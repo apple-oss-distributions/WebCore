@@ -48,16 +48,15 @@ public:
     // so the marker gets to layout itself. Only needed for
     // list-style-position: inside
 
-    virtual void paint(QPainter *p, int x, int y, int w, int h,
-                       int xoff, int yoff, PaintAction paintAction);
-    virtual void paintObject(QPainter *p, int x, int y, int w, int h,
-                             int xoff, int yoff, PaintAction paintAction);
+    virtual void paint(PaintInfo& i, int xoff, int yoff);
     virtual void layout( );
     virtual void calcMinMaxWidth();
 
     virtual void setPixmap( const QPixmap &, const QRect&, CachedImage *);
 
     virtual void calcWidth();
+
+    virtual InlineBox* createInlineBox(bool, bool, bool);
 
     virtual short lineHeight(bool b, bool isRootLineBox=false) const;
     virtual short baselinePosition(bool b, bool isRootLineBox=false) const;
@@ -69,6 +68,8 @@ public:
     RenderListItem* listItem() { return m_listItem; }
     void setListItem(RenderListItem* listItem) { m_listItem = listItem; }
     
+    const QString& text() const { return m_item; }
+
 protected:
     friend class RenderListItem;
     
@@ -76,8 +77,16 @@ protected:
 
     QString m_item;
     CachedImage *m_listImage;
+    QPixmap m_listPixmap;
     long m_value;
     RenderListItem* m_listItem;
+};
+
+class ListMarkerBox : public InlineBox
+{
+public:
+    ListMarkerBox(RenderObject* obj) :InlineBox(obj) {}
+    virtual bool isText() const { return !static_cast<RenderListMarker*>(object())->listImage(); }
 };
 
 class RenderListItem : public RenderBlock
@@ -98,10 +107,7 @@ public:
     void setValue( long v ) { predefVal = v; }
     void calcListValue();
     
-    virtual void paint(QPainter *p, int x, int y, int w, int h,
-                       int xoff, int yoff, PaintAction paintAction);
-    virtual void paintObject(QPainter *p, int x, int y, int w, int h,
-                       int xoff, int yoff, PaintAction paintAction);
+    virtual void paint(PaintInfo& i, int xoff, int yoff);
 
     virtual void layout( );
     virtual void calcMinMaxWidth();
@@ -121,7 +127,6 @@ protected:
     long int predefVal;
     RenderListMarker *m_marker;
     bool _notInList;
-    bool _markerInstalledInParent;
 };
 
 }; //namespace

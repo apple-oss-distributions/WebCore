@@ -31,14 +31,21 @@
 #include "render_image.h"
 #include "render_canvas.h"
 #include "xml/dom_docimpl.h"
+#include "xml/dom_position.h"
 
 #include <kdebug.h>
 #include <assert.h>
 
+#if APPLE_CHANGES
+// For accessibility
+#include "KWQAccObjectCache.h" 
+#endif
+
+using DOM::Position;
 using namespace khtml;
 
 RenderContainer::RenderContainer(DOM::NodeImpl* node)
-    : RenderObject(node)
+    : RenderBox(node)
 {
     m_first = 0;
     m_last = 0;
@@ -54,17 +61,14 @@ void RenderContainer::detach()
     if (continuation())
         continuation()->detach();
     
-    RenderObject* next;
-    for(RenderObject* n = m_first; n; n = next ) {
-        n->removeFromObjectLists();
-        n->setParent(0);
-        next = n->nextSibling();
-        n->detach();
+    while (m_first) {
+        if (m_first->isListMarker())
+            m_first->remove();
+        else
+            m_first->detach();
     }
-    m_first = 0;
-    m_last = 0;
 
-    RenderObject::detach();
+    RenderBox::detach();
 }
 
 bool RenderContainer::canHaveChildren() const
@@ -138,7 +142,7 @@ void RenderContainer::addChild(RenderObject *newChild, RenderObject *beforeChild
         else {
             //kdDebug( 6040 ) << "creating anonymous table" << endl;
             table = new (renderArena()) RenderTable(document() /* is anonymous */);
-            RenderStyle *newStyle = new RenderStyle();
+            RenderStyle *newStyle = new (renderArena()) RenderStyle();
             newStyle->inheritFrom(style());
             newStyle->setDisplay(TABLE);
             table->setStyle(newStyle);
@@ -158,11 +162,9 @@ RenderObject* RenderContainer::removeChildNode(RenderObject* oldChild)
     // So that we'll get the appropriate dirty bit set (either that a normal flow child got yanked or
     // that a positioned child got yanked).  We also repaint, so that the area exposed when the child
     // disappears gets repainted properly.
-    if (document()->renderer()) {
+    if (!documentBeingDestroyed()) {
         oldChild->setNeedsLayoutAndMinMaxRecalc();
-#ifdef INCREMENTAL_REPAINTING
         oldChild->repaint();
-#endif
         
         // Keep our layer hierarchy updated.
         oldChild->removeLayers(enclosingLayer());
@@ -176,14 +178,8 @@ RenderObject* RenderContainer::removeChildNode(RenderObject* oldChild)
         // or end of the selection is deleted and then accessed when the user next selects
         // something.
     
-        if (oldChild->isSelectionBorder()) {
-            RenderObject *root = oldChild;
-            while (root && root->parent())
-                root = root->parent();
-            if (root->isCanvas()) {
-                static_cast<RenderCanvas*>(root)->clearSelection();
-            }
-        }
+        if (oldChild->isSelectionBorder())
+            canvas()->clearSelection();
     }
     
     // remove the child
@@ -201,6 +197,11 @@ RenderObject* RenderContainer::removeChildNode(RenderObject* oldChild)
     oldChild->setNextSibling(0);
     oldChild->setParent(0);
 
+#if APPLE_CHANGES
+    if (KWQAccObjectCache::accessibilityEnabled())
+        document()->getAccObjectCache()->childrenChanged(this);
+#endif
+    
     return oldChild;
 }
 
@@ -273,7 +274,7 @@ void RenderContainer::updatePseudoChild(RenderStyle::PseudoId type, RenderObject
                     genChild->setStyle(pseudo);
                 else {
                     // Images get an empty style that inherits from the pseudo.
-                    RenderStyle* style = new RenderStyle();
+                    RenderStyle* style = new (renderArena()) RenderStyle();
                     style->inheritFrom(pseudo);
                     genChild->setStyle(style);
                 }
@@ -304,7 +305,7 @@ void RenderContainer::updatePseudoChild(RenderStyle::PseudoId type, RenderObject
         else if (contentData->contentType() == CONTENT_OBJECT)
         {
             RenderImage* img = new (renderArena()) RenderImage(document()); /* Anonymous object */
-            RenderStyle* style = new RenderStyle();
+            RenderStyle* style = new (renderArena()) RenderStyle();
             style->inheritFrom(pseudo);
             img->setStyle(style);
             img->setContentObject(contentData->contentObject());
@@ -316,7 +317,6 @@ void RenderContainer::updatePseudoChild(RenderStyle::PseudoId type, RenderObject
         // Add the pseudo after we've installed all our content, so that addChild will be able to find the text
         // inside the inline for e.g., first-letter styling.
         addChild(pseudoContainer, insertBefore);
-        pseudoContainer->close();
     }
 }
 
@@ -348,6 +348,14 @@ void RenderContainer::appendChildNode(RenderObject* newChild)
     newChild->setNeedsLayoutAndMinMaxRecalc(); // Goes up the containing block hierarchy.
     if (!normalChildNeedsLayout())
         setChildNeedsLayout(true); // We may supply the static position for an absolute positioned child.
+    
+    if (!newChild->isFloatingOrPositioned() && childrenInline())
+        dirtyLinesFromChangedChild(newChild);
+    
+#if APPLE_CHANGES
+    if (KWQAccObjectCache::accessibilityEnabled())
+        document()->getAccObjectCache()->childrenChanged(this);
+#endif
 }
 
 void RenderContainer::insertChildNode(RenderObject* child, RenderObject* beforeChild)
@@ -358,7 +366,7 @@ void RenderContainer::insertChildNode(RenderObject* child, RenderObject* beforeC
     }
 
     KHTMLAssert(!child->parent());
-    while ( beforeChild->parent() != this && beforeChild->parent()->isAnonymous() )
+    while ( beforeChild->parent() != this && beforeChild->parent()->isAnonymousBlock() )
 	beforeChild = beforeChild->parent();
     KHTMLAssert(beforeChild->parent() == this);
 
@@ -380,8 +388,15 @@ void RenderContainer::insertChildNode(RenderObject* child, RenderObject* beforeC
     child->setNeedsLayoutAndMinMaxRecalc();
     if (!normalChildNeedsLayout())
         setChildNeedsLayout(true); // We may supply the static position for an absolute positioned child.
+    
+    if (!child->isFloatingOrPositioned() && childrenInline())
+        dirtyLinesFromChangedChild(child);
+    
+#if APPLE_CHANGES
+    if (KWQAccObjectCache::accessibilityEnabled())
+        document()->getAccObjectCache()->childrenChanged(this);
+#endif    
 }
-
 
 void RenderContainer::layout()
 {
@@ -404,7 +419,7 @@ void RenderContainer::removeLeftoverAnonymousBoxes()
     while( child ) {
 	RenderObject *next = child->nextSibling();
 	
-	if ( child->isRenderBlock() && child->isAnonymous() && !child->continuation() && !child->childrenInline() && !child->isTableCell() ) {
+	if ( child->isRenderBlock() && child->isAnonymousBlock() && !child->continuation() && !child->childrenInline() && !child->isTableCell() ) {
 	    RenderObject *firstAnChild = child->firstChild();
 	    RenderObject *lastAnChild = child->lastChild();
 	    if ( firstAnChild ) {
@@ -444,6 +459,40 @@ void RenderContainer::removeLeftoverAnonymousBoxes()
     }
     if ( parent() )
 	parent()->removeLeftoverAnonymousBoxes();
+}
+
+VisiblePosition RenderContainer::positionForCoordinates(int _x, int _y)
+{
+    // no children...return this render object's element, if there is one, and offset 0
+    if (!firstChild())
+        return VisiblePosition(element(), 0, DOWNSTREAM);
+
+    // look for the geometrically-closest child and pass off to that child
+    int min = INT_MAX;
+    RenderObject *closestRenderer = 0;
+    for (RenderObject *renderer = firstChild(); renderer; renderer = renderer->nextSibling()) {
+        if (!renderer->firstChild() && !renderer->isInline() && !renderer->isBlockFlow())
+            continue;
+
+        int absx, absy;
+        renderer->absolutePosition(absx, absy);
+        
+        int top = absy + borderTop() + paddingTop();
+        int bottom = top + renderer->contentHeight();
+        int left = absx + borderLeft() + paddingLeft();
+        int right = left + renderer->contentWidth();
+        
+        int cmp;
+        cmp = abs(_y - top);    if (cmp < min) { closestRenderer = renderer; min = cmp; }
+        cmp = abs(_y - bottom); if (cmp < min) { closestRenderer = renderer; min = cmp; }
+        cmp = abs(_x - left);   if (cmp < min) { closestRenderer = renderer; min = cmp; }
+        cmp = abs(_x - right);  if (cmp < min) { closestRenderer = renderer; min = cmp; }
+    }
+    
+    if (closestRenderer)
+        return closestRenderer->positionForCoordinates(_x, _y);
+    
+    return VisiblePosition(element(), 0, DOWNSTREAM);
 }
     
 #undef DEBUG_LAYOUT

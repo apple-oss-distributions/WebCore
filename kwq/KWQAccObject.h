@@ -16,14 +16,19 @@
  * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL APPLE COMPUTER, INC. OR
  * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
  * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-                                        * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-                                        * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #import <Foundation/Foundation.h>
+#import "KWQAccObjectCache.h"
+
+namespace DOM {
+    class HTMLAreaElementImpl;
+}
 
 namespace khtml {
     class RenderObject;
@@ -33,6 +38,9 @@ namespace khtml {
 {
     khtml::RenderObject* m_renderer;
     id m_data;
+    DOM::HTMLAreaElementImpl* m_areaElement;
+    NSMutableArray* m_children;
+    KWQAccObjectID m_accObjectID;
 }
 
 -(id)initWithRenderer:(khtml::RenderObject*)renderer;
@@ -43,10 +51,17 @@ namespace khtml {
 -(id)data;
 -(void)setData:(id)data;
 
+-(KWQAccObjectID)accObjectID;
+-(void)setAccObjectID:(KWQAccObjectID) accObjectID;
+-(void)removeAccObjectID;
+
 -(KWQAccObject*)firstChild;
 -(KWQAccObject*)lastChild;
 -(KWQAccObject*)previousSibling;
 -(KWQAccObject*)nextSibling;
 -(KWQAccObject*)parentObject;
+
+-(void)childrenChanged;
+-(void)clearChildren;
 
 @end
