@@ -86,15 +86,17 @@ IMPLEMENT_PROTOTYPE(DOMCSSStyleDeclarationProto, DOMCSSStyleDeclarationProtoFunc
 const ClassInfo DOMCSSStyleDeclaration::info = { "CSSStyleDeclaration", 0, &DOMCSSStyleDeclarationTable, 0 };
 
 DOMCSSStyleDeclaration::DOMCSSStyleDeclaration(ExecState *exec, DOM::CSSStyleDeclaration s)
-  : DOMObject(DOMCSSStyleDeclarationProto::self(exec)), styleDecl(s)
-{ }
+  : styleDecl(s)
+{ 
+  setPrototype(DOMCSSStyleDeclarationProto::self(exec));
+}
 
 DOMCSSStyleDeclaration::~DOMCSSStyleDeclaration()
 {
   ScriptInterpreter::forgetDOMObject(styleDecl.handle());
 }
 
-bool DOMCSSStyleDeclaration::hasProperty(ExecState *exec, const Identifier &p) const
+bool DOMCSSStyleDeclaration::hasOwnProperty(ExecState *exec, const Identifier &p) const
 {
   if (p == "cssText")
     return true;
@@ -103,7 +105,7 @@ bool DOMCSSStyleDeclaration::hasProperty(ExecState *exec, const Identifier &p) c
   if (DOM::getPropertyID(prop.ascii(), prop.length()))
       return true;
 
-  return ObjectImp::hasProperty(exec, p);
+  return ObjectImp::hasOwnProperty(exec, p);
 }
 
 Value DOMCSSStyleDeclaration::tryGet(ExecState *exec, const Identifier &propertyName) const
@@ -419,7 +421,10 @@ IMPLEMENT_PROTOFUNC(DOMMediaListProtoFunc)
 IMPLEMENT_PROTOTYPE(DOMMediaListProto, DOMMediaListProtoFunc)
 
 DOMMediaList::DOMMediaList(ExecState *exec, DOM::MediaList ml)
-  : DOMObject(DOMMediaListProto::self(exec)), mediaList(ml) { }
+  : mediaList(ml)
+{
+  setPrototype(DOMMediaListProto::self(exec));
+}
 
 DOMMediaList::~DOMMediaList()
 {
@@ -499,7 +504,10 @@ IMPLEMENT_PROTOFUNC(DOMCSSStyleSheetProtoFunc)
 IMPLEMENT_PROTOTYPE(DOMCSSStyleSheetProto,DOMCSSStyleSheetProtoFunc) // warning, use _WITH_PARENT if DOMStyleSheet gets a proto
 
 DOMCSSStyleSheet::DOMCSSStyleSheet(ExecState *exec, DOM::CSSStyleSheet ss)
-  : DOMStyleSheet(DOMCSSStyleSheetProto::self(exec),ss) { }
+  : DOMStyleSheet(ss) 
+{
+  setPrototype(DOMCSSStyleSheetProto::self(exec));
+}
 
 DOMCSSStyleSheet::~DOMCSSStyleSheet()
 {
@@ -854,9 +862,13 @@ Value CSSRuleConstructor::getValueProperty(ExecState *, int token) const
   return Value();
 }
 
-Value KJS::getCSSRuleConstructor(ExecState *exec)
+namespace KJS {
+
+Value getCSSRuleConstructor(ExecState *exec)
 {
   return cacheGlobalObject<CSSRuleConstructor>( exec, "[[cssRule.constructor]]" );
+}
+
 }
 
 // -------------------------------------------------------------------------
@@ -942,7 +954,7 @@ Value CSSValueConstructor::getValueProperty(ExecState *, int token) const
   return Value();
 }
 
-Value KJS::getCSSValueConstructor(ExecState *exec)
+Value getCSSValueConstructor(ExecState *exec)
 {
   return cacheGlobalObject<CSSValueConstructor>( exec, "[[cssValue.constructor]]" );
 }
@@ -969,7 +981,10 @@ IMPLEMENT_PROTOFUNC(DOMCSSPrimitiveValueProtoFunc)
 IMPLEMENT_PROTOTYPE(DOMCSSPrimitiveValueProto,DOMCSSPrimitiveValueProtoFunc)
 
 DOMCSSPrimitiveValue::DOMCSSPrimitiveValue(ExecState *exec, DOM::CSSPrimitiveValue v)
-  : DOMCSSValue(DOMCSSPrimitiveValueProto::self(exec), v) { }
+  : DOMCSSValue(v) 
+{ 
+  setPrototype(DOMCSSPrimitiveValueProto::self(exec));
+}
 
 Value DOMCSSPrimitiveValue::tryGet(ExecState *exec, const Identifier &p) const
 {
@@ -1054,7 +1069,7 @@ Value CSSPrimitiveValueConstructor::getValueProperty(ExecState *, int token) con
   return Number(token);
 }
 
-Value KJS::getCSSPrimitiveValueConstructor(ExecState *exec)
+Value getCSSPrimitiveValueConstructor(ExecState *exec)
 {
   return cacheGlobalObject<CSSPrimitiveValueConstructor>( exec, "[[cssPrimitiveValue.constructor]]" );
 }
@@ -1072,7 +1087,9 @@ const ClassInfo DOMCSSValueList::info = { "CSSValueList", 0, &DOMCSSValueListTab
 IMPLEMENT_PROTOFUNC(DOMCSSValueListFunc) // not really a proto, but doesn't matter
 
 DOMCSSValueList::DOMCSSValueList(ExecState *exec, DOM::CSSValueList v)
-  : DOMCSSValue(exec, v) { }
+  : DOMCSSValue(exec, v) 
+{ 
+}
 
 Value DOMCSSValueList::tryGet(ExecState *exec, const Identifier &p) const
 {

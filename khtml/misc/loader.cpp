@@ -1240,6 +1240,7 @@ Request::Request(DocLoader* dl, CachedObject *_object, bool _incremental)
     object->setRequest(this);
     incremental = _incremental;
     m_docLoader = dl;
+    multipart = false;
 }
 
 Request::~Request()
@@ -1257,6 +1258,7 @@ DocLoader::DocLoader(KHTMLPart* part, DocumentImpl* doc)
     m_showAnimations = KHTMLSettings::KAnimationEnabled;
     m_part = part;
     m_doc = doc;
+    m_loadInProgress = false;
 
 #if APPLE_CHANGES
     Cache::init();
@@ -1469,6 +1471,11 @@ void DocLoader::removeCachedObject( CachedObject* o ) const
     m_docObjects.removeRef( o );
 }
 
+void DocLoader::setLoadInProgress(bool load)
+{
+    m_loadInProgress = load;
+}
+
 // ------------------------------------------------------------------------------------------
 
 Loader::Loader() : QObject()
@@ -1571,7 +1578,7 @@ void Loader::slotFinished( KIO::Job* job)
 
   if ( !r )
     return;
-
+  
   if (j->error() || j->isErrorPage())
   {
       kdDebug(6060) << "Loader::slotFinished, with error. job->error()= " << j->error() << " job->isErrorPage()=" << j->isErrorPage() << endl;
@@ -1580,8 +1587,7 @@ void Loader::slotFinished( KIO::Job* job)
   }
   else
   {
-      r->object->data(r->m_buffer, true);
-
+      r->object->data(r->m_buffer, true);  
       emit requestDone( r->m_docLoader, r->object );
       time_t expireDate = j->queryMetaData("expire-date").toLong();
 kdDebug(6060) << "Loader::slotFinished, url = " << j->url().url() << " expires " << ctime(&expireDate) << endl;
@@ -1620,16 +1626,19 @@ void Loader::slotFinished( KIO::Job* job, NSData *allData)
             callback->handleError();
         }
         else {
+            docLoader->setLoadInProgress(true);
             r->object->error( job->error(), job->errorText().ascii() );
+            docLoader->setLoadInProgress(false);
             emit requestFailed( docLoader, object );
             Cache::removeCacheEntry( object );
         }
     }
     else {
+        docLoader->setLoadInProgress(true);
         object->data(r->m_buffer, true);
-
         r->object->setAllData(allData);
-
+        docLoader->setLoadInProgress(false);
+        
         // Let the background image decoder trigger the done signal.
         if (!backgroundImageDecoding)
             emit requestDone( docLoader, object );
@@ -1656,6 +1665,19 @@ void Loader::slotReceivedResponse(KIO::Job* job, NSURLResponse *response)
     ASSERT(response);
     r->object->setResponse(response);
     r->object->setExpireDate(KWQCacheObjectExpiresTime(r->m_docLoader, response), false);
+    
+    if (r->multipart) {
+        ASSERT(r->object->type() == CachedObject::Image);
+        static_cast<CachedImage *>(r->object)->clear();
+        r->m_buffer = QBuffer();
+        if (r->m_docLoader->part())
+            r->m_docLoader->part()->checkCompleted();
+        
+    } else if (KWQResponseIsMultipart(response)) {
+        r->multipart = true;
+        if (!r->object->type() == CachedObject::Image)
+            static_cast<KIO::TransferJob*>(job)->cancel();
+    }
 }
 
 #endif
@@ -1681,7 +1703,9 @@ void Loader::slotData( KIO::Job*job, const QByteArray &data )
     r->m_buffer.writeBlock( data.data(), data.size() );
 #endif
 
-    if(r->incremental)
+    if (r->multipart)
+        r->object->data( r->m_buffer, true ); // the loader delivers the data in a multipart section all at once, send eof
+    else if(r->incremental)
         r->object->data( r->m_buffer, false );
 }
 
@@ -1697,7 +1721,8 @@ int Loader::numRequests( DocLoader* dl ) const
     QPtrDictIterator<Request> lIt( m_requestsLoading );
     for (; lIt.current(); ++lIt )
         if ( lIt.current()->m_docLoader == dl )
-            res++;
+            if (!lIt.current()->multipart)
+                res++;
 
 #if APPLE_CHANGES
     QPtrListIterator<Request> bdIt( m_requestsBackgroundDecoding );
@@ -1706,6 +1731,9 @@ int Loader::numRequests( DocLoader* dl ) const
             res++;
 #endif
 
+    if (dl->loadInProgress())
+        res++;
+        
     return res;
 }
 
@@ -2539,6 +2567,7 @@ CachedObjectClient *CachedObjectClientWalker::next()
 
 // --------------------------------------
 
+CachedObjectClient::~CachedObjectClient() { }
 void CachedObjectClient::setPixmap(const QPixmap &, const QRect&, CachedImage *) {}
 void CachedObjectClient::setStyleSheet(const DOM::DOMString &/*url*/, const DOM::DOMString &/*sheet*/) {}
 #ifndef KHTML_NO_XBL

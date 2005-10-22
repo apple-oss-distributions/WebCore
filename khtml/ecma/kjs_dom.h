@@ -38,11 +38,12 @@ namespace KJS {
     // Build a DOMNode
     DOMNode(ExecState *exec, const DOM::Node &n);
     // Constructor for inherited classes
-    DOMNode(const Object &proto, const DOM::Node &n);
+    DOMNode(const DOM::Node &n);
+    virtual ~DOMNode();
     virtual bool toBoolean(ExecState *) const;
     virtual Value tryGet(ExecState *exec, const Identifier &propertyName) const;
     Value getValueProperty(ExecState *exec, int token) const;
-
+    virtual void mark();
     virtual void tryPut(ExecState *exec, const Identifier &propertyName, const Value& value, int attr = None);
     void putValue(ExecState *exec, int token, const Value& value, int attr);
     virtual DOM::Node toNode() const { return node; }
@@ -68,7 +69,7 @@ namespace KJS {
            OnMouseMove, OnMouseOut, OnMouseOver, OnMouseUp, OnMouseWheel, OnMove, OnReset,
            OnResize, OnScroll, OnSearch, OnSelect, OnSubmit, OnUnload,
            OffsetLeft, OffsetTop, OffsetWidth, OffsetHeight, OffsetParent,
-           ClientWidth, ClientHeight, ScrollLeft, ScrollTop, ScrollWidth, ScrollHeight };
+           ClientWidth, ClientHeight, ScrollLeft, ScrollTop, ScrollWidth, ScrollHeight, ScrollIntoView };
 
   protected:
     DOM::Node node;
@@ -78,7 +79,7 @@ namespace KJS {
   public:
     DOMNodeList(ExecState *, const DOM::NodeList &l) : list(l) { }
     ~DOMNodeList();
-    virtual bool hasProperty(ExecState *exec, const Identifier &p) const;
+    virtual bool hasOwnProperty(ExecState *exec, const Identifier &p) const;
     virtual Value tryGet(ExecState *exec, const Identifier &propertyName) const;
     virtual Value call(ExecState *exec, Object &thisObj, const List&args);
     virtual Value tryCall(ExecState *exec, Object &thisObj, const List&args);
@@ -110,7 +111,7 @@ namespace KJS {
     // Build a DOMDocument
     DOMDocument(ExecState *exec, const DOM::Document &d);
     // Constructor for inherited classes
-    DOMDocument(const Object &proto, const DOM::Document &d);
+    DOMDocument(const DOM::Document &d);
     ~DOMDocument();
     virtual Value tryGet(ExecState *exec, const Identifier &propertyName) const;
     Value getValueProperty(ExecState *exec, int token) const;
@@ -125,7 +126,7 @@ namespace KJS {
            CreateEntityReference, GetElementsByTagName, ImportNode, CreateElementNS,
            CreateAttributeNS, GetElementsByTagNameNS, GetElementById,
            CreateRange, CreateNodeIterator, CreateTreeWalker, DefaultView,
-           CreateEvent, StyleSheets, PreferredStylesheetSet, 
+           CreateEvent, ElementFromPoint, StyleSheets, PreferredStylesheetSet, 
            SelectedStylesheetSet, GetOverrideStyle, ReadyState, 
            ExecCommand, QueryCommandEnabled, QueryCommandIndeterm, QueryCommandState, 
            QueryCommandSupported, QueryCommandValue };
@@ -148,7 +149,7 @@ namespace KJS {
     // Build a DOMElement
     DOMElement(ExecState *exec, const DOM::Element &e);
     // Constructor for inherited classes
-    DOMElement(const Object &proto, const DOM::Element &e);
+    DOMElement(const DOM::Element &e);
     virtual Value tryGet(ExecState *exec, const Identifier &propertyName) const;
     // no put - all read-only
     virtual const ClassInfo* classInfo() const { return &info; }
@@ -158,7 +159,7 @@ namespace KJS {
            SetAttributeNode, RemoveAttributeNode, GetElementsByTagName,
            GetAttributeNS, SetAttributeNS, RemoveAttributeNS, GetAttributeNodeNS,
            SetAttributeNodeNS, GetElementsByTagNameNS, HasAttribute, HasAttributeNS,
-           ScrollByLines, ScrollByPages};
+           ScrollByLines, ScrollByPages, ScrollIntoView};
   };
 
   class DOMDOMImplementation : public DOMObject {
@@ -192,7 +193,7 @@ namespace KJS {
   public:
     DOMNamedNodeMap(ExecState *, const DOM::NamedNodeMap &m);
     ~DOMNamedNodeMap();
-    virtual bool hasProperty(ExecState *exec, const Identifier &p) const;
+    virtual bool hasOwnProperty(ExecState *exec, const Identifier &p) const;
     virtual Value tryGet(ExecState *exec, const Identifier &propertyName) const;
     // no put - all read-only
     virtual const ClassInfo* classInfo() const { return &info; }
@@ -241,7 +242,7 @@ namespace KJS {
   // Constructor for Node - constructor stuff not implemented yet
   class NodeConstructor : public DOMObject {
   public:
-    NodeConstructor(ExecState *) : DOMObject() { }
+    NodeConstructor(ExecState *) { }
     virtual Value tryGet(ExecState *exec, const Identifier &propertyName) const;
     Value getValueProperty(ExecState *exec, int token) const;
     // no put - all read-only
@@ -252,7 +253,7 @@ namespace KJS {
   // Constructor for DOMException - constructor stuff not implemented yet
   class DOMExceptionConstructor : public DOMObject {
   public:
-    DOMExceptionConstructor(ExecState *) : DOMObject() { }
+    DOMExceptionConstructor(ExecState *) { }
     virtual Value tryGet(ExecState *exec, const Identifier &propertyName) const;
     Value getValueProperty(ExecState *exec, int token) const;
     // no put - all read-only
@@ -287,7 +288,7 @@ namespace KJS {
     // Build a DOMCharacterData
     DOMCharacterData(ExecState *exec, const DOM::CharacterData &d);
     // Constructor for inherited classes
-    DOMCharacterData(const Object &proto, const DOM::CharacterData &d);
+    DOMCharacterData(const DOM::CharacterData &d);
     virtual Value tryGet(ExecState *exec,const Identifier &propertyName) const;
     Value getValueProperty(ExecState *, int token) const;
     virtual void tryPut(ExecState *exec, const Identifier &propertyName, const Value& value, int attr = None);

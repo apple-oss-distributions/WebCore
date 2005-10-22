@@ -66,6 +66,8 @@ namespace KJS {
         StatusText, Abort, GetAllResponseHeaders, GetResponseHeader, Open, Send, SetRequestHeader,
         OverrideMIMEType };
 
+    static void cancelRequests(DOM::DocumentImpl *d);
+
   private:
     friend class XMLHttpRequestProtoFunc;
     friend class XMLHttpRequestQObject;
@@ -97,6 +99,10 @@ namespace KJS {
 
     void changeState(XMLHttpRequestState newState);
 
+    static QPtrDict< QPtrDict<XMLHttpRequest> > &requestsByDocument();
+    void addToRequestsByDocument();
+    void removeFromRequestsByDocument();
+
     QGuardedPtr<DOM::DocumentImpl> doc;
 
     KURL url;
@@ -107,8 +113,8 @@ namespace KJS {
     KIO::TransferJob * job;
 
     XMLHttpRequestState state;
-    JSUnprotectedEventListener *onReadyStateChangeListener;
-    JSUnprotectedEventListener *onLoadListener;
+    khtml::SharedPtr<JSUnprotectedEventListener> onReadyStateChangeListener;
+    khtml::SharedPtr<JSUnprotectedEventListener> onLoadListener;
 
     khtml::Decoder *decoder;
     QString encoding;

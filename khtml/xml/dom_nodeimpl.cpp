@@ -267,6 +267,11 @@ DOMString NodeImpl::localName() const
     return DOMString();
 }
 
+DOMString NodeImpl::namespaceURI() const
+{
+    return DOMString();
+}
+
 void NodeImpl::setFirstChild(NodeImpl *)
 {
 }
@@ -1088,7 +1093,7 @@ void NodeImpl::checkAddChild(NodeImpl *newChild, int &exceptioncode)
 
     // only do this once we know there won't be an exception
     if (shouldAdoptChild) {
-	KJS::ScriptInterpreter::updateDOMObjectDocument(newChild, newChild->getDocument(), getDocument());
+	KJS::ScriptInterpreter::updateDOMNodeDocument(newChild, newChild->getDocument(), getDocument());
 	newChild->setDocument(getDocument()->docPtr());
     }
 }
@@ -1394,6 +1399,18 @@ RenderObject *NodeImpl::createRenderer(RenderArena *arena, RenderStyle *style)
 long NodeImpl::maxOffset() const
 {
     return 1;
+}
+
+// method for editing madness, which allows BR,1 as a position, though that is incorrect
+long NodeImpl::maxDeepOffset() const
+{
+    if (isTextNode())
+        return static_cast<const TextImpl*>(this)->length();
+        
+    if (id() == ID_BR || (renderer() && renderer()->isReplaced()))
+        return 1;
+
+    return childNodeCount();
 }
 
 long NodeImpl::caretMinOffset() const
@@ -1962,6 +1979,7 @@ bool NodeBaseImpl::checkSameDocument( NodeImpl *newChild, int &exceptioncode )
 {
     exceptioncode = 0;
     DocumentImpl *ownerDocThis = getDocument();
+    // FIXME: Doh! This next line isn't getting newChild, so it's never going to work!
     DocumentImpl *ownerDocNew = getDocument();
     if(ownerDocThis != ownerDocNew) {
         kdDebug(6010)<< "not same document, newChild = " << newChild << "document = " << getDocument() << endl;
@@ -2120,6 +2138,8 @@ bool NodeBaseImpl::getUpperLeftCorner(int &xPos, int &yPos) const
         else if(o->nextSibling())
             o = o->nextSibling();
         else {
+            // FIXME: If the element we're scrolling to doesn't have a child or next sibling and none of the nodes on 
+            // the parent chain have siblings, then this loop returns false prematurely - 4256060
             RenderObject *next = 0;
             while(!next) {
                 o = o->parent();
@@ -2128,7 +2148,10 @@ bool NodeBaseImpl::getUpperLeftCorner(int &xPos, int &yPos) const
             }
             o = next;
         }
-        if((o->isText() && !o->isBR()) || o->isReplaced()) {
+        if (o->parent()->element() == this && o->isText() && !o->isBR() && !static_cast<RenderText*>(o)->firstTextBox()) {
+            // do nothing - skip child node of the named anchor if it doesn't have a text box rdar://problems/4233844&4246096
+        }
+        else if((o->isText() && !o->isBR()) || o->isReplaced()) {
             o->container()->absolutePosition( xPos, yPos );
             if (o->isText())
                 xPos += static_cast<RenderText *>(o)->minXPos();

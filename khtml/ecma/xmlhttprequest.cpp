@@ -1,4 +1,3 @@
-// -*- c-basic-offset: 2 -*-
 /*
  *  This file is part of the KDE libraries
  *  Copyright (C) 2004 Apple Computer, Inc.
@@ -178,13 +177,13 @@ Value XMLHttpRequest::getValueProperty(ExecState *exec, int token) const
   case StatusText:
     return getStatusText();
   case Onreadystatechange:
-   if (onReadyStateChangeListener && onReadyStateChangeListener->listenerObjImp()) {
+   if (onReadyStateChangeListener.notNull() && onReadyStateChangeListener->listenerObjImp()) {
      return onReadyStateChangeListener->listenerObj();
    } else {
      return Null();
    }
   case Onload:
-   if (onLoadListener && onLoadListener->listenerObjImp()) {
+   if (onLoadListener.notNull() && onLoadListener->listenerObjImp()) {
      return onLoadListener->listenerObj();
    } else {
      return Null();
@@ -204,12 +203,10 @@ void XMLHttpRequest::putValue(ExecState *exec, int token, const Value& value, in
 {
   switch(token) {
   case Onreadystatechange:
-    onReadyStateChangeListener = Window::retrieveActive(exec)->getJSUnprotectedEventListener(value, true);
-    if (onReadyStateChangeListener) onReadyStateChangeListener->ref();
+    onReadyStateChangeListener.reset(Window::retrieveActive(exec)->getJSUnprotectedEventListener(value, true));
     break;
   case Onload:
-    onLoadListener = Window::retrieveActive(exec)->getJSUnprotectedEventListener(value, true);
-    if (onLoadListener) onLoadListener->ref();
+    onLoadListener.reset(Window::retrieveActive(exec)->getJSUnprotectedEventListener(value, true));
     break;
   default:
     kdWarning() << "HTMLDocument::putValue unhandled token " << token << endl;
@@ -220,27 +217,25 @@ void XMLHttpRequest::mark()
 {
   DOMObject::mark();
 
-  if (onReadyStateChangeListener)
+  if (onReadyStateChangeListener.notNull())
     onReadyStateChangeListener->mark();
 
-  if (onLoadListener)
+  if (onLoadListener.notNull())
     onLoadListener->mark();
 }
 
 
 XMLHttpRequest::XMLHttpRequest(ExecState *exec, const DOM::Document &d)
-  : DOMObject(XMLHttpRequestProto::self(exec)),
-    qObject(new XMLHttpRequestQObject(this)),
+  : qObject(new XMLHttpRequestQObject(this)),
     doc(static_cast<DOM::DocumentImpl*>(d.handle())),
     async(true),
     job(0),
     state(Uninitialized),
-    onReadyStateChangeListener(0),
-    onLoadListener(0),
     decoder(0),
     createdDocument(false),
     aborted(false)
 {
+  setPrototype(XMLHttpRequestProto::self(exec));
 }
 
 XMLHttpRequest::~XMLHttpRequest()
@@ -256,13 +251,13 @@ void XMLHttpRequest::changeState(XMLHttpRequestState newState)
   if (state != newState) {
     state = newState;
     
-    if (onReadyStateChangeListener != 0 && doc->part()) {
+    if (doc && doc->part() && onReadyStateChangeListener.notNull()) {
       DOM::Event ev = doc->part()->document().createEvent("HTMLEvents");
       ev.initEvent("readystatechange", true, true);
       onReadyStateChangeListener->handleEvent(ev, true);
     }
     
-    if (state == Completed && onLoadListener != 0 && doc->part()) {
+    if (doc && doc->part() && state == Completed && onLoadListener.notNull()) {
       DOM::Event ev = doc->part()->document().createEvent("HTMLEvents");
       ev.initEvent("load", true, true);
       onLoadListener->handleEvent(ev, true);
@@ -321,6 +316,13 @@ void XMLHttpRequest::open(const QString& _method, const KURL& _url, bool _async)
 
 void XMLHttpRequest::send(const QString& _body)
 {
+  if (!doc)
+    return;
+
+  // FIXME: Should this abort instead if we already have a job going?
+  if (job)
+    return;
+
   aborted = false;
 
 #if !APPLE_CHANGES
@@ -355,7 +357,10 @@ void XMLHttpRequest::send(const QString& _body)
   }
 #endif
 
-  gcProtect (this);
+  {
+    InterpreterLock lock;
+    gcProtect(this);
+  }
   
   qObject->connect( job, SIGNAL( result( KIO::Job* ) ),
 		    SLOT( slotFinished( KIO::Job* ) ) );
@@ -369,6 +374,8 @@ void XMLHttpRequest::send(const QString& _body)
   qObject->connect( job, SIGNAL(redirection(KIO::Job*, const KURL& ) ),
 		    SLOT( slotRedirection(KIO::Job*, const KURL&) ) );
 
+  addToRequestsByDocument();
+
 #ifdef APPLE_CHANGES
   KWQServeRequest(khtml::Cache::loader(), doc->docLoader(), job);
 #else 
@@ -378,7 +385,10 @@ void XMLHttpRequest::send(const QString& _body)
 
 void XMLHttpRequest::abort()
 {
-  if (job) {
+  bool hadJob = job;
+
+  if (hadJob) {
+    removeFromRequestsByDocument();
     job->kill();
     job = 0;
   }
@@ -388,7 +398,10 @@ void XMLHttpRequest::abort()
   }
   aborted = true;
 
-  gcUnprotect (this);
+  if (hadJob) {
+    InterpreterLock lock;
+    gcUnprotect(this);
+  }
 }
 
 void XMLHttpRequest::setRequestHeader(const QString& name, const QString &value)
@@ -523,6 +536,7 @@ void XMLHttpRequest::slotFinished(KIO::Job *)
     response += decoder->flush();
   }
 
+  removeFromRequestsByDocument();
   job = 0;
 
   changeState(Completed);
@@ -532,7 +546,8 @@ void XMLHttpRequest::slotFinished(KIO::Job *)
     decoder = 0;
   }
 
-  gcUnprotect (this);
+  InterpreterLock lock;
+  gcUnprotect(this);
 }
 
 void XMLHttpRequest::slotRedirection(KIO::Job*, const KURL& url)
@@ -580,6 +595,50 @@ void XMLHttpRequest::slotData(KIO::Job*, const QByteArray &_data)
   if (!aborted) {
     changeState(Interactive);
   }
+}
+
+QPtrDict< QPtrDict<XMLHttpRequest> > &XMLHttpRequest::requestsByDocument()
+{
+    static QPtrDict< QPtrDict<XMLHttpRequest> > dictionary;
+    return dictionary;
+}
+
+void XMLHttpRequest::addToRequestsByDocument()
+{
+  assert(doc);
+
+  QPtrDict<XMLHttpRequest> *requests = requestsByDocument().find(doc);
+  if (!requests) {
+    requests = new QPtrDict<XMLHttpRequest>;
+    requestsByDocument().insert(doc, requests);
+  }
+
+  assert(requests->find(this) == 0);
+  requests->insert(this, this);
+}
+
+void XMLHttpRequest::removeFromRequestsByDocument()
+{
+  assert(doc);
+
+  QPtrDict<XMLHttpRequest> *requests = requestsByDocument().find(doc);
+
+  // Since synchronous loads are not added to requestsByDocument(), we need to make sure we found the request.
+  if (!requests || !requests->find(this))
+    return;
+
+  requests->remove(this);
+
+  if (requests->isEmpty()) {
+    requestsByDocument().remove(doc);
+    delete requests;
+  }
+}
+
+void XMLHttpRequest::cancelRequests(DOM::DocumentImpl *d)
+{
+  while (QPtrDict<XMLHttpRequest> *requests = requestsByDocument().find(d))
+    QPtrDictIterator<XMLHttpRequest>(*requests).current()->abort();
 }
 
 Value XMLHttpRequestProtoFunc::tryCall(ExecState *exec, Object &thisObj, const List &args)

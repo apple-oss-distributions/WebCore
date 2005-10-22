@@ -297,6 +297,8 @@ namespace khtml
 	void checkNotify();
 
         bool isLoaded() const { return !m_loading; }
+        
+        virtual bool isImage() const { return false; }
 
     protected:
 	DOM::DOMString m_script;
@@ -359,8 +361,9 @@ namespace khtml
         virtual bool schedule() const { return true; }
 
 	void checkNotify();
+        
+        virtual bool isImage() const { return true; }
 
-    protected:
 	void clear();
 
     private slots:
@@ -491,6 +494,9 @@ protected:
         void setCachePolicy( KIO::CacheControl cachePolicy );
         void setShowAnimations( KHTMLSettings::KAnimationAdvice );
         void removeCachedObject( CachedObject*) const;
+		
+        void setLoadInProgress(bool);
+        bool loadInProgress() const { return m_loadInProgress; }
 
     private:
         bool needReload(const KURL &fullUrl);
@@ -506,6 +512,7 @@ protected:
         KHTMLSettings::KAnimationAdvice m_showAnimations : 2;
         KHTMLPart* m_part;
         DOM::DocumentImpl* m_doc;
+        bool m_loadInProgress;
     };
 
     /**
@@ -520,6 +527,7 @@ protected:
 	QBuffer m_buffer;
 	CachedObject *object;
         DocLoader* m_docLoader;
+        bool multipart;
      };
 
     /**

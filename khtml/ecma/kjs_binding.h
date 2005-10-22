@@ -46,7 +46,6 @@ namespace KJS {
    */
   class DOMObject : public ObjectImp {
   public:
-    DOMObject(const Object &proto) : ObjectImp(proto) {}
     DOMObject() : ObjectImp() {}
     virtual Value get(ExecState *exec, const Identifier &propertyName) const;
     virtual Value tryGet(ExecState *exec, const Identifier &propertyName) const
@@ -83,6 +82,8 @@ namespace KJS {
     virtual UString toString(ExecState *) const { return UString("[function]"); }
   };
 
+  class DOMNode;
+
   /**
    * We inherit from Interpreter, to save a pointer to the HTML part
    * that the interpreter runs for.
@@ -104,17 +105,15 @@ namespace KJS {
       return domObjects().remove( objectHandle );
     }
 
-    static DOMObject* getDOMObjectForDocument( DOM::DocumentImpl* documentHandle, void *objectHandle );
-    static void putDOMObjectForDocument( DOM::DocumentImpl* documentHandle, void *objectHandle, DOMObject *obj );
-    static bool deleteDOMObjectsForDocument( DOM::DocumentImpl* documentHandle );
-
-    /**
-     * Static method. Makes all interpreters forget about the object
-     */
     static void forgetDOMObject( void* objectHandle );
-    static void forgetDOMObjectsForDocument( DOM::DocumentImpl* documentHandle );
 
-    static void updateDOMObjectDocument(void *objectHandle, DOM::DocumentImpl *oldDoc, DOM::DocumentImpl *newDoc);
+
+    static DOMNode *getDOMNodeForDocument(DOM::DocumentImpl *document, DOM::NodeImpl *node);
+    static void putDOMNodeForDocument(DOM::DocumentImpl *document, DOM::NodeImpl *nodeHandle, DOMNode *nodeWrapper);
+    static void forgetDOMNodeForDocument(DOM::DocumentImpl *document, DOM::NodeImpl *node);
+    static void forgetAllDOMNodesForDocument(DOM::DocumentImpl *document);
+    static void updateDOMNodeDocument(DOM::NodeImpl *nodeHandle, DOM::DocumentImpl *oldDoc, DOM::DocumentImpl *newDoc);
+
 
 
     KHTMLPart* part() const { return m_part; }
@@ -148,7 +147,7 @@ namespace KJS {
     KHTMLPart* m_part;
 
     static QPtrDict<DOMObject> &domObjects();
-    static QPtrDict<QPtrDict<DOMObject> > &domObjectsPerDocument();
+    static QPtrDict<QPtrDict<DOMNode> > &domNodesPerDocument();
 
     DOM::Event *m_evt;
     bool m_inlineCode;
@@ -302,7 +301,7 @@ namespace KJS {
     virtual const ClassInfo *classInfo() const { return &info; } \
     static const ClassInfo info; \
     Value get(ExecState *exec, const Identifier &propertyName) const; \
-    bool hasProperty(ExecState *exec, const Identifier &propertyName) const; \
+    bool hasOwnProperty(ExecState *exec, const Identifier &propertyName) const; \
   }; \
   const ClassInfo ClassProto::info = { ClassName, 0, &ClassProto##Table, 0 }; \
   };
@@ -313,9 +312,9 @@ namespace KJS {
       /*fprintf( stderr, "%sProto::get(%s) [in macro, no parent]\n", info.className, propertyName.ascii());*/ \
       return lookupGetFunction<ClassFunc,ObjectImp>(exec, propertyName, &ClassProto##Table, this ); \
     } \
-    bool KJS::ClassProto::hasProperty(ExecState *exec, const Identifier &propertyName) const \
+    bool ClassProto::hasOwnProperty(ExecState *exec, const Identifier &propertyName) const \
     { /*stupid but we need this to have a common macro for the declaration*/ \
-      return ObjectImp::hasProperty(exec, propertyName); \
+      return ObjectImp::hasOwnProperty(exec, propertyName); \
     }
 
 #define IMPLEMENT_PROTOTYPE_WITH_PARENT(ClassProto,ClassFunc,ParentProto)  \
@@ -327,12 +326,12 @@ namespace KJS {
       /* Not found -> forward request to "parent" prototype */ \
       return ParentProto::self(exec).get( exec, propertyName ); \
     } \
-    bool KJS::ClassProto::hasProperty(ExecState *exec, const Identifier &propertyName) const \
+    bool ClassProto::hasOwnProperty(ExecState *exec, const Identifier &propertyName) const \
     { \
-      if (ObjectImp::hasProperty(exec, propertyName)) \
+      if (ObjectImp::hasOwnProperty(exec, propertyName)) \
         return true; \
-      return ParentProto::self(exec).hasProperty(exec, propertyName); \
-    }
+      return ParentProto::self(exec).hasOwnProperty(exec, propertyName); \
+    } 
 
 #define IMPLEMENT_PROTOFUNC(ClassFunc) \
   namespace KJS { \
