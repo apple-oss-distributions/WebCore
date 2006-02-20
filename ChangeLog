@@ -1,3 +1,14 @@
+=== WebCore-417.18 ===
+
+2005-12-23  Geoffrey Garen  <ggaren@apple.com>
+
+        - Fixed <rdar://problem/4392583> REGRESSION: Reproducible crash while viewing Opera's "why we're better than Safari" site, http://www.howtocreate.co.uk/browserSpeed.html, in khtml::RenderBlock::nodeAtPoint
+
+        Fix by Darin, reviewed and landed by me.
+
+        * khtml/rendering/render_container.cpp:
+        (RenderContainer::updatePseudoChild): Don't have the parent call removeChild, because the child calls parent()->removeChild() on itself in detach().
+
 === WebCore-417.17 ===
 
 2005-12-21  Adele Peterson  <adele@apple.com>
