@@ -1157,7 +1157,7 @@ void FrameView::layoutTimerFired(Timer<FrameView>*)
 void FrameView::hoverTimerFired(Timer<FrameView>*)
 {
     d->hoverTimer.stop();
-    prepareMouseEvent(false, false, true, PlatformMouseEvent());
+    prepareMouseEvent(false, false, true, PlatformMouseEvent(PlatformMouseEvent::currentEvent));
 }
 
 void FrameView::scheduleRelayout()

@@ -681,8 +681,12 @@ enum EUserSelect {
 
 // Word Break Values. Matches WinIE, rather than CSS3
 
+enum EWordBreak {
+    NormalWordBreak, BreakAllWordBreak, BreakWordBreak
+};
+
 enum EWordWrap {
-    WBNORMAL, BREAK_WORD
+    NormalWordWrap, BreakWordWrap
 };
 
 enum ENBSPMode {
@@ -799,6 +803,7 @@ public:
     AtomicString highlight; // Apple-specific extension for custom highlight rendering.
     unsigned textSecurity : 2; // ETextSecurity
     unsigned userModify : 2; // EUserModify  (editing)
+    unsigned wordBreak : 2; // EWordBreak
     unsigned wordWrap : 1; // EWordWrap 
     unsigned nbspMode : 1; // ENBSPMode
     unsigned khtmlLineBreak : 1; // EKHTMLLineBreak
@@ -1309,6 +1314,9 @@ public:
     bool breakOnlyAfterWhiteSpace() const {
         return whiteSpace() == PRE_WRAP || khtmlLineBreak() == AFTER_WHITE_SPACE;
     }
+    bool breakWords() const {
+        return wordBreak() == BreakWordBreak || wordWrap() == BreakWordWrap;
+    }
 
     const Color & backgroundColor() const { return background->m_color; }
     CachedImage *backgroundImage() const { return background->m_background.m_image; }
@@ -1390,6 +1398,7 @@ public:
     bool textOverflow() const { return css3NonInheritedData->textOverflow; }
     EMarginCollapse marginTopCollapse() const { return static_cast<EMarginCollapse>(css3NonInheritedData->marginTopCollapse); }
     EMarginCollapse marginBottomCollapse() const { return static_cast<EMarginCollapse>(css3NonInheritedData->marginBottomCollapse); }
+    EWordBreak wordBreak() const { return static_cast<EWordBreak>(css3InheritedData->wordBreak); }
     EWordWrap wordWrap() const { return static_cast<EWordWrap>(css3InheritedData->wordWrap); }
     ENBSPMode nbspMode() const { return static_cast<ENBSPMode>(css3InheritedData->nbspMode); }
     EKHTMLLineBreak khtmlLineBreak() const { return static_cast<EKHTMLLineBreak>(css3InheritedData->khtmlLineBreak); }
@@ -1613,6 +1622,7 @@ public:
     void setTextOverflow(bool b) { SET_VAR(css3NonInheritedData, textOverflow, b); }
     void setMarginTopCollapse(EMarginCollapse c) { SET_VAR(css3NonInheritedData, marginTopCollapse, c); }
     void setMarginBottomCollapse(EMarginCollapse c) { SET_VAR(css3NonInheritedData, marginBottomCollapse, c); }
+    void setWordBreak(EWordBreak b) { SET_VAR(css3InheritedData, wordBreak, b); }
     void setWordWrap(EWordWrap b) { SET_VAR(css3InheritedData, wordWrap, b); }
     void setNBSPMode(ENBSPMode b) { SET_VAR(css3InheritedData, nbspMode, b); }
     void setKHTMLLineBreak(EKHTMLLineBreak b) { SET_VAR(css3InheritedData, khtmlLineBreak, b); }
@@ -1745,7 +1755,8 @@ public:
     static bool initialTextOverflow() { return false; }
     static EMarginCollapse initialMarginTopCollapse() { return MCOLLAPSE; }
     static EMarginCollapse initialMarginBottomCollapse() { return MCOLLAPSE; }
-    static EWordWrap initialWordWrap() { return WBNORMAL; }
+    static EWordBreak initialWordBreak() { return NormalWordBreak; }
+    static EWordWrap initialWordWrap() { return NormalWordWrap; }
     static ENBSPMode initialNBSPMode() { return NBNORMAL; }
     static EKHTMLLineBreak initialKHTMLLineBreak() { return LBNORMAL; }
     static EMatchNearestMailBlockquoteColor initialMatchNearestMailBlockquoteColor() { return BCNORMAL; }

@@ -2490,10 +2490,12 @@ void RenderObject::destroy()
 
 void RenderObject::arenaDelete(RenderArena *arena, void *base)
 {
-    if (m_style->backgroundImage())
-        m_style->backgroundImage()->deref(this);
-    if (m_style)
+    if (m_style) {
+        if (m_style->backgroundImage())
+            m_style->backgroundImage()->deref(this);
+    
         m_style->deref(arena);
+    }
     
 #ifndef NDEBUG
     void *savedBase = baseOfRenderObjectBeingDeleted;

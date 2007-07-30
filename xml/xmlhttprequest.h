@@ -34,6 +34,8 @@ namespace WebCore {
   class EventListener;
   class String;
 
+  typedef int ExceptionCode;
+  
   // these exact numeric values are important because JS expects them
   enum XMLHttpRequestState {
     Uninitialized = 0,  // open() has not been called yet
@@ -54,10 +56,10 @@ namespace WebCore {
     String getStatusText() const;
     int getStatus() const;
     XMLHttpRequestState getReadyState() const;
-    void open(const String& method, const KURL& url, bool async, const String& user, const String& password);
-    void send(const String& body);
+    void open(const String& method, const KURL& url, bool async, const String& user, const String& password, ExceptionCode& ec);
+        void send(const String& body, ExceptionCode& ec);
     void abort();
-    void setRequestHeader(const String& name, const String &value);
+    void setRequestHeader(const String& name, const String &value, ExceptionCode& ec);
     void overrideMIMEType(const String& override);
     String getAllResponseHeaders() const;
     String getResponseHeader(const String& name) const;

@@ -129,13 +129,14 @@ RenderStyle* RenderTextControl::createInnerTextStyle(RenderStyle* startStyle)
         // Set word wrap property based on wrap attribute
         if (static_cast<HTMLTextAreaElement*>(element)->wrap() == HTMLTextAreaElement::ta_NoWrap) {
             textBlockStyle->setWhiteSpace(PRE);
-            textBlockStyle->setWordWrap(WBNORMAL);
+            textBlockStyle->setWordWrap(NormalWordWrap);
         } else {
             textBlockStyle->setWhiteSpace(PRE_WRAP);
-            textBlockStyle->setWordWrap(BREAK_WORD);
+            textBlockStyle->setWordWrap(BreakWordWrap);
         }
     } else {
         textBlockStyle->setWhiteSpace(PRE);
+        textBlockStyle->setWordWrap(NormalWordWrap);
         textBlockStyle->setOverflowX(OHIDDEN);
         textBlockStyle->setOverflowY(OHIDDEN);
         
@@ -177,14 +178,15 @@ RenderStyle* RenderTextControl::createDivStyle(RenderStyle* startStyle)
         // Set word wrap property based on wrap attribute
         if (static_cast<HTMLTextAreaElement*>(element)->wrap() == HTMLTextAreaElement::ta_NoWrap) {
             divStyle->setWhiteSpace(PRE);
-            divStyle->setWordWrap(WBNORMAL);
+            divStyle->setWordWrap(NormalWordWrap);
         } else {
             divStyle->setWhiteSpace(PRE_WRAP);
-            divStyle->setWordWrap(BREAK_WORD);
+            divStyle->setWordWrap(BreakWordWrap);
         }
 
     } else {
         divStyle->setWhiteSpace(PRE);
+        divStyle->setWordWrap(NormalWordWrap);
         divStyle->setOverflowX(OHIDDEN);
         divStyle->setOverflowY(OHIDDEN);
     }
@@ -521,7 +523,7 @@ void RenderTextControl::calcHeight()
     // FIXME: We should get the size of the scrollbar from the RenderTheme instead of hard coding it here.
     int scrollbarSize = 0;
     // We are able to have a horizontal scrollbar if the overflow style is scroll, or if its auto and there's no word wrap.
-    if (m_innerText->renderer()->style()->overflowX() == OSCROLL ||  (m_innerText->renderer()->style()->overflowX() == OAUTO && m_innerText->renderer()->style()->wordWrap() == WBNORMAL))
+    if (m_innerText->renderer()->style()->overflowX() == OSCROLL ||  (m_innerText->renderer()->style()->overflowX() == OAUTO && m_innerText->renderer()->style()->wordWrap() == NormalWordWrap))
         scrollbarSize = 15;
     
     m_height = line * rows + toAdd + scrollbarSize;

@@ -40,6 +40,8 @@ public:
     virtual bool isTableCol() const { return true; }
     virtual short lineHeight(bool) const { return 0; }
     virtual void updateFromElement();
+    
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const;
     virtual bool canHaveChildren() const;
     virtual bool requiresLayer() { return false; }
 

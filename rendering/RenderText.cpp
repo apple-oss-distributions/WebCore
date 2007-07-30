@@ -626,6 +626,9 @@ void RenderText::calcMinMaxWidth(int leadWidth)
     bool firstWord = true;
     bool firstLine = true;
     int nextBreakable = -1;
+    
+    bool breakAll = (style()->wordBreak() == BreakAllWordBreak || style()->wordBreak() == BreakWordBreak) && style()->autoWrap();
+    
     for (int i = 0; i < len; i++) {
         UChar c = txt[i];
         
@@ -665,14 +668,14 @@ void RenderText::calcMinMaxWidth(int leadWidth)
             continue;
         }
         
-        bool hasBreak = isBreakable(txt, i, len, nextBreakable);
+        bool hasBreak = breakAll || isBreakable(txt, i, len, nextBreakable);
         int j = i;
         while (c != '\n' && c != ' ' && c != '\t' && c != SOFT_HYPHEN) {
             j++;
             if (j == len)
                 break;
             c = txt[j];
-            if (isBreakable(txt, j, len, nextBreakable))
+            if (breakAll || isBreakable(txt, j, len, nextBreakable))
                 break;
         }
             

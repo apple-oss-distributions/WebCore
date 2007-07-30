@@ -27,9 +27,12 @@
 #include "Event.h"
 #include "EventListener.h"
 #include "EventNames.h"
+#include "ExceptionCode.h"
 #include "FormData.h"
+#include "Frame.h"
 #include "HTMLDocument.h"
 #include "LoaderFunctions.h"
+#include "Page.h"
 #include "PlatformString.h"
 #include "RegularExpression.h"
 #include "TextEncoding.h"
@@ -135,6 +138,58 @@ static String getCharset(const String& contentTypeString)
     return String();
 }
 
+static bool canSetRequestHeader(const String& name)
+{
+    static HashSet<StringImpl*, CaseInsensitiveHash > forbiddenHeaders;
+    
+    if (forbiddenHeaders.isEmpty()) {
+        forbiddenHeaders.add(new StringImpl("accept-charset"));
+        forbiddenHeaders.add(new StringImpl("accept-encoding"));
+        forbiddenHeaders.add(new StringImpl("content-length"));
+        forbiddenHeaders.add(new StringImpl("expect"));
+        forbiddenHeaders.add(new StringImpl("date"));
+        forbiddenHeaders.add(new StringImpl("host"));
+        forbiddenHeaders.add(new StringImpl("keep-alive"));
+        forbiddenHeaders.add(new StringImpl("referer"));
+        forbiddenHeaders.add(new StringImpl("te"));
+        forbiddenHeaders.add(new StringImpl("trailer"));
+        forbiddenHeaders.add(new StringImpl("transfer-encoding"));
+        forbiddenHeaders.add(new StringImpl("upgrade"));
+        forbiddenHeaders.add(new StringImpl("via"));
+    }
+
+    return !forbiddenHeaders.contains(name.impl());
+}
+
+// Determines if a string is a valid token, as defined by
+// "token" in section 2.2 of RFC 2616.
+static bool isValidToken(const String& name)
+{
+    unsigned length = name.length();
+    for (unsigned i = 0; i < length; i++) {
+        UniChar c = name[i];
+        
+        if (c >= 127 || c <= 32)
+            return false;
+        
+        if (c == '(' || c == ')' || c == '<' || c == '>' || c == '@' ||
+            c == ',' || c == ';' || c == ':' || c == '\\' || c == '\"' ||
+            c == '/' || c == '[' || c == ']' || c == '?' || c == '=' ||
+            c == '{' || c == '}')
+            return false;
+    }
+    
+    return true;
+}
+    
+static bool isValidHeaderValue(const String& name)
+{
+    // FIXME: This should really match name against 
+    // field-value in section 4.2 of RFC 2616.
+    
+    return !name.contains('\r') && !name.contains('\n');
+}
+    
 XMLHttpRequestState XMLHttpRequest::getReadyState() const
 {
     return m_state;
@@ -244,7 +299,7 @@ bool XMLHttpRequest::urlMatchesDocumentDomain(const KURL& url) const
     return false;
 }
 
-void XMLHttpRequest::open(const String& method, const KURL& url, bool async, const String& user, const String& password)
+void XMLHttpRequest::open(const String& method, const KURL& url, bool async, const String& user, const String& password, ExceptionCode& ec)
 {
     abort();
     m_aborted = false;
@@ -264,6 +319,11 @@ void XMLHttpRequest::open(const String& method, const KURL& url, bool async, con
     if (!urlMatchesDocumentDomain(url))
         return;
 
+    if (!isValidToken(method)) {
+        ec = SYNTAX_ERR;
+        return;
+    }
+    
     m_url = url;
 
     if (!user.isNull())
@@ -287,7 +347,7 @@ void XMLHttpRequest::open(const String& method, const KURL& url, bool async, con
     changeState(Loading);
 }
 
-void XMLHttpRequest::send(const String& body)
+void XMLHttpRequest::send(const String& body, ExceptionCode& ec)
 {
     if (!m_doc)
         return;
@@ -305,7 +365,7 @@ void XMLHttpRequest::send(const String& body)
         String contentType = getRequestHeader("Content-Type");
         String charset;
         if (contentType.isEmpty())
-            setRequestHeader("Content-Type", "application/xml");
+            setRequestHeader("Content-Type", "application/xml", ec);
         else
             charset = getCharset(contentType);
       
@@ -381,8 +441,17 @@ void XMLHttpRequest::overrideMIMEType(const String& override)
     m_mimeTypeOverride = override;
 }
 
-void XMLHttpRequest::setRequestHeader(const String& name, const String& value)
+void XMLHttpRequest::setRequestHeader(const String& name, const String& value, ExceptionCode& ec)
 {
+    if (!isValidToken(name) || !isValidHeaderValue(value)) {
+        ec = SYNTAX_ERR;
+        return;
+    }
+       
+    if (!canSetRequestHeader(name)) {
+        return;
+    }
+    
     if (m_requestHeaders.length() > 0)
         m_requestHeaders += "\r\n";
     m_requestHeaders += name.deprecatedString();

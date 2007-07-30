@@ -56,6 +56,11 @@ void RenderTableCol::updateFromElement()
         setNeedsLayoutAndMinMaxRecalc();
 }
 
+bool RenderTableCol::isChildAllowed(RenderObject* child, RenderStyle* style) const
+{
+    return !child->isText() && style && (style->display() == TABLE_COLUMN);
+}
+
 bool RenderTableCol::canHaveChildren() const
 {
     // Cols cannot have children. This is actually necessary to fix a bug

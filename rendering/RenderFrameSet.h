@@ -45,6 +45,7 @@ public:
     virtual bool isFrameSet() const { return true; }
 
     virtual void layout();
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const;
     virtual void calcMinMaxWidth();
     void positionFrames();
     void positionFramesWithFlattening();

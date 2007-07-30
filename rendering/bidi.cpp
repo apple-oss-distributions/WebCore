@@ -2025,6 +2025,7 @@ BidiIterator RenderBlock::findNextLineBreak(BidiIterator &start, BidiState &bidi
     RenderObject *last = o;
     RenderObject *previous = o;
     int pos = start.pos;
+    bool atStart = true;
 
     bool prevLineBrokeCleanly = previousLineBrokeCleanly;
     previousLineBrokeCleanly = false;
@@ -2222,16 +2223,22 @@ BidiIterator RenderBlock::findNextLineBreak(BidiIterator &start, BidiState &bidi
                 bool applyWordSpacing = false;
                 bool breakNBSP = autoWrap && o->style()->nbspMode() == SPACE;
                 
-                // FIXME: This check looks suspicious. Why does w have to be 0?  
-                bool breakWords = o->style()->wordWrap() == BREAK_WORD && ((autoWrap && w == 0) || currWS == PRE);
+                // Auto-wrapping text should wrap in the middle of a word only if it could not wrap before the word,
+                // which is only possible if the word is the first thing on the line, that is, if |w| is zero.
+                bool breakWords = o->style()->breakWords() && ((autoWrap && !w) || currWS == PRE);
+                bool midWordBreak = false;
+                bool breakAll = o->style()->wordBreak() == BreakAllWordBreak && autoWrap;
 
                 currentCharacterIsWS = currentCharacterIsSpace || (breakNBSP && c == nonBreakingSpace);
 
-                if (breakWords)
-                    wrapW += t->width(pos, 1, f, w+wrapW);
-                bool midWordBreak = breakWords && (w + wrapW > width);
-
-                if (c == '\n' || (currWS != PRE && isBreakable(str, pos, strlen, nextBreakable, breakNBSP)) || midWordBreak) {
+                if (breakAll || (breakWords && !midWordBreak)) {
+                    wrapW += t->width(pos, 1, f, w + wrapW);
+                    midWordBreak = w + wrapW > width;
+                }
+                
+                bool betweenWords = c == '\n' || (currWS != PRE && !atStart && isBreakable(str, pos, strlen, nextBreakable, breakNBSP));
+                
+                if (betweenWords || midWordBreak || breakAll) {
                     if (strlen > 0 && pos > 0 && (str[pos - 1] == '-' || str[pos - 1] == '?'))
                         midWordBreak = true;
                     bool stoppedIgnoringSpaces = false;
@@ -2339,7 +2346,7 @@ BidiIterator RenderBlock::findNextLineBreak(BidiIterator &start, BidiState &bidi
                         return lBreak;
                     }
 
-                    if (autoWrap) {
+                    if (autoWrap && betweenWords) {
                         w += tmpW;
                         tmpW = 0;
                         lBreak.obj = o;
@@ -2398,6 +2405,7 @@ BidiIterator RenderBlock::findNextLineBreak(BidiIterator &start, BidiState &bidi
                     
                 pos++;
                 len--;
+                atStart = false;
             }
             
             // IMPORTANT: pos is > length here!
@@ -2486,6 +2494,7 @@ BidiIterator RenderBlock::findNextLineBreak(BidiIterator &start, BidiState &bidi
             currentCharacterIsSpace = false;
         
         pos = 0;
+        atStart = false;
     }
 
     if (w + tmpW <= width || lastWS == NOWRAP) {

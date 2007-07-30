@@ -708,7 +708,7 @@ PlatformKeyboardEvent::PlatformKeyboardEvent(GSEventRef event, bool forceAutoRep
       m_keyIdentifier(keyIdentifierForKeyEvent(event)),
       m_isKeyUp(GSEventGetType(event) == kGSEventKeyUp),
       m_autoRepeat (forceAutoRepeat || GSEventIsKeyRepeating (event)),
-      m_WindowsKeyCode(WindowsKeyCodeForKeyEvent(event)),
+      m_WindowsKeyCode(GSEventGetKeyCode(event)),
       m_isKeypad(isKeypadEvent(event)),
       m_shiftKey(GSEventGetModifierFlags(event) & kGSEventFlagMaskShift),
       m_ctrlKey(GSEventGetModifierFlags(event) & kGSEventFlagMaskControl),

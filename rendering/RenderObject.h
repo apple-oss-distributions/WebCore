@@ -200,6 +200,7 @@ public:
     // RenderObject tree manipulation
     //////////////////////////////////////////
     virtual bool canHaveChildren() const;
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const { return true; }
     virtual void addChild(RenderObject *newChild, RenderObject *beforeChild = 0);
     virtual void removeChild(RenderObject *oldChild);
     virtual bool createsAnonymousWrapper() const { return false; }
@@ -279,6 +280,7 @@ public:
     virtual bool isImage() const { return false; }
     virtual bool isTextArea() const { return false; }
     virtual bool isTextField() const { return false; }
+    virtual bool isFrame() const { return false; }
     virtual bool isFrameSet() const { return false; }
     virtual bool isApplet() const { return false; }
     

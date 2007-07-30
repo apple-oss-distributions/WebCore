@@ -687,6 +687,11 @@ bool RenderFrameSet::canResize(int _x, int _y)
     return false;
 }
 
+bool RenderFrameSet::isChildAllowed(RenderObject* child, RenderStyle* style) const
+{
+    return child->isFrame() || child->isFrameSet();
+}
+
 #ifndef NDEBUG
 void RenderFrameSet::dump(TextStream* stream, DeprecatedString ind) const
 {

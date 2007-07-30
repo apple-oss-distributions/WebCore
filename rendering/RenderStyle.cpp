@@ -461,7 +461,8 @@ StyleCSS3InheritedData::StyleCSS3InheritedData()
     : textShadow(0)
     , textSecurity(RenderStyle::initialTextSecurity())
     , userModify(READ_ONLY)
-    , wordWrap(WBNORMAL)
+    , wordBreak(RenderStyle::initialWordBreak())
+    , wordWrap(RenderStyle::initialWordWrap())
     , nbspMode(NBNORMAL)
     , khtmlLineBreak(LBNORMAL)
     , textSizeAdjust(RenderStyle::initialTextSizeAdjust())
@@ -476,6 +477,7 @@ StyleCSS3InheritedData::StyleCSS3InheritedData(const StyleCSS3InheritedData& o)
     , highlight(o.highlight)
     , textSecurity(o.textSecurity)
     , userModify(o.userModify)
+    , wordBreak(o.wordBreak)
     , wordWrap(o.wordWrap)
     , nbspMode(o.nbspMode)
     , khtmlLineBreak(o.khtmlLineBreak)
@@ -494,6 +496,7 @@ bool StyleCSS3InheritedData::operator==(const StyleCSS3InheritedData& o) const
     return userModify == o.userModify
         && shadowDataEquivalent(o)
         && highlight == o.highlight
+        && wordBreak == o.wordBreak
         && wordWrap == o.wordWrap
         && nbspMode == o.nbspMode
         && khtmlLineBreak == o.khtmlLineBreak
@@ -589,8 +592,10 @@ void RenderStyle::arenaDelete(RenderArena *arena)
 
 inline RenderStyle *initDefaultStyle()
 {
-    if (!defaultStyle)
+    if (!defaultStyle) {
         defaultStyle = ::new RenderStyle(true);
+        defaultStyle->font().update();
+    }
     return defaultStyle;
 }
 
@@ -899,6 +904,7 @@ RenderStyle::Diff RenderStyle::diff( const RenderStyle *other ) const
          (css3NonInheritedData->lineClamp != other->css3NonInheritedData->lineClamp) ||
          (css3InheritedData->highlight != other->css3InheritedData->highlight) ||
          (css3InheritedData->textSizeAdjust != other->css3InheritedData->textSizeAdjust) ||
+         (css3InheritedData->wordBreak != other->css3InheritedData->wordBreak) ||
          (css3InheritedData->wordWrap != other->css3InheritedData->wordWrap) ||
          (css3InheritedData->nbspMode != other->css3InheritedData->nbspMode) ||
          (css3InheritedData->khtmlLineBreak != other->css3InheritedData->khtmlLineBreak) ||
