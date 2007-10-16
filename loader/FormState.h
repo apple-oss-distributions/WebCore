@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,37 +29,29 @@
 #ifndef FormState_h
 #define FormState_h
 
-#include <wtf/RefCounted.h>
-#include <wtf/text/WTFString.h>
+#include "Shared.h"
+#include "StringHash.h"
+#include <wtf/HashMap.h>
 
 namespace WebCore {
 
-    class Document;
+    class Frame;
     class HTMLFormElement;
 
-    enum FormSubmissionTrigger {
-        SubmittedByJavaScript,
-        NotSubmittedByJavaScript
-    };
-    
-    typedef Vector<std::pair<String, String> > StringPairVector;
-
-    class FormState : public RefCounted<FormState> {
+    class FormState : public Shared<FormState> {
     public:
-        static PassRefPtr<FormState> create(PassRefPtr<HTMLFormElement>, StringPairVector& textFieldValuesToAdopt, PassRefPtr<Document>, FormSubmissionTrigger);
+        static PassRefPtr<FormState> create(PassRefPtr<HTMLFormElement> form, const HashMap<String, String>& values, PassRefPtr<Frame> sourceFrame);
 
         HTMLFormElement* form() const { return m_form.get(); }
-        const StringPairVector& textFieldValues() const { return m_textFieldValues; }
-        Document* sourceDocument() const { return m_sourceDocument.get(); }
-        FormSubmissionTrigger formSubmissionTrigger() const { return m_formSubmissionTrigger; }
+        const HashMap<String, String>& values() const { return m_values; }
+        Frame* sourceFrame() const { return m_sourceFrame.get(); }
 
     private:
-        FormState(PassRefPtr<HTMLFormElement>, StringPairVector& textFieldValuesToAdopt, PassRefPtr<Document>, FormSubmissionTrigger);
+        FormState(PassRefPtr<HTMLFormElement> form, const HashMap<String, String>& values, PassRefPtr<Frame> sourceFrame);
 
         RefPtr<HTMLFormElement> m_form;
-        StringPairVector m_textFieldValues;
-        RefPtr<Document> m_sourceDocument;
-        FormSubmissionTrigger m_formSubmissionTrigger;
+        HashMap<String, String> m_values;
+        RefPtr<Frame> m_sourceFrame;
     };
 
 }

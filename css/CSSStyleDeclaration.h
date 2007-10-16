@@ -1,6 +1,8 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2008, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -21,56 +23,62 @@
 #ifndef CSSStyleDeclaration_h
 #define CSSStyleDeclaration_h
 
-#include "CSSPropertyNames.h"
-#include "ScriptWrappable.h"
-#include <wtf/Forward.h>
+#include "StyleBase.h"
+#include <wtf/PassRefPtr.h>
 
 namespace WebCore {
 
-class CSSProperty;
+class CSSMutableStyleDeclaration;
 class CSSRule;
-class CSSStyleSheet;
 class CSSValue;
-class MutableStylePropertySet;
-class StylePropertySet;
-class StyledElement;
 
 typedef int ExceptionCode;
 
-class CSSStyleDeclaration : public ScriptWrappable {
-    WTF_MAKE_NONCOPYABLE(CSSStyleDeclaration); WTF_MAKE_FAST_ALLOCATED;
+class CSSStyleDeclaration : public StyleBase {
 public:
-    virtual ~CSSStyleDeclaration() { }
+    virtual bool isStyleDeclaration();
 
-    virtual void ref() = 0;
-    virtual void deref() = 0;
+    static bool isPropertyName(const String&);
 
-    virtual CSSRule* parentRule() const = 0;
+    CSSRule* parentRule() const;
+
     virtual String cssText() const = 0;
     virtual void setCssText(const String&, ExceptionCode&) = 0;
+
     virtual unsigned length() const = 0;
     virtual String item(unsigned index) const = 0;
-    virtual PassRefPtr<CSSValue> getPropertyCSSValue(const String& propertyName) = 0;
-    virtual String getPropertyValue(const String& propertyName) = 0;
-    virtual String getPropertyPriority(const String& propertyName) = 0;
-    virtual String getPropertyShorthand(const String& propertyName) = 0;
-    virtual bool isPropertyImplicit(const String& propertyName) = 0;
-    virtual void setProperty(const String& propertyName, const String& value, const String& priority, ExceptionCode&) = 0;
-    virtual String removeProperty(const String& propertyName, ExceptionCode&) = 0;
 
-    // CSSPropertyID versions of the CSSOM functions to support bindings and editing.
-    // Use the non-virtual methods in the concrete subclasses when possible.
-    // The CSSValue returned by this function should not be exposed to the web as it may be used by multiple documents at the same time.
-    virtual PassRefPtr<CSSValue> getPropertyCSSValueInternal(CSSPropertyID) = 0;
-    virtual String getPropertyValueInternal(CSSPropertyID) = 0;
-    virtual void setPropertyInternal(CSSPropertyID, const String& value, bool important, ExceptionCode&) = 0;
+    PassRefPtr<CSSValue> getPropertyCSSValue(const String& propertyName);
+    String getPropertyValue(const String& propertyName);
+    String getPropertyPriority(const String& propertyName);
+    String getPropertyShorthand(const String& propertyName);
+    bool isPropertyImplicit(const String& propertyName);
+    
+    virtual PassRefPtr<CSSValue> getPropertyCSSValue(int propertyID) const = 0;
+    virtual String getPropertyValue(int propertyID) const = 0;
+    virtual bool getPropertyPriority(int propertyID) const = 0;
+    virtual int getPropertyShorthand(int propertyID) const = 0;
+    virtual bool isPropertyImplicit(int propertyID) const = 0;
 
-    virtual PassRefPtr<MutableStylePropertySet> copyProperties() const = 0;
+    void setProperty(const String& propertyName, const String& value, ExceptionCode&);
+    void setProperty(const String& propertyName, const String& value, const String& priority, ExceptionCode&);
+    String removeProperty(const String& propertyName, ExceptionCode&);
+    virtual void setProperty(int propertyId, const String& value, bool important, ExceptionCode&) = 0;
+    virtual String removeProperty(int propertyID, ExceptionCode&) = 0;
 
-    virtual CSSStyleSheet* parentStyleSheet() const { return 0; }
+    virtual PassRefPtr<CSSMutableStyleDeclaration> copy() const = 0;
+    virtual PassRefPtr<CSSMutableStyleDeclaration> makeMutable() = 0;
+ 
+    void diff(CSSMutableStyleDeclaration*) const;
+
+    PassRefPtr<CSSMutableStyleDeclaration> copyPropertiesInSet(const int* set, unsigned length) const;
 
 protected:
-    CSSStyleDeclaration() { }
+    CSSStyleDeclaration(CSSRule* parentRule = 0);
+
+private:
+    CSSStyleDeclaration(const CSSStyleDeclaration&);
+    CSSStyleDeclaration& operator=(const CSSStyleDeclaration&);
 };
 
 } // namespace WebCore

@@ -1,6 +1,8 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,7 +24,6 @@
 #define FontValue_h
 
 #include "CSSValue.h"
-#include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
 
 namespace WebCore {
@@ -30,16 +31,12 @@ namespace WebCore {
 class CSSPrimitiveValue;
 class CSSValueList;
 
-class FontValue : public CSSValue {
+class FontValue : public CSSValue
+{
 public:
-    static PassRefPtr<FontValue> create()
-    {
-        return adoptRef(new FontValue);
-    }
-
-    String customCssText() const;
-
-    bool equals(const FontValue&) const;
+    virtual String cssText() const;
+    
+    virtual bool isFontValue() { return true; }
 
     RefPtr<CSSPrimitiveValue> style;
     RefPtr<CSSPrimitiveValue> variant;
@@ -47,12 +44,6 @@ public:
     RefPtr<CSSPrimitiveValue> size;
     RefPtr<CSSPrimitiveValue> lineHeight;
     RefPtr<CSSValueList> family;
-
-private:
-    FontValue()
-        : CSSValue(FontClass)
-    {
-    }
 };
 
 } // namespace

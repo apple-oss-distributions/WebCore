@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -17,7 +17,8 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLBRElement : HTMLElement {
-    [Reflect] attribute DOMString clear;
-};
-
+module html {
+    interface [GenerateConstructor] HTMLBRElement : HTMLElement {
+        attribute [ConvertNullToNullString] DOMString clear;
+    };
+}

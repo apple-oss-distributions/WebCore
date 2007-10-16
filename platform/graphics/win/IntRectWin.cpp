@@ -1,4 +1,3 @@
-
 /*
  * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  *
@@ -24,7 +23,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#include "config.h"
 #include "IntRect.h"
 
 #include <windows.h>
@@ -38,7 +36,7 @@ IntRect::IntRect(const RECT& r)
 
 IntRect::operator RECT() const
 {
-    RECT rect = { x(), y(), maxX(), maxY() };
+    RECT rect = { x(), y(), right(), bottom() };
     return rect;
 }
 

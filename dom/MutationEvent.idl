@@ -17,28 +17,31 @@
  * Boston, MA 02110-1301, USA.
  */
 
-// Introduced in DOM Level 2:
-interface MutationEvent : Event {
+module events {
 
-    // attrChangeType
-    const unsigned short MODIFICATION = 1;
-    const unsigned short ADDITION     = 2;
-    const unsigned short REMOVAL      = 3;
+    // Introduced in DOM Level 2:
+    interface [GenerateConstructor] MutationEvent : Event {
 
-    readonly attribute Node           relatedNode;
-    readonly attribute DOMString      prevValue;
-    readonly attribute DOMString      newValue;
-    readonly attribute DOMString      attrName;
-    readonly attribute unsigned short attrChange;
+        // attrChangeType
+        const unsigned short MODIFICATION = 1;
+        const unsigned short ADDITION     = 2;
+        const unsigned short REMOVAL      = 3;
 
-    [ObjCLegacyUnnamedParameters] void initMutationEvent([Default=Undefined] optional DOMString type, 
-                                          [Default=Undefined] optional boolean canBubble, 
-                                          [Default=Undefined] optional boolean cancelable, 
-                                          [Default=Undefined] optional Node relatedNode, 
-                                          [Default=Undefined] optional DOMString prevValue, 
-                                          [Default=Undefined] optional DOMString newValue, 
-                                          [Default=Undefined] optional DOMString attrName, 
-                                          [Default=Undefined] optional unsigned short attrChange);
+        readonly attribute Node           relatedNode;
+        readonly attribute DOMString      prevValue;
+        readonly attribute DOMString      newValue;
+        readonly attribute DOMString      attrName;
+        readonly attribute unsigned short attrChange;
 
-};
+        [OldStyleObjC] void initMutationEvent(in AtomicString type, 
+                                              in boolean canBubble, 
+                                              in boolean cancelable, 
+                                              in Node relatedNode, 
+                                              in DOMString prevValue, 
+                                              in DOMString newValue, 
+                                              in DOMString attrName, 
+                                              in unsigned short attrChange);
 
+    };
+
+}

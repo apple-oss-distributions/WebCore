@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,16 +25,27 @@
 
 #include "config.h"
 #include "Editor.h"
+#include "EditorClient.h"
 
-#include "Clipboard.h"
-#include "Frame.h"
+#include "ClipboardWin.h"
+#include "Document.h"
+#include "Element.h"
+#include "htmlediting.h"
+#include "NotImplemented.h"
+#include "TextIterator.h"
+#include "visible_units.h"
+
+#include <windows.h>
 
 namespace WebCore {
 
-// FIXME: Delete this file when removing LEGACY_STYLE_ABSTRACT_CLIPBOARD_CLASS.
-PassRefPtr<Clipboard> Editor::newGeneralClipboard(ClipboardAccessPolicy policy, Frame* frame)
+PassRefPtr<Clipboard> Editor::newGeneralClipboard(ClipboardAccessPolicy policy)
 {
-    return Clipboard::createForCopyAndPaste(policy);
+    COMPtr<IDataObject> clipboardData;
+    if (!SUCCEEDED(OleGetClipboard(&clipboardData)))
+        clipboardData = 0;
+
+    return new ClipboardWin(false, clipboardData.get(), policy);
 }
 
 } // namespace WebCore

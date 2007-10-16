@@ -1,9 +1,10 @@
-/*
+/**
+ * This file is part of the KDE project.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 2000 Simon Hausmann <hausmann@kde.org>
  *           (C) 2000 Stefan Schimanski (1Stein@gmx.de)
- * Copyright (C) 2004, 2005, 2006, 2009 Apple Inc. All rights reserved.
- * Copyright (C) 2006 Nokia Corporation.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,46 +25,38 @@
 
 #include "config.h"
 #include "RenderFrame.h"
-
+#include "RenderFrameSet.h"
 #include "FrameView.h"
-#include "HTMLFrameElement.h"
-#include "RenderView.h"
+#include "HTMLFrameSetElement.h"
+#include "HTMLNames.h"
 
 namespace WebCore {
 
+using namespace HTMLNames;
+
 RenderFrame::RenderFrame(HTMLFrameElement* frame)
-    : RenderFrameBase(frame)
+    : RenderPart(frame)
 {
     setInline(false);
 }
 
 FrameEdgeInfo RenderFrame::edgeInfo() const
 {
-    HTMLFrameElement* element = static_cast<HTMLFrameElement*>(node());
-    return FrameEdgeInfo(element->noResize(), element->hasFrameBorder());
-}
-
-void RenderFrame::updateFromElement()
-{
-    if (parent() && parent()->isFrameSet())
-        toRenderFrameSet(parent())->notifyFrameEdgeInfoChanged();
+    return FrameEdgeInfo(element()->noResize(), element()->hasFrameBorder());
 }
 
 void RenderFrame::viewCleared()
 {
-    HTMLFrameElement* element = static_cast<HTMLFrameElement*>(node());
-    if (!element || !widget() || !widget()->isFrameView())
-        return;
+    if (element() && m_widget && m_widget->isFrameView()) {
+        FrameView* view = static_cast<FrameView*>(m_widget);
+        int marginw = element()->getMarginWidth();
+        int marginh = element()->getMarginHeight();
 
-    FrameView* view = toFrameView(widget());
-
-    int marginWidth = element->marginWidth();
-    int marginHeight = element->marginHeight();
-
-    if (marginWidth != -1)
-        view->setMarginWidth(marginWidth);
-    if (marginHeight != -1)
-        view->setMarginHeight(marginHeight);
+        if (marginw != -1)
+            view->setMarginWidth(marginw);
+        if (marginh != -1)
+            view->setMarginHeight(marginh);
+    }
 }
 
 } // namespace WebCore

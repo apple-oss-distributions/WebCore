@@ -1,7 +1,8 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,7 +20,6 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #include "config.h"
 #include "HTMLDListElement.h"
 
@@ -29,15 +29,19 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLDListElement::HTMLDListElement(const QualifiedName& tagName, Document* document)
-    : HTMLElement(tagName, document)
+HTMLDListElement::HTMLDListElement(Document* doc)
+    : HTMLElement(HTMLNames::dlTag, doc)
 {
-    ASSERT(hasTagName(dlTag));
 }
 
-PassRefPtr<HTMLDListElement> HTMLDListElement::create(const QualifiedName& tagName, Document* document)
+bool HTMLDListElement::compact() const
 {
-    return adoptRef(new HTMLDListElement(tagName, document));
+    return !getAttribute(compactAttr).isNull();
+}
+
+void HTMLDListElement::setCompact(bool b)
+{
+    setAttribute(compactAttr, b ? "" : 0);
 }
 
 }

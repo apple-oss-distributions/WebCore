@@ -1,5 +1,7 @@
 /*
- * Copyright (C) 2006, 2011, 2012 Apple Computer, Inc.
+ * This file is part of the DOM implementation for KDE.
+ *
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -27,23 +29,19 @@
 
 namespace WebCore {
 
-HTMLOptionsCollection::HTMLOptionsCollection(Node* select)
-    : HTMLCollection(select, SelectOptions, DoesNotOverrideItemAfter)
+HTMLOptionsCollection::HTMLOptionsCollection(HTMLSelectElement* select)
+    : HTMLCollection(select, SelectOptions)
 {
-    ASSERT(select->hasTagName(HTMLNames::selectTag));
+    ASSERT(!info);
+    info = select->collectionInfo();
 }
 
-PassRefPtr<HTMLOptionsCollection> HTMLOptionsCollection::create(Node* select, CollectionType)
-{
-    return adoptRef(new HTMLOptionsCollection(select));
-}
-
-void HTMLOptionsCollection::add(PassRefPtr<HTMLOptionElement> element, ExceptionCode& ec)
+void HTMLOptionsCollection::add(PassRefPtr<HTMLOptionElement> element, ExceptionCode &ec)
 {
     add(element, length(), ec);
 }
 
-void HTMLOptionsCollection::add(PassRefPtr<HTMLOptionElement> element, int index, ExceptionCode& ec)
+void HTMLOptionsCollection::add(PassRefPtr<HTMLOptionElement> element, int index, ExceptionCode &ec)
 {
     HTMLOptionElement* newOption = element.get();
 
@@ -58,34 +56,29 @@ void HTMLOptionsCollection::add(PassRefPtr<HTMLOptionElement> element, int index
     }
 
     ec = 0;
-    HTMLSelectElement* select = toHTMLSelectElement(ownerNode());
+    HTMLSelectElement* select = static_cast<HTMLSelectElement*>(m_base.get());
 
     if (index == -1 || unsigned(index) >= length())
         select->add(newOption, 0, ec);
     else
         select->add(newOption, static_cast<HTMLOptionElement*>(item(index)), ec);
 
-    ASSERT(!ec);
-}
-
-void HTMLOptionsCollection::remove(int index)
-{
-    toHTMLSelectElement(ownerNode())->remove(index);
+    ASSERT(ec == 0);
 }
 
 int HTMLOptionsCollection::selectedIndex() const
 {
-    return toHTMLSelectElement(ownerNode())->selectedIndex();
+    return static_cast<HTMLSelectElement*>(m_base.get())->selectedIndex();
 }
 
 void HTMLOptionsCollection::setSelectedIndex(int index)
 {
-    toHTMLSelectElement(ownerNode())->setSelectedIndex(index);
+    static_cast<HTMLSelectElement*>(m_base.get())->setSelectedIndex(index);
 }
 
 void HTMLOptionsCollection::setLength(unsigned length, ExceptionCode& ec)
 {
-    toHTMLSelectElement(ownerNode())->setLength(length, ec);
+    static_cast<HTMLSelectElement*>(m_base.get())->setLength(length, ec);
 }
 
 } //namespace

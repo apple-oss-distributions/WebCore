@@ -1,7 +1,9 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * (C) 2002-2003 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2002, 2005, 2006, 2008, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2002, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,51 +24,23 @@
 #include "config.h"
 #include "CSSFontFaceRule.h"
 
-#include "PropertySetCSSStyleDeclaration.h"
-#include "StylePropertySet.h"
-#include "StyleRule.h"
-#include <wtf/text/StringBuilder.h>
+#include "CSSMutableStyleDeclaration.h"
 
 namespace WebCore {
 
-CSSFontFaceRule::CSSFontFaceRule(StyleRuleFontFace* fontFaceRule, CSSStyleSheet* parent)
+CSSFontFaceRule::CSSFontFaceRule(StyleBase* parent)
     : CSSRule(parent)
-    , m_fontFaceRule(fontFaceRule)
 {
 }
 
 CSSFontFaceRule::~CSSFontFaceRule()
 {
-    if (m_propertiesCSSOMWrapper)
-        m_propertiesCSSOMWrapper->clearParentRule();
-}
-
-CSSStyleDeclaration* CSSFontFaceRule::style()
-{
-    if (!m_propertiesCSSOMWrapper)
-        m_propertiesCSSOMWrapper = StyleRuleCSSStyleDeclaration::create(m_fontFaceRule->mutableProperties(), this);
-    return m_propertiesCSSOMWrapper.get();
 }
 
 String CSSFontFaceRule::cssText() const
 {
-    StringBuilder result;
-    result.appendLiteral("@font-face { ");
-    String descs = m_fontFaceRule->properties()->asText();
-    result.append(descs);
-    if (!descs.isEmpty())
-        result.append(' ');
-    result.append('}');
-    return result.toString();
-}
-
-void CSSFontFaceRule::reattach(StyleRuleBase* rule)
-{
-    ASSERT(rule);
-    ASSERT_WITH_SECURITY_IMPLICATION(rule->isFontFaceRule());
-    m_fontFaceRule = static_cast<StyleRuleFontFace*>(rule);
-    if (m_propertiesCSSOMWrapper)
-        m_propertiesCSSOMWrapper->reattach(m_fontFaceRule->mutableProperties());
+    // FIXME: Implement!
+    return String();
 }
 
 } // namespace WebCore

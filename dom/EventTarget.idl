@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,21 +18,18 @@
  * Boston, MA 02110-1301, USA.
  */
 
-// Introduced in DOM Level 2:
-[
-    NoInterfaceObject,
-    ObjCProtocol,
-    CPPPureInterface,
-    CustomToJSObject,
-    JSCustomToNativeObject,
-    EventTarget
-] interface EventTarget {
-    [ObjCLegacyUnnamedParameters] void addEventListener(DOMString type, 
-                                         EventListener listener, 
-                                         optional boolean useCapture);
-    [ObjCLegacyUnnamedParameters] void removeEventListener(DOMString type, 
-                                            EventListener listener, 
-                                            optional boolean useCapture);
-    [RaisesException] boolean dispatchEvent(Event event);
-};
+module events {
 
+    // Introduced in DOM Level 2:
+    interface [ObjCProtocol] EventTarget {
+        [OldStyleObjC] void addEventListener(in DOMString type, 
+                                             in EventListener listener, 
+                                             in boolean useCapture);
+        [OldStyleObjC] void removeEventListener(in DOMString type, 
+                                                in EventListener listener, 
+                                                in boolean useCapture);
+        boolean            dispatchEvent(in Event event)
+            raises(EventException);
+    };
+
+}

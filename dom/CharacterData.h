@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2003 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,57 +25,61 @@
 #ifndef CharacterData_h
 #define CharacterData_h
 
-#include "Node.h"
-#include <wtf/text/WTFString.h>
+#include "EventTargetNode.h"
 
 namespace WebCore {
 
-class CharacterData : public Node {
+class CharacterData : public EventTargetNode {
 public:
-    String data() const { return m_data; }
+    CharacterData(Document*, const String& text);
+    CharacterData(Document*);
+    virtual ~CharacterData();
+
+    // DOM methods & attributes for CharacterData
+
+    String data() const { return str; }
     void setData(const String&, ExceptionCode&);
-    unsigned length() const { return m_data.length(); }
+    unsigned length() const { return str->length(); }
     String substringData(unsigned offset, unsigned count, ExceptionCode&);
     void appendData(const String&, ExceptionCode&);
     void insertData(unsigned offset, const String&, ExceptionCode&);
     void deleteData(unsigned offset, unsigned count, ExceptionCode&);
-    void replaceData(unsigned offset, unsigned count, const String&, ExceptionCode&);
+    void replaceData(unsigned offset, unsigned count, const String &arg, ExceptionCode&);
 
     bool containsOnlyWhitespace() const;
+    bool containsOnlyWhitespace(unsigned from, unsigned len) const;
+    
+    // DOM methods overridden from  parent classes
 
-    StringImpl* dataImpl() { return m_data.impl(); }
+    virtual String nodeValue() const;
+    virtual void setNodeValue(const String&, ExceptionCode&);
+    virtual bool isCharacterDataNode() const { return true; }
+    
+    // Other methods (not part of DOM)
 
-    // Like appendData, but optimized for the parser (e.g., no mutation events).
-    // Returns how much could be added before length limit was met.
-    unsigned parserAppendData(const String& string, unsigned offset, unsigned lengthLimit);
+    StringImpl* string() { return str; }
+    virtual void checkCharDataOperation(unsigned offset, ExceptionCode&);
+
+    virtual int maxOffset() const;
+    virtual int caretMinOffset() const;
+    virtual int caretMaxOffset() const;
+    virtual unsigned caretMaxRenderedOffset() const;
+    virtual bool offsetInCharacters() const;
+    virtual bool rendererIsNeeded(RenderStyle*);
+    
+#ifndef NDEBUG
+    virtual void dump(TextStream*, DeprecatedString ind = "") const;
+#endif
 
 protected:
-    CharacterData(Document* document, const String& text, ConstructionType type)
-        : Node(document, type)
-        , m_data(!text.isNull() ? text : emptyString())
-    {
-        ASSERT(type == CreateOther || type == CreateText || type == CreateEditingText);
-    }
+    // note: since DOMStrings are shared, str should always be copied when making
+    // a change or returning a string
+    StringImpl* str;
 
-    void setDataWithoutUpdate(const String& data)
-    {
-        ASSERT(!data.isNull());
-        m_data = data;
-    }
-    void dispatchModifiedEvent(const String& oldValue);
-
-private:
-    virtual String nodeValue() const OVERRIDE FINAL;
-    virtual void setNodeValue(const String&, ExceptionCode&) OVERRIDE FINAL;
-    virtual bool isCharacterDataNode() const OVERRIDE FINAL { return true; }
-    virtual int maxCharacterOffset() const OVERRIDE FINAL;
-    virtual bool offsetInCharacters() const OVERRIDE FINAL;
-    void setDataAndUpdate(const String&, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength);
-    void checkCharDataOperation(unsigned offset, ExceptionCode&);
-
-    String m_data;
+    void dispatchModifiedEvent(StringImpl* prevValue);
 };
 
 } // namespace WebCore
 
 #endif // CharacterData_h
+

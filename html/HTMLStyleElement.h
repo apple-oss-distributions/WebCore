@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2010 Apple Inc. ALl rights reserved.
+ * Copyright (C) 2003 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,82 +21,53 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #ifndef HTMLStyleElement_h
 #define HTMLStyleElement_h
 
+#include "CSSStyleSheet.h"
 #include "HTMLElement.h"
 #include "StyleElement.h"
 
 namespace WebCore {
 
-class HTMLStyleElement;
-class StyleSheet;
-
-template<typename T> class EventSender;
-typedef EventSender<HTMLStyleElement> StyleEventSender;
-
-class HTMLStyleElement FINAL : public HTMLElement, private StyleElement {
+class HTMLStyleElement : public HTMLElement, public StyleElement
+{
 public:
-    static PassRefPtr<HTMLStyleElement> create(const QualifiedName&, Document*, bool createdByParser);
-    virtual ~HTMLStyleElement();
+    HTMLStyleElement(Document*);
 
-    void setType(const AtomicString&);
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusRequired; }
+    virtual int tagPriority() const { return 1; }
+    virtual bool checkDTD(const Node* newChild) { return newChild->isTextNode(); }
 
-    bool scoped() const;
-    void setScoped(bool);
-    Element* scopingElement() const;
-    bool isRegisteredAsScoped() const
-    {
-        // Note: We cannot rely on the 'scoped' attribute still being present when this method is invoked.
-        // Therefore we cannot rely on scoped()!
-        if (m_scopedStyleRegistrationState == NotRegistered)
-            return false;
-        return true;
-    }
+    // overload from HTMLElement
+    virtual void parseMappedAttribute(MappedAttribute*);
+    virtual void insertedIntoDocument();
+    virtual void removedFromDocument();
+    virtual void childrenChanged();
 
-    using StyleElement::sheet;
+    void setCreatedByParser(bool createdByParser) { m_createdByParser = createdByParser; }
+    virtual void finishedParsing();
+
+    virtual bool isLoading() const;
+    virtual bool sheetLoaded();
 
     bool disabled() const;
     void setDisabled(bool);
 
-    void dispatchPendingEvent(StyleEventSender*);
-    static void dispatchPendingLoadEvents();
-
-private:
-    HTMLStyleElement(const QualifiedName&, Document*, bool createdByParser);
-
-    // overload from HTMLElement
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
-
-    virtual void finishParsingChildren();
-
-    virtual bool isLoading() const { return StyleElement::isLoading(); }
-    virtual bool sheetLoaded() { return StyleElement::sheetLoaded(document()); }
-    virtual void notifyLoadedSheetAndAllCriticalSubresources(bool errorOccurred);
-    virtual void startLoadingDynamicSheet() { StyleElement::startLoadingDynamicSheet(document()); }
-
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
-
     virtual const AtomicString& media() const;
+    void setMedia(const AtomicString&);
+
     virtual const AtomicString& type() const;
+    void setType(const AtomicString&);
 
-    void scopedAttributeChanged(bool);
-    void registerWithScopingNode(bool);
-    void unregisterWithScopingNode(ContainerNode*);
+    StyleSheet* sheet();
 
-    bool m_firedLoad;
-    bool m_loadedSheet;
+    virtual void setLoading(bool loading) { m_loading = loading; }
 
-    enum ScopedStyleRegistrationState {
-        NotRegistered,
-        RegisteredAsScoped,
-        RegisteredInShadowRoot
-    };
-    ScopedStyleRegistrationState m_scopedStyleRegistrationState;
+protected:
+    String m_media;
+    bool m_loading;
+    bool m_createdByParser;
 };
 
 } //namespace

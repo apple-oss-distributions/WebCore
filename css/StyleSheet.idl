@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,26 +18,17 @@
  * Boston, MA 02110-1301, USA.
  */
 
-// Introduced in DOM Level 2:
-[
-    JSCustomHeader,
-    JSCustomMarkFunction,
-    GenerateIsReachable,
-    CustomToJSObject,
-    ObjCPolymorphic,
-] interface StyleSheet {
-    [TreatReturnedNullStringAs=Null] readonly attribute DOMString        type;
-             attribute boolean          disabled;
-    readonly attribute Node             ownerNode;
-    readonly attribute StyleSheet       parentStyleSheet;
-    [TreatReturnedNullStringAs=Null] readonly attribute DOMString        href;
-    [TreatReturnedNullStringAs=Null] readonly attribute DOMString        title;
-    readonly attribute MediaList        media;
+module stylesheets {
 
-#if defined(LANGUAGE_CPP) && LANGUAGE_CPP
-    // Extra WebCore methods exposed to allowe compile-time casting in C++
-    boolean isCSSStyleSheet();
-#endif
+    // Introduced in DOM Level 2:
+    interface [GenerateConstructor, ObjCCustomInternalImpl] StyleSheet {
+        readonly attribute [ConvertNullStringTo=Null] DOMString        type;
+                 attribute boolean          disabled;
+        readonly attribute Node             ownerNode;
+        readonly attribute StyleSheet       parentStyleSheet;
+        readonly attribute [ConvertNullStringTo=Null] DOMString        href;
+        readonly attribute [ConvertNullStringTo=Null] DOMString        title;
+        readonly attribute MediaList        media;
+    };
 
-};
-
+}

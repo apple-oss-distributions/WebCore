@@ -26,6 +26,9 @@
  */
 
 #include "config.h"
+
+#if ENABLE(XPATH)
+
 #include "XPathPredicate.h"
 
 #include "Node.h"
@@ -230,6 +233,8 @@ Value Union::evaluate() const
 {
     Value lhsResult = subExpr(0)->evaluate();
     Value rhs = subExpr(1)->evaluate();
+    if (!lhsResult.isNodeSet() || !rhs.isNodeSet())
+        return NodeSet();
     
     NodeSet& resultSet = lhsResult.modifiableNodeSet();
     const NodeSet& rhsNodes = rhs.toNodeSet();
@@ -240,7 +245,7 @@ Value Union::evaluate() const
     
     for (size_t i = 0; i < rhsNodes.size(); ++i) {
         Node* node = rhsNodes[i];
-        if (nodes.add(node).isNewEntry)
+        if (nodes.add(node).second)
             resultSet.append(node);
     }
 
@@ -275,3 +280,5 @@ bool Predicate::evaluate() const
 
 }
 }
+
+#endif // ENABLE(XPATH)

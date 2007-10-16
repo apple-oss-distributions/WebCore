@@ -1,7 +1,7 @@
 /*
  * This file is part of the XSL implementation.
  *
- * Copyright (C) 2004, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,43 +25,35 @@
 
 #if ENABLE(XSLT)
 
-#include "CachedResourceHandle.h"
-#include "CachedStyleSheetClient.h"
+#include "CachedResourceClient.h"
+#include "StyleBase.h"
 #include "XSLStyleSheet.h"
-#include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
 
 class CachedXSLStyleSheet;
 
-class XSLImportRule : private CachedStyleSheetClient {
-    WTF_MAKE_FAST_ALLOCATED;
+class XSLImportRule : public CachedResourceClient, public StyleBase {
 public:
-    static PassOwnPtr<XSLImportRule> create(XSLStyleSheet* parentSheet, const String& href)
-    {
-        return adoptPtr(new XSLImportRule(parentSheet, href));
-    }
-
+    XSLImportRule(StyleBase* parent, const String& href);
     virtual ~XSLImportRule();
     
-    const String& href() const { return m_strHref; }
+    String href() const { return m_strHref; }
     XSLStyleSheet* styleSheet() const { return m_styleSheet.get(); }
-
-    XSLStyleSheet* parentStyleSheet() const { return m_parentStyleSheet; }
-    void setParentStyleSheet(XSLStyleSheet* styleSheet) { m_parentStyleSheet = styleSheet; }
-
+    
+    virtual bool isImportRule() { return true; }
+    XSLStyleSheet* parentStyleSheet() const;
+    
+    // from CachedResourceClient
+    virtual void setXSLStyleSheet(const String& url, const String& sheet);
+    
     bool isLoading();
     void loadSheet();
     
-private:
-    XSLImportRule(XSLStyleSheet* parentSheet, const String& href);
-
-    virtual void setXSLStyleSheet(const String& href, const KURL& baseURL, const String& sheet);
-    
-    XSLStyleSheet* m_parentStyleSheet;
+protected:
     String m_strHref;
     RefPtr<XSLStyleSheet> m_styleSheet;
-    CachedResourceHandle<CachedXSLStyleSheet> m_cachedSheet;
+    CachedXSLStyleSheet* m_cachedSheet;
     bool m_loading;
 };
 

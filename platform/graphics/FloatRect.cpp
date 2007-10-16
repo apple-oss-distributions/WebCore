@@ -30,8 +30,6 @@
 #include "FloatConversion.h"
 #include "IntRect.h"
 #include <algorithm>
-#include <math.h>
-#include <wtf/MathExtras.h>
 
 using std::max;
 using std::min;
@@ -47,40 +45,26 @@ FloatRect FloatRect::narrowPrecision(double x, double y, double width, double he
     return FloatRect(narrowPrecisionToFloat(x), narrowPrecisionToFloat(y), narrowPrecisionToFloat(width), narrowPrecisionToFloat(height));
 }
 
-bool FloatRect::isExpressibleAsIntRect() const
-{
-    return isWithinIntRange(x()) && isWithinIntRange(y())
-        && isWithinIntRange(width()) && isWithinIntRange(height())
-        && isWithinIntRange(maxX()) && isWithinIntRange(maxY());
-}
-
 bool FloatRect::intersects(const FloatRect& other) const
 {
     // Checking emptiness handles negative widths as well as zero.
     return !isEmpty() && !other.isEmpty()
-        && x() < other.maxX() && other.x() < maxX()
-        && y() < other.maxY() && other.y() < maxY();
+        && x() < other.right() && other.x() < right()
+        && y() < other.bottom() && other.y() < bottom();
 }
 
 bool FloatRect::contains(const FloatRect& other) const
 {
-    return x() <= other.x() && maxX() >= other.maxX()
-        && y() <= other.y() && maxY() >= other.maxY();
-}
-
-bool FloatRect::contains(const FloatPoint& point, ContainsMode containsMode) const
-{
-    if (containsMode == InsideOrOnStroke)
-        return contains(point.x(), point.y());
-    return x() < point.x() && maxX() > point.x() && y() < point.y() && maxY() > point.y();
+    return x() <= other.x() && right() >= other.right()
+        && y() <= other.y() && bottom() >= other.bottom();
 }
 
 void FloatRect::intersect(const FloatRect& other)
 {
     float l = max(x(), other.x());
     float t = max(y(), other.y());
-    float r = min(maxX(), other.maxX());
-    float b = min(maxY(), other.maxY());
+    float r = min(right(), other.right());
+    float b = min(bottom(), other.bottom());
 
     // Return a clean empty rectangle for non-intersecting cases.
     if (l >= r || t >= b) {
@@ -90,7 +74,10 @@ void FloatRect::intersect(const FloatRect& other)
         b = 0;
     }
 
-    setLocationAndSizeFromEdges(l, t, r, b);
+    m_location.setX(l);
+    m_location.setY(t);
+    m_size.setWidth(r - l);
+    m_size.setHeight(b - t);
 }
 
 void FloatRect::unite(const FloatRect& other)
@@ -103,165 +90,36 @@ void FloatRect::unite(const FloatRect& other)
         return;
     }
 
-    uniteEvenIfEmpty(other);
+    float l = min(x(), other.x());
+    float t = min(y(), other.y());
+    float r = max(right(), other.right());
+    float b = max(bottom(), other.bottom());
+
+    m_location.setX(l);
+    m_location.setY(t);
+    m_size.setWidth(r - l);
+    m_size.setHeight(b - t);
 }
 
-void FloatRect::uniteEvenIfEmpty(const FloatRect& other)
+void FloatRect::scale(float s)
 {
-    float minX = min(x(), other.x());
-    float minY = min(y(), other.y());
-    float maxX = max(this->maxX(), other.maxX());
-    float maxY = max(this->maxY(), other.maxY());
-
-    setLocationAndSizeFromEdges(minX, minY, maxX, maxY);
-}
-
-void FloatRect::uniteIfNonZero(const FloatRect& other)
-{
-    // Handle empty special cases first.
-    if (other.isZero())
-        return;
-    if (isZero()) {
-        *this = other;
-        return;
-    }
-
-    uniteEvenIfEmpty(other);
-}
-
-void FloatRect::extend(const FloatPoint& p)
-{
-    float minX = min(x(), p.x());
-    float minY = min(y(), p.y());
-    float maxX = max(this->maxX(), p.x());
-    float maxY = max(this->maxY(), p.y());
-
-    setLocationAndSizeFromEdges(minX, minY, maxX, maxY);
-}
-
-void FloatRect::scale(float sx, float sy)
-{
-    m_location.setX(x() * sx);
-    m_location.setY(y() * sy);
-    m_size.setWidth(width() * sx);
-    m_size.setHeight(height() * sy);
-}
-
-FloatRect unionRect(const Vector<FloatRect>& rects)
-{
-    FloatRect result;
-
-    size_t count = rects.size();
-    for (size_t i = 0; i < count; ++i)
-        result.unite(rects[i]);
-
-    return result;
-}
-
-void FloatRect::fitToPoints(const FloatPoint& p0, const FloatPoint& p1)
-{
-    float left = min(p0.x(), p1.x());
-    float top = min(p0.y(), p1.y());
-    float right = max(p0.x(), p1.x());
-    float bottom = max(p0.y(), p1.y());
-
-    setLocationAndSizeFromEdges(left, top, right, bottom);
-}
-
-namespace {
-// Helpers for 3- and 4-way max and min.
-
-template <typename T>
-T min3(const T& v1, const T& v2, const T& v3)
-{
-    return min(min(v1, v2), v3);
-}
-
-template <typename T>
-T max3(const T& v1, const T& v2, const T& v3)
-{
-    return max(max(v1, v2), v3);
-}
-
-template <typename T>
-T min4(const T& v1, const T& v2, const T& v3, const T& v4)
-{
-    return min(min(v1, v2), min(v3, v4));
-}
-
-template <typename T>
-T max4(const T& v1, const T& v2, const T& v3, const T& v4)
-{
-    return max(max(v1, v2), max(v3, v4));
-}
-
-} // anonymous namespace
-
-void FloatRect::fitToPoints(const FloatPoint& p0, const FloatPoint& p1, const FloatPoint& p2)
-{
-    float left = min3(p0.x(), p1.x(), p2.x());
-    float top = min3(p0.y(), p1.y(), p2.y());
-    float right = max3(p0.x(), p1.x(), p2.x());
-    float bottom = max3(p0.y(), p1.y(), p2.y());
-
-    setLocationAndSizeFromEdges(left, top, right, bottom);
-}
-
-void FloatRect::fitToPoints(const FloatPoint& p0, const FloatPoint& p1, const FloatPoint& p2, const FloatPoint& p3)
-{
-    float left = min4(p0.x(), p1.x(), p2.x(), p3.x());
-    float top = min4(p0.y(), p1.y(), p2.y(), p3.y());
-    float right = max4(p0.x(), p1.x(), p2.x(), p3.x());
-    float bottom = max4(p0.y(), p1.y(), p2.y(), p3.y());
-
-    setLocationAndSizeFromEdges(left, top, right, bottom);
-}
-
-static inline int safeFloatToInt(float x)
-{
-    static const int s_intMax = std::numeric_limits<int>::max();
-    static const int s_intMin = std::numeric_limits<int>::min();
-
-    if (x >= static_cast<float>(s_intMax))
-        return s_intMax;
-    if (x < static_cast<float>(s_intMin))
-        return s_intMin;
-    return static_cast<int>(x);
+    m_location.setX(x() * s);
+    m_location.setY(y() * s);
+    m_size.setWidth(width() * s);
+    m_size.setHeight(height() * s);
 }
 
 IntRect enclosingIntRect(const FloatRect& rect)
 {
-    IntPoint location = flooredIntPoint(rect.minXMinYCorner());
-    IntPoint maxPoint = ceiledIntPoint(rect.maxXMaxYCorner());
-
-    return IntRect(location, maxPoint - location);
-}
-
-IntRect enclosedIntRect(const FloatRect& rect)
-{
-    IntPoint location = ceiledIntPoint(rect.minXMinYCorner());
-    IntPoint maxPoint = flooredIntPoint(rect.maxXMaxYCorner());
-    IntSize size = maxPoint - location;
-    size.clampNegativeToZero();
-
-    return IntRect(location, size);
-}
-
-IntRect roundedIntRect(const FloatRect& rect)
-{
-    return IntRect(roundedIntPoint(rect.location()), roundedIntSize(rect.size()));
-}
-
-FloatRect mapRect(const FloatRect& r, const FloatRect& srcRect, const FloatRect& destRect)
-{
-    if (srcRect.width() == 0 || srcRect.height() == 0)
-        return FloatRect();
-
-    float widthScale = destRect.width() / srcRect.width();
-    float heightScale = destRect.height() / srcRect.height();
-    return FloatRect(destRect.x() + (r.x() - srcRect.x()) * widthScale,
-                     destRect.y() + (r.y() - srcRect.y()) * heightScale,
-                     r.width() * widthScale, r.height() * heightScale);
+    int l = static_cast<int>(rect.x());
+    int t = static_cast<int>(rect.y());
+    // FIXME: These two need to be a "ceiling" operation, not rounding.
+    // We changed them to do "+ 0.5f" to compile on Win32 where there's
+    // no ceilf, but they should be changed back to "ceiling" at some point
+    // and we should provide an implementation of ceilf for Win32.
+    int r = static_cast<int>(rect.right() + 0.5f);
+    int b = static_cast<int>(rect.bottom() + 0.5f);
+    return IntRect(l, t, r - l, b - t);
 }
 
 }

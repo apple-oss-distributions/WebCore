@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,14 +32,7 @@ namespace WebCore {
 
 class DeleteButton : public HTMLImageElement {
 public:
-    static PassRefPtr<DeleteButton> create(Document*);
-
-#if !PLATFORM(IOS)
-    virtual bool willRespondToMouseClickEvents() OVERRIDE { return true; }
-#endif // !PLATFORM(IOS)
-
-private:
-    explicit DeleteButton(Document*);
+    DeleteButton(Document*);
 
     virtual void defaultEventHandler(Event*);
 };

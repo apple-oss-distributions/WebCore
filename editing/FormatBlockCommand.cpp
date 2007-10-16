@@ -27,138 +27,102 @@
 #include "Element.h"
 #include "FormatBlockCommand.h"
 #include "Document.h"
-#include "ExceptionCodePlaceholder.h"
 #include "htmlediting.h"
 #include "HTMLElement.h"
 #include "HTMLNames.h"
-#include "Range.h"
-#include "VisibleUnits.h"
+#include "visible_units.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-static Node* enclosingBlockToSplitTreeTo(Node* startNode);
-static bool isElementForFormatBlock(const QualifiedName& tagName);
-static inline bool isElementForFormatBlock(Node* node)
-{
-    return node->isElementNode() && isElementForFormatBlock(toElement(node)->tagQName());
-}
-
-FormatBlockCommand::FormatBlockCommand(Document* document, const QualifiedName& tagName) 
-    : ApplyBlockElementCommand(document, tagName)
-    , m_didApply(false)
+FormatBlockCommand::FormatBlockCommand(Document* document, const String& tagName) 
+    : CompositeEditCommand(document), m_tagName(tagName)
 {
 }
 
-void FormatBlockCommand::formatSelection(const VisiblePosition& startOfSelection, const VisiblePosition& endOfSelection)
+bool FormatBlockCommand::modifyRange()
 {
-    if (!isElementForFormatBlock(tagName()))
-        return;
-    ApplyBlockElementCommand::formatSelection(startOfSelection, endOfSelection);
-    m_didApply = true;
-}
-
-void FormatBlockCommand::formatRange(const Position& start, const Position& end, const Position& endOfSelection, RefPtr<Element>& blockNode)
-{
-    Node* nodeToSplitTo = enclosingBlockToSplitTreeTo(start.deprecatedNode());
-    RefPtr<Node> outerBlock = (start.deprecatedNode() == nodeToSplitTo) ? start.deprecatedNode() : splitTreeToNode(start.deprecatedNode(), nodeToSplitTo);
-    RefPtr<Node> nodeAfterInsertionPosition = outerBlock;
-
-    RefPtr<Range> range = Range::create(document(), start, endOfSelection);
-    Element* refNode = enclosingBlockFlowElement(end);
-    Element* root = editableRootForPosition(start);
-    // Root is null for elements with contenteditable=false.
-    if (!root || !refNode)
-        return;
-    if (isElementForFormatBlock(refNode->tagQName()) && start == startOfBlock(start)
-        && (end == endOfBlock(end) || isNodeVisiblyContainedWithin(refNode, range.get()))
-        && refNode != root && !root->isDescendantOf(refNode)) {
-        // Already in a block element that only contains the current paragraph
-        if (refNode->hasTagName(tagName()))
-            return;
-        nodeAfterInsertionPosition = refNode;
-    }
-
-    if (!blockNode) {
-        // Create a new blockquote and insert it as a child of the root editable element. We accomplish
-        // this by splitting all parents of the current paragraph up to that point.
-        blockNode = createBlockElement();
-        insertNodeBefore(blockNode, nodeAfterInsertionPosition);
-    }
-
-    Position lastParagraphInBlockNode = blockNode->lastChild() ? positionAfterNode(blockNode->lastChild()) : Position();
-    bool wasEndOfParagraph = isEndOfParagraph(lastParagraphInBlockNode);
-
-    moveParagraphWithClones(start, end, blockNode.get(), outerBlock.get());
-
-    if (wasEndOfParagraph && !isEndOfParagraph(lastParagraphInBlockNode) && !isStartOfParagraph(lastParagraphInBlockNode))
-        insertBlockPlaceholder(lastParagraphInBlockNode);
-}
+    ASSERT(endingSelection().isRange());
+    VisiblePosition visibleStart = endingSelection().visibleStart();
+    VisiblePosition visibleEnd = endingSelection().visibleEnd();
+    VisiblePosition startOfLastParagraph = startOfParagraph(visibleEnd);
     
-Element* FormatBlockCommand::elementForFormatBlockCommand(Range* range)
-{
-    if (!range)
-        return 0;
+    if (startOfParagraph(visibleStart) == startOfLastParagraph)
+        return false;
 
-    Node* commonAncestor = range->commonAncestorContainer(IGNORE_EXCEPTION);
-    while (commonAncestor && !isElementForFormatBlock(commonAncestor))
-        commonAncestor = commonAncestor->parentNode();
+    setEndingSelection(visibleStart);
+    doApply();
+    visibleStart = endingSelection().visibleStart();
+    VisiblePosition nextParagraph = endOfParagraph(visibleStart).next();
+    while (nextParagraph.isNotNull() && nextParagraph != startOfLastParagraph) {
+        setEndingSelection(nextParagraph);
+        doApply();
+        nextParagraph = endOfParagraph(endingSelection().visibleStart()).next();
+    }
+    setEndingSelection(visibleEnd);
+    doApply();
+    visibleEnd = endingSelection().visibleEnd();
+    setEndingSelection(Selection(visibleStart.deepEquivalent(), visibleEnd.deepEquivalent(), DOWNSTREAM));
 
-    if (!commonAncestor)
-        return 0;
-
-    Element* rootEditableElement = range->startContainer()->rootEditableElement();
-    if (!rootEditableElement || commonAncestor->contains(rootEditableElement))
-        return 0;
-
-    return commonAncestor->isElementNode() ? toElement(commonAncestor) : 0;
+    return true;
 }
 
-bool isElementForFormatBlock(const QualifiedName& tagName)
+void FormatBlockCommand::doApply()
 {
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, blockTags, ());
-    if (blockTags.isEmpty()) {
-        blockTags.add(addressTag);
-        blockTags.add(articleTag);
-        blockTags.add(asideTag);
-        blockTags.add(blockquoteTag);
-        blockTags.add(ddTag);
-        blockTags.add(divTag);
-        blockTags.add(dlTag);
-        blockTags.add(dtTag);
-        blockTags.add(footerTag);
-        blockTags.add(h1Tag);
-        blockTags.add(h2Tag);
-        blockTags.add(h3Tag);
-        blockTags.add(h4Tag);
-        blockTags.add(h5Tag);
-        blockTags.add(h6Tag);
-        blockTags.add(headerTag);
-        blockTags.add(hgroupTag);
-        blockTags.add(mainTag);
-        blockTags.add(navTag);
-        blockTags.add(pTag);
-        blockTags.add(preTag);
-        blockTags.add(sectionTag);
-    }
-    return blockTags.contains(tagName);
-}
+    if (endingSelection().isNone())
+        return;
+    
+    if (!endingSelection().rootEditableElement())
+        return;
 
-Node* enclosingBlockToSplitTreeTo(Node* startNode)
-{
-    Node* lastBlock = startNode;
-    for (Node* n = startNode; n; n = n->parentNode()) {
-        if (!n->rendererIsEditable())
-            return lastBlock;
-        if (isTableCell(n) || n->hasTagName(bodyTag) || !n->parentNode() || !n->parentNode()->rendererIsEditable() || isElementForFormatBlock(n))
-            return n;
-        if (isBlock(n))
-            lastBlock = n;
-        if (isListElement(n))
-            return n->parentNode()->rendererIsEditable() ? n->parentNode() : n;
+    VisiblePosition visibleEnd = endingSelection().visibleEnd();
+    VisiblePosition visibleStart = endingSelection().visibleStart();
+    // When a selection ends at the start of a paragraph, we rarely paint 
+    // the selection gap before that paragraph, because there often is no gap.  
+    // In a case like this, it's not obvious to the user that the selection 
+    // ends "inside" that paragraph, so it would be confusing if FormatBlock
+    // operated on that paragraph.
+    // FIXME: We paint the gap before some paragraphs that are indented with left 
+    // margin/padding, but not others.  We should make the gap painting more consistent and 
+    // then use a left margin/padding rule here.
+    if (visibleEnd != visibleStart && isStartOfParagraph(visibleEnd))
+        setEndingSelection(Selection(visibleStart, visibleEnd.previous(true)));
+
+    if (endingSelection().isRange() && modifyRange())
+        return;
+    
+    String localName, prefix;
+    if (!Document::parseQualifiedName(m_tagName, prefix, localName))
+        return;
+    QualifiedName qTypeOfBlock = QualifiedName(AtomicString(prefix), AtomicString(localName), xhtmlNamespaceURI);
+    
+    Node* refNode = enclosingBlockFlowElement(endingSelection().visibleStart());
+    if (refNode->hasTagName(qTypeOfBlock))
+        // We're already in a block with the format we want, so we don't have to do anything
+        return;
+    
+    VisiblePosition paragraphStart = startOfParagraph(endingSelection().visibleStart());
+    VisiblePosition paragraphEnd = endOfParagraph(endingSelection().visibleStart());
+    VisiblePosition blockStart = startOfBlock(endingSelection().visibleStart());
+    VisiblePosition blockEnd = endOfBlock(endingSelection().visibleStart());
+    RefPtr<Node> blockNode = createElement(document(), m_tagName);
+    RefPtr<Node> placeholder = createBreakElement(document());
+    
+    Node* root = endingSelection().start().node()->rootEditableElement();
+    if (refNode == root || root->isDescendantOf(refNode))
+        refNode = paragraphStart.deepEquivalent().node();
+    
+    Position upstreamStart = paragraphStart.deepEquivalent().upstream();
+    if ((validBlockTag(refNode->nodeName().lower()) && paragraphStart == blockStart && paragraphEnd == blockEnd) ||
+        !upstreamStart.node()->isDescendantOf(root))
+        // Already in a valid block tag that only contains the current paragraph, so we can swap with the new tag
+        insertNodeBefore(blockNode.get(), refNode);
+    else {
+        insertNodeAt(blockNode.get(), upstreamStart);
     }
-    return lastBlock;
+    appendNode(placeholder.get(), blockNode.get());
+    moveParagraph(paragraphStart, paragraphEnd, VisiblePosition(Position(placeholder.get(), 0)), true, false);
 }
 
 }

@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
- * Copyright (C) 2007-2009 Torch Mobile, Inc.
+ * Copyright (C) 2006, 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,29 +26,23 @@
 #include "config.h"
 #include "EventHandler.h"
 
-#include "COMPtr.h"
-#include "Clipboard.h"
+#include "ClipboardWin.h"
 #include "Cursor.h"
 #include "FloatPoint.h"
 #include "FocusController.h"
 #include "FrameView.h"
 #include "Frame.h"
-#include "FrameSelection.h"
 #include "HitTestRequest.h"
 #include "HitTestResult.h"
 #include "MouseEventWithHitTestResults.h"
 #include "Page.h"
-#include "PlatformKeyboardEvent.h"
+#include "PlatformScrollbar.h"
 #include "PlatformWheelEvent.h"
-#include "Scrollbar.h"
+#include "SelectionController.h"
 #include "WCDataObject.h"
 #include "NotImplemented.h"
 
 namespace WebCore {
-
-#if ENABLE(DRAG_SUPPORT)
-const double EventHandler::TextDragDelay = 0.0;
-#endif
 
 bool EventHandler::passMousePressEventToSubframe(MouseEventWithHitTestResults& mev, Frame* subframe)
 {
@@ -59,10 +52,6 @@ bool EventHandler::passMousePressEventToSubframe(MouseEventWithHitTestResults& m
 
 bool EventHandler::passMouseMoveEventToSubframe(MouseEventWithHitTestResults& mev, Frame* subframe, HitTestResult* hoveredNode)
 {
-#if ENABLE(DRAG_SUPPORT)
-    if (m_mouseDownMayStartDrag && !m_mouseDownWasInSubframe)
-        return false;
-#endif
     subframe->eventHandler()->handleMouseMoveEvent(mev.event(), hoveredNode);
     return true;
 }
@@ -73,34 +62,37 @@ bool EventHandler::passMouseReleaseEventToSubframe(MouseEventWithHitTestResults&
     return true;
 }
 
-bool EventHandler::passWheelEventToWidget(const PlatformWheelEvent& wheelEvent, Widget* widget)
+bool EventHandler::passWheelEventToWidget(PlatformWheelEvent& wheelEvent, Widget* widget)
 {
     if (!widget->isFrameView())
         return false;
 
-    return toFrameView(widget)->frame()->eventHandler()->handleWheelEvent(wheelEvent);
+    return static_cast<FrameView*>(widget)->frame()->eventHandler()->handleWheelEvent(wheelEvent);
 }
 
-bool EventHandler::tabsToAllFormControls(KeyboardEvent*) const
+bool EventHandler::passMousePressEventToScrollbar(MouseEventWithHitTestResults& mev, PlatformScrollbar* scrollbar)
+{
+    if (!scrollbar || !scrollbar->isEnabled())
+        return false;
+    return scrollbar->handleMousePressEvent(mev.event());
+}
+
+bool EventHandler::tabsToAllControls(KeyboardEvent*) const
 {
     return true;
 }
 
 bool EventHandler::eventActivatedView(const PlatformMouseEvent& event) const
 {
-    return event.didActivateWebView();
+    return event.activatedWebView();
 }
 
-#if ENABLE(DRAG_SUPPORT)
-PassRefPtr<Clipboard> EventHandler::createDraggingClipboard() const
+Clipboard* EventHandler::createDraggingClipboard() const
 {
-#if OS(WINCE)
-    return 0;
-#else
-    return Clipboard::createForDragAndDrop();
-#endif
+    COMPtr<WCDataObject> dataObject;
+    WCDataObject::createInstance(&dataObject);
+    return new ClipboardWin(true, dataObject.get(), ClipboardWritable);
 }
-#endif
 
 void EventHandler::focusDocumentView()
 {
@@ -114,11 +106,6 @@ bool EventHandler::passWidgetMouseDownEventToWidget(const MouseEventWithHitTestR
 {
     notImplemented();
     return false;
-}
-
-unsigned EventHandler::accessKeyModifiers()
-{
-    return PlatformEvent::AltKey;
 }
 
 }

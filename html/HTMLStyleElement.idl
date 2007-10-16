@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,13 +18,15 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLStyleElement : HTMLElement {
-    attribute boolean disabled;
-    [Conditional=STYLE_SCOPED] attribute boolean scoped;
-    [Reflect] attribute DOMString media;
-    [Reflect] attribute DOMString type;
+module html {
 
-    // DOM Level 2 Style
-    readonly attribute StyleSheet sheet;
-};
+    interface [GenerateConstructor] HTMLStyleElement : HTMLElement {
+        attribute  boolean              disabled;
+        attribute  [ConvertNullToNullString] DOMString            media;
+        attribute  [ConvertNullToNullString] DOMString            type;
+        
+        // DOM Level 2 Style
+        readonly attribute StyleSheet sheet;
+    };
 
+}

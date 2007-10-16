@@ -17,10 +17,8 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    Constructor,
-    ImplementationLacksVTable
-] interface DOMParser {
-    Document parseFromString([Default=Undefined] optional DOMString str, 
-                             [Default=Undefined] optional DOMString contentType);
-};
+module xpath {
+    interface [GenerateConstructor, CanBeConstructed] DOMParser {
+        Document parseFromString(in DOMString str, in DOMString contentType);
+    };
+}

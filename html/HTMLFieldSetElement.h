@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,46 +26,31 @@
 #ifndef HTMLFieldSetElement_h
 #define HTMLFieldSetElement_h
 
-#include "HTMLFormControlElement.h"
-#include <wtf/OwnPtr.h>
+#include "HTMLGenericFormElement.h"
+
+namespace WebCore {
+    class RenderStyle;
+}
 
 namespace WebCore {
 
-class FormAssociatedElement;
-class HTMLCollection;
+class HTMLFormElement;
+class Document;
+class Node;
 
-class HTMLFieldSetElement FINAL : public HTMLFormControlElement {
+class HTMLFieldSetElement : public HTMLGenericFormElement {
 public:
-    static PassRefPtr<HTMLFieldSetElement> create(const QualifiedName&, Document*, HTMLFormElement*);
-    HTMLLegendElement* legend() const;
+    HTMLFieldSetElement(Document*, HTMLFormElement* = 0);
+    virtual ~HTMLFieldSetElement();
+    
+    virtual int tagPriority() const { return 3; }
+    virtual bool checkDTD(const Node* newChild);
 
-    PassRefPtr<HTMLCollection> elements();
-
-    const Vector<FormAssociatedElement*>& associatedElements() const;
-    unsigned length() const;
-
-protected:
-    virtual void disabledAttributeChanged() OVERRIDE;
-
-private:
-    HTMLFieldSetElement(const QualifiedName&, Document*, HTMLFormElement*);
-
-    virtual bool isEnumeratable() const { return true; }
-    virtual bool supportsFocus() const OVERRIDE;
+    virtual bool isFocusable() const;
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
-    virtual const AtomicString& formControlType() const;
-    virtual bool recalcWillValidate() const { return false; }
-    virtual void childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta) OVERRIDE;
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
-
-    static void invalidateDisabledStateUnder(Element*);
-    void refreshElementsIfNeeded() const;
-
-    mutable Vector<FormAssociatedElement*> m_associatedElements;
-    // When dom tree is modified, we have to refresh the m_associatedElements array.
-    mutable uint64_t m_documentVersion;
+    virtual const AtomicString& type() const;
 };
 
-} // namespace
+} //namespace
 
 #endif

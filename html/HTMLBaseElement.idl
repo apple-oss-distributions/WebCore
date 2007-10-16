@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -17,7 +17,11 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLBaseElement : HTMLElement {
-    [TreatNullAs=NullString] attribute DOMString href;
-    [Reflect] attribute DOMString target;
-};
+module html {
+
+    interface [GenerateConstructor] HTMLBaseElement : HTMLElement {
+        attribute [ConvertNullToNullString] DOMString            href;
+        attribute [ConvertNullToNullString] DOMString            target;
+    };
+
+}

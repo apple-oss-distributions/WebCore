@@ -22,20 +22,19 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
 #ifndef MediaQueryEvaluator_h
 #define MediaQueryEvaluator_h
 
-#include <wtf/text/WTFString.h>
+#include "PlatformString.h"
 
 namespace WebCore {
-class Frame;
-class MediaQueryExp;
-class MediaQuerySet;
+class Page;
 class RenderStyle;
-class StyleResolver;
+class MediaList;
+class MediaQueryExp;
 
 /**
  * Class that evaluates css media queries as defined in
@@ -49,14 +48,14 @@ class StyleResolver;
  * the device characteristics are not known. This can be used to prune the loading
  * of stylesheets to only those which are probable to match.
  */
-class MediaQueryEvaluator {
-     WTF_MAKE_NONCOPYABLE(MediaQueryEvaluator); WTF_MAKE_FAST_ALLOCATED;
+class MediaQueryEvaluator
+{
 public:
     /** Creates evaluator which evaluates only simple media queries
      *  Evaluator returns true for "all", and returns value of \mediaFeatureResult
      *  for any media features
      */
-    explicit MediaQueryEvaluator(bool mediaFeatureResult = false);
+    MediaQueryEvaluator(bool mediaFeatureResult = false);
 
     /** Creates evaluator which evaluates only simple media queries
      *  Evaluator  returns true for acceptedMediaType and returns value of \mediafeatureResult
@@ -67,7 +66,7 @@ public:
 
     /** Creates evaluator which evaluates full media queries
      */
-    MediaQueryEvaluator(const String& acceptedMediaType, Frame*, RenderStyle*);
+    MediaQueryEvaluator(const String& acceptedMediaType, Page* page, RenderStyle* style);
 
     ~MediaQueryEvaluator();
 
@@ -75,15 +74,15 @@ public:
     bool mediaTypeMatchSpecific(const char* mediaTypeToMatch) const;
 
     /** Evaluates a list of media queries */
-    bool eval(const MediaQuerySet*, StyleResolver* = 0) const;
+    bool eval(const MediaList* query) const;
 
     /** Evaluates media query subexpression, ie "and (media-feature: value)" part */
-    bool eval(const MediaQueryExp*) const;
+    bool eval(const MediaQueryExp* expr) const;
 
 private:
     String m_mediaType;
-    Frame* m_frame; // not owned
-    RefPtr<RenderStyle> m_style;
+    Page* m_page; // not owned
+    RenderStyle* m_style; // not owned
     bool m_expResult;
 };
 

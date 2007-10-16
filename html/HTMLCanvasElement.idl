@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2006, 2008, 2009 Apple Inc. All rights reserved.
- * Copyright (C) 2010 Torch Mobile (Beijing) Co. Ltd. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -24,22 +23,17 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-[
-    JSGenerateToNativeObject
-] interface HTMLCanvasElement : HTMLElement {
+module html {
 
-    attribute long width;
-    attribute long height;
+    interface [GenerateConstructor] HTMLCanvasElement : HTMLElement {
 
-    [Custom, RaisesException] DOMString toDataURL([TreatNullAs=NullString, TreatUndefinedAs=NullString,Default=Undefined] optional DOMString type);
+        attribute long width;
+        attribute long height;
 
-#if !defined(LANGUAGE_CPP) || !LANGUAGE_CPP
-#if !defined(LANGUAGE_OBJECTIVE_C) || !LANGUAGE_OBJECTIVE_C
-    // The custom binding is needed to handle context creation attributes.
-    [Custom] any getContext([Default=Undefined] optional DOMString contextId);
-    [Custom] any supportsContext([Default=Undefined] optional DOMString contextId);
-#endif
+#if !defined(LANGUAGE_OBJECTIVE_C)
+        DOMObject getContext(in DOMString contextId);
 #endif
 
-};
+    };
 
+}

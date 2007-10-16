@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,37 +26,27 @@
 #ifndef IndentOutdentCommand_h
 #define IndentOutdentCommand_h
 
-#include "ApplyBlockElementCommand.h"
-#include "EditAction.h"
+#include "CompositeEditCommand.h"
 
 namespace WebCore {
 
-class IndentOutdentCommand : public ApplyBlockElementCommand {
+class IndentOutdentCommand : public CompositeEditCommand
+{
 public:
     enum EIndentType { Indent, Outdent };
-    static PassRefPtr<IndentOutdentCommand> create(Document* document, EIndentType type, int marginInPixels = 0)
-    {
-        return adoptRef(new IndentOutdentCommand(document, type, marginInPixels));
-    }
-
-    virtual bool preservesTypingStyle() const { return true; }
-
-private:
-    IndentOutdentCommand(Document*, EIndentType, int marginInPixels);
-
+    IndentOutdentCommand(Document*, EIndentType, int marginInPixels = 0);
+    virtual void doApply();
     virtual EditAction editingAction() const { return m_typeOfAction == Indent ? EditActionIndent : EditActionOutdent; }
-
-    void indentRegion(const VisiblePosition&, const VisiblePosition&);
-    void outdentRegion(const VisiblePosition&, const VisiblePosition&);
-    void outdentParagraph();
-    bool tryIndentingAsListItem(const Position&, const Position&);
-    void indentIntoBlockquote(const Position&, const Position&, RefPtr<Element>&);
-
-    void formatSelection(const VisiblePosition& startOfSelection, const VisiblePosition& endOfSelection);
-    void formatRange(const Position& start, const Position& end, const Position& endOfSelection, RefPtr<Element>& blockquoteForNextIndent);
-
+private:
+    void splitTreeTo(Node* start, Node* stop);
+    bool modifyRange();
     EIndentType m_typeOfAction;
     int m_marginInPixels;
+    void indentRegion();
+    void outdentRegion();
+    void outdentParagraph();
+    Node* splitTreeToNode(Node*, Node*, bool splitAncestor = false);
+    Node* prepareBlockquoteLevelForInsertion(VisiblePosition&, Node**);
 };
 
 } // namespace WebCore

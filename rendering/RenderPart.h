@@ -1,7 +1,9 @@
 /*
+ * This file is part of the KDE project.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 2000 Simon Hausmann <hausmann@kde.org>
- * Copyright (C) 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -27,42 +29,34 @@
 
 namespace WebCore {
 
-// Renderer for frames via RenderFrameBase, and plug-ins via RenderEmbeddedObject.
+class Frame;
+class HTMLFrameOwnerElement;
+
 class RenderPart : public RenderWidget {
 public:
-    explicit RenderPart(Element*);
+    RenderPart(HTMLFrameOwnerElement*);
     virtual ~RenderPart();
+    
+    virtual const char* renderName() const { return "RenderPart"; }
 
-    virtual void setWidget(PassRefPtr<Widget>);
+    virtual void setWidget(Widget*);
+
+    // FIXME: This should not be necessary.
+    // Remove this once WebKit knows to properly schedule layouts using WebCore when objects resize.
+    virtual void updateWidgetPosition();
+
+    bool hasFallbackContent() const { return m_hasFallbackContent; }
+
     virtual void viewCleared();
 
-#if USE(ACCELERATED_COMPOSITING)
-    bool requiresAcceleratedCompositing() const;
-#endif
-
-    virtual bool needsPreferredWidthsRecalculation() const;
-    virtual RenderBox* embeddedContentBox() const;
-
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
-
 protected:
-#if USE(ACCELERATED_COMPOSITING)
-    virtual bool requiresLayer() const;
-#endif
+    bool m_hasFallbackContent;
 
 private:
-    virtual bool isRenderPart() const { return true; }
-    virtual const char* renderName() const { return "RenderPart"; }
+    virtual void deleteWidget();
+
+    Frame* m_frame;
 };
-
-inline RenderPart* toRenderPart(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderPart());
-    return static_cast<RenderPart*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderPart(const RenderPart*);
 
 }
 

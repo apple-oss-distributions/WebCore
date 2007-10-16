@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2005, 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,36 +27,29 @@
 #define RemoveCSSPropertyCommand_h
 
 #include "EditCommand.h"
-#include "CSSPropertyNames.h"
 
 namespace WebCore {
 
-class StyledElement;
+class CSSStyleDeclaration;
 
-class RemoveCSSPropertyCommand : public SimpleEditCommand {
+class RemoveCSSPropertyCommand : public EditCommand {
 public:
-    static PassRefPtr<RemoveCSSPropertyCommand> create(Document* document, PassRefPtr<StyledElement> element, CSSPropertyID property)
-    {
-        return adoptRef(new RemoveCSSPropertyCommand(document, element, property));
-    }
+    RemoveCSSPropertyCommand(Document*, CSSStyleDeclaration*, int property);
+    virtual ~RemoveCSSPropertyCommand();
 
+    virtual void doApply();
+    virtual void doUnapply();
+
+    CSSMutableStyleDeclaration* styleDeclaration() const { return m_decl.get(); }
+    int property() const { return m_property; }
+    
 private:
-    RemoveCSSPropertyCommand(Document*, PassRefPtr<StyledElement>, CSSPropertyID property);
-    ~RemoveCSSPropertyCommand();
-
-    virtual void doApply() OVERRIDE;
-    virtual void doUnapply() OVERRIDE;
-    
-#ifndef NDEBUG
-    virtual void getNodesInCommand(HashSet<Node*>&) OVERRIDE;
-#endif
-    
-    RefPtr<StyledElement> m_element;
-    CSSPropertyID m_property;
+    RefPtr<CSSMutableStyleDeclaration> m_decl;
+    int m_property;
     String m_oldValue;
     bool m_important;
 };
 
 } // namespace WebCore
 
-#endif // RemoveCSSPropertyCommand_h
+#endif // __remove_css_property_command_h__

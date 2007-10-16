@@ -1,4 +1,4 @@
-/* 
+/* This file is part of the KDE project
    Copyright (C) 2000 Simon Hausmann <hausmann@kde.org>
    Copyright (C) 2006 Apple Computer, Inc.
 
@@ -26,25 +26,25 @@
 
 namespace WebCore {
 
-class Scrollbar;
+class PlatformScrollbar;
 
+// FIXME: Why doesn't this class just cache a HitTestResult instead of copying all of HitTestResult's fields over?
 class MouseEventWithHitTestResults {
 public:
     MouseEventWithHitTestResults(const PlatformMouseEvent&, const HitTestResult&);
 
     const PlatformMouseEvent& event() const { return m_event; }
     const HitTestResult& hitTestResult() const { return m_hitTestResult; }
-    LayoutPoint localPoint() const { return m_hitTestResult.localPoint(); }
-    Scrollbar* scrollbar() const { return m_hitTestResult.scrollbar(); }
+    Node* targetNode() const;
+    const IntPoint localPoint() const;
+    PlatformScrollbar* scrollbar() const;
     bool isOverLink() const;
-    bool isOverWidget() const { return m_hitTestResult.isOverWidget(); }
-    Node* targetNode() const { return m_hitTestResult.targetNode(); }
 
 private:
     PlatformMouseEvent m_event;
     HitTestResult m_hitTestResult;
 };
 
-} // namespace WebCore
+}
 
-#endif // MouseEventWithHitTestResults_h
+#endif

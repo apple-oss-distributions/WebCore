@@ -40,10 +40,7 @@ Color::Color(const QColor& c)
 
 Color::operator QColor() const
 {
-    if (m_valid)
-        return QColor(red(), green(), blue(), alpha());
-    else
-        return QColor();
+    return QColor(red(), green(), blue(), alpha());
 }
 
 }

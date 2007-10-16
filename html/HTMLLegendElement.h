@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,25 +26,32 @@
 #ifndef HTMLLegendElement_h
 #define HTMLLegendElement_h
 
-#include "HTMLElement.h"
+#include "HTMLGenericFormElement.h"
 
 namespace WebCore {
 
-class HTMLFormControlElement;
-
-class HTMLLegendElement FINAL : public HTMLElement {
+class HTMLLegendElement : public HTMLGenericFormElement {
 public:
-    static PassRefPtr<HTMLLegendElement> create(const QualifiedName&, Document*);
+    HTMLLegendElement(Document*, HTMLFormElement* = 0);
+    virtual ~HTMLLegendElement();
 
-private:
-    HTMLLegendElement(const QualifiedName&, Document*);
+    virtual bool isFocusable() const;
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual const AtomicString& type() const;
+    virtual void accessKeyAction(bool sendToAnyElement);
 
-    // Control in the legend's fieldset that gets focus and access key.
-    HTMLFormControlElement* associatedControl();
+    /**
+     * The first form element in the legend's fieldset 
+     */
+    Element* formElement();
 
-    virtual void accessKeyAction(bool sendMouseEvents);
-    virtual void focus(bool restorePreviousSelection, FocusDirection) OVERRIDE;
-    virtual HTMLFormElement* virtualForm() const OVERRIDE;
+    String accessKey() const;
+    void setAccessKey(const String &);
+
+    String align() const;
+    void setAlign(const String &);
+    
+    void focus(bool restorePreviousSelection = true);
 };
 
 } //namespace

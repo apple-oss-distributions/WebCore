@@ -1,6 +1,8 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -30,36 +32,20 @@ namespace WebCore {
 class CSSPrimitiveValue;
 
 // Used for text-shadow and box-shadow
-class ShadowValue : public CSSValue {
+class ShadowValue : public CSSValue
+{
 public:
-    static PassRefPtr<ShadowValue> create(PassRefPtr<CSSPrimitiveValue> x,
+    ShadowValue(PassRefPtr<CSSPrimitiveValue> x,
         PassRefPtr<CSSPrimitiveValue> y,
         PassRefPtr<CSSPrimitiveValue> blur,
-        PassRefPtr<CSSPrimitiveValue> spread,
-        PassRefPtr<CSSPrimitiveValue> style,
-        PassRefPtr<CSSPrimitiveValue> color)
-    {
-        return adoptRef(new ShadowValue(x, y, blur, spread, style, color));
-    }
-
-    String customCssText() const;
-
-    bool equals(const ShadowValue&) const;
+        PassRefPtr<CSSPrimitiveValue> color);
+    
+    virtual String cssText() const;
 
     RefPtr<CSSPrimitiveValue> x;
     RefPtr<CSSPrimitiveValue> y;
     RefPtr<CSSPrimitiveValue> blur;
-    RefPtr<CSSPrimitiveValue> spread;
-    RefPtr<CSSPrimitiveValue> style;
     RefPtr<CSSPrimitiveValue> color;
-
-private:
-    ShadowValue(PassRefPtr<CSSPrimitiveValue> x,
-        PassRefPtr<CSSPrimitiveValue> y,
-        PassRefPtr<CSSPrimitiveValue> blur,
-        PassRefPtr<CSSPrimitiveValue> spread,
-        PassRefPtr<CSSPrimitiveValue> style,
-        PassRefPtr<CSSPrimitiveValue> color);
 };
 
 } // namespace

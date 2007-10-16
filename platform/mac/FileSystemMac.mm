@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,102 +25,51 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
 #import "config.h"
 #import "FileSystem.h"
 
-#import "WebCoreNSURLExtras.h"
-#import "WebCoreSystemInterface.h"
-#import <wtf/RetainPtr.h>
-#import <wtf/text/CString.h>
-#import <wtf/text/WTFString.h>
+#import "PlatformString.h"
 
 namespace WebCore {
 
-String homeDirectoryPath()
+bool fileExists(const String& path) 
 {
-    return NSHomeDirectory();
+    const char* fsRep = [(NSString *)path fileSystemRepresentation];
+        
+    if (!fsRep || fsRep[0] == '\0')
+        return false;
+        
+    struct stat fileInfo;
+
+    // stat(...) returns 0 on successful stat'ing of the file, and non-zero in any case where the file doesn't exist or cannot be accessed
+    return !stat(fsRep, &fileInfo);
 }
 
-String openTemporaryFile(const String& prefix, PlatformFileHandle& platformFileHandle)
+bool deleteFile(const String& path) 
 {
-    platformFileHandle = invalidPlatformFileHandle;
-    
-    Vector<char> temporaryFilePath(PATH_MAX);
-    if (!confstr(_CS_DARWIN_USER_TEMP_DIR, temporaryFilePath.data(), temporaryFilePath.size()))
-        return String();
-
-    // Shrink the vector.   
-    temporaryFilePath.shrink(strlen(temporaryFilePath.data()));
-    ASSERT(temporaryFilePath.last() == '/');
-
-    // Append the file name.
-    CString prefixUtf8 = prefix.utf8();
-    temporaryFilePath.append(prefixUtf8.data(), prefixUtf8.length());
-    temporaryFilePath.append("XXXXXX", 6);
-    temporaryFilePath.append('\0');
-
-    platformFileHandle = mkstemp(temporaryFilePath.data());
-    if (platformFileHandle == invalidPlatformFileHandle)
-        return String();
-
-    return String::fromUTF8(temporaryFilePath.data());
+    const char* fsRep = [(NSString *)path fileSystemRepresentation];
+        
+    if (!fsRep || fsRep[0] == '\0')
+        return false;
+        
+    // unlink(...) returns 0 on successful deletion of the path and non-zero in any other case (including invalid permissions or non-existent file)
+    return !unlink(fsRep);
 }
 
-#if !PLATFORM(IOS)
-
-typedef struct MetaDataInfo
+bool fileSize(const String& path, long long& result)
 {
-    String URLString;
-    String referrer;
-    String path;
-} MetaDataInfo;
-
-static void* setMetaData(void* context)
-{
-    MetaDataInfo *info = (MetaDataInfo *)context;
-    wkSetMetadataURL((NSString *)info->URLString, (NSString *)info->referrer, (NSString *)String::fromUTF8(fileSystemRepresentation(info->path).data()));
+    const char* fsRep = [(NSString *)path fileSystemRepresentation];
     
-    delete info;
+    if (!fsRep || fsRep[0] == '\0')
+        return false;
     
-    return 0;
-}
-
-void setMetadataURL(String& URLString, const String& referrer, const String& path)
-{
-    NSURL *URL = URLWithUserTypedString(URLString, nil);
-    if (URL)
-        URLString = userVisibleString(URLByRemovingUserInfo(URL));
+    struct stat fileInfo;
     
-    // Spawn a background thread for WKSetMetadataURL because this function will not return until mds has
-    // journaled the data we're're trying to set. Depending on what other I/O is going on, it can take some
-    // time. 
-    pthread_t tid;
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    if (!stat(fsRep, &fileInfo))
+        return false;
     
-    MetaDataInfo *info = new MetaDataInfo;
-    
-    info->URLString = URLString;
-    info->referrer = referrer;
-    info->path = path;
-    
-    pthread_create(&tid, &attr, setMetaData, info);
-    pthread_attr_destroy(&attr);
-}
-
-bool canExcludeFromBackup()
-{
+    result = fileInfo.st_size;
     return true;
 }
 
-bool excludeFromBackup(const String& path)
-{
-    // It is critical to pass FALSE for excludeByPath because excluding by path requires root privileges.
-    CSBackupSetItemExcluded(pathAsURL(path).get(), TRUE, FALSE); 
-    return true;
-}
-#endif
-
-} // namespace WebCore
+} //namespace WebCore

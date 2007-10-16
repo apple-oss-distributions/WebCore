@@ -29,9 +29,10 @@
 #ifndef PageURLRecord_h
 #define PageURLRecord_h
 
+#include "PlatformString.h"
+
 #include <wtf/Noncopyable.h>
 #include <wtf/RefPtr.h>
-#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -41,21 +42,16 @@ class PageURLSnapshot {
 public:
     PageURLSnapshot() { }
     
-    PageURLSnapshot(const String& pageURL, const String& iconURL)
-        : m_pageURL(pageURL)
-        , m_iconURL(iconURL)
+    PageURLSnapshot(const String& page, const String& icon)
+        : pageURL(page)
+        , iconURL(icon)
     { }
-
-    const String& pageURL() const { return m_pageURL; }
-    const String& iconURL() const { return m_iconURL; }
-
-private:
-    String m_pageURL;
-    String m_iconURL;
+    
+    String pageURL;
+    String iconURL;
 };
 
-class PageURLRecord {
-    WTF_MAKE_NONCOPYABLE(PageURLRecord); WTF_MAKE_FAST_ALLOCATED;
+class PageURLRecord : Noncopyable {
 public:
     PageURLRecord(const String& pageURL);
     ~PageURLRecord();
@@ -68,19 +64,13 @@ public:
     PageURLSnapshot snapshot(bool forDeletion = false) const;
 
     // Returns false if the page wasn't retained beforehand, true if the retain count was already 1 or higher
-    bool retain(int count)
-    {
-        bool wasRetained = m_retainCount > 0;
-        m_retainCount += count;
-        return wasRetained;
-    }
+    inline bool retain() { return m_retainCount++; }
 
     // Returns true if the page is still retained after the call.  False if the retain count just dropped to 0
-    bool release(int count)
+    inline bool release()
     {
-        ASSERT(m_retainCount >= count);
-        m_retainCount -= count;
-        return m_retainCount > 0;
+        ASSERT(m_retainCount > 0);
+        return --m_retainCount;
     }
 
     inline int retainCount() const { return m_retainCount; }

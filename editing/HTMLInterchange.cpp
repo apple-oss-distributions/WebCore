@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2008 Apple Inc.  All rights reserved.
+ * Copyright (C) 2004 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,75 +26,91 @@
 #include "config.h"
 #include "HTMLInterchange.h"
 
-#include "RenderObject.h"
+#include "CharacterNames.h"
+#include "Document.h"
 #include "Text.h"
 #include "TextIterator.h"
-#include <wtf/StdLibExtras.h>
-#include <wtf/text/StringBuilder.h>
-#include <wtf/unicode/CharacterNames.h>
 
 namespace WebCore {
 
-String convertHTMLTextToInterchangeFormat(const String& in, const Text* node)
+namespace {
+
+DeprecatedString convertedSpaceString() 
+{
+    static DeprecatedString convertedSpaceString;
+    if (convertedSpaceString.length() == 0) {
+        convertedSpaceString = "<span class=\"";
+        convertedSpaceString += AppleConvertedSpace;
+        convertedSpaceString += "\">";
+        convertedSpaceString += DeprecatedChar(noBreakSpace);
+        convertedSpaceString += "</span>";
+    }
+    return convertedSpaceString;
+}
+
+} // end anonymous namespace
+
+DeprecatedString convertHTMLTextToInterchangeFormat(const DeprecatedString& in, const Text* node)
 {
     // Assume all the text comes from node.
     if (node->renderer() && node->renderer()->style()->preserveNewline())
         return in;
+        
+    DeprecatedString s;
 
-    const char convertedSpaceString[] = "<span class=\"" AppleConvertedSpace "\">\xA0</span>";
-    COMPILE_ASSERT((static_cast<unsigned char>('\xA0') == noBreakSpace), ConvertedSpaceStringSpaceIsNoBreakSpace);
-
-    StringBuilder s;
-
-    unsigned i = 0;
-    unsigned consumed = 0;
+    unsigned int i = 0;
+    unsigned int consumed = 0;
     while (i < in.length()) {
         consumed = 1;
-        if (isCollapsibleWhitespace(in[i])) {
+        if (isCollapsibleWhitespace(in[i].unicode())) {
             // count number of adjoining spaces
-            unsigned j = i + 1;
-            while (j < in.length() && isCollapsibleWhitespace(in[j]))
+            unsigned int j = i + 1;
+            while (j < in.length() && isCollapsibleWhitespace(in[j].unicode()))
                 j++;
-            unsigned count = j - i;
+            unsigned int count = j - i;
             consumed = count;
             while (count) {
-                unsigned add = count % 3;
+                unsigned int add = count % 3;
                 switch (add) {
                     case 0:
-                        s.appendLiteral(convertedSpaceString);
-                        s.append(' ');
-                        s.appendLiteral(convertedSpaceString);
+                        s += convertedSpaceString();
+                        s += ' ';
+                        s += convertedSpaceString();
                         add = 3;
                         break;
                     case 1:
                         if (i == 0 || i + 1 == in.length()) // at start or end of string
-                            s.appendLiteral(convertedSpaceString);
+                            s += convertedSpaceString();
                         else
-                            s.append(' ');
+                            s += ' ';
                         break;
                     case 2:
                         if (i == 0) {
                              // at start of string
-                            s.appendLiteral(convertedSpaceString);
-                            s.append(' ');
-                        } else if (i + 2 == in.length()) {
+                            s += convertedSpaceString();
+                            s += ' ';
+                        }
+                        else if (i + 2 == in.length()) {
                              // at end of string
-                            s.appendLiteral(convertedSpaceString);
-                            s.appendLiteral(convertedSpaceString);
-                        } else {
-                            s.appendLiteral(convertedSpaceString);
-                            s.append(' ');
+                            s += convertedSpaceString();
+                            s += convertedSpaceString();
+                        }
+                        else {
+                            s += convertedSpaceString();
+                            s += ' ';
                         }
                         break;
                 }
                 count -= add;
             }
-        } else
-            s.append(in[i]);
+        }
+        else {
+            s += in[i];
+        }
         i += consumed;
     }
 
-    return s.toString();
+    return s;
 }
 
-} // namespace WebCore
+}

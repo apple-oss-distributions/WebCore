@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -17,12 +17,15 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLBaseFontElement : HTMLElement {
-    [Reflect] attribute DOMString color;
-    [Reflect] attribute DOMString face;
-#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
-    [Reflect] attribute DOMString size; // this changed to a long, but our existing API is a string
+module html {
+
+    interface [GenerateConstructor] HTMLBaseFontElement : HTMLElement {
+        attribute [ConvertNullToNullString] DOMString color;
+        attribute [ConvertNullToNullString] DOMString face;
+#if defined(LANGUAGE_OBJECTIVE_C)
+        attribute [ConvertToString] DOMString size; // this changed to a long, but our existing API is a string
 #else
-    [Reflect] attribute long size;
+        attribute long size;
 #endif
-};
+    };
+}

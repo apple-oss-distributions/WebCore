@@ -2,7 +2,7 @@
 #
 #   This file is part of the WebKit project
 #
-#   Copyright (C) 2008 Nokia Corporation and/or its subsidiary(-ies)
+#   Copyright (C) 2007 Trolltech ASA
 #
 #   This library is free software; you can redistribute it and/or
 #   modify it under the terms of the GNU Library General Public
@@ -21,75 +21,35 @@
 use strict;
 use warnings;
 
-use File::Basename;
-use File::Spec;
-use Getopt::Long;
+my $grammar = $ARGV[0];
+my $fileBase = $ARGV[1];
 
-my $outputDir = ".";
-my $extraDefines = "";
-my $symbolsPrefix = "";
-my $preprocessor = "";
-my $preprocessOnly = 0;
-my $bison = "bison";
+system("bison -d -p cssyy " . $grammar . " -o " . $fileBase . ".tab.c");
 
-GetOptions(
-    'outputDir=s' => \$outputDir,
-    'extraDefines=s' => \$extraDefines,
-    'bison=s' => \$bison,
-    'preprocessor=s' => \$preprocessor,
-    'preprocessOnly' => \$preprocessOnly,
-    'symbolsPrefix=s' => \$symbolsPrefix
-);
-
-my $grammarFilePath = $ARGV[0];
-my $grammarIncludesFilePath = @ARGV > 0 ? $ARGV[1] : "";
-
-if (!length($symbolsPrefix) && !$preprocessOnly) {
-    die "Need a symbols prefix to give to bison (e.g. cssyy, xpathyy)";
-}
-
-my ($filename, $basePath, $suffix) = fileparse($grammarFilePath, (".y", ".y.in"));
-
-if ($suffix eq ".y.in") {
-    my $grammarFileOutPath = File::Spec->join($outputDir, "$filename.y");
-    if (!$grammarIncludesFilePath) {
-        $grammarIncludesFilePath = "${basePath}${filename}.y.includes";
-    }
-
-    open GRAMMAR, ">$grammarFileOutPath" or die;
-    open INCLUDES, "<$grammarIncludesFilePath" or die;
-
-    require preprocessor;
-
-    while (<INCLUDES>) {
-        print GRAMMAR;
-    }
-    print GRAMMAR join("", applyPreprocessor($grammarFilePath, $extraDefines, $preprocessor));
-    close GRAMMAR;
-
-    $grammarFilePath = $grammarFileOutPath;
-
-    exit if $preprocessOnly;
-}
-
-my $fileBase = File::Spec->join($outputDir, $filename);
-system("$bison -d -p $symbolsPrefix $grammarFilePath -o $fileBase.cpp");
-
-open HEADER, ">$fileBase.h" or die;
+open HEADER, ">" . $fileBase . ".h" or die;
 print HEADER << "EOF";
 #ifndef CSSGRAMMAR_H
 #define CSSGRAMMAR_H
 EOF
 
-open HPP, "<$fileBase.cpp.h" or open HPP, "<$fileBase.hpp" or die;
+open HPP, "<" . $fileBase . ".tab.h" or die;
 while (<HPP>) {
     print HEADER;
 }
 close HPP;
 
 print HEADER "#endif\n";
+
 close HEADER;
 
-unlink("$fileBase.cpp.h");
-unlink("$fileBase.hpp");
+unlink($fileBase . ".tab.h");
 
+open CPP, ">" . $fileBase . ".cpp" or die;
+open GENSRC, "<" . $fileBase . ".tab.c" or die;
+while (<GENSRC>) {
+    print CPP;
+}
+close GENSRC;
+close CPP;
+
+unlink($fileBase . ".tab.c");

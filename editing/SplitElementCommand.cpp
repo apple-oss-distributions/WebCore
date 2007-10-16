@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2005 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,93 +25,61 @@
 
 #include "config.h"
 #include "SplitElementCommand.h"
-
 #include "Element.h"
-#include "HTMLNames.h"
+
 #include <wtf/Assertions.h>
 
 namespace WebCore {
 
-SplitElementCommand::SplitElementCommand(PassRefPtr<Element> element, PassRefPtr<Node> atChild)
-    : SimpleEditCommand(element->document())
-    , m_element2(element)
-    , m_atChild(atChild)
+SplitElementCommand::SplitElementCommand(Element* element, Node* atChild)
+    : EditCommand(element->document()), m_element2(element), m_atChild(atChild)
 {
     ASSERT(m_element2);
     ASSERT(m_atChild);
-    ASSERT(m_atChild->parentNode() == m_element2);
 }
 
-void SplitElementCommand::executeApply()
-{
-    if (m_atChild->parentNode() != m_element2)
-        return;
-    
-    Vector<RefPtr<Node> > children;
-    for (Node* node = m_element2->firstChild(); node != m_atChild; node = node->nextSibling())
-        children.append(node);
-    
-    ExceptionCode ec = 0;
-    
-    ContainerNode* parent = m_element2->parentNode();
-    if (!parent || !parent->rendererIsEditable())
-        return;
-    parent->insertBefore(m_element1.get(), m_element2.get(), ec);
-    if (ec)
-        return;
-
-    // Delete id attribute from the second element because the same id cannot be used for more than one element
-    m_element2->removeAttribute(HTMLNames::idAttr);
-
-    size_t size = children.size();
-    for (size_t i = 0; i < size; ++i)
-        m_element1->appendChild(children[i], ec);
-}
-    
 void SplitElementCommand::doApply()
 {
-    m_element1 = m_element2->cloneElementWithoutChildren();
+    ASSERT(m_element2);
+    ASSERT(m_atChild);
+
+    ExceptionCode ec = 0;
+
+    if (!m_element1) {
+        // create only if needed.
+        // if reapplying, this object will already exist.
+        m_element1 = static_pointer_cast<Element>(m_element2->cloneNode(false));
+        ASSERT(m_element1);
+    }
+
+    m_element2->parent()->insertBefore(m_element1.get(), m_element2.get(), ec);
+    ASSERT(ec == 0);
     
-    executeApply();
+    while (m_element2->firstChild() != m_atChild) {
+        ASSERT(m_element2->firstChild());
+        m_element1->appendChild(m_element2->firstChild(), ec);
+        ASSERT(ec == 0);
+    }
 }
 
 void SplitElementCommand::doUnapply()
 {
-    if (!m_element1 || !m_element1->rendererIsEditable() || !m_element2->rendererIsEditable())
-        return;
+    ASSERT(m_element1);
+    ASSERT(m_element2);
+    ASSERT(m_atChild);
 
-    Vector<RefPtr<Node> > children;
-    for (Node* node = m_element1->firstChild(); node; node = node->nextSibling())
-        children.append(node);
+    ASSERT(m_element1->nextSibling() == m_element2);
+    ASSERT(m_element2->firstChild() && m_element2->firstChild() == m_atChild);
 
-    RefPtr<Node> refChild = m_element2->firstChild();
+    ExceptionCode ec = 0;
 
-    size_t size = children.size();
-    for (size_t i = 0; i < size; ++i)
-        m_element2->insertBefore(children[i].get(), refChild.get(), IGNORE_EXCEPTION);
+    while (m_element1->lastChild()) {
+        m_element2->insertBefore(m_element1->lastChild(), m_element2->firstChild(), ec);
+        ASSERT(ec == 0);
+    }
 
-    // Recover the id attribute of the original element.
-    if (m_element1->hasAttribute(HTMLNames::idAttr))
-        m_element2->setAttribute(HTMLNames::idAttr, m_element1->getAttribute(HTMLNames::idAttr));
-
-    m_element1->remove(IGNORE_EXCEPTION);
+    m_element2->parentNode()->removeChild(m_element1.get(), ec);
+    ASSERT(ec == 0);
 }
 
-void SplitElementCommand::doReapply()
-{
-    if (!m_element1)
-        return;
-    
-    executeApply();
-}
-
-#ifndef NDEBUG
-void SplitElementCommand::getNodesInCommand(HashSet<Node*>& nodes)
-{
-    addNodeAndDescendants(m_element1.get(), nodes);
-    addNodeAndDescendants(m_element2.get(), nodes);
-    addNodeAndDescendants(m_atChild.get(), nodes);
-}
-#endif
-    
 } // namespace WebCore

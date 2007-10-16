@@ -1,7 +1,9 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,11 +21,9 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #include "config.h"
 #include "HTMLDivElement.h"
 
-#include "Attribute.h"
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
@@ -32,42 +32,48 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLDivElement::HTMLDivElement(const QualifiedName& tagName, Document* document)
-    : HTMLElement(tagName, document)
+HTMLDivElement::HTMLDivElement(Document *doc)
+    : HTMLElement(divTag, doc)
 {
-    ASSERT(hasTagName(divTag));
 }
 
-PassRefPtr<HTMLDivElement> HTMLDivElement::create(Document* document)
+HTMLDivElement::~HTMLDivElement()
 {
-    return adoptRef(new HTMLDivElement(divTag, document));
 }
 
-PassRefPtr<HTMLDivElement> HTMLDivElement::create(const QualifiedName& tagName, Document* document)
+bool HTMLDivElement::mapToEntry(const QualifiedName& attrName, MappedAttributeEntry& result) const
 {
-    return adoptRef(new HTMLDivElement(tagName, document));
+    if (attrName == alignAttr) {
+        result = eBlock;
+        return false;
+    }
+    return HTMLElement::mapToEntry(attrName, result);
 }
 
-bool HTMLDivElement::isPresentationAttribute(const QualifiedName& name) const
+void HTMLDivElement::parseMappedAttribute(MappedAttribute *attr)
 {
-    if (name == alignAttr)
-        return true;
-    return HTMLElement::isPresentationAttribute(name);
-}
-
-void HTMLDivElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
-{
-    if (name == alignAttr) {
-        if (equalIgnoringCase(value, "middle") || equalIgnoringCase(value, "center"))
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyTextAlign, CSSValueWebkitCenter);
-        else if (equalIgnoringCase(value, "left"))
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyTextAlign, CSSValueWebkitLeft);
-        else if (equalIgnoringCase(value, "right"))
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyTextAlign, CSSValueWebkitRight);
+    if (attr->name() == alignAttr) {
+        String v = attr->value();
+        if (equalIgnoringCase(attr->value(), "middle") || equalIgnoringCase(attr->value(), "center"))
+           addCSSProperty(attr, CSS_PROP_TEXT_ALIGN, CSS_VAL__WEBKIT_CENTER);
+        else if (equalIgnoringCase(attr->value(), "left"))
+            addCSSProperty(attr, CSS_PROP_TEXT_ALIGN, CSS_VAL__WEBKIT_LEFT);
+        else if (equalIgnoringCase(attr->value(), "right"))
+            addCSSProperty(attr, CSS_PROP_TEXT_ALIGN, CSS_VAL__WEBKIT_RIGHT);
         else
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyTextAlign, value);
+            addCSSProperty(attr, CSS_PROP_TEXT_ALIGN, v);
     } else
-        HTMLElement::collectStyleForPresentationAttribute(name, value, style);
+        HTMLElement::parseMappedAttribute(attr);
+}
+
+String HTMLDivElement::align() const
+{
+    return getAttribute(alignAttr);
+}
+
+void HTMLDivElement::setAlign(const String &value)
+{
+    setAttribute(alignAttr, value);
 }
 
 }

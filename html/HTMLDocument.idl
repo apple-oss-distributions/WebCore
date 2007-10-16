@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,44 +18,73 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    CustomNamedGetter,
-] interface HTMLDocument : Document {
-    [Custom] void open();
-    void close();
-    [Custom] void write([Default=Undefined] optional DOMString text);
-    [Custom] void writeln([Default=Undefined] optional DOMString text);
+module html {
 
-    readonly attribute HTMLCollection embeds;
-    readonly attribute HTMLCollection plugins;
-    readonly attribute HTMLCollection scripts;
+    interface [GenerateConstructor, HasOverridingNameGetter] HTMLDocument : Document {
+                 attribute [ConvertNullToNullString] DOMString title;
+        readonly attribute DOMString referrer;
+#if defined(LANGUAGE_JAVASCRIPT)
+                 attribute DOMString domain;
+#else
+        readonly attribute DOMString domain;
+#endif
+        readonly attribute DOMString URL;
+                
+        // FIXME: the DOM spec does NOT have this attribute
+        // raising an exception.
+                 attribute HTMLElement body
+                     setter raises (DOMException);
+                     
+        readonly attribute HTMLCollection images;
+        readonly attribute HTMLCollection applets;
+        readonly attribute HTMLCollection links;
+        readonly attribute HTMLCollection forms;
+        readonly attribute HTMLCollection anchors;
+        
+        // FIXME: the DOM spec states that this attribute can 
+        // raise an exception on setting.
+                 attribute [ConvertNullToNullString] DOMString cookie
+                     /*setter raises (DOMException)*/;
 
-    // Extensions
+        [Custom] void open();
+        void close();
+        [Custom] void write(in DOMString text);
+        [Custom] void writeln(in DOMString text);
+        NodeList getElementsByName(in DOMString elementName);
 
-#if defined(LANGUAGE_JAVASCRIPT) && LANGUAGE_JAVASCRIPT
-    // FIXME: This should eventually be available (if they are wanted) for all languages.
-    [Custom, Replaceable, Deletable] readonly attribute HTMLAllCollection all;
+        // Extensions
+        Element getElementById(in DOMString elementId);
+
+        readonly attribute HTMLCollection embeds;
+        readonly attribute HTMLCollection plugins;
+        readonly attribute HTMLCollection scripts;
+
+        readonly attribute DOMString lastModified;
+
+#if defined(LANGUAGE_JAVASCRIPT)
+        // FIXME: These should eventually be available (if they are wanted) for all languages.
+
+                 attribute [Custom, Deletable] HTMLCollection all;
+
+                 attribute [Custom] Location location;
+
+        [Custom] void clear();
 #endif
 
-    void clear();
+        void captureEvents();
+        void releaseEvents();
 
-    void captureEvents();
-    void releaseEvents();
+        readonly attribute long width;
+        readonly attribute long height;
+                 attribute [ConvertNullToNullString] DOMString dir;
+                 attribute [ConvertNullToNullString] DOMString designMode;
 
-    readonly attribute long width;
-    readonly attribute long height;
-             [TreatNullAs=NullString] attribute DOMString dir;
-             [TreatNullAs=NullString] attribute DOMString designMode;
-    readonly attribute DOMString compatMode;
+        // Deprecated attributes
+                 attribute [ConvertNullToNullString] DOMString bgColor;
+                 attribute [ConvertNullToNullString] DOMString fgColor;
+                 attribute [ConvertNullToNullString] DOMString alinkColor;
+                 attribute [ConvertNullToNullString] DOMString linkColor;
+                 attribute [ConvertNullToNullString] DOMString vlinkColor;
+    };
 
-    readonly attribute Element activeElement;
-    boolean hasFocus();
-
-    // Deprecated attributes
-             [TreatNullAs=NullString] attribute DOMString bgColor;
-             [TreatNullAs=NullString] attribute DOMString fgColor;
-             [TreatNullAs=NullString] attribute DOMString alinkColor;
-             [TreatNullAs=NullString] attribute DOMString linkColor;
-             [TreatNullAs=NullString] attribute DOMString vlinkColor;
-};
-
+}

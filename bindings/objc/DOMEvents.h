@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006, 2008 Apple Computer, Inc.  All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.  All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -37,14 +37,8 @@
 #import <WebCore/DOMMouseEvent.h>
 #import <WebCore/DOMMutationEvent.h>
 #import <WebCore/DOMOverflowEvent.h>
-#import <WebCore/DOMProgressEvent.h>
 #import <WebCore/DOMUIEvent.h>
 #import <WebCore/DOMWheelEvent.h>
 
-#if ENABLE(TOUCH_EVENTS)
-#import <WebCore/DOMTouchEvent.h>
-#endif
-
-#if ENABLE(IOS_GESTURE_EVENTS)
-#import <WebCore/DOMGestureEvent.h>
-#endif
+@interface DOMNode (DOMEventTarget) <DOMEventTarget>
+@end

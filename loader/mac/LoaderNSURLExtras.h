@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2006, 2012 Apple Computer, Inc.  All rights reserved.
+ * Copyright (C) 2005, 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,10 +28,23 @@
 
 #import <Foundation/Foundation.h>
 
-namespace WTF {
-class String;
-}
-
+#ifdef __cplusplus
 extern "C" {
-NSString *suggestedFilenameWithMIMEType(NSURL *, const WTF::String& MIMEType);
+#endif
+
+NSURL *urlByRemovingComponent(NSURL *url, CFURLComponentType component);
+NSURL *urlByRemovingFragment(NSURL *url);
+NSString *urlOriginalDataAsString(NSURL *url);
+NSData *urlOriginalData(NSURL *url);
+NSURL *urlWithData(NSData *data);
+NSURL *urlWithDataRelativeToURL(NSData *data, NSURL *baseURL);
+NSURL *urlByRemovingResourceSpecifier(NSURL *url);
+BOOL urlIsFileURL(NSURL *url);
+BOOL stringIsFileURL(NSString *urlString);
+BOOL urlIsEmpty(NSURL *url);
+NSURL *canonicalURL(NSURL *url);
+NSString *suggestedFilenameWithMIMEType(NSURL *url, NSString *MIMEType);
+
+#ifdef __cplusplus
 }
+#endif

@@ -27,13 +27,9 @@
 #include "config.h"
 #include "FloatPoint.h"
 
-#if USE(CG)
+#if PLATFORM(CG)
 
-#if !PLATFORM(IOS)
 #include <ApplicationServices/ApplicationServices.h>
-#else
-#include <CoreGraphics/CoreGraphics.h>
-#endif
 
 namespace WebCore {
 
@@ -48,4 +44,4 @@ FloatPoint::operator CGPoint() const
 
 }
 
-#endif // USE(CG)
+#endif // PLATFORM(CG)

@@ -1,6 +1,8 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,42 +24,14 @@
 #define Counter_h
 
 #include "CSSPrimitiveValue.h"
-#include <wtf/text/WTFString.h>
+#include "PlatformString.h"
+#include "Shared.h"
+#include <wtf/PassRefPtr.h>
 
 namespace WebCore {
 
-class Counter : public RefCounted<Counter> {
+class Counter : public Shared<Counter> {
 public:
-    static PassRefPtr<Counter> create(PassRefPtr<CSSPrimitiveValue> identifier, PassRefPtr<CSSPrimitiveValue> listStyle, PassRefPtr<CSSPrimitiveValue> separator)
-    {
-        return adoptRef(new Counter(identifier, listStyle, separator));
-    }
-
-    String identifier() const { return m_identifier ? m_identifier->getStringValue() : String(); }
-    String listStyle() const { return m_listStyle ? m_listStyle->getStringValue() : String(); }
-    String separator() const { return m_separator ? m_separator->getStringValue() : String(); }
-
-    int listStyleIdent() const { return m_listStyle ? m_listStyle->getIdent() : 0; }
-
-    void setIdentifier(PassRefPtr<CSSPrimitiveValue> identifier) { m_identifier = identifier; }
-    void setListStyle(PassRefPtr<CSSPrimitiveValue> listStyle) { m_listStyle = listStyle; }
-    void setSeparator(PassRefPtr<CSSPrimitiveValue> separator) { m_separator = separator; }
-
-    bool equals(const Counter& other) const
-    {
-        return identifier() == other.identifier()
-            && listStyle() == other.listStyle()
-            && separator() == other.separator();
-    }
-    
-    PassRefPtr<Counter> cloneForCSSOM() const
-    {
-        return create(m_identifier ? m_identifier->cloneForCSSOM() : 0
-            , m_listStyle ? m_listStyle->cloneForCSSOM() : 0
-            , m_separator ? m_separator->cloneForCSSOM() : 0);
-    }
-
-private:
     Counter(PassRefPtr<CSSPrimitiveValue> identifier, PassRefPtr<CSSPrimitiveValue> listStyle, PassRefPtr<CSSPrimitiveValue> separator)
         : m_identifier(identifier)
         , m_listStyle(listStyle)
@@ -65,9 +39,20 @@ private:
     {
     }
 
-    RefPtr<CSSPrimitiveValue> m_identifier; // string
-    RefPtr<CSSPrimitiveValue> m_listStyle; // ident
-    RefPtr<CSSPrimitiveValue> m_separator; // string
+    String identifier() const { return m_identifier ? m_identifier->getStringValue() : String(); }
+    String listStyle() const { return m_listStyle ? m_listStyle->getStringValue() : String(); }
+    String separator() const { return m_separator ? m_separator->getStringValue() : String(); }
+
+    int listStyleNumber() const { return m_listStyle ? m_listStyle->getIntValue() : 0; }
+
+    void setIdentifier(PassRefPtr<CSSPrimitiveValue> identifier) { m_identifier = identifier; }
+    void setListStyle(PassRefPtr<CSSPrimitiveValue> listStyle) { m_listStyle = listStyle; }
+    void setSeparator(PassRefPtr<CSSPrimitiveValue> separator) { m_separator = separator; }
+
+protected:
+    RefPtr<CSSPrimitiveValue> m_identifier; // String
+    RefPtr<CSSPrimitiveValue> m_listStyle;  // int
+    RefPtr<CSSPrimitiveValue> m_separator;  // String
 };
 
 } // namespace WebCore

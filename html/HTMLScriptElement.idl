@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -17,15 +17,15 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLScriptElement : HTMLElement {
-    [TreatNullAs=NullString] attribute DOMString text;
-    [Reflect=for] attribute DOMString htmlFor;
-    [Reflect] attribute DOMString event;
-    [Reflect] attribute DOMString charset;
-    attribute boolean async;
-    [Reflect] attribute boolean defer;
-    [Reflect, URL] attribute DOMString src;
-    [Reflect] attribute DOMString type;
-    [Reflect] attribute DOMString crossOrigin;
-    [Reflect, Conditional=CSP_NEXT] attribute DOMString nonce;
-};
+module html {
+
+    interface [GenerateConstructor] HTMLScriptElement : HTMLElement {
+        attribute [ConvertNullToNullString] DOMString text;
+        attribute [ConvertNullToNullString] DOMString htmlFor;
+        attribute [ConvertNullToNullString] DOMString event;
+        attribute [ConvertNullToNullString] DOMString charset;
+        attribute boolean defer;
+        attribute [ConvertNullToNullString] DOMString src;
+        attribute [ConvertNullToNullString] DOMString type;
+    };
+}

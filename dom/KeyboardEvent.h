@@ -2,7 +2,7 @@
  * Copyright (C) 2001 Peter Kelly (pmk@post.com)
  * Copyright (C) 2001 Tobias Anton (anton@stud.fbi.fh-darmstadt.de)
  * Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,125 +24,76 @@
 #ifndef KeyboardEvent_h
 #define KeyboardEvent_h
 
-#include "EventDispatchMediator.h"
 #include "UIEventWithKeyState.h"
 #include <wtf/Vector.h>
 
 namespace WebCore {
 
-class EventDispatcher;
-class Node;
-class PlatformKeyboardEvent;
+    class PlatformKeyboardEvent;
 
 #if PLATFORM(MAC)
-struct KeypressCommand {
-    KeypressCommand() { }
-    explicit KeypressCommand(const String& commandName) : commandName(commandName) { ASSERT(isASCIILower(commandName[0U])); }
-    KeypressCommand(const String& commandName, const String& text) : commandName(commandName), text(text) { ASSERT(commandName == "insertText:"); }
-
-    String commandName; // Actually, a selector name - it may have a trailing colon, and a name that can be different from an editor command name.
-    String text;
-};
-#endif
-
-struct KeyboardEventInit : public UIEventInit {
-    KeyboardEventInit();
-
-    String keyIdentifier;
-    unsigned keyLocation;
-    bool ctrlKey;
-    bool altKey;
-    bool shiftKey;
-    bool metaKey;
-};
-
-class KeyboardEvent : public UIEventWithKeyState {
-public:
-    enum KeyLocationCode {
-        DOMKeyLocationStandard      = 0x00,
-        DOMKeyLocationLeft          = 0x01,
-        DOMKeyLocationRight         = 0x02,
-        DOMKeyLocationNumpad        = 0x03
-    };
+    struct KeypressCommand {
+        Vector<String> commandNames;
+        String text;
         
-    static PassRefPtr<KeyboardEvent> create()
-    {
-        return adoptRef(new KeyboardEvent);
-    }
-
-    static PassRefPtr<KeyboardEvent> create(const PlatformKeyboardEvent& platformEvent, AbstractView* view)
-    {
-        return adoptRef(new KeyboardEvent(platformEvent, view));
-    }
-
-    static PassRefPtr<KeyboardEvent> create(const AtomicString& type, const KeyboardEventInit& initializer)
-    {
-        return adoptRef(new KeyboardEvent(type, initializer));
-    }
-
-    static PassRefPtr<KeyboardEvent> create(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view,
-        const String& keyIdentifier, unsigned keyLocation,
-        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool altGraphKey)
-    {
-        return adoptRef(new KeyboardEvent(type, canBubble, cancelable, view, keyIdentifier, keyLocation,
-        ctrlKey, altKey, shiftKey, metaKey, altGraphKey));
-    }
-
-    virtual ~KeyboardEvent();
+        bool isEmpty() const { return text.isEmpty() && commandNames.isEmpty(); }
+    };
+#endif
     
-    void initKeyboardEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView*,
-        const String& keyIdentifier, unsigned keyLocation,
-        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool altGraphKey = false);
+    // Introduced in DOM Level 3
+    class KeyboardEvent : public UIEventWithKeyState {
+    public:
+        enum KeyLocationCode {
+            DOM_KEY_LOCATION_STANDARD      = 0x00,
+            DOM_KEY_LOCATION_LEFT          = 0x01,
+            DOM_KEY_LOCATION_RIGHT         = 0x02,
+            DOM_KEY_LOCATION_NUMPAD        = 0x03
+        };
+        
+        KeyboardEvent();
+        KeyboardEvent(const PlatformKeyboardEvent&, AbstractView*);
+        KeyboardEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView*,
+                      const String& keyIdentifier, unsigned keyLocation,
+                      bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool altGraphKey);
+        virtual ~KeyboardEvent();
     
-    const String& keyIdentifier() const { return m_keyIdentifier; }
-    unsigned keyLocation() const { return m_keyLocation; }
-
-    bool getModifierState(const String& keyIdentifier) const;
-
-    bool altGraphKey() const { return m_altGraphKey; }
+        void initKeyboardEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView*,
+                               const String& keyIdentifier, unsigned keyLocation,
+                               bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool altGraphKey = false);
     
-    const PlatformKeyboardEvent* keyEvent() const { return m_keyEvent.get(); }
+        String keyIdentifier() const { return m_keyIdentifier; }
+        unsigned keyLocation() const { return m_keyLocation; }
 
-    int keyCode() const; // key code for keydown and keyup, character for keypress
-    int charCode() const; // character code for keypress, 0 for keydown and keyup
+        bool getModifierState(const String& keyIdentifier) const;
 
-    virtual const AtomicString& interfaceName() const;
-    virtual bool isKeyboardEvent() const;
-    virtual int which() const;
+        bool altGraphKey() const { return m_altGraphKey; }
+    
+        const PlatformKeyboardEvent* keyEvent() const { return m_keyEvent; }
+
+        int keyCode() const; // key code for keydown and keyup, character for other events
+        int charCode() const;
+    
+        virtual bool isKeyboardEvent() const;
+        virtual int which() const;
 
 #if PLATFORM(MAC)
-    // We only have this need to store keypress command info on the Mac.
-    Vector<KeypressCommand>& keypressCommands() { return m_keypressCommands; }
+        // We only have this need to store keypress command info on the Mac.
+        KeypressCommand keypressCommand() { return m_keypressCommand; }
+        void setKeypressCommand(const KeypressCommand& command) { m_keypressCommand = command; }        
 #endif
 
-private:
-    KeyboardEvent();
-    KeyboardEvent(const PlatformKeyboardEvent&, AbstractView*);
-    KeyboardEvent(const AtomicString&, const KeyboardEventInit&);
-    KeyboardEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView*,
-        const String& keyIdentifier, unsigned keyLocation,
-        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool altGraphKey);
+    private:
+        PlatformKeyboardEvent* m_keyEvent;
+        String m_keyIdentifier;
+        unsigned m_keyLocation;
+        bool m_altGraphKey : 1;
 
-    OwnPtr<PlatformKeyboardEvent> m_keyEvent;
-    String m_keyIdentifier;
-    unsigned m_keyLocation;
-    bool m_altGraphKey : 1;
-
-#if PLATFORM(MAC)
-    // Commands that were sent by AppKit when interpreting the event. Doesn't include input method commands.
-    Vector<KeypressCommand> m_keypressCommands;
+#if PLATFORM(MAC)        
+        KeypressCommand m_keypressCommand;
 #endif
-};
+    };
 
-KeyboardEvent* findKeyboardEvent(Event*);
-
-class KeyboardEventDispatchMediator : public EventDispatchMediator {
-public:
-    static PassRefPtr<KeyboardEventDispatchMediator> create(PassRefPtr<KeyboardEvent>);
-private:
-    explicit KeyboardEventDispatchMediator(PassRefPtr<KeyboardEvent>);
-    virtual bool dispatchEvent(EventDispatcher*) const OVERRIDE;
-};
+    KeyboardEvent* findKeyboardEvent(Event*);
 
 } // namespace WebCore
 

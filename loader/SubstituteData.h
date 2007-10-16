@@ -1,3 +1,4 @@
+// -*- mode: c++; c-basic-offset: 4 -*-
 /*
  * Copyright (C) 2007 Apple Inc.  All rights reserved.
  *
@@ -28,6 +29,7 @@
 
 #include "KURL.h"
 #include "SharedBuffer.h"
+#include "PlatformString.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
 

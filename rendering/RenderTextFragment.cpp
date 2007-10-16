@@ -23,13 +23,12 @@
 #include "config.h"
 #include "RenderTextFragment.h"
 
-#include "RenderBlock.h"
 #include "Text.h"
 
 namespace WebCore {
 
 RenderTextFragment::RenderTextFragment(Node* node, StringImpl* str, int startOffset, int length)
-    : RenderText(node, str ? str->substring(startOffset, length) : PassRefPtr<StringImpl>(0))
+    : RenderText(node, str ? str->substring(startOffset, length) : 0)
     , m_start(startOffset)
     , m_end(length)
     , m_firstLetter(0)
@@ -45,81 +44,44 @@ RenderTextFragment::RenderTextFragment(Node* node, StringImpl* str)
 {
 }
 
-RenderTextFragment::~RenderTextFragment()
-{
-}
-
 PassRefPtr<StringImpl> RenderTextFragment::originalText() const
 {
-    Node* e = node();
-    RefPtr<StringImpl> result = ((e && e->isTextNode()) ? toText(e)->dataImpl() : contentString());
-    if (!result)
-        return 0;
-    return result->substring(start(), end());
+    Node* e = element();
+    StringImpl* result = (e ? static_cast<Text*>(e)->string() : contentString());
+    if (result && (start() > 0 || start() < result->length()))
+        result = result->substring(start(), end());
+    return result;
 }
 
-void RenderTextFragment::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
-{
-    RenderText::styleDidChange(diff, oldStyle);
-
-    if (RenderBlock* block = blockForAccompanyingFirstLetter()) {
-        block->style()->removeCachedPseudoStyle(FIRST_LETTER);
-        block->updateFirstLetter();
-    }
-}
-
-void RenderTextFragment::willBeDestroyed()
+void RenderTextFragment::destroy()
 {
     if (m_firstLetter)
         m_firstLetter->destroy();
-    RenderText::willBeDestroyed();
+    RenderText::destroy();
 }
 
-void RenderTextFragment::setText(PassRefPtr<StringImpl> text, bool force)
+void RenderTextFragment::setTextInternal(PassRefPtr<StringImpl> text)
 {
-    RenderText::setText(text, force);
-
-    m_start = 0;
-    m_end = textLength();
+    RenderText::setTextInternal(text);
     if (m_firstLetter) {
         ASSERT(!m_contentString);
         m_firstLetter->destroy();
         m_firstLetter = 0;
-        if (Node* t = node()) {
-            ASSERT(!t->renderer());
-            t->setRenderer(this);
-        }
+        m_start = 0;
+        m_end = textLength();
     }
 }
 
-void RenderTextFragment::transformText()
-{
-    // Don't reset first-letter here because we are only transforming the truncated fragment.
-    if (RefPtr<StringImpl> textToTransform = originalText())
-        RenderText::setText(textToTransform.release(), true);
-}
-
-UChar RenderTextFragment::previousCharacter() const
+UChar RenderTextFragment::previousCharacter()
 {
     if (start()) {
-        Node* e = node();
-        StringImpl* original = ((e && e->isTextNode()) ? toText(e)->dataImpl() : contentString());
-        if (original && start() <= original->length())
+        Node* e = element();
+        StringImpl*  original = (e ? static_cast<Text*>(e)->string() : contentString());
+        if (original)
             return (*original)[start() - 1];
     }
 
     return RenderText::previousCharacter();
-}
-
-RenderBlock* RenderTextFragment::blockForAccompanyingFirstLetter() const
-{
-    if (!m_firstLetter)
-        return 0;
-    for (RenderObject* block = m_firstLetter->parent(); block; block = block->parent()) {
-        if (block->style()->hasPseudoStyle(FIRST_LETTER) && block->canHaveChildren() && block->isRenderBlock())
-            return toRenderBlock(block);
-    }
-    return 0;
 }
 
 } // namespace WebCore

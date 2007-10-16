@@ -28,47 +28,30 @@
 #define Image_h
 
 #include "Color.h"
-#include "ColorSpace.h"
 #include "GraphicsTypes.h"
-#include "ImageOrientation.h"
-#include "IntRect.h"
-#include "NativeImagePtr.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
+#include "ImageSource.h"
 #include <wtf/RefPtr.h>
-#include <wtf/RetainPtr.h>
-#include <wtf/text/WTFString.h>
+#include <wtf/PassRefPtr.h>
+#include "SharedBuffer.h"
 
 #if PLATFORM(MAC)
-OBJC_CLASS NSImage;
+#ifdef __OBJC__
+@class NSImage;
+#else
+class NSImage;
+#endif
 #endif
 
-#if USE(CG)
+#if PLATFORM(CG)
 struct CGContext;
 #endif
 
 #if PLATFORM(WIN)
-typedef struct tagSIZE SIZE;
-typedef SIZE* LPSIZE;
 typedef struct HBITMAP__ *HBITMAP;
 #endif
 
 #if PLATFORM(QT)
 #include <QPixmap>
-#endif
-
-#if PLATFORM(GTK)
-typedef struct _GdkPixbuf GdkPixbuf;
-#endif
-
-#if PLATFORM(EFL)
-#if USE(EO)
-typedef struct _Eo Evas;
-typedef struct _Eo Evas_Object;
-#else
-typedef struct _Evas Evas;
-typedef struct _Evas_Object Evas_Object;
-#endif
 #endif
 
 namespace WebCore {
@@ -78,71 +61,50 @@ class FloatPoint;
 class FloatRect;
 class FloatSize;
 class GraphicsContext;
+class IntRect;
+class IntSize;
 class SharedBuffer;
-struct Length;
+class String;
 
 // This class gets notified when an image creates or destroys decoded frames and when it advances animation frames.
 class ImageObserver;
 
-class Image : public RefCounted<Image> {
-    friend class GeneratedImage;
-    friend class CrossfadeGeneratedImage;
-    friend class GeneratorGeneratedImage;
+class Image : Noncopyable {
     friend class GraphicsContext;
-
 public:
+    Image(ImageObserver* = 0);
     virtual ~Image();
     
-    static PassRefPtr<Image> create(ImageObserver* = 0);
-    static PassRefPtr<Image> loadPlatformResource(const char* name);
+    static Image* loadPlatformResource(const char* name);
     static bool supportsType(const String&); 
 
-    virtual bool isSVGImage() const { return false; }
-    virtual bool isBitmapImage() const { return false; }
-    virtual bool currentFrameKnownToBeOpaque() = 0;
-
-    // Derived classes should override this if they can assure that 
-    // the image contains only resources from its own security origin.
-    virtual bool hasSingleSecurityOrigin() const { return false; }
-
-    static Image* nullImage();
-    bool isNull() const { return size().isEmpty(); }
-
-    virtual void setContainerSize(const IntSize&) { }
-    virtual bool usesContainerSize() const { return false; }
-    virtual bool hasRelativeWidth() const { return false; }
-    virtual bool hasRelativeHeight() const { return false; }
-    virtual void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio);
+    bool isNull() const;
 
     virtual IntSize size() const = 0;
-    IntRect rect() const { return IntRect(IntPoint(), size()); }
-    int width() const { return size().width(); }
-    int height() const { return size().height(); }
-    virtual bool getHotSpot(IntPoint&) const { return false; }
+    IntRect rect() const;
+    int width() const;
+    int height() const;
 
     bool setData(PassRefPtr<SharedBuffer> data, bool allDataReceived);
-    virtual bool dataChanged(bool /*allDataReceived*/) { return false; }
+    virtual bool dataChanged(bool allDataReceived) { return false; }
     
-    virtual String filenameExtension() const { return String(); } // null string if unknown
+    // FIXME: PDF/SVG will be underreporting decoded sizes and will be unable to prune because these functions are not
+    // implemented yet for those image types.
+    virtual void destroyDecodedData(bool incremental = false) {};
+    virtual unsigned decodedSize() const { return 0; }
 
-    virtual void destroyDecodedData(bool destroyAll = true) = 0;
-    virtual unsigned decodedSize() const = 0;
+    SharedBuffer* data() { return m_data.get(); }
 
-    SharedBuffer* data() { return m_encodedImageData.get(); }
-
-    // Animation begins whenever someone draws the image, so startAnimation() is not normally called.
-    // It will automatically pause once all observers no longer want to render the image anywhere.
-    virtual void startAnimation(bool /*catchUpIfNecessary*/ = true) { }
+    // It may look unusual that there is no start animation call as public API.  This is because
+    // we start and stop animating lazily.  Animation begins whenever someone draws the image.  It will
+    // automatically pause once all observers no longer want to render the image anywhere.
     virtual void stopAnimation() {}
     virtual void resetAnimation() {}
     
     // Typically the CachedImage that owns us.
     ImageObserver* imageObserver() const { return m_imageObserver; }
-    void setImageObserver(ImageObserver* observer) { m_imageObserver = observer; }
 
-    enum TileRule { StretchTile, RoundTile, SpaceTile, RepeatTile };
-
-    virtual PassNativeImagePtr nativeImageForCurrentFrame() { return 0; }
+    enum TileRule { StretchTile, RoundTile, RepeatTile };
     
 #if PLATFORM(MAC)
     // Accessors for native image formats.
@@ -150,63 +112,48 @@ public:
     virtual CFDataRef getTIFFRepresentation() { return 0; }
 #endif
 
-#if USE(CG)
+#if PLATFORM(CG)
     virtual CGImageRef getCGImageRef() { return 0; }
-    virtual CGImageRef getFirstCGImageRefOfSize(const IntSize&) { return 0; }
-    virtual RetainPtr<CFArrayRef> getCGImageArray() { return 0; }
-    static RetainPtr<CGImageRef> imageWithColorSpace(CGImageRef originalImage, ColorSpace);
+#endif
+
+#if PLATFORM(QT)
+    virtual QPixmap* getPixmap() const { return 0; }
 #endif
 
 #if PLATFORM(WIN)
     virtual bool getHBITMAP(HBITMAP) { return false; }
     virtual bool getHBITMAPOfSize(HBITMAP, LPSIZE) { return false; }
 #endif
-    
-#if PLATFORM(GTK)
-    virtual GdkPixbuf* getGdkPixbuf() { return 0; }
-    static PassRefPtr<Image> loadPlatformThemeIcon(const char* name, int size);
-#endif
-
-#if PLATFORM(QT)
-    static void setPlatformResource(const char* name, const QPixmap&);
-#endif
-
-#if PLATFORM(EFL)
-    virtual Evas_Object* getEvasObject(Evas*) { return 0; }
-#endif
-
-    virtual void drawPattern(GraphicsContext*, const FloatRect& srcRect, const AffineTransform& patternTransform,
-        const FloatPoint& phase, ColorSpace styleColorSpace, CompositeOperator, const FloatRect& destRect, BlendMode = BlendModeNormal);
-
-#if ENABLE(IMAGE_DECODER_DOWN_SAMPLING)
-    FloatRect adjustSourceRectForDownSampling(const FloatRect& srcRect, const IntSize& scaledSize) const;
-#endif
-
-#if !ASSERT_DISABLED
-    virtual bool notSolidColor() { return true; }
-#endif
 
 protected:
-    Image(ImageObserver* = 0);
+    static void fillWithSolidColor(GraphicsContext* ctxt, const FloatRect& dstRect, const Color& color, CompositeOperator op);
 
-    static void fillWithSolidColor(GraphicsContext*, const FloatRect& dstRect, const Color&, ColorSpace styleColorSpace, CompositeOperator);
-
-    // The ColorSpace parameter will only be used for untagged images.
+private:
 #if PLATFORM(WIN)
-    virtual void drawFrameMatchingSourceSize(GraphicsContext*, const FloatRect& dstRect, const IntSize& srcSize, ColorSpace styleColorSpace, CompositeOperator) { }
+    virtual void drawFrameMatchingSourceSize(GraphicsContext*, const FloatRect& dstRect, const IntSize& srcSize, CompositeOperator) { }
 #endif
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator, BlendMode) = 0;
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator, BlendMode, RespectImageOrientationEnum);
-    void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatPoint& srcPoint, const FloatSize& tileSize, ColorSpace styleColorSpace,
-        CompositeOperator , BlendMode);
-    void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, ColorSpace styleColorSpace, CompositeOperator);
+    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator) = 0;
+    void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatPoint& srcPoint, const FloatSize& tileSize, CompositeOperator);
+    void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, TileRule hRule, TileRule vRule, CompositeOperator);
 
     // Supporting tiled drawing
-    virtual bool mayFillWithSolidColor() { return false; }
+    virtual bool mayFillWithSolidColor() const { return false; }
     virtual Color solidColor() const { return Color(); }
     
-private:
-    RefPtr<SharedBuffer> m_encodedImageData;
+    virtual NativeImagePtr nativeImageForCurrentFrame() { return 0; }
+    
+    virtual void startAnimation() { }
+    
+    virtual void drawPattern(GraphicsContext*, const FloatRect& srcRect, const AffineTransform& patternTransform,
+                             const FloatPoint& phase, CompositeOperator, const FloatRect& destRect);
+#if PLATFORM(CG)
+    // These are private to CG.  Ideally they would be only in the .cpp file, but the callback requires access
+    // to the private function nativeImageForCurrentFrame()
+    static void drawPatternCallback(void* info, CGContext*);
+#endif
+    
+protected:
+    RefPtr<SharedBuffer> m_data; // The encoded raw data for the image. 
     ImageObserver* m_imageObserver;
 };
 

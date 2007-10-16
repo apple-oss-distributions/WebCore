@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * (C) 2002-2003 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2002, 2006, 2008, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2002, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -28,12 +30,14 @@ namespace WebCore {
 
 class CSSUnknownRule : public CSSRule {
 public:
-    CSSUnknownRule() : CSSRule(0) { }
-    virtual ~CSSUnknownRule() { }
+    CSSUnknownRule(StyleBase* parent)
+        : CSSRule(parent)
+    {
+    }
 
-    virtual CSSRule::Type type() const OVERRIDE { return UNKNOWN_RULE; }
-    virtual String cssText() const OVERRIDE { return String(); }
-    virtual void reattach(StyleRuleBase*) OVERRIDE { }
+    virtual bool isUnknownRule() { return true; }
+
+    virtual unsigned short type() const { return UNKNOWN_RULE; }
 };
 
 } // namespace WebCore

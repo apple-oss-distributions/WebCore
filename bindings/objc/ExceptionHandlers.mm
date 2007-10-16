@@ -26,12 +26,16 @@
 #include "config.h"
 #include "ExceptionHandlers.h"
 
-#include "ExceptionCode.h"
+#include "Event.h"
+#include "RangeException.h"
+#include "SVGException.h"
+#include "XPathEvaluator.h"
 
-NSString *DOMException = @"DOMException";
-NSString *DOMRangeException = @"DOMRangeException";
-NSString *DOMEventException = @"DOMEventException";
-NSString *DOMXPathException = @"DOMXPathException";
+NSString * DOMException = @"DOMException";
+NSString * DOMRangeException = @"DOMRangeException";
+NSString * DOMEventException = @"DOMEventException";
+NSString * DOMSVGException = @"DOMSVGException";
+NSString * DOMXPathException = @"DOMXPathException";
 
 namespace WebCore {
 
@@ -39,32 +43,30 @@ void raiseDOMException(ExceptionCode ec)
 {
     ASSERT(ec);
 
-    ExceptionCodeDescription description(ec);
+    NSString *name = DOMException;
 
-    NSString *exceptionName;
-    // FIXME: We can use the enum to do these comparisons faster.
-    if (strcmp(description.typeName, "DOM Range") == 0)
-        exceptionName = DOMRangeException;
-    else if (strcmp(description.typeName, "DOM Events") == 0)
-        exceptionName = DOMEventException;
-    else if (strcmp(description.typeName, "DOM XPath") == 0)
-        exceptionName = DOMXPathException;
-    else
-        exceptionName = DOMException;
+    int code = ec;
+    if (ec >= RangeExceptionOffset && ec <= RangeExceptionMax) {
+        name = DOMRangeException;
+        code -= RangeExceptionOffset;
+    } else if (ec >= EventExceptionOffset && ec <= EventExceptionMax) {
+        name = DOMEventException;
+        code -= EventExceptionOffset;
+#if ENABLE(SVG)
+    } else if (ec >= SVGExceptionOffset && ec <= SVGExceptionMax) {
+        name = DOMSVGException;
+        code -= SVGExceptionOffset;
+#endif
+#if ENABLE(XPATH)
+    } else if (ec >= XPathExceptionOffset && ec <= XPathExceptionMax) {
+        name = DOMXPathException;
+        code -= XPathExceptionOffset;
+#endif
+    }
 
-    NSString *reason;
-    if (description.name)
-        reason = [[NSString alloc] initWithFormat:@"*** %s: %@ %d", description.name, exceptionName, description.code];
-    else
-        reason = [[NSString alloc] initWithFormat:@"*** %@ %d", exceptionName, description.code];
-
-    NSDictionary *userInfo = [[NSDictionary alloc] initWithObjectsAndKeys:[NSNumber numberWithInt:description.code], exceptionName, nil];
-
-    NSException *exception = [NSException exceptionWithName:exceptionName reason:reason userInfo:userInfo];
-
-    [reason release];
-    [userInfo release];
-
+    NSString *reason = [NSString stringWithFormat:@"*** Exception received from DOM API: %d", code];
+    NSException *exception = [NSException exceptionWithName:name reason:reason
+        userInfo:[NSDictionary dictionaryWithObject:[NSNumber numberWithInt:code] forKey:name]];
     [exception raise];
 }
 

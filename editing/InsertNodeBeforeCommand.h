@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2005, 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,27 +30,19 @@
 
 namespace WebCore {
 
-class InsertNodeBeforeCommand : public SimpleEditCommand {
+class InsertNodeBeforeCommand : public EditCommand {
 public:
-    static PassRefPtr<InsertNodeBeforeCommand> create(PassRefPtr<Node> childToInsert, PassRefPtr<Node> childToInsertBefore,
-        ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
-    {
-        return adoptRef(new InsertNodeBeforeCommand(childToInsert, childToInsertBefore, shouldAssumeContentIsAlwaysEditable));
-    }
+    InsertNodeBeforeCommand(PassRefPtr<Node>, Node* refChild);
+
+    virtual void doApply();
+    virtual void doUnapply();
+
+    Node* insertChild() const { return m_insertChild.get(); }
+    Node* refChild() const { return m_refChild.get(); }
 
 private:
-    InsertNodeBeforeCommand(PassRefPtr<Node> childToInsert, PassRefPtr<Node> childToInsertBefore, ShouldAssumeContentIsAlwaysEditable);
-
-    virtual void doApply() OVERRIDE;
-    virtual void doUnapply() OVERRIDE;
-    
-#ifndef NDEBUG
-    virtual void getNodesInCommand(HashSet<Node*>&) OVERRIDE;
-#endif
-    
     RefPtr<Node> m_insertChild;
-    RefPtr<Node> m_refChild;
-    ShouldAssumeContentIsAlwaysEditable m_shouldAssumeContentIsAlwaysEditable;
+    RefPtr<Node> m_refChild; 
 };
 
 } // namespace WebCore

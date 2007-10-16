@@ -26,10 +26,13 @@
 #ifndef GraphicsTypes_h
 #define GraphicsTypes_h
 
-#include <wtf/Forward.h>
-
 namespace WebCore {
 
+    class String;
+
+    // Note: These constants exactly match the NSCompositeOperator constants of
+    // AppKit on Mac OS X. If that's ever changed, we'll need to change the Mac
+    // platform code to map one to the other.
     enum CompositeOperator {
         CompositeClear,
         CompositeCopy,
@@ -43,33 +46,8 @@ namespace WebCore {
         CompositeDestinationAtop,
         CompositeXOR,
         CompositePlusDarker,
-        CompositePlusLighter,
-        CompositeDifference
-    };
-
-    enum BlendMode {
-        BlendModeNormal,
-        BlendModeMultiply,
-        BlendModeScreen,
-        BlendModeOverlay,
-        BlendModeDarken,
-        BlendModeLighten,
-        BlendModeColorDodge,
-        BlendModeColorBurn,
-        BlendModeHardLight,
-        BlendModeSoftLight,
-        BlendModeDifference,
-        BlendModeExclusion,
-        BlendModeHue,
-        BlendModeSaturation,
-        BlendModeColor,
-        BlendModeLuminosity
-    };
-
-    enum GradientSpreadMethod {
-        SpreadMethodPad,
-        SpreadMethodReflect,
-        SpreadMethodRepeat
+        CompositeHighlight,
+        CompositePlusLighter
     };
 
     enum LineCap { ButtCap, RoundCap, SquareCap };
@@ -78,12 +56,8 @@ namespace WebCore {
 
     enum HorizontalAlignment { AlignLeft, AlignRight, AlignHCenter };
 
-    enum TextBaseline { AlphabeticTextBaseline, TopTextBaseline, MiddleTextBaseline, BottomTextBaseline, IdeographicTextBaseline, HangingTextBaseline };
-    
-    enum TextAlign { StartTextAlign, EndTextAlign, LeftTextAlign, CenterTextAlign, RightTextAlign };
-
-    String compositeOperatorName(CompositeOperator, BlendMode);
-    bool parseCompositeAndBlendOperator(const String&, CompositeOperator&, BlendMode&);
+    String compositeOperatorName(CompositeOperator);
+    bool parseCompositeOperator(const String&, CompositeOperator&);
 
     String lineCapName(LineCap);
     bool parseLineCap(const String&, LineCap&);
@@ -91,12 +65,6 @@ namespace WebCore {
     String lineJoinName(LineJoin);
     bool parseLineJoin(const String&, LineJoin&);
 
-    String textAlignName(TextAlign);
-    bool parseTextAlign(const String&, TextAlign&);
-    
-    String textBaselineName(TextBaseline);
-    bool parseTextBaseline(const String&, TextBaseline&);
-
-} // namespace WebCore
+}
 
 #endif

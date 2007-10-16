@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,188 +26,74 @@
 #ifndef Cursor_h
 #define Cursor_h
 
-#include "Image.h"
-#include "IntPoint.h"
-#include <wtf/Assertions.h>
-#include <wtf/RefPtr.h>
+#include <wtf/Platform.h>
 
 #if PLATFORM(WIN)
 typedef struct HICON__* HICON;
 typedef HICON HCURSOR;
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
-#elif PLATFORM(MAC)
-#include <wtf/RetainPtr.h>
+#include <Shared.h>
+#include <wtf/RefPtr.h>
 #elif PLATFORM(GTK)
-#include "GRefPtrGtk.h"
+#include <gdk/gdk.h>
 #elif PLATFORM(QT)
 #include <QCursor>
-#elif PLATFORM(BLACKBERRY)
-#include <BlackBerryPlatformCursor.h>
 #endif
 
-#if PLATFORM(MAC) && !PLATFORM(IOS)
-OBJC_CLASS NSCursor;
+#if PLATFORM(MAC)
+#ifdef __OBJC__
+@class NSCursor;
+#else
+class NSCursor;
 #endif
-
-#if PLATFORM(WIN)
-typedef struct HICON__ *HICON;
-typedef HICON HCURSOR;
-#endif
-
-// Looks like it's just PLATFORM(BLACKBERRY) still not using this?
-#if PLATFORM(WIN) || PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(EFL)
-#define WTF_USE_LAZY_NATIVE_CURSOR 1
 #endif
 
 namespace WebCore {
 
     class Image;
+    class IntPoint;
 
 #if PLATFORM(WIN)
-    class SharedCursor : public RefCounted<SharedCursor> {
+    class SharedCursor : public Shared<SharedCursor> {
     public:
-        static PassRefPtr<SharedCursor> create(HCURSOR nativeCursor) { return adoptRef(new SharedCursor(nativeCursor)); }
-        ~SharedCursor();
+        SharedCursor(HCURSOR nativeCursor) : m_nativeCursor(nativeCursor) {}
+        ~SharedCursor() {
+            DestroyIcon(m_nativeCursor);
+        }
         HCURSOR nativeCursor() const { return m_nativeCursor; }
     private:
-        SharedCursor(HCURSOR nativeCursor) : m_nativeCursor(nativeCursor) { }
         HCURSOR m_nativeCursor;
     };
     typedef RefPtr<SharedCursor> PlatformCursor;
-#elif PLATFORM(MAC) && !PLATFORM(IOS)
-    typedef NSCursor *PlatformCursor;
+#elif PLATFORM(MAC)
+    typedef NSCursor* PlatformCursor;
 #elif PLATFORM(GTK)
-    typedef GRefPtr<GdkCursor> PlatformCursor;
-#elif PLATFORM(EFL)
-    typedef const char* PlatformCursor;
+    typedef GdkCursor* PlatformCursor;
 #elif PLATFORM(QT) && !defined(QT_NO_CURSOR)
-    // Do not need to be shared but need to be created dynamically via ensurePlatformCursor.
-    typedef QCursor* PlatformCursor;
-#elif PLATFORM(BLACKBERRY)
-    typedef BlackBerry::Platform::BlackBerryCursor PlatformCursor;
+    typedef QCursor PlatformCursor;
 #else
     typedef void* PlatformCursor;
 #endif
 
     class Cursor {
-        WTF_MAKE_FAST_ALLOCATED;
     public:
-        enum Type {
-            Pointer = 0,
-            Cross,
-            Hand,
-            IBeam,
-            Wait,
-            Help,
-            EastResize,
-            NorthResize,
-            NorthEastResize,
-            NorthWestResize,
-            SouthResize,
-            SouthEastResize,
-            SouthWestResize,
-            WestResize,
-            NorthSouthResize,
-            EastWestResize,
-            NorthEastSouthWestResize,
-            NorthWestSouthEastResize,
-            ColumnResize,
-            RowResize,
-            MiddlePanning,
-            EastPanning,
-            NorthPanning,
-            NorthEastPanning,
-            NorthWestPanning,
-            SouthPanning,
-            SouthEastPanning,
-            SouthWestPanning,
-            WestPanning,
-            Move,
-            VerticalText,
-            Cell,
-            ContextMenu,
-            Alias,
-            Progress,
-            NoDrop,
-            Copy,
-            None,
-            NotAllowed,
-            ZoomIn,
-            ZoomOut,
-            Grab,
-            Grabbing,
-            Custom
-        };
-
-        static const Cursor& fromType(Cursor::Type);
-
         Cursor()
-#if !PLATFORM(IOS) && !PLATFORM(BLACKBERRY)
-#if USE(LAZY_NATIVE_CURSOR)
-            // This is an invalid Cursor and should never actually get used.
-            : m_type(static_cast<Type>(-1))
-            , m_platformCursor(0)
-#else
-            : m_platformCursor(0)
-#endif // USE(LAZY_NATIVE_CURSOR)
-#endif // !PLATFORM(IOS) && !PLATFORM(BLACKBERRY)
-        {
-        }
-
-#if !PLATFORM(IOS)
-        Cursor(Image*, const IntPoint& hotSpot);
-        Cursor(const Cursor&);
-
-#if ENABLE(MOUSE_CURSOR_SCALE)
-        // Hot spot is in image pixels.
-        Cursor(Image*, const IntPoint& hotSpot, float imageScaleFactor);
+#if !PLATFORM(QT)
+        : m_impl(0)
 #endif
+        { }
 
+        Cursor(Image*, const IntPoint& hotspot);
+        Cursor(const Cursor&);
         ~Cursor();
         Cursor& operator=(const Cursor&);
 
-#if USE(LAZY_NATIVE_CURSOR)
-        explicit Cursor(Type);
-        Type type() const
-        {
-            ASSERT(m_type >= 0 && m_type <= Custom);
-            return m_type;
-        }
-        Image* image() const { return m_image.get(); }
-        const IntPoint& hotSpot() const { return m_hotSpot; }
-#if ENABLE(MOUSE_CURSOR_SCALE)
-        // Image scale in image pixels per logical (UI) pixel.
-        float imageScaleFactor() const { return m_imageScaleFactor; }
-#endif
-        PlatformCursor platformCursor() const;
-#else
-        explicit Cursor(PlatformCursor);
-        PlatformCursor impl() const { return m_platformCursor; }
-#endif
+        Cursor(PlatformCursor);
+        PlatformCursor impl() const { return m_impl; }
 
      private:
-#if USE(LAZY_NATIVE_CURSOR)
-        void ensurePlatformCursor() const;
-
-        Type m_type;
-        RefPtr<Image> m_image;
-        IntPoint m_hotSpot;
-#if ENABLE(MOUSE_CURSOR_SCALE)
-        float m_imageScaleFactor;
-#endif
-#endif
-
-#if !PLATFORM(MAC)
-        mutable PlatformCursor m_platformCursor;
-#else
-        mutable RetainPtr<NSCursor> m_platformCursor;
-#endif
-#endif // !PLATFORM(IOS)
+        PlatformCursor m_impl;
     };
 
-    IntPoint determineHotSpot(Image*, const IntPoint& specifiedHotSpot);
-    
     const Cursor& pointerCursor();
     const Cursor& crossCursor();
     const Cursor& handCursor();
@@ -229,15 +115,6 @@ namespace WebCore {
     const Cursor& northWestSouthEastResizeCursor();
     const Cursor& columnResizeCursor();
     const Cursor& rowResizeCursor();
-    const Cursor& middlePanningCursor();
-    const Cursor& eastPanningCursor();
-    const Cursor& northPanningCursor();
-    const Cursor& northEastPanningCursor();
-    const Cursor& northWestPanningCursor();
-    const Cursor& southPanningCursor();
-    const Cursor& southEastPanningCursor();
-    const Cursor& southWestPanningCursor();
-    const Cursor& westPanningCursor();
     const Cursor& verticalTextCursor();
     const Cursor& cellCursor();
     const Cursor& contextMenuCursor();
@@ -249,8 +126,6 @@ namespace WebCore {
     const Cursor& zoomOutCursor();
     const Cursor& copyCursor();
     const Cursor& noneCursor();
-    const Cursor& grabCursor();
-    const Cursor& grabbingCursor();
 
 } // namespace WebCore
 

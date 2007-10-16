@@ -1,7 +1,8 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -27,16 +28,19 @@
 
 namespace WebCore {
 
-class HTMLParagraphElement FINAL : public HTMLElement {
+class HTMLParagraphElement : public HTMLElement {
 public:
-    static PassRefPtr<HTMLParagraphElement> create(Document*);
-    static PassRefPtr<HTMLParagraphElement> create(const QualifiedName&, Document*);
+    HTMLParagraphElement(Document*);
 
-private:
-    HTMLParagraphElement(const QualifiedName&, Document*);
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusOptional; }
+    virtual int tagPriority() const { return 3; }
+    virtual bool checkDTD(const Node* newChild);
 
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
+    virtual bool mapToEntry(const QualifiedName&, MappedAttributeEntry&) const;
+    virtual void parseMappedAttribute(MappedAttribute*);
+
+    String align() const;
+    void setAlign(const String&);
 };
 
 } // namespace WebCore

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -17,10 +17,11 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLHRElement : HTMLElement {
-    [Reflect] attribute DOMString align;
-    [Reflect] attribute boolean noShade;
-    [Reflect] attribute DOMString size;
-    [Reflect] attribute DOMString width;
-};
-
+module html {
+    interface [GenerateConstructor] HTMLHRElement : HTMLElement {
+        attribute [ConvertNullToNullString] DOMString align;
+        attribute boolean noShade;
+        attribute [ConvertNullToNullString] DOMString size;
+        attribute [ConvertNullToNullString] DOMString width;
+    };
+}

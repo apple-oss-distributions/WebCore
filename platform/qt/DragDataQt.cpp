@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -20,19 +20,18 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
 #include "config.h"
 #include "DragData.h"
 
+#include "ClipboardQt.h"
 #include "Document.h"
 #include "DocumentFragment.h"
-#include "Frame.h"
-#include "Range.h"
 #include "markup.h"
+#include "NotImplemented.h"
 
-#include <QColor>
 #include <QList>
 #include <QMimeData>
 #include <QUrl>
@@ -43,105 +42,74 @@ bool DragData::canSmartReplace() const
 {
     return false;
 }
-
+    
 bool DragData::containsColor() const
 {
-    if (!m_platformDragData)
-        return false;
-    return m_platformDragData->hasColor();
+    notImplemented();
+    return false;
 }
 
 bool DragData::containsFiles() const
 {
-    if (!m_platformDragData)
-        return false;
-    QList<QUrl> urls = m_platformDragData->urls();
-    foreach (const QUrl &url, urls) {
-        if (!url.toLocalFile().isEmpty())
-            return true;
-    }
+    notImplemented();
     return false;
-}
-
-unsigned DragData::numberOfFiles() const
-{
-    return 0;
 }
 
 void DragData::asFilenames(Vector<String>& result) const
 {
-    if (!m_platformDragData)
-        return;
-    QList<QUrl> urls = m_platformDragData->urls();
-    foreach (const QUrl &url, urls) {
-        QString file = url.toLocalFile();
-        if (!file.isEmpty())
-            result.append(file);
-    }
 }
 
 bool DragData::containsPlainText() const
 {
-    if (!m_platformDragData)
-        return false;
     return m_platformDragData->hasText() || m_platformDragData->hasUrls();
 }
 
-String DragData::asPlainText(Frame* frame) const
+String DragData::asPlainText() const
 {
-    if (!m_platformDragData)
-        return String();
     String text = m_platformDragData->text();
     if (!text.isEmpty())
         return text;
-
+    
     // FIXME: Should handle rich text here
-    return asURL(frame, DoNotConvertFilenames, 0);
+    
+    return asURL(0);
 }
-
+    
 Color DragData::asColor() const
 {
-    if (!m_platformDragData)
-        return Color();
-    return qvariant_cast<QColor>(m_platformDragData->colorData());
+    notImplemented();
+    return Color();
 }
 
+Clipboard* DragData::createClipboard(ClipboardAccessPolicy policy) const
+{
+    return new ClipboardQt(policy, m_platformDragData, true);
+}
+    
 bool DragData::containsCompatibleContent() const
 {
-    if (!m_platformDragData)
-        return false;
-    return containsColor() || containsURL(0) || m_platformDragData->hasHtml() || m_platformDragData->hasText();
+    return containsColor() || containsURL() || containsColor() || m_platformDragData->hasHtml() || m_platformDragData->hasText();
 }
-
-bool DragData::containsURL(Frame*, FilenameConversionPolicy filenamePolicy) const
+    
+bool DragData::containsURL() const
 {
-    // FIXME: Use filenamePolicy.
-    if (!m_platformDragData)
-        return false;
     return m_platformDragData->hasUrls();
 }
-
-String DragData::asURL(Frame*, FilenameConversionPolicy filenamePolicy, String*) const
+    
+String DragData::asURL(String* title) const
 {
-    // FIXME: Use filenamePolicy.
-    if (!m_platformDragData)
-        return String();
     QList<QUrl> urls = m_platformDragData->urls();
-
-    if (urls.isEmpty())
-        return String();
-
-    QByteArray encodedUrl = urls.first().toEncoded();
-    return String(encodedUrl.constData(), encodedUrl.length());
+    return urls.first().toString();
 }
-
-PassRefPtr<DocumentFragment> DragData::asFragment(Frame* frame, PassRefPtr<Range>, bool, bool&) const
+    
+    
+PassRefPtr<DocumentFragment> DragData::asFragment(Document* doc) const
 {
-    if (m_platformDragData && m_platformDragData->hasHtml())
-        return createFragmentFromMarkup(frame->document(), m_platformDragData->html(), "", DisallowScriptingAndPluginContent);
-
+    if (m_platformDragData->hasHtml())
+        return createFragmentFromMarkup(doc, m_platformDragData->html(), "");
+    
     return 0;
 }
-
+    
 }
 

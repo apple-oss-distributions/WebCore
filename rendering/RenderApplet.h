@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2006, 2007, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,20 +22,30 @@
 #ifndef RenderApplet_h
 #define RenderApplet_h
 
-#include "RenderEmbeddedObject.h"
+#include "RenderWidget.h"
+#include "StringHash.h"
 
 namespace WebCore {
 
-class HTMLAppletElement;
+    class HTMLAppletElement;
 
-class RenderApplet : public RenderEmbeddedObject {
-public:
-    explicit RenderApplet(HTMLAppletElement*);
-    virtual ~RenderApplet();
+    class RenderApplet : public RenderWidget {
+    public:
+        RenderApplet(HTMLAppletElement*, const HashMap<String, String>& args);
+        virtual ~RenderApplet();
 
-private:
-    virtual const char* renderName() const { return "RenderApplet"; }
-};
+        virtual const char* renderName() const { return "RenderApplet"; }
+
+        virtual bool isApplet() const { return true; }
+
+        virtual void layout();
+        virtual IntSize intrinsicSize() const;
+
+        void createWidgetIfNecessary();
+
+    private:
+        HashMap<String, String> m_args;
+    };
 
 } // namespace WebCore
 

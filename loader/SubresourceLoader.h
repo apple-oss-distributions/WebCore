@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2005, 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,89 +28,47 @@
 
 #ifndef SubresourceLoader_h
 #define SubresourceLoader_h
-
-#include "FrameLoaderTypes.h"
+ 
+#include "ResourceHandleClient.h"
 #include "ResourceLoader.h"
-
-#include <wtf/text/WTFString.h>
+#include <wtf/PassRefPtr.h>
+ 
+#ifndef __OBJC__
+class NSArray;
+class NSDictionary;
+class NSMutableURLRequest;
+#endif
  
 namespace WebCore {
 
-class CachedResource;
-class CachedResourceLoader;
-class Document;
-class PageActivityAssertionToken;
-class ResourceRequest;
-
-class SubresourceLoader : public ResourceLoader {
-public:
-    static PassRefPtr<SubresourceLoader> create(Frame*, CachedResource*, const ResourceRequest&, const ResourceLoaderOptions&);
-
-    virtual ~SubresourceLoader();
-
-    void cancelIfNotFinishing();
-    virtual bool isSubresourceLoader();
-    CachedResource* cachedResource();
-
-#if PLATFORM(IOS)
-    virtual bool startLoading() OVERRIDE;
-    virtual const ResourceRequest& iOSOriginalRequest() const OVERRIDE { return m_iOSOriginalRequest; }
-#endif
-
-private:
-    SubresourceLoader(Frame*, CachedResource*, const ResourceLoaderOptions&);
-
-    virtual bool init(const ResourceRequest&) OVERRIDE;
-
-    virtual void willSendRequest(ResourceRequest&, const ResourceResponse& redirectResponse) OVERRIDE;
-    virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) OVERRIDE;
-    virtual void didReceiveResponse(const ResourceResponse&) OVERRIDE;
-    virtual void didReceiveData(const char*, int, long long encodedDataLength, DataPayloadType) OVERRIDE;
-    virtual void didReceiveBuffer(PassRefPtr<SharedBuffer>, long long encodedDataLength, DataPayloadType) OVERRIDE;
-    virtual void didFinishLoading(double finishTime) OVERRIDE;
-    virtual void didFail(const ResourceError&) OVERRIDE;
-    virtual void willCancel(const ResourceError&) OVERRIDE;
-    virtual void didCancel(const ResourceError&) OVERRIDE;
-
-#if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
-    virtual bool supportsDataArray() OVERRIDE { return true; }
-    virtual void didReceiveDataArray(CFArrayRef) OVERRIDE;
-#endif
-    virtual void releaseResources() OVERRIDE;
-
-    bool checkForHTTPStatusCodeError();
-
-    void didReceiveDataOrBuffer(const char*, int, PassRefPtr<SharedBuffer>, long long encodedDataLength, DataPayloadType);
-
-    void notifyDone();
-
-    enum SubresourceLoaderState {
-        Uninitialized,
-        Initialized,
-        Finishing,
-#if PLATFORM(IOS)
-        CancelledWhileInitializing
-#endif
-    };
-
-    class RequestCountTracker {
+    class FormData;
+    class String;
+    class ResourceHandle;
+    class ResourceRequest;
+    class SubresourceLoaderClient;
+    
+    class SubresourceLoader : public ResourceLoader {
     public:
-        RequestCountTracker(CachedResourceLoader*, CachedResource*);
-        ~RequestCountTracker();
-    private:
-        CachedResourceLoader* m_cachedResourceLoader;
-        CachedResource* m_resource;
-    };
+        static PassRefPtr<SubresourceLoader> create(Frame*, SubresourceLoaderClient*, const ResourceRequest&, bool skipCanLoadCheck = false, bool sendResourceLoadCallbacks = true, bool shouldContentSniff = true);
+        
+        virtual ~SubresourceLoader();
 
-#if PLATFORM(IOS)
-    ResourceRequest m_iOSOriginalRequest;
-#endif
-    CachedResource* m_resource;
-    bool m_loadingMultipartContent;
-    SubresourceLoaderState m_state;
-    OwnPtr<RequestCountTracker> m_requestCountTracker;
-    OwnPtr<PageActivityAssertionToken> m_activityAssertion;
-};
+        virtual bool load(const ResourceRequest&);
+        
+        virtual void willSendRequest(ResourceRequest&, const ResourceResponse& redirectResponse);
+        virtual void didReceiveResponse(const ResourceResponse&);
+        virtual void didReceiveData(const char*, int, long long lengthReceived, bool allAtOnce);
+        virtual void didFinishLoading();
+        virtual void didFail(const ResourceError&);
+        virtual void receivedCancellation(const AuthenticationChallenge&);
+
+    private:
+        SubresourceLoader(Frame*, SubresourceLoaderClient*, bool sendResourceLoadCallbacks, bool shouldContentSniff);
+
+        virtual void didCancel(const ResourceError&);
+        SubresourceLoaderClient* m_client;
+        bool m_loadingMultipartContent;
+    };
 
 }
 

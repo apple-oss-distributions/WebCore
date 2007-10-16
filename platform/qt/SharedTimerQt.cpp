@@ -1,7 +1,6 @@
 /*
  * Copyright (C) 2006 George Staikos <staikos@kde.org>
  * Copyright (C) 2006 Dirk Mueller <mueller@kde.org>
- * Copyright (C) 2008 Holger Hans Peter Freyther
  *
  * All rights reserved.
  *
@@ -24,120 +23,30 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-
-#include "config.h"
-
-#include <QBasicTimer>
-#include <QCoreApplication>
-#include <QDebug>
-#include <QPointer>
-#include <wtf/CurrentTime.h>
+#include "SharedTimerQt.h"
 
 namespace WebCore {
 
-class SharedTimerQt : public QObject {
-    Q_OBJECT
-
-    friend void setSharedTimerFiredFunction(void (*f)());
-public:
-    static SharedTimerQt* inst();
-
-    void start(double);
-    void stop();
-
-protected:
-    void timerEvent(QTimerEvent* ev);
-
-private Q_SLOTS:
-    void destroy();
-
-private:
-    SharedTimerQt();
-    ~SharedTimerQt();
-    QBasicTimer m_timer;
-    void (*m_timerFunction)();
-};
-
-SharedTimerQt::SharedTimerQt()
-    : QObject()
-    , m_timerFunction(0)
-{}
-
-SharedTimerQt::~SharedTimerQt()
-{
-    if (m_timer.isActive()) {
-        if (m_timerFunction) {
-            (m_timerFunction)();
-            m_timerFunction = 0;
-        }
-    }
-}
-
-void SharedTimerQt::destroy()
-{
-    delete this;
-}
-
-SharedTimerQt* SharedTimerQt::inst()
-{
-    static QPointer<SharedTimerQt> timer;
-    if (!timer) {
-        timer = new SharedTimerQt();
-        timer.data()->connect(QCoreApplication::instance(), SIGNAL(aboutToQuit()), SLOT(destroy()));
-    }
-
-    return timer.data();
-}
-
-void SharedTimerQt::start(double interval)
-{
-    unsigned int intervalInMS = static_cast<unsigned int>(interval * 1000);
-
-    m_timer.start(intervalInMS, this);
-}
-
-void SharedTimerQt::stop()
-{
-    m_timer.stop();
-}
-
-void SharedTimerQt::timerEvent(QTimerEvent* ev)
-{
-    if (!m_timerFunction || ev->timerId() != m_timer.timerId())
-        return;
-
-    m_timer.stop();
-    (m_timerFunction)();
-}
+SharedTimerQt* SharedTimerQt::s_self = 0; // FIXME: staticdeleter
 
 void setSharedTimerFiredFunction(void (*f)())
 {
-    if (!QCoreApplication::instance())
-        return;
-
     SharedTimerQt::inst()->m_timerFunction = f;
 }
 
-void setSharedTimerFireInterval(double interval)
+void setSharedTimerFireTime(double fireTime)
 {
-    if (!QCoreApplication::instance())
-        return;
-
-    SharedTimerQt::inst()->start(interval);
+    qreal fireTimeMs = (fireTime - currentTime()) * 1000;
+    SharedTimerQt::inst()->start(qMax(0, int(fireTimeMs)));
 }
 
 void stopSharedTimer()
 {
-    if (!QCoreApplication::instance())
-        return;
-
     SharedTimerQt::inst()->stop();
 }
-
-#include "SharedTimerQt.moc"
 
 }
 

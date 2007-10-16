@@ -1,10 +1,12 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1997 Martin Jones (mjones@kde.org)
  *           (C) 1997 Torben Weis (weis@kde.org)
  *           (C) 1998 Waldo Bastian (bastian@kde.org)
  *           (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -26,21 +28,25 @@
 #ifndef HTMLTableCaptionElement_h
 #define HTMLTableCaptionElement_h
 
-#include "HTMLElement.h"
+#include "HTMLTablePartElement.h"
 
 namespace WebCore {
 
-class HTMLTableCaptionElement FINAL : public HTMLElement {
+class HTMLTableCaptionElement : public HTMLTablePartElement
+{
 public:
-    static PassRefPtr<HTMLTableCaptionElement> create(const QualifiedName&, Document*);
+    HTMLTableCaptionElement(Document*);
+    
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusRequired; }
+    virtual int tagPriority() const { return 5; }
+    
+    virtual bool mapToEntry(const QualifiedName&, MappedAttributeEntry&) const;
+    virtual void parseMappedAttribute(MappedAttribute*);
 
-private:
-    HTMLTableCaptionElement(const QualifiedName&, Document*);
-
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
+    String align() const;
+    void setAlign(const String&);
 };
 
-} // namespace
+} //namespace
 
 #endif

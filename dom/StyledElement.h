@@ -3,7 +3,7 @@
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Peter Kelly (pmk@post.com)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,83 +25,61 @@
 #ifndef StyledElement_h
 #define StyledElement_h
 
-#include "CSSPrimitiveValue.h"
-#include "CSSPropertyNames.h"
 #include "Element.h"
+#include "NamedMappedAttrMap.h"
 
 namespace WebCore {
 
-class Attribute;
-class MutableStylePropertySet;
-class PropertySetCSSStyleDeclaration;
-class StylePropertySet;
-
-struct PresentationAttributeCacheKey;
+class CSSMappedAttributeDeclaration;
+class MappedAttribute;
 
 class StyledElement : public Element {
 public:
+    StyledElement(const QualifiedName&, Document*);
     virtual ~StyledElement();
 
-    virtual const StylePropertySet* additionalPresentationAttributeStyle() { return 0; }
+    virtual bool isStyledElement() const { return true; }
+
+    NamedMappedAttrMap* mappedAttributes() { return static_cast<NamedMappedAttrMap*>(namedAttrMap.get()); }
+    const NamedMappedAttrMap* mappedAttributes() const { return static_cast<NamedMappedAttrMap*>(namedAttrMap.get()); }
+    bool hasMappedAttributes() const { return namedAttrMap && mappedAttributes()->hasMappedAttributes(); }
+    bool isMappedAttribute(const QualifiedName& name) const { MappedAttributeEntry res = eNone; mapToEntry(name, res); return res != eNone; }
+
+    void addCSSLength(MappedAttribute* attr, int id, const String &value);
+    void addCSSProperty(MappedAttribute* attr, int id, const String &value);
+    void addCSSProperty(MappedAttribute* attr, int id, int value);
+    void addCSSStringProperty(MappedAttribute* attr, int id, const String &value, CSSPrimitiveValue::UnitTypes = CSSPrimitiveValue::CSS_STRING);
+    void addCSSImageProperty(MappedAttribute* attr, int id, const String &URL);
+    void addCSSColor(MappedAttribute* attr, int id, const String &c);
+    void createMappedDecl(MappedAttribute* attr);
+    
+    static CSSMappedAttributeDeclaration* getMappedAttributeDecl(MappedAttributeEntry type, Attribute* attr);
+    static void setMappedAttributeDecl(MappedAttributeEntry type, Attribute* attr, CSSMappedAttributeDeclaration* decl);
+    static void removeMappedAttributeDecl(MappedAttributeEntry type, const QualifiedName& attrName, const AtomicString& attrValue);
+    
+    CSSMutableStyleDeclaration* inlineStyleDecl() const { return m_inlineStyleDecl.get(); }
+    virtual CSSMutableStyleDeclaration* additionalAttributeStyleDecl();
+    CSSMutableStyleDeclaration* getInlineStyleDecl();
+    CSSStyleDeclaration* style();
+    void createInlineStyleDecl();
+    void destroyInlineStyleDecl();
     void invalidateStyleAttribute();
-
-    const StylePropertySet* inlineStyle() const { return elementData() ? elementData()->m_inlineStyle.get() : 0; }
+    virtual void updateStyleAttributeIfNeeded() const;
     
-    bool setInlineStyleProperty(CSSPropertyID, int identifier, bool important = false);
-    bool setInlineStyleProperty(CSSPropertyID, double value, CSSPrimitiveValue::UnitTypes, bool important = false);
-    bool setInlineStyleProperty(CSSPropertyID, const String& value, bool important = false);
-    bool removeInlineStyleProperty(CSSPropertyID);
-    void removeAllInlineStyleProperties();
+    virtual const AtomicStringList* getClassList() const;
+    virtual void attributeChanged(Attribute* attr, bool preserveDecls = false);
+    virtual void parseMappedAttribute(MappedAttribute* attr);
+    virtual bool mapToEntry(const QualifiedName& attrName, MappedAttributeEntry& result) const;
+    virtual void createAttributeMap() const;
+    virtual Attribute* createAttribute(const QualifiedName& name, StringImpl* value);
 
-    void synchronizeStyleAttributeInternal() const;
-    
-    virtual CSSStyleDeclaration* style() OVERRIDE FINAL;
-
-    const StylePropertySet* presentationAttributeStyle();
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) { }
+    virtual void copyNonAttributeProperties(const Element*);
 
 protected:
-    StyledElement(const QualifiedName& name, Document* document, ConstructionType type)
-        : Element(name, document, type)
-    {
-    }
-
-    virtual void attributeChanged(const QualifiedName&, const AtomicString&, AttributeModificationReason = ModifiedDirectly) OVERRIDE;
-
-    virtual bool isPresentationAttribute(const QualifiedName&) const { return false; }
-
-    void addPropertyToPresentationAttributeStyle(MutableStylePropertySet*, CSSPropertyID, int identifier);
-    void addPropertyToPresentationAttributeStyle(MutableStylePropertySet*, CSSPropertyID, double value, CSSPrimitiveValue::UnitTypes);
-    void addPropertyToPresentationAttributeStyle(MutableStylePropertySet*, CSSPropertyID, const String& value);
-
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
-
-private:
-    void styleAttributeChanged(const AtomicString& newStyleString, AttributeModificationReason);
-
-    void inlineStyleChanged();
-    PropertySetCSSStyleDeclaration* inlineStyleCSSOMWrapper();
-    void setInlineStyleFromString(const AtomicString&);
-    MutableStylePropertySet* ensureMutableInlineStyle();
-
-    void makePresentationAttributeCacheKey(PresentationAttributeCacheKey&) const;
-    void rebuildPresentationAttributeStyle();
+    RefPtr<CSSMutableStyleDeclaration> m_inlineStyleDecl;
+    mutable bool m_isStyleAttributeValid : 1;
+    mutable bool m_synchronizingStyleAttribute : 1;
 };
-
-inline void StyledElement::invalidateStyleAttribute()
-{
-    ASSERT(elementData());
-    elementData()->m_styleAttributeIsDirty = true;
-}
-
-inline const StylePropertySet* StyledElement::presentationAttributeStyle()
-{
-    if (!elementData())
-        return 0;
-    if (elementData()->m_presentationAttributeStyleIsDirty)
-        rebuildPresentationAttributeStyle();
-    return elementData()->presentationAttributeStyle();
-}
 
 } //namespace
 

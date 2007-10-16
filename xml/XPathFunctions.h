@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2005 Frerich Raabe <raabe@kde.org>
- * Copyright (C) 2006, 2009 Apple Inc.
+ * functions.h - Copyright 2005 Frerich Raabe <raabe@kde.org>
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,6 +27,8 @@
 #ifndef XPathFunctions_h
 #define XPathFunctions_h
 
+#if ENABLE(XPATH)
+
 #include "XPathExpressionNode.h"
 
 namespace WebCore {
@@ -37,6 +39,7 @@ namespace WebCore {
         public:
             void setArguments(const Vector<Expression*>&);
             void setName(const String& name) { m_name = name; }
+
         protected:
             Expression* arg(int pos) { return subExpr(pos); }
             const Expression* arg(int pos) const { return subExpr(pos); }
@@ -49,8 +52,11 @@ namespace WebCore {
 
         Function* createFunction(const String& name, const Vector<Expression*>& args = Vector<Expression*>());
 
-    } // namespace XPath
+    }
 
-} // namespace WebCore
+}
 
-#endif // XPathFunctions_h
+#endif // ENABLE(XPATH)
+
+#endif // XPath_Functions_H
+

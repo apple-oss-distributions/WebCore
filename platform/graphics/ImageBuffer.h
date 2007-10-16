@@ -1,7 +1,6 @@
 /*
  * Copyright (C) 2006 Nikolas Zimmermann <zimmermann@kde.org>
- * Copyright (C) 2007, 2008, 2009 Apple Inc. All rights reserved.
- * Copyright (C) 2010 Torch Mobile (Beijing) Co. Ltd. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,140 +27,68 @@
 #ifndef ImageBuffer_h
 #define ImageBuffer_h
 
-#include "AffineTransform.h"
-#include "ColorSpace.h"
-#include "FloatRect.h"
-#include "GraphicsContext.h"
-#if USE(ACCELERATED_COMPOSITING)
-#include "PlatformLayer.h"
-#endif
-#include "GraphicsTypes.h"
-#include "GraphicsTypes3D.h"
 #include "IntSize.h"
-#include "ImageBufferData.h"
-#include <wtf/Forward.h>
 #include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/Uint8ClampedArray.h>
-#include <wtf/Vector.h>
+#include <memory>
+
+#if PLATFORM(CG)
+typedef struct CGImage* CGImageRef;
+#endif
+
+#if PLATFORM(QT)
+#include <QPixmap>
+class QPainter;
+#endif
+
+#if PLATFORM(CAIRO)
+struct _cairo_surface;
+#endif
 
 namespace WebCore {
 
-    class Image;
-    class ImageData;
-    class IntPoint;
-    class IntRect;
-    class GraphicsContext3D;
+    class GraphicsContext;
+    class RenderObject;
 
-    enum Multiply {
-        Premultiplied,
-        Unmultiplied
-    };
-
-    enum RenderingMode {
-        Unaccelerated,
-        UnacceleratedNonPlatformBuffer, // Use plain memory allocation rather than platform API to allocate backing store.
-        Accelerated
-    };
-    
-    enum BackingStoreCopy {
-        CopyBackingStore, // Guarantee subsequent draws don't affect the copy.
-        DontCopyBackingStore // Subsequent draws may affect the copy.
-    };
-
-    enum ScaleBehavior {
-        Scaled,
-        Unscaled
-    };
-
-    class ImageBuffer {
-        WTF_MAKE_NONCOPYABLE(ImageBuffer); WTF_MAKE_FAST_ALLOCATED;
+    class ImageBuffer : Noncopyable {
     public:
-        // Will return a null pointer on allocation failure.
-        static PassOwnPtr<ImageBuffer> create(const IntSize& size, float resolutionScale = 1, ColorSpace colorSpace = ColorSpaceDeviceRGB, RenderingMode renderingMode = Unaccelerated)
-        {
-            bool success = false;
-            OwnPtr<ImageBuffer> buf = adoptPtr(new ImageBuffer(size, resolutionScale, colorSpace, renderingMode, success));
-            if (!success)
-                return nullptr;
-            return buf.release();
-        }
-
-        static PassOwnPtr<ImageBuffer> createCompatibleBuffer(const IntSize&, float resolutionScale, ColorSpace, const GraphicsContext*, bool hasAlpha);
-
+        static std::auto_ptr<ImageBuffer> create(const IntSize&, bool grayScale);
         ~ImageBuffer();
 
-        // The actual resolution of the backing store
-        const IntSize& internalSize() const { return m_size; }
-        const IntSize& logicalSize() const { return m_logicalSize; }
-
+        IntSize size() const;
         GraphicsContext* context() const;
 
-        PassRefPtr<Image> copyImage(BackingStoreCopy = CopyBackingStore, ScaleBehavior = Scaled) const;
-        // Give hints on the faster copyImage Mode, return DontCopyBackingStore if it supports the DontCopyBackingStore behavior
-        // or return CopyBackingStore if it doesn't.  
-        static BackingStoreCopy fastCopyImageMode();
+        // This offers a way to render parts of a WebKit rendering tree into this ImageBuffer class.
+        // FIXME: This doesn't belong in the platform directory.
+        // Bad layering that this knows about the render tree.
+        // We need to move it into RenderObject or somewhere in the SVG world.
+        static void renderSubtreeToImage(ImageBuffer*, RenderObject*);
 
-        enum CoordinateSystem { LogicalCoordinateSystem, BackingStoreCoordinateSystem };
-
-        PassRefPtr<Uint8ClampedArray> getUnmultipliedImageData(const IntRect&, CoordinateSystem = LogicalCoordinateSystem) const;
-        PassRefPtr<Uint8ClampedArray> getPremultipliedImageData(const IntRect&, CoordinateSystem = LogicalCoordinateSystem) const;
-
-        void putByteArray(Multiply multiplied, Uint8ClampedArray*, const IntSize& sourceSize, const IntRect& sourceRect, const IntPoint& destPoint, CoordinateSystem = LogicalCoordinateSystem);
-        
-        void convertToLuminanceMask();
-        
-        String toDataURL(const String& mimeType, const double* quality = 0, CoordinateSystem = LogicalCoordinateSystem) const;
-#if !USE(CG)
-        AffineTransform baseTransform() const { return AffineTransform(); }
-        void transformColorSpace(ColorSpace srcColorSpace, ColorSpace dstColorSpace);
-        void platformTransformColorSpace(const Vector<int>&);
-#else
-        AffineTransform baseTransform() const { return AffineTransform(1, 0, 0, -1, 0, internalSize().height()); }
+#if PLATFORM(CG)
+        CGImageRef cgImage() const;
+#elif PLATFORM(QT)
+        QPixmap* pixmap() const;
+#elif PLATFORM(CAIRO)
+        _cairo_surface* surface() const;
 #endif
-#if USE(ACCELERATED_COMPOSITING)
-        PlatformLayer* platformLayer() const;
-#endif
-
-        // FIXME: current implementations of this method have the restriction that they only work
-        // with textures that are RGB or RGBA format, and UNSIGNED_BYTE type.
-        bool copyToPlatformTexture(GraphicsContext3D&, Platform3DObject, GC3Denum, bool, bool);
 
     private:
-#if USE(CG)
-        PassNativeImagePtr copyNativeImage(BackingStoreCopy = CopyBackingStore) const;
-        void flushContext() const;
-        void flushContextIfNecessary() const;
-#endif
-        void clip(GraphicsContext*, const FloatRect&) const;
-
-        void draw(GraphicsContext*, ColorSpace, const FloatRect& destRect, const FloatRect& srcRect = FloatRect(0, 0, -1, -1), CompositeOperator = CompositeSourceOver, BlendMode = BlendModeNormal, bool useLowQualityScale = false);
-        void drawPattern(GraphicsContext*, const FloatRect& srcRect, const AffineTransform& patternTransform, const FloatPoint& phase, ColorSpace styleColorSpace, CompositeOperator, const FloatRect& destRect);
-
-        inline void genericConvertToLuminanceMask();
-
-        friend class GraphicsContext;
-        friend class GeneratedImage;
-        friend class CrossfadeGeneratedImage;
-        friend class GeneratorGeneratedImage;
-
-    private:
-        ImageBufferData m_data;
+        void* m_data;
         IntSize m_size;
-        IntSize m_logicalSize;
-        float m_resolutionScale;
+
         OwnPtr<GraphicsContext> m_context;
 
-        // This constructor will place its success into the given out-variable
-        // so that create() knows when it should return failure.
-        ImageBuffer(const IntSize&, float resolutionScale, ColorSpace, RenderingMode, bool& success);
-    };
-
-#if USE(CG)
-    String ImageDataToDataURL(const ImageData&, const String& mimeType, const double* quality);
+#if PLATFORM(CG)
+        ImageBuffer(void* imageData, const IntSize&, std::auto_ptr<GraphicsContext>);
+        mutable CGImageRef m_cgImage;
+#elif PLATFORM(QT)
+        ImageBuffer(const QPixmap &px);
+        mutable QPixmap m_pixmap;
+        mutable QPainter* m_painter;
+#elif PLATFORM(CAIRO)
+        ImageBuffer(_cairo_surface* surface);
+        mutable _cairo_surface *m_surface;
 #endif
+    };
+}
 
-} // namespace WebCore
-
-#endif // ImageBuffer_h
+#endif

@@ -1,4 +1,6 @@
 /*
+ * This file is part of the HTML rendering engine for KDE.
+ *
  * Copyright (C) 2002 Lars Knoll (knoll@kde.org)
  *           (C) 2002 Dirk Mueller (mueller@kde.org)
  *
@@ -21,7 +23,6 @@
 #ifndef AutoTableLayout_h
 #define AutoTableLayout_h
 
-#include "LayoutUnit.h"
 #include "Length.h"
 #include "TableLayout.h"
 #include <wtf/Vector.h>
@@ -36,43 +37,49 @@ public:
     AutoTableLayout(RenderTable*);
     ~AutoTableLayout();
 
-    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minWidth, LayoutUnit& maxWidth) OVERRIDE;
-    virtual void applyPreferredLogicalWidthQuirks(LayoutUnit& minWidth, LayoutUnit& maxWidth) const OVERRIDE;
+    virtual void calcPrefWidths(int& minWidth, int& maxWidth);
     virtual void layout();
 
-private:
+protected:
     void fullRecalc();
-    void recalcColumn(unsigned effCol);
+    void recalcColumn(int effCol);
 
-    int calcEffectiveLogicalWidth();
+    void calcPercentages() const;
+    int totalPercent() const
+    {
+        if (m_percentagesDirty)
+            calcPercentages();
+        return m_totalPercent;
+    }
+
+    int calcEffectiveWidth();
 
     void insertSpanCell(RenderTableCell*);
 
     struct Layout {
         Layout()
-            : minLogicalWidth(0)
-            , maxLogicalWidth(0)
-            , effectiveMinLogicalWidth(0)
-            , effectiveMaxLogicalWidth(0)
-            , computedLogicalWidth(0)
-            , emptyCellsOnly(true)
-        {
-        }
-
-        Length logicalWidth;
-        Length effectiveLogicalWidth;
-        int minLogicalWidth;
-        int maxLogicalWidth;
-        int effectiveMinLogicalWidth;
-        int effectiveMaxLogicalWidth;
-        int computedLogicalWidth;
+            : minWidth(0)
+            , maxWidth(0)
+            , effMinWidth(0)
+            , effMaxWidth(0)
+            , calcWidth(0)
+            , emptyCellsOnly(true) {}
+        Length width;
+        Length effWidth;
+        int minWidth;
+        int maxWidth;
+        int effMinWidth;
+        int effMaxWidth;
+        int calcWidth;
         bool emptyCellsOnly;
     };
 
     Vector<Layout, 4> m_layoutStruct;
     Vector<RenderTableCell*, 4> m_spanCells;
     bool m_hasPercent : 1;
-    mutable bool m_effectiveLogicalWidthDirty : 1;
+    mutable bool m_percentagesDirty : 1;
+    mutable bool m_effWidthDirty : 1;
+    mutable unsigned short m_totalPercent;
 };
 
 } // namespace WebCore

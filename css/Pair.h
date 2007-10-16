@@ -1,4 +1,6 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
@@ -21,10 +23,9 @@
 #ifndef Pair_h
 #define Pair_h
 
-#include <wtf/RefCounted.h>
+#include "Shared.h"
 #include "CSSPrimitiveValue.h"
 #include <wtf/PassRefPtr.h>
-#include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
 
@@ -32,16 +33,11 @@ namespace WebCore {
 // and border-spacing (all of which are space-separated sets of two values).  At the moment we are only using it for
 // border-radius and background-size, but (FIXME) border-spacing and background-position could be converted over to use
 // it (eliminating some extra -webkit- internal properties).
-class Pair : public RefCounted<Pair> {
+class Pair : public Shared<Pair> {
 public:
-    static PassRefPtr<Pair> create()
-    {
-        return adoptRef(new Pair);
-    }
-    static PassRefPtr<Pair> create(PassRefPtr<CSSPrimitiveValue> first, PassRefPtr<CSSPrimitiveValue> second)
-    {
-        return adoptRef(new Pair(first, second));
-    }
+    Pair() : m_first(0), m_second(0) { }
+    Pair(PassRefPtr<CSSPrimitiveValue> first, PassRefPtr<CSSPrimitiveValue> second)
+        : m_first(first), m_second(second) { }
     virtual ~Pair() { }
 
     CSSPrimitiveValue* first() const { return m_first.get(); }
@@ -50,36 +46,7 @@ public:
     void setFirst(PassRefPtr<CSSPrimitiveValue> first) { m_first = first; }
     void setSecond(PassRefPtr<CSSPrimitiveValue> second) { m_second = second; }
 
-    String cssText() const
-    {
-    
-        return generateCSSString(first()->cssText(), second()->cssText());
-    }
-
-    bool equals(const Pair& other) const { return compareCSSValuePtr(m_first, other.m_first) && compareCSSValuePtr(m_second, other.m_second); }
-
-#if ENABLE(CSS_VARIABLES)
-    String serializeResolvingVariables(const HashMap<AtomicString, String>& variables) const
-    {
-        return generateCSSString(first()->customSerializeResolvingVariables(variables),
-                                 second()->customSerializeResolvingVariables(variables));
-    }
-    
-    bool hasVariableReference() const { return first()->hasVariableReference() || second()->hasVariableReference(); }
-#endif
-
-private:
-    Pair() : m_first(0), m_second(0) { }
-    Pair(PassRefPtr<CSSPrimitiveValue> first, PassRefPtr<CSSPrimitiveValue> second)
-        : m_first(first), m_second(second) { }
-
-    static String generateCSSString(const String& first, const String& second)
-    {
-        if (first == second)
-            return first;
-        return first + ' ' + second;
-    }
-
+protected:
     RefPtr<CSSPrimitiveValue> m_first;
     RefPtr<CSSPrimitiveValue> m_second;
 };

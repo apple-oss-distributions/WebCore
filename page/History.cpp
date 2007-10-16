@@ -26,143 +26,52 @@
 #include "config.h"
 #include "History.h"
 
-#include "BackForwardController.h"
-#include "Document.h"
-#include "ExceptionCode.h"
 #include "Frame.h"
 #include "FrameLoader.h"
-#include "FrameLoaderClient.h"
-#include "HistoryController.h"
-#include "HistoryItem.h"
-#include "Page.h"
-#include "SecurityOrigin.h"
-#include "SerializedScriptValue.h"
-#include <wtf/MainThread.h>
 
 namespace WebCore {
 
 History::History(Frame* frame)
-    : DOMWindowProperty(frame)
-    , m_lastStateObjectRequested(0)
+    : m_frame(frame)
 {
+}
+
+Frame* History::frame() const
+{
+    return m_frame;
+}
+
+void History::disconnectFrame()
+{
+    m_frame = 0;
 }
 
 unsigned History::length() const
 {
     if (!m_frame)
         return 0;
-    if (!m_frame->page())
-        return 0;
-    return m_frame->page()->backForward()->count();
-}
-
-PassRefPtr<SerializedScriptValue> History::state()
-{
-    m_lastStateObjectRequested = stateInternal();
-    return m_lastStateObjectRequested;
-}
-
-PassRefPtr<SerializedScriptValue> History::stateInternal() const
-{
-    if (!m_frame)
-        return 0;
-
-    if (HistoryItem* historyItem = m_frame->loader()->history()->currentItem())
-        return historyItem->stateObject();
-
-    return 0;
-}
-
-bool History::stateChanged() const
-{
-    return m_lastStateObjectRequested != stateInternal();
-}
-
-bool History::isSameAsCurrentState(SerializedScriptValue* state) const
-{
-    return state == stateInternal().get();
+    return m_frame->loader()->getHistoryLength();
 }
 
 void History::back()
 {
-    go(-1);
-}
-
-void History::back(ScriptExecutionContext* context)
-{
-    go(context, -1);
+    if (!m_frame)
+        return;
+    m_frame->loader()->scheduleHistoryNavigation(-1);
 }
 
 void History::forward()
 {
-    go(1);
-}
-
-void History::forward(ScriptExecutionContext* context)
-{
-    go(context, 1);
+    if (!m_frame)
+        return;
+    m_frame->loader()->scheduleHistoryNavigation(1);
 }
 
 void History::go(int distance)
 {
     if (!m_frame)
         return;
-
-    m_frame->navigationScheduler()->scheduleHistoryNavigation(distance);
-}
-
-void History::go(ScriptExecutionContext* context, int distance)
-{
-    if (!m_frame)
-        return;
-
-#if !PLATFORM(IOS)
-    ASSERT(isMainThread());
-#else
-    ASSERT(isMainThread() || pthread_main_np());
-#endif
-    Document* activeDocument = toDocument(context);
-    if (!activeDocument)
-        return;
-
-    if (!activeDocument->canNavigate(m_frame))
-        return;
-
-    m_frame->navigationScheduler()->scheduleHistoryNavigation(distance);
-}
-
-KURL History::urlForState(const String& urlString)
-{
-    KURL baseURL = m_frame->document()->baseURL();
-    if (urlString.isEmpty())
-        return baseURL;
-
-    return KURL(baseURL, urlString);
-}
-
-void History::stateObjectAdded(PassRefPtr<SerializedScriptValue> data, const String& title, const String& urlString, StateObjectType stateObjectType, ExceptionCode& ec)
-{
-    if (!m_frame || !m_frame->page())
-        return;
-    
-    KURL fullURL = urlForState(urlString);
-    if (!fullURL.isValid() || !m_frame->document()->securityOrigin()->canRequest(fullURL)) {
-        ec = SECURITY_ERR;
-        return;
-    }
-
-    if (stateObjectType == StateObjectPush)
-        m_frame->loader()->history()->pushState(data, title, fullURL.string());
-    else if (stateObjectType == StateObjectReplace)
-        m_frame->loader()->history()->replaceState(data, title, fullURL.string());
-            
-    if (!urlString.isEmpty())
-        m_frame->document()->updateURLForPushOrReplaceState(fullURL);
-
-    if (stateObjectType == StateObjectPush)
-        m_frame->loader()->client()->dispatchDidPushStateWithinPage();
-    else if (stateObjectType == StateObjectReplace)
-        m_frame->loader()->client()->dispatchDidReplaceStateWithinPage();
+    m_frame->loader()->scheduleHistoryNavigation(distance);
 }
 
 } // namespace WebCore

@@ -20,63 +20,66 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef GIFImageDecoder_h
-#define GIFImageDecoder_h
+#ifndef GIF_DECODER_H_
+#define GIF_DECODER_H_
 
 #include "ImageDecoder.h"
-#include <wtf/OwnPtr.h>
-
-class GIFImageReader;
 
 namespace WebCore {
 
-    // This class decodes the GIF image format.
-    class GIFImageDecoder : public ImageDecoder {
-    public:
-        GIFImageDecoder(ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption);
-        virtual ~GIFImageDecoder();
+class GIFImageDecoderPrivate;
 
-        enum GIFQuery { GIFFullQuery, GIFSizeQuery, GIFFrameCountQuery };
+// This class decodes the GIF image format.
+class GIFImageDecoder : public ImageDecoder
+{
+public:
+    GIFImageDecoder();
+    ~GIFImageDecoder();
 
-        // ImageDecoder
-        virtual String filenameExtension() const { return "gif"; }
-        virtual void setData(SharedBuffer* data, bool allDataReceived);
-        virtual bool isSizeAvailable();
-        virtual bool setSize(unsigned width, unsigned height);
-        virtual size_t frameCount();
-        virtual int repetitionCount() const;
-        virtual ImageFrame* frameBufferAtIndex(size_t index);
-        // CAUTION: setFailed() deletes |m_reader|.  Be careful to avoid
-        // accessing deleted memory, especially when calling this from inside
-        // GIFImageReader!
-        virtual bool setFailed();
-        virtual void clearFrameBufferCache(size_t clearBeforeFrame);
+    // Take the data and store it.
+    virtual void setData(SharedBuffer* data, bool allDataReceived);
 
-        // Callbacks from the GIF reader.
-        bool haveDecodedRow(unsigned frameIndex, const Vector<unsigned char>& rowBuffer, size_t width, size_t rowNumber, unsigned repeatCount, bool writeTransparentPixels);
-        bool frameComplete(unsigned frameIndex, unsigned frameDuration, ImageFrame::FrameDisposalMethod disposalMethod);
-        void gifComplete();
+    // Whether or not the size information has been decoded yet.
+    virtual bool isSizeAvailable() const;
 
-    private:
-        // If the query is GIFFullQuery, decodes the image up to (but not
-        // including) |haltAtFrame|.  Otherwise, decodes as much as is needed to
-        // answer the query, ignoring bitmap data.  If decoding fails but there
-        // is no more data coming, sets the "decode failure" flag.
-        void decode(unsigned haltAtFrame, GIFQuery);
+    // The total number of frames for the image.  Will scan the image data for the answer
+    // (without necessarily decoding all of the individual frames).
+    virtual int frameCount();
 
-        // Called to initialize the frame buffer with the given index, based on
-        // the previous frame's disposal method. Returns true on success. On
-        // failure, this will mark the image as failed.
-        bool initFrameBuffer(unsigned frameIndex);
+    // The number of repetitions to perform for an animation loop.
+    virtual int repetitionCount() const;
 
-        bool m_currentBufferSawAlpha;
-        mutable int m_repetitionCount;
-        OwnPtr<GIFImageReader> m_reader;
-    };
+    virtual RGBA32Buffer* frameBufferAtIndex(size_t index);
 
-} // namespace WebCore
+    virtual unsigned frameDurationAtIndex(size_t index) { return 0; }
+
+    enum GIFQuery { GIFFullQuery, GIFSizeQuery, GIFFrameCountQuery };
+
+    void decode(GIFQuery query, unsigned haltAtFrame) const;
+
+    // Callbacks from the GIF reader.
+    void sizeNowAvailable(unsigned width, unsigned height);
+    void decodingHalted(unsigned bytesLeft);
+    void haveDecodedRow(unsigned frameIndex, unsigned char* rowBuffer, unsigned char* rowEnd, unsigned rowNumber, 
+                        unsigned repeatCount);
+    void frameComplete(unsigned frameIndex, unsigned frameDuration, bool includeInNextFrame);
+    void gifComplete();
+
+private:
+    // Called to initialize a new frame buffer (potentially compositing it
+    // with the previous frame and/or clearing bits in our image based off
+    // the previous frame as well).
+    void initFrameBuffer(RGBA32Buffer& buffer,
+                         RGBA32Buffer* previousBuffer,
+                         bool compositeWithPreviousFrame);
+
+    bool m_frameCountValid;
+    mutable GIFImageDecoderPrivate* m_reader;
+};
+
+}
 
 #endif

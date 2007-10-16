@@ -30,19 +30,11 @@
 
 namespace WebCore {
 
+using namespace EventNames;
+
 BeforeTextInsertedEvent::BeforeTextInsertedEvent(const String& text)
-    : Event(eventNames().webkitBeforeTextInsertedEvent, false, true), m_text(text)
+    : Event(webkitBeforeTextInsertedEvent, false, true), m_text(text)
 {
-}
-
-BeforeTextInsertedEvent::~BeforeTextInsertedEvent()
-{
-}
-
-const AtomicString& BeforeTextInsertedEvent::interfaceName() const
-{
-    // Notice that there is no BeforeTextInsertedEvent.idl.
-    return eventNames().interfaceForEvent;
 }
 
 }

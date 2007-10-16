@@ -1,6 +1,8 @@
 /**
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2009 Apple Computer, Inc.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -21,8 +23,7 @@
 #include "ShadowValue.h"
 
 #include "CSSPrimitiveValue.h"
-#include <wtf/text/StringBuilder.h>
-#include <wtf/text/WTFString.h>
+#include "PlatformString.h"
 
 namespace WebCore {
 
@@ -30,62 +31,37 @@ namespace WebCore {
 ShadowValue::ShadowValue(PassRefPtr<CSSPrimitiveValue> _x,
     PassRefPtr<CSSPrimitiveValue> _y,
     PassRefPtr<CSSPrimitiveValue> _blur,
-    PassRefPtr<CSSPrimitiveValue> _spread,
-    PassRefPtr<CSSPrimitiveValue> _style,
     PassRefPtr<CSSPrimitiveValue> _color)
-    : CSSValue(ShadowClass)
-    , x(_x)
+    : x(_x)
     , y(_y)
     , blur(_blur)
-    , spread(_spread)
-    , style(_style)
     , color(_color)
 {
 }
 
-String ShadowValue::customCssText() const
+String ShadowValue::cssText() const
 {
-    StringBuilder text;
+    String text("");
 
     if (color)
-        text.append(color->cssText());
+        text += color->cssText();
     if (x) {
         if (!text.isEmpty())
-            text.append(' ');
-        text.append(x->cssText());
+            text += " ";
+        text += x->cssText();
     }
     if (y) {
         if (!text.isEmpty())
-            text.append(' ');
-        text.append(y->cssText());
+            text += " ";
+        text += y->cssText();
     }
     if (blur) {
         if (!text.isEmpty())
-            text.append(' ');
-        text.append(blur->cssText());
-    }
-    if (spread) {
-        if (!text.isEmpty())
-            text.append(' ');
-        text.append(spread->cssText());
-    }
-    if (style) {
-        if (!text.isEmpty())
-            text.append(' ');
-        text.append(style->cssText());
+            text += " ";
+        text += blur->cssText();
     }
 
-    return text.toString();
-}
-
-bool ShadowValue::equals(const ShadowValue& other) const
-{
-    return compareCSSValuePtr(color, other.color)
-        && compareCSSValuePtr(x, other.x)
-        && compareCSSValuePtr(y, other.y)
-        && compareCSSValuePtr(blur, other.blur)
-        && compareCSSValuePtr(spread, other.spread)
-        && compareCSSValuePtr(style, other.style);
+    return text;
 }
 
 }

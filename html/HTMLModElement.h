@@ -1,8 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Simon Hausmann <hausmann@kde.org>
- * Copyright (C) 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #ifndef HTMLModElement_h
 #define HTMLModElement_h
 
@@ -28,14 +28,21 @@
 
 namespace WebCore {
 
-class HTMLModElement FINAL : public HTMLElement {
-public:
-    static PassRefPtr<HTMLModElement> create(const QualifiedName&, Document*);
+class String;
 
-private:
+class HTMLModElement : public HTMLElement
+{
+public:
     HTMLModElement(const QualifiedName&, Document*);
 
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusRequired; }
+    virtual int tagPriority() const { return 1; }
+
+    String cite() const;
+    void setCite(const String&);
+
+    String dateTime() const;
+    void setDateTime(const String&);
 };
 
 } //namespace

@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2004, 2005, 2006, 2013 Apple Inc.
- * Copyright (C) 2009 Google Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -17,47 +16,29 @@
  * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  *
- */ 
-
-#if defined(HAVE_CONFIG_H) && HAVE_CONFIG_H
-#ifdef BUILDING_WITH_CMAKE
-#include "cmakeconfig.h"
-#else
-#include "autotoolsconfig.h"
-#endif
-#endif
+ */
 
 #include <wtf/Platform.h>
 
-#if PLATFORM(MAC) || PLATFORM(IOS)
-#define WTF_USE_FILE_LOCK 1
-#endif
+#define MOBILE 0
 
-#if PLATFORM(WIN) && !USE(WINGDI)
-#include <WebCore/WebCoreHeaderDetection.h>
-#endif
-
-#include <wtf/ExportMacros.h>
-#include "PlatformExportMacros.h"
-
-#include <runtime/JSExportMacros.h>
-
-#ifdef __APPLE__
+#if __APPLE__
 #define HAVE_FUNC_USLEEP 1
 #endif /* __APPLE__ */
 
-#if OS(WINDOWS)
+
+#if PLATFORM(WIN_OS)
 
 #ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0502
+#define _WIN32_WINNT 0x0500
 #endif
 
 #ifndef WINVER
-#define WINVER 0x0502
+#define WINVER 0x0500
 #endif
 
-// If we don't define these, they get defined in windef.h.
-// We want to use std::min and std::max.
+// If we don't define these, they get defined in windef.h. 
+// We want to use std::min and std::max
 #ifndef max
 #define max max
 #endif
@@ -65,14 +46,16 @@
 #define min min
 #endif
 
-// CURL needs winsock, so don't prevent inclusion of it
-#if !USE(CURL)
 #ifndef _WINSOCKAPI_
 #define _WINSOCKAPI_ // Prevent inclusion of winsock.h in windows.h
 #endif
-#endif
 
-#endif /* OS(WINDOWS) */
+#endif /* PLATFORM(WIN_OS) */
+
+#if !PLATFORM(SYMBIAN)
+#define IMPORT_C
+#define EXPORT_C
+#endif
 
 #ifdef __cplusplus
 
@@ -82,39 +65,51 @@
 #undef delete
 #include <wtf/FastMalloc.h>
 
-#include <ciso646>
-
 #endif
 
-#include <wtf/DisallowCType.h>
-
-#if COMPILER(MSVC)
-#define SKIP_STATIC_CONSTRUCTORS_ON_MSVC 1
-#else
-#define SKIP_STATIC_CONSTRUCTORS_ON_GCC 1
+#if !COMPILER(MSVC) // can't get this to compile on Visual C++ yet
+#define AVOID_STATIC_CONSTRUCTORS 1
 #endif
 
 #if PLATFORM(WIN)
-#if PLATFORM(WIN_CAIRO)
-#undef WTF_USE_CG
-#define WTF_USE_CAIRO 1
-#define WTF_USE_CURL 1
-#ifndef _WINSOCKAPI_
-#define _WINSOCKAPI_ // Prevent inclusion of winsock.h in windows.h
+#define WTF_USE_JAVASCRIPTCORE_BINDINGS 1
+#define WTF_USE_NPOBJECT 1
+#define WTF_PLATFORM_CG 1
+#undef WTF_PLATFORM_CAIRO
+#define WTF_USE_CFNETWORK 1
+#undef WTF_USE_WININET
+#define WTF_PLATFORM_CF 1
 #endif
-#elif !USE(WINGDI)
-#define WTF_USE_CG 1
-#undef WTF_USE_CAIRO
-#undef WTF_USE_CURL
+
+#if PLATFORM(MAC)
+#define WTF_USE_JAVASCRIPTCORE_BINDINGS 1
+#ifdef __LP64__
+#define WTF_USE_NPOBJECT 0
+#else
+#define WTF_USE_NPOBJECT 1
 #endif
 #endif
 
-#if PLATFORM(MAC) && !PLATFORM(IOS)
-// New theme
-#define WTF_USE_NEW_THEME 1
-#endif // PLATFORM(MAC)
+#if PLATFORM(SYMBIAN)
+#define WTF_USE_JAVASCRIPTCORE_BINDINGS 1
+#define WTF_USE_NPOBJECT 1
+#undef WIN32
+#undef _WIN32
+#undef AVOID_STATIC_CONSTRUCTORS
+#define USE_SYSTEM_MALLOC 1
+#define U_HAVE_INT8_T 0
+#define U_HAVE_INT16_T 0
+#define U_HAVE_INT32_T 0
+#define U_HAVE_INT64_T 0
+#define U_HAVE_INTTYPES_H 0
 
-#if USE(CG)
+#include <stdio.h>
+#include <snprintf.h>
+#include <limits.h>
+#include <wtf/MathExtras.h>
+#endif
+
+#if PLATFORM(CG)
 #ifndef CGFLOAT_DEFINED
 #ifdef __LP64__
 typedef double CGFloat;
@@ -123,26 +118,9 @@ typedef float CGFloat;
 #endif
 #define CGFLOAT_DEFINED 1
 #endif
-#endif /* USE(CG) */
+#endif /* PLATFORM(CG) */
 
-#if PLATFORM(WIN) && USE(CG)
-#define WTF_USE_SAFARI_THEME 1
+#ifdef BUILDING_ON_TIGER
+#undef ENABLE_FTPDIR
+#define ENABLE_FTPDIR 0
 #endif
-
-// CoreAnimation is available to IOS, Mac and Windows if using CG
-#if PLATFORM(MAC) || PLATFORM(IOS) || (PLATFORM(WIN) && USE(CG))
-#define WTF_USE_CA 1
-#endif
-
-// FIXME: Move this to JavaScriptCore/wtf/Platform.h, which is where we define WTF_USE_AVFOUNDATION on the Mac.
-// https://bugs.webkit.org/show_bug.cgi?id=67334
-#if PLATFORM(WIN)
-#define WTF_USE_AVFOUNDATION 1
-
-#if HAVE(AVCF_LEGIBLE_OUTPUT)
-#define HAVE_AVFOUNDATION_MEDIA_SELECTION_GROUP 1
-#define HAVE_AVFOUNDATION_LEGIBLE_OUTPUT_SUPPORT 1
-#endif
-
-#endif
-

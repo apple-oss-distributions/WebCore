@@ -26,15 +26,11 @@
 #ifndef IntSize_h
 #define IntSize_h
 
-#if PLATFORM(IOS)
-#include <CoreGraphics/CoreGraphics.h>
-#endif
+#include <wtf/Platform.h>
 
-#if USE(CG)
+#if PLATFORM(CG)
 typedef struct CGSize CGSize;
 #endif
-
-#if !PLATFORM(IOS)
 
 #if PLATFORM(MAC)
 #ifdef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
@@ -44,27 +40,13 @@ typedef struct _NSSize NSSize;
 #endif
 #endif
 
-#else
-
-#ifndef NSSize
-#define NSSize CGSize
-#endif
-
-#endif
-
 #if PLATFORM(WIN)
 typedef struct tagSIZE SIZE;
 #elif PLATFORM(QT)
-#include <qglobal.h>
-QT_BEGIN_NAMESPACE
 class QSize;
-QT_END_NAMESPACE
-#elif PLATFORM(BLACKBERRY)
-namespace BlackBerry {
-namespace Platform {
-class IntSize;
-}
-}
+#endif
+#if PLATFORM(SYMBIAN)
+class TSize;
 #endif
 
 namespace WebCore {
@@ -81,26 +63,6 @@ public:
     void setHeight(int height) { m_height = height; }
 
     bool isEmpty() const { return m_width <= 0 || m_height <= 0; }
-    bool isZero() const { return !m_width && !m_height; }
-
-    float aspectRatio() const { return static_cast<float>(m_width) / static_cast<float>(m_height); }
-    
-    void expand(int width, int height)
-    {
-        m_width += width;
-        m_height += height;
-    }
-
-    void scale(float widthScale, float heightScale)
-    {
-        m_width = static_cast<int>(static_cast<float>(m_width) * widthScale);
-        m_height = static_cast<int>(static_cast<float>(m_height) * heightScale);
-    }
-    
-    void scale(float scale)
-    {
-        this->scale(scale, scale);
-    }
 
     IntSize expandedTo(const IntSize& other) const
     {
@@ -119,40 +81,15 @@ public:
         *this = expandedTo(IntSize());
     }
 
-    void clampToMinimumSize(const IntSize& minimumSize)
-    {
-        if (m_width < minimumSize.width())
-            m_width = minimumSize.width();
-        if (m_height < minimumSize.height())
-            m_height = minimumSize.height();
-    }
-
-    int area() const
-    {
-        return m_width * m_height;
-    }
-
-    int diagonalLengthSquared() const
-    {
-        return m_width * m_width + m_height * m_height;
-    }
-
-    IntSize transposedSize() const
-    {
-        return IntSize(m_height, m_width);
-    }
-
-#if USE(CG)
+#if PLATFORM(CG)
     explicit IntSize(const CGSize&); // don't do this implicitly since it's lossy
     operator CGSize() const;
 #endif
 
-#if !PLATFORM(IOS)    
 #if PLATFORM(MAC) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
     explicit IntSize(const NSSize &); // don't do this implicitly since it's lossy
     operator NSSize() const;
 #endif
-#endif // !PLATFORM(IOS)
 
 #if PLATFORM(WIN)
     IntSize(const SIZE&);
@@ -163,11 +100,11 @@ public:
     IntSize(const QSize&);
     operator QSize() const;
 #endif
-
-#if PLATFORM(BLACKBERRY)
-    IntSize(const BlackBerry::Platform::IntSize&);
-    operator BlackBerry::Platform::IntSize() const;
+#if PLATFORM(SYMBIAN)
+    IntSize(const TSize&);
+    operator TSize() const;
 #endif
+
 
 private:
     int m_width, m_height;

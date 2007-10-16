@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,44 +31,61 @@
 
 #include "Clipboard.h"
 #include "Event.h"
-#include "EventHeaders.h"
-#include "EventInterfaces.h"
-#include "EventNames.h"
-#include "JSClipboard.h"
-#include <runtime/JSLock.h>
-#include <wtf/HashMap.h>
-#include <wtf/text/AtomicString.h>
-
-using namespace JSC;
+#include "JSKeyboardEvent.h"
+#include "JSMouseEvent.h"
+#include "JSMutationEvent.h"
+#include "JSOverflowEvent.h"
+#include "JSTextEvent.h"
+#include "JSUIEvent.h"
+#include "JSWheelEvent.h"
+#include "KeyboardEvent.h"
+#include "MouseEvent.h"
+#include "MutationEvent.h"
+#include "OverflowEvent.h"
+#include "TextEvent.h"
+#include "UIEvent.h"
+#include "WheelEvent.h"
+#include "kjs_events.h"
 
 namespace WebCore {
 
-JSValue JSEvent::clipboardData(ExecState* exec) const
+KJS::JSValue* JSEvent::clipboardData(KJS::ExecState* exec) const
 {
-    return impl()->isClipboardEvent() ? toJS(exec, globalObject(), impl()->clipboardData()) : jsUndefined();
+    return impl()->isClipboardEvent() ? toJS(exec, impl()->clipboardData()) : KJS::jsUndefined();
 }
 
-#define TRY_TO_WRAP_WITH_INTERFACE(interfaceName) \
-    if (eventNames().interfaceFor##interfaceName == desiredInterface) \
-        return CREATE_DOM_WRAPPER(exec, globalObject, interfaceName, event);
-
-JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, Event* event)
+KJS::JSValue* toJS(KJS::ExecState* exec, Event* event)
 {
-    JSLockHolder lock(exec);
+    KJS::JSLock lock;
 
     if (!event)
-        return jsNull();
+        return KJS::jsNull();
 
-    JSDOMWrapper* wrapper = getCachedWrapper(currentWorld(exec), event);
-    if (wrapper)
-        return wrapper;
+    KJS::ScriptInterpreter* interp = static_cast<KJS::ScriptInterpreter*>(exec->dynamicInterpreter());
 
-    String desiredInterface = event->interfaceName();
-    DOM_EVENT_INTERFACES_FOR_EACH(TRY_TO_WRAP_WITH_INTERFACE)
+    KJS::DOMObject* ret = interp->getDOMObject(event);
+    if (ret)
+        return ret;
 
-    return CREATE_DOM_WRAPPER(exec, globalObject, Event, event);
+    if (event->isKeyboardEvent())
+        ret = new JSKeyboardEvent(exec, static_cast<KeyboardEvent*>(event));
+    else if (event->isTextEvent())
+        ret = new JSTextEvent(exec, static_cast<TextEvent*>(event));
+    else if (event->isMouseEvent())
+        ret = new JSMouseEvent(exec, static_cast<MouseEvent*>(event));
+    else if (event->isWheelEvent())
+        ret = new JSWheelEvent(exec, static_cast<WheelEvent*>(event));
+    else if (event->isUIEvent())
+        ret = new JSUIEvent(exec, static_cast<UIEvent*>(event));
+    else if (event->isMutationEvent())
+        ret = new JSMutationEvent(exec, static_cast<MutationEvent*>(event));
+    else if (event->isOverflowEvent())
+        ret = new JSOverflowEvent(exec, static_cast<OverflowEvent*>(event));
+    else
+        ret = new JSEvent(exec, event);
+
+    interp->putDOMObject(event, ret);
+    return ret;
 }
-
-#undef TRY_TO_WRAP_WITH_INTERFACE
 
 } // namespace WebCore

@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2007m 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,33 +22,34 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #ifndef NameNodeList_h
 #define NameNodeList_h
 
-#include "LiveNodeList.h"
-#include <wtf/Forward.h>
-#include <wtf/text/AtomicString.h>
+#include "NodeList.h"
+#include "PlatformString.h"
 
 namespace WebCore {
 
-// NodeList which lists all Nodes in a Element with a given "name" attribute
-class NameNodeList : public LiveNodeList {
+/**
+ * NodeList which lists all Nodes in a Element with a given "name=" tag
+ */
+class NameNodeList : public NodeList {
 public:
-    static PassRefPtr<NameNodeList> create(PassRefPtr<Node> rootNode, CollectionType type, const AtomicString& name)
-    {
-        ASSERT_UNUSED(type, type == NameNodeListType);
-        return adoptRef(new NameNodeList(rootNode, name));
-    }
+    NameNodeList(Node* doc, const String& name);
 
-    virtual ~NameNodeList();
+    // DOM methods overridden from  parent classes
 
-private:
-    NameNodeList(PassRefPtr<Node> rootNode, const AtomicString& name);
+    virtual unsigned length() const;
+    virtual Node* item(unsigned index) const;
 
-    virtual bool nodeMatches(Element*) const;
+    // Other methods (not part of DOM)
+    virtual void rootNodeChildrenChanged() { }
+    virtual void rootNodeAttributeChanged() { NodeList::rootNodeChildrenChanged(); }
 
-    AtomicString m_name;
+protected:
+    virtual bool nodeMatches(Node* testNode) const;
+
+    String nodeName;
 };
 
 } // namespace WebCore

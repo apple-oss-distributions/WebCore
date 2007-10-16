@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,28 +27,19 @@
 #define DocumentFragment_h
 
 #include "ContainerNode.h"
-#include "FragmentScriptingPermission.h"
 
 namespace WebCore {
 
-class DocumentFragment : public ContainerNode {
+class DocumentFragment : public ContainerNode
+{
 public:
-    static PassRefPtr<DocumentFragment> create(Document*);
+    DocumentFragment(Document*);
 
-    void parseHTML(const String&, Element* contextElement, ParserContentPolicy = AllowScriptingContent);
-    bool parseXML(const String&, Element* contextElement, ParserContentPolicy = AllowScriptingContent);
-    
-    virtual bool canContainRangeEndPoint() const { return true; }
-    virtual bool isTemplateContent() const { return false; }
-
-protected:
-    DocumentFragment(Document*, ConstructionType = CreateContainer);
     virtual String nodeName() const;
-
-private:
     virtual NodeType nodeType() const;
     virtual PassRefPtr<Node> cloneNode(bool deep);
-    virtual bool childTypeAllowed(NodeType) const;
+    virtual bool childTypeAllowed(NodeType);
+    virtual String toString() const;
 };
 
 } //namespace

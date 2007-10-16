@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,35 +30,20 @@
 
 namespace WebCore {
 
-class HTMLElement;
-
 class InsertListCommand : public CompositeEditCommand {
 public:
     enum Type { OrderedList, UnorderedList };
-
-    static PassRefPtr<InsertListCommand> create(Document* document, Type listType)
-    {
-        return adoptRef(new InsertListCommand(document, listType));
-    }
-
-    static PassRefPtr<HTMLElement> insertList(Document*, Type);
-    
-    virtual bool preservesTypingStyle() const { return true; }
-
-private:
-    InsertListCommand(Document*, Type);
-
+    static PassRefPtr<Node> insertList(Document*, Type);
+    InsertListCommand(Document*, Type, const String&);
     virtual void doApply();
     virtual EditAction editingAction() const { return EditActionInsertList; }
-
-    HTMLElement* fixOrphanedListChild(Node*);
-    bool selectionHasListOfType(const VisibleSelection& selection, const QualifiedName&);
-    PassRefPtr<HTMLElement> mergeWithNeighboringLists(PassRefPtr<HTMLElement>);
-    void doApplyForSingleParagraph(bool forceCreateList, const QualifiedName&, Range* currentSelection);
-    void unlistifyParagraph(const VisiblePosition& originalStart, HTMLElement* listNode, Node* listChildNode);
-    PassRefPtr<HTMLElement> listifyParagraph(const VisiblePosition& originalStart, const QualifiedName& listTag);
-    RefPtr<HTMLElement> m_listElement;
+private:
+    Node* fixOrphanedListChild(Node*);
+    bool modifyRange();
+    RefPtr<Node> m_listElement;
     Type m_type;
+    String m_id;
+    bool m_forceCreateList;
 };
 
 } // namespace WebCore

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,89 +29,34 @@
 #include "config.h"
 #include "FileChooser.h"
 
+#include "Icon.h"
+
 namespace WebCore {
-
-FileChooser::FileChooser(FileChooserClient* client, const FileChooserSettings& settings)
-    : m_client(client)
-    , m_settings(settings)
+    
+PassRefPtr<FileChooser> FileChooser::create(FileChooserClient* client, const String& filename)
 {
+    return new FileChooser(client, filename);
 }
 
-PassRefPtr<FileChooser> FileChooser::create(FileChooserClient* client, const FileChooserSettings& settings)
+void FileChooser::clear()
 {
-    return adoptRef(new FileChooser(client, settings));
-}
-
-FileChooser::~FileChooser()
-{
-}
-
-void FileChooser::invalidate()
-{
-    ASSERT(m_client);
-
-    m_client = 0;
+    m_filename = String();
+    m_icon = chooseIcon(m_filename);
 }
 
 void FileChooser::chooseFile(const String& filename)
 {
-    Vector<String> filenames;
-    filenames.append(filename);
-    chooseFiles(filenames);
-}
-
-void FileChooser::chooseFiles(const Vector<String>& filenames)
-{
-    // FIXME: This is inelegant. We should not be looking at settings here.
-    if (m_settings.selectedFiles == filenames)
+    if (m_filename == filename)
         return;
-
-    if (!m_client)
-        return;
-
-    Vector<FileChooserFileInfo> files;
-    for (unsigned i = 0; i < filenames.size(); ++i)
-        files.append(FileChooserFileInfo(filenames[i]));
-    m_client->filesChosen(files);
-}
-
-void FileChooser::chooseFiles(const Vector<FileChooserFileInfo>& files)
-{
-    // FIXME: This is inelegant. We should not be looking at settings here.
-    Vector<String> paths;
-    for (unsigned i = 0; i < files.size(); ++i)
-        paths.append(files[i].path);
-
-    if (m_settings.selectedFiles == paths)
-        return;
-
+    m_filename = filename;
+    m_icon = chooseIcon(filename);
     if (m_client)
-        m_client->filesChosen(files);
+        m_client->valueChanged();
 }
 
-Vector<String> FileChooserSettings::acceptTypes() const
+PassRefPtr<Icon> FileChooser::chooseIcon(const String& filename)
 {
-    Vector<String> acceptTypes;
-    acceptTypes.reserveCapacity(acceptMIMETypes.size() + acceptFileExtensions.size());
-    acceptTypes.appendVector(acceptMIMETypes);
-    acceptTypes.appendVector(acceptFileExtensions);
-    return acceptTypes;
+    return Icon::newIconForFile(filename);
 }
-
-#if PLATFORM(IOS)
-void FileChooser::chooseMediaFiles(const Vector<String>& filenames, const String& displayString, Icon* icon)
-{
-    // FIXME: This is inelegant. We should not be looking at settings here.
-    if (m_settings.selectedFiles == filenames)
-        return;
-
-    if (m_client) {
-        Vector<FileChooserFileInfo> files;
-        for (unsigned i = 0; i < filenames.size(); ++i)
-            files.append(FileChooserFileInfo(filenames[i]));
-        m_client->filesChosen(files, displayString, icon);
-    }
-}
-#endif
 
 }

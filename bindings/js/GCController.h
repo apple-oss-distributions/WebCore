@@ -26,37 +26,22 @@
 #ifndef GCController_h
 #define GCController_h
 
-#if USE(CF) || PLATFORM(BLACKBERRY)
-#include <wtf/FastAllocBase.h>
 #include <wtf/Noncopyable.h>
-#else
 #include "Timer.h"
-#endif
 
 namespace WebCore {
 
-    class GCController {
-        WTF_MAKE_NONCOPYABLE(GCController); WTF_MAKE_FAST_ALLOCATED;
+    class GCController : Noncopyable {
         friend GCController& gcController();
 
     public:
         void garbageCollectSoon();
-        void garbageCollectNow(); // It's better to call garbageCollectSoon, unless you have a specific reason not to.
-
-        void garbageCollectOnAlternateThreadForDebugging(bool waitUntilDone); // Used for stress testing.
-#if PLATFORM(IOS)
-        void releaseExecutableMemory();
-#endif
-        void setJavaScriptGarbageCollectorTimerEnabled(bool);
-        void discardAllCompiledCode();
-
+        
     private:
         GCController(); // Use gcController() instead
-
-#if !USE(CF) && !PLATFORM(BLACKBERRY) && !PLATFORM(QT)
         void gcTimerFired(Timer<GCController>*);
+        
         Timer<GCController> m_GCTimer;
-#endif
     };
 
     // Function to obtain the global GC controller.

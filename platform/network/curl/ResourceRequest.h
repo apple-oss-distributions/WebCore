@@ -1,3 +1,4 @@
+// -*- mode: c++; c-basic-offset: 4 -*-
 /*
  * Copyright (C) 2003, 2006 Apple Computer, Inc.  All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
@@ -21,7 +22,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
 #ifndef ResourceRequest_h
@@ -29,62 +30,36 @@
 
 #include "ResourceRequestBase.h"
 
-typedef const struct _CFURLRequest* CFURLRequestRef;
-
 namespace WebCore {
 
-    class ResourceRequest : public ResourceRequestBase {
-    public:
-        ResourceRequest(const String& url)
-            : ResourceRequestBase(KURL(ParsedURLString, url), UseProtocolCachePolicy)
+    struct ResourceRequest : ResourceRequestBase {
+
+        ResourceRequest(const String& url) 
+            : ResourceRequestBase(KURL(url.deprecatedString()), UseProtocolCachePolicy)
         {
         }
 
-        ResourceRequest(const KURL& url)
+        ResourceRequest(const KURL& url) 
             : ResourceRequestBase(url, UseProtocolCachePolicy)
         {
         }
 
-        ResourceRequest(const KURL& url, const String& referrer, ResourceRequestCachePolicy policy = UseProtocolCachePolicy)
+        ResourceRequest(const KURL& url, const String& referrer, ResourceRequestCachePolicy policy = UseProtocolCachePolicy) 
             : ResourceRequestBase(url, policy)
         {
             setHTTPReferrer(referrer);
         }
-
+        
         ResourceRequest()
             : ResourceRequestBase(KURL(), UseProtocolCachePolicy)
         {
         }
-
-        ResourceRequest(CFURLRequestRef)
-            : ResourceRequestBase()
-        {
-        }
-
-        void updateFromDelegatePreservingOldHTTPBody(const ResourceRequest& delegateProvidedRequest) { *this = delegateProvidedRequest; }
-
-        // Needed for compatibility.
-        CFURLRequestRef cfURLRequest(HTTPBodyUpdatePolicy) const { return 0; }
-
-        // The following two stubs are for compatibility with CFNetwork, and are not used.
-        static bool httpPipeliningEnabled() { return false; }
-        static void setHTTPPipeliningEnabled(bool) { }
-
+        
     private:
         friend class ResourceRequestBase;
 
-        void doUpdatePlatformRequest() { }
-        void doUpdateResourceRequest() { }
-        void doUpdatePlatformHTTPBody() { }
-        void doUpdateResourceHTTPBody() { }
-
-        PassOwnPtr<CrossThreadResourceRequestData> doPlatformCopyData(PassOwnPtr<CrossThreadResourceRequestData> data) const { return data; }
-        void doPlatformAdopt(PassOwnPtr<CrossThreadResourceRequestData>) { }
- 
-        static bool s_httpPipeliningEnabled;
-    };
-
-    struct CrossThreadResourceRequestData : public CrossThreadResourceRequestDataBase {
+        void doUpdatePlatformRequest() {}
+        void doUpdateResourceRequest() {}
     };
 
 } // namespace WebCore

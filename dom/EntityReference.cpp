@@ -1,6 +1,8 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 2000 Peter Kelly (pmk@post.com)
- * Copyright (C) 2006, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -17,23 +19,20 @@
  * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
-
 #include "config.h"
 #include "EntityReference.h"
 
-#include "Document.h"
-
 namespace WebCore {
 
-inline EntityReference::EntityReference(Document* document, const String& entityName)
-    : ContainerNode(document)
-    , m_entityName(entityName)
+EntityReference::EntityReference(Document* doc)
+    : ContainerNode(doc)
 {
 }
 
-PassRefPtr<EntityReference> EntityReference::create(Document* document, const String& entityName)
+EntityReference::EntityReference(Document* doc, const String& entityName)
+    : ContainerNode(doc)
+    , m_entityName(entityName)
 {
-    return adoptRef(new EntityReference(document, entityName));
 }
 
 String EntityReference::nodeName() const
@@ -46,9 +45,40 @@ Node::NodeType EntityReference::nodeType() const
     return ENTITY_REFERENCE_NODE;
 }
 
-PassRefPtr<Node> EntityReference::cloneNode(bool)
+PassRefPtr<Node> EntityReference::cloneNode(bool deep)
 {
-    return create(document(), m_entityName);
+    RefPtr<EntityReference> clone = new EntityReference(document(), m_entityName);
+    // ### make sure children are readonly
+    // ### since we are a reference, should we clone children anyway (even if not deep?)
+    if (deep)
+        cloneChildNodes(clone.get());
+    return clone.release();
+}
+
+// DOM Section 1.1.1
+bool EntityReference::childTypeAllowed(NodeType type)
+{
+    switch (type) {
+        case ELEMENT_NODE:
+        case PROCESSING_INSTRUCTION_NODE:
+        case COMMENT_NODE:
+        case TEXT_NODE:
+        case CDATA_SECTION_NODE:
+        case ENTITY_REFERENCE_NODE:
+            return true;
+            break;
+        default:
+            return false;
+    }
+}
+
+String EntityReference::toString() const
+{
+    String result = "&";
+    result += m_entityName;
+    result += ";";
+
+    return result;
 }
 
 } // namespace

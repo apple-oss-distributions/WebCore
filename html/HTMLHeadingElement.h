@@ -1,7 +1,8 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -27,12 +28,16 @@
 
 namespace WebCore {
 
-class HTMLHeadingElement FINAL : public HTMLElement {
+class HTMLHeadingElement : public HTMLElement {
 public:
-    static PassRefPtr<HTMLHeadingElement> create(const QualifiedName&, Document*);
-
-private:
     HTMLHeadingElement(const QualifiedName&, Document*);
+
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusRequired; }
+    virtual int tagPriority() const { return 5; }
+    virtual bool checkDTD(const Node* newChild);
+
+    String align() const;
+    void setAlign(const String&);
 };
 
 } // namespace WebCore

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,107 +31,55 @@
 #include "CSSImportRule.h"
 #include "CSSMediaRule.h"
 #include "CSSPageRule.h"
+#include "CSSRule.h"
 #include "CSSStyleRule.h"
-#include "CSSSupportsRule.h"
 #include "JSCSSCharsetRule.h"
 #include "JSCSSFontFaceRule.h"
-#include "JSCSSHostRule.h"
 #include "JSCSSImportRule.h"
 #include "JSCSSMediaRule.h"
 #include "JSCSSPageRule.h"
 #include "JSCSSStyleRule.h"
-#include "JSCSSSupportsRule.h"
-#include "JSNode.h"
-#include "JSStyleSheetCustom.h"
-#include "JSWebKitCSSFilterRule.h"
-#include "JSWebKitCSSKeyframeRule.h"
-#include "JSWebKitCSSKeyframesRule.h"
-#include "JSWebKitCSSRegionRule.h"
-#include "JSWebKitCSSViewportRule.h"
-#include "WebKitCSSFilterRule.h"
-#include "WebKitCSSKeyframeRule.h"
-#include "WebKitCSSKeyframesRule.h"
-#include "WebKitCSSRegionRule.h"
-#include "WebKitCSSViewportRule.h"
-
-using namespace JSC;
+#include "kjs_binding.h"
 
 namespace WebCore {
 
-void JSCSSRule::visitChildren(JSCell* cell, SlotVisitor& visitor)
-{
-    JSCSSRule* thisObject = jsCast<JSCSSRule*>(cell);
-    ASSERT_GC_OBJECT_INHERITS(thisObject, &s_info);
-    COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
-    ASSERT(thisObject->structure()->typeInfo().overridesVisitChildren());
-    Base::visitChildren(thisObject, visitor);
-    visitor.addOpaqueRoot(root(thisObject->impl()));
-}
-
-JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, CSSRule* rule)
+KJS::JSValue* toJS(KJS::ExecState* exec, CSSRule* rule)
 {
     if (!rule)
-        return jsNull();
+        return KJS::jsNull();
 
-    JSDOMWrapper* wrapper = getCachedWrapper(currentWorld(exec), rule);
-    if (wrapper)
-        return wrapper;
+    KJS::ScriptInterpreter* interp = static_cast<KJS::ScriptInterpreter*>(exec->dynamicInterpreter());
+    KJS::DOMObject* ret = interp->getDOMObject(rule);
+
+    if (ret)
+        return ret;
 
     switch (rule->type()) {
         case CSSRule::STYLE_RULE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSStyleRule, rule);
+            ret = new JSCSSStyleRule(exec, static_cast<CSSStyleRule*>(rule));
             break;
         case CSSRule::MEDIA_RULE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSMediaRule, rule);
+            ret = new JSCSSMediaRule(exec, static_cast<CSSMediaRule*>(rule));
             break;
         case CSSRule::FONT_FACE_RULE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSFontFaceRule, rule);
+            ret = new JSCSSFontFaceRule(exec, static_cast<CSSFontFaceRule*>(rule));
             break;
         case CSSRule::PAGE_RULE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSPageRule, rule);
+            ret = new JSCSSPageRule(exec, static_cast<CSSPageRule*>(rule));
             break;
         case CSSRule::IMPORT_RULE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSImportRule, rule);
+            ret = new JSCSSImportRule(exec, static_cast<CSSImportRule*>(rule));
             break;
         case CSSRule::CHARSET_RULE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSCharsetRule, rule);
+            ret = new JSCSSCharsetRule(exec, static_cast<CSSCharsetRule*>(rule));
             break;
-        case CSSRule::WEBKIT_KEYFRAME_RULE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, WebKitCSSKeyframeRule, rule);
-            break;
-        case CSSRule::WEBKIT_KEYFRAMES_RULE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, WebKitCSSKeyframesRule, rule);
-            break;
-#if ENABLE(CSS3_CONDITIONAL_RULES)
-        case CSSRule::SUPPORTS_RULE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSSupportsRule, rule);
-            break;
-#endif
-#if ENABLE(CSS_DEVICE_ADAPTATION)
-        case CSSRule::WEBKIT_VIEWPORT_RULE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, WebKitCSSViewportRule, rule);
-            break;
-#endif
-#if ENABLE(CSS_REGIONS)
-        case CSSRule::WEBKIT_REGION_RULE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, WebKitCSSRegionRule, rule);
-            break;
-#endif
-#if ENABLE(SHADOW_DOM)
-        case CSSRule::HOST_RULE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSHostRule, rule);
-            break;
-#endif
-#if ENABLE(CSS_SHADERS)
-        case CSSRule::WEBKIT_FILTER_RULE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, WebKitCSSFilterRule, rule);
-            break;
-#endif
         default:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSRule, rule);
+            ret = new JSCSSRule(exec, rule);
+            break;
     }
 
-    return wrapper;
+    interp->putDOMObject(rule, ret);
+    return ret;
 }
 
 } // namespace WebCore

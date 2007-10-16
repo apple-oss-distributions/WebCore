@@ -1,7 +1,7 @@
 /*
  * This file is part of the theme implementation for form controls in WebCore.
  *
- * Copyright (C) 2009 Nokia Corporation and/or its subsidiary(-ies).
+ * Copyright (C) 2007 Trolltech
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,46 +19,29 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-#ifndef RenderThemeQt_h
-#define RenderThemeQt_h
+#ifndef RenderThemeQt_H
+#define RenderThemeQt_H
 
 #include "RenderTheme.h"
 
-#include <QBrush>
-#include <QPalette>
-#include <QSharedPointer>
-#include <QString>
-
-QT_BEGIN_NAMESPACE
+class QStyle;
 class QPainter;
-QT_END_NAMESPACE
+class QWidget;
+class QStyleOption;
 
 namespace WebCore {
 
-#if ENABLE(PROGRESS_ELEMENT)
-class RenderProgress;
-#endif
 class RenderStyle;
-class HTMLMediaElement;
-class StylePainter;
-class ScrollbarTheme;
 
-typedef PassRefPtr<RenderTheme> (*QtThemeFactoryFunction)(Page* page);
-
-class RenderThemeQt : public RenderTheme {
-
+class RenderThemeQt : public RenderTheme
+{
 public:
-    RenderThemeQt(Page*);
-
-    static void setCustomTheme(QtThemeFactoryFunction, ScrollbarTheme* customScrollbarTheme);
-    static ScrollbarTheme* customScrollbarTheme();
-
-    String extraDefaultStyleSheet();
+    RenderThemeQt();
 
     virtual bool supportsHover(const RenderStyle*) const;
-    virtual bool supportsFocusRing(const RenderStyle*) const;
+    virtual bool supportsFocusRing(const RenderStyle* style) const;
 
-    virtual int baselinePosition(const RenderObject*) const;
+    virtual short baselinePosition(const RenderObject* o) const;
 
     // A method asking if the control changes its tint when the window has focus or not.
     virtual bool controlSupportsTints(const RenderObject*) const;
@@ -66,7 +49,12 @@ public:
     // A general method asking if any control tinting is supported at all.
     virtual bool supportsControlTints() const;
 
-    virtual void adjustRepaintRect(const RenderObject*, IntRect&);
+    virtual void adjustRepaintRect(const RenderObject* o, IntRect& r);
+
+    virtual bool isControlStyled(const RenderStyle*, const BorderData&,
+                                 const BackgroundLayer&, const Color&) const;
+
+    virtual void paintResizeControl(GraphicsContext*, const IntRect&);
 
     // The platform selection color.
     virtual Color platformActiveSelectionBackgroundColor() const;
@@ -74,132 +62,59 @@ public:
     virtual Color platformActiveSelectionForegroundColor() const;
     virtual Color platformInactiveSelectionForegroundColor() const;
 
-    virtual Color platformFocusRingColor() const;
-
     virtual void systemFont(int propId, FontDescription&) const;
-    virtual Color systemColor(int cssValueId) const;
 
     virtual int minimumMenuListSize(RenderStyle*) const;
 
-    virtual void adjustSliderThumbSize(RenderStyle*, Element*) const;
-
-#if ENABLE(DATALIST_ELEMENT)
-    virtual IntSize sliderTickSize() const OVERRIDE;
-    virtual int sliderTickOffsetFromTrackCenter() const OVERRIDE;
-#endif
-
-    virtual double caretBlinkInterval() const;
-
-    virtual bool isControlStyled(const RenderStyle*, const BorderData&, const FillLayer&, const Color&) const;
-
-#if ENABLE(VIDEO)
-    virtual String extraMediaControlsStyleSheet();
-#endif
+    virtual void adjustSliderThumbSize(RenderObject*) const;
 
 protected:
-    virtual bool paintCheckbox(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual bool paintCheckbox(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r);
     virtual void setCheckboxSize(RenderStyle*) const;
 
-    virtual bool paintRadio(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual bool paintRadio(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r);
     virtual void setRadioSize(RenderStyle*) const;
 
+    virtual void adjustButtonStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
+    virtual bool paintButton(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
     virtual void setButtonSize(RenderStyle*) const;
 
-    virtual void adjustTextFieldStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual bool paintTextField(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual void adjustTextFieldStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
 
-    virtual bool paintTextArea(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual void adjustTextAreaStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual bool paintMenuList(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r);
+    virtual void adjustMenuListStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
 
-    virtual void adjustMenuListStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual bool paintMenuListButton(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual void adjustMenuListButtonStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
 
-    virtual void adjustMenuListButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual bool paintSliderTrack(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual bool paintSliderThumb(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
 
-#if ENABLE(PROGRESS_ELEMENT)
-    virtual void adjustProgressBarStyle(StyleResolver*, RenderStyle*, Element*) const;
-    // Returns the repeat interval of the animation for the progress bar.
-    virtual double animationRepeatIntervalForProgressBar(RenderProgress*) const;
-#endif
+    virtual bool paintSearchField(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual void adjustSearchFieldStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
 
-    virtual void adjustSliderTrackStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual void adjustSearchFieldCancelButtonStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
+    virtual bool paintSearchFieldCancelButton(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
 
-    virtual void adjustSliderThumbStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual void adjustSearchFieldDecorationStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
+    virtual bool paintSearchFieldDecoration(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
 
-    virtual bool paintSearchField(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual void adjustSearchFieldStyle(StyleResolver*, RenderStyle*, Element*) const;
-
-    virtual void adjustSearchFieldCancelButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintSearchFieldCancelButton(RenderObject*, const PaintInfo&, const IntRect&);
-
-    virtual void adjustSearchFieldDecorationStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintSearchFieldDecoration(RenderObject*, const PaintInfo&, const IntRect&);
-
-    virtual void adjustSearchFieldResultsDecorationStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintSearchFieldResultsDecoration(RenderObject*, const PaintInfo&, const IntRect&);
-
-#ifndef QT_NO_SPINBOX
-    virtual void adjustInnerSpinButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
-#endif
-
-#if ENABLE(VIDEO)
-    virtual bool paintMediaFullscreenButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaPlayButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaMuteButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaSeekBackButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaSeekForwardButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaSliderThumb(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaCurrentTime(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaVolumeSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaVolumeSliderThumb(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual String formatMediaControlsCurrentTime(float currentTime, float duration) const;
-    virtual String formatMediaControlsRemainingTime(float currentTime, float duration) const;
-    virtual bool hasOwnDisabledStateHandlingFor(ControlPart) const { return true; }
-
-    void paintMediaBackground(QPainter*, const IntRect&) const;
-    double mediaControlsBaselineOpacity() const;
-    QColor getMediaControlForegroundColor(RenderObject* = 0) const;
-#endif
-    virtual void computeSizeBasedOnStyle(RenderStyle*) const = 0;
-
-    virtual String fileListNameForWidth(const FileList*, const Font&, int width, bool multipleFilesAllowed) const OVERRIDE;
-
-    virtual QRect inflateButtonRect(const QRect& originalRect) const;
-
-    virtual void setPopupPadding(RenderStyle*) const = 0;
-
-    virtual QSharedPointer<StylePainter> getStylePainter(const PaintInfo&) = 0;
-
-    bool supportsFocus(ControlPart) const;
-
-    IntRect convertToPaintingRect(RenderObject* inputRenderer, const RenderObject* partRenderer, IntRect partRect, const IntRect& localOffset) const;
-
-    virtual QPalette colorPalette() const;
-
-    Page* m_page;
-
-    QString m_buttonFontFamily;
-
-};
-
-class StylePainter {
-public:
-    virtual ~StylePainter();
-
-    bool isValid() const { return painter; }
-
-    QPainter* painter;
-
-protected:
-    StylePainter(RenderThemeQt*, const PaintInfo&);
-    StylePainter();
-    void init(GraphicsContext*);
-
+    virtual void adjustSearchFieldResultsDecorationStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
+    virtual bool paintSearchFieldResultsDecoration(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
 private:
-    QBrush m_previousBrush;
-    bool m_previousAntialiasing;
+    bool supportsFocus(EAppearance) const;
 
+    bool getStylePainterAndWidgetFromPaintInfo(const RenderObject::PaintInfo&, QStyle*&, QPainter*&, QWidget*&) const;
+    EAppearance applyTheme(QStyleOption&, RenderObject*) const;
+
+    void setSizeFromFont(RenderStyle*) const;
+    IntSize sizeForFont(RenderStyle*) const;
+    void setButtonPadding(RenderStyle*) const;
+    void setPopupPadding(RenderStyle*) const;
+    void setPrimitiveSize(RenderStyle*) const;
 };
 
 }
 
-#endif // RenderThemeQt_h
+#endif

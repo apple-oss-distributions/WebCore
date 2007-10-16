@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,30 +18,24 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    JSCustomMarkFunction,
-    JSGenerateToNativeObject
-] interface Attr : Node {
+module core {
 
-    // DOM Level 1
+    interface [GenerateConstructor] Attr : EventTargetNode {
 
-    [TreatReturnedNullStringAs=Null] readonly attribute DOMString name;
+        // DOM Level 1
 
-    readonly attribute boolean specified;
+        readonly attribute [ConvertNullStringTo=Null] DOMString name;
+        readonly attribute boolean specified;
+                 attribute [ConvertNullStringTo=Null, ConvertNullToNullString, CustomSetter] DOMString value 
+                     setter raises(DOMException);
 
-    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, SetterRaisesException] attribute DOMString value;
+        // DOM Level 2
 
-    // DOM Level 2
+        readonly attribute Element ownerElement;
+        
+        // extensions
 
-    readonly attribute Element ownerElement;
+        readonly attribute CSSStyleDeclaration style;
+    };
 
-    // DOM Level 3
-
-    readonly attribute boolean isId;
-
-#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
-    // This extension is no longer needed, but it has to remain available in Objective C, as it's public API.
-    readonly attribute CSSStyleDeclaration style;
-#endif
-};
-
+}

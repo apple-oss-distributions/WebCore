@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,32 +18,30 @@
  * Boston, MA 02110-1301, USA.
  */
 
-// Introduced in DOM Level 2:
-[
-    JSCustomHeader,
-    JSCustomMarkFunction,
-    GenerateIsReachable,
-    JSCustomGetOwnPropertySlotAndDescriptor,
-    CustomNamedSetter,
-    CustomEnumerateProperty,
-    SkipVTableValidation
-] interface CSSStyleDeclaration {
-    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, SetterRaisesException] attribute DOMString cssText;
+module css {
 
-    [TreatReturnedNullStringAs=Null] DOMString          getPropertyValue([Default=Undefined] optional DOMString propertyName);
-    [Custom] CSSValue           getPropertyCSSValue([Default=Undefined] optional DOMString propertyName);
-    [TreatReturnedNullStringAs=Null, RaisesException] DOMString          removeProperty([Default=Undefined] optional DOMString propertyName);
-    [TreatReturnedNullStringAs=Null] DOMString          getPropertyPriority([Default=Undefined] optional DOMString propertyName);
-    [ObjCLegacyUnnamedParameters, RaisesException] void setProperty([Default=Undefined] optional DOMString propertyName, 
-                                    [TreatNullAs=NullString, Default=Undefined] optional DOMString value, 
-                                    [Default=Undefined] optional DOMString priority);
+    // Introduced in DOM Level 2:
+    interface [GenerateConstructor, CustomPutFunction, HasNameGetter, HasIndexGetter] CSSStyleDeclaration {
+                 attribute [ConvertNullStringTo=Null, ConvertNullToNullString] DOMString        cssText
+                     setter raises(DOMException);
 
-    readonly attribute unsigned long    length;
-    getter DOMString          item([Default=Undefined] optional unsigned long index);
-    readonly attribute CSSRule          parentRule;
+        [ConvertNullStringTo=Null] DOMString          getPropertyValue(in DOMString propertyName);
+        CSSValue           getPropertyCSSValue(in DOMString propertyName);
+        [ConvertNullStringTo=Null] DOMString          removeProperty(in DOMString propertyName)
+            raises(DOMException);
+        [ConvertNullStringTo=Null] DOMString          getPropertyPriority(in DOMString propertyName);
+        [OldStyleObjC] void setProperty(in DOMString propertyName, 
+                                        in [ConvertNullToNullString] DOMString value, 
+                                        in DOMString priority)
+            raises(DOMException);
 
-    // Extensions
-    [TreatReturnedNullStringAs=Null] DOMString          getPropertyShorthand([Default=Undefined] optional DOMString propertyName);
-    boolean            isPropertyImplicit([Default=Undefined] optional DOMString propertyName);
-};
+        readonly attribute unsigned long    length;
+        [ConvertNullStringTo=Null] DOMString          item(in unsigned long index);
+        readonly attribute CSSRule          parentRule;
 
+        // Extensions
+        [ConvertNullStringTo=Null] DOMString          getPropertyShorthand(in DOMString propertyName);
+        boolean            isPropertyImplicit(in DOMString propertyName);
+    };
+
+}

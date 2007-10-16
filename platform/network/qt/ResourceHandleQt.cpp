@@ -1,7 +1,6 @@
 /*
  * Copyright (C) 2006 Nikolas Zimmermann <zimmermann@kde.org>
- * Copyright (C) 2008 Nokia Corporation and/or its subsidiary(-ies)
- * Copyright (C) 2008 Holger Hans Peter Freyther
+ * Copyright (C) 2007 Trolltech AS
  *
  * All rights reserved.
  *
@@ -28,56 +27,21 @@
  */
 
 #include "config.h"
-#include "ResourceHandle.h"
 
-#include "CachedResourceLoader.h"
 #include "Frame.h"
-#include "FrameNetworkingContext.h"
-#include "NotImplemented.h"
-#include "Page.h"
-#include "QNetworkReplyHandler.h"
-#include "ResourceHandleClient.h"
+#include "DocLoader.h"
+#include "ResourceHandle.h"
+#include "DeprecatedString.h"
 #include "ResourceHandleInternal.h"
-#include "SharedBuffer.h"
+#include "qwebnetworkinterface_p.h"
+#include "qwebpage_p.h"
+#include "ChromeClientQt.h"
+#include "FrameLoaderClientQt.h"
+#include "Page.h"
 
-#include <QAbstractNetworkCache>
-#include <QCoreApplication>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkRequest>
-#include <QUrl>
+#include "NotImplemented.h"
 
 namespace WebCore {
-
-class WebCoreSynchronousLoader : public ResourceHandleClient {
-public:
-    WebCoreSynchronousLoader(ResourceError& error, ResourceResponse& response, Vector<char>& data)
-        : m_error(error)
-        , m_response(response)
-        , m_data(data)
-    {}
-
-    virtual void willSendRequest(ResourceHandle*, ResourceRequest&, const ResourceResponse&);
-    virtual void didReceiveResponse(ResourceHandle*, const ResourceResponse& response) { m_response = response; }
-    virtual void didReceiveData(ResourceHandle*, const char* data, int length, int) { m_data.append(data, length); }
-    virtual void didFinishLoading(ResourceHandle*, double /*finishTime*/) {}
-    virtual void didFail(ResourceHandle*, const ResourceError& error) { m_error = error; }
-private:
-    ResourceError& m_error;
-    ResourceResponse& m_response;
-    Vector<char>& m_data;
-};
-
-void WebCoreSynchronousLoader::willSendRequest(ResourceHandle* handle, ResourceRequest& request, const ResourceResponse& /*redirectResponse*/)
-{
-    // FIXME: This needs to be fixed to follow the redirect correctly even for cross-domain requests.
-    if (!protocolHostAndPortAreEqual(handle->firstRequest().url(), request.url())) {
-        ASSERT(m_error.isNull());
-        m_error.setIsCancellation(true);
-        request = ResourceRequest();
-        return;
-    }
-}
 
 ResourceHandleInternal::~ResourceHandleInternal()
 {
@@ -89,65 +53,65 @@ ResourceHandle::~ResourceHandle()
         cancel();
 }
 
-bool ResourceHandle::start()
+bool ResourceHandle::start(Frame* frame)
 {
-    // If NetworkingContext is invalid then we are no longer attached to a Page,
-    // this must be an attempted load from an unload event handler, so let's just block it.
-    if (d->m_context && !d->m_context->isValid())
+    if (!frame)
         return false;
 
-    if (!d->m_user.isEmpty() || !d->m_pass.isEmpty()) {
-        // If credentials were specified for this request, add them to the url,
-        // so that they will be passed to QNetworkRequest.
-        KURL urlWithCredentials(firstRequest().url());
-        urlWithCredentials.setUser(d->m_user);
-        urlWithCredentials.setPass(d->m_pass);
-        d->m_firstRequest.setURL(urlWithCredentials);
+    Page *page = frame->page();
+    // If we are no longer attached to a Page, this must be an attempted load from an
+    // onUnload handler, so let's just block it.
+    if (!page)
+        return false;
+
+    // check for (probably) broken requests
+    if (d->m_request.httpMethod() != "GET" && d->m_request.httpMethod() != "POST") {
+        notImplemented();
+        return false;
     }
 
-    ResourceHandleInternal *d = getInternal();
-    d->m_job = new QNetworkReplyHandler(this, QNetworkReplyHandler::AsynchronousLoad, d->m_defersLoading);
-    return true;
+    getInternal()->m_frame = static_cast<FrameLoaderClientQt*>(frame->loader()->client())->webFrame();
+    return QWebNetworkManager::self()->add(this, getInternal()->m_frame->page()->d->networkInterface);
 }
 
 void ResourceHandle::cancel()
 {
-    if (d->m_job) {
-        d->m_job->abort();
-        d->m_job = 0;
-    }
+    QWebNetworkManager::self()->cancel(this);
 }
 
 bool ResourceHandle::loadsBlocked()
 {
+    notImplemented();
     return false;
 }
 
-void ResourceHandle::platformLoadResourceSynchronously(NetworkingContext* context, const ResourceRequest& request, StoredCredentials /*storedCredentials*/, ResourceError& error, ResourceResponse& response, Vector<char>& data)
+bool ResourceHandle::willLoadFromCache(ResourceRequest& request)
 {
-    WebCoreSynchronousLoader syncLoader(error, response, data);
-    RefPtr<ResourceHandle> handle = adoptRef(new ResourceHandle(context, request, &syncLoader, true, false));
-
-    ResourceHandleInternal* d = handle->getInternal();
-    if (!d->m_user.isEmpty() || !d->m_pass.isEmpty()) {
-        // If credentials were specified for this request, add them to the url,
-        // so that they will be passed to QNetworkRequest.
-        KURL urlWithCredentials(d->m_firstRequest.url());
-        urlWithCredentials.setUser(d->m_user);
-        urlWithCredentials.setPass(d->m_pass);
-        d->m_firstRequest.setURL(urlWithCredentials);
-    }
-
-    // starting in deferred mode gives d->m_job the chance of being set before sending the request.
-    d->m_job = new QNetworkReplyHandler(handle.get(), QNetworkReplyHandler::SynchronousLoad, true);
-    d->m_job->setLoadingDeferred(false);
+    notImplemented();
+    return false;
 }
 
-void ResourceHandle::platformSetDefersLoading(bool defers)
+bool ResourceHandle::supportsBufferedData()
 {
-    if (!d->m_job)
-        return;
-    d->m_job->setLoadingDeferred(defers);
+    notImplemented();
+    return false;
+}
+
+PassRefPtr<SharedBuffer> ResourceHandle::bufferedData()
+{
+    notImplemented();
+    return 0;
+}
+
+void ResourceHandle::loadResourceSynchronously(const ResourceRequest& request, ResourceError& e, ResourceResponse& r, Vector<char>& data)
+{
+    notImplemented();
+}
+
+ 
+void ResourceHandle::setDefersLoading(bool defers)
+{
+    d->m_defersLoading = defers;
 }
 
 } // namespace WebCore

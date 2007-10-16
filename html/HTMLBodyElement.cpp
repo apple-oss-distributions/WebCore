@@ -1,9 +1,9 @@
-/*
+/**
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Simon Hausmann (hausmann@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,159 +24,142 @@
 #include "config.h"
 #include "HTMLBodyElement.h"
 
-#include "Attribute.h"
-#include "CSSImageValue.h"
-#include "CSSParser.h"
+#include "CSSHelper.h"
+#include "CSSMutableStyleDeclaration.h"
+#include "CSSPropertyNames.h"
+#include "CSSStyleSelector.h"
+#include "CSSStyleSheet.h"
 #include "CSSValueKeywords.h"
+#include "Document.h"
 #include "EventNames.h"
-#include "Frame.h"
 #include "FrameView.h"
 #include "HTMLFrameElementBase.h"
 #include "HTMLNames.h"
-#include "HTMLParserIdioms.h"
-#include "Page.h"
-#include "ScriptEventListener.h"
-#include "StylePropertySet.h"
 
 namespace WebCore {
 
+using namespace EventNames;
 using namespace HTMLNames;
 
-HTMLBodyElement::HTMLBodyElement(const QualifiedName& tagName, Document* document)
-    : HTMLElement(tagName, document)
+HTMLBodyElement::HTMLBodyElement(Document* doc)
+    : HTMLElement(bodyTag, doc)
 {
-    ASSERT(hasTagName(bodyTag));
-}
-
-PassRefPtr<HTMLBodyElement> HTMLBodyElement::create(Document* document)
-{
-    return adoptRef(new HTMLBodyElement(bodyTag, document));
-}
-
-PassRefPtr<HTMLBodyElement> HTMLBodyElement::create(const QualifiedName& tagName, Document* document)
-{
-    return adoptRef(new HTMLBodyElement(tagName, document));
 }
 
 HTMLBodyElement::~HTMLBodyElement()
 {
+    if (m_linkDecl) {
+        m_linkDecl->setNode(0);
+        m_linkDecl->setParent(0);
+    }
 }
 
-bool HTMLBodyElement::isPresentationAttribute(const QualifiedName& name) const
+void HTMLBodyElement::createLinkDecl()
 {
-    if (name == backgroundAttr || name == marginwidthAttr || name == leftmarginAttr || name == marginheightAttr || name == topmarginAttr || name == bgcolorAttr || name == textAttr || name == bgpropertiesAttr)
-        return true;
-    return HTMLElement::isPresentationAttribute(name);
+    m_linkDecl = new CSSMutableStyleDeclaration;
+    m_linkDecl->setParent(document()->elementSheet());
+    m_linkDecl->setNode(this);
+    m_linkDecl->setStrictParsing(!document()->inCompatMode());
 }
 
-void HTMLBodyElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
+bool HTMLBodyElement::mapToEntry(const QualifiedName& attrName, MappedAttributeEntry& result) const
 {
-    if (name == backgroundAttr) {
-        String url = stripLeadingAndTrailingHTMLSpaces(value);
-        if (!url.isEmpty()) {
-            RefPtr<CSSImageValue> imageValue = CSSImageValue::create(document()->completeURL(url).string());
-            imageValue->setInitiator(localName());
-            style->setProperty(CSSProperty(CSSPropertyBackgroundImage, imageValue.release()));
-        }
-    } else if (name == marginwidthAttr || name == leftmarginAttr) {
-        addHTMLLengthToStyle(style, CSSPropertyMarginRight, value);
-        addHTMLLengthToStyle(style, CSSPropertyMarginLeft, value);
-    } else if (name == marginheightAttr || name == topmarginAttr) {
-        addHTMLLengthToStyle(style, CSSPropertyMarginBottom, value);
-        addHTMLLengthToStyle(style, CSSPropertyMarginTop, value);
-    } else if (name == bgcolorAttr) {
-        addHTMLColorToStyle(style, CSSPropertyBackgroundColor, value);
-    } else if (name == textAttr) {
-        addHTMLColorToStyle(style, CSSPropertyColor, value);
-    } else if (name == bgpropertiesAttr) {
-        if (equalIgnoringCase(value, "fixed"))
-           addPropertyToPresentationAttributeStyle(style, CSSPropertyBackgroundAttachment, CSSValueFixed);
-    } else
-        HTMLElement::collectStyleForPresentationAttribute(name, value, style);
+    if (attrName == backgroundAttr) {
+        result = (MappedAttributeEntry)(eLastEntry + document()->docID());
+        return false;
+    } 
+    
+    if (attrName == bgcolorAttr ||
+        attrName == textAttr ||
+        attrName == marginwidthAttr ||
+        attrName == leftmarginAttr ||
+        attrName == marginheightAttr ||
+        attrName == topmarginAttr ||
+        attrName == bgpropertiesAttr) {
+        result = eUniversal;
+        return false;
+    }
+
+    return HTMLElement::mapToEntry(attrName, result);
 }
 
-void HTMLBodyElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLBodyElement::parseMappedAttribute(MappedAttribute *attr)
 {
-    if (name == vlinkAttr || name == alinkAttr || name == linkAttr) {
-        if (value.isNull()) {
-            if (name == linkAttr)
+    if (attr->name() == backgroundAttr) {
+        String url = parseURL(attr->value());
+        if (!url.isEmpty())
+            addCSSImageProperty(attr, CSS_PROP_BACKGROUND_IMAGE, document()->completeURL(url));
+    } else if (attr->name() == marginwidthAttr || attr->name() == leftmarginAttr) {
+        addCSSLength(attr, CSS_PROP_MARGIN_RIGHT, attr->value());
+        addCSSLength(attr, CSS_PROP_MARGIN_LEFT, attr->value());
+    } else if (attr->name() == marginheightAttr || attr->name() == topmarginAttr) {
+        addCSSLength(attr, CSS_PROP_MARGIN_BOTTOM, attr->value());
+        addCSSLength(attr, CSS_PROP_MARGIN_TOP, attr->value());
+    } else if (attr->name() == bgcolorAttr) {
+        addCSSColor(attr, CSS_PROP_BACKGROUND_COLOR, attr->value());
+    } else if (attr->name() == textAttr) {
+        addCSSColor(attr, CSS_PROP_COLOR, attr->value());
+    } else if (attr->name() == bgpropertiesAttr) {
+        if (equalIgnoringCase(attr->value(), "fixed"))
+            addCSSProperty(attr, CSS_PROP_BACKGROUND_ATTACHMENT, CSS_VAL_FIXED);
+    } else if (attr->name() == vlinkAttr ||
+               attr->name() == alinkAttr ||
+               attr->name() == linkAttr) {
+        if (attr->isNull()) {
+            if (attr->name() == linkAttr)
                 document()->resetLinkColor();
-            else if (name == vlinkAttr)
+            else if (attr->name() == vlinkAttr)
                 document()->resetVisitedLinkColor();
             else
                 document()->resetActiveLinkColor();
         } else {
-            RGBA32 color;
-            if (CSSParser::parseColor(color, value, !document()->inQuirksMode())) {
-                if (name == linkAttr)
-                    document()->setLinkColor(color);
-                else if (name == vlinkAttr)
-                    document()->setVisitedLinkColor(color);
+            if (!m_linkDecl)
+                createLinkDecl();
+            m_linkDecl->setProperty(CSS_PROP_COLOR, attr->value(), false, false);
+            RefPtr<CSSValue> val = m_linkDecl->getPropertyCSSValue(CSS_PROP_COLOR);
+            if (val && val->isPrimitiveValue()) {
+                Color col = document()->styleSelector()->getColorFromPrimitiveValue(static_cast<CSSPrimitiveValue*>(val.get()));
+                if (attr->name() == linkAttr)
+                    document()->setLinkColor(col);
+                else if (attr->name() == vlinkAttr)
+                    document()->setVisitedLinkColor(col);
                 else
-                    document()->setActiveLinkColor(color);
+                    document()->setActiveLinkColor(col);
             }
         }
-
-        setNeedsStyleRecalc();
-    } else if (name == onloadAttr)
-        document()->setWindowAttributeEventListener(eventNames().loadEvent, createAttributeEventListener(document()->frame(), name, value));
-    else if (name == onbeforeunloadAttr)
-        document()->setWindowAttributeEventListener(eventNames().beforeunloadEvent, createAttributeEventListener(document()->frame(), name, value));
-    else if (name == onunloadAttr)
-        document()->setWindowAttributeEventListener(eventNames().unloadEvent, createAttributeEventListener(document()->frame(), name, value));
-    else if (name == onpagehideAttr)
-        document()->setWindowAttributeEventListener(eventNames().pagehideEvent, createAttributeEventListener(document()->frame(), name, value));
-    else if (name == onpageshowAttr)
-        document()->setWindowAttributeEventListener(eventNames().pageshowEvent, createAttributeEventListener(document()->frame(), name, value));
-    else if (name == onpopstateAttr)
-        document()->setWindowAttributeEventListener(eventNames().popstateEvent, createAttributeEventListener(document()->frame(), name, value));
-    else if (name == onblurAttr)
-        document()->setWindowAttributeEventListener(eventNames().blurEvent, createAttributeEventListener(document()->frame(), name, value));
-    else if (name == onfocusAttr)
-        document()->setWindowAttributeEventListener(eventNames().focusEvent, createAttributeEventListener(document()->frame(), name, value));
-#if ENABLE(ORIENTATION_EVENTS)
-    else if (name == onorientationchangeAttr)
-        document()->setWindowAttributeEventListener(eventNames().orientationchangeEvent, createAttributeEventListener(document()->frame(), name, value));
-#endif
-    else if (name == onhashchangeAttr)
-        document()->setWindowAttributeEventListener(eventNames().hashchangeEvent, createAttributeEventListener(document()->frame(), name, value));
-    else if (name == onresizeAttr)
-        document()->setWindowAttributeEventListener(eventNames().resizeEvent, createAttributeEventListener(document()->frame(), name, value));
-    else if (name == onscrollAttr)
-        document()->setWindowAttributeEventListener(eventNames().scrollEvent, createAttributeEventListener(document()->frame(), name, value));
-    else if (name == onselectionchangeAttr)
-        document()->setAttributeEventListener(eventNames().selectionchangeEvent, createAttributeEventListener(document()->frame(), name, value));
-    else if (name == onstorageAttr)
-        document()->setWindowAttributeEventListener(eventNames().storageEvent, createAttributeEventListener(document()->frame(), name, value));
-    else if (name == ononlineAttr)
-        document()->setWindowAttributeEventListener(eventNames().onlineEvent, createAttributeEventListener(document()->frame(), name, value));
-    else if (name == onofflineAttr)
-        document()->setWindowAttributeEventListener(eventNames().offlineEvent, createAttributeEventListener(document()->frame(), name, value));
-    else
-        HTMLElement::parseAttribute(name, value);
+        
+        if (attached())
+            document()->recalcStyle(Force);
+    } else if (attr->name() == onloadAttr) {
+        document()->setHTMLWindowEventListener(loadEvent, attr);
+    } else if (attr->name() == onbeforeunloadAttr) {
+        document()->setHTMLWindowEventListener(beforeunloadEvent, attr);
+    } else if (attr->name() == onunloadAttr) {
+        document()->setHTMLWindowEventListener(unloadEvent, attr);
+    } else if (attr->name() == onblurAttr) {
+        document()->setHTMLWindowEventListener(blurEvent, attr);
+    } else if (attr->name() == onfocusAttr) {
+        document()->setHTMLWindowEventListener(focusEvent, attr);
+    } else if (attr->name() == onresizeAttr) {
+        document()->setHTMLWindowEventListener(resizeEvent, attr);
+    } else if (attr->name() == onscrollAttr) {
+        document()->setHTMLWindowEventListener(scrollEvent, attr);
+    } else
+        HTMLElement::parseMappedAttribute(attr);
 }
 
-Node::InsertionNotificationRequest HTMLBodyElement::insertedInto(ContainerNode* insertionPoint)
+void HTMLBodyElement::insertedIntoDocument()
 {
-    HTMLElement::insertedInto(insertionPoint);
-    if (insertionPoint->inDocument())
-        return InsertionShouldCallDidNotifySubtreeInsertions;
-    return InsertionDone;
-}
-
-void HTMLBodyElement::didNotifySubtreeInsertions(ContainerNode* insertionPoint)
-{
-    ASSERT_UNUSED(insertionPoint, insertionPoint->inDocument());
-    ASSERT(document());
+    HTMLElement::insertedIntoDocument();
 
     // FIXME: Perhaps this code should be in attach() instead of here.
     Element* ownerElement = document()->ownerElement();
     if (ownerElement && (ownerElement->hasTagName(frameTag) || ownerElement->hasTagName(iframeTag))) {
         HTMLFrameElementBase* ownerFrameElement = static_cast<HTMLFrameElementBase*>(ownerElement);
-        int marginWidth = ownerFrameElement->marginWidth();
+        int marginWidth = ownerFrameElement->getMarginWidth();
         if (marginWidth != -1)
             setAttribute(marginwidthAttr, String::number(marginWidth));
-        int marginHeight = ownerFrameElement->marginHeight();
+        int marginHeight = ownerFrameElement->getMarginHeight();
         if (marginHeight != -1)
             setAttribute(marginheightAttr, String::number(marginHeight));
     }
@@ -187,14 +170,9 @@ void HTMLBodyElement::didNotifySubtreeInsertions(ContainerNode* insertionPoint)
         view->scheduleRelayout();
 }
 
-bool HTMLBodyElement::isURLAttribute(const Attribute& attribute) const
+bool HTMLBodyElement::isURLAttribute(Attribute *attr) const
 {
-    return attribute.name() == backgroundAttr || HTMLElement::isURLAttribute(attribute);
-}
-
-bool HTMLBodyElement::supportsFocus() const
-{
-    return rendererIsEditable() || HTMLElement::supportsFocus();
+    return attr->name() == backgroundAttr;
 }
 
 String HTMLBodyElement::aLink() const
@@ -202,9 +180,19 @@ String HTMLBodyElement::aLink() const
     return getAttribute(alinkAttr);
 }
 
-void HTMLBodyElement::setALink(const String& value)
+void HTMLBodyElement::setALink(const String &value)
 {
     setAttribute(alinkAttr, value);
+}
+
+String HTMLBodyElement::background() const
+{
+    return getAttribute(backgroundAttr);
+}
+
+void HTMLBodyElement::setBackground(const String &value)
+{
+    setAttribute(backgroundAttr, value);
 }
 
 String HTMLBodyElement::bgColor() const
@@ -212,7 +200,7 @@ String HTMLBodyElement::bgColor() const
     return getAttribute(bgcolorAttr);
 }
 
-void HTMLBodyElement::setBgColor(const String& value)
+void HTMLBodyElement::setBgColor(const String &value)
 {
     setAttribute(bgcolorAttr, value);
 }
@@ -222,7 +210,7 @@ String HTMLBodyElement::link() const
     return getAttribute(linkAttr);
 }
 
-void HTMLBodyElement::setLink(const String& value)
+void HTMLBodyElement::setLink(const String &value)
 {
     setAttribute(linkAttr, value);
 }
@@ -232,7 +220,7 @@ String HTMLBodyElement::text() const
     return getAttribute(textAttr);
 }
 
-void HTMLBodyElement::setText(const String& value)
+void HTMLBodyElement::setText(const String &value)
 {
     setAttribute(textAttr, value);
 }
@@ -242,98 +230,69 @@ String HTMLBodyElement::vLink() const
     return getAttribute(vlinkAttr);
 }
 
-void HTMLBodyElement::setVLink(const String& value)
+void HTMLBodyElement::setVLink(const String &value)
 {
     setAttribute(vlinkAttr, value);
 }
 
-static int adjustForZoom(int value, Document* document)
-{
-    Frame* frame = document->frame();
-    float zoomFactor = frame->pageZoomFactor() * frame->frameScaleFactor();
-    if (zoomFactor == 1)
-        return value;
-    // Needed because of truncation (rather than rounding) when scaling up.
-    if (zoomFactor > 1)
-        value++;
-    return static_cast<int>(value / zoomFactor);
-}
-
-int HTMLBodyElement::scrollLeft()
+int HTMLBodyElement::scrollLeft() const
 {
     // Update the document's layout.
-    Document* document = this->document();
-    document->updateLayoutIgnorePendingStylesheets();
-    FrameView* view = document->view();
-#if PLATFORM(IOS)
-    return view ? adjustForZoom(view->actualVisibleContentRect().x(), document) : 0;
-#else
-    return view ? adjustForZoom(view->scrollX(), document) : 0;
-#endif
+    Document* doc = document();
+    doc->updateLayoutIgnorePendingStylesheets();
+    FrameView* view = doc->view();
+    
+    return view ? view->contentsX() : 0;
 }
 
 void HTMLBodyElement::setScrollLeft(int scrollLeft)
 {
-    Document* document = this->document();
-    document->updateLayoutIgnorePendingStylesheets();
-    Frame* frame = document->frame();
-    if (!frame)
-        return;
-    FrameView* view = frame->view();
-    if (!view)
-        return;
-    view->setScrollPosition(IntPoint(static_cast<int>(scrollLeft * frame->pageZoomFactor() * frame->frameScaleFactor()), view->scrollY()));
+    FrameView* sview = ownerDocument()->view();
+    if (sview) {
+        // Update the document's layout
+        document()->updateLayoutIgnorePendingStylesheets();
+        sview->setContentsPos(scrollLeft, sview->contentsY());
+    }    
 }
 
-int HTMLBodyElement::scrollTop()
+int HTMLBodyElement::scrollTop() const
 {
     // Update the document's layout.
-    Document* document = this->document();
-    document->updateLayoutIgnorePendingStylesheets();
-    FrameView* view = document->view();
-#if PLATFORM(IOS)
-    return view ? adjustForZoom(view->actualVisibleContentRect().y(), document) : 0;
-#else
-    return view ? adjustForZoom(view->scrollY(), document) : 0;
-#endif
+    Document* doc = document();
+    doc->updateLayoutIgnorePendingStylesheets();
+    FrameView* view = doc->view();
+    
+    return view ? view->contentsY() : 0;
 }
 
 void HTMLBodyElement::setScrollTop(int scrollTop)
 {
-    Document* document = this->document();
-    document->updateLayoutIgnorePendingStylesheets();
-    Frame* frame = document->frame();
-    if (!frame)
-        return;
-    FrameView* view = frame->view();
-    if (!view)
-        return;
-    view->setScrollPosition(IntPoint(view->scrollX(), static_cast<int>(scrollTop * frame->pageZoomFactor() * frame->frameScaleFactor())));
+    FrameView* sview = ownerDocument()->view();
+    if (sview) {
+        // Update the document's layout
+        document()->updateLayoutIgnorePendingStylesheets();
+        sview->setContentsPos(sview->contentsX(), scrollTop);
+    }        
 }
 
-int HTMLBodyElement::scrollHeight()
+int HTMLBodyElement::scrollHeight() const
 {
     // Update the document's layout.
-    Document* document = this->document();
-    document->updateLayoutIgnorePendingStylesheets();
-    FrameView* view = document->view();
-    return view ? adjustForZoom(view->contentsHeight(), document) : 0;    
+    Document* doc = document();
+    doc->updateLayoutIgnorePendingStylesheets();
+    FrameView* view = doc->view();
+    
+    return view ? view->contentsHeight() : 0;    
 }
 
-int HTMLBodyElement::scrollWidth()
+int HTMLBodyElement::scrollWidth() const
 {
     // Update the document's layout.
-    Document* document = this->document();
-    document->updateLayoutIgnorePendingStylesheets();
-    FrameView* view = document->view();
-    return view ? adjustForZoom(view->contentsWidth(), document) : 0;    
+    Document* doc = document();
+    doc->updateLayoutIgnorePendingStylesheets();
+    FrameView* view = doc->view();
+    
+    return view ? view->contentsWidth() : 0;    
 }
 
-void HTMLBodyElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) const
-{
-    HTMLElement::addSubresourceAttributeURLs(urls);
-
-    addSubresourceURL(urls, document()->completeURL(getAttribute(backgroundAttr)));
 }
-
-} // namespace WebCore

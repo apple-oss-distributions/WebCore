@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc.  All rights reserved.
+ * Copyright (C) 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,25 +26,16 @@
 #include "config.h"
 #include "DragImage.h"
 
-#include "Font.h"
-#include "FontCache.h"
-#include "FontDescription.h"
-#include "FontSelector.h"
+#include "CachedImage.h"
 #include "GraphicsContext.h"
-#include "HWndDC.h"
 #include "Image.h"
-#include "KURL.h"
-#include "StringTruncator.h"
-#include "TextRun.h"
-#include "WebCoreTextRenderer.h"
-#include <wtf/RetainPtr.h>
+#include "RetainPtr.h"
+
+#include <CoreGraphics/CoreGraphics.h>
 
 #include <windows.h>
 
 namespace WebCore {
-
-HBITMAP allocImage(HDC, IntSize, PlatformGraphicsContext** targetRef);
-void deallocContext(PlatformGraphicsContext* target);
 
 IntSize dragImageSize(DragImageRef image)
 {
@@ -61,163 +52,142 @@ void deleteDragImage(DragImageRef image)
         ::DeleteObject(image);
 }
 
+HBITMAP allocImage(HDC dc, IntSize size, CGContextRef *targetRef)
+{
+    HBITMAP hbmp;
+    BITMAPINFO bmpInfo = {0};
+    bmpInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmpInfo.bmiHeader.biWidth = size.width();
+    bmpInfo.bmiHeader.biHeight = size.height();
+    bmpInfo.bmiHeader.biPlanes = 1;
+    bmpInfo.bmiHeader.biBitCount = 32;
+    bmpInfo.bmiHeader.biCompression = BI_RGB;
+    LPVOID bits;
+    hbmp = CreateDIBSection(dc, &bmpInfo, DIB_RGB_COLORS, &bits, 0, 0);
+
+    if (!targetRef)
+        return hbmp;
+
+    CGColorSpaceRef deviceRGB = CGColorSpaceCreateDeviceRGB();
+    CGContextRef bitmapContext = CGBitmapContextCreate(bits, bmpInfo.bmiHeader.biWidth, bmpInfo.bmiHeader.biHeight, 8,
+                                                       bmpInfo.bmiHeader.biWidth * 4, deviceRGB, 
+                                                       kCGBitmapByteOrder32Little | kCGImageAlphaNoneSkipFirst);
+    CGColorSpaceRelease(deviceRGB);
+    if (!bitmapContext) {
+        DeleteObject(hbmp);
+        return 0;
+    }
+
+    *targetRef = bitmapContext;
+    return hbmp;
+}
+
+static CGContextRef createCgContextFromBitmap(HBITMAP bitmap)
+{
+    BITMAP info;
+    GetObject(bitmap, sizeof(info), &info);
+    ASSERT(info.bmBitsPixel == 32);
+
+    CGColorSpaceRef deviceRGB = CGColorSpaceCreateDeviceRGB();
+    CGContextRef bitmapContext = CGBitmapContextCreate(info.bmBits, info.bmWidth, info.bmHeight, 8,
+                                                       info.bmWidthBytes, deviceRGB, kCGBitmapByteOrder32Little | kCGImageAlphaNoneSkipFirst);
+    CGColorSpaceRelease(deviceRGB);
+    return bitmapContext;
+}
+
+DragImageRef scaleDragImage(DragImageRef image, FloatSize scale)
+{
+    // FIXME: due to the way drag images are done on windows we need 
+    // to preprocess the alpha channel <rdar://problem/5015946>
+
+    if (!image)
+        return 0;
+    CGContextRef targetContext;
+    CGContextRef srcContext;
+    CGImageRef srcImage;
+    IntSize srcSize = dragImageSize(image);
+    IntSize dstSize((int)(srcSize.width() * scale.width()), (int)(srcSize.height() * scale.height()));
+    HBITMAP hbmp = 0;
+    HDC dc = GetDC(0);
+    HDC dstDC = CreateCompatibleDC(dc);
+    if (!dstDC)
+        goto exit;
+
+    hbmp = allocImage(dstDC, dstSize, &targetContext);
+    if (!hbmp)
+        goto exit;
+
+    srcContext = createCgContextFromBitmap(image);
+    srcImage = CGBitmapContextCreateImage(srcContext);
+    CGRect rect;
+    rect.origin.x = 0;
+    rect.origin.y = 0;
+    rect.size = dstSize;
+    CGContextDrawImage(targetContext, rect, srcImage);
+    CGImageRelease(srcImage);
+    CGContextRelease(srcContext);
+    CGContextRelease(targetContext);
+    ::DeleteObject(image);
+    image = 0;
+
+exit:
+    if (!hbmp)
+        hbmp = image;
+    if (dstDC)
+        DeleteDC(dstDC);
+    ReleaseDC(0, dc);
+    return hbmp;
+}
+    
 DragImageRef dissolveDragImageToFraction(DragImageRef image, float)
 {
     //We don't do this on windows as the dragimage is blended by the OS
     return image;
 }
         
-DragImageRef createDragImageIconForCachedImageFilename(const String& filename)
-{
-    SHFILEINFO shfi = {0};
-    String fname = filename;
-    if (FAILED(SHGetFileInfo(static_cast<LPCWSTR>(fname.charactersWithNullTermination()), FILE_ATTRIBUTE_NORMAL,
-        &shfi, sizeof(shfi), SHGFI_ICON | SHGFI_USEFILEATTRIBUTES)))
-        return 0;
-
-    ICONINFO iconInfo;
-    if (!GetIconInfo(shfi.hIcon, &iconInfo)) {
-        DestroyIcon(shfi.hIcon);
-        return 0;
-    }
-
-    DestroyIcon(shfi.hIcon);
-    DeleteObject(iconInfo.hbmMask);
-
-    return iconInfo.hbmColor;
-}
-
-const float DragLabelBorderX = 4;
-// Keep border_y in synch with DragController::LinkDragBorderInset.
-const float DragLabelBorderY = 2;
-const float DragLabelRadius = 5;
-const float LabelBorderYOffset = 2;
-
-const float MinDragLabelWidthBeforeClip = 120;
-const float MaxDragLabelWidth = 200;
-const float MaxDragLabelStringWidth = (MaxDragLabelWidth - 2 * DragLabelBorderX);
-
-const float DragLinkLabelFontsize = 11;
-const float DragLinkUrlFontSize = 10;
-
-static Font dragLabelFont(int size, bool bold, FontRenderingMode renderingMode)
-{
-    Font result;
-#if !OS(WINCE)
-    NONCLIENTMETRICS metrics;
-    metrics.cbSize = sizeof(metrics);
-    SystemParametersInfo(SPI_GETNONCLIENTMETRICS, metrics.cbSize, &metrics, 0);
-
-    FontDescription description;
-    description.setWeight(bold ? FontWeightBold : FontWeightNormal);
-    description.setOneFamily(metrics.lfSmCaptionFont.lfFaceName);
-    description.setSpecifiedSize((float)size);
-    description.setComputedSize((float)size);
-    description.setRenderingMode(renderingMode);
-    result = Font(description, 0, 0);
-    result.update(0);
-#endif
-    return result;
-}
-
-DragImageRef createDragImageForLink(KURL& url, const String& inLabel, FontRenderingMode fontRenderingMode)
-{
-    // This is more or less an exact match for the Mac OS X code.
-
-    const Font* labelFont;
-    const Font* urlFont;
-    FontCachePurgePreventer fontCachePurgePreventer;
-
-    if (fontRenderingMode == AlternateRenderingMode) {
-        static const Font alternateRenderingModeLabelFont = dragLabelFont(DragLinkLabelFontsize, true, AlternateRenderingMode);
-        static const Font alternateRenderingModeURLFont = dragLabelFont(DragLinkUrlFontSize, false, AlternateRenderingMode);
-        labelFont = &alternateRenderingModeLabelFont;
-        urlFont = &alternateRenderingModeURLFont;
-    } else {
-        static const Font normalRenderingModeLabelFont = dragLabelFont(DragLinkLabelFontsize, true, NormalRenderingMode);
-        static const Font normalRenderingModeURLFont = dragLabelFont(DragLinkUrlFontSize, false, NormalRenderingMode);
-        labelFont = &normalRenderingModeLabelFont;
-        urlFont = &normalRenderingModeURLFont;
-    }
-
-    bool drawURLString = true;
-    bool clipURLString = false;
-    bool clipLabelString = false;
-
-    String urlString = url.string(); 
-    String label = inLabel;
-    if (label.isEmpty()) {
-        drawURLString = false;
-        label = urlString;
-    }
-
-    // First step in drawing the link drag image width.
-    TextRun labelRun(label.impl());
-    TextRun urlRun(urlString.impl());
-    IntSize labelSize(labelFont->width(labelRun), labelFont->fontMetrics().ascent() + labelFont->fontMetrics().descent());
-
-    if (labelSize.width() > MaxDragLabelStringWidth) {
-        labelSize.setWidth(MaxDragLabelStringWidth);
-        clipLabelString = true;
-    }
-    
-    IntSize urlStringSize;
-    IntSize imageSize(labelSize.width() + DragLabelBorderX * 2, labelSize.height() + DragLabelBorderY * 2);
-
-    if (drawURLString) {
-        urlStringSize.setWidth(urlFont->width(urlRun));
-        urlStringSize.setHeight(urlFont->fontMetrics().ascent() + urlFont->fontMetrics().descent()); 
-        imageSize.setHeight(imageSize.height() + urlStringSize.height());
-        if (urlStringSize.width() > MaxDragLabelStringWidth) {
-            imageSize.setWidth(MaxDragLabelWidth);
-            clipURLString = true;
-        } else
-            imageSize.setWidth(std::max(labelSize.width(), urlStringSize.width()) + DragLabelBorderX * 2);
-    }
-
-    // We now know how big the image needs to be, so we create and
-    // fill the background
-    HBITMAP image = 0;
-    HWndDC dc(0);
+DragImageRef createDragImageFromImage(Image* img)
+{    
+    HBITMAP hbmp = 0;
+    HDC dc = GetDC(0);
     HDC workingDC = CreateCompatibleDC(dc);
+    CGContextRef drawContext = 0;
     if (!workingDC)
-        return 0;
+        goto exit;
 
-    PlatformGraphicsContext* contextRef;
-    image = allocImage(workingDC, imageSize, &contextRef);
-    if (!image) {
+    hbmp = allocImage(workingDC, img->size(), &drawContext);
+
+    if (!hbmp)
+        goto exit;
+
+    if (!drawContext) {
+        ::DeleteObject(hbmp);
+        hbmp = 0;
+    }
+
+    CGImageRef srcImage = img->getCGImageRef();
+    CGRect rect;
+    rect.size = img->size();
+    rect.origin.x = 0;
+    rect.origin.y = -rect.size.height;
+    static const CGFloat white [] = {1.0, 1.0, 1.0, 1.0};
+    CGContextScaleCTM(drawContext, 1, -1);
+    CGContextSetFillColor(drawContext, white);
+    CGContextFillRect(drawContext, rect);
+    CGContextSetBlendMode(drawContext, kCGBlendModeNormal);
+    CGContextDrawImage(drawContext, rect, srcImage);
+    CGContextRelease(drawContext);
+
+exit:
+    if (workingDC)
         DeleteDC(workingDC);
-        return 0;
-    }
-        
-    SelectObject(workingDC, image);
-    GraphicsContext context(contextRef);
-    // On Mac alpha is {0.7, 0.7, 0.7, 0.8}, however we can't control alpha
-    // for drag images on win, so we use 1
-    static const Color backgroundColor(140, 140, 140);
-    static const IntSize radii(DragLabelRadius, DragLabelRadius);
-    IntRect rect(0, 0, imageSize.width(), imageSize.height());
-    context.fillRoundedRect(rect, radii, radii, radii, radii, backgroundColor, ColorSpaceDeviceRGB);
- 
-    // Draw the text
-    static const Color topColor(0, 0, 0, 255); // original alpha = 0.75
-    static const Color bottomColor(255, 255, 255, 127); // original alpha = 0.5
-    if (drawURLString) {
-        if (clipURLString)
-            urlString = StringTruncator::rightTruncate(urlString, imageSize.width() - (DragLabelBorderX * 2.0f), *urlFont, StringTruncator::EnableRoundingHacks);
-        IntPoint textPos(DragLabelBorderX, imageSize.height() - (LabelBorderYOffset + urlFont->fontMetrics().descent()));
-        WebCoreDrawDoubledTextAtPoint(context, urlString, textPos, *urlFont, topColor, bottomColor);
-    }
-    
-    if (clipLabelString)
-        label = StringTruncator::rightTruncate(label, imageSize.width() - (DragLabelBorderX * 2.0f), *labelFont, StringTruncator::EnableRoundingHacks);
-
-    IntPoint textPos(DragLabelBorderX, DragLabelBorderY + labelFont->pixelSize());
-    WebCoreDrawDoubledTextAtPoint(context, label, textPos, *labelFont, topColor, bottomColor);
-
-    deallocContext(contextRef);
-    DeleteDC(workingDC);
-    return image;
+    ReleaseDC(0, dc);
+    return hbmp;
 }
-
+    
+DragImageRef createDragImageIconForCachedImage(CachedImage*)
+{
+    //FIXME: Provide icon for image type <rdar://problem/5015949>
+    return 0;     
+}
+    
 }

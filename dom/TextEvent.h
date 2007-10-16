@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,59 +27,34 @@
 #ifndef TextEvent_h
 #define TextEvent_h
 
-#include "DictationAlternative.h"
-#include "TextEventInputType.h"
 #include "UIEvent.h"
 
 namespace WebCore {
 
-    class DocumentFragment;
-
     class TextEvent : public UIEvent {
     public:
-
-        static PassRefPtr<TextEvent> create();
-        static PassRefPtr<TextEvent> create(PassRefPtr<AbstractView>, const String& data, TextEventInputType = TextEventInputKeyboard);
-        static PassRefPtr<TextEvent> createForPlainTextPaste(PassRefPtr<AbstractView> view, const String& data, bool shouldSmartReplace);
-        static PassRefPtr<TextEvent> createForFragmentPaste(PassRefPtr<AbstractView> view, PassRefPtr<DocumentFragment> data, bool shouldSmartReplace, bool shouldMatchStyle);
-        static PassRefPtr<TextEvent> createForDrop(PassRefPtr<AbstractView> view, const String& data);
-        static PassRefPtr<TextEvent> createForDictation(PassRefPtr<AbstractView>, const String& data, const Vector<DictationAlternative>& dictationAlternatives);
-
+        TextEvent();
+        TextEvent(AbstractView*, const String& data);
         virtual ~TextEvent();
     
-        void initTextEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView>, const String& data);
+        void initTextEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView*, const String& data);
     
         String data() const { return m_data; }
 
-        virtual const AtomicString& interfaceName() const;
+        virtual bool isTextEvent() const;
 
-        bool isLineBreak() const { return m_inputType == TextEventInputLineBreak; }
-        bool isComposition() const { return m_inputType == TextEventInputComposition; }
-        bool isBackTab() const { return m_inputType == TextEventInputBackTab; }
-        bool isPaste() const { return m_inputType == TextEventInputPaste; }
-        bool isDrop() const { return m_inputType == TextEventInputDrop; }
-        bool isDictation() const { return m_inputType == TextEventInputDictation; }
+        // If true, any newline characters in the text are line breaks only, not paragraph separators.
+        bool isLineBreak() const { return m_isLineBreak; }
+        void setIsLineBreak(bool isLineBreak) { m_isLineBreak = isLineBreak; }
 
-        bool shouldSmartReplace() const { return m_shouldSmartReplace; }
-        bool shouldMatchStyle() const { return m_shouldMatchStyle; }
-        DocumentFragment* pastingFragment() const { return m_pastingFragment.get(); }
-        const Vector<DictationAlternative>& dictationAlternatives() const { return m_dictationAlternatives; }
+        // If true, any tab characters in the text are backtabs.
+        bool isBackTab() const { return m_isBackTab; }
+        void setIsBackTab(bool isBackTab) { m_isBackTab = isBackTab; }
 
     private:
-        TextEvent();
-
-        TextEvent(PassRefPtr<AbstractView>, const String& data, TextEventInputType = TextEventInputKeyboard);
-        TextEvent(PassRefPtr<AbstractView>, const String& data, PassRefPtr<DocumentFragment>,
-                  bool shouldSmartReplace, bool shouldMatchStyle);
-        TextEvent(PassRefPtr<AbstractView>, const String& data, const Vector<DictationAlternative>& dictationAlternatives);
-
-        TextEventInputType m_inputType;
         String m_data;
-
-        RefPtr<DocumentFragment> m_pastingFragment;
-        bool m_shouldSmartReplace;
-        bool m_shouldMatchStyle;
-        Vector<DictationAlternative> m_dictationAlternatives;
+        bool m_isLineBreak;
+        bool m_isBackTab;
     };
 
 } // namespace WebCore

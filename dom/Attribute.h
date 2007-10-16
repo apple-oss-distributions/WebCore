@@ -1,9 +1,11 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Peter Kelly (pmk@post.com)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2008, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -29,56 +31,59 @@
 
 namespace WebCore {
 
-// This has no counterpart in DOM.
-// It is an internal representation of the node value of an Attr.
-// The actual Attr with its value as a Text child is allocated only if needed.
-class Attribute {
-public:
-    Attribute(const QualifiedName& name, const AtomicString& value)
-        : m_name(name)
-        , m_value(value)
-    {
-    }
+class Attr;
+class CSSStyleDeclaration;
+class Element;
+class NamedAttrMap;
 
-    // NOTE: The references returned by these functions are only valid for as long
-    // as the Attribute stays in place. For example, calling a function that mutates
-    // an Element's internal attribute storage may invalidate them.
+// this has no counterpart in DOM, purely internal
+// representation of the nodevalue of an Attr.
+// the actual Attr (Attr) with its value as textchild
+// is only allocated on demand by the DOM bindings.
+// Any use of Attr inside khtml should be avoided.
+class Attribute : public Shared<Attribute> {
+    friend class Attr;
+    friend class Element;
+    friend class NamedAttrMap;
+public:
+    // null value is forbidden !
+    Attribute(const QualifiedName& name, const AtomicString& value)
+        : m_name(name), m_value(value), m_impl(0)
+    {}
+    
+    Attribute(const AtomicString& name, const AtomicString& value)
+        : m_name(nullAtom, name, nullAtom), m_value(value), m_impl(0)
+    {}
+
+    virtual ~Attribute() { }
+    
     const AtomicString& value() const { return m_value; }
     const AtomicString& prefix() const { return m_name.prefix(); }
     const AtomicString& localName() const { return m_name.localName(); }
     const AtomicString& namespaceURI() const { return m_name.namespaceURI(); }
-
+    
     const QualifiedName& name() const { return m_name; }
+    
+    Attr* attr() const { return m_impl; }
+    PassRefPtr<Attr> createAttrIfNeeded(Element*);
 
+    bool isNull() const { return m_value.isNull(); }
     bool isEmpty() const { return m_value.isEmpty(); }
-    bool matches(const QualifiedName&) const;
+    
+    virtual Attribute* clone(bool preserveDecl=true) const;
 
+    // An extension to get the style information for presentational attributes.
+    virtual CSSStyleDeclaration* style() const { return 0; }
+    
     void setValue(const AtomicString& value) { m_value = value; }
     void setPrefix(const AtomicString& prefix) { m_name.setPrefix(prefix); }
-
-    // Note: This API is only for HTMLTreeBuilder.  It is not safe to change the
-    // name of an attribute once parseAttribute has been called as DOM
-    // elements may have placed the Attribute in a hash by name.
-    void parserSetName(const QualifiedName& name) { m_name = name; }
-
-#if COMPILER(MSVC)
-    // NOTE: This constructor is not actually implemented, it's just defined so MSVC
-    // will let us use a zero-length array of Attributes.
-    Attribute();
-#endif
 
 private:
     QualifiedName m_name;
     AtomicString m_value;
+    Attr* m_impl;
 };
 
-inline bool Attribute::matches(const QualifiedName& qualifiedName) const
-{
-    if (qualifiedName.localName() != localName())
-        return false;
-    return qualifiedName.prefix() == starAtom || qualifiedName.namespaceURI() == namespaceURI();
-}
+} //namespace
 
-} // namespace WebCore
-
-#endif // Attribute_h
+#endif

@@ -1,7 +1,9 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,25 +21,47 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #include "config.h"
 #include "HTMLBaseFontElement.h"
-
 #include "HTMLNames.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLBaseFontElement::HTMLBaseFontElement(const QualifiedName& tagName, Document* document)
-    : HTMLElement(tagName, document)
+HTMLBaseFontElement::HTMLBaseFontElement(Document *doc)
+    : HTMLElement(basefontTag, doc)
 {
-    ASSERT(hasTagName(basefontTag));
 }
 
-PassRefPtr<HTMLBaseFontElement> HTMLBaseFontElement::create(const QualifiedName& tagName, Document* document)
+String HTMLBaseFontElement::color() const
 {
-    return adoptRef(new HTMLBaseFontElement(tagName, document));
+    return getAttribute(colorAttr);
+}
+
+void HTMLBaseFontElement::setColor(const String &value)
+{
+    setAttribute(colorAttr, value);
+}
+
+String HTMLBaseFontElement::face() const
+{
+    return getAttribute(faceAttr);
+}
+
+void HTMLBaseFontElement::setFace(const String &value)
+{
+    setAttribute(faceAttr, value);
+}
+
+int HTMLBaseFontElement::size() const
+{
+    return getAttribute(sizeAttr).toInt();
+}
+
+void HTMLBaseFontElement::setSize(int value)
+{
+    setAttribute(sizeAttr, String::number(value));
 }
 
 }

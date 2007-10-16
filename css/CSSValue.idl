@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,23 +18,21 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    CustomToJSObject,
-    CustomIsReachable,
-    JSCustomFinalize,
-    ObjCPolymorphic,
-    ImplementationLacksVTable
-] interface CSSValue {
+module css {
 
-    // UnitTypes
-    const unsigned short CSS_INHERIT         = 0;
-    const unsigned short CSS_PRIMITIVE_VALUE = 1;
-    const unsigned short CSS_VALUE_LIST      = 2;
-    const unsigned short CSS_CUSTOM          = 3;
+    interface [GenerateConstructor, ObjCCustomInternalImpl] CSSValue {
 
-    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, SetterRaisesException] attribute DOMString cssText;
+        // UnitTypes
+        const unsigned short CSS_INHERIT         = 0;
+        const unsigned short CSS_PRIMITIVE_VALUE = 1;
+        const unsigned short CSS_VALUE_LIST      = 2;
+        const unsigned short CSS_CUSTOM          = 3;
 
-    readonly attribute unsigned short cssValueType;
+                 attribute [ConvertNullStringTo=Null, ConvertNullToNullString] DOMString cssText
+                     setter raises(DOMException);
 
-};
+        readonly attribute unsigned short cssValueType;
 
+    };
+
+}

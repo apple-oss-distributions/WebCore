@@ -27,20 +27,22 @@
 #ifndef XPathNSResolver_h
 #define XPathNSResolver_h
 
-#include <wtf/Forward.h>
-#include <wtf/RefCounted.h>
+#if ENABLE(XPATH)
+
+#include "Shared.h"
 
 namespace WebCore {
 
-    class XPathNSResolver : public RefCounted<XPathNSResolver> {
+    class String;
+
+    class XPathNSResolver : public Shared<XPathNSResolver> {
     public:
         virtual ~XPathNSResolver();
         virtual String lookupNamespaceURI(const String& prefix) = 0;
-        
-    protected:
-        XPathNSResolver() { }
     };
 
 }
+
+#endif // ENABLE(XPATH)
 
 #endif // XPathNSResolver_h

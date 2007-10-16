@@ -1,4 +1,6 @@
 /*
+ * This file is part of the HTML rendering engine for KDE.
+ *
  * Copyright (C) 2002 Lars Knoll (knoll@kde.org)
  *           (C) 2002 Dirk Mueller (mueller@kde.org)
  *
@@ -21,7 +23,6 @@
 #ifndef FixedTableLayout_h
 #define FixedTableLayout_h
 
-#include "LayoutUnit.h"
 #include "Length.h"
 #include "TableLayout.h"
 #include <wtf/Vector.h>
@@ -34,12 +35,11 @@ class FixedTableLayout : public TableLayout {
 public:
     FixedTableLayout(RenderTable*);
 
-    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minWidth, LayoutUnit& maxWidth) OVERRIDE;
-    virtual void applyPreferredLogicalWidthQuirks(LayoutUnit& minWidth, LayoutUnit& maxWidth) const OVERRIDE;
+    virtual void calcPrefWidths(int& minWidth, int& maxWidth);
     virtual void layout();
 
-private:
-    int calcWidthArray();
+protected:
+    int calcWidthArray(int tableWidth);
 
     Vector<Length> m_width;
 };

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2003 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,32 +23,32 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#include "ScrollTypes.h"
+@class WebCoreFrameBridge;
 
-// WTF_PLATFORM_IOS
-#ifdef __cplusplus
-namespace WebCore {
-    class Frame;
-}
-#endif
+// This protocol is a way for an NSScrollView to detect
+// that the view it's embedded in is one that should be resized when the
+// scroll view is resized.
 
-@protocol WebCoreFrameScrollView
-// WTF_PLATFORM_IOS
-#ifdef __cplusplus
-- (void)setScrollingModes:(WebCore::ScrollbarMode)hMode vertical:(WebCore::ScrollbarMode)vMode andLock:(BOOL)lock;
-- (void)scrollingModes:(WebCore::ScrollbarMode*)hMode vertical:(WebCore::ScrollbarMode*)vMode;
-#else
-- (void)setScrollingModes:(int)hMode vertical:(int)vMode andLock:(BOOL)lock;
-- (void)scrollingModes:(int*)hMode vertical:(int*)vMode;
-#endif
-- (void)setScrollBarsSuppressed:(BOOL)suppressed repaintOnUnsuppress:(BOOL)repaint;
-- (void)setScrollOrigin:(NSPoint)origin updatePositionAtAll:(BOOL)updatePositionAtAll immediately:(BOOL)updatePositionImmediately;
-- (NSPoint)scrollOrigin;
-@end
+typedef enum {
+    WebCoreScrollbarAuto,
+    WebCoreScrollbarAlwaysOff,
+    WebCoreScrollbarAlwaysOn
+} WebCoreScrollbarMode;
 
 @protocol WebCoreFrameView
-// WTF_PLATFORM_IOS
-#ifdef __cplusplus
-- (WebCore::Frame*)_web_frame;
-#endif
+- (void)setHorizontalScrollingMode:(WebCoreScrollbarMode)mode;
+- (void)setVerticalScrollingMode:(WebCoreScrollbarMode)mode;
+- (void)setScrollingMode:(WebCoreScrollbarMode)mode;
+
+- (WebCoreScrollbarMode)horizontalScrollingMode;
+- (WebCoreScrollbarMode)verticalScrollingMode;
+
+- (void)setScrollBarsSuppressed:(BOOL)suppressed repaintOnUnsuppress:(BOOL)repaint;
+
+@end
+
+// This protocol is a way for WebCore to gain access to its information
+// about WebKit subclasses of NSView
+@protocol WebCoreBridgeHolder
+- (WebCoreFrameBridge *) webCoreBridge;
 @end

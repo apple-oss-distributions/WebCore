@@ -28,25 +28,8 @@
 
 #import "FloatRect.h"
 #import "Frame.h"
+#import "FrameView.h"
 #import "Page.h"
-#import "Widget.h"
-#import "NotImplemented.h"
-
-@implementation NSScreen(WebCoreNSScreenUtilities)
-+ (NSScreen *)screenForDislayID:(PlatformDisplayID)displayID
-{
-    for (NSScreen *screen in [NSScreen screens]) {
-        if ([screen displayID] == displayID)
-            return screen;
-    }
-    return nil;
-}
-
-- (PlatformDisplayID)displayID
-{
-    return (PlatformDisplayID)[[[self deviceDescription] objectForKey:@"NSScreenNumber"] intValue];
-}
-@end
 
 namespace WebCore {
 
@@ -62,43 +45,26 @@ int screenDepthPerComponent(Widget*)
 
 bool screenIsMonochrome(Widget*)
 {
-    return false;
+    NSString *colorSpace = NSColorSpaceFromDepth([[NSScreen deepestScreen] depth]);
+    return colorSpace == NSCalibratedWhiteColorSpace
+        || colorSpace == NSCalibratedBlackColorSpace
+        || colorSpace == NSDeviceWhiteColorSpace
+        || colorSpace == NSDeviceBlackColorSpace;
 }
 
 // These functions scale between screen and page coordinates because JavaScript/DOM operations 
 // assume that the screen and the page share the same coordinate system.
 
-static NSScreen *screenForWidget(Widget* widget, NSWindow *window)
-{
-    // Widget is in an NSWindow, use its screen.
-    if (window)
-        return screenForWindow(window);
-    
-    // Didn't get an NSWindow; probably WebKit2. Try using the Widget's display ID.
-    if (NSScreen *screen = widget ? [NSScreen screenForDislayID:widget->windowDisplayID()] : nil)
-        return screen;
-    
-    // Widget's window is offscreen, or no screens. Fall back to the first screen if available.
-    return screenForWindow(nil);
-}
-
 FloatRect screenRect(Widget* widget)
 {
-    NSWindow *window = widget ? [widget->platformWidget() window] : nil;
-    NSScreen *screen = screenForWidget(widget, window);
-    return toUserSpace([screen frame], window);
+    NSWindow *window = widget ? [widget->getView() window] : nil;
+    return toUserSpace([screenForWindow(window) frame], window);
 }
 
 FloatRect screenAvailableRect(Widget* widget)
 {
-    NSWindow *window = widget ? [widget->platformWidget() window] : nil;
-    NSScreen *screen = screenForWidget(widget, window);
-    return toUserSpace([screen visibleFrame], window);
-}
-
-void screenColorProfile(ColorProfile&)
-{
-    notImplemented();
+    NSWindow *window = widget ? [widget->getView() window] : nil;
+    return toUserSpace([screenForWindow(window) visibleFrame], window);
 }
 
 NSScreen *screenForWindow(NSWindow *window)
@@ -118,12 +84,16 @@ FloatRect toUserSpace(const NSRect& rect, NSWindow *destination)
 {
     FloatRect userRect = rect;
     userRect.setY(NSMaxY([screenForWindow(destination) frame]) - (userRect.y() + userRect.height())); // flip
+    if (destination)
+        userRect.scale(1 / [destination userSpaceScaleFactor]); // scale down
     return userRect;
 }
 
 NSRect toDeviceSpace(const FloatRect& rect, NSWindow *source)
 {
     FloatRect deviceRect = rect;
+    if (source)
+        deviceRect.scale([source userSpaceScaleFactor]); // scale up
     deviceRect.setY(NSMaxY([screenForWindow(source) frame]) - (deviceRect.y() + deviceRect.height())); // flip
     return deviceRect;
 }

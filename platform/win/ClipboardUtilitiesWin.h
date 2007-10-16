@@ -28,15 +28,17 @@
 
 #include "DragData.h"
 #include <windows.h>
-#include <wtf/Forward.h>
 
 namespace WebCore {
 
+class CString;
+class DeprecatedCString;
 class Document;
 class KURL;
+class String;
 
-HGLOBAL createGlobalData(const String&);
-HGLOBAL createGlobalData(const Vector<char>&);
+HGLOBAL createGlobalData(String str);
+HGLOBAL createGlobalData(CString str);
 HGLOBAL createGlobalData(const KURL& url, const String& title);
 
 FORMATETC* urlWFormat();
@@ -47,41 +49,22 @@ FORMATETC* filenameWFormat();
 FORMATETC* filenameFormat();
 FORMATETC* htmlFormat();
 FORMATETC* cfHDropFormat();
-FORMATETC* smartPasteFormat();
-FORMATETC* fileDescriptorFormat();
-FORMATETC* fileContentFormatZero();
 
-void markupToCFHTML(const String& markup, const String& srcURL, Vector<char>& result);
+DeprecatedCString markupToCF_HTML(const String& markup, const String& srcURL);
+String urlToMarkup(const KURL& url, const String& title);
 
-void replaceNewlinesWithWindowsStyleNewlines(String&);
-void replaceNBSPWithSpace(String&);
+void replaceNewlinesWithWindowsStyleNewlines(String& str);
+void replaceNBSPWithSpace(String& str);
 
 bool containsFilenames(const IDataObject*);
-bool containsFilenames(const DragDataMap*);
-bool containsHTML(IDataObject*);
-bool containsHTML(const DragDataMap*);
+bool containsHTML(IDataObject* data);
 
 PassRefPtr<DocumentFragment> fragmentFromFilenames(Document*, const IDataObject*);
-PassRefPtr<DocumentFragment> fragmentFromFilenames(Document*, const DragDataMap*);
-PassRefPtr<DocumentFragment> fragmentFromHTML(Document*, IDataObject*);
-PassRefPtr<DocumentFragment> fragmentFromHTML(Document*, const DragDataMap*);
-PassRefPtr<DocumentFragment> fragmentFromCFHTML(Document*, const String& cfhtml);
+PassRefPtr<DocumentFragment> fragmentFromHTML(Document* doc, IDataObject* data);
+PassRefPtr<DocumentFragment> fragmentFromCF_HTML(Document* doc, const String& cf_html);
 
-String getURL(IDataObject*, DragData::FilenameConversionPolicy, String* title = 0);
-String getURL(const DragDataMap*, DragData::FilenameConversionPolicy, String* title = 0);
-String getPlainText(IDataObject*);
-String getPlainText(const DragDataMap*);
-String getTextHTML(IDataObject*);
-String getTextHTML(const DragDataMap*);
-String getCFHTML(IDataObject*);
-String getCFHTML(const DragDataMap*);
-
-void getClipboardData(IDataObject*, FORMATETC* fetc, Vector<String>& dataStrings);
-void setClipboardData(IDataObject*, UINT format, const Vector<String>& dataStrings);
-void getFileDescriptorData(IDataObject*, int& size, String& pathname);
-void getFileContentData(IDataObject*, int size, void* dataBlob);
-void setFileDescriptorData(IDataObject*, int size, const String& pathname);
-void setFileContentData(IDataObject*, int size, void* dataBlob);
+String getURL(IDataObject* dataObject, bool& success, String* title = 0);
+String getPlainText(IDataObject* dataObject, bool& success);
 
 } // namespace WebCore
 

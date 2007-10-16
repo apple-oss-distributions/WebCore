@@ -1,4 +1,6 @@
 /*
+ * This file is part of the HTML rendering engine for KDE.
+ *
  * Copyright (C) 2002 Lars Knoll (knoll@kde.org)
  *           (C) 2002 Dirk Mueller (mueller@kde.org)
  *
@@ -21,32 +23,23 @@
 #ifndef TableLayout_h
 #define TableLayout_h
 
-#include <wtf/FastAllocBase.h>
-#include <wtf/Noncopyable.h>
-
 namespace WebCore {
 
 class RenderTable;
 
 class TableLayout {
-    WTF_MAKE_NONCOPYABLE(TableLayout); WTF_MAKE_FAST_ALLOCATED;
 public:
-    explicit TableLayout(RenderTable* table)
+    TableLayout(RenderTable* table)
         : m_table(table)
     {
     }
 
     virtual ~TableLayout() { }
 
-    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minWidth, LayoutUnit& maxWidth) = 0;
-    virtual void applyPreferredLogicalWidthQuirks(LayoutUnit& minWidth, LayoutUnit& maxWidth) const = 0;
+    virtual void calcPrefWidths(int& minWidth, int& maxWidth) = 0;
     virtual void layout() = 0;
 
 protected:
-    // FIXME: Once we enable SATURATED_LAYOUT_ARITHMETHIC, this should just be LayoutUnit::nearlyMax().
-    // Until then though, using nearlyMax causes overflow in some tests, so we just pick a large number.
-    const static int tableMaxWidth = 1000000;
-
     RenderTable* m_table;
 };
 

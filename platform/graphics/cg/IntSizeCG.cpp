@@ -26,13 +26,9 @@
 #include "config.h"
 #include "IntSize.h"
 
-#if USE(CG)
+#if PLATFORM(CG)
 
-#if !PLATFORM(IOS)
 #include <ApplicationServices/ApplicationServices.h>
-#else
-#include <CoreGraphics/CoreGraphics.h>
-#endif
 
 namespace WebCore {
 
@@ -47,4 +43,4 @@ IntSize::operator CGSize() const
 
 }
 
-#endif // USE(CG)
+#endif // PLATFORM(CG)

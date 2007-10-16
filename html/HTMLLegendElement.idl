@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,11 +18,12 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLLegendElement : HTMLElement {
-    readonly attribute HTMLFormElement form;
-    [Reflect] attribute DOMString align;
-#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
-    [Reflect] attribute DOMString accessKey;
-#endif
-};
+module html {
+    interface [GenerateConstructor] HTMLLegendElement : HTMLElement {
+        readonly attribute HTMLFormElement form;
+        attribute [ConvertNullToNullString] DOMString accessKey;
+        attribute [ConvertNullToNullString] DOMString align;
 
+        void focus();
+    };
+}

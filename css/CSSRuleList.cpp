@@ -1,7 +1,9 @@
 /**
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * (C) 2002-2003 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2002, 2005, 2006, 2012 Apple Computer, Inc.
+ * Copyright (C) 2002, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,7 +25,7 @@
 #include "CSSRuleList.h"
 
 #include "CSSRule.h"
-#include "CSSStyleSheet.h"
+#include "StyleList.h"
 
 namespace WebCore {
 
@@ -31,24 +33,48 @@ CSSRuleList::CSSRuleList()
 {
 }
 
+CSSRuleList::CSSRuleList(StyleList* list, bool omitCharsetRules)
+{
+    if (list) {
+        unsigned len = list->length();
+        for (unsigned i = 0; i < len; ++i) {
+            StyleBase* style = list->item(i);
+            if (style->isRule() && !(omitCharsetRules && style->isCharsetRule()))
+                append(static_cast<CSSRule*>(style));
+        }
+    }
+}
+
 CSSRuleList::~CSSRuleList()
 {
+    CSSRule* rule;
+    while (!m_lstCSSRules.isEmpty() && (rule = m_lstCSSRules.take(0)))
+        rule->deref();
 }
 
-StaticCSSRuleList::StaticCSSRuleList() 
-    : m_refCount(1)
-{ 
-}
-
-StaticCSSRuleList::~StaticCSSRuleList()
+void CSSRuleList::deleteRule(unsigned index)
 {
+    CSSRule* rule = m_lstCSSRules.take(index);
+    if (rule)
+        rule->deref();
+    else
+        ; // FIXME: Throw INDEX_SIZE_ERR exception here
 }
 
-void StaticCSSRuleList::deref()
-{ 
-    ASSERT(m_refCount);
-    if (!--m_refCount)
-        delete this;
+void CSSRuleList::append(CSSRule* rule)
+{
+    insertRule(rule, m_lstCSSRules.count()) ;
+}
+
+unsigned CSSRuleList::insertRule(CSSRule* rule, unsigned index)
+{
+    if (rule && m_lstCSSRules.insert(index, rule)) {
+        rule->ref();
+        return index;
+    }
+
+    // FIXME: Should throw INDEX_SIZE_ERR exception instead!
+    return 0;
 }
 
 } // namespace WebCore

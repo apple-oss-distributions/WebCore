@@ -27,15 +27,48 @@
 
 namespace WebCore {
 
+static inline Element* targetElement(Node* node)
+{
+    if (!node)
+        return 0;
+    Node* parent = node->parent();
+    if (!parent || !parent->isElementNode())
+        return 0;
+    return static_cast<Element*>(parent);
+}
+
 MouseEventWithHitTestResults::MouseEventWithHitTestResults(const PlatformMouseEvent& event, const HitTestResult& hitTestResult)
     : m_event(event)
     , m_hitTestResult(hitTestResult)
 {
 }
+        
+Node* MouseEventWithHitTestResults::targetNode() const
+{
+    Node* node = m_hitTestResult.innerNode();
+    if (node && node->inDocument())
+        return node;
+
+    Element* element = targetElement(node);
+    if (element && element->inDocument())
+        return element;
+
+    return node;
+}
+
+const IntPoint MouseEventWithHitTestResults::localPoint() const
+{
+    return m_hitTestResult.localPoint();
+}
+
+PlatformScrollbar* MouseEventWithHitTestResults::scrollbar() const
+{
+    return m_hitTestResult.scrollbar();
+}
 
 bool MouseEventWithHitTestResults::isOverLink() const
 {
-    return m_hitTestResult.isOverLink();
+    return m_hitTestResult.URLElement() && m_hitTestResult.URLElement()->isLink();
 }
 
 }

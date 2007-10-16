@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2005, 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,66 +25,39 @@
 
 #include "config.h"
 #include "AppendNodeCommand.h"
-
-#include "AXObjectCache.h"
-#include "Document.h"
-#include "ExceptionCodePlaceholder.h"
 #include "htmlediting.h"
 
 namespace WebCore {
 
-AppendNodeCommand::AppendNodeCommand(PassRefPtr<ContainerNode> parent, PassRefPtr<Node> node)
-    : SimpleEditCommand(parent->document())
-    , m_parent(parent)
-    , m_node(node)
+AppendNodeCommand::AppendNodeCommand(Node* parentNode, PassRefPtr<Node> childToAppend)
+    : EditCommand(parentNode->document()), m_parentNode(parentNode), m_childToAppend(childToAppend)
 {
-    ASSERT(m_parent);
-    ASSERT(m_node);
-    ASSERT(!m_node->parentNode());
-
-    ASSERT(m_parent->rendererIsEditable() || !m_parent->attached());
-}
-
-static void sendAXTextChangedIgnoringLineBreaks(Node* node, AXObjectCache::AXTextChange textChange)
-{
-    String nodeValue = node->nodeValue();
-    // Don't consider linebreaks in this command
-    if (nodeValue == "\n")
-      return;
-
-    if (AXObjectCache* cache = node->document()->existingAXObjectCache())
-        cache->nodeTextChangeNotification(node, textChange, 0, nodeValue);
+    ASSERT(m_childToAppend);
+    ASSERT(m_parentNode);
 }
 
 void AppendNodeCommand::doApply()
 {
-    if (!m_parent->rendererIsEditable() && m_parent->attached())
-        return;
+    ASSERT(m_childToAppend);
+    ASSERT(m_parentNode);
+    // If the child to append is already in a tree, appending it will remove it from it's old location
+    // in an non-undoable way.  We might eventually find it useful to do an undoable remove in this case.
+    ASSERT(!m_childToAppend->parent());
+    ASSERT(isContentEditable(m_parentNode.get()) || enclosingNodeOfType(m_parentNode.get(), &isContentEditable) || !m_parentNode->attached());
 
-    m_parent->appendChild(m_node.get(), IGNORE_EXCEPTION, AttachLazily);
-
-    if (AXObjectCache::accessibilityEnabled())
-        sendAXTextChangedIgnoringLineBreaks(m_node.get(), AXObjectCache::AXTextInserted);
+    ExceptionCode ec = 0;
+    m_parentNode->appendChild(m_childToAppend.get(), ec);
+    ASSERT(ec == 0);
 }
 
 void AppendNodeCommand::doUnapply()
 {
-    if (!m_parent->rendererIsEditable())
-        return;
-        
-    // Need to notify this before actually deleting the text
-    if (AXObjectCache::accessibilityEnabled())
-        sendAXTextChangedIgnoringLineBreaks(m_node.get(), AXObjectCache::AXTextDeleted);
+    ASSERT(m_childToAppend);
+    ASSERT(m_parentNode);
 
-    m_node->remove(IGNORE_EXCEPTION);
+    ExceptionCode ec = 0;
+    m_parentNode->removeChild(m_childToAppend.get(), ec);
+    ASSERT(ec == 0);
 }
-
-#ifndef NDEBUG
-void AppendNodeCommand::getNodesInCommand(HashSet<Node*>& nodes)
-{
-    addNodeAndDescendants(m_parent.get(), nodes);
-    addNodeAndDescendants(m_node.get(), nodes);
-}
-#endif
 
 } // namespace WebCore

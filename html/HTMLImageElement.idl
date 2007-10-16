@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,35 +18,33 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    JSGenerateToNativeObject,
-] interface HTMLImageElement : HTMLElement {
-    [Reflect] attribute DOMString name;
-    [Reflect] attribute DOMString align;
-    [Reflect] attribute DOMString alt;
-    [Reflect] attribute DOMString border;
-    [Reflect] attribute DOMString crossOrigin;
-    attribute long height;
-    [Reflect] attribute long hspace;
-    [Reflect] attribute boolean isMap;
-    [Reflect, URL] attribute DOMString longDesc;
-    [Reflect, URL] attribute DOMString src;
-    [Reflect] attribute DOMString useMap;
-    [Reflect] attribute long vspace;
-    attribute long width;
-    
-    // Extensions
-    readonly attribute boolean complete;
-    [Reflect,URL] attribute DOMString lowsrc;
-    readonly attribute long naturalHeight;
-    readonly attribute long naturalWidth;
-    readonly attribute long x;
-    readonly attribute long y;
+module html {
+    interface [GenerateConstructor] HTMLImageElement : HTMLElement {
+                 attribute [ConvertNullToNullString] DOMString name;
+                 attribute [ConvertNullToNullString] DOMString align;
+                 attribute [ConvertNullToNullString] DOMString alt;
+                 attribute [ConvertNullToNullString] DOMString border;        
+                 attribute long height;
+                 attribute long hspace;
+                 attribute boolean isMap;
+                 attribute [ConvertNullToNullString] DOMString longDesc;
+                 attribute [ConvertNullToNullString] DOMString src;
+                 attribute [ConvertNullToNullString] DOMString useMap;
+                 attribute long vspace;
+                 attribute long width;
+        
+        // Extensions
+        readonly attribute boolean complete;
+                 attribute [ConvertNullToNullString] DOMString lowsrc;
+        readonly attribute long naturalHeight;
+        readonly attribute long naturalWidth;
+        readonly attribute long x;
+        readonly attribute long y;
 
-#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
-    // Objective-C extension:
-    readonly attribute DOMString altDisplayString;
-    readonly attribute URL absoluteImageURL;
+#if defined(LANGUAGE_OBJECTIVE_C)
+        // Objective-C extension:
+        readonly attribute DOMString altDisplayString;
+        readonly attribute URL absoluteImageURL;
 #endif
-};
-
+    };
+}

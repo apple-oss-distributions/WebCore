@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007 Apple Inc. All rights reserved.
  * Copyright (C) 2006 James G. Speth (speth@end.com)
  * Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
  *
@@ -26,54 +26,74 @@
  */
 
 #import "config.h"
-#import "DOMInternal.h" // import first to make the private/public trick work
 #import "DOM.h"
 
-#import "CachedImage.h"
-#import "DOMElementInternal.h"
+#import "CDATASection.h"
+#import "CSSHelper.h"
+#import "CSSStyleSheet.h"
+#import "Comment.h"
 #import "DOMHTMLCanvasElement.h"
-#import "DOMHTMLTableCellElementInternal.h"
-#import "DOMNodeInternal.h"
+#import "DOMInternal.h"
 #import "DOMPrivate.h"
-#import "DOMRangeInternal.h"
-#import "Font.h"
+#import "Document.h"
+#import "DocumentFragment.h"
+#import "DocumentType.h"
+#import "EntityReference.h"
+#import "Event.h"
+#import "EventListener.h"
+#import "EventTarget.h"
+#import "ExceptionHandlers.h"
+#import "FontData.h"
+#import "FoundationExtras.h"
 #import "Frame.h"
-#import "FrameSnapshottingMac.h"
-#import "HTMLElement.h"
+#import "FrameView.h"
+#import "HTMLDocument.h"
 #import "HTMLNames.h"
-#import "HTMLParserIdioms.h"
-#import "HTMLTableCellElement.h"
+#import "HTMLPlugInElement.h"
 #import "Image.h"
-#import "JSNode.h"
+#import "IntRect.h"
 #import "NodeFilter.h"
+#import "NodeFilterCondition.h"
+#import "NodeIterator.h"
+#import "NodeList.h"
+#import "ProcessingInstruction.h"
+#import "QualifiedName.h"
 #import "Range.h"
 #import "RenderImage.h"
-#import "ScriptController.h"
+#import "RenderView.h"
+#import "Text.h"
+#import "TreeWalker.h"
 #import "WebScriptObjectPrivate.h"
-#import <JavaScriptCore/APICast.h>
+#import <objc/objc-class.h>
 #import <wtf/HashMap.h>
 
-#if PLATFORM(IOS)
-#import "FocusController.h"
-#import "HTMLLinkElement.h"
-#import "KeyboardEvent.h"
-#import "KURL.h"
-#import "MediaList.h"
-#import "MediaQueryEvaluator.h"
-#import "NodeRenderStyle.h"
-#import "Page.h"
-#import "RenderView.h"
-#import "Touch.h"
-#import "WAKAppKitStubs.h"
-#import "WAKWindow.h"
-#import "WebCoreThreadMessage.h"
+#if ENABLE(SVG)
+#import "SVGDocument.h"
+#import "SVGElement.h"
+#import "SVGNames.h"
 #endif
 
-using namespace JSC;
-using namespace WebCore;
+namespace WebCore {
 
-// FIXME: Would be nice to break this up into separate files to match how other WebKit
-// code is organized.
+class ObjCEventListener : public EventListener {
+public:
+    static ObjCEventListener* find(id <DOMEventListener>);
+    static ObjCEventListener* create(id <DOMEventListener>);
+
+private:
+    ObjCEventListener(id <DOMEventListener>);
+    virtual ~ObjCEventListener();
+
+    virtual void handleEvent(Event*, bool isWindowEvent);
+
+    id <DOMEventListener> m_listener;
+};
+
+typedef HashMap<id, ObjCEventListener*> ListenerMap;
+static ListenerMap* listenerMap;
+
+} // namespace WebCore
+
 
 //------------------------------------------------------------------------------------------
 // DOMNode
@@ -131,6 +151,7 @@ static void createElementClassMap()
     addElementClass(HTMLNames::imgTag, [DOMHTMLImageElement class]);
     addElementClass(HTMLNames::inputTag, [DOMHTMLInputElement class]);
     addElementClass(HTMLNames::insTag, [DOMHTMLModElement class]);
+    addElementClass(HTMLNames::isindexTag, [DOMHTMLIsIndexElement class]);
     addElementClass(HTMLNames::labelTag, [DOMHTMLLabelElement class]);
     addElementClass(HTMLNames::legendTag, [DOMHTMLLegendElement class]);
     addElementClass(HTMLNames::liTag, [DOMHTMLLIElement class]);
@@ -149,6 +170,7 @@ static void createElementClassMap()
     addElementClass(HTMLNames::preTag, [DOMHTMLPreElement class]);
     addElementClass(HTMLNames::qTag, [DOMHTMLQuoteElement class]);
     addElementClass(HTMLNames::scriptTag, [DOMHTMLScriptElement class]);
+    addElementClass(HTMLNames::keygenTag, [DOMHTMLSelectElement class]);
     addElementClass(HTMLNames::selectTag, [DOMHTMLSelectElement class]);
     addElementClass(HTMLNames::styleTag, [DOMHTMLStyleElement class]);
     addElementClass(HTMLNames::tableTag, [DOMHTMLTableElement class]);
@@ -162,22 +184,80 @@ static void createElementClassMap()
     addElementClass(HTMLNames::trTag, [DOMHTMLTableRowElement class]);
     addElementClass(HTMLNames::ulTag, [DOMHTMLUListElement class]);
     addElementClass(HTMLNames::xmpTag, [DOMHTMLPreElement class]);
-}
 
-static Class lookupElementClass(const QualifiedName& tag)
-{
-    // Do a special lookup to ignore element prefixes
-    if (tag.hasPrefix())
-        return elementClassMap->get(QualifiedName(nullAtom, tag.localName(), tag.namespaceURI()).impl());
-    
-    return elementClassMap->get(tag.impl());
+#if ENABLE(SVG)
+    addElementClass(SVGNames::aTag, [DOMSVGAElement class]);
+#if ENABLE(SVG_EXPERIMENTAL_FEATURES)
+    addElementClass(SVGNames::animateTag, [DOMSVGAnimateElement class]);
+    addElementClass(SVGNames::animateColorTag, [DOMSVGAnimateColorElement class]);
+    addElementClass(SVGNames::animateTransformTag, [DOMSVGAnimateTransformElement class]);
+#endif
+    addElementClass(SVGNames::circleTag, [DOMSVGCircleElement class]);
+    addElementClass(SVGNames::clipPathTag, [DOMSVGClipPathElement class]);
+    addElementClass(SVGNames::cursorTag, [DOMSVGCursorElement class]);
+    addElementClass(SVGNames::defsTag, [DOMSVGDefsElement class]);
+    addElementClass(SVGNames::descTag, [DOMSVGDescElement class]);
+    addElementClass(SVGNames::ellipseTag, [DOMSVGEllipseElement class]);
+#if ENABLE(SVG_EXPERIMENTAL_FEATURES)
+    addElementClass(SVGNames::feBlendTag, [DOMSVGFEBlendElement class]);
+    addElementClass(SVGNames::feColorMatrixTag, [DOMSVGFEColorMatrixElement class]);
+    addElementClass(SVGNames::feComponentTransferTag, [DOMSVGFEComponentTransferElement class]);
+    addElementClass(SVGNames::feCompositeTag, [DOMSVGFECompositeElement class]);
+    addElementClass(SVGNames::feDiffuseLightingTag, [DOMSVGFEDiffuseLightingElement class]);
+    addElementClass(SVGNames::feDisplacementMapTag, [DOMSVGFEDisplacementMapElement class]);
+    addElementClass(SVGNames::feDistantLightTag, [DOMSVGFEDistantLightElement class]);
+    addElementClass(SVGNames::feFloodTag, [DOMSVGFEFloodElement class]);
+    addElementClass(SVGNames::feFuncATag, [DOMSVGFEFuncAElement class]);
+    addElementClass(SVGNames::feFuncBTag, [DOMSVGFEFuncBElement class]);
+    addElementClass(SVGNames::feFuncGTag, [DOMSVGFEFuncGElement class]);
+    addElementClass(SVGNames::feFuncRTag, [DOMSVGFEFuncRElement class]);
+    addElementClass(SVGNames::feGaussianBlurTag, [DOMSVGFEGaussianBlurElement class]);
+    addElementClass(SVGNames::feImageTag, [DOMSVGFEImageElement class]);
+    addElementClass(SVGNames::feMergeTag, [DOMSVGFEMergeElement class]);
+    addElementClass(SVGNames::feMergeNodeTag, [DOMSVGFEMergeNodeElement class]);
+    addElementClass(SVGNames::feOffsetTag, [DOMSVGFEOffsetElement class]);
+    addElementClass(SVGNames::fePointLightTag, [DOMSVGFEPointLightElement class]);
+    addElementClass(SVGNames::feSpecularLightingTag, [DOMSVGFESpecularLightingElement class]);
+    addElementClass(SVGNames::feSpotLightTag, [DOMSVGFESpotLightElement class]);
+    addElementClass(SVGNames::feTileTag, [DOMSVGFETileElement class]);
+    addElementClass(SVGNames::feTurbulenceTag, [DOMSVGFETurbulenceElement class]);
+    addElementClass(SVGNames::filterTag, [DOMSVGFilterElement class]);
+    addElementClass(SVGNames::foreignObjectTag, [DOMSVGForeignObjectElement class]);
+#endif
+    addElementClass(SVGNames::gTag, [DOMSVGGElement class]);
+    addElementClass(SVGNames::imageTag, [DOMSVGImageElement class]);
+    addElementClass(SVGNames::lineTag, [DOMSVGLineElement class]);
+    addElementClass(SVGNames::linearGradientTag, [DOMSVGLinearGradientElement class]);
+    addElementClass(SVGNames::markerTag, [DOMSVGMarkerElement class]);
+    addElementClass(SVGNames::maskTag, [DOMSVGMaskElement class]);
+    addElementClass(SVGNames::metadataTag, [DOMSVGMetadataElement class]);
+    addElementClass(SVGNames::pathTag, [DOMSVGPathElement class]);
+    addElementClass(SVGNames::patternTag, [DOMSVGPatternElement class]);
+    addElementClass(SVGNames::polygonTag, [DOMSVGPolygonElement class]);
+    addElementClass(SVGNames::polylineTag, [DOMSVGPolylineElement class]);
+    addElementClass(SVGNames::radialGradientTag, [DOMSVGRadialGradientElement class]);
+    addElementClass(SVGNames::rectTag, [DOMSVGRectElement class]);
+    addElementClass(SVGNames::scriptTag, [DOMSVGScriptElement class]);
+    addElementClass(SVGNames::setTag, [DOMSVGSetElement class]);
+    addElementClass(SVGNames::stopTag, [DOMSVGStopElement class]);
+    addElementClass(SVGNames::styleTag, [DOMSVGStyleElement class]);
+    addElementClass(SVGNames::svgTag, [DOMSVGSVGElement class]);
+    addElementClass(SVGNames::switchTag, [DOMSVGSwitchElement class]);
+    addElementClass(SVGNames::symbolTag, [DOMSVGSymbolElement class]);
+    addElementClass(SVGNames::textTag, [DOMSVGTextElement class]);
+    addElementClass(SVGNames::titleTag, [DOMSVGTitleElement class]);
+    addElementClass(SVGNames::trefTag, [DOMSVGTRefElement class]);
+    addElementClass(SVGNames::tspanTag, [DOMSVGTSpanElement class]);
+    addElementClass(SVGNames::useTag, [DOMSVGUseElement class]);
+    addElementClass(SVGNames::viewTag, [DOMSVGViewElement class]);
+#endif
 }
 
 static Class elementClass(const QualifiedName& tag, Class defaultClass)
 {
     if (!elementClassMap)
         createElementClassMap();
-    Class objcClass = lookupElementClass(tag);
+    Class objcClass = elementClassMap->get(tag.impl());
     if (!objcClass)
         objcClass = defaultClass;
     return objcClass;
@@ -192,86 +272,15 @@ static NSArray *kit(const Vector<IntRect>& rects)
     return array;
 }
 
-#if PLATFORM(IOS)
-static WKQuad wkQuadFromFloatQuad(const FloatQuad& inQuad)
-{
-    WKQuad  theQuad;
-    theQuad.p1 = inQuad.p1();
-    theQuad.p2 = inQuad.p2();
-    theQuad.p3 = inQuad.p3();
-    theQuad.p4 = inQuad.p4();
-    
-    return theQuad;
-}
-
-static NSArray *kit(const Vector<FloatQuad>& quads)
-{
-    size_t size = quads.size();
-    NSMutableArray *array = [NSMutableArray arrayWithCapacity:size];
-    for (size_t i = 0; i < size; ++i) {
-        WKQuadObject* quadObject = [[WKQuadObject alloc] initWithQuad:wkQuadFromFloatQuad(quads[i])];
-        [array addObject:quadObject];
-        [quadObject release];
-    }
-    return array;
-}
-
-static inline float min4(float a, float b, float c, float d)
-{
-    return std::min(std::min(a, b), std::min(c, d));
-}
-
-static inline float max4(float a, float b, float c, float d)
-{
-    return std::max(std::max(a, b), std::max(c, d));
-}
-
-static inline WKQuad emptyQuad()
-{
-    WKQuad zeroQuad = { CGPointZero, CGPointZero, CGPointZero, CGPointZero };
-    return zeroQuad;
-}
-#endif
-
 } // namespace WebCore
-
-#if PLATFORM(IOS)
-@implementation WKQuadObject
-
-- (id)initWithQuad:(WKQuad)quad
-{
-    if ((self = [super init]))
-    {
-        _quad = quad;
-    }
-    return self;
-}
-
-- (WKQuad)quad
-{
-    return _quad;
-}
-
-- (CGRect)boundingBox
-{
-    float left      = WebCore::min4(_quad.p1.x, _quad.p2.x, _quad.p3.x, _quad.p4.x);
-    float top       = WebCore::min4(_quad.p1.y, _quad.p2.y, _quad.p3.y, _quad.p4.y);
-    
-    float right     = WebCore::max4(_quad.p1.x, _quad.p2.x, _quad.p3.x, _quad.p4.x);
-    float bottom    = WebCore::max4(_quad.p1.y, _quad.p2.y, _quad.p3.y, _quad.p4.y);
-    
-    return CGRectMake(left, top, right - left, bottom - top);
-}
-
-@end
-#endif
 
 @implementation DOMNode (WebCoreInternal)
 
+// FIXME: should this go in the main implementation?
 - (NSString *)description
 {
     if (!_internal)
-        return [NSString stringWithFormat:@"<%@: null>", [[self class] description]];
+        return [NSString stringWithFormat:@"<%@: null>", [[self class] description], self];
 
     NSString *value = [self nodeValue];
     if (value)
@@ -281,348 +290,202 @@ static inline WKQuad emptyQuad()
     return [NSString stringWithFormat:@"<%@ [%@]: %p>", [[self class] description], [self nodeName], _internal];
 }
 
-- (JSC::Bindings::RootObject*)_rootObject
+- (id)_initWithNode:(WebCore::Node *)impl
 {
-    WebCore::Frame* frame = core(self)->document()->frame();
-    if (!frame)
-        return 0;
-    return frame->script()->bindingRootObject();
+    ASSERT(impl);
+
+    [super _init];
+    _internal = reinterpret_cast<DOMObjectInternal*>(impl);
+    impl->ref();
+    WebCore::addDOMWrapper(self, impl);
+    return self;
 }
 
-@end
-
-Class kitClass(WebCore::Node* impl)
++ (DOMNode *)_wrapNode:(WebCore::Node *)impl
 {
+    if (!impl)
+        return nil;
+
+    id cachedInstance;
+    cachedInstance = WebCore::getDOMWrapper(impl);
+    if (cachedInstance)
+        return [[cachedInstance retain] autorelease];
+
+    Class wrapperClass = nil;
     switch (impl->nodeType()) {
         case WebCore::Node::ELEMENT_NODE:
             if (impl->isHTMLElement())
-                return WebCore::elementClass(toHTMLElement(impl)->tagQName(), [DOMHTMLElement class]);
-            return [DOMElement class];
+                wrapperClass = WebCore::elementClass(static_cast<WebCore::HTMLElement*>(impl)->tagQName(), [DOMHTMLElement class]);
+#if ENABLE(SVG)
+            else if (impl->isSVGElement())
+                wrapperClass = WebCore::elementClass(static_cast<WebCore::SVGElement*>(impl)->tagQName(), [DOMSVGElement class]);
+#endif
+            else
+                wrapperClass = [DOMElement class];
+            break;
         case WebCore::Node::ATTRIBUTE_NODE:
-            return [DOMAttr class];
+            wrapperClass = [DOMAttr class];
+            break;
         case WebCore::Node::TEXT_NODE:
-            return [DOMText class];
+            wrapperClass = [DOMText class];
+            break;
         case WebCore::Node::CDATA_SECTION_NODE:
-            return [DOMCDATASection class];
+            wrapperClass = [DOMCDATASection class];
+            break;
         case WebCore::Node::ENTITY_REFERENCE_NODE:
-            return [DOMEntityReference class];
+            wrapperClass = [DOMEntityReference class];
+            break;
         case WebCore::Node::ENTITY_NODE:
-            return [DOMEntity class];
+            wrapperClass = [DOMEntity class];
+            break;
         case WebCore::Node::PROCESSING_INSTRUCTION_NODE:
-            return [DOMProcessingInstruction class];
+            wrapperClass = [DOMProcessingInstruction class];
+            break;
         case WebCore::Node::COMMENT_NODE:
-            return [DOMComment class];
+            wrapperClass = [DOMComment class];
+            break;
         case WebCore::Node::DOCUMENT_NODE:
             if (static_cast<WebCore::Document*>(impl)->isHTMLDocument())
-                return [DOMHTMLDocument class];
-            return [DOMDocument class];
+                wrapperClass = [DOMHTMLDocument class];
+#if ENABLE(SVG)
+            else if (static_cast<WebCore::Document*>(impl)->isSVGDocument())
+                wrapperClass = [DOMSVGDocument class];
+#endif
+            else
+                wrapperClass = [DOMDocument class];
+            break;
         case WebCore::Node::DOCUMENT_TYPE_NODE:
-            return [DOMDocumentType class];
+            wrapperClass = [DOMDocumentType class];
+            break;
         case WebCore::Node::DOCUMENT_FRAGMENT_NODE:
-            return [DOMDocumentFragment class];
+            wrapperClass = [DOMDocumentFragment class];
+            break;
         case WebCore::Node::NOTATION_NODE:
-            return [DOMNotation class];
+            wrapperClass = [DOMNotation class];
+            break;
         case WebCore::Node::XPATH_NAMESPACE_NODE:
             // FIXME: Create an XPath objective C wrapper
             // See http://bugs.webkit.org/show_bug.cgi?id=8755
             return nil;
     }
-    ASSERT_NOT_REACHED();
-    return nil;
+    return [[[wrapperClass alloc] _initWithNode:impl] autorelease];
 }
 
-id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
++ (id <DOMEventTarget>)_wrapEventTarget:(WebCore::EventTarget *)eventTarget
 {
     if (!eventTarget)
         return nil;
-
-    if (WebCore::Node* node = eventTarget->toNode())
-        return kit(node);
-
-    // We don't have an ObjC binding for XMLHttpRequest.
-
-    return nil;
-}
-
-@implementation DOMNode (DOMNodeExtensions)
-
-#if PLATFORM(IOS)
-- (CGRect)boundingBox
-#else
-- (NSRect)boundingBox
-#endif
-{
-    // FIXME: Could we move this function to WebCore::Node and autogenerate?
-    core(self)->document()->updateLayoutIgnorePendingStylesheets();
-    WebCore::RenderObject* renderer = core(self)->renderer();
-    if (!renderer)
-#if PLATFORM(IOS)
-        return CGRectZero;
-#else
-        return NSZeroRect;
-#endif
-    return renderer->absoluteBoundingBoxRect();
-}
-
-- (NSArray *)lineBoxRects
-{
-    return [self textRects];
-}
-
-#if PLATFORM(IOS)
-// quad in page coordinates, taking transforms into account. c.f. - (NSRect)boundingBox;
-- (WKQuad)absoluteQuad
-{
-    return [self absoluteQuadAndInsideFixedPosition:0];
-}
-
-- (WKQuad)absoluteQuadAndInsideFixedPosition:(BOOL *)insideFixed
-{
-    core(self)->document()->updateLayoutIgnorePendingStylesheets();
-    WebCore::RenderObject *renderer = core(self)->renderer();
-    if (renderer) {
-        Vector<FloatQuad> quads;
-        bool wasFixed = false;
-        renderer->absoluteQuads(quads, &wasFixed);
-        if (insideFixed)
-            *insideFixed = wasFixed;
-
-        if (quads.size() == 0)
-            return WebCore::emptyQuad();
-        
-        if (quads.size() == 1)
-            return wkQuadFromFloatQuad(quads[0]);
-
-        FloatRect boundingRect = quads[0].boundingBox();
-        for (size_t i = 1; i < quads.size(); ++i)
-            boundingRect.unite(quads[i].boundingBox());
-
-        return wkQuadFromFloatQuad(boundingRect);
-    }
-
-    return WebCore::emptyQuad();
-}
-
-// this method is like - (CGRect)boundingBox, but it accounts for for transforms
-- (CGRect)boundingBoxUsingTransforms
-{
-    core(self)->document()->updateLayoutIgnorePendingStylesheets();
-    WebCore::RenderObject* renderer = core(self)->renderer();
-    if (!renderer)
-        return CGRectZero;
-    return renderer->absoluteBoundingBoxRect(true);
-}
-
-// returns array of WKQuadObject
-- (NSArray *)lineBoxQuads
-{
-    core(self)->document()->updateLayoutIgnorePendingStylesheets();
-    WebCore::RenderObject *renderer = core(self)->renderer();
-    if (renderer) {
-        Vector<WebCore::FloatQuad> quads;
-        renderer->absoluteQuads(quads);
-        return kit(quads);
-    }
-    return nil;
-}
-
-- (Element *)_linkElement
-{
-    WebCore::Node* node = core(self);
     
-    while (node) {
-        if (node->isLink())
-            return static_cast<WebCore::Element*>(node);
-        node = node->parentNode();
+    // We don't have an ObjC binding for XMLHttpRequest
+    return [DOMNode _wrapNode:eventTarget->toNode()];
+}
+
+- (WebCore::Node *)_node
+{
+    return reinterpret_cast<WebCore::Node*>(_internal);
+}
+
+- (KJS::Bindings::RootObject*)_rootObject
+{
+    if (WebCore::Node *n = [self _node]) {
+        if (WebCore::Frame* frame = n->document()->frame())
+            return frame->bindingRootObject();
     }
-    
     return 0;
 }
 
-- (NSURL *)hrefURL
-{
-    Element *link= [self _linkElement];
-    if (link)
-        return link->document()->completeURL(stripLeadingAndTrailingHTMLSpaces(link->getAttribute(HTMLNames::hrefAttr)));
-    
-    return nil;
-}
+@end
 
-- (NSString *)hrefTarget
-{
-    Element *target = [self _linkElement];
-    
-    if(target) return target->getAttribute(HTMLNames::targetAttr);
-    
-    return nil;
-}
+@implementation DOMNode (DOMNodeExtensions)
 
-- (CGRect)hrefFrame
+// FIXME: This should be implemented in Node so we don't have to fetch the renderer.
+// If it was, we could even autogenerate.
+- (NSRect)boundingBox
 {
-    RenderObject *renderer = [self _linkElement]->renderer();
-    
-    if(renderer) return renderer->absoluteBoundingBoxRect();
-    
+    [self _node]->document()->updateLayoutIgnorePendingStylesheets();
+    WebCore::RenderObject *renderer = [self _node]->renderer();
+    if (renderer)
+        return renderer->absoluteBoundingBoxRect();
     return NSZeroRect;
 }
 
-- (NSString *)hrefLabel
+// FIXME: This should be implemented in Node so we don't have to fetch the renderer.
+// If it was, we could even autogenerate.
+- (NSArray *)lineBoxRects
 {
-    Element *link= [self _linkElement];
-    
-    if (!link) return nil;
-    
-    return link->textContent();
-}
-
-- (NSString *)hrefTitle
-{
-    Element *link= [self _linkElement];
-    
-    if (!link) return nil;
-    
-    return link->document()->displayStringModifiedByEncoding(static_cast<HTMLElement *>(link)->title());
-}
-
-- (CGRect)boundingFrame
-{
-    return [self boundingBox];
-}
-
-- (WKQuad)innerFrameQuad       // takes transforms into account
-{
-    core(self)->document()->updateLayoutIgnorePendingStylesheets();
-    RenderObject* renderer = core(self)->renderer();
-    if (!renderer)
-        return emptyQuad();
-
-    RenderStyle* style = renderer->style();
-    IntRect boundingBox = renderer->absoluteBoundingBoxRect(true /* use transforms*/);
-
-    boundingBox.move(style->borderLeftWidth(), style->borderTopWidth());
-    boundingBox.setWidth(boundingBox.width() - style->borderLeftWidth() - style->borderRightWidth());
-    boundingBox.setHeight(boundingBox.height() - style->borderBottomWidth() - style->borderTopWidth());
-
-    // FIXME: This function advertises returning a quad, but it actually returns a bounding box (so there is no rotation, for instance).
-    return wkQuadFromFloatQuad(FloatQuad(boundingBox));
-}
-
-- (float)computedFontSize
-{
-    WebCore::Node *node = core(self);
-    RenderStyle *style = node->renderStyle();
-    if (!style)
-        return 0.0f;
-    return style->fontDescription().computedSize();
-}
-
-- (DOMNode *)nextFocusNode
-{
-    ASSERT(core(self)->document());
-    Page *page = core(self)->document()->page();
-    if (!page)
-        return nil;
-
-    RefPtr<KeyboardEvent> key = KeyboardEvent::create();
-    return kit(page->focusController()->nextFocusableElement(FocusNavigationScope::focusNavigationScopeOf(core(self)->document()), core(self), key.get()));
-}
-
-- (DOMNode *)previousFocusNode
-{
-    ASSERT(core(self)->document());
-    Page *page = core(self)->document()->page();
-    if (!page)
-        return nil;
-
-    RefPtr<KeyboardEvent> key = KeyboardEvent::create();
-    return kit(page->focusController()->previousFocusableElement(FocusNavigationScope::focusNavigationScopeOf(core(self)->document()), core(self), key.get()));
-}
-
-#endif // PLATFORM(IOS)
-
-@end
-
-@implementation DOMNode (DOMNodeExtensionsPendingPublic)
-
-#if !PLATFORM(IOS)
-- (NSImage *)renderedImage
-{
-    // FIXME: Could we move this function to WebCore::Node and autogenerate?
-    WebCore::Node* node = core(self);
-    WebCore::Frame* frame = node->document()->frame();
-    if (!frame)
-        return nil;
-    return frame->nodeImage(node).get();
-}
-#endif
-
-- (NSArray *)textRects
-{
-    core(self)->document()->updateLayoutIgnorePendingStylesheets();
-    if (!core(self)->renderer())
-        return nil;
-    Vector<WebCore::IntRect> rects;
-    core(self)->textRects(rects);
-    return kit(rects);
-}
-
-@end
-
-@implementation DOMNode (WebPrivate)
-
-+ (id)_nodeFromJSWrapper:(JSObjectRef)jsWrapper
-{
-    JSObject* object = toJS(jsWrapper);
-
-    if (!object->inherits(&JSNode::s_info))
-        return nil;
-
-    WebCore::Node* node = jsCast<JSNode*>(object)->impl();
-    return kit(node);
+    [self _node]->document()->updateLayoutIgnorePendingStylesheets();
+    WebCore::RenderObject *renderer = [self _node]->renderer();
+    if (renderer) {
+        Vector<WebCore::IntRect> rects;
+        renderer->addLineBoxRects(rects);
+        return kit(rects);
+    }
+    return nil;
 }
 
 @end
 
 @implementation DOMRange (DOMRangeExtensions)
 
-#if PLATFORM(IOS)
-- (CGRect)boundingBox
-#else
 - (NSRect)boundingBox
-#endif
 {
-    // FIXME: The call to updateLayoutIgnorePendingStylesheets should be moved into WebCore::Range.
-    core(self)->ownerDocument()->updateLayoutIgnorePendingStylesheets();
-    return core(self)->boundingBox();
-}
-
-#if !PLATFORM(IOS)
-- (NSImage *)renderedImageForcingBlackText:(BOOL)forceBlackText
-#else
-- (CGImageRef)renderedImageForcingBlackText:(BOOL)forceBlackText
-#endif
-{
-    WebCore::Range* range = core(self);
-    WebCore::Frame* frame = range->ownerDocument()->frame();
-    if (!frame)
-        return nil;
-
-    return WebCore::rangeImage(frame, range, forceBlackText);
-}
-
-- (NSArray *)textRects
-{
-    // FIXME: The call to updateLayoutIgnorePendingStylesheets should be moved into WebCore::Range.
-    Vector<WebCore::IntRect> rects;
-    core(self)->ownerDocument()->updateLayoutIgnorePendingStylesheets();
-    core(self)->textRects(rects);
-    return kit(rects);
+    [self _range]->ownerDocument()->updateLayoutIgnorePendingStylesheets();
+    return [self _range]->boundingBox();
 }
 
 - (NSArray *)lineBoxRects
 {
-    // FIXME: Remove this once all clients stop using it and we drop Leopard support.
-    return [self textRects];
+    Vector<WebCore::IntRect> rects;
+    [self _range]->ownerDocument()->updateLayoutIgnorePendingStylesheets();
+    [self _range]->addLineBoxRects(rects);
+    return kit(rects);
+}
+
+@end
+
+// FIXME: this should be auto-generated
+@implementation DOMNode (DOMEventTarget)
+
+- (void)addEventListener:(NSString *)type listener:(id <DOMEventListener>)listener useCapture:(BOOL)useCapture
+{
+    if (![self _node]->isEventTargetNode())
+        WebCore::raiseDOMException(DOM_NOT_SUPPORTED_ERR);
+    
+    WebCore::EventListener *wrapper = WebCore::ObjCEventListener::create(listener);
+    WebCore::EventTargetNodeCast([self _node])->addEventListener(type, wrapper, useCapture);
+    wrapper->deref();
+}
+
+- (void)addEventListener:(NSString *)type :(id <DOMEventListener>)listener :(BOOL)useCapture
+{
+    // FIXME: this method can be removed once Mail changes to use the new method <rdar://problem/4746649>
+    [self addEventListener:type listener:listener useCapture:useCapture];
+}
+
+- (void)removeEventListener:(NSString *)type listener:(id <DOMEventListener>)listener useCapture:(BOOL)useCapture
+{
+    if (![self _node]->isEventTargetNode())
+        WebCore::raiseDOMException(DOM_NOT_SUPPORTED_ERR);
+
+    if (WebCore::EventListener *wrapper = WebCore::ObjCEventListener::find(listener))
+        WebCore::EventTargetNodeCast([self _node])->removeEventListener(type, wrapper, useCapture);
+}
+
+- (void)removeEventListener:(NSString *)type :(id <DOMEventListener>)listener :(BOOL)useCapture
+{
+    // FIXME: this method can be removed once Mail changes to use the new method <rdar://problem/4746649>
+    [self removeEventListener:type listener:listener useCapture:useCapture];
+}
+
+- (BOOL)dispatchEvent:(DOMEvent *)event
+{
+    if (![self _node]->isEventTargetNode())
+        WebCore::raiseDOMException(DOM_NOT_SUPPORTED_ERR);
+
+    WebCore::ExceptionCode ec = 0;
+    BOOL result = WebCore::EventTargetNodeCast([self _node])->dispatchEvent([event _event], ec);
+    WebCore::raiseOnDOMError(ec);
+    return result;
 }
 
 @end
@@ -630,119 +493,89 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
 //------------------------------------------------------------------------------------------
 // DOMElement
 
+// FIXME: this should be auto-generated in DOMElement.mm
 @implementation DOMElement (DOMElementAppKitExtensions)
 
-#if !PLATFORM(IOS)
+// FIXME: this should be implemented in the implementation
 - (NSImage*)image
 {
-    // FIXME: Could we move this function to WebCore::Node and autogenerate?
-    WebCore::RenderObject* renderer = core(self)->renderer();
-    if (!renderer || !renderer->isImage())
-        return nil;
-    WebCore::CachedImage* cachedImage = static_cast<WebCore::RenderImage*>(renderer)->cachedImage();
-    if (!cachedImage || cachedImage->errorOccurred())
-        return nil;
-    return cachedImage->imageForRenderer(renderer)->getNSImage();
+    WebCore::RenderObject* renderer = [self _element]->renderer();
+    if (renderer && renderer->isImage()) {
+        WebCore::RenderImage* img = static_cast<WebCore::RenderImage*>(renderer);
+        if (img->cachedImage() && !img->cachedImage()->errorOccurred())
+            return img->cachedImage()->image()->getNSImage();
+    }
+    return nil;
 }
-#endif
 
 @end
 
 @implementation DOMElement (WebPrivate)
 
-#if !PLATFORM(IOS)
+// FIXME: this should be implemented in the implementation
 - (NSFont *)_font
 {
-    // FIXME: Could we move this function to WebCore::Element and autogenerate?
-    WebCore::RenderObject* renderer = core(self)->renderer();
-    if (!renderer)
-        return nil;
-    return renderer->style()->font().primaryFont()->getNSFont();
+    WebCore::RenderObject* renderer = [self _element]->renderer();
+    if (renderer)
+        return renderer->style()->font().primaryFont()->getNSFont();
+    return nil;
 }
-#else
-- (GSFontRef)_font
-{
-    RenderObject* renderer = core(self)->renderer();
-    if (!renderer)
-        return nil;
-    return renderer->style()->font().primaryFont()->getGSFont();
-}
-#endif
 
-#if !PLATFORM(IOS)
+// FIXME: this should be implemented in the implementation
 - (NSData *)_imageTIFFRepresentation
 {
-    // FIXME: Could we move this function to WebCore::Element and autogenerate?
-    WebCore::RenderObject* renderer = core(self)->renderer();
-    if (!renderer || !renderer->isImage())
-        return nil;
-    WebCore::CachedImage* cachedImage = static_cast<WebCore::RenderImage*>(renderer)->cachedImage();
-    if (!cachedImage || cachedImage->errorOccurred())
-        return nil;
-    return (NSData *)cachedImage->imageForRenderer(renderer)->getTIFFRepresentation();
+    WebCore::RenderObject* renderer = [self _element]->renderer();
+    if (renderer && renderer->isImage()) {
+        WebCore::RenderImage* img = static_cast<WebCore::RenderImage*>(renderer);
+        if (img->cachedImage() && !img->cachedImage()->errorOccurred())
+            return (NSData*)(img->cachedImage()->image()->getTIFFRepresentation());
+    }
+    return nil;
 }
-#endif
 
+- (NSRect)_windowClipRect
+{
+    WebCore::RenderObject* renderer = [self _element]->renderer();
+    if (renderer && renderer->view()) {
+        WebCore::FrameView* frameView = renderer->view()->frameView();
+        if (!frameView)
+            return WebCore::IntRect();
+        return frameView->windowClipRectForLayer(renderer->enclosingLayer(), true);
+    }
+    return WebCore::IntRect();
+}
+
+// FIXME: this should be implemented in the implementation
 - (NSURL *)_getURLAttribute:(NSString *)name
 {
-    // FIXME: Could we move this function to WebCore::Element and autogenerate?
     ASSERT(name);
-    WebCore::Element* element = core(self);
+    WebCore::Element* element = [self _element];
     ASSERT(element);
-    return element->document()->completeURL(stripLeadingAndTrailingHTMLSpaces(element->getAttribute(name)));
+    return WebCore::KURL(element->document()->completeURL(parseURL(element->getAttribute(name)).deprecatedString())).getNSURL();
 }
 
+// FIXME: this should be implemented in the implementation
+- (void *)_NPObject
+{
+#if USE(NPOBJECT)
+    WebCore::Element* element = [self _element];
+    if (element->hasTagName(WebCore::HTMLNames::appletTag) || element->hasTagName(WebCore::HTMLNames::embedTag) || element->hasTagName(WebCore::HTMLNames::objectTag))
+        return static_cast<WebCore::HTMLPlugInElement*>(element)->getNPObject();
+#endif
+    return 0;
+}
+
+// FIXME: this should be implemented in the implementation
 - (BOOL)isFocused
 {
-    // FIXME: Could we move this function to WebCore::Element and autogenerate?
-    WebCore::Element* element = core(self);
-    return element->document()->focusedElement() == element;
+    WebCore::Element* impl = [self _element];
+    if (impl->document()->focusedNode() == impl)
+        return YES;
+    return NO;
 }
 
 @end
 
-#if PLATFORM(IOS)
-@implementation DOMHTMLLinkElement (WebPrivate)
-- (BOOL)_mediaQueryMatchesForOrientation:(int)orientation
-{
-    Document* document = static_cast<HTMLLinkElement*>(core(self))->document();
-    FrameView* frameView = document->frame() ? document->frame()->view() : 0;
-    if (!frameView)
-        return false;
-    int layoutWidth = frameView->layoutWidth();
-    int layoutHeight = frameView->layoutHeight();
-    IntSize savedFixedLayoutSize = frameView->fixedLayoutSize();
-    bool savedUseFixedLayout = frameView->useFixedLayout();
-    if ((orientation == WebMediaQueryOrientationPortrait && layoutWidth > layoutHeight) ||
-        (orientation == WebMediaQueryOrientationLandscape && layoutWidth < layoutHeight)) {
-        // temporarily swap the orientation for the evaluation
-        frameView->setFixedLayoutSize(IntSize(layoutHeight, layoutWidth));
-        frameView->setUseFixedLayout(true);
-    }
-        
-    bool result = [self _mediaQueryMatches];
-
-    frameView->setFixedLayoutSize(savedFixedLayoutSize);
-    frameView->setUseFixedLayout(savedUseFixedLayout);
-
-    return result;
-}
-
-- (BOOL)_mediaQueryMatches
-{
-    HTMLLinkElement* link = static_cast<HTMLLinkElement*>(core(self));
-    String media = link->getAttribute(HTMLNames::mediaAttr);
-    if (media.isEmpty())
-        return true;
-    Document* document = link->document();
-
-    RefPtr<MediaQuerySet> mediaQuerySet = MediaQuerySet::createAllowingDescriptionSyntax(media);
-    MediaQueryEvaluator screenEval("screen", document->frame(), document->renderer() ? document->renderer()->style() : 0);
-
-    return screenEval.eval(mediaQuerySet.get());
-}
-@end
-#endif
 
 //------------------------------------------------------------------------------------------
 // DOMRange
@@ -757,7 +590,7 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
                [self startContainer], [self startOffset], [self endContainer], [self endOffset]];
 }
 
-// FIXME: This should be removed as soon as all internal Apple uses of it have been replaced with
+// FIXME: this should be removed as soon as all internal Apple uses of it have been replaced with
 // calls to the public method - (NSString *)text.
 - (NSString *)_text
 {
@@ -766,56 +599,42 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
 
 @end
 
-//------------------------------------------------------------------------------------------
-// DOMRGBColor
-
-@implementation DOMRGBColor (WebPrivate)
-
-#if !PLATFORM(IOS)
-// FIXME: This should be removed as soon as all internal Apple uses of it have been replaced with
-// calls to the public method - (NSColor *)color.
-- (NSColor *)_color
-{
-    return [self color];
-}
-#endif
-
-@end
-
-
-@implementation DOMHTMLTableCellElement (WebPrivate)
-
-- (DOMHTMLTableCellElement *)_cellAbove
-{
-    return kit(core(self)->cellAbove());
-}
-
-@end
 
 //------------------------------------------------------------------------------------------
 // DOMNodeFilter
 
-DOMNodeFilter *kit(WebCore::NodeFilter* impl)
+// FIXME: This implementation should be in it's own file.
+
+@implementation DOMNodeFilter
+
+- (id)_initWithNodeFilter:(WebCore::NodeFilter *)impl
+{
+    ASSERT(impl);
+
+    [super _init];
+    _internal = reinterpret_cast<DOMObjectInternal*>(impl);
+    impl->ref();
+    WebCore::addDOMWrapper(self, impl);
+    return self;
+}
+
++ (DOMNodeFilter *)_wrapNodeFilter:(WebCore::NodeFilter *)impl
 {
     if (!impl)
         return nil;
     
-    if (DOMNodeFilter *wrapper = getDOMWrapper(impl))
-        return [[wrapper retain] autorelease];
+    id cachedInstance;
+    cachedInstance = WebCore::getDOMWrapper(impl);
+    if (cachedInstance)
+        return [[cachedInstance retain] autorelease];
     
-    DOMNodeFilter *wrapper = [[DOMNodeFilter alloc] _init];
-    wrapper->_internal = reinterpret_cast<DOMObjectInternal*>(impl);
-    impl->ref();
-    addDOMWrapper(wrapper, impl);
-    return [wrapper autorelease];
+    return [[[self alloc] _initWithNodeFilter:impl] autorelease];
 }
 
-WebCore::NodeFilter* core(DOMNodeFilter *wrapper)
+- (WebCore::NodeFilter *)_nodeFilter
 {
-    return wrapper ? reinterpret_cast<WebCore::NodeFilter*>(wrapper->_internal) : 0;
+    return reinterpret_cast<WebCore::NodeFilter*>(_internal);
 }
-
-@implementation DOMNodeFilter
 
 - (void)dealloc
 {
@@ -833,7 +652,134 @@ WebCore::NodeFilter* core(DOMNodeFilter *wrapper)
 
 - (short)acceptNode:(DOMNode *)node
 {
-    return core(self)->acceptNode(core(node));
+    return [self _nodeFilter]->acceptNode([node _node]);
 }
 
 @end
+
+
+//------------------------------------------------------------------------------------------
+// ObjCNodeFilterCondition
+
+class ObjCNodeFilterCondition : public WebCore::NodeFilterCondition {
+public:
+    ObjCNodeFilterCondition(id <DOMNodeFilter>);
+    virtual ~ObjCNodeFilterCondition();
+    virtual short acceptNode(WebCore::Node*) const;
+
+private:
+    ObjCNodeFilterCondition(const ObjCNodeFilterCondition&);
+    ObjCNodeFilterCondition &operator=(const ObjCNodeFilterCondition&);
+
+    id <DOMNodeFilter> m_filter;
+};
+
+ObjCNodeFilterCondition::ObjCNodeFilterCondition(id <DOMNodeFilter> filter)
+    : m_filter(filter)
+{
+    ASSERT(m_filter);
+    HardRetain(m_filter);
+}
+
+ObjCNodeFilterCondition::~ObjCNodeFilterCondition()
+{
+    HardRelease(m_filter);
+}
+
+short ObjCNodeFilterCondition::acceptNode(WebCore::Node* node) const
+{
+    if (!node)
+        return WebCore::NodeFilter::FILTER_REJECT;
+    return [m_filter acceptNode:[DOMNode _wrapNode:node]];
+}
+
+
+//------------------------------------------------------------------------------------------
+// DOMDocument (DOMDocumentTraversal)
+
+// FIXME: this should be auto-generated in DOMDocument.mm
+@implementation DOMDocument (DOMDocumentTraversal)
+
+- (DOMNodeIterator *)createNodeIterator:(DOMNode *)root whatToShow:(unsigned)whatToShow filter:(id <DOMNodeFilter>)filter expandEntityReferences:(BOOL)expandEntityReferences
+{
+    WebCore::NodeFilter* cppFilter = 0;
+    if (filter)
+        cppFilter = new WebCore::NodeFilter(new ObjCNodeFilterCondition(filter));
+    WebCore::ExceptionCode ec = 0;
+    RefPtr<WebCore::NodeIterator> impl = [self _document]->createNodeIterator([root _node], whatToShow, cppFilter, expandEntityReferences, ec);
+    WebCore::raiseOnDOMError(ec);
+    return [DOMNodeIterator _wrapNodeIterator:impl.get() filter:filter];
+}
+
+- (DOMTreeWalker *)createTreeWalker:(DOMNode *)root whatToShow:(unsigned)whatToShow filter:(id <DOMNodeFilter>)filter expandEntityReferences:(BOOL)expandEntityReferences
+{
+    WebCore::NodeFilter* cppFilter = 0;
+    if (filter)
+        cppFilter = new WebCore::NodeFilter(new ObjCNodeFilterCondition(filter));
+    WebCore::ExceptionCode ec = 0;
+    RefPtr<WebCore::TreeWalker> impl = [self _document]->createTreeWalker([root _node], whatToShow, cppFilter, expandEntityReferences, ec);
+    WebCore::raiseOnDOMError(ec);
+    return [DOMTreeWalker _wrapTreeWalker:impl.get() filter:filter];
+}
+
+@end
+
+@implementation DOMDocument (DOMDocumentTraversalDeprecated)
+
+- (DOMNodeIterator *)createNodeIterator:(DOMNode *)root :(unsigned)whatToShow :(id <DOMNodeFilter>)filter :(BOOL)expandEntityReferences
+{
+    return [self createNodeIterator:root whatToShow:whatToShow filter:filter expandEntityReferences:expandEntityReferences];
+}
+
+- (DOMTreeWalker *)createTreeWalker:(DOMNode *)root :(unsigned)whatToShow :(id <DOMNodeFilter>)filter :(BOOL)expandEntityReferences
+{
+    return [self createTreeWalker:root whatToShow:whatToShow filter:filter expandEntityReferences:expandEntityReferences];
+}
+
+@end
+
+
+//------------------------------------------------------------------------------------------
+// ObjCEventListener
+
+namespace WebCore {
+
+ObjCEventListener* ObjCEventListener::find(id <DOMEventListener> listener)
+{
+    if (ListenerMap* map = listenerMap)
+        return map->get(listener);
+    return 0;
+}
+
+ObjCEventListener *ObjCEventListener::create(id <DOMEventListener> listener)
+{
+    ObjCEventListener* wrapper = find(listener);
+    if (!wrapper)
+        wrapper = new ObjCEventListener(listener);
+    wrapper->ref();
+    return wrapper;
+}
+
+ObjCEventListener::ObjCEventListener(id <DOMEventListener> listener)
+    : m_listener([listener retain])
+{
+    ListenerMap* map = listenerMap;
+    if (!map) {
+        map = new ListenerMap;
+        listenerMap = map;
+    }
+    map->set(listener, this);
+}
+
+ObjCEventListener::~ObjCEventListener()
+{
+    listenerMap->remove(m_listener);
+    [m_listener release];
+}
+
+void ObjCEventListener::handleEvent(Event* event, bool)
+{
+    [m_listener handleEvent:[DOMEvent _wrapEvent:event]];
+}
+
+} // namespace WebCore

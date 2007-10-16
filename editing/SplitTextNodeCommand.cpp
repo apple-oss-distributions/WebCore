@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2005 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,86 +27,65 @@
 #include "SplitTextNodeCommand.h"
 
 #include "Document.h"
-#include "DocumentMarkerController.h"
 #include "Text.h"
+
 #include <wtf/Assertions.h>
 
 namespace WebCore {
 
-SplitTextNodeCommand::SplitTextNodeCommand(PassRefPtr<Text> text, int offset)
-    : SimpleEditCommand(text->document())
-    , m_text2(text)
-    , m_offset(offset)
+SplitTextNodeCommand::SplitTextNodeCommand(Text* text, int offset)
+    : EditCommand(text->document()), m_text2(text), m_offset(offset)
 {
-    // NOTE: Various callers rely on the fact that the original node becomes
-    // the second node (i.e. the new node is inserted before the existing one).
-    // That is not a fundamental dependency (i.e. it could be re-coded), but
-    // rather is based on how this code happens to work.
     ASSERT(m_text2);
     ASSERT(m_text2->length() > 0);
-    ASSERT(m_offset > 0);
-    ASSERT(m_offset < m_text2->length());
 }
 
 void SplitTextNodeCommand::doApply()
 {
-    ContainerNode* parent = m_text2->parentNode();
-    if (!parent || !parent->rendererIsEditable())
-        return;
+    ASSERT(m_text2);
+    ASSERT(m_offset > 0);
 
-    String prefixText = m_text2->substringData(0, m_offset, IGNORE_EXCEPTION);
-    if (prefixText.isEmpty())
-        return;
+    ExceptionCode ec = 0;
 
-    m_text1 = Text::create(document(), prefixText);
-    ASSERT(m_text1);
-    document()->markers()->copyMarkers(m_text2.get(), 0, m_offset, m_text1.get(), 0);
+    // NOTE: Various callers rely on the fact that the original node becomes
+    // the second node (i.e. the new node is inserted before the existing one).
+    // That is not a fundamental dependency (i.e. it could be re-coded), but
+    // rather is based on how this code happens to work.
+    if (!m_text1) {
+        // create only if needed.
+        // if reapplying, this object will already exist.
+        m_text1 = document()->createTextNode(m_text2->substringData(0, m_offset, ec));
+        ASSERT(ec == 0);
+        ASSERT(m_text1);
+    }
 
-    insertText1AndTrimText2();
+    document()->copyMarkers(m_text2.get(), 0, m_offset, m_text1.get(), 0);
+    m_text2->deleteData(0, m_offset, ec);
+    ASSERT(ec == 0);
+
+    m_text2->parentNode()->insertBefore(m_text1.get(), m_text2.get(), ec);
+    ASSERT(ec == 0);
+        
+    ASSERT(m_text2->previousSibling()->isTextNode());
+    ASSERT(m_text2->previousSibling() == m_text1);
 }
 
 void SplitTextNodeCommand::doUnapply()
 {
-    if (!m_text1 || !m_text1->rendererIsEditable())
-        return;
-
-    ASSERT(m_text1->document() == document());
-
-    String prefixText = m_text1->data();
-
-    m_text2->insertData(0, prefixText, ASSERT_NO_EXCEPTION);
-
-    document()->markers()->copyMarkers(m_text1.get(), 0, prefixText.length(), m_text2.get(), 0);
-    m_text1->remove(ASSERT_NO_EXCEPTION);
-}
-
-void SplitTextNodeCommand::doReapply()
-{
-    if (!m_text1 || !m_text2)
-        return;
-
-    ContainerNode* parent = m_text2->parentNode();
-    if (!parent || !parent->rendererIsEditable())
-        return;
-
-    insertText1AndTrimText2();
-}
-
-void SplitTextNodeCommand::insertText1AndTrimText2()
-{
+    ASSERT(m_text1);
+    ASSERT(m_text2);
+    ASSERT(m_text1->nextSibling() == m_text2);
+        
     ExceptionCode ec = 0;
-    m_text2->parentNode()->insertBefore(m_text1.get(), m_text2.get(), ec);
-    if (ec)
-        return;
-    m_text2->deleteData(0, m_offset, ec);
+    m_text2->insertData(0, m_text1->data(), ec);
+    ASSERT(ec == 0);
+
+    document()->copyMarkers(m_text1.get(), 0, m_offset, m_text2.get(), 0);
+
+    m_text2->parentNode()->removeChild(m_text1.get(), ec);
+    ASSERT(ec == 0);
+
+    m_offset = m_text1->length();
 }
 
-#ifndef NDEBUG
-void SplitTextNodeCommand::getNodesInCommand(HashSet<Node*>& nodes)
-{
-    addNodeAndDescendants(m_text1.get(), nodes);
-    addNodeAndDescendants(m_text2.get(), nodes);
-}
-#endif
-    
 } // namespace WebCore

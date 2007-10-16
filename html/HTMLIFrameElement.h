@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Simon Hausmann <hausmann@kde.org>
- * Copyright (C) 2004, 2006, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -28,32 +30,38 @@
 
 namespace WebCore {
 
-class HTMLIFrameElement FINAL : public HTMLFrameElementBase {
+class HTMLIFrameElement : public HTMLFrameElementBase
+{
 public:
-    static PassRefPtr<HTMLIFrameElement> create(const QualifiedName&, Document*);
+    HTMLIFrameElement(Document* doc);
 
-    bool shouldDisplaySeamlessly() const;
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusRequired; }
+    virtual int tagPriority() const { return 1; }
+
+    virtual bool mapToEntry(const QualifiedName&, MappedAttributeEntry&) const;
+    virtual void parseMappedAttribute(MappedAttribute*);
+
+    virtual void insertedIntoDocument();
+    virtual void removedFromDocument();
+    
+    virtual void attach();
+
+    virtual bool rendererIsNeeded(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    
+    virtual bool isURLAttribute(Attribute*) const;
+
+    String align() const;
+    void setAlign(const String&);
+
+    String height() const;
+    void setHeight(const String&);
+
+    String width() const;
+    void setWidth(const String&);
 
 private:
-    HTMLIFrameElement(const QualifiedName&, Document*);
-
-#if PLATFORM(IOS)
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const OVERRIDE { return false; }
-#endif
-
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
-
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
-
-    virtual void didRecalcStyle(StyleChange) OVERRIDE;
-
-#if ENABLE(MICRODATA)
-    virtual String itemValueText() const OVERRIDE;
-    virtual void setItemValueText(const String&, ExceptionCode&) OVERRIDE;
-#endif
+    String oldNameAttr;
 };
 
 } // namespace WebCore

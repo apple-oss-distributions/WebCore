@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 2001 Peter Kelly (pmk@post.com)
  * Copyright (C) 2001 Tobias Anton (anton@stud.fbi.fh-darmstadt.de)
  * Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,34 +26,21 @@
 #ifndef ClipboardEvent_h
 #define ClipboardEvent_h
 
+#include "Clipboard.h"
 #include "Event.h"
 
 namespace WebCore {
 
-    class Clipboard;
-
     class ClipboardEvent : public Event {
     public:
-        virtual ~ClipboardEvent();
-
-        static PassRefPtr<ClipboardEvent> create()
-        {
-            return adoptRef(new ClipboardEvent);
-        }
-        static PassRefPtr<ClipboardEvent> create(const AtomicString& type, bool canBubbleArg, bool cancelableArg, PassRefPtr<Clipboard> clipboardArg)
-        {
-            return adoptRef(new ClipboardEvent(type, canBubbleArg, cancelableArg, clipboardArg));
-        }
+        ClipboardEvent();
+        ClipboardEvent(const AtomicString& type, bool canBubbleArg, bool cancelableArg, Clipboard* clipboardArg);
 
         Clipboard* clipboard() const { return m_clipboard.get(); }
 
+        virtual bool isClipboardEvent() const;
+
     private:
-        ClipboardEvent();
-        ClipboardEvent(const AtomicString& type, bool canBubbleArg, bool cancelableArg, PassRefPtr<Clipboard>);
-
-        virtual const AtomicString& interfaceName() const OVERRIDE;
-        virtual bool isClipboardEvent() const OVERRIDE;
-
         RefPtr<Clipboard> m_clipboard;
     };
 

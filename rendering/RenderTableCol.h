@@ -1,11 +1,13 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1997 Martin Jones (mjones@kde.org)
  *           (C) 1997 Torben Weis (weis@kde.org)
  *           (C) 1998 Waldo Bastian (bastian@kde.org)
  *           (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2009 Apple Inc. All rights reserved.
- * Copyright (C) 2008 Nokia Corporation and/or its subsidiary(-ies)
+ * Copyright (C) 2003, 2004, 2005, 2006 Apple Computer, Inc.
+ * Copyright (C) 2007 Trolltech ASA
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -26,97 +28,37 @@
 #ifndef RenderTableCol_h
 #define RenderTableCol_h
 
-#include "RenderBox.h"
+#include "RenderContainer.h"
 
 namespace WebCore {
 
-class RenderTable;
-class RenderTableCell;
-
-class RenderTableCol : public RenderBox {
+class RenderTableCol : public RenderContainer
+{
 public:
-    explicit RenderTableCol(Element*);
-
-    RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
-    RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
-
-    const RenderObjectChildList* children() const { return &m_children; }
-    RenderObjectChildList* children() { return &m_children; }
-
-    void clearPreferredLogicalWidthsDirtyBits();
-
-    unsigned span() const { return m_span; }
-    void setSpan(unsigned span) { m_span = span; }
-
-    bool isTableColumnGroupWithColumnChildren() { return firstChild(); }
-    bool isTableColumn() const { return style()->display() == TABLE_COLUMN; }
-    bool isTableColumnGroup() const { return style()->display() == TABLE_COLUMN_GROUP; }
-
-    RenderTableCol* enclosingColumnGroup() const;
-    RenderTableCol* enclosingColumnGroupIfAdjacentBefore() const
-    {
-        if (previousSibling())
-            return 0;
-        return enclosingColumnGroup();
-    }
-
-    RenderTableCol* enclosingColumnGroupIfAdjacentAfter() const
-    {
-        if (nextSibling())
-            return 0;
-        return enclosingColumnGroup();
-    }
-
-
-    // Returns the next column or column-group.
-    RenderTableCol* nextColumn() const;
-
-    const BorderValue& borderAdjoiningCellStartBorder(const RenderTableCell*) const;
-    const BorderValue& borderAdjoiningCellEndBorder(const RenderTableCell*) const;
-    const BorderValue& borderAdjoiningCellBefore(const RenderTableCell*) const;
-    const BorderValue& borderAdjoiningCellAfter(const RenderTableCell*) const;
-
-private:
-    virtual RenderObjectChildList* virtualChildren() { return children(); }
-    virtual const RenderObjectChildList* virtualChildren() const { return children(); }
+    RenderTableCol(Node*);
 
     virtual const char* renderName() const { return "RenderTableCol"; }
-    virtual bool isRenderTableCol() const OVERRIDE { return true; }
+    virtual bool isTableCol() const { return true; }
+    virtual short lineHeight(bool) const { return 0; }
     virtual void updateFromElement();
-    virtual void computePreferredLogicalWidths() OVERRIDE { ASSERT_NOT_REACHED(); }
-
-    virtual void insertedIntoTree() OVERRIDE;
-    virtual void willBeRemovedFromTree() OVERRIDE;
 
     virtual bool isChildAllowed(RenderObject*, RenderStyle*) const;
     virtual bool canHaveChildren() const;
-    virtual bool requiresLayer() const { return false; }
+    virtual bool requiresLayer() { return false; }
 
-    virtual LayoutRect clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const OVERRIDE;
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0);
+    virtual IntRect absoluteClippedOverflowRect();
+    virtual void imageChanged(CachedImage*);
 
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+#ifndef NDEBUG
+    virtual void dump(TextStream*, DeprecatedString) const;
+#endif
 
-    RenderTable* table() const;
-
-    RenderObjectChildList m_children;
-    unsigned m_span;
+    int span() const { return m_span; }
+    void setSpan(int s) { m_span = s; }
+    
+private:
+    int m_span;
 };
-
-inline RenderTableCol* toRenderTableCol(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderTableCol());
-    return static_cast<RenderTableCol*>(object);
-}
-
-inline const RenderTableCol* toRenderTableCol(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isRenderTableCol());
-    return static_cast<const RenderTableCol*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderTableCol(const RenderTableCol*);
 
 }
 

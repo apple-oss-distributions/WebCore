@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -19,201 +19,215 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
 #include "config.h"
-#include "HTMLViewSourceDocument.h"
-
-#include "Attribute.h"
 #include "DOMImplementation.h"
-#include "DocumentStyleSheetCollection.h"
+#include "HTMLViewSourceDocument.h"
+#include "HTMLTokenizer.h"
+#include "HTMLHtmlElement.h"
 #include "HTMLAnchorElement.h"
-#include "HTMLBRElement.h"
-#include "HTMLBaseElement.h"
 #include "HTMLBodyElement.h"
 #include "HTMLDivElement.h"
-#include "HTMLHtmlElement.h"
-#include "HTMLNames.h"
-#include "HTMLTableCellElement.h"
 #include "HTMLTableElement.h"
+#include "HTMLTableCellElement.h"
 #include "HTMLTableRowElement.h"
 #include "HTMLTableSectionElement.h"
-#include "HTMLToken.h"
-#include "HTMLViewSourceParser.h"
-#include "SegmentedString.h"
 #include "Text.h"
-#include "TextViewSourceParser.h"
+#include "TextDocument.h"
+#include "HTMLNames.h"
 
-namespace WebCore {
+namespace WebCore
+{
 
 using namespace HTMLNames;
 
-HTMLViewSourceDocument::HTMLViewSourceDocument(Frame* frame, const KURL& url, const String& mimeType)
-    : HTMLDocument(frame, url)
+HTMLViewSourceDocument::HTMLViewSourceDocument(DOMImplementation* implementation, Frame* frame, const String& mimeType)
+    : HTMLDocument(implementation, frame)
     , m_type(mimeType)
+    , m_current(0)
+    , m_tbody(0)
+    , m_td(0)
 {
-    styleSheetCollection()->setUsesBeforeAfterRulesOverride(true);
-    setIsViewSource(true);
-
-    setCompatibilityMode(QuirksMode);
-    lockCompatibilityMode();
 }
 
-PassRefPtr<DocumentParser> HTMLViewSourceDocument::createParser()
+Tokenizer* HTMLViewSourceDocument::createTokenizer()
 {
-    if (m_type == "text/html" || m_type == "application/xhtml+xml" || m_type == "image/svg+xml" || DOMImplementation::isXMLMIMEType(m_type))
-        return HTMLViewSourceParser::create(this);
-
-    return TextViewSourceParser::create(this);
+    if (implementation()->isTextMIMEType(m_type))
+        return new TextTokenizer(this);
+    return new HTMLTokenizer(this);
 }
 
 void HTMLViewSourceDocument::createContainingTable()
 {
-    RefPtr<HTMLHtmlElement> html = HTMLHtmlElement::create(this);
-    parserAppendChild(html);
+    Element* html = new HTMLHtmlElement(this);
+    addChild(html);
     html->attach();
-    RefPtr<HTMLBodyElement> body = HTMLBodyElement::create(this);
-    html->parserAppendChild(body);
+    Element* body = new HTMLBodyElement(this);
+    html->addChild(body);
     body->attach();
-
+    
     // Create a line gutter div that can be used to make sure the gutter extends down the height of the whole
     // document.
-    RefPtr<HTMLDivElement> div = HTMLDivElement::create(this);
-    div->setAttribute(classAttr, "webkit-line-gutter-backdrop");
-    body->parserAppendChild(div);
+    Element* div = new HTMLDivElement(this);
+    Attribute* a = new MappedAttribute(classAttr, "webkit-line-gutter-backdrop");
+    NamedMappedAttrMap* attrs = new NamedMappedAttrMap(0);
+    attrs->insertAttribute(a, true);   
+    div->setAttributeMap(attrs);     
+    body->addChild(div);
     div->attach();
 
-    RefPtr<HTMLTableElement> table = HTMLTableElement::create(this);
-    body->parserAppendChild(table);
+    Element* table = new HTMLTableElement(this);
+    body->addChild(table);
     table->attach();
-    m_tbody = HTMLTableSectionElement::create(tbodyTag, this);
-    table->parserAppendChild(m_tbody);
+    m_tbody = new HTMLTableSectionElement(tbodyTag, this);
+    table->addChild(m_tbody);
     m_tbody->attach();
     m_current = m_tbody;
 }
 
-void HTMLViewSourceDocument::addSource(const String& source, HTMLToken& token)
+void HTMLViewSourceDocument::addViewSourceText(const String& text)
+{
+    if (!m_current)
+        createContainingTable();
+    addText(text, "");
+}
+
+void HTMLViewSourceDocument::addViewSourceToken(Token* token)
 {
     if (!m_current)
         createContainingTable();
 
-    switch (token.type()) {
-    case HTMLToken::Uninitialized:
-        ASSERT_NOT_REACHED();
-        break;
-    case HTMLToken::DOCTYPE:
-        processDoctypeToken(source, token);
-        break;
-    case HTMLToken::EndOfFile:
-        if (!m_tbody->hasChildNodes())
-            addLine(String());
-        break;
-    case HTMLToken::StartTag:
-    case HTMLToken::EndTag:
-        processTagToken(source, token);
-        break;
-    case HTMLToken::Comment:
-        processCommentToken(source, token);
-        break;
-    case HTMLToken::Character:
-        processCharacterToken(source, token);
-        break;
-    }
-}
-
-void HTMLViewSourceDocument::processDoctypeToken(const String& source, HTMLToken&)
-{
-    if (!m_current)
-        createContainingTable();
-    m_current = addSpanWithClassName("webkit-html-doctype");
-    addText(source, "webkit-html-doctype");
-    m_current = m_td;
-}
-
-void HTMLViewSourceDocument::processTagToken(const String& source, HTMLToken& token)
-{
-    m_current = addSpanWithClassName("webkit-html-tag");
-
-    AtomicString tagName(token.name());
-
-    unsigned index = 0;
-    HTMLToken::AttributeList::const_iterator iter = token.attributes().begin();
-    while (index < source.length()) {
-        if (iter == token.attributes().end()) {
-            // We want to show the remaining characters in the token.
-            index = addRange(source, index, source.length(), "");
-            ASSERT(index == source.length());
-            break;
+    if (token->tagName == textAtom)
+        addText(token->text.get(), "");
+    else if (token->tagName == commentAtom) {
+        if (token->beginTag) {
+            m_current = addSpanWithClassName("webkit-html-comment");
+            addText(String("<!--") + token->text.get() + "-->", "webkit-html-comment");
         }
+    } else {
+        // Handle the tag.
+        bool doctype = token->tagName.startsWith("!DOCTYPE", false);
+        
+        String classNameStr = doctype ? "webkit-html-doctype" : "webkit-html-tag";
+        m_current = addSpanWithClassName(classNameStr);
 
-        AtomicString name(iter->name);
-        String value = StringImpl::create8BitIfPossible(iter->value);
+        String text = "<";
+        if (!token->beginTag)
+            text += "/";
+        text += token->tagName;
+        Vector<UChar>* guide = token->m_sourceInfo.get();
+        if (!guide || !guide->size())
+            text += ">";
 
-        index = addRange(source, index, iter->nameRange.start - token.startIndex(), "");
-        index = addRange(source, index, iter->nameRange.end - token.startIndex(), "webkit-html-attribute-name");
+        addText(text, classNameStr);
 
-        if (tagName == baseTag && name == hrefAttr)
-            m_current = addBase(value);
+        // Walk our guide string that tells us where attribute names/values should go.
+        if (guide && guide->size()) {
+            unsigned size = guide->size();
+            unsigned begin = 0;
+            unsigned currAttr = 0;
+            for (unsigned i = 0; i < size; i++) {
+                if (guide->at(i) == 'a' || guide->at(i) == 'x' || guide->at(i) == 'v') {
+                    // Add in the string.
+                    addText(String((UChar*)(guide->data()) + begin, i - begin), classNameStr);
+                     
+                    begin = i + 1;
 
-        index = addRange(source, index, iter->valueRange.start - token.startIndex(), "");
+                    if (token->attrs && currAttr < token->attrs->length()) {
+                        if (guide->at(i) == 'a') {
+                            Attribute* attr = token->attrs->attributeItem(currAttr);
+                            String name = attr->name().toString();
+                            if (doctype)
+                                addText(name, "webkit-html-doctype");
+                            else {
+                                m_current = addSpanWithClassName("webkit-html-attribute-name");
+                                addText(name, "webkit-html-attribute-name");
+                                if (m_current != m_tbody)
+                                    m_current = static_cast<Element*>(m_current->parent());
+                            }
+                            if (attr->value().isNull() || attr->value().isEmpty())
+                                currAttr++;
+                        } else {
+                            Attribute* attr = token->attrs->attributeItem(currAttr);
+                            String value = attr->value().domString();
+                            if (doctype)
+                                addText(value, "webkit-html-doctype");
+                            else {
+                                // FIXME: XML could use namespace prefixes and confuse us.
+                                if (equalIgnoringCase(attr->name().localName(), "src") || equalIgnoringCase(attr->name().localName(), "href"))
+                                    m_current = addLink(value, equalIgnoringCase(token->tagName, "a"));
+                                else
+                                    m_current = addSpanWithClassName("webkit-html-attribute-value");
+                                addText(value, "webkit-html-attribute-value");
+                                if (m_current != m_tbody)
+                                    m_current = static_cast<Element*>(m_current->parent());
+                            }
+                            currAttr++;
+                        }
+                    }
+                }
+            }
+            
+            // Add in any string that might be left.
+            if (begin < size)
+                addText(String((UChar*)(guide->data()) + begin, size - begin), classNameStr);
 
-        bool isLink = name == srcAttr || name == hrefAttr;
-        index = addRange(source, index, iter->valueRange.end - token.startIndex(), "webkit-html-attribute-value", isLink, tagName == aTag, value);
-
-        ++iter;
+            // Add in the end tag.
+            addText(">", classNameStr);
+        }
+        
+        m_current = m_td;
     }
-    m_current = m_td;
 }
 
-void HTMLViewSourceDocument::processCommentToken(const String& source, HTMLToken&)
-{
-    m_current = addSpanWithClassName("webkit-html-comment");
-    addText(source, "webkit-html-comment");
-    m_current = m_td;
-}
-
-void HTMLViewSourceDocument::processCharacterToken(const String& source, HTMLToken&)
-{
-    addText(source, "");
-}
-
-PassRefPtr<Element> HTMLViewSourceDocument::addSpanWithClassName(const AtomicString& className)
+Element* HTMLViewSourceDocument::addSpanWithClassName(const String& className)
 {
     if (m_current == m_tbody) {
         addLine(className);
         return m_current;
     }
 
-    RefPtr<HTMLElement> span = HTMLElement::create(spanTag, this);
-    span->setAttribute(classAttr, className);
-    m_current->parserAppendChild(span);
+    Element* span = new HTMLElement(spanTag, this);
+    Attribute* a = new MappedAttribute(classAttr, className);
+    NamedMappedAttrMap* attrs = new NamedMappedAttrMap(0);
+    attrs->insertAttribute(a, true);   
+    span->setAttributeMap(attrs);     
+    m_current->addChild(span);
     span->attach();
-    return span.release();
+    return span;
 }
 
-void HTMLViewSourceDocument::addLine(const AtomicString& className)
+void HTMLViewSourceDocument::addLine(const String& className)
 {
     // Create a table row.
-    RefPtr<HTMLTableRowElement> trow = HTMLTableRowElement::create(this);
-    m_tbody->parserAppendChild(trow);
+    Element* trow = new HTMLTableRowElement(this);
+    m_tbody->addChild(trow);
     trow->attach();
-
+    
     // Create a cell that will hold the line number (it is generated in the stylesheet using counters).
-    RefPtr<HTMLTableCellElement> td = HTMLTableCellElement::create(tdTag, this);
-    td->setAttribute(classAttr, "webkit-line-number");
-    trow->parserAppendChild(td);
+    Element* td = new HTMLTableCellElement(tdTag, this);
+    Attribute* classNameAttr = new MappedAttribute(classAttr, "webkit-line-number");
+    NamedMappedAttrMap* attrs = new NamedMappedAttrMap(0);
+    attrs->insertAttribute(classNameAttr, true);
+
+    td->setAttributeMap(attrs);     
+    trow->addChild(td);
     td->attach();
 
     // Create a second cell for the line contents
-    td = HTMLTableCellElement::create(tdTag, this);
-    td->setAttribute(classAttr, "webkit-line-content");
-    trow->parserAppendChild(td);
+    td = new HTMLTableCellElement(tdTag, this);
+    classNameAttr = new MappedAttribute(classAttr, "webkit-line-content");
+    attrs = new NamedMappedAttrMap(0);
+    attrs->insertAttribute(classNameAttr, true);
+    td->setAttributeMap(attrs);     
+    trow->addChild(td);
     td->attach();
     m_current = m_td = td;
 
 #ifdef DEBUG_LINE_NUMBERS
-    RefPtr<Text> lineNumberText = Text::create(this, String::number(parser()->lineNumber() + 1) + " ");
+    Text* lineNumberText = new Text(this, String::number(tokenizer()->lineNumber() + 1) + " ");
     td->addChild(lineNumberText);
     lineNumberText->attach();
 #endif
@@ -226,89 +240,58 @@ void HTMLViewSourceDocument::addLine(const AtomicString& className)
     }
 }
 
-void HTMLViewSourceDocument::finishLine()
-{
-    if (!m_current->hasChildNodes()) {
-        RefPtr<HTMLBRElement> br = HTMLBRElement::create(this);
-        m_current->parserAppendChild(br);
-        br->attach();
-    }
-    m_current = m_tbody;
-}
-
-void HTMLViewSourceDocument::addText(const String& text, const AtomicString& className)
+void HTMLViewSourceDocument::addText(const String& text, const String& className)
 {
     if (text.isEmpty())
         return;
 
     // Add in the content, splitting on newlines.
-    Vector<String> lines;
-    text.split('\n', true, lines);
+    Vector<String> lines = text.split('\n', true);
     unsigned size = lines.size();
     for (unsigned i = 0; i < size; i++) {
         String substring = lines[i];
-        if (m_current == m_tbody)
-            addLine(className);
         if (substring.isEmpty()) {
             if (i == size - 1)
                 break;
-            finishLine();
-            continue;
+            substring = " ";
         }
-        RefPtr<Text> t = Text::create(this, substring);
-        m_current->parserAppendChild(t);
+        if (m_current == m_tbody)
+            addLine(className);
+        Text* t = new Text(this, substring);
+        m_current->addChild(t);
         t->attach();
         if (i < size - 1)
-            finishLine();
+            m_current = m_tbody;
     }
+    
+    // Set current to m_tbody if the last character was a newline.
+    if (text[text.length() - 1] == '\n')
+        m_current = m_tbody;
 }
 
-int HTMLViewSourceDocument::addRange(const String& source, int start, int end, const String& className, bool isLink, bool isAnchor, const String& link)
-{
-    ASSERT(start <= end);
-    if (start == end)
-        return start;
-
-    String text = source.substring(start, end - start);
-    if (!className.isEmpty()) {
-        if (isLink)
-            m_current = addLink(link, isAnchor);
-        else
-            m_current = addSpanWithClassName(className);
-    }
-    addText(text, className);
-    if (!className.isEmpty() && m_current != m_tbody)
-        m_current = toElement(m_current->parentNode());
-    return end;
-}
-
-PassRefPtr<Element> HTMLViewSourceDocument::addBase(const AtomicString& href)
-{
-    RefPtr<HTMLBaseElement> base = HTMLBaseElement::create(baseTag, this);
-    base->setAttribute(hrefAttr, href);
-    m_current->parserAppendChild(base);
-    base->attach();
-    return base.release();
-}
-
-PassRefPtr<Element> HTMLViewSourceDocument::addLink(const AtomicString& url, bool isAnchor)
+Element* HTMLViewSourceDocument::addLink(const String& url, bool isAnchor)
 {
     if (m_current == m_tbody)
         addLine("webkit-html-tag");
-
+    
     // Now create a link for the attribute value instead of a span.
-    RefPtr<HTMLAnchorElement> anchor = HTMLAnchorElement::create(this);
-    const char* classValue;
+    Element* anchor = new HTMLAnchorElement(aTag, this);
+    NamedMappedAttrMap* attrs = new NamedMappedAttrMap(0);
+    String classValueStr("webkit-html-attribute-value");
     if (isAnchor)
-        classValue = "webkit-html-attribute-value webkit-html-external-link";
+        classValueStr += " webkit-html-external-link";
     else
-        classValue = "webkit-html-attribute-value webkit-html-resource-link";
-    anchor->setAttribute(classAttr, classValue);
-    anchor->setAttribute(targetAttr, "_blank");
-    anchor->setAttribute(hrefAttr, url);
-    m_current->parserAppendChild(anchor);
+        classValueStr += " webkit-html-resource-link";
+    Attribute* classAttribute = new MappedAttribute(classAttr, classValueStr);
+    attrs->insertAttribute(classAttribute, true);
+    Attribute* targetAttribute = new MappedAttribute(targetAttr, "_blank");
+    attrs->insertAttribute(targetAttribute, true);
+    Attribute* hrefAttribute = new MappedAttribute(hrefAttr, url);
+    attrs->insertAttribute(hrefAttribute, true);
+    anchor->setAttributeMap(attrs);     
+    m_current->addChild(anchor);
     anchor->attach();
-    return anchor.release();
+    return anchor;
 }
 
 }

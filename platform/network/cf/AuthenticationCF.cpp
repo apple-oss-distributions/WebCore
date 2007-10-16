@@ -26,16 +26,10 @@
 #include "config.h"
 #include "AuthenticationCF.h"
 
-#if USE(CFNETWORK)
-
 #include "AuthenticationChallenge.h"
-#include "AuthenticationClient.h"
 #include "Credential.h"
 #include "ProtectionSpace.h"
-
-// This header must come before all other CFNetwork headers to work around a CFNetwork bug. It can
-// be removed entirely once <rdar://problem/9042114> is fixed.
-#include <CFNetwork/CFURLConnectionPriv.h>
+#include "ResourceHandle.h"
 
 #include <CFNetwork/CFURLAuthChallengePriv.h>
 #include <CFNetwork/CFURLCredentialPriv.h>
@@ -43,56 +37,20 @@
 
 namespace WebCore {
 
-AuthenticationChallenge::AuthenticationChallenge(const ProtectionSpace& protectionSpace,
-                                                 const Credential& proposedCredential,
-                                                 unsigned previousFailureCount,
-                                                 const ResourceResponse& response,
-                                                 const ResourceError& error)
-    : AuthenticationChallengeBase(protectionSpace,
-                                  proposedCredential,
-                                  previousFailureCount,
-                                  response,
-                                  error)
-{
-}
-
-AuthenticationChallenge::AuthenticationChallenge(CFURLAuthChallengeRef cfChallenge,
-                                                 AuthenticationClient* authenticationClient)
-    : AuthenticationChallengeBase(core(CFURLAuthChallengeGetProtectionSpace(cfChallenge)),
-                                  core(CFURLAuthChallengeGetProposedCredential(cfChallenge)),
-                                  CFURLAuthChallengeGetPreviousFailureCount(cfChallenge),
-                                  (CFURLResponseRef)CFURLAuthChallengeGetFailureResponse(cfChallenge),
-                                  CFURLAuthChallengeGetError(cfChallenge))
-    , m_authenticationClient(authenticationClient)
+AuthenticationChallenge::AuthenticationChallenge(CFURLAuthChallengeRef cfChallenge, ResourceHandle* sourceHandle)
+    : m_isNull(false)
+    , m_protectionSpace(core(CFURLAuthChallengeGetProtectionSpace(cfChallenge)))
+    , m_proposedCredential(core(CFURLAuthChallengeGetProposedCredential(cfChallenge)))
+    , m_previousFailureCount(CFURLAuthChallengeGetPreviousFailureCount(cfChallenge))
+    , m_failureResponse((CFURLResponseRef)CFURLAuthChallengeGetFailureResponse(cfChallenge))
+    , m_error(CFURLAuthChallengeGetError(cfChallenge))
+    , m_sourceHandle(sourceHandle)
     , m_cfChallenge(cfChallenge)
 {
 }
 
-void AuthenticationChallenge::setAuthenticationClient(AuthenticationClient* client)
-{
-    m_authenticationClient = client;
-}
-
-AuthenticationClient* AuthenticationChallenge::authenticationClient() const
-{
-    return m_authenticationClient.get();
-}
-
-bool AuthenticationChallenge::platformCompare(const AuthenticationChallenge& a, const AuthenticationChallenge& b)
-{
-    if (a.authenticationClient() != b.authenticationClient())
-        return false;
-
-    if (a.cfURLAuthChallengeRef() != b.cfURLAuthChallengeRef())
-        return false;
-        
-    return true;
-}
-
 CFURLAuthChallengeRef createCF(const AuthenticationChallenge& coreChallenge)
-{
-    // FIXME: Why not cache CFURLAuthChallengeRef in m_cfChallenge? Foundation counterpart does that.
-
+{  
     CFURLProtectionSpaceRef protectionSpace = createCF(coreChallenge.protectionSpace());
     CFURLCredentialRef credential = createCF(coreChallenge.proposedCredential());
     
@@ -121,12 +79,13 @@ CFURLCredentialRef createCF(const Credential& coreCredential)
         ASSERT_NOT_REACHED();
     }
     
-#if CERTIFICATE_CREDENTIALS_SUPPORTED
-    if (coreCredential.type() == CredentialTypeClientCertificate)
-        return CFURLCredentialCreateWithIdentityAndCertificateArray(kCFAllocatorDefault, coreCredential.identity(), coreCredential.certificates(), persistence);
-#endif
+    CFStringRef user = coreCredential.user().createCFString();
+    CFStringRef password = coreCredential.password().createCFString();
+    CFURLCredentialRef result = CFURLCredentialCreate(0, user, password, 0, persistence);
+    CFRelease(user);
+    CFRelease(password);
 
-    return CFURLCredentialCreate(0, coreCredential.user().createCFString().get(), coreCredential.password().createCFString().get(), 0, persistence);
+    return result;
 }
 
 CFURLProtectionSpaceRef createCF(const ProtectionSpace& coreSpace)
@@ -181,19 +140,17 @@ CFURLProtectionSpaceRef createCF(const ProtectionSpace& coreSpace)
     case ProtectionSpaceAuthenticationSchemeNegotiate:
         scheme = kCFURLProtectionSpaceAuthenticationSchemeNegotiate;
         break;
-#if USE(PROTECTION_SPACE_AUTH_CALLBACK)
-    case ProtectionSpaceAuthenticationSchemeServerTrustEvaluationRequested:
-        scheme = kCFURLProtectionSpaceAuthenticationSchemeServerTrustEvaluationRequested;
-        break;
-    case ProtectionSpaceAuthenticationSchemeClientCertificateRequested:
-        scheme = kCFURLProtectionSpaceAuthenticationSchemeClientCertificateRequested;
-        break;
-#endif
     default:
         ASSERT_NOT_REACHED();
     }
 
-    return CFURLProtectionSpaceCreate(0, coreSpace.host().createCFString().get(), coreSpace.port(), serverType, coreSpace.realm().createCFString().get(), scheme);
+    CFStringRef host = coreSpace.host().createCFString();
+    CFStringRef realm = coreSpace.realm().createCFString();
+    CFURLProtectionSpaceRef result = CFURLProtectionSpaceCreate(0, host, coreSpace.port(), serverType, realm, scheme);
+    CFRelease(host);
+    CFRelease(realm);
+    
+    return result;
 }
 
 Credential core(CFURLCredentialRef cfCredential)
@@ -214,15 +171,8 @@ Credential core(CFURLCredentialRef cfCredential)
     default:
         ASSERT_NOT_REACHED();
     }
-
-#if CERTIFICATE_CREDENTIALS_SUPPORTED
-    SecIdentityRef identity = CFURLCredentialGetCertificateIdentity(cfCredential);
-    if (identity)
-        return Credential(identity, CFURLCredentialGetCertificateArray(cfCredential), persistence);
-#endif
-
-    RetainPtr<CFStringRef> password = adoptCF(CFURLCredentialCopyPassword(cfCredential));
-    return Credential(CFURLCredentialGetUsername(cfCredential), password.get(), persistence);
+    
+    return Credential(CFURLCredentialGetUsername(cfCredential), CFURLCredentialCopyPassword(cfCredential), persistence);
 }
 
 ProtectionSpace core(CFURLProtectionSpaceRef cfSpace)
@@ -278,16 +228,7 @@ ProtectionSpace core(CFURLProtectionSpaceRef cfSpace)
     case kCFURLProtectionSpaceAuthenticationSchemeNegotiate:
         scheme = ProtectionSpaceAuthenticationSchemeNegotiate;
         break;
-#if USE(PROTECTION_SPACE_AUTH_CALLBACK)
-    case kCFURLProtectionSpaceAuthenticationSchemeClientCertificateRequested:
-        scheme = ProtectionSpaceAuthenticationSchemeClientCertificateRequested;
-        break;
-    case kCFURLProtectionSpaceAuthenticationSchemeServerTrustEvaluationRequested:
-        scheme = ProtectionSpaceAuthenticationSchemeServerTrustEvaluationRequested;
-        break;
-#endif
     default:
-        scheme = ProtectionSpaceAuthenticationSchemeUnknown;
         ASSERT_NOT_REACHED();
     }
         
@@ -299,5 +240,3 @@ ProtectionSpace core(CFURLProtectionSpaceRef cfSpace)
 }
 
 };
-
-#endif // USE(CFNETWORK)

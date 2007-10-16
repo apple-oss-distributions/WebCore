@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,39 +27,28 @@
 #include "JSStyleSheet.h"
 
 #include "CSSStyleSheet.h"
-#include "Node.h"
 #include "JSCSSStyleSheet.h"
-#include "JSNode.h"
-
-using namespace JSC;
+#include "StyleSheet.h"
 
 namespace WebCore {
 
-void JSStyleSheet::visitChildren(JSCell* cell, SlotVisitor& visitor)
-{
-    JSStyleSheet* thisObject = jsCast<JSStyleSheet*>(cell);
-    ASSERT_GC_OBJECT_INHERITS(thisObject, &s_info);
-    COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
-    ASSERT(thisObject->structure()->typeInfo().overridesVisitChildren());
-    Base::visitChildren(thisObject, visitor);
-    visitor.addOpaqueRoot(root(thisObject->impl()));
-}
-
-JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, StyleSheet* styleSheet)
+KJS::JSValue* toJS(KJS::ExecState* exec, StyleSheet* styleSheet)
 {
     if (!styleSheet)
-        return jsNull();
+        return KJS::jsNull();
 
-    JSDOMWrapper* wrapper = getCachedWrapper(currentWorld(exec), styleSheet);
-    if (wrapper)
-        return wrapper;
+    KJS::ScriptInterpreter* interp = static_cast<KJS::ScriptInterpreter*>(exec->dynamicInterpreter());
+    KJS::DOMObject* ret = interp->getDOMObject(styleSheet);
+    if (ret)
+        return ret;
 
     if (styleSheet->isCSSStyleSheet())
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSStyleSheet, styleSheet);
+        ret = new JSCSSStyleSheet(exec, static_cast<CSSStyleSheet*>(styleSheet));
     else
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, StyleSheet, styleSheet);
+        ret = new JSStyleSheet(exec, styleSheet);
 
-    return wrapper;
+    interp->putDOMObject(styleSheet, ret);
+    return ret;
 }
 
 } // namespace WebCore

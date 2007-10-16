@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,34 +32,26 @@
 #include "Event.h"
 #include "EventNames.h"
 #include "Frame.h"
-#include "HTMLNames.h"
 
 namespace WebCore {
 
-using namespace HTMLNames;
+using namespace EventNames;
 
-#if ENABLE(DELETION_UI)
-
-inline DeleteButton::DeleteButton(Document* document)
-    : HTMLImageElement(imgTag, document)
+DeleteButton::DeleteButton(Document* document)
+    : HTMLImageElement(document)
 {
-}
-
-PassRefPtr<DeleteButton> DeleteButton::create(Document* document)
-{
-    return adoptRef(new DeleteButton(document));
 }
 
 void DeleteButton::defaultEventHandler(Event* event)
 {
-    if (event->type() == eventNames().clickEvent) {
-        document()->frame()->editor().deleteButtonController()->deleteTarget();
-        event->setDefaultHandled();
-        return;
+    if (event->isMouseEvent()) {
+        if (event->type() == clickEvent) {
+            document()->frame()->editor()->deleteButtonController()->deleteTarget();
+            event->setDefaultHandled();
+        }
     }
 
     HTMLImageElement::defaultEventHandler(event);
 }
-#endif
 
 } // namespace

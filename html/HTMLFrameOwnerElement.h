@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -21,20 +21,18 @@
 #ifndef HTMLFrameOwnerElement_h
 #define HTMLFrameOwnerElement_h
 
-#include "FrameLoaderTypes.h"
 #include "HTMLElement.h"
 
 namespace WebCore {
 
 class DOMWindow;
 class Frame;
-class RenderPart;
-
-#if ENABLE(SVG)
-class SVGDocument;
-#endif
+class KeyboardEvent;
 
 class HTMLFrameOwnerElement : public HTMLElement {
+protected:
+    HTMLFrameOwnerElement(const QualifiedName& tagName, Document*);
+
 public:
     virtual ~HTMLFrameOwnerElement();
 
@@ -42,72 +40,16 @@ public:
     DOMWindow* contentWindow() const;
     Document* contentDocument() const;
 
-    void setContentFrame(Frame*);
-    void clearContentFrame();
-
-    void disconnectContentFrame();
-
-    // Most subclasses use RenderPart (either RenderEmbeddedObject or RenderIFrame)
-    // except for HTMLObjectElement and HTMLEmbedElement which may return any
-    // RenderObject when using fallback content.
-    RenderPart* renderPart() const;
-
-#if ENABLE(SVG)
-    SVGDocument* getSVGDocument(ExceptionCode&) const;
-#endif
-
-    virtual ScrollbarMode scrollingMode() const { return ScrollbarAuto; }
-
-    SandboxFlags sandboxFlags() const { return m_sandboxFlags; }
-
-protected:
-    HTMLFrameOwnerElement(const QualifiedName& tagName, Document*);
-    void setSandboxFlags(SandboxFlags);
+    virtual bool isFrameOwnerElement() const { return true; }
+    virtual bool isKeyboardFocusable(KeyboardEvent*) const { return m_contentFrame; }
+    
+    bool createdByParser() const { return m_createdByParser; }
+    void setCreatedByParser(bool createdByParser) { m_createdByParser = createdByParser; }
 
 private:
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const OVERRIDE;
-    virtual bool isFrameOwnerElement() const OVERRIDE { return true; }
-
+    friend class Frame;
     Frame* m_contentFrame;
-    SandboxFlags m_sandboxFlags;
-};
-
-inline HTMLFrameOwnerElement* toFrameOwnerElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isFrameOwnerElement());
-    return static_cast<HTMLFrameOwnerElement*>(node);
-}
-
-class SubframeLoadingDisabler {
-public:
-    explicit SubframeLoadingDisabler(Node* root)
-        : m_root(root)
-    {
-        disabledSubtreeRoots().add(m_root);
-    }
-
-    ~SubframeLoadingDisabler()
-    {
-        disabledSubtreeRoots().remove(m_root);
-    }
-
-    static bool canLoadFrame(HTMLFrameOwnerElement* owner)
-    {
-        for (Node* node = owner; node; node = node->parentOrShadowHostNode()) {
-            if (disabledSubtreeRoots().contains(node))
-                return false;
-        }
-        return true;
-    }
-
-private:
-    static HashSet<Node*>& disabledSubtreeRoots()
-    {
-        DEFINE_STATIC_LOCAL(HashSet<Node*>, nodes, ());
-        return nodes;
-    }
-
-    Node* m_root;
+    bool m_createdByParser;
 };
 
 } // namespace WebCore

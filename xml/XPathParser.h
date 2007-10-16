@@ -27,6 +27,8 @@
 #ifndef XPathParser_h
 #define XPathParser_h
 
+#if ENABLE(XPATH)
+
 #include "XPathStep.h"
 #include "XPathPredicate.h"
 
@@ -56,11 +58,9 @@ namespace WebCore {
             Token(int t, EqTestOp::Opcode v): type(t), eqop(v) {}
         };
 
-        class Parser {
-            WTF_MAKE_NONCOPYABLE(Parser);
+        class Parser : Noncopyable {
         public:
             Parser();
-            ~Parser();
 
             XPathNSResolver* resolver() const { return m_resolver.get(); }
             bool expandQName(const String& qName, String& localName, String& namespaceURI);
@@ -90,7 +90,7 @@ namespace WebCore {
             void deleteNodeTest(Step::NodeTest*);
 
         private:
-            bool isBinaryOperatorContext() const;
+            bool isOperatorContext() const;
 
             void skipWS();
             Token makeTokenAndAdvance(int type, int advance = 1);
@@ -125,5 +125,7 @@ namespace WebCore {
 
     }
 }
+
+#endif // ENABLE(XPATH)
 
 #endif

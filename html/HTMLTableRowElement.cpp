@@ -1,10 +1,12 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1997 Martin Jones (mjones@kde.org)
  *           (C) 1997 Torben Weis (weis@kde.org)
  *           (C) 1998 Waldo Bastian (bastian@kde.org)
  *           (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -21,7 +23,6 @@
  * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
-
 #include "config.h"
 #include "HTMLTableRowElement.h"
 
@@ -38,25 +39,36 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLTableRowElement::HTMLTableRowElement(const QualifiedName& tagName, Document* document)
-    : HTMLTablePartElement(tagName, document)
+HTMLTableRowElement::HTMLTableRowElement(Document* doc)
+    : HTMLTablePartElement(trTag, doc)
 {
-    ASSERT(hasTagName(trTag));
 }
 
-PassRefPtr<HTMLTableRowElement> HTMLTableRowElement::create(Document* document)
+bool HTMLTableRowElement::checkDTD(const Node* newChild)
 {
-    return adoptRef(new HTMLTableRowElement(trTag, document));
+    if (newChild->isTextNode())
+        return static_cast<const Text*>(newChild)->containsOnlyWhitespace();
+    return newChild->hasTagName(tdTag) || newChild->hasTagName(thTag) ||
+           newChild->hasTagName(formTag) || newChild->hasTagName(scriptTag);
 }
 
-PassRefPtr<HTMLTableRowElement> HTMLTableRowElement::create(const QualifiedName& tagName, Document* document)
+ContainerNode* HTMLTableRowElement::addChild(PassRefPtr<Node> child)
 {
-    return adoptRef(new HTMLTableRowElement(tagName, document));
+    if (child->hasTagName(formTag)) {
+        // First add the child.
+        HTMLTablePartElement::addChild(child);
+
+        // Now simply return ourselves as the container to insert into.
+        // This has the effect of demoting the form to a leaf and moving it safely out of the way.
+        return this;
+    }
+
+    return HTMLTablePartElement::addChild(child);
 }
 
 int HTMLTableRowElement::rowIndex() const
 {
-    ContainerNode* table = parentNode();
+    Node *table = parentNode();
     if (!table)
         return -1;
     table = table->parentNode();
@@ -118,27 +130,28 @@ int HTMLTableRowElement::sectionRowIndex() const
     return rIndex;
 }
 
-PassRefPtr<HTMLElement> HTMLTableRowElement::insertCell(int index, ExceptionCode& ec)
+HTMLElement *HTMLTableRowElement::insertCell(int index, ExceptionCode& ec)
 {
+    HTMLTableCellElement *c = 0L;
     RefPtr<HTMLCollection> children = cells();
     int numCells = children ? children->length() : 0;
-    if (index < -1 || index > numCells) {
-        ec = INDEX_SIZE_ERR;
-        return 0;
+    if ( index < -1 || index > numCells )
+        ec = INDEX_SIZE_ERR; // per the DOM
+    else
+    {
+        c = new HTMLTableCellElement(tdTag, document());
+        if(numCells == index || index == -1)
+            appendChild(c, ec);
+        else {
+            Node *n;
+            if(index < 1)
+                n = firstChild();
+            else
+                n = children->item(index);
+            insertBefore(c, n, ec);
+        }
     }
-
-    RefPtr<HTMLTableCellElement> cell = HTMLTableCellElement::create(tdTag, document());
-    if (index < 0 || index >= numCells)
-        appendChild(cell, ec);
-    else {
-        Node* n;
-        if (index < 1)
-            n = firstChild();
-        else
-            n = children->item(index);
-        insertBefore(cell, n, ec);
-    }
-    return cell.release();
+    return c;
 }
 
 void HTMLTableRowElement::deleteCell(int index, ExceptionCode& ec)
@@ -156,12 +169,62 @@ void HTMLTableRowElement::deleteCell(int index, ExceptionCode& ec)
 
 PassRefPtr<HTMLCollection> HTMLTableRowElement::cells()
 {
-    return ensureCachedHTMLCollection(TRCells);
+    return new HTMLCollection(this, HTMLCollection::TRCells);
 }
 
-void HTMLTableRowElement::setCells(HTMLCollection*, ExceptionCode& ec)
+void HTMLTableRowElement::setCells(HTMLCollection *, ExceptionCode& ec)
 {
     ec = NO_MODIFICATION_ALLOWED_ERR;
+}
+
+String HTMLTableRowElement::align() const
+{
+    return getAttribute(alignAttr);
+}
+
+void HTMLTableRowElement::setAlign(const String &value)
+{
+    setAttribute(alignAttr, value);
+}
+
+String HTMLTableRowElement::bgColor() const
+{
+    return getAttribute(bgcolorAttr);
+}
+
+void HTMLTableRowElement::setBgColor(const String &value)
+{
+    setAttribute(bgcolorAttr, value);
+}
+
+String HTMLTableRowElement::ch() const
+{
+    return getAttribute(charAttr);
+}
+
+void HTMLTableRowElement::setCh(const String &value)
+{
+    setAttribute(charAttr, value);
+}
+
+String HTMLTableRowElement::chOff() const
+{
+    return getAttribute(charoffAttr);
+}
+
+void HTMLTableRowElement::setChOff(const String &value)
+{
+    setAttribute(charoffAttr, value);
+}
+
+String HTMLTableRowElement::vAlign() const
+{
+    return getAttribute(valignAttr);
+}
+
+void HTMLTableRowElement::setVAlign(const String &value)
+{
+    setAttribute(valignAttr, value);
 }
 
 }

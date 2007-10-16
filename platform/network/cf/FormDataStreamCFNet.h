@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2006, 2007, 2012 Apple Inc.  All rights reserved.
+ * Copyright (C) 2005, 2006, 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,25 +26,18 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef FormDataStreamCFNet_h
-#define FormDataStreamCFNet_h
+#ifndef FormDataStreamCFNet_h_
+#define FormDataStreamCFNet_h_
 
+#include <CoreFoundation/CoreFoundation.h>
 #include <wtf/Forward.h>
 
 typedef struct _CFURLRequest* CFMutableURLRequestRef;
-typedef struct __CFReadStream* CFReadStreamRef;
-typedef const struct __CFString* CFStringRef;
 
 namespace WebCore {
+    class FormData;
+    void setHTTPBody(CFMutableURLRequestRef, PassRefPtr<FormData>);
+    FormData* httpBodyFromStream(CFReadStreamRef);
+}
 
-class FormData;
-
-void setHTTPBody(CFMutableURLRequestRef, PassRefPtr<FormData>);
-
-FormData* httpBodyFromStream(CFReadStreamRef);
-
-CFStringRef formDataStreamLengthPropertyName();
-
-} // namespace WebCore
-
-#endif // FormDataStreamCFNet_h
+#endif FormDataStreamCFNet_h_

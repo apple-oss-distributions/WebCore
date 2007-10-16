@@ -1,9 +1,11 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Simon Hausmann (hausmann@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,7 +26,6 @@
 #include "config.h"
 #include "HTMLFrameElement.h"
 
-#include "Attribute.h"
 #include "Frame.h"
 #include "HTMLFrameSetElement.h"
 #include "HTMLNames.h"
@@ -34,65 +35,52 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLFrameElement::HTMLFrameElement(const QualifiedName& tagName, Document* document)
-    : HTMLFrameElementBase(tagName, document)
+HTMLFrameElement::HTMLFrameElement(Document* doc)
+    : HTMLFrameElementBase(frameTag, doc)
     , m_frameBorder(true)
     , m_frameBorderSet(false)
 {
-    ASSERT(hasTagName(frameTag));
 }
 
-PassRefPtr<HTMLFrameElement> HTMLFrameElement::create(const QualifiedName& tagName, Document* document)
-{
-    return adoptRef(new HTMLFrameElement(tagName, document));
-}
-
-bool HTMLFrameElement::rendererIsNeeded(const NodeRenderingContext&)
+bool HTMLFrameElement::rendererIsNeeded(RenderStyle* style)
 {
     // For compatibility, frames render even when display: none is set.
-    return isURLAllowed();
+    return isURLAllowed(m_URL);
 }
 
-RenderObject* HTMLFrameElement::createRenderer(RenderArena* arena, RenderStyle*)
+RenderObject* HTMLFrameElement::createRenderer(RenderArena* arena, RenderStyle* style)
 {
     return new (arena) RenderFrame(this);
 }
 
 static inline HTMLFrameSetElement* containingFrameSetElement(Node* node)
 {
-    while ((node = node->parentNode())) {
+    while ((node = node->parentNode()))
         if (node->hasTagName(framesetTag))
             return static_cast<HTMLFrameSetElement*>(node);
-    }
     return 0;
 }
 
-bool HTMLFrameElement::noResize() const
+void HTMLFrameElement::attach()
 {
-    return hasAttribute(noresizeAttr);
-}
-
-void HTMLFrameElement::attach(const AttachContext& context)
-{
-    HTMLFrameElementBase::attach(context);
+    HTMLFrameElementBase::attach();
     
     if (HTMLFrameSetElement* frameSetElement = containingFrameSetElement(this)) {
         if (!m_frameBorderSet)
             m_frameBorder = frameSetElement->hasFrameBorder();
+        if (!m_noResize)
+            m_noResize = frameSetElement->noResize();
     }
 }
 
-void HTMLFrameElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLFrameElement::parseMappedAttribute(MappedAttribute *attr)
 {
-    if (name == frameborderAttr) {
-        m_frameBorder = value.toInt();
-        m_frameBorderSet = !value.isNull();
+    if (attr->name() == frameborderAttr) {
+        m_frameBorder = attr->value().toInt();
+        m_frameBorderSet = !attr->isNull();
         // FIXME: If we are already attached, this has no effect.
-    } else if (name == noresizeAttr) {
-        if (renderer())
-            renderer()->updateFromElement();
     } else
-        HTMLFrameElementBase::parseAttribute(name, value);
+        HTMLFrameElementBase::parseMappedAttribute(attr);
 }
 
 } // namespace WebCore

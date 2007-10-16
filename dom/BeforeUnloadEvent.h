@@ -1,4 +1,6 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 2001 Peter Kelly (pmk@post.com)
  * Copyright (C) 2001 Tobias Anton (anton@stud.fbi.fh-darmstadt.de)
  * Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
@@ -30,12 +32,7 @@ namespace WebCore {
 
     class BeforeUnloadEvent : public Event {
     public:
-        virtual ~BeforeUnloadEvent();
-
-        static PassRefPtr<BeforeUnloadEvent> create()
-        {
-            return adoptRef(new BeforeUnloadEvent);
-        }
+        BeforeUnloadEvent();
 
         virtual bool storesResultAsString() const;
         virtual void storeResult(const String&);
@@ -43,8 +40,6 @@ namespace WebCore {
         String result() const { return m_result; }
 
     private:
-        BeforeUnloadEvent();
-
         String m_result;
     };
 

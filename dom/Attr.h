@@ -3,7 +3,7 @@
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Peter Kelly (pmk@post.com)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -26,81 +26,74 @@
 #define Attr_h
 
 #include "ContainerNode.h"
-#include "QualifiedName.h"
+#include "Attribute.h"
 
 namespace WebCore {
 
-class CSSStyleDeclaration;
-class MutableStylePropertySet;
+// this has no counterpart in DOM, purely internal
+// representation of the nodevalue of an Attr.
+// the actual Attr (Attr) with its value as textchild
+// is only allocated on demand by the DOM bindings.
+// Any use of Attr inside khtml should be avoided.
 
 // Attr can have Text and EntityReference children
 // therefore it has to be a fullblown Node. The plan
 // is to dynamically allocate a textchild and store the
-// resulting nodevalue in the attribute upon
+// resulting nodevalue in the Attribute upon
 // destruction. however, this is not yet implemented.
 
-class Attr FINAL : public ContainerNode {
-public:
-    static PassRefPtr<Attr> create(Element*, const QualifiedName&);
-    static PassRefPtr<Attr> create(Document*, const QualifiedName&, const AtomicString& value);
-    virtual ~Attr();
+class Attr : public ContainerNode {
+    friend class NamedAttrMap;
 
+public:
+    Attr(Element*, Document*, Attribute*);
+    ~Attr();
+
+    // Call this after calling the constructor so the
+    // Attr node isn't floating when we append the text node.
+    void createTextChild();
+    
+    // DOM methods & attributes for Attr
     String name() const { return qualifiedName().toString(); }
-    bool specified() const { return m_specified; }
+    bool specified() const { return m_attrWasSpecifiedOrElementHasRareData; }
     Element* ownerElement() const { return m_element; }
 
-    const AtomicString& value() const;
-    void setValue(const AtomicString&, ExceptionCode&);
-    void setValue(const AtomicString&);
+    String value() const { return m_attribute->value(); }
+    void setValue(const String&, ExceptionCode&);
 
-    const QualifiedName& qualifiedName() const { return m_name; }
-
-    bool isId() const;
-
-    CSSStyleDeclaration* style();
-
-    void setSpecified(bool specified) { m_specified = specified; }
-
-    void attachToElement(Element*);
-    void detachFromElementWithValue(const AtomicString&);
-
-private:
-    Attr(Element*, const QualifiedName&);
-    Attr(Document*, const QualifiedName&, const AtomicString& value);
-
-    void createTextChild();
-
-    virtual String nodeName() const OVERRIDE { return name(); }
-    virtual NodeType nodeType() const OVERRIDE { return ATTRIBUTE_NODE; }
-
-    virtual const AtomicString& localName() const OVERRIDE { return m_name.localName(); }
-    virtual const AtomicString& namespaceURI() const OVERRIDE { return m_name.namespaceURI(); }
-    virtual const AtomicString& prefix() const OVERRIDE { return m_name.prefix(); }
-
+    // DOM methods overridden from parent classes
+    virtual String nodeName() const;
+    virtual NodeType nodeType() const;
+    virtual const AtomicString& localName() const;
+    virtual const AtomicString& namespaceURI() const;
+    virtual const AtomicString& prefix() const;
     virtual void setPrefix(const AtomicString&, ExceptionCode&);
 
-    virtual String nodeValue() const OVERRIDE { return value(); }
+    virtual String nodeValue() const;
     virtual void setNodeValue(const String&, ExceptionCode&);
     virtual PassRefPtr<Node> cloneNode(bool deep);
 
+    // Other methods (not part of DOM)
     virtual bool isAttributeNode() const { return true; }
-    virtual bool childTypeAllowed(NodeType) const;
+    virtual bool childTypeAllowed(NodeType);
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
+    virtual void childrenChanged();
+    virtual String toString() const;
 
-    Attribute& elementAttribute();
+    Attribute* attr() const { return m_attribute.get(); }
+    const QualifiedName& qualifiedName() const { return m_attribute->name(); }
 
-    // Attr wraps either an element/name, or a name/value pair (when it's a standalone Node.)
-    // Note that m_name is always set, but m_element/m_standaloneValue may be null.
+    // An extension to get presentational information for attributes.
+    CSSStyleDeclaration* style() { return m_attribute->style(); }
+
+    void setSpecified(bool specified) { m_attrWasSpecifiedOrElementHasRareData = specified; }
+
+private:
     Element* m_element;
-    QualifiedName m_name;
-    AtomicString m_standaloneValue;
-
-    RefPtr<MutableStylePropertySet> m_style;
-    unsigned m_ignoreChildrenChanged : 31;
-    bool m_specified : 1;
+    RefPtr<Attribute> m_attribute;
+    int m_ignoreChildrenChanged;
 };
 
-} // namespace WebCore
+} //namespace
 
-#endif // Attr_h
+#endif

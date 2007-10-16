@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2004, 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -27,23 +29,38 @@
 
 namespace WebCore {
 
-class HTMLParamElement FINAL : public HTMLElement {
+class HTMLParamElement : public HTMLElement
+{
+    friend class HTMLAppletElement;
 public:
-    static PassRefPtr<HTMLParamElement> create(const QualifiedName&, Document*);
+    HTMLParamElement(Document*);
+    ~HTMLParamElement();
 
-    String name() const;
-    String value() const;
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusForbidden; }
+    virtual int tagPriority() const { return 0; }
 
-    static bool isURLParameter(const String&);
+    virtual void parseMappedAttribute(MappedAttribute*);
 
-private:
-    HTMLParamElement(const QualifiedName&, Document*);
+    virtual bool isURLAttribute(Attribute*) const;
 
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    String name() const { return m_name; }
+    void setName(const String&);
 
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
+    String type() const;
+    void setType(const String&);
+
+    String value() const { return m_value; }
+    void setValue(const String&);
+
+    String valueType() const;
+    void setValueType(const String&);
+
+ protected:
+    AtomicString m_name;
+    AtomicString m_value;
 };
 
-} // namespace WebCore
+
+}
 
 #endif

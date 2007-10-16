@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,33 +18,29 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLFrameElement : HTMLElement {
+module html {
 
-    [Reflect] attribute DOMString frameBorder;
-    [Reflect] attribute DOMString longDesc;
-    [Reflect] attribute DOMString marginHeight;
-    [Reflect] attribute DOMString marginWidth;
-    [Reflect] attribute DOMString name;
-    [Reflect] attribute boolean noResize;
-    [Reflect] attribute DOMString scrolling;
-    [Reflect, URL] attribute DOMString src;
+    interface [GenerateConstructor] HTMLFrameElement : HTMLElement {
 
-    // Introduced in DOM Level 2:
-    [CheckSecurityForNode] readonly attribute Document contentDocument;
+                 attribute [ConvertNullToNullString] DOMString       frameBorder;
+                 attribute [ConvertNullToNullString] DOMString       longDesc;
+                 attribute [ConvertNullToNullString] DOMString       marginHeight;
+                 attribute [ConvertNullToNullString] DOMString       marginWidth;
+                 attribute [ConvertNullToNullString] DOMString       name;
+                 attribute boolean         noResize;
+                 attribute [ConvertNullToNullString] DOMString       scrolling;
+                 attribute [ConvertNullToNullString, CustomSetter] DOMString       src;
 
-    // Extensions
-    readonly attribute DOMWindow contentWindow;
+        // Introduced in DOM Level 2:
+        readonly attribute [CheckFrameSecurity] Document        contentDocument;
 
-#if defined(ENABLE_SVG) && ENABLE_SVG
-#if !defined(LANGUAGE_OBJECTIVE_C) || !LANGUAGE_OBJECTIVE_C
-    [CheckSecurityForNode, RaisesException] SVGDocument getSVGDocument();
-#endif
-#endif
+        // Extensions
+        readonly attribute DOMWindow contentWindow;
 
-    [TreatNullAs=NullString, CustomSetter] attribute DOMString location;
+                 attribute [ConvertNullToNullString, CustomSetter] DOMString       location;
+        readonly attribute long            width;
+        readonly attribute long            height;
 
-    readonly attribute long width;
-    readonly attribute long height;
+    };
 
-};
-
+}

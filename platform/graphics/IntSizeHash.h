@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,20 +24,21 @@
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 
+using WebCore::IntSize;
+
 namespace WTF {
 
-    template<> struct IntHash<WebCore::IntSize> {
-        static unsigned hash(const WebCore::IntSize& key) { return pairIntHash(key.width(), key.height()); }
-        static bool equal(const WebCore::IntSize& a, const WebCore::IntSize& b) { return a == b; }
-        static const bool safeToCompareToEmptyOrDeleted = true;
+    template<> struct IntHash<IntSize> {
+        static unsigned hash(const IntSize& key) { return intHash((static_cast<uint64_t>(key.width()) << 32 | key.height())); }
+        static bool equal(const IntSize& a, const IntSize& b) { return a == b; }
     };
-    template<> struct DefaultHash<WebCore::IntSize> { typedef IntHash<WebCore::IntSize> Hash; };
+    template<> struct DefaultHash<IntSize> { typedef IntHash<IntSize> Hash; };
     
-    template<> struct HashTraits<WebCore::IntSize> : GenericHashTraits<WebCore::IntSize> {
+    template<> struct HashTraits<IntSize> : GenericHashTraits<IntSize> {
         static const bool emptyValueIsZero = true;
         static const bool needsDestruction = false;
-        static void constructDeletedValue(WebCore::IntSize& slot) { new (NotNull, &slot) WebCore::IntSize(-1, -1); }
-        static bool isDeletedValue(const WebCore::IntSize& value) { return value.width() == -1 && value.height() == -1; }
+        static const bool needsRef = false;
+        static IntSize deletedValue() { return IntSize(-1, -1); }
     };
 } // namespace WTF
 

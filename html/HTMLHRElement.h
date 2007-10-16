@@ -1,7 +1,8 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -27,18 +28,28 @@
 
 namespace WebCore {
 
-class HTMLHRElement FINAL : public HTMLElement {
+class HTMLHRElement : public HTMLElement {
 public:
-    static PassRefPtr<HTMLHRElement> create(Document*);
-    static PassRefPtr<HTMLHRElement> create(const QualifiedName&, Document*);
+    HTMLHRElement(Document*);
+    ~HTMLHRElement();
+    
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusForbidden; }
+    virtual int tagPriority() const { return 0; }
+    
+    virtual bool mapToEntry(const QualifiedName&, MappedAttributeEntry&) const;
+    virtual void parseMappedAttribute(MappedAttribute*);
 
-    virtual bool canContainRangeEndPoint() const { return hasChildNodes(); }
+    String align() const;
+    void setAlign(const String&);
 
-private:
-    HTMLHRElement(const QualifiedName&, Document*);
+    bool noShade() const;
+    void setNoShade(bool);
 
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
+    String size() const;
+    void setSize(const String&);
+
+    String width() const;
+    void setWidth(const String&);
 };
 
 } // namespace WebCore

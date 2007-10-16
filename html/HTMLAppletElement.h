@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2004, 2006, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,26 +25,68 @@
 #ifndef HTMLAppletElement_h
 #define HTMLAppletElement_h
 
-#include "HTMLPlugInImageElement.h"
+#include "HTMLPlugInElement.h"
+
+#if USE(JAVASCRIPTCORE_BINDINGS)
+#include <bindings/runtime.h>
+#else
+namespace KJS { namespace Bindings { class Instance; } }
+#endif
 
 namespace WebCore {
 
-class HTMLAppletElement FINAL : public HTMLPlugInImageElement {
+class HTMLFormElement;
+class HTMLImageLoader;
+
+class HTMLAppletElement : public HTMLPlugInElement
+{
 public:
-    static PassRefPtr<HTMLAppletElement> create(const QualifiedName&, Document*, bool createdByParser);
+    HTMLAppletElement(Document*);
+    ~HTMLAppletElement();
+
+    virtual int tagPriority() const { return 1; }
+
+    virtual void parseMappedAttribute(MappedAttribute*);
+    
+    virtual bool rendererIsNeeded(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual void finishedParsing();
+    virtual void detach();
+    
+#if USE(JAVASCRIPTCORE_BINDINGS)
+    virtual KJS::Bindings::Instance* getInstance() const;
+#endif
+
+    String alt() const;
+    void setAlt(const String&);
+
+    String archive() const;
+    void setArchive(const String&);
+
+    String code() const;
+    void setCode(const String&);
+
+    String codeBase() const;
+    void setCodeBase(const String&);
+
+    String hspace() const;
+    void setHspace(const String&);
+
+    String object() const;
+    void setObject(const String&);
+
+    String vspace() const;
+    void setVspace(const String&);
+
+    virtual bool allParamsAvailable();
+    void setupApplet() const;
+
+    virtual void insertedIntoDocument();
+    virtual void removedFromDocument();
 
 private:
-    HTMLAppletElement(const QualifiedName&, Document*, bool createdByParser);
-
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    
-    virtual bool rendererIsNeeded(const NodeRenderingContext&) OVERRIDE;
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) OVERRIDE;
-
-    virtual RenderWidget* renderWidgetForJSBindings() const;
-    virtual void updateWidget(PluginCreationOption) OVERRIDE;
-
-    bool canEmbedJava() const;
+    String oldIdAttr;
+    bool m_allParamsAvailable;
 };
 
 }

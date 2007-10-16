@@ -1,6 +1,8 @@
 /**
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -21,13 +23,18 @@
 #include "config.h"
 #include "CSSInheritedValue.h"
 
-#include <wtf/text/WTFString.h>
+#include "PlatformString.h"
 
 namespace WebCore {
 
-String CSSInheritedValue::customCssText() const
+unsigned short CSSInheritedValue::cssValueType() const
 {
-    return ASCIILiteral("inherit");
+    return CSS_INHERIT;
+}
+
+String CSSInheritedValue::cssText() const
+{
+    return "inherit";
 }
 
 } // namespace WebCore

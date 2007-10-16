@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2005 Frerich Raabe <raabe@kde.org>
- * Copyright (C) 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright 2005 Frerich Raabe <raabe@kde.org>
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,15 +27,17 @@
 #include "config.h"
 #include "XPathExpression.h"
 
+#if ENABLE(XPATH)
+
 #include "Document.h"
 #include "ExceptionCode.h"
-#include "XPathException.h"
+#include "Node.h"
+#include "PlatformString.h"
 #include "XPathExpressionNode.h"
 #include "XPathNSResolver.h"
 #include "XPathParser.h"
 #include "XPathResult.h"
 #include "XPathUtil.h"
-#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -43,7 +45,7 @@ using namespace XPath;
     
 PassRefPtr<XPathExpression> XPathExpression::createExpression(const String& expression, XPathNSResolver* resolver, ExceptionCode& ec)
 {
-    RefPtr<XPathExpression> expr = XPathExpression::create();
+    RefPtr<XPathExpression> expr = new XPathExpression;
     Parser parser;
 
     expr->m_topExpression = parser.parseStatement(expression, resolver, ec);
@@ -65,20 +67,16 @@ PassRefPtr<XPathResult> XPathExpression::evaluate(Node* contextNode, unsigned sh
         return 0;
     }
 
+    EventTargetNode* eventTarget = contextNode->ownerDocument()
+        ? contextNode->ownerDocument()
+        : static_cast<EventTargetNode*>(contextNode);
+
     EvaluationContext& evaluationContext = Expression::evaluationContext();
     evaluationContext.node = contextNode;
     evaluationContext.size = 1;
     evaluationContext.position = 1;
-    evaluationContext.hadTypeConversionError = false;
-    RefPtr<XPathResult> result = XPathResult::create(contextNode->document(), m_topExpression->evaluate());
+    RefPtr<XPathResult> result = new XPathResult(eventTarget, m_topExpression->evaluate());
     evaluationContext.node = 0; // Do not hold a reference to the context node, as this may prevent the whole document from being destroyed in time.
-
-    if (evaluationContext.hadTypeConversionError) {
-        // It is not specified what to do if type conversion fails while evaluating an expression, and INVALID_EXPRESSION_ERR is not exactly right
-        // when the failure happens in an otherwise valid expression because of a variable. But XPathEvaluator does not support variables, so it's close enough.
-        ec = XPathException::INVALID_EXPRESSION_ERR;
-        return 0;
-    }
 
     if (type != XPathResult::ANY_TYPE) {
         ec = 0;
@@ -91,3 +89,5 @@ PassRefPtr<XPathResult> XPathExpression::evaluate(Node* contextNode, unsigned sh
 }
 
 }
+
+#endif // ENABLE(XPATH)

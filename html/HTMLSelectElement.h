@@ -1,10 +1,8 @@
 /*
- * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2009, 2010, 2011 Apple Inc. All rights reserved.
- * Copyright (C) 2010 Google Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -27,55 +25,93 @@
 #define HTMLSelectElement_h
 
 #include "Event.h"
-#include "HTMLFormControlElementWithState.h"
-#include "HTMLOptionsCollection.h"
-#include "TypeAhead.h"
+#include "HTMLCollection.h"
+#include "HTMLGenericFormElement.h"
 #include <wtf/Vector.h>
 
 namespace WebCore {
 
 class HTMLOptionElement;
+class HTMLOptionsCollection;
+class KeyboardEvent;
 
-class HTMLSelectElement : public HTMLFormControlElementWithState, public TypeAheadDataSource {
+class HTMLSelectElement : public HTMLFormControlElementWithState {
 public:
-    static PassRefPtr<HTMLSelectElement> create(const QualifiedName&, Document*, HTMLFormElement*);
+    HTMLSelectElement(Document*, HTMLFormElement* = 0);
+    HTMLSelectElement(const QualifiedName& tagName, Document*, HTMLFormElement* = 0);
+
+    virtual int tagPriority() const { return 6; }
+    virtual bool checkDTD(const Node* newChild);
+
+    virtual const AtomicString& type() const;
+    
+    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
+    virtual bool isMouseFocusable() const;
+    virtual bool canSelectAll() const;
+    virtual void selectAll();
+
+    virtual void recalcStyle(StyleChange);
+
+    virtual void dispatchFocusEvent();
+    virtual void dispatchBlurEvent();
+    
+    virtual bool canStartSelection() const { return false; }
 
     int selectedIndex() const;
-    void setSelectedIndex(int);
+    void setSelectedIndex(int index, bool deselect = true, bool fireOnChange = false);
+    int lastSelectedListIndex() const;
 
-    void optionSelectedByUser(int index, bool dispatchChangeEvent, bool allowMultipleSelection = false);
-
-    // For ValidityState
-    virtual String validationMessage() const OVERRIDE;
-    virtual bool valueMissing() const OVERRIDE;
+    virtual bool isEnumeratable() const { return true; }
 
     unsigned length() const;
 
+    int minWidth() const { return m_minwidth; }
+
     int size() const { return m_size; }
+
     bool multiple() const { return m_multiple; }
 
-    bool usesMenuList() const;
-
-    void add(HTMLElement*, HTMLElement* beforeElement, ExceptionCode&);
+    void add(HTMLElement* element, HTMLElement* before, ExceptionCode&);
     void remove(int index);
-    void remove(HTMLOptionElement*);
 
-    String value() const;
+    String value();
     void setValue(const String&);
-
+    
     PassRefPtr<HTMLOptionsCollection> options();
-    PassRefPtr<HTMLCollection> selectedOptions();
 
-    void optionElementChildrenChanged();
+    virtual bool saveState(String& value) const;
+    virtual void restoreState(const String&);
+
+    virtual bool insertBefore(PassRefPtr<Node> newChild, Node* refChild, ExceptionCode&);
+    virtual bool replaceChild(PassRefPtr<Node> newChild, Node* oldChild, ExceptionCode&);
+    virtual bool removeChild(Node* child, ExceptionCode&);
+    virtual bool appendChild(PassRefPtr<Node> newChild, ExceptionCode&);
+    virtual ContainerNode* addChild(PassRefPtr<Node>);
+
+    virtual void childrenChanged();
+
+    virtual void parseMappedAttribute(MappedAttribute*);
+
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle *);
+    virtual bool appendFormData(FormDataList&, bool);
+
+    // get the actual listbox index of the optionIndexth option
+    int optionToListIndex(int optionIndex) const;
+    // reverse of optionToListIndex - get optionIndex from listboxIndex
+    int listToOptionIndex(int listIndex) const;
 
     void setRecalcListItems();
-    void invalidateSelectedItems();
-    void updateListItemSelectedStates();
 
-    const Vector<HTMLElement*>& listItems() const;
+    const Vector<HTMLElement*>& listItems() const
+    {
+        if (m_recalcListItems)
+            recalcListItems();
+        return m_listItems;
+    }
+    virtual void reset();
 
-    virtual void accessKeyAction(bool sendMouseEvents);
-    void accessKeySetSelectedIndex(int);
+    virtual void defaultEventHandler(Event*);
+    virtual void accessKeyAction(bool sendToAnyElement);
 
     void setMultiple(bool);
 
@@ -84,146 +120,53 @@ public:
     void setOption(unsigned index, HTMLOptionElement*, ExceptionCode&);
     void setLength(unsigned, ExceptionCode&);
 
-    Node* namedItem(const AtomicString& name);
+    Node* namedItem(const String& name, bool caseSensitive = true);
     Node* item(unsigned index);
 
-    void scrollToSelection();
-
-    void listBoxSelectItem(int listIndex, bool allowMultiplySelections, bool shift, bool fireOnChangeNow = true);
-
-#if PLATFORM(IOS)
-    virtual bool willRespondToMouseClickEvents() OVERRIDE;
-#endif
-
-    bool canSelectAll() const;
-    void selectAll();
-    int listToOptionIndex(int listIndex) const;
+    HTMLCollection::CollectionInfo* collectionInfo() { return &m_collectionInfo; }
+    
+    void setActiveSelectionAnchorIndex(int index);
+    void setActiveSelectionEndIndex(int index) { m_activeSelectionEndIndex = index; }
+    void updateListBoxSelection(bool deselectOtherOptions);
     void listBoxOnChange();
-    int optionToListIndex(int optionIndex) const;
+    void menuListOnChange();
+    
     int activeSelectionStartListIndex() const;
     int activeSelectionEndListIndex() const;
-    void setActiveSelectionAnchorIndex(int);
-    void setActiveSelectionEndIndex(int);
-    void updateListBoxSelection(bool deselectOtherOptions);
     
-    // For use in the implementation of HTMLOptionElement.
-    void optionSelectionStateChanged(HTMLOptionElement*, bool optionIsSelected);
-
-protected:
-    HTMLSelectElement(const QualifiedName&, Document*, HTMLFormElement*);
+    void scrollToSelection();
 
 private:
-    virtual const AtomicString& formControlType() const;
-    
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const OVERRIDE;
-    virtual bool isMouseFocusable() const OVERRIDE;
-
-    virtual void dispatchFocusEvent(PassRefPtr<Element> oldFocusedElement, FocusDirection) OVERRIDE FINAL;
-    virtual void dispatchBlurEvent(PassRefPtr<Element> newFocusedElement) OVERRIDE FINAL;
-    
-    virtual bool canStartSelection() const { return false; }
-
-    virtual bool isEnumeratable() const { return true; }
-    virtual bool supportLabels() const OVERRIDE { return true; }
-
-    virtual FormControlState saveFormControlState() const OVERRIDE;
-    virtual void restoreFormControlState(const FormControlState&) OVERRIDE;
-
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-
-    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle *);
-    virtual bool appendFormData(FormDataList&, bool);
-
-    virtual void reset();
-
-    virtual void defaultEventHandler(Event*);
-
-    void dispatchChangeEventForMenuList();
-    
-    void recalcListItems(bool updateSelectedStates = true) const;
-
+    void recalcListItems() const;
     void deselectItems(HTMLOptionElement* excludeElement = 0);
+    bool usesMenuList() const { return !m_multiple && m_size <= 1; }
+    int nextSelectableListIndex(int startIndex);
+    int previousSelectableListIndex(int startIndex);
+    void menuListDefaultEventHandler(Event*);
+    void listBoxDefaultEventHandler(Event*);
     void typeAheadFind(KeyboardEvent*);
     void saveLastSelection();
 
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-
-    virtual bool isOptionalFormControl() const { return !isRequiredFormControl(); }
-    virtual bool isRequiredFormControl() const;
-
-    bool hasPlaceholderLabelOption() const;
-
-    enum SelectOptionFlag {
-        DeselectOtherOptions = 1 << 0,
-        DispatchChangeEvent = 1 << 1,
-        UserDriven = 1 << 2,
-    };
-    typedef unsigned SelectOptionFlags;
-    void selectOption(int optionIndex, SelectOptionFlags = 0);
-    void deselectItemsWithoutValidation(HTMLElement* elementToExclude = 0);
-    void parseMultipleAttribute(const AtomicString&);
-    int lastSelectedListIndex() const;
-    void updateSelectedState(int listIndex, bool multi, bool shift);
-    void menuListDefaultEventHandler(Event*);
-    bool platformHandleKeydownEvent(KeyboardEvent*);
-    void listBoxDefaultEventHandler(Event*);
-    void setOptionsChangedOnRenderer();
-    size_t searchOptionsForValue(const String&, size_t listIndexStart, size_t listIndexEnd) const;
-
-    enum SkipDirection {
-        SkipBackwards = -1,
-        SkipForwards = 1
-    };
-    int nextValidIndex(int listIndex, SkipDirection, int skip) const;
-    int nextSelectableListIndex(int startIndex) const;
-    int previousSelectableListIndex(int startIndex) const;
-    int firstSelectableListIndex() const;
-    int lastSelectableListIndex() const;
-    int nextSelectableListIndexPageAway(int startIndex, SkipDirection) const;
-
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
-
-    // TypeAheadDataSource functions.
-    virtual int indexOfSelectedOption() const OVERRIDE;
-    virtual int optionCount() const OVERRIDE;
-    virtual String optionAtIndex(int index) const OVERRIDE;
-
-    // m_listItems contains HTMLOptionElement, HTMLOptGroupElement, and HTMLHRElement objects.
     mutable Vector<HTMLElement*> m_listItems;
-    Vector<bool> m_lastOnChangeSelection;
     Vector<bool> m_cachedStateForActiveSelection;
-    TypeAhead m_typeAhead;
+    Vector<bool> m_lastOnChangeSelection;
+    int m_minwidth;
     int m_size;
-    int m_lastOnChangeIndex;
+    bool m_multiple;
+    mutable bool m_recalcListItems;
+    mutable int m_lastOnChangeIndex;
+
     int m_activeSelectionAnchorIndex;
     int m_activeSelectionEndIndex;
-    bool m_isProcessingUserDrivenChange;
-    bool m_multiple;
     bool m_activeSelectionState;
-    mutable bool m_shouldRecalcListItems;
+
+    // Instance variables for type-ahead find
+    UChar m_repeatingChar;
+    DOMTimeStamp m_lastCharTime;
+    String m_typedString;
+
+    HTMLCollection::CollectionInfo m_collectionInfo;
 };
-
-inline bool isHTMLSelectElement(const Node* node)
-{
-    return node->hasTagName(HTMLNames::selectTag);
-}
-
-inline HTMLSelectElement* toHTMLSelectElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLSelectElement(node));
-    return static_cast<HTMLSelectElement*>(node);
-}
-
-inline const HTMLSelectElement* toHTMLSelectElement(const Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || isHTMLSelectElement(node));
-    return static_cast<const HTMLSelectElement*>(node);
-}
-
-void toHTMLSelectElement(const HTMLSelectElement*); // This overload will catch anyone doing an unnecessary cast.
 
 } // namespace
 

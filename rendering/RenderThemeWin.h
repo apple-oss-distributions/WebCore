@@ -1,8 +1,7 @@
 /*
  * This file is part of the WebKit project.
  *
- * Copyright (C) 2006, 2008, 2013 Apple Computer, Inc.
- * Copyright (C) 2009 Kenneth Rohde Christiansen
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -36,11 +35,6 @@ namespace WebCore {
 
 struct ThemeData {
     ThemeData() :m_part(0), m_state(0), m_classicState(0) {}
-    ThemeData(int part, int state)
-        : m_part(part)
-        , m_state(state)
-        , m_classicState(0)
-    { }
 
     unsigned m_part;
     unsigned m_state;
@@ -49,13 +43,11 @@ struct ThemeData {
 
 class RenderThemeWin : public RenderTheme {
 public:
-    static PassRefPtr<RenderTheme> create();
-
-    virtual String extraDefaultStyleSheet();
-    virtual String extraQuirksStyleSheet();
-
+    RenderThemeWin();
+    ~RenderThemeWin();
+       
     // A method asking if the theme's controls actually care about redrawing when hovered.
-    virtual bool supportsHover(const RenderStyle*) const;
+    virtual bool supportsHover(const RenderStyle*) const { return true; }
 
     virtual Color platformActiveSelectionBackgroundColor() const;
     virtual Color platformInactiveSelectionBackgroundColor() const;
@@ -64,132 +56,42 @@ public:
 
     // System fonts.
     virtual void systemFont(int propId, FontDescription&) const;
-    virtual Color systemColor(int cssValueId) const;
 
-    virtual bool paintCheckbox(RenderObject* o, const PaintInfo& i, const IntRect& r)
+    virtual bool paintCheckbox(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r)
     { return paintButton(o, i, r); }
     virtual void setCheckboxSize(RenderStyle*) const;
 
-    virtual bool paintRadio(RenderObject* o, const PaintInfo& i, const IntRect& r)
+    virtual bool paintRadio(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r)
     { return paintButton(o, i, r); }
     virtual void setRadioSize(RenderStyle* style) const
     { return setCheckboxSize(style); }
 
-    virtual bool paintButton(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual bool paintButton(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
 
-    virtual void adjustInnerSpinButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintInnerSpinButton(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual bool paintTextField(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
 
-    virtual bool paintTextField(RenderObject*, const PaintInfo&, const IntRect&);
-
-    virtual bool paintTextArea(RenderObject* o, const PaintInfo& i, const IntRect& r)
+    virtual bool paintTextArea(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r)
     { return paintTextField(o, i, r); }
 
-    virtual void adjustMenuListStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintMenuList(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual void adjustMenuListButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
+    void adjustMenuListStyle(CSSStyleSelector* selector, RenderStyle* style, Element* e) const;
+    virtual bool paintMenuList(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
 
-    virtual bool paintMenuListButton(RenderObject*, const PaintInfo&, const IntRect&);
-
-    virtual bool paintSliderTrack(RenderObject* o, const PaintInfo& i, const IntRect& r);
-    virtual bool paintSliderThumb(RenderObject* o, const PaintInfo& i, const IntRect& r);
-    virtual void adjustSliderThumbSize(RenderStyle*, Element*) const;
-
-    virtual bool popupOptionSupportsTextIndent() const { return true; }
-
-    virtual void adjustSearchFieldStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintSearchField(RenderObject*, const PaintInfo&, const IntRect&);
-
-    virtual void adjustSearchFieldCancelButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintSearchFieldCancelButton(RenderObject*, const PaintInfo&, const IntRect&);
-
-    virtual void adjustSearchFieldDecorationStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintSearchFieldDecoration(RenderObject*, const PaintInfo&, const IntRect&) { return false; }
-
-    virtual void adjustSearchFieldResultsDecorationStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintSearchFieldResultsDecoration(RenderObject*, const PaintInfo&, const IntRect&);
-
-    virtual void adjustSearchFieldResultsButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintSearchFieldResultsButton(RenderObject*, const PaintInfo&, const IntRect&);
-
-    virtual void themeChanged();
-
-    virtual void adjustButtonStyle(StyleResolver*, RenderStyle* style, Element*) const { }
-    virtual void adjustTextFieldStyle(StyleResolver*, RenderStyle* style, Element*) const { }
-    virtual void adjustTextAreaStyle(StyleResolver*, RenderStyle* style, Element*) const { }
-
-    static void setWebKitIsBeingUnloaded();
-
-    virtual bool supportsFocusRing(const RenderStyle*) const;
-
-#if ENABLE(VIDEO)
-    virtual String extraMediaControlsStyleSheet();
-#if ENABLE(FULLSCREEN_API)
-    virtual String extraFullScreenStyleSheet();
-#endif
-    virtual bool supportsClosedCaptioning() const;
-    virtual bool paintMediaControlsBackground(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaFullscreenButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaMuteButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaPlayButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaRewindButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaSeekBackButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaSeekForwardButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaSliderThumb(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaToggleClosedCaptionsButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaVolumeSliderContainer(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaVolumeSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaVolumeSliderThumb(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual IntPoint volumeSliderOffsetFromMuteButton(RenderBox*, const IntSize&) const OVERRIDE;
-#endif
-
-#if ENABLE(METER_ELEMENT)
-    virtual IntSize meterSizeForBounds(const RenderMeter*, const IntRect&) const OVERRIDE;
-    virtual bool supportsMeter(ControlPart) const OVERRIDE;
-    virtual void adjustMeterStyle(StyleResolver*, RenderStyle*, Element*) const OVERRIDE;
-    virtual bool paintMeter(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
-#endif
-
-    virtual bool shouldShowPlaceholderWhenFocused() const { return true; }
+    virtual bool paintMenuListButton(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
 
 private:
-    enum ControlSubPart {
-        None,
-        SpinButtonDown,
-        SpinButtonUp,
-    };
-
-    RenderThemeWin();
-    virtual ~RenderThemeWin();
-
     void addIntrinsicMargins(RenderStyle*) const;
     void close();
 
     unsigned determineState(RenderObject*);
-    unsigned determineClassicState(RenderObject*, ControlSubPart = None);
-    unsigned determineSliderThumbState(RenderObject*);
-    unsigned determineButtonState(RenderObject*);
-    unsigned determineSpinButtonState(RenderObject*, ControlSubPart = None);
+    unsigned determineClassicState(RenderObject*);
+    bool supportsFocus(EAppearance);
 
-    bool supportsFocus(ControlPart) const;
-
-    ThemeData getThemeData(RenderObject*, ControlSubPart = None);
-    ThemeData getClassicThemeData(RenderObject* o, ControlSubPart = None);
-
-    HANDLE buttonTheme() const;
-    HANDLE textFieldTheme() const;
-    HANDLE menuListTheme() const;
-    HANDLE sliderTheme() const;
-    HANDLE spinButtonTheme() const;
-    HANDLE progressBarTheme() const;
-
+    ThemeData getThemeData(RenderObject*);
+    
+    HMODULE m_themeDLL;
     mutable HANDLE m_buttonTheme;
     mutable HANDLE m_textFieldTheme;
     mutable HANDLE m_menuListTheme;
-    mutable HANDLE m_sliderTheme;
-    mutable HANDLE m_spinButtonTheme;
-    mutable HANDLE m_progressBarTheme;
 };
 
 };

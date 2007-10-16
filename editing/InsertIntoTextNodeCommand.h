@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2005, 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,28 +32,20 @@ namespace WebCore {
 
 class Text;
 
-class InsertIntoTextNodeCommand : public SimpleEditCommand {
+class InsertIntoTextNodeCommand : public EditCommand {
 public:
-    static PassRefPtr<InsertIntoTextNodeCommand> create(PassRefPtr<Text> node, unsigned offset, const String& text)
-    {
-        return adoptRef(new InsertIntoTextNodeCommand(node, offset, text));
-    }
+    InsertIntoTextNodeCommand(Text* node, int offset, const String& text);
+
+    virtual void doApply();
+    virtual void doUnapply();
+
+    Text* node() const { return m_node.get(); }
+    int offset() const { return m_offset; }
+    String text() const { return m_text; }
 
 private:
-    InsertIntoTextNodeCommand(PassRefPtr<Text> node, unsigned offset, const String& text);
-
-    virtual void doApply() OVERRIDE;
-    virtual void doUnapply() OVERRIDE;
-#if PLATFORM(IOS)
-    virtual void doReapply() OVERRIDE;
-#endif
-    
-#ifndef NDEBUG
-    virtual void getNodesInCommand(HashSet<Node*>&) OVERRIDE;
-#endif
-    
     RefPtr<Text> m_node;
-    unsigned m_offset;
+    int m_offset;
     String m_text;
 };
 

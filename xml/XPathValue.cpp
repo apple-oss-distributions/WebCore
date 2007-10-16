@@ -27,12 +27,13 @@
 #include "config.h"
 #include "XPathValue.h"
 
+#if ENABLE(XPATH)
+
 #include "Node.h"
-#include "XPathExpressionNode.h"
 #include "XPathUtil.h"
-#include <limits>
+
 #include <wtf/MathExtras.h>
-#include <wtf/StdLibExtras.h>
+#include <limits>
 
 using std::numeric_limits;
 
@@ -43,11 +44,8 @@ const Value::AdoptTag Value::adopt = {};
 
 const NodeSet& Value::toNodeSet() const
 {
-    if (!isNodeSet())
-        Expression::evaluationContext().hadTypeConversionError = true;
-
     if (!m_data) {
-        DEFINE_STATIC_LOCAL(NodeSet, emptyNodeSet, ());
+        static NodeSet emptyNodeSet;
         return emptyNodeSet;
     }
 
@@ -56,11 +54,8 @@ const NodeSet& Value::toNodeSet() const
 
 NodeSet& Value::modifiableNodeSet()
 {
-    if (!isNodeSet())
-        Expression::evaluationContext().hadTypeConversionError = true;
-
     if (!m_data)
-        m_data = ValueData::create();
+        m_data = new ValueData;
     
     m_type = NodeSetValue;
     return m_data->m_nodeSet;
@@ -74,7 +69,7 @@ bool Value::toBoolean() const
         case BooleanValue:
             return m_bool;
         case NumberValue:
-            return m_number && !std::isnan(m_number);
+            return m_number != 0 && !isnan(m_number);
         case StringValue:
             return !m_data->m_string.isEmpty();
     }
@@ -90,18 +85,8 @@ double Value::toNumber() const
         case NumberValue:
             return m_number;
         case StringValue: {
-            const String& str = m_data->m_string.simplifyWhiteSpace();
-
-            // String::toDouble() supports exponential notation, which is not allowed in XPath.
-            unsigned len = str.length();
-            for (unsigned i = 0; i < len; ++i) {
-                UChar c = str[i];
-                if (!isASCIIDigit(c) && c != '.'  && c != '-')
-                    return numeric_limits<double>::quiet_NaN();
-            }
-
             bool canConvert;
-            double value = str.toDouble(&canConvert);
+            double value = m_data->m_string.simplifyWhiteSpace().toDouble(&canConvert);
             if (canConvert)
                 return value;
             return numeric_limits<double>::quiet_NaN();
@@ -123,12 +108,12 @@ String Value::toString() const
         case StringValue:
             return m_data->m_string;
         case NumberValue:
-            if (std::isnan(m_number))
+            if (isnan(m_number))
                 return "NaN";
             if (m_number == 0)
                 return "0";
-            if (std::isinf(m_number))
-                return std::signbit(m_number) ? "-Infinity" : "Infinity";
+            if (isinf(m_number))
+                return signbit(m_number) ? "-Infinity" : "Infinity";
             return String::number(m_number);
         case BooleanValue:
             return m_bool ? "true" : "false";
@@ -139,3 +124,5 @@ String Value::toString() const
 
 }
 }
+
+#endif // ENABLE(XPATH)

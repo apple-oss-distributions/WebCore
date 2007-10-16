@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2005 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -24,61 +24,42 @@
  */
 
 #include "config.h"
-#include "InsertNodeBeforeCommand.h"
-
-#include "AXObjectCache.h"
-#include "Document.h"
-#include "ExceptionCodePlaceholder.h"
 #include "htmlediting.h"
+#include "InsertNodeBeforeCommand.h"
 
 namespace WebCore {
 
-InsertNodeBeforeCommand::InsertNodeBeforeCommand(PassRefPtr<Node> insertChild, PassRefPtr<Node> refChild,
-    ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
-    : SimpleEditCommand(refChild->document())
-    , m_insertChild(insertChild)
-    , m_refChild(refChild)
-    , m_shouldAssumeContentIsAlwaysEditable(shouldAssumeContentIsAlwaysEditable)
+InsertNodeBeforeCommand::InsertNodeBeforeCommand(PassRefPtr<Node> insertChild, Node* refChild)
+    : EditCommand(refChild->document()), m_insertChild(insertChild), m_refChild(refChild)
 {
     ASSERT(m_insertChild);
-    ASSERT(!m_insertChild->parentNode());
     ASSERT(m_refChild);
-    ASSERT(m_refChild->parentNode());
-
-    ASSERT(m_refChild->parentNode()->rendererIsEditable() || !m_refChild->parentNode()->attached());
 }
 
 void InsertNodeBeforeCommand::doApply()
 {
-    ContainerNode* parent = m_refChild->parentNode();
-    if (!parent || (m_shouldAssumeContentIsAlwaysEditable == DoNotAssumeContentIsAlwaysEditable && !parent->isContentEditable(Node::UserSelectAllIsAlwaysNonEditable)))
-        return;
-    ASSERT(parent->isContentEditable(Node::UserSelectAllIsAlwaysNonEditable));
+    ASSERT(m_insertChild);
+    ASSERT(m_refChild);
+    ASSERT(m_refChild->parentNode());
+    // If the child to insert is already in a tree, inserting it will remove it from it's old location
+    // in an non-undoable way.  We might eventually find it useful to do an undoable remove in this case.
+    ASSERT(!m_insertChild->parent());
+    ASSERT(enclosingNodeOfType(m_refChild.get(), &isContentEditable) || !m_refChild->parentNode()->attached());
 
-    parent->insertBefore(m_insertChild.get(), m_refChild.get(), IGNORE_EXCEPTION, AttachLazily);
-
-    if (AXObjectCache* cache = document()->existingAXObjectCache())
-        cache->nodeTextChangeNotification(m_insertChild.get(), AXObjectCache::AXTextInserted, 0, m_insertChild->nodeValue());
+    ExceptionCode ec = 0;
+    m_refChild->parentNode()->insertBefore(m_insertChild.get(), m_refChild.get(), ec);
+    ASSERT(ec == 0);
 }
 
 void InsertNodeBeforeCommand::doUnapply()
 {
-    if (!m_insertChild->isContentEditable(Node::UserSelectAllIsAlwaysNonEditable))
-        return;
+    ASSERT(m_insertChild);
+    ASSERT(m_refChild);
+    ASSERT(m_refChild->parentNode());
 
-    // Need to notify this before actually deleting the text
-    if (AXObjectCache* cache = document()->existingAXObjectCache())
-        cache->nodeTextChangeNotification(m_insertChild.get(), AXObjectCache::AXTextDeleted, 0, m_insertChild->nodeValue());
-
-    m_insertChild->remove(IGNORE_EXCEPTION);
+    ExceptionCode ec = 0;
+    m_refChild->parentNode()->removeChild(m_insertChild.get(), ec);
+    ASSERT(ec == 0);
 }
-
-#ifndef NDEBUG
-void InsertNodeBeforeCommand::getNodesInCommand(HashSet<Node*>& nodes)
-{
-    addNodeAndDescendants(m_insertChild.get(), nodes);
-    addNodeAndDescendants(m_refChild.get(), nodes);
-}
-#endif
 
 }

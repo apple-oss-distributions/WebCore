@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2001 Peter Kelly (pmk@post.com)
- *  Copyright (C) 2007, 2008, 2009 Apple Inc. All rights reserved.
+ *  Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -21,34 +21,20 @@
 #define JSNodeFilterCondition_h
 
 #include "NodeFilterCondition.h"
-#include <heap/Weak.h>
-#include <heap/WeakInlines.h>
-#include <runtime/JSCJSValue.h>
-#include <runtime/Operations.h>
-#include <wtf/PassRefPtr.h>
+#include "kjs_dom.h"
 
 namespace WebCore {
 
     class Node;
-    class NodeFilter;
 
     class JSNodeFilterCondition : public NodeFilterCondition {
     public:
-        static PassRefPtr<JSNodeFilterCondition> create(JSC::VM& vm, NodeFilter* owner, JSC::JSValue filter)
-        {
-            return adoptRef(new JSNodeFilterCondition(vm, owner, filter));
-        }
+        JSNodeFilterCondition(KJS::JSObject* filter);
+        virtual short acceptNode(Node*) const;
+        virtual void mark();
 
-    private:
-        JSNodeFilterCondition(JSC::VM&, NodeFilter* owner, JSC::JSValue filter);
-
-        virtual short acceptNode(ScriptState*, Node*) const;
-
-        class WeakOwner : public JSC::WeakHandleOwner {
-            virtual bool isReachableFromOpaqueRoots(JSC::Handle<JSC::Unknown>, void* context, JSC::SlotVisitor&);
-        };
-        WeakOwner m_weakOwner;
-        mutable JSC::Weak<JSC::JSObject> m_filter;
+    protected:
+        KJS::JSObject* m_filter;
     };
 
 } // namespace WebCore

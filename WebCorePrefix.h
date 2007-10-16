@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2005, 2006, 2007, 2013 Apple Inc.
+ * Copyright (C) 2004, 2005, 2006, 2007 Apple Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -18,16 +18,15 @@
  *
  */
 
-/* This prefix file should contain only: 
- *    1) files to precompile for faster builds
+/* This prefix file is for use on Mac OS X and Windows only. It should contain only:
+ *    1) files to precompile on Mac OS X and Windows for faster builds
  *    2) in one case at least: OS-X-specific performance bug workarounds
  *    3) the special trick to catch us using new or delete without including "config.h"
  * The project should be able to build without this header, although we rarely test that.
  */
 
-/* Things that need to be defined globally should go into "config.h". */
 
-#include <wtf/Platform.h>
+/* Things that need to be defined globally should go into "config.h". */
 
 #if defined(__APPLE__)
 #ifdef __cplusplus
@@ -37,20 +36,18 @@
 #endif
 #endif
 
-#if OS(WINDOWS)
+#if defined(WIN32) || defined(_WIN32)
 
 #ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0502
+#define _WIN32_WINNT 0x0500
 #endif
 
 #ifndef WINVER
-#define WINVER 0x0502
+#define WINVER 0x0500
 #endif
 
-#if !USE(CURL)
 #ifndef _WINSOCKAPI_
 #define _WINSOCKAPI_ // Prevent inclusion of winsock.h in windows.h
-#endif
 #endif
 
 // If we don't define these, they get defined in windef.h. 
@@ -60,20 +57,16 @@
 #define min min
 #endif
 
-#else
+#endif // defined(WIN32) || defined(_WIN32)
 
-#include <pthread.h>
-
-#endif // OS(WINDOWS)
-
+#include <ctype.h>
 #include <sys/types.h>
 #include <fcntl.h>
+#include <pthread.h>
 #if defined(__APPLE__)
 #include <regex.h>
 #endif
-
 #include <setjmp.h>
-
 #include <signal.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -87,38 +80,31 @@
 
 #ifdef __cplusplus
 
-
-#include <ciso646>
-
-#if defined(_LIBCPP_VERSION)
-
-// Add work around for a bug in libc++ that caused standard heap
-// APIs to not compile <rdar://problem/10858112>.
-
-#include <type_traits>
-
-namespace WebCore {
-    class TimerHeapReference;
-}
-
-_LIBCPP_BEGIN_NAMESPACE_STD
-
-inline _LIBCPP_INLINE_VISIBILITY
-const WebCore::TimerHeapReference& move(const WebCore::TimerHeapReference& t)
-{
-    return t;
-}
-
-_LIBCPP_END_NAMESPACE_STD
-
-#endif // defined(_LIBCPP_VERSION)
-
 #include <algorithm>
 #include <cstddef>
 #include <new>
 
+/* Work around bug 3553309 by re-including <ctype.h>. */
+#include <cctype>
+#if defined(__APPLE__)
+#define isalnum(c)      __istype((c), (_CTYPE_A|_CTYPE_D))
+#define isalpha(c)      __istype((c), _CTYPE_A)
+#define iscntrl(c)      __istype((c), _CTYPE_C)
+#define isdigit(c)      __isctype((c), _CTYPE_D)        /* ANSI -- locale independent */
+#define isgraph(c)      __istype((c), _CTYPE_G)
+#define islower(c)      __istype((c), _CTYPE_L)
+#define isprint(c)      __istype((c), _CTYPE_R)
+#define ispunct(c)      __istype((c), _CTYPE_P)
+#define isspace(c)      __istype((c), _CTYPE_S)
+#define isupper(c)      __istype((c), _CTYPE_U)
+#define isxdigit(c)     __isctype((c), _CTYPE_X)        /* ANSI -- locale independent */
+#define tolower(c)      __tolower(c)
+#define toupper(c)      __toupper(c)
 #endif
 
+#endif
+
+#include <sys/types.h>
 #if defined(__APPLE__)
 #include <sys/param.h>
 #endif
@@ -128,63 +114,21 @@ _LIBCPP_END_NAMESPACE_STD
 #include <sys/resource.h>
 #endif
 
+#include <time.h>
+
 #include <CoreFoundation/CoreFoundation.h>
-#if PLATFORM(WIN_CAIRO)
-#include <ConditionalMacros.h>
-#include <windows.h>
-#else
-
-#if OS(WINDOWS)
-#if USE(CG)
-
-#if defined(_MSC_VER) && _MSC_VER <= 1600
-
-#include <WebCore/WebCoreHeaderDetection.h>
-
-#if HAVE(AVCF_LEGIBLE_OUTPUT)
-// These must be defined before including CGFloat.h
-// This can be removed once we move to VS2012 or newer
-#include <wtf/ExportMacros.h>
-#include <wtf/MathExtras.h>
-
-#define isnan _isnan
-#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
-#include <CoreGraphics/CGFloat.h>
-#endif
-#include <CoreGraphics/CoreGraphics.h>
-#include <CoreGraphics/CGFloat.h>
-#undef isnan
-#endif
-#endif
-
-// FIXME <rdar://problem/8208868> Remove support for obsolete ColorSync API, CoreServices header in CoreGraphics
-// We can remove this once the new ColorSync APIs are available in an internal Safari SDK.
-#include <ColorSync/ColorSync.h>
-#ifdef __COLORSYNCDEPRECATED__
-#define COREGRAPHICS_INCLUDES_CORESERVICES_HEADER
-#define OBSOLETE_COLORSYNC_API
-#endif
-#endif
-#if USE(CFNETWORK)
-/* Windows doesn't include CFNetwork.h via CoreServices.h, so we do
-   it explicitly here to make Windows more consistent with Mac. */
-#include <CFNetwork/CFNetwork.h>
-#endif
-#include <windows.h>
-#else
-#if !PLATFORM(IOS)
 #include <CoreServices/CoreServices.h>
-#endif // !PLATFORM(IOS)
-#endif // OS(WINDOWS)
 
+#include <AvailabilityMacros.h>
+
+#if defined(__APPLE__)
+#if MAC_OS_X_VERSION_MAX_ALLOWED <= MAC_OS_X_VERSION_10_4
+#define BUILDING_ON_TIGER 1
+#endif
 #endif
 
 #ifdef __OBJC__
-#if PLATFORM(IOS)
-#import <Foundation/Foundation.h>
-#else
 #import <Cocoa/Cocoa.h>
-#endif // PLATFORM(IOS)
 #endif
 
 #ifdef __cplusplus
@@ -192,12 +136,8 @@ _LIBCPP_END_NAMESPACE_STD
 #define delete ("if you use new/delete make sure to include config.h at the top of the file"()) 
 #endif
 
-/* When C++ exceptions are disabled, the C++ library defines |try| and |catch|
- * to allow C++ code that expects exceptions to build. These definitions
- * interfere with Objective-C++ uses of Objective-C exception handlers, which
- * use |@try| and |@catch|. As a workaround, undefine these macros. */
-#ifdef __OBJC__
+/* Work around bug with C++ library that screws up Objective-C++ when exception support is disabled. */
+#if defined(__APPLE__)
 #undef try
 #undef catch
 #endif
-

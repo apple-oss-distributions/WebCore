@@ -21,8 +21,6 @@
 
 #if ENABLE(SVG)
 #include "JSSVGPathSeg.h"
-
-#include "JSDOMBinding.h"
 #include "JSSVGPathSegArcAbs.h"
 #include "JSSVGPathSegArcRel.h"
 #include "JSSVGPathSegClosePath.h"
@@ -42,6 +40,9 @@
 #include "JSSVGPathSegLinetoVerticalRel.h"
 #include "JSSVGPathSegMovetoAbs.h"
 #include "JSSVGPathSegMovetoRel.h"
+
+#include "kjs_binding.h"
+
 #include "SVGPathSeg.h"
 #include "SVGPathSegArc.h"
 #include "SVGPathSegClosePath.h"
@@ -54,63 +55,62 @@
 #include "SVGPathSegLinetoVertical.h"
 #include "SVGPathSegMoveto.h"
 
-using namespace JSC;
+using namespace KJS;
 
 namespace WebCore {
 
-JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, SVGPathSeg* object)
+JSValue* toJS(ExecState* exec, SVGPathSeg* obj)
 {
-    if (!object)
+    if (!obj)
         return jsNull();
-
-    if (JSDOMWrapper* wrapper = getCachedWrapper(currentWorld(exec), object))
-        return wrapper;
-
-    switch (object->pathSegType()) {
+    
+    switch (obj->pathSegType()) {
     case SVGPathSeg::PATHSEG_CLOSEPATH:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegClosePath, object);
+        return cacheDOMObject<SVGPathSegClosePath, JSSVGPathSegClosePath>(exec, static_cast<SVGPathSegClosePath*>(obj));
     case SVGPathSeg::PATHSEG_MOVETO_ABS:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegMovetoAbs, object);
+        return cacheDOMObject<SVGPathSegMovetoAbs, JSSVGPathSegMovetoAbs>(exec, static_cast<SVGPathSegMovetoAbs*>(obj));
     case SVGPathSeg::PATHSEG_MOVETO_REL:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegMovetoRel, object);
+        return cacheDOMObject<SVGPathSegMovetoRel, JSSVGPathSegMovetoRel>(exec, static_cast<SVGPathSegMovetoRel*>(obj));
     case SVGPathSeg::PATHSEG_LINETO_ABS:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegLinetoAbs, object);
+        return cacheDOMObject<SVGPathSegLinetoAbs, JSSVGPathSegLinetoAbs>(exec, static_cast<SVGPathSegLinetoAbs*>(obj));
     case SVGPathSeg::PATHSEG_LINETO_REL:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegLinetoRel, object);
+        return cacheDOMObject<SVGPathSegLinetoRel, JSSVGPathSegLinetoRel>(exec, static_cast<SVGPathSegLinetoRel*>(obj));
     case SVGPathSeg::PATHSEG_CURVETO_CUBIC_ABS:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegCurvetoCubicAbs, object);
+        return cacheDOMObject<SVGPathSegCurvetoCubicAbs, JSSVGPathSegCurvetoCubicAbs>(exec, static_cast<SVGPathSegCurvetoCubicAbs*>(obj));
     case SVGPathSeg::PATHSEG_CURVETO_CUBIC_REL:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegCurvetoCubicRel, object);
+        return cacheDOMObject<SVGPathSegCurvetoCubicRel, JSSVGPathSegCurvetoCubicRel>(exec, static_cast<SVGPathSegCurvetoCubicRel*>(obj));
     case SVGPathSeg::PATHSEG_CURVETO_QUADRATIC_ABS:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegCurvetoQuadraticAbs, object);
+        return cacheDOMObject<SVGPathSegCurvetoQuadraticAbs, JSSVGPathSegCurvetoQuadraticAbs>(exec, static_cast<SVGPathSegCurvetoQuadraticAbs*>(obj));
     case SVGPathSeg::PATHSEG_CURVETO_QUADRATIC_REL:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegCurvetoQuadraticRel, object);
+        return cacheDOMObject<SVGPathSegCurvetoQuadraticRel, JSSVGPathSegCurvetoQuadraticRel>(exec, static_cast<SVGPathSegCurvetoQuadraticRel*>(obj));
     case SVGPathSeg::PATHSEG_ARC_ABS:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegArcAbs, object);
+        return cacheDOMObject<SVGPathSegArcAbs, JSSVGPathSegArcAbs>(exec, static_cast<SVGPathSegArcAbs*>(obj));
     case SVGPathSeg::PATHSEG_ARC_REL:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegArcRel, object);
+        return cacheDOMObject<SVGPathSegArcRel, JSSVGPathSegArcRel>(exec, static_cast<SVGPathSegArcRel*>(obj));
     case SVGPathSeg::PATHSEG_LINETO_HORIZONTAL_ABS:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegLinetoHorizontalAbs, object);
+        return cacheDOMObject<SVGPathSegLinetoHorizontalAbs, JSSVGPathSegLinetoHorizontalAbs>(exec, static_cast<SVGPathSegLinetoHorizontalAbs*>(obj));
     case SVGPathSeg::PATHSEG_LINETO_HORIZONTAL_REL:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegLinetoHorizontalRel, object);
+        return cacheDOMObject<SVGPathSegLinetoHorizontalRel, JSSVGPathSegLinetoHorizontalRel>(exec, static_cast<SVGPathSegLinetoHorizontalRel*>(obj));
     case SVGPathSeg::PATHSEG_LINETO_VERTICAL_ABS:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegLinetoVerticalAbs, object);
+        return cacheDOMObject<SVGPathSegLinetoVerticalAbs, JSSVGPathSegLinetoVerticalAbs>(exec, static_cast<SVGPathSegLinetoVerticalAbs*>(obj));
     case SVGPathSeg::PATHSEG_LINETO_VERTICAL_REL:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegLinetoVerticalRel, object);
+        return cacheDOMObject<SVGPathSegLinetoVerticalRel, JSSVGPathSegLinetoVerticalRel>(exec, static_cast<SVGPathSegLinetoVerticalRel*>(obj));
     case SVGPathSeg::PATHSEG_CURVETO_CUBIC_SMOOTH_ABS:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegCurvetoCubicSmoothAbs, object);
+        return cacheDOMObject<SVGPathSegCurvetoCubicSmoothAbs, JSSVGPathSegCurvetoCubicSmoothAbs>(exec, static_cast<SVGPathSegCurvetoCubicSmoothAbs*>(obj));
     case SVGPathSeg::PATHSEG_CURVETO_CUBIC_SMOOTH_REL:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegCurvetoCubicSmoothRel, object);
+        return cacheDOMObject<SVGPathSegCurvetoCubicSmoothRel, JSSVGPathSegCurvetoCubicSmoothRel>(exec, static_cast<SVGPathSegCurvetoCubicSmoothRel*>(obj));
     case SVGPathSeg::PATHSEG_CURVETO_QUADRATIC_SMOOTH_ABS:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegCurvetoQuadraticSmoothAbs, object);
+        return cacheDOMObject<SVGPathSegCurvetoQuadraticSmoothAbs, JSSVGPathSegCurvetoQuadraticSmoothAbs>(exec, static_cast<SVGPathSegCurvetoQuadraticSmoothAbs*>(obj));
     case SVGPathSeg::PATHSEG_CURVETO_QUADRATIC_SMOOTH_REL:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSegCurvetoQuadraticSmoothRel, object);
+        return cacheDOMObject<SVGPathSegCurvetoQuadraticSmoothRel, JSSVGPathSegCurvetoQuadraticSmoothRel>(exec, static_cast<SVGPathSegCurvetoQuadraticSmoothRel*>(obj));
     case SVGPathSeg::PATHSEG_UNKNOWN:
     default:
-        return CREATE_DOM_WRAPPER(exec, globalObject, SVGPathSeg, object);
+        return cacheDOMObject<SVGPathSeg, JSSVGPathSeg>(exec, obj);
     }
 }
 
 }
 
 #endif // ENABLE(SVG)
+
+// vim:ts=4:noet

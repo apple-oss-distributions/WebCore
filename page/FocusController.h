@@ -27,105 +27,34 @@
 #define FocusController_h
 
 #include "FocusDirection.h"
-#include "LayoutRect.h"
 #include <wtf/Forward.h>
-#include <wtf/Noncopyable.h>
 #include <wtf/RefPtr.h>
 
 namespace WebCore {
 
-struct FocusCandidate;
-class ContainerNode;
-class Document;
-class Element;
-class Frame;
-class HTMLFrameOwnerElement;
-class IntRect;
-class KeyboardEvent;
-class Node;
-class Page;
-class TreeScope;
+    class Frame;
+    class KeyboardEvent;
+    class Node;
+    class Page;
 
-class FocusNavigationScope {
-public:
-    ContainerNode* rootNode() const;
-    Element* owner() const;
-    static FocusNavigationScope focusNavigationScopeOf(Node*);
-    static FocusNavigationScope focusNavigationScopeOwnedByShadowHost(Node*);
-    static FocusNavigationScope focusNavigationScopeOwnedByIFrame(HTMLFrameOwnerElement*);
+    class FocusController {
+    public:
+        FocusController(Page*);
 
-private:
-    explicit FocusNavigationScope(TreeScope*);
-    TreeScope* m_rootTreeScope;
-};
+        void setFocusedFrame(PassRefPtr<Frame>);
+        Frame* focusedFrame() const { return m_focusedFrame.get(); }
+        Frame* focusedOrMainFrame();
 
-class FocusController {
-    WTF_MAKE_NONCOPYABLE(FocusController); WTF_MAKE_FAST_ALLOCATED;
-public:
-    static PassOwnPtr<FocusController> create(Page*);
+        bool setInitialFocus(FocusDirection, KeyboardEvent*);
+        bool advanceFocus(KeyboardEvent*);
+        bool advanceFocus(FocusDirection, KeyboardEvent*, bool initialFocus = false);
+        
+        bool setFocusedNode(Node*, PassRefPtr<Frame>);
 
-    void setFocusedFrame(PassRefPtr<Frame>);
-    Frame* focusedFrame() const { return m_focusedFrame.get(); }
-    Frame* focusedOrMainFrame() const;
-
-    bool setInitialFocus(FocusDirection, KeyboardEvent*);
-    bool advanceFocus(FocusDirection, KeyboardEvent*, bool initialFocus = false);
-
-    bool setFocusedElement(Element*, PassRefPtr<Frame>, FocusDirection = FocusDirectionNone);
-
-    void setActive(bool);
-    bool isActive() const { return m_isActive; }
-
-    void setFocused(bool);
-    bool isFocused() const { return m_isFocused; }
-
-    void setContainingWindowIsVisible(bool);
-    bool containingWindowIsVisible() const { return m_containingWindowIsVisible; }
-
-private:
-    explicit FocusController(Page*);
-
-    bool advanceFocusDirectionally(FocusDirection, KeyboardEvent*);
-    bool advanceFocusInDocumentOrder(FocusDirection, KeyboardEvent*, bool initialFocus);
-
-    Element* findFocusableElementAcrossFocusScope(FocusDirection, FocusNavigationScope startScope, Node* start, KeyboardEvent*);
-    Element* findFocusableElementRecursively(FocusDirection, FocusNavigationScope, Node* start, KeyboardEvent*);
-    Element* findFocusableElementDescendingDownIntoFrameDocument(FocusDirection, Element*, KeyboardEvent*);
-
-    // Searches through the given tree scope, starting from start node, for the next/previous selectable element that comes after/before start node.
-    // The order followed is as specified in section 17.11.1 of the HTML4 spec, which is elements with tab indexes
-    // first (from lowest to highest), and then elements without tab indexes (in document order).
-    //
-    // @param start The node from which to start searching. The node after this will be focused. May be null.
-    //
-    // @return The focus node that comes after/before start node.
-    //
-    // See http://www.w3.org/TR/html4/interact/forms.html#h-17.11.1
-    Element* findFocusableElement(FocusDirection, FocusNavigationScope, Node* start, KeyboardEvent*);
-
-#if PLATFORM(IOS)
-// Methods used by WebCore/bindings/objc/DOM.mm.
-public:
-#endif
-    Element* nextFocusableElement(FocusNavigationScope, Node* start, KeyboardEvent*);
-    Element* previousFocusableElement(FocusNavigationScope, Node* start, KeyboardEvent*);
-
-#if PLATFORM(IOS)
-private:
-#endif
-    Element* findElementWithExactTabIndex(Node* start, int tabIndex, KeyboardEvent*, FocusDirection);
-
-    bool advanceFocusDirectionallyInContainer(Node* container, const LayoutRect& startingRect, FocusDirection, KeyboardEvent*);
-    void findFocusCandidateInContainer(Node* container, const LayoutRect& startingRect, FocusDirection, KeyboardEvent*, FocusCandidate& closest);
-
-    Page* m_page;
-    RefPtr<Frame> m_focusedFrame;
-    bool m_isActive;
-    bool m_isFocused;
-    bool m_isChangingFocusedFrame;
-    bool m_containingWindowIsVisible;
-
-};
+    private:
+        Page* m_page;
+        RefPtr<Frame> m_focusedFrame;
+    };
 
 } // namespace WebCore
     

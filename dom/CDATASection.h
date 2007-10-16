@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2003 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -27,18 +29,22 @@
 
 namespace WebCore {
 
-class CDATASection FINAL : public Text {
+class CDATASection : public Text
+{
+// ### should these have id==ID_TEXT
 public:
-    static PassRefPtr<CDATASection> create(Document*, const String&);
-
-private:
-    CDATASection(Document*, const String&);
+    CDATASection(Document *impl, const String &_text);
+    CDATASection(Document *impl);
+    virtual ~CDATASection();
 
     virtual String nodeName() const;
     virtual NodeType nodeType() const;
     virtual PassRefPtr<Node> cloneNode(bool deep);
-    virtual bool childTypeAllowed(NodeType) const;
-    virtual PassRefPtr<Text> virtualCreate(const String&);
+    virtual bool childTypeAllowed(NodeType);
+    virtual String toString() const;
+
+protected:
+    virtual Text* createNew(StringImpl*);
 };
 
 } // namespace WebCore

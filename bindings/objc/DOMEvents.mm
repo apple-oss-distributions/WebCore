@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004 Apple Computer, Inc.  All rights reserved.
  * Copyright (C) 2006 Jonas Witt <jonas.witt@gmail.com>
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
@@ -26,60 +26,76 @@
  */
 
 #import "config.h"
-#import "DOMEventInternal.h"
+#import "DOMEvents.h"
 
-#import "DOMBeforeLoadEvent.h"
-#import "DOMKeyboardEvent.h"
-#import "DOMMessageEvent.h"
-#import "DOMMouseEvent.h"
-#import "DOMMutationEvent.h"
-#import "DOMOverflowEvent.h"
-#import "DOMProgressEvent.h"
-#import "DOMTextEvent.h"
-#import "DOMWheelEvent.h"
+#import "DOMInternal.h"
+#import "DOMPrivate.h"
 #import "Event.h"
-#import "EventNames.h"
+#import "KeyboardEvent.h"
+#import "MouseEvent.h"
+#import "MutationEvent.h"
+#import "OverflowEvent.h"
+#import "UIEvent.h"
 
-#if ENABLE(TOUCH_EVENTS)
-#import "DOMTouchEvent.h"
+#if ENABLE(SVG)
+#import "DOMSVGZoomEvent.h"
+#import "SVGZoomEvent.h"
 #endif
 
-#if ENABLE(IOS_GESTURE_EVENTS)
-#import "DOMGestureEvent.h"
-#endif
+//------------------------------------------------------------------------------------------
+// DOMEvent
 
-using WebCore::eventNames;
+@implementation DOMEvent (WebCoreInternal)
 
-Class kitClass(WebCore::Event* impl)
+- (WebCore::Event *)_event
 {
-    if (impl->isUIEvent()) {
-        if (impl->isKeyboardEvent())
-            return [DOMKeyboardEvent class];
-        if (impl->isMouseEvent())
-            return [DOMMouseEvent class];
-        if (impl->hasInterface(eventNames().interfaceForTextEvent))
-            return [DOMTextEvent class];
-        if (impl->hasInterface(eventNames().interfaceForWheelEvent))
-            return [DOMWheelEvent class];        
-#if ENABLE(TOUCH_EVENTS)
-        if (impl->hasInterface(eventNames().interfaceForTouchEvent))
-            return [DOMTouchEvent class];
-#endif
-#if ENABLE(IOS_GESTURE_EVENTS)
-        if (impl->hasInterface(eventNames().interfaceForGestureEvent))
-            return [DOMGestureEvent class];
-#endif
-        return [DOMUIEvent class];
-    }
-    if (impl->hasInterface(eventNames().interfaceForMutationEvent))
-        return [DOMMutationEvent class];
-    if (impl->hasInterface(eventNames().interfaceForOverflowEvent))
-        return [DOMOverflowEvent class];
-    if (impl->hasInterface(eventNames().interfaceForMessageEvent))
-        return [DOMMessageEvent class];
-    if (impl->hasInterface(eventNames().interfaceForProgressEvent) || impl->hasInterface(eventNames().interfaceForXMLHttpRequestProgressEvent))
-        return [DOMProgressEvent class];
-    if (impl->hasInterface(eventNames().interfaceForBeforeLoadEvent))
-        return [DOMBeforeLoadEvent class];
-    return [DOMEvent class];
+    return reinterpret_cast<WebCore::Event*>(_internal);
 }
+
+- (id)_initWithEvent:(WebCore::Event *)impl
+{
+    ASSERT(impl);
+
+    [super _init];
+    _internal = reinterpret_cast<DOMObjectInternal *>(impl);
+    impl->ref();
+    WebCore::addDOMWrapper(self, impl);
+    return self;
+}
+
++ (DOMEvent *)_wrapEvent:(WebCore::Event *)impl
+{
+    if (!impl)
+        return nil;
+    
+    id cachedInstance;
+    cachedInstance = WebCore::getDOMWrapper(impl);
+    if (cachedInstance)
+        return [[cachedInstance retain] autorelease];
+    
+    Class wrapperClass = nil;
+    if (impl->isWheelEvent())
+        wrapperClass = [DOMWheelEvent class];        
+    else if (impl->isMouseEvent())
+        wrapperClass = [DOMMouseEvent class];
+    else if (impl->isMutationEvent())
+        wrapperClass = [DOMMutationEvent class];
+    else if (impl->isKeyboardEvent())
+        wrapperClass = [DOMKeyboardEvent class];
+    else if (impl->isTextEvent())
+        wrapperClass = [DOMTextEvent class];
+#if ENABLE(SVG)
+    else if (impl->isSVGZoomEvent())
+        wrapperClass = [DOMSVGZoomEvent class];
+#endif
+    else if (impl->isUIEvent())
+        wrapperClass = [DOMUIEvent class];
+    else if (impl->isOverflowEvent())
+        wrapperClass = [DOMOverflowEvent class];
+    else
+        wrapperClass = [DOMEvent class];
+
+    return [[[wrapperClass alloc] _initWithEvent:impl] autorelease];
+}
+
+@end

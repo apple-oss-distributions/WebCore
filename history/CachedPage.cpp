@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,124 +28,188 @@
 
 #include "Document.h"
 #include "Element.h"
+#include "EventHandler.h"
 #include "FocusController.h"
 #include "Frame.h"
+#include "FrameLoader.h"
 #include "FrameView.h"
-#include "Node.h"
+#include "GCController.h"
+#include "Logging.h"
 #include "Page.h"
-#include "Settings.h"
-#include "VisitedLinkState.h"
-#include <wtf/CurrentTime.h>
-#include <wtf/RefCountedLeakCounter.h>
-#include <wtf/StdLibExtras.h>
-
-#if PLATFORM(IOS)
-#include "FrameSelection.h"
+#include "SystemTime.h"
+#if ENABLE(SVG)
+#include "SVGDocumentExtensions.h"
 #endif
 
-using namespace JSC;
+#include "kjs_proxy.h"
+#include "kjs_window.h"
+#include "kjs_window.h"
+#include <kjs/JSLock.h>
+#include <kjs/SavedBuiltins.h>
+#include <kjs/property_map.h>
+
+using namespace KJS;
 
 namespace WebCore {
 
-DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, cachedPageCounter, ("CachedPage"));
+#ifndef NDEBUG
+WTFLogChannel LogWebCoreCachedPageLeaks =  { 0x00000000, "", WTFLogChannelOn };
+
+struct CachedPageCounter { 
+    static int count; 
+    ~CachedPageCounter() 
+    { 
+        if (count)
+            LOG(WebCoreCachedPageLeaks, "LEAK: %d CachedPage\n", count);
+    }
+};
+int CachedPageCounter::count = 0;
+static CachedPageCounter cachedPageCounter;
+#endif
 
 PassRefPtr<CachedPage> CachedPage::create(Page* page)
 {
-    return adoptRef(new CachedPage(page));
+    return new CachedPage(page);
 }
 
 CachedPage::CachedPage(Page* page)
-    : m_timeStamp(currentTime())
-    , m_expirationTime(m_timeStamp + page->settings()->backForwardCacheExpirationInterval())
-    , m_cachedMainFrame(CachedFrame::create(page->mainFrame()))
-    , m_needStyleRecalcForVisitedLinks(false)
-    , m_needsFullStyleRecalc(false)
-    , m_needsCaptionPreferencesChanged(false)
-    , m_needsDeviceScaleChanged(false)
+    : m_timeStamp(0)
+    , m_document(page->mainFrame()->document())
+    , m_view(page->mainFrame()->view())
+    , m_mousePressNode(page->mainFrame()->eventHandler()->mousePressNode())
+    , m_URL(page->mainFrame()->loader()->url())
+    , m_windowProperties(new SavedProperties)
+    , m_locationProperties(new SavedProperties)
+    , m_interpreterBuiltins(new SavedBuiltins)
 {
 #ifndef NDEBUG
-    cachedPageCounter.increment();
+    ++CachedPageCounter::count;
+#endif
+    
+    Frame* mainFrame = page->mainFrame();
+    KJSProxy* proxy = mainFrame->scriptProxy();
+    Window* window = Window::retrieveWindow(mainFrame);
+
+    mainFrame->clearTimers();
+
+    JSLock lock;
+
+    if (proxy && window) {
+        proxy->interpreter()->saveBuiltins(*m_interpreterBuiltins.get());
+        window->saveProperties(*m_windowProperties.get());
+        window->location()->saveProperties(*m_locationProperties.get());
+        m_pausedTimeouts.set(window->pauseTimeouts());
+    }
+
+    m_document->setInPageCache(true);
+
+#if ENABLE(SVG)
+    if (m_document && m_document->svgExtensions())
+        m_document->accessSVGExtensions()->pauseAnimations();
 #endif
 }
 
 CachedPage::~CachedPage()
 {
 #ifndef NDEBUG
-    cachedPageCounter.decrement();
+    --CachedPageCounter::count;
 #endif
 
-    destroy();
-    ASSERT(!m_cachedMainFrame);
+    close();
 }
 
 void CachedPage::restore(Page* page)
 {
-    ASSERT(m_cachedMainFrame);
-    ASSERT(page && page->mainFrame() && page->mainFrame() == m_cachedMainFrame->view()->frame());
-    ASSERT(!page->subframeCount());
+    ASSERT(m_document->view() == m_view);
 
-    m_cachedMainFrame->open();
-    
+    Frame* mainFrame = page->mainFrame();
+    KJSProxy* proxy = mainFrame->scriptProxy();
+    Window* window = Window::retrieveWindow(mainFrame);
+
+    JSLock lock;
+
+    if (proxy && window) {
+        proxy->interpreter()->restoreBuiltins(*m_interpreterBuiltins.get());
+        window->restoreProperties(*m_windowProperties.get());
+        window->location()->restoreProperties(*m_locationProperties.get());
+        window->resumeTimeouts(m_pausedTimeouts.get());
+    }
+
+#if ENABLE(SVG)
+    if (m_document && m_document->svgExtensions())
+        m_document->accessSVGExtensions()->unpauseAnimations();
+#endif
+
+    mainFrame->eventHandler()->setMousePressNode(mousePressNode());
+        
     // Restore the focus appearance for the focused element.
     // FIXME: Right now we don't support pages w/ frames in the b/f cache.  This may need to be tweaked when we add support for that.
     Document* focusedDocument = page->focusController()->focusedOrMainFrame()->document();
-
-#if !PLATFORM(IOS)
-    if (Element* element = focusedDocument->focusedElement())
-        element->updateFocusAppearance(true);
-#else
-    if (Element* element = focusedDocument->focusedElement()) {
-        // We don't want focused nodes changing scroll position when restoring from the cache
-        // as it can cause ugly jumps before we manage to restore the cached position.
-        page->mainFrame()->selection()->suppressScrolling();
-        element->updateFocusAppearance(true);
-        page->mainFrame()->selection()->restoreScrolling();
+    if (Node* node = focusedDocument->focusedNode()) {
+        if (node->isElementNode())
+            static_cast<Element*>(node)->updateFocusAppearance(true);
     }
-#endif
-
-    if (m_needStyleRecalcForVisitedLinks) {
-        for (Frame* frame = page->mainFrame(); frame; frame = frame->tree()->traverseNext())
-            frame->document()->visitedLinkState()->invalidateStyleForAllLinks();
-    }
-
-#if USE(ACCELERATED_COMPOSITING)
-    if (m_needsDeviceScaleChanged) {
-        if (Frame* frame = page->mainFrame())
-            frame->deviceOrPageScaleFactorChanged();
-    }
-#endif
-
-    if (m_needsFullStyleRecalc)
-        page->setNeedsRecalcStyleInAllFrames();
-
-#if ENABLE(VIDEO_TRACK)
-    if (m_needsCaptionPreferencesChanged)
-        page->captionPreferencesChanged();
-#endif
-
-    clear();
 }
 
 void CachedPage::clear()
 {
-    ASSERT(m_cachedMainFrame);
-    m_cachedMainFrame->clear();
-    m_cachedMainFrame = 0;
-    m_needStyleRecalcForVisitedLinks = false;
-    m_needsFullStyleRecalc = false;
+    if (!m_document)
+        return;
+
+    ASSERT(m_view);
+    ASSERT(m_document->frame() == m_view->frame());
+
+    if (m_document->inPageCache()) {
+        Frame::clearTimers(m_view.get());
+
+        m_document->setInPageCache(false);
+        // FIXME: We don't call willRemove here. Why is that OK?
+        m_document->detach();
+        m_document->removeAllEventListenersFromAllNodes();
+
+        m_view->clearFrame();
+    }
+
+    ASSERT(!m_document->inPageCache());
+
+    m_document = 0;
+    m_view = 0;
+    m_mousePressNode = 0;
+    m_URL = KURL();
+
+    JSLock lock;
+
+    m_windowProperties.clear();
+    m_locationProperties.clear();
+    m_interpreterBuiltins.clear();
+    m_pausedTimeouts.clear();
+
+    gcController().garbageCollectSoon();
 }
 
-void CachedPage::destroy()
+void CachedPage::setDocumentLoader(PassRefPtr<DocumentLoader> loader)
 {
-    if (m_cachedMainFrame)
-        m_cachedMainFrame->destroy();
-
-    m_cachedMainFrame = 0;
+    m_documentLoader = loader;
 }
 
-bool CachedPage::hasExpired() const
+DocumentLoader* CachedPage::documentLoader()
 {
-    return currentTime() > m_expirationTime;
+    return m_documentLoader.get();
+}
+
+void CachedPage::setTimeStamp(double timeStamp)
+{
+    m_timeStamp = timeStamp;
+}
+
+void CachedPage::setTimeStampToNow()
+{
+    m_timeStamp = currentTime();
+}
+
+double CachedPage::timeStamp() const
+{
+    return m_timeStamp;
 }
 
 } // namespace WebCore

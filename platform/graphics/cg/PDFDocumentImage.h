@@ -23,16 +23,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef PDFDocumentImage_h
-#define PDFDocumentImage_h
+#include "Image.h"
 
 #include "FloatRect.h"
 #include "GraphicsTypes.h"
-#include "Image.h"
 
-#if USE(CG)
+#if PLATFORM(CG)
 
-typedef struct CGPDFDocument *CGPDFDocumentRef;
+#include <ApplicationServices/ApplicationServices.h>
 
 namespace WebCore {
 
@@ -40,34 +38,16 @@ namespace WebCore {
 
     class PDFDocumentImage : public Image {
     public:
-        static PassRefPtr<PDFDocumentImage> create()
-        {
-            return adoptRef(new PDFDocumentImage);
-        }
-
-    private:
-        virtual ~PDFDocumentImage();
-
-        virtual String filenameExtension() const;
-
-        virtual bool hasSingleSecurityOrigin() const { return true; }
-
+        PDFDocumentImage();
+        ~PDFDocumentImage();
+        
         virtual bool dataChanged(bool allDataReceived);
 
-        // FIXME: PDF Images are underreporting decoded sizes and will be unable
-        // to prune because these functions are not implemented yet.
-        virtual void destroyDecodedData(bool /*destroyAll*/ = true) { }
-        virtual unsigned decodedSize() const { return 0; }
-
-        virtual void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio);
         virtual IntSize size() const;
 
-        PDFDocumentImage();
-        virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator, BlendMode);
-
-        // FIXME: Implement this to be less conservative.
-        virtual bool currentFrameKnownToBeOpaque() OVERRIDE { return false; }
-
+    private:
+        virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator);
+        
         void setCurrentPage(int);
         int pageCount() const;
         void adjustCTM(GraphicsContext*) const;
@@ -81,6 +61,4 @@ namespace WebCore {
 
 }
 
-#endif // USE(CG)
-
-#endif // PDFDocumentImage_h
+#endif // PLATFORM(CG)

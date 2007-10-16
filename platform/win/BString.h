@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,9 +26,7 @@
 #ifndef BString_h
 #define BString_h
 
-#include <wtf/Forward.h>
-
-#if USE(CF)
+#if PLATFORM(CF)
 typedef const struct __CFString * CFStringRef;
 #endif
 
@@ -36,7 +34,7 @@ typedef wchar_t* BSTR;
 
 namespace WebCore {
 
-    class KURL;
+    class String;
 
     class BString {
     public:
@@ -44,21 +42,17 @@ namespace WebCore {
         BString(const wchar_t*);
         BString(const wchar_t*, size_t length);
         BString(const String&);
-        BString(const AtomicString&);
-        BString(const KURL&);
-#if USE(CF)
+#if PLATFORM(CF)
         BString(CFStringRef);
 #endif
         ~BString();
 
         void adoptBSTR(BSTR);
-        void clear();
 
         BString(const BString&);
         BString& operator=(const BString&);
         BString& operator=(const BSTR&);
 
-        BSTR* operator&() { ASSERT(!m_bstr); return &m_bstr; }
         operator BSTR() const { return m_bstr; }
 
         BSTR release() { BSTR result = m_bstr; m_bstr = 0; return result; }

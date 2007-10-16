@@ -1,4 +1,6 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 2001 Peter Kelly (pmk@post.com)
  * Copyright (C) 2001 Tobias Anton (anton@stud.fbi.fh-darmstadt.de)
  * Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
@@ -24,7 +26,6 @@
 #ifndef MouseRelatedEvent_h
 #define MouseRelatedEvent_h
 
-#include "LayoutPoint.h"
 #include "UIEventWithKeyState.h"
 
 namespace WebCore {
@@ -32,64 +33,44 @@ namespace WebCore {
     // Internal only: Helper class for what's common between mouse and wheel events.
     class MouseRelatedEvent : public UIEventWithKeyState {
     public:
-        // Note that these values are adjusted to counter the effects of zoom, so that values
-        // exposed via DOM APIs are invariant under zooming.
-        int screenX() const { return m_screenLocation.x(); }
-        int screenY() const { return m_screenLocation.y(); }
-        const IntPoint& screenLocation() const { return m_screenLocation; }
-        int clientX() const { return m_clientLocation.x(); }
-        int clientY() const { return m_clientLocation.y(); }
-#if ENABLE(POINTER_LOCK)
-        int webkitMovementX() const { return m_movementDelta.x(); }
-        int webkitMovementY() const { return m_movementDelta.y(); }
-#endif
-        const LayoutPoint& clientLocation() const { return m_clientLocation; }
-        int layerX();
-        int layerY();
-        int offsetX();
-        int offsetY();
+        MouseRelatedEvent();
+        MouseRelatedEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view,
+                          int detail, int screenX, int screenY, int pageX, int pageY,
+                          bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool isSimulated = false);
+
+        int screenX() const { return m_screenX; }
+        int screenY() const { return m_screenY; }
+        int clientX() const { return m_clientX; }
+        int clientY() const { return m_clientY; }
+        int layerX() const { return m_layerX; }
+        int layerY() const { return m_layerY; }
+        int offsetX() const { return m_offsetX; }
+        int offsetY() const { return m_offsetY; }
         bool isSimulated() const { return m_isSimulated; }
         virtual int pageX() const;
         virtual int pageY() const;
-        virtual const LayoutPoint& pageLocation() const;
         int x() const;
         int y() const;
-
-        // Page point in "absolute" coordinates (i.e. post-zoomed, page-relative coords,
-        // usable with RenderObject::absoluteToLocal).
-        const LayoutPoint& absoluteLocation() const { return m_absoluteLocation; }
-        void setAbsoluteLocation(const LayoutPoint& p) { m_absoluteLocation = p; }
-
+    
     protected:
-        MouseRelatedEvent();
-        MouseRelatedEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView>,
-                          int detail, const IntPoint& screenLocation, const IntPoint& windowLocation,
-#if ENABLE(POINTER_LOCK)
-                          const IntPoint& movementDelta,
-#endif
-                          bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool isSimulated = false);
-
         void initCoordinates();
-        void initCoordinates(const LayoutPoint& clientLocation);
+        void initCoordinates(int clientX, int clientY);
         virtual void receivedTarget();
-
-        void computePageLocation();
-        void computeRelativePosition();
-
+        
         // Expose these so MouseEvent::initMouseEvent can set them.
-        IntPoint m_screenLocation;
-        LayoutPoint m_clientLocation;
-#if ENABLE(POINTER_LOCK)
-        LayoutPoint m_movementDelta;
-#endif
+        int m_screenX;
+        int m_screenY;
+        int m_clientX;
+        int m_clientY;
 
     private:
-        LayoutPoint m_pageLocation;
-        LayoutPoint m_layerLocation;
-        LayoutPoint m_offsetLocation;
-        LayoutPoint m_absoluteLocation;
+        int m_pageX;
+        int m_pageY;
+        int m_layerX;
+        int m_layerY;
+        int m_offsetX;
+        int m_offsetY;
         bool m_isSimulated;
-        bool m_hasCachedRelativePosition;
     };
 
 } // namespace WebCore

@@ -26,52 +26,19 @@
 #ifndef SharedTimer_h
 #define SharedTimer_h
 
-#include <wtf/FastAllocBase.h>
-#include <wtf/Noncopyable.h>
-
 namespace WebCore {
 
-    // Each thread has its own single instance of shared timer, which implements this interface.
-    // This instance is shared by all timers in the thread.
+    // Single timer, shared to implement all the timers managed by the Timer class.
     // Not intended to be used directly; use the Timer class instead.
-    class SharedTimer {
-        WTF_MAKE_NONCOPYABLE(SharedTimer); WTF_MAKE_FAST_ALLOCATED;
-    public:
-        SharedTimer() { }
-        virtual ~SharedTimer() {}
-        virtual void setFiredFunction(void (*)()) = 0;
 
-        // The fire interval is in seconds relative to the current monotonic clock time.
-        virtual void setFireInterval(double) = 0;
-        virtual void stop() = 0;
-    };
-
-
-    // Implemented by port (since it provides the run loop for the main thread).
-    // FIXME: make ports implement MainThreadSharedTimer directly instead.
     void setSharedTimerFiredFunction(void (*)());
-    void setSharedTimerFireInterval(double);
+
+    // The fire time is relative to the classic POSIX epoch of January 1, 1970,
+    // as the result of currentTime() is.
+
+    void setSharedTimerFireTime(double fireTime);
     void stopSharedTimer();
 
-    // Implementation of SharedTimer for the main thread.
-    class MainThreadSharedTimer : public SharedTimer {
-    public:
-        virtual void setFiredFunction(void (*function)())
-        {
-            setSharedTimerFiredFunction(function);
-        }
-        
-        virtual void setFireInterval(double interval)
-        {
-            setSharedTimerFireInterval(interval);
-        }
-        
-        virtual void stop()
-        {
-            stopSharedTimer();
-        }
-    };
+}
 
-} // namespace WebCore
-
-#endif // SharedTimer_h
+#endif

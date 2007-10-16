@@ -1,8 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Simon Hausmann <hausmann@kde.org>
- * Copyright (C) 2003, 2006, 2009, 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #ifndef HTMLBRElement_h
 #define HTMLBRElement_h
 
@@ -28,22 +28,26 @@
 
 namespace WebCore {
 
-class HTMLBRElement FINAL : public HTMLElement {
+class String;
+
+class HTMLBRElement : public HTMLElement
+{
 public:
-    static PassRefPtr<HTMLBRElement> create(Document*);
-    static PassRefPtr<HTMLBRElement> create(const QualifiedName&, Document*);
+    HTMLBRElement(Document*);
+    ~HTMLBRElement();
+    
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusForbidden; }
+    virtual int tagPriority() const { return 0; }
 
-    virtual bool canContainRangeEndPoint() const { return false; }
+    virtual bool mapToEntry(const QualifiedName&, MappedAttributeEntry&) const;
+    virtual void parseMappedAttribute(MappedAttribute *attr);
+    
+    virtual RenderObject *createRenderer(RenderArena*, RenderStyle*);
 
-private:
-    HTMLBRElement(const QualifiedName&, Document*);
-
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
-
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    String clear() const;
+    void setClear(const String&);
 };
 
-} // namespace
+} //namespace
 
 #endif

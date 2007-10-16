@@ -26,40 +26,39 @@
 #ifndef JSCustomXPathNSResolver_h
 #define JSCustomXPathNSResolver_h
 
+#if ENABLE(XPATH)
+
 #include "XPathNSResolver.h"
-#include <heap/Strong.h>
-#include <heap/StrongInlines.h>
-#include <runtime/JSCJSValue.h>
-#include <runtime/Operations.h>
 #include <wtf/Forward.h>
 #include <wtf/RefPtr.h>
 
-namespace JSC {
+namespace KJS {
     class ExecState;
     class JSObject;
+    class JSValue;
 }
 
 namespace WebCore {
 
     class Frame;
-    class JSDOMWindow;
 
     class JSCustomXPathNSResolver : public XPathNSResolver {
     public:
-        static PassRefPtr<JSCustomXPathNSResolver> create(JSC::ExecState*, JSC::JSValue);
         
+        static PassRefPtr<JSCustomXPathNSResolver> create(KJS::ExecState*, KJS::JSValue*);
+        
+        JSCustomXPathNSResolver(KJS::JSObject*, Frame*);
         virtual ~JSCustomXPathNSResolver();
 
         virtual String lookupNamespaceURI(const String& prefix);
 
     private:
-        JSCustomXPathNSResolver(JSC::ExecState*, JSC::JSObject*, JSDOMWindow*);
-
-        // JSCustomXPathNSResolvers are always temporary so using a Strong reference is safe here.
-        JSC::Strong<JSC::JSObject> m_customResolver;
-        JSC::Strong<JSDOMWindow> m_globalObject;
+         KJS::JSObject* m_customResolver; // JSCustomXPathNSResolvers are always temporary, thus no need to GC protect the object.
+         RefPtr<Frame> m_frame;
     };
 
 } // namespace WebCore
+
+#endif // ENABLE(XPATH)
 
 #endif // JSCustomXPathNSResolver_h

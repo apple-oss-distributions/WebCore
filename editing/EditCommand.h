@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2005, 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,87 +27,67 @@
 #define EditCommand_h
 
 #include "EditAction.h"
-#include "VisibleSelection.h"
-
-#ifndef NDEBUG
-#include <wtf/HashSet.h>
-#endif
+#include "Element.h"
+#include "Selection.h"
 
 namespace WebCore {
 
 class CompositeEditCommand;
-class Document;
-class Element;
+class CSSMutableStyleDeclaration;
 
-class EditCommand : public RefCounted<EditCommand> {
+class EditCommand : public Shared<EditCommand> {
 public:
+    EditCommand(Document*);
     virtual ~EditCommand();
 
     void setParent(CompositeEditCommand*);
 
+    void apply();
+    void unapply();
+    void reapply();
+
     virtual EditAction editingAction() const;
 
-    const VisibleSelection& startingSelection() const { return m_startingSelection; }
-    const VisibleSelection& endingSelection() const { return m_endingSelection; }
+    const Selection& startingSelection() const { return m_startingSelection; }
+    const Selection& endingSelection() const { return m_endingSelection; }
 
-#if PLATFORM(IOS)
-    virtual bool isInsertTextCommand() const { return false; }
-#endif
+    Element* startingRootEditableElement() const { return m_startingRootEditableElement.get(); }
+    Element* endingRootEditableElement() const { return m_endingRootEditableElement.get(); }
+
+    CSSMutableStyleDeclaration* typingStyle() const { return m_typingStyle.get(); };
+    void setTypingStyle(PassRefPtr<CSSMutableStyleDeclaration>);
     
-    virtual bool isSimpleEditCommand() const { return false; }
-    virtual bool isCompositeEditCommand() const { return false; }
-    virtual bool isEditCommandComposition() const { return false; }
-    bool isTopLevelCommand() const { return !m_parent; }
-
-    virtual void doApply() = 0;
+    virtual bool isInsertTextCommand() const;
+    virtual bool isTypingCommand() const;
 
 protected:
-    explicit EditCommand(Document*);
-    EditCommand(Document*, const VisibleSelection&, const VisibleSelection&);
-
     Document* document() const { return m_document.get(); }
-    CompositeEditCommand* parent() const { return m_parent; }
-    void setStartingSelection(const VisibleSelection&);
-    void setEndingSelection(const VisibleSelection&);
+
+    void setStartingSelection(const Selection&);
+    void setEndingSelection(const Selection&);
+
+    PassRefPtr<CSSMutableStyleDeclaration> styleAtPosition(const Position&);
+    void updateLayout() const;
 
 private:
-    RefPtr<Document> m_document;
-    VisibleSelection m_startingSelection;
-    VisibleSelection m_endingSelection;
-    CompositeEditCommand* m_parent;
-};
-
-enum ShouldAssumeContentIsAlwaysEditable {
-    AssumeContentIsAlwaysEditable,
-    DoNotAssumeContentIsAlwaysEditable,
-};
-
-class SimpleEditCommand : public EditCommand {
-public:
+    virtual void doApply() = 0;
     virtual void doUnapply() = 0;
     virtual void doReapply(); // calls doApply()
 
-#ifndef NDEBUG
-    virtual void getNodesInCommand(HashSet<Node*>&) = 0;
-#endif
+    virtual bool preservesTypingStyle() const;
 
-protected:
-    explicit SimpleEditCommand(Document* document) : EditCommand(document) { }
+    RefPtr<Document> m_document;
+    Selection m_startingSelection;
+    Selection m_endingSelection;
+    RefPtr<Element> m_startingRootEditableElement;
+    RefPtr<Element> m_endingRootEditableElement;
+    RefPtr<CSSMutableStyleDeclaration> m_typingStyle;
+    CompositeEditCommand* m_parent;
 
-#ifndef NDEBUG
-    void addNodeAndDescendants(Node*, HashSet<Node*>&);
-#endif
-
-private:
-    virtual bool isSimpleEditCommand() const OVERRIDE { return true; }
+    friend void applyCommand(PassRefPtr<EditCommand>);
 };
 
-inline SimpleEditCommand* toSimpleEditCommand(EditCommand* command)
-{
-    ASSERT(command);
-    ASSERT_WITH_SECURITY_IMPLICATION(command->isSimpleEditCommand());
-    return static_cast<SimpleEditCommand*>(command);
-}
+void applyCommand(PassRefPtr<EditCommand>);
 
 } // namespace WebCore
 

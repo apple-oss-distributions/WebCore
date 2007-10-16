@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -37,6 +37,7 @@ class Document;
 class DocumentType;
 class HTMLDocument;
 class JSDOMImplementation;
+class String;
 
 typedef int ExceptionCode;
 
@@ -47,7 +48,7 @@ public:
     bool hasFeature(const String& feature, const String& version) const;
     PassRefPtr<DocumentType> createDocumentType(const String& qualifiedName, const String& publicId, const String& systemId, ExceptionCode&);
     PassRefPtr<Document> createDocument(const String& namespaceURI, const String& qualifiedName, DocumentType*, ExceptionCode&);
-    DOMImplementationFront* getInterface(const String& feature);
+    DOMImplementationFront* getInterface(const String& feature) const;
     PassRefPtr<CSSStyleSheet> createCSSStyleSheet(const String& title, const String& media, ExceptionCode&);
     PassRefPtr<HTMLDocument> createHTMLDocument(const String& title);
 };

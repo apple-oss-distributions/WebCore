@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -21,7 +21,6 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
-
 #ifndef HTMLViewSourceDocument_h
 #define HTMLViewSourceDocument_h
 
@@ -29,43 +28,30 @@
 
 namespace WebCore {
 
-class HTMLTableCellElement;
-class HTMLTableSectionElement;
-class HTMLToken;
+class Token;
 
-class HTMLViewSourceDocument FINAL : public HTMLDocument {
+class HTMLViewSourceDocument : public HTMLDocument
+{
 public:
-    static PassRefPtr<HTMLViewSourceDocument> create(Frame* frame, const KURL& url, const String& mimeType)
-    {
-        return adoptRef(new HTMLViewSourceDocument(frame, url, mimeType));
-    }
-
-    void addSource(const String&, HTMLToken&);
+    HTMLViewSourceDocument(DOMImplementation*, Frame*, const String& mimeType);
+    
+    virtual Tokenizer* createTokenizer();
+    
+    void addViewSourceToken(Token*); // Used by the HTML tokenizer.
+    void addViewSourceText(const String&); // Used by the plaintext tokenizer.
+    
+private:
+    void createContainingTable();
+    Element* addSpanWithClassName(const String&);
+    void addLine(const String& className);
+    void addText(const String& text, const String& className);
+    Element* addLink(const String& url, bool isAnchor);
 
 private:
-    HTMLViewSourceDocument(Frame*, const KURL&, const String& mimeType);
-
-    // Returns HTMLViewSourceParser or TextDocumentParser based on m_type.
-    virtual PassRefPtr<DocumentParser> createParser();
-
-    void processDoctypeToken(const String& source, HTMLToken&);
-    void processTagToken(const String& source, HTMLToken&);
-    void processCommentToken(const String& source, HTMLToken&);
-    void processCharacterToken(const String& source, HTMLToken&);
-
-    void createContainingTable();
-    PassRefPtr<Element> addSpanWithClassName(const AtomicString&);
-    void addLine(const AtomicString& className);
-    void finishLine();
-    void addText(const String& text, const AtomicString& className);
-    int addRange(const String& source, int start, int end, const String& className, bool isLink = false, bool isAnchor = false, const String& link = String());
-    PassRefPtr<Element> addLink(const AtomicString& url, bool isAnchor);
-    PassRefPtr<Element> addBase(const AtomicString& href);
-
     String m_type;
-    RefPtr<Element> m_current;
-    RefPtr<HTMLTableSectionElement> m_tbody;
-    RefPtr<HTMLTableCellElement> m_td;
+    Element* m_current;
+    Element* m_tbody;
+    Element* m_td;
 };
 
 }

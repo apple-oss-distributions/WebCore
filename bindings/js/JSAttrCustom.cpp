@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,28 +29,34 @@
 #include "config.h"
 #include "JSAttr.h"
 
+#include "Attr.h"
 #include "Document.h"
-#include "Element.h"
+#include "ExceptionCode.h"
+#include "HTMLFrameElementBase.h"
 #include "HTMLNames.h"
-
-using namespace JSC;
+#include "PlatformString.h"
+#include "kjs_binding.h"
+#include "kjs_dom.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-void JSAttr::visitChildren(JSCell* cell, SlotVisitor& visitor)
+void JSAttr::setValue(KJS::ExecState* exec, KJS::JSValue* value)
 {
-    JSAttr* thisObject = jsCast<JSAttr*>(cell);
-    ASSERT_GC_OBJECT_INHERITS(thisObject, &s_info);
-    COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
-    ASSERT(thisObject->structure()->typeInfo().overridesVisitChildren());
+    Attr* imp = static_cast<Attr*>(impl());
+    String attrValue = valueToStringWithNullCheck(exec, value);
 
-    Base::visitChildren(thisObject, visitor);
-    Element* element = thisObject->impl()->ownerElement();
-    if (!element)
-        return;
-    visitor.addOpaqueRoot(root(element));
+    Element* ownerElement = imp->ownerElement();
+    if (ownerElement && (ownerElement->hasTagName(iframeTag) || ownerElement->hasTagName(frameTag)) && equalIgnoringCase(imp->name(), "src") && attrValue.startsWith("javascript:", false)) {
+        HTMLFrameElementBase* frame = static_cast<HTMLFrameElementBase*>(ownerElement);
+        if (!checkNodeSecurity(exec, frame->contentDocument()))
+            return;
+    }
+
+    ExceptionCode ec = 0;
+    imp->setValue(attrValue, ec);
+    KJS::setDOMException(exec, ec);
 }
 
 } // namespace WebCore

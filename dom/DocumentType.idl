@@ -17,23 +17,22 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    JSGenerateToNativeObject
-] interface DocumentType : Node {
+module core {
 
-    // DOM Level 1
+    interface [GenerateConstructor, GenerateNativeConverter] DocumentType : Node {
 
-    readonly attribute DOMString name;
-    readonly attribute NamedNodeMap entities;
-    readonly attribute NamedNodeMap notations;
+        // DOM Level 1
 
-    // DOM Level 2
+        readonly attribute DOMString name;
+        readonly attribute NamedNodeMap entities;
+        readonly attribute NamedNodeMap notations;
 
-    [TreatReturnedNullStringAs=Null] readonly attribute DOMString publicId;
-    [TreatReturnedNullStringAs=Null] readonly attribute DOMString systemId;
-    [TreatReturnedNullStringAs=Null] readonly attribute DOMString internalSubset;        
+        // DOM Level 2
 
-    // DOM 4
-    [RaisesException] void remove();
-};
+        readonly attribute [ConvertNullStringTo=Null] DOMString publicId;
+        readonly attribute [ConvertNullStringTo=Null] DOMString systemId;
+        readonly attribute [ConvertNullStringTo=Null] DOMString internalSubset;        
 
+    };
+
+}

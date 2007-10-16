@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,30 +26,16 @@
 #ifndef TextIterator_h
 #define TextIterator_h
 
-#include "FindOptions.h"
+#include "DeprecatedString.h"
+#include "InlineTextBox.h"
 #include "Range.h"
 #include <wtf/Vector.h>
 
 namespace WebCore {
 
-class InlineTextBox;
-class RenderText;
-class RenderTextFragment;
-
-enum TextIteratorBehavior {
-    TextIteratorDefaultBehavior = 0,
-    TextIteratorEmitsCharactersBetweenAllVisiblePositions = 1 << 0,
-    TextIteratorEntersTextControls = 1 << 1,
-    TextIteratorEmitsTextsWithoutTranscoding = 1 << 2,
-    TextIteratorIgnoresStyleVisibility = 1 << 3,
-    TextIteratorEmitsObjectReplacementCharacters = 1 << 4,
-    TextIteratorEmitsOriginalText = 1 << 5,
-    TextIteratorStopsOnFormControls = 1 << 6,
-    TextIteratorEmitsImageAltText = 1 << 7,
-};
-    
 // FIXME: Can't really answer this question correctly without knowing the white-space mode.
-// FIXME: Move this somewhere else in the editing directory. It doesn't belong here.
+// FIXME: Move this along with the white-space position functions above
+// somewhere else in the editing directory. It doesn't belong here.
 inline bool isCollapsibleWhitespace(UChar c)
 {
     switch (c) {
@@ -61,53 +47,33 @@ inline bool isCollapsibleWhitespace(UChar c)
     }
 }
 
-String plainText(const Range*, TextIteratorBehavior defaultBehavior = TextIteratorDefaultBehavior, bool isDisplayString = false);
-PassRefPtr<Range> findPlainText(const Range*, const String&, FindOptions);
-
-class BitStack {
-public:
-    BitStack();
-    ~BitStack();
-
-    void push(bool);
-    void pop();
-
-    bool top() const;
-    unsigned size() const;
-
-private:
-    unsigned m_size;
-    Vector<unsigned, 1> m_words;
-};
+DeprecatedString plainText(const Range*);
+UChar* plainTextToMallocAllocatedBuffer(const Range*, unsigned& bufferLength);
+PassRefPtr<Range> findPlainText(const Range*, const String&, bool forward, bool caseSensitive);
 
 // Iterates through the DOM range, returning all the text, and 0-length boundaries
 // at points where replaced elements break up the text flow.  The text comes back in
 // chunks so as to optimize for performance of the iteration.
 
-class TextIterator {
+class TextIterator
+{
 public:
-    explicit TextIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
-    ~TextIterator();
-
-    bool atEnd() const { return !m_positionNode || m_shouldStop; }
+    TextIterator();
+    explicit TextIterator(const Range*, bool emitForReplacedElements = false);
+    
+    bool atEnd() const { return !m_positionNode; }
     void advance();
     
     int length() const { return m_textLength; }
-    const UChar* characters() const { return m_textCharacters ? m_textCharacters : m_text.characters() + startOffset(); }
-    UChar characterAt(unsigned index) const;
-    void appendTextToStringBuilder(StringBuilder&) const;
+    const UChar* characters() const { return m_textCharacters; }
     
     PassRefPtr<Range> range() const;
-    Node* node() const;
      
     static int rangeLength(const Range*, bool spacesForReplacedElements = false);
-    static PassRefPtr<Range> rangeFromLocationAndLength(ContainerNode* scope, int rangeLocation, int rangeLength, bool spacesForReplacedElements = false);
-    static bool getLocationAndLengthFromRange(Node* scope, const Range*, size_t& location, size_t& length);
+    static PassRefPtr<Range> rangeFromLocationAndLength(Element* scope, int rangeLocation, int rangeLength, bool spacesForReplacedElements = false);
     static PassRefPtr<Range> subrange(Range* entireRange, int characterOffset, int characterCount);
     
 private:
-    int startOffset() const { return m_positionStartOffset; }
-    const String& string() const { return m_text; }
     void exitNode();
     bool shouldRepresentNodeOffsetZero();
     bool shouldEmitSpaceBeforeAndAfterNode(Node*);
@@ -116,49 +82,38 @@ private:
     bool handleReplacedElement();
     bool handleNonTextNode();
     void handleTextBox();
-    void handleTextNodeFirstLetter(RenderTextFragment*);
-    bool hasVisibleTextNode(RenderText*);
-    void emitCharacter(UChar, Node* textNode, Node* offsetBaseNode, int textStartOffset, int textEndOffset);
-    void emitText(Node* textNode, RenderObject* renderObject, int textStartOffset, int textEndOffset);
-    void emitText(Node* textNode, int textStartOffset, int textEndOffset);
+    void emitCharacter(UChar, Node *textNode, Node *offsetBaseNode, int textStartOffset, int textEndOffset);
+    void emitText(Node *textNode, int textStartOffset, int textEndOffset);
     
     // Current position, not necessarily of the text being returned, but position
     // as we walk through the DOM tree.
-    Node* m_node;
+    Node *m_node;
     int m_offset;
     bool m_handledNode;
     bool m_handledChildren;
-    BitStack m_fullyClippedStack;
     
     // The range.
-    Node* m_startContainer;
+    Node *m_startContainer;
     int m_startOffset;
-    Node* m_endContainer;
+    Node *m_endContainer;
     int m_endOffset;
-    Node* m_pastEndNode;
+    Node *m_pastEndNode;
     
     // The current text and its position, in the form to be returned from the iterator.
-    Node* m_positionNode;
-    mutable Node* m_positionOffsetBaseNode;
+    Node *m_positionNode;
+    mutable Node *m_positionOffsetBaseNode;
     mutable int m_positionStartOffset;
     mutable int m_positionEndOffset;
-    const UChar* m_textCharacters; // If null, then use m_text for character data.
+    const UChar* m_textCharacters;
     int m_textLength;
-    // Hold string m_textCharacters points to so we ensure it won't be deleted.
-    String m_text;
-
+    
     // Used when there is still some pending text from the current node; when these
     // are false and 0, we go back to normal iterating.
-    bool m_needsAnotherNewline;
-    InlineTextBox* m_textBox;
-    // Used when iteration over :first-letter text to save pointer to
-    // remaining text box.
-    InlineTextBox* m_remainingTextBox;
-    // Used to point to RenderText object for :first-letter.
-    RenderText *m_firstLetterText;
+    bool m_needAnotherNewline;
+    InlineTextBox *m_textBox;
     
     // Used to do the whitespace collapsing logic.
-    Node* m_lastTextNode;    
+    Node *m_lastTextNode;    
     bool m_lastTextNodeEndedWithCollapsedSpace;
     UChar m_lastCharacter;
     
@@ -170,41 +125,23 @@ private:
     size_t m_sortedTextBoxesPosition;
     
     // Used when deciding whether to emit a "positioning" (e.g. newline) before any other content
-    bool m_hasEmitted;
+    bool m_haveEmitted;
     
     // Used by selection preservation code.  There should be one character emitted between every VisiblePosition
     // in the Range used to create the TextIterator.
-    // FIXME <rdar://problem/6028818>: This functionality should eventually be phased out when we rewrite 
-    // moveParagraphs to not clone/destroy moved content.
-    bool m_emitsCharactersBetweenAllVisiblePositions;
-    bool m_entersTextControls;
-
-    // Used when we want texts for copying, pasting, and transposing.
-    bool m_emitsTextWithoutTranscoding;
-    // Used in pasting inside password field.
-    bool m_emitsOriginalText;
-    // Used when deciding text fragment created by :first-letter should be looked into.
-    bool m_handledFirstLetter;
-    // Used when the visibility of the style should not affect text gathering.
-    bool m_ignoresStyleVisibility;
-    // Used when emitting the special 0xFFFC character is required.
-    bool m_emitsObjectReplacementCharacters;
-    // Used when the iteration should stop if form controls are reached.
-    bool m_stopsOnFormControls;
-    // Used when m_stopsOnFormControls is set to determine if the iterator should keep advancing.
-    bool m_shouldStop;
-
-    bool m_emitsImageAltText;
+    bool m_emitForSelectionPreservation;
 };
 
 // Iterates through the DOM range, returning all the text, and 0-length boundaries
-// at points where replaced elements break up the text flow. The text comes back in
+// at points where replaced elements break up the text flow.  The text comes back in
 // chunks so as to optimize for performance of the iteration.
-class SimplifiedBackwardsTextIterator {
+class SimplifiedBackwardsTextIterator
+{
 public:
-    explicit SimplifiedBackwardsTextIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
+    SimplifiedBackwardsTextIterator();
+    explicit SimplifiedBackwardsTextIterator(const Range *);
     
-    bool atEnd() const { return !m_positionNode || m_shouldStop; }
+    bool atEnd() const { return !m_positionNode; }
     void advance();
     
     int length() const { return m_textLength; }
@@ -215,20 +152,17 @@ public:
 private:
     void exitNode();
     bool handleTextNode();
-    RenderText* handleFirstLetter(int& startOffset, int& offsetInNode);
     bool handleReplacedElement();
     bool handleNonTextNode();
-    void emitCharacter(UChar, Node*, int startOffset, int endOffset);
-    bool advanceRespectingRange(Node*);
-
+    void emitCharacter(UChar, Node *Node, int startOffset, int endOffset);
+    
     // Current position, not necessarily of the text being returned, but position
     // as we walk through the DOM tree.
     Node* m_node;
     int m_offset;
     bool m_handledNode;
     bool m_handledChildren;
-    BitStack m_fullyClippedStack;
-
+    
     // End of the range.
     Node* m_startNode;
     int m_startOffset;
@@ -249,28 +183,17 @@ private:
     
     // Used for whitespace characters that aren't in the DOM, so we can point at them.
     UChar m_singleCharacterBuffer;
-
-    // Whether m_node has advanced beyond the iteration range (i.e. m_startNode).
-    bool m_havePassedStartNode;
-
-    // Should handle first-letter renderer in the next call to handleTextNode.
-    bool m_shouldHandleFirstLetter;
-
-    // Used when the iteration should stop if form controls are reached.
-    bool m_stopsOnFormControls;
-
-    // Used when m_stopsOnFormControls is set to determine if the iterator should keep advancing.
-    bool m_shouldStop;
-
-    // Used in pasting inside password field.
-    bool m_emitsOriginalText;
+    
+    // The node after the last node this iterator should process.
+    Node* m_pastStartNode;
 };
 
 // Builds on the text iterator, adding a character position so we can walk one
 // character at a time, or faster, as needed. Useful for searching.
 class CharacterIterator {
 public:
-    explicit CharacterIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
+    CharacterIterator();
+    explicit CharacterIterator(const Range* r, bool emitForReplacedElements = false);
     
     void advance(int numCharacters);
     
@@ -279,7 +202,7 @@ public:
     
     int length() const { return m_textIterator.length() - m_runOffset; }
     const UChar* characters() const { return m_textIterator.characters() + m_runOffset; }
-    String string(int numChars);
+    DeprecatedString string(int numChars);
     
     int characterOffset() const { return m_offset; }
     PassRefPtr<Range> range() const;
@@ -292,30 +215,12 @@ private:
     TextIterator m_textIterator;
 };
     
-class BackwardsCharacterIterator {
-public:
-    explicit BackwardsCharacterIterator(const Range*, TextIteratorBehavior = TextIteratorDefaultBehavior);
-
-    void advance(int);
-
-    bool atEnd() const { return m_textIterator.atEnd(); }
-
-    PassRefPtr<Range> range() const;
-
-private:
-    int m_offset;
-    int m_runOffset;
-    bool m_atBreak;
-
-    SimplifiedBackwardsTextIterator m_textIterator;
-};
-
 // Very similar to the TextIterator, except that the chunks of text returned are "well behaved",
 // meaning they never end split up a word.  This is useful for spellcheck or (perhaps one day) searching.
 class WordAwareIterator {
 public:
-    explicit WordAwareIterator(const Range*);
-    ~WordAwareIterator();
+    WordAwareIterator();
+    explicit WordAwareIterator(const Range *r);
 
     bool atEnd() const { return !m_didLookAhead && m_textIterator.atEnd(); }
     void advance();
@@ -332,7 +237,7 @@ private:
     int m_previousLength;
 
     // many chunks from textIterator concatenated
-    Vector<UChar> m_buffer;
+    DeprecatedString m_buffer;
     
     // Did we have to look ahead in the textIterator to confirm the current chunk?
     bool m_didLookAhead;

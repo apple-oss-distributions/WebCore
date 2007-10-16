@@ -26,27 +26,15 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <objc/objc.h>
-
-#ifdef __OBJC__
-#include <Foundation/Foundation.h>
-@class NSString;
-#else
-typedef struct NSString NSString;
-#endif
+#import <Cocoa/Cocoa.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-BOOL stringIsCaseInsensitiveEqualToString(NSString *first, NSString *second);
-BOOL hasCaseInsensitiveSuffix(NSString *, NSString *suffix);
-BOOL hasCaseInsensitivePrefix(NSString *, NSString *prefix);
-BOOL hasCaseInsensitiveSubstring(NSString *, NSString *substring);
-NSString *filenameByFixingIllegalCharacters(NSString *);
-#if !PLATFORM(IOS)
-CFStringEncoding stringEncodingForResource(Handle resource);
-#endif
+BOOL hasCaseInsensitiveSuffix(NSString *string, NSString *suffix);
+BOOL hasCaseInsensitiveSubstring(NSString *string, NSString *substring);
+NSString *filenameByFixingIllegalCharacters(NSString *string);
 
 #ifdef __cplusplus
 }

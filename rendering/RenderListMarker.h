@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -35,71 +35,48 @@ String listMarkerText(EListStyleType, int value);
 // The RenderListMarker always has to be a child of a RenderListItem.
 class RenderListMarker : public RenderBox {
 public:
-    static RenderListMarker* createAnonymous(RenderListItem*);
-
-    virtual ~RenderListMarker();
-
-    const String& text() const { return m_text; }
-    String suffix() const;
-
-    bool isInside() const;
-
-    void updateMarginsAndContent();
-
-private:
     RenderListMarker(RenderListItem*);
+    ~RenderListMarker();
 
     virtual const char* renderName() const { return "RenderListMarker"; }
-    virtual void computePreferredLogicalWidths() OVERRIDE;
 
     virtual bool isListMarker() const { return true; }
 
-    virtual void paint(PaintInfo&, const LayoutPoint&);
+    virtual void setStyle(RenderStyle*);
+
+    virtual void paint(PaintInfo&, int tx, int ty);
 
     virtual void layout();
+    virtual void calcPrefWidths();
 
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0);
+    virtual void imageChanged(CachedImage*);
 
-    virtual InlineBox* createInlineBox();
+    virtual InlineBox* createInlineBox(bool, bool, bool);
 
-    virtual LayoutUnit lineHeight(bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const;
-    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const;
+    virtual short lineHeight(bool firstLine, bool isRootLineBox = false) const;
+    virtual short baselinePosition(bool firstLine, bool isRootLineBox = false) const;
 
     bool isImage() const;
     bool isText() const { return !isImage(); }
+    const String& text() const { return m_text; }
 
+    bool isInside() const;
+
+    virtual SelectionState selectionState() const { return m_selectionState; }
     virtual void setSelectionState(SelectionState);
-    virtual LayoutRect selectionRectForRepaint(const RenderLayerModelObject* repaintContainer, bool clipToVisibleContent = true) OVERRIDE;
+    virtual IntRect selectionRect(bool clipToVisibleContent = true);
     virtual bool canBeSelectionLeaf() const { return true; }
 
     void updateMargins();
-    void updateContent();
 
-    virtual void styleWillChange(StyleDifference, const RenderStyle* newStyle);
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
-
+private:
     IntRect getRelativeMarkerRect();
-    LayoutRect localSelectionRect();
 
     String m_text;
-    RefPtr<StyleImage> m_image;
+    CachedImage* m_image;
     RenderListItem* m_listItem;
+    SelectionState m_selectionState;
 };
-
-inline RenderListMarker* toRenderListMarker(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isListMarker());
-    return static_cast<RenderListMarker*>(object);
-}
-
-inline const RenderListMarker* toRenderListMarker(const RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isListMarker());
-    return static_cast<const RenderListMarker*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderListMarker(const RenderListMarker*);
 
 } // namespace WebCore
 

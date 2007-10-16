@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2004, 2008, 2009, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2004 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,54 +26,60 @@
 #define HTMLAreaElement_h
 
 #include "HTMLAnchorElement.h"
-#include "LayoutRect.h"
-#include <wtf/OwnArrayPtr.h>
+#include "IntSize.h"
+#include "Path.h"
 
 namespace WebCore {
 
 class HitTestResult;
-class HTMLImageElement;
-class Path;
 
-class HTMLAreaElement FINAL : public HTMLAnchorElement {
+class HTMLAreaElement : public HTMLAnchorElement {
 public:
-    static PassRefPtr<HTMLAreaElement> create(const QualifiedName&, Document*);
+    enum Shape { Default, Poly, Rect, Circle, Unknown };
+
+    HTMLAreaElement(Document*);
+    ~HTMLAreaElement();
+
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusForbidden; }
+    virtual int tagPriority() const { return 0; }
+
+    virtual void parseMappedAttribute(MappedAttribute*);
 
     bool isDefault() const { return m_shape == Default; }
 
-    bool mapMouseEvent(LayoutPoint location, const LayoutSize&, HitTestResult&);
+    bool mapMouseEvent(int x, int y, const IntSize&, HitTestResult&);
 
-    LayoutRect computeRect(RenderObject*) const;
-    Path computePath(RenderObject*) const;
+    virtual IntRect getRect(RenderObject*) const;
 
-    // The parent map's image.
-    HTMLImageElement* imageElement() const;
-    
-private:
-    HTMLAreaElement(const QualifiedName&, Document*);
+    String accessKey() const;
+    void setAccessKey(const String&);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool supportsFocus() const OVERRIDE;
+    String alt() const;
+    void setAlt(const String&);
+
+    String coords() const;
+    void setCoords(const String&);
+
+    String href() const;
+    void setHref(const String&);
+
+    bool noHref() const;
+    void setNoHref(bool);
+
+    String shape() const;
+    void setShape(const String&);
+
+    void setTabIndex(int);
+
     virtual String target() const;
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const OVERRIDE;
-    virtual bool isMouseFocusable() const OVERRIDE;
-    virtual bool isFocusable() const OVERRIDE;
-    virtual void updateFocusAppearance(bool /*restorePreviousSelection*/);
-    virtual void setFocus(bool) OVERRIDE;
+    void setTarget(const String&);
 
-#if ENABLE(MICRODATA)
-    virtual String itemValueText() const OVERRIDE;
-    virtual void setItemValueText(const String&, ExceptionCode&) OVERRIDE;
-#endif
-
-    enum Shape { Default, Poly, Rect, Circle, Unknown };
-    Path getRegion(const LayoutSize&) const;
-    void invalidateCachedRegion();
-
-    OwnPtr<Path> m_region;
-    OwnArrayPtr<Length> m_coords;
+protected:
+    Path getRegion(const IntSize&) const;
+    Path region;
+    Length* m_coords;
     int m_coordsLen;
-    LayoutSize m_lastSize;
+    IntSize m_lastSize;
     Shape m_shape;
 };
 

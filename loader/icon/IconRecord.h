@@ -30,16 +30,13 @@
 #define IconRecord_h
 
 #include "PageURLRecord.h"
+#include "Shared.h"
 #include "SharedBuffer.h"
+
 #include <wtf/HashSet.h>
 #include <wtf/OwnPtr.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/StringHash.h>
-#include <wtf/text/WTFString.h>
-
-#if OS(SOLARIS)
-#include <sys/types.h> // For time_t structure.
-#endif
+#include "PlatformString.h"
+#include "StringHash.h"
 
 namespace WebCore { 
 
@@ -54,31 +51,23 @@ enum ImageDataStatus {
 
 class IconSnapshot {
 public:
-    IconSnapshot() : m_timestamp(0) { }
+    IconSnapshot() : timestamp(0) { }
     
-    IconSnapshot(const String& iconURL, int timestamp, SharedBuffer* data)
-        : m_iconURL(iconURL)
-        , m_timestamp(timestamp)
-        , m_data(data)
+    IconSnapshot(const String& url, int stamp, SharedBuffer* theData)
+        : iconURL(url)
+        , timestamp(stamp)
+        , data(theData)
     { }
-
-    const String& iconURL() const { return m_iconURL; }
-    int timestamp() const { return m_timestamp; }
-    SharedBuffer* data() const { return m_data.get(); }
-
-private:
-    String m_iconURL;
-    int m_timestamp;
-    RefPtr<SharedBuffer> m_data;
+        
+    String iconURL;
+    int timestamp;
+    RefPtr<SharedBuffer> data;
 };
     
-class IconRecord : public RefCounted<IconRecord> {
+class IconRecord : public Shared<IconRecord> {
     friend class PageURLRecord;
 public:
-    static PassRefPtr<IconRecord> create(const String& url)
-    {
-        return adoptRef(new IconRecord(url));
-    }
+    IconRecord(const String& url); 
     ~IconRecord();
     
     time_t getTimestamp() { return m_stamp; }
@@ -96,13 +85,10 @@ public:
     const HashSet<String>& retainingPageURLs() { return m_retainingPageURLs; }
     
     IconSnapshot snapshot(bool forDeletion = false) const;
-
 private:
-    IconRecord(const String& url); 
-
     String m_iconURL;
     time_t m_stamp;
-    RefPtr<Image> m_image;
+    OwnPtr<Image> m_image;
     
     HashSet<String> m_retainingPageURLs;
         

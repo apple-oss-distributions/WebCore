@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Simon Hausmann <hausmann@kde.org>
- * Copyright (C) 2004, 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -28,28 +30,29 @@
 
 namespace WebCore {
 
-class HTMLFrameElement FINAL : public HTMLFrameElementBase {
+class Document;
+class RenderObject;
+class RenderArena;
+class RenderStyle;
+
+class HTMLFrameElement : public HTMLFrameElementBase
+{
 public:
-    static PassRefPtr<HTMLFrameElement> create(const QualifiedName&, Document*);
+    HTMLFrameElement(Document*);
+
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusForbidden; }
+    virtual int tagPriority() const { return 0; }
+  
+    virtual void attach();
+
+    virtual bool rendererIsNeeded(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    
+    virtual void parseMappedAttribute(MappedAttribute*);
 
     bool hasFrameBorder() const { return m_frameBorder; }
 
-    bool noResize() const;
-
 private:
-    HTMLFrameElement(const QualifiedName&, Document*);
-
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
-    
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-
-#if ENABLE(FULLSCREEN_API)
-    virtual bool allowFullScreen() const { return false; }
-#endif
-
     bool m_frameBorder;
     bool m_frameBorderSet;
 };

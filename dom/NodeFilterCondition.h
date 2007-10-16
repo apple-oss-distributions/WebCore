@@ -1,9 +1,11 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  * Copyright (C) 2000 Frederik Holljen (frederik.holljen@hig.no)
  * Copyright (C) 2001 Peter Kelly (pmk@post.com)
  * Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
- * Copyright (C) 2004, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,24 +27,17 @@
 #ifndef NodeFilterCondition_h
 #define NodeFilterCondition_h
 
-#include "ScriptState.h"
-#include <wtf/RefCounted.h>
-
-namespace JSC {
-
-class SlotVisitor;
-
-}
+#include "Shared.h"
 
 namespace WebCore {
 
     class Node;
 
-    class NodeFilterCondition : public RefCounted<NodeFilterCondition> {
+    class NodeFilterCondition : public Shared<NodeFilterCondition> {
     public:
         virtual ~NodeFilterCondition() { }
-        virtual short acceptNode(ScriptState*, Node*) const = 0;
-        virtual void visitAggregate(JSC::SlotVisitor&) { }
+        virtual short acceptNode(Node*) const;
+        virtual void mark() { }
     };
 
 } // namespace WebCore

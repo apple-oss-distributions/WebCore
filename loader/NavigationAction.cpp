@@ -40,7 +40,7 @@ static NavigationType navigationType(FrameLoadType frameLoadType, bool isFormSub
         return NavigationTypeFormSubmitted;
     if (haveEvent)
         return NavigationTypeLinkClicked;
-    if (frameLoadType == FrameLoadTypeReload || frameLoadType == FrameLoadTypeReloadFromOrigin)
+    if (frameLoadType == FrameLoadTypeReload)
         return NavigationTypeReload;
     if (isBackForwardLoadType(frameLoadType))
         return NavigationTypeBackForward;
@@ -52,35 +52,29 @@ NavigationAction::NavigationAction()
 {
 }
 
-NavigationAction::NavigationAction(const ResourceRequest& resourceRequest)
-    : m_resourceRequest(resourceRequest)
-    , m_type(NavigationTypeOther)
-{
-}
-
-NavigationAction::NavigationAction(const ResourceRequest& resourceRequest, NavigationType type)
-    : m_resourceRequest(resourceRequest)
+NavigationAction::NavigationAction(const KURL& URL, NavigationType type)
+    : m_URL(URL)
     , m_type(type)
 {
 }
 
-NavigationAction::NavigationAction(const ResourceRequest& resourceRequest, FrameLoadType frameLoadType,
+NavigationAction::NavigationAction(const KURL& URL, FrameLoadType frameLoadType,
         bool isFormSubmission)
-    : m_resourceRequest(resourceRequest)
+    : m_URL(URL)
     , m_type(navigationType(frameLoadType, isFormSubmission, 0))
 {
 }
 
-NavigationAction::NavigationAction(const ResourceRequest& resourceRequest, NavigationType type, PassRefPtr<Event> event)
-    : m_resourceRequest(resourceRequest)
+NavigationAction::NavigationAction(const KURL& URL, NavigationType type, PassRefPtr<Event> event)
+    : m_URL(URL)
     , m_type(type)
     , m_event(event)
 {
 }
 
-NavigationAction::NavigationAction(const ResourceRequest& resourceRequest, FrameLoadType frameLoadType,
+NavigationAction::NavigationAction(const KURL& URL, FrameLoadType frameLoadType,
         bool isFormSubmission, PassRefPtr<Event> event)
-    : m_resourceRequest(resourceRequest)
+    : m_URL(URL)
     , m_type(navigationType(frameLoadType, isFormSubmission, event))
     , m_event(event)
 {

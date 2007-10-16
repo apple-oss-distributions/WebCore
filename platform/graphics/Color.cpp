@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2004, 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006 Apple Computer, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,28 +26,20 @@
 #include "config.h"
 #include "Color.h"
 
-#include "HashTools.h"
+#include "DeprecatedString.h"
+#include "PlatformString.h"
+#include <math.h>
 #include <wtf/Assertions.h>
-#include <wtf/DecimalNumber.h>
-#include <wtf/HexNumber.h>
 #include <wtf/MathExtras.h>
-#include <wtf/text/StringBuilder.h>
+
+#include "ColorData.c"
 
 using namespace std;
 
 namespace WebCore {
 
-#if !COMPILER(MSVC)
-const RGBA32 Color::black;
-const RGBA32 Color::white;
-const RGBA32 Color::darkGray;
-const RGBA32 Color::gray;
-const RGBA32 Color::lightGray;
-const RGBA32 Color::transparent;
-#endif
-
-static const RGBA32 lightenedBlack = 0xFF545454;
-static const RGBA32 darkenedWhite = 0xFFABABAB;
+const RGBA32 lightenedBlack = 0xFF545454;
+const RGBA32 darkenedWhite = 0xFFABABAB;
 
 RGBA32 makeRGB(int r, int g, int b)
 {
@@ -57,24 +49,6 @@ RGBA32 makeRGB(int r, int g, int b)
 RGBA32 makeRGBA(int r, int g, int b, int a)
 {
     return max(0, min(a, 255)) << 24 | max(0, min(r, 255)) << 16 | max(0, min(g, 255)) << 8 | max(0, min(b, 255));
-}
-
-static int colorFloatToRGBAByte(float f)
-{
-    // We use lroundf and 255 instead of nextafterf(256, 0) to match CG's rounding
-    return max(0, min(static_cast<int>(lroundf(255.0f * f)), 255));
-}
-
-RGBA32 makeRGBA32FromFloats(float r, float g, float b, float a)
-{
-    return colorFloatToRGBAByte(a) << 24 | colorFloatToRGBAByte(r) << 16 | colorFloatToRGBAByte(g) << 8 | colorFloatToRGBAByte(b);
-}
-
-RGBA32 colorWithOverrideAlpha(RGBA32 color, float overrideAlpha)
-{
-    RGBA32 rgbOnly = color & 0x00FFFFFF;
-    RGBA32 rgba = rgbOnly | colorFloatToRGBAByte(overrideAlpha) << 24;
-    return rgba;
 }
 
 static double calcHue(double temp1, double temp2, double hueVal)
@@ -115,59 +89,27 @@ RGBA32 makeRGBAFromHSLA(double hue, double saturation, double lightness, double 
                     static_cast<int>(alpha * scaleFactor));
 }
 
-RGBA32 makeRGBAFromCMYKA(float c, float m, float y, float k, float a)
-{
-    double colors = 1 - k;
-    int r = static_cast<int>(nextafter(256, 0) * (colors * (1 - c)));
-    int g = static_cast<int>(nextafter(256, 0) * (colors * (1 - m)));
-    int b = static_cast<int>(nextafter(256, 0) * (colors * (1 - y)));
-    return makeRGBA(r, g, b, static_cast<float>(nextafter(256, 0) * a));
-}
-
 // originally moved here from the CSS parser
-template <typename CharacterType>
-static inline bool parseHexColorInternal(const CharacterType* name, unsigned length, RGBA32& rgb)
-{
-    if (length != 3 && length != 6)
-        return false;
-    unsigned value = 0;
-    for (unsigned i = 0; i < length; ++i) {
-        if (!isASCIIHexDigit(name[i]))
-            return false;
-        value <<= 4;
-        value |= toASCIIHexValue(name[i]);
-    }
-    if (length == 6) {
-        rgb = 0xFF000000 | value;
-        return true;
-    }
-    // #abc converts to #aabbcc
-    rgb = 0xFF000000
-        | (value & 0xF00) << 12 | (value & 0xF00) << 8
-        | (value & 0xF0) << 8 | (value & 0xF0) << 4
-        | (value & 0xF) << 4 | (value & 0xF);
-    return true;
-}
-
-bool Color::parseHexColor(const LChar* name, unsigned length, RGBA32& rgb)
-{
-    return parseHexColorInternal(name, length, rgb);
-}
-
-bool Color::parseHexColor(const UChar* name, unsigned length, RGBA32& rgb)
-{
-    return parseHexColorInternal(name, length, rgb);
-}
-
 bool Color::parseHexColor(const String& name, RGBA32& rgb)
 {
-    unsigned length = name.length();
-    
-    if (!length)
-        return false;
-    if (name.is8Bit())
-        return parseHexColor(name.characters8(), name.length(), rgb);
-    return parseHexColor(name.characters(), name.length(), rgb);
+    int len = name.length();
+    if (len == 3 || len == 6) {
+        bool ok;
+        int val = name.deprecatedString().toInt(&ok, 16);
+        if (ok) {
+            if (len == 6) {
+                rgb = 0xFF000000 | val;
+                return true;
+            }
+            // #abc converts to #aabbcc according to the specs
+            rgb = 0xFF000000
+                | (val & 0xF00) << 12 | (val & 0xF00) << 8
+                | (val & 0xF0) << 8 | (val & 0xF0) << 4
+                | (val & 0xF) << 4 | (val & 0xF);
+            return true;
+        }
+    }
+    return false;
 }
 
 int differenceSquared(const Color& c1, const Color& c2)
@@ -180,12 +122,9 @@ int differenceSquared(const Color& c1, const Color& c2)
 
 Color::Color(const String& name)
 {
-    if (name[0] == '#') {
-        if (name.is8Bit())
-            m_valid = parseHexColor(name.characters8() + 1, name.length() - 1, m_color);
-        else
-            m_valid = parseHexColor(name.characters() + 1, name.length() - 1, m_color);
-    } else
+    if (name.startsWith("#"))
+        m_valid = parseHexColor(name.substring(1), m_color);
+    else
         setNamedColor(name);
 }
 
@@ -195,75 +134,25 @@ Color::Color(const char* name)
         m_valid = parseHexColor(&name[1], m_color);
     else {
         const NamedColor* foundColor = findColor(name, strlen(name));
-        m_color = foundColor ? foundColor->ARGBValue : 0;
+        m_color = foundColor ? foundColor->RGBValue : 0;
+        m_color |= 0xFF000000;
         m_valid = foundColor;
     }
 }
 
-String Color::serialized() const
-{
-    if (!hasAlpha()) {
-        StringBuilder builder;
-        builder.reserveCapacity(7);
-        builder.append('#');
-        appendByteAsHex(red(), builder, Lowercase);
-        appendByteAsHex(green(), builder, Lowercase);
-        appendByteAsHex(blue(), builder, Lowercase);
-        return builder.toString();
-    }
-
-    Vector<LChar> result;
-    result.reserveInitialCapacity(28);
-    const char commaSpace[] = ", ";
-    const char rgbaParen[] = "rgba(";
-
-    result.append(rgbaParen, 5);
-    appendNumber(result, red());
-    result.append(commaSpace, 2);
-    appendNumber(result, green());
-    result.append(commaSpace, 2);
-    appendNumber(result, blue());
-    result.append(commaSpace, 2);
-
-    if (!alpha())
-        result.append('0');
-    else {
-        NumberToLStringBuffer buffer;
-        unsigned length = DecimalNumber(alpha() / 255.0).toStringDecimal(buffer, WTF::NumberToStringBufferLength);
-        result.append(buffer, length);
-    }
-
-    result.append(')');
-    return String::adopt(result);
-}
-
-String Color::nameForRenderTreeAsText() const
+String Color::name() const
 {
     if (alpha() < 0xFF)
         return String::format("#%02X%02X%02X%02X", red(), green(), blue(), alpha());
     return String::format("#%02X%02X%02X", red(), green(), blue());
 }
 
-static inline const NamedColor* findNamedColor(const String& name)
-{
-    char buffer[64]; // easily big enough for the longest color name
-    unsigned length = name.length();
-    if (length > sizeof(buffer) - 1)
-        return 0;
-    for (unsigned i = 0; i < length; ++i) {
-        UChar c = name[i];
-        if (!c || c > 0x7F)
-            return 0;
-        buffer[i] = toASCIILower(static_cast<char>(c));
-    }
-    buffer[length] = '\0';
-    return findColor(buffer, length);
-}
-
 void Color::setNamedColor(const String& name)
 {
-    const NamedColor* foundColor = findNamedColor(name);
-    m_color = foundColor ? foundColor->ARGBValue : 0;
+    DeprecatedString dname = name.deprecatedString();
+    const NamedColor* foundColor = dname.isAllASCII() ? findColor(dname.latin1(), dname.length()) : 0;
+    m_color = foundColor ? foundColor->RGBValue : 0;
+    m_color |= 0xFF000000;
     m_valid = foundColor;
 }
 
@@ -311,17 +200,6 @@ Color Color::dark() const
                  static_cast<int>(multiplier * b * scaleFactor),
                  alpha());
 }
-
-#if PLATFORM(IOS)
-bool Color::isDark() const
-{
-    float r, g, b, a;
-    getRGBA(r, g, b, a);
-    float v = max(r, max(g, b));
-    
-    return a > 0.5 && v < 0.5;
-}
-#endif
 
 static int blendComponent(int c, int a)
 {
@@ -388,71 +266,6 @@ void Color::getRGBA(double& r, double& g, double& b, double& a) const
     g = green() / 255.0;
     b = blue() / 255.0;
     a = alpha() / 255.0;
-}
-
-void Color::getHSL(double& hue, double& saturation, double& lightness) const
-{
-    // http://en.wikipedia.org/wiki/HSL_color_space. This is a direct copy of
-    // the algorithm therein, although it's 360^o based and we end up wanting
-    // [0...1) based. It's clearer if we stick to 360^o until the end.
-    double r = static_cast<double>(red()) / 255.0;
-    double g = static_cast<double>(green()) / 255.0;
-    double b = static_cast<double>(blue()) / 255.0;
-    double max = std::max(std::max(r, g), b);
-    double min = std::min(std::min(r, g), b);
-
-    if (max == min)
-        hue = 0.0;
-    else if (max == r)
-        hue = (60.0 * ((g - b) / (max - min))) + 360.0;
-    else if (max == g)
-        hue = (60.0 * ((b - r) / (max - min))) + 120.0;
-    else
-        hue = (60.0 * ((r - g) / (max - min))) + 240.0;
-
-    if (hue >= 360.0)
-        hue -= 360.0;
-
-    // makeRGBAFromHSLA assumes that hue is in [0...1).
-    hue /= 360.0;
-
-    lightness = 0.5 * (max + min);
-    if (max == min)
-        saturation = 0.0;
-    else if (lightness <= 0.5)
-        saturation = ((max - min) / (max + min));
-    else
-        saturation = ((max - min) / (2.0 - (max + min)));
-}
-
-Color colorFromPremultipliedARGB(RGBA32 pixelColor)
-{
-    int alpha = alphaChannel(pixelColor);
-    if (alpha && alpha < 255) {
-        return Color::createUnchecked(
-            redChannel(pixelColor) * 255 / alpha,
-            greenChannel(pixelColor) * 255 / alpha,
-            blueChannel(pixelColor) * 255 / alpha,
-            alpha);
-    } else
-        return Color(pixelColor);
-}
-
-RGBA32 premultipliedARGBFromColor(const Color& color)
-{
-    unsigned pixelColor;
-
-    unsigned alpha = color.alpha();
-    if (alpha < 255) {
-        pixelColor = Color::createUnchecked(
-            fastDivideBy255(color.red() * alpha + 254),
-            fastDivideBy255(color.green() * alpha + 254),
-            fastDivideBy255(color.blue() * alpha + 254),
-            alpha).rgb();
-    } else
-         pixelColor = color.rgb();
-
-    return pixelColor;
 }
 
 } // namespace WebCore

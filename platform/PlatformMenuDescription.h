@@ -27,39 +27,30 @@
 #define PlatformMenuDescription_h
 
 #if PLATFORM(MAC)
-OBJC_CLASS NSMutableArray;
+#ifdef __OBJC__
+@class NSMutableArray;
+#else
+class NSMutableArray;
+#endif
 #elif PLATFORM(WIN)
-#include <windows.h>
+typedef struct HMENU__* HMENU;
 #elif PLATFORM(QT)
-#include <qlist.h>
+class QMenu;
 #elif PLATFORM(GTK)
 typedef struct _GtkMenu GtkMenu;
 #endif
 
 namespace WebCore {
 
-#if !USE(CROSS_PLATFORM_CONTEXT_MENUS)
 #if PLATFORM(MAC)
     typedef NSMutableArray* PlatformMenuDescription;
+#elif PLATFORM(WIN)
+    typedef HMENU PlatformMenuDescription;
 #elif PLATFORM(QT)
-    class ContextMenuItem;
-    typedef const QList<ContextMenuItem>* PlatformMenuDescription;
+    typedef QMenu* PlatformMenuDescription;
 #elif PLATFORM(GTK)
     typedef GtkMenu* PlatformMenuDescription;
-#else
-    typedef void* PlatformMenuDescription;
 #endif
-#else
-// FIXME: When more platforms switch over, and PlatformMenuDescription
-// is not used anymore, we should rename this header to PlatformContextMenu.
-#if PLATFORM(WIN)
-    typedef HMENU PlatformContextMenu;
-    typedef MENUITEMINFO PlatformContextMenuItem;
-#else
-    typedef void* PlatformContextMenu;
-    typedef void* PlatformContextMenuItem;
-#endif
-#endif // !USE(CROSS_PLATFORM_CONTEXT_MENUS)
 
 } // namespace
 

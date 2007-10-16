@@ -18,22 +18,22 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    JSGenerateToNativeObject,
-    CustomIndexedSetter,
-    GenerateIsReachable=ImplOwnerNodeRoot,
-] interface HTMLOptionsCollection : HTMLCollection {
-    attribute long selectedIndex;
-    [CustomSetter, SetterRaisesException] attribute unsigned long length;
+module html {
 
-    Node namedItem([Default=Undefined] optional DOMString name);
+    // FIXME: The W3C spec says that HTMLOptionsCollection should not have a parent class.
 
-    [Custom, RaisesException] void add([Default=Undefined] optional HTMLOptionElement option, 
-                      optional unsigned long index);
-    [Custom] void remove([Default=Undefined] optional unsigned long index);
+    interface [GenerateNativeConverter, HasCustomIndexSetter] HTMLOptionsCollection : HTMLCollection {
+                 attribute long selectedIndex;
+                 attribute [Custom] unsigned long length
+                        setter raises (DOMException);
 
-#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
-    Node item(unsigned long index);
+        void add(in HTMLOptionElement option, in [Optional] unsigned long index)
+             raises (DOMException);
+
+#if !defined(LANGUAGE_JAVASCRIPT)
+        Node item(in unsigned long index);
+        Node namedItem(in DOMString name);
 #endif
-};
+    };
 
+}

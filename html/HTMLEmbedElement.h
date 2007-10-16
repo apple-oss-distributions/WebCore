@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2004, 2006, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,38 +25,54 @@
 #ifndef HTMLEmbedElement_h
 #define HTMLEmbedElement_h
 
-#include "HTMLPlugInImageElement.h"
+#include "HTMLPlugInElement.h"
+
+#if USE(JAVASCRIPTCORE_BINDINGS)
+#include <bindings/runtime.h>
+#endif
 
 namespace WebCore {
 
-class HTMLEmbedElement FINAL : public HTMLPlugInImageElement {
+class SVGDocument;
+
+class HTMLEmbedElement : public HTMLPlugInElement {
 public:
-    static PassRefPtr<HTMLEmbedElement> create(const QualifiedName&, Document*, bool createdByParser);
+    HTMLEmbedElement(Document*);
+    ~HTMLEmbedElement();
 
-private:
-    HTMLEmbedElement(const QualifiedName&, Document*, bool createdByParser);
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusForbidden; }
+    virtual int tagPriority() const { return 0; }
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
+    virtual bool mapToEntry(const QualifiedName& attrName, MappedAttributeEntry& result) const;
+    virtual void parseMappedAttribute(MappedAttribute*);
 
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
+    virtual void attach();
+    virtual void detach();
+    virtual bool rendererIsNeeded(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual void insertedIntoDocument();
+    virtual void removedFromDocument();
+    virtual void attributeChanged(Attribute*, bool preserveDecls = false);
+    
+    virtual bool isURLAttribute(Attribute*) const;
 
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual const AtomicString& imageSourceURL() const OVERRIDE;
-
-    virtual RenderWidget* renderWidgetForJSBindings() const;
-
-    virtual void updateWidget(PluginCreationOption);
-
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
-
-    void parametersForPlugin(Vector<String>& paramNames, Vector<String>& paramValues);
-
-#if ENABLE(MICRODATA)
-    virtual String itemValueText() const OVERRIDE;
-    virtual void setItemValueText(const String&, ExceptionCode&) OVERRIDE;
+#if USE(JAVASCRIPTCORE_BINDINGS)
+    virtual KJS::Bindings::Instance* getInstance() const;
 #endif
+
+    String src() const;
+    void setSrc(const String&);
+
+    String type() const;
+    void setType(const String&);
+    
+#if ENABLE(SVG)
+    SVGDocument* getSVGDocument(ExceptionCode&) const;
+#endif
+
+    DeprecatedString url;
+    String m_pluginPage;
+    String m_serviceType;
 };
 
 }

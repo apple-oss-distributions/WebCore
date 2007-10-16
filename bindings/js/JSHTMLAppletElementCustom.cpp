@@ -24,33 +24,44 @@
  */
 
 #include "config.h"
-#include "JSHTMLAppletElementCustom.h"
+#include "JSHTMLAppletElement.h"
 
 #include "HTMLAppletElement.h"
-#include "JSPluginElementFunctions.h"
+#include "kjs_dom.h"
+#include "kjs_html.h"
 
 namespace WebCore {
 
-using namespace JSC;
+using namespace KJS;
 
-bool JSHTMLAppletElement::getOwnPropertySlotDelegate(ExecState* exec, PropertyName propertyName, PropertySlot& slot)
+bool JSHTMLAppletElement::customGetOwnPropertySlot(ExecState* exec, const Identifier& propertyName, PropertySlot& slot)
 {
-    return pluginElementCustomGetOwnPropertySlot<JSHTMLAppletElement, Base>(exec, propertyName, slot, this);
+    return runtimeObjectCustomGetOwnPropertySlot(exec, propertyName, slot, this, static_cast<HTMLElement*>(impl()));
 }
 
-bool JSHTMLAppletElement::getOwnPropertyDescriptorDelegate(ExecState* exec, PropertyName propertyName, PropertyDescriptor& descriptor)
+bool JSHTMLAppletElement::customPut(ExecState* exec, const Identifier& propertyName, JSValue* value, int attr)
 {
-    return pluginElementCustomGetOwnPropertyDescriptor<JSHTMLAppletElement, Base>(exec, propertyName, descriptor, this);
+    return runtimeObjectCustomPut(exec, propertyName, value, attr, static_cast<HTMLElement*>(impl()));
 }
 
-bool JSHTMLAppletElement::putDelegate(ExecState* exec, PropertyName propertyName, JSValue value, PutPropertySlot& slot)
+bool JSHTMLAppletElement::implementsCall() const
 {
-    return runtimeObjectCustomPut(exec, propertyName, value, this, slot);
+    return runtimeObjectImplementsCall(static_cast<HTMLElement*>(impl()));
 }
 
-CallType JSHTMLAppletElement::getCallData(JSCell* cell, CallData& callData)
+JSValue* JSHTMLAppletElement::callAsFunction(ExecState* exec, JSObject* thisObj, const List& args)
 {
-    return runtimeObjectGetCallData(jsCast<JSHTMLAppletElement*>(cell), callData);
+    return runtimeObjectCallAsFunction(exec, thisObj, args, static_cast<HTMLElement*>(impl()));
+}
+
+bool JSHTMLAppletElement::canGetItemsForName(ExecState*, HTMLAppletElement*, const Identifier& propertyName)
+{
+    return propertyName == "__apple_runtime_object";
+}
+
+JSValue* JSHTMLAppletElement::nameGetter(ExecState* exec, JSObject* originalObject, const Identifier& propertyName, const PropertySlot& slot)
+{
+    return runtimeObjectGetter(exec, originalObject, propertyName, slot);
 }
 
 } // namespace WebCore

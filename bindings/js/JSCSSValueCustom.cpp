@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,22 +27,11 @@
 #include "JSCSSValue.h"
 
 #include "CSSPrimitiveValue.h"
+#include "CSSValue.h"
 #include "CSSValueList.h"
 #include "JSCSSPrimitiveValue.h"
 #include "JSCSSValueList.h"
-#include "JSNode.h"
-#include "JSWebKitCSSTransformValue.h"
-#include "WebKitCSSTransformValue.h"
-
-#if ENABLE(CSS_FILTERS)
-#include "JSWebKitCSSFilterValue.h"
-#include "WebKitCSSFilterValue.h"
-#endif
-
-#if ENABLE(CSS_SHADERS)
-#include "JSWebKitCSSMixFunctionValue.h"
-#include "WebKitCSSMixFunctionValue.h"
-#endif
+#include "kjs_binding.h"
 
 #if ENABLE(SVG)
 #include "JSSVGColor.h"
@@ -51,72 +40,34 @@
 #include "SVGPaint.h"
 #endif
 
-using namespace JSC;
-
 namespace WebCore {
 
-bool JSCSSValueOwner::isReachableFromOpaqueRoots(JSC::Handle<JSC::Unknown> handle, void* context, SlotVisitor& visitor)
-{
-    JSCSSValue* jsCSSValue = jsCast<JSCSSValue*>(handle.get().asCell());
-    if (!jsCSSValue->hasCustomProperties())
-        return false;
-    DOMWrapperWorld* world = static_cast<DOMWrapperWorld*>(context);
-    void* root = world->m_cssValueRoots.get(jsCSSValue->impl());
-    if (!root)
-        return false;
-    return visitor.containsOpaqueRoot(root);
-}
-
-void JSCSSValueOwner::finalize(JSC::Handle<JSC::Unknown> handle, void* context)
-{
-    JSCSSValue* jsCSSValue = jsCast<JSCSSValue*>(handle.get().asCell());
-    DOMWrapperWorld* world = static_cast<DOMWrapperWorld*>(context);
-    world->m_cssValueRoots.remove(jsCSSValue->impl());
-    uncacheWrapper(world, jsCSSValue->impl(), jsCSSValue);
-    jsCSSValue->releaseImpl();
-}
-
-JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, CSSValue* value)
+KJS::JSValue* toJS(KJS::ExecState* exec, CSSValue* value)
 {
     if (!value)
-        return jsNull();
+        return KJS::jsNull();
 
-    // Scripts should only ever see cloned CSSValues, never the internal ones.
-    ASSERT(value->isCSSOMSafe());
+    KJS::ScriptInterpreter* interp = static_cast<KJS::ScriptInterpreter*>(exec->dynamicInterpreter());
+    KJS::DOMObject* ret = interp->getDOMObject(value);
 
-    // If we're here under erroneous circumstances, prefer returning null over a potentially insecure value.
-    if (!value->isCSSOMSafe())
-        return jsNull();
+    if (ret)
+        return ret;
 
-    JSDOMWrapper* wrapper = getCachedWrapper(currentWorld(exec), value);
-
-    if (wrapper)
-        return wrapper;
-
-    if (value->isWebKitCSSTransformValue())
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, WebKitCSSTransformValue, value);
-#if ENABLE(CSS_FILTERS)
-    else if (value->isWebKitCSSFilterValue())
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, WebKitCSSFilterValue, value);
-#endif
-#if ENABLE(CSS_SHADERS)
-    else if (value->isWebKitCSSMixFunctionValue())
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, WebKitCSSMixFunctionValue, value);
-#endif
-    else if (value->isValueList())
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSValueList, value);
+    if (value->isValueList())
+        ret = new JSCSSValueList(exec, static_cast<CSSValueList*>(value));
 #if ENABLE(SVG)
-    else if (value->isSVGPaint())
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, SVGPaint, value);
     else if (value->isSVGColor())
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, SVGColor, value);
+        ret = new JSSVGColor(exec, static_cast<SVGColor*>(value));
+    else if (value->isSVGPaint())
+        ret = new JSSVGPaint(exec, static_cast<SVGPaint*>(value));
 #endif
     else if (value->isPrimitiveValue())
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSPrimitiveValue, value);
+        ret = new JSCSSPrimitiveValue(exec, static_cast<CSSPrimitiveValue*>(value));
     else
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSValue, value);
+        ret = new JSCSSValue(exec, value);
 
-    return wrapper;
+    interp->putDOMObject(value, ret);
+    return ret;
 }
 
 } // namespace WebCore

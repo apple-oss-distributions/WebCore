@@ -29,7 +29,7 @@
 #include "DocumentLoader.h"
 
 #include "FrameWin.h"
-#include <wtf/text/WTFString.h>
+#include "PlatformString.h"
 
 namespace WebCore {
 

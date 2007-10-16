@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2004, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,99 +23,108 @@
 #ifndef HTMLObjectElement_h
 #define HTMLObjectElement_h
 
-#include "FormAssociatedElement.h"
-#include "HTMLPlugInImageElement.h"
+#include "HTMLPlugInElement.h"
 
 namespace WebCore {
 
-class HTMLFormElement;
+class HTMLImageLoader;
 
-class HTMLObjectElement FINAL : public HTMLPlugInImageElement, public FormAssociatedElement {
+#if ENABLE(SVG)
+class SVGDocument;
+#endif
+
+class HTMLObjectElement : public HTMLPlugInElement {
 public:
-    static PassRefPtr<HTMLObjectElement> create(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
-    virtual ~HTMLObjectElement();
+    HTMLObjectElement(Document*);
+    ~HTMLObjectElement();
 
+    virtual int tagPriority() const { return 5; }
+
+    virtual void parseMappedAttribute(MappedAttribute*);
+
+    virtual void attach();
+    virtual bool rendererIsNeeded(RenderStyle*);
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual void finishedParsing();
+    virtual void detach();
+    virtual void insertedIntoDocument();
+    virtual void removedFromDocument();
+    
+    virtual void recalcStyle(StyleChange);
+    virtual void childrenChanged();
+
+    virtual bool isURLAttribute(Attribute*) const;
+
+    bool isImageType();
+
+    void renderFallbackContent();
+
+#if USE(JAVASCRIPTCORE_BINDINGS)
+    virtual KJS::Bindings::Instance* getInstance() const;
+#endif
+
+    String archive() const;
+    void setArchive(const String&);
+
+    String border() const;
+    void setBorder(const String&);
+
+    String code() const;
+    void setCode(const String&);
+    
+    String codeBase() const;
+    void setCodeBase(const String&);
+
+    String codeType() const;
+    void setCodeType(const String&);
+    
+    String data() const;
+    void setData(const String&);
+
+    bool declare() const;
+    void setDeclare(bool);
+
+    int hspace() const;
+    void setHspace(int);
+
+    String standby() const;
+    void setStandby(const String&);
+
+    void setTabIndex(int);
+
+    String type() const;
+    void setType(const String&);
+
+    String useMap() const;
+    void setUseMap(const String&);
+
+    int vspace() const;
+    void setVspace(int);
+
+    bool isComplete() const { return m_complete; }
+    void setComplete(bool complete);
+    
     bool isDocNamedItem() const { return m_docNamedItem; }
-
-    const String& classId() const { return m_classId; }
 
     bool containsJavaApplet() const;
 
-    virtual bool useFallbackContent() const { return m_useFallbackContent; }
-    void renderFallbackContent();
-
-    // Implementations of FormAssociatedElement
-    HTMLFormElement* form() const { return FormAssociatedElement::form(); }
-
-    virtual bool isFormControlElement() const { return false; }
-
-    virtual bool isEnumeratable() const { return true; }
-    virtual bool appendFormData(FormDataList&, bool);
-
-    // Implementations of constraint validation API.
-    // Note that the object elements are always barred from constraint validation.
-    virtual String validationMessage() const OVERRIDE { return String(); }
-    bool checkValidity() { return true; }
-    virtual void setCustomValidity(const String&) OVERRIDE { }
-
-    using Node::ref;
-    using Node::deref;
-
-    virtual bool canContainRangeEndPoint() const { return useFallbackContent(); }
-
-private:
-    HTMLObjectElement(const QualifiedName&, Document*, HTMLFormElement*, bool createdByParser);
-
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
-
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
-
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
-    virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
-
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
-
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual const AtomicString& imageSourceURL() const OVERRIDE;
-
-    virtual RenderWidget* renderWidgetForJSBindings() const;
-
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
-
-    virtual void updateWidget(PluginCreationOption);
-    void updateDocNamedItem();
-
-    bool hasFallbackContent() const;
-    
-    // FIXME: This function should not deal with url or serviceType
-    // so that we can better share code between <object> and <embed>.
-    void parametersForPlugin(Vector<String>& paramNames, Vector<String>& paramValues, String& url, String& serviceType);
-    
-    bool shouldAllowQuickTimeClassIdQuirk();
-    bool hasValidClassId();
-
-    virtual void refFormAssociatedElement() { ref(); }
-    virtual void derefFormAssociatedElement() { deref(); }
-    virtual HTMLFormElement* virtualForm() const;
-
-#if ENABLE(MICRODATA)
-    virtual String itemValueText() const OVERRIDE;
-    virtual void setItemValueText(const String&, ExceptionCode&) OVERRIDE;
+#if ENABLE(SVG)
+    SVGDocument* getSVGDocument(ExceptionCode&) const;
 #endif
 
+    String m_serviceType;
+    String m_url;
     String m_classId;
-    bool m_docNamedItem : 1;
+    bool m_needWidgetUpdate : 1;
     bool m_useFallbackContent : 1;
-};
+    HTMLImageLoader* m_imageLoader;
 
-inline HTMLObjectElement* toHTMLObjectElement(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->hasTagName(HTMLNames::objectTag));
-    return static_cast<HTMLObjectElement*>(node);
-}
+private:
+    void updateDocNamedItem();
+    String oldIdAttr;
+    bool m_complete;
+    bool m_docNamedItem;
+};
 
 }
 

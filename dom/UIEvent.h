@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 2001 Peter Kelly (pmk@post.com)
  * Copyright (C) 2001 Tobias Anton (anton@stud.fbi.fh-darmstadt.de)
  * Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
- * Copyright (C) 2003, 2004, 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,65 +26,42 @@
 #ifndef UIEvent_h
 #define UIEvent_h
 
-#include "DOMWindow.h"
 #include "Event.h"
-#include "EventDispatchMediator.h"
 
 namespace WebCore {
 
-typedef DOMWindow AbstractView;
+    class DOMWindow;
 
-struct UIEventInit : public EventInit {
-    UIEventInit();
+    typedef DOMWindow AbstractView;
 
-    RefPtr<AbstractView> view;
-    int detail;
-};
+    class UIEvent : public Event {
+    public:
+        UIEvent();
+        UIEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view, int detail);
+        virtual ~UIEvent();
 
-class UIEvent : public Event {
-public:
-    static PassRefPtr<UIEvent> create()
-    {
-        return adoptRef(new UIEvent);
-    }
-    static PassRefPtr<UIEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView> view, int detail)
-    {
-        return adoptRef(new UIEvent(type, canBubble, cancelable, view, detail));
-    }
-    static PassRefPtr<UIEvent> create(const AtomicString& type, const UIEventInit& initializer)
-    {
-        return adoptRef(new UIEvent(type, initializer));
-    }
-    virtual ~UIEvent();
+        void initUIEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view, int detail);
 
-    void initUIEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView>, int detail);
+        AbstractView* view() const { return m_view.get(); }
+        int detail() const { return m_detail; }
+        
+        virtual bool isUIEvent() const;
 
-    AbstractView* view() const { return m_view.get(); }
-    int detail() const { return m_detail; }
+        virtual int keyCode() const;
+        virtual int charCode() const;
 
-    virtual const AtomicString& interfaceName() const;
-    virtual bool isUIEvent() const;
+        virtual int layerX() const;
+        virtual int layerY() const;
 
-    virtual int keyCode() const;
-    virtual int charCode() const;
+        virtual int pageX() const;
+        virtual int pageY() const;
 
-    virtual int layerX();
-    virtual int layerY();
+        virtual int which() const;
 
-    virtual int pageX() const;
-    virtual int pageY() const;
-
-    virtual int which() const;
-
-protected:
-    UIEvent();
-    UIEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<AbstractView>, int detail);
-    UIEvent(const AtomicString&, const UIEventInit&);
-
-private:
-    RefPtr<AbstractView> m_view;
-    int m_detail;
-};
+    private:
+        RefPtr<AbstractView> m_view;
+        int m_detail;
+    };
 
 } // namespace WebCore
 

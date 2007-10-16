@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,21 +18,28 @@
  * Boston, MA 02110-1301, USA.
  */
 
-// Introduced in DOM Level 2:
-interface CSSStyleSheet : StyleSheet {
-    readonly attribute CSSRule          ownerRule;
-    readonly attribute CSSRuleList      cssRules;
+module css {
 
-    [ObjCLegacyUnnamedParameters, RaisesException] unsigned long insertRule([Default=Undefined] optional DOMString rule, 
-                                            [Default=Undefined] optional unsigned long index);
-    [RaisesException] void               deleteRule([Default=Undefined] optional unsigned long index);
+    // Introduced in DOM Level 2:
+    interface CSSStyleSheet : stylesheets::StyleSheet {
+        readonly attribute CSSRule          ownerRule;
+        readonly attribute CSSRuleList      cssRules;
 
-    // IE Extensions
-    readonly attribute CSSRuleList      rules;
+        [OldStyleObjC] unsigned long insertRule(in DOMString rule, 
+                                                in unsigned long index)
+            raises(DOMException);
+        void               deleteRule(in unsigned long index)
+            raises(DOMException);
 
-    [RaisesException] long addRule([Default=Undefined] optional DOMString selector,
-                 [Default=Undefined] optional DOMString style,
-                 optional unsigned long index);
-    [RaisesException] void removeRule([Default=Undefined] optional unsigned long index);
-};
+        // IE Extensions
+        readonly attribute CSSRuleList      rules;
 
+        long addRule(in DOMString selector,
+                     in DOMString style,
+                     in [Optional] unsigned long index)
+            raises(DOMException);
+        void removeRule(in [Optional] unsigned long index)
+            raises(DOMException);
+    };
+
+}

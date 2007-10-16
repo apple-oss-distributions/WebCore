@@ -1,7 +1,9 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2003 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -26,19 +28,28 @@
 
 namespace WebCore {
 
-inline Comment::Comment(Document* document, const String& text)
-    : CharacterData(document, text, CreateOther)
+Comment::Comment(Document* doc, const String& text)
+    : CharacterData(doc, text)
 {
 }
 
-PassRefPtr<Comment> Comment::create(Document* document, const String& text)
+Comment::Comment(Document* doc)
+    : CharacterData(doc)
 {
-    return adoptRef(new Comment(document, text));
+}
+
+Comment::~Comment()
+{
+}
+
+const AtomicString& Comment::localName() const
+{
+    return commentAtom;
 }
 
 String Comment::nodeName() const
 {
-    return commentAtom.string();
+    return commentAtom.domString();
 }
 
 Node::NodeType Comment::nodeType() const
@@ -48,12 +59,24 @@ Node::NodeType Comment::nodeType() const
 
 PassRefPtr<Node> Comment::cloneNode(bool /*deep*/)
 {
-    return create(document(), data());
+    return document()->createComment(str);
 }
 
-bool Comment::childTypeAllowed(NodeType) const
+// DOM Section 1.1.1
+bool Comment::childTypeAllowed(NodeType)
 {
     return false;
+}
+
+String Comment::toString() const
+{
+    // FIXME: We need to substitute entity references here.
+    return "<!--" + nodeValue() + "-->";
+}
+
+bool Comment::offsetInCharacters() const
+{
+    return true;
 }
 
 } // namespace WebCore

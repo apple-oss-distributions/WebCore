@@ -31,7 +31,8 @@
 #include "FrameView.h"
 #include "Page.h"
 
-namespace WebCore {
+namespace WebCore
+{
 
 // FIXME: These values are straight out of DragControllerMac, so probably have 
 // little correlation with Qt standards...
@@ -43,15 +44,15 @@ const int DragController::DragIconBottomInset = 3;
 const float DragController::DragImageAlpha = 0.75f;
 
 
-bool DragController::isCopyKeyDown(DragData*)
+bool DragController::isCopyKeyDown()
 {
     return false;
 }
     
 DragOperation DragController::dragOperation(DragData* dragData)
 {
-    // FIXME: This logic is incomplete.
-    if (dragData->containsURL(0))
+    //FIXME: This logic is incomplete
+    if (dragData->containsURL())
         return DragOperationCopy;
         
     return DragOperationNone;
@@ -62,10 +63,6 @@ const IntSize& DragController::maxDragImageSize()
     static const IntSize maxDragImageSize(400, 400);
     
     return maxDragImageSize;
-}
-
-void DragController::cleanupAfterSystemDrag()
-{
 }
 
 }

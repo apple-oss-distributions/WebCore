@@ -1,9 +1,11 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  * Copyright (C) 2000 Frederik Holljen (frederik.holljen@hig.no)
  * Copyright (C) 2001 Peter Kelly (pmk@post.com)
  * Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
- * Copyright (C) 2004, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,57 +27,46 @@
 #ifndef NodeIterator_h
 #define NodeIterator_h
 
-#include "NodeFilter.h"
-#include "ScriptWrappable.h"
 #include "Traversal.h"
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
 
 namespace WebCore {
 
+    class Document;
+
     typedef int ExceptionCode;
 
-    class NodeIterator : public ScriptWrappable, public RefCounted<NodeIterator>, public Traversal {
+    class NodeIterator : public Traversal {
     public:
-        static PassRefPtr<NodeIterator> create(PassRefPtr<Node> rootNode, unsigned whatToShow, PassRefPtr<NodeFilter> filter, bool expandEntityReferences)
-        {
-            return adoptRef(new NodeIterator(rootNode, whatToShow, filter, expandEntityReferences));
-        }
+        NodeIterator(Node*, unsigned whatToShow, PassRefPtr<NodeFilter>, bool expandEntityReferences);
         ~NodeIterator();
 
-        PassRefPtr<Node> nextNode(ScriptState*, ExceptionCode&);
-        PassRefPtr<Node> previousNode(ScriptState*, ExceptionCode&);
+        Node* nextNode(ExceptionCode&);
+        Node* previousNode(ExceptionCode&);
         void detach();
 
-        Node* referenceNode() const { return m_referenceNode.node.get(); }
-        bool pointerBeforeReferenceNode() const { return m_referenceNode.isPointerBeforeNode; }
+        Node* referenceNode() const { return m_referenceNode.get(); }
+        bool pointerBeforeReferenceNode() const { return m_beforeReferenceNode; }
 
-        // This function is called before any node is removed from the document tree.
-        void nodeWillBeRemoved(Node*);
-
-        // Do not call these functions. They are just scaffolding to support the Objective-C bindings.
-        // They operate in the main thread normal world, and they swallow JS exceptions.
-        PassRefPtr<Node> nextNode(ExceptionCode& ec) { return nextNode(scriptStateFromNode(mainThreadNormalWorld(), referenceNode()), ec); }
-        PassRefPtr<Node> previousNode(ExceptionCode& ec) { return previousNode(scriptStateFromNode(mainThreadNormalWorld(), referenceNode()), ec); }
+        /**
+         * This function has to be called if you delete a node from the
+         * document tree and you want the Iterator to react if there
+         * are any changes concerning it.
+         */
+        void notifyBeforeNodeRemoval(Node* removed);
 
     private:
-        NodeIterator(PassRefPtr<Node>, unsigned whatToShow, PassRefPtr<NodeFilter>, bool expandEntityReferences);
+        void setReferenceNode(Node*);
+        void setPointerBeforeReferenceNode(bool flag = true) { m_beforeReferenceNode = flag; }
+        bool detached() const { return m_detached; }
+        void setDetached(bool flag = true) { m_detached = flag; }
+        Document* document() const { return m_doc.get(); }
+        Node* findNextNode(Node*) const;
+        Node* findPreviousNode(Node*) const;
 
-        struct NodePointer {
-            RefPtr<Node> node;
-            bool isPointerBeforeNode;
-            NodePointer();
-            NodePointer(PassRefPtr<Node>, bool);
-            void clear();
-            bool moveToNext(Node* root);
-            bool moveToPrevious(Node* root);
-        };
-
-        void updateForNodeRemoval(Node* nodeToBeRemoved, NodePointer&) const;
-
-        NodePointer m_referenceNode;
-        NodePointer m_candidateNode;
+        RefPtr<Node> m_referenceNode;
+        bool m_beforeReferenceNode;
         bool m_detached;
+        RefPtr<Document> m_doc;
     };
 
 } // namespace WebCore

@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2005 Frerich Raabe <raabe@kde.org>
- * Copyright (C) 2006, 2009 Apple Inc.
+ * Copyright 2005 Frerich Raabe <raabe@kde.org>
+ * Copyright (C) 2006 Apple Computer, Inc.
  * Copyright (C) 2007 Alexey Proskuryakov <ap@webkit.org>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,14 +28,15 @@
 #include "config.h"
 #include "XPathFunctions.h"
 
+#if ENABLE(XPATH)
+
+#include "Document.h"
 #include "Element.h"
-#include "ProcessingInstruction.h"
-#include "TreeScope.h"
+#include "NamedAttrMap.h"
 #include "XMLNames.h"
 #include "XPathUtil.h"
 #include "XPathValue.h"
 #include <wtf/MathExtras.h>
-#include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
 namespace XPath {
@@ -73,157 +74,110 @@ static HashMap<String, FunctionRec>* functionMap;
 
 class FunLast : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::NumberValue; }
-public:
-    FunLast() { setIsContextSizeSensitive(true); }
 };
 
 class FunPosition : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::NumberValue; }
-public:
-    FunPosition() { setIsContextPositionSensitive(true); }
 };
 
 class FunCount : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::NumberValue; }
 };
 
 class FunId : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::NodeSetValue; }
 };
 
 class FunLocalName : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::StringValue; }
-public:
-    FunLocalName() { setIsContextNodeSensitive(true); } // local-name() with no arguments uses context node. 
 };
 
 class FunNamespaceURI : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::StringValue; }
-public:
-    FunNamespaceURI() { setIsContextNodeSensitive(true); } // namespace-uri() with no arguments uses context node. 
 };
 
 class FunName : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::StringValue; }
-public:
-    FunName() { setIsContextNodeSensitive(true); } // name() with no arguments uses context node. 
 };
 
 class FunString : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::StringValue; }
-public:
-    FunString() { setIsContextNodeSensitive(true); } // string() with no arguments uses context node. 
 };
 
 class FunConcat : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::StringValue; }
 };
 
 class FunStartsWith : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::BooleanValue; }
 };
 
 class FunContains : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::BooleanValue; }
 };
 
 class FunSubstringBefore : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::StringValue; }
 };
 
 class FunSubstringAfter : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::StringValue; }
 };
 
 class FunSubstring : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::StringValue; }
 };
 
 class FunStringLength : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::NumberValue; }
-public:
-    FunStringLength() { setIsContextNodeSensitive(true); } // string-length() with no arguments uses context node. 
 };
 
 class FunNormalizeSpace : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::StringValue; }
-public:
-    FunNormalizeSpace() { setIsContextNodeSensitive(true); } // normalize-space() with no arguments uses context node. 
 };
 
 class FunTranslate : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::StringValue; }
 };
 
 class FunBoolean : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::BooleanValue; }
 };
 
 class FunNot : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::BooleanValue; }
 };
 
 class FunTrue : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::BooleanValue; }
 };
 
 class FunFalse : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::BooleanValue; }
 };
 
 class FunLang : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::BooleanValue; }
-public:
-    FunLang() { setIsContextNodeSensitive(true); } // lang() always works on context node. 
 };
 
 class FunNumber : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::NumberValue; }
-public:
-    FunNumber() { setIsContextNodeSensitive(true); } // number() with no arguments uses context node. 
 };
 
 class FunSum : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::NumberValue; }
 };
 
 class FunFloor : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::NumberValue; }
 };
 
 class FunCeiling : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::NumberValue; }
 };
 
 class FunRound : public Function {
     virtual Value evaluate() const;
-    virtual Value::Type resultType() const { return Value::NumberValue; }
 public:
     static double round(double);
 };
@@ -292,14 +246,9 @@ inline bool Interval::contains(int value) const
 
 void Function::setArguments(const Vector<Expression*>& args)
 {
-    ASSERT(!subExprCount());
-
-    // Some functions use context node as implicit argument, so when explicit arguments are added, they may no longer be context node sensitive.
-    if (m_name != "lang" && !args.isEmpty())
-        setIsContextNodeSensitive(false);
-
     Vector<Expression*>::const_iterator end = args.end();
-    for (Vector<Expression*>::const_iterator it = args.begin(); it != end; ++it)
+
+    for (Vector<Expression*>::const_iterator it = args.begin(); it != end; it++)
         addSubExpression(*it);
 }
 
@@ -316,41 +265,41 @@ Value FunPosition::evaluate() const
 Value FunId::evaluate() const
 {
     Value a = arg(0)->evaluate();
-    StringBuilder idList; // A whitespace-separated list of IDs
+    Vector<UChar> idList; // A whitespace-separated list of IDs
 
     if (a.isNodeSet()) {
         const NodeSet& nodes = a.toNodeSet();
         for (size_t i = 0; i < nodes.size(); ++i) {
             String str = stringValue(nodes[i]);
-            idList.append(str);
+            idList.append(str.characters(), str.length());
             idList.append(' ');
         }
     } else {
         String str = a.toString();
-        idList.append(str);
+        idList.append(str.characters(), str.length());
     }
     
-    TreeScope* contextScope = evaluationContext().node->treeScope();
+    Document* contextDocument = evaluationContext().node->document();
     NodeSet result;
     HashSet<Node*> resultSet;
 
-    unsigned startPos = 0;
-    unsigned length = idList.length();
+    size_t startPos = 0;
+    size_t length = idList.size();
     while (true) {
         while (startPos < length && isWhitespace(idList[startPos]))
             ++startPos;
         
-        if (startPos == length)
-            break;
-
         size_t endPos = startPos;
         while (endPos < length && !isWhitespace(idList[endPos]))
             ++endPos;
 
+        if (endPos == length)
+            break;
+
         // If there are several nodes with the same id, id() should return the first one.
         // In WebKit, getElementById behaves so, too, although its behavior in this case is formally undefined.
-        Node* node = contextScope->getElementById(String(idList.characters() + startPos, endPos - startPos));
-        if (node && resultSet.add(node).isNewEntry)
+        Node* node = contextDocument->getElementById(String(&idList[startPos], endPos - startPos));
+        if (node && resultSet.add(node).second)
             result.append(node);
         
         startPos = endPos;
@@ -361,68 +310,72 @@ Value FunId::evaluate() const
     return Value(result, Value::adopt);
 }
 
-static inline String expandedNameLocalPart(Node* node)
-{
-    // The local part of an XPath expanded-name matches DOM local name for most node types, except for namespace nodes and processing instruction nodes.
-    ASSERT(node->nodeType() != Node::XPATH_NAMESPACE_NODE); // Not supported yet.
-    if (node->nodeType() == Node::PROCESSING_INSTRUCTION_NODE)
-        return static_cast<ProcessingInstruction*>(node)->target();
-    return node->localName().string();
-}
-
-static inline String expandedName(Node* node)
-{
-    const AtomicString& prefix = node->prefix();
-    return prefix.isEmpty() ? expandedNameLocalPart(node) : prefix + ":" + expandedNameLocalPart(node);
-}
-
 Value FunLocalName::evaluate() const
 {
+    Node* node = 0;
     if (argCount() > 0) {
         Value a = arg(0)->evaluate();
         if (!a.isNodeSet())
             return "";
 
-        Node* node = a.toNodeSet().firstNode();
-        return node ? expandedNameLocalPart(node) : "";
+        node = a.toNodeSet().firstNode();
+        if (!node)
+            return "";
     }
 
-    return expandedNameLocalPart(evaluationContext().node.get());
+    if (!node)
+        node = evaluationContext().node.get();
+
+    return node->localName().domString();
 }
 
 Value FunNamespaceURI::evaluate() const
 {
+    Node* node = 0;
     if (argCount() > 0) {
         Value a = arg(0)->evaluate();
         if (!a.isNodeSet())
             return "";
 
-        Node* node = a.toNodeSet().firstNode();
-        return node ? node->namespaceURI().string() : "";
+        node = a.toNodeSet().firstNode();
+        if (!node)
+            return "";
     }
 
-    return evaluationContext().node->namespaceURI().string();
+    if (!node)
+        node = evaluationContext().node.get();
+
+    return node->namespaceURI().domString();
 }
 
 Value FunName::evaluate() const
 {
+    Node* node = 0;
     if (argCount() > 0) {
         Value a = arg(0)->evaluate();
         if (!a.isNodeSet())
             return "";
 
-        Node* node = a.toNodeSet().firstNode();
-        return node ? expandedName(node) : "";
+        node = a.toNodeSet().firstNode();
+        if (!node)
+            return "";
     }
 
-    return expandedName(evaluationContext().node.get());
+    if (!node)
+        node = evaluationContext().node.get();
+
+    const AtomicString& prefix = node->prefix();
+    return prefix.isEmpty() ? node->localName().domString() : prefix + ":" + node->localName();
 }
 
 Value FunCount::evaluate() const
 {
     Value a = arg(0)->evaluate();
     
-    return double(a.toNodeSet().size());
+    if (!a.isNodeSet())
+        return 0.0;
+    
+    return a.toNodeSet().size();
 }
 
 Value FunString::evaluate() const
@@ -434,16 +387,15 @@ Value FunString::evaluate() const
 
 Value FunConcat::evaluate() const
 {
-    StringBuilder result;
-    result.reserveCapacity(1024);
+    Vector<UChar, 1024> result;
 
     unsigned count = argCount();
     for (unsigned i = 0; i < count; ++i) {
         String str(arg(i)->evaluate().toString());
-        result.append(str);
+        result.append(str.characters(), str.length());
     }
 
-    return result.toString();
+    return String(result.data(), result.size());
 }
 
 Value FunStartsWith::evaluate() const
@@ -476,9 +428,9 @@ Value FunSubstringBefore::evaluate() const
     if (s2.isEmpty())
         return "";
 
-    size_t i = s1.find(s2);
+    int i = s1.find(s2);
 
-    if (i == notFound)
+    if (i == -1)
         return "";
 
     return s1.left(i);
@@ -489,25 +441,25 @@ Value FunSubstringAfter::evaluate() const
     String s1 = arg(0)->evaluate().toString();
     String s2 = arg(1)->evaluate().toString();
 
-    size_t i = s1.find(s2);
-    if (i == notFound)
+    if (s2.isEmpty())
+        return s2;
+
+    int i = s1.find(s2);
+    if (i == -1)
         return "";
 
-    return s1.substring(i + s2.length());
+    return s1.substring(s2.length());
 }
 
 Value FunSubstring::evaluate() const
 {
     String s = arg(0)->evaluate().toString();
-    double doublePos = arg(1)->evaluate().toNumber();
-    if (std::isnan(doublePos))
-        return "";
-    long pos = static_cast<long>(FunRound::round(doublePos));
+    long pos = static_cast<long>(FunRound::round(arg(1)->evaluate().toNumber()));
     bool haveLength = argCount() == 3;
     long len = -1;
     if (haveLength) {
         double doubleLen = arg(2)->evaluate().toNumber();
-        if (std::isnan(doubleLen))
+        if (isnan(doubleLen))
             return "";
         len = static_cast<long>(FunRound::round(doubleLen));
     }
@@ -515,13 +467,11 @@ Value FunSubstring::evaluate() const
     if (pos > long(s.length())) 
         return "";
 
-    if (pos < 1) {
-        if (haveLength) {
-            len -= 1 - pos;
-            if (len < 1)
-                return "";
-        }
+    if (haveLength && pos < 1) {
+        len -= 1 - pos;
         pos = 1;
+        if (len < 1)
+            return "";
     }
 
     return s.substring(pos - 1, len);
@@ -550,19 +500,22 @@ Value FunTranslate::evaluate() const
     String s1 = arg(0)->evaluate().toString();
     String s2 = arg(1)->evaluate().toString();
     String s3 = arg(2)->evaluate().toString();
-    StringBuilder result;
+    String newString;
 
+    // FIXME: Building a String a character at a time is quite slow.
     for (unsigned i1 = 0; i1 < s1.length(); ++i1) {
         UChar ch = s1[i1];
-        size_t i2 = s2.find(ch);
+        int i2 = s2.find(ch);
         
-        if (i2 == notFound)
-            result.append(ch);
-        else if (i2 < s3.length())
-            result.append(s3[i2]);
+        if (i2 == -1)
+            newString += String(&ch, 1);
+        else if ((unsigned)i2 < s3.length()) {
+            UChar c2 = s3[i2];
+            newString += String(&c2, 1);
+        }
     }
 
-    return result.toString();
+    return newString;
 }
 
 Value FunBoolean::evaluate() const
@@ -584,32 +537,30 @@ Value FunLang::evaluate() const
 {
     String lang = arg(0)->evaluate().toString();
 
-    const Attribute* languageAttribute = 0;
+    RefPtr<Node> langNode = 0;
     Node* node = evaluationContext().node.get();
     while (node) {
-        if (node->isElementNode()) {
-            Element* element = toElement(node);
-            if (element->hasAttributes())
-                languageAttribute = element->getAttributeItem(XMLNames::langAttr);
-        }
-        if (languageAttribute)
+        NamedAttrMap* attrs = node->attributes();
+        if (attrs)
+            langNode = attrs->getNamedItemNS(XMLNames::xmlNamespaceURI, "lang");
+        if (langNode)
             break;
         node = node->parentNode();
     }
 
-    if (!languageAttribute)
+    if (!langNode)
         return false;
 
-    String langValue = languageAttribute->value();
+    String langNodeValue = langNode->nodeValue();
     while (true) {
-        if (equalIgnoringCase(langValue, lang))
+        if (equalIgnoringCase(langNodeValue, lang))
             return true;
 
         // Remove suffixes one by one.
-        size_t index = langValue.reverseFind('-');
-        if (index == notFound)
+        int index = langNodeValue.reverseFind('-');
+        if (index == -1)
             break;
-        langValue = langValue.left(index);
+        langNodeValue = langNodeValue.left(index);
     }
 
     return false;
@@ -656,8 +607,8 @@ Value FunCeiling::evaluate() const
 
 double FunRound::round(double val)
 {
-    if (!std::isnan(val) && !std::isinf(val)) {
-        if (std::signbit(val) && val >= -0.5)
+    if (!isnan(val) && !isinf(val)) {
+        if (signbit(val) && val >= -0.5)
             val *= 0; // negative zero
         else
             val = floor(val + 0.5);
@@ -670,13 +621,12 @@ Value FunRound::evaluate() const
     return round(arg(0)->evaluate().toNumber());
 }
 
-struct FunctionMapping {
-    const char* name;
-    FunctionRec function;
-};
-
 static void createFunctionMap()
 {
+    struct FunctionMapping {
+        const char *name;
+        FunctionRec function;
+    };
     static const FunctionMapping functions[] = {
         { "boolean", { &createFunBoolean, 1 } },
         { "ceiling", { &createFunCeiling, 1 } },
@@ -706,9 +656,10 @@ static void createFunctionMap()
         { "translate", { &createFunTranslate, 3 } },
         { "true", { &createFunTrue, 0 } },
     };
+    const unsigned int numFunctions = sizeof(functions) / sizeof(functions[0]);
 
     functionMap = new HashMap<String, FunctionRec>;
-    for (size_t i = 0; i < WTF_ARRAY_LENGTH(functions); ++i)
+    for (unsigned i = 0; i < numFunctions; ++i)
         functionMap->set(functions[i].name, functions[i].function);
 }
 
@@ -720,7 +671,7 @@ Function* createFunction(const String& name, const Vector<Expression*>& args)
     HashMap<String, FunctionRec>::iterator functionMapIter = functionMap->find(name);
     FunctionRec* functionRec = 0;
 
-    if (functionMapIter == functionMap->end() || !(functionRec = &functionMapIter->value)->args.contains(args.size()))
+    if (functionMapIter == functionMap->end() || !(functionRec = &functionMapIter->second)->args.contains(args.size()))
         return 0;
 
     Function* function = functionRec->factoryFn();
@@ -731,3 +682,5 @@ Function* createFunction(const String& name, const Vector<Expression*>& args)
 
 }
 }
+
+#endif // ENABLE(XPATH)

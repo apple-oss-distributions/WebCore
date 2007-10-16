@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,38 +26,18 @@
 #ifndef FormatBlockCommand_h
 #define FormatBlockCommand_h
 
-#include "ApplyBlockElementCommand.h"
-#include "EditAction.h"
-#include "QualifiedName.h"
+#include "CompositeEditCommand.h"
 
 namespace WebCore {
 
-class Document;
-class Element;
-class Position;
-class Range;
-class VisiblePosition;
-
-class FormatBlockCommand : public ApplyBlockElementCommand {
+class FormatBlockCommand : public CompositeEditCommand {
 public:
-    static PassRefPtr<FormatBlockCommand> create(Document* document, const QualifiedName& tagName)
-    {
-        return adoptRef(new FormatBlockCommand(document, tagName));
-    }
-    
-    virtual bool preservesTypingStyle() const { return true; }
-
-    static Element* elementForFormatBlockCommand(Range*);
-    bool didApply() const { return m_didApply; }
-
+    FormatBlockCommand(Document*, const String& tagName);
+    virtual void doApply();
+    virtual EditAction editingAction() const { return EditActionFormatBlock; }
 private:
-    FormatBlockCommand(Document*, const QualifiedName& tagName);
-
-    void formatSelection(const VisiblePosition& startOfSelection, const VisiblePosition& endOfSelection);
-    void formatRange(const Position& start, const Position& end, const Position& endOfSelection, RefPtr<Element>&);
-    EditAction editingAction() const { return EditActionFormatBlock; }
-
-    bool m_didApply;
+    bool modifyRange();
+    String m_tagName;
 };
 
 } // namespace WebCore

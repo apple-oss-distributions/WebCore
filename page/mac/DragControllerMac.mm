@@ -26,7 +26,6 @@
 #import "config.h"
 #import "DragController.h"
 
-#if ENABLE(DRAG_SUPPORT)
 #import "DragData.h"
 #import "Frame.h"
 #import "FrameView.h"
@@ -42,23 +41,23 @@ const int DragController::DragIconBottomInset = 3;
 
 const float DragController::DragImageAlpha = 0.75f;
 
-bool DragController::isCopyKeyDown(DragData* dragData)
+bool DragController::isCopyKeyDown()
 {
-    return dragData->flags() & DragApplicationIsCopyKeyDown;
+    return [[NSApp currentEvent] modifierFlags] & NSAlternateKeyMask;
 }
     
 DragOperation DragController::dragOperation(DragData* dragData)
 {
     ASSERT(dragData);
-
-    if ((dragData->flags() & DragApplicationIsModal) || !dragData->containsURL(m_page->mainFrame()))
+    if ([NSApp modalWindow] || !dragData->containsURL())
         return DragOperationNone;
-
-    if (!m_documentUnderMouse || (!(dragData->flags() & (DragApplicationHasAttachedSheet | DragApplicationIsSource))))
+    
+    if (!m_document || ![[m_page->mainFrame()->view()->getOuterView() window] attachedSheet] 
+        && [dragData->platformData() draggingSource] != m_page->mainFrame()->view()->getOuterView())
         return DragOperationCopy;
-
+        
     return DragOperationNone;
-}
+} 
 
 const IntSize& DragController::maxDragImageSize()
 {
@@ -67,18 +66,4 @@ const IntSize& DragController::maxDragImageSize()
     return maxDragImageSize;
 }
 
-void DragController::cleanupAfterSystemDrag()
-{
-    // Drag has ended, dragEnded *should* have been called, however it is possible
-    // for the UIDelegate to take over the drag, and fail to send the appropriate
-    // drag termination event.  As dragEnded just resets drag variables, we just
-    // call it anyway to be on the safe side.
-    // We don't want to do this for WebKit2, since the client call to start the drag
-    // is asynchronous.
-    if (m_page->mainFrame()->view()->platformWidget())
-        dragEnded();
 }
-
-} // namespace WebCore
-
-#endif // ENABLE(DRAG_SUPPORT)

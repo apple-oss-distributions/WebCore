@@ -23,10 +23,13 @@
 use strict;
 use Getopt::Long;
 
-my $defines;
 my $preprocessor;
-GetOptions('defines=s' => \$defines,
-           'preprocessor=s' => \$preprocessor);
+
+GetOptions('preprocessor=s' => \$preprocessor);
+
+if (!$preprocessor) {
+    $preprocessor = "/usr/bin/gcc -E -P -x c++";
+}
 
 my $header = $ARGV[0];
 shift;
@@ -41,23 +44,13 @@ print HEADER "namespace WebCore {\n";
 print OUT "namespace WebCore {\n";
 
 for my $in (@ARGV) {
-    $in =~ /(\w+)\.css.out$/ or $in =~ /(\w+)\.js$/ or die;
+    $in =~ /(\w+)\.css$/ or die;
     my $name = $1;
 
     # Slurp in the CSS file.
-    my $text;
-    # We should not set --defines option and run "moc" preprocessor on Qt.
-    # See http://webkit.org/b/37296.
-    if (!$defines) {
-        open IN, "<", $in or die;
-        { local $/; $text = <IN>; }
-        close IN;
-        # Remove preprocessor directives.
-        $text =~ s|^#.*?$||mg;
-    } else {
-        require preprocessor;
-        $text = join('', applyPreprocessor($in, $defines, $preprocessor));
-    }
+    open IN, $preprocessor . " " . $in . "|" or die;
+    my $text; { local $/; $text = <IN>; }
+    close IN;
 
     # Remove comments in a simple-minded way that will work fine for our files.
     # Could do this a fancier way if we were worried about arbitrary CSS source.
@@ -72,13 +65,8 @@ for my $in (@ARGV) {
 
     # Write out a C array of the characters.
     my $length = length $text;
-    if ($in =~ /(\w+)\.css.out$/) {
-        print HEADER "extern const char ${name}UserAgentStyleSheet[${length}];\n";
-        print OUT "extern const char ${name}UserAgentStyleSheet[${length}] = {\n";
-    } else {
-        print HEADER "extern const char ${name}JavaScript[${length}];\n";
-        print OUT "extern const char ${name}JavaScript[${length}] = {\n";
-    }
+    print HEADER "extern const char ${name}UserAgentStyleSheet[${length}];\n";
+    print OUT "extern const char ${name}UserAgentStyleSheet[${length}] = {\n";
     my $i = 0;
     while ($i < $length) {
         print OUT "    ";

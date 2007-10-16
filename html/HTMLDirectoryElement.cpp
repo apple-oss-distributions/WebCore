@@ -1,7 +1,8 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,7 +20,6 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #include "config.h"
 #include "HTMLDirectoryElement.h"
 
@@ -29,15 +29,19 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLDirectoryElement::HTMLDirectoryElement(const QualifiedName& tagName, Document* document)
-    : HTMLElement(tagName, document)
+HTMLDirectoryElement::HTMLDirectoryElement(Document* doc)
+    : HTMLElement(HTMLNames::dirTag, doc)
 {
-    ASSERT(hasTagName(dirTag));
 }
 
-PassRefPtr<HTMLDirectoryElement> HTMLDirectoryElement::create(const QualifiedName& tagName, Document* document)
+bool HTMLDirectoryElement::compact() const
 {
-    return adoptRef(new HTMLDirectoryElement(tagName, document));
+    return !getAttribute(compactAttr).isNull();
+}
+
+void HTMLDirectoryElement::setCompact(bool b)
+{
+    setAttribute(compactAttr, b ? "" : 0);
 }
 
 }

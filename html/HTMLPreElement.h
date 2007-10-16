@@ -1,7 +1,8 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -27,15 +28,21 @@
 
 namespace WebCore {
 
-class HTMLPreElement FINAL : public HTMLElement {
+class HTMLPreElement : public HTMLElement {
 public:
-    static PassRefPtr<HTMLPreElement> create(const QualifiedName&, Document*);
-
-private:
     HTMLPreElement(const QualifiedName&, Document*);
 
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusRequired; }
+    virtual int tagPriority() const { return 5; }
+
+    bool mapToEntry(const QualifiedName&, MappedAttributeEntry&) const;
+    void parseMappedAttribute(MappedAttribute*);
+
+    int width() const;
+    void setWidth(int w);
+
+    bool wrap() const;
+    void setWrap(bool b);
 };
 
 } // namespace WebCore

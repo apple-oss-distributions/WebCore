@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,33 +26,41 @@
 #ifndef IconLoader_h
 #define IconLoader_h
 
-#include "CachedRawResourceClient.h"
-#include "CachedResourceHandle.h"
-#include <wtf/Forward.h>
+#include "KURL.h"
+#include "SubresourceLoaderClient.h"
+#include <memory>
 #include <wtf/Noncopyable.h>
-#include <wtf/RefPtr.h>
+#include <wtf/PassRefPtr.h>
 
 namespace WebCore {
 
-class CachedRawResource;
 class Frame;
+class SharedBuffer;
 
-class IconLoader : private CachedRawResourceClient {
-    WTF_MAKE_NONCOPYABLE(IconLoader); WTF_MAKE_FAST_ALLOCATED;
+class IconLoader : private SubresourceLoaderClient, Noncopyable {
 public:
-    static PassOwnPtr<IconLoader> create(Frame*);
-    virtual ~IconLoader();
-
+    static std::auto_ptr<IconLoader> create(Frame*);
+    ~IconLoader();
+    
     void startLoading();
     void stopLoading();
 
 private:
-    explicit IconLoader(Frame*);
-    virtual void notifyFinished(CachedResource*);
+    IconLoader(Frame*);
+
+    virtual void didReceiveResponse(SubresourceLoader*, const ResourceResponse&);
+    virtual void didReceiveData(SubresourceLoader*, const char*, int);
+    virtual void didFinishLoading(SubresourceLoader*);
+    virtual void didFail(SubresourceLoader*, const ResourceError&);
+
+    void finishLoading(const KURL&, PassRefPtr<SharedBuffer> data);
+    void clearLoadingState();
 
     Frame* m_frame;
-    CachedResourceHandle<CachedRawResource> m_resource;
-};
+
+    RefPtr<SubresourceLoader> m_resourceLoader;
+    bool m_loadIsInProgress;
+}; // class IconLoader
 
 } // namespace WebCore
 

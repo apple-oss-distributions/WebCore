@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,38 +26,23 @@
 #ifndef HTMLKeygenElement_h
 #define HTMLKeygenElement_h
 
-#include "HTMLFormControlElementWithState.h"
+#include "HTMLSelectElement.h"
 
 namespace WebCore {
 
-class HTMLSelectElement;
-
-class HTMLKeygenElement FINAL : public HTMLFormControlElementWithState {
+class HTMLKeygenElement : public HTMLSelectElement {
 public:
-    static PassRefPtr<HTMLKeygenElement> create(const QualifiedName&, Document*, HTMLFormElement*);
+    HTMLKeygenElement(Document*, HTMLFormElement* = 0);
 
-    virtual bool willValidate() const { return false; }
+    virtual int tagPriority() const { return 0; }
+    virtual const AtomicString& type() const;
+    virtual bool isEnumeratable() const { return false; }
+    virtual void parseMappedAttribute(MappedAttribute*);
+    virtual bool appendFormData(FormDataList&, bool);
 
 private:
-    HTMLKeygenElement(const QualifiedName&, Document*, HTMLFormElement*);
-
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
-
-    virtual bool canStartSelection() const { return false; }
-
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-
-    virtual bool appendFormData(FormDataList&, bool);
-    virtual const AtomicString& formControlType() const;
-    virtual bool isOptionalFormControl() const { return false; }
-
-    virtual bool isEnumeratable() const { return true; }
-    virtual bool supportLabels() const OVERRIDE { return true; }
-
-    virtual void reset();
-    virtual bool shouldSaveAndRestoreFormControlState() const OVERRIDE;
-
-    HTMLSelectElement* shadowSelect() const;
+    AtomicString m_challenge;
+    AtomicString m_keyType;
 };
 
 } //namespace

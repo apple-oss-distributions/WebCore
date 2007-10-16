@@ -17,38 +17,24 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "GraphicsContext.h"
 #include <wtf/Noncopyable.h>
 
-OBJC_CLASS NSGraphicsContext;
+class NSGraphicsContext;
 
 namespace WebCore {
 
+class GraphicsContext;
+    
 // This class automatically saves and restores the current NSGraphicsContext for
 // functions which call out into AppKit and rely on the currentContext being set
-class LocalCurrentGraphicsContext {
-    WTF_MAKE_NONCOPYABLE(LocalCurrentGraphicsContext);
+class LocalCurrentGraphicsContext : Noncopyable {
 public:
     LocalCurrentGraphicsContext(GraphicsContext* graphicsContext);
     ~LocalCurrentGraphicsContext();
-    CGContextRef cgContext();
+
 private:
     GraphicsContext* m_savedGraphicsContext;
     NSGraphicsContext* m_savedNSGraphicsContext;
-    bool m_didSetGraphicsContext;
-};
-
-class ContextContainer {
-    WTF_MAKE_NONCOPYABLE(ContextContainer);
-public:
-    ContextContainer(GraphicsContext* graphicsContext)
-        : m_graphicsContext(graphicsContext->platformContext())
-    {
-    }
-
-    CGContextRef context() { return m_graphicsContext; }
-private:
-    PlatformGraphicsContext* m_graphicsContext;
 };
 
 }

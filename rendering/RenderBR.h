@@ -1,4 +1,6 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 2000 Lars Knoll (knoll@kde.org)
  *
  * This library is free software; you can redistribute it and/or
@@ -33,48 +35,36 @@ class Position;
 
 class RenderBR : public RenderText {
 public:
-    explicit RenderBR(Node*);
+    RenderBR(Node*);
     virtual ~RenderBR();
 
     virtual const char* renderName() const { return "RenderBR"; }
  
-    virtual LayoutRect selectionRectForRepaint(const RenderLayerModelObject* /*repaintContainer*/, bool /*clipToVisibleContent*/) OVERRIDE { return LayoutRect(); }
+    virtual IntRect selectionRect(bool) { return IntRect(); }
 
-    virtual float width(unsigned /*from*/, unsigned /*len*/, const Font&, float /*xPos*/, HashSet<const SimpleFontData*>* = 0 /*fallbackFonts*/ , GlyphOverflow* = 0) const { return 0; }
-    virtual float width(unsigned /*from*/, unsigned /*len*/, float /*xpos*/, bool = false /*firstLine*/, HashSet<const SimpleFontData*>* = 0 /*fallbackFonts*/, GlyphOverflow* = 0) const { return 0; }
+    virtual unsigned width(unsigned /*from*/, unsigned /*len*/, const Font&, int /*xpos*/) const { return 0; }
+    virtual unsigned width(unsigned /*from*/, unsigned /*len*/, int /*xpos*/, bool /*firstLine = false*/) const { return 0; }
 
-    int lineHeight(bool firstLine) const;
+    virtual short lineHeight(bool firstLine, bool isRootLineBox = false) const;
+    virtual short baselinePosition(bool firstLine, bool isRootLineBox = false) const;
+    virtual void setStyle(RenderStyle*);
 
     // overrides
+    virtual InlineBox* createInlineBox(bool, bool, bool isOnlyRun = false);
+
     virtual bool isBR() const { return true; }
 
     virtual int caretMinOffset() const;
     virtual int caretMaxOffset() const;
+    virtual unsigned caretMaxRenderedOffset() const;
 
-    virtual VisiblePosition positionForPoint(const LayoutPoint&);
+    virtual VisiblePosition positionForCoordinates(int x, int y);
 
-protected:
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+    virtual InlineBox* inlineBox(int offset, EAffinity = UPSTREAM);
 
 private:
-    mutable int m_lineHeight;
+    mutable short m_lineHeight;
 };
-
-
-inline RenderBR* toRenderBR(RenderObject* object)
-{ 
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isBR());
-    return static_cast<RenderBR*>(object);
-}
-
-inline const RenderBR* toRenderBR(const RenderObject* object)
-{ 
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isBR());
-    return static_cast<const RenderBR*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderBR(const RenderBR*);
 
 } // namespace WebCore
 

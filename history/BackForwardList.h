@@ -1,7 +1,5 @@
 /*
- * Copyright (C) 2006, 2010 Apple Inc. All rights reserved.
- * Copyright (C) 2008 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
- * Copyright (C) 2009 Google, Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,46 +26,63 @@
 #ifndef BackForwardList_h
 #define BackForwardList_h
 
+#include "Shared.h"
 #include <wtf/Forward.h>
-#include <wtf/RefCounted.h>
+#include <wtf/HashSet.h>
+#include <wtf/Vector.h>
 
 namespace WebCore {
 
 class HistoryItem;
+class Page;
 
-// FIXME: Rename this class to BackForwardClient, and rename the
-// getter in Page accordingly.
-class BackForwardList : public RefCounted<BackForwardList> {
+typedef Vector<RefPtr<HistoryItem> > HistoryItemVector;
+typedef HashSet<RefPtr<HistoryItem> > HistoryItemHashSet;
+
+class BackForwardList : public Shared<BackForwardList> {
 public: 
-    virtual ~BackForwardList()
-    {
-    }
-
-    virtual void addItem(PassRefPtr<HistoryItem>) = 0;
-
-    virtual void goToItem(HistoryItem*) = 0;
+    BackForwardList(Page*);
+    ~BackForwardList();
+    
+    Page* page() { return m_page; }
+    
+    void addItem(PassRefPtr<HistoryItem>);
+    void goBack();
+    void goForward();
+    void goToItem(HistoryItem*);
         
-    virtual HistoryItem* itemAtIndex(int) = 0;
-    virtual int backListCount() = 0;
-    virtual int forwardListCount() = 0;
+    HistoryItem* backItem();
+    HistoryItem* currentItem();
+    HistoryItem* forwardItem();
+    HistoryItem* itemAtIndex(int);
 
-    virtual bool isActive() = 0;
+    void backListWithLimit(int, HistoryItemVector&);
+    void forwardListWithLimit(int, HistoryItemVector&);
 
-    virtual void close() = 0;
+    int capacity();
+    void setCapacity(int);
+    bool enabled();
+    void setEnabled(bool);
+    int backListCount();
+    int forwardListCount();
+    bool containsItem(HistoryItem*);
 
-#if PLATFORM(IOS)
-    virtual unsigned current() = 0;
-    virtual void setCurrent(unsigned newCurrent) = 0;
-    virtual bool clearAllPageCaches() = 0;
-#endif
+    void close();
+    bool closed();
+    
+    void removeItem(HistoryItem*);
+    HistoryItemVector& entries();
+    
+private:
+    Page* m_page;
+    HistoryItemVector m_entries;
+    HistoryItemHashSet m_entryHash;
+    unsigned m_current;
+    unsigned m_capacity;
+    bool m_closed;
+    bool m_enabled;
+}; //class BackForwardList
+    
+}; //namespace WebCore
 
-    // FIXME: Delete these once all callers are using BackForwardController
-    // instead of calling this directly.
-    HistoryItem* backItem() { return itemAtIndex(-1); }
-    HistoryItem* currentItem() { return itemAtIndex(0); }
-    HistoryItem* forwardItem() { return itemAtIndex(1); }
-};
-
-} // namespace WebCore
-
-#endif // BackForwardList_h
+#endif //BACKFORWARDLIST_H

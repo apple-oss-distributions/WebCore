@@ -26,11 +26,8 @@
 #ifndef ProgressTracker_h
 #define ProgressTracker_h
 
-#include "Timer.h"
-#include <wtf/Forward.h>
 #include <wtf/HashMap.h>
 #include <wtf/Noncopyable.h>
-#include <wtf/OwnPtr.h>
 #include <wtf/RefPtr.h>
 
 namespace WebCore {
@@ -39,13 +36,12 @@ class Frame;
 class ResourceResponse;
 struct ProgressItem;
 
-class ProgressTracker {
-    WTF_MAKE_NONCOPYABLE(ProgressTracker); WTF_MAKE_FAST_ALLOCATED;
+class ProgressTracker : Noncopyable {
 public:
+    ProgressTracker();
     ~ProgressTracker();
-
-    static PassOwnPtr<ProgressTracker> create();
-    static unsigned long createUniqueIdentifier();
+    
+    unsigned long createUniqueIdentifier();
 
     double estimatedProgress() const;
 
@@ -59,17 +55,11 @@ public:
     long long totalPageAndResourceBytesToLoad() const { return m_totalPageAndResourceBytesToLoad; }
     long long totalBytesReceived() const { return m_totalBytesReceived; }
 
-    bool isMainLoadProgressing() const;
-
 private:
-    ProgressTracker();
-
     void reset();
     void finalProgressComplete();
-
-    void progressHeartbeatTimerFired(Timer<ProgressTracker>*);
     
-    static unsigned long s_uniqueIdentifier;
+    unsigned long m_uniqueIdentifier;
     
     long long m_totalPageAndResourceBytesToLoad;
     long long m_totalBytesReceived;
@@ -82,11 +72,7 @@ private:
     RefPtr<Frame> m_originatingProgressFrame;
     
     int m_numProgressTrackedFrames;
-    HashMap<unsigned long, OwnPtr<ProgressItem> > m_progressItems;
-
-    Timer<ProgressTracker> m_progressHeartbeatTimer;
-    unsigned m_heartbeatsWithNoProgress;
-    long long m_totalBytesReceivedBeforePreviousHeartbeat;
+    HashMap<unsigned long, ProgressItem*> m_progressItems;
 };
     
 }

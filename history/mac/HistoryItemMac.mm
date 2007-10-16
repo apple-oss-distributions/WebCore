@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,9 +26,10 @@
 #include "config.h"
 #include "HistoryItem.h"
 
-#include <wtf/text/StringHash.h>
-
 namespace WebCore {
+
+// Notification strings.
+NSString *WebHistoryItemChangedNotification = @"WebHistoryItemChangedNotification";
 
 id HistoryItem::viewState() const
 {
@@ -51,17 +52,14 @@ id HistoryItem::getTransientProperty(const String& key) const
 
 void HistoryItem::setTransientProperty(const String& key, id value)
 {
-    if (!value) {
-        if (m_transientProperties) {
-            m_transientProperties->remove(key);
-            if (m_transientProperties->isEmpty())
-                m_transientProperties.clear();
-        }
-    } else {
-        if (!m_transientProperties)
-            m_transientProperties = adoptPtr(new HashMap<String, RetainPtr<id> >);
+    if (!m_transientProperties)
+        m_transientProperties.set(new HashMap<String, RetainPtr<id> >);
+    if (value == nil)
+        m_transientProperties->remove(key);
+    else
         m_transientProperties->set(key, value);
-    }
 }
 
 } // namespace WebCore
+
+

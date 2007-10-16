@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,20 +18,21 @@
  * Boston, MA 02110-1301, USA.
  */
 
-// Introduced in DOM Level 2:
-[
-    ImplementationLacksVTable
-] interface RGBColor {
-    readonly attribute CSSPrimitiveValue  red;
-    readonly attribute CSSPrimitiveValue  green;
-    readonly attribute CSSPrimitiveValue  blue;
+module css {
 
-    // WebKit extensions
-#if !defined(LANGUAGE_JAVASCRIPT) || !LANGUAGE_JAVASCRIPT
-    readonly attribute CSSPrimitiveValue  alpha;
-#endif
-#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
-    readonly attribute Color              color;
-#endif
-};
+    // Introduced in DOM Level 2:
+    interface [ObjCCustomImplementation] RGBColor {
+        readonly attribute CSSPrimitiveValue  red;
+        readonly attribute CSSPrimitiveValue  green;
+        readonly attribute CSSPrimitiveValue  blue;
 
+        // WebKit extensions
+#if !defined(LANGUAGE_JAVASCRIPT)
+        readonly attribute CSSPrimitiveValue  alpha;
+#endif
+#if defined(LANGUAGE_OBJECTIVE_C)
+        readonly attribute Color              color;
+#endif
+    };
+
+}

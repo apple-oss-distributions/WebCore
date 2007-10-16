@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -27,12 +27,19 @@
 
 namespace WebCore {
 
-class HTMLOListElement;
 class RenderListMarker;
 
 class RenderListItem : public RenderBlock {
 public:
-    explicit RenderListItem(Element*);
+    RenderListItem(Node*);
+
+    virtual const char* renderName() const { return "RenderListItem"; }
+
+    virtual bool isListItem() const { return true; }
+    
+    virtual void destroy();
+
+    virtual void setStyle(RenderStyle*);
 
     int value() const { if (!m_isValueUpToDate) updateValueNow(); return m_value; }
     void updateValue();
@@ -42,62 +49,33 @@ public:
     void setExplicitValue(int value);
     void clearExplicitValue();
 
+    virtual bool isEmpty() const;
+    virtual void paint(PaintInfo&, int tx, int ty);
+
+    virtual void layout();
+    virtual void calcPrefWidths();
+
+    virtual void positionListMarker();
+
     void setNotInList(bool notInList) { m_notInList = notInList; }
     bool notInList() const { return m_notInList; }
 
     const String& markerText() const;
-    String markerTextWithSuffix() const;
-
-    void updateListMarkerNumbers();
-
-    static void updateItemValuesForOrderedList(const HTMLOListElement*);
-    static unsigned itemCountForOrderedList(const HTMLOListElement*);
 
 private:
-    virtual const char* renderName() const { return "RenderListItem"; }
-
-    virtual bool isListItem() const { return true; }
-    
-    virtual void willBeDestroyed();
-
-    virtual void insertedIntoTree() OVERRIDE;
-    virtual void willBeRemovedFromTree() OVERRIDE;
-
-    virtual bool isEmpty() const;
-    virtual void paint(PaintInfo&, const LayoutPoint&);
-
-    virtual void layout();
-
-    void positionListMarker();
-
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
-
-    virtual bool requiresForcedStyleRecalcPropagation() const { return true; }
-
-    virtual void addOverflowFromChildren();
-
     void updateMarkerLocation();
     inline int calcValue() const;
     void updateValueNow() const;
     void explicitValueChanged();
 
-    int m_explicitValue;
     RenderListMarker* m_marker;
+    int m_explicitValue;
     mutable int m_value;
 
     bool m_hasExplicitValue : 1;
     mutable bool m_isValueUpToDate : 1;
     bool m_notInList : 1;
 };
-
-inline RenderListItem* toRenderListItem(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isListItem());
-    return static_cast<RenderListItem*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderListItem(const RenderListItem*);
 
 } // namespace WebCore
 

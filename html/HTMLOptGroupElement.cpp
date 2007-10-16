@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *           (C) 2006 Alexey Proskuryakov (ap@nypop.com)
  *
  * This library is free software; you can redistribute it and/or
@@ -25,115 +27,138 @@
 #include "config.h"
 #include "HTMLOptGroupElement.h"
 
+#include "CSSStyleSelector.h"
 #include "Document.h"
 #include "HTMLNames.h"
 #include "HTMLSelectElement.h"
 #include "RenderMenuList.h"
-#include "NodeRenderStyle.h"
-#include "NodeRenderingContext.h"
-#include "StyleResolver.h"
-#include <wtf/StdLibExtras.h>
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLOptGroupElement::HTMLOptGroupElement(const QualifiedName& tagName, Document* document)
-    : HTMLElement(tagName, document)
+HTMLOptGroupElement::HTMLOptGroupElement(Document* doc, HTMLFormElement* f)
+    : HTMLGenericFormElement(optgroupTag, doc, f)
+    , m_style(0)
 {
-    ASSERT(hasTagName(optgroupTag));
-    setHasCustomStyleCallbacks();
-}
-
-PassRefPtr<HTMLOptGroupElement> HTMLOptGroupElement::create(const QualifiedName& tagName, Document* document)
-{
-    return adoptRef(new HTMLOptGroupElement(tagName, document));
-}
-
-bool HTMLOptGroupElement::isDisabledFormControl() const
-{
-    return fastHasAttribute(disabledAttr);
-}
-
-bool HTMLOptGroupElement::supportsFocus() const
-{
-    return HTMLElement::supportsFocus();
 }
 
 bool HTMLOptGroupElement::isFocusable() const
 {
-    // Optgroup elements do not have a renderer so we check the renderStyle instead.
-    return supportsFocus() && renderStyle() && renderStyle()->display() != NONE;
+    return false;
 }
 
-const AtomicString& HTMLOptGroupElement::formControlType() const
+const AtomicString& HTMLOptGroupElement::type() const
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, optgroup, ("optgroup", AtomicString::ConstructFromLiteral));
+    static const AtomicString optgroup("optgroup");
     return optgroup;
 }
 
-void HTMLOptGroupElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+bool HTMLOptGroupElement::insertBefore(PassRefPtr<Node> newChild, Node* refChild, ExceptionCode& ec)
 {
-    recalcSelectOptions();
-    HTMLElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    bool result = HTMLGenericFormElement::insertBefore(newChild, refChild, ec);
+    if (result)
+        recalcSelectOptions();
+    return result;
 }
 
-void HTMLOptGroupElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+bool HTMLOptGroupElement::replaceChild(PassRefPtr<Node> newChild, Node* oldChild, ExceptionCode& ec)
 {
-    HTMLElement::parseAttribute(name, value);
-    recalcSelectOptions();
+    bool result = HTMLGenericFormElement::replaceChild(newChild, oldChild, ec);
+    if (result)
+        recalcSelectOptions();
+    return result;
+}
 
-    if (name == disabledAttr)
-        didAffectSelector(AffectedSelectorDisabled | AffectedSelectorEnabled);
+bool HTMLOptGroupElement::removeChild(Node* oldChild, ExceptionCode& ec)
+{
+    bool result = HTMLGenericFormElement::removeChild(oldChild, ec);
+    if (result)
+        recalcSelectOptions();
+    return result;
+}
+
+bool HTMLOptGroupElement::appendChild(PassRefPtr<Node> newChild, ExceptionCode& ec)
+{
+    bool result = HTMLGenericFormElement::appendChild(newChild, ec);
+    if (result)
+        recalcSelectOptions();
+    return result;
+}
+
+ContainerNode* HTMLOptGroupElement::addChild(PassRefPtr<Node> newChild)
+{
+    ContainerNode* result = HTMLGenericFormElement::addChild(newChild);
+    if (result)
+        recalcSelectOptions();
+    return result;
+}
+
+void HTMLOptGroupElement::parseMappedAttribute(MappedAttribute *attr)
+{
+    HTMLGenericFormElement::parseMappedAttribute(attr);
+    recalcSelectOptions();
 }
 
 void HTMLOptGroupElement::recalcSelectOptions()
 {
-    ContainerNode* select = parentNode();
+    Node *select = parentNode();
     while (select && !select->hasTagName(selectTag))
         select = select->parentNode();
     if (select)
-        toHTMLSelectElement(select)->setRecalcListItems();
+        static_cast<HTMLSelectElement*>(select)->setRecalcListItems();
 }
 
-void HTMLOptGroupElement::attach(const AttachContext& context)
+String HTMLOptGroupElement::label() const
 {
-    HTMLElement::attach(context);
-    // If after attaching nothing called styleForRenderer() on this node we
-    // manually cache the value. This happens if our parent doesn't have a
-    // renderer like <optgroup> or if it doesn't allow children like <select>.
-    if (!m_style && parentNode()->renderStyle())
-        updateNonRenderStyle();
+    return getAttribute(labelAttr);
 }
 
-void HTMLOptGroupElement::detach(const AttachContext& context)
+void HTMLOptGroupElement::setLabel(const String &value)
 {
-    m_style.clear();
-    HTMLElement::detach(context);
+    setAttribute(labelAttr, value);
 }
 
-void HTMLOptGroupElement::updateNonRenderStyle()
+bool HTMLOptGroupElement::checkDTD(const Node* newChild)
 {
-    m_style = document()->ensureStyleResolver()->styleForElement(this);
+    // Make sure to keep this in sync with <select> (other than not allowing an optgroup).
+    return newChild->isTextNode() || newChild->hasTagName(HTMLNames::optionTag) || newChild->hasTagName(HTMLNames::hrTag) || newChild->hasTagName(HTMLNames::scriptTag);
 }
 
-RenderStyle* HTMLOptGroupElement::nonRendererStyle() const
+void HTMLOptGroupElement::attach()
 {
-    return m_style.get();
+    if (parentNode()->renderStyle()) {
+        RenderStyle* style = styleForRenderer(0);
+        setRenderStyle(style);
+        style->deref(document()->renderArena());
+    }
+    HTMLGenericFormElement::attach();
 }
 
-PassRefPtr<RenderStyle> HTMLOptGroupElement::customStyleForRenderer()
+void HTMLOptGroupElement::detach()
 {
-    // styleForRenderer is called whenever a new style should be associated
-    // with an Element so now is a good time to update our cached style.
-    updateNonRenderStyle();
-    return m_style;
+    if (m_style) {
+        m_style->deref(document()->renderArena());
+        m_style = 0;
+    }
+    HTMLGenericFormElement::detach();
 }
 
-String HTMLOptGroupElement::groupLabelText() const
+void HTMLOptGroupElement::setRenderStyle(RenderStyle* newStyle)
 {
-    String itemText = document()->displayStringModifiedByEncoding(getAttribute(labelAttr));
+    RenderStyle* oldStyle = m_style;
+    m_style = newStyle;
+    if (newStyle)
+        newStyle->ref();
+    if (oldStyle)
+        oldStyle->deref(document()->renderArena());
+}
+
+String HTMLOptGroupElement::groupLabelText()
+{
+    DeprecatedString itemText = getAttribute(labelAttr).deprecatedString();
     
+    itemText.replace('\\', document()->backslashAsCurrencySymbol());
     // In WinIE, leading and trailing whitespace is ignored in options and optgroups. We match this behavior.
     itemText = itemText.stripWhiteSpace();
     // We want to collapse our whitespace too.  This will match other browsers.
@@ -141,25 +166,5 @@ String HTMLOptGroupElement::groupLabelText() const
         
     return itemText;
 }
-    
-HTMLSelectElement* HTMLOptGroupElement::ownerSelectElement() const
-{
-    ContainerNode* select = parentNode();
-    while (select && !select->hasTagName(selectTag))
-        select = select->parentNode();
-    
-    if (!select)
-       return 0;
-    
-    return toHTMLSelectElement(select);
-}
-
-void HTMLOptGroupElement::accessKeyAction(bool)
-{
-    HTMLSelectElement* select = ownerSelectElement();
-    // send to the parent to bring focus to the list box
-    if (select && !select->focused())
-        select->accessKeyAction(false);
-}
-
+ 
 } // namespace

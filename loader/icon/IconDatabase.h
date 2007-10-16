@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
- * Copyright (C) 2007 Justin Haygood (jhaygood@reaktix.com)
+ * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,21 +26,18 @@
 #ifndef IconDatabase_h
 #define IconDatabase_h
 
-#include "IconDatabaseBase.h"
+#if ENABLE(ICONDATABASE)
+#include "SQLDatabase.h"
+#endif
+
+#include "StringHash.h"
+#if ENABLE(ICONDATABASE)
+#include "Threading.h"
+#endif
 #include "Timer.h"
-#include <wtf/HashCountedSet.h>
-#include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/text/StringHash.h>
-#include <wtf/text/WTFString.h>
-
-#if ENABLE(ICONDATABASE)
-#include "SQLiteDatabase.h"
-#include <wtf/Threading.h>
-#endif // ENABLE(ICONDATABASE)
 
 namespace WebCore { 
 
@@ -60,52 +56,41 @@ class SharedBuffer;
 class SQLTransaction;
 #endif
 
-#if !ENABLE(ICONDATABASE)
-// For builds with IconDatabase disabled, they'll just use a default derivation of IconDatabaseBase. Which does nothing.
-class IconDatabase : public IconDatabaseBase {
-public:
-    static PassOwnPtr<IconDatabase> create() { return adoptPtr(new IconDatabase); }
-    static void delayDatabaseCleanup() { }
-    static void allowDatabaseCleanup() { }
-    static void checkIntegrityBeforeOpening() { }
-    static String defaultDatabaseFilename() { return "WebpageIcons.db"; }
+enum IconLoadDecision {
+    IconLoadYes,
+    IconLoadNo,
+    IconLoadUnknown
 };
-#else 
 
-class IconDatabase : public IconDatabaseBase {
-    WTF_MAKE_FAST_ALLOCATED;
-    
+class IconDatabase : Noncopyable {
+
 // *** Main Thread Only ***
 public:
-    static PassOwnPtr<IconDatabase> create() { return adoptPtr(new IconDatabase); }
-    ~IconDatabase();
+    void setClient(IconDatabaseClient*);
 
-    virtual void setClient(IconDatabaseClient*);
-
-    virtual bool open(const String& directory, const String& filename);
-    virtual void close();
+    bool open(const String& path);
+    void close();
             
-    virtual void removeAllIcons();
+    void removeAllIcons();
 
+    Image* iconForPageURL(const String&, const IntSize&, bool cache = true);
     void readIconForPageURLFromDisk(const String&);
+    String iconURLForPageURL(const String&);
+    Image* defaultIcon(const IntSize&);
 
-    virtual Image* defaultIcon(const IntSize&);
+    void retainIconForPageURL(const String&);
+    void releaseIconForPageURL(const String&);
 
-    virtual void retainIconForPageURL(const String&);
-    virtual void releaseIconForPageURL(const String&);
-    virtual void setIconDataForIconURL(PassRefPtr<SharedBuffer> data, const String&);
-    virtual void setIconURLForPageURL(const String& iconURL, const String& pageURL);
+    void setIconDataForIconURL(PassRefPtr<SharedBuffer> data, const String&);
+    void setIconURLForPageURL(const String& iconURL, const String& pageURL);
 
-    virtual Image* synchronousIconForPageURL(const String&, const IntSize&);
-    virtual PassNativeImagePtr synchronousNativeIconForPageURL(const String& pageURLOriginal, const IntSize&);
-    virtual String synchronousIconURLForPageURL(const String&);
-    virtual bool synchronousIconDataKnownForIconURL(const String&);
-    virtual IconLoadDecision synchronousLoadDecisionForIconURL(const String&, DocumentLoader*);    
+    IconLoadDecision loadDecisionForIconURL(const String&, DocumentLoader*);
+    bool iconDataKnownForIconURL(const String&);
     
-    virtual void setEnabled(bool);
-    virtual bool isEnabled() const;
+    void setEnabled(bool enabled);
+    bool isEnabled() const;
     
-    virtual void setPrivateBrowsingEnabled(bool flag);
+    void setPrivateBrowsingEnabled(bool flag);
     bool isPrivateBrowsingEnabled() const;
     
     static void delayDatabaseCleanup();
@@ -113,60 +98,60 @@ public:
     static void checkIntegrityBeforeOpening();
         
     // Support for WebCoreStatistics in WebKit
-    virtual size_t pageURLMappingCount();
-    virtual size_t retainedPageURLCount();
-    virtual size_t iconRecordCount();
-    virtual size_t iconRecordCountWithData();
+    size_t pageURLMappingCount();
+    size_t retainedPageURLCount();
+    size_t iconRecordCount();
+    size_t iconRecordCountWithData();
 
 private:
     IconDatabase();
-    friend IconDatabaseBase& iconDatabase();
+    ~IconDatabase();
+    friend IconDatabase* iconDatabase();
 
-    static void notifyPendingLoadDecisionsOnMainThread(void*);
-    void notifyPendingLoadDecisions();
+#if ENABLE(ICONDATABASE)
+    // This is called on the main thread via the callOnMainThread() function which currently
+    // doesn't have any way to allow it to be an instance method, which it should be
+    static void notifyPendingLoadDecisions();
+    
+    void notifyPendingLoadDecisionsInternal();
 
     void wakeSyncThread();
     void scheduleOrDeferSyncTimer();
+    OwnPtr<Timer<IconDatabase> > m_syncTimer;
     void syncTimerFired(Timer<IconDatabase>*);
     
-    Timer<IconDatabase> m_syncTimer;
-    ThreadIdentifier m_syncThread;
+    pthread_t m_syncThread;
     bool m_syncThreadRunning;
     
     HashSet<RefPtr<DocumentLoader> > m_loadersPendingDecision;
 
-    RefPtr<IconRecord> m_defaultIconRecord;
-
-    static void performScheduleOrDeferSyncTimerOnMainThread(void*);
-    void performScheduleOrDeferSyncTimer();
-
-    bool m_scheduleOrDeferSyncTimerRequested;
+    IconRecord* m_defaultIconRecord;
+#endif // ENABLE(ICONDATABASE)
 
 // *** Any Thread ***
 public:
-    virtual bool isOpen() const;
-    virtual String databasePath() const;
+    bool isOpen() const;
+    String databasePath() const;
     static String defaultDatabaseFilename();
 
 private:
-    PassRefPtr<IconRecord> getOrCreateIconRecord(const String& iconURL);
+#if ENABLE(ICONDATABASE)
+    IconRecord* getOrCreateIconRecord(const String& iconURL);
     PageURLRecord* getOrCreatePageURLRecord(const String& pageURL);
     
     bool m_isEnabled;
     bool m_privateBrowsingEnabled;
-
+    
     mutable Mutex m_syncLock;
     ThreadCondition m_syncCondition;
     String m_databaseDirectory;
     // Holding m_syncLock is required when accessing m_completeDatabasePath
     String m_completeDatabasePath;
-
+    
     bool m_threadTerminationRequested;
     bool m_removeIconsRequested;
     bool m_iconURLImportComplete;
-    bool m_syncThreadHasWorkToDo;
-    bool m_disabledSuddenTerminationForSyncThread;
-
+    
     Mutex m_urlAndIconLock;
     // Holding m_urlAndIconLock is required when accessing any of the following data structures or the objects they contain
     HashMap<String, IconRecord*> m_iconURLToRecordMap;
@@ -184,26 +169,24 @@ private:
     HashSet<String> m_pageURLsInterestedInIcons;
     HashSet<IconRecord*> m_iconsPendingReading;
 
-    Mutex m_urlsToRetainOrReleaseLock;
-    // Holding m_urlsToRetainOrReleaseLock is required when accessing any of the following data structures.
-    HashCountedSet<String> m_urlsToRetain;
-    HashCountedSet<String> m_urlsToRelease;
-    bool m_retainOrReleaseIconRequested;
-
 // *** Sync Thread Only ***
 public:
-    virtual bool shouldStopThreadActivity() const;
+    // Should be used only on the sync thread and only by the Safari 2 Icons import procedure
+    void importIconURLForPageURL(const String& iconURL, const String& pageURL);
+    void importIconDataForIconURL(PassRefPtr<SharedBuffer> data, const String& iconURL);
+    
+    bool shouldStopThreadActivity() const;
 
 private:    
-    static void iconDatabaseSyncThreadStart(void *);
-    void iconDatabaseSyncThread();
+    static void* iconDatabaseSyncThreadStart(void *);
+    void* iconDatabaseSyncThread();
     
     // The following block of methods are called exclusively by the sync thread to manage i/o to and from the database
     // Each method should periodically monitor m_threadTerminationRequested when it makes sense to return early on shutdown
     void performOpenInitialization();
     bool checkIntegrity();
     void performURLImport();
-    void syncThreadMainLoop();
+    void* syncThreadMainLoop();
     bool readFromDatabase();
     bool writeToDatabase();
     void pruneUnretainedIcons();
@@ -211,12 +194,11 @@ private:
     void removeAllIconsOnThread();
     void deleteAllPreparedStatements();
     void* cleanupSyncThread();
-    void performRetainIconForPageURL(const String&, int retainCount);
-    void performReleaseIconForPageURL(const String&, int releaseCount);
-    
-    bool wasExcludedFromBackup();
-    void setWasExcludedFromBackup();
 
+    // Record (on disk) whether or not Safari 2-style icons were imported (once per dataabse)
+    bool imported();
+    void setImported(bool);
+    
     bool m_initialPruningComplete;
         
     void setIconURLForPageURLInSQLDatabase(const String&, const String&);
@@ -227,38 +209,36 @@ private:
     PassRefPtr<SharedBuffer> getImageDataForIconURLFromSQLDatabase(const String& iconURL);
     void removeIconFromSQLDatabase(const String& iconURL);
     void writeIconSnapshotToSQLDatabase(const IconSnapshot&);    
-
-    void performPendingRetainAndReleaseOperations();
-
-    // Methods to dispatch client callbacks on the main thread
-    void dispatchDidImportIconURLForPageURLOnMainThread(const String&);
-    void dispatchDidImportIconDataForPageURLOnMainThread(const String&);
-    void dispatchDidRemoveAllIconsOnMainThread();
-    void dispatchDidFinishURLImportOnMainThread();
     
     // The client is set by the main thread before the thread starts, and from then on is only used by the sync thread
     IconDatabaseClient* m_client;
     
-    SQLiteDatabase m_syncDB;
+    SQLDatabase m_syncDB;
     
-    OwnPtr<SQLiteStatement> m_setIconIDForPageURLStatement;
-    OwnPtr<SQLiteStatement> m_removePageURLStatement;
-    OwnPtr<SQLiteStatement> m_getIconIDForIconURLStatement;
-    OwnPtr<SQLiteStatement> m_getImageDataForIconURLStatement;
-    OwnPtr<SQLiteStatement> m_addIconToIconInfoStatement;
-    OwnPtr<SQLiteStatement> m_addIconToIconDataStatement;
-    OwnPtr<SQLiteStatement> m_getImageDataStatement;
-    OwnPtr<SQLiteStatement> m_deletePageURLsForIconURLStatement;
-    OwnPtr<SQLiteStatement> m_deleteIconFromIconInfoStatement;
-    OwnPtr<SQLiteStatement> m_deleteIconFromIconDataStatement;
-    OwnPtr<SQLiteStatement> m_updateIconInfoStatement;
-    OwnPtr<SQLiteStatement> m_updateIconDataStatement;
-    OwnPtr<SQLiteStatement> m_setIconInfoStatement;
-    OwnPtr<SQLiteStatement> m_setIconDataStatement;
+    // Track whether the "Safari 2" import is complete and/or set in the database
+    bool m_imported;
+    bool m_isImportedSet;
+    
+    OwnPtr<SQLStatement> m_setIconIDForPageURLStatement;
+    OwnPtr<SQLStatement> m_removePageURLStatement;
+    OwnPtr<SQLStatement> m_getIconIDForIconURLStatement;
+    OwnPtr<SQLStatement> m_getImageDataForIconURLStatement;
+    OwnPtr<SQLStatement> m_addIconToIconInfoStatement;
+    OwnPtr<SQLStatement> m_addIconToIconDataStatement;
+    OwnPtr<SQLStatement> m_getImageDataStatement;
+    OwnPtr<SQLStatement> m_deletePageURLsForIconURLStatement;
+    OwnPtr<SQLStatement> m_deleteIconFromIconInfoStatement;
+    OwnPtr<SQLStatement> m_deleteIconFromIconDataStatement;
+    OwnPtr<SQLStatement> m_updateIconInfoStatement;
+    OwnPtr<SQLStatement> m_updateIconDataStatement;
+    OwnPtr<SQLStatement> m_setIconInfoStatement;
+    OwnPtr<SQLStatement> m_setIconDataStatement;
+#endif // ENABLE(ICONDATABASE)
 };
 
-#endif // !ENABLE(ICONDATABASE)
+// Function to obtain the global icon database.
+IconDatabase* iconDatabase();
 
 } // namespace WebCore
 
-#endif // IconDatabase_h
+#endif

@@ -1,3 +1,4 @@
+// -*- mode: c++; c-basic-offset: 4 -*-
 /*
  * Copyright (C) 2003, 2006 Apple Computer, Inc.  All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
@@ -29,17 +30,12 @@
 
 #include "ResourceRequestBase.h"
 
-QT_BEGIN_NAMESPACE
-class QNetworkRequest;
-QT_END_NAMESPACE
-
 namespace WebCore {
-class NetworkingContext;
 
-    class ResourceRequest : public ResourceRequestBase {
-    public:
+    struct ResourceRequest : ResourceRequestBase {
+
         ResourceRequest(const String& url) 
-            : ResourceRequestBase(KURL(ParsedURLString, url), UseProtocolCachePolicy)
+            : ResourceRequestBase(KURL(url.deprecatedString()), UseProtocolCachePolicy)
         {
         }
 
@@ -53,29 +49,17 @@ class NetworkingContext;
         {
             setHTTPReferrer(referrer);
         }
-
+        
         ResourceRequest()
             : ResourceRequestBase(KURL(), UseProtocolCachePolicy)
         {
         }
-
-        void updateFromDelegatePreservingOldHTTPBody(const ResourceRequest& delegateProvidedRequest) { *this = delegateProvidedRequest; }
-
-        QNetworkRequest toNetworkRequest(NetworkingContext* = 0) const;
-
+        
     private:
         friend class ResourceRequestBase;
 
-        void doUpdatePlatformRequest() { }
-        void doUpdateResourceRequest() { }
-        void doUpdatePlatformHTTPBody() { }
-        void doUpdateResourceHTTPBody() { }
-
-        PassOwnPtr<CrossThreadResourceRequestData> doPlatformCopyData(PassOwnPtr<CrossThreadResourceRequestData> data) const { return data; }
-        void doPlatformAdopt(PassOwnPtr<CrossThreadResourceRequestData>) { }
-    };
-
-    struct CrossThreadResourceRequestData : public CrossThreadResourceRequestDataBase {
+        void doUpdatePlatformRequest() {}
+        void doUpdateResourceRequest() {}
     };
 
 } // namespace WebCore

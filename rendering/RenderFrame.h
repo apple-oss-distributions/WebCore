@@ -1,7 +1,9 @@
 /*
+ * This file is part of the KDE project.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 2000 Simon Hausmann <hausmann@kde.org>
- * Copyright (C) 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,36 +25,25 @@
 #ifndef RenderFrame_h
 #define RenderFrame_h
 
-#include "RenderFrameBase.h"
+#include "HTMLFrameElement.h"
+#include "RenderPart.h"
 #include "RenderFrameSet.h"
 
 namespace WebCore {
 
-class HTMLFrameElement;
-
-class RenderFrame : public RenderFrameBase {
+class RenderFrame : public RenderPart {
 public:
-    explicit RenderFrame(HTMLFrameElement*);
+    RenderFrame(HTMLFrameElement*);
 
-    FrameEdgeInfo edgeInfo() const;
-
-private:
     virtual const char* renderName() const { return "RenderFrame"; }
     virtual bool isFrame() const { return true; }
 
-    virtual void updateFromElement();
+    HTMLFrameElement* element() const { return static_cast<HTMLFrameElement*>(RenderPart::element()); }
+
+    FrameEdgeInfo edgeInfo() const;
 
     virtual void viewCleared();
 };
-
-inline RenderFrame* toRenderFrame(RenderObject* object)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isFrame());
-    return static_cast<RenderFrame*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderFrame(const RenderFrame*);
 
 } // namespace WebCore
 

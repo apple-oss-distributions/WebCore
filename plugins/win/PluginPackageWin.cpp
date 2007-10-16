@@ -1,7 +1,5 @@
 /*
- * Copyright (C) 2006, 2008 Apple Inc. All rights reserved.
- * Copyright (C) 2008 Collabora, Ltd.  All rights reserved.
- * Copyright (C) 2009 Torch Mobile, Inc.  All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,221 +23,152 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-
 #include "config.h"
-#include "PluginPackage.h"
+#include "PluginPackageWin.h"
 
-#include "MIMETypeRegistry.h"
-#include "PluginDatabase.h"
-#include "PluginDebug.h"
 #include "Timer.h"
+#include "DeprecatedString.h"
 #include "npruntime_impl.h"
-#include <string.h>
-#include <wtf/OwnArrayPtr.h>
-#include <wtf/text/CString.h>
-#include <shlwapi.h>
+#include "PluginDebug.h"
 
 namespace WebCore {
+
+PluginPackageWin::~PluginPackageWin()
+{
+    ASSERT(!m_isLoaded);
+}
 
 static String getVersionInfo(const LPVOID versionInfoData, const String& info)
 {
     LPVOID buffer;
     UINT bufferLength;
     String subInfo = "\\StringfileInfo\\040904E4\\" + info;
-    bool retval = VerQueryValueW(versionInfoData,
-        const_cast<UChar*>(subInfo.charactersWithNullTermination()),
-        &buffer, &bufferLength);
+
+    bool retval = VerQueryValueW(versionInfoData, const_cast<UChar*>(subInfo.charactersWithNullTermination()), 
+                                 &buffer, &bufferLength);
     if (!retval || bufferLength == 0)
         return String();
 
-    // Subtract 1 from the length; we don't want the trailing null character.
+    // Subtract 1 from the length; we don't want the trailing 0
     return String(reinterpret_cast<UChar*>(buffer), bufferLength - 1);
 }
 
-bool PluginPackage::isPluginBlacklisted()
+static Vector<String> splitString(const String& str, char delimiter, int padTo)
 {
-    if (name() == "Citrix ICA Client") {
-        // The Citrix ICA Client plug-in requires a Mozilla-based browser; see <rdar://6418681>.
-        return true;
-    }
+    int pos = 0;
+    int newPos;
+    Vector<String> result;
+    DeprecatedString ds = str.deprecatedString();
+    String s;
+    do {
 
-    if (name() == "Silverlight Plug-In") {
-        // workaround for <rdar://5557379> Crash in Silverlight when opening microsoft.com.
-        // the latest 1.0 version of Silverlight does not reproduce this crash, so allow it
-        // and any newer versions
-        static const PlatformModuleVersion slPluginMinRequired(0x51BE0000, 0x00010000);
+        newPos = ds.find(delimiter, pos);
 
-        if (compareFileVersion(slPluginMinRequired) < 0)
-            return true;
-    } else if (equalIgnoringCase(fileName(), "npmozax.dll")) {
-        // Bug 15217: Mozilla ActiveX control complains about missing xpcom_core.dll
-        return true;
-    } else if (equalIgnoringCase(fileName(), "npwpf.dll")) {
-        // Bug 57119: Microsoft Windows Presentation Foundation (WPF) plug-in complains about missing xpcom.dll
-        return true;
-    } else if (name() == "Yahoo Application State Plugin") {
-        // https://bugs.webkit.org/show_bug.cgi?id=26860
-        // Bug in Yahoo Application State plug-in earlier than 1.0.0.6 leads to heap corruption. 
-        static const PlatformModuleVersion yahooAppStatePluginMinRequired(0x00000006, 0x00010000);
-        if (compareFileVersion(yahooAppStatePluginMinRequired) < 0)
-            return true;
-    }
+        if (newPos == -1)
+            s = ds.mid(pos);
+        else
+            s = ds.mid(pos, newPos - pos);
+        
+        if (!s.isEmpty())
+            result.append(s);
 
-    return false;
+        pos = newPos + 1;
+    } while (newPos != -1);
+
+    while (padTo != -1 && static_cast<int>(result.size()) < padTo)
+        result.append("");
+
+    return result;
 }
 
-void PluginPackage::determineQuirks(const String& mimeType)
+void PluginPackageWin::freeLibrarySoon()
 {
-    if (mimeType == "application/x-shockwave-flash") {
-        static const PlatformModuleVersion flashTenVersion(0x00000000, 0x000a0000);
+    ASSERT(!m_freeLibraryTimer.isActive());
+    ASSERT(m_module);
+    ASSERT(m_loadCount == 0);
 
-        // Pre 10 Flash only requests windowless plugins if we return a mozilla user agent
-        if (compareFileVersion(flashTenVersion) < 0)
-            m_quirks.add(PluginQuirkWantsMozillaUserAgent);
-
-        m_quirks.add(PluginQuirkThrottleInvalidate);
-        m_quirks.add(PluginQuirkThrottleWMUserPlusOneMessages);
-        m_quirks.add(PluginQuirkFlashURLNotifyBug);
-    }
-
-    if (name().contains("Microsoft") && name().contains("Windows Media")) {
-        // The WMP plugin sets its size on the first NPP_SetWindow call and never updates its size, so
-        // call SetWindow when the plugin view has a correct size
-        m_quirks.add(PluginQuirkDeferFirstSetWindowCall);
-
-        // Windowless mode does not work at all with the WMP plugin so just remove that parameter 
-        // and don't pass it to the plug-in.
-        m_quirks.add(PluginQuirkRemoveWindowlessVideoParam);
-
-        // WMP has a modal message loop that it enters whenever we call it or
-        // ask it to paint. This modal loop can deliver messages to other
-        // windows in WebKit at times when they are not expecting them (for
-        // example, delivering a WM_PAINT message during a layout), and these
-        // can cause crashes.
-        m_quirks.add(PluginQuirkHasModalMessageLoop);
-    }
-
-    if (name() == "VLC Multimedia Plugin" || name() == "VLC Multimedia Plug-in") {
-        // VLC hangs on NPP_Destroy if we call NPP_SetWindow with a null window handle
-        m_quirks.add(PluginQuirkDontSetNullWindowHandleOnDestroy);
-
-        // VLC 0.8.6d and 0.8.6e crash if multiple instances are created.
-        // <rdar://problem/5773070> tracks allowing multiple instances when this
-        // bug is fixed.
-        m_quirks.add(PluginQuirkDontAllowMultipleInstances);
-    }
-
-    // The DivX plugin sets its size on the first NPP_SetWindow call and never updates its size, so
-    // call SetWindow when the plugin view has a correct size
-    if (mimeType == "video/divx")
-        m_quirks.add(PluginQuirkDeferFirstSetWindowCall);
-
-    // FIXME: This is a workaround for a problem in our NPRuntime bindings; if a plug-in creates an
-    // NPObject and passes it to a function it's not possible to see what root object that NPObject belongs to.
-    // Thus, we don't know that the object should be invalidated when the plug-in instance goes away.
-    // See <rdar://problem/5487742>.
-    if (mimeType == "application/x-silverlight")
-        m_quirks.add(PluginQuirkDontUnloadPlugin);
-
-    if (MIMETypeRegistry::isJavaAppletMIMEType(mimeType)) {
-        // Because a single process cannot create multiple VMs, and we cannot reliably unload a
-        // Java VM, we cannot unload the Java plugin, or we'll lose reference to our only VM
-        m_quirks.add(PluginQuirkDontUnloadPlugin);
-
-        // Setting the window region to an empty region causes bad scrolling repaint problems
-        // with the Java plug-in.
-        m_quirks.add(PluginQuirkDontClipToZeroRectWhenScrolling);
-    }
-
-    if (mimeType == "audio/x-pn-realaudio-plugin") {
-        // Prevent the Real plugin from calling the Window Proc recursively, causing the stack to overflow.
-        m_quirks.add(PluginQuirkDontCallWndProcForSameMessageRecursively);
-
-        static const PlatformModuleVersion lastKnownUnloadableRealPlayerVersion(0x000B0B24, 0x00060000);
-
-        // Unloading RealPlayer versions newer than 10.5 can cause a hang; see rdar://5669317.
-        // FIXME: Resume unloading when this bug in the RealPlayer Plug-In is fixed (rdar://5713147)
-        if (compareFileVersion(lastKnownUnloadableRealPlayerVersion) > 0)
-            m_quirks.add(PluginQuirkDontUnloadPlugin);
-    }
+    m_freeLibraryTimer.startOneShot(0);
 }
 
-bool PluginPackage::fetchInfo()
+void PluginPackageWin::freeLibraryTimerFired(Timer<PluginPackageWin>* /*timer*/)
+{
+    ASSERT(m_module);
+    ASSERT(m_loadCount == 0);
+
+    ::FreeLibrary(m_module);
+    m_module = 0;
+}
+
+PluginPackageWin::PluginPackageWin(const String& path, const FILETIME& lastModified)
+    : m_path(path)
+    , m_module(0)
+    , m_lastModified(lastModified)
+    , m_isLoaded(false)
+    , m_loadCount(0)
+    , m_freeLibraryTimer(this, &PluginPackageWin::freeLibraryTimerFired)
+{
+    int pos = m_path.deprecatedString().findRev('\\');
+
+    m_fileName = m_path.right(m_path.length() - pos - 1);
+}
+
+bool PluginPackageWin::fetchInfo()
 {
     DWORD versionInfoSize, zeroHandle;
-    versionInfoSize = GetFileVersionInfoSizeW(const_cast<UChar*>(m_path.charactersWithNullTermination()), &zeroHandle);
+    versionInfoSize = GetFileVersionInfoSizeW(m_path.charactersWithNullTermination(), &zeroHandle); 
+
     if (versionInfoSize == 0)
         return false;
 
-    OwnArrayPtr<char> versionInfoData = adoptArrayPtr(new char[versionInfoSize]);
+    LPVOID versionInfoData = fastMalloc(versionInfoSize);
 
-    if (!GetFileVersionInfoW(const_cast<UChar*>(m_path.charactersWithNullTermination()),
-            0, versionInfoSize, versionInfoData.get()))
+    if (!GetFileVersionInfoW(m_path.charactersWithNullTermination(), 0, versionInfoSize, versionInfoData)) {
+        fastFree(versionInfoData);
         return false;
+    }
 
-    m_name = getVersionInfo(versionInfoData.get(), "ProductName");
-    m_description = getVersionInfo(versionInfoData.get(), "FileDescription");
-    if (m_name.isNull() || m_description.isNull())
+    m_name = getVersionInfo(versionInfoData, "ProductName");
+    m_description = getVersionInfo(versionInfoData, "FileDescription");
+
+    if (m_name.isNull() || m_description.isNull()) {
+        fastFree(versionInfoData);
         return false;
+    }
 
-    VS_FIXEDFILEINFO* info;
-    UINT infoSize;
-    if (!VerQueryValueW(versionInfoData.get(), L"\\", (LPVOID*) &info, &infoSize) || infoSize < sizeof(VS_FIXEDFILEINFO))
-        return false;
-    m_moduleVersion.leastSig = info->dwFileVersionLS;
-    m_moduleVersion.mostSig = info->dwFileVersionMS;
+    Vector<String> mimeTypes = splitString(getVersionInfo(versionInfoData, "MIMEType"), '|', -1);
+    Vector<String> fileExtents = splitString(getVersionInfo(versionInfoData, "FileExtents"), '|', mimeTypes.size());
+    Vector<String> descriptions = splitString(getVersionInfo(versionInfoData, "FileOpenName"), '|', mimeTypes.size());
 
-    if (isPluginBlacklisted())
-        return false;
+    fastFree(versionInfoData);
 
-    Vector<String> types;
-    getVersionInfo(versionInfoData.get(), "MIMEType").split('|', types);
-    Vector<String> extensionLists;
-    getVersionInfo(versionInfoData.get(), "FileExtents").split('|', extensionLists);
-    Vector<String> descriptions;
-    getVersionInfo(versionInfoData.get(), "FileOpenName").split('|', descriptions);
-
-    for (unsigned i = 0; i < types.size(); i++) {
-        String type = types[i].lower();
-        String description = i < descriptions.size() ? descriptions[i] : "";
-        String extensionList = i < extensionLists.size() ? extensionLists[i] : "";
-
-        Vector<String> extensionsVector;
-        extensionList.split(',', extensionsVector);
-
-        // Get rid of the extension list that may be at the end of the description string.
+    for (unsigned i = 0; i < mimeTypes.size(); i++) {
+        // Get rid of the extension list in the description string
+        String description = descriptions[i];    
         int pos = description.find("(*");
         if (pos != -1) {
-            // There might be a space that we need to get rid of.
+            // There might be a space that we need to get rid of
             if (pos > 1 && description[pos - 1] == ' ')
                 pos--;
+
             description = description.left(pos);
         }
 
-        // Determine the quirks for the MIME types this plug-in supports
-        determineQuirks(type);
-
-        m_mimeToExtensions.add(type, extensionsVector);
-        m_mimeToDescriptions.add(type, description);
+        m_mimeToExtensions.add(mimeTypes[i], splitString(fileExtents[i], ',', -1));
+        m_mimeToDescriptions.add(mimeTypes[i], description);
     }
 
     return true;
 }
 
-bool PluginPackage::load()
+bool PluginPackageWin::load()
 {
     if (m_freeLibraryTimer.isActive()) {
         ASSERT(m_module);
         m_freeLibraryTimer.stop();
     } else if (m_isLoaded) {
-        if (m_quirks.contains(PluginQuirkDontAllowMultipleInstances))
-            return false;
         m_loadCount++;
         return true;
     } else {
-#if OS(WINCE)
-        m_module = ::LoadLibraryW(m_path.charactersWithNullTermination());
-#else
         WCHAR currentPath[MAX_PATH];
 
         if (!::GetCurrentDirectoryW(MAX_PATH, currentPath))
@@ -251,14 +180,13 @@ bool PluginPackage::load()
             return false;
 
         // Load the library
-        m_module = ::LoadLibraryExW(m_path.charactersWithNullTermination(), 0, LOAD_WITH_ALTERED_SEARCH_PATH);
+        m_module = ::LoadLibraryW(m_path.charactersWithNullTermination());
 
         if (!::SetCurrentDirectoryW(currentPath)) {
             if (m_module)
                 ::FreeLibrary(m_module);
             return false;
         }
-#endif
     }
 
     if (!m_module)
@@ -270,19 +198,13 @@ bool PluginPackage::load()
     NP_InitializeFuncPtr NP_Initialize = 0;
     NPError npErr;
 
-#if OS(WINCE)
-    NP_Initialize = (NP_InitializeFuncPtr)GetProcAddress(m_module, L"NP_Initialize");
-    NP_GetEntryPoints = (NP_GetEntryPointsFuncPtr)GetProcAddress(m_module, L"NP_GetEntryPoints");
-    m_NPP_Shutdown = (NPP_ShutdownProcPtr)GetProcAddress(m_module, L"NP_Shutdown");
-#else
     NP_Initialize = (NP_InitializeFuncPtr)GetProcAddress(m_module, "NP_Initialize");
     NP_GetEntryPoints = (NP_GetEntryPointsFuncPtr)GetProcAddress(m_module, "NP_GetEntryPoints");
     m_NPP_Shutdown = (NPP_ShutdownProcPtr)GetProcAddress(m_module, "NP_Shutdown");
-#endif
 
     if (!NP_Initialize || !NP_GetEntryPoints || !m_NPP_Shutdown)
         goto abort;
-
+  
     memset(&m_pluginFuncs, 0, sizeof(m_pluginFuncs));
     m_pluginFuncs.size = sizeof(m_pluginFuncs);
 
@@ -291,7 +213,53 @@ bool PluginPackage::load()
     if (npErr != NPERR_NO_ERROR)
         goto abort;
 
-    initializeBrowserFuncs();
+    memset(&m_browserFuncs, 0, sizeof(m_browserFuncs));
+    m_browserFuncs.size = sizeof (m_browserFuncs);
+    m_browserFuncs.version = NP_VERSION_MINOR;
+    m_browserFuncs.geturl = NPN_GetURL;
+    m_browserFuncs.posturl = NPN_PostURL;
+    m_browserFuncs.requestread = NPN_RequestRead;
+    m_browserFuncs.newstream = NPN_NewStream;
+    m_browserFuncs.write = NPN_Write;
+    m_browserFuncs.destroystream = NPN_DestroyStream;
+    m_browserFuncs.status = NPN_Status;
+    m_browserFuncs.uagent = NPN_UserAgent;
+    m_browserFuncs.memalloc = NPN_MemAlloc;
+    m_browserFuncs.memfree = NPN_MemFree;
+    m_browserFuncs.memflush = NPN_MemFlush;
+    m_browserFuncs.reloadplugins = NPN_ReloadPlugins;
+    m_browserFuncs.geturlnotify = NPN_GetURLNotify;
+    m_browserFuncs.posturlnotify = NPN_PostURLNotify;
+    m_browserFuncs.getvalue = NPN_GetValue;
+    m_browserFuncs.setvalue = NPN_SetValue;
+    m_browserFuncs.invalidaterect = NPN_InvalidateRect;
+    m_browserFuncs.invalidateregion = NPN_InvalidateRegion;
+    m_browserFuncs.forceredraw = NPN_ForceRedraw;
+    m_browserFuncs.getJavaEnv = NPN_GetJavaEnv;
+    m_browserFuncs.getJavaPeer = NPN_GetJavaPeer;
+    m_browserFuncs.pushpopupsenabledstate = NPN_PushPopupsEnabledState;
+    m_browserFuncs.poppopupsenabledstate = NPN_PopPopupsEnabledState;
+
+    m_browserFuncs.releasevariantvalue = _NPN_ReleaseVariantValue;
+    m_browserFuncs.getstringidentifier = _NPN_GetStringIdentifier;
+    m_browserFuncs.getstringidentifiers = _NPN_GetStringIdentifiers;
+    m_browserFuncs.getintidentifier = _NPN_GetIntIdentifier;
+    m_browserFuncs.identifierisstring = _NPN_IdentifierIsString;
+    m_browserFuncs.utf8fromidentifier = _NPN_UTF8FromIdentifier;
+    m_browserFuncs.intfromidentifier = _NPN_IntFromIdentifier;
+    m_browserFuncs.createobject = _NPN_CreateObject;
+    m_browserFuncs.retainobject = _NPN_RetainObject;
+    m_browserFuncs.releaseobject = _NPN_ReleaseObject;
+    m_browserFuncs.invoke = _NPN_Invoke;
+    m_browserFuncs.invokeDefault = _NPN_InvokeDefault;
+    m_browserFuncs.evaluate = _NPN_Evaluate;
+    m_browserFuncs.getproperty = _NPN_GetProperty;
+    m_browserFuncs.setproperty = _NPN_SetProperty;
+    m_browserFuncs.removeproperty = _NPN_RemoveProperty;
+    m_browserFuncs.hasproperty = _NPN_HasMethod;
+    m_browserFuncs.hasmethod = _NPN_HasProperty;
+    m_browserFuncs.setexception = _NPN_SetException;
+    m_browserFuncs.enumerate = _NPN_Enumerate;
 
     npErr = NP_Initialize(&m_browserFuncs);
     LOG_NPERROR(npErr);
@@ -301,45 +269,69 @@ bool PluginPackage::load()
 
     m_loadCount++;
     return true;
-
 abort:
     unloadWithoutShutdown();
     return false;
 }
 
-unsigned PluginPackage::hash() const
+void PluginPackageWin::unload()
+{
+    if (!m_isLoaded)
+        return;
+
+    if (--m_loadCount > 0)
+        return;
+
+    m_NPP_Shutdown();
+
+    unloadWithoutShutdown();
+}
+
+void PluginPackageWin::unloadWithoutShutdown()
+{
+    if (!m_isLoaded)
+        return;
+
+    ASSERT(m_loadCount == 0);
+    ASSERT(m_module);
+
+    // <rdar://5530519>: Crash when closing tab with pdf file (Reader 7 only)
+    // If the plugin has subclassed its parent window, as with Reader 7, we may have
+    // gotten here by way of the plugin's internal window proc forwarding a message to our
+    // original window proc. If we free the plugin library from here, we will jump back
+    // to code we just freed when we return, so delay calling FreeLibrary at least until
+    // the next message loop
+    freeLibrarySoon();
+
+    m_isLoaded = false;
+}
+
+PluginPackageWin* PluginPackageWin::createPackage(const String& path, const FILETIME& lastModified)
+{
+    PluginPackageWin* package = new PluginPackageWin(path, lastModified);
+
+    if (!package->fetchInfo()) {
+        delete package;
+        return 0;
+    }
+    
+    return package;
+}
+
+unsigned PluginPackageWin::hash() const
 { 
-    const unsigned hashCodes[] = {
-        m_name.impl()->hash(),
+    unsigned hashCodes[3] = {
         m_description.impl()->hash(),
-        m_mimeToExtensions.size()
+        m_lastModified.dwLowDateTime,
+        m_lastModified.dwHighDateTime
     };
 
-    return StringHasher::hashMemory<sizeof(hashCodes)>(hashCodes);
+    return StringImpl::computeHash(reinterpret_cast<UChar*>(hashCodes), 3 * sizeof(unsigned) / sizeof(UChar));
 }
 
-bool PluginPackage::equal(const PluginPackage& a, const PluginPackage& b)
+bool PluginPackageWin::equal(const PluginPackageWin& a, const PluginPackageWin& b)
 {
-    if (a.m_name != b.m_name)
-        return false;
-
-    if (a.m_description != b.m_description)
-        return false;
-
-    if (a.m_mimeToExtensions.size() != b.m_mimeToExtensions.size())
-        return false;
-
-    MIMEToExtensionsMap::const_iterator::Keys end = a.m_mimeToExtensions.end().keys();
-    for (MIMEToExtensionsMap::const_iterator::Keys it = a.m_mimeToExtensions.begin().keys(); it != end; ++it) {
-        if (!b.m_mimeToExtensions.contains(*it))
-            return false;
-    }
-
-    return true;
+    return a.m_description == b.m_description && (CompareFileTime(&a.m_lastModified, &b.m_lastModified) == 0);
 }
 
-uint16_t PluginPackage::NPVersion() const
-{
-    return NP_VERSION_MINOR;
-}
 }

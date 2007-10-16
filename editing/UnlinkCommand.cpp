@@ -37,11 +37,14 @@ UnlinkCommand::UnlinkCommand(Document* document)
 
 void UnlinkCommand::doApply()
 {
-    // FIXME: If a caret is inside a link, we should remove it, but currently we don't.
-    if (!endingSelection().isNonOrphanedRange())
+    // FIXME: If a caret is inside a link, remove it.
+    if (!endingSelection().isRange())
         return;
+        
+    pushPartiallySelectedAnchorElementsDown();
 
-    removeStyledElement(HTMLAnchorElement::create(document()));
+    HTMLAnchorElement* anchorElement = new HTMLAnchorElement(document());
+    removeStyledElement(anchorElement);
 }
 
 }

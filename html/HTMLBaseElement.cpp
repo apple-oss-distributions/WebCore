@@ -1,8 +1,10 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2003, 2008, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,83 +25,76 @@
 #include "config.h"
 #include "HTMLBaseElement.h"
 
-#include "Attribute.h"
+#include "CSSHelper.h"
 #include "Document.h"
+#include "Frame.h"
+#include "FrameLoader.h"
 #include "HTMLNames.h"
-#include "HTMLParserIdioms.h"
-#include "TextResourceDecoder.h"
+#include "KURL.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLBaseElement::HTMLBaseElement(const QualifiedName& tagName, Document* document)
-    : HTMLElement(tagName, document)
+HTMLBaseElement::HTMLBaseElement(Document *doc)
+    : HTMLElement(baseTag, doc)
 {
-    ASSERT(hasTagName(baseTag));
 }
 
-PassRefPtr<HTMLBaseElement> HTMLBaseElement::create(const QualifiedName& tagName, Document* document)
+HTMLBaseElement::~HTMLBaseElement()
 {
-    return adoptRef(new HTMLBaseElement(tagName, document));
 }
 
-void HTMLBaseElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLBaseElement::parseMappedAttribute(MappedAttribute *attr)
 {
-    if (name == hrefAttr || name == targetAttr)
-        document()->processBaseElement();
-    else
-        HTMLElement::parseAttribute(name, value);
+    if (attr->name() == hrefAttr) {
+        m_href = parseURL(attr->value());
+        process();
+    } else if (attr->name() == targetAttr) {
+        m_target = attr->value();
+        process();
+    } else
+        HTMLElement::parseMappedAttribute(attr);
 }
 
-Node::InsertionNotificationRequest HTMLBaseElement::insertedInto(ContainerNode* insertionPoint)
+void HTMLBaseElement::insertedIntoDocument()
 {
-    HTMLElement::insertedInto(insertionPoint);
-    if (insertionPoint->inDocument())
-        document()->processBaseElement();
-    return InsertionDone;
+    HTMLElement::insertedIntoDocument();
+    process();
 }
 
-void HTMLBaseElement::removedFrom(ContainerNode* insertionPoint)
+void HTMLBaseElement::removedFromDocument()
 {
-    HTMLElement::removedFrom(insertionPoint);
-    if (insertionPoint->inDocument())
-        document()->processBaseElement();
+    HTMLElement::removedFromDocument();
+
+    // Since the document doesn't have a base element...
+    // (This will break in the case of multiple base elements, but that's not valid anyway (?))
+    document()->setBaseURL(DeprecatedString::null);
+    document()->setBaseTarget(DeprecatedString::null);
 }
 
-bool HTMLBaseElement::isURLAttribute(const Attribute& attribute) const
+void HTMLBaseElement::process()
 {
-    return attribute.name().localName() == hrefAttr || HTMLElement::isURLAttribute(attribute);
+    if (!inDocument())
+        return;
+
+    if (!m_href.isEmpty() && document()->frame())
+        document()->setBaseURL(KURL(document()->frame()->loader()->url(), m_href.deprecatedString()).url());
+
+    if (!m_target.isEmpty())
+        document()->setBaseTarget(m_target);
+
+    // ### should changing a document's base URL dynamically automatically update all images, stylesheets etc?
 }
 
-String HTMLBaseElement::target() const
-{
-    return fastGetAttribute(targetAttr);
-}
-
-KURL HTMLBaseElement::href() const
-{
-    // This does not use the getURLAttribute function because that will resolve relative to the document's base URL;
-    // base elements like this one can be used to set that base URL. Thus we need to resolve relative to the document's
-    // URL and ignore the base URL.
-
-    const AtomicString& attributeValue = fastGetAttribute(hrefAttr);
-    if (attributeValue.isNull())
-        return document()->url();
-
-    KURL url = !document()->decoder() ?
-        KURL(document()->url(), stripLeadingAndTrailingHTMLSpaces(attributeValue)) :
-        KURL(document()->url(), stripLeadingAndTrailingHTMLSpaces(attributeValue), document()->decoder()->encoding());
-
-    if (!url.isValid())
-        return KURL();
-
-    return url;
-}
-
-void HTMLBaseElement::setHref(const AtomicString& value)
+void HTMLBaseElement::setHref(const String &value)
 {
     setAttribute(hrefAttr, value);
+}
+
+void HTMLBaseElement::setTarget(const String &value)
+{
+    setAttribute(targetAttr, value);
 }
 
 }

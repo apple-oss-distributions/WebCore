@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2005, 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,9 +27,25 @@
 #define PlatformMouseEvent_h
 
 #include "IntPoint.h"
-#include "PlatformEvent.h"
-#if OS(WINDOWS)
-#include "WindowsExtras.h"
+#include <wtf/Platform.h>
+
+#if PLATFORM(MAC)
+#ifdef __OBJC__
+@class NSEvent;
+@class NSScreen;
+@class NSWindow;
+#else
+class NSEvent;
+class NSScreen;
+class NSWindow;
+#endif
+#endif
+
+#if PLATFORM(WIN)
+typedef struct HWND__* HWND;
+typedef unsigned UINT;
+typedef unsigned WPARAM;
+typedef long LPARAM;
 #endif
 
 #if PLATFORM(GTK)
@@ -37,108 +53,104 @@ typedef struct _GdkEventButton GdkEventButton;
 typedef struct _GdkEventMotion GdkEventMotion;
 #endif
 
-#if PLATFORM(EFL)
-typedef struct _Evas_Event_Mouse_Down Evas_Event_Mouse_Down;
-typedef struct _Evas_Event_Mouse_Up Evas_Event_Mouse_Up;
-typedef struct _Evas_Event_Mouse_Move Evas_Event_Mouse_Move;
+#if PLATFORM(QT)
+class QMouseEvent;
 #endif
 
 namespace WebCore {
     
     // These button numbers match the ones used in the DOM API, 0 through 2, except for NoButton which isn't specified.
     enum MouseButton { NoButton = -1, LeftButton, MiddleButton, RightButton };
-
-#if PLATFORM(BLACKBERRY)
-    enum MouseInputMethod { PointingDevice, TouchScreen };
-#endif
+    enum MouseEventType { MouseEventMoved, MouseEventPressed, MouseEventReleased, MouseEventScroll };
     
-    class PlatformMouseEvent : public PlatformEvent {
+    class PlatformMouseEvent {
     public:
         PlatformMouseEvent()
-            : PlatformEvent(PlatformEvent::MouseMoved)
-            , m_button(NoButton)
+            : m_button(NoButton)
+            , m_eventType(MouseEventMoved)
             , m_clickCount(0)
+            , m_shiftKey(false)
+            , m_ctrlKey(false)
+            , m_altKey(false)
+            , m_metaKey(false)
+            , m_timestamp(0)
             , m_modifierFlags(0)
-#if PLATFORM(MAC) && !PLATFORM(IOS)
-            , m_eventNumber(0)
-#elif PLATFORM(WIN)
-            , m_didActivateWebView(false)
-#endif
         {
         }
 
-        PlatformMouseEvent(const IntPoint& position, const IntPoint& globalPosition, MouseButton button, PlatformEvent::Type type,
-                           int clickCount, bool shiftKey, bool ctrlKey, bool altKey, bool metaKey, double timestamp)
-            : PlatformEvent(type, shiftKey, ctrlKey, altKey, metaKey, timestamp)
-            , m_position(position)
-            , m_globalPosition(globalPosition)
-            , m_button(button)
+        PlatformMouseEvent(const IntPoint& pos, const IntPoint& globalPos, MouseButton button, MouseEventType eventType,
+                           int clickCount, bool shift, bool ctrl, bool alt, bool meta, double timestamp)
+            : m_position(pos), m_globalPosition(globalPos), m_button(button)
+            , m_eventType(eventType)
             , m_clickCount(clickCount)
+            , m_shiftKey(shift)
+            , m_ctrlKey(ctrl)
+            , m_altKey(alt)
+            , m_metaKey(meta)
+            , m_timestamp(timestamp)
             , m_modifierFlags(0)
-#if PLATFORM(MAC) && !PLATFORM(IOS)
-            , m_eventNumber(0)
-#elif PLATFORM(WIN)
-            , m_didActivateWebView(false)
-#endif
         {
         }
 
-        const IntPoint& position() const { return m_position; }
-        const IntPoint& globalPosition() const { return m_globalPosition; }
-#if ENABLE(POINTER_LOCK)
-        const IntPoint& movementDelta() const { return m_movementDelta; }
-#endif
-
+        const IntPoint& pos() const { return m_position; }
+        int x() const { return m_position.x(); }
+        int y() const { return m_position.y(); }
+        int globalX() const { return m_globalPosition.x(); }
+        int globalY() const { return m_globalPosition.y(); }
         MouseButton button() const { return m_button; }
+        MouseEventType eventType() const { return m_eventType; }
         int clickCount() const { return m_clickCount; }
+        bool shiftKey() const { return m_shiftKey; }
+        bool ctrlKey() const { return m_ctrlKey; }
+        bool altKey() const { return m_altKey; }
+        bool metaKey() const { return m_metaKey; }
         unsigned modifierFlags() const { return m_modifierFlags; }
         
+        //time in seconds
+        double timestamp() const { return m_timestamp; }
 
-#if PLATFORM(GTK) 
-        explicit PlatformMouseEvent(GdkEventButton*);
-        explicit PlatformMouseEvent(GdkEventMotion*);
-        void setClickCount(int count) { m_clickCount = count; }
-#endif
-
-#if PLATFORM(EFL)
-        void setClickCount(unsigned int);
-        PlatformMouseEvent(const Evas_Event_Mouse_Down*, IntPoint);
-        PlatformMouseEvent(const Evas_Event_Mouse_Up*, IntPoint);
-        PlatformMouseEvent(const Evas_Event_Mouse_Move*, IntPoint);
-#endif
-
-#if PLATFORM(MAC) && !PLATFORM(IOS)
+#if PLATFORM(MAC)
+        PlatformMouseEvent(NSEvent*);
         int eventNumber() const { return m_eventNumber; }
 #endif
-
 #if PLATFORM(WIN)
-        PlatformMouseEvent(HWND, UINT, WPARAM, LPARAM, bool didActivateWebView = false);
+        PlatformMouseEvent(HWND, UINT, WPARAM, LPARAM, bool activatedWebView = false);
         void setClickCount(int count) { m_clickCount = count; }
-        bool didActivateWebView() const { return m_didActivateWebView; }
+        bool activatedWebView() const { return m_activatedWebView; }
+#endif
+#if PLATFORM(GTK) 
+        PlatformMouseEvent(GdkEventButton*);
+        PlatformMouseEvent(GdkEventMotion*);
+#endif
+#if PLATFORM(QT)
+        PlatformMouseEvent(QMouseEvent*, int clickCount);
 #endif
 
-#if PLATFORM(BLACKBERRY)
-        PlatformMouseEvent(const IntPoint& eventPosition, const IntPoint& globalPosition, const PlatformEvent::Type, int clickCount, MouseButton, bool shiftKey, bool ctrlKey, bool altKey, MouseInputMethod = PointingDevice);
-        MouseInputMethod inputMethod() const { return m_inputMethod; }
-#endif
-    protected:
+    private:
         IntPoint m_position;
         IntPoint m_globalPosition;
-#if ENABLE(POINTER_LOCK)
-        IntPoint m_movementDelta;
-#endif
         MouseButton m_button;
+        MouseEventType m_eventType;
         int m_clickCount;
+        bool m_shiftKey;
+        bool m_ctrlKey;
+        bool m_altKey;
+        bool m_metaKey;
+        double m_timestamp; // unit: seconds
         unsigned m_modifierFlags;
-
-#if PLATFORM(MAC) && !PLATFORM(IOS)
+#if PLATFORM(MAC)
         int m_eventNumber;
-#elif PLATFORM(WIN)
-        bool m_didActivateWebView;
-#elif PLATFORM(BLACKBERRY)
-        MouseInputMethod m_inputMethod;
+#endif
+#if PLATFORM(WIN)
+        bool m_activatedWebView;
 #endif
     };
+
+#if PLATFORM(MAC)
+    IntPoint globalPoint(const NSPoint& windowPoint, NSWindow *window);
+    IntPoint pointForEvent(NSEvent *event);
+    IntPoint globalPointForEvent(NSEvent *event);
+#endif
 
 } // namespace WebCore
 

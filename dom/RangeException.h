@@ -1,4 +1,6 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999 Lars Knoll (knoll@kde.org)
  * (C) 2000 Gunnstein Lye (gunnstein@netcom.no)
  * (C) 2000 Frederik Holljen (frederik.holljen@hig.no)
@@ -25,34 +27,20 @@
 #ifndef RangeException_h
 #define RangeException_h
 
-#include "ExceptionBase.h"
+#include "Shared.h"
 
 namespace WebCore {
 
-class RangeException : public ExceptionBase {
-public:
-    static PassRefPtr<RangeException> create(const ExceptionCodeDescription& description)
-    {
-        return adoptRef(new RangeException(description));
-    }
+const int RangeExceptionOffset = 200;
+const int RangeExceptionMax = 299;
+enum RangeExceptionCode { BAD_BOUNDARYPOINTS_ERR = RangeExceptionOffset + 1, INVALID_NODE_TYPE_ERR };
 
-    static const int RangeExceptionOffset = 200;
-    static const int RangeExceptionMax = 299;
-
-    enum RangeExceptionCode {
-        BAD_BOUNDARYPOINTS_ERR = RangeExceptionOffset + 1,
-        INVALID_NODE_TYPE_ERR
-    };
-
-    static bool initializeDescription(ExceptionCode, ExceptionCodeDescription*);
-
-private:
-    explicit RangeException(const ExceptionCodeDescription& description)
-        : ExceptionBase(description)
-    {
-    }
+class RangeException : public Shared<RangeException> {
+public :
+    static const unsigned short BAD_BOUNDARYPOINTS_ERR = 1;
+    static const unsigned short INVALID_NODE_TYPE_ERR = 2;
 };
 
-} // namespace WebCore
+} // namespace
 
-#endif // RangeException_h
+#endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2005 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,27 +31,19 @@
 
 namespace WebCore {
 
-RemoveNodePreservingChildrenCommand::RemoveNodePreservingChildrenCommand(PassRefPtr<Node> node, ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
-    : CompositeEditCommand(node->document())
-    , m_node(node)
-    , m_shouldAssumeContentIsAlwaysEditable(shouldAssumeContentIsAlwaysEditable)
+RemoveNodePreservingChildrenCommand::RemoveNodePreservingChildrenCommand(Node* node)
+    : CompositeEditCommand(node->document()), m_node(node)
 {
     ASSERT(m_node);
 }
 
 void RemoveNodePreservingChildrenCommand::doApply()
 {
-    Vector<RefPtr<Node> > children;
-    for (Node* child = m_node->firstChild(); child; child = child->nextSibling())
-        children.append(child);
-
-    size_t size = children.size();
-    for (size_t i = 0; i < size; ++i) {
-        RefPtr<Node> child = children[i].release();
-        removeNode(child, m_shouldAssumeContentIsAlwaysEditable);
-        insertNodeBefore(child.release(), m_node, m_shouldAssumeContentIsAlwaysEditable);
+    while (Node* curr = node()->firstChild()) {
+        removeNode(curr);
+        insertNodeBefore(curr, node());
     }
-    removeNode(m_node, m_shouldAssumeContentIsAlwaysEditable);
+    removeNode(node());
 }
 
 }

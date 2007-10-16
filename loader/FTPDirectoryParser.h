@@ -71,7 +71,7 @@
 #ifndef FTPDirectoryParser_h
 #define FTPDirectoryParser_h
 
-#include <wtf/text/WTFString.h>
+#include "PlatformString.h"
 
 #include <time.h>
 

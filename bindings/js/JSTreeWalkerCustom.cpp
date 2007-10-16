@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -16,29 +16,20 @@
  * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
-
 #include "config.h"
 #include "JSTreeWalker.h"
 
-#include "JSNode.h"
-#include "Node.h"
 #include "NodeFilter.h"
 #include "TreeWalker.h"
 
-using namespace JSC;
-
 namespace WebCore {
-
-void JSTreeWalker::visitChildren(JSCell* cell, SlotVisitor& visitor)
+    
+void JSTreeWalker::mark()
 {
-    JSTreeWalker* thisObject = jsCast<JSTreeWalker*>(cell);
-    ASSERT_GC_OBJECT_INHERITS(thisObject, &s_info);
-    COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
-    ASSERT(thisObject->structure()->typeInfo().overridesVisitChildren());
-    Base::visitChildren(thisObject, visitor);
-
-    if (NodeFilter* filter = thisObject->m_impl->filter())
-        visitor.addOpaqueRoot(filter);
+    if (NodeFilter* filter = m_impl->filter())
+        filter->mark();
+    
+    DOMObject::mark();
 }
-
+    
 }

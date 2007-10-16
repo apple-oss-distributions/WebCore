@@ -1,8 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Simon Hausmann <hausmann@kde.org>
- * Copyright (C) 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,7 +21,6 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #ifndef HTMLFontElement_h
 #define HTMLFontElement_h
 
@@ -28,19 +28,32 @@
 
 namespace WebCore {
 
-class HTMLFontElement FINAL : public HTMLElement {
+class String;
+
+class HTMLFontElement : public HTMLElement
+{
 public:
-    static PassRefPtr<HTMLFontElement> create(const QualifiedName&, Document*);
+    HTMLFontElement(Document*);
+    ~HTMLFontElement();
+    
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusRequired; }
+    virtual int tagPriority() const { return 1; }
+
+    virtual bool mapToEntry(const QualifiedName&, MappedAttributeEntry&) const;
+    virtual void parseMappedAttribute(MappedAttribute*);
+
+    String color() const;
+    void setColor(const String&);
+
+    String face() const;
+    void setFace(const String&);
+
+    String size() const;
+    void setSize(const String&);
     
     static bool cssValueFromFontSizeNumber(const String&, int&);
-
-private:
-    HTMLFontElement(const QualifiedName&, Document*);
-
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 };
 
-} // namespace
+} //namespace
 
 #endif

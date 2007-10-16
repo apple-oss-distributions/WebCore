@@ -1,8 +1,10 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 2001 Peter Kelly (pmk@post.com)
  * Copyright (C) 2001 Tobias Anton (anton@stud.fbi.fh-darmstadt.de)
  * Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
- * Copyright (C) 2003, 2005, 2006, 2008, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,124 +25,56 @@
 #include "config.h"
 #include "WheelEvent.h"
 
-#include "Clipboard.h"
-#include "EventDispatcher.h"
 #include "EventNames.h"
-#include "PlatformWheelEvent.h"
 
 #include <wtf/MathExtras.h>
 
 namespace WebCore {
 
-WheelEventInit::WheelEventInit()
-    : wheelDeltaX(0)
-    , wheelDeltaY(0)
-    , deltaMode(WheelEvent::DOM_DELTA_PIXEL)
-{
-}
+using namespace EventNames;
 
 WheelEvent::WheelEvent()
-    : m_deltaMode(DOM_DELTA_PIXEL)
-    , m_directionInvertedFromDevice(false)
+    : m_wheelDeltaX(0)
+    , m_wheelDeltaY(0)
 {
 }
 
-WheelEvent::WheelEvent(const AtomicString& type, const WheelEventInit& initializer)
-    : MouseEvent(type, initializer)
-    , m_wheelDelta(IntPoint(initializer.wheelDeltaX, initializer.wheelDeltaY))
-    , m_deltaMode(initializer.deltaMode)
+WheelEvent::WheelEvent(float wheelDeltaX, float wheelDeltaY, AbstractView* view,
+                       int screenX, int screenY, int pageX, int pageY,
+                       bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
+    : MouseRelatedEvent(mousewheelEvent,
+                        true, true, view, 0, screenX, screenY, pageX, pageY, 
+                        ctrlKey, altKey, shiftKey, metaKey)
+    , m_wheelDeltaX(lroundf(wheelDeltaX) * 120)
+    , m_wheelDeltaY(lroundf(wheelDeltaY) * 120) // Normalize to the Windows 120 multiple
 {
 }
 
-WheelEvent::WheelEvent(const FloatPoint& wheelTicks, const FloatPoint& rawDelta, unsigned deltaMode,
-    PassRefPtr<AbstractView> view, const IntPoint& screenLocation, const IntPoint& pageLocation,
-    bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool directionInvertedFromDevice)
-    : MouseEvent(eventNames().mousewheelEvent,
-                 true, true, view, 0, screenLocation.x(), screenLocation.y(),
-                 pageLocation.x(), pageLocation.y(),
-#if ENABLE(POINTER_LOCK)
-                 0, 0,
-#endif
-                 ctrlKey, altKey, shiftKey, metaKey, 0, 0, 0, false)
-    , m_wheelDelta(IntPoint(static_cast<int>(wheelTicks.x() * TickMultiplier), static_cast<int>(wheelTicks.y() * TickMultiplier)))
-    , m_rawDelta(roundedIntPoint(rawDelta))
-    , m_deltaMode(deltaMode)
-    , m_directionInvertedFromDevice(directionInvertedFromDevice)
-{
-}
-
-void WheelEvent::initWheelEvent(int rawDeltaX, int rawDeltaY, PassRefPtr<AbstractView> view,
+void WheelEvent::initWheelEvent(int wheelDeltaX, int wheelDeltaY, AbstractView* view,
                                 int screenX, int screenY, int pageX, int pageY,
                                 bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
 {
     if (dispatched())
         return;
     
-    initUIEvent(eventNames().mousewheelEvent, true, true, view, 0);
+    initUIEvent(mousewheelEvent, true, true, view, 0);
     
-    m_screenLocation = IntPoint(screenX, screenY);
+    m_screenX = screenX;
+    m_screenY = screenY;
     m_ctrlKey = ctrlKey;
     m_altKey = altKey;
     m_shiftKey = shiftKey;
     m_metaKey = metaKey;
+    m_wheelDeltaX = wheelDeltaX;
+    m_wheelDeltaY = wheelDeltaY;
     
-    // Normalize to the Windows 120 multiple
-    m_wheelDelta = IntPoint(rawDeltaX * TickMultiplier, rawDeltaY * TickMultiplier);
-    
-    m_rawDelta = IntPoint(rawDeltaX, rawDeltaY);
-    m_deltaMode = DOM_DELTA_PIXEL;
-    m_directionInvertedFromDevice = false;
-
-    initCoordinates(IntPoint(pageX, pageY));
+    initCoordinates(pageX, pageY);
 }
 
-void WheelEvent::initWebKitWheelEvent(int rawDeltaX, int rawDeltaY, PassRefPtr<AbstractView> view,
-                                      int screenX, int screenY, int pageX, int pageY,
-                                      bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
-{
-    initWheelEvent(rawDeltaX, rawDeltaY, view, screenX, screenY, pageX, pageY,
-                   ctrlKey, altKey, shiftKey, metaKey);
-}
 
-const AtomicString& WheelEvent::interfaceName() const
+bool WheelEvent::isWheelEvent() const
 {
-    return eventNames().interfaceForWheelEvent;
-}
-
-bool WheelEvent::isMouseEvent() const
-{
-    return false;
-}
-
-inline static unsigned deltaMode(const PlatformWheelEvent& event)
-{
-    return event.granularity() == ScrollByPageWheelEvent ? WheelEvent::DOM_DELTA_PAGE : WheelEvent::DOM_DELTA_PIXEL;
-}
-
-PassRefPtr<WheelEventDispatchMediator> WheelEventDispatchMediator::create(const PlatformWheelEvent& event, PassRefPtr<AbstractView> view)
-{
-    return adoptRef(new WheelEventDispatchMediator(event, view));
-}
-
-WheelEventDispatchMediator::WheelEventDispatchMediator(const PlatformWheelEvent& event, PassRefPtr<AbstractView> view)
-{
-    if (!(event.deltaX() || event.deltaY()))
-        return;
-
-    setEvent(WheelEvent::create(FloatPoint(event.wheelTicksX(), event.wheelTicksY()), FloatPoint(event.deltaX(), event.deltaY()),
-        deltaMode(event), view, event.globalPosition(), event.position(),
-        event.ctrlKey(), event.altKey(), event.shiftKey(), event.metaKey(), event.directionInvertedFromDevice()));
-}
-
-WheelEvent* WheelEventDispatchMediator::event() const
-{
-    return static_cast<WheelEvent*>(EventDispatchMediator::event());
-}
-
-bool WheelEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) const
-{
-    ASSERT(event());
-    return EventDispatchMediator::dispatchEvent(dispatcher) && !event()->defaultHandled();
+    return true;
 }
 
 } // namespace WebCore

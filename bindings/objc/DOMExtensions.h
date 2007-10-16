@@ -43,89 +43,20 @@
 #import <WebCore/DOMRGBColor.h>
 #import <WebCore/DOMRange.h>
 
-#if PLATFORM(IOS)
-#import <CoreGraphics/CoreGraphics.h>
-#endif
-
 @class NSArray;
 @class NSImage;
 @class NSURL;
 
-
-#if PLATFORM(IOS)
-@interface DOMHTMLElement (DOMHTMLElementExtensions)
-- (int)scrollXOffset;
-- (int)scrollYOffset;
-- (void)setScrollXOffset:(int)x scrollYOffset:(int)y;
-- (void)setScrollXOffset:(int)x scrollYOffset:(int)y adjustForPurpleCaret:(BOOL)adjustForPurpleCaret;
-- (void)absolutePosition:(int *)x :(int *)y :(int *)w :(int *)h;
-@end
-#endif
-
-#if PLATFORM(IOS)
-typedef struct _WKQuad {
-    CGPoint p1;
-    CGPoint p2;
-    CGPoint p3;
-    CGPoint p4;
-} WKQuad;
-
-@interface WKQuadObject : NSObject
-{
-    WKQuad  _quad;
-}
-
-- (id)initWithQuad:(WKQuad)quad;
-- (WKQuad)quad;
-- (CGRect)boundingBox;
-@end
-#endif
-
 @interface DOMNode (DOMNodeExtensions)
-#if PLATFORM(IOS)
-- (CGRect)boundingBox;
-#else
-- (NSRect)boundingBox WEBKIT_OBJC_METHOD_ANNOTATION(AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER);
-#endif
-- (NSArray *)lineBoxRects WEBKIT_OBJC_METHOD_ANNOTATION(AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER);
-
-#if PLATFORM(IOS)
-- (CGRect)boundingBoxUsingTransforms; // takes transforms into account
-
-- (WKQuad)absoluteQuad;
-- (WKQuad)absoluteQuadAndInsideFixedPosition:(BOOL *)insideFixed;
-- (NSArray *)lineBoxQuads;      // returns array of WKQuadObject
-
-- (NSURL *)hrefURL;
-- (CGRect)hrefFrame;
-- (NSString *)hrefTarget;
-- (NSString *)hrefLabel;
-- (NSString *)hrefTitle;
-- (CGRect)boundingFrame;
-- (WKQuad)innerFrameQuad;       // takes transforms into account
-- (float)computedFontSize;
-- (DOMNode *)nextFocusNode;
-- (DOMNode *)previousFocusNode;
-#endif
+- (NSRect)boundingBox;
+- (NSArray *)lineBoxRects;
 @end
 
 @interface DOMElement (DOMElementAppKitExtensions)
-#if !PLATFORM(IOS)
-- (NSImage *)image WEBKIT_OBJC_METHOD_ANNOTATION(AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER);
-#endif
+- (NSImage *)image;
 @end
 
 @interface DOMHTMLDocument (DOMHTMLDocumentExtensions)
-- (DOMDocumentFragment *)createDocumentFragmentWithMarkupString:(NSString *)markupString baseURL:(NSURL *)baseURL WEBKIT_OBJC_METHOD_ANNOTATION(AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER);
-- (DOMDocumentFragment *)createDocumentFragmentWithText:(NSString *)text WEBKIT_OBJC_METHOD_ANNOTATION(AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER);
+- (DOMDocumentFragment *)createDocumentFragmentWithMarkupString:(NSString *)markupString baseURL:(NSURL *)baseURL;
+- (DOMDocumentFragment *)createDocumentFragmentWithText:(NSString *)text;
 @end
-
-#if PLATFORM(IOS)
-@interface DOMHTMLAreaElement (DOMHTMLAreaElementExtensions)
-- (CGRect)boundingFrameForOwner:(DOMNode *)anOwner;
-@end
-
-@interface DOMHTMLSelectElement (DOMHTMLSelectElementExtensions)
-- (DOMNode *)listItemAtIndex:(int)anIndex;
-@end
-#endif

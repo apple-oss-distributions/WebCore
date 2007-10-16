@@ -23,104 +23,26 @@
 #include "config.h"
 #include "KeyboardEvent.h"
 
-#include "Document.h"
-#include "DOMWindow.h"
-#include "EventDispatcher.h"
 #include "EventNames.h"
-#include "EventHandler.h"
-#include "Frame.h"
 #include "PlatformKeyboardEvent.h"
-#include "Settings.h"
-#include "WindowsKeyboardCodes.h"
 
 namespace WebCore {
 
-static inline const AtomicString& eventTypeForKeyboardEventType(PlatformEvent::Type type)
-{
-    switch (type) {
-        case PlatformEvent::KeyUp:
-            return eventNames().keyupEvent;
-        case PlatformEvent::RawKeyDown:
-            return eventNames().keydownEvent;
-        case PlatformEvent::Char:
-            return eventNames().keypressEvent;
-        case PlatformEvent::KeyDown:
-            // The caller should disambiguate the combined event into RawKeyDown or Char events.
-            break;
-        default:
-            break;
-    }
-    ASSERT_NOT_REACHED();
-    return eventNames().keydownEvent;
-}
-
-static inline int windowsVirtualKeyCodeWithoutLocation(int keycode)
-{
-    switch (keycode) {
-    case VK_LCONTROL:
-    case VK_RCONTROL:
-        return VK_CONTROL;
-    case VK_LSHIFT:
-    case VK_RSHIFT:
-        return VK_SHIFT;
-    case VK_LMENU:
-    case VK_RMENU:
-        return VK_MENU;
-    default:
-        return keycode;
-    }
-}
-
-static inline KeyboardEvent::KeyLocationCode keyLocationCode(const PlatformKeyboardEvent& key)
-{
-    if (key.isKeypad())
-        return KeyboardEvent::DOMKeyLocationNumpad;
-
-    switch (key.windowsVirtualKeyCode()) {
-    case VK_LCONTROL:
-    case VK_LSHIFT:
-    case VK_LMENU:
-    case VK_LWIN:
-        return KeyboardEvent::DOMKeyLocationLeft;
-    case VK_RCONTROL:
-    case VK_RSHIFT:
-    case VK_RMENU:
-    case VK_RWIN:
-        return KeyboardEvent::DOMKeyLocationRight;
-    default:
-        return KeyboardEvent::DOMKeyLocationStandard;
-    }
-}
-
-KeyboardEventInit::KeyboardEventInit()
-    : keyLocation(0)
-    , ctrlKey(false)
-    , altKey(false)
-    , shiftKey(false)
-    , metaKey(false)
-{
-}
+using namespace EventNames;
 
 KeyboardEvent::KeyboardEvent()
-    : m_keyLocation(DOMKeyLocationStandard)
+    : m_keyEvent(0)
+    , m_keyLocation(DOM_KEY_LOCATION_STANDARD)
     , m_altGraphKey(false)
 {
 }
 
 KeyboardEvent::KeyboardEvent(const PlatformKeyboardEvent& key, AbstractView* view)
-    : UIEventWithKeyState(eventTypeForKeyboardEventType(key.type()),
+    : UIEventWithKeyState(key.isKeyUp() ? keyupEvent : key.isAutoRepeat() ? keypressEvent : keydownEvent,
                           true, true, view, 0, key.ctrlKey(), key.altKey(), key.shiftKey(), key.metaKey())
-    , m_keyEvent(adoptPtr(new PlatformKeyboardEvent(key)))
+    , m_keyEvent(new PlatformKeyboardEvent(key))
     , m_keyIdentifier(key.keyIdentifier())
-    , m_keyLocation(keyLocationCode(key))
-    , m_altGraphKey(false)
-{
-}
-
-KeyboardEvent::KeyboardEvent(const AtomicString& eventType, const KeyboardEventInit& initializer)
-    : UIEventWithKeyState(eventType, initializer.bubbles, initializer.cancelable, initializer.view, initializer.detail, initializer.ctrlKey, initializer.altKey, initializer.shiftKey, initializer.metaKey)
-    , m_keyIdentifier(initializer.keyIdentifier)
-    , m_keyLocation(initializer.keyLocation)
+    , m_keyLocation(key.isKeypad() ? DOM_KEY_LOCATION_NUMPAD : DOM_KEY_LOCATION_STANDARD)
     , m_altGraphKey(false)
 {
 }
@@ -129,6 +51,7 @@ KeyboardEvent::KeyboardEvent(const AtomicString& eventType, bool canBubble, bool
                              const String &keyIdentifier,  unsigned keyLocation,
                              bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool altGraphKey)
     : UIEventWithKeyState(eventType, canBubble, cancelable, view, 0, ctrlKey, altKey, shiftKey, metaKey)
+    , m_keyEvent(0)
     , m_keyIdentifier(keyIdentifier)
     , m_keyLocation(keyLocation)
     , m_altGraphKey(altGraphKey)
@@ -137,6 +60,7 @@ KeyboardEvent::KeyboardEvent(const AtomicString& eventType, bool canBubble, bool
 
 KeyboardEvent::~KeyboardEvent()
 {
+    delete m_keyEvent;
 }
 
 void KeyboardEvent::initKeyboardEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view,
@@ -172,35 +96,21 @@ bool KeyboardEvent::getModifierState(const String& keyIdentifier) const
 
 int KeyboardEvent::keyCode() const
 {
-    // IE: virtual key code for keyup/keydown, character code for keypress
-    // Firefox: virtual key code for keyup/keydown, zero for keypress
-    // We match IE.
     if (!m_keyEvent)
         return 0;
-    if (type() == eventNames().keydownEvent || type() == eventNames().keyupEvent)
-        return windowsVirtualKeyCodeWithoutLocation(m_keyEvent->windowsVirtualKeyCode());
-
+    if (type() == keydownEvent || type() == keyupEvent)
+        return m_keyEvent->WindowsKeyCode();
     return charCode();
 }
 
 int KeyboardEvent::charCode() const
 {
-    // IE: not supported
-    // Firefox: 0 for keydown/keyup events, character code for keypress
-    // We match Firefox, unless in backward compatibility mode, where we always return the character code.
-    bool backwardCompatibilityMode = false;
-    if (view() && view()->frame())
-        backwardCompatibilityMode = view()->frame()->eventHandler()->needsKeyboardEventDisambiguationQuirks();
-
-    if (!m_keyEvent || (type() != eventNames().keypressEvent && !backwardCompatibilityMode))
+    if (!m_keyEvent)
         return 0;
     String text = m_keyEvent->text();
-    return static_cast<int>(text.characterStartingAt(0));
-}
-
-const AtomicString& KeyboardEvent::interfaceName() const
-{
-    return eventNames().interfaceForKeyboardEvent;
+    if (text.length() != 1)
+        return 0;
+    return text[0];
 }
 
 bool KeyboardEvent::isKeyboardEvent() const
@@ -221,22 +131,6 @@ KeyboardEvent* findKeyboardEvent(Event* event)
         if (e->isKeyboardEvent())
             return static_cast<KeyboardEvent*>(e);
     return 0;
-}
-
-PassRefPtr<KeyboardEventDispatchMediator> KeyboardEventDispatchMediator::create(PassRefPtr<KeyboardEvent> event)
-{
-    return adoptRef(new KeyboardEventDispatchMediator(event));
-}
-
-KeyboardEventDispatchMediator::KeyboardEventDispatchMediator(PassRefPtr<KeyboardEvent> event)
-    : EventDispatchMediator(event)
-{
-}
-
-bool KeyboardEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) const
-{
-    // Make sure not to return true if we already took default action while handling the event.
-    return EventDispatchMediator::dispatchEvent(dispatcher) && !event()->defaultHandled();
 }
 
 } // namespace WebCore

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,36 +26,31 @@
 #ifndef PositionIterator_h
 #define PositionIterator_h
 
-#include "Node.h"
 #include "Position.h"
 
 namespace WebCore {
 
-// A Position iterator with constant-time
-// increment, decrement, and several predicates on the Position it is at.
-// Conversion to/from Position is O(n) in the offset.
 class PositionIterator {
 public:
     PositionIterator()
-        : m_anchorNode(0)
-        , m_nodeAfterPositionInAnchor(0)
-        , m_offsetInAnchor(0)
+        : m_parent(0)
+        , m_child(0)
+        , m_offset(0)
     {
     }
 
     PositionIterator(const Position& pos)
-        : m_anchorNode(pos.anchorNode())
-        , m_nodeAfterPositionInAnchor(m_anchorNode->childNode(pos.deprecatedEditingOffset()))
-        , m_offsetInAnchor(m_nodeAfterPositionInAnchor ? 0 : pos.deprecatedEditingOffset())
+        : m_parent(pos.node())
+        , m_child(m_parent->childNode(pos.offset()))
+        , m_offset(m_child ? 0 : pos.offset())
     {
     }
-    operator Position() const;
 
     void increment();
     void decrement();
 
-    Node* node() const { return m_anchorNode; }
-    int offsetInLeafNode() const { return m_offsetInAnchor; }
+    Node* node() const { return m_parent; }
+    int offsetInLeafNode() const { return m_offset; }
 
     bool atStart() const;
     bool atEnd() const;
@@ -64,9 +59,10 @@ public:
     bool isCandidate() const;
 
 private:
-    Node* m_anchorNode;
-    Node* m_nodeAfterPositionInAnchor; // If this is non-null, m_nodeAfterPositionInAnchor->parentNode() == m_anchorNode;
-    int m_offsetInAnchor;
+    friend class Position;
+    Node* m_parent;
+    Node* m_child;
+    int m_offset;
 };
 
 } // namespace WebCore

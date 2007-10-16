@@ -26,9 +26,11 @@
 #include "config.h"
 #include "NativeXPathNSResolver.h"
 
+#if ENABLE(XPATH)
+
 #include "Node.h"
+#include "PlatformString.h"
 #include "XMLNames.h"
-#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -52,3 +54,5 @@ String NativeXPathNSResolver::lookupNamespaceURI(const String& prefix)
 }
 
 } // namespace WebCore
+
+#endif // ENABLE(XPATH)

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,144 +27,148 @@
 #include "JSHTMLDocument.h"
 
 #include "Frame.h"
-#include "HTMLAllCollection.h"
+#include "FrameLoader.h"
 #include "HTMLBodyElement.h"
 #include "HTMLCollection.h"
 #include "HTMLDocument.h"
 #include "HTMLElement.h"
 #include "HTMLIFrameElement.h"
 #include "HTMLNames.h"
-#include "JSDOMWindow.h"
-#include "JSDOMWindowCustom.h"
-#include "JSDOMWindowShell.h"
 #include "JSHTMLCollection.h"
-#include "JSMainThreadExecState.h"
-#include "SegmentedString.h"
-#include "DocumentParser.h"
-#include <runtime/Error.h>
-#include <runtime/JSCell.h>
-#include <wtf/unicode/CharacterNames.h>
-
-using namespace JSC;
+#include "kjs_html.h"
+#include "kjs_window.h"
 
 namespace WebCore {
 
+using namespace KJS;
 using namespace HTMLNames;
 
-bool JSHTMLDocument::canGetItemsForName(ExecState*, HTMLDocument* document, PropertyName propertyName)
+bool JSHTMLDocument::canGetItemsForName(ExecState*, HTMLDocument* doc, const Identifier& propertyName)
 {
-    AtomicStringImpl* atomicPropertyName = findAtomicString(propertyName);
-    return atomicPropertyName && document->documentNamedItemMap().contains(atomicPropertyName);
+    return doc->hasNamedItem(propertyName) || doc->hasDocExtraNamedItem(propertyName);
 }
 
-JSValue JSHTMLDocument::nameGetter(ExecState* exec, JSValue slotBase, PropertyName propertyName)
+JSValue* JSHTMLDocument::nameGetter(ExecState* exec, JSObject* originalObject, const Identifier& propertyName, const PropertySlot& slot)
 {
-    JSHTMLDocument* thisObj = jsCast<JSHTMLDocument*>(asObject(slotBase));
-    HTMLDocument* document = toHTMLDocument(thisObj->impl());
+    JSHTMLDocument* thisObj = static_cast<JSHTMLDocument*>(slot.slotBase());
+    HTMLDocument* doc = static_cast<HTMLDocument*>(thisObj->impl());
 
-    AtomicStringImpl* atomicPropertyName = findAtomicString(propertyName);
-    if (!atomicPropertyName || !document->documentNamedItemMap().contains(atomicPropertyName))
+    String name = propertyName;
+    RefPtr<HTMLCollection> collection = doc->documentNamedItems(name);
+
+    unsigned length = collection->length();
+    if (!length)
         return jsUndefined();
 
-    if (UNLIKELY(!document->documentNamedItemMap().containsSingle(atomicPropertyName))) {
-        RefPtr<HTMLCollection> collection = document->documentNamedItems(atomicPropertyName);
-        ASSERT(!collection->isEmpty());
-        ASSERT(!collection->hasExactlyOneItem());
-        return toJS(exec, thisObj->globalObject(), WTF::getPtr(collection));
-    }
+    if (length == 1) {
+        Node* node = collection->firstItem();
 
-    Node* node = document->documentNamedItemMap().getElementByDocumentNamedItem(atomicPropertyName, document);
-    Frame* frame;
-    if (node->hasTagName(iframeTag) && (frame = static_cast<HTMLIFrameElement*>(node)->contentFrame()))
-        return toJS(exec, frame);
+        Frame* frame;
+        if (node->hasTagName(iframeTag) && (frame = static_cast<HTMLIFrameElement*>(node)->contentFrame()))
+            return Window::retrieve(frame);
 
-    return toJS(exec, thisObj->globalObject(), node);
+        return toJS(exec, node);
+    } 
+
+    return toJS(exec, collection.get());
 }
 
 // Custom attributes
 
-JSValue JSHTMLDocument::all(ExecState* exec) const
+JSValue* JSHTMLDocument::all(ExecState* exec) const
 {
     // If "all" has been overwritten, return the overwritten value
-    JSValue v = getDirect(exec->vm(), Identifier(exec, "all"));
-    if (v)
+    if (JSValue* v = getDirect("all"))
         return v;
 
-    return toJS(exec, globalObject(), toHTMLDocument(impl())->all());
+    return toJS(exec, static_cast<HTMLDocument*>(impl())->all().get());
 }
 
-void JSHTMLDocument::setAll(ExecState* exec, JSValue value)
+void JSHTMLDocument::setAll(ExecState*, JSValue* value)
 {
     // Add "all" to the property map.
-    putDirect(exec->vm(), Identifier(exec, "all"), value);
+    putDirect("all", value);
+}
+
+JSValue* JSHTMLDocument::location(ExecState* exec) const
+{
+    Frame* frame = static_cast<HTMLDocument*>(impl())->frame();
+    if (!frame)
+        return jsNull();
+
+    Window* win = Window::retrieveWindow(frame);
+    ASSERT(win);
+    return win->location();
+}
+
+void JSHTMLDocument::setLocation(ExecState* exec, JSValue* value)
+{
+    Frame* frame = static_cast<HTMLDocument*>(impl())->frame();
+    if (!frame)
+        return;
+
+    String str = value->toString(exec);
+
+    // When assigning location, IE and Mozilla both resolve the URL
+    // relative not the target frame.
+    Frame* activeFrame = static_cast<ScriptInterpreter*>(exec->dynamicInterpreter())->frame();
+    if (activeFrame)
+        str = activeFrame->document()->completeURL(str);
+
+    bool userGesture = static_cast<ScriptInterpreter*>(exec->dynamicInterpreter())->wasRunByUserGesture();
+    frame->loader()->scheduleLocationChange(str, activeFrame->loader()->outgoingReferrer(), false, userGesture);
 }
 
 // Custom functions
 
-JSValue JSHTMLDocument::open(ExecState* exec)
+JSValue* JSHTMLDocument::open(ExecState* exec, const List& args)
 {
     // For compatibility with other browsers, pass open calls with more than 2 parameters to the window.
-    if (exec->argumentCount() > 2) {
-        Frame* frame = toHTMLDocument(impl())->frame();
+    if (args.size() > 2) {
+        Frame* frame = static_cast<HTMLDocument*>(impl())->frame();
         if (frame) {
-            JSDOMWindowShell* wrapper = toJSDOMWindowShell(frame, currentWorld(exec));
-            if (wrapper) {
-                JSValue function = wrapper->get(exec, Identifier(exec, "open"));
-                CallData callData;
-                CallType callType = ::getCallData(function, callData);
-                if (callType == CallTypeNone)
-                    return throwTypeError(exec);
-                return JSMainThreadExecState::call(exec, function, callType, callData, wrapper, ArgList(exec));
+            Window* window = Window::retrieveWindow(frame);
+            if (window) {
+                JSObject* functionObject = window->get(exec, "open")->getObject();
+                if (!functionObject || !functionObject->implementsCall())
+                    return throwError(exec, TypeError);
+                return functionObject->call(exec, window, args);
             }
         }
         return jsUndefined();
     }
 
-    // document.open clobbers the security context of the document and
-    // aliases it with the active security context.
-    Document* activeDocument = asJSDOMWindow(exec->lexicalGlobalObject())->impl()->document();
-
     // In the case of two parameters or fewer, do a normal document open.
-    toHTMLDocument(impl())->open(activeDocument);
-    return this;
-}
-
-enum NewlineRequirement { DoNotAddNewline, DoAddNewline };
-
-static inline void documentWrite(ExecState* exec, HTMLDocument* document, NewlineRequirement addNewline)
-{
-    // DOM only specifies single string argument, but browsers allow multiple or no arguments.
-
-    size_t size = exec->argumentCount();
-
-    String firstString = exec->argument(0).toString(exec)->value(exec);
-    SegmentedString segmentedString = firstString;
-    if (size != 1) {
-        if (!size)
-            segmentedString.clear();
-        else {
-            for (size_t i = 1; i < size; ++i) {
-                String subsequentString = exec->argument(i).toString(exec)->value(exec);
-                segmentedString.append(SegmentedString(subsequentString));
-            }
-        }
-    }
-    if (addNewline)
-        segmentedString.append(SegmentedString(String(&newlineCharacter, 1)));
-
-    Document* activeDocument = asJSDOMWindow(exec->lexicalGlobalObject())->impl()->document();
-    document->write(segmentedString, activeDocument);
-}
-
-JSValue JSHTMLDocument::write(ExecState* exec)
-{
-    documentWrite(exec, toHTMLDocument(impl()), DoNotAddNewline);
+    static_cast<HTMLDocument*>(impl())->open();
     return jsUndefined();
 }
 
-JSValue JSHTMLDocument::writeln(ExecState* exec)
+static String writeHelper(ExecState* exec, const List& args)
 {
-    documentWrite(exec, toHTMLDocument(impl()), DoAddNewline);
+    // DOM only specifies single string argument, but NS & IE allow multiple
+    // or no arguments.
+    String str = "";
+    for (int i = 0; i < args.size(); ++i)
+        str += args[i]->toString(exec);
+    return str;
+}
+
+JSValue* JSHTMLDocument::write(ExecState* exec, const List& args)
+{
+    static_cast<HTMLDocument*>(impl())->write(writeHelper(exec, args));
+    return jsUndefined();
+}
+
+JSValue* JSHTMLDocument::writeln(ExecState* exec, const List& args)
+{
+    static_cast<HTMLDocument*>(impl())->write(writeHelper(exec, args) + "\n");
+    return jsUndefined();
+}
+
+JSValue* JSHTMLDocument::clear(ExecState*, const List&)
+{
+    // even IE doesn't support this one...
+    // static_cast<HTMLDocument*>(impl())->clear();
     return jsUndefined();
 }
 

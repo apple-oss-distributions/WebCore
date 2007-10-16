@@ -1,6 +1,8 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,26 +24,13 @@
 #define CSSInheritedValue_h
 
 #include "CSSValue.h"
-#include <wtf/PassRefPtr.h>
 
 namespace WebCore {
 
 class CSSInheritedValue : public CSSValue {
 public:
-    static PassRefPtr<CSSInheritedValue> create()
-    {
-        return adoptRef(new CSSInheritedValue);
-    }
-
-    String customCssText() const;
-
-    bool equals(const CSSInheritedValue&) const { return true; }
-
-private:
-    CSSInheritedValue()
-        : CSSValue(InheritedClass)
-    {
-    }
+    virtual unsigned short cssValueType() const;
+    virtual String cssText() const;
 };
 
 } // namespace WebCore

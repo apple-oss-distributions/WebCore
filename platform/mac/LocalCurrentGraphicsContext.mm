@@ -20,42 +20,34 @@
 #include "config.h"
 #include "LocalCurrentGraphicsContext.h"
 
+#include "GraphicsContext.h"
 #include <AppKit/NSGraphicsContext.h>
 
 namespace WebCore {
 
 LocalCurrentGraphicsContext::LocalCurrentGraphicsContext(GraphicsContext* graphicsContext)
-    : m_didSetGraphicsContext(false)
 {
     m_savedGraphicsContext = graphicsContext;
     graphicsContext->save();
-
-    CGContextRef cgContext = this->cgContext();
-    if (cgContext == [[NSGraphicsContext currentContext] graphicsPort]) {
+    
+    if (graphicsContext->platformContext() == [[NSGraphicsContext currentContext] graphicsPort]) {
         m_savedNSGraphicsContext = 0;
         return;
     }
-
+    
     m_savedNSGraphicsContext = [[NSGraphicsContext currentContext] retain];
-    NSGraphicsContext* newContext = [NSGraphicsContext graphicsContextWithGraphicsPort:cgContext flipped:YES];
+    NSGraphicsContext* newContext = [NSGraphicsContext graphicsContextWithGraphicsPort:graphicsContext->platformContext() flipped:YES];
     [NSGraphicsContext setCurrentContext:newContext];
-    m_didSetGraphicsContext = true;
 }
 
 LocalCurrentGraphicsContext::~LocalCurrentGraphicsContext()
 {
-    if (m_didSetGraphicsContext) {
+    m_savedGraphicsContext->restore();
+
+    if (m_savedNSGraphicsContext) {
         [NSGraphicsContext setCurrentContext:m_savedNSGraphicsContext];
         [m_savedNSGraphicsContext release];
     }
-
-    m_savedGraphicsContext->restore();
-}
-
-CGContextRef LocalCurrentGraphicsContext::cgContext()
-{
-    CGContextRef cgContext = m_savedGraphicsContext->platformContext();
-    return cgContext;
 }
 
 }

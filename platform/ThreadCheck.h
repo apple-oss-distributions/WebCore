@@ -26,7 +26,6 @@
 #ifndef ThreadCheck_h
 #define ThreadCheck_h
 
-#if !PLATFORM(IOS)
 namespace WebCore {
     enum ThreadViolationBehavior {
         NoThreadCheck,
@@ -34,22 +33,12 @@ namespace WebCore {
         LogOnThreadViolation,
         RaiseExceptionOnThreadViolation
     };
-    enum ThreadViolationRound {
-        ThreadViolationRoundOne = 0,
-        ThreadViolationRoundTwo,
-        MaximumThreadViolationRound
-    };
-    void setDefaultThreadViolationBehavior(ThreadViolationBehavior, ThreadViolationRound);
-    void reportThreadViolation(const char* function, ThreadViolationRound);
+    void setDefaultThreadViolationBehavior(ThreadViolationBehavior);
+    void reportThreadViolation(const char* function);
 }
 
-extern "C" void WebCoreReportThreadViolation(const char* function, WebCore::ThreadViolationRound);
+extern "C" void WebCoreReportThreadViolation(const char* function);
 
-#define WebCoreThreadViolationCheckRoundOne() ::WebCore::reportThreadViolation(WTF_PRETTY_FUNCTION, WebCore::ThreadViolationRoundOne)
-#define WebCoreThreadViolationCheckRoundTwo() ::WebCore::reportThreadViolation(WTF_PRETTY_FUNCTION, WebCore::ThreadViolationRoundTwo)
-#else
-#define WebCoreThreadViolationCheckRoundOne() do {} while (0)
-#define WebCoreThreadViolationCheckRoundTwo() do {} while (0)
-#endif // PLATFORM(IOS)
+#define WebCoreThreadViolationCheck() ::WebCore::reportThreadViolation(WTF_PRETTY_FUNCTION)
 
 #endif

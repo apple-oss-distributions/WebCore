@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006, 2006, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004-2006 Apple Computer, Inc.  All rights reserved.
  * Copyright (C) 2006 James G. Speth <speth@end.com>
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
@@ -28,11 +28,11 @@
 #import "config.h"
 #import "DOMObject.h"
 
-#import "DOMHTMLLinkElementInternal.h"
-#import "DOMHTMLStyleElementInternal.h"
+#import "DOMHTMLLinkElement.h"
+#import "DOMHTMLStyleElement.h"
 #import "DOMInternal.h"
-#import "DOMProcessingInstructionInternal.h"
-#import "DOMStyleSheetInternal.h"
+#import "DOMProcessingInstruction.h"
+#import "DOMStyleSheet.h"
 #import "HTMLLinkElement.h"
 #import "HTMLStyleElement.h"
 #import "ProcessingInstruction.h"
@@ -52,13 +52,19 @@
 - (void)dealloc
 {
     if (_internal)
-        removeDOMWrapper(_internal);
+        WebCore::removeDOMWrapper(_internal);
     [super dealloc];
 }
 
-- (id)copyWithZone:(NSZone *)unusedZone
+- (void)finalize
 {
-    UNUSED_PARAM(unusedZone);
+    if (_internal)
+        WebCore::removeDOMWrapper(_internal);
+    [super finalize];
+}
+
+- (id)copyWithZone:(NSZone *)zone
+{
     return [self retain];
 }
 
@@ -68,18 +74,27 @@
 
 - (DOMStyleSheet *)sheet
 {
-    WebCore::StyleSheet* styleSheet;
+    WebCore::StyleSheet *styleSheet;
 
     if ([self isKindOfClass:[DOMProcessingInstruction class]])
-        styleSheet = core(static_cast<DOMProcessingInstruction *>(self))->sheet();
+        styleSheet = static_cast<WebCore::ProcessingInstruction*>([(DOMProcessingInstruction *)self _node])->sheet();
     else if ([self isKindOfClass:[DOMHTMLLinkElement class]])
-        styleSheet = core(static_cast<DOMHTMLLinkElement *>(self))->sheet();
+        styleSheet = static_cast<WebCore::HTMLLinkElement*>([(DOMHTMLLinkElement *)self _node])->sheet();
     else if ([self isKindOfClass:[DOMHTMLStyleElement class]])
-        styleSheet = core(static_cast<DOMHTMLStyleElement *>(self))->sheet();
+        styleSheet = static_cast<WebCore::HTMLStyleElement*>([(DOMHTMLStyleElement *)self _node])->sheet();
     else
         return nil;
 
-    return kit(styleSheet);
+    return [DOMStyleSheet _wrapStyleSheet:styleSheet];
+}
+
+@end
+
+@implementation DOMObject (WebCoreInternal)
+
+- (id)_init
+{
+    return [super _init];
 }
 
 @end

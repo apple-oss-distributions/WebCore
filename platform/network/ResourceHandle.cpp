@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006, 2007, 2008, 2009, 2010, 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006, 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,121 +28,45 @@
 #include "ResourceHandleInternal.h"
 
 #include "Logging.h"
-#include "NetworkingContext.h"
 #include "ResourceHandleClient.h"
 #include "Timer.h"
 #include <algorithm>
-#include <wtf/MainThread.h>
-#include <wtf/text/CString.h>
-
-#if PLATFORM(IOS)
-#include "NotImplemented.h"
-#endif
 
 namespace WebCore {
 
-static bool shouldForceContentSniffing;
-
-typedef HashMap<AtomicString, ResourceHandle::BuiltinConstructor> BuiltinResourceHandleConstructorMap;
-static BuiltinResourceHandleConstructorMap& builtinResourceHandleConstructorMap()
+ResourceHandle::ResourceHandle(const ResourceRequest& request, ResourceHandleClient* client, bool defersLoading,
+         bool shouldContentSniff, bool mightDownloadFromHandle)
+    : d(new ResourceHandleInternal(this, request, client, defersLoading, shouldContentSniff, mightDownloadFromHandle))
 {
-#if PLATFORM(IOS)
-    ASSERT(WebThreadIsLockedOrDisabled());
-#else
-    ASSERT(isMainThread());
-#endif
-    DEFINE_STATIC_LOCAL(BuiltinResourceHandleConstructorMap, map, ());
-    return map;
 }
 
-void ResourceHandle::registerBuiltinConstructor(const AtomicString& protocol, ResourceHandle::BuiltinConstructor constructor)
+PassRefPtr<ResourceHandle> ResourceHandle::create(const ResourceRequest& request, ResourceHandleClient* client,
+    Frame* frame, bool defersLoading, bool shouldContentSniff, bool mightDownloadFromHandle)
 {
-    builtinResourceHandleConstructorMap().add(protocol, constructor);
-}
+    RefPtr<ResourceHandle> newHandle(new ResourceHandle(request, client, defersLoading, shouldContentSniff, mightDownloadFromHandle));
 
-typedef HashMap<AtomicString, ResourceHandle::BuiltinSynchronousLoader> BuiltinResourceHandleSynchronousLoaderMap;
-static BuiltinResourceHandleSynchronousLoaderMap& builtinResourceHandleSynchronousLoaderMap()
-{
-    ASSERT(isMainThread());
-    DEFINE_STATIC_LOCAL(BuiltinResourceHandleSynchronousLoaderMap, map, ());
-    return map;
-}
-
-void ResourceHandle::registerBuiltinSynchronousLoader(const AtomicString& protocol, ResourceHandle::BuiltinSynchronousLoader loader)
-{
-    builtinResourceHandleSynchronousLoaderMap().add(protocol, loader);
-}
-
-ResourceHandle::ResourceHandle(NetworkingContext* context, const ResourceRequest& request, ResourceHandleClient* client, bool defersLoading, bool shouldContentSniff)
-    : d(adoptPtr(new ResourceHandleInternal(this, context, request, client, defersLoading, shouldContentSniff && shouldContentSniffURL(request.url()))))
-{
-    if (!request.url().isValid()) {
-        scheduleFailure(InvalidURLFailure);
-        return;
-    }
-
-    if (!portAllowed(request.url())) {
-        scheduleFailure(BlockedFailure);
-        return;
-    }
-}
-
-PassRefPtr<ResourceHandle> ResourceHandle::create(NetworkingContext* context, const ResourceRequest& request, ResourceHandleClient* client, bool defersLoading, bool shouldContentSniff)
-{
-    BuiltinResourceHandleConstructorMap::iterator protocolMapItem = builtinResourceHandleConstructorMap().find(request.url().protocol());
-
-    if (protocolMapItem != builtinResourceHandleConstructorMap().end())
-        return protocolMapItem->value(request, client);
-
-    RefPtr<ResourceHandle> newHandle(adoptRef(new ResourceHandle(context, request, client, defersLoading, shouldContentSniff)));
-
-    if (newHandle->d->m_scheduledFailureType != NoFailure)
+    if (!portAllowed(request)) {
+        newHandle->scheduleBlockedFailure();
         return newHandle.release();
-
-    if (newHandle->start())
+    }
+        
+    if (newHandle->start(frame))
         return newHandle.release();
 
     return 0;
 }
 
-void ResourceHandle::scheduleFailure(FailureType type)
+void ResourceHandle::scheduleBlockedFailure()
 {
-    d->m_scheduledFailureType = type;
-    d->m_failureTimer.startOneShot(0);
+    Timer<ResourceHandle>* blockedTimer = new Timer<ResourceHandle>(this, &ResourceHandle::fireBlockedFailure);
+    blockedTimer->startOneShot(0);
 }
 
-void ResourceHandle::fireFailure(Timer<ResourceHandle>*)
+void ResourceHandle::fireBlockedFailure(Timer<ResourceHandle>* timer)
 {
-    if (!client())
-        return;
-
-    switch (d->m_scheduledFailureType) {
-        case NoFailure:
-            ASSERT_NOT_REACHED();
-            return;
-        case BlockedFailure:
-            d->m_scheduledFailureType = NoFailure;
-            client()->wasBlocked(this);
-            return;
-        case InvalidURLFailure:
-            d->m_scheduledFailureType = NoFailure;
-            client()->cannotShowURL(this);
-            return;
-    }
-
-    ASSERT_NOT_REACHED();
-}
-
-void ResourceHandle::loadResourceSynchronously(NetworkingContext* context, const ResourceRequest& request, StoredCredentials storedCredentials, ResourceError& error, ResourceResponse& response, Vector<char>& data)
-{
-    BuiltinResourceHandleSynchronousLoaderMap::iterator protocolMapItem = builtinResourceHandleSynchronousLoaderMap().find(request.url().protocol());
-
-    if (protocolMapItem != builtinResourceHandleSynchronousLoaderMap().end()) {
-        protocolMapItem->value(context, request, storedCredentials, error, response, data);
-        return;
-    }
-
-    platformLoadResourceSynchronously(context, request, storedCredentials, error, response, data);
+    if (client())
+        client()->wasBlocked(this);
+    delete timer;
 }
 
 ResourceHandleClient* ResourceHandle::client() const
@@ -155,101 +79,107 @@ void ResourceHandle::setClient(ResourceHandleClient* client)
     d->m_client = client;
 }
 
-#if PLATFORM(IOS) || !PLATFORM(MAC)
-// ResourceHandle never uses async client calls on these platforms yet.
-void ResourceHandle::continueWillSendRequest(const ResourceRequest&)
+const ResourceRequest& ResourceHandle::request() const
 {
-    notImplemented();
-}
-
-void ResourceHandle::continueDidReceiveResponse()
-{
-    notImplemented();
-}
-
-void ResourceHandle::continueShouldUseCredentialStorage(bool)
-{
-    notImplemented();
-}
-
-#if USE(PROTECTION_SPACE_AUTH_CALLBACK)
-void ResourceHandle::continueCanAuthenticateAgainstProtectionSpace(bool)
-{
-    notImplemented();
-}
-#endif
-#endif
-
-ResourceRequest& ResourceHandle::firstRequest()
-{
-    return d->m_firstRequest;
-}
-
-NetworkingContext* ResourceHandle::context() const
-{
-    return d->m_context.get();
-}
-
-const String& ResourceHandle::lastHTTPMethod() const
-{
-    return d->m_lastHTTPMethod;
-}
-
-bool ResourceHandle::hasAuthenticationChallenge() const
-{
-    return !d->m_currentWebChallenge.isNull();
+    return d->m_request;
 }
 
 void ResourceHandle::clearAuthentication()
 {
 #if PLATFORM(MAC)
     d->m_currentMacChallenge = nil;
+#elif PLATFORM(CF)
+    d->m_currentCFChallenge = 0;
 #endif
     d->m_currentWebChallenge.nullify();
 }
-  
-bool ResourceHandle::shouldContentSniff() const
-{
-    return d->m_shouldContentSniff;
-}
 
-bool ResourceHandle::shouldContentSniffURL(const KURL& url)
+bool ResourceHandle::portAllowed(const ResourceRequest& request)
 {
-#if PLATFORM(MAC)
-    if (shouldForceContentSniffing)
+    unsigned short port = request.url().port();
+
+    // Since most URLs don't have a port, return early for the "no port" case.
+    if (!port)
         return true;
-#endif
-    // We shouldn't content sniff file URLs as their MIME type should be established via their extension.
-    return !url.protocolIs("file");
+
+    // This blocked port list matches the port blocking that Mozilla implements.
+    // See http://www.mozilla.org/projects/netlib/PortBanning.html for more information.
+    static const unsigned short blockedPortList[] = {
+        1,    // tcpmux
+        7,    // echo
+        9,    // discard
+        11,   // systat
+        13,   // daytime
+        15,   // netstat
+        17,   // qotd
+        19,   // chargen
+        20,   // FTP-data
+        21,   // FTP-control
+        22,   // SSH
+        23,   // telnet
+        25,   // SMTP
+        37,   // time
+        42,   // name
+        43,   // nicname
+        53,   // domain
+        77,   // priv-rjs
+        79,   // finger
+        87,   // ttylink
+        95,   // supdup
+        101,  // hostriame
+        102,  // iso-tsap
+        103,  // gppitnp
+        104,  // acr-nema
+        109,  // POP2
+        110,  // POP3
+        111,  // sunrpc
+        113,  // auth
+        115,  // SFTP
+        117,  // uucp-path
+        119,  // nntp
+        123,  // NTP
+        135,  // loc-srv / epmap
+        139,  // netbios
+        143,  // IMAP2
+        179,  // BGP
+        389,  // LDAP
+        465,  // SMTP+SSL
+        512,  // print / exec
+        513,  // login
+        514,  // shell
+        515,  // printer
+        526,  // tempo
+        530,  // courier
+        531,  // Chat
+        532,  // netnews
+        540,  // UUCP
+        556,  // remotefs
+        563,  // NNTP+SSL
+        587,  // ESMTP
+        601,  // syslog-conn
+        636,  // LDAP+SSL
+        993,  // IMAP+SSL
+        995,  // POP3+SSL
+        2049, // NFS
+        4045, // lockd
+        6000, // X11
+    };
+    const unsigned short* const blockedPortListEnd = blockedPortList
+        + sizeof(blockedPortList) / sizeof(blockedPortList[0]);
+
+    // If the port is not in the blocked port list, allow it.
+    if (!std::binary_search(blockedPortList, blockedPortListEnd, port))
+        return true;
+
+    // Allow ports 21 and 22 for FTP URLs, as Mozilla does.
+    if ((port == 21 || port == 22) && request.url().url().startsWith("ftp:", false))
+        return true;
+
+    // Allow any port number in a file URL, since the port number is ignored.
+    if (request.url().url().startsWith("file:", false))
+        return true;
+
+    return false;
 }
-
-void ResourceHandle::forceContentSniffing()
-{
-    shouldForceContentSniffing = true;
-}
-
-void ResourceHandle::setDefersLoading(bool defers)
-{
-    LOG(Network, "Handle %p setDefersLoading(%s)", this, defers ? "true" : "false");
-
-    ASSERT(d->m_defersLoading != defers); // Deferring is not counted, so calling setDefersLoading() repeatedly is likely to be in error.
-    d->m_defersLoading = defers;
-
-    if (defers) {
-        ASSERT(d->m_failureTimer.isActive() == (d->m_scheduledFailureType != NoFailure));
-        if (d->m_failureTimer.isActive())
-            d->m_failureTimer.stop();
-    } else if (d->m_scheduledFailureType != NoFailure) {
-        ASSERT(!d->m_failureTimer.isActive());
-        d->m_failureTimer.startOneShot(0);
-    }
-
-    platformSetDefersLoading(defers);
-}
-
-void ResourceHandle::didChangePriority(ResourceLoadPriority)
-{
-    // Optionally implemented by platform.
-}
-
+  
 } // namespace WebCore

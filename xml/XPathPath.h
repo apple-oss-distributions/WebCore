@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2005 Frerich Raabe <raabe@kde.org>
- * Copyright (C) 2006, 2009 Apple Inc.
+ * path.h - Copyright 2005 Frerich Raabe <raabe@kde.org>
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,8 +27,12 @@
 #ifndef XPathPath_h
 #define XPathPath_h
 
+#if ENABLE(XPATH)
+
 #include "XPathExpressionNode.h"
 #include "XPathNodeSet.h"
+
+int xpathyyparse(void*);
 
 namespace WebCore {
 
@@ -45,8 +49,6 @@ namespace WebCore {
             virtual Value evaluate() const;
 
         private:
-            virtual Value::Type resultType() const { return Value::NodeSetValue; }
-
             Expression* m_expr;
             Vector<Predicate*> m_predicates;
         };
@@ -55,7 +57,7 @@ namespace WebCore {
         public:
             LocationPath();
             virtual ~LocationPath();
-            void setAbsolute(bool value) { m_absolute = value; setIsContextNodeSensitive(!m_absolute); }
+            void setAbsolute(bool value) { m_absolute = value; }
 
             virtual Value evaluate() const;
             void evaluate(NodeSet& nodes) const; // nodes is an input/output parameter
@@ -64,13 +66,14 @@ namespace WebCore {
             void insertFirstStep(Step* step);
 
         private:
-            virtual Value::Type resultType() const { return Value::NodeSetValue; }
+            void optimizeStepPair(unsigned index);
 
             Vector<Step*> m_steps;
             bool m_absolute;
         };
 
-        class Path : public Expression {
+        class Path : public Expression
+        {
         public:
             Path(Filter*, LocationPath*);
             virtual ~Path();
@@ -78,13 +81,13 @@ namespace WebCore {
             virtual Value evaluate() const;
 
         private:
-            virtual Value::Type resultType() const { return Value::NodeSetValue; }
-
             Filter* m_filter;
             LocationPath* m_path;
         };
 
     }
 }
+
+#endif // ENABLE(XPATH)
 
 #endif // XPath_Path_H

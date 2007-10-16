@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2005 Frerich Raabe <raabe@kde.org>
- * Copyright (C) 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright 2005 Frerich Raabe <raabe@kde.org>
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,18 +27,21 @@
 #ifndef XPathResult_h
 #define XPathResult_h
 
+#if ENABLE(XPATH)
+
+#include "Shared.h"
 #include "XPathValue.h"
-#include <wtf/Forward.h>
-#include <wtf/RefCounted.h>
 
 namespace WebCore {
 
     typedef int ExceptionCode;
 
-    class Document;
+    class EventListener;
+    class EventTargetNode;
     class Node;
+    class String;
 
-    class XPathResult : public RefCounted<XPathResult> {
+    class XPathResult : public Shared<XPathResult> {
     public:
         enum XPathResultType {
             ANY_TYPE = 0,
@@ -53,7 +56,7 @@ namespace WebCore {
             FIRST_ORDERED_NODE_TYPE = 9
         };
         
-        static PassRefPtr<XPathResult> create(Document* document, const XPath::Value& value) { return adoptRef(new XPathResult(document, value)); }
+        XPathResult(EventTargetNode*, const XPath::Value&);
         ~XPathResult();
         
         void convertTo(unsigned short type, ExceptionCode&);
@@ -70,19 +73,20 @@ namespace WebCore {
         Node* iterateNext(ExceptionCode&);
         Node* snapshotItem(unsigned long index, ExceptionCode&);
 
-        const XPath::Value& value() const { return m_value; }
+        void invalidateIteratorState();
 
     private:
-        XPathResult(Document*, const XPath::Value&);
-        
         XPath::Value m_value;
         unsigned m_nodeSetPosition;
         XPath::NodeSet m_nodeSet; // FIXME: why duplicate the node set stored in m_value?
         unsigned short m_resultType;
-        RefPtr<Document> m_document;
-        uint64_t m_domTreeVersion;
+        bool m_invalidIteratorState;
+        RefPtr<EventTargetNode> m_eventTarget;
+        RefPtr<EventListener> m_eventListener;
     };
 
-} // namespace WebCore
+}
+
+#endif // ENABLE(XPATH)
 
 #endif // XPathResult_h

@@ -1,8 +1,10 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Simon Hausmann <hausmann@kde.org>
- * Copyright (C) 2003, 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,40 +21,28 @@
  * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
-
 #include "config.h"
 #include "HTMLQuoteElement.h"
 
-#include "Document.h"
-#include "DocumentStyleSheetCollection.h"
 #include "HTMLNames.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLQuoteElement::HTMLQuoteElement(const QualifiedName& tagName, Document* document)
-    : HTMLElement(tagName, document)
+HTMLQuoteElement::HTMLQuoteElement(Document *doc)
+    : HTMLElement(qTag, doc)
 {
-    ASSERT(hasTagName(qTag) || hasTagName(blockquoteTag));
 }
 
-PassRefPtr<HTMLQuoteElement> HTMLQuoteElement::create(const QualifiedName& tagName, Document* document)
+String HTMLQuoteElement::cite() const
 {
-    return adoptRef(new HTMLQuoteElement(tagName, document));
+    return getAttribute(citeAttr);
 }
 
-Node::InsertionNotificationRequest HTMLQuoteElement::insertedInto(ContainerNode* insertionPoint)
+void HTMLQuoteElement::setCite(const String &value)
 {
-    if (hasTagName(qTag))
-        document()->styleSheetCollection()->setUsesBeforeAfterRulesOverride(true);
-
-    return HTMLElement::insertedInto(insertionPoint);
-}
-
-bool HTMLQuoteElement::isURLAttribute(const Attribute& attribute) const
-{
-    return attribute.name() == citeAttr || HTMLElement::isURLAttribute(attribute);
+    setAttribute(citeAttr, value);
 }
 
 }

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2006 Friedemann Kleint <fkleint@trolltech.com>
- * Copyright (C) 2008 Nokia Corporation and/or its subsidiary(-ies)
+ * Copyright (C) 2006 Trolltech ASA
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,49 +28,66 @@
 #define ImageDecoderQt_h
 
 #include "ImageDecoder.h"
-#include <QtCore/QBuffer>
-#include <QtCore/QHash>
-#include <QtCore/QList>
-#include <QtGui/QImageReader>
+#include <QtGui/QImage>
 #include <QtGui/QPixmap>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassOwnPtr.h>
+#include <QtCore/QList>
+#include <QtCore/QHash>
 
 namespace WebCore {
 
 
 class ImageDecoderQt : public ImageDecoder
 {
-public:
-    ImageDecoderQt(ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption);
-    ~ImageDecoderQt();
-
-    virtual void setData(SharedBuffer* data, bool allDataReceived);
-    virtual bool isSizeAvailable();
-    virtual size_t frameCount();
-    virtual int repetitionCount() const;
-    virtual ImageFrame* frameBufferAtIndex(size_t index);
-
-    virtual String filenameExtension() const;
-
-    virtual void clearFrameBufferCache(size_t clearBeforeFrame);
-
-private:
     ImageDecoderQt(const ImageDecoderQt&);
     ImageDecoderQt &operator=(const ImageDecoderQt&);
+public:
+    ImageDecoderQt();
+    ~ImageDecoderQt();
 
-private:
-    void internalDecodeSize();
-    void internalReadImage(size_t);
-    bool internalHandleCurrentImage(size_t);
-    void forceLoadEverything();
-    void clearPointers();
+    typedef Vector<char> IncomingData;
 
+    virtual void setData(const IncomingData& data, bool allDataReceived);
+
+    virtual bool isSizeAvailable() const;
+
+    virtual int frameCount() const;
+
+
+    virtual int repetitionCount() const;
+
+
+    virtual RGBA32Buffer* frameBufferAtIndex(size_t index);
+
+    const QPixmap* imageAtIndex(size_t index) const;
+
+    virtual bool supportsAlpha() const;
+
+    int duration(size_t index) const;
+
+    void clearFrame(size_t index);
 private:
-    QByteArray m_format;
-    OwnPtr<QBuffer> m_buffer;
-    OwnPtr<QImageReader> m_reader;
-    mutable int m_repetitionCount;
+    class ReadContext;
+    void reset();
+    bool hasFirstImageHeader() const;
+
+    enum ImageState {
+        // Started image reading
+        ImagePartial,
+            // Header (size / alpha) are known
+            ImageHeaderValid,
+            // Image is complete
+            ImageComplete };
+
+    struct ImageData {
+        ImageData(const QImage& image, ImageState imageState = ImagePartial, int duration=0);
+        QImage m_image;
+        ImageState m_imageState;
+        int m_duration;
+    };
+
+    typedef QList<ImageData> ImageList;
+    ImageList m_imageList;
+    mutable QHash<int, QPixmap> m_pixmapCache;
 };
 
 

@@ -1,7 +1,6 @@
 /*
- * Copyright (C) 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
- * Copyright (C) 2012 Samsung Electronics. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,117 +18,54 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLInputElement : HTMLElement {
-    [Reflect] attribute DOMString accept;
-    [Reflect] attribute DOMString alt;
-    [Reflect] attribute DOMString autocomplete;
-    [Reflect] attribute boolean autofocus;
-    [Reflect=checked] attribute boolean defaultChecked;
-    attribute boolean checked;
-    [Reflect] attribute DOMString dirName;
-    [Reflect] attribute boolean disabled;
-    readonly attribute HTMLFormElement form;
-    attribute FileList files;
-    [Reflect, URL] attribute DOMString formAction;
-    [TreatNullAs=NullString] attribute DOMString formEnctype;
-    [TreatNullAs=NullString] attribute DOMString formMethod;
-    [Reflect] attribute boolean formNoValidate;
-    [Reflect] attribute DOMString formTarget;
-    attribute unsigned long height;
-    attribute boolean indeterminate;
-    [Conditional=DATALIST_ELEMENT] readonly attribute HTMLElement list;
-    [Reflect] attribute DOMString max;
-    [SetterRaisesException] attribute long maxLength;
-    [Reflect] attribute DOMString min;
-    [Reflect] attribute boolean multiple;
-    [Reflect] attribute DOMString name;
-    [Reflect] attribute DOMString pattern;
-    [Reflect] attribute DOMString placeholder;
-    [Reflect] attribute boolean readOnly;
-    [Reflect] attribute boolean required;
-#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
-    [ObjCImplementedAsUnsignedLong] attribute DOMString size; // DOM level 2 changed this to a long, but ObjC API is a string
+module html {
+
+    interface [LegacyParent=JSHTMLInputElementBase, GenerateConstructor] HTMLInputElement : HTMLElement {
+                 attribute [ConvertNullToNullString] DOMString defaultValue;
+                 attribute boolean         defaultChecked;
+        readonly attribute HTMLFormElement form;
+                 attribute [ConvertNullToNullString] DOMString accept;
+                 attribute [ConvertNullToNullString] DOMString accessKey;
+                 attribute [ConvertNullToNullString] DOMString align;
+                 attribute [ConvertNullToNullString] DOMString alt;
+                 attribute boolean         checked;
+                 attribute boolean         disabled;
+                 attribute long            maxLength;
+                 attribute [ConvertNullToNullString] DOMString name;
+                 attribute boolean         readOnly;
+#if defined(LANGUAGE_OBJECTIVE_C)
+                 attribute [ConvertToString] DOMString size; // DOM level 2 changed this to a long, but our existing API is a string
 #else
-    [SetterRaisesException] attribute unsigned long size; // Changed string -> long -> unsigned long
+                 attribute unsigned long   size; // Changed string -> long as part of DOM level 2
 #endif
-    [Reflect, URL] attribute DOMString src;
-    [Reflect] attribute DOMString step;
-    [TreatNullAs=NullString] attribute DOMString type; // readonly dropped as part of DOM level 2
-    [TreatNullAs=NullString] attribute DOMString defaultValue;
-    // See the discussion in https://bugs.webkit.org/show_bug.cgi?id=100085
-#if defined(LANGUAGE_JAVASCRIPT) && LANGUAGE_JAVASCRIPT
-    [TreatNullAs=NullString, SetterRaisesException] attribute DOMString value;
-#else
-    [TreatNullAs=NullString] attribute DOMString value;
-#endif
-#if !defined(LANGUAGE_CPP) || !LANGUAGE_CPP
-    [SetterRaisesException] attribute Date valueAsDate;
-#endif
-    [SetterRaisesException] attribute double valueAsNumber;
-
-    [RaisesException] void stepUp(optional long n);
-    [RaisesException] void stepDown(optional long n);
-
-    attribute unsigned long width;
-    readonly attribute boolean willValidate;
-    readonly attribute ValidityState validity;
-    readonly attribute DOMString validationMessage;
-    boolean checkValidity();
-    void setCustomValidity([TreatNullAs=NullString, TreatUndefinedAs=NullString] DOMString error);
-
-    readonly attribute NodeList labels;
-
-    void select();
-    [Custom] attribute long selectionStart;
-    [Custom] attribute long selectionEnd;
-    [Custom] attribute DOMString selectionDirection;
-
-    [RaisesException] void setRangeText(DOMString replacement);
-    [RaisesException] void setRangeText(DOMString replacement,
-                        unsigned long start,
-                        unsigned long end,
-                        [Default=NullString] optional DOMString selectionMode);
-
-#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
-    [Custom] void setSelectionRange(long start, long end);
-#else
-    [Custom] void setSelectionRange([Default=Undefined] optional long start, 
-                                    [Default=Undefined] optional long end, 
-                                    optional DOMString direction);
+                 attribute [ConvertNullToNullString] DOMString src;
+                 attribute long            tabIndex;
+                 attribute [ConvertNullToNullString] DOMString type; // readonly dropped as part of DOM level 2
+                 attribute [ConvertNullToNullString] DOMString useMap;
+                 attribute [ConvertNullToNullString] DOMString value;
+        
+        void               blur();
+        void               focus();
+        void               select();
+        void               click();
+        
+        // WinIE extension:
+                 attribute boolean         indeterminate;
+        
+        // WinIE & FireFox extension:
+        
+        // Handled by JSHTMLInputElementBase to allow hiding based on input type
+#if !defined(LANGUAGE_JAVASCRIPT)
+                 attribute long            selectionStart;
+                 attribute long            selectionEnd;
+        void               setSelectionRange(in long start, in long end);
 #endif
 
-    // Non-standard attributes
-    [Reflect] attribute DOMString align;
-    [Conditional=DIRECTORY_UPLOAD, Reflect] attribute boolean webkitdirectory;
-    [Reflect] attribute DOMString useMap;
-    [Reflect] attribute boolean incremental;
-    [Conditional=INPUT_SPEECH, Reflect] attribute boolean webkitSpeech;
-    [Conditional=INPUT_SPEECH, Reflect] attribute boolean webkitGrammar;
-    [Conditional=INPUT_SPEECH, NotEnumerable] attribute EventListener onwebkitspeechchange;
-
-#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
-    [Reflect] attribute DOMString accessKey;
+#if defined(LANGUAGE_OBJECTIVE_C)
+        // Objective-C extension:
+        readonly attribute DOMString       altDisplayString;
+        readonly attribute URL             absoluteImageURL;
 #endif
+    };
 
-#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
-    void click();
-#endif
-
-#if !defined(LANGUAGE_JAVASCRIPT) || !LANGUAGE_JAVASCRIPT
-    void setValueForUser([TreatNullAs=NullString] DOMString value);
-#endif
-
-#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
-    // Objective-C extension:
-    readonly attribute DOMString altDisplayString;
-    readonly attribute URL absoluteImageURL;
-#endif
-
-#if WTF_PLATFORM_IOS
-    attribute boolean autocorrect;
-    [TreatNullAs=NullString] attribute DOMString autocapitalize;
-#endif
-
-    // See http://www.w3.org/TR/html-media-capture/
-    [Conditional=MEDIA_CAPTURE] attribute DOMString capture;
-};
+}

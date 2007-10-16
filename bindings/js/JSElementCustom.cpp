@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,45 +30,97 @@
 #include "config.h"
 #include "JSElement.h"
 
+#include "Attr.h"
 #include "Document.h"
+#include "Element.h"
 #include "ExceptionCode.h"
 #include "HTMLFrameElementBase.h"
 #include "HTMLNames.h"
-#include "JSAttr.h"
-#include "JSDOMBinding.h"
-#include "JSHTMLElementWrapperFactory.h"
-#include "JSNodeList.h"
-#include "NodeList.h"
-
-#if ENABLE(SVG)
-#include "JSSVGElementWrapperFactory.h"
-#include "SVGElement.h"
-#endif
-
-using namespace JSC;
+#include "PlatformString.h"
+#include "kjs_binding.h"
+#include "kjs_dom.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-JSValue toJSNewlyCreated(ExecState* exec, JSDOMGlobalObject* globalObject, Element* element)
+static inline bool allowSettingSrcToJavascriptURL(KJS::ExecState* exec, Element* element, String name, String value)
 {
-    if (!element)
-        return jsNull();
+    if ((element->hasTagName(iframeTag) || element->hasTagName(frameTag)) && equalIgnoringCase(name, "src") && value.startsWith("javascript:", false)) {
+        HTMLFrameElementBase* frame = static_cast<HTMLFrameElementBase*>(element);
+        if (!checkNodeSecurity(exec, frame->contentDocument()))
+            return false;
+    }
+    return true;
+} 
 
-    ASSERT(!getCachedWrapper(currentWorld(exec), element));
+KJS::JSValue* JSElement::setAttribute(KJS::ExecState* exec, const KJS::List& args)
+{
+    ExceptionCode ec = 0;
+    String name = args[0]->toString(exec);
+    String value = args[1]->toString(exec);
 
-    JSDOMWrapper* wrapper;        
-    if (element->isHTMLElement())
-        wrapper = createJSHTMLWrapper(exec, globalObject, toHTMLElement(element));
-#if ENABLE(SVG)
-    else if (element->isSVGElement())
-        wrapper = createJSSVGWrapper(exec, globalObject, toSVGElement(element));
-#endif
-    else
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, Element, element);
+    Element* imp = impl();
+    if (!allowSettingSrcToJavascriptURL(exec, imp, name, value))
+        return KJS::jsUndefined();
 
-    return wrapper;    
+    imp->setAttribute(name, value, ec);
+    KJS::setDOMException(exec, ec);
+    return KJS::jsUndefined();
+}
+
+KJS::JSValue* JSElement::setAttributeNode(KJS::ExecState* exec, const KJS::List& args)
+{
+    ExceptionCode ec = 0;
+    bool newAttrOk;
+    Attr* newAttr = toAttr(args[0], newAttrOk);
+    if (!newAttrOk) {
+        setDOMException(exec, TYPE_MISMATCH_ERR);
+        return KJS::jsUndefined();
+    }
+
+    Element* imp = impl();
+    if (!allowSettingSrcToJavascriptURL(exec, imp, newAttr->name(), newAttr->value()))
+        return KJS::jsUndefined();
+
+    KJS::JSValue* result = toJS(exec, WTF::getPtr(imp->setAttributeNode(newAttr, ec)));
+    KJS::setDOMException(exec, ec);
+    return result;
+}
+
+KJS::JSValue* JSElement::setAttributeNS(KJS::ExecState* exec, const KJS::List& args)
+{
+    ExceptionCode ec = 0;
+    String namespaceURI = valueToStringWithNullCheck(exec, args[0]);
+    String qualifiedName = args[1]->toString(exec);
+    String value = args[2]->toString(exec);
+
+    Element* imp = impl();
+    if (!allowSettingSrcToJavascriptURL(exec, imp, qualifiedName, value))
+        return KJS::jsUndefined();
+
+    imp->setAttributeNS(namespaceURI, qualifiedName, value, ec);
+    KJS::setDOMException(exec, ec);
+    return KJS::jsUndefined();
+}
+
+KJS::JSValue* JSElement::setAttributeNodeNS(KJS::ExecState* exec, const KJS::List& args)
+{
+    ExceptionCode ec = 0;
+    bool newAttrOk;
+    Attr* newAttr = toAttr(args[0], newAttrOk);
+    if (!newAttrOk) {
+        KJS::setDOMException(exec, TYPE_MISMATCH_ERR);
+        return KJS::jsUndefined();
+    }
+
+    Element* imp = impl();
+    if (!allowSettingSrcToJavascriptURL(exec, imp, newAttr->name(), newAttr->value()))
+        return KJS::jsUndefined();
+
+    KJS::JSValue* result = toJS(exec, WTF::getPtr(imp->setAttributeNodeNS(newAttr, ec)));
+    KJS::setDOMException(exec, ec);
+    return result;
 }
 
 } // namespace WebCore

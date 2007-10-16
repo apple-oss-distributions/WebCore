@@ -29,16 +29,11 @@
 #include "EventNames.h"
 
 namespace WebCore {
-
-OverflowEventInit::OverflowEventInit()
-    : orient(0)
-    , horizontalOverflow(false)
-    , verticalOverflow(false)
-{
-}
-
+    
+using namespace EventNames;
+    
 OverflowEvent::OverflowEvent()
-    : Event(eventNames().overflowchangedEvent, false, false)
+    : Event(overflowchangedEvent, false, false)
     , m_orient(VERTICAL)
     , m_horizontalOverflow(false)
     , m_verticalOverflow(false)
@@ -46,7 +41,7 @@ OverflowEvent::OverflowEvent()
 }
 
 OverflowEvent::OverflowEvent(bool horizontalOverflowChanged, bool horizontalOverflow, bool verticalOverflowChanged, bool verticalOverflow)
-    : Event(eventNames().overflowchangedEvent, false, false)
+    : Event(overflowchangedEvent, false, false)
     , m_horizontalOverflow(horizontalOverflow)
     , m_verticalOverflow(verticalOverflow)
 {
@@ -60,24 +55,16 @@ OverflowEvent::OverflowEvent(bool horizontalOverflowChanged, bool horizontalOver
         m_orient = VERTICAL;
 }
 
-OverflowEvent::OverflowEvent(const AtomicString& type, const OverflowEventInit& initializer)
-    : Event(type, initializer)
-    , m_orient(initializer.orient)
-    , m_horizontalOverflow(initializer.horizontalOverflow)
-    , m_verticalOverflow(initializer.verticalOverflow)
+bool OverflowEvent::isOverflowEvent() const
 {
-}
-
-const AtomicString& OverflowEvent::interfaceName() const
-{
-    return eventNames().interfaceForOverflowEvent;
+    return true;
 }
 
 void OverflowEvent::initOverflowEvent(unsigned short orient, bool horizontalOverflow, bool verticalOverflow)
 {
     if (dispatched())
         return;
-
+    
     m_orient = orient;
     m_horizontalOverflow = horizontalOverflow;
     m_verticalOverflow = verticalOverflow;

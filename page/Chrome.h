@@ -1,7 +1,6 @@
+// -*- mode: c++; c-basic-offset: 4 -*-
 /*
- * Copyright (C) 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
- * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
- * Copyright (C) 2012, Samsung Electronics. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,19 +21,9 @@
 #ifndef Chrome_h
 #define Chrome_h
 
-#include "Cursor.h"
 #include "FocusDirection.h"
-#include "HostWindow.h"
 #include <wtf/Forward.h>
 #include <wtf/RefPtr.h>
-
-#if PLATFORM(IOS)
-#ifndef __OBJC__
-class WAKView;
-#else
-@class WAKView;
-#endif
-#endif
 
 #if PLATFORM(MAC)
 #ifndef __OBJC__
@@ -44,165 +33,106 @@ class NSView;
 
 namespace WebCore {
 
-class ChromeClient;
-class ColorChooser;
-class ColorChooserClient;
-class DateTimeChooser;
-class DateTimeChooserClient;
-class FileChooser;
-class FileIconLoader;
-class FloatRect;
-class Frame;
-class Geolocation;
-class HitTestResult;
-class IntRect;
-class NavigationAction;
-class Node;
-class Page;
-class PopupMenu;
-class PopupMenuClient;
-class PopupOpeningObserver;
-class SearchPopupMenu;
-
-struct DateTimeChooserParameters;
-struct FrameLoadRequest;
-struct ViewportArguments;
-struct WindowFeatures;
+    class ChromeClient;
+    class ContextMenu;
+    class FloatRect;
+    class Frame;
+    class HitTestResult;
+    class IntRect;
+    class Page;
+    class String;
     
-class Chrome : public HostWindow {
-public:
-    ~Chrome();
+    struct FrameLoadRequest;
+    
+    enum MessageSource {
+        HTMLMessageSource,
+        XMLMessageSource,
+        JSMessageSource,
+        CSSMessageSource,
+        OtherMessageSource
+    };
 
-    static PassOwnPtr<Chrome> create(Page*, ChromeClient*);
+    enum MessageLevel {
+        TipMessageLevel,
+        LogMessageLevel,
+        WarningMessageLevel,
+        ErrorMessageLevel
+    };
 
-    ChromeClient* client() { return m_client; }
+    class Chrome {
+    public:
+        Chrome(Page*, ChromeClient*);
+        ~Chrome();
 
-    // HostWindow methods.
-    virtual void invalidateRootView(const IntRect&, bool) OVERRIDE;
-    virtual void invalidateContentsAndRootView(const IntRect&, bool) OVERRIDE;
-    virtual void invalidateContentsForSlowScroll(const IntRect&, bool) OVERRIDE;
-    virtual void scroll(const IntSize&, const IntRect&, const IntRect&) OVERRIDE;
-#if USE(TILED_BACKING_STORE)
-    virtual void delegatedScrollRequested(const IntPoint& scrollPoint) OVERRIDE;
-#endif
-    virtual IntPoint screenToRootView(const IntPoint&) const OVERRIDE;
-    virtual IntRect rootViewToScreen(const IntRect&) const OVERRIDE;
-    virtual PlatformPageClient platformPageClient() const OVERRIDE;
-    virtual void scrollbarsModeDidChange() const OVERRIDE;
-    virtual void setCursor(const Cursor&) OVERRIDE;
-    virtual void setCursorHiddenUntilMouseMoves(bool) OVERRIDE;
+        ChromeClient* client() { return m_client; }
 
-#if ENABLE(REQUEST_ANIMATION_FRAME)
-    virtual void scheduleAnimation() OVERRIDE;
-#endif
+        void setWindowRect(const FloatRect&) const;
+        FloatRect windowRect() const;
 
-    void scrollRectIntoView(const IntRect&) const;
+        FloatRect pageRect() const;
+        
+        float scaleFactor();
 
-    void contentsSizeChanged(Frame*, const IntSize&) const;
-    void layoutUpdated(Frame*) const;
+        void focus() const;
+        void unfocus() const;
 
-    void setWindowRect(const FloatRect&) const;
-    FloatRect windowRect() const;
+        bool canTakeFocus(FocusDirection) const;
+        void takeFocus(FocusDirection) const;
 
-    FloatRect pageRect() const;
+        Page* createWindow(Frame*, const FrameLoadRequest&) const;
+        Page* createModalDialog(Frame*, const FrameLoadRequest&) const;
+        void show() const;
 
-    void focus() const;
-    void unfocus() const;
+        bool canRunModal() const;
+        bool canRunModalNow() const;
+        void runModal() const;
 
-    bool canTakeFocus(FocusDirection) const;
-    void takeFocus(FocusDirection) const;
+        void setToolbarsVisible(bool) const;
+        bool toolbarsVisible() const;
+        
+        void setStatusbarVisible(bool) const;
+        bool statusbarVisible() const;
+        
+        void setScrollbarsVisible(bool) const;
+        bool scrollbarsVisible() const;
+        
+        void setMenubarVisible(bool) const;
+        bool menubarVisible() const;
+        
+        void setResizable(bool) const;
 
-    void focusedNodeChanged(Node*) const;
-    void focusedFrameChanged(Frame*) const;
+        void addMessageToConsole(MessageSource, MessageLevel, const String& message, unsigned lineNumber, const String& sourceID);
 
-    Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, const NavigationAction&) const;
-    void show() const;
+        bool canRunBeforeUnloadConfirmPanel();
+        bool runBeforeUnloadConfirmPanel(const String& message, Frame* frame);
 
-    bool canRunModal() const;
-    bool canRunModalNow() const;
-    void runModal() const;
+        void closeWindowSoon();
 
-    void setToolbarsVisible(bool) const;
-    bool toolbarsVisible() const;
+        void runJavaScriptAlert(Frame*, const String&);
+        bool runJavaScriptConfirm(Frame*, const String&);
+        bool runJavaScriptPrompt(Frame*, const String& message, const String& defaultValue, String& result);                
+        void setStatusbarText(Frame*, const String&);
+        bool shouldInterruptJavaScript();
 
-    void setStatusbarVisible(bool) const;
-    bool statusbarVisible() const;
+        IntRect windowResizerRect() const;
+        void addToDirtyRegion(const IntRect&);
+        void scrollBackingStore(int dx, int dy, const IntRect& scrollViewRect, const IntRect& clipRect);
+        void updateBackingStore();
 
-    void setScrollbarsVisible(bool) const;
-    bool scrollbarsVisible() const;
+        void mouseDidMoveOverElement(const HitTestResult&, unsigned modifierFlags);
 
-    void setMenubarVisible(bool) const;
-    bool menubarVisible() const;
+        void setToolTip(const HitTestResult&);
 
-    void setResizable(bool) const;
-
-    bool canRunBeforeUnloadConfirmPanel();
-    bool runBeforeUnloadConfirmPanel(const String& message, Frame*);
-
-    void closeWindowSoon();
-
-    void runJavaScriptAlert(Frame*, const String&);
-    bool runJavaScriptConfirm(Frame*, const String&);
-    bool runJavaScriptPrompt(Frame*, const String& message, const String& defaultValue, String& result);
-    void setStatusbarText(Frame*, const String&);
-    bool shouldInterruptJavaScript();
-
-    IntRect windowResizerRect() const;
-
-    void mouseDidMoveOverElement(const HitTestResult&, unsigned modifierFlags);
-
-    void setToolTip(const HitTestResult&);
-
-    void print(Frame*);
-
-    void enableSuddenTermination();
-    void disableSuddenTermination();
-
-#if ENABLE(INPUT_TYPE_COLOR)
-    PassOwnPtr<ColorChooser> createColorChooser(ColorChooserClient*, const Color& initialColor);
-#endif
-#if !PLATFORM(IOS) && ENABLE(DATE_AND_TIME_INPUT_TYPES)
-    PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
-#endif
-
-    void runOpenPanel(Frame*, PassRefPtr<FileChooser>);
-    void loadIconForFiles(const Vector<String>&, FileIconLoader*);
-#if ENABLE(DIRECTORY_UPLOAD)
-    void enumerateChosenDirectory(FileChooser*);
-#endif
-
-    void dispatchViewportPropertiesDidChange(const ViewportArguments&) const;
-
-    bool requiresFullscreenForVideoPlayback();
+        void print(Frame*);
 
 #if PLATFORM(MAC)
-    void focusNSView(NSView*);
+        void focusNSView(NSView*);
 #endif
 
-    bool selectItemWritingDirectionIsNatural();
-    bool selectItemAlignmentFollowsMenuWritingDirection();
-    bool hasOpenedPopup() const;
-    PassRefPtr<PopupMenu> createPopupMenu(PopupMenuClient*) const;
-    PassRefPtr<SearchPopupMenu> createSearchPopupMenu(PopupMenuClient*) const;
-
-#if PLATFORM(IOS)
-    void setDispatchViewportDataDidChangeSuppressed(bool b) { m_isDispatchViewportDataDidChangeSuppressed = b; }
-#endif
-    void registerPopupOpeningObserver(PopupOpeningObserver*);
-    void unregisterPopupOpeningObserver(PopupOpeningObserver*);
-
-private:
-    Chrome(Page*, ChromeClient*);
-    void notifyPopupOpeningObservers() const;
-
-    Page* m_page;
-    ChromeClient* m_client;
-#if PLATFORM(IOS)
-    bool m_isDispatchViewportDataDidChangeSuppressed;
-#endif
-    Vector<PopupOpeningObserver*> m_popupOpeningObservers;
-};
-
+    private:
+        Page* m_page;
+        ChromeClient* m_client;
+    };
 }
 
 #endif // Chrome_h

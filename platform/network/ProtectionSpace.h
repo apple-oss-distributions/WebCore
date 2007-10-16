@@ -22,46 +22,38 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
-
 #ifndef ProtectionSpace_h
 #define ProtectionSpace_h
 
-#include <wtf/text/WTFString.h>
+#include "PlatformString.h"
 
 namespace WebCore {
 
 enum ProtectionSpaceServerType {
-    ProtectionSpaceServerHTTP = 1,
-    ProtectionSpaceServerHTTPS = 2,
-    ProtectionSpaceServerFTP = 3,
-    ProtectionSpaceServerFTPS = 4,
-    ProtectionSpaceProxyHTTP = 5,
-    ProtectionSpaceProxyHTTPS = 6,
-    ProtectionSpaceProxyFTP = 7,
-    ProtectionSpaceProxySOCKS = 8
+  ProtectionSpaceServerHTTP = 1,
+  ProtectionSpaceServerHTTPS = 2,
+  ProtectionSpaceServerFTP = 3,
+  ProtectionSpaceServerFTPS = 4,
+  ProtectionSpaceProxyHTTP = 5,
+  ProtectionSpaceProxyHTTPS = 6,
+  ProtectionSpaceProxyFTP = 7,
+  ProtectionSpaceProxySOCKS = 8
 };
 
 enum ProtectionSpaceAuthenticationScheme {
-    ProtectionSpaceAuthenticationSchemeDefault = 1,
-    ProtectionSpaceAuthenticationSchemeHTTPBasic = 2,
-    ProtectionSpaceAuthenticationSchemeHTTPDigest = 3,
-    ProtectionSpaceAuthenticationSchemeHTMLForm = 4,
-    ProtectionSpaceAuthenticationSchemeNTLM = 5,
-    ProtectionSpaceAuthenticationSchemeNegotiate = 6,
-    ProtectionSpaceAuthenticationSchemeClientCertificateRequested = 7,
-    ProtectionSpaceAuthenticationSchemeServerTrustEvaluationRequested = 8,
-    ProtectionSpaceAuthenticationSchemeUnknown = 100
+  ProtectionSpaceAuthenticationSchemeDefault = 1,
+  ProtectionSpaceAuthenticationSchemeHTTPBasic = 2,
+  ProtectionSpaceAuthenticationSchemeHTTPDigest = 3,
+  ProtectionSpaceAuthenticationSchemeHTMLForm = 4,
+  ProtectionSpaceAuthenticationSchemeNTLM = 5,
+  ProtectionSpaceAuthenticationSchemeNegotiate = 6,
 };
-  
+
 class ProtectionSpace {
 
 public:
     ProtectionSpace();
     ProtectionSpace(const String& host, int port, ProtectionSpaceServerType, const String& realm, ProtectionSpaceAuthenticationScheme);
-
-    // Hash table deleted values, which are only constructed and never copied or destroyed.
-    ProtectionSpace(WTF::HashTableDeletedValueType) : m_isHashTableDeletedValue(true) { }
-    bool isHashTableDeletedValue() const { return m_isHashTableDeletedValue; }
     
     const String& host() const;
     int port() const;
@@ -78,12 +70,10 @@ private:
     ProtectionSpaceServerType m_serverType;
     String m_realm;
     ProtectionSpaceAuthenticationScheme m_authenticationScheme;
-    bool m_isHashTableDeletedValue;
 };
 
 bool operator==(const ProtectionSpace& a, const ProtectionSpace& b);
 inline bool operator!=(const ProtectionSpace& a, const ProtectionSpace& b) { return !(a == b); }
     
-} // namespace WebCore
-
-#endif // ProtectionSpace_h
+}
+#endif

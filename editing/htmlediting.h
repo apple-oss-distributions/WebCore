@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,242 +26,101 @@
 #ifndef htmlediting_h
 #define htmlediting_h
 
-#include "EditingBoundary.h"
-#include "Position.h"
-#include "TextDirection.h"
 #include <wtf/Forward.h>
-#include <wtf/unicode/CharacterNames.h>
+#include "HTMLNames.h"
 
 namespace WebCore {
 
 class Document;
 class Element;
-class HTMLElement;
-class HTMLTextFormControlElement;
 class Node;
 class Position;
 class Range;
+class Selection;
+class String;
 class VisiblePosition;
-class VisibleSelection;
 
-
-// This file contains a set of helper functions used by the editing commands
-
-// -------------------------------------------------------------------------
-// Node
-// -------------------------------------------------------------------------
-
-// Functions returning Node
-
-Node* highestAncestor(Node*);
-Node* highestEditableRoot(const Position&, EditableType = ContentIsEditable);
-
-Node* highestEnclosingNodeOfType(const Position&, bool (*nodeIsOfType)(const Node*),
-    EditingBoundaryCrossingRule = CannotCrossEditingBoundary, Node* stayWithin = 0);
-Node* highestNodeToRemoveInPruning(Node*);
-Node* lowestEditableAncestor(Node*);
-
-Element* deprecatedEnclosingBlockFlowElement(Node*); // Use enclosingBlock instead.
-Element* enclosingBlock(Node*, EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
-Node* enclosingTableCell(const Position&);
-Node* enclosingEmptyListItem(const VisiblePosition&);
-Element* enclosingAnchorElement(const Position&);
-Node* enclosingNodeWithTag(const Position&, const QualifiedName&);
-Node* enclosingNodeOfType(const Position&, bool (*nodeIsOfType)(const Node*), EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
-
-Node* tabSpanNode(const Node*);
-Node* isLastPositionBeforeTable(const VisiblePosition&);
-Node* isFirstPositionAfterTable(const VisiblePosition&);
-
-// These two deliver leaf nodes as if the whole DOM tree were a linear chain of its leaf nodes.
-Node* nextLeafNode(const Node*);
-Node* previousLeafNode(const Node*);
-
-// offset functions on Node
-
-int lastOffsetForEditing(const Node*);
-int caretMinOffset(const Node*);
-int caretMaxOffset(const Node*);
-
-// boolean functions on Node
-
-// FIXME: editingIgnoresContent, canHaveChildrenForEditing, and isAtomicNode
-// should be renamed to reflect its usage.
-
-// Returns true for nodes that either have no content, or have content that is ignored (skipped over) while editing.
-// There are no VisiblePositions inside these nodes.
-inline bool editingIgnoresContent(const Node* node)
-{
-    return !node->canContainRangeEndPoint();
-}
-
-inline bool canHaveChildrenForEditing(const Node* node)
-{
-    return !node->isTextNode() && node->canContainRangeEndPoint();
-}
-
+Position rangeCompliantEquivalent(const Position&);
+Position rangeCompliantEquivalent(const VisiblePosition&);
+int maxDeepOffset(const Node*);
 bool isAtomicNode(const Node*);
-bool isBlock(const Node*);
-bool isBlockFlowElement(const Node*);
-bool isInline(const Node*);
-bool isSpecialElement(const Node*);
-bool isTabSpanNode(const Node*);
-bool isTabSpanTextNode(const Node*);
-bool isMailBlockquote(const Node*);
-bool isTableElement(Node*);
-bool isTableCell(const Node*);
-bool isEmptyTableCell(const Node*);
-bool isTableStructureNode(const Node*);
-bool isListElement(Node*);
-bool isListItem(const Node*);
-bool isNodeRendered(const Node*);
-bool isNodeVisiblyContainedWithin(Node*, const Range*);
-bool isRenderedAsNonInlineTableImageOrHR(const Node*);
-bool areIdenticalElements(const Node*, const Node*);
-bool isNonTableCellHTMLBlockElement(const Node*);
-
-TextDirection directionOfEnclosingBlock(const Position&);
-
-// -------------------------------------------------------------------------
-// Position
-// -------------------------------------------------------------------------
-    
-// Functions returning Position
-    
-Position nextCandidate(const Position&);
-Position previousCandidate(const Position&);
-    
-Position nextVisuallyDistinctCandidate(const Position&);
-Position previousVisuallyDistinctCandidate(const Position&);
-
-Position positionOutsideTabSpan(const Position&);
-Position positionBeforeContainingSpecialElement(const Position&, Node** containingSpecialElement = 0);
-Position positionAfterContainingSpecialElement(const Position&, Node** containingSpecialElement = 0);
-Position positionOutsideContainingSpecialElement(const Position&, Node** containingSpecialElement = 0);
-
-inline Position firstPositionInOrBeforeNode(Node* node)
-{
-    if (!node)
-        return Position();
-    return editingIgnoresContent(node) ? positionBeforeNode(node) : firstPositionInNode(node);
-}
-
-inline Position lastPositionInOrAfterNode(Node* node)
-{
-    if (!node)
-        return Position();
-    return editingIgnoresContent(node) ? positionAfterNode(node) : lastPositionInNode(node);
-}
-
-// comparision functions on Position
-    
-int comparePositions(const Position&, const Position&);
-
-// boolean functions on Position
-
-enum EUpdateStyle { UpdateStyle, DoNotUpdateStyle };
-bool isEditablePosition(const Position&, EditableType = ContentIsEditable, EUpdateStyle = UpdateStyle);
-bool isRichlyEditablePosition(const Position&, EditableType = ContentIsEditable);
-bool isFirstVisiblePositionInSpecialElement(const Position&);
-bool isLastVisiblePositionInSpecialElement(const Position&);
-bool lineBreakExistsAtPosition(const Position&);
-bool isVisiblyAdjacent(const Position& first, const Position& second);
-bool isAtUnsplittableElement(const Position&);
-
-// miscellaneous functions on Position
-
-unsigned numEnclosingMailBlockquotes(const Position&);
-void updatePositionForNodeRemoval(Position&, Node*);
-
-// -------------------------------------------------------------------------
-// VisiblePosition
-// -------------------------------------------------------------------------
-    
-// Functions returning VisiblePosition
-    
+bool editingIgnoresContent(const Node*);
+bool canHaveChildrenForEditing(const Node*);
+Node* highestEditableRoot(const Position&);
 VisiblePosition firstEditablePositionAfterPositionInRoot(const Position&, Node*);
 VisiblePosition lastEditablePositionBeforePositionInRoot(const Position&, Node*);
-VisiblePosition visiblePositionBeforeNode(Node*);
-VisiblePosition visiblePositionAfterNode(Node*);
+int comparePositions(const Position&, const Position&);
+Node* lowestEditableAncestor(Node*);
+bool isContentEditable(Node*);
+Position nextCandidate(const Position&);
+Position nextVisuallyDistinctCandidate(const Position&);
+Position previousCandidate(const Position&);
+Position previousVisuallyDistinctCandidate(const Position&);
+bool isEditablePosition(const Position&);
+bool isRichlyEditablePosition(const Position&);
+Element* editableRootForPosition(const Position&);
+bool isBlock(Node*);
+Node* enclosingBlock(Node*);
 
-bool lineBreakExistsAtVisiblePosition(const VisiblePosition&);
-    
-int comparePositions(const VisiblePosition&, const VisiblePosition&);
+String stringWithRebalancedWhitespace(const String&, bool, bool);
+const String& nonBreakingSpaceString();
 
-int indexForVisiblePosition(const VisiblePosition&, RefPtr<ContainerNode>& scope);
-VisiblePosition visiblePositionForIndex(int index, ContainerNode* scope);
+//------------------------------------------------------------------------------------------
 
-// -------------------------------------------------------------------------
-// Range
-// -------------------------------------------------------------------------
+Position positionBeforeNode(const Node*);
+Position positionAfterNode(const Node*);
 
-// Functions returning Range
+PassRefPtr<Range> avoidIntersectionWithNode(const Range*, Node*);
+Selection avoidIntersectionWithNode(const Selection&, Node*);
 
-PassRefPtr<Range> createRange(PassRefPtr<Document>, const VisiblePosition& start, const VisiblePosition& end, ExceptionCode&);
-PassRefPtr<Range> extendRangeToWrappingNodes(PassRefPtr<Range> rangeToExtend, const Range* maximumRange, const Node* rootNode);
+bool isSpecialElement(const Node*);
+bool validBlockTag(const String&);
 
-// -------------------------------------------------------------------------
-// HTMLElement
-// -------------------------------------------------------------------------
-    
-// Functions returning HTMLElement
-    
-PassRefPtr<HTMLElement> createDefaultParagraphElement(Document*);
-PassRefPtr<HTMLElement> createBreakElement(Document*);
-PassRefPtr<HTMLElement> createOrderedListElement(Document*);
-PassRefPtr<HTMLElement> createUnorderedListElement(Document*);
-PassRefPtr<HTMLElement> createListItemElement(Document*);
-PassRefPtr<HTMLElement> createHTMLElement(Document*, const QualifiedName&);
-PassRefPtr<HTMLElement> createHTMLElement(Document*, const AtomicString&);
+PassRefPtr<Element> createDefaultParagraphElement(Document*);
+PassRefPtr<Element> createBreakElement(Document*);
+PassRefPtr<Element> createOrderedListElement(Document*);
+PassRefPtr<Element> createUnorderedListElement(Document*);
+PassRefPtr<Element> createListItemElement(Document*);
+PassRefPtr<Element> createElement(Document*, const String&);
 
-HTMLElement* enclosingList(Node*);
-HTMLElement* outermostEnclosingList(Node*, Node* rootList = 0);
-Node* enclosingListChild(Node*);
-
-// -------------------------------------------------------------------------
-// Element
-// -------------------------------------------------------------------------
-    
-// Functions returning Element
-    
+bool isTabSpanNode(const Node*);
+bool isTabSpanTextNode(const Node*);
+Node* tabSpanNode(const Node*);
+Position positionBeforeTabSpan(const Position&);
 PassRefPtr<Element> createTabSpanElement(Document*);
 PassRefPtr<Element> createTabSpanElement(Document*, PassRefPtr<Node> tabTextNode);
 PassRefPtr<Element> createTabSpanElement(Document*, const String& tabText);
+
+bool isNodeRendered(const Node*);
+bool isMailBlockquote(const Node*);
+Node* nearestMailBlockquote(const Node*);
+
+//------------------------------------------------------------------------------------------
+
+bool isTableStructureNode(const Node*);
 PassRefPtr<Element> createBlockPlaceholderElement(Document*);
 
-Element* editableRootForPosition(const Position&, EditableType = ContentIsEditable);
-Element* unsplittableElementForPosition(const Position&);
+bool isFirstVisiblePositionInSpecialElement(const Position&);
+Position positionBeforeContainingSpecialElement(const Position&, Node** containingSpecialElement=0);
+bool isLastVisiblePositionInSpecialElement(const Position&);
+Position positionAfterContainingSpecialElement(const Position&, Node** containingSpecialElement=0);
+Position positionOutsideContainingSpecialElement(const Position&, Node** containingSpecialElement=0);
+Node* isLastPositionBeforeTable(const VisiblePosition&);
+Node* isFirstPositionAfterTable(const VisiblePosition&);
 
-// Boolean functions on Element
-    
-bool canMergeLists(Element* firstList, Element* secondList);
-    
-// -------------------------------------------------------------------------
-// VisibleSelection
-// -------------------------------------------------------------------------
+Node* enclosingNodeWithTag(Node*, const QualifiedName&);
+Node* enclosingNodeOfType(Node*, bool (*nodeIsOfType)(Node*));
+Node* enclosingTableCell(const Position&);
+Node* enclosingEmptyListItem(const VisiblePosition&);
+Node* enclosingAnchorElement(const Position&);
+bool isListElement(Node*);
+Node* enclosingList(Node*);
+Node* outermostEnclosingList(Node*);
+Node* enclosingListChild(Node*);
+Node* highestAncestor(Node*);
+bool isTableElement(Node*);
 
-// Functions returning VisibleSelection
-VisibleSelection selectionForParagraphIteration(const VisibleSelection&);
-
-Position adjustedSelectionStartForStyleComputation(const VisibleSelection&);
-    
-
-// Miscellaneous functions on Text
-inline bool isWhitespace(UChar c)
-{
-    return c == noBreakSpace || c == ' ' || c == '\n' || c == '\t';
-}
-
-inline bool isAmbiguousBoundaryCharacter(UChar character)
-{
-    // These are characters that can behave as word boundaries, but can appear within words.
-    // If they are just typed, i.e. if they are immediately followed by a caret, we want to delay text checking until the next character has been typed.
-    // FIXME: this is required until 6853027 is fixed and text checking can do this for us.
-    return character == '\'' || character == rightSingleQuotationMark || character == hebrewPunctuationGershayim;
-}
-
-String stringWithRebalancedWhitespace(const String&, bool startIsStartOfParagraph, bool endIsEndOfParagraph);
-const String& nonBreakingSpaceString();
+bool lineBreakExistsAtPosition(const VisiblePosition&);
 
 }
 

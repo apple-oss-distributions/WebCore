@@ -26,43 +26,41 @@
 #ifndef DragImage_h
 #define DragImage_h
 
-#include "FontRenderingMode.h"
-#include "ImageOrientation.h"
 #include "IntSize.h"
 #include "FloatSize.h"
-#include <wtf/Forward.h>
 
 #if PLATFORM(MAC)
 #include <wtf/RetainPtr.h>
-OBJC_CLASS NSImage;
+#ifdef __OBJC__
+@class NSImage;
+#else
+class NSImage;
+#endif
 #elif PLATFORM(QT)
-QT_BEGIN_NAMESPACE
-class QPixmap;
-QT_END_NAMESPACE
+class QImage;
 #elif PLATFORM(WIN)
 typedef struct HBITMAP__* HBITMAP;
-#elif PLATFORM(GTK)
-typedef struct _cairo_surface cairo_surface_t;
 #endif
 
 //We need to #define YOffset as it needs to be shared with WebKit
 #define DragLabelBorderYOffset 2
 
 namespace WebCore {
-
+    
+    class CachedImage;
+    class Frame;
     class Image;
     class KURL;
     class Range;
-
+    class String;
+    
 #if PLATFORM(MAC)
     typedef RetainPtr<NSImage> DragImageRef;
 #elif PLATFORM(QT)
-    typedef QPixmap* DragImageRef;
+    typedef QImage* DragImageRef;
 #elif PLATFORM(WIN)
     typedef HBITMAP DragImageRef;
 #elif PLATFORM(GTK)
-    typedef cairo_surface_t* DragImageRef;
-#elif PLATFORM(EFL) || PLATFORM(BLACKBERRY)
     typedef void* DragImageRef;
 #endif
     
@@ -75,10 +73,11 @@ namespace WebCore {
     DragImageRef scaleDragImage(DragImageRef, FloatSize scale);
     DragImageRef dissolveDragImageToFraction(DragImageRef image, float delta);
     
-    DragImageRef createDragImageFromImage(Image*, RespectImageOrientationEnum = DoNotRespectImageOrientation);
-    DragImageRef createDragImageIconForCachedImageFilename(const String&);
-    DragImageRef createDragImageForLink(KURL&, const String& label, FontRenderingMode);
+    DragImageRef createDragImageFromImage(Image*);
+    DragImageRef createDragImageForSelection(Frame*);    
+    DragImageRef createDragImageIconForCachedImage(CachedImage*);
     void deleteDragImage(DragImageRef);
 }
+
 
 #endif //!DragImage_h

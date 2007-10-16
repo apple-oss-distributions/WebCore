@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
- *           (C) 2008 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/) 
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.s
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,109 +21,136 @@
 #ifndef RenderTextControl_h
 #define RenderTextControl_h
 
+#include "PopupMenuClient.h"
 #include "RenderBlock.h"
-#include "RenderFlexibleBox.h"
+#include "Timer.h"
 
 namespace WebCore {
 
-class HTMLTextFormControlElement;
+class HTMLTextFieldInnerElement;
+class HTMLTextFieldInnerTextElement;
+class HTMLSearchFieldCancelButtonElement;
+class HTMLSearchFieldResultsButtonElement;
+class SearchPopupMenu;
+class Selection;
 
-class RenderTextControl : public RenderBlock {
+class RenderTextControl : public RenderBlock, private PopupMenuClient {
 public:
+    RenderTextControl(Node*, bool multiLine);
     virtual ~RenderTextControl();
 
-    HTMLTextFormControlElement* textFormControlElement() const;
-    virtual PassRefPtr<RenderStyle> createInnerTextStyle(const RenderStyle* startStyle) const = 0;
+    virtual const char* renderName() const { return "RenderTextControl"; }
 
-#if PLATFORM(IOS)
-    bool canScroll() const;
-
-    // Returns the line height of the inner renderer.
-    virtual int innerLineHeight() const OVERRIDE;
-#endif
-
-    VisiblePosition visiblePositionForIndex(int index) const;
-
-protected:
-    RenderTextControl(Element*);
-
-    // This convenience function should not be made public because innerTextElement may outlive the render tree.
-    HTMLElement* innerTextElement() const;
-
-    int scrollbarThickness() const;
-    void adjustInnerTextStyle(const RenderStyle* startStyle, RenderStyle* textBlockStyle) const;
-
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
-
-    void hitInnerTextElement(HitTestResult&, const LayoutPoint& pointInContainer, const LayoutPoint& accumulatedOffset);
-
-    int textBlockLogicalWidth() const;
-    int textBlockLogicalHeight() const;
-
-    float scaleEmToUnits(int x) const;
-
-    static bool hasValidAvgCharWidth(AtomicString family);
-    virtual float getAvgCharWidth(AtomicString family);
-    virtual LayoutUnit preferredContentLogicalWidth(float charWidth) const = 0;
-    virtual LayoutUnit computeControlLogicalHeight(LayoutUnit lineHeight, LayoutUnit nonContentHeight) const = 0;
-    virtual RenderStyle* textBaseStyle() const = 0;
-
+    virtual bool hasControlClip() const { return m_cancelButton; }
+    virtual IntRect controlClipRect(int tx, int ty) const;
+    virtual void calcHeight();
+    virtual void calcPrefWidths();
+    virtual void removeLeftoverAnonymousBlock(RenderBlock*) { }
+    virtual void setStyle(RenderStyle*);
     virtual void updateFromElement();
-    virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const OVERRIDE;
-    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren);
+    virtual bool canHaveChildren() const { return false; }
+    virtual short baselinePosition(bool firstLine, bool isRootLineBox) const;
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, int x, int y, int tx, int ty, HitTestAction);
+    virtual void layout();
+    virtual bool avoidsFloats() const { return true; }
+
+    virtual bool isEdited() const { return m_dirty; }
+    virtual void setEdited(bool isEdited) { m_dirty = isEdited; }
+    virtual bool isTextField() const { return !m_multiLine; }
+    virtual bool isTextArea() const { return m_multiLine; }
+    
+    bool isUserEdited() const { return m_userEdited; }
+    void setUserEdited(bool isUserEdited) { m_userEdited = isUserEdited; }
+
+    int selectionStart();
+    int selectionEnd();
+    void setSelectionStart(int);
+    void setSelectionEnd(int);
+    void select();
+    void setSelectionRange(int start, int end);
+    Selection selection(int start, int end) const;
+
+    void subtreeHasChanged();
+    String text();
+    String textWithHardLineBreaks();
+    void forwardEvent(Event*);
+    void selectionChanged(bool userTriggered);
+
+    virtual bool shouldAutoscroll() const { return true; }
+    virtual void autoscroll();
+
+    // Subclassed to forward to our inner div.
+    virtual int scrollLeft() const;
+    virtual int scrollTop() const;
+    virtual int scrollWidth() const;
+    virtual int scrollHeight() const;
+    virtual void setScrollLeft(int);
+    virtual void setScrollTop(int);
+    virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1.0f);
+    virtual bool isScrollable() const;
+
+    VisiblePosition visiblePositionForIndex(int index);
+    int indexForVisiblePosition(const VisiblePosition&);
+
+    void addSearchResult();
+
+    bool popupIsVisible() const { return m_searchPopupIsVisible; }
+    void showPopup();
+    void hidePopup();
+
+    void stopSearchEventTimer();
+    
+    bool placeholderIsVisible() const { return m_placeholderVisible; }
 
 private:
-    virtual const char* renderName() const { return "RenderTextControl"; }
-    virtual bool isTextControl() const { return true; }
-    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
-    virtual void computePreferredLogicalWidths() OVERRIDE;
-    virtual void removeLeftoverAnonymousBlock(RenderBlock*) { }
-    virtual bool avoidsFloats() const { return true; }
-    virtual bool canHaveGeneratedChildren() const OVERRIDE { return false; }
-    virtual bool canBeReplacedWithInlineRunIn() const OVERRIDE;
+    // PopupMenuClient methods
+    virtual void valueChanged(unsigned listIndex, bool fireEvents = true);
+    virtual String itemText(unsigned listIndex) const;
+    virtual bool itemIsEnabled(unsigned listIndex) const;
+    virtual Color itemBackgroundColor(unsigned listIndex) const;
+    virtual RenderStyle* itemStyle(unsigned listIndex) const;
+    virtual RenderStyle* clientStyle() const;
+    virtual Document* clientDocument() const;
+    virtual int clientPaddingLeft() const;
+    virtual int clientPaddingRight() const;
+    virtual int listSize() const;
+    virtual int selectedIndex() const;
+    virtual bool itemIsSeparator(unsigned listIndex) const;
+    virtual bool itemIsLabel(unsigned listIndex) const;
+    virtual bool itemIsSelected(unsigned listIndex) const;
+    virtual void setTextFromItem(unsigned listIndex);
+    virtual bool shouldPopOver() const { return false; }
+    virtual bool valueShouldChangeOnHotTrack() const { return false; }
     
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint&);
+    RenderStyle* createInnerBlockStyle(RenderStyle* startStyle);
+    RenderStyle* createInnerTextStyle(RenderStyle* startStyle);
+    RenderStyle* createCancelButtonStyle(RenderStyle* startStyle);
+    RenderStyle* createResultsButtonStyle(RenderStyle* startStyle);
 
-    virtual bool canBeProgramaticallyScrolled() const { return true; }
+    void updatePlaceholder();
+    void createSubtreeIfNeeded();
+    void updateCancelButtonVisibility(RenderStyle*);
+    const AtomicString& autosaveName() const;
+    void startSearchEventTimer();
+    void searchEventTimerFired(Timer<RenderTextControl>*);
+    String finishText(Vector<UChar>&) const;
 
-    virtual bool requiresForcedStyleRecalcPropagation() const { return true; }
+    RefPtr<HTMLTextFieldInnerElement> m_innerBlock;
+    RefPtr<HTMLTextFieldInnerTextElement> m_innerText;
+    RefPtr<HTMLSearchFieldResultsButtonElement> m_resultsButton;
+    RefPtr<HTMLSearchFieldCancelButtonElement> m_cancelButton;
+
+    bool m_dirty;
+    bool m_multiLine;
+    bool m_placeholderVisible;
+    bool m_userEdited;
+
+    RefPtr<SearchPopupMenu> m_searchPopup;
+    bool m_searchPopupIsVisible;
+    mutable Vector<String> m_recentSearches;
+
+    Timer<RenderTextControl> m_searchEventTimer;
 };
-
-inline RenderTextControl* toRenderTextControl(RenderObject* object)
-{ 
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isTextControl());
-    return static_cast<RenderTextControl*>(object);
-}
-
-inline const RenderTextControl* toRenderTextControl(const RenderObject* object)
-{ 
-    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isTextControl());
-    return static_cast<const RenderTextControl*>(object);
-}
-
-// This will catch anyone doing an unnecessary cast.
-void toRenderTextControl(const RenderTextControl*);
-
-// Renderer for our inner container, for <search> and others.
-// We can't use RenderFlexibleBox directly, because flexboxes have a different
-// baseline definition, and then inputs of different types wouldn't line up
-// anymore.
-class RenderTextControlInnerContainer : public RenderFlexibleBox {
-public:
-    explicit RenderTextControlInnerContainer(Element* element)
-        : RenderFlexibleBox(element)
-    { }
-    virtual ~RenderTextControlInnerContainer() { }
-
-    virtual int baselinePosition(FontBaseline baseline, bool firstLine, LineDirectionMode direction, LinePositionMode position) const OVERRIDE
-    {
-        return RenderBlock::baselinePosition(baseline, firstLine, direction, position);
-    }
-    virtual int firstLineBoxBaseline() const OVERRIDE { return RenderBlock::firstLineBoxBaseline(); }
-    virtual int inlineBlockBaseline(LineDirectionMode direction) const OVERRIDE { return RenderBlock::inlineBlockBaseline(direction); }
-
-};
-
 
 } // namespace WebCore
 

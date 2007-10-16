@@ -1,4 +1,6 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 2006, 2007 Rob Buis
  *
  * This library is free software; you can redistribute it and/or
@@ -17,51 +19,38 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #ifndef StyleElement_h
 #define StyleElement_h
 
 #include "CSSStyleSheet.h"
-#include <wtf/text/TextPosition.h>
 
 namespace WebCore {
 
-class Document;
 class Element;
 
 class StyleElement {
 public:
-    StyleElement(Document*, bool createdByParser);
-    virtual ~StyleElement();
+    StyleElement();
+    virtual ~StyleElement() {}
 
 protected:
+    StyleSheet* sheet(Element*);
+
+    virtual void setLoading(bool) {}
+
     virtual const AtomicString& type() const = 0;
     virtual const AtomicString& media() const = 0;
 
-    CSSStyleSheet* sheet() const { return m_sheet.get(); }
-
-    bool isLoading() const;
-    bool sheetLoaded(Document*);
-    void startLoadingDynamicSheet(Document*);
-
     void insertedIntoDocument(Document*, Element*);
-    void removedFromDocument(Document*, Element*);
-    void clearDocumentData(Document*, Element*);
-    void childrenChanged(Element*);
-    void finishParsingChildren(Element*);
-
-    RefPtr<CSSStyleSheet> m_sheet;
-
-private:
-    void createSheet(Element*, WTF::OrdinalNumber startLineNumber, const String& text = String());
+    void removedFromDocument(Document*);
     void process(Element*);
-    void clearSheet();
 
-    bool m_createdByParser;
-    bool m_loading;
-    WTF::OrdinalNumber m_startLineNumber;
+    void createSheet(Element* e, const String& text = String());
+
+protected:
+    RefPtr<CSSStyleSheet> m_sheet;
 };
 
-}
+} //namespace
 
 #endif

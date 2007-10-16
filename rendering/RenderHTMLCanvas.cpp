@@ -26,15 +26,10 @@
 #include "config.h"
 #include "RenderHTMLCanvas.h"
 
-#include "CanvasRenderingContext.h"
 #include "Document.h"
-#include "Frame.h"
-#include "FrameView.h"
 #include "GraphicsContext.h"
 #include "HTMLCanvasElement.h"
 #include "HTMLNames.h"
-#include "Page.h"
-#include "PaintInfo.h"
 #include "RenderView.h"
 
 namespace WebCore {
@@ -44,55 +39,77 @@ using namespace HTMLNames;
 RenderHTMLCanvas::RenderHTMLCanvas(HTMLCanvasElement* element)
     : RenderReplaced(element, element->size())
 {
-    // Actual size is not known yet, report the default intrinsic size.
-    view()->frameView()->incrementVisuallyNonEmptyPixelCount(roundedIntSize(intrinsicSize()));
 }
 
-bool RenderHTMLCanvas::requiresLayer() const
+void RenderHTMLCanvas::paint(PaintInfo& paintInfo, int tx, int ty)
 {
-    if (RenderReplaced::requiresLayer())
-        return true;
-    
-    HTMLCanvasElement* canvas = static_cast<HTMLCanvasElement*>(node());
-    return canvas && canvas->renderingContext() && canvas->renderingContext()->isAccelerated();
-}
+    if (!shouldPaint(paintInfo, tx, ty))
+        return;
 
-void RenderHTMLCanvas::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
-{
-    LayoutRect rect = contentBoxRect();
-    rect.moveBy(paintOffset);
+    int x = tx + m_x;
+    int y = ty + m_y;
 
-    if (Frame* frame = this->frame()) {
-        if (Page* page = frame->page()) {
-            if (paintInfo.phase == PaintPhaseForeground)
-                page->addRelevantRepaintedObject(this, rect);
-        }
+    if (hasBoxDecorations() && (paintInfo.phase == PaintPhaseForeground || paintInfo.phase == PaintPhaseSelection)) 
+        paintBoxDecorations(paintInfo, x, y);
+
+    if ((paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline) && style()->outlineWidth() && style()->visibility() == VISIBLE)
+        paintOutline(paintInfo.context, x, y, width(), height(), style());
+
+    if (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection)
+        return;
+
+    if (!shouldPaintWithinRoot(paintInfo))
+        return;
+
+    bool drawSelectionTint = selectionState() != SelectionNone && !document()->printing();
+    if (paintInfo.phase == PaintPhaseSelection) {
+        if (selectionState() == SelectionNone)
+            return;
+        drawSelectionTint = false;
     }
 
-    bool useLowQualityScale = style()->imageRendering() == ImageRenderingCrispEdges || style()->imageRendering() == ImageRenderingOptimizeSpeed;
-    static_cast<HTMLCanvasElement*>(node())->paint(paintInfo.context, rect, useLowQualityScale);
+    static_cast<HTMLCanvasElement*>(node())->paint(paintInfo.context,
+        IntRect(x + borderLeft() + paddingLeft(), y + borderTop() + paddingTop(), contentWidth(), contentHeight()));
+
+    if (drawSelectionTint)
+        paintInfo.context->fillRect(selectionRect(), selectionBackgroundColor());
+}
+
+void RenderHTMLCanvas::layout()
+{
+    ASSERT(needsLayout());
+
+    IntRect oldBounds;
+    IntRect oldOutlineBox;
+    bool checkForRepaint = checkForRepaintDuringLayout();
+    if (checkForRepaint) {
+        oldBounds = absoluteClippedOverflowRect();
+        oldOutlineBox = absoluteOutlineBox();
+    }
+    calcWidth();
+    calcHeight();
+    adjustOverflowForBoxShadow();
+    if (checkForRepaint)
+        repaintAfterLayoutIfNeeded(oldBounds, oldOutlineBox);
+
+    setNeedsLayout(false);
 }
 
 void RenderHTMLCanvas::canvasSizeChanged()
 {
-    IntSize canvasSize = static_cast<HTMLCanvasElement*>(node())->size();
-    LayoutSize zoomedSize(canvasSize.width() * style()->effectiveZoom(), canvasSize.height() * style()->effectiveZoom());
-
-    if (zoomedSize == intrinsicSize())
+    IntSize size = static_cast<HTMLCanvasElement*>(node())->size();
+    if (size == intrinsicSize())
         return;
 
-    setIntrinsicSize(zoomedSize);
+    setIntrinsicSize(size);
 
-    if (!parent())
-        return;
+    if (!prefWidthsDirty())
+        setPrefWidthsDirty(true);
 
-    if (!preferredLogicalWidthsDirty())
-        setPreferredLogicalWidthsDirty(true);
-
-    LayoutSize oldSize = size();
-    updateLogicalWidth();
-    updateLogicalHeight();
-    if (oldSize == size())
+    IntSize oldSize = IntSize(m_width, m_height);
+    calcWidth();
+    calcHeight();
+    if (oldSize == IntSize(m_width, m_height))
         return;
 
     if (!selfNeedsLayout())

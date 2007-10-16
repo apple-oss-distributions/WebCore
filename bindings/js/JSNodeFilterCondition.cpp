@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2001 Peter Kelly (pmk@post.com)
- *  Copyright (C) 2007, 2008, 2009 Apple Inc. All rights reserved.
+ *  Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -20,67 +20,41 @@
 #include "config.h"
 #include "JSNodeFilterCondition.h"
 
-#include "JSMainThreadExecState.h"
+#include "Document.h"
+#include "Frame.h"
 #include "JSNode.h"
 #include "JSNodeFilter.h"
 #include "NodeFilter.h"
-#include <runtime/Error.h>
-#include <runtime/JSLock.h>
+#include "kjs_proxy.h"
 
 namespace WebCore {
 
-using namespace JSC;
-
-JSNodeFilterCondition::JSNodeFilterCondition(VM&, NodeFilter* owner, JSValue filter)
-    : m_filter(filter.isObject() ? PassWeak<JSObject>(jsCast<JSObject*>(filter), &m_weakOwner, owner) : nullptr)
+JSNodeFilterCondition::JSNodeFilterCondition(KJS::JSObject* filter)
+    : m_filter(filter)
 {
 }
 
-short JSNodeFilterCondition::acceptNode(JSC::ExecState* exec, Node* filterNode) const
+void JSNodeFilterCondition::mark()
 {
-    JSLockHolder lock(exec);
+    m_filter->mark();
+}
 
-    if (!m_filter)
-        return NodeFilter::FILTER_ACCEPT;
-
-    // Exec is null if we've been called from a non-JavaScript language and the document
-    // is no longer able to run JavaScript (e.g., it's disconnected from its frame).
-    if (!exec)
-        return NodeFilter::FILTER_REJECT;
-
-    JSValue filter = m_filter.get();
-    CallData callData;
-    CallType callType = getCallData(filter, callData);
-    if (callType == CallTypeNone) {
-        filter = filter.get(exec, Identifier(exec, "acceptNode"));
-        callType = getCallData(filter, callData);
-        if (callType == CallTypeNone) {
-            throwError(exec, createTypeError(exec, "NodeFilter object does not have an acceptNode function"));
-            return NodeFilter::FILTER_REJECT;
-        }
+short JSNodeFilterCondition::acceptNode(Node* filterNode) const
+{
+    Node* node = filterNode;
+    Frame* frame = node->document()->frame();
+    KJSProxy* proxy = frame->scriptProxy();
+    if (proxy && m_filter->implementsCall()) {
+        KJS::JSLock lock;
+        KJS::ExecState* exec = proxy->interpreter()->globalExec();
+        KJS::List args;
+        args.append(toJS(exec, node));
+        KJS::JSObject* obj = m_filter;
+        KJS::JSValue* result = obj->call(exec, obj, args);
+        return result->toInt32(exec);
     }
 
-    MarkedArgumentBuffer args;
-    // FIXME: The node should have the prototype chain that came from its document, not
-    // whatever prototype chain might be on the window this filter came from. Bug 27662
-    args.append(toJS(exec, deprecatedGlobalObjectForPrototype(exec), filterNode));
-    if (exec->hadException())
-        return NodeFilter::FILTER_REJECT;
-
-    JSValue result = JSMainThreadExecState::call(exec, filter, callType, callData, m_filter.get(), args);
-    if (exec->hadException())
-        return NodeFilter::FILTER_REJECT;
-
-    int intResult = result.toInt32(exec);
-    if (exec->hadException())
-        return NodeFilter::FILTER_REJECT;
-
-    return intResult;
-}
-
-bool JSNodeFilterCondition::WeakOwner::isReachableFromOpaqueRoots(JSC::Handle<JSC::Unknown>, void* context, SlotVisitor& visitor)
-{
-    return visitor.containsOpaqueRoot(context);
+    return NodeFilter::FILTER_REJECT;
 }
 
 } // namespace WebCore

@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *           (C) 2006 Alexey Proskuryakov (ap@nypop.com)
  *
  * This library is free software; you can redistribute it and/or
@@ -25,17 +27,13 @@
 #include "config.h"
 #include "HTMLKeygenElement.h"
 
-#include "Attribute.h"
 #include "Document.h"
-#include "ElementShadow.h"
 #include "FormDataList.h"
 #include "HTMLNames.h"
-#include "HTMLSelectElement.h"
 #include "HTMLOptionElement.h"
+#include "KURL.h"
 #include "SSLKeyGenerator.h"
-#include "ShadowRoot.h"
 #include "Text.h"
-#include <wtf/StdLibExtras.h>
 
 using namespace WebCore;
 
@@ -43,94 +41,46 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-class KeygenSelectElement FINAL : public HTMLSelectElement {
-public:
-    static PassRefPtr<KeygenSelectElement> create(Document* document)
-    {
-        return adoptRef(new KeygenSelectElement(document));
-    }
-
-protected:
-    KeygenSelectElement(Document* document)
-        : HTMLSelectElement(selectTag, document, 0)
-    {
-        DEFINE_STATIC_LOCAL(AtomicString, pseudoId, ("-webkit-keygen-select", AtomicString::ConstructFromLiteral));
-        setPseudo(pseudoId);
-    }
-
-private:
-    virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren()
-    {
-        return create(document());
-    }
-};
-
-inline HTMLKeygenElement::HTMLKeygenElement(const QualifiedName& tagName, Document* document, HTMLFormElement* form)
-    : HTMLFormControlElementWithState(tagName, document, form)
+HTMLKeygenElement::HTMLKeygenElement(Document* doc, HTMLFormElement* f)
+    : HTMLSelectElement(keygenTag, doc, f)
 {
-    ASSERT(hasTagName(keygenTag));
-
-    // Create a select element with one option element for each key size.
-    Vector<String> keys;
-    getSupportedKeySizes(keys);
-
-    RefPtr<HTMLSelectElement> select = KeygenSelectElement::create(document);
-    for (size_t i = 0; i < keys.size(); ++i) {
-        RefPtr<HTMLOptionElement> option = HTMLOptionElement::create(document);
-        select->appendChild(option, IGNORE_EXCEPTION);
-        option->appendChild(Text::create(document, keys[i]), IGNORE_EXCEPTION);
+    Vector<String> keys = supportedKeySizes();
+        
+    Vector<String>::const_iterator end = keys.end();
+    for (Vector<String>::const_iterator it = keys.begin(); it != end; ++it) {
+        HTMLOptionElement* o = new HTMLOptionElement(doc, form());
+        addChild(o);
+        o->addChild(new Text(doc, *it));
     }
-
-    ensureUserAgentShadowRoot()->appendChild(select, IGNORE_EXCEPTION);
 }
 
-PassRefPtr<HTMLKeygenElement> HTMLKeygenElement::create(const QualifiedName& tagName, Document* document, HTMLFormElement* form)
+const AtomicString& HTMLKeygenElement::type() const
 {
-    return adoptRef(new HTMLKeygenElement(tagName, document, form));
+    static const AtomicString keygen("keygen");
+    return keygen;
 }
 
-void HTMLKeygenElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLKeygenElement::parseMappedAttribute(MappedAttribute* attr)
 {
-    // Reflect disabled attribute on the shadow select element
-    if (name == disabledAttr)
-        shadowSelect()->setAttribute(name, value);
-
-    HTMLFormControlElement::parseAttribute(name, value);
+    if (attr->name() == challengeAttr)
+        m_challenge = attr->value();
+    else if (attr->name() == keytypeAttr)
+        m_keyType = attr->value();
+    else
+        // skip HTMLSelectElement parsing!
+        HTMLGenericFormElement::parseMappedAttribute(attr);
 }
 
 bool HTMLKeygenElement::appendFormData(FormDataList& encoded_values, bool)
 {
     // Only RSA is supported at this time.
-    const AtomicString& keyType = fastGetAttribute(keytypeAttr);
-    if (!keyType.isNull() && !equalIgnoringCase(keyType, "rsa"))
+    if (!m_keyType.isNull() && !equalIgnoringCase(m_keyType, "rsa"))
         return false;
-    String value = signedPublicKeyAndChallengeString(shadowSelect()->selectedIndex(), fastGetAttribute(challengeAttr), document()->baseURL());
+    String value = signedPublicKeyAndChallengeString(selectedIndex(), m_challenge, document()->baseURL());
     if (value.isNull())
         return false;
     encoded_values.appendData(name(), value.utf8());
     return true;
-}
-
-const AtomicString& HTMLKeygenElement::formControlType() const
-{
-    DEFINE_STATIC_LOCAL(const AtomicString, keygen, ("keygen", AtomicString::ConstructFromLiteral));
-    return keygen;
-}
-
-void HTMLKeygenElement::reset()
-{
-    static_cast<HTMLFormControlElement*>(shadowSelect())->reset();
-}
-
-bool HTMLKeygenElement::shouldSaveAndRestoreFormControlState() const
-{
-    return false;
-}
-
-HTMLSelectElement* HTMLKeygenElement::shadowSelect() const
-{
-    ShadowRoot* root = userAgentShadowRoot();
-    return root ? toHTMLSelectElement(root->firstChild()) : 0;
 }
 
 } // namespace

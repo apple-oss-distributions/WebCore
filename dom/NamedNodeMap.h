@@ -1,9 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- *           (C) 2001 Peter Kelly (pmk@post.com)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2008, 2010, 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,57 +26,43 @@
 #ifndef NamedNodeMap_h
 #define NamedNodeMap_h
 
-#include "ScriptWrappable.h"
-#include <wtf/PassOwnPtr.h>
+#include "Shared.h"
 #include <wtf/PassRefPtr.h>
-#include <wtf/text/AtomicString.h>
 
 namespace WebCore {
 
 class Node;
-class Element;
+class QualifiedName;
+class String;
 
 typedef int ExceptionCode;
 
-class NamedNodeMap : public ScriptWrappable {
-    WTF_MAKE_FAST_ALLOCATED;
-    friend class Element;
+// Generic NamedNodeMap interface
+// Other classes implement this for more specific situations e.g. attributes of an element.
+class NamedNodeMap : public Shared<NamedNodeMap> {
 public:
-    static PassOwnPtr<NamedNodeMap> create(Element* element)
-    {
-        return adoptPtr(new NamedNodeMap(element));
-    }
+    NamedNodeMap() { }
+    virtual ~NamedNodeMap() { }
 
-    void ref();
-    void deref();
+    virtual PassRefPtr<Node> getNamedItem(const String& name) const = 0;
+    virtual PassRefPtr<Node> removeNamedItem(const String& name, ExceptionCode&) = 0;
 
-    // Public DOM interface.
+    virtual PassRefPtr<Node> getNamedItemNS(const String& namespaceURI, const String& localName) const = 0;
+    PassRefPtr<Node> setNamedItemNS(Node* arg, ExceptionCode& ec) { return setNamedItem(arg, ec); }
+    virtual PassRefPtr<Node> removeNamedItemNS(const String& namespaceURI, const String& localName, ExceptionCode&) = 0;
 
-    PassRefPtr<Node> getNamedItem(const AtomicString&) const;
-    PassRefPtr<Node> removeNamedItem(const AtomicString& name, ExceptionCode&);
+    // DOM methods & attributes for NamedNodeMap
+    virtual PassRefPtr<Node> getNamedItem(const QualifiedName& attrName) const = 0;
+    virtual PassRefPtr<Node> removeNamedItem(const QualifiedName& attrName, ExceptionCode&) = 0;
+    virtual PassRefPtr<Node> setNamedItem(Node*, ExceptionCode&) = 0;
 
-    PassRefPtr<Node> getNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName) const;
-    PassRefPtr<Node> removeNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName, ExceptionCode&);
+    virtual PassRefPtr<Node> item(unsigned index) const = 0;
+    virtual unsigned length() const = 0;
 
-    PassRefPtr<Node> setNamedItem(Node*, ExceptionCode&);
-    PassRefPtr<Node> setNamedItemNS(Node*, ExceptionCode&);
-
-    PassRefPtr<Node> item(unsigned index) const;
-    unsigned length() const;
-
-    Element* element() const { return m_element; }
-
-private:
-    explicit NamedNodeMap(Element* element)
-        : m_element(element)
-    {
-        // Only supports NamedNodeMaps with Element associated, DocumentType.entities and DocumentType.notations are not supported yet.
-        ASSERT(m_element);
-    }
-
-    Element* m_element;
+    // Other methods (not part of DOM)
+    virtual bool isReadOnlyNode() { return false; }
 };
 
-} // namespace WebCore
+} //namespace
 
-#endif // NamedNodeMap_h
+#endif

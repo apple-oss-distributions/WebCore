@@ -1,10 +1,11 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Simon Hausmann (hausmann@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2006, 2008, 2009 Apple Inc. All rights reserved.
- * Copyright (C) 2009 Ericsson AB. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -21,111 +22,141 @@
  * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
-
 #include "config.h"
 #include "HTMLIFrameElement.h"
 
-#include "Attribute.h"
 #include "CSSPropertyNames.h"
 #include "Frame.h"
 #include "HTMLDocument.h"
 #include "HTMLNames.h"
-#include "NodeRenderingContext.h"
-#include "RenderIFrame.h"
-#include "ScriptableDocumentParser.h"
-#include <wtf/text/TextPosition.h>
+#include "RenderPartObject.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLIFrameElement::HTMLIFrameElement(const QualifiedName& tagName, Document* document)
-    : HTMLFrameElementBase(tagName, document)
+HTMLIFrameElement::HTMLIFrameElement(Document* doc)
+    : HTMLFrameElementBase(iframeTag, doc)
 {
-    ASSERT(hasTagName(iframeTag));
-    setHasCustomStyleCallbacks();
 }
 
-PassRefPtr<HTMLIFrameElement> HTMLIFrameElement::create(const QualifiedName& tagName, Document* document)
+bool HTMLIFrameElement::mapToEntry(const QualifiedName& attrName, MappedAttributeEntry& result) const
 {
-    return adoptRef(new HTMLIFrameElement(tagName, document));
+    if (attrName == widthAttr || attrName == heightAttr) {
+        result = eUniversal;
+        return false;
+    }
+    
+    if (attrName == alignAttr) {
+        result = eReplaced; // Share with <img> since the alignment behavior is the same.
+        return false;
+    }
+    
+    if (attrName == frameborderAttr) {
+        result = eReplaced;
+        return false;
+    }
+
+    return HTMLFrameElementBase::mapToEntry(attrName, result);
 }
 
-bool HTMLIFrameElement::isPresentationAttribute(const QualifiedName& name) const
+void HTMLIFrameElement::parseMappedAttribute(MappedAttribute *attr)
 {
-    if (name == widthAttr || name == heightAttr || name == alignAttr || name == frameborderAttr || name == seamlessAttr)
-        return true;
-    return HTMLFrameElementBase::isPresentationAttribute(name);
-}
-
-void HTMLIFrameElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
-{
-    if (name == widthAttr)
-        addHTMLLengthToStyle(style, CSSPropertyWidth, value);
-    else if (name == heightAttr)
-        addHTMLLengthToStyle(style, CSSPropertyHeight, value);
-    else if (name == alignAttr)
-        applyAlignmentAttributeToStyle(value, style);
-    else if (name == frameborderAttr) {
-        // Frame border doesn't really match the HTML4 spec definition for iframes. It simply adds
-        // a presentational hint that the border should be off if set to zero.
-        if (!value.toInt()) {
-            // Add a rule that nulls out our border width.
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyBorderWidth, 0, CSSPrimitiveValue::CSS_PX);
+    if (attr->name() == widthAttr)
+        addCSSLength(attr, CSS_PROP_WIDTH, attr->value());
+    else if (attr->name() == heightAttr)
+        addCSSLength(attr, CSS_PROP_HEIGHT, attr->value());
+    else if (attr->name() == alignAttr)
+        addHTMLAlignment(attr);
+    else if (attr->name() == nameAttr) {
+        String newNameAttr = attr->value();
+        if (inDocument() && document()->isHTMLDocument()) {
+            HTMLDocument* doc = static_cast<HTMLDocument* >(document());
+            doc->removeDocExtraNamedItem(oldNameAttr);
+            doc->addDocExtraNamedItem(newNameAttr);
         }
+        oldNameAttr = newNameAttr;
+    } else if (attr->name() == frameborderAttr) {
+        // Frame border doesn't really match the HTML4 spec definition for iframes.  It simply adds
+        // a presentational hint that the border should be off if set to zero.
+        if (!attr->isNull() && !attr->value().toInt())
+            // Add a rule that nulls out our border width.
+            addCSSLength(attr, CSS_PROP_BORDER_WIDTH, "0");
     } else
-        HTMLFrameElementBase::collectStyleForPresentationAttribute(name, value, style);
+        HTMLFrameElementBase::parseMappedAttribute(attr);
 }
 
-void HTMLIFrameElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+bool HTMLIFrameElement::rendererIsNeeded(RenderStyle* style)
 {
-    if (name == sandboxAttr) {
-        String invalidTokens;
-        setSandboxFlags(value.isNull() ? SandboxNone : SecurityContext::parseSandboxPolicy(value, invalidTokens));
-        if (!invalidTokens.isNull())
-            document()->addConsoleMessage(OtherMessageSource, ErrorMessageLevel, "Error while parsing the 'sandbox' attribute: " + invalidTokens);
-    } else if (name == seamlessAttr) {
-        // If we're adding or removing the seamless attribute, we need to force the content document to recalculate its StyleResolver.
-        if (contentDocument())
-            contentDocument()->styleResolverChanged(DeferRecalcStyle);
-    } else
-        HTMLFrameElementBase::parseAttribute(name, value);
-}
-
-bool HTMLIFrameElement::rendererIsNeeded(const NodeRenderingContext& context)
-{
-    return isURLAllowed() && context.style()->display() != NONE;
+    return isURLAllowed(m_URL) && style->display() != NONE;
 }
 
 RenderObject* HTMLIFrameElement::createRenderer(RenderArena* arena, RenderStyle*)
 {
-    return new (arena) RenderIFrame(this);
+    return new (arena) RenderPartObject(this);
 }
 
-bool HTMLIFrameElement::shouldDisplaySeamlessly() const
+void HTMLIFrameElement::insertedIntoDocument()
 {
-    return contentDocument() && contentDocument()->shouldDisplaySeamlesslyWithParent();
+    if (document()->isHTMLDocument()) {
+        HTMLDocument* doc = static_cast<HTMLDocument*>(document());
+        doc->addDocExtraNamedItem(oldNameAttr);
+    }
+
+    HTMLFrameElementBase::insertedIntoDocument();
 }
 
-void HTMLIFrameElement::didRecalcStyle(StyleChange styleChange)
+void HTMLIFrameElement::removedFromDocument()
 {
-    if (!shouldDisplaySeamlessly())
-        return;
-    Document* childDocument = contentDocument();
-    if (styleChange >= Inherit || childDocument->childNeedsStyleRecalc() || childDocument->needsStyleRecalc())
-        contentDocument()->recalcStyle(styleChange);
+    if (document()->isHTMLDocument()) {
+        HTMLDocument* doc = static_cast<HTMLDocument*>(document());
+        doc->removeDocExtraNamedItem(oldNameAttr);
+    }
+
+    HTMLFrameElementBase::removedFromDocument();
 }
 
-#if ENABLE(MICRODATA)
-String HTMLIFrameElement::itemValueText() const
+void HTMLIFrameElement::attach()
 {
-    return getURLAttribute(srcAttr);
+    HTMLFrameElementBase::attach();
+
+    if (RenderPartObject* renderPartObject = static_cast<RenderPartObject*>(renderer()))
+        renderPartObject->updateWidget(false);
 }
 
-void HTMLIFrameElement::setItemValueText(const String& value, ExceptionCode&)
+bool HTMLIFrameElement::isURLAttribute(Attribute* attr) const
 {
-    setAttribute(srcAttr, value);
+    return attr->name() == srcAttr;
 }
-#endif
+
+String HTMLIFrameElement::align() const
+{
+    return getAttribute(alignAttr);
+}
+
+void HTMLIFrameElement::setAlign(const String &value)
+{
+    setAttribute(alignAttr, value);
+}
+
+String HTMLIFrameElement::height() const
+{
+    return getAttribute(heightAttr);
+}
+
+void HTMLIFrameElement::setHeight(const String &value)
+{
+    setAttribute(heightAttr, value);
+}
+
+String HTMLIFrameElement::width() const
+{
+    return getAttribute(widthAttr);
+}
+
+void HTMLIFrameElement::setWidth(const String &value)
+{
+    setAttribute(widthAttr, value);
+}
 
 }

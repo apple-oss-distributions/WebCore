@@ -24,33 +24,44 @@
  */
 
 #include "config.h"
-#include "JSHTMLEmbedElementCustom.h"
+#include "JSHTMLEmbedElement.h"
 
 #include "HTMLEmbedElement.h"
-#include "JSPluginElementFunctions.h"
+#include "kjs_dom.h"
+#include "kjs_html.h"
 
 namespace WebCore {
 
-using namespace JSC;
+using namespace KJS;
 
-bool JSHTMLEmbedElement::getOwnPropertySlotDelegate(ExecState* exec, PropertyName propertyName, PropertySlot& slot)
+bool JSHTMLEmbedElement::customGetOwnPropertySlot(ExecState* exec, const Identifier& propertyName, PropertySlot& slot)
 {
-    return pluginElementCustomGetOwnPropertySlot<JSHTMLEmbedElement, Base>(exec, propertyName, slot, this);
+    return runtimeObjectCustomGetOwnPropertySlot(exec, propertyName, slot, this, static_cast<HTMLElement*>(impl()));
 }
 
-bool JSHTMLEmbedElement::getOwnPropertyDescriptorDelegate(ExecState* exec, PropertyName propertyName, PropertyDescriptor& descriptor)
+bool JSHTMLEmbedElement::customPut(ExecState* exec, const Identifier& propertyName, JSValue* value, int attr)
 {
-    return pluginElementCustomGetOwnPropertyDescriptor<JSHTMLEmbedElement, Base>(exec, propertyName, descriptor, this);
+    return runtimeObjectCustomPut(exec, propertyName, value, attr, static_cast<HTMLElement*>(impl()));
 }
 
-bool JSHTMLEmbedElement::putDelegate(ExecState* exec, PropertyName propertyName, JSValue value, PutPropertySlot& slot)
+bool JSHTMLEmbedElement::implementsCall() const
 {
-    return runtimeObjectCustomPut(exec, propertyName, value, this, slot);
+    return runtimeObjectImplementsCall(static_cast<HTMLElement*>(impl()));
 }
 
-CallType JSHTMLEmbedElement::getCallData(JSCell* cell, CallData& callData)
+JSValue* JSHTMLEmbedElement::callAsFunction(ExecState* exec, JSObject* thisObj, const List& args)
 {
-    return runtimeObjectGetCallData(jsCast<JSHTMLEmbedElement*>(cell), callData);
+    return runtimeObjectCallAsFunction(exec, thisObj, args, static_cast<HTMLElement*>(impl()));
+}
+
+bool JSHTMLEmbedElement::canGetItemsForName(ExecState*, HTMLEmbedElement*, const Identifier& propertyName)
+{
+    return propertyName == "__apple_runtime_object";
+}
+
+JSValue* JSHTMLEmbedElement::nameGetter(ExecState* exec, JSObject* originalObject, const Identifier& propertyName, const PropertySlot& slot)
+{
+    return runtimeObjectGetter(exec, originalObject, propertyName, slot);
 }
 
 } // namespace WebCore

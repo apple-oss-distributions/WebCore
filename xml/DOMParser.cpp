@@ -1,5 +1,6 @@
 /*
- *  Copyright (C) 2003, 2006, 2008 Apple Inc. All rights reserved.
+ *  This file is part of the KDE libraries
+ *  Copyright (C) 2003, 2006 Apple Computer, Inc.
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -20,19 +21,23 @@
 #include "DOMParser.h"
 
 #include "DOMImplementation.h"
-#include "Document.h"
-#include <wtf/text/WTFString.h>
+#include "PlatformString.h"
 
 namespace WebCore {
-
+    
 PassRefPtr<Document> DOMParser::parseFromString(const String& str, const String& contentType)
 {
     if (!DOMImplementation::isXMLMIMEType(contentType))
         return 0;
 
-    RefPtr<Document> doc = DOMImplementation::createDocument(contentType, 0, KURL(), false);
-    doc->setContent(str);
+    RefPtr<Document> doc = DOMImplementation::instance()->createDocument(contentType, 0, false);
+
+    doc->open();
+    doc->write(str);
+    doc->finishParsing();
+    doc->close();
+        
     return doc.release();
 }
 
-} // namespace WebCore
+}

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,17 +18,15 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    CustomToJSObject,
-    GenerateIsReachable=ImplOwnerNodeRoot,
-    ObjCPolymorphic,
-] interface HTMLCollection {
-    readonly attribute unsigned long length;
-    getter Node item([Default=Undefined] optional unsigned long index);
-    getter Node namedItem([Default=Undefined] optional DOMString name);
+module html {
 
-#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
-    NodeList tags([Default=Undefined] optional DOMString name);
-#endif
-};
+    interface [GenerateConstructor, HasIndexGetter, HasNameGetter, CustomCall, CustomToJS] HTMLCollection {
+        readonly attribute unsigned long length;
+        [Custom] Node item(in unsigned long index);
+        [Custom] Node namedItem(in DOMString name);
 
+        // Extensions
+        NodeList tags(in DOMString name);
+    };
+
+}

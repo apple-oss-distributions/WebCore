@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,34 +27,34 @@
 #include "JSHTMLFrameSetElement.h"
 
 #include "Document.h"
-#include "HTMLCollection.h"
 #include "HTMLFrameElement.h"
 #include "HTMLFrameSetElement.h"
 #include "HTMLNames.h"
-#include "JSDOMWindow.h"
-#include "JSDOMWindowShell.h"
-#include "JSDOMBinding.h"
-
-using namespace JSC;
+#include "kjs_binding.h"
+#include "kjs_window.h"
 
 namespace WebCore {
 
+using namespace KJS;
 using namespace HTMLNames;
 
-bool JSHTMLFrameSetElement::canGetItemsForName(ExecState*, HTMLFrameSetElement* frameSet, PropertyName propertyName)
+bool JSHTMLFrameSetElement::canGetItemsForName(ExecState*, HTMLFrameSetElement* frameSet, const Identifier& propertyName)
 {
-    Node* frame = frameSet->children()->namedItem(propertyNameToAtomicString(propertyName));
+    Node* frame = frameSet->children()->namedItem(propertyName);
     return frame && frame->hasTagName(frameTag);
 }
 
-JSValue JSHTMLFrameSetElement::nameGetter(ExecState* exec, JSValue slotBase, PropertyName propertyName)
+JSValue* JSHTMLFrameSetElement::nameGetter(ExecState* exec, JSObject* originalObject, const Identifier& propertyName, const PropertySlot& slot)
 {
-    HTMLElement* element = jsCast<JSHTMLElement*>(asObject(slotBase))->impl();
-    Node* frameElement = element->children()->namedItem(propertyNameToAtomicString(propertyName));
-    if (Document* document = static_cast<HTMLFrameElement*>(frameElement)->contentDocument()) {
-        if (JSDOMWindowShell* window = toJSDOMWindowShell(document->frame(), currentWorld(exec)))
+    JSHTMLElement* thisObj = static_cast<JSHTMLElement*>(slot.slotBase());
+    HTMLElement* element = static_cast<HTMLElement*>(thisObj->impl());
+
+    Node* frame = element->children()->namedItem(propertyName);
+    if (Document* doc = static_cast<HTMLFrameElement*>(frame)->contentDocument()) {
+        if (Window* window = Window::retrieveWindow(doc->frame()))
             return window;
     }
+
     return jsUndefined();
 }
 

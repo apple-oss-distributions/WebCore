@@ -33,34 +33,33 @@
 #include "FloatRect.h"
 #include "Frame.h"
 #include "FrameView.h"
-#include "InspectorInstrumentation.h"
 #include "PlatformScreen.h"
-#include "Settings.h"
 #include "Widget.h"
 
 namespace WebCore {
 
 Screen::Screen(Frame* frame)
-    : DOMWindowProperty(frame)
+    : m_frame(frame)
 {
+}
+
+void Screen::disconnectFrame()
+{
+    m_frame = 0;
 }
 
 unsigned Screen::height() const
 {
     if (!m_frame)
         return 0;
-    long height = static_cast<long>(screenRect(m_frame->view()).height());
-    InspectorInstrumentation::applyScreenHeightOverride(m_frame, &height);
-    return static_cast<unsigned>(height);
+    return static_cast<unsigned>(screenRect(m_frame->view()).height());
 }
 
 unsigned Screen::width() const
 {
     if (!m_frame)
         return 0;
-    long width = static_cast<long>(screenRect(m_frame->view()).width());
-    InspectorInstrumentation::applyScreenWidthOverride(m_frame, &width);
-    return static_cast<unsigned>(width);
+    return static_cast<unsigned>(screenRect(m_frame->view()).width());
 }
 
 unsigned Screen::colorDepth() const
@@ -77,18 +76,18 @@ unsigned Screen::pixelDepth() const
     return static_cast<unsigned>(screenDepth(m_frame->view()));
 }
 
-int Screen::availLeft() const
+unsigned Screen::availLeft() const
 {
     if (!m_frame)
         return 0;
-    return static_cast<int>(screenAvailableRect(m_frame->view()).x());
+    return static_cast<unsigned>(screenAvailableRect(m_frame->view()).x());
 }
 
-int Screen::availTop() const
+unsigned Screen::availTop() const
 {
     if (!m_frame)
         return 0;
-    return static_cast<int>(screenAvailableRect(m_frame->view()).y());
+    return static_cast<unsigned>(screenAvailableRect(m_frame->view()).y());
 }
 
 unsigned Screen::availHeight() const

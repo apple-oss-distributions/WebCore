@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2007, 2008, 2013 Apple Inc.
- * Copyright (C) 2009 Kenneth Rohde Christiansen
+ * Copyright (C) 2007 Apple Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,16 +21,11 @@
 #ifndef RenderThemeSafari_h
 #define RenderThemeSafari_h
 
-#if USE(SAFARI_THEME)
+#ifdef USE_SAFARI_THEME
 
 #include "RenderTheme.h"
 
-// If you have an empty placeholder SafariThemeConstants.h, then include SafariTheme.h
-// This is a workaround until a version of WebKitSupportLibrary is released with an updated SafariThemeConstants.h 
-#include <SafariTheme/SafariThemeConstants.h>
-#ifndef SafariThemeConstants_h
 #include <SafariTheme/SafariTheme.h>
-#endif
 
 #if PLATFORM(WIN)
 typedef void* HANDLE;
@@ -47,12 +41,13 @@ class RenderStyle;
 
 class RenderThemeSafari : public RenderTheme {
 public:
-    static PassRefPtr<RenderTheme> create();
+    RenderThemeSafari();
+    virtual ~RenderThemeSafari();
 
     // A method to obtain the baseline position for a "leaf" control.  This will only be used if a baseline
     // position cannot be determined by examining child content. Checkboxes and radio buttons are examples of
     // controls that need to do this.
-    virtual int baselinePosition(const RenderObject*) const;
+    virtual short baselinePosition(const RenderObject*) const;
 
     // A method asking if the control changes its tint when the window has focus or not.
     virtual bool controlSupportsTints(const RenderObject*) const;
@@ -63,21 +58,19 @@ public:
     virtual void adjustRepaintRect(const RenderObject*, IntRect&);
 
     virtual bool isControlStyled(const RenderStyle*, const BorderData&,
-                                 const FillLayer&, const Color& backgroundColor) const;
+                                 const BackgroundLayer&, const Color& backgroundColor) const;
 
     virtual Color platformActiveSelectionBackgroundColor() const;
     virtual Color platformInactiveSelectionBackgroundColor() const;
     virtual Color activeListBoxSelectionBackgroundColor() const;
-
-    virtual Color platformFocusRingColor() const;
 
     // System fonts.
     virtual void systemFont(int propId, FontDescription&) const;
 
     virtual int minimumMenuListSize(RenderStyle*) const;
 
-    virtual void adjustSliderThumbSize(RenderStyle*, Element*) const;
-    virtual void adjustSliderThumbStyle(StyleResolver*, RenderStyle*, Element*) const; 
+    virtual void adjustSliderThumbSize(RenderObject*) const;
+    virtual void adjustSliderThumbStyle(CSSStyleSelector*, RenderStyle*, Element*) const; 
     
     virtual int popupInternalPaddingLeft(RenderStyle*) const;
     virtual int popupInternalPaddingRight(RenderStyle*) const;
@@ -86,71 +79,47 @@ public:
 
 protected:
     // Methods for each appearance value.
-    virtual bool paintCheckbox(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual bool paintCheckbox(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
     virtual void setCheckboxSize(RenderStyle*) const;
 
-    virtual bool paintRadio(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual bool paintRadio(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
     virtual void setRadioSize(RenderStyle*) const;
 
-    virtual void adjustButtonStyle(StyleResolver*, RenderStyle*, WebCore::Element*) const;
-    virtual bool paintButton(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual void adjustButtonStyle(CSSStyleSelector*, RenderStyle*, WebCore::Element*) const;
+    virtual bool paintButton(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
     virtual void setButtonSize(RenderStyle*) const;
 
-    virtual bool paintTextField(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual void adjustTextFieldStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual bool paintTextField(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual void adjustTextFieldStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
 
-    virtual bool paintTextArea(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual void adjustTextAreaStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual bool paintTextArea(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual void adjustTextAreaStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
 
-    virtual bool paintMenuList(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual void adjustMenuListStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual bool paintMenuList(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual void adjustMenuListStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
 
-    virtual bool paintMenuListButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual void adjustMenuListButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual bool paintMenuListButton(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual void adjustMenuListButtonStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
 
-    virtual bool paintSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintSliderThumb(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual bool paintSliderTrack(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual bool paintSliderThumb(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
 
-    virtual bool paintSearchField(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual void adjustSearchFieldStyle(StyleResolver*, RenderStyle*, Element*) const;
+    virtual bool paintSearchField(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual void adjustSearchFieldStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
 
-    virtual void adjustSearchFieldCancelButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintSearchFieldCancelButton(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual void adjustSearchFieldCancelButtonStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
+    virtual bool paintSearchFieldCancelButton(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
 
-    virtual void adjustSearchFieldDecorationStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintSearchFieldDecoration(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual void adjustSearchFieldDecorationStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
+    virtual bool paintSearchFieldDecoration(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
 
-    virtual void adjustSearchFieldResultsDecorationStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintSearchFieldResultsDecoration(RenderObject*, const PaintInfo&, const IntRect&);
+    virtual void adjustSearchFieldResultsDecorationStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
+    virtual bool paintSearchFieldResultsDecoration(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
 
-    virtual void adjustSearchFieldResultsButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
-    virtual bool paintSearchFieldResultsButton(RenderObject*, const PaintInfo&, const IntRect&);
- 
-    virtual bool paintCapsLockIndicator(RenderObject*, const PaintInfo&, const IntRect&);
-
-#if ENABLE(VIDEO)
-    virtual bool paintMediaFullscreenButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaPlayButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaMuteButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaSeekBackButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaSeekForwardButton(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
-    virtual bool paintMediaSliderThumb(RenderObject*, const PaintInfo&, const IntRect&);
-#endif
-
-#if ENABLE(METER_ELEMENT)
-    virtual IntSize meterSizeForBounds(const RenderMeter*, const IntRect&) const OVERRIDE;
-    virtual bool supportsMeter(ControlPart) const OVERRIDE;
-    virtual void adjustMeterStyle(StyleResolver*, RenderStyle*, Element*) const OVERRIDE;
-    virtual bool paintMeter(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
-#endif
-
-    virtual bool shouldShowPlaceholderWhenFocused() const { return true; }
+    virtual void adjustSearchFieldResultsButtonStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
+    virtual bool paintSearchFieldResultsButton(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
 
 private:
-    RenderThemeSafari();
-    virtual ~RenderThemeSafari();
-
     IntRect inflateRect(const IntRect&, const IntSize&, const int* margins) const;
 
     // Get the control size based off the font.  Used by some of the controls (like buttons).
@@ -161,7 +130,7 @@ private:
     void setSizeFromFont(RenderStyle*, const IntSize* sizes) const;
     IntSize sizeForFont(RenderStyle*, const IntSize* sizes) const;
     IntSize sizeForSystemFont(RenderStyle*, const IntSize* sizes) const;
-    void setFontFromControlSize(StyleResolver*, RenderStyle*, NSControlSize) const;
+    void setFontFromControlSize(CSSStyleSelector*, RenderStyle*, NSControlSize) const;
 
     // Helpers for adjusting appearance and for painting
     const IntSize* checkboxSizes() const;
@@ -177,7 +146,7 @@ private:
     const IntSize* popupButtonSizes() const;
     const int* popupButtonMargins(NSControlSize) const;
     const int* popupButtonPadding(NSControlSize) const;
-    void paintMenuListButtonGradients(RenderObject*, const PaintInfo&, const IntRect&);
+    void paintMenuListButtonGradients(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
     const IntSize* menuListSizes() const;
 
     const IntSize* searchFieldSizes() const;
@@ -186,10 +155,13 @@ private:
     void setSearchFieldSize(RenderStyle*) const;
 
     ThemeControlState determineState(RenderObject*) const;
+    
+private:
+    HMODULE m_themeDLL;
 };
 
 } // namespace WebCore
 
-#endif // #if USE(SAFARI_THEME)
+#endif // defined(USE_SAFARI_THEME)
 
 #endif // RenderThemeSafari_h

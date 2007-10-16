@@ -23,12 +23,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#include "config.h"
+
 #include "WCDataObject.h"
 
-#include "ClipboardUtilitiesWin.h"
-#include "DragData.h"
-#include <wtf/text/WTFString.h>
+#include "PlatformString.h"
 
 namespace WebCore {
 
@@ -76,7 +74,8 @@ WCEnumFormatEtc::WCEnumFormatEtc(const Vector<FORMATETC*>& formats)
 STDMETHODIMP  WCEnumFormatEtc::QueryInterface(REFIID riid, void** ppvObject)
 {
     *ppvObject = 0;
-    if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, IID_IEnumFORMATETC)) {
+    if (IsEqualIID(riid, IID_IUnknown) || 
+        IsEqualIID(riid, IID_IEnumFORMATETC)) {
         *ppvObject = this;
         AddRef();
         return S_OK;
@@ -162,17 +161,6 @@ HRESULT WCDataObject::createInstance(WCDataObject** result)
     return S_OK;
 }
 
-HRESULT WCDataObject::createInstance(WCDataObject** result, const DragDataMap& dataMap)
-{
-    if (!result)
-        return E_POINTER;
-    *result = new WCDataObject;
-
-    for (DragDataMap::const_iterator it = dataMap.begin(); it != dataMap.end(); ++it)
-        setClipboardData(*result, it->key, it->value);
-    return S_OK;
-}
-
 WCDataObject::WCDataObject()
 : m_ref(1)
 {
@@ -190,10 +178,8 @@ WCDataObject::~WCDataObject()
 STDMETHODIMP WCDataObject::QueryInterface(REFIID riid,void** ppvObject)
 {
     *ppvObject = 0;
-    if (IsEqualIID(riid, IID_IUnknown) || 
-        IsEqualIID(riid, IID_IDataObject)) {
+    if (IID_IUnknown==riid || IID_IDataObject==riid)
         *ppvObject=this;
-    }
     if (*ppvObject) {
         AddRef();
         return S_OK;
@@ -298,7 +284,6 @@ void WCDataObject::CopyMedium(STGMEDIUM* pMedDest, STGMEDIUM* pMedSrc, FORMATETC
 {
     switch(pMedSrc->tymed)
     {
-#if !OS(WINCE)
     case TYMED_HGLOBAL:
         pMedDest->hGlobal = (HGLOBAL)OleDuplicateData(pMedSrc->hGlobal,pFmtSrc->cfFormat, 0);
         break;
@@ -314,7 +299,6 @@ void WCDataObject::CopyMedium(STGMEDIUM* pMedDest, STGMEDIUM* pMedSrc, FORMATETC
     case TYMED_FILE:
         pMedSrc->lpszFileName = (LPOLESTR)OleDuplicateData(pMedSrc->lpszFileName,pFmtSrc->cfFormat, 0);
         break;
-#endif
     case TYMED_ISTREAM:
         pMedDest->pstm = pMedSrc->pstm;
         pMedSrc->pstm->AddRef();
@@ -392,5 +376,6 @@ void WCDataObject::clearData(CLIPFORMAT format)
         ptr++;
     }
 }
+
 
 }

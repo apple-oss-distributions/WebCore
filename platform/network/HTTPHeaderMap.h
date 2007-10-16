@@ -1,6 +1,6 @@
+// -*- mode: c++; c-basic-offset: 4 -*-
 /*
  * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
- * Copyright (C) 2009 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,39 +27,12 @@
 #ifndef HTTPHeaderMap_h
 #define HTTPHeaderMap_h
 
-#include <utility>
+#include "StringHash.h"
 #include <wtf/HashMap.h>
-#include <wtf/PassOwnPtr.h>
-#include <wtf/Vector.h>
-#include <wtf/text/AtomicString.h>
-#include <wtf/text/AtomicStringHash.h>
-#include <wtf/text/StringHash.h>
 
 namespace WebCore {
 
-    typedef Vector<std::pair<String, String> > CrossThreadHTTPHeaderMapData;
-
-    // FIXME: Not every header fits into a map. Notably, multiple Set-Cookie header fields are needed to set multiple cookies.
-    class HTTPHeaderMap : public HashMap<AtomicString, String, CaseFoldingHash> {
-    public:
-        HTTPHeaderMap();
-        ~HTTPHeaderMap();
-
-        // Gets a copy of the data suitable for passing to another thread.
-        PassOwnPtr<CrossThreadHTTPHeaderMapData> copyData() const;
-
-        void adopt(PassOwnPtr<CrossThreadHTTPHeaderMapData>);
-        
-        String get(const AtomicString& name) const;
-
-        AddResult add(const AtomicString& name, const String& value);
-
-        // Alternate accessors that are faster than converting the char* to AtomicString first.
-        bool contains(const char*) const;
-        String get(const char*) const;
-        AddResult add(const char* name, const String& value);
-        
-    };
+    typedef HashMap<String, String, CaseInsensitiveHash<String> > HTTPHeaderMap;
 
 } // namespace WebCore
 

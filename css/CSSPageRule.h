@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * (C) 2002-2003 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2002, 2006, 2008, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2002, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,34 +25,33 @@
 #define CSSPageRule_h
 
 #include "CSSRule.h"
+#include <wtf/RefPtr.h>
 
 namespace WebCore {
 
-class CSSStyleDeclaration;
-class CSSStyleSheet;
-class StyleRulePage;
-class StyleRuleCSSStyleDeclaration;
+class CSSMutableStyleDeclaration;
+
+typedef int ExceptionCode;
 
 class CSSPageRule : public CSSRule {
 public:
-    static PassRefPtr<CSSPageRule> create(StyleRulePage* rule, CSSStyleSheet* sheet) { return adoptRef(new CSSPageRule(rule, sheet)); }
-
+    CSSPageRule(StyleBase* parent);
     virtual ~CSSPageRule();
 
-    virtual CSSRule::Type type() const OVERRIDE { return PAGE_RULE; }
-    virtual String cssText() const OVERRIDE;
-    virtual void reattach(StyleRuleBase*) OVERRIDE;
-
-    CSSStyleDeclaration* style();
+    virtual bool isPageRule() { return true; }
 
     String selectorText() const;
-    void setSelectorText(const String&);
+    void setSelectorText(const String&, ExceptionCode&);
 
-private:
-    CSSPageRule(StyleRulePage*, CSSStyleSheet*);
-    
-    RefPtr<StyleRulePage> m_pageRule;
-    mutable RefPtr<StyleRuleCSSStyleDeclaration> m_propertiesCSSOMWrapper;
+    CSSMutableStyleDeclaration* style() const { return m_style.get(); }
+
+    // Inherited from CSSRule
+    virtual unsigned short type() const { return PAGE_RULE; }
+
+    virtual String cssText() const;
+
+protected:
+    RefPtr<CSSMutableStyleDeclaration> m_style;
 };
 
 } // namespace WebCore

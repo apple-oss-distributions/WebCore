@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * (C) 2002-2003 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2002, 2006, 2008, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2002, 2006 Apple Computer, Inc.
  * Copyright (C) 2006 Samuel Weinig (sam@webkit.org)
  *
  * This library is free software; you can redistribute it and/or
@@ -23,31 +25,42 @@
 #ifndef CSSMediaRule_h
 #define CSSMediaRule_h
 
-#include "CSSGroupingRule.h"
-#include "MediaList.h"
+#include "CSSRule.h"
+#include <wtf/RefPtr.h>
 
 namespace WebCore {
 
-class StyleRuleMedia;
+class CSSRuleList;
+class MediaList;
 
-class CSSMediaRule : public CSSGroupingRule {
+typedef int ExceptionCode;
+
+class CSSMediaRule : public CSSRule {
 public:
-    static PassRefPtr<CSSMediaRule> create(StyleRuleMedia* rule, CSSStyleSheet* sheet) { return adoptRef(new CSSMediaRule(rule, sheet)); }
-
+    CSSMediaRule(StyleBase* parent);
+    CSSMediaRule(StyleBase* parent, const String& media);
+    CSSMediaRule(StyleBase* parent, MediaList* mediaList, CSSRuleList* ruleList);
     virtual ~CSSMediaRule();
 
-    virtual CSSRule::Type type() const OVERRIDE { return MEDIA_RULE; }
-    virtual void reattach(StyleRuleBase*) OVERRIDE;
-    virtual String cssText() const OVERRIDE;
+    virtual bool isMediaRule() { return true; }
 
-    MediaList* media() const;
+    MediaList* media() const { return m_lstMedia.get(); }
+    CSSRuleList* cssRules() { return m_lstCSSRules.get(); }
 
-private:
-    CSSMediaRule(StyleRuleMedia*, CSSStyleSheet*);
+    unsigned insertRule(const String& rule, unsigned index, ExceptionCode&);
+    void deleteRule(unsigned index, ExceptionCode&);
 
-    MediaQuerySet* mediaQueries() const;
-    
-    mutable RefPtr<MediaList> m_mediaCSSOMWrapper;
+    // Inherited from CSSRule
+    virtual unsigned short type() const { return MEDIA_RULE; }
+
+    virtual String cssText() const;
+
+    // Not part of the CSSOM
+    unsigned append(CSSRule*);
+
+protected:
+    RefPtr<MediaList> m_lstMedia;
+    RefPtr<CSSRuleList> m_lstCSSRules;
 };
 
 } // namespace WebCore

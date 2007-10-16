@@ -26,11 +26,8 @@
 #ifndef AuthenticationCF_h
 #define AuthenticationCF_h
 
-#if USE(CFNETWORK)
-
-#include <CFNetwork/CFURLCredentialPriv.h>
-
 typedef struct _CFURLAuthChallenge* CFURLAuthChallengeRef;
+typedef struct _CFURLCredential* CFURLCredentialRef;
 typedef struct _CFURLProtectionSpace* CFURLProtectionSpaceRef;
 
 namespace WebCore {
@@ -43,14 +40,10 @@ CFURLAuthChallengeRef createCF(const AuthenticationChallenge&);
 CFURLCredentialRef createCF(const Credential&);
 CFURLProtectionSpaceRef createCF(const ProtectionSpace&);
 
-#if PLATFORM(MAC)
-AuthenticationChallenge core(CFURLAuthChallengeRef);
-#endif
 Credential core(CFURLCredentialRef);
 ProtectionSpace core(CFURLProtectionSpaceRef);
 
+
 }
 
-#endif // USE(CFNETWORK)
-
-#endif // AuthenticationCF_h
+#endif

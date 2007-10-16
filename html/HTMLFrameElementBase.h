@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Simon Hausmann <hausmann@kde.org>
- * Copyright (C) 2004, 2006, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -31,54 +33,77 @@ namespace WebCore {
 
 class HTMLFrameElementBase : public HTMLFrameOwnerElement {
 public:
-    KURL location() const;
+    virtual void parseMappedAttribute(MappedAttribute*);
+
+    virtual void insertedIntoDocument();
+    virtual void removedFromDocument();
+    virtual void willRemove();
+
+    virtual void attach();
+
+    String location() const;
     void setLocation(const String&);
 
-    virtual ScrollbarMode scrollingMode() const { return m_scrolling; }
+    virtual bool isFocusable() const;
+    virtual void setFocus(bool);
     
-    int marginWidth() const { return m_marginWidth; }
-    int marginHeight() const { return m_marginHeight; }
+    virtual bool isURLAttribute(Attribute*) const;
 
-    int width();
-    int height();
+    ScrollbarMode scrollingMode() const { return m_scrolling; }
+    
+    int getMarginWidth() const { return m_marginWidth; }
+    int getMarginHeight() const { return m_marginHeight; }
 
-    virtual bool canContainRangeEndPoint() const { return false; }
+    String frameBorder() const;
+    void setFrameBorder(const String&);
+
+    String longDesc() const;
+    void setLongDesc(const String&);
+
+    String marginHeight() const;
+    void setMarginHeight(const String&);
+
+    String marginWidth() const;
+    void setMarginWidth(const String&);
+
+    String name() const;
+    void setName(const String&);
+
+    bool noResize() const { return m_noResize; }
+    void setNoResize(bool);
+
+    String scrolling() const;
+    void setScrolling(const String&);
+
+    String src() const;
+    void setSrc(const String&);
+
+    int width() const;
+    int height() const;
+
+    bool viewSourceMode() const { return m_viewSource; }
 
 protected:
     HTMLFrameElementBase(const QualifiedName&, Document*);
 
-    bool isURLAllowed() const;
-
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void didNotifySubtreeInsertions(ContainerNode*) OVERRIDE;
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-
-private:
-    virtual bool supportsFocus() const OVERRIDE;
-    virtual void setFocus(bool) OVERRIDE;
-    
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual bool isHTMLContentAttribute(const Attribute&) const OVERRIDE;
-
-    virtual bool isFrameElementBase() const { return true; }
-
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
-
-    bool viewSourceMode() const { return m_viewSource; }
-
+    bool isURLAllowed(const AtomicString&) const;
     void setNameAndOpenURL();
-    void openURL(bool lockHistory = true, bool lockBackForwardList = true);
+    void openURL();
+
+    static void setNameAndOpenURLCallback(Node*);
 
     AtomicString m_URL;
-    AtomicString m_frameName;
+    AtomicString m_name;
 
     ScrollbarMode m_scrolling;
 
     int m_marginWidth;
     int m_marginHeight;
 
+    bool m_noResize;
     bool m_viewSource;
+
+    bool m_shouldOpenURLAfterAttach;
 };
 
 } // namespace WebCore

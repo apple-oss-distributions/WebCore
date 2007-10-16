@@ -1,11 +1,8 @@
 /*
  * This file is part of the popup menu implementation for <select> elements in WebCore.
  *
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
- * Copyright (C) 2006 Michael Emmel mike.emmel@gmail.com
- * Copyright (C) 2008 Collabora Ltd.
- * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
- * Copyright (C) 2010 Igalia S.L.
+ * Copyright (C) 2006, 2007 Apple Inc.
+ * Copyright (C) 2006 Michael Emmel mike.emmel@gmail.com 
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,102 +22,114 @@
  */
 
 #include "config.h"
-#include "PopupMenuGtk.h"
+#include "PopupMenu.h"
 
+#include "CString.h"
 #include "FrameView.h"
-#include <wtf/gobject/GOwnPtr.h>
-#include "GtkUtilities.h"
-#include "HostWindow.h"
+#include "NotImplemented.h"
+#include "PlatformString.h"
 #include <gtk/gtk.h>
-#include <wtf/text/CString.h>
-
+ 
 namespace WebCore {
 
-static const uint32_t gSearchTimeoutMs = 1000;
-
-PopupMenuGtk::PopupMenuGtk(PopupMenuClient* client)
+PopupMenu::PopupMenu(PopupMenuClient* client)
     : m_popupClient(client)
+    , m_popup(0)
 {
 }
 
-PopupMenuGtk::~PopupMenuGtk()
+PopupMenu::~PopupMenu()
 {
-    if (m_popup) {
-        g_signal_handlers_disconnect_matched(m_popup->platformMenu(), G_SIGNAL_MATCH_DATA, 0, 0, 0, 0, this);
-        hide();
-    }
+    if (m_popup)
+        g_object_unref(m_popup);
 }
 
-GtkAction* PopupMenuGtk::createGtkActionForMenuItem(int itemIndex)
-{
-    GOwnPtr<char> actionName(g_strdup_printf("popup-menu-action-%d", itemIndex));
-    GtkAction* action = gtk_action_new(actionName.get(), client()->itemText(itemIndex).utf8().data(), client()->itemToolTip(itemIndex).utf8().data(), 0);
-    g_object_set_data(G_OBJECT(action), "popup-menu-action-index", GINT_TO_POINTER(itemIndex));
-    g_signal_connect(action, "activate", G_CALLBACK(menuItemActivated), this);
-    // FIXME: Apply the PopupMenuStyle from client()->itemStyle(i)
-    gtk_action_set_visible(action, !client()->itemStyle(itemIndex).isDisplayNone());
-    gtk_action_set_sensitive(action, client()->itemIsEnabled(itemIndex));
-
-    return action;
-}
-
-void PopupMenuGtk::show(const IntRect& rect, FrameView* view, int index)
+void PopupMenu::show(const IntRect& rect, FrameView* view, int index)
 {
     ASSERT(client());
 
     if (!m_popup) {
-        m_popup = GtkPopupMenu::create();
-        g_signal_connect(m_popup->platformMenu(), "unmap", G_CALLBACK(PopupMenuGtk::menuUnmapped), this);
+        m_popup = GTK_MENU(gtk_menu_new());
+        g_object_ref(G_OBJECT(m_popup));
+        gtk_object_sink(GTK_OBJECT(m_popup));
+        g_signal_connect(m_popup, "unmap", G_CALLBACK(menuUnmapped), this);
     } else
-        m_popup->clear();
+        gtk_container_foreach(GTK_CONTAINER(m_popup), reinterpret_cast<GtkCallback>(menuRemoveItem), this);
+
+    int x, y;
+    gdk_window_get_origin(GTK_WIDGET(view->containingWindow())->window, &x, &y);
+    m_menuPosition = view->contentsToWindow(rect.location());
+    m_menuPosition = IntPoint(m_menuPosition.x() + x, m_menuPosition.y() + y + rect.height());
+    m_indexMap.clear();
 
     const int size = client()->listSize();
     for (int i = 0; i < size; ++i) {
+        GtkWidget* item;
         if (client()->itemIsSeparator(i))
-            m_popup->appendSeparator();
-        else {
-            GRefPtr<GtkAction> action = adoptGRef(createGtkActionForMenuItem(i));
-            m_popup->appendItem(action.get());
-        }
+            item = gtk_separator_menu_item_new();
+        else
+            item = gtk_menu_item_new_with_label(client()->itemText(i).utf8().data());
+
+        m_indexMap.add(item, i);
+        g_signal_connect(item, "activate", G_CALLBACK(menuItemActivated), this);
+
+        // FIXME: Apply the RenderStyle from client()->itemStyle(i)
+        gtk_widget_set_sensitive(item, client()->itemIsEnabled(i));
+        gtk_menu_shell_append(GTK_MENU_SHELL(m_popup), item);
+        gtk_widget_show(item);
     }
 
-    IntPoint menuPosition = convertWidgetPointToScreenPoint(GTK_WIDGET(view->hostWindow()->platformPageClient()), view->contentsToWindow(rect.location()));
-    menuPosition.move(0, rect.height());
+    gtk_menu_set_active(m_popup, index);
 
-    m_popup->popUp(rect.size(), menuPosition, size, index, gtk_get_current_event());
 
-    // GTK can refuse to actually open the menu when mouse grabs fails.
-    // Ensure WebCore does not go into some pesky state.
-    if (!gtk_widget_get_visible(m_popup->platformMenu()))
-        client()->popupDidHide();
+    // The size calls are directly copied from gtkcombobox.c which is LGPL
+    GtkRequisition requisition;
+    gtk_widget_set_size_request(GTK_WIDGET(m_popup), -1, -1);
+    gtk_widget_size_request(GTK_WIDGET(m_popup), &requisition);
+    gtk_widget_set_size_request(GTK_WIDGET(m_popup), MAX(rect.width(), requisition.width), -1);
+    gtk_menu_popup(m_popup, NULL, NULL, reinterpret_cast<GtkMenuPositionFunc>(menuPositionFunction), this, 0, gtk_get_current_event_time());
 }
 
-void PopupMenuGtk::hide()
+void PopupMenu::hide()
 {
     ASSERT(m_popup);
-    m_popup->popDown();
+    gtk_menu_popdown(m_popup);
 }
 
-void PopupMenuGtk::updateFromElement()
+void PopupMenu::updateFromElement() 
 {
     client()->setTextFromItem(client()->selectedIndex());
 }
 
-void PopupMenuGtk::disconnectClient()
+bool PopupMenu::itemWritingDirectionIsNatural()
 {
-    m_popupClient = 0;
+    return true;
 }
 
-void PopupMenuGtk::menuItemActivated(GtkAction* action, PopupMenuGtk* that)
+void PopupMenu::menuItemActivated(GtkMenuItem* item, PopupMenu* that)
 {
     ASSERT(that->client());
-    that->client()->valueChanged(GPOINTER_TO_INT(g_object_get_data(G_OBJECT(action), "popup-menu-action-index")));
+    ASSERT(that->m_indexMap.contains(GTK_WIDGET(item)));
+    that->client()->valueChanged(that->m_indexMap.get(GTK_WIDGET(item)));
 }
 
-void PopupMenuGtk::menuUnmapped(GtkWidget*, PopupMenuGtk* that)
+void PopupMenu::menuUnmapped(GtkWidget*, PopupMenu* that)
 {
     ASSERT(that->client());
-    that->client()->popupDidHide();
+    that->client()->hidePopup();
+}
+
+void PopupMenu::menuPositionFunction(GtkMenu*, gint* x, gint* y, gboolean* pushIn, PopupMenu* that)
+{
+    *x = that->m_menuPosition.x();
+    *y = that->m_menuPosition.y();
+    pushIn = false;
+}
+
+void PopupMenu::menuRemoveItem(GtkWidget* widget, PopupMenu* that)
+{
+    ASSERT(that->m_popup);
+    gtk_container_remove(GTK_CONTAINER(that->m_popup), widget);
 }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc.  All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,7 +26,13 @@
 #include "config.h"
 #include "Image.h"
 #include "BitmapImage.h"
+#include "GraphicsContext.h"
+#include <ApplicationServices/ApplicationServices.h>
 
+#include <winsock2.h>
+#include <windows.h>
+#include "PlatformString.h"
+#include "MIMETypeRegistry.h"
 #include "SharedBuffer.h"
 
 // This function loads resources from WebKit
@@ -34,21 +40,71 @@ PassRefPtr<WebCore::SharedBuffer> loadResourceIntoBuffer(const char*);
 
 namespace WebCore {
 
+void BitmapImage::initPlatformData()
+{
+}
+
 void BitmapImage::invalidatePlatformData()
 {
 }
 
-PassRefPtr<Image> Image::loadPlatformResource(const char *name)
+Image* Image::loadPlatformResource(const char *name)
 {
     RefPtr<SharedBuffer> buffer = loadResourceIntoBuffer(name);
-    RefPtr<BitmapImage> img = BitmapImage::create();
+    BitmapImage* img = new BitmapImage;
     img->setData(buffer.release(), true);
-    return img.release();
+    return img;
 }
 
 bool BitmapImage::getHBITMAP(HBITMAP bmp)
 {
     return getHBITMAPOfSize(bmp, 0);
+}
+
+bool BitmapImage::getHBITMAPOfSize(HBITMAP bmp, LPSIZE size)
+{
+    ASSERT(bmp);
+
+    BITMAP bmpInfo;
+    GetObject(bmp, sizeof(BITMAP), &bmpInfo);
+
+    ASSERT(bmpInfo.bmBitsPixel == 32);
+    int bufferSize = bmpInfo.bmWidthBytes * bmpInfo.bmHeight;
+    
+    CGColorSpaceRef deviceRGB = CGColorSpaceCreateDeviceRGB();
+    CGContextRef cgContext = CGBitmapContextCreate(bmpInfo.bmBits, bmpInfo.bmWidth, bmpInfo.bmHeight,
+        8, bmpInfo.bmWidthBytes, deviceRGB, kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+  
+    GraphicsContext gc(cgContext);
+    IntSize imageSize = BitmapImage::size();
+    if (size)
+        drawFrameMatchingSourceSize(&gc, FloatRect(0, 0, bmpInfo.bmWidth, bmpInfo.bmHeight), IntSize(*size), CompositeCopy);
+    else
+        draw(&gc, FloatRect(0, 0, bmpInfo.bmWidth, bmpInfo.bmHeight), FloatRect(0, 0, imageSize.width(), imageSize.height()), CompositeCopy);
+
+    // Do cleanup
+    CGContextRelease(cgContext);
+    CGColorSpaceRelease(deviceRGB);
+    return true;
+}
+
+void BitmapImage::drawFrameMatchingSourceSize(GraphicsContext* ctxt, const FloatRect& dstRect, const IntSize& srcSize, CompositeOperator compositeOp)
+{
+    int frames = frameCount();
+    for (int i = 0; i < frames; ++i) {
+        CGImageRef image = frameAtIndex(i);
+        if (CGImageGetHeight(image) == (size_t)srcSize.height() && CGImageGetWidth(image) == (size_t)srcSize.width()) {
+            size_t currentFrame = m_currentFrame;
+            m_currentFrame = i;
+            draw(ctxt, dstRect, FloatRect(0, 0, srcSize.width(), srcSize.height()), compositeOp);
+            m_currentFrame = currentFrame;
+            return;
+        }
+    }
+
+    // No image of the correct size was found, fallback to drawing the current frame
+    IntSize imageSize = BitmapImage::size();
+    draw(ctxt, dstRect, FloatRect(0, 0, imageSize.width(), imageSize.height()), compositeOp);
 }
 
 } // namespace WebCore

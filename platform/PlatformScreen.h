@@ -26,45 +26,33 @@
 #ifndef PlatformScreen_h
 #define PlatformScreen_h
 
-#include <wtf/Vector.h>
+#include "FloatRect.h"
+#include <wtf/Forward.h>
+#include <wtf/RefPtr.h>
 
-#if PLATFORM(MAC) && !PLATFORM(IOS)
-OBJC_CLASS NSScreen;
-OBJC_CLASS NSWindow;
-#ifdef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
-typedef struct CGRect NSRect;
-typedef struct CGPoint NSPoint;
+#if PLATFORM(MAC)
+#ifdef __OBJC__
+    @class NSScreen;
+    @class NSWindow;
 #else
-typedef struct _NSRect NSRect;
-typedef struct _NSPoint NSPoint;
+    class NSScreen;
+    class NSWindow;
 #endif
 #endif
-
-typedef uint32_t PlatformDisplayID;
-
-typedef WTF::Vector<char> ColorProfile;
 
 namespace WebCore {
 
     class FloatRect;
     class Widget;
 
-    int screenHorizontalDPI(Widget*);
-    int screenVerticalDPI(Widget*);
     int screenDepth(Widget*);
     int screenDepthPerComponent(Widget*);
     bool screenIsMonochrome(Widget*);
 
     FloatRect screenRect(Widget*);
     FloatRect screenAvailableRect(Widget*);
-    void screenColorProfile(ColorProfile&);
 
-#if PLATFORM(CHROMIUM)
-    // Measured in frames per second. 0 if the refresh rate is unknown, or not applicable.
-    double screenRefreshRate(Widget*);
-#endif
-
-#if PLATFORM(MAC) && !PLATFORM(IOS)
+#if PLATFORM(MAC)
     NSScreen *screenForWindow(NSWindow *);
 
     FloatRect toUserSpace(const NSRect&, NSWindow *destination);

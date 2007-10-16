@@ -20,13 +20,14 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
 #include "config.h"
 #include "EventHandler.h"
 
-#include "Clipboard.h"
+#include "ClipboardGtk.h"
+#include "EventNames.h"
 #include "FloatPoint.h"
 #include "FocusController.h"
 #include "Frame.h"
@@ -35,18 +36,16 @@
 #include "MouseEventWithHitTestResults.h"
 #include "NotImplemented.h"
 #include "Page.h"
-#include "PlatformKeyboardEvent.h"
+#include "PlatformScrollBar.h"
 #include "PlatformWheelEvent.h"
 #include "RenderWidget.h"
-#include "Scrollbar.h"
 
 namespace WebCore {
 
-const double EventHandler::TextDragDelay = 0.0;
+using namespace EventNames;
 
-bool EventHandler::tabsToAllFormControls(KeyboardEvent* event) const
+bool EventHandler::tabsToAllControls(KeyboardEvent* event) const
 {
-    // We always allow tabs to all controls
     return true;
 }
 
@@ -62,7 +61,8 @@ bool EventHandler::passWidgetMouseDownEventToWidget(const MouseEventWithHitTestR
     RenderObject* target = event.targetNode() ? event.targetNode()->renderer() : 0;
     if (!target || !target->isWidget())
         return false;
-    return passMouseDownEventToWidget(toRenderWidget(target)->widget());
+    
+    return passMouseDownEventToWidget(static_cast<RenderWidget*>(target)->widget());
 }
 
 bool EventHandler::passWidgetMouseDownEventToWidget(RenderWidget* renderWidget)
@@ -78,25 +78,18 @@ bool EventHandler::passMouseDownEventToWidget(Widget* widget)
 
 bool EventHandler::eventActivatedView(const PlatformMouseEvent&) const
 {
-    //GTK+ activation is not necessarily tied to mouse events, so it may
-    //not make sense to implement this
+    notImplemented();
+}
 
+bool EventHandler::passWheelEventToWidget(PlatformWheelEvent&, Widget* widget)
+{
     notImplemented();
     return false;
 }
 
-bool EventHandler::passWheelEventToWidget(const PlatformWheelEvent& event, Widget* widget)
+Clipboard* EventHandler::createDraggingClipboard() const 
 {
-    ASSERT(widget);
-    if (!widget->isFrameView())
-        return false;
-
-    return toFrameView(widget)->frame()->eventHandler()->handleWheelEvent(event);
-}
-
-PassRefPtr<Clipboard> EventHandler::createDraggingClipboard() const
-{
-    return Clipboard::createForDragAndDrop();
+    return new ClipboardGtk(ClipboardWritable, true);
 }
 
 bool EventHandler::passMousePressEventToSubframe(MouseEventWithHitTestResults& mev, Frame* subframe)
@@ -117,18 +110,10 @@ bool EventHandler::passMouseReleaseEventToSubframe(MouseEventWithHitTestResults&
     return true;
 }
 
-unsigned EventHandler::accessKeyModifiers()
+bool EventHandler::passMousePressEventToScrollbar(MouseEventWithHitTestResults&, PlatformScrollbar* scrollbar)
 {
-    return PlatformEvent::AltKey;
-}
-
-// GTK+ must scroll horizontally if the mouse pointer is on top of the
-// horizontal scrollbar while scrolling with the wheel; we need to
-// add the deltas and ticks here so that this behavior is consistent
-// for styled scrollbars.
-bool EventHandler::shouldTurnVerticalTicksIntoHorizontal(const HitTestResult& result, const PlatformWheelEvent&) const
-{
-    return result.scrollbar() && result.scrollbar()->orientation() == HorizontalScrollbar;
+    notImplemented();
+    return false;
 }
 
 }

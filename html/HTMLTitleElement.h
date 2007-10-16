@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,27 +25,26 @@
 #define HTMLTitleElement_h
 
 #include "HTMLElement.h"
-#include "StringWithDirection.h"
 
 namespace WebCore {
 
-class HTMLTitleElement FINAL : public HTMLElement {
+class HTMLTitleElement : public HTMLElement
+{
 public:
-    static PassRefPtr<HTMLTitleElement> create(const QualifiedName&, Document*);
+    HTMLTitleElement(Document*);
+    ~HTMLTitleElement();
+
+    virtual bool checkDTD(const Node* newChild) { return newChild->isTextNode(); }
+
+    virtual void insertedIntoDocument();
+    virtual void removedFromDocument();
+    virtual void childrenChanged();
 
     String text() const;
     void setText(const String&);
 
-    StringWithDirection textWithDirection();
-
-private:
-    HTMLTitleElement(const QualifiedName&, Document*);
-
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
-
-    StringWithDirection m_title;
+protected:
+    String m_title;
 };
 
 } //namespace

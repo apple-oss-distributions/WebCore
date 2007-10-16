@@ -29,21 +29,9 @@
 #import "config.h"
 #import "WebCoreNSStringExtras.h"
 
-#import <wtf/RetainPtr.h>
-
-BOOL stringIsCaseInsensitiveEqualToString(NSString *first, NSString *second)
-{
-    return [first compare:second options:(NSCaseInsensitiveSearch|NSLiteralSearch)] == NSOrderedSame;
-}
-
 BOOL hasCaseInsensitiveSuffix(NSString *string, NSString *suffix)
 {
     return [string rangeOfString:suffix options:(NSCaseInsensitiveSearch | NSBackwardsSearch | NSAnchoredSearch)].location != NSNotFound;
-}
-
-BOOL hasCaseInsensitivePrefix(NSString *string, NSString *prefix)
-{
-    return [string rangeOfString:prefix options:(NSCaseInsensitiveSearch | NSAnchoredSearch)].location != NSNotFound;
 }
 
 BOOL hasCaseInsensitiveSubstring(NSString *string, NSString *substring)
@@ -72,57 +60,3 @@ NSString *filenameByFixingIllegalCharacters(NSString *string)
     
     return filename;
 }
-
-#if !PLATFORM(IOS)
-#if COMPILER(CLANG)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#endif
-
-CFStringEncoding stringEncodingForResource(Handle resource)
-{
-    short resRef = HomeResFile(resource);
-    if (ResError() != noErr)
-        return NSMacOSRomanStringEncoding;
-    
-    // Get the FSRef for the current resource file
-    FSRef fref;
-    OSStatus error = FSGetForkCBInfo(resRef, 0, NULL, NULL, NULL, &fref, NULL);
-    if (error != noErr)
-        return NSMacOSRomanStringEncoding;
-    
-    RetainPtr<CFURLRef> url = adoptCF(CFURLCreateFromFSRef(NULL, &fref));
-    if (!url)
-        return NSMacOSRomanStringEncoding;
-
-    NSString *path = [(NSURL *)url.get() path];
-
-    // Get the lproj directory name
-    path = [path stringByDeletingLastPathComponent];
-    if (!stringIsCaseInsensitiveEqualToString([path pathExtension], @"lproj"))
-        return NSMacOSRomanStringEncoding;
-    
-    NSString *directoryName = [[path stringByDeletingPathExtension] lastPathComponent];
-    RetainPtr<CFStringRef> locale = adoptCF(CFLocaleCreateCanonicalLocaleIdentifierFromString(NULL, (CFStringRef)directoryName));
-    if (!locale)
-        return NSMacOSRomanStringEncoding;
-
-    LangCode lang;
-    RegionCode region;
-    error = LocaleStringToLangAndRegionCodes([(NSString *)locale.get() UTF8String], &lang, &region);
-    if (error != noErr)
-        return NSMacOSRomanStringEncoding;
-
-    TextEncoding encoding;
-    error = UpgradeScriptInfoToTextEncoding(kTextScriptDontCare, lang, region, NULL, &encoding);
-    if (error != noErr)
-        return NSMacOSRomanStringEncoding;
-    
-    return encoding;
-}
-
-#if COMPILER(CLANG)
-#pragma clang diagnostic pop
-#endif
-
-#endif // !PLATFORM(IOS)

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2006 Friedemann Kleint <fkleint@trolltech.com>
- * Copyright (C) 2008 Nokia Corporation and/or its subsidiary(-ies)
+ * Copyright (C) 2006 Trolltech ASA
  *
  * All rights reserved.
  *
@@ -29,15 +29,160 @@
 #include "config.h"
 #include "ImageDecoderQt.h"
 
-#include <QtCore/QBuffer>
 #include <QtCore/QByteArray>
+#include <QtCore/QBuffer>
+
 #include <QtGui/QImageReader>
+#include <qdebug.h>
+
+#if !defined(Q_OS_WIN)
+Q_IMPORT_PLUGIN(qtwebico) //For ico format...
+#endif
+
+namespace {
+    const  QImage::Format DesiredFormat = QImage::Format_ARGB32;
+    const  bool debugImageDecoderQt = false;
+}
 
 namespace WebCore {
+ImageDecoderQt::ImageData::ImageData(const QImage& image, ImageState imageState, int duration) :
+    m_image(image), m_imageState(imageState), m_duration(duration)
+{
+}
 
-ImageDecoderQt::ImageDecoderQt(ImageSource::AlphaOption alphaOption, ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption)
-    : ImageDecoder(alphaOption, gammaAndColorProfileOption)
-    , m_repetitionCount(cAnimationNone)
+// Context, maintains IODevice on a data buffer.
+class ImageDecoderQt::ReadContext {
+public:
+
+    enum LoadMode {
+        // Load images incrementally. This is still experimental and
+        // will cause the image plugins to report errors.
+        // Also note that as of Qt 4.2.2, the JPEG loader does not return error codes
+        // on "preliminary end of data".
+        LoadIncrementally,
+            // Load images only if  all data have been received
+            LoadComplete };
+
+    ReadContext(const IncomingData & data, LoadMode loadMode, ImageList &target);
+
+    enum ReadResult { ReadEOF, ReadFailed, ReadPartial, ReadComplete };
+
+    // Append data and read out all images. Returns the result
+    // of the last read operation, so, even if  ReadPartial is returned,
+    // a few images might have been read.
+    ReadResult read(bool allDataReceived);
+
+private:
+    enum IncrementalReadResult { IncrementalReadFailed, IncrementalReadPartial, IncrementalReadComplete };
+    // Incrementally read an image
+    IncrementalReadResult readImageLines(ImageData &);
+
+    const LoadMode m_loadMode;
+
+    QByteArray m_data;
+    QBuffer m_buffer;
+    QImageReader m_reader;
+
+    ImageList &m_target;
+
+    // Detected data format of the stream
+    enum QImage::Format m_dataFormat;
+    QSize m_size;
+
+};
+
+ImageDecoderQt::ReadContext::ReadContext(const IncomingData & data, LoadMode loadMode, ImageList &target) :
+    m_loadMode(loadMode),
+    m_data(data.data(), data.size()),
+    m_buffer(&m_data),
+    m_reader(&m_buffer),
+    m_target(target),
+    m_dataFormat(QImage::Format_Invalid)
+{
+    m_buffer.open(QIODevice::ReadOnly);
+}
+
+
+ImageDecoderQt::ReadContext::ReadResult
+        ImageDecoderQt::ReadContext::read(bool allDataReceived)
+{
+    // Complete mode: Read only all all data received
+    if (m_loadMode == LoadComplete && !allDataReceived)
+        return ReadPartial;
+
+    // Attempt to read out all images
+    while (true) {
+        if (m_target.empty() || m_target.back().m_imageState == ImageComplete) {
+            // Start a new image.
+            if (!m_reader.canRead())
+                return ReadEOF;
+
+            // Attempt to construct an empty image of the matching size and format
+            // for efficient reading
+            QImage newImage = m_dataFormat != QImage::Format_Invalid  ?
+                          QImage(m_size,m_dataFormat) : QImage();
+            m_target.push_back(ImageData(newImage));
+        }
+
+        // read chunks
+        switch (readImageLines(m_target.back())) {
+        case IncrementalReadFailed:
+            m_target.pop_back();
+            return ReadFailed;
+        case IncrementalReadPartial:
+            return ReadPartial;
+        case IncrementalReadComplete:
+            m_target.back().m_imageState = ImageComplete;
+            //store for next
+            m_dataFormat = m_target.back().m_image.format();
+            m_size = m_target.back().m_image.size();
+            const bool supportsAnimation = m_reader.supportsAnimation();
+
+            if (debugImageDecoderQt)
+                qDebug() << "readImage(): #" << m_target.size() << " complete, " << m_size << " format " << m_dataFormat
+                <<  " supportsAnimation=" <<  supportsAnimation ;
+            // No point in readinfg further
+            if (!supportsAnimation)
+                return ReadComplete;
+
+            break;
+        }
+    }
+    return ReadComplete;
+}
+
+
+
+ImageDecoderQt::ReadContext::IncrementalReadResult
+        ImageDecoderQt::ReadContext::readImageLines(ImageData &imageData)
+{
+    // TODO: Implement incremental reading here,
+    // set state to reflect complete header, etc.
+    // For now, we read the whole image.
+
+    const qint64 startPos = m_buffer.pos ();
+    // Oops, failed. Rewind.
+    if (!m_reader.read(&imageData.m_image)) {
+        m_buffer.seek(startPos);
+        const bool gotHeader = imageData.m_image.size().width();
+
+        if (debugImageDecoderQt)
+            qDebug() << "readImageLines(): read() failed: " << m_reader.errorString()
+                << " got header=" << gotHeader;
+        // [Experimental] Did we manage to read the header?
+        if (gotHeader) {
+            imageData.m_imageState = ImageHeaderValid;
+            return IncrementalReadPartial;
+        }
+        return IncrementalReadFailed;
+    }
+    imageData.m_duration = m_reader.nextImageDelay();
+    return IncrementalReadComplete;
+}
+
+
+// ImageDecoderQt
+ImageDecoderQt::ImageDecoderQt( )
 {
 }
 
@@ -45,236 +190,108 @@ ImageDecoderQt::~ImageDecoderQt()
 {
 }
 
-void ImageDecoderQt::setData(SharedBuffer* data, bool allDataReceived)
+bool ImageDecoderQt::hasFirstImageHeader() const
 {
-    if (failed())
-        return;
-
-    // No progressive loading possible
-    if (!allDataReceived)
-        return;
-
-    // Cache our own new data.
-    ImageDecoder::setData(data, allDataReceived);
-
-    // We expect to be only called once with allDataReceived
-    ASSERT(!m_buffer);
-    ASSERT(!m_reader);
-
-    // Attempt to load the data
-    QByteArray imageData = QByteArray::fromRawData(m_data->data(), m_data->size());
-    m_buffer = adoptPtr(new QBuffer);
-    m_buffer->setData(imageData);
-    m_buffer->open(QIODevice::ReadOnly | QIODevice::Unbuffered);
-    m_reader = adoptPtr(new QImageReader(m_buffer.get(), m_format));
-
-    // This will force the JPEG decoder to use JDCT_IFAST
-    m_reader->setQuality(49);
-
-    // QImageReader only allows retrieving the format before reading the image
-    m_format = m_reader->format();
+    return  !m_imageList.empty() && m_imageList[0].m_imageState >= ImageHeaderValid;
 }
 
-bool ImageDecoderQt::isSizeAvailable()
+void ImageDecoderQt::reset()
 {
-    if (!ImageDecoder::isSizeAvailable() && m_reader)
-        internalDecodeSize();
-
-    return ImageDecoder::isSizeAvailable();
+    m_failed = false;
+    m_imageList.clear();
+    m_pixmapCache.clear();
+    m_sizeAvailable = false;
+    m_size = IntSize(-1, -1);
 }
 
-size_t ImageDecoderQt::frameCount()
+void ImageDecoderQt::setData(const IncomingData &data, bool allDataReceived)
 {
-    if (m_frameBufferCache.isEmpty() && m_reader) {
-        if (m_reader->supportsAnimation()) {
-            int imageCount = m_reader->imageCount();
+    reset();
+    ReadContext readContext(data, ReadContext::LoadComplete, m_imageList);
 
-            // Fixup for Qt decoders... imageCount() is wrong
-            // and jumpToNextImage does not work either... so
-            // we will have to parse everything...
-            if (!imageCount)
-                forceLoadEverything();
-            else {
-                m_frameBufferCache.resize(imageCount);
-                for (size_t i = 0; i < m_frameBufferCache.size(); ++i)
-                    m_frameBufferCache[i].setPremultiplyAlpha(m_premultiplyAlpha);
-            }
-        } else {
-            m_frameBufferCache.resize(1);
-            m_frameBufferCache[0].setPremultiplyAlpha(m_premultiplyAlpha);
+    if (debugImageDecoderQt)
+        qDebug() << " setData " << data.size() << " image bytes, complete=" << allDataReceived;
+
+    const  ReadContext::ReadResult readResult =  readContext.read(allDataReceived);
+
+    if (debugImageDecoderQt)
+        qDebug()  << " read returns " << readResult;
+
+    switch ( readResult)    {
+    case ReadContext::ReadFailed:
+        m_failed = true;
+        break;
+    case ReadContext::ReadEOF:
+    case ReadContext::ReadPartial:
+    case ReadContext::ReadComplete:
+        // Did we read anything - try to set the size.
+        if (hasFirstImageHeader()) {
+            m_sizeAvailable = true;
+            m_size = m_imageList[0].m_image.size();
         }
+        break;
     }
-
-    return m_frameBufferCache.size();
 }
+
+
+bool ImageDecoderQt::isSizeAvailable() const
+{
+    if (debugImageDecoderQt)
+        qDebug() << " ImageDecoderQt::isSizeAvailable() returns" << m_sizeAvailable;
+    return m_sizeAvailable;
+}
+
+int ImageDecoderQt::frameCount() const
+{
+    return m_imageList.size();
+}
+
 
 int ImageDecoderQt::repetitionCount() const
 {
-    if (m_reader && m_reader->supportsAnimation())
-        m_repetitionCount = m_reader->loopCount();
-    return m_repetitionCount;
+    // TODO: Am I Moses?!
+    return cAnimationNone;
 }
 
-String ImageDecoderQt::filenameExtension() const
+
+bool ImageDecoderQt::supportsAlpha() const
 {
-    return String(m_format.constData(), m_format.length());
+    return hasFirstImageHeader() && m_imageList[0].m_image.hasAlphaChannel();
 }
 
-ImageFrame* ImageDecoderQt::frameBufferAtIndex(size_t index)
+int ImageDecoderQt::duration(size_t index) const
 {
-    // In case the ImageDecoderQt got recreated we don't know
-    // yet how many images we are going to have and need to
-    // find that out now.
-    size_t count = m_frameBufferCache.size();
-    if (!failed() && !count) {
-        internalDecodeSize();
-        count = frameCount();
-    }
+    if (index >= m_imageList.size())
+        return 0;
+    return  m_imageList[index].m_duration;
+}
 
-    if (index >= count)
+RGBA32Buffer* ImageDecoderQt::frameBufferAtIndex(size_t index)
+{
+    Q_ASSERT("use imageAtIndex instead");
+    return 0;
+}
+
+const QPixmap* ImageDecoderQt::imageAtIndex(size_t index) const
+{
+    if (debugImageDecoderQt)
+        qDebug() << "ImageDecoderQt::imageAtIndex(" << index << ')';
+
+    if (index >= m_imageList.size())
         return 0;
 
-    ImageFrame& frame = m_frameBufferCache[index];
-    if (frame.status() != ImageFrame::FrameComplete && m_reader)
-        internalReadImage(index);
-    return &frame;
-}
-
-void ImageDecoderQt::clearFrameBufferCache(size_t /*index*/)
-{
-}
-
-void ImageDecoderQt::internalDecodeSize()
-{
-    ASSERT(m_reader);
-
-    // If we have a QSize() something failed
-    QSize size = m_reader->size();
-    if (size.isEmpty()) {
-        setFailed();
-        return clearPointers();
+    if (!m_pixmapCache.contains(index)) {
+        m_pixmapCache.insert(index,
+                             QPixmap::fromImage(m_imageList[index].m_image));
     }
-
-    setSize(size.width(), size.height());
-
-    // We don't need the tables set by prepareScaleDataIfNecessary,
-    // but their dimensions are used by ImageDecoder::scaledSize().
-    prepareScaleDataIfNecessary();
-    if (m_scaled)
-        m_reader->setScaledSize(scaledSize());
+    return  &m_pixmapCache[index];
 }
 
-void ImageDecoderQt::internalReadImage(size_t frameIndex)
+void ImageDecoderQt::clearFrame(size_t index)
 {
-    ASSERT(m_reader);
-
-    if (m_reader->supportsAnimation())
-        m_reader->jumpToImage(frameIndex);
-    else if (frameIndex) {
-        setFailed();
-        return clearPointers();
-    }
-
-    if (!internalHandleCurrentImage(frameIndex))
-      setFailed();
-
-    // Attempt to return some memory
-    for (int i = 0; i < m_frameBufferCache.size(); ++i) {
-        if (m_frameBufferCache[i].status() != ImageFrame::FrameComplete)
-            return;
-    }
-
-    clearPointers();
-}
-
-bool ImageDecoderQt::internalHandleCurrentImage(size_t frameIndex)
-{
-    ImageFrame* const buffer = &m_frameBufferCache[frameIndex];
-    QSize imageSize = m_reader->scaledSize();
-    if (imageSize.isEmpty())
-        imageSize = m_reader->size();
-
-    if (!buffer->setSize(imageSize.width(), imageSize.height()))
-        return false;
-
-    QImage image(reinterpret_cast<uchar*>(buffer->getAddr(0, 0)), imageSize.width(), imageSize.height(), sizeof(ImageFrame::PixelData) * imageSize.width(), m_reader->imageFormat());
-
-    buffer->setDuration(m_reader->nextImageDelay());
-    m_reader->read(&image);
-
-    // ImageFrame expects ARGB32.
-    if (buffer->premultiplyAlpha()) {
-        if (image.format() != QImage::Format_ARGB32_Premultiplied)
-            image = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-    } else {
-        if (image.format() != QImage::Format_ARGB32)
-            image = image.convertToFormat(QImage::Format_ARGB32);
-    }
-
-    if (reinterpret_cast<const uchar*>(image.constBits()) != reinterpret_cast<const uchar*>(buffer->getAddr(0, 0))) {
-        // The in-buffer was replaced during decoding with another, so copy into it manually.
-        memcpy(buffer->getAddr(0, 0), image.constBits(),  image.byteCount());
-    }
-
-    if (image.isNull()) {
-        frameCount();
-        repetitionCount();
-        clearPointers();
-        return false;
-    }
-
-    buffer->setOriginalFrameRect(image.rect());
-    buffer->setHasAlpha(image.hasAlphaChannel());
-    buffer->setStatus(ImageFrame::FrameComplete);
-
-    return true;
-}
-
-// The QImageIOHandler is not able to tell us how many frames
-// we have and we need to parse every image. We do this by
-// increasing the m_frameBufferCache by one and try to parse
-// the image. We stop when QImage::read fails and then need
-// to resize the m_frameBufferCache to the final size and update
-// the failed bit. If we failed to decode the first image
-// then we truly failed to decode, otherwise we're OK.
-
-// TODO: Do not increment the m_frameBufferCache.size() by one but more than one
-void ImageDecoderQt::forceLoadEverything()
-{
-    int imageCount = 0;
-
-    do {
-        m_frameBufferCache.resize(++imageCount);
-    } while (internalHandleCurrentImage(imageCount - 1));
-
-    // If we failed decoding the first image we actually
-    // have no images and need to set the failed bit.
-    // Otherwise, we want to forget about
-    // the last attempt to decode a image.
-    m_frameBufferCache.resize(imageCount - 1);
-    for (size_t i = 0; i < m_frameBufferCache.size(); ++i)
-        m_frameBufferCache[i].setPremultiplyAlpha(m_premultiplyAlpha);
-    if (imageCount == 1)
-      setFailed();
-}
-
-void ImageDecoderQt::clearPointers()
-{
-    m_reader.clear();
-    m_buffer.clear();
-}
-
-PassNativeImagePtr ImageFrame::asNewNativeImage() const
-{
-    QImage::Format format;
-    if (m_hasAlpha)
-        format = m_premultiplyAlpha ?  QImage::Format_ARGB32_Premultiplied : QImage::Format_ARGB32;
-    else
-        format = QImage::Format_RGB32;
-
-    QImage img(reinterpret_cast<uchar*>(m_bytes), m_size.width(), m_size.height(), sizeof(PixelData) * m_size.width(), format);
-
-    return new QPixmap(QPixmap::fromImage(img));
+    if (m_imageList.size() < (int)index)
+        m_imageList[index].m_image = QImage();
+    m_pixmapCache.take(index);
 }
 
 }

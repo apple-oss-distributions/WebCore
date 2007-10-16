@@ -27,8 +27,6 @@
 #include "config.h"
 #include "FloatPoint.h"
 
-#if !PLATFORM(IOS)
-
 namespace WebCore {
 
 #ifndef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
@@ -45,5 +43,3 @@ FloatPoint::operator NSPoint() const
 #endif
 
 }
-
-#endif

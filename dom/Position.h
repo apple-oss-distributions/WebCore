@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,334 +26,88 @@
 #ifndef Position_h
 #define Position_h
 
-#include "ContainerNode.h"
-#include "EditingBoundary.h"
+#include "Node.h"
 #include "TextAffinity.h"
-#include "TextDirection.h"
-#include <wtf/Assertions.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
 
 namespace WebCore {
 
 class CSSComputedStyleDeclaration;
 class Element;
-class InlineBox;
-class Node;
+class PositionIterator;
 class Range;
-class RenderObject;
-class Text;
 
-enum PositionMoveType {
-    CodePoint,       // Move by a single code point.
-    Character,       // Move to the next Unicode character break.
-    BackwardDeletion // Subject to platform conventions.
-};
+enum EUsingComposedCharacters { NotUsingComposedCharacters = false, UsingComposedCharacters = true };
 
-class Position {
+class Position
+{
 public:
-    enum AnchorType {
-        PositionIsOffsetInAnchor,
-        PositionIsBeforeAnchor,
-        PositionIsAfterAnchor,
-        PositionIsBeforeChildren,
-        PositionIsAfterChildren,
-    };
+    Position() : m_node(0), m_offset(0) { }
+    Position(Node*, int offset);
+    Position(const PositionIterator&);
 
-    Position()
-        : m_offset(0)
-        , m_anchorType(PositionIsOffsetInAnchor)
-        , m_isLegacyEditingPosition(false)
-    {
-    }
+    void clear();
 
-    // For creating legacy editing positions: (Anchor type will be determined from editingIgnoresContent(node))
-    class LegacyEditingOffset {
-    public:
-        int value() const { return m_offset; }
+    Node *node() const { return m_node.get(); }
+    Element* documentElement() const;
+    int offset() const { return m_offset; }
 
-    private:
-        explicit LegacyEditingOffset(int offset) : m_offset(offset) { }
-
-        friend Position createLegacyEditingPosition(PassRefPtr<Node>, int offset);
-
-        int m_offset;
-    };
-    Position(PassRefPtr<Node> anchorNode, LegacyEditingOffset);
-
-    // For creating before/after positions:
-    Position(PassRefPtr<Node> anchorNode, AnchorType);
-    Position(PassRefPtr<Text> textNode, unsigned offset);
-
-    // For creating offset positions:
-    // FIXME: This constructor should eventually go away. See bug 63040.
-    Position(PassRefPtr<Node> anchorNode, int offset, AnchorType);
-
-    AnchorType anchorType() const { return static_cast<AnchorType>(m_anchorType); }
-
-    void clear() { m_anchorNode.clear(); m_offset = 0; m_anchorType = PositionIsOffsetInAnchor; m_isLegacyEditingPosition = false; }
-
-    // These are always DOM compliant values.  Editing positions like [img, 0] (aka [img, before])
-    // will return img->parentNode() and img->nodeIndex() from these functions.
-    Node* containerNode() const; // NULL for a before/after position anchored to a node with no parent
-    Text* containerText() const;
-
-    int computeOffsetInContainerNode() const;  // O(n) for before/after-anchored positions, O(1) for parent-anchored positions
-    Position parentAnchoredEquivalent() const; // Convenience method for DOM positions that also fixes up some positions for editing
-
-    // Inline O(1) access for Positions which callers know to be parent-anchored
-    int offsetInContainerNode() const
-    {
-        ASSERT(anchorType() == PositionIsOffsetInAnchor);
-        return m_offset;
-    }
-
-    // New code should not use this function.
-    int deprecatedEditingOffset() const
-    {
-        if (m_isLegacyEditingPosition || (m_anchorType != PositionIsAfterAnchor && m_anchorType != PositionIsAfterChildren))
-            return m_offset;
-        return offsetForPositionAfterAnchor();
-    }
-
-    // These are convenience methods which are smart about whether the position is neighbor anchored or parent anchored
-    Node* computeNodeBeforePosition() const;
-    Node* computeNodeAfterPosition() const;
-
-    Node* anchorNode() const { return m_anchorNode.get(); }
-
-    // FIXME: Callers should be moved off of node(), node() is not always the container for this position.
-    // For nodes which editingIgnoresContent(node()) returns true, positions like [ignoredNode, 0]
-    // will be treated as before ignoredNode (thus node() is really after the position, not containing it).
-    Node* deprecatedNode() const { return m_anchorNode.get(); }
-
-    Document* document() const { return m_anchorNode ? m_anchorNode->document() : 0; }
-    Element* rootEditableElement() const
-    {
-        Node* container = containerNode();
-        return container ? container->rootEditableElement() : 0;
-    }
-
-    // These should only be used for PositionIsOffsetInAnchor positions, unless
-    // the position is a legacy editing position.
-    void moveToPosition(PassRefPtr<Node> anchorNode, int offset);
-    void moveToOffset(int offset);
-
-    bool isNull() const { return !m_anchorNode; }
-    bool isNotNull() const { return m_anchorNode; }
-    bool isOrphan() const { return m_anchorNode && !m_anchorNode->inDocument(); }
+    bool isNull() const { return m_node == 0; }
+    bool isNotNull() const { return m_node != 0; }
 
     Element* element() const;
+    PassRefPtr<CSSComputedStyleDeclaration> computedStyle() const;
 
-    // Move up or down the DOM by one position.
-    // Offsets are computed using render text for nodes that have renderers - but note that even when
-    // using composed characters, the result may be inside a single user-visible character if a ligature is formed.
-    Position previous(PositionMoveType = CodePoint) const;
-    Position next(PositionMoveType = CodePoint) const;
-    static int uncheckedPreviousOffset(const Node*, int current);
-    static int uncheckedPreviousOffsetForBackwardDeletion(const Node*, int current);
-    static int uncheckedNextOffset(const Node*, int current);
-
-    // These can be either inside or just before/after the node, depending on
-    // if the node is ignored by editing or not.
-    // FIXME: These should go away. They only make sense for legacy positions.
-    bool atFirstEditingPositionForNode() const;
-    bool atLastEditingPositionForNode() const;
-
-    // Returns true if the visually equivalent positions around have different editability
-    bool atEditingBoundary() const;
-    Node* parentEditingBoundary() const;
+    // Move up or down the DOM by one position
+    Position previous(EUsingComposedCharacters usingComposedCharacters=NotUsingComposedCharacters) const;
+    Position next(EUsingComposedCharacters usingComposedCharacters=NotUsingComposedCharacters) const;
+    bool atStart() const;
+    bool atEnd() const;
     
-    bool atStartOfTree() const;
-    bool atEndOfTree() const;
-
     // FIXME: Make these non-member functions and put them somewhere in the editing directory.
     // These aren't really basic "position" operations. More high level editing helper functions.
     Position leadingWhitespacePosition(EAffinity, bool considerNonCollapsibleWhitespace = false) const;
     Position trailingWhitespacePosition(EAffinity, bool considerNonCollapsibleWhitespace = false) const;
-    
-    // These return useful visually equivalent positions.
-    Position upstream(EditingBoundaryCrossingRule = CannotCrossEditingBoundary) const;
-    Position downstream(EditingBoundaryCrossingRule = CannotCrossEditingBoundary) const;
+
+    // p.upstream() through p.downstream() is the range of positions that map to the same VisiblePosition as p.
+    Position upstream() const;
+    Position downstream() const;
     
     bool isCandidate() const;
     bool inRenderedText() const;
     bool isRenderedCharacter() const;
-    bool rendersInDifferentPosition(const Position&) const;
-
-    void getInlineBoxAndOffset(EAffinity, InlineBox*&, int& caretOffset) const;
-    void getInlineBoxAndOffset(EAffinity, TextDirection primaryDirection, InlineBox*&, int& caretOffset) const;
-
-    TextDirection primaryDirection() const;
-
+    bool rendersInDifferentPosition(const Position &pos) const;
+    
     static bool hasRenderedNonAnonymousDescendantsWithHeight(RenderObject*);
     static bool nodeIsUserSelectNone(Node*);
-#if ENABLE(USERSELECT_ALL)
-    static bool nodeIsUserSelectAll(const Node*);
-    static Node* rootUserSelectAllForNode(Node*);
-#else
-    static bool nodeIsUserSelectAll(const Node*) { return false; }
-    static Node* rootUserSelectAllForNode(Node*) { return 0; }
-#endif
-    static ContainerNode* findParent(const Node*);
     
     void debugPosition(const char* msg = "") const;
 
 #ifndef NDEBUG
     void formatForDebugger(char* buffer, unsigned length) const;
-    void showAnchorTypeAndOffset() const;
     void showTreeForThis() const;
 #endif
     
 private:
-    int offsetForPositionAfterAnchor() const;
-
     int renderedOffset() const;
 
-    
     Position previousCharacterPosition(EAffinity) const;
     Position nextCharacterPosition(EAffinity) const;
-
-    static AnchorType anchorTypeForLegacyEditingPosition(Node* anchorNode, int offset);
-
-    RefPtr<Node> m_anchorNode;
-    // m_offset can be the offset inside m_anchorNode, or if editingIgnoresContent(m_anchorNode)
-    // returns true, then other places in editing will treat m_offset == 0 as "before the anchor"
-    // and m_offset > 0 as "after the anchor node".  See parentAnchoredEquivalent for more info.
+    RefPtr<Node> m_node;
     int m_offset;
-    unsigned m_anchorType : 3;
-    bool m_isLegacyEditingPosition : 1;
 };
 
-inline Position createLegacyEditingPosition(PassRefPtr<Node> node, int offset)
+inline bool operator==(const Position &a, const Position &b)
 {
-    return Position(node, Position::LegacyEditingOffset(offset));
+    return a.node() == b.node() && a.offset() == b.offset();
 }
 
-inline bool operator==(const Position& a, const Position& b)
-{
-    // FIXME: In <div><img></div> [div, 0] != [img, 0] even though most of the
-    // editing code will treat them as identical.
-    return a.anchorNode() == b.anchorNode() && a.deprecatedEditingOffset() == b.deprecatedEditingOffset() && a.anchorType() == b.anchorType();
-}
-
-inline bool operator!=(const Position& a, const Position& b)
+inline bool operator!=(const Position &a, const Position &b)
 {
     return !(a == b);
 }
 
-#if PLATFORM(IOS)    
-inline bool operator<(const Position& a, const Position& b)
-{
-    if (a.isNull() || b.isNull())
-        return false;
-    if (a.anchorNode() == b.anchorNode()) {
-        return a.deprecatedEditingOffset() < b.deprecatedEditingOffset();
-    } 
-    else {
-        short result = b.anchorNode()->compareDocumentPosition(a.anchorNode());
-        return (result == Node::DOCUMENT_POSITION_PRECEDING);
-    }
-}
-
-inline bool operator>(const Position& a, const Position& b) 
-{
-    if (a.isNull() || b.isNull())
-        return false;
-    return (a != b && b < a);
-}
-
-inline bool operator>=(const Position& a, const Position& b) 
-{
-    if (a.isNull() || b.isNull())
-        return false;
-    return (a == b || a > b);
-}
-
-inline bool operator<=(const Position& a, const Position& b) 
-{
-    if (a.isNull() || b.isNull())
-        return false;
-    return (a == b || a < b);
-}
-#endif
-
-// We define position creation functions to make callsites more readable.
-// These are inline to prevent ref-churn when returning a Position object.
-// If we ever add a PassPosition we can make these non-inline.
-
-inline Position positionInParentBeforeNode(const Node* node)
-{
-    // FIXME: This should ASSERT(node->parentNode())
-    // At least one caller currently hits this ASSERT though, which indicates
-    // that the caller is trying to make a position relative to a disconnected node (which is likely an error)
-    // Specifically, editing/deleting/delete-ligature-001.html crashes with ASSERT(node->parentNode())
-    return Position(Position::findParent(node), node->nodeIndex(), Position::PositionIsOffsetInAnchor);
-}
-
-inline Position positionInParentAfterNode(const Node* node)
-{
-    ASSERT(Position::findParent(node));
-    return Position(Position::findParent(node), node->nodeIndex() + 1, Position::PositionIsOffsetInAnchor);
-}
-
-// positionBeforeNode and positionAfterNode return neighbor-anchored positions, construction is O(1)
-inline Position positionBeforeNode(Node* anchorNode)
-{
-    ASSERT(anchorNode);
-    return Position(anchorNode, Position::PositionIsBeforeAnchor);
-}
-
-inline Position positionAfterNode(Node* anchorNode)
-{
-    ASSERT(anchorNode);
-    return Position(anchorNode, Position::PositionIsAfterAnchor);
-}
-
-inline int lastOffsetInNode(Node* node)
-{
-    return node->offsetInCharacters() ? node->maxCharacterOffset() : static_cast<int>(node->childNodeCount());
-}
-
-// firstPositionInNode and lastPositionInNode return parent-anchored positions, lastPositionInNode construction is O(n) due to childNodeCount()
-inline Position firstPositionInNode(Node* anchorNode)
-{
-    if (anchorNode->isTextNode())
-        return Position(anchorNode, 0, Position::PositionIsOffsetInAnchor);
-    return Position(anchorNode, Position::PositionIsBeforeChildren);
-}
-
-inline Position lastPositionInNode(Node* anchorNode)
-{
-    if (anchorNode->isTextNode())
-        return Position(anchorNode, lastOffsetInNode(anchorNode), Position::PositionIsOffsetInAnchor);
-    return Position(anchorNode, Position::PositionIsAfterChildren);
-}
-
-inline int minOffsetForNode(Node* anchorNode, int offset)
-{
-    if (anchorNode->offsetInCharacters())
-        return std::min(offset, anchorNode->maxCharacterOffset());
-
-    int newOffset = 0;
-    for (Node* node = anchorNode->firstChild(); node && newOffset < offset; node = node->nextSibling())
-        newOffset++;
-    
-    return newOffset;
-}
-
-inline bool offsetIsBeforeLastNodeOffset(int offset, Node* anchorNode)
-{
-    if (anchorNode->offsetInCharacters())
-        return offset < anchorNode->maxCharacterOffset();
-
-    int currentOffset = 0;
-    for (Node* node = anchorNode->firstChild(); node && currentOffset < offset; node = node->nextSibling())
-        currentOffset++;
-    
-    
-    return offset < currentOffset;
-}
+Position startPosition(const Range*);
+Position endPosition(const Range*);
 
 } // namespace WebCore
 

@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2007 Apple Inc. All rights reserved.
+ * Copyright (C) 2004 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,29 +22,25 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #ifndef ChildNodeList_h
 #define ChildNodeList_h
 
-#include "LiveNodeList.h"
-#include <wtf/PassRefPtr.h>
+#include "NodeList.h"
 
 namespace WebCore {
 
-    class ChildNodeList : public LiveNodeList {
-    public:
-        static PassRefPtr<ChildNodeList> create(PassRefPtr<Node> rootNode)
-        {
-            return adoptRef(new ChildNodeList(rootNode));
-        }
+class ChildNodeList : public NodeList {
+public:
+    ChildNodeList(Node*, NodeList::Caches*);
 
-        virtual ~ChildNodeList();
+    virtual unsigned length() const;
+    virtual Node* item(unsigned index) const;
 
-    protected:
-        explicit ChildNodeList(PassRefPtr<Node> rootNode);
+    virtual void rootNodeChildrenChanged();
 
-        virtual bool nodeMatches(Element*) const;
-    };
+protected:
+    virtual bool nodeMatches(Node* testNode) const;
+};
 
 } // namespace WebCore
 

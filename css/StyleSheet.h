@@ -1,6 +1,8 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2006, 2008, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -21,38 +23,48 @@
 #ifndef StyleSheet_h
 #define StyleSheet_h
 
-#include "CSSParserMode.h"
-#include "KURLHash.h"
-#include <wtf/Forward.h>
-#include <wtf/ListHashSet.h>
-#include <wtf/RefCounted.h>
+#include "StyleList.h"
+#include "PlatformString.h"
 
 namespace WebCore {
 
-class CSSImportRule;
-class MediaList;
 class Node;
-class StyleSheet;
+class CachedCSSStyleSheet;
+class MediaList;
 
-class StyleSheet : public RefCounted<StyleSheet> {
+class StyleSheet : public StyleList {
 public:
+    StyleSheet(Node* ownerNode, const String& href = String());
+    StyleSheet(StyleSheet* parentSheet, const String& href = String());
+    StyleSheet(StyleBase* owner, const String& href = String());
     virtual ~StyleSheet();
 
-    virtual bool disabled() const = 0;
-    virtual void setDisabled(bool) = 0;
-    virtual Node* ownerNode() const = 0;
-    virtual StyleSheet* parentStyleSheet() const { return 0; }
-    virtual String href() const = 0;
-    virtual String title() const = 0;
-    virtual MediaList* media() const { return 0; }
-    virtual String type() const = 0;
+    virtual bool isStyleSheet() const { return true; }
 
-    virtual CSSImportRule* ownerRule() const { return 0; }
-    virtual void clearOwnerNode() = 0;
-    virtual KURL baseURL() const = 0;
-    virtual bool isLoading() const = 0;
-    virtual bool isCSSStyleSheet() const { return false; }
-    virtual bool isXSLStyleSheet() const { return false; }
+    virtual String type() const { return String(); }
+
+    bool disabled() const { return m_disabled; }
+    void setDisabled(bool disabled) { m_disabled = disabled; styleSheetChanged(); }
+
+    Node* ownerNode() const { return m_parentNode; }
+    StyleSheet *parentStyleSheet() const;
+    String href() const { return m_strHref; }
+    void setHref(const String& href) { m_strHref = href; }
+    String title() const { return m_strTitle; }
+    void setTitle(const String& s) { m_strTitle = s; }
+    MediaList* media() const { return m_media.get(); }
+    void setMedia(MediaList*);
+
+    virtual bool isLoading() { return false; }
+
+    virtual void styleSheetChanged() { }
+    
+protected:
+    Node* m_parentNode;
+    String m_strHref;
+    String m_strTitle;
+    RefPtr<MediaList> m_media;
+    bool m_disabled;
 };
 
 } // namespace

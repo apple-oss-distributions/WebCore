@@ -26,35 +26,40 @@
 #include "config.h"
 #include "JSNodeList.h"
 
+#include "AtomicString.h"
 #include "JSNode.h"
-#include "LiveNodeList.h"
 #include "Node.h"
 #include "NodeList.h"
-#include <wtf/text/AtomicString.h>
-
-using namespace JSC;
 
 namespace WebCore {
 
-bool JSNodeListOwner::isReachableFromOpaqueRoots(JSC::Handle<JSC::Unknown> handle, void*, SlotVisitor& visitor)
+// Need to support both get and call, so that list[0] and list(0) work.
+KJS::JSValue* JSNodeList::callAsFunction(KJS::ExecState* exec, KJS::JSObject* thisObj, const KJS::List& args)
 {
-    JSNodeList* jsNodeList = jsCast<JSNodeList*>(handle.get().asCell());
-    if (!jsNodeList->hasCustomProperties())
-        return false;
-    if (!jsNodeList->impl()->isLiveNodeList())
-        return false;
-    return visitor.containsOpaqueRoot(root(static_cast<LiveNodeList*>(jsNodeList->impl())->ownerNode()));
+    // Do not use thisObj here. See JSHTMLCollection.
+    KJS::UString s = args[0]->toString(exec);
+    bool ok;
+    unsigned u = s.toUInt32(&ok);
+    if (ok)
+        return toJS(exec, impl()->item(u));
+
+    return KJS::jsUndefined();
 }
 
-bool JSNodeList::canGetItemsForName(ExecState*, NodeList* impl, PropertyName propertyName)
+bool JSNodeList::implementsCall() const
 {
-    return impl->namedItem(propertyNameToAtomicString(propertyName));
+    return true;
 }
 
-JSValue JSNodeList::nameGetter(ExecState* exec, JSValue slotBase, PropertyName propertyName)
+bool JSNodeList::canGetItemsForName(KJS::ExecState*, NodeList* impl, const KJS::Identifier& propertyName)
 {
-    JSNodeList* thisObj = jsCast<JSNodeList*>(asObject(slotBase));
-    return toJS(exec, thisObj->globalObject(), thisObj->impl()->namedItem(propertyNameToAtomicString(propertyName)));
+    return impl->itemWithName(propertyName);
+}
+
+KJS::JSValue* JSNodeList::nameGetter(KJS::ExecState* exec, KJS::JSObject* originalObject, const KJS::Identifier& propertyName, const KJS::PropertySlot& slot)
+{
+    JSNodeList* thisObj = static_cast<JSNodeList*>(slot.slotBase());
+    return toJS(exec, thisObj->impl()->itemWithName(propertyName));
 }
 
 } // namespace WebCore

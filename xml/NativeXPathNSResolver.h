@@ -26,25 +26,29 @@
 #ifndef NativeXPathNSResolver_h
 #define NativeXPathNSResolver_h
 
+#if ENABLE(XPATH)
+
 #include "XPathNSResolver.h"
+#include <wtf/Forward.h>
 #include <wtf/RefPtr.h>
 
 namespace WebCore {
 
-class Node;
+    class Node;
 
-class NativeXPathNSResolver : public XPathNSResolver {
-public:
-    static PassRefPtr<NativeXPathNSResolver> create(PassRefPtr<Node> node) { return adoptRef(new NativeXPathNSResolver(node)); }
-    virtual ~NativeXPathNSResolver();
+    class NativeXPathNSResolver : public XPathNSResolver {
+    public:
+        NativeXPathNSResolver(PassRefPtr<Node>);
+        virtual ~NativeXPathNSResolver();
 
-    virtual String lookupNamespaceURI(const String& prefix);
+        virtual String lookupNamespaceURI(const String& prefix);
 
-private:
-    explicit NativeXPathNSResolver(PassRefPtr<Node>);
-    RefPtr<Node> m_node;
-};
+    private:
+        RefPtr<Node> m_node;
+    };
 
 } // namespace WebCore
+
+#endif // ENABLE(XPATH)
 
 #endif // NativeXPathNSResolver_h

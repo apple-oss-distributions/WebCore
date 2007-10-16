@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -24,33 +24,44 @@
  */
 
 #include "config.h"
-#include "JSHTMLObjectElementCustom.h"
+#include "JSHTMLObjectElement.h"
 
 #include "HTMLObjectElement.h"
-#include "JSPluginElementFunctions.h"
+#include "kjs_dom.h"
+#include "kjs_html.h"
 
 namespace WebCore {
 
-using namespace JSC;
+using namespace KJS;
 
-bool JSHTMLObjectElement::getOwnPropertySlotDelegate(ExecState* exec, PropertyName propertyName, PropertySlot& slot)
+bool JSHTMLObjectElement::customGetOwnPropertySlot(ExecState* exec, const Identifier& propertyName, PropertySlot& slot)
 {
-    return pluginElementCustomGetOwnPropertySlot<JSHTMLObjectElement, Base>(exec, propertyName, slot, this);
+    return runtimeObjectCustomGetOwnPropertySlot(exec, propertyName, slot, this, static_cast<HTMLElement*>(impl()));
 }
 
-bool JSHTMLObjectElement::getOwnPropertyDescriptorDelegate(ExecState* exec, PropertyName propertyName, PropertyDescriptor& descriptor)
+bool JSHTMLObjectElement::customPut(ExecState* exec, const Identifier& propertyName, JSValue* value, int attr)
 {
-    return pluginElementCustomGetOwnPropertyDescriptor<JSHTMLObjectElement, Base>(exec, propertyName, descriptor, this);
+    return runtimeObjectCustomPut(exec, propertyName, value, attr, static_cast<HTMLElement*>(impl()));
 }
 
-bool JSHTMLObjectElement::putDelegate(ExecState* exec, PropertyName propertyName, JSValue value, PutPropertySlot& slot)
+bool JSHTMLObjectElement::implementsCall() const
 {
-    return runtimeObjectCustomPut(exec, propertyName, value, this, slot);
+    return runtimeObjectImplementsCall(static_cast<HTMLElement*>(impl()));
 }
 
-CallType JSHTMLObjectElement::getCallData(JSCell* cell, CallData& callData)
+JSValue* JSHTMLObjectElement::callAsFunction(ExecState* exec, JSObject* thisObj, const List& args)
 {
-    return runtimeObjectGetCallData(jsCast<JSHTMLObjectElement*>(cell), callData);
+    return runtimeObjectCallAsFunction(exec, thisObj, args, static_cast<HTMLElement*>(impl()));
+}
+
+bool JSHTMLObjectElement::canGetItemsForName(ExecState*, HTMLObjectElement*, const Identifier& propertyName)
+{
+    return propertyName == "__apple_runtime_object";
+}
+
+JSValue* JSHTMLObjectElement::nameGetter(ExecState* exec, JSObject* originalObject, const Identifier& propertyName, const PropertySlot& slot)
+{
+    return runtimeObjectGetter(exec, originalObject, propertyName, slot);
 }
 
 } // namespace WebCore

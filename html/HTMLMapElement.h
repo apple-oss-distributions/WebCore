@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2004, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2004 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -27,30 +29,30 @@
 
 namespace WebCore {
 
+class IntSize;
 class HitTestResult;
-class HTMLImageElement;
-    
-class HTMLMapElement FINAL : public HTMLElement {
+
+class HTMLMapElement : public HTMLElement {
 public:
-    static PassRefPtr<HTMLMapElement> create(Document*);
-    static PassRefPtr<HTMLMapElement> create(const QualifiedName&, Document*);
-    virtual ~HTMLMapElement();
+    HTMLMapElement(Document*);
+    ~HTMLMapElement();
+
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusRequired; }
+    virtual int tagPriority() const { return 1; }
+    virtual bool checkDTD(const Node*);
 
     const AtomicString& getName() const { return m_name; }
 
-    bool mapMouseEvent(LayoutPoint location, const LayoutSize&, HitTestResult&);
-    
-    HTMLImageElement* imageElement();
+    virtual void parseMappedAttribute(MappedAttribute*);
+
+    bool mapMouseEvent(int x, int y, const IntSize&, HitTestResult&);
+
     PassRefPtr<HTMLCollection> areas();
 
+    String name() const;
+    void setName(const String&);
+
 private:
-    HTMLMapElement(const QualifiedName&, Document*);
-
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
-
     AtomicString m_name;
 };
 

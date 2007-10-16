@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2009 Dirk Schulze <krit@webkit.org>
- * Copyright (C) Research In Motion Limited 2011. All rights reserved.
+ * Copyright (C) 2006 Nikolas Zimmermann <zimmermann@kde.org>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -21,98 +20,47 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
 #include "config.h"
 #include "ImageBuffer.h"
 
-#include "IntRect.h"
-#include <wtf/MathExtras.h>
+#include "GraphicsContext.h"
+#include "RenderObject.h"
+
+#if ENABLE(SVG)
+#include "RenderSVGContainer.h"
+#endif
 
 namespace WebCore {
 
-#if !USE(CG)
-void ImageBuffer::transformColorSpace(ColorSpace srcColorSpace, ColorSpace dstColorSpace)
+IntSize ImageBuffer::size() const
 {
-    DEFINE_STATIC_LOCAL(Vector<int>, deviceRgbLUT, ());
-    DEFINE_STATIC_LOCAL(Vector<int>, linearRgbLUT, ());
-
-    if (srcColorSpace == dstColorSpace)
-        return;
-
-    // only sRGB <-> linearRGB are supported at the moment
-    if ((srcColorSpace != ColorSpaceLinearRGB && srcColorSpace != ColorSpaceDeviceRGB)
-        || (dstColorSpace != ColorSpaceLinearRGB && dstColorSpace != ColorSpaceDeviceRGB))
-        return;
-
-    if (dstColorSpace == ColorSpaceLinearRGB) {
-        if (linearRgbLUT.isEmpty()) {
-            for (unsigned i = 0; i < 256; i++) {
-                float color = i  / 255.0f;
-                color = (color <= 0.04045f ? color / 12.92f : pow((color + 0.055f) / 1.055f, 2.4f));
-                color = std::max(0.0f, color);
-                color = std::min(1.0f, color);
-                linearRgbLUT.append(static_cast<int>(round(color * 255)));
-            }
-        }
-        platformTransformColorSpace(linearRgbLUT);
-    } else if (dstColorSpace == ColorSpaceDeviceRGB) {
-        if (deviceRgbLUT.isEmpty()) {
-            for (unsigned i = 0; i < 256; i++) {
-                float color = i / 255.0f;
-                color = (powf(color, 1.0f / 2.4f) * 1.055f) - 0.055f;
-                color = std::max(0.0f, color);
-                color = std::min(1.0f, color);
-                deviceRgbLUT.append(static_cast<int>(round(color * 255)));
-            }
-        }
-        platformTransformColorSpace(deviceRgbLUT);
-    }
-}
-#endif // USE(CG)
-
-inline void ImageBuffer::genericConvertToLuminanceMask()
-{
-    IntRect luminanceRect(IntPoint(), internalSize());
-    RefPtr<Uint8ClampedArray> srcPixelArray = getUnmultipliedImageData(luminanceRect);
-    
-    unsigned pixelArrayLength = srcPixelArray->length();
-    for (unsigned pixelOffset = 0; pixelOffset < pixelArrayLength; pixelOffset += 4) {
-        unsigned char a = srcPixelArray->item(pixelOffset + 3);
-        if (!a)
-            continue;
-        unsigned char r = srcPixelArray->item(pixelOffset);
-        unsigned char g = srcPixelArray->item(pixelOffset + 1);
-        unsigned char b = srcPixelArray->item(pixelOffset + 2);
-        
-        double luma = (r * 0.2125 + g * 0.7154 + b * 0.0721) * ((double)a / 255.0);
-        srcPixelArray->set(pixelOffset + 3, luma);
-    }
-    putByteArray(Unmultiplied, srcPixelArray.get(), luminanceRect.size(), luminanceRect, IntPoint());
+    return m_size;
 }
 
-void ImageBuffer::convertToLuminanceMask()
+void ImageBuffer::renderSubtreeToImage(ImageBuffer* image, RenderObject* item)
 {
-    // Add platform specific functions with platformConvertToLuminanceMask here later.
-    genericConvertToLuminanceMask();
-}
+    ASSERT(item && image && image->context());
+    RenderObject::PaintInfo info(image->context(), IntRect(), PaintPhaseForeground, 0, 0, 0);
 
-#if USE(ACCELERATED_COMPOSITING) && !USE(CAIRO) && !PLATFORM(BLACKBERRY)
-PlatformLayer* ImageBuffer::platformLayer() const
-{
-    return 0;
-}
+#if ENABLE(SVG)
+    RenderSVGContainer* svgContainer = 0;
+    if (item && item->isSVGContainer())
+         svgContainer = static_cast<RenderSVGContainer*>(item);
+
+    bool drawsContents = svgContainer ? svgContainer->drawsContents() : false;
+    if (svgContainer && !drawsContents)
+        svgContainer->setDrawsContents(true);
 #endif
 
-bool ImageBuffer::copyToPlatformTexture(GraphicsContext3D&, Platform3DObject, GC3Denum, bool, bool)
-{
-    return false;
-}
+    item->paint(info, 0, 0);
 
-PassOwnPtr<ImageBuffer> ImageBuffer::createCompatibleBuffer(const IntSize& size, float resolutionScale, ColorSpace colorSpace, const GraphicsContext* context, bool)
-{
-    return create(size, resolutionScale, colorSpace, context->isAcceleratedContext() ? Accelerated : Unaccelerated);
+#if ENABLE(SVG)
+    if (svgContainer && !drawsContents)
+        svgContainer->setDrawsContents(false);
+#endif
 }
 
 }

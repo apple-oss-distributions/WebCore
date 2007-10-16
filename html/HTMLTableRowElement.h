@@ -1,10 +1,12 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1997 Martin Jones (mjones@kde.org)
  *           (C) 1997 Torben Weis (weis@kde.org)
  *           (C) 1998 Waldo Bastian (bastian@kde.org)
  *           (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -30,27 +32,48 @@
 
 namespace WebCore {
 
-class HTMLTableRowElement FINAL : public HTMLTablePartElement {
+class HTMLTableRowElement : public HTMLTablePartElement
+{
 public:
-    static PassRefPtr<HTMLTableRowElement> create(Document*);
-    static PassRefPtr<HTMLTableRowElement> create(const QualifiedName&, Document*);
+    HTMLTableRowElement(Document* doc);
+
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusOptional; }
+    virtual int tagPriority() const { return 7; }
+    virtual bool checkDTD(const Node*);
+    virtual ContainerNode* addChild(PassRefPtr<Node>);
 
     int rowIndex() const;
+    int sectionRowIndex() const;
+
+    HTMLElement* insertCell(int index, ExceptionCode&);
+    void deleteCell(int index, ExceptionCode&);
+
     void setRowIndex(int);
 
-    int sectionRowIndex() const;
     void setSectionRowIndex(int);
-
-    PassRefPtr<HTMLElement> insertCell(int index, ExceptionCode&);
-    void deleteCell(int index, ExceptionCode&);
 
     PassRefPtr<HTMLCollection> cells();
     void setCells(HTMLCollection *, ExceptionCode&);
 
-private:
-    HTMLTableRowElement(const QualifiedName&, Document*);
+    String align() const;
+    void setAlign(const String&);
+
+    String bgColor() const;
+    void setBgColor(const String&);
+
+    String ch() const;
+    void setCh(const String&);
+
+    String chOff() const;
+    void setChOff(const String&);
+
+    String vAlign() const;
+    void setVAlign(const String&);
+
+protected:
+    int ncols;
 };
 
-} // namespace
+} //namespace
 
 #endif

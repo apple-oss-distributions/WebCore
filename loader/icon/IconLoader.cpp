@@ -26,31 +26,30 @@
 #include "config.h"
 #include "IconLoader.h"
 
-#include "CachedRawResource.h"
-#include "CachedResourceLoader.h"
-#include "CachedResourceRequest.h"
-#include "CachedResourceRequestInitiators.h"
 #include "Document.h"
 #include "Frame.h"
 #include "FrameLoader.h"
 #include "FrameLoaderClient.h"
-#include "IconController.h"
 #include "IconDatabase.h"
 #include "Logging.h"
-#include "ResourceBuffer.h"
+#include "ResourceHandle.h"
+#include "ResourceResponse.h"
 #include "ResourceRequest.h"
-#include <wtf/text/CString.h>
+#include "SubresourceLoader.h"
+
+using namespace std;
 
 namespace WebCore {
 
 IconLoader::IconLoader(Frame* frame)
     : m_frame(frame)
+    , m_loadIsInProgress(false)
 {
 }
 
-PassOwnPtr<IconLoader> IconLoader::create(Frame* frame)
+auto_ptr<IconLoader> IconLoader::create(Frame* frame)
 {
-    return adoptPtr(new IconLoader(frame));
+    return auto_ptr<IconLoader>(new IconLoader(frame));
 }
 
 IconLoader::~IconLoader()
@@ -58,59 +57,109 @@ IconLoader::~IconLoader()
 }
 
 void IconLoader::startLoading()
-{
-    if (m_resource || !m_frame->document())
+{    
+    if (m_resourceLoader)
         return;
 
-    CachedResourceRequest request(ResourceRequest(m_frame->loader()->icon()->url()), ResourceLoaderOptions(SendCallbacks, SniffContent, BufferData, DoNotAllowStoredCredentials, DoNotAskClientForAnyCredentials, DoSecurityCheck));
+    // FIXME: http://bugs.webkit.org/show_bug.cgi?id=10902
+    // Once ResourceHandle will load without a DocLoader, we can remove this check.
+    // A frame may be documentless - one example is a frame containing only a PDF.
+    if (!m_frame->document()) {
+        LOG(IconDatabase, "Documentless-frame - icon won't be loaded");
+        return;
+    }
 
-#if PLATFORM(BLACKBERRY)
-    request.mutableResourceRequest().setTargetType(ResourceRequest::TargetIsFavicon);
-#endif
-    request.mutableResourceRequest().setPriority(ResourceLoadPriorityLow);
-    request.setInitiator(cachedResourceRequestInitiators().icon);
+    // Set flag so we can detect the case where the load completes before
+    // SubresourceLoader::create returns.
+    m_loadIsInProgress = true;
 
-    m_resource = m_frame->document()->cachedResourceLoader()->requestRawResource(request);
-    if (m_resource)
-        m_resource->addClient(this);
-    else
-        LOG_ERROR("Failed to start load for icon at url %s", m_frame->loader()->icon()->url().string().ascii().data());
+    RefPtr<SubresourceLoader> loader = SubresourceLoader::create(m_frame, this, m_frame->loader()->iconURL());
+    if (!loader)
+        LOG_ERROR("Failed to start load for icon at url %s", m_frame->loader()->iconURL().url().ascii());
+
+    // Store the handle so we can cancel the load if stopLoading is called later.
+    // But only do it if the load hasn't already completed.
+    if (m_loadIsInProgress)
+        m_resourceLoader = loader.release();
 }
 
 void IconLoader::stopLoading()
 {
-    if (m_resource) {
-        m_resource->removeClient(this);
-        m_resource = 0;
+    clearLoadingState();
+}
+
+void IconLoader::didReceiveResponse(SubresourceLoader* resourceLoader, const ResourceResponse& response)
+{
+    // If we got a status code indicating an invalid response, then lets
+    // ignore the data and not try to decode the error page as an icon.
+    int status = response.httpStatusCode();
+    LOG(IconDatabase, "IconLoader::didReceiveResponse() - Loader %p, response %i", resourceLoader, status);
+
+    if (status && (status < 200 || status > 299)) {
+        ResourceHandle* handle = resourceLoader->handle();
+        finishLoading(handle ? handle->request().url() : KURL(), 0);
     }
 }
 
-void IconLoader::notifyFinished(CachedResource* resource)
+void IconLoader::didReceiveData(SubresourceLoader* loader, const char*, int size)
 {
-    ASSERT(resource == m_resource);
+    LOG(IconDatabase, "IconLoader::didReceiveData() - Loader %p, number of bytes %i", loader, size);
+}
 
-    // If we got a status code indicating an invalid response, then lets
-    // ignore the data and not try to decode the error page as an icon.
-    RefPtr<ResourceBuffer> data = resource->resourceBuffer();
-    int status = resource->response().httpStatusCode();
-    if (status && (status < 200 || status > 299))
-        data = 0;
+void IconLoader::didFail(SubresourceLoader* resourceLoader, const ResourceError&)
+{
+    LOG(IconDatabase, "IconLoader::didFail() - Loader %p", resourceLoader);
+    
+    // Until <rdar://problem/5463392> is resolved and we can properly cancel SubresourceLoaders when they get an error response,
+    // we need to be prepared to receive this call even after we've "finished loading" once.
+    // After it is resolved, we can restore an assertion that the load is in progress if ::didFail() is called
+    
+    if (m_loadIsInProgress) {
+        ASSERT(resourceLoader == m_resourceLoader);
+        ResourceHandle* handle = resourceLoader->handle();
+        finishLoading(handle ? handle->request().url() : KURL(), 0);
+    }
+}
 
-    static const char pdfMagicNumber[] = "%PDF";
-    static unsigned pdfMagicNumberLength = sizeof(pdfMagicNumber) - 1;
-    if (data && data->size() >= pdfMagicNumberLength && !memcmp(data->data(), pdfMagicNumber, pdfMagicNumberLength)) {
-        LOG(IconDatabase, "IconLoader::finishLoading() - Ignoring icon at %s because it appears to be a PDF", resource->url().string().ascii().data());
-        data = 0;
+void IconLoader::didFinishLoading(SubresourceLoader* resourceLoader)
+{
+    LOG(IconDatabase, "IconLoader::didFinishLoading() - Loader %p", resourceLoader);
+
+    // Until <rdar://problem/5463392> is resolved and we can properly cancel SubresourceLoaders when they get an error response,
+    // we need to be prepared to receive this call even after we've "finished loading" once.
+    // After it is resolved, we can restore an assertion that the load is in progress if ::didFail() is called
+    
+    if (m_loadIsInProgress) {
+        ASSERT(resourceLoader == m_resourceLoader);
+        ResourceHandle* handle = resourceLoader->handle();
+        finishLoading(handle ? handle->request().url() : KURL(), m_resourceLoader->resourceData());
+    }
+}
+
+void IconLoader::finishLoading(const KURL& iconURL, PassRefPtr<SharedBuffer> data)
+{
+
+    // When an icon load results in a 404 we commit it to the database here and clear the loading state.  
+    // But the SubresourceLoader continues pulling in data in the background for the 404 page if the server sends one.  
+    // Once that data finishes loading or if the load is cancelled while that data is being read, finishLoading ends up being called a second time.
+    // We need to change SubresourceLoader to have a mode where it will stop itself after receiving a 404 so this won't happen -
+    // in the meantime, we'll only commit this data to the IconDatabase if it's the first time ::finishLoading() is called
+    // <rdar://problem/5463392> tracks that enhancement
+    
+    if (!iconURL.isEmpty() && m_loadIsInProgress) {
+        iconDatabase()->setIconDataForIconURL(data, iconURL.url());
+        LOG(IconDatabase, "IconLoader::finishLoading() - Committing iconURL %s to database", iconURL.url().ascii());
+        m_frame->loader()->commitIconURLToIconDatabase(iconURL);
+        m_frame->loader()->client()->dispatchDidReceiveIcon();
     }
 
-    LOG(IconDatabase, "IconLoader::finishLoading() - Committing iconURL %s to database", resource->url().string().ascii().data());
-    m_frame->loader()->icon()->commitToDatabase(resource->url());
-    // Setting the icon data only after committing to the database ensures that the data is
-    // kept in memory (so it does not have to be read from the database asynchronously), since
-    // there is a page URL referencing it.
-    iconDatabase().setIconDataForIconURL(data ? data->sharedBuffer() : 0, resource->url().string());
-    m_frame->loader()->client()->dispatchDidReceiveIcon();
-    stopLoading();
+    clearLoadingState();
+}
+
+void IconLoader::clearLoadingState()
+{
+    m_resourceLoader = 0;
+    m_loadIsInProgress = false;
 }
 
 }

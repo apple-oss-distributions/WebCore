@@ -27,12 +27,14 @@
 #ifndef XPathUtil_h
 #define XPathUtil_h
 
-#include <wtf/Forward.h>
+#if ENABLE(XPATH)
+
 #include <wtf/Vector.h>
 
 namespace WebCore {
 
     class Node;
+    class String;
 
     namespace XPath {
 
@@ -48,5 +50,7 @@ namespace WebCore {
     }
 
 }
+
+#endif // ENABLE(XPATH)
 
 #endif // XPath_Util_H

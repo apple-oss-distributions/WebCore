@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,34 +26,31 @@
 #include "config.h"
 #include "JSNodeFilter.h"
 
-#include "JSDOMWindowBase.h"
-#include "JSNode.h"
 #include "JSNodeFilterCondition.h"
 #include "NodeFilter.h"
-#include "JSDOMBinding.h"
-
-using namespace JSC;
+#include "kjs_binding.h"
 
 namespace WebCore {
 
-void JSNodeFilter::visitChildren(JSCell* cell, SlotVisitor& visitor)
+void JSNodeFilter::mark()
 {
-    JSNodeFilter* thisObject = jsCast<JSNodeFilter*>(cell);
-    ASSERT_GC_OBJECT_INHERITS(thisObject, &s_info);
-    COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
-    ASSERT(thisObject->structure()->typeInfo().overridesVisitChildren());
-    Base::visitChildren(thisObject, visitor);
-    visitor.addOpaqueRoot(thisObject->impl());
+    impl()->mark();
+    DOMObject::mark();
 }
 
-PassRefPtr<NodeFilter> toNodeFilter(VM& vm, JSValue value)
+NodeFilter* toNodeFilter(KJS::JSValue* val)
 {
-    if (value.inherits(&JSNodeFilter::s_info))
-        return jsCast<JSNodeFilter*>(asObject(value))->impl();
+    if (!val || !val->isObject())
+        return 0;
 
-    RefPtr<NodeFilter> result = NodeFilter::create();
-    result->setCondition(JSNodeFilterCondition::create(vm, result.get(), value));
-    return result.release();
+    if (val->isObject(&JSNodeFilter::info))
+        return static_cast<JSNodeFilter*>(val)->impl();
+
+    KJS::JSObject* o = static_cast<KJS::JSObject*>(val);
+    if (o->implementsCall())
+        return new NodeFilter(new JSNodeFilterCondition(o));
+
+    return 0;
 }
 
 } // namespace WebCore

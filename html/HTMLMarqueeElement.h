@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2007, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,45 +25,29 @@
 #ifndef HTMLMarqueeElement_h
 #define HTMLMarqueeElement_h
 
-#include "ActiveDOMObject.h"
 #include "HTMLElement.h"
 
 namespace WebCore {
 
-class RenderMarquee;
-
-class HTMLMarqueeElement FINAL : public HTMLElement, private ActiveDOMObject {
+class HTMLMarqueeElement : public HTMLElement {
 public:
-    static PassRefPtr<HTMLMarqueeElement> create(const QualifiedName&, Document*);
+    HTMLMarqueeElement(Document*);
+    
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusRequired; }
+    virtual int tagPriority() const { return 3; }
 
-    int minimumDelay() const;
+    virtual bool mapToEntry(const QualifiedName&, MappedAttributeEntry&) const;
+    virtual void parseMappedAttribute(MappedAttribute*);
+
+    int minimumDelay() const { return m_minimumDelay; }
 
     // DOM Functions
 
     void start();
     void stop();
     
-    int scrollAmount() const;
-    void setScrollAmount(int, ExceptionCode&);
-    
-    int scrollDelay() const;
-    void setScrollDelay(int, ExceptionCode&);
-    
-    int loop() const;
-    void setLoop(int, ExceptionCode&);
-    
 private:
-    HTMLMarqueeElement(const QualifiedName&, Document*);
-
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
-
-    // ActiveDOMObject
-    virtual bool canSuspend() const;
-    virtual void suspend(ReasonForSuspension);
-    virtual void resume();
-
-    RenderMarquee* renderMarquee() const;
+    int m_minimumDelay;
 };
 
 } // namespace WebCore

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,16 +26,13 @@
 #include "config.h"
 #include "BString.h"
 
-#include "KURL.h"
+#include "PlatformString.h"
+#include <tchar.h>
 #include <windows.h>
-#include <wtf/text/AtomicString.h>
-#include <wtf/text/WTFString.h>
 
-#if USE(CF)
+#if PLATFORM(CF)
 #include <CoreFoundation/CoreFoundation.h>
 #endif
-
-using namespace JSC;
 
 namespace WebCore {
 
@@ -68,23 +65,7 @@ BString::BString(const String& s)
         m_bstr = SysAllocStringLen(s.characters(), s.length());
 }
 
-BString::BString(const KURL& url)
-{
-    if (url.isNull())
-        m_bstr = 0;
-    else
-        m_bstr = SysAllocStringLen(url.string().characters(), url.string().length());
-}
-
-BString::BString(const AtomicString& s)
-{
-    if (s.isNull())
-        m_bstr = 0;
-    else
-        m_bstr = SysAllocStringLen(s.characters(), s.length());
-}
-
-#if USE(CF)
+#if PLATFORM(CF)
 BString::BString(CFStringRef cfstr)
     : m_bstr(0)
 {
@@ -93,7 +74,7 @@ BString::BString(CFStringRef cfstr)
 
     const UniChar* uniChars = CFStringGetCharactersPtr(cfstr);
     if (uniChars) {
-        m_bstr = SysAllocStringLen((LPCWSTR)uniChars, CFStringGetLength(cfstr));
+        m_bstr = SysAllocStringLen((LPCTSTR)uniChars, CFStringGetLength(cfstr));
         return;
     }
 
@@ -119,14 +100,9 @@ BString::BString(const BString& other)
 
 void BString::adoptBSTR(BSTR bstr)
 {
-    SysFreeString(m_bstr);
+    if (m_bstr)
+        SysFreeString(m_bstr);
     m_bstr = bstr;
-}
-
-void BString::clear()
-{
-    SysFreeString(m_bstr);
-    m_bstr = 0;
 }
 
 BString& BString::operator=(const BString& other)
@@ -154,7 +130,7 @@ bool operator ==(const BString& a, const BString& b)
         return true;
     if (!(BSTR)a || !(BSTR)b)
         return false;
-    return !wcscmp((BSTR)a, (BSTR)b);
+    return !_tcscmp((BSTR)a, (BSTR)b);
 }
 
 bool operator !=(const BString& a, const BString& b)
@@ -170,7 +146,7 @@ bool operator ==(const BString& a, BSTR b)
         return true;
     if (!(BSTR)a || !b)
         return false;
-    return !wcscmp((BSTR)a, b);
+    return !_tcscmp((BSTR)a, b);
 }
 
 bool operator !=(const BString& a, BSTR b)
@@ -186,7 +162,7 @@ bool operator ==(BSTR a, const BString& b)
         return true;
     if (!a || !(BSTR)b)
         return false;
-    return !wcscmp(a, (BSTR)b);
+    return !_tcscmp(a, (BSTR)b);
 }
 
 bool operator !=(BSTR a, const BString& b)

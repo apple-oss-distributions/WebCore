@@ -1,7 +1,9 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2007, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,175 +21,102 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #include "config.h"
 #include "HTMLMarqueeElement.h"
 
-#include "Attribute.h"
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
-#include "ExceptionCode.h"
 #include "HTMLNames.h"
 #include "RenderLayer.h"
-#include "RenderMarquee.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLMarqueeElement::HTMLMarqueeElement(const QualifiedName& tagName, Document* document)
-    : HTMLElement(tagName, document)
-    , ActiveDOMObject(document)
+ // WinIE uses 60ms as the minimum delay by default.
+const int defaultMinimumDelay = 60;
+
+HTMLMarqueeElement::HTMLMarqueeElement(Document* doc)
+    : HTMLElement(marqueeTag, doc)
+    , m_minimumDelay(defaultMinimumDelay)
 {
-    ASSERT(hasTagName(marqueeTag));
 }
 
-PassRefPtr<HTMLMarqueeElement> HTMLMarqueeElement::create(const QualifiedName& tagName, Document* document)
+bool HTMLMarqueeElement::mapToEntry(const QualifiedName& attrName, MappedAttributeEntry& result) const
 {
-    RefPtr<HTMLMarqueeElement> marqueeElement(adoptRef(new HTMLMarqueeElement(tagName, document)));
-    marqueeElement->suspendIfNeeded();
-    return marqueeElement.release();
-}
-
-int HTMLMarqueeElement::minimumDelay() const
-{
-    if (fastGetAttribute(truespeedAttr).isEmpty()) {
-        // WinIE uses 60ms as the minimum delay by default.
-        return 60;
+    if (attrName == widthAttr ||
+        attrName == heightAttr ||
+        attrName == bgcolorAttr ||
+        attrName == vspaceAttr ||
+        attrName == hspaceAttr ||
+        attrName == scrollamountAttr ||
+        attrName == scrolldelayAttr ||
+        attrName == loopAttr ||
+        attrName == behaviorAttr ||
+        attrName == directionAttr) {
+        result = eUniversal;
+        return false;
     }
-    return 0;
+
+    return HTMLElement::mapToEntry(attrName, result);
 }
 
-bool HTMLMarqueeElement::isPresentationAttribute(const QualifiedName& name) const
+void HTMLMarqueeElement::parseMappedAttribute(MappedAttribute *attr)
 {
-    if (name == widthAttr || name == heightAttr || name == bgcolorAttr || name == vspaceAttr || name == hspaceAttr || name == scrollamountAttr || name == scrolldelayAttr || name == loopAttr || name == behaviorAttr || name == directionAttr)
-        return true;
-    return HTMLElement::isPresentationAttribute(name);
-}
-
-void HTMLMarqueeElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
-{
-    if (name == widthAttr) {
-        if (!value.isEmpty())
-            addHTMLLengthToStyle(style, CSSPropertyWidth, value);
-    } else if (name == heightAttr) {
-        if (!value.isEmpty())
-            addHTMLLengthToStyle(style, CSSPropertyHeight, value);
-    } else if (name == bgcolorAttr) {
-        if (!value.isEmpty())
-            addHTMLColorToStyle(style, CSSPropertyBackgroundColor, value);
-    } else if (name == vspaceAttr) {
-        if (!value.isEmpty()) {
-            addHTMLLengthToStyle(style, CSSPropertyMarginTop, value);
-            addHTMLLengthToStyle(style, CSSPropertyMarginBottom, value);
+    if (attr->name() == widthAttr) {
+        if (!attr->value().isEmpty())
+            addCSSLength(attr, CSS_PROP_WIDTH, attr->value());
+    } else if (attr->name() == heightAttr) {
+        if (!attr->value().isEmpty())
+            addCSSLength(attr, CSS_PROP_HEIGHT, attr->value());
+    } else if (attr->name() == bgcolorAttr) {
+        if (!attr->value().isEmpty())
+            addCSSColor(attr, CSS_PROP_BACKGROUND_COLOR, attr->value());
+    } else if (attr->name() == vspaceAttr) {
+        if (!attr->value().isEmpty()) {
+            addCSSLength(attr, CSS_PROP_MARGIN_TOP, attr->value());
+            addCSSLength(attr, CSS_PROP_MARGIN_BOTTOM, attr->value());
         }
-    } else if (name == hspaceAttr) {
-        if (!value.isEmpty()) {
-            addHTMLLengthToStyle(style, CSSPropertyMarginLeft, value);
-            addHTMLLengthToStyle(style, CSSPropertyMarginRight, value);
+    } else if (attr->name() == hspaceAttr) {
+        if (!attr->value().isEmpty()) {
+            addCSSLength(attr, CSS_PROP_MARGIN_LEFT, attr->value());
+            addCSSLength(attr, CSS_PROP_MARGIN_RIGHT, attr->value());
         }
-    } else if (name == scrollamountAttr) {
-        if (!value.isEmpty())
-            addHTMLLengthToStyle(style, CSSPropertyWebkitMarqueeIncrement, value);
-    } else if (name == scrolldelayAttr) {
-        if (!value.isEmpty())
-            addHTMLLengthToStyle(style, CSSPropertyWebkitMarqueeSpeed, value);
-    } else if (name == loopAttr) {
-        if (!value.isEmpty()) {
-            if (value == "-1" || equalIgnoringCase(value, "infinite"))
-                addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitMarqueeRepetition, CSSValueInfinite);
+    } else if (attr->name() == scrollamountAttr) {
+        if (!attr->value().isEmpty())
+            addCSSLength(attr, CSS_PROP__WEBKIT_MARQUEE_INCREMENT, attr->value());
+    } else if (attr->name() == scrolldelayAttr) {
+        if (!attr->value().isEmpty())
+            addCSSLength(attr, CSS_PROP__WEBKIT_MARQUEE_SPEED, attr->value());
+    } else if (attr->name() == loopAttr) {
+        if (!attr->value().isEmpty()) {
+            if (attr->value() == "-1" || equalIgnoringCase(attr->value(), "infinite"))
+                addCSSProperty(attr, CSS_PROP__WEBKIT_MARQUEE_REPETITION, CSS_VAL_INFINITE);
             else
-                addHTMLLengthToStyle(style, CSSPropertyWebkitMarqueeRepetition, value);
+                addCSSLength(attr, CSS_PROP__WEBKIT_MARQUEE_REPETITION, attr->value());
         }
-    } else if (name == behaviorAttr) {
-        if (!value.isEmpty())
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitMarqueeStyle, value);
-    } else if (name == directionAttr) {
-        if (!value.isEmpty())
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyWebkitMarqueeDirection, value);
-    } else
-        HTMLElement::collectStyleForPresentationAttribute(name, value, style);
+    } else if (attr->name() == behaviorAttr) {
+        if (!attr->value().isEmpty())
+            addCSSProperty(attr, CSS_PROP__WEBKIT_MARQUEE_STYLE, attr->value());
+    } else if (attr->name() == directionAttr) {
+        if (!attr->value().isEmpty())
+            addCSSProperty(attr, CSS_PROP__WEBKIT_MARQUEE_DIRECTION, attr->value());
+    } else if (attr->name() == truespeedAttr)
+        m_minimumDelay = !attr->isNull() ? 0 : defaultMinimumDelay;
+    else
+        HTMLElement::parseMappedAttribute(attr);
 }
 
 void HTMLMarqueeElement::start()
 {
-    if (RenderMarquee* marqueeRenderer = renderMarquee())
-        marqueeRenderer->start();
+    if (renderer() && renderer()->hasLayer() && renderer()->layer()->marquee())
+        renderer()->layer()->marquee()->start();
 }
 
 void HTMLMarqueeElement::stop()
 {
-    if (RenderMarquee* marqueeRenderer = renderMarquee())
-        marqueeRenderer->stop();
-}
-
-int HTMLMarqueeElement::scrollAmount() const
-{
-    bool ok;
-    int scrollAmount = fastGetAttribute(scrollamountAttr).toInt(&ok);
-    return ok && scrollAmount >= 0 ? scrollAmount : RenderStyle::initialMarqueeIncrement().intValue();
-}
-    
-void HTMLMarqueeElement::setScrollAmount(int scrollAmount, ExceptionCode& ec)
-{
-    if (scrollAmount < 0)
-        ec = INDEX_SIZE_ERR;
-    else
-        setIntegralAttribute(scrollamountAttr, scrollAmount);
-}
-    
-int HTMLMarqueeElement::scrollDelay() const
-{
-    bool ok;
-    int scrollDelay = fastGetAttribute(scrolldelayAttr).toInt(&ok);
-    return ok && scrollDelay >= 0 ? scrollDelay : RenderStyle::initialMarqueeSpeed();
-}
-
-void HTMLMarqueeElement::setScrollDelay(int scrollDelay, ExceptionCode& ec)
-{
-    if (scrollDelay < 0)
-        ec = INDEX_SIZE_ERR;
-    else
-        setIntegralAttribute(scrolldelayAttr, scrollDelay);
-}
-    
-int HTMLMarqueeElement::loop() const
-{
-    bool ok;
-    int loopValue = fastGetAttribute(loopAttr).toInt(&ok);
-    return ok && loopValue > 0 ? loopValue : -1;
-}
-    
-void HTMLMarqueeElement::setLoop(int loop, ExceptionCode& ec)
-{
-    if (loop <= 0 && loop != -1)
-        ec = INDEX_SIZE_ERR;
-    else
-        setIntegralAttribute(loopAttr, loop);
-}
-
-bool HTMLMarqueeElement::canSuspend() const
-{
-    return true;
-}
-
-void HTMLMarqueeElement::suspend(ReasonForSuspension)
-{
-    if (RenderMarquee* marqueeRenderer = renderMarquee())
-        marqueeRenderer->suspend();
-}
-
-void HTMLMarqueeElement::resume()
-{
-    if (RenderMarquee* marqueeRenderer = renderMarquee())
-        marqueeRenderer->updateMarqueePosition();
-}
-
-RenderMarquee* HTMLMarqueeElement::renderMarquee() const
-{
-    if (renderer() && renderer()->hasLayer())
-        return renderBoxModelObject()->layer()->marquee();
-    return 0;
+    if (renderer() && renderer()->hasLayer() && renderer()->layer()->marquee())
+        renderer()->layer()->marquee()->stop();
 }
 
 } // namespace WebCore

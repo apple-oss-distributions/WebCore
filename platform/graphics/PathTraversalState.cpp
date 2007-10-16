@@ -1,5 +1,7 @@
 /*
- * Copyright (C) 2006, 2007 Eric Seidel <eric@webkit.org>
+ * This file is part of the WebKit open source project.
+ *
+ * Copyright (C) 2006, 2007 Eric Seidel (eric@webkit.org)
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,8 +22,9 @@
 #include "config.h"
 #include "PathTraversalState.h"
 
-#include <wtf/MathExtras.h>
-#include <wtf/Vector.h>
+#include "Path.h"
+
+#include <math.h>
 
 namespace WebCore {
 
@@ -116,20 +119,17 @@ struct CubicBezier {
 template<class CurveType>
 static float curveLength(PathTraversalState& traversalState, CurveType curve)
 {
-    static const unsigned curveStackDepthLimit = 20;
-
     Vector<CurveType> curveStack;
     curveStack.append(curve);
 
-    float totalLength = 0;
+    float totalLength = 0.0f;
     do {
         float length = curve.approximateDistance();
-        if ((length - distanceLine(curve.start, curve.end)) > kPathSegmentLengthTolerance && curveStack.size() <= curveStackDepthLimit) {
-            CurveType leftCurve;
-            CurveType rightCurve;
-            curve.split(leftCurve, rightCurve);
-            curve = leftCurve;
-            curveStack.append(rightCurve);
+        if ((length - distanceLine(curve.start, curve.end)) > kPathSegmentLengthTolerance) {
+            CurveType left, right;
+            curve.split(left, right);
+            curve = left;
+            curveStack.append(right);
         } else {
             totalLength += length;
             if (traversalState.m_action == PathTraversalState::TraversalPointAtLength
@@ -150,24 +150,24 @@ static float curveLength(PathTraversalState& traversalState, CurveType curve)
 PathTraversalState::PathTraversalState(PathTraversalAction action)
     : m_action(action)
     , m_success(false)
-    , m_totalLength(0)
+    , m_totalLength(0.0f)
     , m_segmentIndex(0)
-    , m_desiredLength(0)
-    , m_normalAngle(0)
+    , m_desiredLength(0.0f)
+    , m_normalAngle(0.0f)
 {
 }
 
 float PathTraversalState::closeSubpath()
 {
     float distance = distanceLine(m_current, m_start);
-    m_current = m_control1 = m_control2 = m_start;
+    m_start = m_control1 = m_control2 = m_current;
     return distance;
 }
 
 float PathTraversalState::moveTo(const FloatPoint& point)
 {
     m_current = m_start = m_control1 = m_control2 = point;
-    return 0;
+    return 0.0f;
 }
 
 float PathTraversalState::lineTo(const FloatPoint& point)
@@ -201,23 +201,6 @@ float PathTraversalState::cubicBezierTo(const FloatPoint& newControl1, const Flo
         m_current = newEnd;
 
     return distance;
-}
-
-void PathTraversalState::processSegment()
-{
-    if (m_action == TraversalSegmentAtLength && m_totalLength >= m_desiredLength)
-        m_success = true;
-        
-    if ((m_action == TraversalPointAtLength || m_action == TraversalNormalAngleAtLength) && m_totalLength >= m_desiredLength) {
-        float slope = FloatPoint(m_current - m_previous).slopeAngleRadians();
-        if (m_action == TraversalPointAtLength) {
-            float offset = m_desiredLength - m_totalLength;
-            m_current.move(offset * cosf(slope), offset * sinf(slope));
-        } else
-            m_normalAngle = rad2deg(slope);
-        m_success = true;
-    }
-    m_previous = m_current;
 }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2005, 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004-2006 Apple Computer, Inc.  All rights reserved.
  * Copyright (C) 2006 James G. Speth (speth@end.com)
  * Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
  *
@@ -26,136 +26,184 @@
  */
 
 #import "config.h"
+#import "DOMCSS.h"
 
+#import "CSSCharsetRule.h"
+#import "CSSFontFaceRule.h"
+#import "CSSImportRule.h"
+#import "CSSMediaRule.h"
+#import "CSSPageRule.h"
+#import "CSSPrimitiveValue.h"
 #import "CSSRule.h"
+#import "CSSRuleList.h"
+#import "CSSStyleDeclaration.h"
+#import "CSSStyleRule.h"
 #import "CSSStyleSheet.h"
-#import "CSSValue.h"
-#import "DOMCSSCharsetRule.h"
-#import "DOMCSSFontFaceRule.h"
-#import "DOMCSSImportRule.h"
-#import "DOMCSSMediaRule.h"
-#import "DOMCSSPageRule.h"
-#import "DOMCSSPrimitiveValue.h"
-#import "DOMCSSRuleInternal.h"
-#import "DOMCSSStyleDeclaration.h"
-#import "DOMCSSStyleRule.h"
-#import "DOMCSSStyleSheet.h"
-#if ENABLE(CSS3_CONDITIONAL_RULES)
-#import "DOMCSSSupportsRule.h"
-#endif
-#import "DOMCSSUnknownRule.h"
-#import "DOMCSSValueInternal.h"
-#import "DOMCSSValueList.h"
+#import "CSSValueList.h"
 #import "DOMInternal.h"
-#import "DOMStyleSheetInternal.h"
-#import "DOMWebKitCSSKeyframeRule.h"
-#import "DOMWebKitCSSKeyframesRule.h"
-#import "DOMWebKitCSSTransformValue.h"
+#import "DOMPrivate.h"
+#import "StyleSheet.h"
+#import <objc/objc-class.h>
 
-#if ENABLE(CSS_SHADERS)
-#import "DOMWebKitCSSFilterRule.h"
-#endif
-
-#if ENABLE(CSS_FILTERS)
-#import "DOMWebKitCSSFilterValue.h"
-#endif
-
-#if ENABLE(CSS_REGIONS)
-#import "DOMWebKitCSSRegionRule.h"
-#endif
-
-#if ENABLE(CSS_DEVICE_ADAPTATION)
-#import "DOMWebKitCSSViewportRule.h"
-#endif
-
-#if ENABLE(SHADOW_DOM)
-#import "DOMCSSHostRule.h"
+#if ENABLE(SVG)
+#import "DOMSVGColor.h"
+#import "DOMSVGPaint.h"
 #endif
 
 //------------------------------------------------------------------------------------------
 // DOMStyleSheet
 
-Class kitClass(WebCore::StyleSheet* impl)
+@implementation DOMStyleSheet (WebCoreInternal)
+
+- (WebCore::StyleSheet *)_styleSheet
 {
-    if (impl->isCSSStyleSheet())
-        return [DOMCSSStyleSheet class];
-    return [DOMStyleSheet class];
+    return reinterpret_cast<WebCore::StyleSheet*>(_internal);
 }
+
+- (id)_initWithStyleSheet:(WebCore::StyleSheet *)impl
+{
+    [super _init];
+    _internal = reinterpret_cast<DOMObjectInternal*>(impl);
+    impl->ref();
+    WebCore::addDOMWrapper(self, impl);
+    return self;
+}
+
++ (DOMStyleSheet *)_wrapStyleSheet:(WebCore::StyleSheet *)impl
+{
+    if (!impl)
+        return nil;
+
+    id cachedInstance;
+    cachedInstance = WebCore::getDOMWrapper(impl);
+    if (cachedInstance)
+        return [[cachedInstance retain] autorelease];
+    
+    Class wrapperClass;
+    if (impl->isCSSStyleSheet())
+        wrapperClass = [DOMCSSStyleSheet class];
+    else
+        wrapperClass = [DOMStyleSheet class];
+    return [[[wrapperClass alloc] _initWithStyleSheet:impl] autorelease];
+}
+
+@end
 
 //------------------------------------------------------------------------------------------
 // DOMCSSRule
 
-Class kitClass(WebCore::CSSRule* impl)
+@implementation DOMCSSRule (WebCoreInternal)
+
+- (WebCore::CSSRule *)_CSSRule
 {
+    return reinterpret_cast<WebCore::CSSRule*>(_internal);
+}
+
+- (id)_initWithCSSRule:(WebCore::CSSRule *)impl
+{
+    [super _init];
+    _internal = reinterpret_cast<DOMObjectInternal*>(impl);
+    impl->ref();
+    WebCore::addDOMWrapper(self, impl);
+    return self;
+}
+
++ (DOMCSSRule *)_wrapCSSRule:(WebCore::CSSRule *)impl
+{
+    if (!impl)
+        return nil;
+
+    id cachedInstance;
+    cachedInstance = WebCore::getDOMWrapper(impl);
+    if (cachedInstance)
+        return [[cachedInstance retain] autorelease];
+
+    Class wrapperClass = nil;
     switch (impl->type()) {
         case DOM_UNKNOWN_RULE:
-            return [DOMCSSUnknownRule class];
+            wrapperClass = [DOMCSSUnknownRule class];
+            break;
         case DOM_STYLE_RULE:
-            return [DOMCSSStyleRule class];
+            wrapperClass = [DOMCSSStyleRule class];
+            break;
         case DOM_CHARSET_RULE:
-            return [DOMCSSCharsetRule class];
+            wrapperClass = [DOMCSSCharsetRule class];
+            break;
         case DOM_IMPORT_RULE:
-            return [DOMCSSImportRule class];
+            wrapperClass = [DOMCSSImportRule class];
+            break;
         case DOM_MEDIA_RULE:
-            return [DOMCSSMediaRule class];
+            wrapperClass = [DOMCSSMediaRule class];
+            break;
         case DOM_FONT_FACE_RULE:
-            return [DOMCSSFontFaceRule class];
+            wrapperClass = [DOMCSSFontFaceRule class];
+            break;
         case DOM_PAGE_RULE:
-            return [DOMCSSPageRule class];
-        case DOM_WEBKIT_KEYFRAMES_RULE:
-            return [DOMWebKitCSSKeyframesRule class];
-        case DOM_WEBKIT_KEYFRAME_RULE:
-            return [DOMWebKitCSSKeyframeRule class];
-#if ENABLE(CSS3_CONDITIONAL_RULES)
-        case DOM_SUPPORTS_RULE:
-            return [DOMCSSSupportsRule class];
-#endif
-#if ENABLE(CSS_DEVICE_ADAPTATION)
-        case DOM_WEBKIT_VIEWPORT_RULE:
-            return [DOMWebKitCSSViewportRule class];
-#endif
-#if ENABLE(CSS_REGIONS)
-        case DOM_WEBKIT_REGION_RULE:
-            return [DOMWebKitCSSRegionRule class];
-#endif
-#if ENABLE(SHADOW_DOM)
-        case DOM_HOST_RULE:
-            return [DOMCSSHostRule class];
-#endif
-#if ENABLE(CSS_SHADERS)
-        case DOM_WEBKIT_FILTER_RULE:
-            return [DOMWebKitCSSFilterRule class];
-#endif
+            wrapperClass = [DOMCSSPageRule class];
+            break;
     }
-    ASSERT_NOT_REACHED();
-    return nil;
+    return [[[wrapperClass alloc] _initWithCSSRule:impl] autorelease];
 }
+
+@end
+
 
 //------------------------------------------------------------------------------------------
 // DOMCSSValue
 
-Class kitClass(WebCore::CSSValue* impl)
+@implementation DOMCSSValue (WebCoreInternal)
+
+- (WebCore::CSSValue *)_CSSValue
 {
-    switch (impl->cssValueType()) {
-        case WebCore::CSSValue::CSS_PRIMITIVE_VALUE:
-            return [DOMCSSPrimitiveValue class];
-        case WebCore::CSSValue::CSS_VALUE_LIST:
-            if (impl->isWebKitCSSTransformValue())
-                return [DOMWebKitCSSTransformValue class];
-#if ENABLE(CSS_FILTERS)
-            if (impl->isWebKitCSSFilterValue())
-                return [DOMWebKitCSSFilterValue class];
-#endif
-            return [DOMCSSValueList class];
-        case WebCore::CSSValue::CSS_INHERIT:
-        case WebCore::CSSValue::CSS_INITIAL:
-            return [DOMCSSValue class];
-        case WebCore::CSSValue::CSS_CUSTOM:
-            return [DOMCSSValue class];
-    }
-    ASSERT_NOT_REACHED();
-    return nil;
+    return reinterpret_cast<WebCore::CSSValue*>(_internal);
 }
+
+- (id)_initWithCSSValue:(WebCore::CSSValue *)impl
+{
+    [super _init];
+    _internal = reinterpret_cast<DOMObjectInternal*>(impl);
+    impl->ref();
+    WebCore::addDOMWrapper(self, impl);
+    return self;
+}
+
++ (DOMCSSValue *)_wrapCSSValue:(WebCore::CSSValue *)impl
+{
+    if (!impl)
+        return nil;
+
+    id cachedInstance;
+    cachedInstance = WebCore::getDOMWrapper(impl);
+    if (cachedInstance)
+        return [[cachedInstance retain] autorelease];
+
+    Class wrapperClass = nil;
+    switch (impl->cssValueType()) {
+        case DOM_CSS_PRIMITIVE_VALUE:
+            wrapperClass = [DOMCSSPrimitiveValue class];
+            break;
+        case DOM_CSS_VALUE_LIST:
+            wrapperClass = [DOMCSSValueList class];
+            break;
+        case DOM_CSS_INHERIT:
+            wrapperClass = [DOMCSSValue class];
+            break;
+        case DOM_CSS_CUSTOM:
+#if ENABLE(SVG)
+            if (impl->isSVGPaint())
+                wrapperClass = [DOMSVGPaint class];
+            else if (impl->isSVGColor())
+                wrapperClass = [DOMSVGColor class];
+            else
+#endif
+                wrapperClass = [DOMCSSValue class];
+            break;
+    }
+    return [[[wrapperClass alloc] _initWithCSSValue:impl] autorelease];
+}
+
+@end
+
 
 //------------------------------------------------------------------------------------------
 // DOMCSSStyleDeclaration CSS2 Properties

@@ -1,12 +1,9 @@
 /*
  * This file is part of the WebKit project.
  *
- * Copyright (C) 2008 Nokia Corporation and/or its subsidiary(-ies)
- *
  * Copyright (C) 2006 Zack Rusin <zack@kde.org>
  *               2006 Dirk Mueller <mueller@kde.org>
  *               2006 Nikolas Zimmermann <zimmermann@kde.org>
- * Copyright (C) 2008 Holger Hans Peter Freyther
  *
  * All rights reserved.
  *
@@ -28,121 +25,35 @@
  */
 
 #include "config.h"
+
 #include "RenderThemeQt.h"
 
-#include "CSSValueKeywords.h"
-#include "Chrome.h"
-#include "ChromeClient.h"
-#include "Color.h"
-#include "ExceptionCodePlaceholder.h"
-#include "FileList.h"
-#include "Font.h"
-#include "FontSelector.h"
-#include "GraphicsContext.h"
-#include "HTMLInputElement.h"
-#include "HTMLMediaElement.h"
-#include "HTMLNames.h"
-#include "LocalizedStrings.h"
-#if ENABLE(VIDEO)
-#include "MediaControlElements.h"
-#endif
-#include "NotImplemented.h"
-#include "Page.h"
-#include "PaintInfo.h"
-#include "RenderBox.h"
-#if ENABLE(PROGRESS_ELEMENT)
-#include "RenderProgress.h"
-#endif
-#include "RenderTheme.h"
-#include "RenderThemeQtMobile.h"
-#include "ScrollbarTheme.h"
-#include "StyleResolver.h"
-#include "TimeRanges.h"
-#include "UserAgentStyleSheets.h"
-#include <wtf/text/StringBuilder.h>
-
+#include <QApplication>
 #include <QColor>
-#include <QFile>
-#include <QFontMetrics>
-#include <QGuiApplication>
+#include <QDebug>
+#include <QStyle>
+#include <QWidget>
+#include <QPainter>
+#include <QStyleOptionButton>
+#include <QStyleOptionFrameV2>
 
-#include <QStyleHints>
+#include "Color.h"
+#include "Document.h"
+#include "Font.h"
+#include "RenderTheme.h"
+#include "GraphicsContext.h"
 
 namespace WebCore {
 
-using namespace HTMLNames;
+RenderTheme* theme()
+{
+    static RenderThemeQt rt;
+    return &rt;
+}
 
-// These values all match Safari/Win/Chromium
-static const float defaultControlFontPixelSize = 13;
-static const float defaultCancelButtonSize = 9;
-static const float minCancelButtonSize = 5;
-static const float maxCancelButtonSize = 21;
-static const float defaultSearchFieldResultsDecorationSize = 13;
-static const float minSearchFieldResultsDecorationSize = 9;
-static const float maxSearchFieldResultsDecorationSize = 30;
-static const float defaultSearchFieldResultsButtonWidth = 18;
-
-static QtThemeFactoryFunction themeFactory;
-static ScrollbarTheme* scrollbarTheme;
-
-RenderThemeQt::RenderThemeQt(Page* page)
+RenderThemeQt::RenderThemeQt()
     : RenderTheme()
-    , m_page(page)
 {
-    m_buttonFontFamily = QGuiApplication::font().family();
-}
-
-void RenderThemeQt::setCustomTheme(QtThemeFactoryFunction factory, ScrollbarTheme* customScrollbarTheme)
-{
-    themeFactory = factory;
-    scrollbarTheme = customScrollbarTheme;
-}
-
-ScrollbarTheme* RenderThemeQt::customScrollbarTheme()
-{
-    return scrollbarTheme;
-}
-
-static PassRefPtr<RenderTheme> createTheme(Page* page)
-{
-    if (themeFactory)
-        return themeFactory(page);
-    return RenderThemeQtMobile::create(page);
-}
-
-PassRefPtr<RenderTheme> RenderTheme::themeForPage(Page* page)
-{
-    if (page)
-        return createTheme(page);
-    static RenderTheme* fallback = createTheme(0).leakRef();
-    return fallback;
-}
-
-// Remove this when SearchFieldPart is style-able in RenderTheme::isControlStyled()
-bool RenderThemeQt::isControlStyled(const RenderStyle* style, const BorderData& border, const FillLayer& fill, const Color& backgroundColor) const
-{
-    switch (style->appearance()) {
-    case SearchFieldPart:
-        // Test the style to see if the UA border and background match.
-        return (style->border() != border
-                || *style->backgroundLayers() != fill
-                || style->visitedDependentColor(CSSPropertyBackgroundColor) != backgroundColor);
-    default:
-        return RenderTheme::isControlStyled(style, border, fill, backgroundColor);
-    }
-}
-
-String RenderThemeQt::extraDefaultStyleSheet()
-{
-    StringBuilder result;
-    result.append(RenderTheme::extraDefaultStyleSheet());
-    // When no theme factory is provided we default to using our platform independent "Mobile Qt" theme,
-    // which requires the following stylesheets.
-    if (!themeFactory) {
-        result.append(String(themeQtNoListboxesUserAgentStyleSheet, sizeof(themeQtNoListboxesUserAgentStyleSheet)));
-        result.append(String(mobileThemeQtUserAgentStyleSheet, sizeof(mobileThemeQtUserAgentStyleSheet)));
-    }
-    return result.toString();
 }
 
 bool RenderThemeQt::supportsHover(const RenderStyle*) const
@@ -152,39 +63,14 @@ bool RenderThemeQt::supportsHover(const RenderStyle*) const
 
 bool RenderThemeQt::supportsFocusRing(const RenderStyle* style) const
 {
-    switch (style->appearance()) {
-    case CheckboxPart:
-    case RadioPart:
-    case PushButtonPart:
-    case SquareButtonPart:
-    case ButtonPart:
-    case ButtonBevelPart:
-    case ListboxPart:
-    case ListItemPart:
-    case MenulistPart:
-    case MenulistButtonPart:
-    case SliderHorizontalPart:
-    case SliderVerticalPart:
-    case SliderThumbHorizontalPart:
-    case SliderThumbVerticalPart:
-    case SearchFieldPart:
-    case SearchFieldResultsButtonPart:
-    case SearchFieldCancelButtonPart:
-    case TextFieldPart:
-    case TextAreaPart:
-        return true;
-    default:
-        return false;
-    }
+    return supportsFocus(style->appearance());
 }
 
-int RenderThemeQt::baselinePosition(const RenderObject* o) const
+short RenderThemeQt::baselinePosition(const RenderObject* o) const
 {
-    if (!o->isBox())
-        return 0;
-
-    if (o->style()->appearance() == CheckboxPart || o->style()->appearance() == RadioPart)
-        return toRenderBox(o)->marginTop() + toRenderBox(o)->height() - 2; // Same as in old khtml
+    if (o->style()->appearance() == CheckboxAppearance ||
+        o->style()->appearance() == RadioAppearance)
+        return o->marginTop() + o->height() - 2; // Same as in old khtml
     return RenderTheme::baselinePosition(o);
 }
 
@@ -194,7 +80,7 @@ bool RenderThemeQt::controlSupportsTints(const RenderObject* o) const
         return false;
 
     // Checkboxes only have tint when checked.
-    if (o->style()->appearance() == CheckboxPart)
+    if (o->style()->appearance() == CheckboxAppearance)
         return isChecked(o);
 
     // For now assume other controls have tint if enabled.
@@ -206,709 +92,474 @@ bool RenderThemeQt::supportsControlTints() const
     return true;
 }
 
-QRect RenderThemeQt::inflateButtonRect(const QRect& originalRect) const
-{
-    return originalRect;
-}
-
-void RenderThemeQt::adjustRepaintRect(const RenderObject* o, IntRect& rect)
+void RenderThemeQt::adjustRepaintRect(const RenderObject* o, IntRect& r)
 {
     switch (o->style()->appearance()) {
-    case CheckboxPart:
-        break;
-    case RadioPart:
-        break;
-    case PushButtonPart:
-    case ButtonPart: {
-        QRect inflatedRect = inflateButtonRect(rect);
-        rect = IntRect(inflatedRect.x(), inflatedRect.y(), inflatedRect.width(), inflatedRect.height());
+    case CheckboxAppearance: {
         break;
     }
-    case MenulistPart:
+    case RadioAppearance: {
         break;
+    }
+    case PushButtonAppearance:
+    case ButtonAppearance: {
+        break;
+    }
+    case MenulistAppearance: {
+        break;
+    }
     default:
         break;
     }
 }
 
+bool RenderThemeQt::isControlStyled(const RenderStyle* style, const BorderData& border,
+                                     const BackgroundLayer& background, const Color& backgroundColor) const
+{
+    if (style->appearance() == TextFieldAppearance || style->appearance() == TextAreaAppearance)
+        return style->border() != border;
+
+    return RenderTheme::isControlStyled(style, border, background, backgroundColor);
+}
+
+void RenderThemeQt::paintResizeControl(GraphicsContext*, const IntRect&)
+{
+}
+
+
 Color RenderThemeQt::platformActiveSelectionBackgroundColor() const
 {
-    return colorPalette().brush(QPalette::Active, QPalette::Highlight).color();
+    QPalette pal = QApplication::palette();
+    return pal.brush(QPalette::Active, QPalette::Highlight).color();
 }
 
 Color RenderThemeQt::platformInactiveSelectionBackgroundColor() const
 {
-    return colorPalette().brush(QPalette::Inactive, QPalette::Highlight).color();
+    QPalette pal = QApplication::palette();
+    return pal.brush(QPalette::Inactive, QPalette::Highlight).color();
 }
 
 Color RenderThemeQt::platformActiveSelectionForegroundColor() const
 {
-    return colorPalette().brush(QPalette::Active, QPalette::HighlightedText).color();
+    QPalette pal = QApplication::palette();
+    return pal.brush(QPalette::Active, QPalette::HighlightedText).color();
 }
 
 Color RenderThemeQt::platformInactiveSelectionForegroundColor() const
 {
-    return colorPalette().brush(QPalette::Inactive, QPalette::HighlightedText).color();
+    QPalette pal = QApplication::palette();
+    return pal.brush(QPalette::Inactive, QPalette::HighlightedText).color();
 }
 
-Color RenderThemeQt::platformFocusRingColor() const
-{
-    return colorPalette().brush(QPalette::Active, QPalette::Highlight).color();
-}
-
-void RenderThemeQt::systemFont(int, FontDescription&) const
+void RenderThemeQt::systemFont(int propId, FontDescription& fontDescription) const
 {
     // no-op
 }
 
-Color RenderThemeQt::systemColor(int cssValueId) const
-{
-    QPalette pal = colorPalette();
-    switch (cssValueId) {
-    case CSSValueButtontext:
-        return pal.brush(QPalette::Active, QPalette::ButtonText).color();
-    case CSSValueCaptiontext:
-        return pal.brush(QPalette::Active, QPalette::Text).color();
-    default:
-        return RenderTheme::systemColor(cssValueId);
-    }
-}
-
 int RenderThemeQt::minimumMenuListSize(RenderStyle*) const
 {
-    // FIXME: Later we need a way to query the UI process for the dpi
-    const QFontMetrics fm(QGuiApplication::font());
-    return fm.width(QLatin1Char('x'));
+    const QFontMetrics &fm = QApplication::fontMetrics();
+    return 7 * fm.width(QLatin1Char('x'));
+}
+
+void RenderThemeQt::adjustSliderThumbSize(RenderObject* o) const
+{
+    RenderTheme::adjustSliderThumbSize(o);
+}
+
+bool RenderThemeQt::paintCheckbox(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r)
+{
+    return paintButton(o, i, r);
 }
 
 void RenderThemeQt::setCheckboxSize(RenderStyle* style) const
 {
-    computeSizeBasedOnStyle(style);
+    // If the width and height are both specified, then we have nothing to do.
+    if (!style->width().isIntrinsicOrAuto() && !style->height().isAuto())
+        return;
+
+    // FIXME:  A hard-coded size of 13 is used.  This is wrong but necessary for now.  It matches Firefox.
+    // At different DPI settings on Windows, querying the theme gives you a larger size that accounts for
+    // the higher DPI.  Until our entire engine honors a DPI setting other than 96, we can't rely on the theme's
+    // metrics.
+    const int ff = 13;
+    if (style->width().isIntrinsicOrAuto())
+        style->setWidth(Length(ff, Fixed));
+
+    if (style->height().isAuto())
+        style->setHeight(Length(ff, Fixed));
 }
 
-bool RenderThemeQt::paintCheckbox(RenderObject* o, const PaintInfo& i, const IntRect& r)
+bool RenderThemeQt::paintRadio(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r)
 {
     return paintButton(o, i, r);
 }
 
 void RenderThemeQt::setRadioSize(RenderStyle* style) const
 {
-    computeSizeBasedOnStyle(style);
+    // This is the same as checkboxes.
+    setCheckboxSize(style);
 }
 
-bool RenderThemeQt::paintRadio(RenderObject* o, const PaintInfo& i, const IntRect& r)
+void RenderThemeQt::adjustButtonStyle(CSSStyleSelector* selector, RenderStyle* style, Element* e) const
 {
-    return paintButton(o, i, r);
+    // Ditch the border.
+    style->resetBorder();
+
+    // Height is locked to auto.
+    style->setHeight(Length(Auto));
+
+    // White-space is locked to pre
+    style->setWhiteSpace(PRE);
+
+    setButtonSize(style);
+
+    setButtonPadding(style);
+}
+
+bool RenderThemeQt::paintButton(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r)
+{
+    QStyle* style = 0;
+    QPainter* painter = 0;
+    QWidget* widget = 0;
+
+    if (!getStylePainterAndWidgetFromPaintInfo(i, style, painter, widget))
+        return true;
+
+    QStyleOptionButton option;
+    option.initFrom(widget);
+    option.rect = r;
+
+    // Get the correct theme data for a button
+    EAppearance appearance = applyTheme(option, o);
+
+    if(appearance == PushButtonAppearance || appearance == ButtonAppearance)
+        style->drawControl(QStyle::CE_PushButton, &option, painter);
+    else if(appearance == RadioAppearance)
+        style->drawControl(QStyle::CE_RadioButton, &option, painter);
+    else if(appearance == CheckboxAppearance)
+        style->drawControl(QStyle::CE_CheckBox, &option, painter);
+
+    return false;
 }
 
 void RenderThemeQt::setButtonSize(RenderStyle* style) const
 {
-    computeSizeBasedOnStyle(style);
+    setPrimitiveSize(style);
 }
 
-void RenderThemeQt::adjustTextFieldStyle(StyleResolver*, RenderStyle* style, Element*) const
+bool RenderThemeQt::paintTextField(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r)
 {
-    // Resetting the style like this leads to differences like:
-    // - RenderTextControl {INPUT} at (2,2) size 168x25 [bgcolor=#FFFFFF] border: (2px inset #000000)]
-    // + RenderTextControl {INPUT} at (2,2) size 166x26
-    // in layout tests when a CSS style is applied that doesn't affect background color, border or
-    // padding. Just worth keeping in mind!
-    style->setBackgroundColor(Color::transparent);
-    style->resetBorder();
-    style->resetPadding();
-    computeSizeBasedOnStyle(style);
-}
+    QStyle* style = 0;
+    QPainter* painter = 0;
+    QWidget* widget = 0;
 
-void RenderThemeQt::adjustTextAreaStyle(StyleResolver* selector, RenderStyle* style, Element* element) const
-{
-    adjustTextFieldStyle(selector, style, element);
-}
+    if (!getStylePainterAndWidgetFromPaintInfo(i, style, painter, widget))
+        return true;
 
-bool RenderThemeQt::paintTextArea(RenderObject* o, const PaintInfo& i, const IntRect& r)
-{
-    return paintTextField(o, i, r);
-}
+    QStyleOptionFrameV2 panel;
+    
+    panel.initFrom(widget);
+    panel.rect = r;
+    panel.state |= QStyle::State_Sunken;
+    panel.features = QStyleOptionFrameV2::None;
 
-void RenderThemeQt::adjustMenuListStyle(StyleResolver*, RenderStyle* style, Element*) const
-{
-    style->resetBorder();
+    // Get the correct theme data for a button
+    EAppearance appearance = applyTheme(panel, o);
+    Q_ASSERT(appearance == TextFieldAppearance);
 
-    // Height is locked to auto.
-    style->setHeight(Length(Auto));
-
-    // White-space is locked to pre
-    style->setWhiteSpace(PRE);
-
-    computeSizeBasedOnStyle(style);
-
-    // Add in the padding that we'd like to use.
-    setPopupPadding(style);
-}
-
-void RenderThemeQt::adjustMenuListButtonStyle(StyleResolver*, RenderStyle* style, Element*) const
-{
-    // Height is locked to auto.
-    style->setHeight(Length(Auto));
-
-    // White-space is locked to pre
-    style->setWhiteSpace(PRE);
-
-    computeSizeBasedOnStyle(style);
-
-    // Add in the padding that we'd like to use.
-    setPopupPadding(style);
-}
-
-#if ENABLE(PROGRESS_ELEMENT)
-double RenderThemeQt::animationRepeatIntervalForProgressBar(RenderProgress* renderProgress) const
-{
-    if (renderProgress->position() >= 0)
-        return 0;
-
-    // FIXME: Use hard-coded value until http://bugreports.qt.nokia.com/browse/QTBUG-9171 is fixed.
-    // Use the value from windows style which is 10 fps.
-    return 0.1;
-}
-
-void RenderThemeQt::adjustProgressBarStyle(StyleResolver*, RenderStyle* style, Element*) const
-{
-    style->setBoxShadow(nullptr);
-}
-#endif
-
-void RenderThemeQt::adjustSliderTrackStyle(StyleResolver*, RenderStyle* style, Element*) const
-{
-    style->setBoxShadow(nullptr);
-}
-
-void RenderThemeQt::adjustSliderThumbStyle(StyleResolver* styleResolver, RenderStyle* style, Element* element) const
-{
-    RenderTheme::adjustSliderThumbStyle(styleResolver, style, element);
-    style->setBoxShadow(nullptr);
-}
-
-#if ENABLE(DATALIST_ELEMENT)
-IntSize RenderThemeQt::sliderTickSize() const
-{
-    // FIXME: We need to set this to the size of one tick mark.
-    return IntSize(0, 0);
-}
-
-int RenderThemeQt::sliderTickOffsetFromTrackCenter() const
-{
-    // FIXME: We need to set this to the position of the tick marks.
-    return 0;
-}
-#endif
-
-bool RenderThemeQt::paintSearchField(RenderObject* o, const PaintInfo& pi,
-                                     const IntRect& r)
-{
-    return paintTextField(o, pi, r);
-}
-
-void RenderThemeQt::adjustSearchFieldStyle(StyleResolver*, RenderStyle* style, Element*) const
-{
-    // Resetting the style like this leads to differences like:
-    // - RenderTextControl {INPUT} at (2,2) size 168x25 [bgcolor=#FFFFFF] border: (2px inset #000000)]
-    // + RenderTextControl {INPUT} at (2,2) size 166x26
-    // in layout tests when a CSS style is applied that doesn't affect background color, border or
-    // padding. Just worth keeping in mind!
-    style->setBackgroundColor(Color::transparent);
-    style->resetBorder();
-    style->resetPadding();
-    computeSizeBasedOnStyle(style);
-}
-
-void RenderThemeQt::adjustSearchFieldCancelButtonStyle(StyleResolver*, RenderStyle* style, Element*) const
-{
-    // Logic taken from RenderThemeChromium.cpp.
-    // Scale the button size based on the font size.
-    float fontScale = style->fontSize() / defaultControlFontPixelSize;
-    int cancelButtonSize = lroundf(qMin(qMax(minCancelButtonSize, defaultCancelButtonSize * fontScale), maxCancelButtonSize));
-    style->setWidth(Length(cancelButtonSize, Fixed));
-    style->setHeight(Length(cancelButtonSize, Fixed));
-}
-
-// Function taken from RenderThemeChromium.cpp
-IntRect RenderThemeQt::convertToPaintingRect(RenderObject* inputRenderer, const RenderObject* partRenderer, IntRect partRect, const IntRect& localOffset) const
-{
-    // Compute an offset between the part renderer and the input renderer.
-    IntSize offsetFromInputRenderer = -roundedIntSize(partRenderer->offsetFromAncestorContainer(inputRenderer));
-    // Move the rect into partRenderer's coords.
-    partRect.move(offsetFromInputRenderer);
-    // Account for the local drawing offset.
-    partRect.move(localOffset.x(), localOffset.y());
-
-    return partRect;
-}
-
-QPalette RenderThemeQt::colorPalette() const
-{
-    return QGuiApplication::palette();
-}
-
-bool RenderThemeQt::paintSearchFieldCancelButton(RenderObject* o, const PaintInfo& pi,
-                                                 const IntRect& r)
-{
-    // Logic copied from RenderThemeChromium.cpp.
-
-    // Get the renderer of <input> element.
-    Node* input = o->node()->shadowHost();
-    if (!input)
-        input = o->node();
-    if (!input->renderer()->isBox())
-        return false;
-    RenderBox* inputRenderBox = toRenderBox(input->renderer());
-    IntRect inputContentBox = pixelSnappedIntRect(inputRenderBox->contentBoxRect());
-
-    // Make sure the scaled button stays square and will fit in its parent's box.
-    int cancelButtonSize = qMin(inputContentBox.width(), qMin(inputContentBox.height(), r.height()));
-    // Calculate cancel button's coordinates relative to the input element.
-    // Center the button vertically. Round up though, so if it has to be one pixel off-center, it will
-    // be one pixel closer to the bottom of the field. This tends to look better with the text.
-    IntRect cancelButtonRect(o->offsetFromAncestorContainer(inputRenderBox).width(),
-                             inputContentBox.y() + (inputContentBox.height() - cancelButtonSize + 1) / 2,
-                             cancelButtonSize, cancelButtonSize);
-    IntRect paintingRect = convertToPaintingRect(inputRenderBox, o, cancelButtonRect, r);
-    static Image* cancelImage = Image::loadPlatformResource("searchCancelButton").leakRef();
-    static Image* cancelPressedImage = Image::loadPlatformResource("searchCancelButtonPressed").leakRef();
-    pi.context->drawImage(isPressed(o) ? cancelPressedImage : cancelImage,
-                                 o->style()->colorSpace(), paintingRect);
+    // Now paint the text field.
+    style->drawPrimitive(QStyle::PE_PanelLineEdit, &panel, painter, widget);
+    style->drawPrimitive(QStyle::PE_FrameLineEdit, &panel, painter, widget);
+      
     return false;
 }
 
-void RenderThemeQt::adjustSearchFieldDecorationStyle(StyleResolver* styleResolver, RenderStyle* style, Element* e) const
+void RenderThemeQt::adjustTextFieldStyle(CSSStyleSelector*, RenderStyle* style, Element*) const
 {
-    notImplemented();
-    RenderTheme::adjustSearchFieldDecorationStyle(styleResolver, style, e);
 }
 
-bool RenderThemeQt::paintSearchFieldDecoration(RenderObject* o, const PaintInfo& pi,
+void RenderThemeQt::adjustMenuListStyle(CSSStyleSelector*, RenderStyle* style, Element*) const
+{
+    style->resetBorder();
+
+    // Height is locked to auto.
+    style->setHeight(Length(Auto));
+
+    // White-space is locked to pre
+    style->setWhiteSpace(PRE);
+
+    setPrimitiveSize(style);
+
+    // Add in the padding that we'd like to use.
+    setPopupPadding(style);
+
+    // Our font is locked to the appropriate system font size for the control.  To clarify, we first use the CSS-specified font to figure out
+    // a reasonable control size, but once that control size is determined, we throw that font away and use the appropriate
+    // system font for the control size instead.
+    //setFontFromControlSize(selector, style);
+}
+
+bool RenderThemeQt::paintMenuList(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r)
+{
+    QStyle* style = 0;
+    QPainter* painter = 0;
+    QWidget* widget = 0;
+
+    if (!getStylePainterAndWidgetFromPaintInfo(i, style, painter, widget))
+        return true;
+
+    QStyleOptionComboBox opt;
+    opt.initFrom(widget);
+    EAppearance appearance = applyTheme(opt, o);
+    const QPoint topLeft = r.topLeft();
+    painter->translate(topLeft);
+    opt.rect.moveTo(QPoint(0,0));
+    opt.rect.setSize(r.size());
+
+    opt.frame = false;
+
+    style->drawComplexControl(QStyle::CC_ComboBox, &opt, painter, widget);
+    painter->translate(-topLeft);
+    return false;
+}
+
+
+bool RenderThemeQt::paintMenuListButton(RenderObject* o, const RenderObject::PaintInfo& pi,
+                                        const IntRect& r)
+{
+    return RenderTheme::paintMenuListButton(o, pi, r);
+}
+
+void RenderThemeQt::adjustMenuListButtonStyle(CSSStyleSelector* selector, RenderStyle* style,
+                                              Element* e) const
+{
+    RenderTheme::adjustMenuListButtonStyle(selector, style, e);
+}
+
+bool RenderThemeQt::paintSliderTrack(RenderObject* o, const RenderObject::PaintInfo& pi,
+                                     const IntRect& r)
+{
+    return RenderTheme::paintSliderTrack(o, pi, r);
+}
+
+bool RenderThemeQt::paintSliderThumb(RenderObject* o, const RenderObject::PaintInfo& pi,
+                                     const IntRect& r)
+{
+    return RenderTheme::paintSliderThumb(o, pi, r);
+}
+
+bool RenderThemeQt::paintSearchField(RenderObject* o, const RenderObject::PaintInfo& pi,
+                                     const IntRect& r)
+{
+    return RenderTheme::paintSearchField(o, pi, r);
+}
+
+void RenderThemeQt::adjustSearchFieldStyle(CSSStyleSelector* selector, RenderStyle* style,
+                                           Element* e) const
+{
+    RenderTheme::adjustSearchFieldStyle(selector, style, e);
+}
+
+void RenderThemeQt::adjustSearchFieldCancelButtonStyle(CSSStyleSelector* selector, RenderStyle* style,
+                                                       Element* e) const
+{
+    RenderTheme::adjustSearchFieldCancelButtonStyle(selector, style, e);
+}
+
+bool RenderThemeQt::paintSearchFieldCancelButton(RenderObject* o, const RenderObject::PaintInfo& pi,
+                                                 const IntRect& r)
+{
+    return RenderTheme::paintSearchFieldCancelButton(o, pi, r);
+}
+
+void RenderThemeQt::adjustSearchFieldDecorationStyle(CSSStyleSelector* selector, RenderStyle* style,
+                                                     Element* e) const
+{
+    RenderTheme::adjustSearchFieldDecorationStyle(selector, style, e);
+}
+
+bool RenderThemeQt::paintSearchFieldDecoration(RenderObject* o, const RenderObject::PaintInfo& pi,
                                                const IntRect& r)
 {
-    notImplemented();
     return RenderTheme::paintSearchFieldDecoration(o, pi, r);
 }
 
-void RenderThemeQt::adjustSearchFieldResultsDecorationStyle(StyleResolver* styleResolver, RenderStyle* style, Element* e) const
+void RenderThemeQt::adjustSearchFieldResultsDecorationStyle(CSSStyleSelector* selector, RenderStyle* style,
+                                                            Element* e) const
 {
-    notImplemented();
-    RenderTheme::adjustSearchFieldResultsDecorationStyle(styleResolver, style, e);
+    RenderTheme::adjustSearchFieldResultsDecorationStyle(selector, style, e);
 }
 
-bool RenderThemeQt::paintSearchFieldResultsDecoration(RenderObject* o, const PaintInfo& pi,
+bool RenderThemeQt::paintSearchFieldResultsDecoration(RenderObject* o, const RenderObject::PaintInfo& pi,
                                                       const IntRect& r)
 {
-    notImplemented();
     return RenderTheme::paintSearchFieldResultsDecoration(o, pi, r);
 }
 
-#ifndef QT_NO_SPINBOX
-void RenderThemeQt::adjustInnerSpinButtonStyle(StyleResolver*, RenderStyle* style, Element*) const
-{
-    // Use the same width as our native scrollbar
-    int width = ScrollbarTheme::theme()->scrollbarThickness();
-    style->setWidth(Length(width, Fixed));
-    style->setMinWidth(Length(width, Fixed));
-}
-#endif
-
-bool RenderThemeQt::supportsFocus(ControlPart appearance) const
+bool RenderThemeQt::supportsFocus(EAppearance appearance) const
 {
     switch (appearance) {
-    case PushButtonPart:
-    case ButtonPart:
-    case TextFieldPart:
-    case TextAreaPart:
-    case ListboxPart:
-    case MenulistPart:
-    case RadioPart:
-    case CheckboxPart:
-    case SliderHorizontalPart:
-    case SliderVerticalPart:
-        return true;
-    default: // No for all others...
-        return false;
+        case PushButtonAppearance:
+        case ButtonAppearance:
+        case TextFieldAppearance:
+        case MenulistAppearance:
+        case RadioAppearance:
+        case CheckboxAppearance:
+            return true;
+        default: // No for all others...
+            return false;
     }
 }
 
-#if ENABLE(VIDEO)
-
-String RenderThemeQt::extraMediaControlsStyleSheet()
+bool RenderThemeQt::getStylePainterAndWidgetFromPaintInfo(const RenderObject::PaintInfo& i, QStyle*& style,
+                                                          QPainter*& painter, QWidget*& widget) const
 {
-    String result = String(mediaControlsQtUserAgentStyleSheet, sizeof(mediaControlsQtUserAgentStyleSheet));
+    painter = (i.context ? static_cast<QPainter*>(i.context->platformContext()) : 0);
+    widget = (painter ? static_cast<QWidget*>(painter->device()) : 0);
+    style = (widget ? widget->style() : 0);
 
-    if (m_page && m_page->chrome().requiresFullscreenForVideoPlayback())
-        result.append(String(mediaControlsQtFullscreenUserAgentStyleSheet, sizeof(mediaControlsQtFullscreenUserAgentStyleSheet)));
+    return (painter && widget && style);
+}
+
+EAppearance RenderThemeQt::applyTheme(QStyleOption& option, RenderObject* o) const
+{
+    // Default bits: no focus, no mouse over
+    option.state &= ~(QStyle::State_HasFocus | QStyle::State_MouseOver);
+
+    if (!isEnabled(o))
+        option.state &= ~QStyle::State_Enabled;
+
+    if (isReadOnlyControl(o))
+        // Readonly is supported on textfields.
+        option.state |= QStyle::State_ReadOnly;
+
+    if (supportsFocus(o->style()->appearance()) && isFocused(o))
+        option.state |= QStyle::State_HasFocus;
+
+    if (isHovered(o))
+        option.state |= QStyle::State_MouseOver;
+
+    EAppearance result = o->style()->appearance();
+
+    switch (result) {
+        case PushButtonAppearance:
+        case SquareButtonAppearance:
+        case ButtonAppearance:
+        case ButtonBevelAppearance:
+        case ListItemAppearance:
+        case MenulistButtonAppearance:
+        case ScrollbarButtonLeftAppearance:
+        case ScrollbarButtonRightAppearance:
+        case ScrollbarTrackHorizontalAppearance:
+        case ScrollbarTrackVerticalAppearance:
+        case ScrollbarThumbHorizontalAppearance:
+        case ScrollbarThumbVerticalAppearance:
+        case SearchFieldResultsButtonAppearance:
+        case SearchFieldCancelButtonAppearance: {
+            if (isPressed(o))
+                option.state |= QStyle::State_Sunken;
+            else if (result == PushButtonAppearance)
+                option.state |= QStyle::State_Raised;
+            break;
+        }
+    }
+
+    if(result == RadioAppearance || result == CheckboxAppearance)
+        option.state |= (isChecked(o) ? QStyle::State_On : QStyle::State_Off);
 
     return result;
 }
 
-// Helper class to transform the painter's world matrix to the object's content area, scaled to 0,0,100,100
-class WorldMatrixTransformer {
-public:
-    WorldMatrixTransformer(QPainter* painter, RenderObject* renderObject, const IntRect& r) : m_painter(painter)
-    {
-        RenderStyle* style = renderObject->style();
-        m_originalTransform = m_painter->transform();
-        m_painter->translate(r.x() + style->paddingLeft().value(), r.y() + style->paddingTop().value());
-        m_painter->scale((r.width() - style->paddingLeft().value() - style->paddingRight().value()) / 100.0,
-             (r.height() - style->paddingTop().value() - style->paddingBottom().value()) / 100.0);
+void RenderThemeQt::setSizeFromFont(RenderStyle* style) const
+{
+    // FIXME: Check is flawed, since it doesn't take min-width/max-width into account.
+     IntSize size = sizeForFont(style);
+    if (style->width().isIntrinsicOrAuto() && size.width() > 0)
+        style->setWidth(Length(size.width(), Fixed));
+    if (style->height().isAuto() && size.height() > 0)
+        style->setHeight(Length(size.height(), Fixed));
+}
+
+IntSize RenderThemeQt::sizeForFont(RenderStyle* style) const
+{
+    const QFontMetrics fm(style->font().font());
+    QSize size(0, 0);
+    switch (style->appearance()) {
+    case CheckboxAppearance: {
+        break;
     }
-
-    ~WorldMatrixTransformer() { m_painter->setTransform(m_originalTransform); }
-
-private:
-    QPainter* m_painter;
-    QTransform m_originalTransform;
-};
-
-double RenderThemeQt::mediaControlsBaselineOpacity() const
-{
-    return 0.4;
-}
-
-void RenderThemeQt::paintMediaBackground(QPainter* painter, const IntRect& r) const
-{
-    painter->setPen(Qt::NoPen);
-    static QColor transparentBlack(0, 0, 0, mediaControlsBaselineOpacity() * 255);
-    painter->setBrush(transparentBlack);
-    painter->drawRoundedRect(r.x(), r.y(), r.width(), r.height(), 5.0, 5.0);
-}
-
-static bool mediaElementCanPlay(RenderObject* o)
-{
-    HTMLMediaElement* mediaElement = toParentMediaElement(o);
-    if (!mediaElement)
-        return false;
-
-    return mediaElement->readyState() > HTMLMediaElement::HAVE_METADATA
-           || (mediaElement->readyState() == HTMLMediaElement::HAVE_NOTHING
-               && o->style()->appearance() == MediaPlayButtonPart && mediaElement->preload() == "none");
-}
-
-QColor RenderThemeQt::getMediaControlForegroundColor(RenderObject* o) const
-{
-    QColor fgColor = platformActiveSelectionBackgroundColor();
-    if (!o)
-        return fgColor;
-
-    if (o->node() && o->node()->isElementNode() && toElement(o->node())->active())
-        fgColor = fgColor.lighter();
-
-    if (!mediaElementCanPlay(o))
-        fgColor = colorPalette().brush(QPalette::Disabled, QPalette::Text).color();
-
-    return fgColor;
-}
-
-bool RenderThemeQt::paintMediaFullscreenButton(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
-{
-    HTMLMediaElement* mediaElement = toParentMediaElement(o);
-    if (!mediaElement)
-        return false;
-
-    QSharedPointer<StylePainter> p = getStylePainter(paintInfo);
-    if (p.isNull() || !p->isValid())
-        return true;
-
-    p->painter->setRenderHint(QPainter::Antialiasing, true);
-
-    paintMediaBackground(p->painter, r);
-
-    WorldMatrixTransformer transformer(p->painter, o, r);
-    const QPointF arrowPolygon[9] = { QPointF(20, 0), QPointF(100, 0), QPointF(100, 80),
-            QPointF(80, 80), QPointF(80, 30), QPointF(10, 100), QPointF(0, 90), QPointF(70, 20), QPointF(20, 20)};
-
-    p->painter->setBrush(getMediaControlForegroundColor(o));
-    p->painter->drawPolygon(arrowPolygon, 9);
-
-    return false;
-}
-
-bool RenderThemeQt::paintMediaMuteButton(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
-{
-    HTMLMediaElement* mediaElement = toParentMediaElement(o);
-    if (!mediaElement)
-        return false;
-
-    QSharedPointer<StylePainter> p = getStylePainter(paintInfo);
-    if (p.isNull() || !p->isValid())
-        return true;
-
-    p->painter->setRenderHint(QPainter::Antialiasing, true);
-
-    paintMediaBackground(p->painter, r);
-
-    WorldMatrixTransformer transformer(p->painter, o, r);
-    const QPointF speakerPolygon[6] = { QPointF(20, 30), QPointF(50, 30), QPointF(80, 0),
-            QPointF(80, 100), QPointF(50, 70), QPointF(20, 70)};
-
-    p->painter->setBrush(mediaElement->muted() ? Qt::darkRed : getMediaControlForegroundColor(o));
-    p->painter->drawPolygon(speakerPolygon, 6);
-
-    return false;
-}
-
-bool RenderThemeQt::paintMediaPlayButton(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
-{
-    HTMLMediaElement* mediaElement = toParentMediaElement(o);
-    if (!mediaElement)
-        return false;
-
-    QSharedPointer<StylePainter> p = getStylePainter(paintInfo);
-    if (p.isNull() || !p->isValid())
-        return true;
-
-    p->painter->setRenderHint(QPainter::Antialiasing, true);
-
-    paintMediaBackground(p->painter, r);
-
-    WorldMatrixTransformer transformer(p->painter, o, r);
-    p->painter->setBrush(getMediaControlForegroundColor(o));
-    if (mediaElement->canPlay()) {
-        const QPointF playPolygon[3] = { QPointF(0, 0), QPointF(100, 50), QPointF(0, 100)};
-        p->painter->drawPolygon(playPolygon, 3);
-    } else {
-        p->painter->drawRect(0, 0, 30, 100);
-        p->painter->drawRect(70, 0, 30, 100);
+    case RadioAppearance: {
+        break;
     }
-
-    return false;
-}
-
-bool RenderThemeQt::paintMediaSeekBackButton(RenderObject*, const PaintInfo&, const IntRect&)
-{
-    // We don't want to paint this at the moment.
-    return false;
-}
-
-bool RenderThemeQt::paintMediaSeekForwardButton(RenderObject*, const PaintInfo&, const IntRect&)
-{
-    // We don't want to paint this at the moment.
-    return false;
-}
-
-bool RenderThemeQt::paintMediaCurrentTime(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
-{
-    QSharedPointer<StylePainter> p = getStylePainter(paintInfo);
-    if (p.isNull() || !p->isValid())
-        return true;
-
-    p->painter->setRenderHint(QPainter::Antialiasing, true);
-    paintMediaBackground(p->painter, r);
-
-    return false;
-}
-
-String RenderThemeQt::formatMediaControlsCurrentTime(float currentTime, float duration) const
-{
-    return formatMediaControlsTime(currentTime) + " / " + formatMediaControlsTime(duration);
-}
-
-String RenderThemeQt::formatMediaControlsRemainingTime(float currentTime, float duration) const
-{
-    return String();
-}
-
-bool RenderThemeQt::paintMediaVolumeSliderTrack(RenderObject *o, const PaintInfo &paintInfo, const IntRect &r)
-{
-    QSharedPointer<StylePainter> p = getStylePainter(paintInfo);
-    if (p.isNull() || !p->isValid())
-        return true;
-
-    p->painter->setRenderHint(QPainter::Antialiasing, true);
-
-    paintMediaBackground(p->painter, r);
-
-    if (!o->isSlider())
-        return false;
-
-    IntRect b = pixelSnappedIntRect(toRenderBox(o)->contentBoxRect());
-
-    // Position the outer rectangle
-    int top = r.y() + b.y();
-    int left = r.x() + b.x();
-    int width = b.width();
-    int height = b.height();
-
-    QPalette pal = colorPalette();
-    const QColor highlightText = pal.brush(QPalette::Active, QPalette::HighlightedText).color();
-    const QColor scaleColor(highlightText.red(), highlightText.green(), highlightText.blue(), mediaControlsBaselineOpacity() * 255);
-
-    // Draw the outer rectangle
-    p->painter->setBrush(scaleColor);
-    p->painter->drawRect(left, top, width, height);
-
-    if (!o->node() || !o->node()->hasTagName(inputTag))
-        return false;
-
-    HTMLInputElement* slider = static_cast<HTMLInputElement*>(o->node());
-
-    // Position the inner rectangle
-    height = height * slider->valueAsNumber();
-    top += b.height() - height;
-
-    // Draw the inner rectangle
-    p->painter->setPen(Qt::NoPen);
-    p->painter->setBrush(getMediaControlForegroundColor(o));
-    p->painter->drawRect(left, top, width, height);
-
-    return false;
-}
-
-bool RenderThemeQt::paintMediaVolumeSliderThumb(RenderObject *o, const PaintInfo &paintInfo, const IntRect &r)
-{
-    QSharedPointer<StylePainter> p = getStylePainter(paintInfo);
-    if (p.isNull() || !p->isValid())
-        return true;
-
-    // Nothing to draw here, this is all done in the track
-    return false;
-}
-
-bool RenderThemeQt::paintMediaSliderTrack(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
-{
-    HTMLMediaElement* mediaElement = toParentMediaElement(o);
-    if (!mediaElement)
-        return false;
-
-    QSharedPointer<StylePainter> p = getStylePainter(paintInfo);
-    if (p.isNull() || !p->isValid())
-        return true;
-
-    p->painter->setRenderHint(QPainter::Antialiasing, true);
-
-    paintMediaBackground(p->painter, r);
-
-    if (MediaPlayer* player = mediaElement->player()) {
-        // Get the buffered parts of the media
-        RefPtr<TimeRanges> buffered = player->buffered();
-        if (buffered->length() > 0 && player->duration() < std::numeric_limits<float>::infinity()) {
-            // Set the transform and brush
-            WorldMatrixTransformer transformer(p->painter, o, r);
-            p->painter->setBrush(getMediaControlForegroundColor());
-
-            // Paint each buffered section
-            for (int i = 0; i < buffered->length(); i++) {
-                float startX = (buffered->start(i, IGNORE_EXCEPTION) / player->duration()) * 100;
-                float width = ((buffered->end(i, IGNORE_EXCEPTION) / player->duration()) * 100) - startX;
-                p->painter->drawRect(startX, 37, width, 26);
-            }
-        }
+    case PushButtonAppearance:
+    case ButtonAppearance: {
+        QSize sz = fm.size(Qt::TextShowMnemonic, QString::fromLatin1("X"));
+        QStyleOptionButton opt;
+        sz = QApplication::style()->sizeFromContents(QStyle::CT_PushButton,
+                                                     &opt, sz, 0);
+        size.setHeight(sz.height());
+        break;
     }
-
-    return false;
-}
-
-bool RenderThemeQt::paintMediaSliderThumb(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
-{
-    ASSERT(o->node());
-    Node* hostNode = o->node()->shadowHost();
-    if (!hostNode)
-        hostNode = o->node();
-    HTMLMediaElement* mediaElement = toParentMediaElement(hostNode);
-    if (!mediaElement)
-        return false;
-
-    QSharedPointer<StylePainter> p = getStylePainter(paintInfo);
-    if (p.isNull() || !p->isValid())
-        return true;
-
-    p->painter->setRenderHint(QPainter::Antialiasing, true);
-
-    p->painter->setPen(Qt::NoPen);
-    p->painter->setBrush(getMediaControlForegroundColor(hostNode->renderer()));
-    p->painter->drawRect(r.x(), r.y(), r.width(), r.height());
-
-    return false;
-}
-#endif
-
-void RenderThemeQt::adjustSliderThumbSize(RenderStyle* style, Element*) const
-{
-    // timelineThumbHeight should match the height property of -webkit-media-controls-timeline in mediaControlsQt.css.
-    const int timelineThumbHeight = 12;
-    const int timelineThumbWidth = timelineThumbHeight / 3;
-    // volumeThumbWidth should match the width property of -webkit-media-controls-volume-slider in mediaControlsQt.css.
-    const int volumeThumbWidth = 12;
-    const int volumeThumbHeight = volumeThumbWidth / 3;
-    ControlPart part = style->appearance();
-
-    if (part == MediaSliderThumbPart) {
-        style->setWidth(Length(timelineThumbWidth, Fixed));
-        style->setHeight(Length(timelineThumbHeight, Fixed));
-    } else if (part == MediaVolumeSliderThumbPart) {
-        style->setHeight(Length(volumeThumbHeight, Fixed));
-        style->setWidth(Length(volumeThumbWidth, Fixed));
+    case MenulistAppearance: {
+        QSize sz;
+        sz.setHeight(qMax(fm.lineSpacing(), 14) + 2);
+        QStyleOptionComboBox opt;
+        sz = QApplication::style()->sizeFromContents(QStyle::CT_ComboBox,
+                                                     &opt, sz, 0);
+        size.setHeight(sz.height());
+        break;
     }
-}
-
-double RenderThemeQt::caretBlinkInterval() const
-{
-    return static_cast<QGuiApplication*>(qApp)->styleHints()->cursorFlashTime() / 1000.0 / 2.0;
-}
-
-String RenderThemeQt::fileListNameForWidth(const FileList* fileList, const Font& font, int width, bool multipleFilesAllowed) const
-{
-    UNUSED_PARAM(multipleFilesAllowed);
-    if (width <= 0)
-        return String();
-
-    String string;
-    if (fileList->isEmpty())
-        string = fileButtonNoFileSelectedLabel();
-    else if (fileList->length() == 1) {
-        String fname = fileList->item(0)->path();
-        QFontMetrics fm(font.syntheticFont());
-        string = fm.elidedText(fname, Qt::ElideLeft, width);
-    } else {
-        int n = fileList->length();
-        string = QCoreApplication::translate("QWebPage", "%n file(s)",
-                                             "number of chosen file",
-                                             n);
+    case TextFieldAppearance: {
+        const int verticalMargin   = 1;
+        const int horizontalMargin = 2;
+        int h = qMax(fm.lineSpacing(), 14) + 2*verticalMargin;
+        int w = fm.width(QLatin1Char('x')) * 17 + 2*horizontalMargin;
+        QStyleOptionFrameV2 opt;
+        opt.lineWidth = QApplication::style()->pixelMetric(QStyle::PM_DefaultFrameWidth,
+                                                           &opt, 0);
+        QSize sz = QApplication::style()->sizeFromContents(QStyle::CT_LineEdit,
+                                                           &opt,
+                                                           QSize(w, h).expandedTo(QApplication::globalStrut()),
+                                                           0);
+        size.setHeight(sz.height());
+        break;
     }
-
-    return string;
-}
-
-StylePainter::StylePainter(RenderThemeQt* theme, const PaintInfo& paintInfo)
-    : painter(0)
-{
-    Q_UNUSED(theme);
-    ASSERT(paintInfo.context);
-    init(paintInfo.context);
-}
-
-StylePainter::StylePainter()
-    : painter(0)
-{
-}
-
-void StylePainter::init(GraphicsContext* context)
-{
-    painter = static_cast<QPainter*>(context->platformContext());
-
-    if (painter) {
-        // the styles often assume being called with a pristine painter where no brush is set,
-        // so reset it manually
-        m_previousBrush = painter->brush();
-        painter->setBrush(Qt::NoBrush);
-
-        // painting the widget with anti-aliasing will make it blurry
-        // disable it here and restore it later
-        m_previousAntialiasing = painter->testRenderHint(QPainter::Antialiasing);
-        painter->setRenderHint(QPainter::Antialiasing, false);
+    default:
+        break;
     }
+    return size;
 }
 
-StylePainter::~StylePainter()
+void RenderThemeQt::setButtonPadding(RenderStyle* style) const
 {
-    if (painter) {
-        painter->setBrush(m_previousBrush);
-        painter->setRenderHints(QPainter::Antialiasing, m_previousAntialiasing);
-    }
+    const int padding = 8;
+    style->setPaddingLeft(Length(padding, Fixed));
+    style->setPaddingRight(Length(padding, Fixed));
+    style->setPaddingTop(Length(0, Fixed));
+    style->setPaddingBottom(Length(0, Fixed));
+}
+
+void RenderThemeQt::setPopupPadding(RenderStyle* style) const
+{
+    const int padding = 8;
+    style->setPaddingLeft(Length(padding, Fixed));
+    QStyleOptionComboBox opt;
+    int w = QApplication::style()->pixelMetric(QStyle::PM_ButtonIconSize, &opt, 0);
+    style->setPaddingRight(Length(padding + w, Fixed));
+
+    style->setPaddingTop(Length(1, Fixed));
+    style->setPaddingBottom(Length(0, Fixed));
+}
+
+void RenderThemeQt::setPrimitiveSize(RenderStyle* style) const
+{
+    // If the width and height are both specified, then we have nothing to do.
+    if (!style->width().isIntrinsicOrAuto() && !style->height().isAuto())
+        return;
+
+    // Use the font size to determine the intrinsic width of the control.
+    setSizeFromFont(style);
 }
 
 }

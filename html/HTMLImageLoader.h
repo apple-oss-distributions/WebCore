@@ -1,4 +1,6 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  * Copyright (C) 2004 Apple Computer, Inc.
@@ -23,21 +25,50 @@
 #ifndef HTMLImageLoader_h
 #define HTMLImageLoader_h
 
-#include "ImageLoader.h"
+#include "CachedResourceClient.h"
 
 namespace WebCore {
 
-class HTMLImageLoader : public ImageLoader {
+class Element;
+
+class HTMLImageLoader : public CachedResourceClient {
 public:
     HTMLImageLoader(Element*);
     virtual ~HTMLImageLoader();
 
-    virtual void dispatchLoadEvent();
-    virtual String sourceURI(const AtomicString&) const;
+    virtual void updateFromElement();
 
+    virtual void dispatchLoadEvent();
+
+    Element* element() const { return m_element; }
+    bool imageComplete() const { return m_imageComplete; }
+
+    CachedImage* image() const { return m_image; }
+    void setImage(CachedImage*);
+
+    void setLoadManually(bool loadManually) { m_loadManually = loadManually; }
+
+    // CachedResourceClient API
     virtual void notifyFinished(CachedResource*);
+
+protected:
+    void setLoadingImage(CachedImage*);
+    
+    bool haveFiredLoadEvent() { return m_firedLoad; }
+    void setHaveFiredLoadEvent(bool firedLoad) { m_firedLoad = firedLoad; }
+
+private:
+    void protectElement();
+    void unprotectElement();
+    
+    Element* m_element;
+    CachedImage* m_image;
+    bool m_firedLoad : 1;
+    bool m_imageComplete : 1;
+    bool m_loadManually : 1;
+    bool m_elementIsProtected : 1;
 };
 
-}
+} //namespace
 
 #endif

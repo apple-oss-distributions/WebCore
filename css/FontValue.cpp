@@ -1,4 +1,6 @@
 /**
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
@@ -22,56 +24,46 @@
 
 #include "CSSValueList.h"
 #include "CSSPrimitiveValue.h"
-#include <wtf/text/StringBuilder.h>
+#include "PlatformString.h"
 
 namespace WebCore {
 
-String FontValue::customCssText() const
+String FontValue::cssText() const
 {
-    // font variant weight size / line-height family
+    // font variant weight size / line-height family 
 
-    StringBuilder result;
+    String result("");
 
     if (style)
-        result.append(style->cssText());
+        result += style->cssText();
     if (variant) {
         if (!result.isEmpty())
-            result.append(' ');
-        result.append(variant->cssText());
+            result += " ";
+        result += variant->cssText();
     }
     if (weight) {
         if (!result.isEmpty())
-            result.append(' ');
-        result.append(weight->cssText());
+            result += " ";
+        result += weight->cssText();
     }
     if (size) {
         if (!result.isEmpty())
-            result.append(' ');
-        result.append(size->cssText());
+            result += " ";
+        result += size->cssText();
     }
     if (lineHeight) {
         if (!size)
-            result.append(' ');
-        result.append('/');
-        result.append(lineHeight->cssText());
+            result += " ";
+        result += "/";
+        result += lineHeight->cssText();
     }
     if (family) {
         if (!result.isEmpty())
-            result.append(' ');
-        result.append(family->cssText());
+            result += " ";
+        result += family->cssText();
     }
 
-    return result.toString();
-}
-
-bool FontValue::equals(const FontValue& other) const
-{
-    return compareCSSValuePtr(style, other.style)
-        && compareCSSValuePtr(variant, other.variant)
-        && compareCSSValuePtr(weight, other.weight)
-        && compareCSSValuePtr(size, other.size)
-        && compareCSSValuePtr(lineHeight, other.lineHeight)
-        && compareCSSValuePtr(family, other.family);
+    return result;
 }
 
 }

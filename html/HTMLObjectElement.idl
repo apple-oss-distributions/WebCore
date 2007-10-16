@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,46 +18,40 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    CustomNamedSetter,
-    JSCustomGetOwnPropertySlotAndDescriptor,
-    CustomCall
-] interface HTMLObjectElement : HTMLElement {
-    readonly attribute HTMLFormElement form;
-    [Reflect] attribute DOMString code;
-    [Reflect] attribute DOMString align;
-    [Reflect] attribute DOMString archive;
-    [Reflect] attribute DOMString border;
-    [Reflect] attribute DOMString codeBase;
-    [Reflect] attribute DOMString codeType;
-    [Reflect, URL] attribute DOMString data;
-    [Reflect] attribute boolean declare;
-    [Reflect] attribute DOMString height;
-    [Reflect] attribute long hspace;
-    [Reflect] attribute DOMString name;
-    [Reflect] attribute DOMString standby;
-    [Reflect] attribute DOMString type;
-    [Reflect] attribute DOMString useMap;
-    [Reflect] attribute long vspace;
-    [Reflect] attribute DOMString width;
-    readonly attribute boolean willValidate;
-    readonly attribute ValidityState validity;
-    readonly attribute DOMString validationMessage;
-    boolean checkValidity();
-    void setCustomValidity([TreatNullAs=NullString, TreatUndefinedAs=NullString] DOMString error);
+module html {
 
-    // Introduced in DOM Level 2:
-    [CheckSecurityForNode] readonly attribute Document contentDocument;
+    interface [GenerateConstructor, CustomPutFunction, CustomGetOwnPropertySlot, CustomCall, HasOverridingNameGetter] HTMLObjectElement : HTMLElement {
+        readonly attribute HTMLFormElement form;
+                 attribute [ConvertNullToNullString] DOMString       code;
+                 attribute [ConvertNullToNullString] DOMString       align;
+                 attribute [ConvertNullToNullString] DOMString       archive;
+                 attribute [ConvertNullToNullString] DOMString       border;
+                 attribute [ConvertNullToNullString] DOMString       codeBase;
+                 attribute [ConvertNullToNullString] DOMString       codeType;
+                 attribute [ConvertNullToNullString] DOMString       data;
+                 attribute boolean         declare;
+                 attribute [ConvertNullToNullString] DOMString       height;
+                 attribute long            hspace;
+                 attribute [ConvertNullToNullString] DOMString       name;
+                 attribute [ConvertNullToNullString] DOMString       standby;
+                 attribute long            tabIndex;
+                 attribute [ConvertNullToNullString] DOMString       type;
+                 attribute [ConvertNullToNullString] DOMString       useMap;
+                 attribute long            vspace;
+                 attribute [ConvertNullToNullString] DOMString       width;
 
-#if defined(ENABLE_SVG) && ENABLE_SVG
-#if !defined(LANGUAGE_OBJECTIVE_C) || !LANGUAGE_OBJECTIVE_C
-    [CheckSecurityForNode, RaisesException] SVGDocument getSVGDocument();
-#endif
+        // Introduced in DOM Level 2:
+        readonly attribute [CheckFrameSecurity] Document        contentDocument;
+
+#if ENABLE_SVG
+        [SVGCheckSecurityDocument] SVGDocument getSVGDocument()
+            raises(DOMException);
 #endif
 
-#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
-    // Objective-C extension:
-    readonly attribute URL absoluteImageURL;
+#if defined(LANGUAGE_OBJECTIVE_C)
+        // Objective-C extension:
+        readonly attribute URL             absoluteImageURL;
 #endif
-};
+    };
 
+}

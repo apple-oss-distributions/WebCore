@@ -1,8 +1,10 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 2001 Peter Kelly (pmk@post.com)
  * Copyright (C) 2001 Tobias Anton (anton@stud.fbi.fh-darmstadt.de)
  * Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
- * Copyright (C) 2003, 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,37 +21,24 @@
  * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
-
 #include "config.h"
 #include "Event.h"
 
-#include "EventDispatcher.h"
-#include "EventNames.h"
-#include "EventTarget.h"
-#include "UserGestureIndicator.h"
-#include <wtf/CurrentTime.h>
-#include <wtf/text/AtomicString.h>
+#include "AtomicString.h"
+#include "SystemTime.h"
 
 namespace WebCore {
-
-EventInit::EventInit()
-    : bubbles(false)
-    , cancelable(false)
-{
-}
-
 
 Event::Event()
     : m_canBubble(false)
     , m_cancelable(false)
     , m_propagationStopped(false)
-    , m_immediatePropagationStopped(false)
     , m_defaultPrevented(false)
     , m_defaultHandled(false)
     , m_cancelBubble(false)
-    , m_eventPhase(0)
     , m_currentTarget(0)
-    , m_createTime(convertSecondsToDOMTimeStamp(currentTime()))
+    , m_eventPhase(0)
+    , m_createTime(static_cast<DOMTimeStamp>(currentTime() * 1000.0))
 {
 }
 
@@ -58,28 +47,12 @@ Event::Event(const AtomicString& eventType, bool canBubbleArg, bool cancelableAr
     , m_canBubble(canBubbleArg)
     , m_cancelable(cancelableArg)
     , m_propagationStopped(false)
-    , m_immediatePropagationStopped(false)
     , m_defaultPrevented(false)
     , m_defaultHandled(false)
     , m_cancelBubble(false)
-    , m_eventPhase(0)
     , m_currentTarget(0)
-    , m_createTime(convertSecondsToDOMTimeStamp(currentTime()))
-{
-}
-
-Event::Event(const AtomicString& eventType, const EventInit& initializer)
-    : m_type(eventType)
-    , m_canBubble(initializer.bubbles)
-    , m_cancelable(initializer.cancelable)
-    , m_propagationStopped(false)
-    , m_immediatePropagationStopped(false)
-    , m_defaultPrevented(false)
-    , m_defaultHandled(false)
-    , m_cancelBubble(false)
     , m_eventPhase(0)
-    , m_currentTarget(0)
-    , m_createTime(convertSecondsToDOMTimeStamp(currentTime()))
+    , m_createTime(static_cast<DOMTimeStamp>(currentTime() * 1000.0))
 {
 }
 
@@ -92,23 +65,9 @@ void Event::initEvent(const AtomicString& eventTypeArg, bool canBubbleArg, bool 
     if (dispatched())
         return;
 
-    m_propagationStopped = false;
-    m_immediatePropagationStopped = false;
-    m_defaultPrevented = false;
-
     m_type = eventTypeArg;
     m_canBubble = canBubbleArg;
     m_cancelable = cancelableArg;
-}
-
-const AtomicString& Event::interfaceName() const
-{
-    return eventNames().interfaceForEvent;
-}
-
-bool Event::hasInterface(const AtomicString& name) const
-{
-    return interfaceName() == name;
 }
 
 bool Event::isUIEvent() const
@@ -121,7 +80,7 @@ bool Event::isMouseEvent() const
     return false;
 }
 
-bool Event::isFocusEvent() const
+bool Event::isMutationEvent() const
 {
     return false;
 }
@@ -131,7 +90,7 @@ bool Event::isKeyboardEvent() const
     return false;
 }
 
-bool Event::isTouchEvent() const
+bool Event::isTextEvent() const
 {
     return false;
 }
@@ -146,7 +105,7 @@ bool Event::isClipboardEvent() const
     return false;
 }
 
-bool Event::storesResultAsString() const
+bool Event::isWheelEvent() const
 {
     return false;
 }
@@ -156,20 +115,30 @@ bool Event::isBeforeTextInsertedEvent() const
     return false;
 }
 
+bool Event::isOverflowEvent() const
+{
+    return false;
+}
+
+#if ENABLE(SVG)
+bool Event::isSVGZoomEvent() const
+{
+    return false;
+}
+#endif
+
+
+bool Event::storesResultAsString() const
+{
+    return false;
+}
+
 void Event::storeResult(const String&)
 {
 }
 
-PassRefPtr<Event> Event::cloneFor(HTMLIFrameElement*) const
-{
-    return Event::create(type(), bubbles(), cancelable());
-}
-
 void Event::setTarget(PassRefPtr<EventTarget> target)
 {
-    if (m_target == target)
-        return;
-
     m_target = target;
     if (m_target)
         receivedTarget();

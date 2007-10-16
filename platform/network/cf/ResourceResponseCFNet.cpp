@@ -24,16 +24,15 @@
  */
 
 #include "config.h"
-#include "ResourceResponse.h"
-
-#if USE(CFNETWORK)
+#include "ResourceResponseCFNet.h"
 
 #include "HTTPParsers.h"
 #include "MIMETypeRegistry.h"
+#include "ResourceResponse.h"
 #include <CFNetwork/CFURLResponsePriv.h>
 #include <wtf/RetainPtr.h>
 
-using namespace std;
+using std::min;
 
 // We would like a better value for a maximum time_t,
 // but there is no way to do that in C with any certainty.
@@ -42,21 +41,8 @@ using namespace std;
 
 namespace WebCore {
 
-static CFStringRef const commonHeaderFields[] = {
-    CFSTR("Age"), CFSTR("Cache-Control"), CFSTR("Content-Type"), CFSTR("Date"), CFSTR("Etag"), CFSTR("Expires"), CFSTR("Last-Modified"), CFSTR("Pragma")
-};
-static const int numCommonHeaderFields = sizeof(commonHeaderFields) / sizeof(CFStringRef);
-
 CFURLResponseRef ResourceResponse::cfURLResponse() const
-{
-    if (!m_cfResponse && !m_isNull) {
-        RetainPtr<CFURLRef> url = m_url.createCFURL();
-
-        // FIXME: This creates a very incomplete CFURLResponse, which does not even have a status code.
-
-        m_cfResponse = adoptCF(CFURLResponseCreate(0, url.get(), m_mimeType.createCFString().get(), m_expectedContentLength, m_textEncodingName.createCFString().get(), kCFURLCacheStorageAllowed));
-    }
-
+{  
     return m_cfResponse.get();
 }
 
@@ -69,73 +55,47 @@ static inline bool filenameHasSaneExtension(const String& filename)
     return dot > 0 && dot < length - 1;
 }
 
-void ResourceResponse::platformLazyInit(InitLevel initLevel)
+void ResourceResponse::doUpdateResourceResponse()
 {
-    if (m_initLevel > initLevel)
+    if (!m_cfResponse.get())
         return;
 
-    if (m_isNull || !m_cfResponse.get())
-        return;
+    // FIXME: We may need to do MIME type sniffing here (unless that is done in CFURLResponseGetMIMEType).
 
-    if (m_initLevel < CommonFieldsOnly && initLevel >= CommonFieldsOnly) {
-        m_url = CFURLResponseGetURL(m_cfResponse.get());
-        m_mimeType = CFURLResponseGetMIMEType(m_cfResponse.get());
-        m_expectedContentLength = CFURLResponseGetExpectedContentLength(m_cfResponse.get());
-        m_textEncodingName = CFURLResponseGetTextEncodingName(m_cfResponse.get());
+    m_url = CFURLResponseGetURL(m_cfResponse.get());
+    m_mimeType = CFURLResponseGetMIMEType(m_cfResponse.get());
+    m_expectedContentLength = CFURLResponseGetExpectedContentLength(m_cfResponse.get());
+    m_textEncodingName = CFURLResponseGetTextEncodingName(m_cfResponse.get());
 
-        // Workaround for <rdar://problem/8757088>, can be removed once that is fixed.
-        unsigned textEncodingNameLength = m_textEncodingName.length();
-        if (textEncodingNameLength >= 2 && m_textEncodingName[0U] == '"' && m_textEncodingName[textEncodingNameLength - 1] == '"')
-            m_textEncodingName = m_textEncodingName.substring(1, textEncodingNameLength - 2);
+    CFAbsoluteTime expiration = CFURLResponseGetExpirationTime(m_cfResponse.get());
+    m_expirationDate = min((time_t)(expiration + kCFAbsoluteTimeIntervalSince1970), MAX_TIME_T);
 
-        CFHTTPMessageRef httpResponse = CFURLResponseGetHTTPResponse(m_cfResponse.get());
-        if (httpResponse) {
-            m_httpStatusCode = CFHTTPMessageGetResponseStatusCode(httpResponse);
-            
-            RetainPtr<CFDictionaryRef> headers = adoptCF(CFHTTPMessageCopyAllHeaderFields(httpResponse));
-            
-            for (int i = 0; i < numCommonHeaderFields; i++) {
-                CFStringRef value;
-                if (CFDictionaryGetValueIfPresent(headers.get(), commonHeaderFields[i], (const void **)&value))
-                    m_httpHeaderFields.set(commonHeaderFields[i], value);
-            }
-        } else
-            m_httpStatusCode = 0;
-    }
+    CFAbsoluteTime lastModified = CFURLResponseGetLastModifiedDate(m_cfResponse.get());
+    m_lastModifiedDate = min((time_t)(lastModified + kCFAbsoluteTimeIntervalSince1970), MAX_TIME_T);
 
-    if (m_initLevel < CommonAndUncommonFields && initLevel >= CommonAndUncommonFields) {
-        CFHTTPMessageRef httpResponse = CFURLResponseGetHTTPResponse(m_cfResponse.get());
-        if (httpResponse) {
-            RetainPtr<CFStringRef> statusLine = adoptCF(CFHTTPMessageCopyResponseStatusLine(httpResponse));
-            m_httpStatusText = extractReasonPhraseFromHTTPStatusLine(statusLine.get());
+    RetainPtr<CFStringRef> suggestedFilename(AdoptCF, CFURLResponseCopySuggestedFilename(m_cfResponse.get()));
+    m_suggestedFilename = suggestedFilename.get();
 
-            RetainPtr<CFDictionaryRef> headers = adoptCF(CFHTTPMessageCopyAllHeaderFields(httpResponse));
-            CFIndex headerCount = CFDictionaryGetCount(headers.get());
-            Vector<const void*, 128> keys(headerCount);
-            Vector<const void*, 128> values(headerCount);
-            CFDictionaryGetKeysAndValues(headers.get(), keys.data(), values.data());
-            for (int i = 0; i < headerCount; ++i)
-                m_httpHeaderFields.set((CFStringRef)keys[i], (CFStringRef)values[i]);
-        }
-    }
-    
-    if (m_initLevel < AllFields && initLevel >= AllFields) {
-        RetainPtr<CFStringRef> suggestedFilename = adoptCF(CFURLResponseCopySuggestedFilename(m_cfResponse.get()));
-        m_suggestedFilename = suggestedFilename.get();
-    }
+    CFHTTPMessageRef httpResponse = CFURLResponseGetHTTPResponse(m_cfResponse.get());
+    if (httpResponse) {
+        m_httpStatusCode = CFHTTPMessageGetResponseStatusCode(httpResponse);
 
-    m_initLevel = initLevel;
-}
-    
-bool ResourceResponse::platformCompare(const ResourceResponse& a, const ResourceResponse& b)
-{
-    // CFEqual crashes if you pass it 0 so do an early check before calling it.
-    if (!a.cfURLResponse() || !b.cfURLResponse())
-        return a.cfURLResponse() == b.cfURLResponse();
-    return CFEqual(a.cfURLResponse(), b.cfURLResponse());
+        RetainPtr<CFStringRef> statusLine(AdoptCF, CFHTTPMessageCopyResponseStatusLine(httpResponse));
+        String statusText(statusLine.get());
+        int spacePos = statusText.find(" ");
+        if (spacePos != -1)
+            statusText = statusText.substring(spacePos + 1);
+        m_httpStatusText = statusText;
+
+        RetainPtr<CFDictionaryRef> headers(AdoptCF, CFHTTPMessageCopyAllHeaderFields(httpResponse));
+        CFIndex headerCount = CFDictionaryGetCount(headers.get());
+        Vector<const void*, 128> keys(headerCount);
+        Vector<const void*, 128> values(headerCount);
+        CFDictionaryGetKeysAndValues(headers.get(), keys.data(), values.data());
+        for (int i = 0; i < headerCount; ++i)
+            m_httpHeaderFields.set((CFStringRef)keys[i], (CFStringRef)values[i]);
+    } else
+        m_httpStatusCode = 0;
 }
 
-
-} // namespace WebCore
-
-#endif // USE(CFNETWORK)
+}

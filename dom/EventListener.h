@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -21,52 +21,17 @@
 #ifndef EventListener_h
 #define EventListener_h
 
-#include <wtf/RefCounted.h>
-
-namespace JSC {
-    class JSObject;
-    class SlotVisitor;
-}
+#include "Shared.h"
 
 namespace WebCore {
 
-    class ScriptExecutionContext;
     class Event;
 
-    class EventListener : public RefCounted<EventListener> {
+    class EventListener : public Shared<EventListener> {
     public:
-        enum Type {
-            JSEventListenerType, 
-            ImageEventListenerType, 
-            ObjCEventListenerType,
-            CPPEventListenerType,
-            ConditionEventListenerType,
-            GObjectEventListenerType,
-            NativeEventListenerType,
-            SVGTRefTargetEventListenerType,
-            MediaControlsAppleEventListenerType 
-        };
-
         virtual ~EventListener() { }
-        virtual bool operator==(const EventListener&) = 0;
-        virtual void handleEvent(ScriptExecutionContext*, Event*) = 0;
-        virtual bool wasCreatedFromMarkup() const { return false; }
-
-        virtual void visitJSFunction(JSC::SlotVisitor&) { }
-
-        bool isAttribute() const { return virtualisAttribute(); }
-        Type type() const { return m_type; }
-
-    protected:
-        explicit EventListener(Type type)
-            : m_type(type)
-        {
-        }
-
-    private:
-        virtual bool virtualisAttribute() const { return false; }
-        
-        Type m_type;
+        virtual void handleEvent(Event*, bool isWindowEvent) = 0;
+        virtual bool isHTMLEventListener() const { return false; }
     };
 
 }

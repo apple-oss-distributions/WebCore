@@ -1,8 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
- * Copyright (C) 2008 Nikolas Zimmermann <zimmermann@kde.org>
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007 Apple Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,51 +21,66 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #ifndef HTMLScriptElement_h
 #define HTMLScriptElement_h
 
-#include "ScriptElement.h"
 #include "HTMLElement.h"
+#include "CachedResourceClient.h"
 
 namespace WebCore {
 
-class HTMLScriptElement FINAL : public HTMLElement, public ScriptElement {
-public:
-    static PassRefPtr<HTMLScriptElement> create(const QualifiedName&, Document*, bool wasInsertedByParser, bool alreadyStarted = false);
+class CachedScript;
 
-    String text() const { return scriptContent(); }
+class HTMLScriptElement : public HTMLElement, public CachedResourceClient
+{
+public:
+    HTMLScriptElement(Document *doc);
+    ~HTMLScriptElement();
+
+    virtual HTMLTagStatus endTagRequirement() const { return TagStatusRequired; }
+    virtual int tagPriority() const { return 1; }
+    virtual bool checkDTD(const Node* newChild) { return newChild->isTextNode(); }
+
+    virtual void parseMappedAttribute(MappedAttribute *attr);
+    virtual void insertedIntoDocument();
+    virtual void removedFromDocument();
+    virtual void notifyFinished(CachedResource *finishedObj);
+
+    virtual void childrenChanged();
+
+    virtual bool isURLAttribute(Attribute *attr) const;
+
+    void setCreatedByParser(bool createdByParser) { m_createdByParser = createdByParser; }
+    virtual void finishedParsing();
+
+    bool shouldExecuteAsJavaScript();
+    void evaluateScript(const String &URL, const String &script);
+
+    String text() const;
     void setText(const String&);
 
-    KURL src() const;
+    String htmlFor() const;
+    void setHtmlFor(const String&);
 
-    void setAsync(bool);
-    bool async() const;
+    String event() const;
+    void setEvent(const String&);
+
+    String charset() const;
+    void setCharset(const String&);
+
+    bool defer() const;
+    void setDefer(bool);
+
+    String src() const;
+    void setSrc(const String&);
+
+    String type() const;
+    void setType(const String&);
 
 private:
-    HTMLScriptElement(const QualifiedName&, Document*, bool wasInsertedByParser, bool alreadyStarted);
-
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
-
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-
-    virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
-
-    virtual String sourceAttributeValue() const;
-    virtual String charsetAttributeValue() const;
-    virtual String typeAttributeValue() const;
-    virtual String languageAttributeValue() const;
-    virtual String forAttributeValue() const;
-    virtual String eventAttributeValue() const;
-    virtual bool asyncAttributeValue() const;
-    virtual bool deferAttributeValue() const;
-    virtual bool hasSourceAttribute() const;
-
-    virtual void dispatchLoadEvent();
-
-    virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren();
+    CachedScript* m_cachedScript;
+    bool m_createdByParser;
+    bool m_evaluated;
 };
 
 } //namespace

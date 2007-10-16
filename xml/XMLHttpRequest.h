@@ -1,8 +1,8 @@
+// -*- c-basic-offset: 2 -*-
 /*
- *  Copyright (C) 2003, 2006, 2008 Apple Inc. All rights reserved.
+ *  This file is part of the KDE libraries
+ *  Copyright (C) 2003, 2006 Apple Computer, Inc.
  *  Copyright (C) 2005, 2006 Alexey Proskuryakov <ap@nypop.com>
- *  Copyright (C) 2011 Google Inc. All rights reserved.
- *  Copyright (C) 2012 Intel Corporation
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -22,226 +22,143 @@
 #ifndef XMLHttpRequest_h
 #define XMLHttpRequest_h
 
-#include "ActiveDOMObject.h"
-#include "EventListener.h"
-#include "EventNames.h"
 #include "EventTarget.h"
-#include "FormData.h"
+#include "HTTPHeaderMap.h"
+#include "KURL.h"
+#include "PlatformString.h"
 #include "ResourceResponse.h"
-#include "ScriptWrappable.h"
-#include "ThreadableLoaderClient.h"
-#include "XMLHttpRequestProgressEventThrottle.h"
-#include <wtf/OwnPtr.h>
-#include <wtf/text/AtomicStringHash.h>
-#include <wtf/text/StringBuilder.h>
+#include "StringHash.h"
+#include "SubresourceLoaderClient.h"
+#include <kjs/ustring.h>
+
+#include <wtf/HashMap.h>
+#include <wtf/Vector.h>
 
 namespace WebCore {
 
-class Blob;
-class Document;
-class DOMFormData;
-class ResourceRequest;
-class SecurityOrigin;
-class SharedBuffer;
 class TextResourceDecoder;
-class ThreadableLoader;
+class Document;
+class Event;
+class EventListener;
+class String;
 
-class XMLHttpRequest : public ScriptWrappable, public RefCounted<XMLHttpRequest>, public EventTarget, private ThreadableLoaderClient, public ActiveDOMObject {
-    WTF_MAKE_FAST_ALLOCATED;
+typedef int ExceptionCode;
+
+const int XMLHttpRequestExceptionOffset = 500;
+const int XMLHttpRequestExceptionMax = 699;
+enum XMLHttpRequestExceptionCode {
+    PERMISSION_DENIED = XMLHttpRequestExceptionOffset, // Use SECURITY_ERR when that's in DOM Core, http://bugs.webkit.org/show_bug.cgi?id=12182
+    NETWORK_ERR = XMLHttpRequestExceptionOffset + 101
+};
+
+// these exact numeric values are important because JS expects them
+enum XMLHttpRequestState {
+    Uninitialized = 0,  // The initial value.
+    Open = 1,           // The open() method has been successfully called.
+    Sent = 2,           // The user agent successfully completed the request, but no data has yet been received.
+    Receiving = 3,      // Immediately before receiving the message body (if any). All HTTP headers have been received.
+    Loaded = 4          // The data transfer has been completed.
+};
+
+class XMLHttpRequest : public Shared<XMLHttpRequest>, public EventTarget, private SubresourceLoaderClient {
 public:
-    static PassRefPtr<XMLHttpRequest> create(ScriptExecutionContext*);
+    XMLHttpRequest(Document*);
     ~XMLHttpRequest();
 
-    // These exact numeric values are important because JS expects them.
-    enum State {
-        UNSENT = 0,
-        OPENED = 1,
-        HEADERS_RECEIVED = 2,
-        LOADING = 3,
-        DONE = 4
-    };
-    
-    enum ResponseTypeCode {
-        ResponseTypeDefault,
-        ResponseTypeText, 
-        ResponseTypeDocument,
-        ResponseTypeBlob,
-        ResponseTypeArrayBuffer
-    };
+    virtual XMLHttpRequest* toXMLHttpRequest() { return this; }
 
-    virtual void contextDestroyed();
-#if ENABLE(XHR_TIMEOUT)
-    virtual void didTimeout();
-#endif
-    virtual bool canSuspend() const;
-    virtual void suspend(ReasonForSuspension);
-    virtual void resume();
-    virtual void stop();
+    static void detachRequests(Document*);
+    static void cancelRequests(Document*);
 
-    virtual const AtomicString& interfaceName() const;
-    virtual ScriptExecutionContext* scriptExecutionContext() const;
-
-    const KURL& url() const { return m_url; }
-    String statusText(ExceptionCode&) const;
-    int status(ExceptionCode&) const;
-    State readyState() const;
-    bool withCredentials() const { return m_includeCredentials; }
-    void setWithCredentials(bool, ExceptionCode&);
-    void open(const String& method, const KURL&, ExceptionCode&);
+    String getStatusText(ExceptionCode&) const;
+    int getStatus(ExceptionCode&) const;
+    XMLHttpRequestState getReadyState() const;
     void open(const String& method, const KURL&, bool async, ExceptionCode&);
     void open(const String& method, const KURL&, bool async, const String& user, ExceptionCode&);
     void open(const String& method, const KURL&, bool async, const String& user, const String& password, ExceptionCode&);
-    void send(ExceptionCode&);
-    void send(Document*, ExceptionCode&);
-    void send(const String&, ExceptionCode&);
-    void send(Blob*, ExceptionCode&);
-    void send(DOMFormData*, ExceptionCode&);
-    void send(ArrayBuffer*, ExceptionCode&);
-    void send(ArrayBufferView*, ExceptionCode&);
+    void send(const String& body, ExceptionCode&);
     void abort();
-    void setRequestHeader(const AtomicString& name, const String& value, ExceptionCode&);
-    void overrideMimeType(const String& override);
-    String getAllResponseHeaders(ExceptionCode&) const;
-    String getResponseHeader(const AtomicString& name, ExceptionCode&) const;
-    String responseText(ExceptionCode&);
-    Document* responseXML(ExceptionCode&);
-    Document* optionalResponseXML() const { return m_responseDocument.get(); }
-    Blob* responseBlob(ExceptionCode&);
-    Blob* optionalResponseBlob() const { return m_responseBlob.get(); }
-#if ENABLE(XHR_TIMEOUT)
-    unsigned long timeout() const { return m_timeoutMilliseconds; }
-    void setTimeout(unsigned long timeout, ExceptionCode&);
-#endif
+    void setRequestHeader(const String& name, const String& value, ExceptionCode&);
+    void overrideMIMEType(const String& override);
+    String getAllResponseHeaders() const;
+    String getResponseHeader(const String& name) const;
+    const KJS::UString& getResponseText() const;
+    Document* getResponseXML() const;
 
-    void sendFromInspector(PassRefPtr<FormData>, ExceptionCode&);
+    void setOnReadyStateChangeListener(EventListener*);
+    EventListener* onReadyStateChangeListener() const;
+    void setOnLoadListener(EventListener*);
+    EventListener* onLoadListener() const;
 
-    // Expose HTTP validation methods for other untrusted requests.
-    static bool isAllowedHTTPMethod(const String&);
-    static String uppercaseKnownHTTPMethod(const String&);
-    static bool isAllowedHTTPHeader(const String&);
+    typedef Vector<RefPtr<EventListener> > ListenerVector;
+    typedef HashMap<AtomicStringImpl*, ListenerVector> EventListenersMap;
 
-    void setResponseType(const String&, ExceptionCode&);
-    String responseType();
-    ResponseTypeCode responseTypeCode() const { return m_responseTypeCode; }
-    
-    // response attribute has custom getter.
-    ArrayBuffer* responseArrayBuffer(ExceptionCode&);
-    ArrayBuffer* optionalResponseArrayBuffer() const { return m_responseArrayBuffer.get(); }
+    // useCapture is not used, even for add/remove pairing (for Firefox compatibility).
+    virtual void addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture);
+    virtual void removeEventListener(const AtomicString& eventType, EventListener*, bool useCapture);
+    virtual bool dispatchEvent(PassRefPtr<Event>, ExceptionCode&, bool tempEvent = false);
+    EventListenersMap& eventListeners() { return m_eventListeners; }
 
-    void setLastSendLineNumber(unsigned lineNumber) { m_lastSendLineNumber = lineNumber; }
-    void setLastSendURL(const String& url) { m_lastSendURL = url; }
+    Document* document() const { return m_doc; }
 
-    XMLHttpRequestUpload* upload();
-    XMLHttpRequestUpload* optionalUpload() const { return m_upload.get(); }
-
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(readystatechange);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(abort);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(load);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(loadend);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(loadstart);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(progress);
-#if ENABLE(XHR_TIMEOUT)
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(timeout);
-#endif
-
-    using RefCounted<XMLHttpRequest>::ref;
-    using RefCounted<XMLHttpRequest>::deref;
+    using Shared<XMLHttpRequest>::ref;
+    using Shared<XMLHttpRequest>::deref;
 
 private:
-    XMLHttpRequest(ScriptExecutionContext*);
-
     virtual void refEventTarget() { ref(); }
     virtual void derefEventTarget() { deref(); }
-    virtual EventTargetData* eventTargetData();
-    virtual EventTargetData* ensureEventTargetData();
 
-    Document* document() const;
-    SecurityOrigin* securityOrigin() const;
+    bool urlMatchesDocumentDomain(const KURL&) const;
 
-#if ENABLE(DASHBOARD_SUPPORT)
-    bool usesDashboardBackwardCompatibilityMode() const;
-#endif
+    virtual void willSendRequest(SubresourceLoader*, ResourceRequest& request, const ResourceResponse& redirectResponse);
+    virtual void didReceiveResponse(SubresourceLoader*, const ResourceResponse&);
+    virtual void didReceiveData(SubresourceLoader*, const char* data, int size);
+    virtual void didFail(SubresourceLoader*, const ResourceError&);
+    virtual void didFinishLoading(SubresourceLoader*);
+    virtual void receivedCancellation(SubresourceLoader*, const AuthenticationChallenge&);
 
-    virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent);
-    virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse&);
-    virtual void didReceiveData(const char* data, int dataLength);
-    virtual void didFinishLoading(unsigned long identifier, double finishTime);
-    virtual void didFail(const ResourceError&);
-    virtual void didFailRedirectCheck();
+    void processSyncLoadResults(const Vector<char>& data, const ResourceResponse&);
 
     String responseMIMEType() const;
     bool responseIsXML() const;
 
-    bool initSend(ExceptionCode&);
-    void sendBytesData(const void*, size_t, ExceptionCode&);
+    String getRequestHeader(const String& name) const;
 
-    String getRequestHeader(const AtomicString& name) const;
-    void setRequestHeaderInternal(const AtomicString& name, const String& value);
-
-    void changeState(State newState);
+    void changeState(XMLHttpRequestState newState);
     void callReadyStateChangeListener();
     void dropProtection();
-    void internalAbort();
-    void clearResponse();
-    void clearResponseBuffers();
-    void clearRequest();
 
-    void createRequest(ExceptionCode&);
+    Document* m_doc;
 
-    void genericError();
-    void networkError();
-    void abortError();
-
-    OwnPtr<XMLHttpRequestUpload> m_upload;
+    RefPtr<EventListener> m_onReadyStateChangeListener;
+    RefPtr<EventListener> m_onLoadListener;
+    EventListenersMap m_eventListeners;
 
     KURL m_url;
-    String m_method;
+    DeprecatedString m_method;
     HTTPHeaderMap m_requestHeaders;
-    RefPtr<FormData> m_requestEntityBody;
     String m_mimeTypeOverride;
     bool m_async;
-    bool m_includeCredentials;
-#if ENABLE(XHR_TIMEOUT)
-    unsigned long m_timeoutMilliseconds;
-#endif
-    RefPtr<Blob> m_responseBlob;
 
-    RefPtr<ThreadableLoader> m_loader;
-    State m_state;
+    RefPtr<SubresourceLoader> m_loader;
+    XMLHttpRequestState m_state;
 
     ResourceResponse m_response;
-    String m_responseEncoding;
+    String m_encoding;
 
     RefPtr<TextResourceDecoder> m_decoder;
 
-    StringBuilder m_responseBuilder;
+    // Unlike most strings in the DOM, we keep this as a KJS::UString, not a WebCore::String.
+    // That's because these strings can easily get huge (they are filled from the network with
+    // no parsing) and because JS can easily observe many intermediate states, so it's very useful
+    // to be able to share the buffer with JavaScript versions of the whole or partial string.
+    // In contrast, this string doesn't interact much with the rest of the engine so it's not that
+    // big a cost that it isn't a String.
+    KJS::UString m_responseText;
     mutable bool m_createdDocument;
-    mutable RefPtr<Document> m_responseDocument;
-    
-    RefPtr<SharedBuffer> m_binaryResponseBuilder;
-    mutable RefPtr<ArrayBuffer> m_responseArrayBuffer;
+    mutable RefPtr<Document> m_responseXML;
 
-    bool m_error;
-
-    bool m_uploadEventsAllowed;
-    bool m_uploadComplete;
-
-    bool m_sameOriginRequest;
-
-    // Used for onprogress tracking
-    long long m_receivedLength;
-
-    unsigned m_lastSendLineNumber;
-    String m_lastSendURL;
-    ExceptionCode m_exceptionCode;
-
-    EventTargetData m_eventTargetData;
-
-    XMLHttpRequestProgressEventThrottle m_progressEventThrottle;
-
-    // An enum corresponding to the allowed string values for the responseType attribute.
-    ResponseTypeCode m_responseTypeCode;
+    bool m_aborted;
 };
 
 } // namespace WebCore

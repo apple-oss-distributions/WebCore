@@ -26,116 +26,132 @@
 #include "config.h"
 #include "ContextMenu.h"
 
+#include "CString.h"
 #include "Document.h"
 #include "Frame.h"
 #include "FrameView.h"
 #include "Node.h"
-#include "NotImplemented.h"
+#include <tchar.h>
 #include <windows.h>
-#include <wtf/OwnArrayPtr.h>
-#include <wtf/Vector.h>
-#include <wtf/text/CString.h>
-
-#ifndef MIIM_FTYPE
-#define MIIM_FTYPE MIIM_TYPE
-#endif
-#ifndef MIIM_STRING
-#define MIIM_STRING MIIM_TYPE
-#endif
 
 namespace WebCore {
 
-ContextMenu::ContextMenu(HMENU menu)
+ContextMenu::ContextMenu(const HitTestResult& result)
+    : m_hitTestResult(result)
+    , m_platformDescription(0)
 {
-    getContextMenuItems(menu, m_items);
+    setPlatformDescription(::CreatePopupMenu());
 }
 
-void ContextMenu::getContextMenuItems(HMENU menu, Vector<ContextMenuItem>& items)
+ContextMenu::ContextMenu(const HitTestResult& result, const PlatformMenuDescription menu)
+    : m_hitTestResult(result)
+    , m_platformDescription(0)
 {
-#if OS(WINCE)
-    notImplemented();
-#else
-    int count = ::GetMenuItemCount(menu);
-    if (count <= 0)
+    setPlatformDescription(menu);
+}
+
+ContextMenu::~ContextMenu()
+{
+    if (m_platformDescription)
+        ::DestroyMenu(m_platformDescription);
+}
+
+unsigned ContextMenu::itemCount() const
+{
+    if (!m_platformDescription)
+        return 0;
+
+    return ::GetMenuItemCount(m_platformDescription);
+}
+
+void ContextMenu::insertItem(unsigned int position, ContextMenuItem& item)
+{
+    if (!m_platformDescription)
         return;
 
-    for (int i = 0; i < count; ++i) {
-        MENUITEMINFO info = {0};
-        info.cbSize = sizeof(MENUITEMINFO);
-        info.fMask = MIIM_FTYPE | MIIM_ID | MIIM_STRING | MIIM_STATE | MIIM_SUBMENU;
-
-        if (!::GetMenuItemInfo(menu, i, TRUE, &info))
-            continue;
-
-        if (info.fType == MFT_SEPARATOR) {
-            items.append(ContextMenuItem(SeparatorType, ContextMenuItemTagNoAction, String()));
-            continue;
-        }
-
-        int menuStringLength = info.cch + 1;
-        OwnArrayPtr<WCHAR> menuString = adoptArrayPtr(new WCHAR[menuStringLength]);
-        info.dwTypeData = menuString.get();
-        info.cch = menuStringLength;
-
-        if (::GetMenuItemInfo(menu, i, TRUE, &info))
-           items.append(ContextMenuItem(info));
-    }
-#endif
+    checkOrEnableIfNeeded(item);
+    ::InsertMenuItem(m_platformDescription, position, TRUE, item.releasePlatformDescription());
 }
 
-HMENU ContextMenu::createPlatformContextMenuFromItems(const Vector<ContextMenuItem>& items)
+void ContextMenu::appendItem(ContextMenuItem& item)
 {
-    HMENU menu = ::CreatePopupMenu();
+    insertItem(itemCount(), item);
+}
 
-    for (size_t i = 0; i < items.size(); ++i) {
-        const ContextMenuItem& item = items[i];
+static ContextMenuItem* contextMenuItemByIdOrPosition(HMENU menu, unsigned id, BOOL byPosition)
+{
+    if (!menu)
+        return 0;
+    LPMENUITEMINFO info = (LPMENUITEMINFO)malloc(sizeof(MENUITEMINFO));
+    if (!info)
+        return 0;
 
-        MENUITEMINFO menuItem = item.platformContextMenuItem();
+    memset(info, 0, sizeof(MENUITEMINFO));
 
-#if OS(WINCE)
-        UINT flags = MF_BYPOSITION;
-        UINT newItem = 0;
-        LPCWSTR title = 0;
+    info->cbSize = sizeof(MENUITEMINFO);
+    
+    info->fMask = MIIM_FTYPE | MIIM_ID | MIIM_STRING;
 
-        if (item.type() == SeparatorType)
-            flags |= MF_SEPARATOR;
-        else {
-            flags |= MF_STRING;
-            flags |= item.checked() ? MF_CHECKED : MF_UNCHECKED;
-            flags |= item.enabled() ? MF_ENABLED : MF_GRAYED;
-
-            title = menuItem.dwTypeData;
-            menuItem.dwTypeData = 0;
-
-            if (menuItem.hSubMenu) {
-                flags |= MF_POPUP;
-                newItem = reinterpret_cast<UINT>(menuItem.hSubMenu);
-                menuItem.hSubMenu = 0;
-            } else
-                newItem = menuItem.wID;
-        }
-
-        ::InsertMenuW(menu, i, flags, newItem, title);
-#else
-        // ContextMenuItem::platformContextMenuItem doesn't set the title of the MENUITEMINFO to make the
-        // lifetime handling easier for callers.
-        String itemTitle = item.title();
-        if (item.type() != SeparatorType) {
-            menuItem.fMask |= MIIM_STRING;
-            menuItem.cch = itemTitle.length();
-            menuItem.dwTypeData = const_cast<LPWSTR>(itemTitle.charactersWithNullTermination());
-        }
-
-        ::InsertMenuItem(menu, i, TRUE, &menuItem);
-#endif
+    if (!::GetMenuItemInfo(menu, id, byPosition, info)) {
+        free(info);
+        return 0;
     }
 
-    return menu;
+    UINT type = info->fType & ~(MFT_MENUBARBREAK | MFT_MENUBREAK | MFT_OWNERDRAW | MFT_RADIOCHECK | MFT_RIGHTORDER | MFT_RIGHTJUSTIFY);
+    if (type == MFT_STRING) {
+        LPTSTR buffer = (LPTSTR)malloc(++info->cch * sizeof(TCHAR));
+        if (!buffer) {
+            free(info);
+            return 0;
+        }
+        info->dwTypeData = buffer;
+        ::GetMenuItemInfo(menu, id, byPosition, info);
+    }
+    
+    return new ContextMenuItem(info);
 }
 
-HMENU ContextMenu::platformContextMenu() const
+ContextMenuItem* ContextMenu::itemWithAction(unsigned action)
 {
-    return createPlatformContextMenuFromItems(m_items);
+    return contextMenuItemByIdOrPosition(m_platformDescription, action, FALSE);
 }
 
-} // namespace WebCore
+ContextMenuItem* ContextMenu::itemAtIndex(unsigned index, const PlatformMenuDescription platformDescription)
+{
+    return contextMenuItemByIdOrPosition(platformDescription, index, TRUE);
+}
+
+void ContextMenu::setPlatformDescription(HMENU menu)
+{
+    if (menu == m_platformDescription)
+        return;
+    
+    if (m_platformDescription)
+        ::DestroyMenu(m_platformDescription);
+
+    m_platformDescription = menu;
+    if (!m_platformDescription)
+        return;
+
+    MENUINFO menuInfo = {0};
+    menuInfo.cbSize = sizeof(MENUINFO);
+    menuInfo.fMask = MIM_STYLE;
+    ::GetMenuInfo(m_platformDescription, &menuInfo);
+    menuInfo.fMask = MIM_STYLE;
+    menuInfo.dwStyle |= MNS_NOTIFYBYPOS;
+    ::SetMenuInfo(m_platformDescription, &menuInfo);
+}
+
+HMENU ContextMenu::platformDescription() const
+{
+    return m_platformDescription;
+}
+
+HMENU ContextMenu::releasePlatformDescription()
+{
+    HMENU description = m_platformDescription;
+    m_platformDescription = 0;
+    return description;
+}
+
+}

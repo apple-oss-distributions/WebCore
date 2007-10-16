@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,31 +18,27 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLIFrameElement : HTMLElement {
-    [Reflect] attribute DOMString align;
-    [Reflect] attribute DOMString frameBorder;
-    [Reflect] attribute DOMString height;
-    [Reflect] attribute DOMString longDesc;
-    [Reflect] attribute DOMString marginHeight;
-    [Reflect] attribute DOMString marginWidth;
-    [Reflect] attribute DOMString name;
-    [Reflect] attribute DOMString sandbox;
-    [Reflect, Conditional=IFRAME_SEAMLESS] attribute boolean seamless;
-    [Reflect] attribute DOMString scrolling;
-    [Reflect, URL] attribute DOMString src;
-    [Reflect] attribute DOMString srcdoc;
-    [Reflect] attribute DOMString width;
+module html {
 
-    // Introduced in DOM Level 2:
-    [CheckSecurityForNode] readonly attribute Document contentDocument;
+    interface [GenerateConstructor] HTMLIFrameElement : HTMLElement {
 
-    // Extensions
-    readonly attribute DOMWindow contentWindow;
+                 attribute [ConvertNullToNullString] DOMString       align;
+                 attribute [ConvertNullToNullString] DOMString       frameBorder;
+                 attribute [ConvertNullToNullString] DOMString       height;
+                 attribute [ConvertNullToNullString] DOMString       longDesc;
+                 attribute [ConvertNullToNullString] DOMString       marginHeight;
+                 attribute [ConvertNullToNullString] DOMString       marginWidth;
+                 attribute [ConvertNullToNullString] DOMString       name;
+                 attribute [ConvertNullToNullString] DOMString       scrolling;
+                 attribute [ConvertNullToNullString, CustomSetter] DOMString       src;
+                 attribute [ConvertNullToNullString] DOMString       width;
 
-#if defined(ENABLE_SVG) && ENABLE_SVG
-#if !defined(LANGUAGE_OBJECTIVE_C) || !LANGUAGE_OBJECTIVE_C
-    [CheckSecurityForNode, RaisesException] SVGDocument getSVGDocument();
-#endif
-#endif
-};
+        // Introduced in DOM Level 2:
+        readonly attribute [CheckFrameSecurity] Document        contentDocument;
 
+        // Extensions
+        readonly attribute DOMWindow contentWindow;
+
+    };
+
+}

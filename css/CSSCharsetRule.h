@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * (C) 2002-2003 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2002, 2006, 2008, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2002, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,28 +25,28 @@
 #define CSSCharsetRule_h
 
 #include "CSSRule.h"
+#include "PlatformString.h"
 
 namespace WebCore {
 
+typedef int ExceptionCode;
+
 class CSSCharsetRule : public CSSRule {
 public:
-    static PassRefPtr<CSSCharsetRule> create(CSSStyleSheet* parent, const String& encoding)
-    {
-        return adoptRef(new CSSCharsetRule(parent, encoding));
-    }
+    CSSCharsetRule(StyleBase* parent, const String& encoding);
+    virtual ~CSSCharsetRule();
 
-    virtual ~CSSCharsetRule() { }
+    virtual bool isCharsetRule() { return true; }
 
-    virtual CSSRule::Type type() const OVERRIDE { return CHARSET_RULE; }
-    virtual String cssText() const OVERRIDE;
-    virtual void reattach(StyleRuleBase* rule) OVERRIDE { ASSERT_UNUSED(rule, !rule); }
-
-    const String& encoding() const { return m_encoding; }
+    String encoding() const { return m_encoding; }
     void setEncoding(const String& encoding, ExceptionCode&) { m_encoding = encoding; }
 
-private:
-    CSSCharsetRule(CSSStyleSheet* parent, const String& encoding);
+    // Inherited from CSSRule
+    virtual unsigned short type() const { return CHARSET_RULE; }
 
+    virtual String cssText() const;
+
+protected:
     String m_encoding;
 };
 

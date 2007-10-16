@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,11 +26,8 @@
 #ifndef DOMImplementation_h
 #define DOMImplementation_h
 
-#include "Document.h"
-#include "MediaPlayer.h"
+#include "Shared.h"
 #include <wtf/Forward.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
 
 namespace WebCore {
 
@@ -37,45 +36,40 @@ class Document;
 class DocumentType;
 class Frame;
 class HTMLDocument;
-class KURL;
-class RegularExpression;
+class String;
 
 typedef int ExceptionCode;
 
-class DOMImplementation : public ScriptWrappable {
-    WTF_MAKE_FAST_ALLOCATED;
+class DOMImplementation : public Shared<DOMImplementation> {
 public:
-    static PassOwnPtr<DOMImplementation> create(Document* document) { return adoptPtr(new DOMImplementation(document)); }
-    
-    void ref() { m_document->ref(); }
-    void deref() { m_document->deref(); }
-    Document* document() { return m_document; }
+    virtual ~DOMImplementation(); 
 
     // DOM methods & attributes for DOMImplementation
-    static bool hasFeature(const String& feature, const String& version);
-    PassRefPtr<DocumentType> createDocumentType(const String& qualifiedName, const String& publicId, const String& systemId, ExceptionCode&);
+    bool hasFeature(const String& feature, const String& version) const;
+    PassRefPtr<DocumentType> createDocumentType(const String& qualifiedName, const String& publicId, const String &systemId, ExceptionCode&);
     PassRefPtr<Document> createDocument(const String& namespaceURI, const String& qualifiedName, DocumentType*, ExceptionCode&);
 
-    DOMImplementation* getInterface(const String& feature);
+    DOMImplementation* getInterface(const String& feature) const;
 
     // From the DOMImplementationCSS interface
-    static PassRefPtr<CSSStyleSheet> createCSSStyleSheet(const String& title, const String& media, ExceptionCode&);
+    PassRefPtr<CSSStyleSheet> createCSSStyleSheet(const String& title, const String& media, ExceptionCode&);
 
     // From the HTMLDOMImplementation interface
     PassRefPtr<HTMLDocument> createHTMLDocument(const String& title);
 
     // Other methods (not part of DOM)
-    static PassRefPtr<Document> createDocument(const String& MIMEType, Frame*, const KURL&, bool inViewSourceMode);
+    PassRefPtr<Document> createDocument(const String& MIMEType, Frame*, bool inViewSourceMode);
+    PassRefPtr<Document> createDocument(Frame*);
+    PassRefPtr<HTMLDocument> createHTMLDocument(Frame*);
+
+    // Returns the static instance of this class - only one instance of this class should
+    // ever be present, and is used as a factory method for creating Document objects
+    static DOMImplementation* instance();
 
     static bool isXMLMIMEType(const String& MIMEType);
     static bool isTextMIMEType(const String& MIMEType);
-
-private:
-    explicit DOMImplementation(Document*);
-
-    Document* m_document;
 };
 
-} // namespace WebCore
+} //namespace
 
 #endif

@@ -1,8 +1,10 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *           (C) 2006 Alexey Proskuryakov (ap@nypop.com)
  *
  * This library is free software; you can redistribute it and/or
@@ -25,74 +27,95 @@
 #include "config.h"
 #include "HTMLLegendElement.h"
 
-#include "HTMLFieldSetElement.h"
-#include "HTMLFormControlElement.h"
 #include "HTMLNames.h"
-#include "NodeTraversal.h"
-#include <wtf/StdLibExtras.h>
+#include "RenderLegend.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-
-inline HTMLLegendElement::HTMLLegendElement(const QualifiedName& tagName, Document* document)
-    : HTMLElement(tagName, document)
+HTMLLegendElement::HTMLLegendElement(Document *doc, HTMLFormElement *f)
+: HTMLGenericFormElement(legendTag, doc, f)
 {
-    ASSERT(hasTagName(legendTag));
 }
 
-PassRefPtr<HTMLLegendElement> HTMLLegendElement::create(const QualifiedName& tagName, Document* document)
+HTMLLegendElement::~HTMLLegendElement()
 {
-    return adoptRef(new HTMLLegendElement(tagName, document));
 }
 
-HTMLFormControlElement* HTMLLegendElement::associatedControl()
+bool HTMLLegendElement::isFocusable() const
+{
+    return false;
+}
+
+RenderObject* HTMLLegendElement::createRenderer(RenderArena* arena, RenderStyle* style)
+{
+    if (style->contentData())
+        return RenderObject::createObject(this, style);
+    
+    return new (arena) RenderLegend(this);
+}
+
+const AtomicString& HTMLLegendElement::type() const
+{
+    static const AtomicString legend("legend");
+    return legend;
+}
+
+String HTMLLegendElement::accessKey() const
+{
+    return getAttribute(accesskeyAttr);
+}
+
+void HTMLLegendElement::setAccessKey(const String &value)
+{
+    setAttribute(accesskeyAttr, value);
+}
+
+String HTMLLegendElement::align() const
+{
+    return getAttribute(alignAttr);
+}
+
+void HTMLLegendElement::setAlign(const String &value)
+{
+    setAttribute(alignAttr, value);
+}
+
+Element *HTMLLegendElement::formElement()
 {
     // Check if there's a fieldset belonging to this legend.
-    Element* fieldset = parentElement();
+    Node *fieldset = parentNode();
     while (fieldset && !fieldset->hasTagName(fieldsetTag))
-        fieldset = fieldset->parentElement();
+        fieldset = fieldset->parentNode();
     if (!fieldset)
         return 0;
 
-    // Find first form element inside the fieldset that is not a legend element.
-    // FIXME: Should we consider tabindex?
-    Element* element = fieldset;
-    while ((element = ElementTraversal::next(element, fieldset))) {
-        if (element->isFormControlElement())
-            return static_cast<HTMLFormControlElement*>(element);
+    // Find first form element inside the fieldset.
+    // FIXME: Should we care about tabindex?
+    Node *node = fieldset;
+    while ((node = node->traverseNextNode(fieldset))) {
+        if (node->isHTMLElement()) {
+            HTMLElement *element = static_cast<HTMLElement *>(node);
+            if (!element->hasLocalName(legendTag) && element->isGenericFormElement())
+                return element;
+        }
     }
 
     return 0;
 }
 
-void HTMLLegendElement::focus(bool, FocusDirection direction)
+void HTMLLegendElement::focus(bool)
 {
-    if (isFocusable())
-        Element::focus(true, direction);
-        
-    // To match other browsers' behavior, never restore previous selection.
-    if (HTMLFormControlElement* control = associatedControl())
-        control->focus(false, direction);
+    // to match other browsers, never restore previous selection
+    if (Element *element = formElement())
+        element->focus(false);
 }
 
-void HTMLLegendElement::accessKeyAction(bool sendMouseEvents)
+void HTMLLegendElement::accessKeyAction(bool sendToAnyElement)
 {
-    if (HTMLFormControlElement* control = associatedControl())
-        control->accessKeyAction(sendMouseEvents);
-}
-
-HTMLFormElement* HTMLLegendElement::virtualForm() const
-{
-    // According to the specification, If the legend has a fieldset element as
-    // its parent, then the form attribute must return the same value as the
-    // form attribute on that fieldset element. Otherwise, it must return null.
-    ContainerNode* fieldset = parentNode();
-    if (!fieldset || !fieldset->hasTagName(fieldsetTag))
-        return 0;
-
-    return static_cast<HTMLFieldSetElement*>(fieldset)->form();
+    if (Element *element = formElement())
+        element->accessKeyAction(sendToAnyElement);
 }
     
 } // namespace

@@ -1,7 +1,9 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,43 +21,63 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #include "config.h"
 #include "HTMLPreElement.h"
 
-#include "Attribute.h"
 #include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include "HTMLNames.h"
-#include "StylePropertySet.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLPreElement::HTMLPreElement(const QualifiedName& tagName, Document* document)
-    : HTMLElement(tagName, document)
+HTMLPreElement::HTMLPreElement(const QualifiedName& tagName, Document* doc)
+    : HTMLElement(tagName, doc)
 {
 }
 
-PassRefPtr<HTMLPreElement> HTMLPreElement::create(const QualifiedName& tagName, Document* document)
+bool HTMLPreElement::mapToEntry(const QualifiedName& attrName, MappedAttributeEntry& result) const
 {
-    return adoptRef(new HTMLPreElement(tagName, document));
+    if (attrName == widthAttr || attrName == wrapAttr) {
+        result = ePre;
+        return false;
+    }
+    return HTMLElement::mapToEntry(attrName, result);
 }
 
-bool HTMLPreElement::isPresentationAttribute(const QualifiedName& name) const
+void HTMLPreElement::parseMappedAttribute(MappedAttribute *attr)
 {
-    if (name == wrapAttr)
-        return true;
-    return HTMLElement::isPresentationAttribute(name);
+    if (attr->name() == widthAttr) {
+        // FIXME: Implement this some day.  Width on a <pre> is the # of characters that
+        // we should size the pre to.  We basically need to take the width of a space,
+        // multiply by the value of the attribute and then set that as the width CSS
+        // property.
+    } else if (attr->name() == wrapAttr) {
+        if (!attr->value().isNull())
+            addCSSProperty(attr, CSS_PROP_WHITE_SPACE, CSS_VAL_PRE_WRAP);
+    } else
+        return HTMLElement::parseMappedAttribute(attr);
 }
 
-void HTMLPreElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
+int HTMLPreElement::width() const
 {
-    if (name == wrapAttr)
-        style->setProperty(CSSPropertyWhiteSpace, CSSValuePreWrap);
-    else
-        HTMLElement::collectStyleForPresentationAttribute(name, value, style);
+    return getAttribute(widthAttr).toInt();
+}
+
+void HTMLPreElement::setWidth(int width)
+{
+    setAttribute(widthAttr, String::number(width));
+}
+
+bool HTMLPreElement::wrap() const
+{
+    return !getAttribute(wrapAttr).isNull();
+}
+
+void HTMLPreElement::setWrap(bool wrap)
+{
+    setAttribute(wrapAttr, wrap ? "" : 0);
 }
 
 }

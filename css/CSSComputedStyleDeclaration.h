@@ -1,6 +1,7 @@
-/*
- * Copyright (C) 2004 Zack Rusin <zack@kde.org>
- * Copyright (C) 2004, 2005, 2006, 2008, 2012, 2013 Apple Inc. All rights reserved.
+/**
+ *
+ * Copyright (C)  2004  Zack Rusin <zack@kde.org>
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -22,114 +23,52 @@
 #define CSSComputedStyleDeclaration_h
 
 #include "CSSStyleDeclaration.h"
-#include "RenderStyleConstants.h"
-#include <wtf/RefPtr.h>
-#include <wtf/text/WTFString.h>
+#include "Node.h"
 
 namespace WebCore {
 
-class CSSPrimitiveValue;
-class CSSValueList;
-class Color;
-class MutableStylePropertySet;
-class Node;
+class CSSMutableStyleDeclaration;
+class CSSProperty;
 class RenderObject;
 class RenderStyle;
-class SVGPaint;
-class ShadowData;
-class StylePropertySet;
-class StylePropertyShorthand;
-
-#if ENABLE(CSS_SHADERS)
-class CustomFilterNumberParameter;
-class CustomFilterParameter;
-#endif
 
 enum EUpdateLayout { DoNotUpdateLayout = false, UpdateLayout = true };
 
-class ComputedStyleExtractor {
-public:
-    ComputedStyleExtractor(PassRefPtr<Node>, bool allowVisitedStyle = false, PseudoId = NOPSEUDO);
-
-    PassRefPtr<CSSValue> propertyValue(CSSPropertyID, EUpdateLayout = UpdateLayout) const;
-
-    // Helper methods for HTML editing.
-    PassRefPtr<MutableStylePropertySet> copyPropertiesInSet(const CSSPropertyID* set, unsigned length) const;
-    PassRefPtr<MutableStylePropertySet> copyProperties() const;
-    PassRefPtr<CSSPrimitiveValue> getFontSizeCSSValuePreferringKeyword() const;
-    bool useFixedFontDefaultSize() const;
-    bool propertyMatches(CSSPropertyID, const CSSValue*) const;
-
-private:
-    // The styled node is either the node passed into computedPropertyValue, or the
-    // PseudoElement for :before and :after if they exist.
-    // FIXME: This should be styledElement since in JS getComputedStyle only works
-    // on Elements, but right now editing creates these for text nodes. We should fix that.
-    Node* styledNode() const;
-
-#if ENABLE(SVG)
-    PassRefPtr<CSSValue> svgPropertyValue(CSSPropertyID, EUpdateLayout) const;
-    PassRefPtr<SVGPaint> adjustSVGPaintForCurrentColor(PassRefPtr<SVGPaint>, RenderStyle*) const;
-#endif
-
-    PassRefPtr<CSSValue> valueForShadow(const ShadowData*, CSSPropertyID, const RenderStyle*) const;
-    PassRefPtr<CSSPrimitiveValue> currentColorOrValidColor(RenderStyle*, const Color&) const;
-
-#if ENABLE(CSS_FILTERS)
-    PassRefPtr<CSSValue> valueForFilter(const RenderObject*, const RenderStyle*) const;
-#endif
-
-    PassRefPtr<CSSValueList> getCSSPropertyValuesForShorthandProperties(const StylePropertyShorthand&) const;
-    PassRefPtr<CSSValueList> getCSSPropertyValuesForSidesShorthand(const StylePropertyShorthand&) const;
-    PassRefPtr<CSSValueList> getBackgroundShorthandValue() const;
-    PassRefPtr<CSSValueList> getCSSPropertyValuesForGridShorthand(const StylePropertyShorthand&) const;
-
-    RefPtr<Node> m_node;
-    PseudoId m_pseudoElementSpecifier;
-    bool m_allowVisitedStyle;
-};
-
 class CSSComputedStyleDeclaration : public CSSStyleDeclaration {
 public:
-    static PassRefPtr<CSSComputedStyleDeclaration> create(PassRefPtr<Node> node, bool allowVisitedStyle = false, const String& pseudoElementName = String())
-    {
-        return adoptRef(new CSSComputedStyleDeclaration(node, allowVisitedStyle, pseudoElementName));
-    }
+    CSSComputedStyleDeclaration(PassRefPtr<Node>);
     virtual ~CSSComputedStyleDeclaration();
 
-    virtual void ref() OVERRIDE;
-    virtual void deref() OVERRIDE;
+    virtual String cssText() const;
 
-    String getPropertyValue(CSSPropertyID) const;
-
-private:
-    CSSComputedStyleDeclaration(PassRefPtr<Node>, bool allowVisitedStyle, const String&);
-
-    // CSSOM functions. Don't make these public.
-    virtual CSSRule* parentRule() const;
     virtual unsigned length() const;
     virtual String item(unsigned index) const;
-    virtual PassRefPtr<CSSValue> getPropertyCSSValue(const String& propertyName);
-    virtual String getPropertyValue(const String& propertyName);
-    virtual String getPropertyPriority(const String& propertyName);
-    virtual String getPropertyShorthand(const String& propertyName);
-    virtual bool isPropertyImplicit(const String& propertyName);
-    virtual void setProperty(const String& propertyName, const String& value, const String& priority, ExceptionCode&);
-    virtual String removeProperty(const String& propertyName, ExceptionCode&);
-    virtual String cssText() const;
-    virtual void setCssText(const String&, ExceptionCode&);
-    virtual PassRefPtr<CSSValue> getPropertyCSSValueInternal(CSSPropertyID);
-    virtual String getPropertyValueInternal(CSSPropertyID);
-    virtual void setPropertyInternal(CSSPropertyID, const String& value, bool important, ExceptionCode&);
-    virtual PassRefPtr<MutableStylePropertySet> copyProperties() const OVERRIDE;
 
-    PassRefPtr<CSSValue> getPropertyCSSValue(CSSPropertyID, EUpdateLayout = UpdateLayout) const;
+    virtual PassRefPtr<CSSValue> getPropertyCSSValue(int propertyID) const;
+    virtual String getPropertyValue(int propertyID) const;
+    virtual bool getPropertyPriority(int propertyID) const;
+    virtual int getPropertyShorthand(int propertyID) const { return -1; }
+    virtual bool isPropertyImplicit(int propertyID) const { return true; }
+
+    virtual PassRefPtr<CSSMutableStyleDeclaration> copy() const;
+    virtual PassRefPtr<CSSMutableStyleDeclaration> makeMutable();
+
+    PassRefPtr<CSSValue> getPropertyCSSValue(int propertyID, EUpdateLayout) const;
+
+    PassRefPtr<CSSMutableStyleDeclaration> copyInheritableProperties() const;
+
+    static void removeComputedInheritablePropertiesFrom(CSSMutableStyleDeclaration*);
+
+private:
+    virtual void setCssText(const String&, ExceptionCode&);
+
+    virtual String removeProperty(int propertyID, ExceptionCode&);
+    virtual void setProperty(int propertyId, const String& value, bool important, ExceptionCode&);
 
     RefPtr<Node> m_node;
-    PseudoId m_pseudoElementSpecifier;
-    bool m_allowVisitedStyle;
-    unsigned m_refCount;
 };
+
+PassRefPtr<CSSComputedStyleDeclaration> computedStyle(Node*);
 
 } // namespace WebCore
 

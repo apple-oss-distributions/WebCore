@@ -1,4 +1,6 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
@@ -21,124 +23,53 @@
 #ifndef CSSProperty_h
 #define CSSProperty_h
 
-#include "CSSPropertyNames.h"
 #include "CSSValue.h"
-#include "RenderStyleConstants.h"
-#include "TextDirection.h"
-#include "WritingMode.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
 
 namespace WebCore {
 
-union StylePropertyMetadata {
-    StylePropertyMetadata(CSSPropertyID propertyID, CSSPropertyID shorthandID, bool important, bool implicit, bool inherited)
-        : m_propertyID(propertyID)
+class CSSProperty {
+public:
+    CSSProperty(int propID, PassRefPtr<CSSValue> value, bool important = false, int shorthandID = 0, bool implicit = false)
+        : m_id(propID)
         , m_shorthandID(shorthandID)
         , m_important(important)
         , m_implicit(implicit)
-        , m_inherited(inherited)
-    {
-    }
-
-    unsigned m_bits;
-    struct {
-        unsigned m_propertyID : 14;
-        unsigned m_shorthandID : 14; // If this property was set as part of a shorthand, gives the shorthand.
-        unsigned m_important : 1;
-        unsigned m_implicit : 1; // Whether or not the property was set implicitly as the result of a shorthand.
-        unsigned m_inherited : 1;
-    };
-};
-
-class CSSProperty {
-public:
-    CSSProperty(CSSPropertyID propertyID, PassRefPtr<CSSValue> value, bool important = false, CSSPropertyID shorthandID = CSSPropertyInvalid, bool implicit = false)
-        : m_metadata(propertyID, shorthandID, important, implicit, isInheritedProperty(propertyID))
         , m_value(value)
     {
-#if ENABLE(CSS_VARIABLES)
-    ASSERT((propertyID == CSSPropertyVariable) == (m_value && m_value->isVariableValue()));
-#endif
     }
 
-    // FIXME: Remove this.
-    CSSProperty(StylePropertyMetadata metadata, CSSValue* value)
-        : m_metadata(metadata)
-        , m_value(value)
+    CSSProperty& operator=(const CSSProperty& other)
     {
-#if ENABLE(CSS_VARIABLES)
-    ASSERT((metadata.m_propertyID == CSSPropertyVariable) == (m_value && m_value->isVariableValue()));
-#endif
+        m_id = other.m_id;
+        m_shorthandID = other.m_shorthandID;
+        m_important = other.m_important;
+        m_value = other.m_value;
+        return *this;
     }
 
-    CSSPropertyID id() const { return static_cast<CSSPropertyID>(m_metadata.m_propertyID); }
-    CSSPropertyID shorthandID() const { return static_cast<CSSPropertyID>(m_metadata.m_shorthandID); }
-    bool isImportant() const { return m_metadata.m_important; }
+    int id() const { return m_id; }
+    int shorthandID() const { return m_shorthandID; }
+
+    bool isImportant() const { return m_important; }
+    bool isImplicit() const { return m_implicit; }
 
     CSSValue* value() const { return m_value.get(); }
+    
+    String cssText() const;
 
-    void wrapValueInCommaSeparatedList();
+    friend bool operator==(const CSSProperty&, const CSSProperty&);
 
-    static CSSPropertyID resolveDirectionAwareProperty(CSSPropertyID, TextDirection, WritingMode);
-    static bool isInheritedProperty(CSSPropertyID);
+    // make sure the following fits in 4 bytes.
+    int m_id;
+    int m_shorthandID;  // If this property was set as part of a shorthand, gives the shorthand.
+    bool m_important : 1;
+    bool m_implicit : 1; // Whether or not the property was set implicitly as the result of a shorthand.
 
-    StylePropertyMetadata metadata() const { return m_metadata; }
-
-private:
-    StylePropertyMetadata m_metadata;
     RefPtr<CSSValue> m_value;
 };
 
-inline CSSPropertyID prefixingVariantForPropertyId(CSSPropertyID propId)
-{
-    CSSPropertyID propertyId = CSSPropertyInvalid;
-    switch (propId) {
-    case CSSPropertyTransitionDelay:
-        propertyId = CSSPropertyWebkitTransitionDelay;
-        break;
-    case CSSPropertyTransitionDuration:
-        propertyId = CSSPropertyWebkitTransitionDuration;
-        break;
-    case CSSPropertyTransitionProperty:
-        propertyId = CSSPropertyWebkitTransitionProperty;
-        break;
-    case CSSPropertyTransitionTimingFunction:
-        propertyId = CSSPropertyWebkitTransitionTimingFunction;
-        break;
-    case CSSPropertyTransition:
-        propertyId = CSSPropertyWebkitTransition;
-        break;
-    case CSSPropertyWebkitTransitionDelay:
-        propertyId = CSSPropertyTransitionDelay;
-        break;
-    case CSSPropertyWebkitTransitionDuration:
-        propertyId = CSSPropertyTransitionDuration;
-        break;
-    case CSSPropertyWebkitTransitionProperty:
-        propertyId = CSSPropertyTransitionProperty;
-        break;
-    case CSSPropertyWebkitTransitionTimingFunction:
-        propertyId = CSSPropertyTransitionTimingFunction;
-        break;
-    case CSSPropertyWebkitTransition:
-        propertyId = CSSPropertyTransition;
-        break;
-    default:
-        propertyId = propId;
-        break;
-    }
-    ASSERT(propertyId != CSSPropertyInvalid);
-    return propertyId;
-}
-
 } // namespace WebCore
-
-namespace WTF {
-template <> struct VectorTraits<WebCore::CSSProperty> : VectorTraitsBase<false, WebCore::CSSProperty> {
-    static const bool canInitializeWithMemset = true;
-    static const bool canMoveWithMemcpy = true;
-};
-}
 
 #endif // CSSProperty_h

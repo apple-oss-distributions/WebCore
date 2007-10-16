@@ -25,23 +25,13 @@
 #include "config.h"
 #include "ProtectionSpace.h"
 
-#if USE(CFNETWORK) && !PLATFORM(MAC)
-#include "AuthenticationCF.h"
-#include <CFNetwork/CFURLProtectionSpacePriv.h>
-#include <wtf/RetainPtr.h>
-#endif
-
 namespace WebCore {
 
 // Need to enforce empty, non-null strings due to the pickiness of the String == String operator
 // combined with the semantics of the String(NSString*) constructor
 ProtectionSpace::ProtectionSpace()
     : m_host("")
-    , m_port(0)
-    , m_serverType(ProtectionSpaceServerHTTP)
     , m_realm("")
-    , m_authenticationScheme(ProtectionSpaceAuthenticationSchemeDefault)
-    , m_isHashTableDeletedValue(false)
 {
 }
  
@@ -51,9 +41,8 @@ ProtectionSpace::ProtectionSpace(const String& host, int port, ProtectionSpaceSe
     : m_host(host.length() ? host : "")
     , m_port(port)
     , m_serverType(serverType)
-    , m_realm(realm.length() ? realm : "")
+    , m_realm(realm.length() ? host : "")
     , m_authenticationScheme(authenticationScheme)
-    , m_isHashTableDeletedValue(false)
 {    
 }
     
@@ -92,15 +81,10 @@ ProtectionSpaceAuthenticationScheme ProtectionSpace::authenticationScheme() cons
 
 bool ProtectionSpace::receivesCredentialSecurely() const
 {
-#if USE(CFNETWORK) && !PLATFORM(MAC)
-    RetainPtr<CFURLProtectionSpaceRef> cfSpace = adoptCF(createCF(*this));
-    return cfSpace && CFURLProtectionSpaceReceivesCredentialSecurely(cfSpace.get());
-#else
-    return (m_serverType == ProtectionSpaceServerHTTPS || 
-            m_serverType == ProtectionSpaceServerFTPS || 
-            m_serverType == ProtectionSpaceProxyHTTPS || 
-            m_authenticationScheme == ProtectionSpaceAuthenticationSchemeHTTPDigest); 
-#endif
+    return (m_serverType == ProtectionSpaceServerHTTPS ||
+            m_serverType == ProtectionSpaceServerFTPS ||
+            m_serverType == ProtectionSpaceProxyHTTPS ||
+            m_authenticationScheme == ProtectionSpaceAuthenticationSchemeHTTPDigest);
 }
 
 bool operator==(const ProtectionSpace& a, const ProtectionSpace& b)
@@ -111,8 +95,7 @@ bool operator==(const ProtectionSpace& a, const ProtectionSpace& b)
         return false;
     if (a.serverType() != b.serverType())
         return false;
-    // Ignore realm for proxies
-    if (!a.isProxy() && a.realm() != b.realm())
+    if (a.realm() != b.realm())
         return false;
     if (a.authenticationScheme() != b.authenticationScheme())
         return false;

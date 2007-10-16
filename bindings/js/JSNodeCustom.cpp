@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,26 +34,15 @@
 #include "DocumentType.h"
 #include "Entity.h"
 #include "EntityReference.h"
-#include "ExceptionCode.h"
-#include "HTMLAudioElement.h"
-#include "HTMLCanvasElement.h"
 #include "HTMLElement.h"
-#include "HTMLFrameElementBase.h"
-#include "HTMLImageElement.h"
-#include "HTMLLinkElement.h"
-#include "HTMLNames.h"
-#include "HTMLScriptElement.h"
-#include "HTMLStyleElement.h"
 #include "JSAttr.h"
 #include "JSCDATASection.h"
 #include "JSComment.h"
-#include "JSDOMBinding.h"
 #include "JSDocument.h"
 #include "JSDocumentFragment.h"
 #include "JSDocumentType.h"
 #include "JSEntity.h"
 #include "JSEntityReference.h"
-#include "JSEventListener.h"
 #include "JSHTMLElement.h"
 #include "JSHTMLElementWrapperFactory.h"
 #include "JSNotation.h"
@@ -62,10 +51,6 @@
 #include "Node.h"
 #include "Notation.h"
 #include "ProcessingInstruction.h"
-#include "RegisteredEventListener.h"
-#include "ShadowRoot.h"
-#include "StyleSheet.h"
-#include "StyledElement.h"
 #include "Text.h"
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
@@ -75,213 +60,162 @@
 #include "SVGElement.h"
 #endif
 
-using namespace JSC;
-
 namespace WebCore {
 
-using namespace HTMLNames;
+typedef int ExpectionCode;
 
-static inline bool isObservable(JSNode* jsNode, Node* node)
+KJS::JSValue* JSNode::insertBefore(KJS::ExecState* exec, const KJS::List& args)
 {
-    // The root node keeps the tree intact.
-    if (!node->parentNode())
-        return true;
-
-    if (jsNode->hasCustomProperties())
-        return true;
-
-    // A node's JS wrapper is responsible for marking its JS event listeners.
-    if (node->hasEventListeners())
-        return true;
-
-    return false;
+    ExceptionCode ec = 0;
+    bool ok = impl()->insertBefore(toNode(args[0]), toNode(args[1]), ec);
+    KJS::setDOMException(exec, ec);
+    if (ok)
+        return args[0];
+    return KJS::jsNull();
 }
 
-static inline bool isReachableFromDOM(JSNode* jsNode, Node* node, SlotVisitor& visitor)
+KJS::JSValue* JSNode::replaceChild(KJS::ExecState* exec, const KJS::List& args)
 {
-    if (!node->inDocument()) {
-        // If a wrapper is the last reference to an image element
-        // that is loading but not in the document, the wrapper is observable
-        // because it is the only thing keeping the image element alive, and if
-        // the element is destroyed, its load event will not fire.
-        // FIXME: The DOM should manage this issue without the help of JavaScript wrappers.
-        if (node->hasTagName(imgTag)) {
-            if (static_cast<HTMLImageElement*>(node)->hasPendingActivity())
-                return true;
-        }
-    #if ENABLE(VIDEO)
-        else if (node->hasTagName(audioTag)) {
-            if (!static_cast<HTMLAudioElement*>(node)->paused())
-                return true;
-        }
-    #endif
+    ExceptionCode ec = 0;
+    bool ok = impl()->replaceChild(toNode(args[0]), toNode(args[1]), ec);
+    KJS::setDOMException(exec, ec);
+    if (ok)
+        return args[1];
+    return KJS::jsNull();
+}
 
-        // If a node is firing event listeners, its wrapper is observable because
-        // its wrapper is responsible for marking those event listeners.
-        if (node->isFiringEventListeners())
-            return true;
+KJS::JSValue* JSNode::removeChild(KJS::ExecState* exec, const KJS::List& args)
+{
+    ExceptionCode ec = 0;
+    bool ok = impl()->removeChild(toNode(args[0]), ec);
+    KJS::setDOMException(exec, ec);
+    if (ok)
+        return args[0];
+    return KJS::jsNull();
+}
+
+KJS::JSValue* JSNode::appendChild(KJS::ExecState* exec, const KJS::List& args)
+{
+    ExceptionCode ec = 0;
+    bool ok = impl()->appendChild(toNode(args[0]), ec);
+    KJS::setDOMException(exec, ec);
+    if (ok)
+        return args[0];
+    return KJS::jsNull();
+}
+
+void JSNode::mark()
+{
+    ASSERT(!marked());
+
+    Node* node = m_impl.get();
+
+    // Nodes in the document are kept alive by ScriptInterpreter::mark,
+    // so we have no special responsibilities and can just call the base class here.
+    if (node->inDocument()) {
+        DOMObject::mark();
+        return;
     }
 
-    return isObservable(jsNode, node) && visitor.containsOpaqueRoot(root(node));
+    // This is a node outside the document, so find the root of the tree it is in,
+    // and start marking from there.
+    Node* root = node;
+    for (Node* current = m_impl.get(); current; current = current->parentNode())
+        root = current;
+
+    // If we're already marking this tree, then we can simply mark this wrapper
+    // by calling the base class; our caller is iterating the tree.
+    if (root->m_inSubtreeMark) {
+        DOMObject::mark();
+        return;
+    }
+
+    // Mark the whole tree; use the global set of roots to avoid reentering.
+    root->m_inSubtreeMark = true;
+    for (Node* nodeToMark = root; nodeToMark; nodeToMark = nodeToMark->traverseNextNode()) {
+        JSNode* wrapper = KJS::ScriptInterpreter::getDOMNodeForDocument(m_impl->document(), nodeToMark);
+        if (wrapper) {
+            if (!wrapper->marked())
+                wrapper->mark();
+        } else if (nodeToMark == node) {
+            // This is the case where the map from the document to wrappers has
+            // been cleared out, but a wrapper is being marked. For now, we'll
+            // let the rest of the tree of wrappers get collected, because we have
+            // no good way of finding them. Later we should test behavior of other
+            // browsers and see if we need to preserve other wrappers in this case.
+            if (!marked())
+                mark();
+        }
+    }
+    root->m_inSubtreeMark = false;
+
+    // Double check that we actually ended up marked. This assert caught problems in the past.
+    ASSERT(marked());
 }
 
-bool JSNodeOwner::isReachableFromOpaqueRoots(JSC::Handle<JSC::Unknown> handle, void*, SlotVisitor& visitor)
+KJS::JSValue* toJS(KJS::ExecState* exec, PassRefPtr<Node> n)
 {
-    JSNode* jsNode = jsCast<JSNode*>(handle.get().asCell());
-    return isReachableFromDOM(jsNode, jsNode->impl(), visitor);
-}
+    Node* node = n.get(); 
+    if (!node)
+        return KJS::jsNull();
 
-void JSNodeOwner::finalize(JSC::Handle<JSC::Unknown> handle, void* context)
-{
-    JSNode* jsNode = static_cast<JSNode*>(handle.get().asCell());
-    DOMWrapperWorld* world = static_cast<DOMWrapperWorld*>(context);
-    uncacheWrapper(world, jsNode->impl(), jsNode);
-    jsNode->releaseImpl();
-}
+    KJS::ScriptInterpreter* interp = static_cast<KJS::ScriptInterpreter*>(exec->dynamicInterpreter());
+    Document* doc = node->document();
+    JSNode* ret = interp->getDOMNodeForDocument(doc, node);
+    if (ret)
+        return ret;
 
-JSValue JSNode::insertBefore(ExecState* exec)
-{
-    Node* imp = static_cast<Node*>(impl());
-    ExceptionCode ec = 0;
-    bool ok = imp->insertBefore(toNode(exec->argument(0)), toNode(exec->argument(1)), ec, AttachLazily);
-    setDOMException(exec, ec);
-    if (ok)
-        return exec->argument(0);
-    return jsNull();
-}
-
-JSValue JSNode::replaceChild(ExecState* exec)
-{
-    Node* imp = static_cast<Node*>(impl());
-    ExceptionCode ec = 0;
-    bool ok = imp->replaceChild(toNode(exec->argument(0)), toNode(exec->argument(1)), ec, AttachLazily);
-    setDOMException(exec, ec);
-    if (ok)
-        return exec->argument(1);
-    return jsNull();
-}
-
-JSValue JSNode::removeChild(ExecState* exec)
-{
-    Node* imp = static_cast<Node*>(impl());
-    ExceptionCode ec = 0;
-    bool ok = imp->removeChild(toNode(exec->argument(0)), ec);
-    setDOMException(exec, ec);
-    if (ok)
-        return exec->argument(0);
-    return jsNull();
-}
-
-JSValue JSNode::appendChild(ExecState* exec)
-{
-    Node* imp = static_cast<Node*>(impl());
-    ExceptionCode ec = 0;
-    bool ok = imp->appendChild(toNode(exec->argument(0)), ec, AttachLazily);
-    setDOMException(exec, ec);
-    if (ok)
-        return exec->argument(0);
-    return jsNull();
-}
-
-JSScope* JSNode::pushEventHandlerScope(ExecState* exec, JSScope* node) const
-{
-    if (inherits(&JSHTMLElement::s_info))
-        return jsCast<const JSHTMLElement*>(this)->pushEventHandlerScope(exec, node);
-    return node;
-}
-
-void JSNode::visitChildren(JSCell* cell, SlotVisitor& visitor)
-{
-    JSNode* thisObject = jsCast<JSNode*>(cell);
-    ASSERT_GC_OBJECT_INHERITS(thisObject, &s_info);
-    COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
-    ASSERT(thisObject->structure()->typeInfo().overridesVisitChildren());
-    Base::visitChildren(thisObject, visitor);
-
-    Node* node = thisObject->impl();
-    node->visitJSEventListeners(visitor);
-
-    visitor.addOpaqueRoot(root(node));
-}
-
-static ALWAYS_INLINE JSValue createWrapperInline(ExecState* exec, JSDOMGlobalObject* globalObject, Node* node)
-{
-    ASSERT(node);
-    ASSERT(!getCachedWrapper(currentWorld(exec), node));
-    
-    JSDOMWrapper* wrapper;    
     switch (node->nodeType()) {
         case Node::ELEMENT_NODE:
             if (node->isHTMLElement())
-                wrapper = createJSHTMLWrapper(exec, globalObject, toHTMLElement(node));
+                ret = createJSHTMLWrapper(exec, static_pointer_cast<HTMLElement>(n));
 #if ENABLE(SVG)
             else if (node->isSVGElement())
-                wrapper = createJSSVGWrapper(exec, globalObject, toSVGElement(node));
+                ret = createJSSVGWrapper(exec, static_pointer_cast<SVGElement>(n));
 #endif
             else
-                wrapper = CREATE_DOM_WRAPPER(exec, globalObject, Element, node);
+                ret = new JSElement(exec, static_cast<Element*>(node));
             break;
         case Node::ATTRIBUTE_NODE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, Attr, node);
+            ret = new JSAttr(exec, static_cast<Attr*>(node));
             break;
         case Node::TEXT_NODE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, Text, node);
+            ret = new JSText(exec, static_cast<Text*>(node));
             break;
         case Node::CDATA_SECTION_NODE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CDATASection, node);
+            ret = new JSCDATASection(exec, static_cast<CDATASection*>(node));
             break;
         case Node::ENTITY_NODE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, Entity, node);
+            ret = new JSEntity(exec, static_cast<Entity*>(node));
             break;
         case Node::PROCESSING_INSTRUCTION_NODE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, ProcessingInstruction, node);
+            ret = new JSProcessingInstruction(exec, static_cast<ProcessingInstruction*>(node));
             break;
         case Node::COMMENT_NODE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, Comment, node);
+            ret = new JSComment(exec, static_cast<Comment*>(node));
             break;
         case Node::DOCUMENT_NODE:
             // we don't want to cache the document itself in the per-document dictionary
-            return toJS(exec, globalObject, toDocument(node));
+            return toJS(exec, static_cast<Document*>(node));
         case Node::DOCUMENT_TYPE_NODE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, DocumentType, node);
+            ret = new JSDocumentType(exec, static_cast<DocumentType*>(node));
             break;
         case Node::NOTATION_NODE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, Notation, node);
+            ret = new JSNotation(exec, static_cast<Notation*>(node));
             break;
         case Node::DOCUMENT_FRAGMENT_NODE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, DocumentFragment, node);
+            ret = new JSDocumentFragment(exec, static_cast<DocumentFragment*>(node));
             break;
         case Node::ENTITY_REFERENCE_NODE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, EntityReference, node);
+            ret = new JSEntityReference(exec, static_cast<EntityReference*>(node));
             break;
         default:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, Node, node);
+            ret = new JSNode(exec, node);
     }
 
-    return wrapper;    
-}
+    interp->putDOMNodeForDocument(doc, node, ret);
 
-JSValue createWrapper(ExecState* exec, JSDOMGlobalObject* globalObject, Node* node)
-{
-    return createWrapperInline(exec, globalObject, node);
-}
-    
-JSValue toJSNewlyCreated(ExecState* exec, JSDOMGlobalObject* globalObject, Node* node)
-{
-    if (!node)
-        return jsNull();
-    
-    return createWrapperInline(exec, globalObject, node);
-}
-
-void willCreatePossiblyOrphanedTreeByRemovalSlowCase(Node* root)
-{
-    ScriptState* scriptState = mainWorldScriptState(root->document()->frame());
-    if (!scriptState)
-        return;
-
-    JSLockHolder lock(scriptState);
-    toJS(scriptState, static_cast<JSDOMGlobalObject*>(scriptState->lexicalGlobalObject()), root);
+    return ret;
 }
 
 } // namespace WebCore

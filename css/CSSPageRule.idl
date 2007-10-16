@@ -18,12 +18,16 @@
  * Boston, MA 02110-1301, USA.
  */
 
-// Introduced in DOM Level 2:
-interface CSSPageRule : CSSRule {
+module css {
 
-             [TreatReturnedNullStringAs=Null, TreatNullAs=NullString] attribute DOMString selectorText;
+    // Introduced in DOM Level 2:
+    interface [GenerateConstructor] CSSPageRule : CSSRule {
 
-    readonly attribute CSSStyleDeclaration style;
+                 attribute [ConvertNullStringTo=Null, ConvertNullToNullString] DOMString selectorText
+                     setter raises(DOMException);
 
-};
+        readonly attribute CSSStyleDeclaration style;
 
+    };
+
+}

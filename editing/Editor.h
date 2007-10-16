@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,56 +27,34 @@
 #define Editor_h
 
 #include "ClipboardAccessPolicy.h"
-#include "Color.h"
-#include "DictationAlternative.h"
-#include "DocumentMarker.h"
-#include "EditAction.h"
-#include "EditingBehavior.h"
-#include "EditingStyle.h"
+#include "EditorDeleteAction.h"
 #include "EditorInsertAction.h"
-#include "FindOptions.h"
-#include "FrameDestructionObserver.h"
-#include "FrameSelection.h"
-#include "TextChecking.h"
-#include "TextIterator.h"
-#include "VisibleSelection.h"
-#include "WritingDirection.h"
+#include "Frame.h"
+#include "SelectionController.h"
+#include <wtf/Forward.h>
+#include <wtf/OwnPtr.h>
+#include <wtf/RefPtr.h>
 
-#if PLATFORM(MAC) && !defined(__OBJC__)
-class NSDictionary;
-#if PLATFORM(IOS)
-typedef int WKWritingDirection;
-#else
-typedef int NSWritingDirection;
-#endif
+#if PLATFORM(MAC)
+class NSString;
+class NSURL;
 #endif
 
 namespace WebCore {
 
 class Clipboard;
-class CompositeEditCommand;
-#if ENABLE(DELETION_UI)
 class DeleteButtonController;
-#endif
+class DocumentFragment;
 class EditCommand;
-class EditCommandComposition;
 class EditorClient;
-class EditorInternalCommand;
+class EventTargetNode;
+class FontData;
 class Frame;
 class HTMLElement;
-class HitTestResult;
-class KillRing;
 class Pasteboard;
-class SimpleFontData;
-class SpellChecker;
-class SpellCheckRequest;
-class AlternativeTextController;
-class SharedBuffer;
-class StylePropertySet;
-class Text;
-class TextCheckerClient;
-class TextEvent;
-struct TextCheckingResult;
+class Range;
+class SelectionController;
+class Selection;
 
 struct CompositionUnderline {
     CompositionUnderline() 
@@ -89,33 +67,18 @@ struct CompositionUnderline {
     bool thick;
 };
 
-enum EditorCommandSource { CommandFromMenuOrKeyBinding, CommandFromDOM, CommandFromDOMWithUserInterface };
-enum EditorParagraphSeparator { EditorParagraphSeparatorIsDiv, EditorParagraphSeparatorIsP };
-
-class Editor : public FrameDestructionObserver {
+class Editor {
 public:
-    explicit Editor(Frame*);
+    Editor(Frame*);
     ~Editor();
 
     EditorClient* client() const;
-    TextCheckerClient* textChecker() const;
-
     Frame* frame() const { return m_frame; }
-
-#if ENABLE(DELETION_UI)
     DeleteButtonController* deleteButtonController() const { return m_deleteButtonController.get(); }
-    PassRefPtr<Range> avoidIntersectionWithDeleteButtonController(const Range*) const;
-    VisibleSelection avoidIntersectionWithDeleteButtonController(const VisibleSelection&) const;
-#else
-    PassRefPtr<Range> avoidIntersectionWithDeleteButtonController(Range* range) const { return range; }
-    VisibleSelection avoidIntersectionWithDeleteButtonController(const VisibleSelection& selection) const { return selection; }
-#endif
+    EditCommand* lastEditCommand() { return m_lastEditCommand.get(); }
 
-    CompositeEditCommand* lastEditCommand() { return m_lastEditCommand.get(); }
-
-    void handleKeyboardEvent(KeyboardEvent*);
-    void handleInputMethodKeydown(KeyboardEvent*);
-    bool handleTextEvent(TextEvent*);
+    void handleKeypress(KeyboardEvent*);
+    void handleInputMethodKeypress(KeyboardEvent*);
 
     bool canEdit() const;
     bool canEditRichly() const;
@@ -131,36 +94,32 @@ public:
     bool canCopy() const;
     bool canPaste() const;
     bool canDelete() const;
-    bool canSmartCopyOrDelete();
-
+    
     void cut();
     void copy();
     void paste();
     void pasteAsPlainText();
     void performDelete();
 
-#if !PLATFORM(IOS)
     void copyURL(const KURL&, const String&);
     void copyImage(const HitTestResult&);
-#endif
 
     void indent();
     void outdent();
-    void transpose();
 
-    bool shouldInsertFragment(PassRefPtr<DocumentFragment>, PassRefPtr<Range>, EditorInsertAction);
+    bool shouldInsertFragment(PassRefPtr<DocumentFragment> fragment, PassRefPtr<Range> replacingDOMRange, EditorInsertAction givenAction);
     bool shouldInsertText(const String&, Range*, EditorInsertAction) const;
+    bool shouldShowDeleteInterface(HTMLElement*) const;
     bool shouldDeleteRange(Range*) const;
-    bool shouldApplyStyle(StylePropertySet*, Range*);
-
-    void respondToChangedContents(const VisibleSelection& endingSelection);
-
-    bool selectionStartHasStyle(CSSPropertyID, const String& value) const;
-    TriState selectionHasStyle(CSSPropertyID, const String& value) const;
-    String selectionStartCSSPropertyValue(CSSPropertyID);
+    bool shouldApplyStyle(CSSStyleDeclaration*, Range*);
     
-    TriState selectionUnorderedListState() const;
-    TriState selectionOrderedListState() const;
+    void respondToChangedSelection(const Selection& oldSelection);
+    void respondToChangedContents(const Selection& endingSelection);
+    
+    const FontData* fontForSelection(bool&) const;
+    
+    Frame::TriState selectionUnorderedListState() const;
+    Frame::TriState selectionOrderedListState() const;
     PassRefPtr<Node> insertOrderedList();
     PassRefPtr<Node> insertUnorderedList();
     bool canIncreaseSelectionListLevel();
@@ -172,73 +131,40 @@ public:
    
     void removeFormattingAndStyle();
 
-    void clearLastEditCommand();
-#if PLATFORM(IOS)
-    void ensureLastEditCommandHasCurrentSelectionIfOpenForMoreTyping();
-#endif
+    // FIXME: Once the Editor implements all editing commands, it should track 
+    // the lastEditCommand on its own, and we should remove this function.
+    void setLastEditCommand(PassRefPtr<EditCommand> lastEditCommand);
 
-    bool deleteWithDirection(SelectionDirection, TextGranularity, bool killRing, bool isTypingAction);
+    bool deleteWithDirection(SelectionController::EDirection, TextGranularity, bool killRing, bool isTypingAction);
+    void deleteRange(Range*, bool killRing, bool prepend, bool smartDeleteOK, EditorDeleteAction, TextGranularity);
     void deleteSelectionWithSmartDelete(bool smartDelete);
-#if PLATFORM(IOS)
-    void clearText();
-    void removeUnchangeableStyles();
-#endif
-    
+    void deleteSelectionWithSmartDelete();
     bool dispatchCPPEvent(const AtomicString&, ClipboardAccessPolicy);
     
     Node* removedAnchor() const { return m_removedAnchor.get(); }
     void setRemovedAnchor(PassRefPtr<Node> n) { m_removedAnchor = n; }
 
-    void applyStyle(StylePropertySet*, EditAction = EditActionUnspecified);
-    void applyParagraphStyle(StylePropertySet*, EditAction = EditActionUnspecified);
-    void applyStyleToSelection(StylePropertySet*, EditAction);
-    void applyParagraphStyleToSelection(StylePropertySet*, EditAction);
+    void applyStyle(CSSStyleDeclaration*, EditAction = EditActionUnspecified);
+    void applyParagraphStyle(CSSStyleDeclaration*, EditAction = EditActionUnspecified);
+    void applyStyleToSelection(CSSStyleDeclaration*, EditAction);
+    void applyParagraphStyleToSelection(CSSStyleDeclaration*, EditAction);
 
-    void appliedEditing(PassRefPtr<CompositeEditCommand>);
-    void unappliedEditing(PassRefPtr<EditCommandComposition>);
-    void reappliedEditing(PassRefPtr<EditCommandComposition>);
-    void unappliedSpellCorrection(const VisibleSelection& selectionOfCorrected, const String& corrected, const String& correction);
+    void appliedEditing(PassRefPtr<EditCommand>);
+    void unappliedEditing(PassRefPtr<EditCommand>);
+    void reappliedEditing(PassRefPtr<EditCommand>);
+    
+    bool selectionStartHasStyle(CSSStyleDeclaration*) const;
 
-    void setShouldStyleWithCSS(bool flag) { m_shouldStyleWithCSS = flag; }
-    bool shouldStyleWithCSS() const { return m_shouldStyleWithCSS; }
-
-    class Command {
-    public:
-        Command();
-        Command(const EditorInternalCommand*, EditorCommandSource, PassRefPtr<Frame>);
-
-        bool execute(const String& parameter = String(), Event* triggeringEvent = 0) const;
-        bool execute(Event* triggeringEvent) const;
-
-        bool isSupported() const;
-        bool isEnabled(Event* triggeringEvent = 0) const;
-
-        TriState state(Event* triggeringEvent = 0) const;
-        String value(Event* triggeringEvent = 0) const;
-
-        bool isTextInsertion() const;
-
-    private:
-        const EditorInternalCommand* m_command;
-        EditorCommandSource m_source;
-        RefPtr<Frame> m_frame;
-    };
-    Command command(const String& commandName); // Command source is CommandFromMenuOrKeyBinding.
-    Command command(const String& commandName, EditorCommandSource);
-    static bool commandIsSupportedFromMenuOrKeyBinding(const String& commandName); // Works without a frame.
-
+    bool clientIsEditable() const;
+    
+    bool execCommand(const AtomicString&, Event* triggeringEvent = 0);
+    
     bool insertText(const String&, Event* triggeringEvent);
-    bool insertTextForConfirmedComposition(const String& text);
-    bool insertDictatedText(const String&, const Vector<DictationAlternative>& dictationAlternatives, Event* triggeringEvent);
-    bool insertTextWithoutSendingTextEvent(const String&, bool selectInsertedText, TextEvent* triggeringEvent);
+    bool insertTextWithoutSendingTextEvent(const String&, bool selectInsertedText, Event* triggeringEvent = 0);
     bool insertLineBreak();
     bool insertParagraphSeparator();
-
-#if PLATFORM(MAC)
-    bool insertParagraphSeparatorInQuotedContent();
-#endif
     
-    bool isContinuousSpellCheckingEnabled() const;
+    bool isContinuousSpellCheckingEnabled();
     void toggleContinuousSpellChecking();
     bool isGrammarCheckingEnabled();
     void toggleGrammarChecking();
@@ -246,52 +172,13 @@ public:
     void learnSpelling();
     int spellCheckerDocumentTag();
     bool isSelectionUngrammatical();
-    String misspelledSelectionString() const;
-    String misspelledWordAtCaretOrRange(Node* clickedNode) const;
-    Vector<String> guessesForMisspelledWord(const String&) const;
+    bool isSelectionMisspelled();
+    Vector<String> guessesForMisspelledSelection();
     Vector<String> guessesForUngrammaticalSelection();
-    Vector<String> guessesForMisspelledOrUngrammatical(bool& misspelled, bool& ungrammatical);
-    bool isSpellCheckingEnabledInFocusedNode() const;
-    bool isSpellCheckingEnabledFor(Node*) const;
-    void markMisspellingsAfterTypingToWord(const VisiblePosition &wordStart, const VisibleSelection& selectionAfterTyping, bool doReplacement);
-    void markMisspellings(const VisibleSelection&, RefPtr<Range>& firstMisspellingRange);
-    void markBadGrammar(const VisibleSelection&);
-    void markMisspellingsAndBadGrammar(const VisibleSelection& spellingSelection, bool markGrammar, const VisibleSelection& grammarSelection);
-    void markAndReplaceFor(PassRefPtr<SpellCheckRequest>, const Vector<TextCheckingResult>&);
-
-    bool isOverwriteModeEnabled() const { return m_overwriteModeEnabled; }
-    void toggleOverwriteModeEnabled();
-
-#if USE(APPKIT)
-    void uppercaseWord();
-    void lowercaseWord();
-    void capitalizeWord();
-#endif
-#if USE(AUTOMATIC_TEXT_REPLACEMENT)
-    void showSubstitutionsPanel();
-    bool substitutionsPanelIsShowing();
-    void toggleSmartInsertDelete();
-    bool isAutomaticQuoteSubstitutionEnabled();
-    void toggleAutomaticQuoteSubstitution();
-    bool isAutomaticLinkDetectionEnabled();
-    void toggleAutomaticLinkDetection();
-    bool isAutomaticDashSubstitutionEnabled();
-    void toggleAutomaticDashSubstitution();
-    bool isAutomaticTextReplacementEnabled();
-    void toggleAutomaticTextReplacement();
-    bool isAutomaticSpellingCorrectionEnabled();
-    void toggleAutomaticSpellingCorrection();
-#endif
-
-    void markAllMisspellingsAndBadGrammarInRanges(TextCheckingTypeMask, Range* spellingRange, Range* grammarRange);
-#if PLATFORM(IOS)
-    NO_RETURN_DUE_TO_ASSERT
-#endif
-    void changeBackToReplacedString(const String& replacedString);
-
-#if !PLATFORM(IOS)
+    void markMisspellingsAfterTypingToPosition(const VisiblePosition&);
+    void markMisspellings(const Selection&);
+    void markBadGrammar(const Selection&);
     void advanceToNextMisspelling(bool startBeforeSelection = false);
-#endif // !PLATFORM(IOS)
     void showSpellingGuessPanel();
     bool spellingPanelIsShowing();
 
@@ -306,7 +193,6 @@ public:
 
     void didBeginEditing();
     void didEndEditing();
-    void willWriteSelectionToPasteboard(PassRefPtr<Range>);
     void didWriteSelectionToPasteboard();
     
     void showFontPanel();
@@ -314,22 +200,16 @@ public:
     void showColorPanel();
     void toggleBold();
     void toggleUnderline();
-    void setBaseWritingDirection(WritingDirection);
+    void setBaseWritingDirection(String);
 
-    // smartInsertDeleteEnabled and selectTrailingWhitespaceEnabled are 
-    // mutually exclusive, meaning that enabling one will disable the other.
     bool smartInsertDeleteEnabled();
-    bool isSelectTrailingWhitespaceEnabled();
     
-    bool hasBidiSelection() const;
-
     // international text input composition
     bool hasComposition() const { return m_compositionNode; }
     void setComposition(const String&, const Vector<CompositionUnderline>&, unsigned selectionStart, unsigned selectionEnd);
     void confirmComposition();
     void confirmComposition(const String&); // if no existing composition, replaces selection
-    void cancelComposition();
-    bool cancelCompositionIfSelectionIsInvalid();
+    void confirmCompositionWithoutDisturbingSelection();
     PassRefPtr<Range> compositionRange() const;
     bool getCompositionSelection(unsigned& selectionStart, unsigned& selectionEnd) const;
 
@@ -340,176 +220,66 @@ public:
     bool compositionUsesCustomUnderlines() const { return !m_customCompositionUnderlines.isEmpty(); }
     const Vector<CompositionUnderline>& customCompositionUnderlines() const { return m_customCompositionUnderlines; }
 
-    void setIgnoreCompositionSelectionChange(bool);
     bool ignoreCompositionSelectionChange() const { return m_ignoreCompositionSelectionChange; }
 
     void setStartNewKillRingSequence(bool);
+
+#if PLATFORM(MAC)
+    NSString* userVisibleString(NSURL*);
+#endif
 
     PassRefPtr<Range> rangeForPoint(const IntPoint& windowPoint);
 
     void clear();
 
-    VisibleSelection selectionForCommand(Event*);
-
-    KillRing* killRing() const { return m_killRing.get(); }
-    SpellChecker* spellChecker() const { return m_spellChecker.get(); }
-
-    EditingBehavior behavior() const;
-
-    PassRefPtr<Range> selectedRange();
-
-#if PLATFORM(IOS)
-    void confirmMarkedText();
-    void setTextAsChildOfElement(const String&, Element*);
-    void setTextAlignmentForChangedBaseWritingDirection(WritingDirection);
-    void insertDictationPhrases(PassOwnPtr<Vector<Vector<String> > > dictationPhrases, RetainPtr<id> metadata);
-    void setDictationPhrasesAsChildOfElement(PassOwnPtr<Vector<Vector<String> > > dictationPhrases, RetainPtr<id> metadata, Element* element);
-#endif
-    
-    void addToKillRing(Range*, bool prepend);
-
-    void startAlternativeTextUITimer();
-    // If user confirmed a correction in the correction panel, correction has non-zero length, otherwise it means that user has dismissed the panel.
-    void handleAlternativeTextUIResult(const String& correction);
-    void dismissCorrectionPanelAsIgnored();
-
-    void pasteAsFragment(PassRefPtr<DocumentFragment>, bool smartReplace, bool matchStyle);
-    void pasteAsPlainText(const String&, bool smartReplace);
-
-    // This is only called on the mac where paste is implemented primarily at the WebKit level.
-    void pasteAsPlainTextBypassingDHTML();
- 
-    void clearMisspellingsAndBadGrammar(const VisibleSelection&);
-    void markMisspellingsAndBadGrammar(const VisibleSelection&);
-
-    Node* findEventTargetFrom(const VisibleSelection& selection) const;
-
-    String selectedText() const;
-    String selectedTextForClipboard() const;
-    bool findString(const String&, FindOptions);
-    // FIXME: Switch callers over to the FindOptions version and retire this one.
-    bool findString(const String&, bool forward, bool caseFlag, bool wrapFlag, bool startInSelection);
-
-    PassRefPtr<Range> rangeOfString(const String&, Range*, FindOptions);
-    PassRefPtr<Range> findStringAndScrollToVisible(const String&, Range*, FindOptions);
-
-    const VisibleSelection& mark() const; // Mark, to be used as emacs uses it.
-    void setMark(const VisibleSelection&);
-
-    void computeAndSetTypingStyle(StylePropertySet* , EditAction = EditActionUnspecified);
-    void applyEditingStyleToBodyElement() const;
-    void applyEditingStyleToElement(Element*) const;
-
-    IntRect firstRectForRange(Range*) const;
-
-    void respondToChangedSelection(const VisibleSelection& oldSelection, FrameSelection::SetSelectionOptions);
-    bool shouldChangeSelection(const VisibleSelection& oldSelection, const VisibleSelection& newSelection, EAffinity, bool stillSelecting) const;
-    unsigned countMatchesForText(const String&, Range*, FindOptions, unsigned limit, bool markMatches, Vector<RefPtr<Range> >*);
-    bool markedTextMatchesAreHighlighted() const;
-    void setMarkedTextMatchesAreHighlighted(bool);
-
-    void textFieldDidBeginEditing(Element*);
-    void textFieldDidEndEditing(Element*);
-    void textDidChangeInTextField(Element*);
-    bool doTextFieldCommandFromEvent(Element*, KeyboardEvent*);
-    void textWillBeDeletedInTextField(Element* input);
-    void textDidChangeInTextArea(Element*);
-    WritingDirection baseWritingDirectionForSelectionStart() const;
-
-#if PLATFORM(MAC)
-    const SimpleFontData* fontForSelection(bool&) const;
-    NSDictionary* fontAttributesForSelectionStart() const;
-#if !PLATFORM(IOS)
-    bool canCopyExcludingStandaloneImages();
-    void takeFindStringFromSelection();
-    void writeSelectionToPasteboard(const String& pasteboardName, const Vector<String>& pasteboardTypes);
-    void readSelectionFromPasteboard(const String& pasteboardName);
-    String stringSelectionForPasteboard();
-    String stringSelectionForPasteboardWithImageAltText();
-    PassRefPtr<SharedBuffer> dataSelectionForPasteboard(const String& pasteboardName);
-#endif
-#endif
-    void replaceSelectionWithFragment(PassRefPtr<DocumentFragment>, bool selectReplacement, bool smartReplace, bool matchStyle);
-    void replaceSelectionWithText(const String&, bool selectReplacement, bool smartReplace);
-    bool selectionStartHasMarkerFor(DocumentMarker::MarkerType, int from, int length) const;
-    void updateMarkersForWordsAffectedByEditing(bool onlyHandleWordsContainingSelection);
-    void deletedAutocorrectionAtPosition(const Position&, const String& originalString);
-    
-    void simplifyMarkup(Node* startNode, Node* endNode);
-
-    void deviceScaleFactorChanged();
-
-    EditorParagraphSeparator defaultParagraphSeparator() const { return m_defaultParagraphSeparator; }
-    void setDefaultParagraphSeparator(EditorParagraphSeparator separator) { m_defaultParagraphSeparator = separator; }
-    Vector<String> dictationAlternativesForMarker(const DocumentMarker*);
-    void applyDictationAlternativelternative(const String& alternativeString);
 private:
-    virtual void willDetachPage() OVERRIDE;
-
-#if ENABLE(DELETION_UI)
+    Frame* m_frame;
     OwnPtr<DeleteButtonController> m_deleteButtonController;
-#endif
-    RefPtr<CompositeEditCommand> m_lastEditCommand;
+    RefPtr<EditCommand> m_lastEditCommand;
     RefPtr<Node> m_removedAnchor;
+
     RefPtr<Text> m_compositionNode;
     unsigned m_compositionStart;
     unsigned m_compositionEnd;
     Vector<CompositionUnderline> m_customCompositionUnderlines;
     bool m_ignoreCompositionSelectionChange;
-    bool m_shouldStartNewKillRingSequence;
-    bool m_shouldStyleWithCSS;
-    OwnPtr<KillRing> m_killRing;
-    OwnPtr<SpellChecker> m_spellChecker;
-    OwnPtr<AlternativeTextController> m_alternativeTextController;
-    VisibleSelection m_mark;
-    bool m_areMarkedTextMatchesHighlighted;
-    EditorParagraphSeparator m_defaultParagraphSeparator;
-    bool m_overwriteModeEnabled;
 
     bool canDeleteRange(Range*) const;
+    bool canSmartCopyOrDelete();
     bool canSmartReplaceWithPasteboard(Pasteboard*);
-    PassRefPtr<Clipboard> newGeneralClipboard(ClipboardAccessPolicy, Frame*);
+    PassRefPtr<Clipboard> newGeneralClipboard(ClipboardAccessPolicy);
+    PassRefPtr<Range> selectedRange();
     void pasteAsPlainTextWithPasteboard(Pasteboard*);
     void pasteWithPasteboard(Pasteboard*, bool allowPlainText);
-
-    void revealSelectionAfterEditingOperation(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded, RevealExtentOption = DoNotRevealExtent);
-    void markMisspellingsOrBadGrammar(const VisibleSelection&, bool checkSpelling, RefPtr<Range>& firstMisspellingRange);
-    TextCheckingTypeMask resolveTextCheckingTypeMask(TextCheckingTypeMask);
-
-    String selectedText(TextIteratorBehavior) const;
+    void replaceSelectionWithFragment(PassRefPtr<DocumentFragment>, bool selectReplacement, bool smartReplace, bool matchStyle);
+    void replaceSelectionWithText(const String&, bool selectReplacement, bool smartReplace);
+    void writeSelectionToPasteboard(Pasteboard*);
+    void revealSelectionAfterEditingOperation();
 
     void selectComposition();
-    enum SetCompositionMode { ConfirmComposition, CancelComposition };
-    void setComposition(const String&, SetCompositionMode);
+    void confirmComposition(const String&, bool preserveSelection);
+    void setIgnoreCompositionSelectionChange(bool ignore);
 
-    void changeSelectionAfterCommand(const VisibleSelection& newSelection, FrameSelection::SetSelectionOptions);
-    void notifyComponentsOnChangedSelection(const VisibleSelection& oldSelection, FrameSelection::SetSelectionOptions);
+    void addToKillRing(Range*, bool prepend);
 
-    Node* findEventTargetFromSelection() const;
-
-    bool unifiedTextCheckerEnabled() const;
+#if PLATFORM(MAC)
+    bool m_startNewKillRingSequence;
+#endif
 };
+
+#if PLATFORM(MAC)
 
 inline void Editor::setStartNewKillRingSequence(bool flag)
 {
-    m_shouldStartNewKillRingSequence = flag;
+    m_startNewKillRingSequence = flag;
 }
 
-inline const VisibleSelection& Editor::mark() const
-{
-    return m_mark;
-}
+#else
 
-inline void Editor::setMark(const VisibleSelection& selection)
-{
-    m_mark = selection;
-}
+inline void Editor::setStartNewKillRingSequence(bool) { }
+inline void Editor::addToKillRing(Range*, bool) { }
 
-inline bool Editor::markedTextMatchesAreHighlighted() const
-{
-    return m_areMarkedTextMatchesHighlighted;
-}
-
+#endif
 
 } // namespace WebCore
 

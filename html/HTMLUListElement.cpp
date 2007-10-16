@@ -1,7 +1,8 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,11 +20,9 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #include "config.h"
 #include "HTMLUListElement.h"
 
-#include "Attribute.h"
 #include "CSSPropertyNames.h"
 #include "HTMLNames.h"
 
@@ -31,35 +30,47 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLUListElement::HTMLUListElement(const QualifiedName& tagName, Document* document)
-    : HTMLElement(tagName, document)
+HTMLUListElement::HTMLUListElement(Document* doc)
+    : HTMLElement(HTMLNames::ulTag, doc)
 {
-    ASSERT(hasTagName(ulTag));
 }
 
-PassRefPtr<HTMLUListElement> HTMLUListElement::create(Document* document)
+bool HTMLUListElement::mapToEntry(const QualifiedName& attrName, MappedAttributeEntry& result) const
 {
-    return adoptRef(new HTMLUListElement(ulTag, document));
+    if (attrName == typeAttr) {
+        result = eUnorderedList;
+        return false;
+    }
+    
+    return HTMLElement::mapToEntry(attrName, result);
 }
 
-PassRefPtr<HTMLUListElement> HTMLUListElement::create(const QualifiedName& tagName, Document* document)
+void HTMLUListElement::parseMappedAttribute(MappedAttribute *attr)
 {
-    return adoptRef(new HTMLUListElement(tagName, document));
-}
-
-bool HTMLUListElement::isPresentationAttribute(const QualifiedName& name) const
-{
-    if (name == typeAttr)
-        return true;
-    return HTMLElement::isPresentationAttribute(name);
-}
-
-void HTMLUListElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
-{
-    if (name == typeAttr)
-        addPropertyToPresentationAttributeStyle(style, CSSPropertyListStyleType, value);
+    if (attr->name() == typeAttr)
+        addCSSProperty(attr, CSS_PROP_LIST_STYLE_TYPE, attr->value());
     else
-        HTMLElement::collectStyleForPresentationAttribute(name, value, style);
+        HTMLElement::parseMappedAttribute(attr);
+}
+
+bool HTMLUListElement::compact() const
+{
+    return !getAttribute(compactAttr).isNull();
+}
+
+void HTMLUListElement::setCompact(bool b)
+{
+    setAttribute(compactAttr, b ? "" : 0);
+}
+
+String HTMLUListElement::type() const
+{
+    return getAttribute(typeAttr);
+}
+
+void HTMLUListElement::setType(const String &value)
+{
+    setAttribute(typeAttr, value);
 }
 
 }

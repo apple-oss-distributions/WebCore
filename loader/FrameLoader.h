@@ -1,8 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008, 2009, 2011 Apple Inc. All rights reserved.
- * Copyright (C) 2008, 2009 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
- * Copyright (C) Research In Motion Limited 2009. All rights reserved.
- * Copyright (C) 2011 Google Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,450 +29,640 @@
 #ifndef FrameLoader_h
 #define FrameLoader_h
 
+#include "CachedResource.h"
 #include "CachePolicy.h"
-#include "FrameLoaderStateMachine.h"
+#include "FormState.h"
 #include "FrameLoaderTypes.h"
-#include "IconURL.h"
-#include "LayoutMilestones.h"
-#include "MixedContentChecker.h"
-#include "ResourceHandleTypes.h"
-#include "ResourceLoadNotifier.h"
-#include "SecurityContext.h"
-#include "SubframeLoader.h"
+#include "KURL.h"
+#include "StringHash.h"
 #include "Timer.h"
 #include <wtf/Forward.h>
 #include <wtf/HashSet.h>
+#include <wtf/HashMap.h>
+#include <wtf/Noncopyable.h>
+#include <wtf/OwnPtr.h>
+#include <wtf/RefPtr.h>
+#include "ResourceRequest.h"
+#if USE(LOW_BANDWIDTH_DISPLAY)
+#include "CachedResourceClient.h"
+#endif
+
+namespace KJS {
+    class JSValue;
+}
 
 namespace WebCore {
 
-class Archive;
-class CachedFrameBase;
-class CachedPage;
-class CachedResource;
-class Chrome;
-class DOMWrapperWorld;
-class DocumentLoader;
-class Event;
-class FormState;
-class FormSubmission;
-class FrameLoaderClient;
-class FrameNetworkingContext;
-class HistoryController;
-class HistoryItem;
-class IconController;
-class NavigationAction;
-class NetworkingContext;
-class Page;
-class PageActivityAssertionToken;
-class PolicyChecker;
-class ResourceError;
-class ResourceRequest;
-class ResourceResponse;
-class SecurityOrigin;
-class SerializedScriptValue;
-class StringWithDirection;
-class SubstituteData;
-
-struct FrameLoadRequest;
-struct WindowFeatures;
-
-bool isBackForwardLoadType(FrameLoadType);
-
-class FrameLoader {
-    WTF_MAKE_NONCOPYABLE(FrameLoader);
-public:
-    FrameLoader(Frame*, FrameLoaderClient*);
-    ~FrameLoader();
-
-    void init();
-#if PLATFORM(IOS)
-    void initForSynthesizedDocument(const KURL& url);
-#endif
-
-    Frame* frame() const { return m_frame; }
-
-    PolicyChecker* policyChecker() const { return m_policyChecker.get(); }
-    HistoryController* history() const { return m_history.get(); }
-    ResourceLoadNotifier* notifier() const { return &m_notifer; }
-    SubframeLoader* subframeLoader() const { return &m_subframeLoader; }
-    IconController* icon() const { return m_icon.get(); }
-    MixedContentChecker* mixedContentChecker() const { return &m_mixedContentChecker; }
-
-    void prepareForHistoryNavigation();
-    void setupForReplace();
-
-    // FIXME: These are all functions which start loads. We have too many.
-    void loadURLIntoChildFrame(const KURL&, const String& referer, Frame*);
-    void loadFrameRequest(const FrameLoadRequest&, bool lockHistory, bool lockBackForwardList,  // Called by submitForm, calls loadPostRequest and loadURL.
-        PassRefPtr<Event>, PassRefPtr<FormState>, ShouldSendReferrer);
-
-    void load(const FrameLoadRequest&);
-
-#if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
-    void loadArchive(PassRefPtr<Archive>);
-#endif
-    unsigned long loadResourceSynchronously(const ResourceRequest&, StoredCredentials, ClientCredentialPolicy, ResourceError&, ResourceResponse&, Vector<char>& data);
-
-    void changeLocation(SecurityOrigin*, const KURL&, const String& referrer, bool lockHistory = true, bool lockBackForwardList = true, bool refresh = false);
-    void urlSelected(const KURL&, const String& target, PassRefPtr<Event>, bool lockHistory, bool lockBackForwardList, ShouldSendReferrer);
-    void submitForm(PassRefPtr<FormSubmission>);
-
-    void reload(bool endToEndReload = false);
-    void reloadWithOverrideEncoding(const String& overrideEncoding);
-    void reloadWithOverrideURL(const KURL& overrideUrl, bool endToEndReload = false);
-
-    void open(CachedFrameBase&);
-    void loadItem(HistoryItem*, FrameLoadType);
-    HistoryItem* requestedHistoryItem() const { return m_requestedHistoryItem.get(); }
-
-    void retryAfterFailedCacheOnlyMainResourceLoad();
-
-    static void reportLocalLoadFailed(Frame*, const String& url);
-
-    // FIXME: These are all functions which stop loads. We have too many.
-    void stopAllLoaders(ClearProvisionalItemPolicy = ShouldClearProvisionalItem);
-    void stopForUserCancel(bool deferCheckLoadComplete = false);
-    void stop();
-    void stopLoading(UnloadEventPolicy);
-    bool closeURL();
-    void cancelAndClear();
-    // FIXME: clear() is trying to do too many things. We should break it down into smaller functions (ideally with fewer raw Boolean parameters).
-    void clear(Document* newDocument, bool clearWindowProperties = true, bool clearScriptObjects = true, bool clearFrameView = true);
-
-    bool isLoading() const;
-    bool frameHasLoaded() const;
-
-    int numPendingOrLoadingRequests(bool recurse) const;
-    String referrer() const;
-    String outgoingReferrer() const;
-    String outgoingOrigin() const;
-
-    DocumentLoader* activeDocumentLoader() const;
-    DocumentLoader* documentLoader() const { return m_documentLoader.get(); }
-    DocumentLoader* policyDocumentLoader() const { return m_policyDocumentLoader.get(); }
-    DocumentLoader* provisionalDocumentLoader() const { return m_provisionalDocumentLoader.get(); }
-    FrameState state() const { return m_state; }
-    static double timeOfLastCompletedLoad();
-
-#if PLATFORM(IOS)
-    RetainPtr<CFDictionaryRef> connectionProperties(ResourceLoader*);
-#endif
-    const ResourceRequest& originalRequest() const;
-    const ResourceRequest& initialRequest() const;
-    void receivedMainResourceError(const ResourceError&);
-
-    bool willLoadMediaElementURL(KURL&);
-
-    void handleFallbackContent();
-
-    ResourceError cancelledError(const ResourceRequest&) const;
-
-    bool isHostedByObjectElement() const;
-    bool isLoadingMainFrame() const;
-
-    bool isReplacing() const;
-    void setReplacing();
-    bool subframeIsLoading() const;
-    void willChangeTitle(DocumentLoader*);
-    void didChangeTitle(DocumentLoader*);
-    void didChangeIcons(IconType);
-
-    bool shouldTreatURLAsSrcdocDocument(const KURL&) const;
-
-    FrameLoadType loadType() const;
-
-    CachePolicy subresourceCachePolicy() const;
-
-    void didLayout(LayoutMilestones);
-    void didFirstLayout();
-
-    void loadedResourceFromMemoryCache(CachedResource*, ResourceRequest& newRequest);
-    void tellClientAboutPastMemoryCacheLoads();
-
-    void checkLoadComplete();
-    void detachFromParent();
-    void detachViewsAndDocumentLoader();
-
-    void addExtraFieldsToSubresourceRequest(ResourceRequest&);
-    void addExtraFieldsToMainResourceRequest(ResourceRequest&);
-    
-    static void addHTTPOriginIfNeeded(ResourceRequest&, const String& origin);
-
-    FrameLoaderClient* client() const { return m_client; }
-
-    void setDefersLoading(bool);
-
-    void didExplicitOpen();
-
-    // Callbacks from DocumentWriter
-    void didBeginDocument(bool dispatchWindowObjectAvailable);
-
-    void receivedFirstData();
-
-    void handledOnloadEvents();
-    String userAgent(const KURL&) const;
-
-    void dispatchDidClearWindowObjectInWorld(DOMWrapperWorld*);
-    void dispatchDidClearWindowObjectsInAllWorlds();
-    void dispatchDocumentElementAvailable();
-
-    // The following sandbox flags will be forced, regardless of changes to
-    // the sandbox attribute of any parent frames.
-    void forceSandboxFlags(SandboxFlags flags) { m_forcedSandboxFlags |= flags; }
-    SandboxFlags effectiveSandboxFlags() const;
-
-    bool checkIfFormActionAllowedByCSP(const KURL&) const;
-
-    Frame* opener();
-    void setOpener(Frame*);
-
-    void resetMultipleFormSubmissionProtection();
-
-    void checkCallImplicitClose();
-
-    void frameDetached();
-
-    void setOutgoingReferrer(const KURL&);
-
-    void loadDone();
-    void finishedParsing();
-    void checkCompleted();
-
-    void checkDidPerformFirstNavigation();
-
-    bool isComplete() const;
-
-    void setTitle(const StringWithDirection&);
-
-    void commitProvisionalLoad();
-
-#if PLATFORM(IOS)
-    void setLoadsSynchronously(bool loadsSynchronously) { m_loadsSynchronously = loadsSynchronously; }
-    bool loadsSynchronously() { return m_loadsSynchronously; }
-#endif
-
-    FrameLoaderStateMachine* stateMachine() const { return &m_stateMachine; }
-
-    Frame* findFrameForNavigation(const AtomicString& name, Document* activeDocument = 0);
-
-    void applyUserAgent(ResourceRequest&);
-
-    bool shouldInterruptLoadForXFrameOptions(const String&, const KURL&, unsigned long requestIdentifier);
-
-    void completed();
-    bool allAncestorsAreComplete() const; // including this
-    void clientRedirected(const KURL&, double delay, double fireDate, bool lockBackForwardList);
-    void clientRedirectCancelledOrFinished(bool cancelWithLoadInProgress);
-
-    // FIXME: This is public because this asynchronous callback from the FrameLoaderClient
-    // uses the policy machinery (and therefore is called via the PolicyChecker).  Once we
-    // introduce a proper callback type for this function, we should make it private again.
-    void continueLoadAfterWillSubmitForm();
-
-    void setOriginalURLForDownloadRequest(ResourceRequest&);
-
-    bool suppressOpenerInNewFrame() const { return m_suppressOpenerInNewFrame; }
-
-    static ObjectContentType defaultObjectContentType(const KURL&, const String& mimeType, bool shouldPreferPlugInsForImages);
-
-    bool quickRedirectComing() const { return m_quickRedirectComing; }
-
-    bool shouldClose();
-    
-    void started();
-
-    enum PageDismissalType {
-        NoDismissal = 0,
-        BeforeUnloadDismissal = 1,
-        PageHideDismissal = 2,
-        UnloadDismissal = 3
-    };
-    PageDismissalType pageDismissalEventBeingDispatched() const { return m_pageDismissalEventBeingDispatched; }
-
-    NetworkingContext* networkingContext() const;
-
-    void loadProgressingStatusChanged();
-
-    const KURL& previousURL() const { return m_previousURL; }
-
-    void forcePageTransitionIfNeeded();
-
-private:
-    enum FormSubmissionCacheLoadPolicy {
-        MayAttemptCacheOnlyLoadForFormSubmissionItem,
-        MayNotAttemptCacheOnlyLoadForFormSubmissionItem
+    class AuthenticationChallenge;
+    class CachedPage;
+    class Document;
+    class DocumentLoader;
+    class Element;
+    class Event;
+    class FormData;
+    class Frame;
+    class FrameLoaderClient;
+    class HistoryItem;
+    class HTMLFormElement;
+    class HTMLFrameOwnerElement;
+    class IconLoader;
+    class IntSize;
+    class NavigationAction;
+    class Node;
+    class Page;
+    class RenderPart;
+    class ResourceError;
+    class ResourceLoader;
+    class ResourceRequest;
+    class ResourceResponse;
+    class SharedBuffer;
+    class SubstituteData;
+    class TextResourceDecoder;
+    class Widget;
+
+    struct FormSubmission;
+    struct FrameLoadRequest;
+    struct ScheduledRedirection;
+    struct WindowFeatures;
+
+    bool isBackForwardLoadType(FrameLoadType);
+
+    typedef void (*NavigationPolicyDecisionFunction)(void* argument,
+        const ResourceRequest&, PassRefPtr<FormState>, bool shouldContinue);
+    typedef void (*NewWindowPolicyDecisionFunction)(void* argument,
+        const ResourceRequest&, PassRefPtr<FormState>, const String& frameName, bool shouldContinue);
+    typedef void (*ContentPolicyDecisionFunction)(void* argument, PolicyAction);
+
+    class PolicyCheck {
+    public:
+        PolicyCheck();
+
+        void clear();
+        void set(const ResourceRequest&, PassRefPtr<FormState>,
+            NavigationPolicyDecisionFunction, void* argument);
+        void set(const ResourceRequest&, PassRefPtr<FormState>, const String& frameName,
+            NewWindowPolicyDecisionFunction, void* argument);
+        void set(ContentPolicyDecisionFunction, void* argument);
+
+        const ResourceRequest& request() const { return m_request; }
+        void clearRequest();
+
+        void call(bool shouldContinue);
+        void call(PolicyAction);
+        void cancel();
+
+    private:
+        ResourceRequest m_request;
+        RefPtr<FormState> m_formState;
+        String m_frameName;
+
+        NavigationPolicyDecisionFunction m_navigationFunction;
+        NewWindowPolicyDecisionFunction m_newWindowFunction;
+        ContentPolicyDecisionFunction m_contentFunction;
+        void* m_argument;
     };
 
-    bool allChildrenAreComplete() const; // immediate children, not all descendants
-
-    void checkTimerFired(Timer<FrameLoader>*);
-    
-    void loadSameDocumentItem(HistoryItem*);
-    void loadDifferentDocumentItem(HistoryItem*, FrameLoadType, FormSubmissionCacheLoadPolicy);
-    
-    void loadProvisionalItemFromCachedPage();
-
-    void updateFirstPartyForCookies();
-    void setFirstPartyForCookies(const KURL&);
-    
-    void addExtraFieldsToRequest(ResourceRequest&, FrameLoadType, bool isMainResource);
-
-    void clearProvisionalLoad();
-    void transitionToCommitted(PassRefPtr<CachedPage>);
-    void frameLoadCompleted();
-
-    SubstituteData defaultSubstituteDataForURL(const KURL&);
-
-    static void callContinueLoadAfterNavigationPolicy(void*, const ResourceRequest&, PassRefPtr<FormState>, bool shouldContinue);
-    static void callContinueLoadAfterNewWindowPolicy(void*, const ResourceRequest&, PassRefPtr<FormState>, const String& frameName, const NavigationAction&, bool shouldContinue);
-    static void callContinueFragmentScrollAfterNavigationPolicy(void*, const ResourceRequest&, PassRefPtr<FormState>, bool shouldContinue);
-    
-    bool handleBeforeUnloadEvent(Chrome&, FrameLoader* frameLoaderBeingNavigated);
-
-    void continueLoadAfterNavigationPolicy(const ResourceRequest&, PassRefPtr<FormState>, bool shouldContinue);
-    void continueLoadAfterNewWindowPolicy(const ResourceRequest&, PassRefPtr<FormState>, const String& frameName, const NavigationAction&, bool shouldContinue);
-    void continueFragmentScrollAfterNavigationPolicy(const ResourceRequest&, bool shouldContinue);
-
-    bool shouldPerformFragmentNavigation(bool isFormSubmission, const String& httpMethod, FrameLoadType, const KURL&);
-    void scrollToFragmentWithParentBoundary(const KURL&);
-
-    void checkLoadCompleteForThisFrame();
-
-    void setDocumentLoader(DocumentLoader*);
-    void setPolicyDocumentLoader(DocumentLoader*);
-    void setProvisionalDocumentLoader(DocumentLoader*);
-
-    void setState(FrameState);
-
-    void closeOldDataSources();
-    void prepareForCachedPageRestore();
-
-    bool shouldReloadToHandleUnreachableURL(DocumentLoader*);
-
-    void dispatchDidCommitLoad();
-
-    void urlSelected(const FrameLoadRequest&, PassRefPtr<Event>, bool lockHistory, bool lockBackForwardList, ShouldSendReferrer, ShouldReplaceDocumentIfJavaScriptURL);
-
-    void loadWithDocumentLoader(DocumentLoader*, FrameLoadType, PassRefPtr<FormState>); // Calls continueLoadAfterNavigationPolicy
-    void load(DocumentLoader*);                                                         // Calls loadWithDocumentLoader   
-
-    void loadWithNavigationAction(const ResourceRequest&, const NavigationAction&,      // Calls loadWithDocumentLoader
-        bool lockHistory, FrameLoadType, PassRefPtr<FormState>);
-
-    void loadPostRequest(const ResourceRequest&, const String& referrer,                // Called by loadFrameRequest, calls loadWithNavigationAction
-        const String& frameName, bool lockHistory, FrameLoadType, PassRefPtr<Event>, PassRefPtr<FormState>);
-    void loadURL(const KURL&, const String& referrer, const String& frameName,          // Called by loadFrameRequest, calls loadWithNavigationAction or dispatches to navigation policy delegate
-        bool lockHistory, FrameLoadType, PassRefPtr<Event>, PassRefPtr<FormState>);                                                         
-
-    void reloadWithRequest(const ResourceRequest&, bool endToEndReload);
-
-    bool shouldReload(const KURL& currentURL, const KURL& destinationURL);
-
-    void requestFromDelegate(ResourceRequest&, unsigned long& identifier, ResourceError&);
-
-    void detachChildren();
-    void closeAndRemoveChild(Frame*);
-
-    void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, bool isNewNavigation);
-
-    void prepareForLoadStart();
-    void provisionalLoadStarted();
-
-    void willTransitionToCommitted();
-    bool didOpenURL();
-
-    void scheduleCheckCompleted();
-    void scheduleCheckLoadComplete();
-    void startCheckCompleteTimer();
-
-    bool shouldTreatURLAsSameAsCurrent(const KURL&) const;
-
-    void dispatchGlobalObjectAvailableInAllWorlds();
-
-    Frame* m_frame;
-    FrameLoaderClient* m_client;
-
-    // FIXME: These should be OwnPtr<T> to reduce build times and simplify
-    // header dependencies unless performance testing proves otherwise.
-    // Some of these could be lazily created for memory savings on devices.
-    OwnPtr<PolicyChecker> m_policyChecker;
-    OwnPtr<HistoryController> m_history;
-    mutable ResourceLoadNotifier m_notifer;
-    mutable SubframeLoader m_subframeLoader;
-    mutable FrameLoaderStateMachine m_stateMachine;
-    OwnPtr<IconController> m_icon;
-    mutable MixedContentChecker m_mixedContentChecker;
-
-    class FrameProgressTracker;
-    OwnPtr<FrameProgressTracker> m_progressTracker;
-
-    FrameState m_state;
-    FrameLoadType m_loadType;
-
-    // Document loaders for the three phases of frame loading. Note that while 
-    // a new request is being loaded, the old document loader may still be referenced.
-    // E.g. while a new request is in the "policy" state, the old document loader may
-    // be consulted in particular as it makes sense to imply certain settings on the new loader.
-    RefPtr<DocumentLoader> m_documentLoader;
-    RefPtr<DocumentLoader> m_provisionalDocumentLoader;
-    RefPtr<DocumentLoader> m_policyDocumentLoader;
-
-    bool m_delegateIsHandlingProvisionalLoadError;
-
-    bool m_quickRedirectComing;
-    bool m_sentRedirectNotification;
-    bool m_inStopAllLoaders;
-
-    String m_outgoingReferrer;
-
-    bool m_isExecutingJavaScriptFormAction;
-
-    bool m_didCallImplicitClose;
-    bool m_wasUnloadEventEmitted;
-    PageDismissalType m_pageDismissalEventBeingDispatched;
-    bool m_isComplete;
-
-    RefPtr<SerializedScriptValue> m_pendingStateObject;
-
-    bool m_needsClear;
-
-    KURL m_submittedFormURL;
-
-    Timer<FrameLoader> m_checkTimer;
-    bool m_shouldCallCheckCompleted;
-    bool m_shouldCallCheckLoadComplete;
-
-    Frame* m_opener;
-    HashSet<Frame*> m_openedFrames;
-
-    bool m_didPerformFirstNavigation;
-    bool m_loadingFromCachedPage;
-    bool m_suppressOpenerInNewFrame;
-    
-    bool m_currentNavigationHasShownBeforeUnloadConfirmPanel;
-
-    SandboxFlags m_forcedSandboxFlags;
-
-    RefPtr<FrameNetworkingContext> m_networkingContext;
-
-    KURL m_previousURL;
-    RefPtr<HistoryItem> m_requestedHistoryItem;
-    OwnPtr<PageActivityAssertionToken> m_activityAssertion;
-
-#if PLATFORM(IOS)
-    bool m_loadsSynchronously;
+    class FrameLoader : Noncopyable
+#if USE(LOW_BANDWIDTH_DISPLAY)
+    , private CachedResourceClient
 #endif
-};
+    {
+    public:
+        FrameLoader(Frame*, FrameLoaderClient*);
+        ~FrameLoader();
 
-// This function is called by createWindow() in JSDOMWindowBase.cpp, for example, for
-// modal dialog creation.  The lookupFrame is for looking up the frame name in case
-// the frame name references a frame different from the openerFrame, e.g. when it is
-// "_self" or "_parent".
-//
-// FIXME: Consider making this function part of an appropriate class (not FrameLoader)
-// and moving it to a more appropriate location.
-PassRefPtr<Frame> createWindow(Frame* openerFrame, Frame* lookupFrame, const FrameLoadRequest&, const WindowFeatures&, bool& created);
+        void init();
 
-} // namespace WebCore
+        Frame* frame() const { return m_frame; }
 
-#endif // FrameLoader_h
+        // FIXME: This is not cool, people.
+        void prepareForLoadStart();
+        void setupForReplace();
+        void setupForReplaceByMIMEType(const String& newMIMEType);
+        void finalSetupForReplace(DocumentLoader*);
+        void load(const KURL&, Event*);
+        void load(const FrameLoadRequest&, bool lockHistory, bool userGesture,
+            Event*, HTMLFormElement*, const HashMap<String, String>& formValues);
+        void load(const KURL&, const String& referrer, FrameLoadType, const String& target,
+            Event*, PassRefPtr<FormState>);
+        void post(const KURL&, const String& referrer, const String& target,
+            PassRefPtr<FormData>, const String& contentType,
+            Event*, HTMLFormElement*, const HashMap<String, String>& formValues);
+
+        void load(const ResourceRequest&);
+        void load(const ResourceRequest&, const SubstituteData&);
+        void load(const ResourceRequest&, const String& frameName);
+        void load(const ResourceRequest&, const NavigationAction&, FrameLoadType, PassRefPtr<FormState>);
+        
+        void load(DocumentLoader*);
+        void load(DocumentLoader*, FrameLoadType, PassRefPtr<FormState>);
+
+        static bool canLoad(const KURL&, const String& referrer);
+        static bool canLoad(const KURL&, const Document*);
+        static bool canLoad(const CachedResource&, const Document*);
+        static void reportLocalLoadFailed(const Page*, const String& url);
+
+        static bool shouldHideReferrer(const KURL& url, const String& referrer);
+
+        Frame* createWindow(const FrameLoadRequest&, const WindowFeatures&, bool& created);
+
+        void loadResourceSynchronously(const ResourceRequest&, ResourceError&, ResourceResponse&, Vector<char>& data);
+
+        bool canHandleRequest(const ResourceRequest&);
+
+        // Also not cool.
+        void stopAllLoaders();
+        void stopForUserCancel(bool deferCheckLoadComplete = false);
+        void cancelPendingArchiveLoad(ResourceLoader*);
+
+        bool isLoadingMainResource() const { return m_isLoadingMainResource; }
+        bool isLoading() const;
+        bool frameHasLoaded() const;
+        bool committedFirstRealDocumentLoad() const { return m_committedFirstRealDocumentLoad; }
+
+        int numPendingOrLoadingRequests(bool recurse) const;
+        bool isReloading() const;
+        String referrer() const;
+        String outgoingReferrer() const;
+        void loadEmptyDocumentSynchronously();
+
+        DocumentLoader* activeDocumentLoader() const;
+        DocumentLoader* documentLoader() const;
+        DocumentLoader* provisionalDocumentLoader();
+        FrameState state() const;
+        static double timeOfLastCompletedLoad();
+        
+        void didReceiveAuthenticationChallenge(ResourceLoader*, const AuthenticationChallenge&);
+        void didCancelAuthenticationChallenge(ResourceLoader*, const AuthenticationChallenge&);
+        
+        void assignIdentifierToInitialRequest(unsigned long identifier, const ResourceRequest&);
+        void willSendRequest(ResourceLoader*, ResourceRequest&, const ResourceResponse& redirectResponse);
+        void didReceiveResponse(ResourceLoader*, const ResourceResponse&);
+        void didReceiveData(ResourceLoader*, const char*, int, int lengthReceived);
+        void didFinishLoad(ResourceLoader*);
+        void didFailToLoad(ResourceLoader*, const ResourceError&);
+        bool privateBrowsingEnabled() const;
+        const ResourceRequest& originalRequest() const;
+        const ResourceRequest& initialRequest() const;
+        void receivedMainResourceError(const ResourceError&, bool isComplete);
+        void receivedData(const char*, int);
+
+        void handleFallbackContent();
+        bool isStopping() const;
+
+        void finishedLoading();
+
+        ResourceError cancelledError(const ResourceRequest&) const;
+        ResourceError fileDoesNotExistError(const ResourceResponse&) const;
+        ResourceError blockedError(const ResourceRequest&) const;
+        bool willUseArchive(ResourceLoader*, const ResourceRequest&, const KURL&) const;
+        bool isArchiveLoadPending(ResourceLoader*) const;
+        void cannotShowMIMEType(const ResourceResponse&);
+        ResourceError interruptionForPolicyChangeError(const ResourceRequest&);
+
+        bool isHostedByObjectElement() const;
+        bool isLoadingMainFrame() const;
+        bool canShowMIMEType(const String& MIMEType) const;
+        bool representationExistsForURLScheme(const String& URLScheme);
+        String generatedMIMETypeForURLScheme(const String& URLScheme);
+
+        void notifyIconChanged();
+
+        void checkNavigationPolicy(const ResourceRequest&, NavigationPolicyDecisionFunction function, void* argument);
+        void checkContentPolicy(const String& MIMEType, ContentPolicyDecisionFunction, void* argument);
+        void cancelContentPolicyCheck();
+
+        void reload();
+        void reloadAllowingStaleData(const String& overrideEncoding);
+
+        void didReceiveServerRedirectForProvisionalLoadForFrame();
+        void finishedLoadingDocument(DocumentLoader*);
+        void committedLoad(DocumentLoader*, const char*, int);
+        bool isReplacing() const;
+        void setReplacing();
+        void revertToProvisional(DocumentLoader*);
+        void setMainDocumentError(DocumentLoader*, const ResourceError&);
+        void mainReceivedCompleteError(DocumentLoader*, const ResourceError&);
+        bool subframeIsLoading() const;
+        void willChangeTitle(DocumentLoader*);
+        void didChangeTitle(DocumentLoader*);
+
+        FrameLoadType loadType() const;
+
+        void didFirstLayout();
+        bool firstLayoutDone() const;
+
+        void clientRedirectCancelledOrFinished(bool cancelWithLoadInProgress);
+        void clientRedirected(const KURL&, double delay, double fireDate, bool lockHistory, bool isJavaScriptFormAction);
+        bool shouldReload(const KURL& currentURL, const KURL& destinationURL);
+
+        bool isQuickRedirectComing() const;
+
+        void sendRemainingDelegateMessages(unsigned long identifier, const ResourceResponse&, int length, const ResourceError&);
+        void requestFromDelegate(ResourceRequest&, unsigned long& identifier, ResourceError&);
+        void loadedResourceFromMemoryCache(const ResourceRequest&, const ResourceResponse&, int length);
+
+        void recursiveCheckLoadComplete();
+        void checkLoadComplete();
+        void detachFromParent();
+        void detachChildren();
+
+        void addExtraFieldsToRequest(ResourceRequest&, bool isMainResource, bool alwaysFromRequest);
+
+        FrameLoaderClient* client() const;
+
+        void setDefersLoading(bool);
+
+        void changeLocation(const String& URL, const String& referrer, bool lockHistory = true, bool userGesture = false);
+        void changeLocation(const KURL& URL, const String& referrer, bool lockHistory = true, bool userGesture = false);
+        void urlSelected(const ResourceRequest&, const String& target, Event*, bool lockHistory, bool userGesture);
+        void urlSelected(const FrameLoadRequest&, Event*, bool lockHistory, bool userGesture);
+      
+        bool requestFrame(HTMLFrameOwnerElement*, const String& URL, const AtomicString& frameName);
+        Frame* loadSubframe(HTMLFrameOwnerElement*, const KURL& URL, const String& name, const String& referrer);
+
+        void submitForm(const char* action, const String& URL, PassRefPtr<FormData>, const String& target, const String& contentType, const String& boundary, Event*);
+        void submitFormAgain();
+        void submitForm(const FrameLoadRequest&, Event*);
+
+        void stop();
+        void stopLoading(bool sendUnload);
+        bool closeURL();
+
+        void didExplicitOpen();
+
+        KURL iconURL();
+        void commitIconURLToIconDatabase(const KURL&);
+
+        KURL baseURL() const;
+        String baseTarget() const;
+        KURL dataURLBaseFromRequest(const ResourceRequest& request) const;
+
+        bool isScheduledLocationChangePending() const;
+        void scheduleHTTPRedirection(double delay, const String& URL);
+        void scheduleLocationChange(const String& URL, const String& referrer, bool lockHistory = true, bool userGesture = false);
+        void scheduleRefresh(bool userGesture = false);
+        void scheduleHistoryNavigation(int steps);
+
+        bool canGoBackOrForward(int distance) const;
+        void goBackOrForward(int distance);
+        int getHistoryLength();
+        KURL historyURL(int distance);
+
+        void begin();
+        void begin(const KURL&, bool dispatchWindowObjectAvailable = true);
+
+        void write(const char* str, int len = -1, bool flush = false);
+        void write(const String&);
+        void end();
+        void endIfNotLoadingMainResource();
+
+        void setEncoding(const String& encoding, bool userChosen);
+        String encoding() const;
+
+        KJS::JSValue* executeScript(const String& URL, int baseLine, const String& script);
+        KJS::JSValue* executeScript(const String& script, bool forceUserGesture = false);
+
+        void gotoAnchor();
+        bool gotoAnchor(const String& name); // returns true if the anchor was found
+        void scrollToAnchor(const KURL&);
+
+        void tokenizerProcessedData();
+
+        void handledOnloadEvents();
+        String userAgent(const KURL&) const;
+
+        Widget* createJavaAppletWidget(const IntSize&, Element*, const HashMap<String, String>& args);
+
+        void dispatchWindowObjectAvailable();
+        void restoreDocumentState();
+
+        String overrideMediaType() const;
+
+        Frame* opener();
+        void setOpener(Frame*);
+        bool openedByDOM() const;
+        void setOpenedByDOM();
+
+        void provisionalLoadStarted();
+
+        bool userGestureHint();
+
+        void resetMultipleFormSubmissionProtection();
+        void didNotOpenURL(const KURL&);
+
+        void addData(const char* bytes, int length);
+
+        bool canCachePage();
+
+        void checkCallImplicitClose();
+        bool didOpenURL(const KURL&);
+
+        void frameDetached();
+
+        // FIXME: Which one of these URL methods is right?
+        KURL url() const;
+        KURL URL() const;
+
+        void updateBaseURLForEmptyDocument();
+
+        void setResponseMIMEType(const String&);
+        const String& responseMIMEType() const;
+
+        bool containsPlugins() const;
+
+        void loadDone();
+        void finishedParsing();
+        void checkCompleted();
+        void scheduleCheckCompleted();
+        void scheduleCheckLoadComplete();
+
+        void clearRecordedFormValues();
+        void recordFormValue(const String& name, const String& value, PassRefPtr<HTMLFormElement>);
+
+        bool isComplete() const;
+
+        bool requestObject(RenderPart* frame, const String& URL, const AtomicString& frameName,
+            const String& serviceType, const Vector<String>& paramNames, const Vector<String>& paramValues);
+
+        KURL completeURL(const String& URL);
+
+        void didTellBridgeAboutLoad(const String& URL);
+        bool haveToldBridgeAboutLoad(const String& URL);
+
+        KURL originalRequestURL() const;
+
+        void cancelAndClear();
+
+        void setTitle(const String&);
+        void dispatchDidChangeLocationWithinPage();
+        
+        void dispatchDidFinishLoadToClient();
+        void updateGlobalHistoryForStandardLoad(const KURL&);
+        void updateGlobalHistoryForReload(const KURL&);
+        bool shouldGoToHistoryItem(HistoryItem*) const;
+        bool shouldTreatURLAsSameAsCurrent(const KURL&) const;
+
+        void commitProvisionalLoad(PassRefPtr<CachedPage>);
+
+        void goToItem(HistoryItem*, FrameLoadType);
+        void saveDocumentAndScrollState();
+        void saveScrollPositionAndViewStateToItem(HistoryItem*);
+
+        // FIXME: These accessors are here for a dwindling number of users in WebKit, WebFrame
+        // being the primary one.  After they're no longer needed there, they can be removed!
+        HistoryItem* currentHistoryItem();
+        HistoryItem* previousHistoryItem();
+        HistoryItem* provisionalHistoryItem();
+        void setCurrentHistoryItem(PassRefPtr<HistoryItem>);
+        void setPreviousHistoryItem(PassRefPtr<HistoryItem>);
+        void setProvisionalHistoryItem(PassRefPtr<HistoryItem>);
+
+        void continueLoadWithData(SharedBuffer*, const String& mimeType, const String& textEncoding, const KURL&); 
+
+        static void registerURLSchemeAsLocal(const String& scheme);
+        static bool restrictAccessToLocal();
+        static void setRestrictAccessToLocal(bool);
+        static bool shouldTreatURLAsLocal(const String& url);
+
+#if USE(LOW_BANDWIDTH_DISPLAY)    
+        bool addLowBandwidthDisplayRequest(CachedResource*);
+        void needToSwitchOutLowBandwidthDisplay() { m_needToSwitchOutLowBandwidthDisplay = true; }
+
+        // Client can control whether to use low bandwidth display on a per frame basis.
+        // However, this should only be used for the top frame, not sub-frame.
+        void setUseLowBandwidthDisplay(bool lowBandwidth) { m_useLowBandwidthDisplay = lowBandwidth; }
+        bool useLowBandwidthDisplay() const { return m_useLowBandwidthDisplay; }
+#endif
+
+        bool committingFirstRealLoad() const { return !m_creatingInitialEmptyDocument && !m_committedFirstRealDocumentLoad; }
+
+        void iconLoadDecisionAvailable();
+    private:
+        PassRefPtr<HistoryItem> createHistoryItem(bool useOriginal);
+        PassRefPtr<HistoryItem> createHistoryItemTree(Frame* targetFrame, bool clipAtTarget);
+
+        void addBackForwardItemClippedAtTarget(bool doClip);
+        void restoreScrollPositionAndViewState();
+        void saveDocumentState();
+        void loadItem(HistoryItem*, FrameLoadType);
+        bool urlsMatchItem(HistoryItem*) const;
+        void invalidateCurrentItemCachedPage();
+        void recursiveGoToItem(HistoryItem*, HistoryItem*, FrameLoadType);
+        bool childFramesMatchItem(HistoryItem*) const;
+
+        void addHistoryForCurrentLocation();
+        void updateHistoryForBackForwardNavigation();
+        void updateHistoryForReload();
+        void updateHistoryForStandardLoad();
+        void updateHistoryForRedirectWithLockedHistory();
+        void updateHistoryForClientRedirect();
+        void updateHistoryForCommit();
+    
+        void redirectionTimerFired(Timer<FrameLoader>*);
+        void checkCompletedTimerFired(Timer<FrameLoader>*);
+        void checkLoadCompleteTimerFired(Timer<FrameLoader>*);
+
+        void cancelRedirection(bool newLoadInProgress = false);
+
+        void started();
+
+        void completed();
+        void parentCompleted();
+
+        bool shouldUsePlugin(const KURL&, const String& mimeType, bool hasFallback, bool& useFallback);
+        bool loadPlugin(RenderPart*, const KURL&, const String& mimeType,
+        const Vector<String>& paramNames, const Vector<String>& paramValues, bool useFallback);
+        
+        bool loadProvisionalItemFromCachedPage();
+        void cachePageForHistoryItem(HistoryItem*);
+
+        void receivedFirstData();
+
+        void updatePolicyBaseURL();
+        void setPolicyBaseURL(const String&);
+
+        void replaceContentsWithScriptResult(const KURL&);
+
+        // Also not cool.
+        void stopLoadingSubframes();
+
+        void clearProvisionalLoad();
+        void markLoadComplete();
+        void transitionToCommitted(PassRefPtr<CachedPage>);
+        void frameLoadCompleted();
+
+        void mainReceivedError(const ResourceError&, bool isComplete);
+
+        void setLoadType(FrameLoadType);
+
+        void checkNavigationPolicy(const ResourceRequest&, DocumentLoader*, PassRefPtr<FormState>,
+                                   NavigationPolicyDecisionFunction, void* argument);
+        void checkNewWindowPolicy(const NavigationAction&, const ResourceRequest&, 
+                                  PassRefPtr<FormState>, const String& frameName);
+
+        void continueAfterNavigationPolicy(PolicyAction);
+        void continueAfterNewWindowPolicy(PolicyAction);
+        void continueAfterContentPolicy(PolicyAction);
+        void continueLoadAfterWillSubmitForm(PolicyAction = PolicyUse);
+
+        static void callContinueLoadAfterNavigationPolicy(void*, const ResourceRequest&, PassRefPtr<FormState>, bool shouldContinue);
+        void continueLoadAfterNavigationPolicy(const ResourceRequest&, PassRefPtr<FormState>, bool shouldContinue);
+        static void callContinueLoadAfterNewWindowPolicy(void*, const ResourceRequest&, PassRefPtr<FormState>, const String& frameName, bool shouldContinue);
+        void continueLoadAfterNewWindowPolicy(const ResourceRequest&, PassRefPtr<FormState>, const String& frameName, bool shouldContinue);
+        static void callContinueFragmentScrollAfterNavigationPolicy(void*, const ResourceRequest&, PassRefPtr<FormState>, bool shouldContinue);
+        void continueFragmentScrollAfterNavigationPolicy(const ResourceRequest&, bool shouldContinue);
+        void addHistoryItemForFragmentScroll();
+
+        void stopPolicyCheck();
+
+        void closeDocument();
+        
+        void checkLoadCompleteForThisFrame();
+
+        void setDocumentLoader(DocumentLoader*);
+        void setPolicyDocumentLoader(DocumentLoader*);
+        void setProvisionalDocumentLoader(DocumentLoader*);
+
+        void setState(FrameState);
+
+        void closeOldDataSources();
+        void open(CachedPage&);
+        void opened();
+        void updateHistoryAfterClientRedirect();
+
+        void clear(bool clearWindowProperties = true, bool clearScriptObjects = true);
+
+        bool shouldReloadToHandleUnreachableURL(DocumentLoader*);
+        void handleUnimplementablePolicy(const ResourceError&);
+
+        void applyUserAgent(ResourceRequest& request);
+
+        bool canTarget(Frame*) const;
+
+        void scheduleRedirection(ScheduledRedirection*);
+        void startRedirectionTimer();
+        void stopRedirectionTimer();
+
+        void startIconLoader();
+        
+        bool isSecureTransition(const KURL& fromURL, const KURL& toURL);
+
+#if USE(LOW_BANDWIDTH_DISPLAY)
+        // implementation of CachedResourceClient        
+        virtual void notifyFinished(CachedResource*);
+
+        void removeAllLowBandwidthDisplayRequests();    
+        void switchOutLowBandwidthDisplayIfReady();        
+#endif
+
+        void dispatchDidCommitLoad();
+        void dispatchAssignIdentifierToInitialRequest(unsigned long identifier, DocumentLoader*, const ResourceRequest&);
+        void dispatchWillSendRequest(DocumentLoader*, unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse);
+        void dispatchDidReceiveResponse(DocumentLoader*, unsigned long identifier, const ResourceResponse&);
+        void dispatchDidReceiveContentLength(DocumentLoader*, unsigned long identifier, int length);
+        void dispatchDidFinishLoading(DocumentLoader*, unsigned long identifier);
+        bool dispatchDidLoadResourceFromMemoryCache(DocumentLoader*, const ResourceRequest&, const ResourceResponse&, int length);
+
+        Frame* m_frame;
+        FrameLoaderClient* m_client;
+
+        FrameState m_state;
+        FrameLoadType m_loadType;
+
+        RefPtr<DocumentLoader> m_documentLoader;
+        RefPtr<DocumentLoader> m_provisionalDocumentLoader;
+        RefPtr<DocumentLoader> m_policyDocumentLoader;
+
+        FrameLoadType m_policyLoadType;
+        PolicyCheck m_policyCheck;
+
+        bool m_delegateIsHandlingProvisionalLoadError;
+        bool m_delegateIsDecidingNavigationPolicy;
+        bool m_delegateIsHandlingUnimplementablePolicy;
+
+        bool m_firstLayoutDone;
+        bool m_quickRedirectComing;
+        bool m_sentRedirectNotification;
+        bool m_inStopAllLoaders;
+        bool m_navigationDuringLoad;
+
+        String m_outgoingReferrer;
+
+        CachePolicy m_cachePolicy;
+
+        HashSet<String> m_urlsBridgeKnowsAbout;
+
+        OwnPtr<FormSubmission> m_deferredFormSubmission;
+
+        bool m_isExecutingJavaScriptFormAction;
+        bool m_isRunningScript;
+
+        String m_responseMIMEType;
+
+        bool m_didCallImplicitClose;
+        bool m_wasUnloadEventEmitted;
+        bool m_isComplete;
+        bool m_isLoadingMainResource;
+
+        KURL m_URL;
+        KURL m_workingURL;
+
+        OwnPtr<IconLoader> m_iconLoader;
+        bool m_mayLoadIconLater;
+
+        bool m_cancellingWithLoadInProgress;
+
+        OwnPtr<ScheduledRedirection> m_scheduledRedirection;
+
+        bool m_needsClear;
+        bool m_receivedData;
+
+        bool m_encodingWasChosenByUser;
+        String m_encoding;
+        RefPtr<TextResourceDecoder> m_decoder;
+
+        bool m_containsPlugIns;
+
+        RefPtr<HTMLFormElement> m_formAboutToBeSubmitted;
+        HashMap<String, String> m_formValuesAboutToBeSubmitted;
+        KURL m_submittedFormURL;
+    
+        Timer<FrameLoader> m_redirectionTimer;
+        Timer<FrameLoader> m_checkCompletedTimer;
+        Timer<FrameLoader> m_checkLoadCompleteTimer;
+
+        Frame* m_opener;
+        HashSet<Frame*> m_openedFrames;
+
+        bool m_openedByDOM;
+
+        bool m_creatingInitialEmptyDocument;
+        bool m_isDisplayingInitialEmptyDocument;
+        bool m_committedFirstRealDocumentLoad;
+
+        RefPtr<HistoryItem> m_currentHistoryItem;
+        RefPtr<HistoryItem> m_previousHistoryItem;
+        RefPtr<HistoryItem> m_provisionalHistoryItem;
+        
+        bool m_didPerformFirstNavigation;
+
+#if USE(LOW_BANDWIDTH_DISPLAY)
+        // whether to use low bandwidth dislay, set by client
+        bool m_useLowBandwidthDisplay;
+
+        // whether to call finishParsing() in switchOutLowBandwidthDisplayIfReady() 
+        bool m_finishedParsingDuringLowBandwidthDisplay;
+
+        // whether to call switchOutLowBandwidthDisplayIfReady;
+        // true if there is external css, javascript, or subframe/plugin
+        bool m_needToSwitchOutLowBandwidthDisplay;
+        
+        String m_pendingSourceInLowBandwidthDisplay;        
+        HashSet<CachedResource*> m_externalRequestsInLowBandwidthDisplay;
+#endif   
+    };
+
+}
+
+#endif

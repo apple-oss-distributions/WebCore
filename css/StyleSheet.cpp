@@ -1,4 +1,6 @@
 /**
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * Copyright (C) 2004, 2006 Apple Computer, Inc.
  *
@@ -20,10 +22,53 @@
 #include "config.h"
 #include "StyleSheet.h"
 
+#include "MediaList.h"
+
 namespace WebCore {
+
+StyleSheet::StyleSheet(StyleSheet* parentSheet, const String& href)
+    : StyleList(parentSheet)
+    , m_parentNode(0)
+    , m_strHref(href)
+    , m_disabled(false)
+{
+}
+
+
+StyleSheet::StyleSheet(Node* parentNode, const String& href)
+    : StyleList(0)
+    , m_parentNode(parentNode)
+    , m_strHref(href)
+    , m_disabled(false)
+{
+}
+
+StyleSheet::StyleSheet(StyleBase* owner, const String& href)
+    : StyleList(owner)
+    , m_parentNode(0)
+    , m_strHref(href)
+    , m_disabled(false)
+{
+}
 
 StyleSheet::~StyleSheet()
 {
+    if (m_media)
+        m_media->setParent(0);
+}
+
+StyleSheet* StyleSheet::parentStyleSheet() const
+{
+    return (parent() && parent()->isStyleSheet()) ? static_cast<StyleSheet*>(parent()) : 0;
+}
+
+void StyleSheet::setMedia(MediaList* media)
+{
+    if (m_media)
+        m_media->setParent(0);
+
+    m_media = media;
+    m_media->setParent(this);
 }
 
 }

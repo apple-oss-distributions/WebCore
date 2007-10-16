@@ -1,4 +1,5 @@
 /*
+ *  This file is part of the KDE libraries
  *  Copyright (C) 2003, 2006 Apple Computer, Inc.
  *  Copyright (C) 2006 Samuel Weinig (sam@webkit.org)
  *
@@ -20,9 +21,8 @@
 #ifndef XMLSerializer_h
 #define XMLSerializer_h
 
-#include <wtf/Forward.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
+#include "Shared.h"
+#include "PlatformString.h"
 
 namespace WebCore {
 
@@ -30,14 +30,9 @@ namespace WebCore {
 
     class Node;
 
-    class XMLSerializer : public RefCounted<XMLSerializer> {
+    class XMLSerializer : public Shared<XMLSerializer> {
     public:
-        static PassRefPtr<XMLSerializer> create() { return adoptRef(new XMLSerializer); }
-        
         String serializeToString(Node*, ExceptionCode&);
-        
-    private:
-        XMLSerializer()  { }        
     };
 
 } // namespace WebCore

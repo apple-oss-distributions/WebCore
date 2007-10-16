@@ -1,7 +1,6 @@
 /*
- * Copyright (C) 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
- * Copyright (C) 2011 Google Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,26 +18,26 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLLinkElement : HTMLElement {
-    [Reflect] attribute boolean disabled;
-    [Reflect] attribute DOMString charset;
-    [Reflect, URL] attribute DOMString href;
-    [Reflect] attribute DOMString hreflang;
-    [Reflect] attribute DOMString media;
-    [Reflect] attribute DOMString rel;
-    [Reflect] attribute DOMString rev;
-#if defined(LANGUAGE_JAVASCRIPT) && LANGUAGE_JAVASCRIPT
-    [Custom] attribute DOMSettableTokenList sizes;
+module html {
+
+    interface [GenerateConstructor] HTMLLinkElement : HTMLElement {
+        attribute  boolean              disabled;
+        attribute  [ConvertNullToNullString] DOMString            charset;
+        attribute  [ConvertNullToNullString] DOMString            href;
+        attribute  [ConvertNullToNullString] DOMString            hreflang;
+        attribute  [ConvertNullToNullString] DOMString            media;
+        attribute  [ConvertNullToNullString] DOMString            rel;
+        attribute  [ConvertNullToNullString] DOMString            rev;
+        attribute  [ConvertNullToNullString] DOMString            target;
+        attribute  [ConvertNullToNullString] DOMString            type;
+
+        // DOM Level 2 Style
+        readonly attribute StyleSheet   sheet;
+
+#if defined(LANGUAGE_OBJECTIVE_C)
+        // Objective-C extension:
+        readonly attribute URL absoluteLinkURL;
 #endif
-    [Reflect] attribute DOMString target;
-    [Reflect] attribute DOMString type;
+    };
 
-    // DOM Level 2 Style
-    readonly attribute StyleSheet sheet;
-
-#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
-    // Objective-C extension:
-    readonly attribute URL absoluteLinkURL;
-#endif
-};
-
+}

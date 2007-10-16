@@ -1,8 +1,10 @@
 /**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2007 Apple Inc. All rights reserved.
+ * Copyright (C) 2004 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,27 +27,31 @@
 
 #include "Element.h"
 #include "HTMLNames.h"
-#include "NodeRareData.h"
-#include <wtf/Assertions.h>
+
+using namespace WebCore;
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-NameNodeList::NameNodeList(PassRefPtr<Node> rootNode, const AtomicString& name)
-    : LiveNodeList(rootNode, NameNodeListType, InvalidateOnNameAttrChange)
-    , m_name(name)
+NameNodeList::NameNodeList(Node *n, const String &t)
+  : NodeList(n), nodeName(t)
 {
 }
 
-NameNodeList::~NameNodeList()
+unsigned NameNodeList::length() const
 {
-    ownerNode()->nodeLists()->removeCacheWithAtomicName(this, NameNodeListType, m_name);
-} 
-
-bool NameNodeList::nodeMatches(Element* testNode) const
-{
-    return testNode->getNameAttribute() == m_name;
+    return recursiveLength();
 }
 
-} // namespace WebCore
+Node *NameNodeList::item (unsigned index) const
+{
+    return recursiveItem(index);
+}
+
+bool NameNodeList::nodeMatches(Node *testNode) const
+{
+    return static_cast<Element*>(testNode)->getAttribute(nameAttr) == nodeName;
+}
+
+}

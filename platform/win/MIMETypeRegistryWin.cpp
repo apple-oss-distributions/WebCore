@@ -26,12 +26,21 @@
 #include "config.h"
 #include "MIMETypeRegistry.h"
 
-#include "WindowsExtras.h"
-#include <wtf/Assertions.h>
+#include <shlwapi.h>
 #include <wtf/HashMap.h>
-#include <wtf/MainThread.h>
 
-namespace WebCore {
+namespace WebCore 
+{
+
+String getMIMETypeForUTI(const String & uti)
+{
+    String mimeType;
+    // FIXME: This is an ugly hack: public.type -> image/type mimetype
+    if (int dotLocation = uti.reverseFind('.')) {
+        mimeType = String("image/")+uti.substring(dotLocation + 1);
+    }
+    return mimeType;
+}
 
 static String mimeTypeForExtension(const String& extension)
 {
@@ -40,24 +49,32 @@ static String mimeTypeForExtension(const String& extension)
     DWORD contentTypeStrLen = sizeof(contentTypeStr);
     DWORD keyType;
 
-    HRESULT result = getRegistryValue(HKEY_CLASSES_ROOT, ext.charactersWithNullTermination(), L"Content Type", &keyType, contentTypeStr, &contentTypeStrLen);
+    HRESULT result = SHGetValue(HKEY_CLASSES_ROOT, ext.charactersWithNullTermination(), L"Content Type", &keyType, (LPVOID)contentTypeStr, &contentTypeStrLen);
 
-    if (result == ERROR_SUCCESS && keyType == REG_SZ)
+    if (result == ERROR_SUCCESS && keyType == REG_SZ) 
         return String(contentTypeStr, contentTypeStrLen / sizeof(contentTypeStr[0]) - 1);
 
     return String();
 }
-
+   
 String MIMETypeRegistry::getPreferredExtensionForMIMEType(const String& type)
 {
+    String mimeType;
+    
+    int semiColonPos = type.find(';');
+    if (semiColonPos < 0)
+        mimeType = type;
+    else
+        mimeType = type.substring(0, semiColonPos);
+
     String path = "MIME\\Database\\Content Type\\" + type;
     WCHAR extStr[MAX_PATH];
     DWORD extStrLen = sizeof(extStr);
     DWORD keyType;
 
-    HRESULT result = getRegistryValue(HKEY_CLASSES_ROOT, path.charactersWithNullTermination(), L"Extension", &keyType, extStr, &extStrLen);
+    HRESULT result = SHGetValueW(HKEY_CLASSES_ROOT, path.charactersWithNullTermination(), L"Extension", &keyType, (LPVOID)extStr, &extStrLen);
 
-    if (result == ERROR_SUCCESS && keyType == REG_SZ)
+    if (result == ERROR_SUCCESS && keyType == REG_SZ) 
         return String(extStr + 1, extStrLen / sizeof(extStr[0]) - 2);
 
     return String();
@@ -65,8 +82,6 @@ String MIMETypeRegistry::getPreferredExtensionForMIMEType(const String& type)
 
 String MIMETypeRegistry::getMIMETypeForExtension(const String &ext)
 {
-    ASSERT(isMainThread());
-
     if (ext.isEmpty())
         return String();
 
@@ -94,9 +109,6 @@ String MIMETypeRegistry::getMIMETypeForExtension(const String &ext)
         mimetypeMap.add("ico", "image/ico");
         mimetypeMap.add("cur", "image/ico");
         mimetypeMap.add("bmp", "image/bmp");
-        mimetypeMap.add("wml", "text/vnd.wap.wml");
-        mimetypeMap.add("wmlc", "application/vnd.wap.wmlc");
-        mimetypeMap.add("m4a", "audio/x-m4a");
     }
     String result = mimetypeMap.get(ext);
     if (result.isEmpty()) {
@@ -105,11 +117,6 @@ String MIMETypeRegistry::getMIMETypeForExtension(const String &ext)
             mimetypeMap.add(ext, result);
     }
     return result;
-}
-
-bool MIMETypeRegistry::isApplicationPluginMIMEType(const String&)
-{
-    return false;
 }
 
 }

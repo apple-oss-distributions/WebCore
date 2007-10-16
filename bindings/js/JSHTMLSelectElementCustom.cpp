@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple, Inc.
  * Copyright (C) 2007 Alexey Proskuryakov (ap@webkit.org)
  *
  * This library is free software; you can redistribute it and/or
@@ -26,28 +26,30 @@
 #include "HTMLOptionElement.h"
 #include "HTMLSelectElement.h"
 #include "JSHTMLOptionElement.h"
+#include "kjs_html.h"
 
 namespace WebCore {
 
-using namespace JSC;
+using namespace KJS;
 using namespace HTMLNames;
 
-JSValue JSHTMLSelectElement::remove(ExecState* exec)
+JSValue* JSHTMLSelectElement::remove(ExecState* exec, const List& args)
 {
-    HTMLSelectElement& select = *toHTMLSelectElement(impl());
+    HTMLSelectElement& select = *static_cast<HTMLSelectElement*>(impl());
 
-    // The remove function can take either an option object or the index of an option.
-    if (HTMLOptionElement* option = toHTMLOptionElement(exec->argument(0)))
-        select.remove(option);
+    // we support both options index and options objects
+    HTMLElement* element = toHTMLElement(args[0]);
+    if (element && element->hasTagName(optionTag))
+        select.remove(static_cast<HTMLOptionElement*>(element)->index());
     else
-        select.remove(exec->argument(0).toInt32(exec));
+        select.remove(args[0]->toInt32(exec));
 
     return jsUndefined();
 }
 
-void selectIndexSetter(HTMLSelectElement* select, JSC::ExecState* exec, unsigned index, JSC::JSValue value)
+void selectIndexSetter(HTMLSelectElement* select, KJS::ExecState* exec, unsigned index, KJS::JSValue* value)
 {
-    if (value.isUndefinedOrNull())
+    if (value->isUndefinedOrNull())
         select->remove(index);
     else {
         ExceptionCode ec = 0;
@@ -60,9 +62,9 @@ void selectIndexSetter(HTMLSelectElement* select, JSC::ExecState* exec, unsigned
     }
 }
 
-void JSHTMLSelectElement::indexSetter(JSC::ExecState* exec, unsigned index, JSC::JSValue value)
+void JSHTMLSelectElement::indexSetter(KJS::ExecState* exec, unsigned index, KJS::JSValue* value, int attr)
 {
-    selectIndexSetter(toHTMLSelectElement(impl()), exec, index, value);
+    selectIndexSetter(static_cast<HTMLSelectElement*>(impl()), exec, index, value);
 }
 
 }

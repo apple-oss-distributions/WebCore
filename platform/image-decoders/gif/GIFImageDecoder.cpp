@@ -23,398 +23,360 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#include "config.h"
 #include "GIFImageDecoder.h"
-
 #include "GIFImageReader.h"
-#include "PlatformInstrumentation.h"
-#include <limits>
-#include <wtf/PassOwnPtr.h>
+
+#if PLATFORM(CAIRO) || PLATFORM(QT)
 
 namespace WebCore {
 
-GIFImageDecoder::GIFImageDecoder(ImageSource::AlphaOption alphaOption,
-                                 ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption)
-    : ImageDecoder(alphaOption, gammaAndColorProfileOption)
-    , m_repetitionCount(cAnimationLoopOnce)
+class GIFImageDecoderPrivate
 {
-}
+public:
+    GIFImageDecoderPrivate(GIFImageDecoder* decoder = 0)
+        : m_reader(decoder)
+    {
+        m_readOffset = 0;
+    }
+
+    ~GIFImageDecoderPrivate()
+    {
+        m_reader.close();
+    }
+
+    bool decode(const Vector<char>& data, 
+                GIFImageDecoder::GIFQuery query = GIFImageDecoder::GIFFullQuery,
+                unsigned int haltFrame = -1)
+    {
+        return m_reader.read((const unsigned char*)data.data() + m_readOffset, data.size() - m_readOffset, 
+                             query,
+                             haltFrame);
+    }
+
+    unsigned frameCount() const { return m_reader.images_count; }
+    int repetitionCount() const { return m_reader.loop_count; }
+
+    void setReadOffset(unsigned o) { m_readOffset = o; }
+
+    bool isTransparent() const { return m_reader.frame_reader->is_transparent; }
+
+    void getColorMap(unsigned char*& map, unsigned& size) const {
+        if (m_reader.frame_reader->is_local_colormap_defined) {
+            map = m_reader.frame_reader->local_colormap;
+            size = (unsigned)m_reader.frame_reader->local_colormap_size;
+        } else {
+            map = m_reader.global_colormap;
+            size = m_reader.global_colormap_size;
+        }
+    }
+
+    unsigned frameXOffset() const { return m_reader.frame_reader->x_offset; }
+    unsigned frameYOffset() const { return m_reader.frame_reader->y_offset; }
+    unsigned frameWidth() const { return m_reader.frame_reader->width; }
+    unsigned frameHeight() const { return m_reader.frame_reader->height; }
+
+    int transparentPixel() const { return m_reader.frame_reader->tpixel; }
+
+    unsigned duration() const { return m_reader.frame_reader->delay_time; }
+
+private:
+    GIFImageReader m_reader;
+    unsigned m_readOffset;
+};
+
+GIFImageDecoder::GIFImageDecoder()
+: m_frameCountValid(true), m_reader(0)
+{}
 
 GIFImageDecoder::~GIFImageDecoder()
 {
+    delete m_reader;
 }
 
+// Take the data and store it.
 void GIFImageDecoder::setData(SharedBuffer* data, bool allDataReceived)
 {
-    if (failed())
+    if (m_failed)
         return;
 
+    // Cache our new data.
     ImageDecoder::setData(data, allDataReceived);
-    if (m_reader)
-        m_reader->setData(data);
+
+    // Our frame count is now unknown.
+    m_frameCountValid = false;
+
+    // Create the GIF reader.
+    if (!m_reader && !m_failed)
+        m_reader = new GIFImageDecoderPrivate(this);
 }
 
-bool GIFImageDecoder::isSizeAvailable()
+// Whether or not the size information has been decoded yet.
+bool GIFImageDecoder::isSizeAvailable() const
 {
-    if (!ImageDecoder::isSizeAvailable())
-         decode(0, GIFSizeQuery);
+    // If we have pending data to decode, send it to the GIF reader now.
+    if (!m_sizeAvailable && m_reader) {
+        if (m_failed)
+            return false;
 
-    return ImageDecoder::isSizeAvailable();
+        // The decoder will go ahead and aggressively consume everything up until the first
+        // size is encountered.
+        decode(GIFSizeQuery, 0);
+    }
+
+    return m_sizeAvailable;
 }
 
-bool GIFImageDecoder::setSize(unsigned width, unsigned height)
+// The total number of frames for the image.  Will scan the image data for the answer
+// (without necessarily decoding all of the individual frames).
+int GIFImageDecoder::frameCount()
 {
-    if (ImageDecoder::isSizeAvailable() && size() == IntSize(width, height))
-        return true;
+    // If the decoder had an earlier error, we will just return what we had decoded
+    // so far.
+    if (!m_frameCountValid) {
+        // FIXME: Scanning all the data has O(n^2) behavior if the data were to come in really
+        // slowly.  Might be interesting to try to clone our existing read session to preserve
+        // state, but for now we just crawl all the data.  Note that this is no worse than what
+        // ImageIO does on Mac right now (it also crawls all the data again).
+        GIFImageDecoderPrivate reader;
+        reader.decode(m_data->buffer(), GIFFrameCountQuery);
+        m_frameCountValid = true;
+        m_frameBufferCache.resize(reader.frameCount());
+    }
 
-    if (!ImageDecoder::setSize(width, height))
-        return false;
-
-    prepareScaleDataIfNecessary();
-    return true;
-}
-
-size_t GIFImageDecoder::frameCount()
-{
-    decode(std::numeric_limits<unsigned>::max(), GIFFrameCountQuery);
     return m_frameBufferCache.size();
 }
 
+// The number of repetitions to perform for an animation loop.
 int GIFImageDecoder::repetitionCount() const
 {
-    // This value can arrive at any point in the image data stream.  Most GIFs
-    // in the wild declare it near the beginning of the file, so it usually is
-    // set by the time we've decoded the size, but (depending on the GIF and the
-    // packets sent back by the webserver) not always.  If the reader hasn't
-    // seen a loop count yet, it will return cLoopCountNotSeen, in which case we
-    // should default to looping once (the initial value for
-    // |m_repetitionCount|).
-    //
-    // There are some additional wrinkles here. First, ImageSource::clear()
-    // may destroy the reader, making the result from the reader _less_
-    // authoritative on future calls if the recreated reader hasn't seen the
-    // loop count.  We don't need to special-case this because in this case the
-    // new reader will once again return cLoopCountNotSeen, and we won't
-    // overwrite the cached correct value.
-    //
-    // Second, a GIF might never set a loop count at all, in which case we
-    // should continue to treat it as a "loop once" animation.  We don't need
-    // special code here either, because in this case we'll never change
-    // |m_repetitionCount| from its default value.
-    //
-    // Third, we use the same GIFImageReader for counting frames and we might
-    // see the loop count and then encounter a decoding error which happens
-    // later in the stream. It is also possible that no frames are in the
-    // stream. In these cases we should just loop once.
-    if (failed() || (m_reader && (!m_reader->imagesCount())))
-        m_repetitionCount = cAnimationLoopOnce;
-    else if (m_reader && m_reader->loopCount() != cLoopCountNotSeen)
-        m_repetitionCount = m_reader->loopCount();
-    return m_repetitionCount;
+    // We don't have to do any decoding to determine this, since the loop count was determined after
+    // the initial query for size.
+    if (m_reader)
+        return m_reader->repetitionCount();
+    return cAnimationNone;
 }
 
-ImageFrame* GIFImageDecoder::frameBufferAtIndex(size_t index)
+RGBA32Buffer* GIFImageDecoder::frameBufferAtIndex(size_t index)
 {
-    if (index >= frameCount())
+    if (index < 0 || index >= m_frameBufferCache.size())
         return 0;
 
-    ImageFrame& frame = m_frameBufferCache[index];
-    if (frame.status() != ImageFrame::FrameComplete) {
-        PlatformInstrumentation::willDecodeImage("GIF");
-        decode(index + 1, GIFFullQuery);
-        PlatformInstrumentation::didDecodeImage();
-    }
+    RGBA32Buffer& frame = m_frameBufferCache[index];
+    if (frame.status() != RGBA32Buffer::FrameComplete && m_reader)
+        // Decode this frame.
+        decode(GIFFullQuery, index+1);
     return &frame;
 }
 
-bool GIFImageDecoder::setFailed()
+// Feed data to the GIF reader.
+void GIFImageDecoder::decode(GIFQuery query, unsigned haltAtFrame) const
 {
-    m_reader.clear();
-    return ImageDecoder::setFailed();
-}
-
-void GIFImageDecoder::clearFrameBufferCache(size_t clearBeforeFrame)
-{
-    // In some cases, like if the decoder was destroyed while animating, we
-    // can be asked to clear more frames than we currently have.
-    if (m_frameBufferCache.isEmpty())
-        return; // Nothing to do.
-
-    // The "-1" here is tricky.  It does not mean that |clearBeforeFrame| is the
-    // last frame we wish to preserve, but rather that we never want to clear
-    // the very last frame in the cache: it's empty (so clearing it is
-    // pointless), it's partial (so we don't want to clear it anyway), or the
-    // cache could be enlarged with a future setData() call and it could be
-    // needed to construct the next frame (see comments below).  Callers can
-    // always use ImageSource::clear(true, ...) to completely free the memory in
-    // this case.
-    clearBeforeFrame = std::min(clearBeforeFrame, m_frameBufferCache.size() - 1);
-    const Vector<ImageFrame>::iterator end(m_frameBufferCache.begin() + clearBeforeFrame);
-
-    // We need to preserve frames such that:
-    //   * We don't clear |end|
-    //   * We don't clear the frame we're currently decoding
-    //   * We don't clear any frame from which a future initFrameBuffer() call
-    //     will copy bitmap data
-    // All other frames can be cleared.  Because of the constraints on when
-    // ImageSource::clear() can be called (see ImageSource.h), we're guaranteed
-    // not to have non-empty frames after the frame we're currently decoding.
-    // So, scan backwards from |end| as follows:
-    //   * If the frame is empty, we're still past any frames we care about.
-    //   * If the frame is complete, but is DisposeOverwritePrevious, we'll
-    //     skip over it in future initFrameBuffer() calls.  We can clear it
-    //     unless it's |end|, and keep scanning.  For any other disposal method,
-    //     stop scanning, as we've found the frame initFrameBuffer() will need
-    //     next.
-    //   * If the frame is partial, we're decoding it, so don't clear it; if it
-    //     has a disposal method other than DisposeOverwritePrevious, stop
-    //     scanning, as we'll only need this frame when decoding the next one.
-    Vector<ImageFrame>::iterator i(end);
-    for (; (i != m_frameBufferCache.begin()) && ((i->status() == ImageFrame::FrameEmpty) || (i->disposalMethod() == ImageFrame::DisposeOverwritePrevious)); --i) {
-        if ((i->status() == ImageFrame::FrameComplete) && (i != end))
-            i->clearPixelData();
-    }
-
-    // Now |i| holds the last frame we need to preserve; clear prior frames.
-    for (Vector<ImageFrame>::iterator j(m_frameBufferCache.begin()); j != i; ++j) {
-        ASSERT(j->status() != ImageFrame::FramePartial);
-        if (j->status() != ImageFrame::FrameEmpty)
-            j->clearPixelData();
-    }
-}
-
-bool GIFImageDecoder::haveDecodedRow(unsigned frameIndex, const Vector<unsigned char>& rowBuffer, size_t width, size_t rowNumber, unsigned repeatCount, bool writeTransparentPixels)
-{
-    const GIFFrameContext* frameContext = m_reader->frameContext();
-    // The pixel data and coordinates supplied to us are relative to the frame's
-    // origin within the entire image size, i.e.
-    // (frameContext->xOffset, frameContext->yOffset). There is no guarantee
-    // that width == (size().width() - frameContext->xOffset), so
-    // we must ensure we don't run off the end of either the source data or the
-    // row's X-coordinates.
-    int xBegin = upperBoundScaledX(frameContext->xOffset);
-    int yBegin = upperBoundScaledY(frameContext->yOffset + rowNumber);
-    int xEnd = lowerBoundScaledX(std::min(static_cast<int>(frameContext->xOffset + width), size().width()) - 1, xBegin + 1) + 1;
-    int yEnd = lowerBoundScaledY(std::min(static_cast<int>(frameContext->yOffset + rowNumber + repeatCount), size().height()) - 1, yBegin + 1) + 1;
-    if (rowBuffer.isEmpty() || (xBegin < 0) || (yBegin < 0) || (xEnd <= xBegin) || (yEnd <= yBegin))
-        return true;
-
-    // Get the colormap.
-    const unsigned char* colorMap;
-    unsigned colorMapSize;
-    if (frameContext->isLocalColormapDefined) {
-        colorMap = m_reader->localColormap(frameContext);
-        colorMapSize = m_reader->localColormapSize(frameContext);
-    } else {
-        colorMap = m_reader->globalColormap();
-        colorMapSize = m_reader->globalColormapSize();
-    }
-    if (!colorMap)
-        return true;
-
-    // Initialize the frame if necessary.
-    ImageFrame& buffer = m_frameBufferCache[frameIndex];
-    if ((buffer.status() == ImageFrame::FrameEmpty) && !initFrameBuffer(frameIndex))
-        return false;
-
-    ImageFrame::PixelData* currentAddress = buffer.getAddr(xBegin, yBegin);
-    // Write one row's worth of data into the frame.  
-    for (int x = xBegin; x < xEnd; ++x) {
-        const unsigned char sourceValue = rowBuffer[(m_scaled ? m_scaledColumns[x] : x) - frameContext->xOffset];
-        if ((!frameContext->isTransparent || (sourceValue != frameContext->tpixel)) && (sourceValue < colorMapSize)) {
-            const size_t colorIndex = static_cast<size_t>(sourceValue) * 3;
-            buffer.setRGBA(currentAddress, colorMap[colorIndex], colorMap[colorIndex + 1], colorMap[colorIndex + 2], 255);
-        } else {
-            m_currentBufferSawAlpha = true;
-            // We may or may not need to write transparent pixels to the buffer.
-            // If we're compositing against a previous image, it's wrong, and if
-            // we're writing atop a cleared, fully transparent buffer, it's
-            // unnecessary; but if we're decoding an interlaced gif and
-            // displaying it "Haeberli"-style, we must write these for passes
-            // beyond the first, or the initial passes will "show through" the
-            // later ones.
-            if (writeTransparentPixels)
-                buffer.setRGBA(currentAddress, 0, 0, 0, 0);
-        }
-        ++currentAddress;
-    }
-
-    // Tell the frame to copy the row data if need be.
-    if (repeatCount > 1)
-        buffer.copyRowNTimes(xBegin, xEnd, yBegin, yEnd);
-
-    return true;
-}
-
-bool GIFImageDecoder::frameComplete(unsigned frameIndex, unsigned frameDuration, ImageFrame::FrameDisposalMethod disposalMethod)
-{
-    // Initialize the frame if necessary.  Some GIFs insert do-nothing frames,
-    // in which case we never reach haveDecodedRow() before getting here.
-    ImageFrame& buffer = m_frameBufferCache[frameIndex];
-    if ((buffer.status() == ImageFrame::FrameEmpty) && !initFrameBuffer(frameIndex))
-        return false; // initFrameBuffer() has already called setFailed().
-
-    buffer.setStatus(ImageFrame::FrameComplete);
-    buffer.setDuration(frameDuration);
-    buffer.setDisposalMethod(disposalMethod);
-
-    if (!m_currentBufferSawAlpha) {
-        // The whole frame was non-transparent, so it's possible that the entire
-        // resulting buffer was non-transparent, and we can setHasAlpha(false).
-        if (buffer.originalFrameRect().contains(IntRect(IntPoint(), scaledSize())))
-            buffer.setHasAlpha(false);
-        else if (frameIndex) {
-            // Tricky case.  This frame does not have alpha only if everywhere
-            // outside its rect doesn't have alpha.  To know whether this is
-            // true, we check the start state of the frame -- if it doesn't have
-            // alpha, we're safe.
-            //
-            // First skip over prior DisposeOverwritePrevious frames (since they
-            // don't affect the start state of this frame) the same way we do in
-            // initFrameBuffer().
-            const ImageFrame* prevBuffer = &m_frameBufferCache[--frameIndex];
-            while (frameIndex && (prevBuffer->disposalMethod() == ImageFrame::DisposeOverwritePrevious))
-                prevBuffer = &m_frameBufferCache[--frameIndex];
-
-            // Now, if we're at a DisposeNotSpecified or DisposeKeep frame, then
-            // we can say we have no alpha if that frame had no alpha.  But
-            // since in initFrameBuffer() we already copied that frame's alpha
-            // state into the current frame's, we need do nothing at all here.
-            //
-            // The only remaining case is a DisposeOverwriteBgcolor frame.  If
-            // it had no alpha, and its rect is contained in the current frame's
-            // rect, we know the current frame has no alpha.
-            if ((prevBuffer->disposalMethod() == ImageFrame::DisposeOverwriteBgcolor) && !prevBuffer->hasAlpha() && buffer.originalFrameRect().contains(prevBuffer->originalFrameRect()))
-                buffer.setHasAlpha(false);
-        }
-    }
-
-    return true;
-}
-
-void GIFImageDecoder::gifComplete()
-{
-    // Cache the repetition count, which is now as authoritative as it's ever
-    // going to be.
-    repetitionCount();
-
-    m_reader.clear();
-}
-
-void GIFImageDecoder::decode(unsigned haltAtFrame, GIFQuery query)
-{
-    if (failed())
+    if (m_failed)
         return;
 
-    if (!m_reader) {
-        m_reader = adoptPtr(new GIFImageReader(this));
-        m_reader->setData(m_data);
+    m_failed = !m_reader->decode(m_data->buffer(), query, haltAtFrame);
+    
+    if (m_failed) {
+        delete m_reader;
+        m_reader = 0;
     }
-
-    if (query == GIFSizeQuery) {
-        if (!m_reader->decode(GIFSizeQuery, haltAtFrame))
-            setFailed();
-        return;
-    }
-
-    if (!m_reader->decode(GIFFrameCountQuery, haltAtFrame)) {
-        setFailed();
-        return;
-    }
-
-    const size_t oldSize = m_frameBufferCache.size();
-    m_frameBufferCache.resize(m_reader->imagesCount());
-    for (size_t i = oldSize; i < m_reader->imagesCount(); ++i)
-        m_frameBufferCache[i].setPremultiplyAlpha(m_premultiplyAlpha);
-
-    if (query == GIFFrameCountQuery)
-        return;
-
-    if (!m_reader->decode(GIFFullQuery, haltAtFrame)) {
-        setFailed();
-        return;
-    }
-
-    // It is also a fatal error if all data is received but we failed to decode
-    // all frames completely.
-    if (isAllDataReceived() && haltAtFrame >= m_frameBufferCache.size() && m_reader)
-        setFailed();
 }
 
-bool GIFImageDecoder::initFrameBuffer(unsigned frameIndex)
+// Callbacks from the GIF reader.
+void GIFImageDecoder::sizeNowAvailable(unsigned width, unsigned height)
+{
+    m_size = IntSize(width, height);
+    m_sizeAvailable = true;
+}
+
+void GIFImageDecoder::decodingHalted(unsigned bytesLeft)
+{
+    m_reader->setReadOffset(m_data->size() - bytesLeft);
+}
+
+void GIFImageDecoder::initFrameBuffer(RGBA32Buffer& buffer, 
+                                      RGBA32Buffer* previousBuffer,
+                                      bool compositeWithPreviousFrame)
 {
     // Initialize the frame rect in our buffer.
-    const GIFFrameContext* frameContext = m_reader->frameContext();
-    IntRect frameRect(frameContext->xOffset, frameContext->yOffset, frameContext->width, frameContext->height);
+    IntRect frameRect(m_reader->frameXOffset(), m_reader->frameYOffset(),
+                      m_reader->frameWidth(), m_reader->frameHeight());
 
-    // Make sure the frameRect doesn't extend outside the buffer.
-    if (frameRect.maxX() > size().width())
-        frameRect.setWidth(size().width() - frameContext->xOffset);
-    if (frameRect.maxY() > size().height())
-        frameRect.setHeight(size().height() - frameContext->yOffset);
+    // Make sure the frameRect doesn't extend past the bottom-right of the buffer.
+    if (frameRect.right() > m_size.width())
+        frameRect.setWidth(m_size.width() - m_reader->frameXOffset());
+    if (frameRect.bottom() > m_size.height())
+        frameRect.setHeight(m_size.height() - m_reader->frameYOffset());
 
-    ImageFrame* const buffer = &m_frameBufferCache[frameIndex];
-    int left = upperBoundScaledX(frameRect.x());
-    int right = lowerBoundScaledX(frameRect.maxX(), left);
-    int top = upperBoundScaledY(frameRect.y());
-    int bottom = lowerBoundScaledY(frameRect.maxY(), top);
-    buffer->setOriginalFrameRect(IntRect(left, top, right - left, bottom - top));
+    buffer.setRect(frameRect);
+
+    bool isSubRect = (frameRect.x() > 0 || frameRect.y() > 0 ||
+                      frameRect.width() < m_size.width() ||
+                      frameRect.height() < m_size.height());
     
-    if (!frameIndex) {
-        // This is the first frame, so we're not relying on any previous data.
-        if (!buffer->setSize(scaledSize().width(), scaledSize().height()))
-            return setFailed();
-    } else {
-        // The starting state for this frame depends on the previous frame's
-        // disposal method.
-        //
-        // Frames that use the DisposeOverwritePrevious method are effectively
-        // no-ops in terms of changing the starting state of a frame compared to
-        // the starting state of the previous frame, so skip over them.  (If the
-        // first frame specifies this method, it will get treated like
-        // DisposeOverwriteBgcolor below and reset to a completely empty image.)
-        const ImageFrame* prevBuffer = &m_frameBufferCache[--frameIndex];
-        ImageFrame::FrameDisposalMethod prevMethod = prevBuffer->disposalMethod();
-        while (frameIndex && (prevMethod == ImageFrame::DisposeOverwritePrevious)) {
-            prevBuffer = &m_frameBufferCache[--frameIndex];
-            prevMethod = prevBuffer->disposalMethod();
-        }
-        ASSERT(prevBuffer->status() == ImageFrame::FrameComplete);
+    // Let's resize our buffer now to the correct width/height and then
+    // initialize portions of it if needed.
+    RGBA32Array& bytes = buffer.bytes();
+        
+    // If the disposal method of the previous frame said to stick around, then we need     
+    // to copy that frame into our frame.  We also dont want to have any impact on
+    // anything outside our frame's rect, so if we don't overlay the entire image,
+    // then also composite with the previous frame.
+    if (previousBuffer && (compositeWithPreviousFrame || isSubRect)) {
+        bytes = previousBuffer->bytes();
+        buffer.ensureHeight(m_size.height());
+        buffer.setHasAlpha(previousBuffer->hasAlpha());
+    }
+    else // Resize to the width and height of the image.
+        bytes.resize(m_size.width() * m_size.height());
 
-        if ((prevMethod == ImageFrame::DisposeNotSpecified) || (prevMethod == ImageFrame::DisposeKeep)) {
-            // Preserve the last frame as the starting state for this frame.
-            if (!buffer->copyBitmapData(*prevBuffer))
-                return setFailed();
-        } else {
-            // We want to clear the previous frame to transparent, without
-            // affecting pixels in the image outside of the frame.
-            const IntRect& prevRect = prevBuffer->originalFrameRect();
-            const IntSize& bufferSize = scaledSize();
-            if (!frameIndex || prevRect.contains(IntRect(IntPoint(), scaledSize()))) {
-                // Clearing the first frame, or a frame the size of the whole
-                // image, results in a completely empty image.
-                if (!buffer->setSize(bufferSize.width(), bufferSize.height()))
-                    return setFailed();
-            } else {
-              // Copy the whole previous buffer, then clear just its frame.
-              if (!buffer->copyBitmapData(*prevBuffer))
-                  return setFailed();
-              for (int y = prevRect.y(); y < prevRect.maxY(); ++y) {
-                  for (int x = prevRect.x(); x < prevRect.maxX(); ++x)
-                      buffer->setRGBA(x, y, 0, 0, 0, 0);
-              }
-              if ((prevRect.width() > 0) && (prevRect.height() > 0))
-                  buffer->setHasAlpha(true);
+    if (isSubRect) {
+        // We need to go ahead and initialize the first frame to make sure
+        // that areas outside the subrect start off transparent.
+        if (!previousBuffer) {
+            bytes.fill(0);
+            buffer.setHasAlpha(true);
+        } else if (!compositeWithPreviousFrame) {
+            // Now this is an interesting case.  In the case where we fill 
+            // the entire image, we effectively do a full clear of the image (and thus
+            // don't have to initialize anything in our buffer).
+            // 
+            // However in the case where we only fill a piece of the image, two problems occur:
+            // (1) We need to wipe out the area occupied by the previous frame, which
+            // could also have been a subrect.
+            // (2) Anything outside the previous frame's rect *and* outside our current
+            // frame's rect should be left alone.
+            // We have handled (2) by just initializing our buffer from the previous frame.
+            // Our subrect will correctly overwrite the previous frame's contents as we
+            // decode rows.  However that still leaves the problem of having to wipe out
+            // the area occupied by the previous frame that does not overlap with
+            // the new frame.
+            if (previousBuffer->rect() != frameRect) {
+                // We have to restore the entire previous subframe with the first frame's contents.
+                RGBA32Buffer* firstBuffer = &m_frameBufferCache[0];
+                bool sawAlpha = buffer.hasAlpha();
+                IntRect prevRect = previousBuffer->rect();
+                unsigned end = prevRect.y() + prevRect.height();
+
+                // Given that we allocate buffers to be the same size as previous buffers,
+                // I think this assert should be valid.
+                ASSERT(IntRect(IntPoint(0,0), m_size).contains(firstBuffer->rect()));
+
+                for (unsigned i = prevRect.y(); i < end; i++) {
+                    unsigned* curr = buffer.bytes().data() + (i * m_size.width() + prevRect.x());
+                    unsigned* orig = firstBuffer->bytes().data() + (i * m_size.width() + prevRect.x());
+                    unsigned* end = curr + prevRect.width();
+                    unsigned* origEnd = orig + firstBuffer->rect().width();
+
+                    while (curr != end && orig != origEnd) {
+                        if (!sawAlpha) {
+                            sawAlpha = true;
+                            buffer.setHasAlpha(true);
+                        }
+                        *curr++ = *orig++;
+                    }
+                }
             }
         }
     }
 
     // Update our status to be partially complete.
-    buffer->setStatus(ImageFrame::FramePartial);
-
-    // Reset the alpha pixel tracker for this frame.
-    m_currentBufferSawAlpha = false;
-    return true;
+    buffer.setStatus(RGBA32Buffer::FramePartial);
 }
 
-} // namespace WebCore
+void GIFImageDecoder::haveDecodedRow(unsigned frameIndex,
+                                     unsigned char* rowBuffer,   // Pointer to single scanline temporary buffer
+                                     unsigned char* rowEnd,
+                                     unsigned rowNumber,  // The row index
+                                     unsigned repeatCount) // How many times to repeat the row
+{
+    // Resize to the width and height of the image.
+    RGBA32Buffer& buffer = m_frameBufferCache[frameIndex];
+    RGBA32Buffer* previousBuffer = (frameIndex > 0) ? &m_frameBufferCache[frameIndex-1] : 0;
+    bool compositeWithPreviousFrame = previousBuffer && previousBuffer->includeInNextFrame();
+
+    if (buffer.status() == RGBA32Buffer::FrameEmpty)
+        initFrameBuffer(buffer, previousBuffer, compositeWithPreviousFrame);
+
+    if (rowBuffer == 0)
+      return;
+
+    unsigned colorMapSize;
+    unsigned char* colorMap;
+    m_reader->getColorMap(colorMap, colorMapSize);
+    if (!colorMap)
+        return;
+
+    // The buffers that we draw are the entire image's width and height, so a final output frame is
+    // width * height RGBA32 values in size.
+    //
+    // A single GIF frame, however, can be smaller than the entire image, i.e., it can represent some sub-rectangle
+    // within the overall image.  The rows we are decoding are within this
+    // sub-rectangle.  This means that if the GIF frame's sub-rectangle is (x,y,w,h) then row 0 is really row
+    // y, and each row goes from x to x+w.
+    unsigned dstPos = (m_reader->frameYOffset() + rowNumber) * m_size.width() + m_reader->frameXOffset();
+    unsigned* dst = buffer.bytes().data() + dstPos;
+    unsigned* dstEnd = dst + m_size.width() - m_reader->frameXOffset();
+    unsigned* currDst = dst;
+    unsigned char* currentRowByte = rowBuffer;
+    
+    bool hasAlpha = m_reader->isTransparent(); 
+    bool sawAlpha = false;
+    while (currentRowByte != rowEnd && currDst < dstEnd) {
+        if ((!hasAlpha || *currentRowByte != m_reader->transparentPixel()) && *currentRowByte < colorMapSize) {
+            unsigned colorIndex = *currentRowByte * 3;
+            unsigned red = colorMap[colorIndex];
+            unsigned green = colorMap[colorIndex + 1];
+            unsigned blue = colorMap[colorIndex + 2];
+            RGBA32Buffer::setRGBA(*currDst, red, green, blue, 255);
+        } else {
+            if (!sawAlpha) {
+                sawAlpha = true;
+                buffer.setHasAlpha(true);
+            }
+            
+            if (!compositeWithPreviousFrame)
+                RGBA32Buffer::setRGBA(*currDst, 0, 0, 0, 0);
+        }
+        currDst++;
+        currentRowByte++;
+    }
+
+    if (repeatCount > 1) {
+        // Copy the row |repeatCount|-1 times.
+        unsigned num = currDst - dst;
+        unsigned size = num * sizeof(unsigned);
+        unsigned width = m_size.width();
+        unsigned* end = buffer.bytes().data() + width * m_size.height();
+        currDst = dst + width;
+        for (unsigned i = 1; i < repeatCount; i++) {
+            if (currDst + num > end) // Protect against a buffer overrun from a bogus repeatCount.
+                break;
+            memcpy(currDst, dst, size);
+            currDst += width;
+        }
+    }
+
+    // Our partial height is rowNumber + 1, e.g., row 2 is the 3rd row, so that's a height of 3.
+    // Adding in repeatCount - 1 to rowNumber + 1 works out to just be rowNumber + repeatCount.
+    buffer.ensureHeight(rowNumber + repeatCount);
+}
+
+void GIFImageDecoder::frameComplete(unsigned frameIndex, unsigned frameDuration, bool includeInNextFrame)
+{
+    RGBA32Buffer& buffer = m_frameBufferCache[frameIndex];
+    buffer.setStatus(RGBA32Buffer::FrameComplete);
+    buffer.setDuration(frameDuration);
+    buffer.setIncludeInNextFrame(includeInNextFrame);
+    buffer.ensureHeight(m_size.height());
+}
+
+void GIFImageDecoder::gifComplete()
+{
+    delete m_reader;
+    m_reader = 0;
+}
+
+}
+
+#endif // PLATFORM(CAIRO)

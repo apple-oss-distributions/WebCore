@@ -1,4 +1,6 @@
 /**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 2000 Lars Knoll (knoll@kde.org)
  * Copyright (C) 2006 Apple Computer, Inc.
  *
@@ -28,14 +30,8 @@
 
 namespace WebCore {
 
-static PassRefPtr<StringImpl> newlineString()
-{
-    DEFINE_STATIC_LOCAL(const String, string, (ASCIILiteral("\n")));
-    return string.impl();
-}
-
 RenderBR::RenderBR(Node* node)
-    : RenderText(node, newlineString())
+    : RenderText(node, new StringImpl("\n"))
     , m_lineHeight(-1)
 {
 }
@@ -44,23 +40,51 @@ RenderBR::~RenderBR()
 {
 }
 
-int RenderBR::lineHeight(bool firstLine) const
+InlineBox* RenderBR::createInlineBox(bool makePlaceholder, bool isRootLineBox, bool isOnlyRun)
 {
-    if (firstLine && document()->styleSheetCollection()->usesFirstLineRules()) {
+    // We only treat a box as text for a <br> if we are on a line by ourself or in strict mode
+    // (Note the use of strict mode.  In "almost strict" mode, we don't treat the box for <br> as text.)
+    InlineTextBox* box = static_cast<InlineTextBox*>(RenderText::createInlineBox(makePlaceholder, isRootLineBox, isOnlyRun));
+    box->setIsText(isOnlyRun || document()->inStrictMode());
+    return box;
+}
+
+short RenderBR::baselinePosition(bool firstLine, bool isRootLineBox) const
+{
+    if (firstTextBox() && !firstTextBox()->isText())
+        return 0;
+    return RenderText::baselinePosition(firstLine, isRootLineBox);
+}
+
+short RenderBR::lineHeight(bool firstLine, bool isRootLineBox) const
+{
+    if (firstTextBox() && !firstTextBox()->isText())
+        return 0;
+
+    if (firstLine) {
         RenderStyle* s = style(firstLine);
-        if (s != style())
-            return s->computedLineHeight(view());
+        Length lh = s->lineHeight();
+        if (lh.isNegative()) {
+            if (s == style()) {
+                if (m_lineHeight == -1)
+                    m_lineHeight = RenderObject::lineHeight(false);
+                return m_lineHeight;
+            }
+            return s->font().lineSpacing();
+        }
+        if (lh.isPercent())
+            return lh.calcMinValue(s->fontSize());
+        return lh.value();
     }
-    
+
     if (m_lineHeight == -1)
-        m_lineHeight = style()->computedLineHeight(view());
-    
+        m_lineHeight = RenderObject::lineHeight(false);
     return m_lineHeight;
 }
 
-void RenderBR::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
+void RenderBR::setStyle(RenderStyle* newStyle)
 {
-    RenderText::styleDidChange(diff, oldStyle);
+    RenderText::setStyle(newStyle);
     m_lineHeight = -1;
 }
 
@@ -74,9 +98,19 @@ int RenderBR::caretMaxOffset() const
     return 1;
 }
 
-VisiblePosition RenderBR::positionForPoint(const LayoutPoint&)
+unsigned RenderBR::caretMaxRenderedOffset() const
 {
-    return createVisiblePosition(0, DOWNSTREAM);
+    return 1;
+}
+
+VisiblePosition RenderBR::positionForCoordinates(int /*x*/, int /*y*/)
+{
+    return VisiblePosition(element(), 0, DOWNSTREAM);
+}
+
+InlineBox* RenderBR::inlineBox(int /*offset*/, EAffinity /*affinity*/)
+{
+    return firstTextBox();
 }
 
 } // namespace WebCore

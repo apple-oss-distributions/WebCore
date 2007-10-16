@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -17,8 +17,11 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLOptGroupElement : HTMLElement {
-    [Reflect] attribute boolean disabled;
-    [Reflect] attribute DOMString label;
-};
+module html {
 
+    interface [GenerateConstructor] HTMLOptGroupElement : HTMLElement {
+        attribute  boolean              disabled;
+        attribute  [ConvertNullToNullString] DOMString            label;
+    };
+
+}

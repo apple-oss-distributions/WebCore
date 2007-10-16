@@ -23,52 +23,44 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef PNGImageDecoder_h
-#define PNGImageDecoder_h
+#ifndef PNG_DECODER_H_
+#define PNG_DECODER_H_
 
 #include "ImageDecoder.h"
-#include <wtf/OwnPtr.h>
 
 namespace WebCore {
 
-    class PNGImageReader;
+class PNGImageReader;
 
-    // This class decodes the PNG image format.
-    class PNGImageDecoder : public ImageDecoder {
-    public:
-        PNGImageDecoder(ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption);
-        virtual ~PNGImageDecoder();
+// This class decodes the PNG image format.
+class PNGImageDecoder : public ImageDecoder
+{
+public:
+    PNGImageDecoder();
+    ~PNGImageDecoder();
 
-        // ImageDecoder
-        virtual String filenameExtension() const { return "png"; }
-        virtual bool isSizeAvailable();
-        virtual bool setSize(unsigned width, unsigned height);
-        virtual ImageFrame* frameBufferAtIndex(size_t index);
-        // CAUTION: setFailed() deletes |m_reader|.  Be careful to avoid
-        // accessing deleted memory, especially when calling this from inside
-        // PNGImageReader!
-        virtual bool setFailed();
+    // Take the data and store it.
+    virtual void setData(SharedBuffer* data, bool allDataReceived);
 
-        // Callbacks from libpng
-        void headerAvailable();
-        void rowAvailable(unsigned char* rowBuffer, unsigned rowIndex, int interlacePass);
-        void pngComplete();
+    // Whether or not the size information has been decoded yet.
+    virtual bool isSizeAvailable() const;
 
-        bool isComplete() const
-        {
-            return !m_frameBufferCache.isEmpty() && (m_frameBufferCache.first().status() == ImageFrame::FrameComplete);
-        }
+    virtual RGBA32Buffer* frameBufferAtIndex(size_t index);
 
-    private:
-        // Decodes the image.  If |onlySize| is true, stops decoding after
-        // calculating the image size.  If decoding fails but there is no more
-        // data coming, sets the "decode failure" flag.
-        void decode(bool onlySize);
+    void decode(bool sizeOnly = false) const;
 
-        OwnPtr<PNGImageReader> m_reader;
-        bool m_doNothingOnFailure;
-    };
+    PNGImageReader* reader() { return m_reader; }
 
-} // namespace WebCore
+    // Callbacks from libpng
+    void decodingFailed() { m_failed = true; }
+    void headerAvailable();
+    void rowAvailable(unsigned char* rowBuffer, unsigned rowIndex, int interlacePass);
+    void pngComplete();
+
+private:
+    mutable PNGImageReader* m_reader;
+};
+
+}
 
 #endif

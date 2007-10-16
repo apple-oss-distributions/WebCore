@@ -1,6 +1,8 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2008, 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -21,98 +23,49 @@
 #include "config.h"
 #include "CSSImageValue.h"
 
-#include "CSSCursorImageValue.h"
-#include "CSSParser.h"
 #include "CSSValueKeywords.h"
+#include "Cache.h"
 #include "CachedImage.h"
-#include "CachedResourceLoader.h"
-#include "CachedResourceRequest.h"
-#include "CachedResourceRequestInitiators.h"
-#include "Document.h"
-#include "Element.h"
-#include "MemoryCache.h"
-#include "StyleCachedImage.h"
-#include "StylePendingImage.h"
+#include "DocLoader.h"
 
 namespace WebCore {
 
-CSSImageValue::CSSImageValue(const String& url)
-    : CSSValue(ImageClass)
-    , m_url(url)
+CSSImageValue::CSSImageValue(const String& url, StyleBase* style)
+    : CSSPrimitiveValue(url, CSS_URI)
+    , m_image(0)
     , m_accessedImage(false)
 {
 }
 
-CSSImageValue::CSSImageValue(const String& url, StyleImage* image)
-    : CSSValue(ImageClass)
-    , m_url(url)
-    , m_image(image)
+CSSImageValue::CSSImageValue()
+    : CSSPrimitiveValue(CSS_VAL_NONE)
+    , m_image(0)
     , m_accessedImage(true)
 {
 }
 
 CSSImageValue::~CSSImageValue()
 {
+    if (m_image)
+        m_image->deref(this);
 }
 
-StyleImage* CSSImageValue::cachedOrPendingImage()
+CachedImage* CSSImageValue::image(DocLoader* loader)
 {
-    if (!m_image)
-        m_image = StylePendingImage::create(this);
-
-    return m_image.get();
-}
-
-StyleCachedImage* CSSImageValue::cachedImage(CachedResourceLoader* loader)
-{
-    ASSERT(loader);
-
     if (!m_accessedImage) {
         m_accessedImage = true;
 
-        CachedResourceRequest request(ResourceRequest(loader->document()->completeURL(m_url)));
-        if (m_initiatorName.isEmpty())
-            request.setInitiator(cachedResourceRequestInitiators().css);
+        if (loader)
+            m_image = loader->requestImage(getStringValue());
         else
-            request.setInitiator(m_initiatorName);
-        if (CachedResourceHandle<CachedImage> cachedImage = loader->requestImage(request))
-            m_image = StyleCachedImage::create(cachedImage.get());
+            // FIXME: Should find a way to make these images sit in their own memory partition, since they are user agent images.
+            m_image = static_cast<CachedImage*>(cache()->requestResource(0, CachedResource::ImageResource, KURL(getStringValue().deprecatedString()), 0, 0));
+
+        if (m_image)
+            m_image->ref(this);
     }
-
-    return (m_image && m_image->isCachedImage()) ? static_cast<StyleCachedImage*>(m_image.get()) : 0;
-}
-
-bool CSSImageValue::hasFailedOrCanceledSubresources() const
-{
-    if (!m_image || !m_image->isCachedImage())
-        return false;
-    CachedResource* cachedResource = static_cast<StyleCachedImage*>(m_image.get())->cachedImage();
-    if (!cachedResource)
-        return true;
-    return cachedResource->loadFailedOrCanceled();
-}
-
-bool CSSImageValue::equals(const CSSImageValue& other) const
-{
-    return m_url == other.m_url;
-}
-
-String CSSImageValue::customCssText() const
-{
-    return "url(" + quoteCSSURLIfNeeded(m_url) + ')';
-}
-
-PassRefPtr<CSSValue> CSSImageValue::cloneForCSSOM() const
-{
-    // NOTE: We expose CSSImageValues as URI primitive values in CSSOM to maintain old behavior.
-    RefPtr<CSSPrimitiveValue> uriValue = CSSPrimitiveValue::create(m_url, CSSPrimitiveValue::CSS_URI);
-    uriValue->setCSSOMSafe();
-    return uriValue.release();
-}
-
-bool CSSImageValue::knownToBeOpaque(const RenderObject* renderer) const
-{
-    return m_image ? m_image->knownToBeOpaque(renderer) : false;
+    
+    return m_image;
 }
 
 } // namespace WebCore

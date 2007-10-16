@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
- * Copyright (C) 2010 Igalia S.L
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,20 +26,25 @@
 #ifndef ContextMenuItem_h
 #define ContextMenuItem_h
 
-#if ENABLE(CONTEXT_MENUS)
-
 #include "PlatformMenuDescription.h"
+#include "PlatformString.h"
 #include <wtf/OwnPtr.h>
-#include <wtf/text/WTFString.h>
 
 #if PLATFORM(MAC)
 #include <wtf/RetainPtr.h>
-OBJC_CLASS NSMenuItem;
+
+#ifdef __OBJC__
+@class NSMenuItem;
+#else
+class NSMenuItem;
+#endif
+#elif PLATFORM(WIN)
+typedef struct tagMENUITEMINFOW* LPMENUITEMINFO;
 #elif PLATFORM(GTK)
 typedef struct _GtkMenuItem GtkMenuItem;
-typedef struct _GtkAction GtkAction;
+#elif PLATFORM(QT)
+#include <QAction>
 #endif
-#endif // ENABLE(CONTEXT_MENUS)
 
 namespace WebCore {
 
@@ -56,9 +60,6 @@ namespace WebCore {
         ContextMenuItemTagOpenImageInNewWindow,
         ContextMenuItemTagDownloadImageToDisk,
         ContextMenuItemTagCopyImageToClipboard,
-#if PLATFORM(QT) || PLATFORM(GTK) || PLATFORM(EFL)
-        ContextMenuItemTagCopyImageUrlToClipboard,
-#endif
         ContextMenuItemTagOpenFrameInNewWindow,
         ContextMenuItemTagCopy,
         ContextMenuItemTagGoBack,
@@ -67,26 +68,6 @@ namespace WebCore {
         ContextMenuItemTagReload,
         ContextMenuItemTagCut,
         ContextMenuItemTagPaste,
-#if PLATFORM(GTK)
-        ContextMenuItemTagDelete,
-#endif
-#if PLATFORM(GTK) || PLATFORM(QT) || PLATFORM (EFL)
-        ContextMenuItemTagSelectAll,
-#endif
-#if PLATFORM(GTK)
-        ContextMenuItemTagInputMethods,
-        ContextMenuItemTagUnicode,
-        ContextMenuItemTagUnicodeInsertLRMMark,
-        ContextMenuItemTagUnicodeInsertRLMMark,
-        ContextMenuItemTagUnicodeInsertLREMark,
-        ContextMenuItemTagUnicodeInsertRLEMark,
-        ContextMenuItemTagUnicodeInsertLROMark,
-        ContextMenuItemTagUnicodeInsertRLOMark,
-        ContextMenuItemTagUnicodeInsertPDFMark,
-        ContextMenuItemTagUnicodeInsertZWSMark,
-        ContextMenuItemTagUnicodeInsertZWJMark,
-        ContextMenuItemTagUnicodeInsertZWNJMark,
-#endif
         ContextMenuItemTagSpellingGuess,
         ContextMenuItemTagNoGuessesFound,
         ContextMenuItemTagIgnoreSpelling,
@@ -130,132 +111,71 @@ namespace WebCore {
         ContextMenuItemTagRightToLeft,
         ContextMenuItemTagPDFSinglePageScrolling,
         ContextMenuItemTagPDFFacingPagesScrolling,
-#if ENABLE(INSPECTOR)
         ContextMenuItemTagInspectElement,
-#endif
-        ContextMenuItemTagTextDirectionMenu, // Text Direction sub-menu
-        ContextMenuItemTagTextDirectionDefault,
-        ContextMenuItemTagTextDirectionLeftToRight,
-        ContextMenuItemTagTextDirectionRightToLeft,
-#if PLATFORM(MAC)
-        ContextMenuItemTagCorrectSpellingAutomatically,
-        ContextMenuItemTagSubstitutionsMenu,
-        ContextMenuItemTagShowSubstitutions,
-        ContextMenuItemTagSmartCopyPaste,
-        ContextMenuItemTagSmartQuotes,
-        ContextMenuItemTagSmartDashes,
-        ContextMenuItemTagSmartLinks,
-        ContextMenuItemTagTextReplacement,
-        ContextMenuItemTagTransformationsMenu,
-        ContextMenuItemTagMakeUpperCase,
-        ContextMenuItemTagMakeLowerCase,
-        ContextMenuItemTagCapitalize,
-        ContextMenuItemTagChangeBack,
-#endif
-        ContextMenuItemTagOpenMediaInNewWindow,
-        ContextMenuItemTagDownloadMediaToDisk,
-        ContextMenuItemTagCopyMediaLinkToClipboard,
-        ContextMenuItemTagToggleMediaControls,
-        ContextMenuItemTagToggleMediaLoop,
-        ContextMenuItemTagEnterVideoFullscreen,
-        ContextMenuItemTagMediaPlayPause,
-        ContextMenuItemTagMediaMute,
-        ContextMenuItemTagDictationAlternative,
-        ContextMenuItemTagOpenLinkInThisWindow,
-        ContextMenuItemTagToggleVideoFullscreen,
-        ContextMenuItemBaseCustomTag = 5000,
-        ContextMenuItemCustomTagNoAction = 5998,
-        ContextMenuItemLastCustomTag = 5999,
         ContextMenuItemBaseApplicationTag = 10000
     };
 
     enum ContextMenuItemType {
         ActionType,
-        CheckableActionType,
         SeparatorType,
         SubmenuType
     };
 
-#if ENABLE(CONTEXT_MENUS)
 #if PLATFORM(MAC)
     typedef NSMenuItem* PlatformMenuItemDescription;
+#elif PLATFORM(WIN)
+    typedef LPMENUITEMINFO PlatformMenuItemDescription;
+#elif PLATFORM(QT)
+    struct PlatformMenuItemDescriptionType {
+        PlatformMenuItemDescriptionType() : qaction(0), menu(0), action(ContextMenuItemTagNoAction), type(ActionType), subMenu(0) {}
+        QAction *qaction;
+        QMenu *menu;
+        ContextMenuAction action;
+        QString title;
+        ContextMenuItemType type;
+        PlatformMenuDescription subMenu;
+    };
+    typedef PlatformMenuItemDescriptionType* PlatformMenuItemDescription;
 #elif PLATFORM(GTK)
     typedef GtkMenuItem* PlatformMenuItemDescription;
-#else
-    typedef void* PlatformMenuItemDescription;
 #endif
 
     class ContextMenuItem {
-        WTF_MAKE_FAST_ALLOCATED;
     public:
-        ContextMenuItem(ContextMenuItemType, ContextMenuAction, const String&, ContextMenu* subMenu = 0);
-        ContextMenuItem(ContextMenuItemType, ContextMenuAction, const String&, bool enabled, bool checked);
-
+        ContextMenuItem(PlatformMenuItemDescription);
+        ContextMenuItem(ContextMenu* subMenu = 0);
+        ContextMenuItem(ContextMenuItemType type, ContextMenuAction action, const String& title, ContextMenu* subMenu = 0);
         ~ContextMenuItem();
 
-        void setType(ContextMenuItemType);
-        ContextMenuItemType type() const;
-
-        void setAction(ContextMenuAction);
-        ContextMenuAction action() const;
-
-        void setChecked(bool = true);
-        bool checked() const;
-
-        void setEnabled(bool = true);
-        bool enabled() const;
-
-        void setSubMenu(ContextMenu*);
-
-#if PLATFORM(GTK)
-        GtkAction* gtkAction() const;
-#endif
-
-#if USE(CROSS_PLATFORM_CONTEXT_MENUS)
-        ContextMenuItem(ContextMenuAction, const String&, bool enabled, bool checked, const Vector<ContextMenuItem>& subMenuItems);
-        explicit ContextMenuItem(const PlatformContextMenuItem&);
-
-        // On Windows, the title (dwTypeData of the MENUITEMINFO) is not set in this function. Callers can set the title themselves,
-        // and handle the lifetime of the title, if they need it.
-        PlatformContextMenuItem platformContextMenuItem() const;
-
-        void setTitle(const String& title) { m_title = title; }
-        const String& title() const { return m_title; }
-
-        const Vector<ContextMenuItem>& subMenuItems() const { return m_subMenuItems; }
-#else
-    public:
-        explicit ContextMenuItem(PlatformMenuItemDescription);
-        explicit ContextMenuItem(ContextMenu* subMenu = 0);
-        ContextMenuItem(ContextMenuAction, const String&, bool enabled, bool checked, Vector<ContextMenuItem>& submenuItems);
-
         PlatformMenuItemDescription releasePlatformDescription();
+
+        ContextMenuItemType type() const;
+        void setType(ContextMenuItemType);
+
+        ContextMenuAction action() const;
+        void setAction(ContextMenuAction);
 
         String title() const;
         void setTitle(const String&);
 
         PlatformMenuDescription platformSubMenu() const;
-        void setSubMenu(Vector<ContextMenuItem>&);
+        void setSubMenu(ContextMenu*);
 
-#endif // USE(CROSS_PLATFORM_CONTEXT_MENUS)
+        void setChecked(bool = true);
+        
+        void setEnabled(bool = true);
+        bool enabled() const;
+
+        // FIXME: Do we need a keyboard accelerator here?
+
     private:
-#if USE(CROSS_PLATFORM_CONTEXT_MENUS)
-        ContextMenuItemType m_type;
-        ContextMenuAction m_action;
-        String m_title;
-        bool m_enabled;
-        bool m_checked;
-        Vector<ContextMenuItem> m_subMenuItems;
-#else
 #if PLATFORM(MAC)
         RetainPtr<NSMenuItem> m_platformDescription;
 #else
         PlatformMenuItemDescription m_platformDescription;
 #endif
-#endif // USE(CROSS_PLATFORM_CONTEXT_MENUS)
     };
 
-#endif // ENABLE(CONTEXT_MENUS)
 }
 
 #endif // ContextMenuItem_h

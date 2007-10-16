@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,21 +18,26 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLTableCellElement : HTMLElement {
-    readonly attribute long cellIndex;
-    [Reflect] attribute DOMString abbr;
-    [Reflect] attribute DOMString align;
-    [Reflect] attribute DOMString axis;
-    [Reflect] attribute DOMString bgColor;
-    [Reflect=char] attribute DOMString ch;
-    [Reflect=charoff] attribute DOMString chOff;
-    attribute long colSpan;
-    [Reflect] attribute DOMString headers;
-    [Reflect] attribute DOMString height;
-    [Reflect] attribute boolean noWrap;
-    attribute long rowSpan;
-    [Reflect] attribute DOMString scope;
-    [Reflect] attribute DOMString vAlign;
-    [Reflect] attribute DOMString width;
-};
+module html {
 
+    interface [GenerateConstructor] HTMLTableCellElement : HTMLElement {
+
+        readonly attribute long            cellIndex;
+                 attribute [ConvertNullToNullString] DOMString       abbr;
+                 attribute [ConvertNullToNullString] DOMString       align;
+                 attribute [ConvertNullToNullString] DOMString       axis;
+                 attribute [ConvertNullToNullString] DOMString       bgColor;
+                 attribute [ConvertNullToNullString] DOMString       ch;
+                 attribute [ConvertNullToNullString] DOMString       chOff;
+                 attribute long            colSpan;
+                 attribute [ConvertNullToNullString] DOMString       headers;
+                 attribute [ConvertNullToNullString] DOMString       height;
+                 attribute boolean         noWrap;
+                 attribute long            rowSpan;
+                 attribute [ConvertNullToNullString] DOMString       scope;
+                 attribute [ConvertNullToNullString] DOMString       vAlign;
+                 attribute [ConvertNullToNullString] DOMString       width;
+
+    };
+
+}

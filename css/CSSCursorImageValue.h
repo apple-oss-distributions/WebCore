@@ -1,6 +1,7 @@
 /*
- * Copyright (C) 2006 Rob Buis <buis@kde.org>
- * Copyright (C) 2008 Apple Inc. All right reserved.
+ * This file is part of the DOM implementation for KDE.
+ *
+ * Copyright (C) 2006, Rob Buis <buis@kde.org>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,63 +24,18 @@
 
 #include "CSSImageValue.h"
 #include "IntPoint.h"
-#include <wtf/HashSet.h>
 
 namespace WebCore {
 
-class Document;
-class Element;
-class SVGElement;
-
-class CSSCursorImageValue : public CSSValue {
+class CSSCursorImageValue : public CSSImageValue {
 public:
-    static PassRefPtr<CSSCursorImageValue> create(PassRefPtr<CSSValue> imageValue, bool hasHotSpot, const IntPoint& hotSpot)
-    {
-        return adoptRef(new CSSCursorImageValue(imageValue, hasHotSpot, hotSpot));
-    }
+    CSSCursorImageValue(const String& url, const IntPoint& hotspot, StyleBase*);
+    virtual ~CSSCursorImageValue();
 
-    ~CSSCursorImageValue();
+    IntPoint hotspot() const { return m_hotspot; }
 
-    bool hasHotSpot() const { return m_hasHotSpot; }
-
-    IntPoint hotSpot() const
-    {
-        if (m_hasHotSpot)
-            return m_hotSpot;
-        return IntPoint(-1, -1);
-    }
-
-    String customCssText() const;
-
-    bool updateIfSVGCursorIsUsed(Element*);
-    StyleImage* cachedImage(CachedResourceLoader*);
-    StyleImage* cachedOrPendingImage(Document*);
-
-#if ENABLE(SVG)
-    void removeReferencedElement(SVGElement*);
-#endif
-
-    bool equals(const CSSCursorImageValue&) const;
-
-private:
-    CSSCursorImageValue(PassRefPtr<CSSValue> imageValue, bool hasHotSpot, const IntPoint& hotSpot);
-
-#if ENABLE(SVG)
-    bool isSVGCursor() const;
-    String cachedImageURL();
-    void clearCachedImage();
-#endif
-
-    RefPtr<CSSValue> m_imageValue;
-
-    bool m_hasHotSpot;
-    IntPoint m_hotSpot;
-    RefPtr<StyleImage> m_image;
-    bool m_accessedImage;
-
-#if ENABLE(SVG)
-    HashSet<SVGElement*> m_referencedElements;
-#endif
+protected:
+    IntPoint m_hotspot;
 };
 
 } // namespace WebCore

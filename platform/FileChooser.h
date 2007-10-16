@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,79 +30,66 @@
 #ifndef FileChooser_h
 #define FileChooser_h
 
-#include <wtf/RefCounted.h>
-#include <wtf/Vector.h>
-#include <wtf/text/WTFString.h>
+#include "PlatformString.h"
+#include <wtf/RefPtr.h>
+
+#if PLATFORM(MAC)
+#include <wtf/RetainPtr.h>
+#ifdef __OBJC__
+@class OpenPanelController;
+#else
+class OpenPanelController;
+#endif
+#endif
 
 namespace WebCore {
 
-class FileChooser;
-#if PLATFORM(IOS)
+class Document;
+class Font;
 class Icon;
-#endif
-
-struct FileChooserFileInfo {
-    FileChooserFileInfo(const String& path, const String& displayName = String())
-        : path(path)
-        , displayName(displayName)
-    {
-    }
-
-    const String path;
-    const String displayName;
-};
-
-struct FileChooserSettings {
-    bool allowsMultipleFiles;
-#if ENABLE(DIRECTORY_UPLOAD)
-    bool allowsDirectoryUpload;
-#endif
-    Vector<String> acceptMIMETypes;
-    Vector<String> acceptFileExtensions;
-    Vector<String> selectedFiles;
-#if ENABLE(MEDIA_CAPTURE)
-    String capture;
-#endif
-
-    // Returns a combined vector of acceptMIMETypes and acceptFileExtensions.
-    Vector<String> acceptTypes() const;
-};
 
 class FileChooserClient {
 public:
     virtual ~FileChooserClient() { }
+    virtual void valueChanged() = 0;
+};
 
-    virtual void filesChosen(const Vector<FileChooserFileInfo>&) = 0;
-#if PLATFORM(IOS)
-    virtual void filesChosen(const Vector<FileChooserFileInfo>&, const String& displayString, Icon*) = 0;
+class FileChooser : public Shared<FileChooser> {
+public:
+    static PassRefPtr<FileChooser> create(FileChooserClient*, const String& initialFilename);
+    ~FileChooser();
+
+    void disconnectClient() { m_client = 0; }
+    bool disconnected() { return !m_client; }
+
+    // FIXME: It's a layering violation that we pass a Document in here.
+    // The platform directory is underneath the DOM, so it can't use the DOM.
+    // Because of UI delegates, it's not clear that this class belongs in the platform
+    // layer at all. It might need to go alongside the Chrome class instead.
+    void openFileChooser(Document*);
+
+    const String& filename() const { return m_filename; }
+    String basenameForWidth(const Font&, int width) const;
+
+    Icon* icon() const { return m_icon.get(); }
+
+    void clear(); // for use by client; does not call valueChanged
+
+    void chooseFile(const String& filename);
+
+private:
+    FileChooser(FileChooserClient*, const String& initialFilename);
+    static PassRefPtr<Icon> chooseIcon(const String& filename);
+
+    FileChooserClient* m_client;
+    String m_filename;
+    RefPtr<Icon> m_icon;
+
+#if PLATFORM(MAC)
+    RetainPtr<OpenPanelController> m_controller;
 #endif
 };
 
-class FileChooser : public RefCounted<FileChooser> {
-public:
-    static PassRefPtr<FileChooser> create(FileChooserClient*, const FileChooserSettings&);
-    ~FileChooser();
+}
 
-    void invalidate();
-
-    void chooseFile(const String& path);
-    void chooseFiles(const Vector<String>& paths);
-#if PLATFORM(IOS)
-    void chooseMediaFiles(const Vector<String>& paths, const String& displayString, Icon*);
-#endif    
-
-    // FIXME: We should probably just pass file paths that could be virtual paths with proper display names rather than passing structs.
-    void chooseFiles(const Vector<FileChooserFileInfo>& files);
-
-    const FileChooserSettings& settings() const { return m_settings; }
-
-private:
-    FileChooser(FileChooserClient*, const FileChooserSettings&);
-
-    FileChooserClient* m_client;
-    FileChooserSettings m_settings;
-};
-
-} // namespace WebCore
-
-#endif // FileChooser_h
+#endif

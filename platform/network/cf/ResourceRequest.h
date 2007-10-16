@@ -1,3 +1,4 @@
+// -*- mode: c++; c-basic-offset: 4 -*-
 /*
  * Copyright (C) 2003, 2006 Apple Computer, Inc.  All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
@@ -21,148 +22,55 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
 #ifndef ResourceRequest_h
 #define ResourceRequest_h
 
 #include "ResourceRequestBase.h"
+
 #include <wtf/RetainPtr.h>
-
-OBJC_CLASS NSURLRequest;
-
-#if PLATFORM(MAC) || USE(CFNETWORK)
 typedef const struct _CFURLRequest* CFURLRequestRef;
-typedef const struct __CFURLStorageSession* CFURLStorageSessionRef;
-#endif
 
 namespace WebCore {
 
-    class ResourceRequest : public ResourceRequestBase {
-    public:
+    struct ResourceRequest : ResourceRequestBase {
+
         ResourceRequest(const String& url) 
-            : ResourceRequestBase(KURL(ParsedURLString, url), UseProtocolCachePolicy)
-#if PLATFORM(IOS)
-            , m_mainResourceRequest(false)
-#endif
+            : ResourceRequestBase(KURL(url.deprecatedString()), UseProtocolCachePolicy)
         {
         }
 
         ResourceRequest(const KURL& url) 
             : ResourceRequestBase(url, UseProtocolCachePolicy)
-#if PLATFORM(IOS)
-            , m_mainResourceRequest(false)
-#endif
         {
         }
 
         ResourceRequest(const KURL& url, const String& referrer, ResourceRequestCachePolicy policy = UseProtocolCachePolicy) 
             : ResourceRequestBase(url, policy)
-#if PLATFORM(IOS)
-            , m_mainResourceRequest(false)
-#endif
         {
             setHTTPReferrer(referrer);
         }
         
         ResourceRequest()
             : ResourceRequestBase(KURL(), UseProtocolCachePolicy)
-#if PLATFORM(IOS)
-            , m_mainResourceRequest(false)
-#endif
         {
         }
         
-#if USE(CFNETWORK)
-#if PLATFORM(MAC)
-        ResourceRequest(NSURLRequest *);
-        void updateNSURLRequest();
-#endif
-
         ResourceRequest(CFURLRequestRef cfRequest)
             : ResourceRequestBase()
-#if PLATFORM(IOS)
-            , m_mainResourceRequest(false)
-#endif
-            , m_cfRequest(cfRequest)
-        {
-#if PLATFORM(MAC)
-            updateNSURLRequest();
-#endif
-        }
-#else
-        ResourceRequest(NSURLRequest *nsRequest)
-            : ResourceRequestBase()
-#if PLATFORM(IOS)
-            , m_mainResourceRequest(false)
-#endif
-            , m_nsRequest(nsRequest)
-        {
-        }
-#endif
-
-        void updateFromDelegatePreservingOldHTTPBody(const ResourceRequest&);
-
-#if PLATFORM(MAC)
-        void applyWebArchiveHackForMail();
-        NSURLRequest *nsURLRequest(HTTPBodyUpdatePolicy) const;
-#endif
-
-#if ENABLE(CACHE_PARTITIONING)
-        static String partitionName(const String& domain);
-        const String& cachePartition() const { return m_cachePartition.isNull() ? emptyString() : m_cachePartition; }
-        void setCachePartition(const String& cachePartition) { m_cachePartition = partitionName(cachePartition); }
-#endif
-
-#if PLATFORM(MAC) || USE(CFNETWORK)
-        CFURLRequestRef cfURLRequest(HTTPBodyUpdatePolicy) const;
-        void setStorageSession(CFURLStorageSessionRef);
-#endif
-
-        static bool httpPipeliningEnabled();
-        static void setHTTPPipeliningEnabled(bool);
-
-#if PLATFORM(MAC)
-        static bool useQuickLookResourceCachingQuirks();
-#endif
-
-#if PLATFORM(IOS)
-        void setMainResourceRequest(bool isMainResourceRequest) const { m_mainResourceRequest = isMainResourceRequest; }
-        bool isMainResourceRequest() const { return m_mainResourceRequest; }
+            , m_cfRequest(cfRequest) { }
+        
+        CFURLRequestRef cfURLRequest() const;       
 
     private:
-        mutable bool m_mainResourceRequest;
-#endif
-
-    private:
-        friend class ResourceRequestBase;
+        friend struct ResourceRequestBase;
 
         void doUpdatePlatformRequest();
         void doUpdateResourceRequest();
-        void doUpdatePlatformHTTPBody();
-        void doUpdateResourceHTTPBody();
-
-        PassOwnPtr<CrossThreadResourceRequestData> doPlatformCopyData(PassOwnPtr<CrossThreadResourceRequestData>) const;
-        void doPlatformAdopt(PassOwnPtr<CrossThreadResourceRequestData>);
-
-#if USE(CFNETWORK)
-        RetainPtr<CFURLRequestRef> m_cfRequest;
-#endif
-#if PLATFORM(MAC)
-        RetainPtr<NSURLRequest> m_nsRequest;
-#endif
-#if ENABLE(CACHE_PARTITIONING)
-        String m_cachePartition;
-#endif
-
-        static bool s_httpPipeliningEnabled;
-    };
-
-    struct CrossThreadResourceRequestData : public CrossThreadResourceRequestDataBase {
-#if ENABLE(CACHE_PARTITIONING)
-        String m_cachePartition;
-#endif
+        
+        RetainPtr<CFURLRequestRef> m_cfRequest;      
     };
 
 } // namespace WebCore

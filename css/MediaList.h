@@ -1,6 +1,8 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2004, 2006, 2008, 2009, 2010, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -21,106 +23,44 @@
 #ifndef MediaList_h
 #define MediaList_h
 
-#include "ExceptionCode.h"
-#include <wtf/Forward.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
+#include "StyleBase.h"
 #include <wtf/Vector.h>
-#include <wtf/text/WTFString.h>
+#include "PlatformString.h"
 
 namespace WebCore {
-
-class CSSRule;
+typedef int ExceptionCode;
 class CSSStyleSheet;
-class Document;
-class MediaList;
 class MediaQuery;
+class CSSRule;
 
-class MediaQuerySet : public RefCounted<MediaQuerySet> {
+class MediaList : public StyleBase
+{
 public:
-    static PassRefPtr<MediaQuerySet> create()
-    {
-        return adoptRef(new MediaQuerySet());
-    }
-    static PassRefPtr<MediaQuerySet> create(const String& mediaString)
-    {
-        return adoptRef(new MediaQuerySet(mediaString, false));
-    }
-    static PassRefPtr<MediaQuerySet> createAllowingDescriptionSyntax(const String& mediaString)
-    {
-        return adoptRef(new MediaQuerySet(mediaString, true));
-    }
-    ~MediaQuerySet();
-    
-    bool parse(const String&);
-    bool add(const String&);
-    bool remove(const String&);
-
-    void addMediaQuery(PassOwnPtr<MediaQuery>);
-
-    const Vector<OwnPtr<MediaQuery> >& queryVector() const { return m_queries; }
-    
-    int lastLine() const { return m_lastLine; }
-    void setLastLine(int lastLine) { m_lastLine = lastLine; }
-    
-    String mediaText() const;
-
-    PassRefPtr<MediaQuerySet> copy() const { return adoptRef(new MediaQuerySet(*this)); }
-
-private:
-    MediaQuerySet();
-    MediaQuerySet(const String& mediaQuery, bool fallbackToDescription);
-    MediaQuerySet(const MediaQuerySet&);
-    
-    unsigned m_fallbackToDescriptor : 1; // true if failed media query parsing should fallback to media description parsing.
-    signed m_lastLine : 31;
-    Vector<OwnPtr<MediaQuery> > m_queries;
-};
-
-class MediaList : public RefCounted<MediaList> {
-public:
-    static PassRefPtr<MediaList> create(MediaQuerySet* mediaQueries, CSSStyleSheet* parentSheet)
-    {
-        return adoptRef(new MediaList(mediaQueries, parentSheet));
-    }
-    static PassRefPtr<MediaList> create(MediaQuerySet* mediaQueries, CSSRule* parentRule)
-    {
-        return adoptRef(new MediaList(mediaQueries, parentRule));
-    }
-
+    MediaList(bool fallbackToDescription = false) : StyleBase(0), m_fallback(fallbackToDescription) {}
+    MediaList(CSSStyleSheet* parentSheet, bool fallbackToDescription = false);
+    MediaList(CSSStyleSheet* parentSheet, const String& media, bool fallbackToDescription = false);
+    MediaList(CSSRule* parentRule, const String& media, bool fallbackToDescription = false);
     ~MediaList();
 
-    unsigned length() const { return m_mediaQueries->queryVector().size(); }
+    virtual bool isMediaList() { return true; }
+
+    CSSStyleSheet* parentStyleSheet() const;
+    CSSRule* parentRule() const;
+    unsigned length() const { return (unsigned) m_queries.size(); }
     String item(unsigned index) const;
     void deleteMedium(const String& oldMedium, ExceptionCode&);
     void appendMedium(const String& newMedium, ExceptionCode&);
 
-    String mediaText() const { return m_mediaQueries->mediaText(); }
-    void setMediaText(const String&, ExceptionCode&);
+    String mediaText() const;
+    void setMediaText(const String&, ExceptionCode&xo);
 
-    // Not part of CSSOM.
-    CSSRule* parentRule() const { return m_parentRule; }
-    CSSStyleSheet* parentStyleSheet() const { return m_parentStyleSheet; }
-    void clearParentStyleSheet() { ASSERT(m_parentStyleSheet); m_parentStyleSheet = 0; }
-    void clearParentRule() { ASSERT(m_parentRule); m_parentRule = 0; }
-    const MediaQuerySet* queries() const { return m_mediaQueries.get(); }
+    void appendMediaQuery(MediaQuery* mediaQuery);
+    const Vector<MediaQuery*>* mediaQueries() const { return &m_queries; }
 
-    void reattach(MediaQuerySet*);
-
-private:
-    MediaList();
-    MediaList(MediaQuerySet*, CSSStyleSheet* parentSheet);
-    MediaList(MediaQuerySet*, CSSRule* parentRule);
-
-    RefPtr<MediaQuerySet> m_mediaQueries;
-    CSSStyleSheet* m_parentStyleSheet;
-    CSSRule* m_parentRule;
+protected:
+    Vector<MediaQuery*> m_queries;
+    bool m_fallback; // true if failed media query parsing should fallback to media description parsing
 };
-
-#if ENABLE(RESOLUTION_MEDIA_QUERY)
-// Adds message to inspector console whenever dpi or dpcm values are used for "screen" media.
-void reportMediaQueryWarningIfNeeded(Document*, const MediaQuerySet*);
-#endif
 
 } // namespace
 

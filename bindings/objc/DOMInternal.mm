@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006, 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,76 +26,50 @@
 #import "config.h"
 #import "DOMInternal.h"
 
-#import "DOMNodeInternal.h"
+#import "Document.h"
+#import "Event.h"
 #import "Frame.h"
 #import "JSNode.h"
-#import "ScriptController.h"
+#import "Node.h"
+#import "PlatformString.h"
+#import "Range.h"
+#import "RangeException.h"
+#import "SVGException.h"
 #import "WebScriptObjectPrivate.h"
-#import "runtime_root.h"
-
-#if PLATFORM(IOS)
-#define NEEDS_WRAPPER_CACHE_LOCK 1
-#endif
+#import "XPathEvaluator.h"
+#import "kjs_proxy.h"
 
 //------------------------------------------------------------------------------------------
 // Wrapping WebCore implementation objects
 
-static NSMapTable* DOMWrapperCache;
-    
-#ifdef NEEDS_WRAPPER_CACHE_LOCK
-static Mutex& wrapperCacheLock()
-{
-    DEFINE_STATIC_LOCAL(Mutex, wrapperCacheMutex, ());
-    return wrapperCacheMutex;
-}
-#endif
+namespace WebCore {
 
-#if COMPILER(CLANG)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#endif    
-
-NSMapTable* createWrapperCache()
-{
-    // NSMapTable with zeroing weak pointers is the recommended way to build caches like this under garbage collection.
-    NSPointerFunctionsOptions keyOptions = NSPointerFunctionsOpaqueMemory | NSPointerFunctionsOpaquePersonality;
-    NSPointerFunctionsOptions valueOptions = NSPointerFunctionsZeroingWeakMemory | NSPointerFunctionsObjectPersonality;
-    return [[NSMapTable alloc] initWithKeyOptions:keyOptions valueOptions:valueOptions capacity:0];
-}
-
-#if COMPILER(CLANG)
-#pragma clang diagnostic pop
-#endif
+typedef HashMap<DOMObjectInternal*, NSObject*> DOMWrapperMap;
+static DOMWrapperMap* DOMWrapperCache;
 
 NSObject* getDOMWrapper(DOMObjectInternal* impl)
 {
-#ifdef NEEDS_WRAPPER_CACHE_LOCK
-    MutexLocker locker(wrapperCacheLock());
-#endif
     if (!DOMWrapperCache)
         return nil;
-    return static_cast<NSObject*>(NSMapGet(DOMWrapperCache, impl));
+    return DOMWrapperCache->get(impl);
 }
 
 void addDOMWrapper(NSObject* wrapper, DOMObjectInternal* impl)
 {
-#ifdef NEEDS_WRAPPER_CACHE_LOCK
-    MutexLocker locker(wrapperCacheLock());
-#endif
     if (!DOMWrapperCache)
-        DOMWrapperCache = createWrapperCache();
-    NSMapInsert(DOMWrapperCache, impl, wrapper);
+        DOMWrapperCache = new DOMWrapperMap;
+    DOMWrapperCache->set(impl, wrapper);
 }
 
 void removeDOMWrapper(DOMObjectInternal* impl)
 {
-#ifdef NEEDS_WRAPPER_CACHE_LOCK
-    MutexLocker locker(wrapperCacheLock());
-#endif
     if (!DOMWrapperCache)
         return;
-    NSMapRemove(DOMWrapperCache, impl);
+    DOMWrapperCache->remove(impl);
 }
+
+} // namespace WebCore
+
 
 //------------------------------------------------------------------------------------------
 
@@ -119,7 +93,7 @@ void removeDOMWrapper(DOMObjectInternal* impl)
 
 - (void)_initializeScriptDOMNodeImp
 {
-    ASSERT(_private->isCreatedByDOMWrapper);
+    assert (_private->isCreatedByDOMWrapper);
     
     if (![self isKindOfClass:[DOMNode class]]) {
         // DOMObject can't map back to a document, and thus an interpreter,
@@ -130,7 +104,7 @@ void removeDOMWrapper(DOMObjectInternal* impl)
     
     // Extract the WebCore::Node from the ObjectiveC wrapper.
     DOMNode *n = (DOMNode *)self;
-    WebCore::Node *nodeImpl = core(n);
+    WebCore::Node *nodeImpl = [n _node];
 
     // Dig up Interpreter and ExecState.
     WebCore::Frame *frame = 0;
@@ -138,15 +112,14 @@ void removeDOMWrapper(DOMObjectInternal* impl)
         frame = document->frame();
     if (!frame)
         return;
-
-    // The global object which should own this node - FIXME: does this need to be isolated-world aware?
-    WebCore::JSDOMGlobalObject* globalObject = frame->script()->globalObject(WebCore::mainThreadNormalWorld());
-    JSC::ExecState *exec = globalObject->globalExec();
-
+        
+    KJS::Interpreter *interpreter = frame->scriptProxy()->interpreter();
+    KJS::ExecState *exec = interpreter->globalExec();
+    
     // Get (or create) a cached JS object for the DOM node.
-    JSC::JSObject *scriptImp = asObject(WebCore::toJS(exec, globalObject, nodeImpl));
+    KJS::JSObject *scriptImp = static_cast<KJS::JSObject*>(WebCore::toJS(exec, nodeImpl));
 
-    JSC::Bindings::RootObject* rootObject = frame->script()->bindingRootObject();
+    KJS::Bindings::RootObject* rootObject = frame->bindingRootObject();
 
     [self _setImp:scriptImp originRootObject:rootObject rootObject:rootObject];
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -17,9 +17,10 @@
  * Boston, MA 02110-1301, USA.
  */
 
-interface HTMLFontElement : HTMLElement {
-    [Reflect] attribute DOMString color;
-    [Reflect] attribute DOMString face;
-    [Reflect] attribute DOMString size;
-};
-
+module html {
+    interface [GenerateConstructor] HTMLFontElement : HTMLElement {
+        attribute [ConvertNullToNullString] DOMString color;
+        attribute [ConvertNullToNullString] DOMString face;
+        attribute [ConvertNullToNullString] DOMString size;
+    };
+}

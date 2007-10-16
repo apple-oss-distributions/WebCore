@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2010 Apple, Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,22 +18,24 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    JSGenerateToNativeObject,
-    NamedConstructor=Option([Default=NullString] optional DOMString data, [Default=NullString] optional DOMString value, [Default=Undefined] optional boolean defaultSelected, [Default=Undefined] optional boolean selected),
-    ConstructorRaisesException
-] interface HTMLOptionElement : HTMLElement {
-    [Reflect] attribute boolean disabled;
-    readonly attribute HTMLFormElement form;
-    attribute DOMString label;
-    [Reflect=selected] attribute boolean defaultSelected;
-    attribute boolean selected;
-    attribute DOMString value;
+module html {
 
-#if defined(LANGUAGE_JAVASCRIPT) && LANGUAGE_JAVASCRIPT
-    [SetterRaisesException] attribute DOMString text;
+    interface [GenerateNativeConverter] HTMLOptionElement : HTMLElement {
+        readonly attribute  HTMLFormElement      form;
+                 attribute  boolean              defaultSelected;
+#if defined(LANGUAGE_JAVASCRIPT)
+                 attribute  [ConvertNullToNullString] DOMString            text
+                     setter raises(DOMException);
+                 attribute  long                 index
+                     setter raises(DOMException); // FIXME: We disallow setting in violation of DOM 1 HTML.
 #else
-    readonly attribute DOMString text;
+        readonly attribute  DOMString            text;
+        readonly attribute  long                 index;
 #endif
-    readonly attribute long index;
-};
+                 attribute  boolean              disabled;
+                 attribute  [ConvertNullToNullString] DOMString            label;
+                 attribute  boolean              selected;
+                 attribute  [ConvertNullToNullString] DOMString            value;
+    };
+
+}

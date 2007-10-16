@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -26,24 +26,27 @@
 #include "HTMLOptionsCollection.h"
 #include "HTMLSelectElement.h"
 #include "JSHTMLOptionElement.h"
-#include "JSHTMLSelectElement.h"
 #include "JSHTMLSelectElementCustom.h"
-#include "JSNodeList.h"
-#include "StaticNodeList.h"
 
-#include <wtf/MathExtras.h>
+#include <kjs/operations.h>
 
-using namespace JSC;
+using namespace KJS;
 
 namespace WebCore {
 
-void JSHTMLOptionsCollection::setLength(ExecState* exec, JSValue value)
+JSValue* JSHTMLOptionsCollection::length(ExecState* exec) const
+{
+    HTMLOptionsCollection* imp = static_cast<HTMLOptionsCollection*>(impl());
+    return jsNumber(imp->length());
+}
+
+void JSHTMLOptionsCollection::setLength(ExecState* exec, JSValue* value)
 {
     HTMLOptionsCollection* imp = static_cast<HTMLOptionsCollection*>(impl());
     ExceptionCode ec = 0;
     unsigned newLength = 0;
-    double lengthValue = value.toNumber(exec);
-    if (!std::isnan(lengthValue) && !std::isinf(lengthValue)) {
+    double lengthValue = value->toNumber(exec);
+    if (!isNaN(lengthValue) && !isInf(lengthValue)) {
         if (lengthValue < 0.0)
             ec = INDEX_SIZE_ERR;
         else if (lengthValue > static_cast<double>(UINT_MAX))
@@ -56,35 +59,11 @@ void JSHTMLOptionsCollection::setLength(ExecState* exec, JSValue value)
     setDOMException(exec, ec);
 }
 
-void JSHTMLOptionsCollection::indexSetter(ExecState* exec, unsigned index, JSValue value)
+void JSHTMLOptionsCollection::indexSetter(KJS::ExecState* exec, unsigned index, KJS::JSValue* value, int attr)
 {
     HTMLOptionsCollection* imp = static_cast<HTMLOptionsCollection*>(impl());
-    HTMLSelectElement* base = toHTMLSelectElement(imp->ownerNode());
+    HTMLSelectElement* base = static_cast<HTMLSelectElement*>(imp->base());
     selectIndexSetter(base, exec, index, value);
-}
-
-JSValue JSHTMLOptionsCollection::add(ExecState* exec)
-{
-    HTMLOptionsCollection* imp = static_cast<HTMLOptionsCollection*>(impl());
-    HTMLOptionElement* option = toHTMLOptionElement(exec->argument(0));
-    ExceptionCode ec = 0;
-    if (exec->argumentCount() < 2)
-        imp->add(option, ec);
-    else {
-        int index = exec->argument(1).toInt32(exec);
-        if (exec->hadException())
-            return jsUndefined();
-        imp->add(option, index, ec);
-    }
-    setDOMException(exec, ec);
-    return jsUndefined();
-}
-
-JSValue JSHTMLOptionsCollection::remove(ExecState* exec)
-{
-    HTMLOptionsCollection* imp = static_cast<HTMLOptionsCollection*>(impl());
-    JSHTMLSelectElement* base = jsCast<JSHTMLSelectElement*>(asObject(toJS(exec, globalObject(), imp->ownerNode())));
-    return base->remove(exec);
 }
 
 }

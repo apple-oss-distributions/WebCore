@@ -1,8 +1,10 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,22 +25,58 @@
 #include "config.h"
 #include "DocumentType.h"
 
+#include "DOMImplementation.h"
 #include "Document.h"
 #include "NamedNodeMap.h"
 
 namespace WebCore {
 
-DocumentType::DocumentType(Document* document, const String& name, const String& publicId, const String& systemId)
-    : Node(document, CreateOther)
-    , m_name(name)
-    , m_publicId(publicId)
-    , m_systemId(systemId)
+DocumentType::DocumentType(DOMImplementation *i, Document *doc, const String &n, const String &p, const String &s)
+    : Node(doc), m_implementation(i), m_name(n), m_publicId(p), m_systemId(s)
 {
 }
 
-KURL DocumentType::baseURI() const
+DocumentType::DocumentType(Document *doc, const String &n, const String &p, const String &s)
+    : Node(doc), m_name(n), m_publicId(p), m_systemId(s)
 {
-    return KURL();
+}
+
+DocumentType::DocumentType(Document *doc, const DocumentType &t)
+    : Node(doc), m_implementation(t.m_implementation)
+    , m_name(t.m_name), m_publicId(t.m_publicId), m_systemId(t.m_systemId), m_subset(t.m_subset)
+{
+}
+
+String DocumentType::toString() const
+{
+    if (m_name.isEmpty())
+        return "";
+
+    String result = "<!DOCTYPE ";
+    result += m_name;
+    if (!m_publicId.isEmpty()) {
+        result += " PUBLIC \"";
+        result += m_publicId;
+        result += "\" \"";
+        result += m_systemId;
+        result += "\"";
+    } else if (!m_systemId.isEmpty()) {
+        result += " SYSTEM \"";
+        result += m_systemId;
+        result += "\"";
+    }
+    if (!m_subset.isEmpty()) {
+        result += " [";
+        result += m_subset;
+        result += "]";
+    }
+    result += ">";
+    return result;
+}
+
+String DocumentType::baseURI() const
+{
+    return String();
 }
 
 String DocumentType::nodeName() const
@@ -53,31 +91,8 @@ Node::NodeType DocumentType::nodeType() const
 
 PassRefPtr<Node> DocumentType::cloneNode(bool /*deep*/)
 {
-    return create(document(), m_name, m_publicId, m_systemId);
-}
-
-Node::InsertionNotificationRequest DocumentType::insertedInto(ContainerNode* insertionPoint)
-{
-    Node::insertedInto(insertionPoint);
-    if (!insertionPoint->inDocument())
-        return InsertionDone;
-
-    // Our document node can be null if we were created by a DOMImplementation.  We use the parent() instead.
-    ASSERT(parentNode() && parentNode()->isDocumentNode());
-    if (parentNode() && parentNode()->isDocumentNode()) {
-        Document* doc = toDocument(parentNode());
-        if (!doc->doctype())
-            doc->setDocType(this);
-    }
-
-    return InsertionDone;
-}
-
-void DocumentType::removedFrom(ContainerNode* insertionPoint)
-{
-    if (insertionPoint->inDocument() && document() && document()->doctype() == this)
-        document()->setDocType(0);
-    Node::removedFrom(insertionPoint);
+    // The DOM Level 2 specification says cloning DocumentType nodes is "implementation dependent" so for now we do not support it.
+    return 0;
 }
 
 }

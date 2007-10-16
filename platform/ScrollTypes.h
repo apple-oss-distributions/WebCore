@@ -26,9 +26,6 @@
 #ifndef ScrollTypes_h
 #define ScrollTypes_h
 
-// WTF_PLATFORM_IOS
-#ifdef __cplusplus
-
 namespace WebCore {
 
     enum ScrollDirection {
@@ -38,137 +35,17 @@ namespace WebCore {
         ScrollRight
     };
 
-    enum ScrollLogicalDirection {
-        ScrollBlockDirectionBackward,
-        ScrollBlockDirectionForward,
-        ScrollInlineDirectionBackward,
-        ScrollInlineDirectionForward
-    };
-    
-    
-    inline ScrollDirection logicalToPhysical(ScrollLogicalDirection direction, bool isVertical, bool isFlipped) 
-    {
-        switch (direction) {
-        case ScrollBlockDirectionBackward: {
-            if (isVertical) {
-                if (!isFlipped)
-                    return ScrollUp;
-                return ScrollDown;
-            } else {
-                if (!isFlipped)
-                    return ScrollLeft;
-                return ScrollRight;
-            }
-            break;
-        }
-        case ScrollBlockDirectionForward: {
-            if (isVertical) {
-                if (!isFlipped)
-                    return ScrollDown;
-                return ScrollUp;
-            } else {
-                if (!isFlipped)
-                    return ScrollRight;
-                return ScrollLeft;
-            }
-            break;
-        }
-        case ScrollInlineDirectionBackward: {
-            if (isVertical) {
-                if (!isFlipped)
-                    return ScrollLeft;
-                return ScrollRight;
-            } else {
-                if (!isFlipped)
-                    return ScrollUp;
-                return ScrollDown;
-            }
-            break;
-        }
-        case ScrollInlineDirectionForward: {
-            if (isVertical) {
-                if (!isFlipped)
-                    return ScrollRight;
-                return ScrollLeft;
-            } else {
-                if (!isFlipped)
-                    return ScrollDown;
-                return ScrollUp;
-            }
-            break;
-        }
-        default:
-            ASSERT_NOT_REACHED();
-            break;
-        }
-        return ScrollUp;
-    }
-
     enum ScrollGranularity {
         ScrollByLine,
         ScrollByPage,
         ScrollByDocument,
-        ScrollByPixel,
-        ScrollByPrecisePixel
-    };
-
-    enum ScrollElasticity {
-        ScrollElasticityAutomatic,
-        ScrollElasticityNone,
-        ScrollElasticityAllowed
+        ScrollByPixel
     };
 
     enum ScrollbarOrientation { HorizontalScrollbar, VerticalScrollbar };
 
     enum ScrollbarMode { ScrollbarAuto, ScrollbarAlwaysOff, ScrollbarAlwaysOn };
 
-    enum ScrollbarControlSize { RegularScrollbar, SmallScrollbar };
-
-    typedef unsigned ScrollbarControlState;
-
-    enum ScrollbarControlStateMask {
-        ActiveScrollbarState = 1,
-        EnabledScrollbarState = 1 << 1,
-        PressedScrollbarState = 1 << 2
-    };
-
-    enum ScrollbarPart {
-        NoPart = 0,
-        BackButtonStartPart = 1,
-        ForwardButtonStartPart = 1 << 1,
-        BackTrackPart = 1 << 2,
-        ThumbPart = 1 << 3,
-        ForwardTrackPart = 1 << 4,
-        BackButtonEndPart = 1 << 5,
-        ForwardButtonEndPart = 1 << 6,
-        ScrollbarBGPart = 1 << 7,
-        TrackBGPart = 1 << 8,
-        AllParts = 0xffffffff
-    };
-
-    enum ScrollbarButtonsPlacement {
-        ScrollbarButtonsNone,
-        ScrollbarButtonsSingle,
-        ScrollbarButtonsDoubleStart,
-        ScrollbarButtonsDoubleEnd,
-        ScrollbarButtonsDoubleBoth
-    };
-    
-    enum ScrollbarOverlayStyle {
-        ScrollbarOverlayStyleDefault,
-        ScrollbarOverlayStyleDark,
-        ScrollbarOverlayStyleLight
-    };
-    
-    typedef unsigned ScrollbarControlPartMask;
-
-    enum ScrollPinningBehavior {
-        DoNotPin,
-        PinToTop,
-        PinToBottom
-    };
 }
-
-#endif // __cplusplus
 
 #endif

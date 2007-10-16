@@ -1,5 +1,7 @@
-/*
- * Copyright (C) 2005, 2006, 2009 Apple Inc. All rights reserved.
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
+ * Copyright (C) 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,79 +21,115 @@
 
 #include "config.h"
 
-#ifdef SKIP_STATIC_CONSTRUCTORS_ON_GCC
+#ifdef AVOID_STATIC_CONSTRUCTORS
 #define WEBCORE_QUALIFIEDNAME_HIDE_GLOBALS 1
 #else
 #define QNAME_DEFAULT_CONSTRUCTOR
 #endif
 
 #include "QualifiedName.h"
-#include "HTMLNames.h"
-#include "XLinkNames.h"
-#include "XMLNSNames.h"
-#include "XMLNames.h"
+#include "StaticConstructors.h"
 #include <wtf/Assertions.h>
 #include <wtf/HashSet.h>
-#include <wtf/StaticConstructors.h>
-
-#if ENABLE(MATHML)
-#include "MathMLNames.h"
-#endif
-
-#if ENABLE(SVG)
-#include "SVGNames.h"
-#endif
 
 namespace WebCore {
 
-static const int staticQualifiedNamesCount = HTMLNames::HTMLTagsCount + HTMLNames::HTMLAttrsCount
-#if ENABLE(MATHML)
-    + MathMLNames::MathMLTagsCount + MathMLNames::MathMLAttrsCount
-#endif
-#if ENABLE(SVG)
-    + SVGNames::SVGTagsCount + SVGNames::SVGAttrsCount
-#endif
-    + XLinkNames::XLinkAttrsCount
-    + XMLNSNames::XMLNSAttrsCount
-    + XMLNames::XMLAttrsCount;
-
-struct QualifiedNameHashTraits : public HashTraits<QualifiedName::QualifiedNameImpl*> {
-    static const int minimumTableSize = WTF::HashTableCapacityForSize<staticQualifiedNamesCount>::value;
+struct QualifiedNameComponents {
+    StringImpl* m_prefix;
+    StringImpl* m_localName;
+    StringImpl* m_namespace;
 };
 
-typedef HashSet<QualifiedName::QualifiedNameImpl*, QualifiedNameHash, QualifiedNameHashTraits> QNameSet;
+// Golden ratio - arbitrary start value to avoid mapping all 0's to all 0's
+static const unsigned PHI = 0x9e3779b9U;
+    
+static inline unsigned hashComponents(const QualifiedNameComponents& buf)
+{
+    ASSERT(sizeof(QualifiedNameComponents) % (sizeof(uint16_t) * 2) == 0);
+
+    unsigned l = sizeof(QualifiedNameComponents) / (sizeof(uint16_t) * 2);
+    const uint16_t* s = reinterpret_cast<const uint16_t*>(&buf);
+    uint32_t hash = PHI;
+
+    // Main loop
+    for (; l > 0; l--) {
+        hash += s[0];
+        uint32_t tmp = (s[1] << 11) ^ hash;
+        hash = (hash << 16) ^ tmp;
+        s += 2;
+        hash += hash >> 11;
+    }
+        
+    // Force "avalanching" of final 127 bits
+    hash ^= hash << 3;
+    hash += hash >> 5;
+    hash ^= hash << 2;
+    hash += hash >> 15;
+    hash ^= hash << 10;
+
+    // this avoids ever returning a hash code of 0, since that is used to
+    // signal "hash not computed yet", using a value that is likely to be
+    // effectively the same as 0 when the low bits are masked
+    if (hash == 0)
+        hash = 0x80000000;
+
+    return hash;
+}
+
+struct QNameHash {
+    static unsigned hash(const QualifiedName::QualifiedNameImpl* name) {    
+        QualifiedNameComponents c = { name->m_prefix.impl(), name->m_localName.impl(), name->m_namespace.impl() };
+        return hashComponents(c);
+    }
+    static bool equal(const QualifiedName::QualifiedNameImpl* a, const QualifiedName::QualifiedNameImpl* b) { return a == b; }
+};
+
+typedef HashSet<QualifiedName::QualifiedNameImpl*, QNameHash> QNameSet;
 
 struct QNameComponentsTranslator {
-    static unsigned hash(const QualifiedNameComponents& components)
-    {
+    static unsigned hash(const QualifiedNameComponents& components) { 
         return hashComponents(components); 
     }
-    static bool equal(QualifiedName::QualifiedNameImpl* name, const QualifiedNameComponents& c)
-    {
+    static bool equal(QualifiedName::QualifiedNameImpl* name, const QualifiedNameComponents& c) {
         return c.m_prefix == name->m_prefix.impl() && c.m_localName == name->m_localName.impl() && c.m_namespace == name->m_namespace.impl();
     }
-    static void translate(QualifiedName::QualifiedNameImpl*& location, const QualifiedNameComponents& components, unsigned)
-    {
-        location = QualifiedName::QualifiedNameImpl::create(components.m_prefix, components.m_localName, components.m_namespace).leakRef();
+    static void translate(QualifiedName::QualifiedNameImpl*& location, const QualifiedNameComponents& components, unsigned hash) {
+        location = new QualifiedName::QualifiedNameImpl(components.m_prefix, components.m_localName, components.m_namespace);
     }
 };
 
 static QNameSet* gNameCache;
 
 QualifiedName::QualifiedName(const AtomicString& p, const AtomicString& l, const AtomicString& n)
+    : m_impl(0)
 {
     if (!gNameCache)
         gNameCache = new QNameSet;
-    QualifiedNameComponents components = { p.impl(), l.impl(), n.isEmpty() ? nullAtom.impl() : n.impl() };
-    QNameSet::AddResult addResult = gNameCache->add<QualifiedNameComponents, QNameComponentsTranslator>(components);
-    m_impl = *addResult.iterator;
-    if (!addResult.isNewEntry)
-        m_impl->ref();
+    QualifiedNameComponents components = { p.impl(), l.impl(), n.impl() };
+    m_impl = *gNameCache->add<QualifiedNameComponents, QNameComponentsTranslator>(components).first;    
+    ref();
 }
 
 QualifiedName::~QualifiedName()
 {
     deref();
+}
+
+QualifiedName::QualifiedName(const QualifiedName& other)
+{
+    m_impl = other.m_impl;
+    ref();
+}
+
+const QualifiedName& QualifiedName::operator=(const QualifiedName& other)
+{
+    if (m_impl != other.m_impl) {
+        deref();
+        m_impl = other.m_impl;
+        ref();
+    }
+    
+    return *this;
 }
 
 void QualifiedName::deref()
@@ -100,24 +138,23 @@ void QualifiedName::deref()
     if (!m_impl)
         return;
 #endif
-    ASSERT(!isHashTableDeletedValue());
+
+    if (m_impl->hasOneRef())
+        gNameCache->remove(m_impl);
     m_impl->deref();
 }
 
-QualifiedName::QualifiedNameImpl::~QualifiedNameImpl()
+void QualifiedName::setPrefix(const AtomicString& prefix)
 {
-    gNameCache->remove(this);
+    QualifiedName other(prefix, localName(), namespaceURI());
+    *this = other;
 }
 
 String QualifiedName::toString() const
 {
     String local = localName();
-    if (hasPrefix()) {
-        String result = prefix().string();
-        result.append(":");
-        result.append(local);
-        return result;
-    }
+    if (hasPrefix())
+        return prefix() + ":" + local;
     return local;
 }
 
@@ -131,38 +168,9 @@ void QualifiedName::init()
         // Use placement new to initialize the globals.
         
         AtomicString::init();
-        new (NotNull, (void*)&anyName) QualifiedName(nullAtom, starAtom, starAtom);
+        new ((void*)&anyName) QualifiedName(nullAtom, starAtom, starAtom);
         initialized = true;
     }
-}
-
-const QualifiedName& nullQName()
-{
-    DEFINE_STATIC_LOCAL(QualifiedName, nullName, (nullAtom, nullAtom, nullAtom));
-    return nullName;
-}
-
-const AtomicString& QualifiedName::localNameUpper() const
-{
-    if (!m_impl->m_localNameUpper)
-        m_impl->m_localNameUpper = m_impl->m_localName.upper();
-    return m_impl->m_localNameUpper;
-}
-
-unsigned QualifiedName::QualifiedNameImpl::computeHash() const
-{
-    QualifiedNameComponents components = { m_prefix.impl(), m_localName.impl(), m_namespace.impl() };
-    return hashComponents(components);
-}
-
-void createQualifiedName(void* targetAddress, StringImpl* name, const AtomicString& nameNamespace)
-{
-    new (NotNull, reinterpret_cast<void*>(targetAddress)) QualifiedName(nullAtom, AtomicString(name), nameNamespace);
-}
-
-void createQualifiedName(void* targetAddress, StringImpl* name)
-{
-    new (NotNull, reinterpret_cast<void*>(targetAddress)) QualifiedName(nullAtom, AtomicString(name), nullAtom);
 }
 
 }

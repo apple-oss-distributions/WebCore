@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Samuel Weinig <sam.weinig@gmail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -18,30 +18,28 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    CustomNamedSetter,
-    JSCustomGetOwnPropertySlotAndDescriptor,
-    CustomCall,
-] interface HTMLEmbedElement : HTMLElement {
-[Reflect] attribute DOMString align;
-#if defined(LANGUAGE_JAVASCRIPT) && LANGUAGE_JAVASCRIPT
-[Reflect] attribute DOMString height;
+module html {
+
+    interface [GenerateConstructor, CustomPutFunction, CustomGetOwnPropertySlot, CustomCall, HasOverridingNameGetter] HTMLEmbedElement : HTMLElement {
+                 attribute [ConvertNullToNullString] DOMString align;
+#if defined(LANGUAGE_JAVASCRIPT)
+                 attribute [ConvertNullToNullString] DOMString height;
 #else
-[Reflect] attribute long height;
+                 attribute [ConvertFromString] long height;
 #endif
-[Reflect] attribute DOMString name;
-[Reflect, URL] attribute DOMString src;
-[Reflect] attribute DOMString type;
-#if defined(LANGUAGE_JAVASCRIPT) && LANGUAGE_JAVASCRIPT
-[Reflect] attribute DOMString width;
+                 attribute [ConvertNullToNullString] DOMString name;
+                 attribute [ConvertNullToNullString] DOMString src;
+                 attribute [ConvertNullToNullString] DOMString type;
+#if defined(LANGUAGE_JAVASCRIPT)
+                 attribute [ConvertNullToNullString] DOMString width;
 #else
-[Reflect] attribute long width;
+                 attribute [ConvertFromString] long width;
 #endif
 
-#if defined(ENABLE_SVG) && ENABLE_SVG
-#if !defined(LANGUAGE_OBJECTIVE_C) || !LANGUAGE_OBJECTIVE_C
-[CheckSecurityForNode, RaisesException] SVGDocument getSVGDocument();
+#if ENABLE_SVG
+        [SVGCheckSecurityDocument] SVGDocument getSVGDocument()
+            raises(DOMException);
 #endif
-#endif
-};
+    };
 
+}

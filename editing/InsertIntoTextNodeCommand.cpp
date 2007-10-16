@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2005 Apple Computer, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,75 +26,40 @@
 #include "config.h"
 #include "InsertIntoTextNodeCommand.h"
 
-#include "AXObjectCache.h"
-#include "Document.h"
-#include "ExceptionCodePlaceholder.h"
-#include "RenderText.h"
-#include "Settings.h"
 #include "Text.h"
-#if PLATFORM(IOS)
-#include "RenderText.h"
-#endif
 
 namespace WebCore {
 
-InsertIntoTextNodeCommand::InsertIntoTextNodeCommand(PassRefPtr<Text> node, unsigned offset, const String& text)
-    : SimpleEditCommand(node->document())
-    , m_node(node)
-    , m_offset(offset)
-    , m_text(text)
+InsertIntoTextNodeCommand::InsertIntoTextNodeCommand(Text *node, int offset, const String &text)
+    : EditCommand(node->document()), m_node(node), m_offset(offset)
 {
     ASSERT(m_node);
-    ASSERT(m_offset <= m_node->length());
-    ASSERT(!m_text.isEmpty());
+    ASSERT(m_offset >= 0);
+    ASSERT(!text.isEmpty());
+    
+    m_text = text.copy(); // make a copy to ensure that the string never changes
 }
 
 void InsertIntoTextNodeCommand::doApply()
 {
-    bool passwordEchoEnabled = document()->settings() && document()->settings()->passwordEchoEnabled();
-    if (passwordEchoEnabled)
-        document()->updateLayoutIgnorePendingStylesheets();
+    ASSERT(m_node);
+    ASSERT(m_offset >= 0);
+    ASSERT(!m_text.isEmpty());
 
-    if (!m_node->rendererIsEditable())
-        return;
-
-    if (passwordEchoEnabled) {
-        RenderText* renderText = toRenderText(m_node->renderer());
-        if (renderText && renderText->isSecure())
-            renderText->momentarilyRevealLastTypedCharacter(m_offset + m_text.length() - 1);
-    }
-
-    m_node->insertData(m_offset, m_text, IGNORE_EXCEPTION);
-
-    if (AXObjectCache* cache = document()->existingAXObjectCache())
-        cache->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextInserted, m_offset, m_text);
-}
-
-#if PLATFORM(IOS)
-void InsertIntoTextNodeCommand::doReapply()
-{
-    ExceptionCode ec;
+    ExceptionCode ec = 0;
     m_node->insertData(m_offset, m_text, ec);
+    ASSERT(ec == 0);
 }
-#endif
-    
+
 void InsertIntoTextNodeCommand::doUnapply()
 {
-    if (!m_node->rendererIsEditable())
-        return;
-        
-    // Need to notify this before actually deleting the text
-    if (AXObjectCache* cache = document()->existingAXObjectCache())
-        cache->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextDeleted, m_offset, m_text);
+    ASSERT(m_node);
+    ASSERT(m_offset >= 0);
+    ASSERT(!m_text.isEmpty());
 
-    m_node->deleteData(m_offset, m_text.length(), IGNORE_EXCEPTION);
+    ExceptionCode ec = 0;
+    m_node->deleteData(m_offset, m_text.length(), ec);
+    ASSERT(ec == 0);
 }
-
-#ifndef NDEBUG
-void InsertIntoTextNodeCommand::getNodesInCommand(HashSet<Node*>& nodes)
-{
-    addNodeAndDescendants(m_node.get(), nodes);
-}
-#endif
 
 } // namespace WebCore

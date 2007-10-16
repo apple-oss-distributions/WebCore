@@ -3,7 +3,7 @@
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Peter Kelly (pmk@post.com)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2009, 2010, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,131 +23,121 @@
 #include "config.h"
 #include "Attr.h"
 
+#include "Document.h"
+#include "Element.h"
 #include "ExceptionCode.h"
-#include "HTMLNames.h"
-#include "ScopedEventQueue.h"
-#include "StylePropertySet.h"
-#include "StyledElement.h"
 #include "Text.h"
-#include "XMLNSNames.h"
-#include <wtf/text/AtomicString.h>
-#include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
 
-using namespace HTMLNames;
-
-Attr::Attr(Element* element, const QualifiedName& name)
-    : ContainerNode(element->document())
-    , m_element(element)
-    , m_name(name)
-    , m_ignoreChildrenChanged(0)
-    , m_specified(true)
+Attr::Attr(Element* element, Document* docPtr, Attribute* a)
+    : ContainerNode(docPtr),
+      m_element(element),
+      m_attribute(a),
+      m_ignoreChildrenChanged(0)
 {
-}
-
-Attr::Attr(Document* document, const QualifiedName& name, const AtomicString& standaloneValue)
-    : ContainerNode(document)
-    , m_element(0)
-    , m_name(name)
-    , m_standaloneValue(standaloneValue)
-    , m_ignoreChildrenChanged(0)
-    , m_specified(true)
-{
-}
-
-PassRefPtr<Attr> Attr::create(Element* element, const QualifiedName& name)
-{
-    RefPtr<Attr> attr = adoptRef(new Attr(element, name));
-    attr->createTextChild();
-    return attr.release();
-}
-
-PassRefPtr<Attr> Attr::create(Document* document, const QualifiedName& name, const AtomicString& value)
-{
-    RefPtr<Attr> attr = adoptRef(new Attr(document, name, value));
-    attr->createTextChild();
-    return attr.release();
+    ASSERT(!m_attribute->attr());
+    m_attribute->m_impl = this;
+    m_attrWasSpecifiedOrElementHasRareData = true;
 }
 
 Attr::~Attr()
 {
+    ASSERT(m_attribute->attr() == this);
+    m_attribute->m_impl = 0;
 }
 
 void Attr::createTextChild()
 {
     ASSERT(refCount());
-    if (!value().isEmpty()) {
-        RefPtr<Text> textNode = document()->createTextNode(value().string());
+    if (!m_attribute->value().isEmpty()) {
+        RefPtr<Text> textNode = document()->createTextNode(m_attribute->value().impl());
 
         // This does everything appendChild() would do in this situation (assuming m_ignoreChildrenChanged was set),
         // but much more efficiently.
-        textNode->setParentOrShadowHostNode(this);
+        textNode->setParent(this);
         setFirstChild(textNode.get());
         setLastChild(textNode.get());
     }
 }
 
-void Attr::setPrefix(const AtomicString& prefix, ExceptionCode& ec)
+String Attr::nodeName() const
 {
-    ec = 0;
-    checkSetPrefix(prefix, ec);
+    return name();
+}
+
+Node::NodeType Attr::nodeType() const
+{
+    return ATTRIBUTE_NODE;
+}
+
+const AtomicString& Attr::localName() const
+{
+    return m_attribute->localName();
+}
+
+const AtomicString& Attr::namespaceURI() const
+{
+    return m_attribute->namespaceURI();
+}
+
+const AtomicString& Attr::prefix() const
+{
+    return m_attribute->prefix();
+}
+
+void Attr::setPrefix(const AtomicString &_prefix, ExceptionCode& ec)
+{
+    checkSetPrefix(_prefix, ec);
     if (ec)
         return;
 
-    if ((prefix == xmlnsAtom && namespaceURI() != XMLNSNames::xmlnsNamespaceURI)
-        || static_cast<Attr*>(this)->qualifiedName() == xmlnsAtom) {
-        ec = NAMESPACE_ERR;
+    m_attribute->setPrefix(_prefix);
+}
+
+String Attr::nodeValue() const
+{
+    return value();
+}
+
+void Attr::setValue( const String& v, ExceptionCode& ec)
+{
+    ec = 0;
+
+    // do not interprete entities in the string, its literal!
+
+    // NO_MODIFICATION_ALLOWED_ERR: Raised when the node is readonly
+    if (isReadOnlyNode()) {
+        ec = NO_MODIFICATION_ALLOWED_ERR;
         return;
     }
 
-    const AtomicString& newPrefix = prefix.isEmpty() ? nullAtom : prefix;
-
-    if (m_element)
-        elementAttribute().setPrefix(newPrefix);
-    m_name.setPrefix(newPrefix);
-}
-
-void Attr::setValue(const AtomicString& value)
-{
-    EventQueueScope scope;
+    int e = 0;
     m_ignoreChildrenChanged++;
     removeChildren();
-    if (m_element)
-        elementAttribute().setValue(value);
-    else
-        m_standaloneValue = value;
-    createTextChild();
+    appendChild(document()->createTextNode(v.impl()), e);
     m_ignoreChildrenChanged--;
-
-    invalidateNodeListCachesInAncestors(&m_name, m_element);
-}
-
-void Attr::setValue(const AtomicString& value, ExceptionCode&)
-{
+    
+    m_attribute->setValue(v.impl());
     if (m_element)
-        m_element->willModifyAttribute(qualifiedName(), this->value(), value);
-
-    setValue(value);
-
-    if (m_element)
-        m_element->didModifyAttribute(qualifiedName(), value);
+        m_element->attributeChanged(m_attribute.get());
 }
 
 void Attr::setNodeValue(const String& v, ExceptionCode& ec)
 {
+    // NO_MODIFICATION_ALLOWED_ERR: taken care of by setValue()
     setValue(v, ec);
 }
 
 PassRefPtr<Node> Attr::cloneNode(bool /*deep*/)
 {
-    RefPtr<Attr> clone = adoptRef(new Attr(document(), qualifiedName(), value()));
+    RefPtr<Attr> clone = new Attr(0, document(), m_attribute->clone());
     cloneChildNodes(clone.get());
     return clone.release();
 }
 
 // DOM Section 1.1.1
-bool Attr::childTypeAllowed(NodeType type) const
+bool Attr::childTypeAllowed(NodeType type)
 {
     switch (type) {
         case TEXT_NODE:
@@ -158,76 +148,47 @@ bool Attr::childTypeAllowed(NodeType type) const
     }
 }
 
-void Attr::childrenChanged(bool, Node*, Node*, int)
+void Attr::childrenChanged()
 {
+    Node::childrenChanged();
+    
     if (m_ignoreChildrenChanged > 0)
         return;
-
-    invalidateNodeListCachesInAncestors(&qualifiedName(), m_element);
-
+    
     // FIXME: We should include entity references in the value
-
-    StringBuilder valueBuilder;
+    
+    String val = "";
     for (Node *n = firstChild(); n; n = n->nextSibling()) {
         if (n->isTextNode())
-            valueBuilder.append(toText(n)->data());
+            val += static_cast<Text *>(n)->data();
+    }
+    
+    m_attribute->setValue(val.impl());
+    if (m_element)
+        m_element->attributeChanged(m_attribute.get());
+}
+
+String Attr::toString() const
+{
+    String result;
+
+    result += nodeName();
+
+    // FIXME: substitute entities for any instances of " or ' --
+    // maybe easier to just use text value and ignore existing
+    // entity refs?
+
+    if (firstChild() != NULL) {
+        result += "=\"";
+
+        for (Node *child = firstChild(); child != NULL; child = child->nextSibling()) {
+            result += child->toString();
+        }
+        
+        result += "\"";
     }
 
-    AtomicString newValue = valueBuilder.toAtomicString();
-    if (m_element)
-        m_element->willModifyAttribute(qualifiedName(), value(), newValue);
-
-    if (m_element)
-        elementAttribute().setValue(newValue);
-    else
-        m_standaloneValue = newValue;
-
-    if (m_element)
-        m_element->attributeChanged(qualifiedName(), newValue);
-}
-
-bool Attr::isId() const
-{
-    return qualifiedName().matches(document()->idAttributeName());
-}
-
-CSSStyleDeclaration* Attr::style()
-{
-    // This function only exists to support the Obj-C bindings.
-    if (!m_element || !m_element->isStyledElement())
-        return 0;
-    m_style = MutableStylePropertySet::create();
-    static_cast<StyledElement*>(m_element)->collectStyleForPresentationAttribute(qualifiedName(), value(), m_style.get());
-    return m_style->ensureCSSStyleDeclaration();
-}
-
-const AtomicString& Attr::value() const
-{
-    if (m_element)
-        return m_element->getAttribute(qualifiedName());
-    return m_standaloneValue;
-}
-
-Attribute& Attr::elementAttribute()
-{
-    ASSERT(m_element);
-    ASSERT(m_element->elementData());
-    return *m_element->ensureUniqueElementData()->getAttributeItem(qualifiedName());
-}
-
-void Attr::detachFromElementWithValue(const AtomicString& value)
-{
-    ASSERT(m_element);
-    ASSERT(m_standaloneValue.isNull());
-    m_standaloneValue = value;
-    m_element = 0;
-}
-
-void Attr::attachToElement(Element* element)
-{
-    ASSERT(!m_element);
-    m_element = element;
-    m_standaloneValue = nullAtom;
+    return result;
 }
 
 }

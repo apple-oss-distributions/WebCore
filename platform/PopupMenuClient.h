@@ -1,5 +1,4 @@
 /*
- * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
  * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
@@ -22,59 +21,35 @@
 #ifndef PopupMenuClient_h
 #define PopupMenuClient_h
 
-#include "LayoutUnit.h"
-#include "PopupMenuStyle.h"
-#include "ScrollTypes.h"
-#include <wtf/Forward.h>
-
 namespace WebCore {
 
 class Color;
-class FontSelector;
-class HostWindow;
-class Scrollbar;
-class ScrollableArea;
+class Document;
+class String;
+class RenderStyle;
 
 class PopupMenuClient {
 public:
     virtual ~PopupMenuClient() {}
     virtual void valueChanged(unsigned listIndex, bool fireEvents = true) = 0;
-    virtual void selectionChanged(unsigned listIndex, bool fireEvents = true) = 0;
-    virtual void selectionCleared() = 0;
 
     virtual String itemText(unsigned listIndex) const = 0;
-    virtual String itemLabel(unsigned listIndex) const = 0;
-    virtual String itemIcon(unsigned listIndex) const = 0;
-    virtual String itemToolTip(unsigned listIndex) const = 0;
-    virtual String itemAccessibilityText(unsigned listIndex) const = 0;
     virtual bool itemIsEnabled(unsigned listIndex) const = 0;
-    virtual PopupMenuStyle itemStyle(unsigned listIndex) const = 0;
-    virtual PopupMenuStyle menuStyle() const = 0;
-    virtual int clientInsetLeft() const = 0;
-    virtual int clientInsetRight() const = 0;
-    virtual LayoutUnit clientPaddingLeft() const = 0;
-    virtual LayoutUnit clientPaddingRight() const = 0;
+    virtual Color itemBackgroundColor(unsigned listIndex) const = 0;
+    virtual RenderStyle* itemStyle(unsigned listIndex) const = 0;
+    virtual RenderStyle* clientStyle() const = 0;
+    virtual Document* clientDocument() const = 0;
+    virtual int clientPaddingLeft() const = 0;
+    virtual int clientPaddingRight() const = 0;
     virtual int listSize() const = 0;
     virtual int selectedIndex() const = 0;
-    virtual void popupDidHide() = 0;
+    virtual void hidePopup() = 0;
     virtual bool itemIsSeparator(unsigned listIndex) const = 0;
     virtual bool itemIsLabel(unsigned listIndex) const = 0;
     virtual bool itemIsSelected(unsigned listIndex) const = 0;
     virtual bool shouldPopOver() const = 0;
     virtual bool valueShouldChangeOnHotTrack() const = 0;
     virtual void setTextFromItem(unsigned listIndex) = 0;
-
-    virtual void listBoxSelectItem(int /*listIndex*/, bool /*allowMultiplySelections*/, bool /*shift*/, bool /*fireOnChangeNow*/ = true) { ASSERT_NOT_REACHED(); }
-    virtual bool multiple() const
-    {
-        ASSERT_NOT_REACHED();
-        return false;
-    }
-
-    virtual FontSelector* fontSelector() const = 0;
-    virtual HostWindow* hostWindow() const = 0;
-
-    virtual PassRefPtr<Scrollbar> createScrollbar(ScrollableArea*, ScrollbarOrientation, ScrollbarControlSize) = 0;
 };
 
 }

@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.  All rights reserved.
- * Copyright (C) 2008 Collabora Ltd.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -21,294 +20,183 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
 #ifndef Widget_h
 #define Widget_h
 
-#if PLATFORM(IOS)
-#ifndef NSView
-#define NSView WAKView
-#endif
-#endif
-
-#include "IntRect.h"
-#include "PlatformScreen.h"
-#include <wtf/Forward.h>
-#include <wtf/RefCounted.h>
+#include <wtf/Platform.h>
 
 #if PLATFORM(MAC)
-#include <wtf/RetainPtr.h>
+#ifdef __OBJC__
+@class NSView;
+#else
+class NSView;
 #endif
-
-#if PLATFORM(QT)
-#include <QPointer>
-#include <qglobal.h>
-#endif
-
-#if PLATFORM(MAC)
-OBJC_CLASS NSView;
-OBJC_CLASS NSWindow;
-typedef NSView *PlatformWidget;
 #endif
 
 #if PLATFORM(WIN)
 typedef struct HWND__* HWND;
-typedef HWND PlatformWidget;
 #endif
 
 #if PLATFORM(GTK)
+typedef struct _GdkDrawable GdkDrawable;
 typedef struct _GtkWidget GtkWidget;
 typedef struct _GtkContainer GtkContainer;
-typedef GtkWidget* PlatformWidget;
 #endif
 
 #if PLATFORM(QT)
-QT_BEGIN_NAMESPACE
-class QObject;
-QT_END_NAMESPACE
-typedef QObject* PlatformWidget;
-#endif
-
-#if PLATFORM(BLACKBERRY)
-typedef void* PlatformWidget;
-#endif
-
-#if PLATFORM(EFL)
-#if USE(EO)
-typedef struct _Eo Evas_Object;
-#else
-typedef struct _Evas_Object Evas_Object;
-#endif
-typedef Evas_Object* PlatformWidget;
-#endif
-
-#if PLATFORM(QT)
-class QWebPageClient;
-typedef QWebPageClient* PlatformPageClient;
-#elif PLATFORM(BLACKBERRY)
-#include "PageClientBlackBerry.h"
-typedef PageClientBlackBerry* PlatformPageClient;
-#elif PLATFORM(EFL)
-class PageClientEfl;
-typedef PageClientEfl* PlatformPageClient;
-#else
-typedef PlatformWidget PlatformPageClient;
+class QWidget;
+class QWebFrame;
 #endif
 
 namespace WebCore {
 
-class Cursor;
-class Event;
-class Font;
-class GraphicsContext;
-class PlatformMouseEvent;
-class ScrollView;
-class WidgetPrivate;
+    class Cursor;
+    class Event;
+    class Font;
+    class GraphicsContext;
+    class IntPoint;
+    class IntRect;
+    class IntSize;
+    class PlatformMouseEvent;
+    class ScrollView;
+    class WidgetClient;
+    class WidgetPrivate;
 
-enum WidgetNotification { WillPaintFlattened, DidPaintFlattened };
+    class Widget {
+    public:
+        Widget();
+        virtual ~Widget();
 
-// The Widget class serves as a base class for three kinds of objects:
-// (1) Scrollable areas (ScrollView)
-// (2) Scrollbars (Scrollbar)
-// (3) Plugins (PluginView)
-//
-// A widget may or may not be backed by a platform-specific object (e.g., HWND on Windows, NSView on Mac, QWidget on Qt).
-//
-// Widgets are connected in a hierarchy, with the restriction that plugins and scrollbars are always leaves of the
-// tree.  Only ScrollViews can have children (and therefore the Widget class has no concept of children).
-//
-// The rules right now for which widgets get platform-specific objects are as follows:
-// ScrollView - Mac
-// Scrollbar - Mac, Gtk
-// Plugin - Mac, Windows (windowed only), Qt (windowed only, widget is an HWND on windows), Gtk (windowed only)
-//
-class Widget : public RefCounted<Widget> {
-public:
-    explicit Widget(PlatformWidget = 0);
-    virtual ~Widget();
+        virtual void setEnabled(bool);
+        virtual bool isEnabled() const;
 
-    PlatformWidget platformWidget() const;
-    void setPlatformWidget(PlatformWidget);
+        int x() const;
+        int y() const;
+        int width() const;
+        int height() const;
+        IntSize size() const;
+        void resize(int, int);
+        void resize(const IntSize&);
+        IntPoint pos() const;
+        void move(int, int);
+        void move(const IntPoint&);
 
-    int x() const { return frameRect().x(); }
-    int y() const { return frameRect().y(); }
-    int width() const { return frameRect().width(); }
-    int height() const { return frameRect().height(); }
-    IntSize size() const { return frameRect().size(); }
-    IntPoint location() const { return frameRect().location(); }
+        virtual void paint(GraphicsContext*, const IntRect&);
+        virtual void invalidate();
+        virtual void invalidateRect(const IntRect&);
 
-    virtual void setFrameRect(const IntRect&);
-    IntRect frameRect() const;
-    IntRect boundsRect() const { return IntRect(0, 0, width(),  height()); }
+        virtual void setFrameGeometry(const IntRect&);
+        virtual IntRect frameGeometry() const;
 
-    void resize(int w, int h) { setFrameRect(IntRect(x(), y(), w, h)); }
-    void resize(const IntSize& s) { setFrameRect(IntRect(location(), s)); }
-    void move(int x, int y) { setFrameRect(IntRect(x, y, width(), height())); }
-    void move(const IntPoint& p) { setFrameRect(IntRect(p, size())); }
+        virtual void setFocus();
 
-    virtual void paint(GraphicsContext*, const IntRect&);
-    void invalidate() { invalidateRect(boundsRect()); }
-    virtual void invalidateRect(const IntRect&) = 0;
+        void setCursor(const Cursor&);
+        Cursor cursor();
 
-    virtual void setFocus(bool);
+        virtual void show();
+        virtual void hide();
 
-    void setCursor(const Cursor&);
+        void setIsSelected(bool);
 
-    virtual void show();
-    virtual void hide();
-    bool isSelfVisible() const { return m_selfVisible; } // Whether or not we have been explicitly marked as visible or not.
-    bool isParentVisible() const { return m_parentVisible; } // Whether or not our parent is visible.
-    bool isVisible() const { return m_selfVisible && m_parentVisible; } // Whether or not we are actually visible.
-    virtual void setParentVisible(bool visible) { m_parentVisible = visible; }
-    void setSelfVisible(bool v) { m_selfVisible = v; }
+        void setClient(WidgetClient*);
+        WidgetClient* client() const;
 
-    void setIsSelected(bool);
+        virtual bool isFrameView() const;
 
-    virtual bool isFrameView() const { return false; }
-    virtual bool isPluginView() const { return false; }
-    // FIXME: The Mac plug-in code should inherit from PluginView. When this happens PluginViewBase and PluginView can become one class.
-    virtual bool isPluginViewBase() const { return false; }
-    virtual bool isScrollbar() const { return false; }
-    virtual bool isScrollView() const { return false; }
+        virtual void removeFromParent();
 
-    void removeFromParent();
-    virtual void setParent(ScrollView* view);
-    ScrollView* parent() const { return m_parent; }
-    ScrollView* root() const;
+        // This method is used by plugins on all platforms to obtain a clip rect that includes clips set by WebCore,
+        // e.g., in overflow:auto sections.  The clip rects coordinates are in the containing window's coordinate space.
+        // This clip includes any clips that the widget itself sets up for its children.
+        virtual IntRect windowClipRect() const;
 
-    virtual void handleEvent(Event*) { }
+        virtual void handleEvent(Event*) { }
 
-    virtual void notifyWidget(WidgetNotification) { }
+#if PLATFORM(WIN)
+        void setContainingWindow(HWND);
+        HWND containingWindow() const;
 
-    IntRect convertToRootView(const IntRect&) const;
-    IntRect convertFromRootView(const IntRect&) const;
+        virtual void setParent(ScrollView*);
+        ScrollView* parent() const;
 
-    IntPoint convertToRootView(const IntPoint&) const;
-    IntPoint convertFromRootView(const IntPoint&) const;
+        virtual void geometryChanged() const {};
+        
+        IntRect convertToContainingWindow(const IntRect&) const;
+        IntPoint convertToContainingWindow(const IntPoint&) const;
+        IntPoint convertFromContainingWindow(const IntPoint&) const;
 
-    // It is important for cross-platform code to realize that Mac has flipped coordinates.  Therefore any code
-    // that tries to convert the location of a rect using the point-based convertFromContainingWindow will end
-    // up with an inaccurate rect.  Always make sure to use the rect-based convertFromContainingWindow method
-    // when converting window rects.
-    IntRect convertToContainingWindow(const IntRect&) const;
-    IntRect convertFromContainingWindow(const IntRect&) const;
+        virtual IntPoint convertChildToSelf(const Widget*, const IntPoint&) const;
+        virtual IntPoint convertSelfToChild(const Widget*, const IntPoint&) const;
 
-    IntPoint convertToContainingWindow(const IntPoint&) const;
-    IntPoint convertFromContainingWindow(const IntPoint&) const;
+        bool suppressInvalidation() const;
+        void setSuppressInvalidation(bool);
 
-    virtual void frameRectsChanged();
-
-    // Notifies this widget that other widgets on the page have been repositioned.
-    virtual void widgetPositionsUpdated() {}
-
-    // Notifies this widget that its clip rect changed.
-    virtual void clipRectChanged() { }
-
-    // Whether transforms affect the frame rect. FIXME: We get rid of this and have
-    // the frame rects be the same no matter what transforms are applied.
-    virtual bool transformsAffectFrameRect() { return true; }
-
-#if PLATFORM(MAC) || PLATFORM(IOS)
-    NSView* getOuterView() const;
-
-    void removeFromSuperview();
-#endif
-#if PLATFORM(IOS)
-    void addToSuperview(NSView* superview);
 #endif
 
-#if PLATFORM(EFL)
-    void setEvasObject(Evas_Object*);
-    Evas_Object* evasObject() { return m_evasObject; }
+#if PLATFORM(GTK)
+        virtual void setParent(ScrollView*);
+        ScrollView* parent() const;
+
+        void setContainingWindow(GtkContainer*);
+        GtkContainer* containingWindow() const;
+
+        virtual void geometryChanged() const;
+
+        IntRect convertToContainingWindow(const IntRect&) const;
+        IntPoint convertToContainingWindow(const IntPoint&) const;
+        IntPoint convertFromContainingWindow(const IntPoint&) const;
+
+        virtual IntPoint convertChildToSelf(const Widget*, const IntPoint&) const;
+        virtual IntPoint convertSelfToChild(const Widget*, const IntPoint&) const;
+
+        bool suppressInvalidation() const;
+        void setSuppressInvalidation(bool);
+
+        GtkWidget* gtkWidget() const;
+protected:
+        void setGtkWidget(GtkWidget*);
 #endif
 
 #if PLATFORM(QT)
-    QObject* bindingObject() const;
-    void setBindingObject(QObject*);
+        QWidget* qwidget() const;
+        void setQWidget(QWidget *widget);
+        QWidget* containingWindow() const;
+
+        QWebFrame* qwebframe() const;
+        void setQWebFrame(QWebFrame *webFrame);
+        virtual void setParent(ScrollView*);
+        ScrollView* parent() const;
+        virtual void geometryChanged() const;
+
+        IntRect convertToContainingWindow(const IntRect&) const;
+        IntPoint convertToContainingWindow(const IntPoint&) const;
+        IntPoint convertFromContainingWindow(const IntPoint&) const;
+
+        virtual IntPoint convertChildToSelf(const Widget*, const IntPoint&) const;
+        virtual IntPoint convertSelfToChild(const Widget*, const IntPoint&) const;
 #endif
 
-    // Virtual methods to convert points to/from the containing ScrollView
-    virtual IntRect convertToContainingView(const IntRect&) const;
-    virtual IntRect convertFromContainingView(const IntRect&) const;
-    virtual IntPoint convertToContainingView(const IntPoint&) const;
-    virtual IntPoint convertFromContainingView(const IntPoint&) const;
-    
-    // Return the displayID of the screen that this widget's window is primarily on.
-    virtual PlatformDisplayID windowDisplayID() const;
-
-private:
-    void init(PlatformWidget); // Must be called by all Widget constructors to initialize cross-platform data.
-
-    void releasePlatformWidget();
-    void retainPlatformWidget();
-
-    // These methods are used to convert from the root widget to the containing window,
-    // which has behavior that may differ between platforms (e.g. Mac uses flipped window coordinates).
-    static IntRect convertFromRootToContainingWindow(const Widget* rootWidget, const IntRect&);
-    static IntRect convertFromContainingWindowToRoot(const Widget* rootWidget, const IntRect&);
-
-    static IntPoint convertFromRootToContainingWindow(const Widget* rootWidget, const IntPoint&);
-    static IntPoint convertFromContainingWindowToRoot(const Widget* rootWidget, const IntPoint&);
-
-private:
-    ScrollView* m_parent;
-#if !PLATFORM(MAC)
-    PlatformWidget m_widget;
-#else
-    RetainPtr<NSView> m_widget;
-#endif
-    bool m_selfVisible;
-    bool m_parentVisible;
-
-    IntRect m_frame; // Not used when a native widget exists.
-
-#if !PLATFORM(IOS)
 #if PLATFORM(MAC)
-    WidgetPrivate* m_data;
-#endif
-#endif // !PLATFORM(IOS)
+        Widget(NSView*);
 
-#if PLATFORM(EFL)
-    Evas_Object* m_evasObject;
-#endif
+        NSView* getView() const;
+        NSView* getOuterView() const;
+        void setView(NSView*);
+        
+        static void beforeMouseDown(NSView*, Widget*);
+        static void afterMouseDown(NSView*, Widget*);
 
-#if PLATFORM(QT)
-    QPointer<QObject> m_bindingObject;
-#endif
-
-};
-
-#if !PLATFORM(MAC)
-
-inline PlatformWidget Widget::platformWidget() const
-{
-    return m_widget;
-}
-
-inline void Widget::setPlatformWidget(PlatformWidget widget)
-{
-    if (widget != m_widget) {
-        releasePlatformWidget();
-        m_widget = widget;
-        retainPlatformWidget();
-    }
-}
-
+        void addToSuperview(NSView* superview);
+        void removeFromSuperview();
+        IntPoint convertToScreenCoordinate(NSView*, const IntPoint&);
 #endif
 
-#if !PLATFORM(GTK)
-
-inline void Widget::releasePlatformWidget()
-{
-}
-
-inline void Widget::retainPlatformWidget()
-{
-}
-
-#endif
+    private:
+        WidgetPrivate* data;
+    };
 
 } // namespace WebCore
 

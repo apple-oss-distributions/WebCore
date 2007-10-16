@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2003 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -26,58 +28,46 @@
 #include "CharacterData.h"
 
 namespace WebCore {
+    
+const unsigned cTextNodeLengthLimit = 1 << 16;
 
-class RenderText;
-
-class Text : public CharacterData {
+class Text : public CharacterData
+{
 public:
-    static const unsigned defaultLengthLimit = 1 << 16;
+    Text(Document *impl, const String &_text);
+    Text(Document *impl);
+    virtual ~Text();
 
-    static PassRefPtr<Text> create(Document*, const String&);
-    static PassRefPtr<Text> createWithLengthLimit(Document*, const String&, unsigned positionInString, unsigned lengthLimit = defaultLengthLimit);
-    static PassRefPtr<Text> createEditingText(Document*, const String&);
+    // DOM methods & attributes for CharacterData
 
-    PassRefPtr<Text> splitText(unsigned offset, ExceptionCode&);
+    Text *splitText ( const unsigned offset, ExceptionCode&);
 
-    // DOM Level 3: http://www.w3.org/TR/DOM-Level-3-Core/core.html#ID-1312295772
+    // DOM methods overridden from  parent classes
+    const AtomicString& localName() const;
+    virtual String nodeName() const;
+    virtual NodeType nodeType() const;
+    virtual PassRefPtr<Node> cloneNode(bool deep);
 
-    String wholeText() const;
-    PassRefPtr<Text> replaceWholeText(const String&, ExceptionCode&);
+    // Other methods (not part of DOM)
+
+    virtual bool isTextNode() const { return true; }
+    virtual void attach();
+    virtual bool rendererIsNeeded(RenderStyle *);
+    virtual RenderObject *createRenderer(RenderArena *, RenderStyle *);
+    virtual void recalcStyle( StyleChange = NoChange );
+    virtual bool childTypeAllowed(NodeType);
+
+    virtual String toString() const;
     
-    void recalcTextStyle(StyleChange);
-    void createTextRendererIfNeeded();
-    bool textRendererIsNeeded(const NodeRenderingContext&);
-    RenderText* createTextRenderer(RenderArena*, RenderStyle*);
-    void updateTextRenderer(unsigned offsetOfReplacedData, unsigned lengthOfReplacedData);
-
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE FINAL;
-    
-    virtual bool canContainRangeEndPoint() const OVERRIDE FINAL { return true; }
-
-protected:
-    Text(Document* document, const String& data, ConstructionType type)
-        : CharacterData(document, data, type)
-    {
-    }
-
-private:
-    virtual String nodeName() const OVERRIDE;
-    virtual NodeType nodeType() const OVERRIDE;
-    virtual PassRefPtr<Node> cloneNode(bool deep) OVERRIDE;
-    virtual bool childTypeAllowed(NodeType) const OVERRIDE;
-
-    virtual PassRefPtr<Text> virtualCreate(const String&);
+    static PassRefPtr<Text> createWithLengthLimit(Document*, const String&, unsigned& charsLeft, unsigned maxChars = cTextNodeLengthLimit);
 
 #ifndef NDEBUG
-    virtual void formatForDebugger(char* buffer, unsigned length) const;
+    virtual void formatForDebugger(char *buffer, unsigned length) const;
 #endif
-};
 
-inline Text* toText(Node* node)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(!node || node->isTextNode());
-    return static_cast<Text*>(node);
-}
+protected:
+    virtual Text* createNew(StringImpl*);
+};
 
 } // namespace WebCore
 

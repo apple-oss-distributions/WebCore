@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2011, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,75 +25,126 @@
 #ifndef HTMLCollection_h
 #define HTMLCollection_h
 
-#include "CollectionType.h"
-#include "LiveNodeList.h"
-#include "ScriptWrappable.h"
+#include "Shared.h"
 #include <wtf/Forward.h>
 #include <wtf/HashMap.h>
-#include <wtf/PassOwnPtr.h>
 #include <wtf/Vector.h>
 
 namespace WebCore {
 
-class HTMLCollection : public LiveNodeListBase {
-public:
-    static PassRefPtr<HTMLCollection> create(Node* base, CollectionType);
-    virtual ~HTMLCollection();
+class AtomicString;
+class AtomicStringImpl;
+class Node;
+class NodeList;
+class String;
 
-    // DOM API
-    virtual Node* namedItem(const AtomicString& name) const;
+class HTMLCollection : public Shared<HTMLCollection> {
+public:
+    enum Type {
+        // from JSHTMLDocument
+        DocImages = 0, // all IMG elements in the document
+        DocApplets,   // all OBJECT and APPLET elements
+        DocEmbeds,    // all EMBED elements
+        DocObjects,   // all OBJECT elements
+        DocForms,     // all FORMS
+        DocLinks,     // all A _and_ AREA elements with a value for href
+        DocAnchors,      // all A elements with a value for name
+        DocScripts,   // all SCRIPT element
+        // from HTMLTable, HTMLTableSection, HTMLTableRow
+        TableRows,    // all rows in this table or tablesection
+        TableTBodies, // all TBODY elements in this table
+        TSectionRows, // all rows elements in this table section
+        TRCells,      // all CELLS in this row
+        // from SELECT
+        SelectOptions,
+        // from HTMLMap
+        MapAreas,
+        DocAll,        // "all" elements (IE)
+        NodeChildren,   // first-level children (IE)
+        WindowNamedItems,
+        DocumentNamedItems
+    };
+
+    enum {
+        UnnamedCollectionTypes = NodeChildren + 1,
+        CollectionTypes = DocumentNamedItems + 1
+    };
+
+    HTMLCollection(Node *_base, HTMLCollection::Type _type);
+    virtual ~HTMLCollection();
+    
+    unsigned length() const;
+    
+    virtual Node *item(unsigned index) const;
+    virtual Node *firstItem() const;
+    virtual Node *nextItem() const;
+
+    virtual Node *namedItem(const String &name, bool caseSensitive = true) const;
+    // In case of multiple items named the same way
+    virtual Node *nextNamedItem(const String &name) const;
+
+    // Extension
     PassRefPtr<NodeList> tags(const String&);
 
-    // Non-DOM API
-    virtual bool hasNamedItem(const AtomicString& name) const;
-    void namedItems(const AtomicString& name, Vector<RefPtr<Node> >&) const;
-    bool isEmpty() const
-    {
-        if (isLengthCacheValid())
-            return !cachedLength();
-        if (isItemCacheValid())
-            return !cachedItem();
-        return !item(0);
-    }
-    bool hasExactlyOneItem() const
-    {
-        if (isLengthCacheValid())
-            return cachedLength() == 1;
-        if (isItemCacheValid())
-            return cachedItem() && !cachedItemOffset() && !item(1);
-        return item(0) && !item(1);
-    }
+    void namedItems(const AtomicString &name, Vector<RefPtr<Node> >&) const;
 
-    virtual Element* virtualItemAfter(unsigned& offsetInArray, Element*) const;
+    Node *base() { return m_base.get(); }
 
-    Element* traverseFirstElement(unsigned& offsetInArray, ContainerNode* root) const;
-    Element* traverseForwardToOffset(unsigned offset, Element* currentElement, unsigned& currentOffset, unsigned& offsetInArray, ContainerNode* root) const;
+    struct CollectionInfo {
+        CollectionInfo();
+        CollectionInfo(const CollectionInfo&);
+        CollectionInfo& operator=(const CollectionInfo& other)
+        {
+            CollectionInfo tmp(other);    
+            swap(tmp);
+            return *this;
+        }
+        
+        ~CollectionInfo();
+        void reset();
+        void swap(CollectionInfo&);
+
+        unsigned int version;
+        Node *current;
+        unsigned int position;
+        unsigned int length;
+        int elementsArrayPosition;
+        typedef HashMap<AtomicStringImpl*, Vector<Node*>*> NodeCacheMap;
+        NodeCacheMap idCache;
+        NodeCacheMap nameCache;
+        bool haslength;
+        bool hasNameCache;
+    private:
+        static void copyCacheMap(NodeCacheMap& dest, const NodeCacheMap& src)
+        {
+            ASSERT(dest.isEmpty());
+            NodeCacheMap::const_iterator end = src.end();
+            for (NodeCacheMap::const_iterator it = src.begin(); it != end; ++it)
+                dest.add(it->first, new Vector<Node*>(*it->second));
+        }
+    };
+
+    Type collectionType() const { return type; }
 
 protected:
-    HTMLCollection(Node* base, CollectionType, ItemAfterOverrideType);
-
     virtual void updateNameCache() const;
 
-    typedef HashMap<AtomicStringImpl*, OwnPtr<Vector<Element*> > > NodeCacheMap;
-    Vector<Element*>* idCache(const AtomicString& name) const { return m_idCache.get(name.impl()); }
-    Vector<Element*>* nameCache(const AtomicString& name) const { return m_nameCache.get(name.impl()); }
-    void appendIdCache(const AtomicString& name, Element* element) const { append(m_idCache, name, element); }
-    void appendNameCache(const AtomicString& name, Element* element) const { append(m_nameCache, name, element); }
+    virtual Node *traverseNextItem(Node *start) const;
+    bool checkForNameMatch(Node *node, bool checkName, const String &name, bool caseSensitive) const;
+    virtual unsigned calcLength() const;
+    virtual void resetCollectionInfo() const;
+    // the base node, the collection refers to
+    RefPtr<Node> m_base;
+    // The collection list the following elements
+    Type type;
+    mutable CollectionInfo *info;
 
-private:
-    Element* traverseNextElement(unsigned& offsetInArray, Element* previous, ContainerNode* root) const;
+    // For nextNamedItem()
+    mutable bool idsDone;
 
-    virtual bool isLiveNodeList() const OVERRIDE { ASSERT_NOT_REACHED(); return true; }
-
-    static void append(NodeCacheMap&, const AtomicString&, Element*);
-
-    mutable NodeCacheMap m_idCache;
-    mutable NodeCacheMap m_nameCache;
-    mutable unsigned m_cachedElementsArrayOffset;
-
-    friend class LiveNodeListBase;
+    mutable bool m_ownsInfo;
 };
 
-} // namespace
+} //namespace
 
 #endif

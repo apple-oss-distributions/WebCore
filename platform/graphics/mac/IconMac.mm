@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -18,17 +18,19 @@
  *
  */
 
-#if !PLATFORM(IOS)
-
 #import "config.h"
 #import "Icon.h"
 
 #import "GraphicsContext.h"
 #import "LocalCurrentGraphicsContext.h"
+#import "PlatformString.h"
 #import <wtf/PassRefPtr.h>
-#include <wtf/text/WTFString.h>
 
 namespace WebCore {
+
+Icon::Icon()
+{
+}
 
 Icon::Icon(NSImage *image)
     : m_nsImage(image)
@@ -41,31 +43,18 @@ Icon::~Icon()
 {
 }
 
-// FIXME: Move the code to ChromeClient::iconForFiles().
-PassRefPtr<Icon> Icon::createIconForFiles(const Vector<String>& filenames)
+PassRefPtr<Icon> Icon::newIconForFile(const String& filename)
 {
-    if (filenames.isEmpty())
+    // Don't pass relative filenames -- we don't want a result that depends on the current directory.
+    // Need 0U here to disambiguate String::operator[] from operator(NSString*, int)[]
+    if (filename.isEmpty() || filename[0U] != '/')
         return 0;
 
-    bool useIconFromFirstFile;
-    useIconFromFirstFile = filenames.size() == 1;
-    if (useIconFromFirstFile) {
-        // Don't pass relative filenames -- we don't want a result that depends on the current directory.
-        // Need 0U here to disambiguate String::operator[] from operator(NSString*, int)[]
-        if (filenames[0].isEmpty() || filenames[0][0U] != '/')
-            return 0;
-
-        NSImage* image = [[NSWorkspace sharedWorkspace] iconForFile:filenames[0]];
-        if (!image)
-            return 0;
-
-        return adoptRef(new Icon(image));
-    }
-    NSImage* image = [NSImage imageNamed:NSImageNameMultipleDocuments];
+    NSImage* image = [[NSWorkspace sharedWorkspace] iconForFile:filename];
     if (!image)
         return 0;
 
-    return adoptRef(new Icon(image));
+    return new Icon(image);
 }
 
 void Icon::paint(GraphicsContext* context, const IntRect& rect)
@@ -81,5 +70,3 @@ void Icon::paint(GraphicsContext* context, const IntRect& rect)
 }
 
 }
-
-#endif

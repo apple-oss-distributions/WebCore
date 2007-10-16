@@ -27,9 +27,6 @@
 #define Logging_h
 
 #include <wtf/Assertions.h>
-#include <wtf/Forward.h>
-
-#if !LOG_DISABLED
 
 #ifndef LOG_CHANNEL_PREFIX
 #define LOG_CHANNEL_PREFIX Log
@@ -43,7 +40,7 @@ namespace WebCore {
     extern WTFLogChannel LogPopupBlocking;
     extern WTFLogChannel LogEvents;
     extern WTFLogChannel LogEditing;
-    extern WTFLogChannel LogLiveConnect;
+    extern WTFLogChannel LogTextConversion;
     extern WTFLogChannel LogIconDatabase;
     extern WTFLogChannel LogSQLDatabase;
     extern WTFLogChannel LogSpellingAndGrammar;
@@ -51,31 +48,11 @@ namespace WebCore {
     extern WTFLogChannel LogHistory;
     extern WTFLogChannel LogPageCache;
     extern WTFLogChannel LogPlatformLeaks;
-    extern WTFLogChannel LogResourceLoading;
-    extern WTFLogChannel LogAnimations;
     extern WTFLogChannel LogNetwork;
     extern WTFLogChannel LogFTP;
     extern WTFLogChannel LogThreading;
-    extern WTFLogChannel LogStorageAPI;
-    extern WTFLogChannel LogMedia;
-    extern WTFLogChannel LogPlugins;
-    extern WTFLogChannel LogArchives;
-    extern WTFLogChannel LogProgress;
-    extern WTFLogChannel LogFileAPI;
-    extern WTFLogChannel LogWebAudio;
-    extern WTFLogChannel LogCompositing;
-    extern WTFLogChannel LogGamepad;
 
-#if PLATFORM(IOS)
-#if ENABLE(DISK_IMAGE_CACHE)
-    extern WTFLogChannel LogDiskImageCache;
-#endif
-    extern WTFLogChannel LogMemoryPressure;
-#endif
-
-    WTFLogChannel* getChannelFromName(const String& channelName);
+    void InitializeLoggingChannelsIfNecessary();
 }
-
-#endif // !LOG_DISABLED
 
 #endif // Logging_h

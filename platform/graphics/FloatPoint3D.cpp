@@ -1,7 +1,9 @@
 /*
     Copyright (C) 2004, 2005, 2006 Nikolas Zimmermann <wildfox@kde.org>
                   2004, 2005 Rob Buis <buis@kde.org>
-                  2005 Eric Seidel <eric@webkit.org>
+                  2005 Eric Seidel <eric.seidel@kdemail.net>
+
+    This file is part of the KDE project
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Library General Public
@@ -21,22 +23,65 @@
 
 #include "config.h"
 
-#include "FloatPoint3D.h"
-
+#if ENABLE(SVG)
 #include <math.h>
+#include "FloatPoint3D.h"
 
 namespace WebCore {
 
+FloatPoint3D::FloatPoint3D()
+    : m_x(0)
+    , m_y(0)
+    , m_z(0)
+{
+}
+
+FloatPoint3D::FloatPoint3D(float x, float y, float z)
+    : m_x(x)
+    , m_y(y)
+    , m_z(z)
+{
+}
+
+float FloatPoint3D::x() const
+{
+    return m_x;
+}
+
+void FloatPoint3D::setX(float x)
+{
+    m_x = x;
+}
+
+float FloatPoint3D::y() const
+{
+    return m_y;
+}
+
+void FloatPoint3D::setY(float y)
+{
+    m_y = y;
+}
+
+float FloatPoint3D::z() const
+{
+    return m_z;
+}
+
+void FloatPoint3D::setZ(float z)
+{
+    m_z = z;
+}
+
 void FloatPoint3D::normalize()
 {
-    float tempLength = length();
+    float length = sqrtf(m_x * m_x + m_y * m_y + m_z * m_z);
 
-    if (tempLength) {
-        m_x /= tempLength;
-        m_y /= tempLength;
-        m_z /= tempLength;
-    }
+    m_x /= length;
+    m_y /= length;
+    m_z /= length;
 }
 
 } // namespace WebCore
 
+#endif // ENABLE(SVG)

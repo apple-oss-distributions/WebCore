@@ -1,10 +1,12 @@
-/*
+/**
+ * This file is part of the DOM implementation for KDE.
+ *
  * Copyright (C) 1997 Martin Jones (mjones@kde.org)
  *           (C) 1997 Torben Weis (weis@kde.org)
  *           (C) 1998 Waldo Bastian (bastian@kde.org)
  *           (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -21,11 +23,9 @@
  * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
-
 #include "config.h"
 #include "HTMLTableCaptionElement.h"
 
-#include "Attribute.h"
 #include "CSSPropertyNames.h"
 #include "HTMLNames.h"
 
@@ -33,31 +33,38 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-inline HTMLTableCaptionElement::HTMLTableCaptionElement(const QualifiedName& tagName, Document* document)
-    : HTMLElement(tagName, document)
+HTMLTableCaptionElement::HTMLTableCaptionElement(Document *doc)
+    : HTMLTablePartElement(captionTag, doc)
 {
-    ASSERT(hasTagName(captionTag));
 }
 
-PassRefPtr<HTMLTableCaptionElement> HTMLTableCaptionElement::create(const QualifiedName& tagName, Document* document)
+bool HTMLTableCaptionElement::mapToEntry(const QualifiedName& attrName, MappedAttributeEntry& result) const
 {
-    return adoptRef(new HTMLTableCaptionElement(tagName, document));
+    if (attrName == alignAttr) {
+        result = eCaption;
+        return false;
+    }
+
+    return HTMLElement::mapToEntry(attrName, result);
 }
 
-bool HTMLTableCaptionElement::isPresentationAttribute(const QualifiedName& name) const
+void HTMLTableCaptionElement::parseMappedAttribute(MappedAttribute *attr)
 {
-    if (name == alignAttr)
-        return true;
-    return HTMLElement::isPresentationAttribute(name);
-}
-
-void HTMLTableCaptionElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
-{
-    if (name == alignAttr) {
-        if (!value.isEmpty())
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyCaptionSide, value);
+    if (attr->name() == alignAttr) {
+        if (!attr->value().isEmpty())
+            addCSSProperty(attr, CSS_PROP_CAPTION_SIDE, attr->value());
     } else
-        HTMLElement::collectStyleForPresentationAttribute(name, value, style);
+        HTMLElement::parseMappedAttribute(attr);
+}
+
+String HTMLTableCaptionElement::align() const
+{
+    return getAttribute(alignAttr);
+}
+
+void HTMLTableCaptionElement::setAlign(const String &value)
+{
+    setAttribute(alignAttr, value);
 }
 
 }

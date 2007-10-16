@@ -18,10 +18,11 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    Constructor,
-    ImplementationLacksVTable
-] interface XMLSerializer {
-    [RaisesException] DOMString serializeToString([Default=Undefined] optional Node node);
-};
+module xpath {
 
+    interface [GenerateConstructor, CanBeConstructed] XMLSerializer {
+        DOMString serializeToString(in Node node)
+            raises(DOMException);
+    };
+
+}

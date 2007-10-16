@@ -1,7 +1,9 @@
 /*
+ * This file is part of the DOM implementation for KDE.
+ *
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * (C) 2002-2003 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2002, 2006, 2008, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2002, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,34 +25,44 @@
 #define CSSImportRule_h
 
 #include "CSSRule.h"
+#include "CachedResourceClient.h"
+#include "PlatformString.h"
 
 namespace WebCore {
 
 class CachedCSSStyleSheet;
 class MediaList;
-class MediaQuerySet;
-class StyleRuleImport;
 
-class CSSImportRule : public CSSRule {
+class CSSImportRule : public CSSRule, public CachedResourceClient {
 public:
-    static PassRefPtr<CSSImportRule> create(StyleRuleImport* rule, CSSStyleSheet* sheet) { return adoptRef(new CSSImportRule(rule, sheet)); }
-    
+    CSSImportRule(StyleBase* parent, const String& href, MediaList*);
     virtual ~CSSImportRule();
 
-    virtual CSSRule::Type type() const OVERRIDE { return IMPORT_RULE; }
-    virtual String cssText() const OVERRIDE;
-    virtual void reattach(StyleRuleBase*) OVERRIDE;
+    virtual bool isImportRule() { return true; }
 
-    String href() const;
-    MediaList* media() const;
-    CSSStyleSheet* styleSheet() const;
+    String href() const { return m_strHref; }
+    MediaList* media() const { return m_lstMedia.get(); }
+    CSSStyleSheet* styleSheet() const { return m_styleSheet.get(); }
 
-private:
-    CSSImportRule(StyleRuleImport*, CSSStyleSheet*);
+    // Inherited from CSSRule
+    virtual unsigned short type() const { return IMPORT_RULE; }
 
-    RefPtr<StyleRuleImport> m_importRule;
-    mutable RefPtr<MediaList> m_mediaCSSOMWrapper;
-    mutable RefPtr<CSSStyleSheet> m_styleSheetCSSOMWrapper;
+    virtual String cssText() const;
+
+    // Not part of the CSSOM
+    bool isLoading() const;
+
+    // from CachedResourceClient
+    virtual void setCSSStyleSheet(const String& url, const String& charset, const String& sheet);
+
+    virtual void insertedIntoParent();
+
+protected:
+    String m_strHref;
+    RefPtr<MediaList> m_lstMedia;
+    RefPtr<CSSStyleSheet> m_styleSheet;
+    CachedCSSStyleSheet* m_cachedSheet;
+    bool m_loading;
 };
 
 } // namespace WebCore

@@ -1,3 +1,4 @@
+// -*- mode: c++; c-basic-offset: 4 -*-
 /*
  * Copyright (C) 2004, 2006 Apple Computer, Inc.  All rights reserved.
  *
@@ -26,49 +27,34 @@
 #ifndef ResourceHandleInternal_h
 #define ResourceHandleInternal_h
 
-#include "NetworkingContext.h"
-#include "ResourceHandle.h"
 #include "ResourceRequest.h"
 #include "AuthenticationChallenge.h"
-#include "Timer.h"
 
 #if USE(CFNETWORK)
 #include <CFNetwork/CFURLConnectionPriv.h>
 #endif
 
-#if USE(WININET) || (USE(CURL) && PLATFORM(WIN))
+#if USE(WININET)
 #include <winsock2.h>
 #include <windows.h>
+#include "Timer.h"
 #endif
 
 #if USE(CURL)
 #include <curl/curl.h>
-#include "FormDataStreamCurl.h"
-#endif
-
-#if USE(SOUP)
-#include <libsoup/soup.h>
-#include <wtf/gobject/GOwnPtr.h>
-#include <wtf/gobject/GRefPtr.h>
-class Frame;
 #endif
 
 #if PLATFORM(QT)
-QT_BEGIN_NAMESPACE
+class QWebFrame;
 class QWebNetworkJob;
-QT_END_NAMESPACE
-namespace WebCore {
-class QNetworkReplyHandler;
-}
 #endif
 
 #if PLATFORM(MAC)
-OBJC_CLASS NSURLAuthenticationChallenge;
-OBJC_CLASS NSURLConnection;
+#ifdef __OBJC__
+@class NSURLConnection;
+#else
+class NSURLConnection;
 #endif
-
-#if PLATFORM(MAC) || USE(CFNETWORK)
-typedef const struct __CFURLStorageSession* CFURLStorageSessionRef;
 #endif
 
 // The allocations and releases in ResourceHandleInternal are
@@ -78,162 +64,103 @@ typedef const struct __CFURLStorageSession* CFURLStorageSessionRef;
 namespace WebCore {
     class ResourceHandleClient;
 
-    class ResourceHandleInternal {
-        WTF_MAKE_NONCOPYABLE(ResourceHandleInternal); WTF_MAKE_FAST_ALLOCATED;
+    class ResourceHandleInternal : Noncopyable {
     public:
-        ResourceHandleInternal(ResourceHandle* loader, NetworkingContext* context, const ResourceRequest& request, ResourceHandleClient* client, bool defersLoading, bool shouldContentSniff)
-            : m_context(context)
-            , m_client(client)
-            , m_firstRequest(request)
-            , m_lastHTTPMethod(request.httpMethod())
+        ResourceHandleInternal(ResourceHandle* loader, const ResourceRequest& request, ResourceHandleClient* c, bool defersLoading, bool shouldContentSniff, bool mightDownloadFromHandle)
+            : m_client(c)
+            , m_request(request)
             , status(0)
             , m_defersLoading(defersLoading)
             , m_shouldContentSniff(shouldContentSniff)
+            , m_mightDownloadFromHandle(mightDownloadFromHandle)
 #if USE(CFNETWORK)
             , m_connection(0)
-            , m_currentRequest(request)
 #endif
 #if USE(WININET)
+            , m_fileHandle(INVALID_HANDLE_VALUE)
             , m_fileLoadTimer(loader, &ResourceHandle::fileLoadTimer)
-            , m_internetHandle(0)
-            , m_connectHandle(0)
-            , m_requestHandle(0)
-            , m_sentEndRequest(false)
+            , m_resourceHandle(0)
+            , m_secondaryHandle(0)
+            , m_jobId(0)
+            , m_threadId(0)
+            , m_writing(false)
+            , m_formDataString(0)
+            , m_formDataLength(0)
             , m_bytesRemainingToWrite(0)
-            , m_loadSynchronously(false)
             , m_hasReceivedResponse(false)
+            , m_resend(false)
 #endif
 #if USE(CURL)
             , m_handle(0)
             , m_url(0)
+            , m_fileName(0)
             , m_customHeaders(0)
-            , m_cancelled(false)
-            , m_formDataStream(loader)
-#endif
-#if USE(SOUP)
-            , m_cancelled(false)
-            , m_readBufferPtr(0)
-            , m_readBufferSize(0)
-            , m_bodySize(0)
-            , m_bodyDataSent(0)
-            , m_redirectCount(0)
 #endif
 #if PLATFORM(QT)
             , m_job(0)
+            , m_frame(0)
 #endif
 #if PLATFORM(MAC)
-            , m_startWhenScheduled(false)
-            , m_needsSiteSpecificQuirks(false)
             , m_currentMacChallenge(nil)
+#elif USE(CFNETWORK)
+            , m_currentCFChallenge(0)
 #endif
-            , m_scheduledFailureType(ResourceHandle::NoFailure)
-            , m_failureTimer(loader, &ResourceHandle::fireFailure)
         {
-            const KURL& url = m_firstRequest.url();
-            m_user = url.user();
-            m_pass = url.pass();
-            m_firstRequest.removeCredentials();
         }
         
         ~ResourceHandleInternal();
 
         ResourceHandleClient* client() { return m_client; }
-
-        RefPtr<NetworkingContext> m_context;
         ResourceHandleClient* m_client;
-        ResourceRequest m_firstRequest;
-        String m_lastHTTPMethod;
-
-        // Suggested credentials for the current redirection step.
-        String m_user;
-        String m_pass;
         
-        Credential m_initialCredential;
+        ResourceRequest m_request;
         
         int status;
 
         bool m_defersLoading;
         bool m_shouldContentSniff;
+        bool m_mightDownloadFromHandle;
 #if USE(CFNETWORK)
         RetainPtr<CFURLConnectionRef> m_connection;
-        ResourceRequest m_currentRequest;
-#endif
-#if PLATFORM(MAC) && !USE(CFNETWORK)
+#elif PLATFORM(MAC)
         RetainPtr<NSURLConnection> m_connection;
-        RetainPtr<id> m_delegate;
-#endif
-#if PLATFORM(MAC)
-        bool m_startWhenScheduled;
-        bool m_needsSiteSpecificQuirks;
-#endif
-#if PLATFORM(MAC) || USE(CFNETWORK)
-        RetainPtr<CFURLStorageSessionRef> m_storageSession;
+        RetainPtr<WebCoreResourceHandleAsDelegate> m_delegate;
+        RetainPtr<id> m_proxy;
 #endif
 #if USE(WININET)
+        HANDLE m_fileHandle;
         Timer<ResourceHandle> m_fileLoadTimer;
-        HINTERNET m_internetHandle;
-        HINTERNET m_connectHandle;
-        HINTERNET m_requestHandle;
-        bool m_sentEndRequest;
-        Vector<char> m_formData;
-        size_t m_bytesRemainingToWrite;
-        bool m_loadSynchronously;
+        HINTERNET m_resourceHandle;
+        HINTERNET m_secondaryHandle;
+        unsigned m_jobId;
+        DWORD m_threadId;
+        bool m_writing;
+        char* m_formDataString;
+        int m_formDataLength;
+        int m_bytesRemainingToWrite;
+        String m_postReferrer;
         bool m_hasReceivedResponse;
-        String m_redirectUrl;
+        bool m_resend;
 #endif
 #if USE(CURL)
         CURL* m_handle;
         char* m_url;
-        struct curl_slist* m_customHeaders;
-        ResourceResponse m_response;
-        bool m_cancelled;
-
-        FormDataStream m_formDataStream;
+        char* m_fileName;
+        struct curl_slist* m_customHeaders;        
         Vector<char> m_postBytes;
-#endif
-#if USE(SOUP)
-        GRefPtr<SoupMessage> m_soupMessage;
         ResourceResponse m_response;
-        bool m_cancelled;
-        GRefPtr<SoupRequest> m_soupRequest;
-        GRefPtr<GInputStream> m_inputStream;
-        GRefPtr<SoupMultipartInputStream> m_multipartInputStream;
-        GRefPtr<GCancellable> m_cancellable;
-        GRefPtr<GAsyncResult> m_deferredResult;
-        GRefPtr<GSource> m_timeoutSource;
-        GOwnPtr<char> m_defaultReadBuffer;
-        char* m_readBufferPtr;
-        size_t m_readBufferSize;
-        unsigned long m_bodySize;
-        unsigned long m_bodyDataSent;
-        SoupSession* soupSession();
-        int m_redirectCount;
-#endif
-#if PLATFORM(GTK)
-        struct {
-            Credential credential;
-            AuthenticationChallenge challenge;
-        } m_credentialDataToSaveInPersistentStore;
 #endif
 #if PLATFORM(QT)
-        QNetworkReplyHandler* m_job;
+        QWebNetworkJob *m_job;
+        QWebFrame *m_frame;
 #endif
-
 #if PLATFORM(MAC)
-        // We need to keep a reference to the original challenge to be able to cancel it.
-        // It is almost identical to m_currentWebChallenge.nsURLAuthenticationChallenge(), but has a different sender.
         NSURLAuthenticationChallenge *m_currentMacChallenge;
 #endif
-        AuthenticationChallenge m_currentWebChallenge;
-#if PLATFORM(BLACKBERRY)
-        // We need to store the credentials for host and proxy separately for the platform
-        // networking layer. One of these will always be equal to m_currentWebChallenge.
-        AuthenticationChallenge m_hostWebChallenge;
-        AuthenticationChallenge m_proxyWebChallenge;
+#if USE(CFNETWORK)
+        CFURLAuthChallengeRef m_currentCFChallenge;
 #endif
-
-        ResourceHandle::FailureType m_scheduledFailureType;
-        Timer<ResourceHandle> m_failureTimer;
+        AuthenticationChallenge m_currentWebChallenge;
     };
 
 } // namespace WebCore

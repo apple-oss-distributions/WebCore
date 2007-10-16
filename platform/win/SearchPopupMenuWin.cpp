@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2006, 2007 Apple Inc.
- * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,81 +18,32 @@
  */
 
 #include "config.h"
-#include "SearchPopupMenuWin.h"
+#include "SearchPopupMenu.h"
 
-#include <wtf/text/AtomicString.h>
-
-#if USE(CF)
-#include <wtf/RetainPtr.h>
-#endif
+#include "AtomicString.h"
+#include "NotImplemented.h"
 
 namespace WebCore {
 
-SearchPopupMenuWin::SearchPopupMenuWin(PopupMenuClient* client)
-    : m_popup(adoptRef(new PopupMenuWin(client)))
+SearchPopupMenu::SearchPopupMenu(PopupMenuClient* client)
+    : PopupMenu(client)
 {
 }
 
-PopupMenu* SearchPopupMenuWin::popupMenu()
+bool SearchPopupMenu::enabled()
 {
-    return m_popup.get();
-}
-
-bool SearchPopupMenuWin::enabled()
-{
-#if USE(CF)
-    return true;
-#else
+    // FIXME: <rdar://problem/5057218> Reenable "recent searches" search field menu when menu is fully implemented
     return false;
-#endif
 }
 
-#if USE(CF)
-static RetainPtr<CFStringRef> autosaveKey(const String& name)
+void SearchPopupMenu::saveRecentSearches(const AtomicString& name, const Vector<String>& searchItems)
 {
-    return String("com.apple.WebKit.searchField:" + name).createCFString();
-}
-#endif
-
-void SearchPopupMenuWin::saveRecentSearches(const AtomicString& name, const Vector<String>& searchItems)
-{
-    if (name.isEmpty())
-        return;
-
-#if USE(CF)
-    RetainPtr<CFMutableArrayRef> items;
-
-    size_t size = searchItems.size();
-    if (size) {
-        items = adoptCF(CFArrayCreateMutable(0, size, &kCFTypeArrayCallBacks));
-        for (size_t i = 0; i < size; ++i)
-            CFArrayAppendValue(items.get(), searchItems[i].createCFString().get());
-    }
-
-    CFPreferencesSetAppValue(autosaveKey(name).get(), items.get(), kCFPreferencesCurrentApplication);
-    CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication);
-#endif
+    notImplemented();
 }
 
-void SearchPopupMenuWin::loadRecentSearches(const AtomicString& name, Vector<String>& searchItems)
+void SearchPopupMenu::loadRecentSearches(const AtomicString& name, Vector<String>& searchItems)
 {
-    if (name.isEmpty())
-        return;
-
-#if USE(CF)
-    searchItems.clear();
-    RetainPtr<CFArrayRef> items = adoptCF(reinterpret_cast<CFArrayRef>(CFPreferencesCopyAppValue(autosaveKey(name).get(), kCFPreferencesCurrentApplication)));
-
-    if (!items || CFGetTypeID(items.get()) != CFArrayGetTypeID())
-        return;
-
-    size_t size = CFArrayGetCount(items.get());
-    for (size_t i = 0; i < size; ++i) {
-        CFStringRef item = (CFStringRef)CFArrayGetValueAtIndex(items.get(), i);
-        if (CFGetTypeID(item) == CFStringGetTypeID())
-            searchItems.append(item);
-    }
-#endif
+    notImplemented();
 }
 
 }

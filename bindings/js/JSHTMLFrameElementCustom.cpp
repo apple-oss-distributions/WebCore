@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,35 +31,43 @@
 
 #include "Document.h"
 #include "HTMLFrameElement.h"
-#include "HTMLNames.h"
-#include "HTMLParserIdioms.h"
-#include "JSDOMBinding.h"
-
-using namespace JSC;
+#include "PlatformString.h"
+#include "kjs_binding.h"
+#include "kjs_dom.h"
 
 namespace WebCore {
 
-using namespace HTMLNames;
-
-static inline bool allowSettingJavascriptURL(ExecState* exec, HTMLFrameElement* imp, const String& value)
+static inline bool allowSettingJavascriptURL(KJS::ExecState* exec, HTMLFrameElement* imp, String value)
 {
-    if (protocolIsJavaScript(stripLeadingAndTrailingHTMLSpaces(value))) {
-        Document* contentDocument = imp->contentDocument();
-        if (contentDocument && !shouldAllowAccessToNode(exec, contentDocument))
+    if (value.startsWith("javascript:", false)) {
+        if (!checkNodeSecurity(exec, imp->contentDocument()))
             return false;
     }
     return true;
-}
+} 
 
-void JSHTMLFrameElement::setLocation(ExecState* exec, JSValue value)
+void JSHTMLFrameElement::setSrc(KJS::ExecState* exec, KJS::JSValue* value)
 {
     HTMLFrameElement* imp = static_cast<HTMLFrameElement*>(impl());
-    String locationValue = valueToStringWithNullCheck(exec, value);
+    String srcValue = KJS::valueToStringWithNullCheck(exec, value);
+
+    if (!allowSettingJavascriptURL(exec, imp, srcValue))
+        return;
+
+    imp->setSrc(srcValue);
+    return;
+}
+
+void JSHTMLFrameElement::setLocation(KJS::ExecState* exec, KJS::JSValue* value)
+{
+    HTMLFrameElement* imp = static_cast<HTMLFrameElement*>(impl());
+    String locationValue = KJS::valueToStringWithNullCheck(exec, value);
 
     if (!allowSettingJavascriptURL(exec, imp, locationValue))
         return;
 
     imp->setLocation(locationValue);
+    return;
 }
 
 } // namespace WebCore

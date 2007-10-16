@@ -26,12 +26,10 @@
 #ifndef TextAffinity_h
 #define TextAffinity_h
 
+#include <wtf/Platform.h>
+
 #ifdef __OBJC__
-#if !PLATFORM(IOS)
 #include <AppKit/NSTextView.h>
-#else
-#include "WAKAppKitStubs.h"
-#endif // !PLATFORM(IOS)
 #endif
 
 namespace WebCore {
@@ -40,22 +38,20 @@ namespace WebCore {
 // From NSTextView.h:
 // NSSelectionAffinityUpstream = 0
 // NSSelectionAffinityDownstream = 1
-enum EAffinity { UPSTREAM = 0, DOWNSTREAM = 1 };
-
-} // namespace WebCore
+typedef enum { UPSTREAM = 0, DOWNSTREAM = 1 } EAffinity;
 
 #ifdef __OBJC__
-
-inline NSSelectionAffinity kit(WebCore::EAffinity affinity)
+inline NSSelectionAffinity kit(EAffinity affinity)
 {
     return static_cast<NSSelectionAffinity>(affinity);
 }
 
-inline WebCore::EAffinity core(NSSelectionAffinity affinity)
+inline EAffinity core(NSSelectionAffinity affinity)
 {
-    return static_cast<WebCore::EAffinity>(affinity);
+    return static_cast<EAffinity>(affinity);
 }
-
 #endif
+
+} // namespace WebCore
 
 #endif // TextAffinity_h

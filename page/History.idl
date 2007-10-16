@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -20,23 +20,17 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-[
-    JSCustomGetOwnPropertySlotAndDescriptor,
-    CustomNamedSetter,
-    GenerateIsReachable=ImplFrame,
-    CustomDeleteProperty,
-    CustomEnumerateProperty,
-] interface History {
-    readonly attribute unsigned long length;
-    [CachedAttribute, Custom] readonly attribute SerializedScriptValue state;
+module window {
 
-    [DoNotCheckSecurity, CallWith=ScriptExecutionContext] void back();
-    [DoNotCheckSecurity, CallWith=ScriptExecutionContext] void forward();
-    [DoNotCheckSecurity, CallWith=ScriptExecutionContext] void go([Default=Undefined] optional long distance);
+    interface History {
+        readonly attribute unsigned long length;
 
-    [Custom, RaisesException] void pushState(any data, DOMString title, optional DOMString url);
-    [Custom, RaisesException] void replaceState(any data, DOMString title, optional DOMString url);
-};
+        void back();
+        void forward();
+        void go(in long distance);
+    };
+
+}

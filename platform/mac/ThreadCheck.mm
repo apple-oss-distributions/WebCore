@@ -26,84 +26,65 @@
 #import "config.h"
 #import "ThreadCheck.h"
 
-#import <wtf/HashSet.h>
-#import <wtf/StdLibExtras.h>
-#include <wtf/text/StringHash.h>
+#import "StringHash.h"
+#import <JavaScriptCore/HashSet.h>
 
 namespace WebCore {
 
+static ThreadViolationBehavior defaultThreadViolationBehavior = RaiseExceptionOnThreadViolation;
+
 static bool didReadThreadViolationBehaviorFromUserDefaults = false;
-static bool threadViolationBehaviorIsDefault = true;
-static ThreadViolationBehavior threadViolationBehavior[MaximumThreadViolationRound] = { RaiseExceptionOnThreadViolation, RaiseExceptionOnThreadViolation };
+static bool threadViolationBehaviorIsDefault;
+static ThreadViolationBehavior threadViolationBehavior;
 
 static void readThreadViolationBehaviorFromUserDefaults()
 {
-    didReadThreadViolationBehaviorFromUserDefaults = true;
-
-    ThreadViolationBehavior newBehavior = LogOnFirstThreadViolation;
     NSString *threadCheckLevel = [[NSUserDefaults standardUserDefaults] stringForKey:@"WebCoreThreadCheck"];
-    if (!threadCheckLevel)
-        return;
-
     if ([threadCheckLevel isEqualToString:@"None"])
-        newBehavior = NoThreadCheck;
+        threadViolationBehavior = NoThreadCheck;
     else if ([threadCheckLevel isEqualToString:@"Exception"])
-        newBehavior = RaiseExceptionOnThreadViolation;
+        threadViolationBehavior = RaiseExceptionOnThreadViolation;
     else if ([threadCheckLevel isEqualToString:@"Log"])
-        newBehavior = LogOnThreadViolation;
+        threadViolationBehavior = LogOnThreadViolation;
     else if ([threadCheckLevel isEqualToString:@"LogOnce"])
-        newBehavior = LogOnFirstThreadViolation;
-    else
-        ASSERT_NOT_REACHED();
-
-    threadViolationBehaviorIsDefault = false;
-
-    for (unsigned i = 0; i < MaximumThreadViolationRound; ++i)
-        threadViolationBehavior[i] = newBehavior;
+        threadViolationBehavior = LogOnFirstThreadViolation;
+    else {
+        threadViolationBehavior = defaultThreadViolationBehavior;
+        threadViolationBehaviorIsDefault = true;
+    }
+    didReadThreadViolationBehaviorFromUserDefaults = true;
 }
 
-void setDefaultThreadViolationBehavior(ThreadViolationBehavior behavior, ThreadViolationRound round)
+void setDefaultThreadViolationBehavior(ThreadViolationBehavior behavior)
 {
-    ASSERT(round < MaximumThreadViolationRound);
-    if (round >= MaximumThreadViolationRound)
-        return;
-    if (!didReadThreadViolationBehaviorFromUserDefaults)
-        readThreadViolationBehaviorFromUserDefaults();
+    defaultThreadViolationBehavior = behavior;
     if (threadViolationBehaviorIsDefault)
-        threadViolationBehavior[round] = behavior;
+        threadViolationBehavior = behavior;
 }
 
-void reportThreadViolation(const char* function, ThreadViolationRound round)
+void reportThreadViolation(const char* function)
 {
-    ASSERT(round < MaximumThreadViolationRound);
-    if (round >= MaximumThreadViolationRound)
-        return;
     if (!didReadThreadViolationBehaviorFromUserDefaults)
-        readThreadViolationBehaviorFromUserDefaults();
-    if (threadViolationBehavior[round] == NoThreadCheck)
+        readThreadViolationBehaviorFromUserDefaults();    
+    if (threadViolationBehavior == NoThreadCheck)
         return;
     if (pthread_main_np())
         return;
-    WebCoreReportThreadViolation(function, round);
+    WebCoreReportThreadViolation(function);
 }
 
 } // namespace WebCore
 
 // Split out the actual reporting of the thread violation to make it easier to set a breakpoint
-void WebCoreReportThreadViolation(const char* function, WebCore::ThreadViolationRound round)
+void WebCoreReportThreadViolation(const char* function)
 {
     using namespace WebCore;
-
-    ASSERT(round < MaximumThreadViolationRound);
-    if (round >= MaximumThreadViolationRound)
-        return;
-
-    DEFINE_STATIC_LOCAL(HashSet<String>, loggedFunctions, ());
-    switch (threadViolationBehavior[round]) {
+    static HashSet<String> loggedFunctions;
+    switch (threadViolationBehavior) {
         case NoThreadCheck:
             break;
         case LogOnFirstThreadViolation:
-            if (loggedFunctions.add(function).isNewEntry) {
+            if (loggedFunctions.add(function).second) {
                 NSLog(@"WebKit Threading Violation - %s called from secondary thread", function);
                 NSLog(@"Additional threading violations for this function will not be logged.");
             }

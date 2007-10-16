@@ -1,5 +1,7 @@
 /*
- * Copyright (C) 2005, 2006, 2009 Apple Inc. All rights reserved.
+ * This file is part of the DOM implementation for KDE.
+ *
+ * Copyright (C) 2005 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -17,64 +19,32 @@
  * Boston, MA 02110-1301, USA.
  *
  */
-
 #ifndef QualifiedName_h
 #define QualifiedName_h
 
-#include <wtf/Forward.h>
-#include <wtf/HashTraits.h>
-#include <wtf/RefCounted.h>
-#include <wtf/text/AtomicString.h>
+#include "AtomicString.h"
 
 namespace WebCore {
 
-struct QualifiedNameComponents {
-    StringImpl* m_prefix;
-    StringImpl* m_localName;
-    StringImpl* m_namespace;
-};
-
 class QualifiedName {
-    WTF_MAKE_FAST_ALLOCATED;
 public:
-    class QualifiedNameImpl : public RefCounted<QualifiedNameImpl> {
+    class QualifiedNameImpl : public Shared<QualifiedNameImpl> {
     public:
-        static PassRefPtr<QualifiedNameImpl> create(const AtomicString& prefix, const AtomicString& localName, const AtomicString& namespaceURI)
-        {
-            return adoptRef(new QualifiedNameImpl(prefix, localName, namespaceURI));
-        }
+        QualifiedNameImpl(const AtomicString& p, const AtomicString& l, const AtomicString& n) :m_prefix(p), m_localName(l), m_namespace(n) {}
 
-        ~QualifiedNameImpl();
-
-        unsigned computeHash() const;
-
-        mutable unsigned m_existingHash;
-        const AtomicString m_prefix;
-        const AtomicString m_localName;
-        const AtomicString m_namespace;
-        mutable AtomicString m_localNameUpper;
-
-    private:
-        QualifiedNameImpl(const AtomicString& prefix, const AtomicString& localName, const AtomicString& namespaceURI)
-            : m_existingHash(0)
-            , m_prefix(prefix)
-            , m_localName(localName)
-            , m_namespace(namespaceURI)
-        {
-            ASSERT(!namespaceURI.isEmpty() || namespaceURI.isNull());
-        }        
+        AtomicString m_prefix;
+        AtomicString m_localName;
+        AtomicString m_namespace;
     };
 
     QualifiedName(const AtomicString& prefix, const AtomicString& localName, const AtomicString& namespaceURI);
-    QualifiedName(WTF::HashTableDeletedValueType) : m_impl(hashTableDeletedValue()) { }
-    bool isHashTableDeletedValue() const { return m_impl == hashTableDeletedValue(); }
     ~QualifiedName();
 #ifdef QNAME_DEFAULT_CONSTRUCTOR
     QualifiedName() : m_impl(0) { }
 #endif
 
-    QualifiedName(const QualifiedName& other) : m_impl(other.m_impl) { ref(); }
-    const QualifiedName& operator=(const QualifiedName& other) { other.ref(); deref(); m_impl = other.m_impl; return *this; }
+    QualifiedName(const QualifiedName&);
+    const QualifiedName& operator=(const QualifiedName&);
 
     bool operator==(const QualifiedName& other) const { return m_impl == other.m_impl; }
     bool operator!=(const QualifiedName& other) const { return !(*this == other); }
@@ -82,14 +52,11 @@ public:
     bool matches(const QualifiedName& other) const { return m_impl == other.m_impl || (localName() == other.localName() && namespaceURI() == other.namespaceURI()); }
 
     bool hasPrefix() const { return m_impl->m_prefix != nullAtom; }
-    void setPrefix(const AtomicString& prefix) { *this = QualifiedName(prefix, localName(), namespaceURI()); }
+    void setPrefix(const AtomicString& prefix);
 
     const AtomicString& prefix() const { return m_impl->m_prefix; }
     const AtomicString& localName() const { return m_impl->m_localName; }
     const AtomicString& namespaceURI() const { return m_impl->m_namespace; }
-
-    // Uppercased localName, cached for efficiency
-    const AtomicString& localNameUpper() const;
 
     String toString() const;
 
@@ -99,10 +66,9 @@ public:
     static void init();
 
 private:
-    void ref() const { m_impl->ref(); }
-    void deref();
 
-    static QualifiedNameImpl* hashTableDeletedValue() { return RefPtr<QualifiedNameImpl>::hashTableDeletedValue(); }
+    void ref() { m_impl->ref(); } 
+    void deref();
     
     QualifiedNameImpl* m_impl;
 };
@@ -112,51 +78,10 @@ extern const QualifiedName anyName;
 inline const QualifiedName& anyQName() { return anyName; }
 #endif
 
-const QualifiedName& nullQName();
-
 inline bool operator==(const AtomicString& a, const QualifiedName& q) { return a == q.localName(); }
 inline bool operator!=(const AtomicString& a, const QualifiedName& q) { return a != q.localName(); }
 inline bool operator==(const QualifiedName& q, const AtomicString& a) { return a == q.localName(); }
 inline bool operator!=(const QualifiedName& q, const AtomicString& a) { return a != q.localName(); }
 
-inline unsigned hashComponents(const QualifiedNameComponents& buf)
-{
-    return StringHasher::hashMemory<sizeof(QualifiedNameComponents)>(&buf);
 }
-
-struct QualifiedNameHash {
-    static unsigned hash(const QualifiedName& name) { return hash(name.impl()); }
-
-    static unsigned hash(const QualifiedName::QualifiedNameImpl* name) 
-    {
-        if (!name->m_existingHash)
-            name->m_existingHash = name->computeHash();
-        return name->m_existingHash;
-    }
-
-    static bool equal(const QualifiedName& a, const QualifiedName& b) { return a == b; }
-    static bool equal(const QualifiedName::QualifiedNameImpl* a, const QualifiedName::QualifiedNameImpl* b) { return a == b; }
-
-    static const bool safeToCompareToEmptyOrDeleted = false;
-};
-
-void createQualifiedName(void* targetAddress, StringImpl* name);
-void createQualifiedName(void* targetAddress, StringImpl* name, const AtomicString& nameNamespace);
-
-}
-
-namespace WTF {
-    
-    template<typename T> struct DefaultHash;
-
-    template<> struct DefaultHash<WebCore::QualifiedName> {
-        typedef WebCore::QualifiedNameHash Hash;
-    };
-    
-    template<> struct HashTraits<WebCore::QualifiedName> : SimpleClassHashTraits<WebCore::QualifiedName> {
-        static const bool emptyValueIsZero = false;
-        static WebCore::QualifiedName emptyValue() { return WebCore::nullQName(); }
-    };
-}
-
 #endif

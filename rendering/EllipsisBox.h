@@ -1,4 +1,6 @@
 /**
+* This file is part of the html renderer for KDE.
+ *
  * Copyright (C) 2003, 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
@@ -24,37 +26,26 @@
 
 namespace WebCore {
 
-class HitTestRequest;
 class HitTestResult;
 
-class EllipsisBox FINAL : public InlineBox {
+struct HitTestRequest;
+
+class EllipsisBox : public InlineBox {
 public:
     EllipsisBox(RenderObject* obj, const AtomicString& ellipsisStr, InlineFlowBox* parent,
-                int width, int height, int y, bool firstLine, bool isVertical, InlineBox* markupBox)
-        : InlineBox(obj, FloatPoint(0, y), width, firstLine, true, false, false, isVertical, 0, 0, parent)
-        , m_shouldPaintMarkupBox(markupBox)
-        , m_height(height)
+                int width, int y, int height, int baseline, bool firstLine, InlineBox* markupBox)
+        : InlineBox(obj, 0, y, width, height, baseline, firstLine, true, false, false, 0, 0, parent)
         , m_str(ellipsisStr)
-        , m_selectionState(RenderObject::SelectionNone)
+        , m_markupBox(markupBox)
     {
     }
 
-    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom);
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
-    void setSelectionState(RenderObject::SelectionState s) { m_selectionState = s; }
-    IntRect selectionRect();
+    virtual void paint(RenderObject::PaintInfo&, int tx, int ty);
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, int x, int y, int tx, int ty);
 
 private:
-    void paintMarkupBox(PaintInfo&, const LayoutPoint& paintOffset, LayoutUnit lineTop, LayoutUnit lineBottom, RenderStyle*);
-    virtual int height() const { return m_height; }
-    virtual RenderObject::SelectionState selectionState() { return m_selectionState; }
-    void paintSelection(GraphicsContext*, const LayoutPoint&, RenderStyle*, const Font&);
-    InlineBox* markupBox() const;
-
-    bool m_shouldPaintMarkupBox;
-    int m_height;
     AtomicString m_str;
-    RenderObject::SelectionState m_selectionState;
+    InlineBox* m_markupBox;
 };
 
 } // namespace WebCore

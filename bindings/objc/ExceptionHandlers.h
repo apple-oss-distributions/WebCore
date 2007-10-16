@@ -26,7 +26,7 @@
 #ifndef ExceptionHandlers_h
 #define ExceptionHandlers_h
 
-#include <wtf/Assertions.h>
+#include <JavaScriptCore/Assertions.h>
 
 #if !defined(NDEBUG) && !defined(DISABLE_THREAD_CHECK)
 #define DOM_ASSERT_MAIN_THREAD() do \
@@ -42,7 +42,7 @@ namespace WebCore {
     
     typedef int ExceptionCode;
     
-    class FrameSelection;
+    class SelectionController;
     class Range;
 
     void raiseDOMException(ExceptionCode);
