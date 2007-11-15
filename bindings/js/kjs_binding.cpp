@@ -246,7 +246,7 @@ void *ScriptInterpreter::createLanguageInstanceForValue (ExecState *exec, int la
     return result;
 }
 
-bool ScriptInterpreter::checkTimeout()
+bool ScriptInterpreter::shouldStopExecution()
 {
     if (!m_frame)
         return false;
@@ -255,7 +255,7 @@ bool ScriptInterpreter::checkTimeout()
         return false;
     if (WebThreadStateBitIsSet(windowState, WebThreadStateBitIsStopping))
         return true;
-    return Interpreter::checkTimeout();
+    return Interpreter::shouldStopExecution();
 }
 
 bool ScriptInterpreter::shouldInterruptScript() const

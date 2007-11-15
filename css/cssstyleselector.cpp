@@ -3819,7 +3819,7 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
             return; // Error case.
         style->setBoxOrdinalGroup((unsigned int)(primitiveValue->getFloatValue()));
         return;
-    case CSS_PROP_BOX_SIZING:
+    case CSS_PROP__WEBKIT_BOX_SIZING:
         HANDLE_INHERIT_AND_INITIAL(boxSizing, BoxSizing)
         if (!primitiveValue) return;
         if (primitiveValue->getIdent() == CSS_VAL_CONTENT_BOX)
@@ -4140,6 +4140,15 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
         else
             imageLoadingBorder = LOADING_OUTLINE;
         style->setImageLoadingBorder(imageLoadingBorder);
+    }
+    
+    case CSS_PROP__WEBKIT_TAP_HIGHLIGHT_COLOR: {
+        HANDLE_INHERIT_AND_INITIAL(tapHighlightColor, TapHighlightColor);
+        if (!primitiveValue)
+            break;
+            
+        Color col = getColorFromPrimitiveValue(primitiveValue).blendWithWhite();
+        style->setTapHighlightColor(col);
     }
     default:
 #if SVG_SUPPORT

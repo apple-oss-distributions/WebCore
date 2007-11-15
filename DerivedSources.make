@@ -52,6 +52,7 @@ all : \
     JSCanvasPattern.h \
     JSCanvasRenderingContext2D.h \
     JSCharacterData.h \
+    JSConsole.h \
     JSCounter.h \
     JSCSSStyleDeclaration.h \
     JSDOMImplementation.h \

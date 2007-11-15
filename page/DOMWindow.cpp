@@ -26,6 +26,7 @@
 #include "config.h"
 #include "DOMWindow.h"
 
+#include "Console.h"
 #include "cssstyleselector.h"
 #include "CSSComputedStyleDeclaration.h"
 #include "CSSRuleList.h"
@@ -48,6 +49,14 @@ Frame* DOMWindow::frame()
 void DOMWindow::disconnectFrame()
 {
     m_frame = 0;
+    clear();
+}
+
+void DOMWindow::clear()
+{
+    if (m_console)
+        m_console->disconnectFrame();
+    m_console = 0;
 }
 
 Document* DOMWindow::document() const
@@ -86,6 +95,13 @@ PassRefPtr<CSSRuleList> DOMWindow::getMatchedCSSRules(Element* elt, const String
 double DOMWindow::devicePixelRatio() const
 {
     return m_frame->view() ? m_frame->view()->scaleFactor() : 1.0;
+}
+
+Console* DOMWindow::console() const
+{
+    if (!m_console)
+        m_console = new Console(m_frame);
+    return m_console.get();
 }
 
 } // namespace WebCore

@@ -151,6 +151,7 @@ static const int computedProperties[] = {
     CSS_PROP_WORD_SPACING,
     CSS_PROP_WORD_WRAP,
     CSS_PROP_Z_INDEX,
+    CSS_PROP__WEBKIT_TAP_HIGHLIGHT_COLOR,
 };
 
 const unsigned numComputedProperties = sizeof(computedProperties) / sizeof(computedProperties[0]);
@@ -1341,6 +1342,9 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(int proper
             return new CSSPrimitiveValue(firstRegion.release());
         }
 #endif
+    case CSS_PROP__WEBKIT_TAP_HIGHLIGHT_COLOR: {
+        return new CSSPrimitiveValue(style->tapHighlightColor().rgb());
+    }
     }
 
     LOG_ERROR("unimplemented propertyID: %d", propertyID);
@@ -1408,6 +1412,7 @@ const int inheritableProperties[] = {
     CSS_PROP_WHITE_SPACE,
     CSS_PROP_WIDOWS,
     CSS_PROP_WORD_SPACING,
+    CSS_PROP__WEBKIT_TAP_HIGHLIGHT_COLOR,
 };
 
 const unsigned numInheritableProperties = sizeof(inheritableProperties) / sizeof(inheritableProperties[0]);

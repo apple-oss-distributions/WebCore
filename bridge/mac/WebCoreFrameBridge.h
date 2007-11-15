@@ -272,6 +272,7 @@ typedef enum {
 - (void)forceLayoutAdjustingViewSize:(BOOL)adjustSizeFlag;
 - (void)forceLayoutWithMinimumPageWidth:(float)minPageWidth maximumPageWidth:(float)maxPageWidth adjustingViewSize:(BOOL)adjustSizeFlag;
 - (void)sendResizeEvent;
+- (void)sendOrientationChangeEvent;
 - (void)sendScrollEvent;
 - (BOOL)needsLayout;
 - (void)setNeedsLayout;
@@ -500,6 +501,7 @@ typedef enum {
 - (DOMRange *)editableDOMRangeForPoint:(NSPoint)point;
 - (DOMRange *)characterRangeAtPoint:(NSPoint)point;
 - (void)setCaretColor:(CGColorRef)color;
+- (void)resetSelection;
 - (void)moveSelectionToPoint:(NSPoint)point useSingleLineSelectionBehavior:(BOOL)useSingleLineSelectionBehavior;
 - (void)moveSelectionToPoint:(NSPoint)point;
 - (void)moveSelectionToStartOrEndOfCurrentWord;
@@ -551,6 +553,7 @@ typedef enum {
 - (void)pauseTimeouts;
 - (void)resumeTimeouts;
 - (unsigned)formElementsCharacterCount;
+- (void)didRestoreFromCache;
 
 - (void)setProhibitsScrolling:(BOOL)prohibits;
 
@@ -680,9 +683,11 @@ typedef enum {
 - (BOOL)textField:(DOMHTMLInputElement *)element doCommandBySelector:(SEL)commandSelector;
 - (BOOL)textField:(DOMHTMLInputElement *)element shouldHandleEvent:(GSEventRef)event;
 
+- (void)formElementDidSetValue:(DOMHTMLElement *)anElement;
 - (void)formElementDidFocus:(DOMHTMLElement *)anElement;
 - (void)formElementDidBlur:(DOMHTMLElement *)anElement;
 - (void)didReceiveViewportArguments:(NSDictionary *)arguments;
+- (void)setNeedsScrollNotifications:(NSNumber *)aFlag;
 - (void)didObserveDeferredContentChange;
 
 - (void)setHasBorder:(BOOL)hasBorder;
@@ -741,6 +746,8 @@ typedef enum {
 - (void)caretChanged;
 
 - (BOOL)isLoading;
+
+- (int)rotationDegrees;
 
 @end
 

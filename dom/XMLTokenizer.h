@@ -63,6 +63,9 @@ public:
     
     bool inViewSourceMode() const { return m_inViewSourceMode; }
     void setInViewSourceMode(bool mode) { m_inViewSourceMode = mode; }
+    
+    virtual int lineNumber() const { return -1; }
+    virtual int columnNumber() const { return -1; }
 
 protected:
     // The tokenizer has buffers, so parsing may continue even after

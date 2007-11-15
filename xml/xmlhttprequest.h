@@ -71,6 +71,8 @@ namespace WebCore {
     void setOnLoadListener(EventListener*);
     EventListener* onLoadListener() const;
 
+    Document* document() const { return m_doc; }
+
   private:
     bool urlMatchesDocumentDomain(const KURL&) const;
 

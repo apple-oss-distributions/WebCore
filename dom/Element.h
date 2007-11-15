@@ -175,6 +175,10 @@ protected:
     virtual void createAttributeMap() const;
     String openTagStartToString() const;
 
+    // The following method is called when a Document is restored from the page cache
+    // and the element has registered itself with the Document via registerForDidRestorePageCallback()
+    virtual void didRestoreFromCache() { }
+    
 private:
     void updateId(const AtomicString& oldId, const AtomicString& newId);
 

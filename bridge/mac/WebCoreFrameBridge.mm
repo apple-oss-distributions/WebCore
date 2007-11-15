@@ -1425,6 +1425,11 @@ static BOOL nowPrinting(WebCoreFrameBridge *self)
     m_frame->sendResizeEvent();
 }
 
+- (void)sendOrientationChangeEvent
+{
+    m_frame->sendOrientationChangeEvent();
+}
+
 - (void)sendScrollEvent
 {
     m_frame->sendScrollEvent();
@@ -2253,18 +2258,29 @@ static HTMLFormElement *formElementFromDOMElement(DOMElement *element)
 
 - (NSRange)convertToNSRange:(Range *)range
 {
-    if (!range || range->isDetached()) {
-        return NSMakeRange(NSNotFound, 0);
-    }
-
-    RefPtr<Range> fromStartRange(m_frame->document()->createRange());
     int exception = 0;
-
-    fromStartRange->setEnd(range->startContainer(exception), range->startOffset(exception), exception);
-    int startPosition = TextIterator::rangeLength(fromStartRange.get());
-
-    fromStartRange->setEnd(range->endContainer(exception), range->endOffset(exception), exception);
-    int endPosition = TextIterator::rangeLength(fromStartRange.get());
+    
+    if (!range || range->isDetached())
+        return NSMakeRange(NSNotFound, 0);
+    
+    Element* selectionRoot = m_frame->selection().rootEditableElement();
+    Element* scope = selectionRoot ? selectionRoot : m_frame->document()->documentElement();
+    
+    // Mouse events may cause TSM to attempt to create an NSRange for a portion of the view
+    // that is not inside the current editable region.  These checks ensure we don't produce
+    // potentially invalid data when responding to such requests.
+    if (range->startContainer(exception) != scope && !range->startContainer(exception)->isAncestor(scope))
+        return NSMakeRange(NSNotFound, 0);
+    if(range->endContainer(exception) != scope && !range->endContainer(exception)->isAncestor(scope))
+        return NSMakeRange(NSNotFound, 0);
+    
+    RefPtr<Range> testRange = new Range(scope->document(), scope, 0, range->startContainer(exception), range->startOffset(exception));
+    ASSERT(testRange->startContainer(exception) == scope);
+    int startPosition = TextIterator::rangeLength(testRange.get());
+    
+    testRange->setEnd(range->endContainer(exception), range->endOffset(exception), exception);
+    ASSERT(testRange->startContainer(exception) == scope);
+    int endPosition = TextIterator::rangeLength(testRange.get());
 
     return NSMakeRange(startPosition, endPosition - startPosition);
 }
@@ -2786,6 +2802,11 @@ static HTMLFormElement *formElementFromDOMElement(DOMElement *element)
 }
 
 
+- (void)resetSelection
+{
+    m_frame->setSelection(m_frame->selection());
+}
+
 - (void)moveSelectionToPoint:(NSPoint)point useSingleLineSelectionBehavior:(BOOL)useSingleLineSelectionBehavior;
 {
     SelectionController selection([self _visiblePositionForPoint:point]);
@@ -2819,6 +2840,14 @@ static HTMLFormElement *formElementFromDOMElement(DOMElement *element)
 
 - (void)moveSelectionToStartOrEndOfCurrentWord
 {
+    // Here, a word starts with non-whitespace or at the start of a line and
+    // ends at the next whitespace, or at the end of a line.
+
+    // Selection rule: If the selection is before the first character or
+    // just after the first character of a word that is longer than one
+    // character, move to the start of the word. Otherwise, move to the
+    // end of the word.
+
     SelectionController selection(m_frame->selection());
     if (selection.isNone())
         return;
@@ -3238,6 +3267,11 @@ static NSCharacterSet *_getPostSmartSet(void)
             frameBridge->m_frame->forceLayout();
         }
     }
+}
+
+- (void)didRestoreFromCache
+{
+    m_frame->document()->didRestoreFromCache();
 }
 
 - (void)setProhibitsScrolling:(BOOL)prohibits

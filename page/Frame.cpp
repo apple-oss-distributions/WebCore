@@ -825,7 +825,7 @@ void Frame::checkEmitLoadEvent()
         String domain = d->m_doc->domain();
         for (Frame* child = tree()->firstChild(); child; child = child->tree()->nextSibling())
             if (child->d->m_doc)
-                child->d->m_doc->setDomain(domain);
+                child->d->m_doc->setDomainInternal(domain);
     }
 
     d->m_bLoadEventEmitted = true;
@@ -2218,6 +2218,10 @@ void Frame::textDidChangeInTextArea(Element* input)
 {
 }
 
+void Frame::formElementDidSetValue(Element * anElement)
+{
+}
+
 void Frame::formElementDidFocus(Element * anElement)
 {
 }
@@ -2227,6 +2231,10 @@ void Frame::formElementDidBlur(Element * anElement)
 }
 
 void Frame::didReceiveViewportArguments(ViewportArguments)
+{
+}
+
+void Frame::setNeedsScrollNotifications(bool)
 {
 }
 
@@ -2343,6 +2351,12 @@ void Frame::setOpener(Frame* opener)
     if (opener)
         opener->d->m_openedFrames.add(this);
     d->m_opener = opener;
+
+    // If we're called with opener == 0, we're being desructed,
+    // so don't init the document's security policy URL.
+    if (opener && d->m_view && d->m_view->m_frame)
+        if (d->m_view->m_frame->document())
+            d->m_view->m_frame->document()->initSecurityPolicyURL();
 }
 
 bool Frame::openedByJS()
@@ -3183,8 +3197,7 @@ bool Frame::canCachePage()
         tree()->parent() ||
         d->m_url.protocol().startsWith("https") || 
         (d->m_doc && (d->m_doc->applets()->length() != 0 ||
-                      d->m_doc->hasWindowEventListener(unloadEvent) ||
-                      d->m_doc->hasPasswordField()))) {
+                      d->m_doc->hasWindowEventListener(unloadEvent)))) {
         return false;
     }
     return true;
@@ -3353,6 +3366,14 @@ void Frame::sendResizeEvent()
     if (Document* doc = document())
         doc->dispatchWindowEvent(EventNames::resizeEvent, false, false);
 }
+
+
+void Frame::sendOrientationChangeEvent()
+{
+    if (Document* doc = document())
+        doc->dispatchWindowEvent(EventNames::orientationChangeEvent, false, false);
+}
+
 
 void Frame::sendScrollEvent()
 {
@@ -3795,6 +3816,7 @@ Page* Frame::page() const
 
 void Frame::pageDestroyed()
 {
+    clearObservedContentModifiers();
     d->m_page = 0;
 
     // This will stop any JS timers
@@ -3826,7 +3848,7 @@ void Frame::started()
 
 void Frame::disconnectOwnerElement()
 {
-    if (d->m_ownerElement)
+    if (d->m_ownerElement && d->m_page)
         d->m_page->decrementFrameCount();
         
     d->m_ownerElement = 0;

@@ -1049,7 +1049,7 @@ void FrameMac::saveDocumentState()
 {
     // Do not save doc state if the page has a password field and a form that would be submitted
     // via https
-    if (!(d->m_doc && d->m_doc->hasPasswordField() && d->m_doc->hasSecureForm())) {
+    if (!(d->m_doc && d->m_doc->hasSecureForm())) {
         BEGIN_BLOCK_OBJC_EXCEPTIONS;
         [_bridge saveDocumentState];
         END_BLOCK_OBJC_EXCEPTIONS;
@@ -1151,16 +1151,6 @@ bool FrameMac::statusbarVisible()
 bool FrameMac::toolbarVisible()
 {
     return [_bridge areToolbarsVisible];
-}
-
-void FrameMac::addMessageToConsole(const String &message, unsigned lineNumber, const String &sourceURL)
-{
-    NSDictionary *dictionary = [NSDictionary dictionaryWithObjectsAndKeys:
-        (NSString *)message, @"message",
-        [NSNumber numberWithInt: lineNumber], @"lineNumber",
-        (NSString *)sourceURL, @"sourceURL",
-        NULL];
-    [_bridge addMessageToConsole:dictionary];
 }
 
 void FrameMac::createEmptyDocument()
@@ -2108,6 +2098,13 @@ void FrameMac::textWillBeDeletedInTextField(Element* input)
     END_BLOCK_OBJC_EXCEPTIONS;
 }
 
+void FrameMac::formElementDidSetValue(Element * anElement)
+{
+    BEGIN_BLOCK_OBJC_EXCEPTIONS;
+    [_bridge formElementDidSetValue:(DOMHTMLElement *)[DOMElement _elementWith:anElement]];
+    END_BLOCK_OBJC_EXCEPTIONS;
+}
+
 void FrameMac::formElementDidFocus(Element * anElement)
 {
     BEGIN_BLOCK_OBJC_EXCEPTIONS;
@@ -2149,6 +2146,13 @@ void FrameMac::didReceiveViewportArguments(ViewportArguments arguments)
     END_BLOCK_OBJC_EXCEPTIONS;
 }
 
+void FrameMac::setNeedsScrollNotifications(bool aFlag)
+{
+    BEGIN_BLOCK_OBJC_EXCEPTIONS;
+    [_bridge setNeedsScrollNotifications:[NSNumber numberWithBool:aFlag]];
+    END_BLOCK_OBJC_EXCEPTIONS;
+}
+
 void FrameMac::deferredContentChangeObserved()
 {
     BEGIN_BLOCK_OBJC_EXCEPTIONS;
@@ -2156,6 +2160,13 @@ void FrameMac::deferredContentChangeObserved()
     END_BLOCK_OBJC_EXCEPTIONS;
 }
 
+void FrameMac::clearObservedContentModifiers()
+{
+    if (WebThreadCountOfObservedContentModifiers() > 0) {
+        WebThreadClearObservedContentModifiers();
+        deferredContentChangeObserved();
+    }        
+}
 
 
 void FrameMac::setMarkedTextRange(const Range *range, NSArray *attributes, NSArray *ranges)
@@ -2339,5 +2350,9 @@ void FrameMac::notifySelectionLayoutChanged() const
     [_bridge caretChanged];
 }
 
+int FrameMac::orientation() const
+{
+    return [_bridge rotationDegrees];
+}
 
 }

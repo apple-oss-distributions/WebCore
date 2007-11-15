@@ -65,12 +65,12 @@ static void initializeLoggingChannelsIfNecessary()
     initializeLogChannel(LogIconDatabase);
 }
 
-- (id)init
+- (id)initWithChromeClient:(void *)aChromeClient
 {
     initializeLoggingChannelsIfNecessary();
     self = [super init];
     if (self)
-        _page = new Page(self);
+        _page = new Page(self, static_cast<ChromeClient *>(aChromeClient));
     return self;
 }
 

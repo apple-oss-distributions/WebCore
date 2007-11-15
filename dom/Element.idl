@@ -27,8 +27,8 @@ module core {
 
         [ConvertNullStringTo=Null] DOMString getAttribute(in DOMString name);
 
-        void setAttribute(in DOMString name,
-                          in DOMString value)
+        [Custom] void setAttribute(in DOMString name,
+                                   in DOMString value)
             raises(DOMException);
 
         void removeAttribute(in DOMString name)
@@ -36,7 +36,7 @@ module core {
 
         Attr getAttributeNode(in DOMString name);
 
-        Attr setAttributeNode(in Attr newAttr)
+        [Custom] Attr setAttributeNode(in Attr newAttr)
             raises(DOMException);
 
         Attr removeAttributeNode(in Attr oldAttr)
@@ -49,9 +49,9 @@ module core {
         DOMString getAttributeNS(in [ConvertNullToNullString] DOMString namespaceURI,
                                  in DOMString localName);
 
-        void setAttributeNS(in [ConvertNullToNullString] DOMString namespaceURI,
-                            in DOMString qualifiedName, 
-                            in DOMString value)
+        [Custom] void setAttributeNS(in [ConvertNullToNullString] DOMString namespaceURI,
+                                     in DOMString qualifiedName, 
+                                     in DOMString value)
             raises(DOMException);
 
         void removeAttributeNS(in [ConvertNullToNullString] DOMString namespaceURI,
@@ -64,7 +64,7 @@ module core {
         Attr getAttributeNodeNS(in [ConvertNullToNullString] DOMString namespaceURI,
                                 in DOMString localName);
 
-        Attr setAttributeNodeNS(in Attr newAttr)
+        [Custom] Attr setAttributeNodeNS(in Attr newAttr)
             raises(DOMException);
 
         boolean hasAttribute(in DOMString name);

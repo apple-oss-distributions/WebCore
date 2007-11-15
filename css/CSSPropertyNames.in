@@ -51,7 +51,7 @@ bottom
 -webkit-box-ordinal-group
 -webkit-box-orient
 -webkit-box-pack
-box-sizing
+-webkit-box-sizing
 caption-side
 clear
 clip
@@ -187,3 +187,4 @@ scrollbar-arrow-color
 -webkit-text-decorations-in-effect
 -webkit-rtl-ordering
 -webkit-image-loading-border
+-webkit-tap-highlight-color

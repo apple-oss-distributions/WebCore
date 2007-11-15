@@ -52,6 +52,7 @@ class WebCoreFrameBridge;
     WebCorePage *_page;
     BOOL _closed;
 }
+- (id)initWithChromeClient:(void *)aChromeClient;
 - (void)close;
 
 - (void)setMainFrame:(WebCoreFrameBridge *)mainFrame;

@@ -65,9 +65,6 @@
 #include "WKContentObservation.h"
 #include "WebCoreThread.h"
 
-const int WKMouseMoveWillCauseChangeTimeout = 200;
-
-
 using namespace WebCore;
 using namespace EventNames;
 
@@ -242,6 +239,7 @@ const ClassInfo Window::info = { "Window", 0, &WindowTable, 0 };
   screenY       Window::ScreenY         DontDelete|ReadOnly
   screenLeft    Window::ScreenLeft      DontDelete|ReadOnly
   screenTop     Window::ScreenTop       DontDelete|ReadOnly
+  orientation   Window::Orientation     DontDelete|ReadOnly
   scrollbars    Window::Scrollbars      DontDelete|ReadOnly
   statusbar     Window::Statusbar       DontDelete|ReadOnly
   toolbar       Window::Toolbar         DontDelete|ReadOnly
@@ -308,6 +306,7 @@ const ClassInfo Window::info = { "Window", 0, &WindowTable, 0 };
   onselect      Window::Onselect        DontDelete
   onsubmit      Window::Onsubmit        DontDelete
   onunload      Window::Onunload        DontDelete
+  onorientationchange      Window::OnOrientationChange        DontDelete
   onbeforeunload Window::Onbeforeunload DontDelete
   frameElement  Window::FrameElement    DontDelete|ReadOnly
   showModalDialog Window::ShowModalDialog    DontDelete|Function 1
@@ -723,13 +722,13 @@ JSValue *Window::getValueProperty(ExecState *exec, int token) const
             return jsUndefined(); 
       if (!m_frame->view())
         return jsUndefined();
-      return jsNumber(m_frame->view()->visibleHeight());
+      return jsNumber(m_frame->view()->actualVisibleHeight());
     case InnerWidth:
         if (!isSafeScript(exec)) 
             return jsUndefined();
       if (!m_frame->view())
         return jsUndefined();
-      return jsNumber(m_frame->view()->visibleWidth());
+      return jsNumber(m_frame->view()->actualVisibleWidth());
     case Length:
       return jsNumber(m_frame->tree()->childCount());
     case Location_:
@@ -781,14 +780,14 @@ JSValue *Window::getValueProperty(ExecState *exec, int token) const
       if (!m_frame->view())
         return jsUndefined();
       updateLayout();
-      return jsNumber(m_frame->view()->contentsX());
+      return jsNumber(m_frame->view()->actualContentsX());  
     case PageYOffset:
         if (!isSafeScript(exec)) 
             return jsUndefined();
       if (!m_frame->view())
         return jsUndefined();
       updateLayout();
-      return jsNumber(m_frame->view()->contentsY());
+      return jsNumber(m_frame->view()->actualContentsY());
     case Parent:
       return retrieve(m_frame->tree()->parent() ? m_frame->tree()->parent() : m_frame);
     case Personalbar:
@@ -805,6 +804,10 @@ JSValue *Window::getValueProperty(ExecState *exec, int token) const
         if (!isSafeScript(exec)) 
             return jsUndefined();
       return jsNumber(m_frame->page()->windowRect().y());
+    case Orientation:
+        if (!isSafeScript(exec)) 
+            return jsUndefined();
+      return jsNumber(m_frame->orientation());
     case ScrollX:
         if (!isSafeScript(exec)) 
             return jsUndefined();
@@ -929,6 +932,8 @@ JSValue *Window::getValueProperty(ExecState *exec, int token) const
      return getListener(exec, resetEvent);
    case Onresize:
      return getListener(exec,resizeEvent);
+   case OnOrientationChange:
+     return getListener(exec,orientationChangeEvent);
    case Onscroll:
      return getListener(exec,scrollEvent);
    case Onsearch:
@@ -1082,10 +1087,12 @@ void Window::put(ExecState* exec, const Identifier &propertyName, JSValue *value
   if (entry) {
     switch(entry->value) {
     case Status:
-      m_frame->setJSStatusBarText(value->toString(exec));
+      if (isSafeScript(exec))
+        m_frame->setJSStatusBarText(value->toString(exec));
       return;
     case DefaultStatus:
-      m_frame->setJSDefaultStatusBarText(value->toString(exec));
+      if (isSafeScript(exec))
+        m_frame->setJSDefaultStatusBarText(value->toString(exec));
       return;
     case Location_: {
       Frame* p = Window::retrieveActive(exec)->m_frame;
@@ -1182,6 +1189,10 @@ void Window::put(ExecState* exec, const Identifier &propertyName, JSValue *value
     case Onresize:
       if (isSafeScript(exec))
         setListener(exec,resizeEvent,value);
+      return;
+    case OnOrientationChange:
+      if (isSafeScript(exec))
+        setListener(exec,orientationChangeEvent,value);
       return;
     case Onscroll:
       if (isSafeScript(exec))
@@ -1285,68 +1296,59 @@ bool Window::isSafeScript(const ScriptInterpreter *origin, const ScriptInterpret
     }
     String message = String::sprintf("Unsafe JavaScript attempt to access frame with URL %s from frame with URL %s. Domains must match.\n", 
                   targetDocument->URL().latin1(), originDocument->URL().latin1());
-    targetPart->addMessageToConsole(message, 1, String()); //fixme: provide a real line number and sourceurl
+    if (Page* page = targetPart->page())
+        page->chrome()->addMessageToConsole(JSMessageSource, ErrorMessageLevel, message, 1, String()); // FIXME: provide a real line number and source URL.
 
     return false;
 }
 
 bool Window::isSafeScript(ExecState *exec) const
 {
-  if (!m_frame) // frame deleted ? can't grant access
+  if (!m_frame)
     return false;
   Frame *activePart = static_cast<ScriptInterpreter *>( exec->dynamicInterpreter() )->frame();
   if (!activePart)
     return false;
-  if ( activePart == m_frame ) // Not calling from another frame, no problem.
+  if ( activePart == m_frame )
     return true;
+
+  WebCore::Document* thisDocument = m_frame->document();
 
   // JS may be attempting to access the "window" object, which should be valid,
   // even if the document hasn't been constructed yet.  If the document doesn't
   // exist yet allow JS to access the window object.
-  if (!m_frame->document())
+  if (!thisDocument)
       return true;
 
-  WebCore::Document* thisDocument = m_frame->document();
   WebCore::Document* actDocument = activePart->document();
+  const KURL& actURL = actDocument->securityPolicyURL();
 
-  WebCore::String actDomain;
-
-  if (!actDocument)
-    actDomain = activePart->url().host();
-  else
-    actDomain = actDocument->domain();
-  
-  // FIXME: this really should be explicitly checking for the "file:" protocol instead
-  // Always allow local pages to execute any JS.
-  if (actDomain.isEmpty())
+  if (actURL.isLocalFile())
     return true;
-  
-  WebCore::String thisDomain = thisDocument->domain();
 
-  // if this document is being initially loaded as empty by its parent
-  // or opener, allow access from any document in the same domain as
-  // the parent or opener.
-  if (shouldLoadAsEmptyDocument(m_frame->url())) {
-    Frame *ancestorPart = m_frame->opener() ? m_frame->opener() : m_frame->tree()->parent();
-    while (ancestorPart && shouldLoadAsEmptyDocument(ancestorPart->url())) {
-      ancestorPart = ancestorPart->tree()->parent();
-    }
-    
-    if (ancestorPart)
-      thisDomain = ancestorPart->document()->domain();
+  const KURL& thisURL = thisDocument->securityPolicyURL();
+
+  // data: URL's are not allowed access to anything other than themselves.
+  if (equalIgnoringCase(thisURL.protocol(), "data") || equalIgnoringCase(actURL.protocol(), "data"))
+    return false;
+
+  if (thisDocument->domainWasSetInDOM() && actDocument->domainWasSetInDOM()) {
+    if (thisDocument->domain() == actDocument->domain())
+      return true;
   }
 
-  // FIXME: this should check that URL scheme and port match too, probably
-  if (actDomain == thisDomain)
+  if (equalIgnoringCase(actURL.host(), thisURL.host()) && equalIgnoringCase(actURL.protocol(), thisURL.protocol()) && actURL.port() == thisURL.port())
     return true;
 
   if (Interpreter::shouldPrintExceptions()) {
-      printf("Unsafe JavaScript attempt to access frame with URL %s from frame with URL %s. Domains must match.\n", 
-             thisDocument->URL().latin1(), actDocument->URL().latin1());
+      printf("Unsafe JavaScript attempt to access frame with URL %s from frame with URL %s. Domains, protocols and ports must match.\n", 
+             thisURL.url().latin1(), actURL.url().latin1());
   }
-  String message = String::sprintf("Unsafe JavaScript attempt to access frame with URL %s from frame with URL %s. Domains must match.\n", 
-                  thisDocument->URL().latin1(), actDocument->URL().latin1());
-  m_frame->addMessageToConsole(message, 1, String());
+  String message = String::sprintf("Unsafe JavaScript attempt to access frame with URL %s from frame with URL %s. Domains, protocols and ports must match.\n", 
+                                   thisURL.url().latin1(), actURL.url().latin1());
+
+  if (Page* page = m_frame->page())
+      page->chrome()->addMessageToConsole(JSMessageSource, ErrorMessageLevel, message, 1, String());
   
   return false;
 }
@@ -1705,7 +1707,7 @@ JSValue *WindowFunc::callAsFunction(ExecState *exec, JSObject *thisObj, const Li
           newFrame->write("<HTML><BODY>");
           newFrame->end();          
           if (oldDoc) {
-              newFrame->document()->setDomain(oldDoc->domain(), true);
+              newFrame->document()->setDomainInternal(oldDoc->domain());
               newFrame->document()->setBaseURL(oldDoc->baseURL());
           }
       }
@@ -1868,14 +1870,14 @@ JSValue *WindowFunc::callAsFunction(ExecState *exec, JSObject *thisObj, const Li
   case Window::AddEventListener:
         if (!window->isSafeScript(exec))
             return jsUndefined();
-        if (JSEventListener *listener = Window::retrieveActive(exec)->findOrCreateJSEventListener(args[1]))
+        if (JSEventListener* listener = window->findOrCreateJSEventListener(args[1]))
             if (Document *doc = frame->document())
                 doc->addWindowEventListener(AtomicString(args[0]->toString(exec)), listener, args[2]->toBoolean(exec));
         return jsUndefined();
   case Window::RemoveEventListener:
         if (!window->isSafeScript(exec))
             return jsUndefined();
-        if (JSEventListener *listener = Window::retrieveActive(exec)->findJSEventListener(args[1]))
+        if (JSEventListener* listener = window->findJSEventListener(args[1]))
             if (Document *doc = frame->document())
                 doc->removeWindowEventListener(AtomicString(args[0]->toString(exec)), listener, args[2]->toBoolean(exec));
         return jsUndefined();
@@ -1900,10 +1902,15 @@ void Window::updateLayout() const
 
 void ScheduledAction::execute(Window *window)
 {
-    if (!window->m_frame || !window->m_frame->jScript())
+    RefPtr<Frame> frame = window->m_frame;
+    if (!frame)
         return;
 
-    ScriptInterpreter *interpreter = window->m_frame->jScript()->interpreter();
+    KJSProxy* scriptProxy = frame->jScript();
+    if (!scriptProxy)
+        return;
+
+    RefPtr<ScriptInterpreter> interpreter = scriptProxy->interpreter();
 
     interpreter->setProcessingTimerCallback(true);
   
@@ -1922,16 +1929,19 @@ void ScheduledAction::execute(Window *window)
                 int lineNumber = exception->get(exec, "line")->toInt32(exec);
                 if (Interpreter::shouldPrintExceptions())
                     printf("(timer):%s\n", message.deprecatedString().utf8().data());
-                window->m_frame->addMessageToConsole(message, lineNumber, String());
+                if (Page* page = frame->page())
+                    page->chrome()->addMessageToConsole(JSMessageSource, ErrorMessageLevel, message, lineNumber, String());
             }
         }
     } else
-        window->m_frame->executeScript(0, m_code);
+        frame->executeScript(0, m_code);
   
     // Update our document's rendering following the execution of the timeout callback.
-    // FIXME: Why? Why not other documents, for example?
-    Document *doc = window->m_frame->document();
-    if (doc)
+    // FIXME: Why not use updateDocumentsRendering to update rendering of all documents?
+    // FIXME: Is this really the right point to do the update? We need a place that works
+    // for all possible entry points that might possibly execute script, but this seems
+    // to be a bit too low-level.
+    if (Document* doc = frame->document())
         doc->updateRendering();
   
     interpreter->setProcessingTimerCallback(false);
@@ -1945,6 +1955,9 @@ void Window::clearAllTimeouts()
     m_timeouts.clear();
     deleteAllValues(m_deferredTimeouts);
     m_deferredTimeouts.clear();
+    
+    if (m_frame)
+        m_frame->clearObservedContentModifiers();
 }
 
 int Window::installTimeout(ScheduledAction* a, int t, bool singleShot)
@@ -1960,8 +1973,6 @@ int Window::installTimeout(ScheduledAction* a, int t, bool singleShot)
             WKSetObservedContentChange(WKContentIndeterminateChange);
             WebThreadAddObservedContentModifier(timer); // Will only take affect if not already visibility change.
         }
-        else if (t <= WKMouseMoveWillCauseChangeTimeout)
-            WKSetObservedContentChange(WKContentVisibilityChange);
     }
     
     // Use a minimum interval of 10 ms to match other browsers.
@@ -2021,10 +2032,9 @@ PausedTimeouts* Window::pauseTimeouts()
     deleteAllValues(m_timeouts);
     m_timeouts.clear();
 
-    if (WebThreadCountOfObservedContentModifiers() > 0) {
-        WebThreadClearObservedContentModifiers();
-        m_frame->deferredContentChangeObserved();
-    }
+    ASSERT(m_frame);
+    if (m_frame)
+        m_frame->clearObservedContentModifiers();
     
     return result;
 }
@@ -2267,17 +2277,6 @@ JSValue *Location::getValueProperty(ExecState *exec, int token) const
 
 bool Location::getOwnPropertySlot(ExecState *exec, const Identifier& propertyName, PropertySlot& slot) 
 {
-  /*if (!m_frame)
-    return false;
-  
-  const Window* window = Window::retrieveWindow(m_frame);
-  if (!window || !window->isSafeScript(exec)) {
-      slot.setUndefined(this);
-      return true;
-  }
-
-  return getStaticPropertySlot<LocationFunc, Location, JSObject>(exec, &LocationTable, this, propertyName, slot);*/
-
     if (!m_frame)
         return false;
     
@@ -2299,58 +2298,69 @@ void Location::put(ExecState *exec, const Identifier &p, JSValue *v, int attr)
 
   DeprecatedString str = v->toString(exec);
   KURL url = m_frame->url();
-  const HashEntry *entry = Lookup::findEntry(&LocationTable, p);
-  if (entry)
-    switch (entry->value) {
-    case Href: {
-      Frame* p = Window::retrieveActive(exec)->frame();
-      if ( p )
-        url = p->document()->completeURL( str );
-      else
-        url = str;
-      break;
-    }
-    case Hash: {
-      if (str.startsWith("#"))
-        str = str.mid(1);
+  const Window* window = Window::retrieveWindow(m_frame);
+  bool sameDomainAccess = window && window->isSafeScript(exec);
 
-      if (url.ref() == str)
+  const HashEntry *entry = Lookup::findEntry(&LocationTable, p);
+
+  if (entry) {
+      // cross-domain access to the location is allowed when assigning the whole location,
+      // but not when assigning the individual pieces, since that might inadvertently
+      // disclose other parts of the original location.
+      if (entry->value != Href && !sameDomainAccess)
           return;
 
-      url.setRef(str);
-      break;
-    }
-    case Host: {
-      DeprecatedString host = str.left(str.find(":"));
-      DeprecatedString port = str.mid(str.find(":")+1);
-      url.setHost(host);
-      url.setPort(port.toUInt());
-      break;
-    }
-    case Hostname:
-      url.setHost(str);
-      break;
-    case Pathname:
-      url.setPath(str);
-      break;
-    case Port:
-      url.setPort(str.toUInt());
-      break;
-    case Protocol:
-      url.setProtocol(str);
-      break;
-    case Search:
-      url.setQuery(str);
-      break;
-    }
-  else {
-    JSObject::put(exec, p, v, attr);
-    return;
+     switch (entry->value) {
+     case Href: {
+         Frame* frame = Window::retrieveActive(exec)->impl()->frame();
+         if (frame)
+             url = frame->completeURL(str).url();
+         else
+             url = str;
+         break;
+     } 
+     case Hash: {
+         if (str.startsWith("#"))
+             str = str.mid(1);
+         
+         if (url.ref() == str)
+             return;
+
+         url.setRef(str);
+         break;
+     }
+     case Host: {
+         url.setHostAndPort(str);
+         break;
+     }
+     case Hostname:
+         url.setHost(str);
+         break;
+     case Pathname:
+         url.setPath(str);
+         break;
+     case Port:
+         url.setPort(str.toUInt());
+         break;
+     case Protocol:
+         url.setProtocol(str);
+         break;
+     case Search:
+         url.setQuery(str);
+         break;
+     default:
+         // Disallow changing other properties in LocationTable. e.g., "window.location.toString = ...".
+         // <http://bugs.webkit.org/show_bug.cgi?id=12720>
+         return;
+     }
+  } else {
+     if (sameDomainAccess)
+         JSObject::put(exec, p, v, attr);
+     return;
   }
 
-  const Window* window = Window::retrieveWindow(m_frame);
   Frame* activePart = Window::retrieveActive(exec)->frame();
-  if (!url.url().startsWith("javascript:", false) || (window && window->isSafeScript(exec))) {
+  if (!url.url().startsWith("javascript:", false) || sameDomainAccess) {
     bool userGesture = static_cast<ScriptInterpreter *>(exec->dynamicInterpreter())->wasRunByUserGesture();
     // We want a new history item if this JS was called via a user gesture
     m_frame->scheduleLocationChange(url.url(), activePart->referrer(), !userGesture, userGesture);

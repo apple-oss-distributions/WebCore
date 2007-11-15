@@ -35,6 +35,13 @@ class FormDataList;
 class HTMLFormElement;
 class RenderFormElement;
 
+typedef enum
+{
+    HTMLTextEntryAssistanceUnspecified,
+    HTMLTextEntryAssistanceOn,
+    HTMLTextEntryAssistanceOff
+}   HTMLTextEntryAssistance;
+
 class HTMLGenericFormElement : public HTMLElement
 {
     friend class HTMLFormElement;
@@ -105,6 +112,9 @@ public:
     
     virtual void dispatchFocusEvent();
     virtual void dispatchBlurEvent();
+    
+    virtual HTMLTextEntryAssistance autocorrect();
+    virtual HTMLTextEntryAssistance autocapitalize();
 
 protected:
     HTMLFormElement* getForm() const;
@@ -114,6 +124,8 @@ private:
     bool m_disabled;
     bool m_readOnly;
     mutable bool m_valueMatchesRenderer;
+    HTMLTextEntryAssistance m_autocorrect;
+    HTMLTextEntryAssistance m_autocapitalize;
 
 };
 

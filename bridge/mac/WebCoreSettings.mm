@@ -240,8 +240,12 @@ using namespace WebCore;
 
 - (void)setJavaScriptEnabled:(BOOL)enabled
 {
+    if (JavaScriptEnabled == enabled)
+        return;
+    
     JavaScriptEnabled = enabled;
     settings->setIsJavaScriptEnabled(enabled);
+    [self _updateAllViews];
 }
 
 - (BOOL)JavaScriptEnabled

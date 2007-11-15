@@ -101,7 +101,7 @@ namespace KJS {
     virtual void *createLanguageInstanceForValue (ExecState *exec, int language, JSObject *value, const Bindings::RootObject *origin, const Bindings::RootObject *current);
     void *createObjcInstanceForValue (ExecState *exec, JSObject *value, const Bindings::RootObject *origin, const Bindings::RootObject *current);
 
-    bool checkTimeout();
+    bool shouldStopExecution();
     virtual bool shouldInterruptScript() const;
 
   protected:

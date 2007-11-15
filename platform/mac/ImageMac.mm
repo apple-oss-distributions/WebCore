@@ -43,6 +43,9 @@ void FrameData::clear()
     if (m_frame) {
         CGImageRelease(m_frame);
         m_frame = 0;
+		m_bytes = 0;
+		m_scale = 0.0;
+		m_haveInfo = false;
         m_duration = 0.;
         m_hasAlpha = true;
     }
@@ -103,11 +106,11 @@ void Image::checkForSolidColor()
     if (frameCount() > 1)
         m_isSolidColor = false;
     else {
-        CGImageRef image = frameAtIndex(0);
+        CGImageRef image;
         
         // Currently we only check for solid color in the important special case of a 1x1 image.
-        if (image && CGImageGetWidth(image) == 1 && CGImageGetHeight(image) == 1) {
-            unsigned char pixel[4]; // RGBA
+        if ((m_source.size() == IntSize(1, 1)) && (image = frameAtIndex(0))) {
+            unsigned char pixel[4] = {0, 0, 0, 0}; // RGBA
             CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
             CGContextRef bmap = CGBitmapContextCreate(&pixel, 1, 1, 8, sizeof(pixel), space, kCGImageAlphaPremultipliedLast);
             if (bmap) {
@@ -169,8 +172,11 @@ void Image::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRec
     
     CGRect fr = ctxt->roundToDevicePixels(srcRect);
     CGRect ir = ctxt->roundToDevicePixels(dstRect);
+	CGRect dr = CGRectApplyAffineTransform(ir, CGContextGetCTM(ctxt->platformContext()));
 
-    CGImageRef image = frameAtIndex(m_currentFrame);
+    CGImageRef image = frameAtIndex(m_currentFrame, std::min(1.0f, std::max(dr.size.width  / fr.size.width,
+                                                                            dr.size.height / fr.size.height)));
+
     if (!image) // If it's too early we won't have an image yet.
         return;
 
@@ -187,8 +193,8 @@ void Image::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRec
 
     // Get the height (in adjusted, i.e. scaled, coords) of the portion of the image
     // that is currently decoded.  This could be less that the actual height.
-    CGSize selfSize = size();                          // full image size, in pixels
-    float curHeight = CGImageGetHeight(image);         // height of loaded portion, in pixels
+    CGSize selfSize = size();                                                            // full image size, in pixels
+    float curHeight = CGImageGetHeight(image) * selfSize.width / CGImageGetWidth(image); // height of loaded portion, in pixels
     
     CGSize adjustedSize = selfSize;
     if (curHeight < selfSize.height) {

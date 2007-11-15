@@ -267,9 +267,15 @@ sub GenerateHeader
     
     # Constructor object getter
     if ($dataNode->extendedAttributes->{"GenerateConstructor"}) {
-        push(@headerContent, "    static KJS::JSValue* getConstructor(KJS::ExecState*);\n")
+        push(@headerContent, "    static KJS::JSValue* getConstructor(KJS::ExecState*);\n");
     }
     
+    # Make object undetectable
+    if ($dataNode->extendedAttributes->{"Undetectable"}) {
+        push(@headerContent, "    virtual bool toBoolean(KJS::ExecState*) const { return false; }\n");
+        push(@headerContent, "    virtual bool masqueradeAsUndefined() const { return true; }\n");
+    }
+
     my $numCustomFunctions = 0;
     my $numCustomAttributes = 0;
     
@@ -286,6 +292,8 @@ sub GenerateHeader
             my $attribute = $_;
             
             $numCustomAttributes++ if $attribute->signature->extendedAttributes->{"Custom"};
+            $numCustomAttributes++ if $attribute->signature->extendedAttributes->{"CustomGetter"};
+            $numCustomAttributes++ if $attribute->signature->extendedAttributes->{"CustomSetter"};
             
             $i++;
             if((($i % 4) eq 0) and ($i ne 0)) {
@@ -338,6 +346,12 @@ sub GenerateHeader
                 push(@headerContent, "    KJS::JSValue* " . $attribute->signature->name . "(KJS::ExecState*) const;\n");
                 if ($attribute->type !~ /^readonly/) {
                     push(@headerContent, "    void set" . ucfirst($attribute->signature->name) . "(KJS::ExecState*, KJS::JSValue*);\n");        
+                }
+            } elsif ($attribute->signature->extendedAttributes->{"CustomGetter"}) {
+                push(@headerContent, "    KJS::JSValue* " . $attribute->signature->name . "(KJS::ExecState*) const;\n");
+            } elsif ($attribute->signature->extendedAttributes->{"CustomSetter"}) {
+                if ($attribute->type !~ /^readonly/) {
+                    push(@headerContent, "    void set" . ucfirst($attribute->signature->name) . "(KJS::ExecState*, KJS::JSValue*);\n");
                 }
             }
         }
@@ -701,12 +715,14 @@ sub GenerateImplementation
   
     push(@implContent, "JSValue* ${className}::getValueProperty(ExecState* exec, int token) const\n{\n");
     push(@implContent, "    $implClassName* imp = static_cast<$implClassName*>(impl());\n\n");
+    my $impArrayIndex = $#implContent;
+    my $impNeedsDeclaration = 0;
     push(@implContent, "    switch (token) {\n");
 
     foreach my $attribute (@{$dataNode->attributes}) {
       my $name = $attribute->signature->name;
         
-      if ($attribute->signature->extendedAttributes->{"Custom"}) {
+      if ($attribute->signature->extendedAttributes->{"Custom"} || $attribute->signature->extendedAttributes->{"CustomGetter"}) {
         push(@implContent, "    case " . ucfirst($name) . "AttrNum:\n");
           if ($dataNode->extendedAttributes->{"CheckDomainSecurity"} && !$attribute->signature->extendedAttributes->{"DoNotCheckDomainSecurity"}) { 
               push(@implContent, "        if (!isSafeScript(exec))\n"); 
@@ -729,6 +745,7 @@ sub GenerateImplementation
               push(@implContent, "        if (!isSafeScript(exec))\n"); 
               push(@implContent, "            return jsUndefined();\n"); 
           } 
+          $impNeedsDeclaration++;
           push(@implContent, "        return " . NativeToJSValue($attribute->signature, "imp->$name()") . ";\n");
       } else {
           push(@implContent, "    case " . ucfirst($name) . "AttrNum: {\n");
@@ -736,6 +753,7 @@ sub GenerateImplementation
               push(@implContent, "        if (!isSafeScript(exec))\n"); 
               push(@implContent, "            return jsUndefined();\n"); 
           } 
+          $impNeedsDeclaration++;
         push(@implContent, "        ExceptionCode ec = 0;\n");
         push(@implContent, "        KJS::JSValue* result = " . NativeToJSValue($attribute->signature, "imp->$name(ec)") . ";\n");
         push(@implContent, "        setDOMException(exec, ec);\n");
@@ -743,6 +761,8 @@ sub GenerateImplementation
         push(@implContent, "    }\n");
       }
     }
+
+    $implContent[$impArrayIndex] = "" unless $impNeedsDeclaration;
 
     push(@implContent, "    }\n    return 0;\n}\n\n");
     
@@ -767,13 +787,15 @@ sub GenerateImplementation
       push(@implContent, "void ${className}::putValueProperty(ExecState* exec, int token, JSValue* value, int /*attr*/)\n");
       push(@implContent, "{\n");
       push(@implContent, "    $implClassName* imp = static_cast<$implClassName*>(impl());\n\n");
+      my $impArrayIndex = $#implContent;
+      my $impNeedsDeclaration = 0;
       push(@implContent, "    switch (token) {\n");
 
       foreach my $attribute (@{$dataNode->attributes}) {
         if ($attribute->type !~ /^readonly/) {
           my $name = $attribute->signature->name;
  
-          if ($attribute->signature->extendedAttributes->{"Custom"}) {
+          if ($attribute->signature->extendedAttributes->{"Custom"} || $attribute->signature->extendedAttributes->{"CustomSetter"}) {
               push(@implContent, "    case " . ucfirst($name) . "AttrNum: {\n");
               push(@implContent, "        set" . ucfirst($name) . "(exec, value);\n");
           } elsif ($attribute->signature->type =~ /Constructor$/) {
@@ -787,8 +809,16 @@ sub GenerateImplementation
               # FIXME: We need to provide scalable hooks/attributes for this kind of extension
               push(@implContent, "        if (isSafeScript(exec))\n");
               push(@implContent, "            JSObject::put(exec, \"$name\", value);\n");
+          } elsif ($attribute->signature->extendedAttributes->{"Replaceable"}) {
+              push(@implContent, "    case " . ucfirst($name) . "AttrNum: {\n");
+              push(@implContent, "        // Shadowing a built-in object\n");
+
+              # FIXME: We need to provide scalable hooks/attributes for this kind of extension
+              push(@implContent, "        if (isSafeScript(exec))\n");
+              push(@implContent, "            JSObject::put(exec, \"$name\", value);\n");
           } else {
               push(@implContent, "    case " . ucfirst($name) ."AttrNum: {\n");
+              $impNeedsDeclaration++;
               push(@implContent, "        ExceptionCode ec = 0;\n") if @{$attribute->setterExceptions};
               push(@implContent, "        imp->set" . ucfirst($name) . "(" . JSValueToNative($attribute->signature, "value"));
               push(@implContent, ", ec") if @{$attribute->setterExceptions};
@@ -801,10 +831,8 @@ sub GenerateImplementation
       }
       push(@implContent, "    }\n"); # end switch
         
-      if ($interfaceName eq "DOMWindow") {
-          push(@implContent, "    // FIXME: Hack to prevent unused variable warning -- remove once DOMWindow includes a settable property\n");
-          push(@implContent, "    (void)imp;\n");
-      }
+      $implContent[$impArrayIndex] = "" unless $impNeedsDeclaration;
+
       push(@implContent, "}\n\n"); # end function
     }
   }

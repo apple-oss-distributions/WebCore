@@ -41,6 +41,10 @@ namespace WebCore {
         int contentsHeight() const;
         int contentsX() const;
         int contentsY() const;
+        int actualVisibleWidth() const;
+        int actualVisibleHeight() const;
+        int actualContentsX() const;
+        int actualContentsY() const;
         IntSize scrollOffset() const;
         void scrollBy(int dx, int dy);
         virtual void scrollPointRecursively(int dx, int dy);

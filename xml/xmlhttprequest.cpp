@@ -449,6 +449,8 @@ void XMLHttpRequest::setRequestHeader(const String& name, const String& value, E
     }
        
     if (!canSetRequestHeader(name)) {
+        if (m_doc && m_doc->frame() && m_doc->frame()->page())
+            m_doc->frame()->page()->chrome()->addMessageToConsole(JSMessageSource, ErrorMessageLevel, "Refused to set unsafe header " + name, 1, String());
         return;
     }
     

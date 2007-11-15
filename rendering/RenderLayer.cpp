@@ -1297,7 +1297,6 @@ RenderLayer::paintLayer(RenderLayer* rootLayer, GraphicsContext* p,
         // z-index.  We paint after we painted the background/border, so that the scrollbars will
         // sit above the background/border.
         paintScrollbars(p, damageRect);
-        paintResizeControl(p);
         // Restore the clip.
         restoreClip(p, paintDirtyRect, damageRect);
     }

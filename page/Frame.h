@@ -441,9 +441,11 @@ public:
   virtual void textWillBeDeletedInTextField(Element* input);
   virtual void textDidChangeInTextArea(Element*);
   
+  virtual void formElementDidSetValue(Element *);
   virtual void formElementDidFocus(Element*);
   virtual void formElementDidBlur(Element*);
   virtual void didReceiveViewportArguments(ViewportArguments);
+  virtual void setNeedsScrollNotifications(bool);
 
   virtual bool inputManagerHasMarkedText() const { return false; }
   
@@ -544,6 +546,7 @@ public:
 #endif
   
   virtual void deferredContentChangeObserved() = 0;
+  virtual void clearObservedContentModifiers() = 0;
   
   /**
    * returns a KURL object for the given url. Use when
@@ -572,7 +575,6 @@ public:
   virtual KJS::Bindings::Instance* getObjectInstanceForWidget(Widget*) = 0;
   virtual void markMisspellingsInAdjacentWords(const VisiblePosition&) = 0;
   virtual void markMisspellings(const SelectionController&) = 0;
-  virtual void addMessageToConsole(const String& message,  unsigned int lineNumber, const String& sourceID) = 0;
   virtual void runJavaScriptAlert(const String& message) = 0;
   virtual bool runJavaScriptConfirm(const String& message) = 0;
   virtual bool runJavaScriptPrompt(const String& message, const String& defaultValue, String& result) = 0;  
@@ -614,9 +616,7 @@ public:
   virtual String overrideMediaType() const = 0;
   virtual void redirectDataToPlugin(Widget* pluginWidget) { }
   
-#if PRE_MERGE
   void selectionLayoutChanged();
-#endif
   
 protected:
   virtual Plugin* createPlugin(Element* node, const KURL& url, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType) = 0;
@@ -653,9 +653,6 @@ private:
 
   void clearCaretRectIfNeeded();
   void setFocusNodeIfNeeded();
-#if !PRE_MERGE
-  void selectionLayoutChanged();
-#endif
   void caretBlinkTimerFired(Timer<Frame>*);
 
   void overflowAutoScrollTimerFired(Timer<Frame>*);
@@ -762,6 +759,8 @@ private:
   void forceLayoutWithPageWidthRange(float minPageWidth, float maxPageWidth);
 
   void sendResizeEvent();
+  void sendOrientationChangeEvent();
+  virtual int orientation() const { return 0; }
   void sendScrollEvent();
   bool scrollbarsVisible();
   void scrollToAnchor(const KURL&);

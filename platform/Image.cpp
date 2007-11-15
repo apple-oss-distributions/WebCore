@@ -87,13 +87,10 @@ void Image::destroyDecodedData(bool incremental)
     // Destroy the cached images and release them.
     if (m_frames.size()) {
         int sizeChange = 0;
-        int frameSize = m_size.width() * m_size.height() * 4;
         for (unsigned i = incremental ? m_frames.size() - 1 : 0; i < m_frames.size(); i++) {
             if (m_frames[i].m_frame) {
-                sizeChange -= frameSize;
+                sizeChange -= m_frames[i].m_bytes;
                 m_frames[i].clear();
-                if (!incremental)
-                    m_source.destroyFrameAtIndex(i);
             }
         }
         
@@ -119,7 +116,7 @@ void Image::destroyDecodedData(bool incremental)
     }
 }
 
-void Image::cacheFrame(size_t index)
+void Image::cacheFrame(size_t index, float scaleHint)
 {
     size_t numFrames = frameCount();
     ASSERT(m_decodedSize == 0 || numFrames > 1);
@@ -134,14 +131,13 @@ void Image::cacheFrame(size_t index)
     if (m_frames.size() < numFrames)
         m_frames.resize(numFrames);
 
-    m_frames[index].m_frame = m_source.createFrameAtIndex(index);
+    m_frames[index].m_frame = m_source.createFrameAtIndex(index, scaleHint, &m_frames[index].m_scale, &m_frames[index].m_bytes);
     if (numFrames == 1 && m_frames[index].m_frame)
         checkForSolidColor();
 
-    if (shouldAnimate())
-        m_frames[index].m_duration = m_source.frameDurationAtIndex(index);
-    m_frames[index].m_hasAlpha = m_source.frameHasAlphaAtIndex(index);
-    int sizeChange = m_frames[index].m_frame ? m_size.width() * m_size.height() * 4 : 0;
+	if (!m_frames[index].m_haveInfo)
+		cacheFrameInfo(index);
+    int sizeChange = m_frames[index].m_bytes;
 
     if (sizeChange) {
         if (imageObserver())
@@ -150,6 +146,20 @@ void Image::cacheFrame(size_t index)
         if (imageObserver())
             imageObserver()->decodedSizeChanged(this, sizeChange);
     }
+}
+
+void Image::cacheFrameInfo(size_t index)
+{
+    size_t numFrames = frameCount();
+    ASSERT(!m_frames[index].m_haveInfo);
+
+    if (m_frames.size() < numFrames)
+        m_frames.resize(numFrames);
+
+    if (shouldAnimate())
+        m_frames[index].m_duration = m_source.frameDurationAtIndex(index);
+    m_frames[index].m_hasAlpha = m_source.frameHasAlphaAtIndex(index);
+	m_frames[index].m_haveInfo = true;
 }
 
 bool Image::isNull() const
@@ -243,11 +253,29 @@ bool Image::isSizeAvailable()
 
 NativeImagePtr Image::frameAtIndex(size_t index)
 {
+	return frameAtIndex(index, 1.0f);
+}
+
+NativeImagePtr Image::frameAtIndex(size_t index, float scaleHint)
+{
     if (index >= frameCount())
         return 0;
 
     if (index >= m_frames.size() || !m_frames[index].m_frame)
-        cacheFrame(index);
+        cacheFrame(index, scaleHint);
+	else if (std::min(1.0f, scaleHint) > m_frames[index].m_scale) {
+		// If the image is already cached, but at too small a size, re-decode a larger version.
+        int sizeChange = -m_frames[index].m_bytes;
+        m_frames[index].clear();
+        invalidateNativeData();
+		if (imageObserver())
+			imageObserver()->decodedSizeChanging(this, sizeChange);
+		m_decodedSize += sizeChange;
+		if (imageObserver())
+			imageObserver()->decodedSizeChanged(this, sizeChange);
+		
+        cacheFrame(index, scaleHint);
+	}
 
     return m_frames[index].m_frame;
 }
@@ -257,8 +285,8 @@ float Image::frameDurationAtIndex(size_t index)
     if (index >= frameCount())
         return 0;
 
-    if (index >= m_frames.size() || !m_frames[index].m_frame)
-        cacheFrame(index);
+    if (index >= m_frames.size() || !m_frames[index].m_haveInfo)
+        cacheFrameInfo(index);
 
     return m_frames[index].m_duration;
 }
@@ -268,8 +296,8 @@ bool Image::frameHasAlphaAtIndex(size_t index)
     if (index >= frameCount())
         return 0;
 
-    if (index >= m_frames.size() || !m_frames[index].m_frame)
-        cacheFrame(index);
+    if (index >= m_frames.size() || !m_frames[index].m_haveInfo)
+        cacheFrameInfo(index);
 
     return m_frames[index].m_hasAlpha;
 }

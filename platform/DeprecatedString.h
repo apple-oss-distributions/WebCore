@@ -367,7 +367,7 @@ public:
     
     void fill(DeprecatedChar, int len=-1);
     void truncate(unsigned);
-
+    void resize(unsigned);
     void reserve(unsigned);
 
     bool operator!() const;
@@ -405,6 +405,7 @@ private:
 
     friend bool operator==(const DeprecatedString &, const DeprecatedString &);
     friend bool operator==(const DeprecatedString &, const char *);
+    friend bool equalIgnoringCase(const DeprecatedString&, const DeprecatedString&);
 
     friend class DeprecatedConstString;
     friend class QGDict;
@@ -418,6 +419,10 @@ DeprecatedString operator+(const DeprecatedString &, char);
 DeprecatedString operator+(const char *, const DeprecatedString &);
 DeprecatedString operator+(DeprecatedChar, const DeprecatedString &);
 DeprecatedString operator+(char, const DeprecatedString &);
+
+bool equalIgnoringCase(const DeprecatedString&, const DeprecatedString&);
+inline bool equalIgnoringCase(const DeprecatedString& a, const char* b) { return equalIgnoringCase(a, DeprecatedString(b)); }
+inline bool equalIgnoringCase(const char* a, const DeprecatedString& b) { return equalIgnoringCase(DeprecatedString(a), b); }
 
 inline char *DeprecatedStringData::ascii()
 {

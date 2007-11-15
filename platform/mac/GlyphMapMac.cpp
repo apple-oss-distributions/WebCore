@@ -36,9 +36,17 @@ namespace WebCore
 
 bool GlyphMap::fillPage(GlyphPage* page, UChar* buffer, unsigned bufferLength, const FontData* fontData)
 {
-    CGGlyph glyphs[cGlyphPageSize];
-    GSFontGetGlyphsForUnichars(fontData->platformData().font, buffer, glyphs, cGlyphPageSize);
+    CGGlyph glyphs[cGlyphPageSize * 2];
+        
+    // We pass in either 256 or 512  UTF-16 characters
+    // 256 for U+FFFF and less
+    // 512 (double character surrogates) for U+1000 and above
+    // It is indeed possible to get back 512 glyphs back from the API, so the glyph buffer we pass in must be 512
+    // If we get back more than 256 glyphs though we'll ignore all the ones after 256, this should not happen 
+    // as the only time we pass in 512 characters is when they are surrogates.
+    GSFontGetGlyphsForUnichars(fontData->platformData().font, buffer, glyphs, bufferLength);
 	
+    // Loop through at most 256 glyphs
     for (unsigned i= 0; i < cGlyphPageSize; i++)
         page->setGlyphDataForIndex(i, glyphs[i], fontData);
 

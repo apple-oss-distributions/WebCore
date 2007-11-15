@@ -21,9 +21,11 @@
 #ifndef PAGE_H
 #define PAGE_H
 
+#include "Chrome.h"
 #include "PlatformString.h"
 #include "SelectionController.h"
 #include <wtf/HashSet.h>
+#include <wtf/OwnPtr.h>
 
 #include "Document.h"
 
@@ -37,6 +39,8 @@ class WebCorePageBridge;
 
 namespace WebCore {
 
+    class Chrome;
+    class ChromeClient;
     class Frame;
     class FrameNamespace;
     class FloatRect;
@@ -62,6 +66,8 @@ namespace WebCore {
         void decrementFrameCount() { --m_frameCount; }
         int frameCount() const { return m_frameCount; }
         
+        Chrome* chrome() const { return m_chrome.get(); }
+        
         Widget* widget() const;
 
         static void setNeedsReapplyStyles();
@@ -72,7 +78,7 @@ namespace WebCore {
         SelectionController& dragCaret() const; // FIXME: Change to pointer?
 
 #if PLATFORM(MAC)
-        Page(WebCorePageBridge*);
+        Page(WebCorePageBridge*, ChromeClient*);
         WebCorePageBridge* bridge() const { return m_bridge; }
 #endif
 
@@ -81,6 +87,7 @@ namespace WebCore {
 #endif
 
     private:
+        OwnPtr<Chrome> m_chrome;
         void init();
 
         RefPtr<Frame> m_mainFrame;

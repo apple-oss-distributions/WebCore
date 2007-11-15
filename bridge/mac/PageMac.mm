@@ -30,8 +30,9 @@
 
 namespace WebCore {
 
-Page::Page(WebCorePageBridge* bridge)
-: m_frameCount(0)
+Page::Page(WebCorePageBridge* bridge, ChromeClient* chromeClient)
+: m_chrome(new Chrome(this, chromeClient))
+, m_frameCount(0)
 , m_widget(0)
 , m_bridge(bridge)
 

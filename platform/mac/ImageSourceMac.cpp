@@ -33,7 +33,7 @@
 namespace WebCore {
 
 ImageSource::ImageSource()
-    : m_decoder(0), m_isSubsampled(false)
+    : m_decoder(0), m_isProgressive(false), m_baseSubsampling(0)
 {
 }
 
@@ -52,32 +52,25 @@ void ImageSource::clear()
 
 const CFStringRef kCGImageSourceShouldPreferRGB32 = CFSTR("kCGImageSourceShouldPreferRGB32");
 
-CFDictionaryRef ImageSource::imageSourceOptions() const
-{
-    static CFDictionaryRef options;
-    
-    if (!options) {
-        const void *keys[2] = { kCGImageSourceShouldCache, kCGImageSourceShouldPreferRGB32 };
-        const void *values[2] = { kCFBooleanTrue, kCFBooleanTrue };
-        options = CFDictionaryCreate(NULL, keys, values, 2, 
-            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-    }
 
-    if (m_isSubsampled) {
-        static CFDictionaryRef subsampledOptions;
-        if (!subsampledOptions) {
-            const void *keys[3] = { kCGImageSourceShouldCache, kCGImageSourceShouldPreferRGB32, kCGImageSourceSubsampleFactor };
-            static int subsampleFactor = 4;
-            static CFNumberRef subsampleFactorNum = CFNumberCreate(NULL,  kCFNumberIntType,  &subsampleFactor);
-            const void *values[3] = { kCFBooleanTrue, kCFBooleanTrue, subsampleFactorNum };
-            subsampledOptions = CFDictionaryCreate(NULL, keys, values, 3, 
-                                                   &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-        }
-        return subsampledOptions;        
-    }
+CFDictionaryRef ImageSource::imageSourceOptions(int requestedSubsampling) const
+{
+    static CFDictionaryRef options[4] = {NULL, NULL, NULL, NULL};
+	int subsampling = std::min(3, m_isProgressive ? 0 : (requestedSubsampling + m_baseSubsampling));
     
-    return options;
+    if (!options[subsampling]) {
+		int subsampleInt = 1 << subsampling;  // [0..3] => [1, 2, 4, 8]
+		CFNumberRef subsampleNumber = CFNumberCreate(NULL,  kCFNumberIntType,  &subsampleInt);
+        const void *keys[3] = { kCGImageSourceShouldCache, kCGImageSourceShouldPreferRGB32, kCGImageSourceSubsampleFactor };
+        const void *values[3] = { kCFBooleanTrue, kCFBooleanTrue, subsampleNumber };
+        options[subsampling] = CFDictionaryCreate(NULL, keys, values, 3,
+            &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+		CFRelease(subsampleNumber);
+    }
+	
+	return options[subsampling];
 }
+
 
 bool ImageSource::initialized() const
 {
@@ -113,7 +106,6 @@ bool ImageSource::isSizeAvailable()
 IntSize ImageSource::size() const
 {
     IntSize result;
-    bool isProgressive = false;
     CFDictionaryRef properties = CGImageSourceCopyPropertiesAtIndex(m_decoder, 0, imageSourceOptions());
     if (properties) {
         int w = 0, h = 0;
@@ -124,31 +116,37 @@ IntSize ImageSource::size() const
         if (num)
             CFNumberGetValue(num, kCFNumberIntType, &h);
         result = IntSize(w, h);            
-        CFDictionaryRef jfifProperties = (CFDictionaryRef)CFDictionaryGetValue(properties, kCGImagePropertyJFIFDictionary);
-        if (jfifProperties) {
-            CFBooleanRef isProgCFBool = (CFBooleanRef)CFDictionaryGetValue(jfifProperties, kCGImagePropertyJFIFIsProgressive);
-            if (isProgCFBool)
-                isProgressive = CFBooleanGetValue(isProgCFBool);
-            // 5184655: Hang rendering very large progressive JPEG
-            // Decoding progressive images hangs for a very long time right now
-            // Until this is fixed, don't sub-sample progressive images
-            // This will cause them to fail our large image check and they won't be decoded.
-            // FIXME: remove once underlying issue is fixed (5191418)
-        }
-        CFRelease(properties);
-    }
-    if (!m_isSubsampled && !isProgressive) {
-        if (result.width() * result.height() >  2000000) {
-            // Image is very large and should be sub-sampled.
-            // Set the flag and ask for the size again. If the image can be subsampled, the size will be
-            // greatly reduced. 4x sub-sampling will make us support up to 32MP images, which should be plenty.
-            // There's no callback from ImageIO when the size is available, so we do the check when we happen
-            // to check the size and its non - zero.
-            // Note: some clients of this class don't call isSizeAvailable() so we can't rely on that.
-            m_isSubsampled = true;
-            result = size();
-        }
-    }    
+
+		if (!m_isProgressive)
+		{
+			CFDictionaryRef jfifProperties = (CFDictionaryRef)CFDictionaryGetValue(properties, kCGImagePropertyJFIFDictionary);
+			if (jfifProperties) {
+				CFBooleanRef isProgCFBool = (CFBooleanRef)CFDictionaryGetValue(jfifProperties, kCGImagePropertyJFIFIsProgressive);
+				if (isProgCFBool)
+					m_isProgressive = CFBooleanGetValue(isProgCFBool);
+				// 5184655: Hang rendering very large progressive JPEG
+				// Decoding progressive images hangs for a very long time right now
+				// Until this is fixed, don't sub-sample progressive images
+				// This will cause them to fail our large image check and they won't be decoded.
+				// FIXME: remove once underlying issue is fixed (5191418)
+			}
+		}
+		
+		if ((m_baseSubsampling == 0) && !m_isProgressive) {
+			while ((m_baseSubsampling < 3) && (result.width() * result.height() > 2000000)) {
+				// Image is very large and should be sub-sampled.
+				// Increase the base subsampling and ask for the size again. If the image can be subsampled, the size will be
+				// greatly reduced. 4x sub-sampling will make us support up to 32MP images, which should be plenty.
+				// There's no callback from ImageIO when the size is available, so we do the check when we happen
+				// to check the size and its non - zero.
+				// Note: some clients of this class don't call isSizeAvailable() so we can't rely on that.
+				m_baseSubsampling++;
+				result = size();
+			}
+		}    
+
+		CFRelease(properties);
+	}
     return result;
 }
 
@@ -178,19 +176,17 @@ size_t ImageSource::frameCount() const
     return m_decoder ? CGImageSourceGetCount(m_decoder) : 0;
 }
 
-CGImageRef ImageSource::createFrameAtIndex(size_t index)
+
+CGImageRef ImageSource::createFrameAtIndex(size_t index, float scaleHint, float* actualScaleOut, ssize_t* bytesOut)
 {
-    return CGImageSourceCreateImageAtIndex(m_decoder, index, imageSourceOptions());
+	// subsampling can be 0, 1, 2 or 3, which means full-, quarter-, sixteenth- and sixty-fourth-size, respectively.
+	int subsampling = (int)log2f(1.0f / std::max(0.1f, std::min(1.0f, scaleHint)));
+    CGImageRef image = CGImageSourceCreateImageAtIndex(m_decoder, index, imageSourceOptions(subsampling));
+	*actualScaleOut = float(CGImageGetWidth(image)) / float(size().width()); // height could be anything while downloading
+	*bytesOut = CGImageGetBytesPerRow(image) * CGImageGetHeight(image);
+	return image;
 }
 
-void ImageSource::destroyFrameAtIndex(size_t index) 
-{ 
-    // FIXME: Image I/O has no API for flushing frames from its internal cache.  The best we can do is tell it to create 
-    // a new image with NULL options.  This will cause the cache/no-cache flags to mismatch, and it will then drop 
-    // its reference to the old decoded image. 
-    CGImageRef image = CGImageSourceCreateImageAtIndex(m_decoder, index, NULL); 
-    CGImageRelease(image); 
-} 
 
 bool ImageSource::frameIsCompleteAtIndex(size_t index) 
 { 
@@ -221,9 +217,13 @@ float ImageSource::frameDurationAtIndex(size_t index)
 
 bool ImageSource::frameHasAlphaAtIndex(size_t index)
 {
-    // Might be interesting to do this optimization on Mac some day, but for now we're just using this
-    // for the Cairo source, since it uses our decoders, and our decoders can answer this question.
-    // FIXME: Could return false for JPEG and other non-transparent image formats.
+	CFStringRef imageType = CGImageSourceGetType(m_decoder);
+
+	// Return false for JPEG
+	if (CFEqual(imageType, CFSTR("public.jpeg")))
+		return false;
+
+	// FIXME: Return false for other non-transparent image formats.
     // FIXME: Could maybe return false for a GIF Frame if we have enough info in the GIF properties dictionary
     // to determine whether or not a transparent color was defined.
     return true;

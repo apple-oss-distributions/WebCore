@@ -86,10 +86,13 @@ bool TransferJob::start(DocLoader* docLoader)
         handle = [bridge startLoadingResource:resourceLoader withMethod:method() URL:url().getNSURL() customHeaders:headerDict];
     [resourceLoader setHandle:handle];
     [resourceLoader release];
-    return handle != nil;
+
+    if (handle) 
+        return true; 
+    
     END_BLOCK_OBJC_EXCEPTIONS;
 
-    return true;
+    return false;
 }
 
 void TransferJob::assembleResponseHeaders() const

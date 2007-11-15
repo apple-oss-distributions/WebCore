@@ -2084,16 +2084,14 @@ void RenderObject::selectionStartEnd(int& spos, int& epos)
     view()->selectionStartEnd(spos, epos);
 }
 
-RenderBlock* RenderObject::createAnonymousBlock(RenderStyle * style)
+RenderBlock* RenderObject::createAnonymousBlock()
 {
-    if (!style) {
-        style = new (renderArena()) RenderStyle();
-        style->inheritFrom(m_style);
-        style->setDisplay(BLOCK);
-    }
+    RenderStyle* newStyle = new (renderArena()) RenderStyle();
+    newStyle->inheritFrom(m_style);
+    newStyle->setDisplay(BLOCK);    
 
     RenderBlock *newBox = new (renderArena()) RenderBlock(document() /* anonymous box */);
-    newBox->setStyle(style);
+    newBox->setStyle(newStyle);
     return newBox;
 }
 

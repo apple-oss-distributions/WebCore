@@ -230,6 +230,13 @@
 - (void)setValue:(NSString *)value;
 @end
 
+typedef enum
+{
+    DOMHTMLTextEntryAssistanceUnspecified,
+    DOMHTMLTextEntryAssistanceOn,
+    DOMHTMLTextEntryAssistanceOff
+} DOMHTMLTextEntryAssistance;
+
 @interface DOMHTMLInputElement : DOMHTMLElement
 - (NSString *)defaultValue;
 - (void)setDefaultValue:(NSString *)defaultValue;
@@ -270,6 +277,8 @@
 - (void)focus;
 - (void)select;
 - (void)click;
+- (DOMHTMLTextEntryAssistance)autocorrect;
+- (DOMHTMLTextEntryAssistance)autocapitalize;
 @end
 
 @interface DOMHTMLTextAreaElement : DOMHTMLElement
@@ -296,6 +305,8 @@
 - (void)blur;
 - (void)focus;
 - (void)select;
+- (DOMHTMLTextEntryAssistance)autocorrect;
+- (DOMHTMLTextEntryAssistance)autocapitalize;
 @end
 
 @interface DOMHTMLButtonElement : DOMHTMLElement

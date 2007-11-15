@@ -43,7 +43,7 @@ namespace WebCore
 
 void FontCache::platformInit()
 {
-	size_t s = 1536*1024;
+	size_t s = 1024*1024;
 
     wkSetUpFontCache(s);
 }
@@ -52,6 +52,117 @@ const FontData* FontCache::getFontDataForCharacters(const Font& font, const UCha
 {
     if (length > 0 && *characters == 0xF8FF)
         return getCachedFontData(getAppleFallbackFont(font));
+
+    UChar32 c = *characters;
+    if (length > 1 && U16_IS_LEAD(c) && U16_IS_TRAIL(characters[1]))
+        c = U16_GET_SUPPLEMENTARY(c, characters[1]);
+
+    bool useCJFont = false;
+    bool useKoreanFont = false;
+    bool useCyrillicFont = false;
+    if (length > 0) {
+        do {
+            // This isn't a loop but a way to efficiently check for ranges of characters.
+
+            // The following ranges are Korean Hangul and should be rendered by Apple Gothic
+            // U+1100 - U+11FF
+            // U+3130 - U+318F
+            // U+AC00 - U+D7A3
+
+            // These are Cyrillic and should be rendered by Helvetica Neue
+            // U+0400 - U+052F
+            
+            if (c < 0x400)
+                break;
+            if (c <= 0x52F)
+                useCyrillicFont = true;
+            if (c < 0x1100)
+                break;
+            if (c <= 0x11FF) {
+                useKoreanFont = true;
+                break;
+            }
+            if (c < 0x2E80)
+                break;
+            if (c < 0x3130) {
+                useCJFont = true;
+                break;
+            }
+            if (c <= 0x318F) {
+                useKoreanFont = true;
+                break;
+            }
+            if (c < 0xAC00) {
+                useCJFont = true;
+                break;
+            }
+            if (c <= 0xD7A3) {
+                useKoreanFont = true;
+                break;
+            }
+            if ( c <= 0xDFFF) {
+                useCJFont = true;
+                break;
+            }
+            if (c <= 0xF8FF)
+                break;
+            if (c < 0xFFF0) {
+                useCJFont = true;
+                break;
+            }
+            if (c >=0x20000 && c <= 0x2FFFF)
+                useCJFont = true;
+        } while (0);
+    }
+        
+	FontPlatformData* platformFont = NULL;
+    
+    if (useCJFont) {
+        // by default, Chinese font is preferred, to fall back on Japanese
+        static AtomicString preferredPlain("STXihei");
+        static AtomicString preferredBold("STHeiti");
+        static AtomicString secondaryPlain("HiraKakuProN-W3");
+        static AtomicString secondaryBold("HiraKakuProN-W6");
+
+        static int CJKFontInitialized = 0;
+        if ( CJKFontInitialized == 0 )
+        {
+            CJKFontInitialized = 1;
+            // Testing: languageName = (CFStringRef)@"ja";
+            NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+            NSArray *languages = [defaults stringArrayForKey:@"AppleLanguages"];
+            CFStringRef language = [languages count] > 0 ? (CFStringRef)[languages objectAtIndex:0] : CFSTR("en");
+            CFStringRef languageName = CFLocaleCreateCanonicalLanguageIdentifierFromString(NULL, language);
+            if ( CFEqual(languageName, CFSTR("ja")) ) {
+                // If user's language is japanese, swap preferred and secondary.
+                AtomicString tmp = secondaryPlain;
+                secondaryPlain = preferredPlain;
+                preferredPlain = tmp;
+                
+                tmp = secondaryBold;
+                secondaryBold = preferredBold;
+                preferredBold = tmp;
+            }
+            CFRelease(languageName);
+        }
+
+        platformFont = getCachedFontPlatformData(font.fontDescription(), font.fontDescription().bold() ? preferredBold : preferredPlain);    
+        FontData *fontData = getCachedFontData(platformFont);
+        GlyphData glyphData = fontData->glyphDataForCharacter(c);
+        if ( glyphData.glyph == 0 )
+            platformFont = getCachedFontPlatformData(font.fontDescription(), font.fontDescription().bold() ? secondaryBold : secondaryPlain);
+    } else if (useKoreanFont) {
+        static AtomicString koreanFont("AppleGothic");
+        platformFont = getCachedFontPlatformData(font.fontDescription(), koreanFont);    
+    } else if (useCyrillicFont) {
+        static AtomicString cyrillicPlain("HelveticaNeue");
+        static AtomicString cyrillicBold("HelveticaNeueBold");
+        platformFont = getCachedFontPlatformData(font.fontDescription(), font.fontDescription().bold() ? cyrillicBold : cyrillicPlain);
+    }
+
+	if ( platformFont != NULL )
+		return getCachedFontData(platformFont);
+
     return getCachedFontData(getLastResortFallbackFont(font));
 }
 

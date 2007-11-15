@@ -64,7 +64,7 @@ protected:
 
 private:
     void createInnerBlock();
-    RenderStyle * createInnerStyle();
+    void adjustInnerStyle();
     void setText(const String&);
 
     RenderText* m_buttonText;

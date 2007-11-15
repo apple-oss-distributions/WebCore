@@ -18,8 +18,6 @@
  *
  */
 
-#define PRE_MERGE 1
-
 #include "config.h"
 #include "RenderTextControl.h"
 
@@ -35,11 +33,7 @@
 #include "RenderTheme.h"
 #include "SelectionController.h"
 #include "TextIterator.h"
-#if PRE_MERGE
 #import "Font.h"
-#else
-#include "TextStyle.h"
-#endif
 #include "htmlediting.h"
 #include "visible_units.h"
 #include <math.h>
@@ -220,11 +214,7 @@ void RenderTextControl::updatePlaceholder()
     String placeholder;
     if (!m_multiLine) {
         HTMLInputElement* input = static_cast<HTMLInputElement*>(node());
-#if PRE_MERGE
         if (input->value().isEmpty() && document()->focusNode() != node())    
-#else
-        if (input->value().isEmpty() && document()->focusedNode() != node())         
-#endif
             placeholder = input->getAttribute(placeholderAttr);
     }
     
@@ -325,11 +315,7 @@ void RenderTextControl::updateFromElement()
             if (value.endsWith("\n") || value.endsWith("\r"))
                 m_innerText->appendChild(new HTMLBRElement(document()), ec);
             if (Frame* frame = document()->frame())
-#if PRE_MERGE
                 frame->clearUndoRedoOperations();
-#else
-                frame->editor()->clearUndoRedoOperations();
-#endif
             m_dirty = false;
         }
         element->setValueMatchesRenderer();
@@ -342,11 +328,7 @@ int RenderTextControl::selectionStart()
     Frame* frame = document()->frame();
     if (!frame)
         return 0;
-#if PRE_MERGE
     return indexForVisiblePosition(document()->frame()->selection().start());
-#else
-    return indexForVisiblePosition(document()->frame()->selectionController()->start());        
-#endif
 }
 
 int RenderTextControl::selectionEnd()
@@ -354,11 +336,7 @@ int RenderTextControl::selectionEnd()
     Frame* frame = document()->frame();
     if (!frame)
         return 0;
-#if PRE_MERGE
     return indexForVisiblePosition(document()->frame()->selection().end());
-#else
-    return indexForVisiblePosition(document()->frame()->selectionController()->end());
-#endif
 }
 
 void RenderTextControl::setSelectionStart(int start)
@@ -397,19 +375,13 @@ void RenderTextControl::setSelectionRange(int start, int end)
     else
         endPosition = visiblePositionForIndex(end);
     Selection newSelection = Selection(startPosition, endPosition);
-#if PRE_MERGE
     document()->frame()->selection().setSelection(newSelection);
-#else
-    document()->frame()->selectionController()->setSelection(newSelection);
-#endif
 
     // FIXME: Granularity is stored separately on the frame, but also in the selection controller.
     // The granularity in the selection controller should be used, and then this line of code would not be needed.
     document()->frame()->setSelectionGranularity(CharacterGranularity);
     
-#if PRE_MERGE
     document()->frame()->selectionLayoutChanged();
-#endif
 }
 
 VisiblePosition RenderTextControl::visiblePositionForIndex(int index)
@@ -546,53 +518,11 @@ bool RenderTextControl::nodeAtPoint(NodeInfo& info, int x, int y, int tx, int ty
     // In a search field, we want to act as if we've hit the results block if we're to the left of the inner text block,
     // and act as if we've hit the close block if we're to the right of the inner text block.
     
-#if PRE_MERGE
     if (RenderBlock::nodeAtPoint(info, x, y, tx, ty, hitTestAction)) {
         info.setInnerNode(m_innerText.get());
         return true;
     }  
     return false;
-#else
-    if (RenderBlock::nodeAtPoint(request, result, x, y, tx, ty, hitTestAction) &&
-        (result.innerNode() == element() || result.innerNode() == m_innerBlock)) {
-        IntPoint localPoint = IntPoint(x - tx - m_x, y - ty - m_y);
-        if (m_innerBlock) {
-            Node* leftNode;
-            Node* rightNode;
-            if (style()->direction() == LTR) {
-                leftNode = m_resultsButton.get();
-                rightNode = m_cancelButton.get();
-            } else {
-                leftNode = m_cancelButton.get();
-                rightNode = m_resultsButton.get();
-            }
-            
-            int textLeft = tx + m_x + m_innerBlock->renderer()->xPos() + m_innerText->renderer()->xPos();
-            int textRight = textLeft + m_innerText->renderer()->width();
-            if (leftNode && x < textLeft) {
-                result.setInnerNode(leftNode);
-                result.setLocalPoint(IntPoint(localPoint.x() - m_innerText->renderer()->xPos() - m_innerBlock->renderer()->xPos() - leftNode->renderer()->xPos(),
-                                              localPoint.y() - m_innerText->renderer()->yPos() - m_innerBlock->renderer()->yPos() - leftNode->renderer()->yPos()));
-                return true;
-            } 
-            if (rightNode && x > textRight) {
-                result.setInnerNode(rightNode);
-                result.setLocalPoint(IntPoint(localPoint.x() - m_innerText->renderer()->xPos() - m_innerBlock->renderer()->xPos() - rightNode->renderer()->xPos(),
-                                              localPoint.y() - m_innerText->renderer()->yPos() - m_innerBlock->renderer()->yPos() - rightNode->renderer()->yPos()));
-                return true;
-            }
-        }
-        
-        // Hit the inner text block.
-        result.setInnerNode(m_innerText.get());
-        result.setLocalPoint(IntPoint(localPoint.x() - m_innerText->renderer()->xPos() - (m_innerBlock.get() ? m_innerBlock->renderer()->xPos() : 0),
-                                      localPoint.y() - m_innerText->renderer()->yPos() - (m_innerBlock.get() ? m_innerBlock->renderer()->yPos() : 0)));
-        
-        return true;
-    }
-    
-    return false;
-#endif
 }
 
 void RenderTextControl::layout()
@@ -696,11 +626,7 @@ void RenderTextControl::selectionChanged(bool userTriggered)
     else
         static_cast<HTMLInputElement*>(element)->cacheSelection(selectionStart(), selectionEnd());
     if (Frame* frame = document()->frame())
-#if PRE_MERGE
         if (frame->selection().isRange() && userTriggered)
-#else
-        if (frame->selectionController()->isRange() && userTriggered)
-#endif
             element->dispatchHTMLEvent(selectEvent, true, false);
 }
 

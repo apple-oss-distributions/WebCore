@@ -66,16 +66,16 @@ public:
     int repetitionCount();
     
     size_t frameCount() const;
-    NativeImagePtr createFrameAtIndex(size_t);
-    void destroyFrameAtIndex(size_t);
+    NativeImagePtr createFrameAtIndex(size_t, float scaleHint, float* actualScaleOut, ssize_t* bytesOut);
     float frameDurationAtIndex(size_t);
     bool frameHasAlphaAtIndex(size_t); // Whether or not the frame actually used any alpha.
     bool frameIsCompleteAtIndex(size_t); // Whether or not the frame is completely decoded. 
 
 private:
     NativeImageSourcePtr m_decoder;
-    mutable bool m_isSubsampled;
-    CFDictionaryRef imageSourceOptions() const;
+    mutable bool m_isProgressive;
+	mutable int m_baseSubsampling;
+    CFDictionaryRef imageSourceOptions(int subsampling = 0) const;
 };
 
 }

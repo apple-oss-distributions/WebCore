@@ -30,6 +30,7 @@
 #include "HTMLNames.h"
 #include "HTMLOptionElement.h"
 #include "HTMLSelectElement.h"
+#include "RenderBR.h"
 #include "RenderText.h"
 #include "RenderTheme.h"
 #include "HTMLDivElement.h"
@@ -65,30 +66,19 @@ void RenderMenuList::createInnerBlock()
 
     // Create an anonymous block.
     ASSERT(!firstChild());
-    
-    m_innerBlock = createAnonymousBlock(createInnerStyle());
-
+    m_innerBlock = createAnonymousBlock();
+    adjustInnerStyle();
     RenderFlexibleBox::addChild(m_innerBlock);
 }
 
-
-RenderStyle * RenderMenuList::createInnerStyle()
+void RenderMenuList::adjustInnerStyle()
 {
-    RenderStyle* innerStyle = new (renderArena()) RenderStyle();
+    m_innerBlock->style()->setBoxFlex(1.0f);
     
-    innerStyle->inheritFrom(style());
-    innerStyle->setDisplay(BLOCK);
-    
-    innerStyle->setBoxFlex(1.0f);
-    
-    innerStyle->setOverflowX(OHIDDEN);
-    innerStyle->setOverflowY(OHIDDEN);
-    
-    innerStyle->setTextOverflow(true);
-
-    innerStyle->setPaddingRight(Length(theme()->auxiliaryMenuListRightPadding(this), Fixed));
-    
-    return innerStyle;
+    m_innerBlock->style()->setPaddingLeft(Length(theme()->popupInternalPaddingLeft(style()), Fixed));
+    m_innerBlock->style()->setPaddingRight(Length(theme()->popupInternalPaddingRight(style()), Fixed));
+    m_innerBlock->style()->setPaddingTop(Length(theme()->popupInternalPaddingTop(style()), Fixed));
+    m_innerBlock->style()->setPaddingBottom(Length(theme()->popupInternalPaddingBottom(style()), Fixed));
 }
 
 void RenderMenuList::addChild(RenderObject* newChild, RenderObject* beforeChild)
@@ -106,14 +96,14 @@ void RenderMenuList::removeChild(RenderObject* oldChild)
         m_innerBlock->removeChild(oldChild);
 }
 
-void RenderMenuList::setStyle(RenderStyle* style)
+void RenderMenuList::setStyle(RenderStyle* newStyle)
 {
-    RenderBlock::setStyle(style);
+    RenderBlock::setStyle(newStyle);
+    
     if (m_buttonText)
-        m_buttonText->setStyle(style);
-    if (m_innerBlock)
-        m_innerBlock->setStyle(createInnerStyle());
-
+        m_buttonText->setStyle(newStyle);
+    if (m_innerBlock) // RenderBlock handled updating the anonymous block's style.
+        adjustInnerStyle();
     setReplaced(isInline());
 }
 
@@ -168,18 +158,24 @@ bool RenderMenuList::multiple() const
 void RenderMenuList::setText(const String& s)
 {
     if (s.isEmpty()) {
-        if (m_buttonText) {
-            m_buttonText->destroy();
-            m_buttonText = 0;
+        if (!m_buttonText || !m_buttonText->isBR()) {
+            if (m_buttonText)
+                m_buttonText->destroy();
+            m_buttonText = new (renderArena()) RenderBR(document());
+            m_buttonText->setStyle(style());
+            addChild(m_buttonText);
         }
     } else {
-        if (m_buttonText)
+        if (m_buttonText && !m_buttonText->isBR())
             m_buttonText->setText(s.impl());
         else {
+            if (m_buttonText)
+                m_buttonText->destroy();
             m_buttonText = new (renderArena()) RenderText(document(), s.impl());
             m_buttonText->setStyle(style());
             addChild(m_buttonText);
         }
+        adjustInnerStyle();
     }
 }
 
@@ -216,7 +212,8 @@ void RenderMenuList::calcMinMaxWidth()
     }
 
 
-    int toAdd = paddingLeft() + paddingRight() + borderLeft() + borderRight() + theme()->auxiliaryMenuListRightPadding(this);
+    int toAdd = paddingLeft() + paddingRight() + borderLeft() + borderRight() + 
+                m_innerBlock->paddingLeft() + m_innerBlock->paddingRight() + m_innerBlock->borderLeft() + m_innerBlock->borderRight();
 
     m_minWidth += toAdd;
     m_maxWidth += toAdd;

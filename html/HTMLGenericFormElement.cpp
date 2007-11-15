@@ -41,7 +41,13 @@ using namespace EventNames;
 using namespace HTMLNames;
 
 HTMLGenericFormElement::HTMLGenericFormElement(const QualifiedName& tagName, Document* doc, HTMLFormElement* f)
-    : HTMLElement(tagName, doc), m_form(f), m_disabled(false), m_readOnly(false), m_valueMatchesRenderer(false)
+    : HTMLElement(tagName, doc)
+    , m_form(f)
+    , m_disabled(false)
+    , m_readOnly(false)
+    , m_valueMatchesRenderer(false)
+    , m_autocorrect(HTMLTextEntryAssistanceUnspecified)
+    , m_autocapitalize(HTMLTextEntryAssistanceUnspecified)
 {
     if (!m_form)
         m_form = getForm();
@@ -75,6 +81,10 @@ void HTMLGenericFormElement::parseMappedAttribute(MappedAttribute *attr)
             if (renderer() && renderer()->style()->hasAppearance())
                 theme()->stateChanged(renderer(), ReadOnlyState);
         }
+    } else if (attr->name() == autocorrectAttr)
+        m_autocorrect = equalIgnoringCase(attr->value(), "off") ? HTMLTextEntryAssistanceOff : HTMLTextEntryAssistanceOn;
+    else if (attr->name() == autocapitalizeAttr) {
+        m_autocapitalize = equalIgnoringCase(attr->value(), "off") ? HTMLTextEntryAssistanceOff : HTMLTextEntryAssistanceOn;
     } else
         HTMLElement::parseMappedAttribute(attr);
 }
@@ -279,6 +289,16 @@ void HTMLGenericFormElement::dispatchBlurEvent()
     document()->frame()->formElementDidBlur(this);
     
     HTMLElement::dispatchBlurEvent();
+}
+
+HTMLTextEntryAssistance HTMLGenericFormElement::autocorrect()
+{
+    return m_autocorrect;
+}
+
+HTMLTextEntryAssistance HTMLGenericFormElement::autocapitalize()
+{
+    return m_autocapitalize;
 }
 
 

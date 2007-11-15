@@ -2,7 +2,7 @@
  * The default style sheet used to render HTML.
  *
  * Copyright (C) 2000 Lars Knoll (knoll@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006 Apple Computer, Inc.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -323,7 +323,7 @@ input, textarea, select, button, isindex, input[type="file"]::-webkit-file-uploa
 }
 
 input[type="search"] {
-    box-sizing: border-box;
+    -webkit-box-sizing: border-box;
 }
 
 input, textarea, isindex {
@@ -370,7 +370,9 @@ button, input[type="button"], input[type="submit"], input[type="reset"], input[t
     text-align: center;
     cursor: default;
     color: ButtonText;
-    background-color:transparent;
+    
+    /* We want to be as close to transparent as possible without actually being transparent */
+    background-color:rgba(255, 255, 255, 0.01);
     
     padding-top: 0px;
     padding-bottom: 0px;
@@ -384,7 +386,7 @@ button, input[type="button"], input[type="submit"], input[type="reset"], input[t
 
 input[type="button"], input[type="submit"], input[type="reset"], input[type="file"]::-webkit-file-upload-button
 {
-    box-sizing: border-box;
+    -webkit-box-sizing: border-box;
 }
 
 input[type="button"]:disabled, input[type="submit"]:disabled, input[type="reset"]:disabled, input[type="file"]:disabled::-webkit-file-upload-button, button:disabled, select:disabled {
@@ -402,7 +404,7 @@ area, param {
 input[type="radio"], input[type="checkbox"] {
     margin: 3px 0.5ex;
     border:1px solid #4c4c4c;
-    box-sizing:border-box;
+    -webkit-box-sizing:border-box;
 }
 
 input[type="checkbox"] {
@@ -414,7 +416,9 @@ input[type="checkbox"] {
     height:16px;
 
     padding:0px;
-    background:transparent;
+    
+    /* We want to be as close to transparent as possible without actually being transparent */
+    background:rgba(255, 255, 255, 0.01);
 }
 
 input[type="radio"] {
@@ -426,12 +430,16 @@ input[type="radio"] {
     height:16px;
 
     padding:0px;
-    background:transparent;
+
+    /* We want to be as close to transparent as possible without actually being transparent */
+    background:rgba(255, 255, 255, 0.01);
 }
 
 input[type="checkbox"]:checked, input[type="radio"]:checked {
     background:rgba(0, 0, 0, 0.8);
-    border-color:transparent;
+    
+    /* We want to be as close to transparent as possible without actually being transparent */
+    border-color:rgba(255, 255, 255, 0.01);
 }
 
 input[type="checkbox"]:checked:disabled, input[type="radio"]:checked:disabled {
@@ -443,11 +451,11 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled {
     opacity:0.4;
 }
 
-select:focus, select[mutliple]:focus {
+select:focus {
     border-color: rgb(17, 46, 135);
 }
 
-select, select[mutliple] {
+select {
     letter-spacing: normal;
     word-spacing: normal;
     line-height: normal;
@@ -461,9 +469,10 @@ select, select[mutliple] {
     -webkit-border-radius: 5px;
     border:1px solid #4c4c4c;
 
-    background:transparent;
+    /* We want to be as close to transparent as possible without actually being transparent */
+    background:rgba(255, 255, 255, 0.01);
     
-    box-sizing: border-box;
+    -webkit-box-sizing: border-box;
     font: 11px Helvetica;
     padding: 0 0.5em 0 0.5em !important;
 }

@@ -186,7 +186,7 @@ public:
 
     // This function is a convenience helper for creating an anonymous block that inherits its
     // style from this RenderObject.
-    RenderBlock* createAnonymousBlock(RenderStyle * style = NULL);
+    RenderBlock* createAnonymousBlock();
     
     // Whether or not a positioned element requires normal flow x/y to be computed
     // to determine its position.

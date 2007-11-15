@@ -85,6 +85,8 @@ public:
     static const RGBA32 gray = 0xFFA0A0A0;
     static const RGBA32 lightGray = 0xFFC0C0C0;
     static const RGBA32 transparent = 0x00000000;
+
+    static const RGBA32 tap = 0x4D1A1A1A;
     
 private:
     RGBA32 color;

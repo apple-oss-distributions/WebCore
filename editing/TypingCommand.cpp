@@ -222,18 +222,6 @@ EditAction TypingCommand::editingAction() const
 
 void TypingCommand::markMisspellingsAfterTyping()
 {
-    // Take a look at the selection that results after typing and determine whether we need to spellcheck. 
-    // Since the word containing the current selection is never marked, this does a check to
-    // see if typing made a new word that is not in the current selection. Basically, you
-    // get this by being at the end of a word and typing a space.    
-    VisiblePosition start(endingSelection().start(), endingSelection().affinity());
-    VisiblePosition previous = start.previous();
-    if (previous.isNotNull()) {
-        VisiblePosition p1 = startOfWord(previous, LeftWordIfOnBoundary);
-        VisiblePosition p2 = startOfWord(start, LeftWordIfOnBoundary);
-        if (p1 != p2)
-            document()->frame()->markMisspellingsInAdjacentWords(p1);
-    }
 }
 
 void TypingCommand::typingAddedToOpenCommand()

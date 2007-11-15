@@ -125,7 +125,8 @@ void HTMLInputElement::init()
 
 HTMLInputElement::~HTMLInputElement()
 {
-    document()->deregisterFormElementWithState(this);
+    document()->unregisterFormElementWithState(this);
+    document()->unregisterForDidRestoreFromCacheCallback(this);
     delete m_imageLoader;
 }
 
@@ -285,11 +286,11 @@ void HTMLInputElement::setInputType(const String& t)
                 detach();
 
             bool didStoreValue = storesValueSeparateFromAttribute();
-            bool didMaintainState = inputType() != PASSWORD;
+            bool wasPasswordField = inputType() == PASSWORD;
             bool didRespectHeightAndWidth = respectHeightAndWidthAttrs();
             m_type = newType;
             bool willStoreValue = storesValueSeparateFromAttribute();
-            bool willMaintainState = inputType() != PASSWORD;
+            bool isPasswordField = inputType() == PASSWORD;
             bool willRespectHeightAndWidth = respectHeightAndWidthAttrs();
 
             if (didStoreValue && !willStoreValue && !m_value.isNull()) {
@@ -301,10 +302,13 @@ void HTMLInputElement::setInputType(const String& t)
             else
                 recheckValue();
 
-            if (willMaintainState && !didMaintainState)
+            if (wasPasswordField && !isPasswordField) {
                 document()->registerFormElementWithState(this);
-            else if (!willMaintainState && didMaintainState)
-                document()->deregisterFormElementWithState(this);
+                document()->unregisterForDidRestoreFromCacheCallback(this);
+            } else if (!wasPasswordField && isPasswordField) {
+                document()->unregisterFormElementWithState(this);
+                document()->registerForDidRestoreFromCacheCallback(this);
+            }
 
             if (didRespectHeightAndWidth != willRespectHeightAndWidth) {
                 NamedMappedAttrMap* map = mappedAttributes();
@@ -417,7 +421,6 @@ void HTMLInputElement::restoreState(const String& state)
 {
     ASSERT(inputType() != PASSWORD); // should never save/restore password fields
     switch (inputType()) {
-// FIXME: take this stuff out after the MERGE
         case RESET:
         case SUBMIT:
             if (!state.isEmpty())
@@ -833,10 +836,8 @@ void HTMLInputElement::attach()
         }
     }
 
-    // note we don't deal with calling passwordFieldRemoved() on detach, because the timing
-    // was such that it cleared our state too early
     if (inputType() == PASSWORD)
-        document()->passwordFieldAdded();
+        document()->unregisterForDidRestoreFromCacheCallback(this);
 }
 
 void HTMLInputElement::detach()
@@ -1071,6 +1072,9 @@ void HTMLInputElement::setValue(const String& value)
         ASSERT(cachedSelEnd != -1);
         setSelectionRange(cachedSelStart, cachedSelStart);
     }
+
+    if (document() && document()->frame())
+        document()->frame()->formElementDidSetValue(this);
 }
 
 void HTMLInputElement::setValueFromRenderer(const String& value)
@@ -1479,6 +1483,12 @@ String HTMLInputElement::constrainValue(const String& proposedValue, int maxLen)
             return proposedValue.substring(0, newLen);
     }
     return proposedValue;
+}
+
+void HTMLInputElement::didRestoreFromCache()
+{
+    ASSERT(inputType() == PASSWORD);
+    reset();
 }
 
 

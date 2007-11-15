@@ -466,6 +466,7 @@ StyleCSS3InheritedData::StyleCSS3InheritedData()
     , nbspMode(NBNORMAL)
     , khtmlLineBreak(LBNORMAL)
     , textSizeAdjust(RenderStyle::initialTextSizeAdjust())
+    , tapHighlightColor(RenderStyle::initialTapHighlightColor())
     , resize(RenderStyle::initialResize())
 {
 
@@ -482,6 +483,7 @@ StyleCSS3InheritedData::StyleCSS3InheritedData(const StyleCSS3InheritedData& o)
     , nbspMode(o.nbspMode)
     , khtmlLineBreak(o.khtmlLineBreak)
     , textSizeAdjust(o.textSizeAdjust)
+    , tapHighlightColor(o.tapHighlightColor)
     , resize(o.resize)
 {
 }
@@ -500,7 +502,8 @@ bool StyleCSS3InheritedData::operator==(const StyleCSS3InheritedData& o) const
         && wordWrap == o.wordWrap
         && nbspMode == o.nbspMode
         && khtmlLineBreak == o.khtmlLineBreak
-        && textSizeAdjust == o.textSizeAdjust;
+        && textSizeAdjust == o.textSizeAdjust
+        && tapHighlightColor == o.tapHighlightColor;
 }
 
 bool StyleCSS3InheritedData::shadowDataEquivalent(const StyleCSS3InheritedData& o) const

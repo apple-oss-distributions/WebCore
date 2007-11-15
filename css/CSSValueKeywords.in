@@ -517,7 +517,7 @@ content
 padding
 
 #
-# CSS_PROP_BOX_SIZING
+# CSS_PROP__WEBKIT_BOX_SIZING
 #
 border-box
 content-box

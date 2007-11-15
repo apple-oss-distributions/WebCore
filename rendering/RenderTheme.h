@@ -114,8 +114,6 @@ public:
         // System fonts.
         virtual int minimumMenuListSize(RenderStyle*) const { return 0; }
         
-        virtual int auxiliaryMenuListRightPadding(RenderMenuList *) const { return 0; }
-        
         virtual RenderPopupMenu* createPopupMenu(RenderArena*, Document*, RenderMenuList*) = 0;
         
         // Methods for state querying
@@ -126,6 +124,11 @@ public:
         bool isPressed(const RenderObject* o) const;
         bool isHovered(const RenderObject* o) const;
         bool isReadOnlyControl(const RenderObject* o) const;
+        
+        virtual int popupInternalPaddingLeft(RenderStyle*) const { return 0; }
+        virtual int popupInternalPaddingRight(RenderStyle*) const { return 0; }
+        virtual int popupInternalPaddingTop(RenderStyle*) const { return 0; }
+        virtual int popupInternalPaddingBottom(RenderStyle*) const { return 0; }
         
 protected:
         

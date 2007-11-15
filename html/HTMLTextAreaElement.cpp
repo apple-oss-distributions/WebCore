@@ -58,7 +58,7 @@ HTMLTextAreaElement::HTMLTextAreaElement(Document *doc, HTMLFormElement *f)
 
 HTMLTextAreaElement::~HTMLTextAreaElement()
 {
-    document()->deregisterFormElementWithState(this);
+    document()->unregisterFormElementWithState(this);
 }
 
 const AtomicString& HTMLTextAreaElement::type() const
@@ -278,6 +278,9 @@ void HTMLTextAreaElement::setValue(const String& value)
         setSelectionRange(cachedSelStart, cachedSelStart);
     }
     setChanged(true);
+    
+    if (document() && document()->frame())
+        document()->frame()->formElementDidSetValue(this);
 }
 
 String HTMLTextAreaElement::defaultValue() const

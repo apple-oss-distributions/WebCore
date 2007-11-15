@@ -126,6 +126,7 @@ onselect
 onselectstart
 onsubmit
 onunload
+onorientationchange
 pagex
 pagey
 placeholder
@@ -176,3 +177,5 @@ vlink
 vspace
 width
 wrap
+autocorrect
+autocapitalize

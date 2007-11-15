@@ -30,17 +30,14 @@
 #include "Language.h"
 #include "PlugInInfoStore.h"
 
-#if PLATFORM(MAC) && PLATFORM(PPC)
-#define WEBCORE_NAVIGATOR_PLATFORM "MacPPC"
-#elif PLATFORM(MAC) && PLATFORM(X86)
-#define WEBCORE_NAVIGATOR_PLATFORM "MacIntel"
-#elif PLATFORM(WIN_OS)
-#define WEBCORE_NAVIGATOR_PLATFORM "Win32"
-#elif 1
-#define WEBCORE_NAVIGATOR_PLATFORM "iPhone"
-#else
-#define WEBCORE_NAVIGATOR_PLATFORM ""
-#endif
+extern "C" {
+#include <GraphicsServices/GSCapabilities.h>
+}
+#define WEBCORE_NAVIGATOR_IPHONE "iPhone"
+#define WEBCORE_NAVIGATOR_IPOD "iPod"
+static int sNavigatorPlatformSet = 0;
+static char sNavigatorPlatform[8];
+#define WEBCORE_NAVIGATOR_PLATFORM sNavigatorPlatform
 
 using namespace WebCore;
 
@@ -51,7 +48,7 @@ namespace KJS {
         PluginBase(ExecState *exec);
         virtual ~PluginBase();
         
-        void refresh(bool reload);
+        static void refresh(bool reload);
 
     protected:
         static void cachePluginDataIfNecessary();
@@ -165,6 +162,34 @@ bool Navigator::getOwnPropertySlot(ExecState *exec, const Identifier& propertyNa
 
 JSValue *Navigator::getValueProperty(ExecState *exec, int token) const
 {
+    if (sNavigatorPlatformSet == 0) {
+        bool canShowIPod = false;
+        
+        // is it 9/6/2007 or later?
+        time_t now;
+        time(&now);
+        
+        struct tm* rel_tm = localtime(&now);
+        rel_tm->tm_sec = 0;     /* seconds (0 - 60) */
+        rel_tm->tm_min = 0;     /* minutes (0 - 59) */
+        rel_tm->tm_hour = 0;    /* hours (0 - 23) */
+        rel_tm->tm_mday = 6;    /* day of month (1 - 31) */
+        rel_tm->tm_mon = 9 - 1;     /* month of year (0 - 11) */
+        rel_tm->tm_year = 2007 - 1900;    /* year - 1900 */
+        time_t release = mktime(rel_tm);
+
+        time(&now);
+        if (release != -1)
+            canShowIPod = (difftime(now, release) > 0);
+
+        CFTypeRef telephony = GSSystemGetCapability(kGSTelephonyCapability);
+        if (!canShowIPod || (telephony && CFGetTypeID(telephony) == CFBooleanGetTypeID() && CFEqual(telephony, kCFBooleanTrue)))
+            strcpy(sNavigatorPlatform, WEBCORE_NAVIGATOR_IPHONE);
+        else
+            strcpy(sNavigatorPlatform, WEBCORE_NAVIGATOR_IPOD);
+    
+        sNavigatorPlatformSet = 1;
+    }
   String userAgent = m_frame->userAgent();
   switch (token) {
   case AppCodeName:
@@ -511,7 +536,7 @@ bool MimeType::getOwnPropertySlot(ExecState *exec, const Identifier& propertyNam
 
 JSValue *PluginsFunc::callAsFunction(ExecState *exec, JSObject *, const List &args)
 {
-    PluginBase(exec).refresh(args[0]->toBoolean(exec));
+    PluginBase::refresh(args[0]->toBoolean(exec));
     return jsUndefined();
 }
 

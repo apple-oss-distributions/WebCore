@@ -49,6 +49,7 @@
 #include "HTMLTableSectionElement.h"
 #include "HTMLTokenizer.h"
 #include "LocalizedStrings.h"
+#include "Page.h"
 
 #include "Text.h"
 #include "WebCoreTelephoneParser.h"
@@ -210,12 +211,13 @@ public:
  *    element or ignore the tag.
  *
  */
-HTMLParser::HTMLParser(Document* doc) 
+HTMLParser::HTMLParser(Document* doc, bool reportErrors) 
     : document(doc)
     , current(0)
     , currentIsReferenced(false)
     , blockStack(0)
     , m_fragment(false)
+    , m_reportErrors(reportErrors)
 {
     reset();
 }
@@ -226,6 +228,7 @@ HTMLParser::HTMLParser(DocumentFragment* frag)
     , currentIsReferenced(false)
     , blockStack(0)
     , m_fragment(true)
+    , m_reportErrors(false)
 {
     reset();
     setCurrent(frag);
@@ -283,9 +286,11 @@ PassRefPtr<Node> HTMLParser::parseToken(Token *t)
     }
 
     // Apparently some sites use </br> instead of <br>.  Be compatible with IE and Firefox and treat this like <br>.
-    if (t->isCloseTag(brTag) && doc()->inCompatMode())
+    if (t->isCloseTag(brTag) && doc()->inCompatMode()) {
+        reportError(MalformedBRError);
         t->beginTag = true;
-
+    }
+    
     if (!t->beginTag) {
         processCloseTag(t);
         return 0;
@@ -296,6 +301,17 @@ PassRefPtr<Node> HTMLParser::parseToken(Token *t)
         if (inBody && !skipMode() && current->localName() != styleTag && current->localName() != titleTag && 
             current->localName() != scriptTag && !t->text->containsOnlyWhitespace()) 
             haveContent = true;
+        
+        RefPtr<Node> n;
+        String text = t->text.get();
+        unsigned charsLeft = text.length();
+        while (charsLeft) {
+            // split large blocks of text to nodes of manageable size
+            n = Text::createWithLengthLimit(document, text, charsLeft);
+            if (!insertNode(n.get(), t->flat))
+                return 0;
+        }
+        return n;
     }
 
     RefPtr<Node> n = getNode(t);
@@ -429,6 +445,11 @@ bool HTMLParser::insertNode(Node *n, bool flat)
     //printf("insertNode candidate: %s\n", n->toString().deprecatedString().latin1());
     int tagPriority = n->isHTMLElement() ? static_cast<HTMLElement*>(n)->tagPriority() : 0;
 
+    // <table> is never allowed inside stray table content.  Always pop out of the stray table content
+    // and close up the first table, and then start the second table as a sibling.
+    if (inStrayTableContent && localName == tableTag)
+        popBlock(tableTag);
+
     bool parentAttached = current->attached();    
     if (parentAttached && Document::isTelephoneNumberParsingEnabled()) {
         n = parseTelephoneNumbers(n);
@@ -472,18 +493,26 @@ bool HTMLParser::handleError(Node* n, bool flat, const AtomicString& localName, 
         HTMLElement* h = static_cast<HTMLElement*>(n);
         if (h->hasLocalName(trTag) || h->hasLocalName(thTag) || h->hasLocalName(tdTag)) {
             if (inStrayTableContent && !isTableRelated(current)) {
+                reportError(MisplacedTablePartError, &localName, &current->localName());
                 // pop out to the nearest enclosing table-related tag.
                 while (blockStack && !isTableRelated(current))
                     popOneBlock();
                 return insertNode(n);
             }
         } else if (h->hasLocalName(headTag)) {
-            if (!current->isDocumentNode() && !current->hasTagName(htmlTag))
+            if (!current->isDocumentNode() && !current->hasTagName(htmlTag)) {
+                reportError(MisplacedHeadError);
                 return false;
+            }
         } else if (h->hasLocalName(metaTag) || h->hasLocalName(linkTag) || h->hasLocalName(baseTag)) {
-            if (!head)
+            bool createdHead = false;
+            if (!head) {
                 createHead();
+                createdHead = true;
+            }
             if (head) {
+                if (!createdHead)
+                    reportError(MisplacedHeadContentError, &localName, &current->localName());
                 if (head->addChild(n)) {
                     if (!n->attached() && !m_fragment)
                         n->attach();
@@ -494,6 +523,7 @@ bool HTMLParser::handleError(Node* n, bool flat, const AtomicString& localName, 
         } else if (h->hasLocalName(htmlTag)) {
             if (!current->isDocumentNode() ) {
                 if (doc()->firstChild()->hasTagName(htmlTag)) {
+                    reportError(RedundantHTMLBodyError, &localName);
                     // we have another <HTML> element.... apply attributes to existing one
                     // make sure we don't overwrite already existing attributes
                     NamedAttrMap *map = static_cast<Element*>(n)->attributes(true);
@@ -508,11 +538,18 @@ bool HTMLParser::handleError(Node* n, bool flat, const AtomicString& localName, 
                 return false;
             }
         } else if (h->hasLocalName(titleTag) || h->hasLocalName(styleTag)) {
-            if (!head)
+            bool createdHead = false;
+            if (!head) {
                 createHead();
+                createdHead = true;
+            }
             if (head) {
                 Node *newNode = head->addChild(n);
                 if (newNode) {
+                    
+                    if (!createdHead)
+                        reportError(MisplacedHeadContentError, &localName, &current->localName());
+                    
                     pushBlock(localName, tagPriority);
                     setCurrent(newNode);
                     if (!n->attached() && !m_fragment)
@@ -531,6 +568,7 @@ bool HTMLParser::handleError(Node* n, bool flat, const AtomicString& localName, 
                 // we have another <BODY> element.... apply attributes to existing one
                 // make sure we don't overwrite already existing attributes
                 // some sites use <body bgcolor=rightcolor>...<body bgcolor=wrongcolor>
+                reportError(RedundantHTMLBodyError, &localName);
                 NamedAttrMap *map = static_cast<Element*>(n)->attributes(true);
                 Element *existingBody = doc()->body();
                 NamedAttrMap *bmap = existingBody->attributes(false);
@@ -558,6 +596,7 @@ bool HTMLParser::handleError(Node* n, bool flat, const AtomicString& localName, 
             }
         } else if (h->hasLocalName(areaTag)) {
             if (map) {
+                reportError(MisplacedAreaError, &current->localName());
                 map->addChild(n);
                 if (!n->attached() && !m_fragment)
                     n->attach();
@@ -619,7 +658,8 @@ bool HTMLParser::handleError(Node* n, bool flat, const AtomicString& localName, 
                     startBody();
                     insertNode(e);
                     handled = true;
-                }
+                } else
+                    reportError(MisplacedFramesetContentError, &localName);
             }
         } else if (h->hasLocalName(headTag)) {
             if (n->hasTagName(htmlTag))
@@ -632,84 +672,81 @@ bool HTMLParser::handleError(Node* n, bool flat, const AtomicString& localName, 
                     startBody();
                     insertNode(e);
                     handled = true;
-                }
+                } else
+                    reportError(MisplacedFramesetContentError, &localName);
             }
         } else if (h->hasLocalName(addressTag) || h->hasLocalName(dlTag) || h->hasLocalName(dtTag)
                    || h->hasLocalName(fontTag) || h->hasLocalName(styleTag) || h->hasLocalName(titleTag)) {
+            reportError(MisplacedContentRetryError, &localName, &currentTagName);
             popBlock(currentTagName);
             handled = true;
         } else if (h->hasLocalName(captionTag)) {
             // Illegal content in a caption. Close the caption and try again.
+            reportError(MisplacedCaptionContentError, &localName);
             popBlock(currentTagName);
             if (isTablePart(n))
                 return insertNode(n, flat);
         } else if (h->hasLocalName(tableTag) || h->hasLocalName(trTag) || isTableSection(h)) {
             if (n->hasTagName(tableTag)) {
+                reportError(MisplacedTableError, &currentTagName);
                 popBlock(localName); // end the table
                 handled = true;      // ...and start a new one
             } else {
-                bool possiblyMoveStrayContent = true;
                 ExceptionCode ec = 0;
-                if (n->isTextNode()) {
-                    Text *t = static_cast<Text *>(n);
-                    if (t->containsOnlyWhitespace())
-                        return false;
-                    StringImpl *i = t->string();
-                    unsigned int pos = 0;
-                    while (pos < i->length() && ((*i)[pos] == ' ' || (*i)[pos] == nonBreakingSpace))
-                        pos++;
-                    if (pos == i->length())
-                        possiblyMoveStrayContent = false;
-                }
-                if (possiblyMoveStrayContent) {
-                    Node *node = current;
-                    Node *parent = node->parentNode();
-                    // A script may have removed the current node's parent from the DOM
-                    // http://bugzilla.opendarwin.org/show_bug.cgi?id=7137
-                    // FIXME: we should do real recovery here and re-parent with the correct node.
+                Node* node = current;
+                Node* parent = node->parentNode();
+                // A script may have removed the current node's parent from the DOM
+                // http://bugs.webkit.org/show_bug.cgi?id=7137
+                // FIXME: we should do real recovery here and re-parent with the correct node.
+                if (!parent)
+                    return false;
+                Node* grandparent = parent->parentNode();
+                
+                if (n->isTextNode() ||
+                    (h->hasLocalName(trTag) &&
+                     isTableSection(parent) && grandparent->hasTagName(tableTag)) ||
+                    ((!n->hasTagName(tdTag) && !n->hasTagName(thTag) &&
+                      !n->hasTagName(formTag) && !n->hasTagName(scriptTag)) && isTableSection(node) &&
+                     parent->hasTagName(tableTag))) {
+                    node = (node->hasTagName(tableTag)) ? node :
+                    ((node->hasTagName(trTag)) ? grandparent : parent);
+                    Node* parent = node->parentNode();
                     if (!parent)
                         return false;
-                    Node *grandparent = parent->parentNode();
-
-                    if (n->isTextNode() ||
-                        (h->hasLocalName(trTag) &&
-                         isTableSection(parent) && grandparent->hasTagName(tableTag)) ||
-                         ((!n->hasTagName(tdTag) && !n->hasTagName(thTag) &&
-                           !n->hasTagName(formTag) && !n->hasTagName(scriptTag)) && isTableSection(node) &&
-                         parent->hasTagName(tableTag))) {
-                        node = (node->hasTagName(tableTag)) ? node :
-                                ((node->hasTagName(trTag)) ? grandparent : parent);
-                        Node *parent = node->parentNode();
-                        if (!parent)
-                            return false;
-                        parent->insertBefore(n, node, ec);
-                        if (!ec) {
-                            if (n->isHTMLElement() && tagPriority > 0 && 
-                                !flat && static_cast<HTMLElement*>(n)->endTagRequirement() != TagStatusForbidden)
-                            {
-                                pushBlock(localName, tagPriority);
-                                setCurrent(n);
-                                inStrayTableContent++;
-                                blockStack->strayTableContent = true;
-                            }
-                            return true;
-                        }
-                    }
-
+                    parent->insertBefore(n, node, ec);
                     if (!ec) {
-                        if (current->hasTagName(trTag))
-                            e = new HTMLTableCellElement(tdTag, document);
-                        else if (current->hasTagName(tableTag))
-                            e = new HTMLTableSectionElement(tbodyTag, document, true); // implicit 
-                        else
-                            e = new HTMLTableRowElement(document);
-                        
-                        insertNode(e);
-                        handled = true;
+                        reportError(StrayTableContentError, &localName, &currentTagName);
+                        if (n->isHTMLElement() && tagPriority > 0 && 
+                            !flat && static_cast<HTMLElement*>(n)->endTagRequirement() != TagStatusForbidden)
+                        {
+                            pushBlock(localName, tagPriority);
+                            setCurrent(n);
+                            inStrayTableContent++;
+                            blockStack->strayTableContent = true;
+                        }
+                        return true;
                     }
+                }
+                
+                if (!ec) {
+                    if (current->hasTagName(trTag)) {
+                        reportError(TablePartRequiredError, &localName, &tdTag.localName());
+                        e = new HTMLTableCellElement(tdTag, document);
+                    } else if (current->hasTagName(tableTag)) {
+                        // Don't report an error in this case, since making a <tbody> happens all the time when you have <table><tr>,
+                        // and it isn't really a parse error per se.
+                        e = new HTMLTableSectionElement(tbodyTag, document, true);
+                    } else {
+                        reportError(TablePartRequiredError, &localName, &trTag.localName());
+                        e = new HTMLTableRowElement(document);
+                    }
+                    
+                    insertNode(e);
+                    handled = true;
                 }
             }
         } else if (h->hasLocalName(objectTag)) {
+            reportError(MisplacedContentRetryError, &localName, &currentTagName);
             setSkipMode(objectTag);
             return false;
         } else if (h->hasLocalName(ulTag) || h->hasLocalName(olTag) ||
@@ -734,10 +771,8 @@ bool HTMLParser::handleError(Node* n, bool flat, const AtomicString& localName, 
                 popBlock(localName);
             }
         } else if (h->hasLocalName(colgroupTag)) {
-            if (!n->isTextNode()) {
-                popBlock(currentTagName);
-                handled = true;
-            }
+            popBlock(currentTagName);
+            handled = true;
         } else if (!h->hasLocalName(bodyTag)) {
             if (isInline(current)) {
                 popInlineBlocks();
@@ -745,6 +780,12 @@ bool HTMLParser::handleError(Node* n, bool flat, const AtomicString& localName, 
             }
         }
     } else if (current->isDocumentNode()) {
+        if (n->isTextNode()) {
+            Text* t = static_cast<Text*>(n);
+            if (t->containsOnlyWhitespace())
+                return false;
+        }
+        
         if (current->firstChild() == 0 || !current->firstChild()->isHTMLElement()) {
             e = new HTMLHtmlElement(document);
             insertNode(e);
@@ -753,8 +794,10 @@ bool HTMLParser::handleError(Node* n, bool flat, const AtomicString& localName, 
     }
 
     // 3. If we couldn't handle the error, just return false and attempt to error-correct again.
-    if (!handled)
+    if (!handled) {
+        reportError(IgnoredContentError, &localName, &current->localName());
         return false;
+    }
     return insertNode(n);
 }
 
@@ -778,7 +821,8 @@ bool HTMLParser::headCreateErrorCheck(Token* t, RefPtr<Node>& result)
     if (!head || current->localName() == htmlTag) {
         head = new HTMLHeadElement(document);
         result = head;
-    }
+    } else
+        reportError(MisplacedHeadError);
     return false;
 }
 
@@ -991,18 +1035,23 @@ void HTMLParser::processCloseTag(Token *t)
     // Support for really broken html.
     // we never close the body tag, since some stupid web pages close it before the actual end of the doc.
     // let's rely on the end() call to close things.
-    if (t->tagName == htmlTag || t->tagName == bodyTag)
+    if (t->tagName == htmlTag || t->tagName == bodyTag || t->tagName == commentAtom)
         return;
     
-    if (t->tagName == formTag)
+    bool checkForCloseTagErrors = true;
+    if (t->tagName == formTag) {
         form = 0;
+        checkForCloseTagErrors = false;
+    }
     else if (t->tagName == mapTag)
         map = 0;
     else if (t->tagName == selectTag)
         inSelect = false;
+    else if (t->tagName == pTag)
+        checkForCloseTagErrors = false;
         
     HTMLStackElem* oldElem = blockStack;
-    popBlock(t->tagName);
+    popBlock(t->tagName, checkForCloseTagErrors);
     if (oldElem == blockStack && t->tagName == pTag) {
         // We encountered a stray </p>.  Amazingly Gecko, WinIE, and MacIE all treat
         // this as a valid break, i.e., <p></p>.  So go ahead and make the empty
@@ -1010,6 +1059,7 @@ void HTMLParser::processCloseTag(Token *t)
         t->beginTag = true;
         parseToken(t);
         popBlock(t->tagName);
+        reportError(StrayParagraphCloseError);
     }
 }
 
@@ -1096,34 +1146,26 @@ bool HTMLParser::isResidualStyleTag(const AtomicString& tagName)
 
 bool HTMLParser::isAffectedByResidualStyle(const AtomicString& tagName)
 {
-    if (isResidualStyleTag(tagName))
-        return true;
-
-    static HashSet<AtomicStringImpl*> affectedBlockTags;
-    if (affectedBlockTags.isEmpty()) {
-        affectedBlockTags.add(addressTag.localName().impl());
-        affectedBlockTags.add(blockquoteTag.localName().impl());
-        affectedBlockTags.add(centerTag.localName().impl());
-        affectedBlockTags.add(ddTag.localName().impl());
-        affectedBlockTags.add(divTag.localName().impl());
-        affectedBlockTags.add(dlTag.localName().impl());
-        affectedBlockTags.add(dtTag.localName().impl());
-        affectedBlockTags.add(formTag.localName().impl());
-        affectedBlockTags.add(h1Tag.localName().impl());
-        affectedBlockTags.add(h2Tag.localName().impl());
-        affectedBlockTags.add(h3Tag.localName().impl());
-        affectedBlockTags.add(h4Tag.localName().impl());
-        affectedBlockTags.add(h5Tag.localName().impl());
-        affectedBlockTags.add(h6Tag.localName().impl());
-        affectedBlockTags.add(liTag.localName().impl());
-        affectedBlockTags.add(listingTag.localName().impl());
-        affectedBlockTags.add(olTag.localName().impl());
-        affectedBlockTags.add(pTag.localName().impl());
-        affectedBlockTags.add(preTag.localName().impl());
-        affectedBlockTags.add(ulTag.localName().impl());
+    static HashSet<AtomicStringImpl*> unaffectedTags;
+    if (unaffectedTags.isEmpty()) {
+        unaffectedTags.add(bodyTag.localName().impl());
+        unaffectedTags.add(tableTag.localName().impl());
+        unaffectedTags.add(theadTag.localName().impl());
+        unaffectedTags.add(tbodyTag.localName().impl());
+        unaffectedTags.add(tfootTag.localName().impl());
+        unaffectedTags.add(trTag.localName().impl());
+        unaffectedTags.add(thTag.localName().impl());
+        unaffectedTags.add(tdTag.localName().impl());
+        unaffectedTags.add(captionTag.localName().impl());
+        unaffectedTags.add(colgroupTag.localName().impl());
+        unaffectedTags.add(colTag.localName().impl());
+        unaffectedTags.add(optionTag.localName().impl());
+        unaffectedTags.add(optgroupTag.localName().impl());
+        unaffectedTags.add(selectTag.localName().impl());
+        unaffectedTags.add(objectTag.localName().impl());
     }
     
-    return affectedBlockTags.contains(tagName.impl());
+    return !unaffectedTags.contains(tagName.impl());
 }
 
 void HTMLParser::handleResidualStyleCloseTagAcrossBlocks(HTMLStackElem* elem)
@@ -1194,6 +1236,7 @@ void HTMLParser::handleResidualStyleCloseTagAcrossBlocks(HTMLStackElem* elem)
             if (isResidualStyleTag(currElem->node->localName())) {
                 // Create a clone of this element.
                 RefPtr<Node> currNode = currElem->node->cloneNode(false);
+                reportError(ResidualStyleError, &currNode->localName());
 
                 // Change the stack element's node to point to the clone.
                 currElem->node = currNode;
@@ -1235,6 +1278,7 @@ void HTMLParser::handleResidualStyleCloseTagAcrossBlocks(HTMLStackElem* elem)
 
     // Step 2: Clone |residualElem|.
     RefPtr<Node> newNode = residualElem->cloneNode(false); // Shallow clone. We don't pick up the same kids.
+    reportError(ResidualStyleError, &newNode->localName());
 
     // Step 3: Place |blockElem|'s children under |newNode|.  Remove all of the children of |blockElem|
     // before we've put |newElem| into the document.  That way we'll only do one attachment of all
@@ -1308,6 +1352,7 @@ void HTMLParser::reopenResidualStyleTags(HTMLStackElem* elem, Node* malformedTab
     while (elem) {
         // Create a shallow clone of the DOM node for this element.
         RefPtr<Node> newNode = elem->node->cloneNode(false); 
+        reportError(ResidualStyleError, &newNode->localName());
 
         // Append the new node. In the malformed table case, we need to insert before the table,
         // which will be the last child.
@@ -1346,7 +1391,7 @@ void HTMLParser::pushBlock(const AtomicString& tagName, int _level)
     blockStack = Elem;
 }
 
-void HTMLParser::popBlock(const AtomicString& _tagName)
+void HTMLParser::popBlock(const AtomicString& _tagName, bool reportErrors)
 {
     HTMLStackElem *Elem = blockStack;
     
@@ -1358,8 +1403,11 @@ void HTMLParser::popBlock(const AtomicString& _tagName)
         Elem = Elem->next;
     }
 
-    if (!Elem)
+    if (!Elem) {
+        if (reportErrors)
+            reportError(StrayCloseTagError, &_tagName, 0, true);
         return;
+    }
 
     if (maxLevel > Elem->level) {
         // We didn't match because the tag is in a different scope, e.g.,
@@ -1523,6 +1571,50 @@ void HTMLParser::finished()
     // Warning, this may delete the tokenizer and parser, so don't try to do anything else after this.
     if (!m_fragment)
         document->finishedParsing();
+}
+
+void HTMLParser::reportErrorToConsole(HTMLParserErrorCode errorCode, const AtomicString* tagName1, const AtomicString* tagName2, bool closeTags)
+{    
+    Frame* frame = document->frame();
+    if (!frame)
+        return;
+    
+    Page* page = frame->page();
+    if (!page)
+        return;
+    
+    HTMLTokenizer* htmlTokenizer = static_cast<HTMLTokenizer*>(document->tokenizer());
+    int lineNumber = htmlTokenizer->lineNumber() + 1;
+    
+    AtomicString tag1;
+    AtomicString tag2;
+    if (tagName1) {
+        if (*tagName1 == "#text")
+            tag1 = "Text";
+        else if (*tagName1 == "#comment")
+            tag1 = "<!-- comment -->";
+        else
+            tag1 = (closeTags ? "</" : "<") + *tagName1 + ">";
+    }
+    if (tagName2) {
+        if (*tagName2 == "#text")
+            tag2 = "Text";
+        else if (*tagName2 == "#comment")
+            tag2 = "<!-- comment -->";
+        else
+            tag2 = (closeTags ? "</" : "<") + *tagName2 + ">";
+    }
+    
+    const char* errorMsg = htmlParserErrorMessageTemplate(errorCode);
+    if (!errorMsg)
+        return;
+    
+    String message;
+    message += errorMsg;
+    message.replace("%tag1", tag1);
+    message.replace("%tag2", tag2);
+    
+    page->chrome()->addMessageToConsole(HTMLMessageSource, isWarning(errorCode) ? WarningMessageLevel: ErrorMessageLevel, message, lineNumber, document->URL());
 }
 
 }

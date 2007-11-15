@@ -35,7 +35,7 @@ class RenderStyle;
 class RenderThemePurple : public RenderTheme {
 public:
     
-    virtual int auxiliaryMenuListRightPadding(RenderMenuList *) const;
+    virtual int popupInternalPaddingRight(RenderStyle*) const;
                 
 protected:
 

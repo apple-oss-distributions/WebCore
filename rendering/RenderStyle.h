@@ -808,6 +808,7 @@ public:
     unsigned nbspMode : 1; // ENBSPMode
     unsigned khtmlLineBreak : 1; // EKHTMLLineBreak
     TextSizeAdjustment textSizeAdjust;
+    Color tapHighlightColor;
     unsigned resize : 2; // EResize
     
 private:
@@ -1410,6 +1411,7 @@ public:
     // Apple-specific property getter methods
     int lineClamp() const { return css3NonInheritedData->lineClamp; }
     TextSizeAdjustment textSizeAdjust() const { return css3InheritedData->textSizeAdjust; }
+    Color tapHighlightColor() const { return css3InheritedData->tapHighlightColor; }
     ETextSecurity textSecurity() const { return static_cast<ETextSecurity>(css3InheritedData->textSecurity); }
 
 // attribute setter methods
@@ -1634,6 +1636,7 @@ public:
     // Apple-specific property setters
     void setLineClamp(int c) { SET_VAR(css3NonInheritedData, lineClamp, c); }
     void setTextSizeAdjust(TextSizeAdjustment anAdjustment) { SET_VAR(css3InheritedData, textSizeAdjust, anAdjustment); }
+    void setTapHighlightColor(const Color & v) { SET_VAR(css3InheritedData,tapHighlightColor,v); }
     void setTextSecurity(ETextSecurity aTextSecurity) { SET_VAR(css3InheritedData, textSecurity, aTextSecurity); } 
 
 #if SVG_SUPPORT
@@ -1769,6 +1772,7 @@ public:
     // Keep these at the end.
     static int initialLineClamp() { return -1; }
     static TextSizeAdjustment initialTextSizeAdjust() { return TextSizeAdjustment(); }
+    static Color initialTapHighlightColor() { return Color::tap; }
     static ETextSecurity initialTextSecurity() { return TSNONE; }
     static const DeprecatedValueList<StyleDashboardRegion>& initialDashboardRegions();
     static const DeprecatedValueList<StyleDashboardRegion>& noneDashboardRegions();

@@ -125,14 +125,28 @@ void JSXMLHttpRequest::put(ExecState *exec, const Identifier &propertyName, JSVa
 
 void JSXMLHttpRequest::putValueProperty(ExecState *exec, int token, JSValue* value, int /*attr*/)
 {
-  switch(token) {
-  case Onreadystatechange:
-    m_impl->setOnReadyStateChangeListener(Window::retrieveActive(exec)->findOrCreateJSUnprotectedEventListener(value, true));
-    break;
-  case Onload:
-    m_impl->setOnLoadListener(Window::retrieveActive(exec)->findOrCreateJSUnprotectedEventListener(value, true));
-    break;
-  }
+    switch(token) {
+        case Onreadystatechange: {
+            Document* doc = m_impl->document();
+            if (!doc)
+                return;
+            Frame* frame = doc->frame();
+            if (!frame)
+                return;
+            m_impl->setOnReadyStateChangeListener(KJS::Window::retrieveWindow(frame)->findOrCreateJSUnprotectedEventListener(value, true));
+            break;
+        }
+        case Onload: {
+            Document* doc = m_impl->document();
+            if (!doc)
+                return;
+            Frame* frame = doc->frame();
+            if (!frame)
+                return;
+            m_impl->setOnLoadListener(KJS::Window::retrieveWindow(frame)->findOrCreateJSUnprotectedEventListener(value, true));
+            break;
+        }
+    }
 }
 
 void JSXMLHttpRequest::mark()

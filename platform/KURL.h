@@ -78,6 +78,7 @@ public:
     void setProtocol(const DeprecatedString &);
     void setHost(const DeprecatedString &);
     void setPort(unsigned short int);
+    void setHostAndPort(const DeprecatedString&);
     void setUser(const DeprecatedString &);
     void setPass(const DeprecatedString &);
     void setPath(const DeprecatedString &);

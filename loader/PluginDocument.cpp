@@ -68,6 +68,9 @@ void PluginTokenizer::createDocumentStructure()
     ExceptionCode ec;
     RefPtr<Element> rootElement = m_doc->createElementNS(xhtmlNamespaceURI, "html", ec);
     m_doc->appendChild(rootElement, ec);
+
+    // Should not be able to zoom into standalone plug-in documents
+    m_doc->processViewport("user-scalable=no");
         
     RefPtr<Element> body = m_doc->createElementNS(xhtmlNamespaceURI, "body", ec);
     body->setAttribute(marginwidthAttr, "0");

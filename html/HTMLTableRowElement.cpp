@@ -33,6 +33,7 @@
 #include "HTMLTableElement.h"
 #include "HTMLTableSectionElement.h"
 #include "NodeList.h"
+#include "Text.h"
 
 namespace WebCore {
 
@@ -45,6 +46,8 @@ HTMLTableRowElement::HTMLTableRowElement(Document* doc)
 
 bool HTMLTableRowElement::checkDTD(const Node* newChild)
 {
+    if (newChild->isTextNode())
+        return static_cast<const Text*>(newChild)->containsOnlyWhitespace();
     return newChild->hasTagName(tdTag) || newChild->hasTagName(thTag) ||
            newChild->hasTagName(formTag) || newChild->hasTagName(scriptTag);
 }
@@ -83,7 +86,8 @@ int HTMLTableRowElement::rowIndex() const
         for (Node *row = head->firstChild(); row; row = row->nextSibling()) {
             if (row == this)
                 return rIndex;
-            ++rIndex;
+            if (row->hasTagName(trTag))
+                ++rIndex;
         }
     }
     
@@ -93,7 +97,8 @@ int HTMLTableRowElement::rowIndex() const
             for (Node* row = section->firstChild(); row; row = row->nextSibling()) {
                 if (row == this)
                     return rIndex;
-                ++rIndex;
+                if (row->hasTagName(trTag))
+                    ++rIndex;
             }
         }
     }
@@ -102,7 +107,8 @@ int HTMLTableRowElement::rowIndex() const
         for (Node *row = foot->firstChild(); row; row = row->nextSibling()) {
             if (row == this)
                 return rIndex;
-            ++rIndex;
+            if (row->hasTagName(trTag))
+                ++rIndex;
         }
     }
 
@@ -124,10 +130,10 @@ int HTMLTableRowElement::sectionRowIndex() const
     return rIndex;
 }
 
-HTMLElement *HTMLTableRowElement::insertCell( int index, ExceptionCode& ec)
+HTMLElement *HTMLTableRowElement::insertCell(int index, ExceptionCode& ec)
 {
     HTMLTableCellElement *c = 0L;
-    RefPtr<NodeList> children = childNodes();
+    RefPtr<HTMLCollection> children = cells();
     int numCells = children ? children->length() : 0;
     if ( index < -1 || index > numCells )
         ec = INDEX_SIZE_ERR; // per the DOM
@@ -148,15 +154,15 @@ HTMLElement *HTMLTableRowElement::insertCell( int index, ExceptionCode& ec)
     return c;
 }
 
-void HTMLTableRowElement::deleteCell( int index, ExceptionCode& ec)
+void HTMLTableRowElement::deleteCell(int index, ExceptionCode& ec)
 {
-    RefPtr<NodeList> children = childNodes();
+    RefPtr<HTMLCollection> children = cells();
     int numCells = children ? children->length() : 0;
-    if (index == -1 )
+    if (index == -1)
         index = numCells-1;
     if (index >= 0 && index < numCells) {
-        RefPtr<Node> row = children->item(index);
-        HTMLElement::removeChild(row.get(), ec);
+        RefPtr<Node> cell = children->item(index);
+        HTMLElement::removeChild(cell.get(), ec);
     } else
         ec = INDEX_SIZE_ERR;
 }

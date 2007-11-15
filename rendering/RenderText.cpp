@@ -626,6 +626,7 @@ void RenderText::calcMinMaxWidth(int leadWidth)
     bool firstWord = true;
     bool firstLine = true;
     int nextBreakable = -1;
+    int lastWordBoundary = 0;
     
     bool breakAll = (style()->wordBreak() == BreakAllWordBreak || style()->wordBreak() == BreakWordBreak) && style()->autoWrap();
     
@@ -665,25 +666,38 @@ void RenderText::calcMinMaxWidth(int leadWidth)
         
         // Ignore spaces and soft hyphens
         if (ignoringSpaces || c == SOFT_HYPHEN) {
+            ASSERT(lastWordBoundary == i);
+            lastWordBoundary++;
             continue;
         }
         
         bool hasBreak = breakAll || isBreakable(txt, i, len, nextBreakable);
+        bool betweenWords = true;
         int j = i;
         while (c != '\n' && c != ' ' && c != '\t' && c != SOFT_HYPHEN) {
             j++;
             if (j == len)
                 break;
             c = txt[j];
-            if (breakAll || isBreakable(txt, j, len, nextBreakable))
+            if (isBreakable(txt, j, len, nextBreakable))
                 break;
+            if (breakAll) {
+                betweenWords = false;
+                break;
+            }
         }
             
         int wordlen = j - i;
         if (wordlen) {
             int w = widthFromCache(f, i, wordlen, tabWidth(), leadWidth + currMaxWidth);
             currMinWidth += w;
-            currMaxWidth += w;
+            if (betweenWords) {
+                if (lastWordBoundary == i)
+                    currMaxWidth += w;
+                else
+                    currMaxWidth += widthFromCache(f, lastWordBoundary, j - lastWordBoundary, tabWidth(), leadWidth + currMaxWidth);
+                lastWordBoundary = j;
+            }
             
             bool isSpace = (j < len) && c == ' ';
             bool isCollapsibleWhiteSpace = (j < len) && style()->isCollapsibleWhiteSpace(c);
@@ -735,6 +749,8 @@ void RenderText::calcMinMaxWidth(int leadWidth)
                 currMaxWidth += f->width(TextRun(txt + i, 1), TextStyle(tabWidth(), leadWidth + currMaxWidth));
                 needsWordSpacing = isSpace && !previousCharacterIsSpace && i == len-1;
             }
+            ASSERT(lastWordBoundary == i);
+            lastWordBoundary++;
         }
     }
 

@@ -59,8 +59,13 @@
 - (void)setDelegate:(id)delegate;
 - (id)delegate;
 
+- (CGPoint)contentsPoint;
+- (CGRect)actualDocumentVisibleRect;
+
 @end
 
 @interface NSObject (WAKScrollViewDelegate)
+- (CGPoint)contentsPointForScrollView:(WAKScrollView *)aScrollView;
+- (CGRect)documentVisibleRectForScrollView:(WAKScrollView *)aScrollView;
 - (BOOL)scrollView:(WAKScrollView *)scrollView shouldScrollToPoint:(CGPoint)point;
 @end

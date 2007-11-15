@@ -226,7 +226,7 @@ static bool device_aspect_ratioMediaFeatureEval(CSSValue* value, RenderStyle* st
         int a = 0;
         int b = 0;
         if (parseAspectRatio(value, a, b))
-            return b != 0  && cmpvalue(a * (int)sg.height(), b * (int)sg.width(), op);
+            return b != 0  && cmpvalue(a * (int)sg.width(), b * (int)sg.height(), op);
         return false;
     }
 

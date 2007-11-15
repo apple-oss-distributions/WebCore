@@ -180,6 +180,7 @@ namespace KJS {
            Onabort, Onblur, Onchange, Onclick, Ondblclick, Ondragdrop, Onerror, 
            Onfocus, Onkeydown, Onkeypress, Onkeyup, Onload, Onmousedown, Onmousemove,
            Onmouseout, Onmouseover, Onmouseup, OnWindowMouseWheel, Onmove, Onreset, Onresize, Onscroll, Onsearch,
+           OnOrientationChange, Orientation,
            Onselect, Onsubmit, Onunload, Onbeforeunload,
            Statusbar, Toolbar, FrameElement, ShowModalDialog };
 

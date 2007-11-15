@@ -67,6 +67,7 @@ namespace KJS {
           OnFocus, OnInput, OnKeyDown, OnKeyPress, OnKeyUp, OnLoad, OnMouseDown,
           OnMouseMove, OnMouseOut, OnMouseOver, OnMouseUp, OnMouseWheel, OnMove, OnReset,
           OnResize, OnScroll, OnSearch, OnSelect, OnSubmit, OnUnload
+          , OnOrientationChange
       };
   };
 

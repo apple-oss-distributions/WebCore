@@ -115,11 +115,6 @@ void raiseDOMException(ExceptionCode ec)
 //------------------------------------------------------------------------------------------
 // String/NSString bridging
 
-StringImpl::operator NSString *() const
-{
-    return [NSString stringWithCharacters:m_data length:m_length];
-}
-
 String::String(NSString* str)
 {
     if (!str)

@@ -67,7 +67,7 @@ class ImageObserver;
 
 struct FrameData {
     FrameData()
-      :m_frame(0), m_duration(0), m_hasAlpha(true) 
+      :m_frame(0), m_bytes(0), m_scale(0), m_haveInfo(false), m_duration(0), m_hasAlpha(true) 
     {}
 
     ~FrameData()
@@ -78,6 +78,9 @@ struct FrameData {
     void clear();
 
     NativeImagePtr m_frame;
+	ssize_t m_bytes;
+	float m_scale;
+	bool m_haveInfo;
     float m_duration;
     bool m_hasAlpha;
 };
@@ -119,6 +122,7 @@ public:
     // Frame accessors.
     size_t currentFrame() const { return m_currentFrame; }
     size_t frameCount();
+    NativeImagePtr frameAtIndex(size_t index, float scaleHint);
     NativeImagePtr frameAtIndex(size_t index);
     float frameDurationAtIndex(size_t index);
     bool frameHasAlphaAtIndex(size_t index);
@@ -149,7 +153,10 @@ private:
         CompositeOperator);
 
     // Decodes and caches a frame. Never accessed except internally.
-    void cacheFrame(size_t index);
+    void cacheFrame(size_t index, float scaleHint);
+
+	// Cache frame metadata without decoding image.
+    void cacheFrameInfo(size_t index);
     
     // Whether or not size is available yet.    
     bool isSizeAvailable();

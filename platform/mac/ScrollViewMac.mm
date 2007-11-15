@@ -97,6 +97,34 @@ int ScrollView::visibleHeight() const
     return 0;
 }
 
+int ScrollView::actualVisibleWidth() const
+{
+    NSScrollView *view = (NSScrollView *)getView();
+    
+    BEGIN_BLOCK_OBJC_EXCEPTIONS;
+    if ([view isKindOfClass:[NSScrollView class]])
+        return (int)[view actualDocumentVisibleRect].size.width;
+    else
+        return (int)[view bounds].size.width;
+    END_BLOCK_OBJC_EXCEPTIONS;
+    
+    return 0;
+}
+
+int ScrollView::actualVisibleHeight() const
+{
+    NSScrollView *view = (NSScrollView *)getView();
+    
+    BEGIN_BLOCK_OBJC_EXCEPTIONS;
+    if ([view _KWQ_isScrollView])
+        return (int)[view actualDocumentVisibleRect].size.height;
+    else
+        return (int)[view bounds].size.height;
+    END_BLOCK_OBJC_EXCEPTIONS;
+    
+    return 0;
+}
+
 FloatRect ScrollView::visibleContentRect() const
 {
     BEGIN_BLOCK_OBJC_EXCEPTIONS;
@@ -133,6 +161,34 @@ int ScrollView::contentsHeight() const
         return (int)[view bounds].size.height;
     END_BLOCK_OBJC_EXCEPTIONS;
 
+    return 0;
+}
+
+int ScrollView::actualContentsX() const
+{
+    NSView *view = getView();
+    
+    BEGIN_BLOCK_OBJC_EXCEPTIONS;
+    if ([view _KWQ_isScrollView])
+        return (int)[(NSScrollView *)view contentsPoint].x;
+    else
+        return (int)[view visibleRect].origin.x;
+    END_BLOCK_OBJC_EXCEPTIONS;
+    
+    return 0;
+}
+
+int ScrollView::actualContentsY() const
+{
+    NSView *view = getView();
+    
+    BEGIN_BLOCK_OBJC_EXCEPTIONS;
+    if ([view _KWQ_isScrollView])
+        return (int)[(NSScrollView *)view contentsPoint].y;
+    else
+        return (int)[view visibleRect].origin.y;
+    END_BLOCK_OBJC_EXCEPTIONS;
+    
     return 0;
 }
 
@@ -177,7 +233,7 @@ IntSize ScrollView::scrollOffset() const
 
 void ScrollView::scrollBy(int dx, int dy)
 {
-    setContentsPos(contentsX() + dx, contentsY() + dy);
+    setContentsPos(actualContentsX() + dx, actualContentsY() + dy);
 }
 
 void ScrollView::scrollPointRecursively(int x, int y)
@@ -215,7 +271,11 @@ void ScrollView::setContentsPos(int x, int y)
     NSView *view = getView();    
     docView = getDocumentView();
     if (docView)
+    {
+        p = [view convertPoint:p fromView:docView];
         view = docView;
+    }
+
     [view scrollPoint:p];
     END_BLOCK_OBJC_EXCEPTIONS;
 }

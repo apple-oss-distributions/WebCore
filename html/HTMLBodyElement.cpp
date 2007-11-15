@@ -142,6 +142,8 @@ void HTMLBodyElement::parseMappedAttribute(MappedAttribute *attr)
         document()->setHTMLWindowEventListener(focusEvent, attr);
     } else if (attr->name() == onresizeAttr) {
         document()->setHTMLWindowEventListener(resizeEvent, attr);
+    } else if (attr->name() == onorientationchangeAttr) {
+        document()->setHTMLWindowEventListener(orientationChangeEvent, attr);
     } else if (attr->name() == onscrollAttr) {
         document()->setHTMLWindowEventListener(scrollEvent, attr);
     } else

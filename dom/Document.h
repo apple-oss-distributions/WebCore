@@ -32,6 +32,7 @@
 #include "DeprecatedStringList.h"
 #include "DocumentMarker.h"
 #include "HTMLCollection.h"
+#include "KURL.h"
 #include "StringHash.h"
 #include "Timer.h"
 #include <wtf/HashCountedSet.h>
@@ -88,6 +89,7 @@ namespace WebCore {
     class StyleSheet;
     class StyleSheetList;
     class Text;
+    class TextResourceDecoder;
     class Tokenizer;
     class TreeWalker;
 #if XPATH_SUPPORT
@@ -329,7 +331,7 @@ public:
 
     // Machinery for saving and restoring state when you leave and then go back to a page.
     void registerFormElementWithState(HTMLGenericFormElement* e) { m_formElementsWithState.add(e); }
-    void deregisterFormElementWithState(HTMLGenericFormElement* e) { m_formElementsWithState.remove(e); }
+    void unregisterFormElementWithState(HTMLGenericFormElement* e) { m_formElementsWithState.remove(e); }
     Vector<String> formElementsState() const;
     unsigned formElementsCharacterCount() const;
     void setStateForNewFormElements(const Vector<String>&);
@@ -554,7 +556,9 @@ public:
      * @param content The header value (value of the meta tag's "content" attribute)
      */
     void processHttpEquiv(const String& equiv, const String& content);
+    void processArguments(const String & features, void *userData, void (*argumentsCallback)(const String& keyString, const String& valueString, Document * aDocument, void* userData));
     void processViewport(const String & features);
+    void processFormatDetection(const String & features);
     
     void dispatchImageLoadEventSoon(HTMLImageLoader*);
     void dispatchImageLoadEventsNow();
@@ -565,8 +569,10 @@ public:
     Element* ownerElement() const;
     
     String referrer() const;
+
     String domain() const;
-    void setDomain(const String& newDomain, bool force = false); // not part of the DOM
+    void setDomain(const String& newDomain);
+    void setDomainInternal(const String& newDomain);
 
     String policyBaseURL() const { return m_policyBaseURL; }
     void setPolicyBaseURL(const String& s) { m_policyBaseURL = s; }
@@ -715,6 +721,8 @@ protected:
     HashSet<HTMLGenericFormElement*> m_formElementsWithState;
     FormElementStateMap m_stateForNewFormElements;
 
+    HashSet<Element*> m_didRestorePageCallbackSet;
+    
     Color m_linkColor;
     Color m_visitedLinkColor;
     Color m_activeLinkColor;
@@ -776,9 +784,12 @@ public:
     bool inPageCache();
     void setInPageCache(bool flag);
 
-    void passwordFieldAdded();
-    void passwordFieldRemoved();
-    bool hasPasswordField() const;
+    // Elements can register themselves for the "didRestoreFromCache()" callback which will be
+    // called if the document is restored from the Page Cache
+    void registerForDidRestoreFromCacheCallback(Element*);
+    void unregisterForDidRestoreFromCacheCallback(Element*);
+    
+    void didRestoreFromCache();
 
     void secureFormAdded();
     void secureFormRemoved();
@@ -815,6 +826,11 @@ public:
     SVGDocumentExtensions* accessSVGExtensions();
 #endif
 
+    bool domainWasSetInDOM() const { return m_domainWasSetInDOM; }
+
+    void initSecurityPolicyURL();
+    const KURL& securityPolicyURL() const { return m_securityPolicyURL; }
+
 private:
     void updateTitle();
     void removeAllDisconnectedNodeEventListeners();
@@ -829,8 +845,11 @@ private:
     void didEndEditing();
 
     mutable String m_domain;
+    bool m_domainWasSetInDOM;
+
+    KURL m_securityPolicyURL;
+
     RenderObject* m_savedRenderer;
-    int m_passwordFields;
     int m_secureForms;
     
     RefPtr<Decoder> m_decoder;
@@ -868,21 +887,25 @@ private:
     mutable bool m_accessKeyMapValid;
     bool m_createRenderers;
     bool m_inPageCache;
-    
+
 public:
     void addAutoSizingNode (Node *node, float size);
     void validateAutoSizingNodes ();
 
     static void setTelephoneNumberParsingEnabled(bool enabled);
     static bool isTelephoneNumberParsingEnabled();
+        
+    void incrementScrollEventListenersCount();
+    void decrementScrollEventListenersCount();
     
 private:
     typedef HashMap<TextAutoSizingKey, RefPtr<TextAutoSizingValue>, TextAutoSizingHash, TextAutoSizingTraits> TextAutoSizingMap;
     TextAutoSizingMap m_textAutoSizedNodes;
 
     static bool telephoneNumberParsingEnabled;
+    unsigned m_scrollEventListenerCount;
 };
 
-} //namespace
+} // namespace WebCore
 
-#endif
+#endif // Document_h

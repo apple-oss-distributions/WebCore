@@ -28,6 +28,7 @@
 
 namespace WebCore { namespace EventNames {
 
+
 #define DOM_EVENT_NAMES_FOR_EACH(macro) \
     \
     macro(abort) \
@@ -75,6 +76,7 @@ namespace WebCore { namespace EventNames {
     macro(textInput) \
     macro(unload) \
     macro(zoom) \
+    macro(orientationChange) \
     \
     macro(DOMActivate) \
     macro(DOMAttrModified) \
@@ -95,6 +97,7 @@ namespace WebCore { namespace EventNames {
     macro(khtmlOrigclickMouseup) \
     \
 // end of DOM_EVENT_NAMES_FOR_EACH
+
 
 #if !DOM_EVENT_NAMES_HIDE_GLOBALS
     #define DOM_EVENT_NAMES_DECLARE(name) extern const AtomicString name##Event;

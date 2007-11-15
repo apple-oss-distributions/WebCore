@@ -1633,6 +1633,16 @@ using namespace HTMLNames;
         [self _inputElement]->click(false);
 }
 
+- (DOMHTMLTextEntryAssistance)autocorrect
+{
+    return (DOMHTMLTextEntryAssistance)[self _inputElement]->autocorrect();
+}
+
+- (DOMHTMLTextEntryAssistance)autocapitalize
+{
+    return (DOMHTMLTextEntryAssistance)[self _inputElement]->autocapitalize();
+}
+
 @end
 
 @implementation DOMHTMLTextAreaElement
@@ -1763,6 +1773,16 @@ using namespace HTMLNames;
 {
     APPLY_ON_WEBTHREAD
         [self _textAreaElement]->select();
+}
+
+- (DOMHTMLTextEntryAssistance)autocorrect
+{
+    return (DOMHTMLTextEntryAssistance)[self _textAreaElement]->autocorrect();
+}
+
+- (DOMHTMLTextEntryAssistance)autocapitalize
+{
+    return (DOMHTMLTextEntryAssistance)[self _textAreaElement]->autocapitalize();
 }
 
 @end

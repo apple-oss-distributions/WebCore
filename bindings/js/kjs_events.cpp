@@ -21,6 +21,7 @@
 #include "config.h"
 #include "kjs_events.h"
 
+#include "Chrome.h"
 #include "Clipboard.h"
 #include "ClipboardEvent.h"
 #include "Document.h"
@@ -39,6 +40,7 @@
 #include "MouseEvent.h"
 #include "MutationEvent.h"
 #include "OverflowEvent.h"
+#include "Page.h"
 #include "UIEvent.h"
 #include "WheelEvent.h"
 #include "kjs_proxy.h"
@@ -127,7 +129,8 @@ void JSAbstractEventListener::handleEvent(Event* ele, bool isWindowEvent)
             String sourceURL = exception->get(exec, "sourceURL")->toString(exec);
             if (Interpreter::shouldPrintExceptions())
                 printf("(event handler):%s\n", message.deprecatedString().utf8().data());
-            frame->addMessageToConsole(message, lineNumber, sourceURL);
+            if (Page* page = frame->page())
+                page->chrome()->addMessageToConsole(JSMessageSource, ErrorMessageLevel, message, lineNumber, sourceURL);
             exec->clearException();
         } else {
             if (!retval->isUndefinedOrNull() && event->storesResultAsString())

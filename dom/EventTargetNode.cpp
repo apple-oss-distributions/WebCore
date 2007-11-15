@@ -140,6 +140,9 @@ void EventTargetNode::addEventListener(const AtomicString &eventType, PassRefPtr
     if (!m_regdListeners)
         m_regdListeners = new RegisteredEventListenerList;
     
+    if (this == document() && eventType == scrollEvent)
+        document()->incrementScrollEventListenersCount();
+    
     // Remove existing identical listener set with identical arguments.
     // The DOM2 spec says that "duplicate instances are discarded" in this case.
     removeEventListener(eventType, listener.get(), useCapture);
@@ -187,6 +190,9 @@ void EventTargetNode::removeEventListener(const AtomicString &eventType, EventLi
                 if (!count) listeners->remove(this);
                 else listeners->set(this, count);
             }
+            
+            if (this == document() && eventType == scrollEvent)
+                document()->decrementScrollEventListenersCount();
         
             (*it)->setRemoved(true);
             

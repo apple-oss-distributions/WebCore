@@ -304,7 +304,6 @@ void RenderPartObject::viewCleared()
         }
 
         view->setHasBorder(hasBorder);
-// FIXME: remove after MERGE:
         view->setIgnoreWheelEvents(element()->hasTagName(iframeTag));
         if (marginw != -1)
             view->setMarginWidth(marginw);

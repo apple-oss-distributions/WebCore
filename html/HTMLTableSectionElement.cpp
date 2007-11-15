@@ -31,6 +31,7 @@
 #include "HTMLNames.h"
 #include "HTMLTableRowElement.h"
 #include "NodeList.h"
+#include "Text.h"
 
 namespace WebCore {
 
@@ -44,6 +45,8 @@ HTMLTableSectionElement::HTMLTableSectionElement(const QualifiedName& tagName, D
 
 bool HTMLTableSectionElement::checkDTD(const Node* newChild)
 {
+    if (newChild->isTextNode())
+        return static_cast<const Text*>(newChild)->containsOnlyWhitespace();
     return newChild->hasTagName(trTag) || newChild->hasTagName(formTag) ||
            newChild->hasTagName(scriptTag);
 }
@@ -67,7 +70,7 @@ ContainerNode* HTMLTableSectionElement::addChild(PassRefPtr<Node> child)
 HTMLElement* HTMLTableSectionElement::insertRow(int index, ExceptionCode& ec)
 {
     HTMLTableRowElement* r = 0L;
-    RefPtr<NodeList> children = childNodes();
+    RefPtr<HTMLCollection> children = rows();
     int numRows = children ? (int)children->length() : 0;
     if (index < -1 || index > numRows)
         ec = INDEX_SIZE_ERR; // per the DOM
@@ -89,7 +92,7 @@ HTMLElement* HTMLTableSectionElement::insertRow(int index, ExceptionCode& ec)
 
 void HTMLTableSectionElement::deleteRow( int index, ExceptionCode& ec)
 {
-    RefPtr<NodeList> children = childNodes();
+    RefPtr<HTMLCollection> children = rows();
     int numRows = children ? (int)children->length() : 0;
     if (index == -1)
         index = numRows - 1;

@@ -30,6 +30,7 @@
 #define HTMLPARSER_H
 
 #include "HTMLDocument.h"
+#include "HTMLParserErrorCodes.h"
 
 namespace WebCore {
 
@@ -49,7 +50,7 @@ class Token;
 class HTMLParser
 {
 public:
-    HTMLParser(Document*);
+    HTMLParser(Document*, bool);
     HTMLParser(DocumentFragment*);
     virtual ~HTMLParser();
 
@@ -116,7 +117,7 @@ private:
     HTMLStackElem *blockStack;
 
     void pushBlock(const AtomicString& tagName, int _level);
-    void popBlock(const AtomicString& tagName);
+    void popBlock(const AtomicString& tagName, bool reportErrors = false);
     void popBlock(const QualifiedName& qName) { return popBlock(qName.localName()); } // Convenience function for readability.
     void popOneBlock(bool delBlock = true);
     void popInlineBlocks();
@@ -166,6 +167,11 @@ private:
      * inserts the stupid isIndex element.
      */
     void startBody();
+    
+    void reportError(HTMLParserErrorCode errorCode, const AtomicString* tagName1 = 0, const AtomicString* tagName2 = 0, bool closeTags = false)
+    { if (!m_reportErrors) return; reportErrorToConsole(errorCode, tagName1, tagName2, closeTags); }
+    
+    void reportErrorToConsole(HTMLParserErrorCode, const AtomicString* tagName1, const AtomicString* tagName2, bool closeTags);
 
     bool inBody;
     bool haveContent;
@@ -180,6 +186,7 @@ private:
 
     bool headLoaded;
     bool m_fragment;
+    bool m_reportErrors;
     int inStrayTableContent;
 };
 

@@ -115,7 +115,8 @@ void HTMLDocument::setBody(HTMLElement *_body, ExceptionCode& ec)
 
 Tokenizer *HTMLDocument::createTokenizer()
 {
-    return new HTMLTokenizer(this);
+    // FIXME: this should probably pass the frame instead
+    return new HTMLTokenizer(this, true);
 }
 
 // --------------------------------------------------------------------------

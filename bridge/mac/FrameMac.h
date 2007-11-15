@@ -148,8 +148,6 @@ public:
     virtual void saveDocumentState();
     virtual void restoreDocumentState();
     
-    virtual void addMessageToConsole(const String& message,  unsigned int lineNumber, const String& sourceID);
-    
     NSView* nextKeyView(Node* startingPoint, SelectionDirection);
     NSView* nextKeyViewInFrameHierarchy(Node* startingPoint, SelectionDirection);
     static NSView* nextKeyViewForWidget(Widget* startingPoint, SelectionDirection);
@@ -271,16 +269,20 @@ public:
     virtual void textWillBeDeletedInTextField(Element*);
     virtual void textDidChangeInTextArea(Element*);
     
+    virtual void formElementDidSetValue(Element *);
     virtual void formElementDidFocus(Element*);
     virtual void formElementDidBlur(Element*);
     
     virtual void didReceiveViewportArguments(ViewportArguments);
+    
+    virtual void setNeedsScrollNotifications(bool);
     
     virtual ViewportArguments viewportArguments();
     virtual void setViewportArguments(ViewportArguments);
     virtual NSDictionary * dictionaryForViewportArguments(ViewportArguments arguments);
     
     virtual void deferredContentChangeObserved();
+    virtual void clearObservedContentModifiers();
 
 #if BINDINGS
     KJS::Bindings::RootObject* executionContextForDOM();
@@ -324,6 +326,8 @@ public:
     void paintCustomHighlight(const AtomicString& type, const FloatRect& boxRect, const FloatRect& lineRect, bool text, bool line);
 
     GSEventRef currentEvent() { return _currentEvent; }
+
+    virtual int orientation() const;
 
 protected:
     virtual void startRedirectionTimer();

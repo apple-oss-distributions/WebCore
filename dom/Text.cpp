@@ -27,6 +27,8 @@
 #include "Document.h"
 #include "ExceptionCode.h"
 #include "RenderText.h"
+#include "break_lines.h"
+#include "TextBreakIterator.h"
 
 namespace WebCore {
 
@@ -183,6 +185,32 @@ String Text::toString() const
 {
     // FIXME: substitute entity references as needed!
     return nodeValue();
+}
+
+PassRefPtr<Text> Text::createWithLengthLimit(Document* doc, const String& text, unsigned& charsLeft, unsigned maxChars)
+{
+    if (charsLeft == text.length() && charsLeft <= maxChars) {
+        charsLeft = 0;
+        return new Text(doc, text);
+    }
+    
+    unsigned start = text.length() - charsLeft;
+    unsigned end = start + std::min(charsLeft, maxChars);
+    
+    // check we are not on an unbreakable boundary
+    TextBreakIterator* it = characterBreakIterator(text.characters(), text.length()); 
+ 	if (end < text.length() && !isTextBreak(it, end)) 
+        end = textBreakPreceding(it, end); 
+    
+        
+    // maxChars of unbreakable characters could lead to infinite loop
+    if (end <= start)
+        end = text.length();
+    
+    String nodeText = text.substring(start, end - start);
+    charsLeft = text.length() - end;
+        
+    return new Text(doc, nodeText);
 }
 
 #ifndef NDEBUG

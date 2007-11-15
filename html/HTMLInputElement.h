@@ -191,6 +191,8 @@ public:
     virtual void setDisabled(bool isDisabled) { HTMLGenericFormElement::setDisabled(inputType() == FILE || isDisabled); }
 
     String constrainValue(const String& proposedValue) const;
+
+    virtual void didRestoreFromCache();
     
 protected:
     AtomicString m_name;

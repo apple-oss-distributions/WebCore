@@ -29,8 +29,9 @@
 #include "Shared.h"
 #include <wtf/Noncopyable.h>
 #include <wtf/PassRefPtr.h>
-
+#include "Console.h"
 namespace WebCore {
+    //class Console;
     class CSSRuleList;
     class CSSStyleDeclaration;
     class Document;
@@ -44,6 +45,10 @@ namespace WebCore {
         Frame* frame();
         void disconnectFrame();
 
+        void clear();
+        
+        Console* console() const;
+        
         // DOM Level 2 AbstractView Interface
         Document* document() const;
         
@@ -56,6 +61,7 @@ namespace WebCore {
         
     private:
         Frame* m_frame;
+        mutable RefPtr<Console> m_console;
     };
 
 } // namespace WebCore

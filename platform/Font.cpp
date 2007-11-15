@@ -177,6 +177,10 @@ void WidthIterator::advance(int offset, GlyphBuffer* glyphBuffer)
                 }
                 CFRelease (string);
             }
+        } 
+        // check for left-to-right and right-to-left marks (lrm, rlm)
+        else if (c == 0x200E || c == 0x200F) {
+            c = 0x200B; // map to zero-width space            
         }
         
         const FontData* fontData = m_substituteFontData ? m_substituteFontData : primaryFont;

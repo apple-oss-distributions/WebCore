@@ -109,6 +109,9 @@ using XBL::XBLBindingManager;
 #endif
 
 #include "Element.h"
+#include "Page.h"
+#include "HTMLTokenizer.h"
+#include "HTMLParserErrorCodes.h"
 #include "WKUtilities.h"
 
 using namespace std;
@@ -217,8 +220,8 @@ Document::Document(DOMImplementation* impl, FrameView *v)
 #ifdef KHTML_XSLT
     , m_transformSource(0)
 #endif
+    , m_domainWasSetInDOM(false)
     , m_savedRenderer(0)
-    , m_passwordFields(0)
     , m_secureForms(0)
     , m_designMode(inherit)
     , m_selfOnlyRefCount(0)
@@ -232,6 +235,7 @@ Document::Document(DOMImplementation* impl, FrameView *v)
     , m_accessKeyMapValid(false)
     , m_createRenderers(true)
     , m_inPageCache(false)
+    , m_scrollEventListenerCount(0)
 {
     m_document.resetSkippingRef(this);
 
@@ -275,6 +279,8 @@ Document::Document(DOMImplementation* impl, FrameView *v)
     m_overMinimumLayoutThreshold = false;
     
     m_jsEditor = 0;
+
+    initSecurityPolicyURL();
 
     static int docID = 0;
     m_docID = docID++;
@@ -986,13 +992,14 @@ void Document::detach()
         render->destroy();
 
     m_view = 0;
+
+    // do this before the arena is cleared, which is needed to deref the RenderStyle on TextAutoSizingKey
+    m_textAutoSizedNodes.clear();
     
     if (m_renderArena) {
         delete m_renderArena;
         m_renderArena = 0;
     }
-
-    m_textAutoSizedNodes.clear();
 }
 
 void Document::removeAllEventListenersFromAllNodes()
@@ -1312,9 +1319,7 @@ void Document::clear()
 
     removeChildren();
 
-    RegisteredEventListenerList::iterator end = m_windowEventListeners.end();
-    for (RegisteredEventListenerList::iterator it = m_windowEventListeners.begin(); it != end; ++it)
-        m_windowEventListeners.remove(it);
+    m_windowEventListeners.clear();
 }
 
 void Document::setURL(const DeprecatedString& url)
@@ -1627,13 +1632,46 @@ void Document::processHttpEquiv(const String &equiv, const String &content)
     }
 }
 
-static void setViewportFeature(const String& keyString, const String& valueString, ViewportArguments & arguments)
+
+static void reportViewportWarning(Document * aDocument, ViewportErrorCode anErrorCode, const String& aReplacement)
 {
+    Tokenizer * tokenizer = aDocument->tokenizer();
+    
+    Frame * frame = aDocument->frame();
+    if (!frame)
+        return;
+    
+    Page * page = frame->page();
+    
+    if (page) {
+        
+        String message = viewportErrorMessageTemplate(anErrorCode);
+        message.replace("%replacement", aReplacement);
+        
+        page->chrome()->addMessageToConsole(HTMLMessageSource, viewportErrorMessageLevel(anErrorCode), message, tokenizer ? tokenizer->lineNumber() + 1 : 0, aDocument->URL());
+    }
+}
+
+static void setViewportFeature(const String& keyString, const String& valueString, Document * aDocument, void* userData)
+{
+    ViewportArguments &arguments = *((ViewportArguments*)userData);
     float value = -1;
+    bool didUseConstants = false;
 
     if (equalIgnoringCase(valueString, "yes"))
         value = 1;
-    else if (valueString.length() != 0 && !equalIgnoringCase(valueString, "default")) // listing a key with no value is shorthand for key=default
+    else if (equalIgnoringCase(valueString, "device-width")) {
+        didUseConstants = true;
+        value = GSMainScreenSize().width;
+    }
+    else if (equalIgnoringCase(valueString, "device-height")) {
+        didUseConstants = true;
+        value = GSMainScreenSize().height;
+    }
+    // This allows us to distinguish the omission of a key from asking for the default value.
+    else if (equalIgnoringCase(valueString, "default"))
+        value = -2;
+    else if (valueString.length() != 0) // listing a key with no value is shorthand for key=default
         value = valueString.deprecatedString().toDouble();
 
     if (keyString == "initial-scale")
@@ -1641,13 +1679,42 @@ static void setViewportFeature(const String& keyString, const String& valueStrin
     else if (keyString == "minimum-scale")
         arguments.minimumScale = value;
     else if (keyString == "maximum-scale")
+    {
         arguments.maximumScale = value;
+        
+        if (value > 10.0)
+            reportViewportWarning(aDocument, MaximumScaleTooLargeError, keyString);
+    }
     else if (keyString == "user-scalable")
         arguments.userScalable = value;
-    else if (keyString == "width")
+    else if (keyString == "width") {
+        
+        if (value == GSMainScreenSize().width && !didUseConstants)
+            reportViewportWarning(aDocument, DeviceWidthShouldBeUsedWarning, keyString);
+        else if (value == GSMainScreenSize().height && !didUseConstants)
+            reportViewportWarning(aDocument, DeviceHeightShouldBeUsedWarning, keyString);
+        
         arguments.width = value;
-    else if (keyString == "height")
+    }
+    else if (keyString == "height") {
+        
+        if (value == GSMainScreenSize().width && !didUseConstants)
+            reportViewportWarning(aDocument, DeviceWidthShouldBeUsedWarning, keyString);
+        else if (value == GSMainScreenSize().height && !didUseConstants)
+            reportViewportWarning(aDocument, DeviceHeightShouldBeUsedWarning, keyString);
+        
         arguments.height = value;
+    }
+    else
+        reportViewportWarning(aDocument, UnrecognizedViewportArgumentError, keyString);
+}
+
+static void setParserFeature(const String& keyString, const String& valueString, Document * aDocument, void* userData)
+{
+    Document* document = (Document *)userData;
+    if ((keyString == "telephone") && equalIgnoringCase(valueString, "no")) {
+        document->setTelephoneNumberParsingEnabled(false);
+    }
 }
 
 // Though isspace() considers \t and \v to be whitespace, Win IE doesn't.
@@ -1656,14 +1723,8 @@ static bool isSeparator(::UChar c)
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '=' || c == ',' || c == '\0';
 }
 
-void Document::processViewport(const String & features)
+void Document::processArguments(const String & features, void *userData, void (*argumentsCallback)(const String& keyString, const String& valueString, Document * aDocument, void* userData))
 {
-    assert(!features.isNull());
-    
-    Frame *frame = this->frame();
-    
-    ViewportArguments arguments;
-
     // Tread lightly in this code -- it was specifically designed to mimic Win IE's parsing behavior.
     int keyBegin, keyEnd;
     int valueBegin, valueEnd;
@@ -1709,11 +1770,30 @@ void Document::processViewport(const String & features)
         
         String keyString(buffer.substring(keyBegin, keyEnd - keyBegin));
         String valueString(buffer.substring(valueBegin, valueEnd - valueBegin));
-        setViewportFeature(keyString, valueString, arguments);
+        argumentsCallback(keyString, valueString, this, userData);
     }
+}
+
+void Document::processViewport(const String & features)
+{
+    assert(!features.isNull());
     
+    Frame *frame = this->frame();
+    
+    ViewportArguments arguments;
+
+    processArguments(features, &arguments, setViewportFeature);
+
     frame->didReceiveViewportArguments(arguments);
 }
+
+void Document::processFormatDetection(const String & features)
+{
+    assert(!features.isNull());
+    
+    processArguments(features, this, setParserFeature);
+}
+
 
 MouseEventWithHitTestResults Document::prepareMouseEvent(bool readonly, bool active, bool mouseMove,
                                                          const IntPoint& point, const PlatformMouseEvent& event)
@@ -2325,9 +2405,25 @@ void Document::removeHTMLWindowEventListener(const AtomicString &eventType)
     for (; it != m_windowEventListeners.end(); ++it)
         if ( (*it)->eventType() == eventType && (*it)->listener()->isHTMLEventListener()) {
             m_windowEventListeners.remove(it);
+            if (eventType == scrollEvent)
+                decrementScrollEventListenersCount();
             return;
         }
 }
+
+
+void Document::incrementScrollEventListenersCount()
+{
+    if (++m_scrollEventListenerCount == 1 && this == topDocument())
+        frame()->setNeedsScrollNotifications(true);
+}
+
+void Document::decrementScrollEventListenersCount()
+{
+    if (--m_scrollEventListenerCount == 0 && this == topDocument())
+        frame()->setNeedsScrollNotifications(false);
+}
+
 
 void Document::addWindowEventListener(const AtomicString &eventType, PassRefPtr<EventListener> listener, bool useCapture)
 {
@@ -2335,6 +2431,10 @@ void Document::addWindowEventListener(const AtomicString &eventType, PassRefPtr<
     // The DOM 2 spec says that "duplicate instances are discarded" in this case.
     removeWindowEventListener(eventType, listener.get(), useCapture);
     m_windowEventListeners.append(new RegisteredEventListener(eventType, listener, useCapture));
+    
+    if (eventType == scrollEvent)
+        incrementScrollEventListenersCount();
+
 }
 
 void Document::removeWindowEventListener(const AtomicString &eventType, EventListener *listener, bool useCapture)
@@ -2344,6 +2444,8 @@ void Document::removeWindowEventListener(const AtomicString &eventType, EventLis
     for (; it != m_windowEventListeners.end(); ++it)
         if (*(*it) == rl) {
             m_windowEventListeners.remove(it);
+            if (eventType == scrollEvent)
+                decrementScrollEventListenersCount();
             return;
         }
 }
@@ -2441,29 +2543,40 @@ String Document::domain() const
     return m_domain;
 }
 
-void Document::setDomain(const String &newDomain, bool force /*=false*/)
+void Document::setDomain(const String& newDomain)
 {
-    if (force) {
-        m_domain = newDomain;
-        return;
-    }
-    if (m_domain.isEmpty()) // not set yet (we set it on demand to save time and space)
-        m_domain = KURL(URL()).host(); // Initially set to the host
+    m_domainWasSetInDOM = true;
+
+    // Not set yet (we set it on demand to save time and space)
+    // Initially set to the host
+    if (m_domain.isEmpty())
+        m_domain = KURL(URL()).host();
 
     // Both NS and IE specify that changing the domain is only allowed when
     // the new domain is a suffix of the old domain.
+
+    // FIXME: We should add logging indicating why a domain was not allowed. 
+
     int oldLength = m_domain.length();
     int newLength = newDomain.length();
-    if (newLength < oldLength) // e.g. newDomain=kde.org (7) and m_domain=www.kde.org (11)
-    {
+    // e.g. newDomain=kde.org (7) and m_domain=www.kde.org (11)
+    if (newLength < oldLength) {
         String test = m_domain.copy();
-        if (test[oldLength - newLength - 1] == '.') // Check that it's a subdomain, not e.g. "de.org"
-        {
-            test.remove(0, oldLength - newLength); // now test is "kde.org" from m_domain
-            if (test == newDomain)                 // and we check that it's the same thing as newDomain
+        // Check that it's a subdomain, not e.g. "de.org"
+        if (test[oldLength - newLength - 1] == '.') {
+            // Now test is "kde.org" from m_domain
+            // and we check that it's the same thing as newDomain
+            test.remove(0, oldLength - newLength);
+            if (test == newDomain)
                 m_domain = newDomain;
         }
     }
+}
+
+void Document::setDomainInternal(const String& newDomain)
+{
+    m_domainWasSetInDOM = false;
+    m_domain = newDomain;
 }
 
 bool Document::isValidName(const String &name)
@@ -2616,20 +2729,21 @@ void Document::setInPageCache(bool flag)
     }
 }
 
-void Document::passwordFieldAdded()
+void Document::registerForDidRestoreFromCacheCallback(Element* e)
 {
-    m_passwordFields++;
+    m_didRestorePageCallbackSet.add(e);
 }
 
-void Document::passwordFieldRemoved()
+void Document::unregisterForDidRestoreFromCacheCallback(Element* e)
 {
-    assert(m_passwordFields > 0);
-    m_passwordFields--;
+    m_didRestorePageCallbackSet.remove(e);
 }
 
-bool Document::hasPasswordField() const
+void Document::didRestoreFromCache()
 {
-    return m_passwordFields > 0;
+    HashSet<Element*>::iterator it = m_didRestorePageCallbackSet.begin();
+    for (; it != m_didRestorePageCallbackSet.end(); ++it) 
+        (*it)->didRestoreFromCache();
 }
 
 void Document::secureFormAdded()
@@ -3728,4 +3842,32 @@ void Document::validateAutoSizingNodes ()
 }
 
 
+void Document::initSecurityPolicyURL()
+{
+    Frame* f = frame();
+    if (!f)
+        return;
+
+    m_securityPolicyURL = f->url();
+
+    // javascript: URLs create document using the "about" protocol
+    if (!m_securityPolicyURL.isEmpty() && !equalIgnoringCase(m_securityPolicyURL.protocol(), "about"))
+        return;
+
+    Frame* openerFrame = 0;
+    if (f->tree()->parent())
+        openerFrame = f->tree()->parent();
+    else if (f->opener())
+        openerFrame = f->opener();
+
+    if (!openerFrame)
+        return;
+
+    Document* openerDocument = openerFrame->document();
+    if (!openerDocument)
+        return;
+
+    m_securityPolicyURL = openerDocument->securityPolicyURL();
 }
+
+} // namespace WebCore

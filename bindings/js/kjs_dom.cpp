@@ -396,6 +396,7 @@ onselect      DOMEventTargetNode::OnSelect               DontDelete
 onselectstart DOMEventTargetNode::OnSelectStart          DontDelete
 onsubmit      DOMEventTargetNode::OnSubmit               DontDelete
 onunload      DOMEventTargetNode::OnUnload               DontDelete
+onorientationchange      DOMEventTargetNode::OnOrientationChange               DontDelete
 @end
 */
 
@@ -485,6 +486,8 @@ JSValue* DOMEventTargetNode::getValueProperty(ExecState* exec, int token) const
             return getListener(resetEvent);
         case OnResize:
             return getListener(resizeEvent);
+        case OnOrientationChange:
+            return getListener(orientationChangeEvent);
         case OnScroll:
             return getListener(scrollEvent);
         case OnSearch:
@@ -618,6 +621,9 @@ void DOMEventTargetNode::putValueProperty(ExecState* exec, int token, JSValue* v
         case OnResize:
             setListener(exec, resizeEvent, value);
             break;
+        case OnOrientationChange:
+            setListener(exec, orientationChangeEvent, value);
+            break;
         case OnScroll:
             setListener(exec, scrollEvent, value);
             break;
@@ -641,7 +647,9 @@ void DOMEventTargetNode::putValueProperty(ExecState* exec, int token, JSValue* v
 
 void DOMEventTargetNode::setListener(ExecState* exec, const AtomicString &eventType, JSValue* func) const
 {
-    EventTargetNodeCast(impl())->setHTMLEventListener(eventType, Window::retrieveActive(exec)->findOrCreateJSEventListener(func, true));
+    Frame* frame = impl()->document()->frame();
+    if (frame)
+        EventTargetNodeCast(impl())->setHTMLEventListener(eventType, KJS::Window::retrieveWindow(frame)->findOrCreateJSEventListener(func, true));
 }
 
 JSValue* DOMEventTargetNode::getListener(const AtomicString &eventType) const
@@ -679,13 +687,19 @@ JSValue* DOMEventTargetNodeProtoFunc::callAsFunction(ExecState* exec, JSObject* 
     EventTargetNode* node = static_cast<EventTargetNode*>(DOMNode->impl());
     switch (id) {
         case DOMEventTargetNode::AddEventListener: {
-            JSEventListener *listener = Window::retrieveActive(exec)->findOrCreateJSEventListener(args[1]);
+            Frame* frame = node->document()->frame();
+            if (!frame)
+                return jsUndefined();
+            JSEventListener* listener = KJS::Window::retrieveWindow(frame)->findOrCreateJSEventListener(args[1]);
             if (listener)
                 node->addEventListener(args[0]->toString(exec), listener,args[2]->toBoolean(exec));
             return jsUndefined();
         }
         case DOMEventTargetNode::RemoveEventListener: {
-            JSEventListener *listener = Window::retrieveActive(exec)->findJSEventListener(args[1]);
+            Frame* frame = node->document()->frame();
+            if (!frame)
+                return jsUndefined();
+            JSEventListener* listener = KJS::Window::retrieveWindow(frame)->findJSEventListener(args[1]);
             if (listener) 
                 node->removeEventListener(args[0]->toString(exec), listener,args[2]->toBoolean(exec));
             return jsUndefined();
