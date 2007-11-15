@@ -2492,6 +2492,9 @@ void RenderObject::arenaDelete(RenderArena *arena, void *base)
         if (m_style->backgroundImage())
             m_style->backgroundImage()->deref(this);
     
+        if (CachedImage* borderImage = m_style->borderImage().image())
+            borderImage->deref(this);
+        
         m_style->deref(arena);
     }
     

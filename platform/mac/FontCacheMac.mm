@@ -119,31 +119,47 @@ const FontData* FontCache::getFontDataForCharacters(const Font& font, const UCha
     
     if (useCJFont) {
         // by default, Chinese font is preferred, to fall back on Japanese
-        static AtomicString preferredPlain("STXihei");
-        static AtomicString preferredBold("STHeiti");
-        static AtomicString secondaryPlain("HiraKakuProN-W3");
-        static AtomicString secondaryBold("HiraKakuProN-W6");
+        static const AtomicString chinesePlain("STXihei");
+        static const AtomicString chineseBold("STHeiti");
+        static const AtomicString japanesePlain("HiraKakuProN-W3");
+        static const AtomicString japaneseBold("HiraKakuProN-W6");
 
-        static int CJKFontInitialized = 0;
-        if ( CJKFontInitialized == 0 )
+        static AtomicString preferredPlain;
+        static AtomicString preferredBold;
+        static AtomicString secondaryPlain;
+        static AtomicString secondaryBold;
+
+        static bool CJKFontInitialized = false;
+
+        if ( !CJKFontInitialized )
         {
-            CJKFontInitialized = 1;
+            // NSLog(@"WebCore is checking AppleLanguages for Chinese/Japanese font preference\n");
+            CJKFontInitialized = true;
             // Testing: languageName = (CFStringRef)@"ja";
             NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
             NSArray *languages = [defaults stringArrayForKey:@"AppleLanguages"];
-            CFStringRef language = [languages count] > 0 ? (CFStringRef)[languages objectAtIndex:0] : CFSTR("en");
-            CFStringRef languageName = CFLocaleCreateCanonicalLanguageIdentifierFromString(NULL, language);
-            if ( CFEqual(languageName, CFSTR("ja")) ) {
-                // If user's language is japanese, swap preferred and secondary.
-                AtomicString tmp = secondaryPlain;
-                secondaryPlain = preferredPlain;
-                preferredPlain = tmp;
-                
-                tmp = secondaryBold;
-                secondaryBold = preferredBold;
-                preferredBold = tmp;
+            int japanesePreferred = 1; // if there is no "ja" or "zh", prefer "ja"
+            int count = [languages count];
+            for ( CFIndex index=0; index < count; ++index) {
+                CFStringRef language = (CFStringRef)[languages objectAtIndex:index];
+                CFStringRef languageName = CFLocaleCreateCanonicalLanguageIdentifierFromString(NULL, language);
+                if (      CFEqual(languageName, CFSTR("ja")) )         { CFRelease(languageName); japanesePreferred = 1; break;}
+                else if ( CFEqual(languageName, CFSTR("zh-Hans")) )    { CFRelease(languageName); japanesePreferred = 0; break;}
+                else if ( CFEqual(languageName, CFSTR("zh-Hant")) )    { CFRelease(languageName); japanesePreferred = 0; break;}
+                CFRelease(languageName);
             }
-            CFRelease(languageName);
+           if (japanesePreferred) {
+                // If user's AppleLanguages has "ja" above "zh-*", swap preferred and secondary
+               preferredPlain = japanesePlain;
+               preferredBold = japaneseBold;
+               secondaryPlain = chinesePlain;
+               secondaryBold = chineseBold;
+           } else {
+               preferredPlain = chinesePlain;
+               preferredBold = chineseBold;               
+               secondaryPlain = japanesePlain;
+               secondaryBold = japaneseBold;
+           }
         }
 
         platformFont = getCachedFontPlatformData(font.fontDescription(), font.fontDescription().bold() ? preferredBold : preferredPlain);    

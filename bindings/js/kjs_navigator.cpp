@@ -35,9 +35,7 @@ extern "C" {
 }
 #define WEBCORE_NAVIGATOR_IPHONE "iPhone"
 #define WEBCORE_NAVIGATOR_IPOD "iPod"
-static int sNavigatorPlatformSet = 0;
-static char sNavigatorPlatform[8];
-#define WEBCORE_NAVIGATOR_PLATFORM sNavigatorPlatform
+#define WEBCORE_NAVIGATOR_PLATFORM (GSSystemHasTelephonyCapability() == kCFBooleanTrue ? WEBCORE_NAVIGATOR_IPHONE : WEBCORE_NAVIGATOR_IPOD)
 
 using namespace WebCore;
 
@@ -162,34 +160,6 @@ bool Navigator::getOwnPropertySlot(ExecState *exec, const Identifier& propertyNa
 
 JSValue *Navigator::getValueProperty(ExecState *exec, int token) const
 {
-    if (sNavigatorPlatformSet == 0) {
-        bool canShowIPod = false;
-        
-        // is it 9/6/2007 or later?
-        time_t now;
-        time(&now);
-        
-        struct tm* rel_tm = localtime(&now);
-        rel_tm->tm_sec = 0;     /* seconds (0 - 60) */
-        rel_tm->tm_min = 0;     /* minutes (0 - 59) */
-        rel_tm->tm_hour = 0;    /* hours (0 - 23) */
-        rel_tm->tm_mday = 6;    /* day of month (1 - 31) */
-        rel_tm->tm_mon = 9 - 1;     /* month of year (0 - 11) */
-        rel_tm->tm_year = 2007 - 1900;    /* year - 1900 */
-        time_t release = mktime(rel_tm);
-
-        time(&now);
-        if (release != -1)
-            canShowIPod = (difftime(now, release) > 0);
-
-        CFTypeRef telephony = GSSystemGetCapability(kGSTelephonyCapability);
-        if (!canShowIPod || (telephony && CFGetTypeID(telephony) == CFBooleanGetTypeID() && CFEqual(telephony, kCFBooleanTrue)))
-            strcpy(sNavigatorPlatform, WEBCORE_NAVIGATOR_IPHONE);
-        else
-            strcpy(sNavigatorPlatform, WEBCORE_NAVIGATOR_IPOD);
-    
-        sNavigatorPlatformSet = 1;
-    }
   String userAgent = m_frame->userAgent();
   switch (token) {
   case AppCodeName:
@@ -212,7 +182,7 @@ JSValue *Navigator::getValueProperty(ExecState *exec, int token) const
   case UserAgent:
     return jsString(userAgent);
   case Platform:
-    return jsString(WEBCORE_NAVIGATOR_PLATFORM);
+      return jsString(WEBCORE_NAVIGATOR_PLATFORM);
   case _Plugins:
     return new Plugins(exec);
   case _MimeTypes:

@@ -467,6 +467,11 @@ void Frame::clear(bool clearWindowProperties)
 
   if (!d->m_haveEncoding)
     d->m_encoding = DeprecatedString::null;
+  
+  if (d->m_savedPausedTimeouts != 0) {
+      delete d->m_savedPausedTimeouts;
+      d->m_savedPausedTimeouts = 0;
+  }
 }
 
 Document *Frame::document() const
