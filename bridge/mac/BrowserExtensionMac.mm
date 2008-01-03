@@ -72,8 +72,10 @@ void BrowserExtensionMac::createNewWindow(const ResourceRequest& request,
 
     NSString *frameName = request.frameName.isEmpty() ? nil : (NSString*)request.frameName;
     if (frameName) {
-        // FIXME: Can't we just use m_frame->findFrame?
-        if (WebCoreFrameBridge *frameBridge = [m_frame->bridge() findFrameNamed:frameName]) {
+        if (Frame* frame = m_frame->tree()->find(frameName)) {
+            WebCoreFrameBridge *frameBridge = Mac(frame)->bridge();
+            if (![m_frame->bridge() canTargetLoadInFrame:frameBridge])
+                return;
             if (!url.isEmpty()) {
                 String argsReferrer = request.referrer();
                 NSString *referrer;

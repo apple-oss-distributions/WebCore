@@ -108,6 +108,8 @@ public:
   Frame(Page*, Element*);
   virtual ~Frame();
 
+  virtual bool canTargetLoadInFrame(Frame*) { return false; }
+
   virtual bool openURL(const KURL&);
   virtual bool closeURL();
 

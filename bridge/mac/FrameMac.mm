@@ -2355,4 +2355,9 @@ int FrameMac::orientation() const
     return [_bridge rotationDegrees];
 }
 
+bool FrameMac::canTargetLoadInFrame(Frame* targetFrame)
+{
+    return [_bridge canTargetLoadInFrame:Mac(targetFrame)->bridge()];
+}
+
 }

@@ -1097,6 +1097,8 @@ void Window::put(ExecState* exec, const Identifier &propertyName, JSValue *value
     case Location_: {
       Frame* p = Window::retrieveActive(exec)->m_frame;
       if (p) {
+        if (!p->canTargetLoadInFrame(impl()->frame()))
+          return;
         DeprecatedString dstUrl = p->document()->completeURL(DeprecatedString(value->toString(exec)));
         if (!dstUrl.startsWith("javascript:", false) || isSafeScript(exec)) {
           bool userGesture = static_cast<ScriptInterpreter *>(exec->dynamicInterpreter())->wasRunByUserGesture();
@@ -1643,6 +1645,10 @@ JSValue *WindowFunc::callAsFunction(ExecState *exec, JSObject *thisObj, const Li
   }
   case Window::Open:
   {
+      Frame* activeFrame = Window::retrieveActive(exec)->impl()->frame();
+      if (!activeFrame)
+          return  jsUndefined();
+
       AtomicString frameName = args[1]->isUndefinedOrNull()
         ? "_blank" : AtomicString(args[1]->toString(exec));
       // Because FrameTree::find() returns true for empty strings, we must check for empty framenames.
@@ -1666,20 +1672,22 @@ JSValue *WindowFunc::callAsFunction(ExecState *exec, JSObject *thisObj, const Li
       ResourceRequest request;
       request.setURL(url);
       request.frameName = frameName.deprecatedString();
+
+      // Get the target frame for the special cases of _top and _parent.  In those 
+      // cases, we can schedule a location change right now and return early.
+      bool topOrParent = false;
       if (request.frameName == "_top") {
           while (frame->tree()->parent())
               frame = frame->tree()->parent();
-          
-          const Window* window = Window::retrieveWindow(frame);
-          if (!url.url().startsWith("javascript:", false) || (window && window->isSafeScript(exec))) {
-              frame->scheduleLocationChange(url.url(), activePart->referrer(), false/*don't lock history*/, userGesture);
-          }
-          return Window::retrieve(frame);
+          topOrParent = true;
+      } else if (request.frameName == "_parent") {
+          if (Frame* parent = frame->tree()->parent())
+              frame = parent;
+          if (!activeFrame->canTargetLoadInFrame(frame))
+              return jsUndefined();
+          topOrParent = true;
       }
-      if (request.frameName == "_parent") {
-          if (frame->tree()->parent())
-              frame = frame->tree()->parent();
-          
+      if (topOrParent) {
           const Window* window = Window::retrieveWindow(frame);
           if (!url.url().startsWith("javascript:", false) || (window && window->isSafeScript(exec))) {
               frame->scheduleLocationChange(url.url(), activePart->referrer(), false/*don't lock history*/, userGesture);
@@ -2313,10 +2321,11 @@ void Location::put(ExecState *exec, const Identifier &p, JSValue *v, int attr)
      switch (entry->value) {
      case Href: {
          Frame* frame = Window::retrieveActive(exec)->impl()->frame();
-         if (frame)
-             url = frame->completeURL(str).url();
-         else
-             url = str;
+         if (!frame)
+             return;
+         if (!frame->canTargetLoadInFrame(m_frame))
+             return;
+         url = frame->completeURL(str).url();
          break;
      } 
      case Hash: {
@@ -2398,9 +2407,11 @@ JSValue *LocationFunc::callAsFunction(ExecState *exec, JSObject *thisObj, const 
     switch (id) {
     case Location::Replace:
     {
-      DeprecatedString str = args[0]->toString(exec);
       Frame* p = Window::retrieveActive(exec)->frame();
-      if ( p ) {
+      if (p) {
+        if (!p->canTargetLoadInFrame(frame))
+          return jsUndefined();
+        DeprecatedString str = args[0]->toString(exec);
         const Window* window = Window::retrieveWindow(frame);
         if (!str.startsWith("javascript:", false) || (window && window->isSafeScript(exec))) {
           bool userGesture = static_cast<ScriptInterpreter *>(exec->dynamicInterpreter())->wasRunByUserGesture();
@@ -2422,6 +2433,8 @@ JSValue *LocationFunc::callAsFunction(ExecState *exec, JSObject *thisObj, const 
     {
         Frame *p = Window::retrieveActive(exec)->frame();
         if (p) {
+            if (!p->canTargetLoadInFrame(frame))
+                return jsUndefined();
             const Window *window = Window::retrieveWindow(frame);
             DeprecatedString dstUrl = p->document()->completeURL(DeprecatedString(args[0]->toString(exec)));
             if (!dstUrl.startsWith("javascript:", false) || (window && window->isSafeScript(exec))) {

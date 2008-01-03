@@ -110,6 +110,8 @@ class FrameMac : public Frame
 public:
     FrameMac(Page*, Element*);
     ~FrameMac();
+
+    virtual bool canTargetLoadInFrame(Frame*);
     
     void clear();
 

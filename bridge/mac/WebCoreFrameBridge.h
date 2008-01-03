@@ -236,7 +236,7 @@ typedef enum {
 - (void)didNotOpenURL:(NSURL *)URL pageCache:(NSDictionary *)pageCache;
 
 - (BOOL)canLoadURL:(NSURL *)URL fromReferrer:(NSString *)referrer hideReferrer:(BOOL *)hideReferrer;
-- (BOOL)canTargetLoadInFrame:(WebCoreFrameBridge *)targetFrame;
+- (BOOL)canTargetLoadInFrame:(WebCoreFrameBridge *)targetFrameBridge;
 
 - (void)saveDocumentState;
 - (void)restoreDocumentState;

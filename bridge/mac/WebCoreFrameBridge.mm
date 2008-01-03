@@ -316,32 +316,49 @@ static inline WebCoreFrameBridge *bridge(Frame *frame)
     return NO;
 }
 
-- (BOOL)canTargetLoadInFrame:(WebCoreFrameBridge *)targetFrame
+- (BOOL)canTargetLoadInFrame:(WebCoreFrameBridge *)targetFrameBridge
 {
-    // This method prevents this exploit:
-    // <rdar://problem/3715785> multiple frame injection vulnerability reported by Secunia, affects almost all browsers
-    
-    // don't mess with navigation within the same page/frameset
-    if ([self page] == [targetFrame page])
+    FrameMac* targetFrame = [targetFrameBridge impl];
+
+    // The navigation change is safe if the active frame is:
+    //   - in the same security origin as the target or one of the target's ancestors
+    // Or the target frame is:
+    //   - a top-level frame in the frame hierarchy
+
+    if (!targetFrame)
         return YES;
 
-    // Normally, domain should be called on the DOMDocument since it is a DOM method, but this fix is needed for
-    // Jaguar as well where the DOM API doesn't exist.
-    NSString *thisDomain = [self domain];
-    if ([thisDomain length] == 0) {
-        // Allow if the request is made from a local file.
+    if (m_frame == targetFrame)
+        return YES; 
+
+    if (!targetFrame->tree()->parent())
         return YES;
+
+    Document* actDocument = m_frame->document();
+    ASSERT(actDocument);
+    const KURL& actURL = actDocument->securityPolicyURL();
+    if (actURL.isLocalFile())
+        return YES;
+    if (equalIgnoringCase(actURL.protocol(), "data"))
+        return NO;
+
+    for (Frame* ancestorFrame = targetFrame; ancestorFrame; ancestorFrame = ancestorFrame->tree()->parent()) {
+        Document* ancestorDocument = ancestorFrame->document();
+        if (!ancestorDocument)
+            return YES;
+
+        const KURL& ancestorURL = ancestorDocument->securityPolicyURL();
+        if (equalIgnoringCase(ancestorURL.protocol(), "data"))
+            return NO;
+
+        if (ancestorDocument->domainWasSetInDOM() && actDocument->domainWasSetInDOM()) {
+            if (ancestorDocument->domain() == actDocument->domain())
+                return YES;
+        }
+
+        if (equalIgnoringCase(actURL.host(), ancestorURL.host()) && equalIgnoringCase(actURL.protocol(), ancestorURL.protocol()) && actURL.port() == ancestorURL.port())
+            return YES;
     }
-    
-    WebCoreFrameBridge *parentBridge = [targetFrame parent];
-    // Allow if target is an entire window.
-    if (!parentBridge)
-        return YES;
-    
-    NSString *parentDomain = [parentBridge domain];
-    // Allow if the domain of the parent of the targeted frame equals this domain.
-    if (parentDomain && isCaseSensitiveEqual(thisDomain, parentDomain))
-        return YES;
 
     return NO;
 }

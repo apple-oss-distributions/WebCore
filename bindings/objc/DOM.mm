@@ -488,6 +488,15 @@ static ListenerMap* listenerMap;
     return nil;
 }
 
+- (NSString *)hrefTarget
+{
+    Element *target = [self _cachedLink];
+    
+    if(target) return target->getAttribute("target");
+    
+    return nil;
+}
+
 - (CGRect)hrefFrame
 {
     RenderObject *renderer = [self _cachedLink]->renderer();
