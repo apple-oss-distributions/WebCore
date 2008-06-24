@@ -1,0 +1,26 @@
+/*
+ * Copyright (C) 2007, 2008, Apple Inc. All rights reserved.
+ *
+ * No license or rights are granted by Apple expressly or by implication,
+ * estoppel, or otherwise, to Apple copyrights, patents, trademarks, trade
+ * secrets or other rights.
+ */
+
+module css {
+
+    // Introduced in DOM Level ?:
+    interface [
+        AppleCopyright,
+        GenerateConstructor,
+        HasIndexGetter
+    ] WebKitCSSKeyframesRule : CSSRule {
+
+        attribute [ConvertNullStringTo=Null, ConvertNullToNullString] DOMString name;
+        readonly attribute CSSRuleList cssRules;
+        
+        void insertRule(in DOMString rule);
+        void deleteRule(in DOMString key);
+        WebKitCSSKeyframeRule findRule(in DOMString key);
+    };
+
+}

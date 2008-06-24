@@ -1,0 +1,44 @@
+/*
+ * Copyright (C) 2007, 2008, Apple Inc. All rights reserved.
+ *
+ * No license or rights are granted by Apple expressly or by implication,
+ * estoppel, or otherwise, to Apple copyrights, patents, trademarks, trade
+ * secrets or other rights.
+ */
+
+module css {
+
+    // Introduced in DOM Level ?:
+    interface [
+        AppleCopyright,
+    ] WebKitCSSMatrix {
+
+        attribute float m11;
+        attribute float m12;
+        attribute float m13;
+        attribute float m14;
+        attribute float m21;
+        attribute float m22;
+        attribute float m23;
+        attribute float m24;
+        attribute float m31;
+        attribute float m32;
+        attribute float m33;
+        attribute float m34;
+        attribute float m41;
+        attribute float m42;
+        attribute float m43;
+        attribute float m44;
+
+        void            setMatrixValue(in DOMString string);
+        WebKitCSSMatrix multiply(in WebKitCSSMatrix secondMatrix) raises CSSException;
+        WebKitCSSMatrix inverse() raises CSSException;
+        WebKitCSSMatrix translate(in float x, in float y, in float z);
+        WebKitCSSMatrix scale(in float scaleX, in float scaleY, in float scaleZ);
+        WebKitCSSMatrix rotate(in float rotX, in float rotY, in float rotZ);
+        WebKitCSSMatrix rotateAxisAngle(in float x, in float y, in float z, in float angle);
+        
+        DOMString toString();
+    };
+
+}
