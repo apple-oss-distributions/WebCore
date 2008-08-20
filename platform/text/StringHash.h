@@ -199,7 +199,26 @@ namespace WebCore {
 
         static const bool safeToCompareToEmptyOrDeleted = false;
     };
-
+    
+    // This hash can be used in cases where the key is a hash of a string, but we don't
+    // want to store the string. It's not really specific to string hashing, but all our
+    // current uses of it are for strings.
+    struct AlreadyHashed : IntHash<unsigned> {
+        static unsigned hash(unsigned key) { return key; }
+        
+        // To use a hash value as a key for a hash table, we need to eliminate the
+        // "deleted" value, which is negative one. That could be done by changing
+        // the string hash function to never generate negative one, but this works
+        // and is still relatively efficient.
+        static unsigned avoidDeletedValue(unsigned hash)
+        {
+            ASSERT(hash);
+            unsigned newHash = hash | (!(hash + 1) << 31);
+            ASSERT(newHash);
+            ASSERT(newHash != 0xFFFFFFFF);
+            return newHash;
+        }
+    };
 }
 
 namespace WTF {

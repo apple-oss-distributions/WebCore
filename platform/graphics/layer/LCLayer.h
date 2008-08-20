@@ -341,7 +341,7 @@ protected:
     void setAnimation(CSSPropertyID type);
     void setAllAnimations();
     bool addAnimationEntry(CSSPropertyID type, short index, double& beginTime, 
-                            void* fromValue, bool isTransition, const Transition* transition);
+                            bool isTransition, const Transition* transition);
     void animDone(CSSPropertyID type, short index);
     int findAnimationEntry(CSSPropertyID type, short index) const;
     void removeAnimation(int inAnimIndex, bool reset);
@@ -354,6 +354,7 @@ public:
     
 protected:
     static const int kMaxPixelDimension = 1024;
+    static const int kTiledLayerTileSize = 480;
     static const int kMaxPixelsForLayer = kMaxPixelDimension*kMaxPixelDimension;
     
     String m_name;
@@ -394,14 +395,12 @@ protected:
         : beginTime(-1)
         , pauseTime(-2)
         , endTime(-1)
-        , fromValue(0)
         , type(CSS_PROP_INVALID)
         , isCurrent(true)
         , isTransition(true) { }
                             
         double beginTime, pauseTime, endTime;
         RefPtr<Transition> animLayer;
-        void* fromValue;
         CSSPropertyID type  : 10;
         short index         : 16;       // currently unused; was used by additive animation. always 0.
         bool isCurrent      : 1;

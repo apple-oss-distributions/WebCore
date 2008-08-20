@@ -144,7 +144,7 @@ private:
     void checkListItems() const;
 
     void deselectItems(HTMLOptionElement* excludeElement = 0);
-    bool usesMenuList() const { return !m_multiple && m_size <= 1; }
+    bool usesMenuList() const { return !m_multiple; }
     int nextSelectableListIndex(int startIndex);
     int previousSelectableListIndex(int startIndex);
     void menuListDefaultEventHandler(Event*);

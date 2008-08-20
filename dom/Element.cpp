@@ -788,7 +788,7 @@ void Element::recalcStyle(StyleChange change)
         if (ch != NoChange) {
             if (newStyle)
                 setRenderStyle(newStyle);
-        } else if (changed() && newStyle && (document()->usesSiblingRules() || document()->usesDescendantRules())) {
+        } else if (changed() && (styleChangeType() != AnimationStyleChange) && newStyle && (document()->usesSiblingRules() || document()->usesDescendantRules())) {
             // Although no change occurred, we use the new style so that the cousin style sharing code won't get
             // fooled into believing this style is the same.  This is only necessary if the document actually uses
             // sibling/descendant rules, since otherwise it isn't possible for ancestor styles to affect sharing of
@@ -797,7 +797,8 @@ void Element::recalcStyle(StyleChange change)
                 renderer()->setStyleInternal(newStyle);
             else
                 setRenderStyle(newStyle);
-        }
+        } else if (styleChangeType() == AnimationStyleChange)
+            setRenderStyle(newStyle);
 
         newStyle->deref(document()->renderArena());
 

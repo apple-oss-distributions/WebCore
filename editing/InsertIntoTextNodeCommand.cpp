@@ -29,8 +29,6 @@
 #include "Text.h"
 #include "RenderText.h"
 
-#define SHOULD_MAKE_LAST_CHARACTER_INSECURE 0
-
 namespace WebCore {
 
 InsertIntoTextNodeCommand::InsertIntoTextNodeCommand(Text* node, int offset, const String& text)

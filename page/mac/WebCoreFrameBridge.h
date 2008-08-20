@@ -278,6 +278,7 @@ typedef enum WebScrollGranularity {
 - (void)replaceSelectionWithText:(NSString *)text selectReplacement:(BOOL)selectReplacement smartReplace:(BOOL)smartReplace;
 
 - (void)setText:(NSString *)text asChildOfElement:(DOMElement *)element breakLines:(BOOL)breakLines;
+- (void)createDefaultFieldEditorDocumentStructure;
 
 - (void)insertParagraphSeparatorInQuotedContent;
 

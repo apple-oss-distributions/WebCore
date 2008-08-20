@@ -92,7 +92,7 @@ public:
 private:
     bool checkOutOfMemory();
     int m_maxDataSize;
-    bool m_accoutedForLimit;
+    bool m_accountedForLimit;
 };
 
 }

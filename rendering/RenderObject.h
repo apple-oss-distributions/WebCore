@@ -163,6 +163,7 @@ public:
     typedef bool (*TraverseNextInclusionFunction)(const RenderObject *); 
     RenderObject *traverseNext(const RenderObject *stayWithin, TraverseNextInclusionFunction inclusionFunction) const;
     void adjustComputedFontSizesOnBlocks(float size, float visibleWidth);
+    void resetTextAutosizing();
     virtual RenderLayer* layer() const { return 0; }
     RenderLayer* enclosingLayer() const;
     void addLayers(RenderLayer* parentLayer, RenderObject* newObject);

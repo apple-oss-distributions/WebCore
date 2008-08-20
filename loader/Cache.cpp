@@ -119,12 +119,9 @@ CachedResource* Cache::requestResource(DocLoader* docLoader, CachedResource::Typ
         resource = createResource(type, docLoader, url, charset, skipCanLoadCheck, sendResourceLoadCallbacks);
         ASSERT(resource);
         ASSERT(resource->inCache());
-        if (!disabled()) {
+        if (!disabled())
             m_resources.set(url.string(), resource);  // The size will be added in later once the resource is loaded and calls back to us with the new size.
-            
-            // This will move the resource to the front of its LRU list and increase its access count.
-            resourceAccessed(resource);
-        } else {
+        else {
             // Kick the resource out of the cache, because the cache is disabled.
             resource->setInCache(false);
             resource->setDocLoader(docLoader);
@@ -147,6 +144,11 @@ CachedResource* Cache::requestResource(DocLoader* docLoader, CachedResource::Typ
     if (docLoader->frame() && docLoader->frame()->loader()->addLowBandwidthDisplayRequest(resource))
         return 0;
 #endif
+
+    if (!disabled()) {
+        // This will move the resource to the front of its LRU list and increase its access count.
+        resourceAccessed(resource);
+    }
 
     return resource;
 }

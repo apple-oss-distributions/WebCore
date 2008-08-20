@@ -28,7 +28,7 @@
 
 #if ENABLE(SVG)
 
-#include <ApplicationServices/ApplicationServices.h>
+#include <CoreGraphics/CoreGraphics.h>
 #include "GraphicsTypes.h"
 
 namespace WebCore {

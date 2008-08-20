@@ -195,6 +195,7 @@ public:
     void addNode(Node *node, float size);
     bool adjustNodeSizes ();
     int numNodes () const;
+    void reset();
 
 private:
     HashSet<RefPtr<Node> > m_autoSizedNodes;
@@ -421,6 +422,8 @@ public:
 
     virtual void attach();
     virtual void detach();
+
+    void clearFramePointer();
 
     RenderArena* renderArena() { return m_renderArena; }
 
@@ -1045,6 +1048,7 @@ private:
 public:
     void addAutoSizingNode (Node *node, float size);
     void validateAutoSizingNodes ();
+    void resetAutoSizingNodes();
 
     void setTelephoneNumberParsingEnabled(bool enabled);
     bool isTelephoneNumberParsingEnabled();

@@ -29,6 +29,11 @@
 #include "config.h"
 #include "DocumentLoader.h"
 
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+#include "ApplicationCache.h"
+#include "ApplicationCacheGroup.h"
+#include "ApplicationCacheResource.h"
+#endif
 #include "CachedPage.h"
 #include "DocLoader.h"
 #include "Document.h"
@@ -38,7 +43,9 @@
 #include "HistoryItem.h"
 #include "Logging.h"
 #include "MainResourceLoader.h"
+#include "Page.h"
 #include "PlatformString.h"
+#include "Settings.h"
 #include "SharedBuffer.h"
 #include "StringBuffer.h"
 #include "XMLTokenizer.h"
@@ -138,6 +145,10 @@ DocumentLoader::DocumentLoader(const ResourceRequest& req, const SubstituteData&
     , m_isClientRedirect(false)
     , m_loadingFromCachedPage(false)
     , m_stopRecordingResponses(false)
+    , m_substituteResourceDeliveryTimer(this, &DocumentLoader::substituteResourceDeliveryTimerFired)
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+    , m_candidateApplicationCacheGroup(0)
+#endif
 {
 }
 
@@ -151,6 +162,13 @@ FrameLoader* DocumentLoader::frameLoader() const
 DocumentLoader::~DocumentLoader()
 {
     ASSERT(!m_frame || frameLoader()->activeDocumentLoader() != this || !frameLoader()->isLoading());
+
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+    if (m_applicationCache)
+        m_applicationCache->group()->documentLoaderDestroyed(this);
+    else if (m_candidateApplicationCacheGroup)
+        m_candidateApplicationCacheGroup->documentLoaderDestroyed(this);
+#endif
 }
 
 PassRefPtr<SharedBuffer> DocumentLoader::mainResourceData() const
@@ -241,6 +259,14 @@ void DocumentLoader::clearErrors()
 
 void DocumentLoader::mainReceivedError(const ResourceError& error, bool isComplete)
 {
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+    ApplicationCacheGroup* group = m_candidateApplicationCacheGroup;
+    if (!group && m_applicationCache && !mainResourceApplicationCache())
+        group = m_applicationCache->group();
+    
+    if (group)
+        group->failedLoadingMainResource(this);
+#endif
     if (!frameLoader())
         return;
     setMainDocumentError(error);
@@ -393,6 +419,7 @@ void DocumentLoader::setupForReplaceByMIMEType(const String& newMIMEType)
     
     stopLoadingSubresources();
     stopLoadingPlugIns();
+    clearArchiveResources();
 
     frameLoader()->finalSetupForReplace(this);
 }
@@ -451,6 +478,9 @@ void DocumentLoader::setPrimaryLoadComplete(bool flag)
     if (flag) {
         if (m_mainResourceLoader) {
             m_mainResourceData = m_mainResourceLoader->resourceData();
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+            m_mainResourceApplicationCache = m_mainResourceLoader->applicationCache();
+#endif
             m_mainResourceLoader = 0;
         }
         updateLoading();
@@ -475,6 +505,62 @@ bool DocumentLoader::isLoadingInAPISense() const
         }
     }
     return frameLoader()->subframeIsLoading();
+}
+    
+void DocumentLoader::clearArchiveResources()
+{
+    m_substituteResourceDeliveryTimer.stop();
+}
+    
+void DocumentLoader::deliverSubstituteResourcesAfterDelay()
+{
+    if (m_pendingSubstituteResources.isEmpty())
+        return;
+    ASSERT(m_frame && m_frame->page());
+    if (m_frame->page()->defersLoading())
+        return;
+    if (!m_substituteResourceDeliveryTimer.isActive())
+        m_substituteResourceDeliveryTimer.startOneShot(0);
+}
+
+void DocumentLoader::substituteResourceDeliveryTimerFired(Timer<DocumentLoader>*)
+{
+    if (m_pendingSubstituteResources.isEmpty())
+        return;
+    ASSERT(m_frame && m_frame->page());
+    if (m_frame->page()->defersLoading())
+        return;
+    
+    SubstituteResourceMap copy;
+    copy.swap(m_pendingSubstituteResources);
+    
+    SubstituteResourceMap::const_iterator end = copy.end();
+    for (SubstituteResourceMap::const_iterator it = copy.begin(); it != end; ++it) {
+        RefPtr<ResourceLoader> loader = it->first;
+        SubstituteResource* resource = it->second.get();
+        
+        if (resource) {
+            SharedBuffer* data = resource->data();
+            
+            loader->didReceiveResponse(resource->response());
+            loader->didReceiveData(data->data(), data->size(), data->size(), true);
+            loader->didFinishLoading();
+        } else {
+            // A null resource means that we should fail the load.
+            // FIXME: Maybe we should use another error here - something like "not in cache".
+            loader->didFail(loader->cannotShowURLError());
+        }
+    }
+}
+
+
+void DocumentLoader::cancelPendingSubstituteLoad(ResourceLoader* loader)
+{
+    if (m_pendingSubstituteResources.isEmpty())
+        return;
+    m_pendingSubstituteResources.remove(loader);
+    if (m_pendingSubstituteResources.isEmpty())
+        m_substituteResourceDeliveryTimer.stop();
 }
 
 void DocumentLoader::addResponse(const ResourceResponse& r)
@@ -623,6 +709,8 @@ void DocumentLoader::setDefersLoading(bool defers)
         m_mainResourceLoader->setDefersLoading(defers);
     setAllDefersLoading(m_subresourceLoaders, defers);
     setAllDefersLoading(m_plugInStreamLoaders, defers);
+    if (!defers)
+        deliverSubstituteResourcesAfterDelay();
 }
 
 void DocumentLoader::stopLoadingPlugIns()
@@ -721,5 +809,88 @@ void DocumentLoader::iconLoadDecisionAvailable()
     if (m_frame)
         m_frame->loader()->iconLoadDecisionAvailable();
 }
+    
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+void DocumentLoader::setCandidateApplicationCacheGroup(ApplicationCacheGroup* group)
+{
+    ASSERT(!m_applicationCache);
+    m_candidateApplicationCacheGroup = group;
+}
+
+void DocumentLoader::setApplicationCache(PassRefPtr<ApplicationCache> applicationCache)
+{
+    if (m_candidateApplicationCacheGroup) {
+        ASSERT(!m_applicationCache);
+        m_candidateApplicationCacheGroup = 0;
+    }
+    
+    m_applicationCache = applicationCache;
+}
+
+ApplicationCache* DocumentLoader::topLevelApplicationCache() const
+{
+    if (!m_frame)
+        return 0;
+    
+    if (m_applicationCache)
+        return m_applicationCache.get();
+    
+    if (Page* page = m_frame->page())
+        return page->mainFrame()->loader()->documentLoader()->applicationCache();
+    
+    return 0;
+}
+
+ApplicationCache* DocumentLoader::mainResourceApplicationCache() const
+{
+    if (m_mainResourceApplicationCache)
+        return m_mainResourceApplicationCache.get();
+    if (m_mainResourceLoader)
+        return m_mainResourceLoader->applicationCache();
+    return 0;
+}
+
+bool DocumentLoader::shouldLoadResourceFromApplicationCache(const ResourceRequest& request, ApplicationCacheResource*& resource)
+{
+    ApplicationCache* cache = topLevelApplicationCache();    
+    if (!cache)
+        return false;
+    
+    // If the resource is not a HTTP/HTTPS GET, then abort
+    if (!ApplicationCache::requestIsHTTPOrHTTPSGet(request))
+        return false;
+    
+    if (cache->isURLInOnlineWhitelist(request.url()))
+        return false;
+    
+    resource = cache->resourceForURL(request.url().string());
+    
+    // Don't load foreign resources.
+    if (resource && (resource->type() & ApplicationCacheResource::Foreign))
+        resource = 0;
+    
+    return true;
+}
+
+bool DocumentLoader::scheduleApplicationCacheLoad(ResourceLoader* loader, const ResourceRequest& request, const KURL& originalURL)
+{
+    if (!frameLoader()->frame()->settings() || !frameLoader()->frame()->settings()->offlineWebApplicationCacheEnabled())
+        return false;
+    
+    if (request.url() != originalURL)
+        return false;
+    
+    ApplicationCacheResource* resource;
+    if (!shouldLoadResourceFromApplicationCache(request, resource))
+        // FIXME: Handle opportunistic caching namespaces
+        return false;
+    
+    m_pendingSubstituteResources.set(loader, resource);
+    deliverSubstituteResourcesAfterDelay();
+    
+    return true;
+}
+
+#endif // ENABLE(OFFLINE_WEB_APPLICATIONS)
 
 }

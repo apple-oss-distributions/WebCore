@@ -29,8 +29,7 @@
 #include "HTMLNames.h"
 #include "RenderTextFragment.h"
 
-using std::min;
-using std::max;
+#include "RenderTheme.h"
 
 namespace WebCore {
 
@@ -125,15 +124,18 @@ IntRect RenderButton::controlClipRect(int tx, int ty) const
     return IntRect(tx + borderLeft(), ty + borderTop(), m_width - borderLeft() - borderRight(), m_height - borderTop() - borderBottom());
 }
 
-IntSize RenderButton::borderRadius() const
+void RenderButton::layout()
 {
-    return shouldPaintWithBorderRadius() ? IntSize(min(width(), height()) / 2.0, height() / 2.0) : IntSize(0, 0);
-}
+    RenderFlexibleBox::layout();
 
-bool RenderButton::shouldPaintWithBorderRadius() const
-{
-    return style()->appearance() == PushButtonAppearance
-        || (style()->appearance() == ButtonAppearance && height() <= max(style()->minHeight().value(), style()->height().value()));
+    if (style()->appearance() == NoAppearance || style()->backgroundLayers()->hasImage()) return;
+    
+    IntSize radius(MIN(width(), height()) / 2.0, height() / 2.0);
+    
+    style()->setBorderTopLeftRadius(radius);
+    style()->setBorderTopRightRadius(radius);
+    style()->setBorderBottomLeftRadius(radius);
+    style()->setBorderBottomRightRadius(radius);
 }
 
 } // namespace WebCore

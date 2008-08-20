@@ -268,14 +268,16 @@ void HTMLFormControlElementWithState::finishParsingChildren()
 
 void HTMLGenericFormElement::dispatchFocusEvent()
 {
-    document()->frame()->formElementDidFocus(this);
+    if (document()->frame())
+        document()->frame()->formElementDidFocus(this);
     
     HTMLElement::dispatchFocusEvent();
 }
 
 void HTMLGenericFormElement::dispatchBlurEvent()
 {
-    document()->frame()->formElementDidBlur(this);
+    if (document()->frame())
+        document()->frame()->formElementDidBlur(this);
     
     HTMLElement::dispatchBlurEvent();
 }

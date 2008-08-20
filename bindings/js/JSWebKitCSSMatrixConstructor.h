@@ -1,5 +1,9 @@
 /*
  * Copyright (C) 2007, 2008, Apple Inc. All rights reserved.
+ *
+ * No license or rights are granted by Apple expressly or by implication,
+ * estoppel, or otherwise, to Apple copyrights, patents, trademarks, trade
+ * secrets or other rights.
  */
 
 #ifndef JSWebKitCSSMatrixConstructor_h

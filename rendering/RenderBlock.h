@@ -289,6 +289,10 @@ public:
 
     int immediateLineCount();
     void adjustComputedFontSizes(float size, float visibleWidth);
+    void resetComputedFontSize() { 
+        m_widthForTextAutosizing = -1; 
+        m_lineCountForTextAutosizing = NOT_SET;
+    }
 
     int desiredColumnWidth() const;
     unsigned desiredColumnCount() const;

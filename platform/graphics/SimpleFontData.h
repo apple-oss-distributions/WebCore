@@ -57,12 +57,12 @@ public:
     SimpleFontData* smallCapsFontData(const FontDescription& fontDescription) const;
 
     // vertical metrics
-    int ascent() const { return GSFontGetAscent(m_font.font()); }
-    int descent() const { return -GSFontGetDescent(m_font.font()); }
-    int lineSpacing() const { return GSFontGetLineSpacing(m_font.font()); }
-    int lineGap() const { return GSFontGetLineGap(m_font.font()); }
-    float xHeight() const { return GSFontGetXHeight(m_font.font()); }
-    unsigned unitsPerEm() const { return GSFontGetUnitsPerEm(m_font.font()); }
+    int ascent() const { return m_ascent; }
+    int descent() const { return m_descent; }
+    int lineSpacing() const { return m_lineSpacing; }
+    int lineGap() const { return m_lineGap; }
+    float xHeight() const { return m_xHeight; }
+    unsigned unitsPerEm() const { return m_unitsPerEm; }
 
     float widthForGlyph(Glyph) const;
     float platformWidthForGlyph(Glyph) const;
@@ -114,6 +114,12 @@ private:
     void commonInit();
 
 public:
+    int m_ascent;
+    int m_descent;
+    int m_lineSpacing;
+    int m_lineGap;
+    float m_xHeight;
+    unsigned m_unitsPerEm;
 
     FontPlatformData m_font;
 

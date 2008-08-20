@@ -29,9 +29,9 @@ namespace WebCore {
 FontCustomPlatformData::~FontCustomPlatformData()
 {
     // FIXME: <rdar://problem/5607116> Web fonts broken in WebKit
-    // we probably need a release method in GS when we have support for loading fonts from a memory buffer
-    // CFRelease may do, see comment from andrew in <rdar://problem/5607113>
-    m_gsFont = 0;
+    // Be sure CFRelease() does everything we need to do here to prevent
+    // leaks.  See comment from Andrew in <rdar://problem/5607113>.
+    CFRelease(m_gsFont);
 }
 
 FontPlatformData FontCustomPlatformData::fontPlatformData(int size, bool bold, bool italic)
@@ -46,7 +46,7 @@ FontCustomPlatformData* createFontCustomPlatformData(SharedBuffer* buffer)
     // FIXME: <rdar://problem/5607116> Web fonts broken in WebKit
     gsFontRef = GSFontCreateWithName("Courier", 0, 1.0f);
 
-    return new FontCustomPlatformData(gsFontRef);
+    return new FontCustomPlatformData(gsFontRef); // gsFontRef released in destructor
 }
 
 }

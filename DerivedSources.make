@@ -32,6 +32,7 @@ VPATH = \
     $(WebCore)/css \
     $(WebCore)/dom \
     $(WebCore)/html \
+	$(WebCore)/loader/appcache \
     $(WebCore)/page \
     $(WebCore)/storage \
     $(WebCore)/xml \
@@ -344,6 +345,7 @@ all : \
     JSConsole.h \
     JSCounter.h \
     JSCSSStyleDeclaration.h \
+	JSDOMApplicationCache.h \
     JSDOMCoreException.h \
     JSDOMImplementation.h \
     JSDOMParser.h \

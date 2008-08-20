@@ -143,6 +143,9 @@ protected:
         RefPtr<SharedBuffer> m_resourceData;
         bool m_defersLoading;
         ResourceRequest m_deferredRequest;
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+        bool m_wasLoadedFromApplicationCache;
+#endif
     };
 
 }

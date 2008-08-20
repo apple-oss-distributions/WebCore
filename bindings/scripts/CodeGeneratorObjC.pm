@@ -1602,11 +1602,7 @@ sub GenerateImplementation
             push(@implContent, "$initWithSig\n");
             push(@implContent, "{\n");
             push(@implContent, "    $assertMainThread;\n");
-            if ($initWithImplName eq "_initWithRange" || $initWithImplName eq "_initWithNode") {
-                push(@implContent, "    [super _init];\n");
-            } else {
-                push(@implContent, "    [super _init];\n");
-            }
+            push(@implContent, "    [super _init];\n");
             push(@implContent, "    $podTypeWithNamespace* _impl = new $podTypeWithNamespace(impl);\n");
             push(@implContent, "    _internal = reinterpret_cast<DOMObjectInternal*>(_impl);\n");
             push(@implContent, "    return self;\n");

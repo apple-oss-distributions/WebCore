@@ -80,6 +80,12 @@ JSValue* toJS(ExecState* exec, EventTarget* target)
     if (XMLHttpRequest* xhr = target->toXMLHttpRequest())
         // XMLHttpRequest is always created via JS, so we don't need to use cacheDOMObject() here.
         return ScriptInterpreter::getDOMObject(xhr);
+    
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+    if (DOMApplicationCache* cache = target->toDOMApplicationCache())
+        // DOMApplicationCache is always created via JS, so we don't need to use cacheDOMObject() here.
+        return ScriptInterpreter::getDOMObject(cache);
+#endif
 
     // There are two kinds of EventTargets: EventTargetNode and XMLHttpRequest.
     // If SVG support is enabled, there is also SVGElementInstance.

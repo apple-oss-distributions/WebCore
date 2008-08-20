@@ -86,6 +86,8 @@ public:
 
     SQLiteDatabase* database() { return &m_database; }
 
+    const String& query() const { return m_query; }
+
 private:
     SQLiteDatabase& m_database;
     String m_query;

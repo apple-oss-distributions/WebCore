@@ -267,7 +267,7 @@ KURL::KURL(const DeprecatedString &url)
     } else
         parse(url.ascii(), &url);
 }
-
+    
 KURL::KURL(const KURL& base, const DeprecatedString& relative)
 {
     init(base, relative, UTF8Encoding());
@@ -1553,6 +1553,31 @@ bool protocolIs(const String& url, const char* protocol)
         if (toASCIILower(url[i]) != protocol[i])
             return false;
     }
+}
+    
+bool protocolHostAndPortAreEqual(const KURL& a, const KURL& b)
+{
+    if (a.schemeEndPos != b.schemeEndPos)
+        return false;
+    int hostStartA = a.hostStart(); 
+    int hostStartB = b.hostStart();
+    if (a.hostEndPos - hostStartA != b.hostEndPos - hostStartB)
+        return false;
+    
+    // Check the scheme
+    for (int i = 0; i < a.schemeEndPos; ++i)
+        if (a.string()[i] != b.string()[i])
+            return false;
+    
+    // And the host
+    for (int i = hostStartA; i < a.hostEndPos; ++i)
+        if (a.string()[i] != b.string()[i])
+            return false;
+    
+    if (a.port() != b.port())
+        return false;
+    
+    return true;
 }
 
 #ifndef NDEBUG

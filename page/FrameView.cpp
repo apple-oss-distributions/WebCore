@@ -61,6 +61,18 @@ static const double maxDeferredRepaintDelayDuringLoading = 2.0;
 // On each repaint the delay increses by this amount
 static const double deferredRepaintDelayIncrement = 0.5;
 
+class VisibleSizeOverrideHelper {
+private:
+    FrameView *m_frameView;
+public:
+    inline VisibleSizeOverrideHelper(FrameView *frameView) : m_frameView(frameView) {
+        m_frameView->setVisibleSizeOverrideEnabled(true);
+    }
+    inline ~VisibleSizeOverrideHelper() {
+        m_frameView->setVisibleSizeOverrideEnabled(false);
+    }
+};
+
 struct ScheduledEvent {
     RefPtr<Event> m_event;
     RefPtr<EventTargetNode> m_eventTarget;
@@ -444,7 +456,7 @@ void FrameView::layout(bool allowSubtree)
         return;
 
     bool didFirstLayout = false;
-    setVisibleSizeOverrideEnabled(true);
+    VisibleSizeOverrideHelper helper(this);
 
     d->layoutTimer.stop();
     d->delayedLayout = false;
@@ -456,13 +468,13 @@ void FrameView::layout(bool allowSubtree)
         // FIXME: Do we need to set m_size.width here?
         // FIXME: Should we set m_size.height here too?
         m_size.setWidth(visibleWidth());
-        goto abort;
+        return;
     }
     
     // we shouldn't enter layout() while painting
     ASSERT(!m_frame->isPainting());
     if (m_frame->isPainting())
-        goto abort;
+        return;
 
     if (!allowSubtree && d->layoutRoot) {
         d->layoutRoot->markContainingBlocksForLayout(false);
@@ -480,7 +492,7 @@ void FrameView::layout(bool allowSubtree)
     if (!document) {
         // FIXME: Should we set m_size.height here too?
         m_size.setWidth(visibleWidth());
-        goto abort;
+        return;
     }
 
     d->layoutSchedulingEnabled = false;
@@ -504,13 +516,13 @@ void FrameView::layout(bool allowSubtree)
     // If there is only one ref to this view left, then its going to be destroyed as soon as we exit, 
     // so there's no point to continuing to layout
     if (protector->hasOneRef())
-        goto abort;
+        return;
 
     RenderObject* root = subtree ? d->layoutRoot : document->renderer();
     if (!root) {
         // FIXME: Do we need to set m_size here?
         d->layoutSchedulingEnabled = true;
-        goto abort;
+        return;
     }
     
 #if ENABLE(IPHONE_PPT)
@@ -679,9 +691,6 @@ void FrameView::layout(bool allowSubtree)
     }
 
     d->nestedLayoutCount--;
-    
-abort:
-    setVisibleSizeOverrideEnabled(false);
 }
 
 void FrameView::addWidgetToUpdate(RenderPartObject* object)

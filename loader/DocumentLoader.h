@@ -43,6 +43,11 @@
 
 namespace WebCore {
 
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+    class ApplicationCache;
+    class ApplicationCacheGroup;
+    class ApplicationCacheResource;
+#endif
     class CachedPage;
     class Frame;
     class FrameLoader;
@@ -52,6 +57,7 @@ namespace WebCore {
     class ResourceLoader;
     class SharedBuffer;
     class SubstituteData;
+    class SubstituteResource;
 
     typedef HashSet<RefPtr<ResourceLoader> > ResourceLoaderSet;
     typedef Vector<ResourceResponse> ResponseVector;
@@ -113,6 +119,9 @@ namespace WebCore {
         void setPrimaryLoadComplete(bool);
         void setTitle(const String&);
         String overrideEncoding() const;
+        
+        void clearArchiveResources();
+        void cancelPendingSubstituteLoad(ResourceLoader*);   
 
         void addResponse(const ResourceResponse&);
         const ResponseVector& responses() const;
@@ -154,6 +163,21 @@ namespace WebCore {
         void subresourceLoaderFinishedLoadingOnePart(ResourceLoader*);
         
         bool deferMainResourceDataLoad() const { return m_deferMainResourceDataLoad; }
+        
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+        bool scheduleApplicationCacheLoad(ResourceLoader*, const ResourceRequest&, const KURL& originalURL);
+        bool shouldLoadResourceFromApplicationCache(const ResourceRequest&, ApplicationCacheResource*&);
+        
+        void setCandidateApplicationCacheGroup(ApplicationCacheGroup* group);
+        ApplicationCacheGroup* candidateApplicationCacheGroup() const { return m_candidateApplicationCacheGroup; }
+        
+        void setApplicationCache(PassRefPtr<ApplicationCache> applicationCache);
+        ApplicationCache* applicationCache() const { return m_applicationCache.get(); }
+        ApplicationCache* topLevelApplicationCache() const;
+        
+        ApplicationCache* mainResourceApplicationCache() const;
+#endif
+
     protected:
         bool m_deferMainResourceDataLoad;
 
@@ -164,6 +188,9 @@ namespace WebCore {
         void setMainDocumentError(const ResourceError&);
         void commitLoad(const char*, int);
         bool doesProgressiveLoad(const String& MIMEType) const;
+        
+        void deliverSubstituteResourcesAfterDelay();
+        void substituteResourceDeliveryTimerFired(Timer<DocumentLoader>*);
 
         Frame* m_frame;
 
@@ -222,6 +249,22 @@ namespace WebCore {
         // page cache.
         ResponseVector m_responses;
         bool m_stopRecordingResponses;
+        
+        typedef HashMap<RefPtr<ResourceLoader>, RefPtr<SubstituteResource> > SubstituteResourceMap;
+        SubstituteResourceMap m_pendingSubstituteResources;
+        Timer<DocumentLoader> m_substituteResourceDeliveryTimer;
+        
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)  
+        // The application cache that the document loader is associated with (if any).
+        RefPtr<ApplicationCache> m_applicationCache;
+        
+        // Before an application cache has finished loading, this will be the candidate application
+        // group that the document loader is associated with.
+        ApplicationCacheGroup* m_candidateApplicationCacheGroup;
+        
+        // Once the main resource has finished loading, this is the application cache it was loaded from (if any).
+        RefPtr<ApplicationCache> m_mainResourceApplicationCache;
+#endif
     };
 
 }

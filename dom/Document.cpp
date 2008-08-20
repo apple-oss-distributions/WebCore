@@ -326,8 +326,7 @@ Document::Document(DOMImplementation* impl, Frame* frame, bool isXHTML)
     m_renderArena = 0;
 
     
-    // FIXME: DocLoader probably no longer needs the frame argument
-    m_docLoader = new DocLoader(frame, this);
+    m_docLoader = new DocLoader(this);
 
     visuallyOrdered = false;
     m_bParsing = false;
@@ -1293,9 +1292,12 @@ void Document::detach()
         
     if (m_styleSelector)
         m_styleSelector->arenaDestroy();
-
-    // FIXME: is this needed or desirable?
-    m_frame = 0;
+    
+    // This is required, as our Frame might delete itself as soon as it detaches
+    // us.  However, this violates Node::detach() symantics, as it's never
+    // possible to re-attach.  Eventually Document::detach() should be renamed
+    // or this call made explicit in each of the callers of Document::detach().
+    clearFramePointer();
 
     // do this before the arena is cleared, which is needed to deref the RenderStyle on TextAutoSizingKey
     m_textAutoSizedNodes.clear();
@@ -1306,9 +1308,15 @@ void Document::detach()
     }
 }
 
+void Document::clearFramePointer()
+{
+    m_frame = 0;
+}
+
 void Document::removeAllEventListenersFromAllNodes()
 {
     m_windowEventListeners.clear();
+    setTouchEventListenersDirty(true);
     m_touchEventListeners.clear();
     removeAllDisconnectedNodeEventListeners();
     for (Node *n = this; n; n = n->traverseNextNode()) {
@@ -1654,6 +1662,7 @@ void Document::clear()
     removeChildren();
 
     m_windowEventListeners.clear();
+    setTouchEventListenersDirty(true);
     m_touchEventListeners.clear();
 }
 
@@ -4256,6 +4265,40 @@ bool TextAutoSizingValue::adjustNodeSizes()
     
     return objectsRemoved;
 }
+    
+void TextAutoSizingValue::reset()
+{
+    HashSet<RefPtr<Node> >::iterator end = m_autoSizedNodes.end();
+    for (HashSet<RefPtr<Node> >::iterator i = m_autoSizedNodes.begin(); i != end; ++i) {
+        RefPtr<Node>& autoSizingNode = *i;
+        RenderText* text = static_cast<RenderText*>(autoSizingNode->renderer());
+        if (!text)
+            continue;
+        // Rest the font size back to the original specified size
+        FontDescription fontDescription = text->style()->fontDescription();
+        float originalSize = fontDescription.specifiedSize();
+        if (fontDescription.computedSize() != originalSize) {
+            fontDescription.setComputedSize(originalSize);
+            RenderStyle* style = new (text->renderArena()) RenderStyle(*text->style());
+            style->setFontDescription(fontDescription);
+            style->font().update(autoSizingNode->document()->styleSelector()->fontSelector());
+            text->setStyle(style);
+        }
+        // Reset the line height of the parent.
+        RenderObject* parentRenderer = text->parent();
+        if (!parentRenderer)
+            continue;
+        const RenderStyle* parentStyle = parentRenderer->style();
+        Length originalLineHeight = parentStyle->specifiedLineHeight();   
+        if (originalLineHeight != parentStyle->lineHeight()) {
+            RenderStyle* newParentStyle = new (text->renderArena()) RenderStyle(*parentStyle);
+            newParentStyle->setLineHeight(originalLineHeight);
+            newParentStyle->setFontDescription(fontDescription);
+            newParentStyle->font().update(autoSizingNode->document()->styleSelector()->fontSelector());
+            parentRenderer->setStyle(newParentStyle);          
+        }
+    }
+}
 
 void Document::addAutoSizingNode(Node* node, float candidateSize)
 {
@@ -4281,10 +4324,9 @@ void Document::validateAutoSizingNodes ()
     TextAutoSizingMap::iterator end = m_textAutoSizedNodes.end();
     for (TextAutoSizingMap::iterator i = m_textAutoSizedNodes.begin(); i != end; ++i) {
         TextAutoSizingKey key = i->first;
-        RefPtr<TextAutoSizingValue> value;
+        RefPtr<TextAutoSizingValue> value = i->second;
         // Update all the nodes in the collection to reflect the new
         // candidate size.
-        value = m_textAutoSizedNodes.get(key);
         if (!value)
             continue;
         
@@ -4295,6 +4337,17 @@ void Document::validateAutoSizingNodes ()
     unsigned count = nodesForRemoval.size();
     for (unsigned i = 0; i < count; i++)
         m_textAutoSizedNodes.remove(nodesForRemoval[i]);
+}
+    
+void Document::resetAutoSizingNodes()
+{
+    TextAutoSizingMap::iterator end = m_textAutoSizedNodes.end();
+    for (TextAutoSizingMap::iterator i = m_textAutoSizedNodes.begin(); i != end; ++i) {
+        RefPtr<TextAutoSizingValue> value = i->second;
+        if (value)
+            value->reset();
+    }
+    m_textAutoSizedNodes.clear();
 }
 
 void Document::incrementImageDataCount(unsigned count)

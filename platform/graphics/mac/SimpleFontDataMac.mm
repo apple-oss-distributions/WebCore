@@ -57,12 +57,16 @@ void SimpleFontData::platformInit()
     m_spaceWidth = 0;
     m_smallCapsFont = 0;
     m_adjustedSpaceWidth = 0;
+    m_ascent = GSFontGetAscent(m_font.font());
+    m_descent = -GSFontGetDescent(m_font.font());
+    m_lineSpacing = GSFontGetLineSpacing(m_font.font());
+    m_lineGap = GSFontGetLineGap(m_font.font());
+    m_xHeight = GSFontGetXHeight(m_font.font());
+    m_unitsPerEm = GSFontGetUnitsPerEm(m_font.font());    
 }
 
 void SimpleFontData::platformDestroy()
 {
-    if (m_font.font())
-        CFRelease(m_font.font());
 }
 
 SimpleFontData* SimpleFontData::smallCapsFontData(const FontDescription& fontDescription) const
@@ -108,9 +112,12 @@ bool SimpleFontData::containsCharacters(const UChar* characters, int length) con
 void SimpleFontData::determinePitch()
 {
     GSFontRef f = m_font.font();
-
-    const char *fullName = GSFontGetFullName(f);
-    m_treatAsFixedPitch = (GSFontIsFixedPitch(f) || (fullName && (strcasecmp(fullName, "Osaka-Mono") == 0 || strcasecmp(fullName, "MS-PGothic") == 0)));
+    m_treatAsFixedPitch = false;
+    // GSFont is null in the case of SVG fonts for example.
+    if (f) {
+        const char *fullName = GSFontGetFullName(f);
+        m_treatAsFixedPitch = (GSFontIsFixedPitch(f) || (fullName && (strcasecmp(fullName, "Osaka-Mono") == 0 || strcasecmp(fullName, "MS-PGothic") == 0)));        
+    }
 }
 
 float SimpleFontData::platformWidthForGlyph(Glyph glyph) const

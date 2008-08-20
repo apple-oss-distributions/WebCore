@@ -151,6 +151,17 @@ void WidthIterator::advance(int offset, GlyphBuffer* glyphBuffer)
             }
         }
 
+
+#define HANGUL_SBASE 0xAC00
+#define HANGUL_LBASE 0x1100
+#define HANGUL_VBASE 0x1161
+#define HANGUL_TBASE 0x11A7
+#define HANGUL_SCOUNT 11172
+#define HANGUL_LCOUNT 19
+#define HANGUL_VCOUNT 21
+#define HANGUL_TCOUNT 28
+#define HANGUL_NCOUNT (HANGUL_VCOUNT * HANGUL_TCOUNT)
+        
         // Check for simple diacriticals
         else if (c >= 0x41 && c <= 0x7a && currentCharacter + 1 < m_run.length()) {
             UChar diacritical = cp[1];
@@ -167,7 +178,29 @@ void WidthIterator::advance(int offset, GlyphBuffer* glyphBuffer)
                 }
                 CFRelease (string);
             }
-        } 
+        } else if ((c >= HANGUL_LBASE) && (c < (HANGUL_LBASE + 0xFF))) { // Hangul Jamo
+            // FIXME: <rdar://problem/6044932> Remove Hangul Jamo recomposition code once it is in TOT.
+            // This should be removed once TOT has this functionality (<rdar://problem/5719306> Korean characters are displayed decomposed)
+            int8_t lIndex = c - HANGUL_LBASE;
+            if ((currentCharacter + 1 < m_run.length()) && (0 <= lIndex) && (lIndex <= HANGUL_LCOUNT)) {
+                int16_t vIndex = cp[1] - HANGUL_VBASE;
+                if ((vIndex >= 0) && (vIndex <= HANGUL_VCOUNT)) {
+                    int16_t tIndex = 0;
+                    clusterLength = 2;
+                    if (currentCharacter + 2 < m_run.length()) {
+                        tIndex = cp[2] - HANGUL_TBASE;
+                        if ((tIndex < 0) || (tIndex > HANGUL_TCOUNT)) {
+                            tIndex = 0;
+                        } else {
+                            clusterLength = 3;
+                        }
+                    }
+                    c = (lIndex * HANGUL_VCOUNT + vIndex) * HANGUL_TCOUNT + tIndex + HANGUL_SBASE;
+                }
+            }
+        }
+        
+        
         // check for left-to-right and right-to-left marks (lrm, rlm)
         else if (c == 0x200E || c == 0x200F) {
             c = 0x200B; // map to zero-width space            
@@ -659,11 +692,24 @@ float Font::drawText(GraphicsContext* context, const TextRun& run, const FloatPo
         return 0.0f;
     
     to = (to == -1 ? run.length() : to);
+
+#if ENABLE(SVG_FONTS)
+    if (primaryFont()->isSVGFont()) {
+        drawTextUsingSVGFont(context, run, point, from, to);
+        return 0;
+    }
+#endif
+
     return drawSimpleText(context, run, point, from, to);
 }
 
 float Font::floatWidth(const TextRun& run) const
 {
+#if ENABLE(SVG_FONTS)
+    if (primaryFont()->isSVGFont())
+        return floatWidthUsingSVGFont(run);
+#endif
+
         return floatWidthForSimpleText(run, 0);
 }
 

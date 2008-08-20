@@ -42,6 +42,10 @@ public:
 
     String version() const;
     void setVersion(const String&);
+
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+    virtual void insertedIntoDocument();
+#endif
 };
 
 } //namespace

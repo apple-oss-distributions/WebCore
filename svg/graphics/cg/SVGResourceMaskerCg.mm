@@ -37,13 +37,17 @@
 #import "SVGRenderSupport.h"
 #import "SVGRenderStyle.h"
 #import "SVGResourceFilter.h"
+
+#if ENABLE(SVG_FILTERS) // PURPLE_CHANGE
 #import <QuartzCore/CIFilter.h>
 #import <QuartzCore/CoreImage.h>
+#endif
 
 using namespace std;
 
 namespace WebCore {
 
+#if ENABLE(SVG_FILTERS) // PURPLE_CHANGE
 static CIImage* applyLuminanceToAlphaFilter(CIImage* inputImage)
 {
     CIFilter* luminanceToAlpha = [CIFilter filterWithName:@"CIColorMatrix"];
@@ -91,7 +95,8 @@ static CIImage* transformImageIntoGrayscaleMask(CIImage* inputImage)
     [multipliedGrayscale setValue:alphaAsGrayscale forKey:@"inputImage"];  
     return [multipliedGrayscale valueForKey:@"outputImage"];
 }
-
+#endif
+    
 void SVGResourceMasker::applyMask(GraphicsContext* context, const FloatRect& boundingBox)
 {
     if (!m_mask)
@@ -107,6 +112,7 @@ void SVGResourceMasker::applyMask(GraphicsContext* context, const FloatRect& bou
     if (!grayScaleImage.get())
         return;
     
+#if ENABLE(SVG_FILTERS) // PURPLE_CHANGE
     BEGIN_BLOCK_OBJC_EXCEPTIONS
     CGContextRef grayScaleContext = grayScaleImage->context()->platformContext();
     CIContext* ciGrayscaleContext = [CIContext contextWithCGContext:grayScaleContext options:nil];
@@ -120,6 +126,7 @@ void SVGResourceMasker::applyMask(GraphicsContext* context, const FloatRect& bou
 
     CGContextClipToMask(context->platformContext(), m_maskRect, grayScaleImage->cgImage());
     END_BLOCK_OBJC_EXCEPTIONS
+#endif
 }
 
 } // namespace WebCore

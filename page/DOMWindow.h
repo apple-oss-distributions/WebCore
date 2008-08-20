@@ -48,6 +48,10 @@ namespace WebCore {
     class Screen;
     class WebKitPoint;
     class Node;
+    
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+    class DOMApplicationCache;
+#endif
 
     typedef int ExceptionCode;
 
@@ -150,6 +154,10 @@ namespace WebCore {
 
         Console* console() const;
         
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+        DOMApplicationCache* applicationCache() const;
+#endif
+        
 #if ENABLE(CROSS_DOCUMENT_MESSAGING)
         void postMessage(const String& message, const String& domain, const String& uri, DOMWindow* source) const;
 #endif
@@ -164,6 +172,10 @@ namespace WebCore {
         void resizeBy(float x, float y) const;
         void resizeTo(float width, float height) const;
 
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+        DOMApplicationCache* optionalApplicationCache() const { return m_applicationCache.get(); }
+#endif
+
     private:
         Frame* m_frame;
         mutable RefPtr<Screen> m_screen;
@@ -176,6 +188,9 @@ namespace WebCore {
         mutable RefPtr<BarInfo> m_statusbar;
         mutable RefPtr<BarInfo> m_toolbar;
         mutable RefPtr<Console> m_console;
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+        mutable RefPtr<DOMApplicationCache> m_applicationCache;
+#endif
     };
 
 } // namespace WebCore

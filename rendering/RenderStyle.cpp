@@ -31,6 +31,12 @@ namespace WebCore {
 
 static RenderStyle* defaultStyle;
 
+// compare floating points, taking nan into account
+static inline bool floatingPointValuesEqual(float a, float b)
+{
+    return (isnan(a) && isnan(b)) || (a == b);
+}
+
 StyleSurroundData::StyleSurroundData()
     : margin(Fixed), padding(Fixed)
 {
@@ -878,7 +884,7 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
 #endif
         && (m_transformStyle3D == o.m_transformStyle3D)
         && (m_backfaceVisibility == o.m_backfaceVisibility)
-        && (m_perspective == o.m_perspective)
+        && floatingPointValuesEqual(m_perspective, o.m_perspective)
         && (m_perspectiveOriginX == o.m_perspectiveOriginX)
         && (m_perspectiveOriginY == o.m_perspectiveOriginY)
         ;
@@ -1295,12 +1301,6 @@ bool RenderStyle::inheritedNotEqual(RenderStyle* other) const
            m_svgStyle->inheritedNotEqual(other->m_svgStyle.get()) ||
 #endif
            rareInheritedData != other->rareInheritedData;
-}
-
-// compare floating points, taking nan into account
-static inline bool floatingPointValuesEqual(float a, float b)
-{
-    return (isnan(a) && isnan(b)) || (a == b);
 }
 
 inline unsigned computeFontHash(const Font& font)

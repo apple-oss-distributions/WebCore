@@ -442,7 +442,6 @@ input[type="button"], input[type="submit"], input[type="reset"], input[type="fil
     /* We want to be as close to background-color:transparent as possible without actually being transparent */
     background-color: rgba(255, 255, 255, 0.01);
     font: 11px Helvetica;
-    -webkit-border-radius: initial;
 #endif
     -webkit-box-sizing: border-box;
 }

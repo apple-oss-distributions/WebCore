@@ -44,10 +44,9 @@
 
 namespace WebCore {
 
-DocLoader::DocLoader(Frame *frame, Document* doc)
+DocLoader::DocLoader(Document* doc)
     : m_cache(cache())
     , m_cachePolicy(CachePolicyVerify)
-    , m_frame(frame)
     , m_doc(doc)
     , m_requestCount(0)
     , m_autoLoadImages(true)
@@ -64,6 +63,11 @@ DocLoader::~DocLoader()
     for (HashMap<String, CachedResource*>::iterator it = m_docResources.begin(); it != end; ++it)
         it->second->setDocLoader(0);
     m_cache->removeDocLoader(this);
+}
+
+Frame* DocLoader::frame() const
+{
+    return m_doc->frame();
 }
 
 void DocLoader::checkForReload(const KURL& fullURL)
@@ -156,8 +160,8 @@ CachedResource* DocLoader::requestResource(CachedResource::Type type, const Stri
             m_docResources.remove(it);
         }
     }
-                                                          
-    if (m_frame && m_frame->loader()->isReloading())
+
+    if (frame() && frame()->loader()->isReloading())
         setCachePolicy(CachePolicyReload);
 
     checkForReload(fullURL);
@@ -205,14 +209,14 @@ void DocLoader::removeCachedResource(CachedResource* resource) const
 void DocLoader::setLoadInProgress(bool load)
 {
     m_loadInProgress = load;
-    if (!load && m_frame)
-        m_frame->loader()->loadDone();
+    if (!load && frame())
+        frame()->loader()->loadDone();
 }
 
 void DocLoader::checkCacheObjectStatus(CachedResource* resource)
 {
     // Return from the function for objects that we didn't load from the cache or if we don't have a frame.
-    if (!resource || !m_frame)
+    if (!resource || !frame())
         return;
 
     switch (resource->status()) {
@@ -226,7 +230,7 @@ void DocLoader::checkCacheObjectStatus(CachedResource* resource)
     }
 
     // FIXME: If the WebKit client changes or cancels the request, WebCore does not respect this and continues the load.
-    m_frame->loader()->loadedResourceFromMemoryCache(resource);
+    frame()->loader()->loadedResourceFromMemoryCache(resource);
 }
 
 void DocLoader::incrementRequestCount()

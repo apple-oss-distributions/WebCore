@@ -167,7 +167,7 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
             if( languages ) {
                 CFStringRef languageName = NULL;
                 for( NSString *language in languages) {
-                    CFStringRef languageName = CFLocaleCreateCanonicalLanguageIdentifierFromString(NULL, (CFStringRef)language);
+                    languageName = CFLocaleCreateCanonicalLanguageIdentifierFromString(NULL, (CFStringRef)language);
                     if ( CFEqual(languageName, CFSTR("zh-Hans")) )
                         break;                                  //Simplified Chinese - default settings
                     else if ( CFEqual(languageName, CFSTR("ja")) ) {	

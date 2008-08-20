@@ -31,7 +31,7 @@
 #if ENABLE(SVG)
 #include "CgSupport.h"
 
-#include <ApplicationServices/ApplicationServices.h>
+#include <CoreGraphics/CoreGraphics.h>
 #include "FloatConversion.h"
 #include "GraphicsContext.h"
 #include "RenderStyle.h"

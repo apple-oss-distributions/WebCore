@@ -41,6 +41,13 @@ SharedBuffer::SharedBuffer(const unsigned char* data, int size)
 {
     m_buffer.append(data, size);
 }
+    
+PassRefPtr<SharedBuffer> SharedBuffer::adoptVector(Vector<char>& vector)
+{
+    RefPtr<SharedBuffer> buffer = new SharedBuffer;
+    buffer->m_buffer.swap(vector);
+    return buffer.release();
+}
 
 unsigned SharedBuffer::size() const
 {

@@ -1319,18 +1319,31 @@ static HTMLFormElement *formElementFromDOMElement(DOMElement *element)
 
 - (NSRect)rectForScrollToVisible
 {
-    // return caretRect if selection is caret, selectionRect otherwise
     Selection selection(m_frame->selectionController()->selection());
-    if (selection.isCaret()) {
-        return [self caretRect];   
-    }
-    
-    NSRect selectionRect = m_frame->selectionRect();
-    if (CGRectEqualToRect(CGRectZero, selectionRect)) {
-        // The DOM has probably been changed and the selection has not.  caretRect handles this.
+    if (selection.isNone())
+        return CGRectZero;
+
+    if (selection.isCaret())
         return [self caretRect];
-    }
-    return selectionRect;
+
+    Selection originalSelection(selection);
+    Position pos;
+
+    pos = originalSelection.start();
+    selection.setBase(pos);
+    selection.setExtent(pos);
+    SelectionController startController;
+    startController.setSelection(selection);
+    FloatRect startRect(startController.absoluteCaretQuad().boundingBox());
+    
+    pos = originalSelection.end();
+    selection.setBase(pos);
+    selection.setExtent(pos);
+    SelectionController endController;
+    endController.setSelection(selection);
+    FloatRect endRect(endController.absoluteCaretQuad().boundingBox());
+
+    return unionRect(startRect, endRect);
 }
 
 - (NSRect)autocorrectionRect
@@ -1844,6 +1857,46 @@ static HTMLFormElement *formElementFromDOMElement(DOMElement *element)
     
     m_frame->editor()->client()->respondToChangedContents();
 }
+
+- (void)createDefaultFieldEditorDocumentStructure
+{
+    if (!m_frame)
+        return;
+
+    Document* doc = m_frame->document();
+    if (!doc)
+        return;
+
+
+    // clear out all current children of the document
+    doc->removeChildren();
+
+    m_frame->editor()->client()->respondToChangedContents();
+
+    ExceptionCode ec;
+
+    RefPtr<Element> rootElement = doc->createElementNS(xhtmlNamespaceURI, "html", ec);
+    doc->appendChild(rootElement, ec);
+
+    RefPtr<Element> body = doc->createElementNS(xhtmlNamespaceURI, "body", ec);
+    body->setAttribute(styleAttr, "margin: 0px; word-wrap: break-word; -khtml-nbsp-mode: space; -khtml-line-break: after-white-space; white-space: nowrap");
+    rootElement->appendChild(body, ec);
+    
+    RefPtr<Element> sizeElement = doc->createElementNS(xhtmlNamespaceURI, "div", ec);
+    sizeElement->setAttribute("id", "size", ec);
+    sizeElement->setAttribute("contentEditable", "false", ec);
+    sizeElement->setAttribute("unselectable", "on", ec);
+    body->appendChild(sizeElement, ec);
+
+    RefPtr<Element> textElement = doc->createElementNS(xhtmlNamespaceURI, "div", ec);
+    textElement->setAttribute("id", "text", ec);
+    textElement->setAttribute("contentEditable", "true", ec);
+    textElement->setAttribute("unselectable", "off", ec);
+    sizeElement->appendChild(textElement, ec);
+    
+    m_frame->editor()->client()->respondToChangedContents();
+}
+
 
 - (void)insertParagraphSeparatorInQuotedContent
 {

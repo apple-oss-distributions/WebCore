@@ -54,6 +54,10 @@
 #include "Database.h"
 #endif
 
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+#include "DOMApplicationCache.h"
+#endif
+
 using std::min;
 using std::max;
 
@@ -132,6 +136,12 @@ void DOMWindow::clear()
     if (m_console)
         m_console->disconnectFrame();
     m_console = 0;
+    
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+    if (m_applicationCache)
+        m_applicationCache->disconnectFrame();
+    m_applicationCache = 0;
+#endif
 }
 
 Screen* DOMWindow::screen() const
@@ -196,6 +206,15 @@ Console* DOMWindow::console() const
         m_console = new Console(m_frame);
     return m_console.get();
 }
+
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+DOMApplicationCache* DOMWindow::applicationCache() const
+{
+    if (!m_applicationCache)
+        m_applicationCache = DOMApplicationCache::create(m_frame);
+    return m_applicationCache.get();
+}
+#endif
 
 #if ENABLE(CROSS_DOCUMENT_MESSAGING)
 void DOMWindow::postMessage(const String& message, const String& domain, const String& uri, DOMWindow* source) const

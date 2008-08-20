@@ -54,6 +54,7 @@ namespace WebCore {
     inline bool operator!=(const KURL &a, const KURL &b) { return !(a == b); }
 
     bool equalIgnoringRef(const KURL&, const KURL&);
+    bool protocolHostAndPortAreEqual(const KURL&, const KURL&);
 
 class KURL {
 public:
@@ -129,6 +130,9 @@ public:
     static DeprecatedString encode_string(const DeprecatedString&);
     
     friend bool operator==(const KURL &, const KURL &);
+    
+    int hostStart() const { return (passwordEndPos == userStartPos) ? passwordEndPos : passwordEndPos + 1; }
+    int hostEnd() const { return hostEndPos; }
 
 #ifndef NDEBUG
     void print() const;
@@ -153,6 +157,7 @@ private:
     int fragmentEndPos;
     
     friend bool equalIgnoringRef(const KURL& a, const KURL& b);
+    friend bool protocolHostAndPortAreEqual(const KURL&, const KURL&);
 };
 
 bool protocolIs(const String& url, const char* protocol);

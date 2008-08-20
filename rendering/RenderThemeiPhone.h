@@ -34,7 +34,8 @@ protected:
     virtual void adjustRadioStyle(CSSStyleSelector*, RenderStyle*, Element*) const;    
     virtual bool paintRadioDecorations(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
     
-    virtual bool paintButton(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual bool paintButtonDecorations(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r);
+    virtual bool paintPushButtonDecorations(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r);
     virtual void setButtonSize(RenderStyle*) const;
     
     virtual void adjustTextFieldStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
@@ -46,7 +47,6 @@ protected:
     virtual bool paintMenuListButtonDecorations(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
     
 private:
-    bool paintButtonDecorationsForAnyAppearance(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r);
 
     typedef enum
     {

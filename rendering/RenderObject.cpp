@@ -481,6 +481,20 @@ void RenderObject::adjustComputedFontSizesOnBlocks(float size, float visibleWidt
     // Remove style from auto-sizing table that are no longer valid.
     document->validateAutoSizingNodes();
 }
+    
+void RenderObject::resetTextAutosizing()
+{
+    Document *document = view()->frameView()->frame()->document();
+    if (!document)
+        return;
+    
+    document->resetAutoSizingNodes();
+    
+    for (RenderObject *descendent = traverseNext(this, includeNonFixedHeight); descendent; descendent = descendent->traverseNext(this, includeNonFixedHeight)) {
+        if (descendent->isRenderBlock() && !descendent->isListItem())
+            static_cast<RenderBlock*>(descendent)->resetComputedFontSize();
+    }
+}
 
 static void addLayers(RenderObject* obj, RenderLayer* parentLayer, RenderObject*& newObject,
                       RenderLayer*& beforeChild)

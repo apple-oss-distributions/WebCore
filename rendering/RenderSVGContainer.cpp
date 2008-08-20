@@ -127,8 +127,6 @@ RenderObject* RenderSVGContainer::removeChildNode(RenderObject* oldChild, bool f
     oldChild->setNextSibling(0);
     oldChild->setParent(0);
 
-    if (AXObjectCache::accessibilityEnabled())
-        document()->axObjectCache()->childrenChanged(this);
 
     return oldChild;
 }
@@ -153,8 +151,6 @@ void RenderSVGContainer::appendChildNode(RenderObject* newChild, bool)
     if (!normalChildNeedsLayout())
         setChildNeedsLayout(true); // We may supply the static position for an absolute positioned child.
 
-    if (AXObjectCache::accessibilityEnabled())
-        document()->axObjectCache()->childrenChanged(this);
 }
 
 void RenderSVGContainer::insertChildNode(RenderObject* child, RenderObject* beforeChild, bool)
@@ -184,8 +180,6 @@ void RenderSVGContainer::insertChildNode(RenderObject* child, RenderObject* befo
     if (!normalChildNeedsLayout())
         setChildNeedsLayout(true); // We may supply the static position for an absolute positioned child.
 
-    if (AXObjectCache::accessibilityEnabled())
-        document()->axObjectCache()->childrenChanged(this);
 }
 
 bool RenderSVGContainer::drawsContents() const

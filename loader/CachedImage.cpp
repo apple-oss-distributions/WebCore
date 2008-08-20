@@ -61,7 +61,7 @@ CachedImage::CachedImage(DocLoader* docLoader, const String& url, bool forCache)
     if (docLoader && docLoader->frame()) {
         m_maxDataSize = docLoader->frame()->maximumImageSize();
     }
-    m_accoutedForLimit = false;
+    m_accountedForLimit = false;
 }
 
 CachedImage::CachedImage(Image* image)
@@ -72,7 +72,7 @@ CachedImage::CachedImage(Image* image)
     m_loading = false;
 
     m_maxDataSize = 0;
-    m_accoutedForLimit = false;
+    m_accountedForLimit = false;
 }
 
 CachedImage::~CachedImage()
@@ -208,8 +208,8 @@ bool CachedImage::checkOutOfMemory()
 
 bool CachedImage::markAccountedForLimit()
 {
-    if (!m_accoutedForLimit) {
-        m_accoutedForLimit = true;
+    if (!m_accountedForLimit) {
+        m_accountedForLimit = true;
         return true;
     }
     return false;

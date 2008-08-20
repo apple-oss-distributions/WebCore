@@ -1993,7 +1993,6 @@ public:
     float textStrokeWidth() const { return rareInheritedData->textStrokeWidth; }
     const Color& textFillColor() const { return rareInheritedData->textFillColor; }
     float opacity() const { return rareNonInheritedData->opacity; }
-    bool hasOpacity() const { return !isnan(rareNonInheritedData->opacity); }
     EAppearance appearance() const { return static_cast<EAppearance>(rareNonInheritedData->m_appearance); }
     EImageLoadingBorder imageLoadingBorder() { return static_cast<EImageLoadingBorder>(rareNonInheritedData->m_imageLoadingBorder); }
     EBoxAlignment boxAlign() const { return static_cast<EBoxAlignment>(rareNonInheritedData->flexibleBox->align); }

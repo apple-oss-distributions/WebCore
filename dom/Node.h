@@ -65,7 +65,7 @@ class Transform3D;
 
 typedef int ExceptionCode;
 
-enum StyleChangeType { NoStyleChange, InlineStyleChange, FullStyleChange };
+enum StyleChangeType { NoStyleChange, InlineStyleChange, FullStyleChange, AnimationStyleChange };
 
 // this class implements nodes, which can have a parent but no children:
 class Node : public TreeShared<Node> {

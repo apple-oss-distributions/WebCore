@@ -74,7 +74,9 @@ Settings::Settings(Page* page)
     , m_needsSiteSpecificQuirks(false)
     , m_fontRenderingMode(0)
     , m_flatFrameSetLayoutEnabled(true)
+    , m_standalone(false)
     , m_maximumResourceDataLength(10485760)
+    , m_offlineWebApplicationCacheEnabled(false)
 {
     // A Frame may not have been created yet, so we initialize the AtomicString 
     // hash before trying to use it.
@@ -325,6 +327,11 @@ long long Settings::maximumResourceDataLength()
     return m_maximumResourceDataLength;
 }
 
+void Settings::setStandalone(bool flag)
+{
+    m_standalone = flag;
+}
+
 void Settings::setFontRenderingMode(FontRenderingMode mode)
 {
     if (fontRenderingMode() == mode)
@@ -341,6 +348,11 @@ FontRenderingMode Settings::fontRenderingMode() const
 void Settings::setNeedsSiteSpecificQuirks(bool needsQuirks)
 {
     m_needsSiteSpecificQuirks = needsQuirks;
+}
+
+void Settings::setOfflineWebApplicationCacheEnabled(bool enabled)
+{
+    m_offlineWebApplicationCacheEnabled = enabled;
 }
 
 } // namespace WebCore

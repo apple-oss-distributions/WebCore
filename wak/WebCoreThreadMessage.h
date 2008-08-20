@@ -33,6 +33,7 @@ void WebThreadAdoptAndRelease(id obj);
 // Synchronous from web thread to main thread.
 void WebThreadCallDelegate(NSInvocation *invocation);
 void WebThreadPostNotification(NSString *name, id object, id userInfo);
+void WebThreadCallDelegateAsync(NSInvocation *invocation);
 
 // Convenience method for creating an NSInvocation object
 NSInvocation *WebThreadCreateNSInvocation(id target, SEL selector);

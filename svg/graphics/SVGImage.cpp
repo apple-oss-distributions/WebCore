@@ -188,10 +188,10 @@ bool SVGImage::dataChanged(bool allDataReceived)
         m_page->settings()->setJavaScriptEnabled(false);
 
         m_frame = new Frame(m_page.get(), 0, dummyFrameLoaderClient);
-        m_frame->init();
         m_frameView = new FrameView(m_frame.get());
         m_frameView->deref(); // FIXME: FrameView starts with a refcount of 1
         m_frame->setView(m_frameView.get());
+        m_frame->init(); //PURPLE_CHANGES: this change should be done on TOT too. <rdar://problem/5783525> Incorrect order of initialiazions in SVGImage::dataChanged()
         ResourceRequest fakeRequest(KURL(""));
         m_frame->loader()->load(fakeRequest); // Make sure the DocumentLoader is created
         m_frame->loader()->cancelContentPolicyCheck(); // cancel any policy checks

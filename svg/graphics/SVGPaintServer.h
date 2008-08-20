@@ -31,7 +31,7 @@
 #include "SVGResource.h"
 
 #if PLATFORM(CG)
-#include <ApplicationServices/ApplicationServices.h>
+#include <CoreGraphics/CoreGraphics.h>
 #endif
 
 #if PLATFORM(QT)

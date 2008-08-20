@@ -145,6 +145,8 @@ namespace WebCore {
 
         void setFlatFrameSetLayoutEnabled(bool);
         bool flatFrameSetLayoutEnabled() const { return m_flatFrameSetLayoutEnabled; }
+        void setStandalone(bool flag);
+        bool standalone() const { return m_standalone; }
         void setMaximumResourceDataLength(long long length);
         long long maximumResourceDataLength();
         
@@ -156,6 +158,9 @@ namespace WebCore {
 
         void setNeedsSiteSpecificQuirks(bool);
         bool needsSiteSpecificQuirks() const { return m_needsSiteSpecificQuirks; }
+        
+        void setOfflineWebApplicationCacheEnabled(bool);
+        bool offlineWebApplicationCacheEnabled() const { return m_offlineWebApplicationCacheEnabled; }
 
     private:
         Page* m_page;
@@ -197,7 +202,9 @@ namespace WebCore {
         bool m_needsSiteSpecificQuirks : 1;
         unsigned m_fontRenderingMode : 1;
         bool m_flatFrameSetLayoutEnabled : 1;
+        bool m_standalone : 1;        
         long long m_maximumResourceDataLength;
+        bool m_offlineWebApplicationCacheEnabled : 1;
     };
 
 } // namespace WebCore

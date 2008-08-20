@@ -45,7 +45,7 @@ namespace WebCore {
 static void setChanged(Node* node)
 {
     ASSERT(!node || (node->document() && !node->document()->inPageCache()));
-    node->setChanged();
+    node->setChanged(AnimationStyleChange);
 }
 
 static const double cAnimationTimerDelay = 0.025;

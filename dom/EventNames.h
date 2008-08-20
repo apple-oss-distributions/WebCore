@@ -35,11 +35,14 @@ namespace WebCore { namespace EventNames {
     macro(beforepaste) \
     macro(beforeunload) \
     macro(blur) \
+    macro(cached) \
     macro(change) \
+    macro(checking) \
     macro(click) \
     macro(contextmenu) \
     macro(copy) \
     macro(cut) \
+    macro(downloading) \
     macro(dblclick) \
     macro(drag) \
     macro(dragend) \
@@ -62,6 +65,7 @@ namespace WebCore { namespace EventNames {
     macro(mouseover) \
     macro(mouseup) \
     macro(mousewheel) \
+    macro(noupdate) \
     macro(orientationchange) \
     macro(touchstart) \
     macro(touchmove) \
@@ -82,6 +86,7 @@ namespace WebCore { namespace EventNames {
     macro(submit) \
     macro(textInput) \
     macro(unload) \
+    macro(updateready) \
     macro(zoom) \
     \
     macro(DOMActivate) \

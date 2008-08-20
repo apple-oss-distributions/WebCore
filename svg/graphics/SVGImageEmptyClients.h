@@ -63,13 +63,13 @@ public:
     
     virtual float scaleFactor() { return 1.f; }
     
-    virtual void focus() { }
+    virtual void focus(bool userGesture) { }
     virtual void unfocus() { }
     
     virtual bool canTakeFocus(FocusDirection) { return false; }
     virtual void takeFocus(FocusDirection) { }
     
-    virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&) { return 0; }
+    virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, const bool) { return 0; }
     virtual void show() { }
     
     virtual bool canRunModal() { return false; }
@@ -89,8 +89,8 @@ public:
     
     virtual void setResizable(bool) { }
     
-    virtual void addMessageToConsole(const String& message, unsigned int lineNumber, const String& sourceID) { }
-    
+    virtual void addMessageToConsole(MessageSource source, MessageLevel level, const String& message, unsigned lineNumber, const String& sourceID) { }
+
     virtual bool canRunBeforeUnloadConfirmPanel() { return false; }
     virtual bool runBeforeUnloadConfirmPanel(const String& message, Frame* frame) { return true; }
     
@@ -331,6 +331,11 @@ public:
     virtual bool doTextFieldCommandFromEvent(Element*, KeyboardEvent*) { return false; }
     virtual void textWillBeDeletedInTextField(Element*) { }
     virtual void textDidChangeInTextArea(Element*) { }
+    virtual void formElementDidSetValue(Element*) { }
+    virtual void formElementDidFocus(Element*) { }
+    virtual void formElementDidBlur(Element*) { }
+    virtual void suppressFormNotifications() { }
+    virtual void restoreFormNotifications() { }
     
 #if PLATFORM(MAC)
     virtual void markedTextAbandoned(Frame*) { }

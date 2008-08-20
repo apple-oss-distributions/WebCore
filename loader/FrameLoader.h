@@ -438,6 +438,8 @@ namespace WebCore {
 
         bool shouldAllowNavigation(Frame* targetFrame) const;
         Frame* findFrameForNavigation(const AtomicString& name);
+        
+        void applyUserAgent(ResourceRequest& request);
 
     private:
         PassRefPtr<HistoryItem> createHistoryItem(bool useOriginal);
@@ -534,8 +536,6 @@ namespace WebCore {
 
         bool shouldReloadToHandleUnreachableURL(DocumentLoader*);
         void handleUnimplementablePolicy(const ResourceError&);
-
-        void applyUserAgent(ResourceRequest& request);
 
         void scheduleRedirection(ScheduledRedirection*);
         void startRedirectionTimer();

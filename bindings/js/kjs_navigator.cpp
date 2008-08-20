@@ -169,6 +169,7 @@ const ClassInfo Navigator::info = { "Navigator", 0, &NavigatorTable };
   vendor        Navigator::Vendor                       DontDelete|ReadOnly
   vendorSub     Navigator::VendorSub                    DontDelete|ReadOnly
   cookieEnabled Navigator::CookieEnabled                DontDelete|ReadOnly
+  standalone    Navigator::Standalone                   DontDelete|ReadOnly
   javaEnabled   navigatorProtoFuncJavaEnabled  DontDelete|Function 0
 @end
 */
@@ -252,6 +253,14 @@ static bool needsYouTubeQuirk(ExecState* exec, Frame* frame)
 
 #endif
 
+static bool isStandalone(Frame* frame)
+{
+    Settings* settings = frame->settings();
+    if (!settings)
+        return false;
+    return settings->standalone();
+}
+
 JSValue* Navigator::getValueProperty(ExecState* exec, int token) const
 {
   switch (token) {
@@ -286,6 +295,8 @@ JSValue* Navigator::getValueProperty(ExecState* exec, int token) const
     return new MimeTypes(exec);
   case CookieEnabled:
     return jsBoolean(cookiesEnabled(m_frame->document()));
+  case Standalone:
+    return jsBoolean(isStandalone(m_frame));
   }
   return 0;
 }

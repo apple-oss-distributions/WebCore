@@ -54,17 +54,14 @@ public:
     void setText(const String&);
     
     virtual bool canHaveChildren() const;
-
-    IntSize borderRadius() const;
+    
+    virtual void layout();
 
 protected:
     virtual bool hasLineIfEmpty() const { return true; }
 
     RenderTextFragment* m_buttonText;
     RenderBlock* m_inner;
-
-private:
-    bool shouldPaintWithBorderRadius() const;
 };
 
 } // namespace WebCore

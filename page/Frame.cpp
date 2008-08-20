@@ -270,7 +270,11 @@ void Frame::setDocument(PassRefPtr<Document> newDoc)
         d->m_jscript->clearDocumentWrapper();
 
     // Need to reapplyStyles when changing documents so new document gets image autoload settings and custom user style sheet
+#if ENABLE(SVG)
+    if (d->m_doc && !d->m_userStyleSheet.isNull() && !d->m_needsReapplyStyles && view())
+#else
     if (d->m_doc && !d->m_userStyleSheet.isNull())
+#endif
         setNeedsReapplyStyles();
 }
 
@@ -1478,8 +1482,10 @@ void Frame::revealSelection(const RenderLayer::ScrollAlignment& alignment) const
         // the selection rect could intersect more than just that. 
         // See <rdar://problem/4799899>.
         if (RenderLayer *layer = start.node()->renderer()->enclosingLayer()) {
+            layer->setAdjustForPurpleCaretWhenScrolling(true);
             layer->scrollRectToVisible(rect, alignment, alignment);
-            notifySelectionLayoutChanged();    
+            layer->setAdjustForPurpleCaretWhenScrolling(false);
+            notifySelectionLayoutChanged();
         }
     }
 }

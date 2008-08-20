@@ -86,6 +86,11 @@
 #include <kjs/JSLock.h>
 #include <kjs/object.h>
 
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+#include "ApplicationCache.h"
+#include "ApplicationCacheResource.h"
+#endif
+
 #if ENABLE(SVG)
 #include "SVGDocument.h"
 #include "SVGLocatable.h"
@@ -467,9 +472,11 @@ Frame* FrameLoader::loadSubframe(HTMLFrameOwnerElement* ownerElement, const KURL
     }
     
     frame->loader()->m_isComplete = false;
-    
-    if (ownerElement->renderer() && frame->view())
-        static_cast<RenderWidget*>(ownerElement->renderer())->setWidget(frame->view());
+   
+    RenderObject* renderer = ownerElement->renderer();
+    FrameView* view = frame->view();
+    if (renderer && renderer->isWidget() && view)
+        static_cast<RenderWidget*>(renderer)->setWidget(view);
     
     checkCallImplicitClose();
     
@@ -1801,7 +1808,14 @@ bool FrameLoader::canCachePage()
         && loadType != FrameLoadTypeReloadAllowingStaleData
         && loadType != FrameLoadTypeSame
         && !m_documentLoader->isLoadingInAPISense()
-        && !m_documentLoader->isStopping();
+        && !m_documentLoader->isStopping()
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+        // FIXME: We should investigating caching pages that have an associated
+        // application cache. <rdar://problem/5917899> tracks that work.
+        && !m_documentLoader->applicationCache()
+        && !m_documentLoader->candidateApplicationCacheGroup()
+#endif
+    ;
 }
 
 void FrameLoader::updatePolicyBaseURL()
@@ -3326,7 +3340,17 @@ void FrameLoader::loadResourceSynchronously(const ResourceRequest& request, Reso
     if (error.isNull()) {
         ASSERT(!newRequest.isNull());
         didTellClientAboutLoad(newRequest.url().string());
-        ResourceHandle::loadResourceSynchronously(newRequest, error, response, data, m_frame);
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+        ApplicationCacheResource* resource;
+        if (documentLoader()->shouldLoadResourceFromApplicationCache(newRequest, resource)) {
+            if (resource) {
+                response = resource->response();
+                data.append(resource->data()->data(), resource->data()->size());
+            } else
+                error = cannotShowURLError(newRequest);
+        } else 
+#endif
+            ResourceHandle::loadResourceSynchronously(newRequest, error, response, data, m_frame);
     }
     
     sendRemainingDelegateMessages(identifier, response, data.size(), error);

@@ -30,7 +30,7 @@
 #if ENABLE(SVG)
 #include "RenderPath.h"
 
-#include <ApplicationServices/ApplicationServices.h>
+#include <CoreGraphics/CoreGraphics.h>
 #include "CgSupport.h"
 #include "GraphicsContext.h"
 #include "SVGPaintServer.h"
