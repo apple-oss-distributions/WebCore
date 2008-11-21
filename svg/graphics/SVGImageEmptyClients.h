@@ -336,6 +336,9 @@ public:
     virtual void formElementDidBlur(Element*) { }
     virtual void suppressFormNotifications() { }
     virtual void restoreFormNotifications() { }
+    virtual void suppressSelectionNotifications() { }
+    virtual void restoreSelectionNotifications() { }
+    virtual bool isSuppressingSelectionNotifications() { return false; }
     
 #if PLATFORM(MAC)
     virtual void markedTextAbandoned(Frame*) { }

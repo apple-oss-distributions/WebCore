@@ -78,6 +78,8 @@ public:
     void setValue(const AtomicString& value) { m_value = value; }
     void setPrefix(const AtomicString& prefix) { m_name.setPrefix(prefix); }
 
+    virtual bool isMappedAttribute() { return false; }
+
 private:
     QualifiedName m_name;
     AtomicString m_value;

@@ -139,6 +139,8 @@ private:
     
     RefPtr<ApplicationCacheResource> m_manifestResource;
     RefPtr<ResourceHandle> m_manifestHandle;
+    
+    unsigned m_loadedSize;
 };
 
 } // namespace WebCore

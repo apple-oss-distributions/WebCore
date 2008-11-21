@@ -659,7 +659,8 @@ void FrameView::layout(bool allowSubtree)
 
 #if ENABLE(IPHONE_PPT)
     double endTime = currentTime();
-    m_frame->page()->mainFrame()->didLayout(didFirstLayout, endTime - startTime);
+    if (m_frame->page() && m_frame->page()->mainFrame())
+        m_frame->page()->mainFrame()->didLayout(didFirstLayout, endTime - startTime);
 #endif
 
     if (didFirstLayout)
@@ -921,6 +922,30 @@ void FrameView::resetDeferredRepaintDelay()
         d->m_deferredRepaintTimer.startOneShot(0);
 }
 
+// Code copied from windowClipRect
+IntSize FrameView::offsetInWindow() const
+{
+    ASSERT(m_frame->view() == this);
+
+    // Set our clip rect to be our contents.
+    IntSize curOffset(x(), y());
+
+    if (!m_frame || !m_frame->document() || !m_frame->document()->ownerElement())
+        return curOffset;
+
+    // Walk up the FrameView tree
+    Element* elt = m_frame->document()->ownerElement();
+    RenderLayer* layer = elt->renderer()->enclosingLayer();
+    // FIXME: layer should never be null, but sometimes seems to be anyway.
+    if (!layer)
+        return curOffset;
+    FrameView* parentView = elt->document()->view();
+    curOffset += parentView->offsetInWindow();
+    
+    return curOffset;
+}
+
+
 void FrameView::layoutTimerFired(Timer<FrameView>*)
 {
 #ifdef INSTRUMENT_LAYOUT_SCHEDULING
@@ -1138,6 +1163,22 @@ void FrameView::performPostLayoutTasks()
         if (resized && (!documentLoader || !documentLoader->isLoadingInAPISense()))
             m_frame->sendResizeEvent();
     }
+}
+
+// Override widget method so we can reposition our root layers when
+// widgets are laid out.
+void FrameView::setFrameGeometry(const IntRect &rect)
+{
+    ScrollView::setFrameGeometry(rect);
+
+#if ENABLE(HW_COMP)
+    if (!m_frame || !m_frame->document())
+        return;
+
+    RenderView* root = static_cast<RenderView*>(m_frame->document()->renderer());
+    if (root)
+        root->updateLayerPosition();
+#endif
 }
 
 void FrameView::postLayoutTimerFired(Timer<FrameView>*)

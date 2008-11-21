@@ -157,7 +157,9 @@ private:
     unsigned deadCapacity() const;
     
     void pruneDeadResources(); // Flush decoded and encoded data from resources not referenced by Web pages.
-    void pruneLiveResources(); // Flush decoded data from resources still referenced by Web pages.
+public:
+    void pruneLiveResources(bool critical = false); // Flush decoded data from resources still referenced by Web pages.
+private:
 
     // Member variables.
     HashSet<DocLoader*> m_docLoaders;

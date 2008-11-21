@@ -121,6 +121,7 @@ namespace WebCore {
 
     typedef int ExceptionCode;
 
+    class CachedImage;
     extern const int cLayoutScheduleThreshold;
 
 class FormElementKey {
@@ -1056,15 +1057,23 @@ public:
     void incrementScrollEventListenersCount();
     void decrementScrollEventListenersCount();
 
-    void incrementImageDataCount(unsigned count);
-    unsigned long imageDataCount();
+    void incrementTotalImageDataSize(CachedImage* image);
+    void decrementTotalImageDataSize(CachedImage* image);
+    unsigned long totalImageDataSize();
+
+    void incrementAnimatedImageDataCount(unsigned count);
+    unsigned long animatedImageDataCount();
 private:
     typedef HashMap<TextAutoSizingKey, RefPtr<TextAutoSizingValue>, TextAutoSizingHash, TextAutoSizingTraits> TextAutoSizingMap;
     TextAutoSizingMap m_textAutoSizedNodes;
 
     bool m_telephoneNumberParsingEnabled;
     unsigned m_scrollEventListenerCount;
-    unsigned long m_imageDataCount;
+    
+    HashCountedSet<CachedImage*> m_documentImages;
+    
+    unsigned long m_totalImageDataSize;
+    unsigned long m_animatedImageDataCount;
 };
 
 } // namespace WebCore

@@ -141,7 +141,8 @@ void TextCodecICU::registerEncodingByName(const char *name, EncodingNameRegistra
         {"maccentraleurroman", "macos-29-10.2"},
         {"xmacturkish", "macos-35-10.2 "},
         {"macturkish", "macos-35-10.2 "},
-        
+        {"softbanksjis", "softbank-sjis"},
+
         {0, 0}};
     unsigned i;
     

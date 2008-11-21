@@ -33,16 +33,18 @@ namespace WebCore {
     
     class Font;
     class String;
-    
+    class FloatSize;
+
     class StringTruncator {
     public:
         static String centerTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks = true);
         static String rightTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks = true);
-        static String centerTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks, float& resultWidth);
-        static String rightTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks, float& resultWidth);
-        static String leftTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks, float& resultWidth);
-        static String rightClipToCharacter(const String&, float maxWidth, const Font&, bool disableRoundingHacks, float& resultWidth);
-        static String rightClipToWord(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth);
+        static String centerTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks, FloatSize& resultSize);
+        static String rightTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks, FloatSize& resultSize);
+        static String leftTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks, FloatSize& resultSize);
+        static String rightClipToCharacter(const String&, float maxWidth, const Font&, bool disableRoundingHacks, FloatSize& resultSize);
+        static String rightClipToWord(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, FloatSize& resultSize);
+        static FloatSize size(const String&, const Font&, bool disableRoundingHacks = true);
         static float width(const String&, const Font&, bool disableRoundingHacks = true);
     };
     

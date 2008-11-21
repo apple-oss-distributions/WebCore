@@ -63,7 +63,6 @@ public:
     void setWidth(const String&);
 
     virtual bool willRespondToMouseMoveEvents() { return false; }
-    virtual bool willRespondToMouseDragEvents() { return false; }
     virtual bool willRespondToMouseClickEvents() { return true; }
 
 #if USE(JAVASCRIPTCORE_BINDINGS)

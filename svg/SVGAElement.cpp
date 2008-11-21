@@ -192,6 +192,13 @@ bool SVGAElement::childShouldCreateRenderer(Node* child) const
 
     return SVGElement::childShouldCreateRenderer(child);
 }
+    
+bool SVGAElement::willRespondToMouseClickEvents()
+{ 
+    if (!href().isEmpty()) 
+        return true; 
+    return SVGStyledTransformableElement::willRespondToMouseClickEvents(); 
+}
 
 } // namespace WebCore
 

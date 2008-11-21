@@ -20,6 +20,8 @@
 
 #include "config.h"
 
+#include <libkern/OSAtomic.h>
+
 #ifdef AVOID_STATIC_CONSTRUCTORS
 #define ATOMICSTRING_HIDE_GLOBALS 1
 #endif
@@ -37,6 +39,14 @@ using KJS::UString;
 
 namespace WebCore {
 
+class AtomicStringTableLocker {
+    static OSSpinLock s_stringTableLock;
+public:
+    AtomicStringTableLocker() { OSSpinLockLock(&s_stringTableLock); }
+    ~AtomicStringTableLocker() { OSSpinLockUnlock(&s_stringTableLock); }
+};
+OSSpinLock AtomicStringTableLocker::s_stringTableLock = OS_SPINLOCK_INIT;
+    
 static HashSet<StringImpl*>* stringTable;
 
 struct CStringTranslator 
@@ -80,6 +90,7 @@ StringImpl* AtomicString::add(const char* c)
         return 0;
     if (!*c)
         return StringImpl::empty();    
+    AtomicStringTableLocker locker();
     return *stringTable->add<const char*, CStringTranslator>(c).first;
 }
 
@@ -144,6 +155,7 @@ StringImpl* AtomicString::add(const UChar* s, int length)
         return StringImpl::empty();
     
     UCharBuffer buf = {s, length}; 
+    AtomicStringTableLocker locker();
     return *stringTable->add<UCharBuffer, UCharBufferTranslator>(buf).first;
 }
 
@@ -160,6 +172,7 @@ StringImpl* AtomicString::add(const UChar* s)
         return StringImpl::empty();
 
     UCharBuffer buf = {s, length}; 
+    AtomicStringTableLocker locker();
     return *stringTable->add<UCharBuffer, UCharBufferTranslator>(buf).first;
 }
 
@@ -171,6 +184,7 @@ StringImpl* AtomicString::add(StringImpl* r)
     if (r->length() == 0)
         return StringImpl::empty();
     
+    AtomicStringTableLocker locker();
     StringImpl* result = *stringTable->add(r).first;
     if (result == r)
         r->m_inTable = true;
@@ -179,6 +193,7 @@ StringImpl* AtomicString::add(StringImpl* r)
 
 void AtomicString::remove(StringImpl* r)
 {
+    AtomicStringTableLocker locker();
     stringTable->remove(r);
 }
 
@@ -222,6 +237,7 @@ void AtomicString::init()
 {
     static bool initialized;
     if (!initialized) {
+        AtomicStringTableLocker locker();
         stringTable = new HashSet<StringImpl*>;
 
         // Use placement new to initialize the globals.

@@ -36,6 +36,8 @@
 #include <wtf/Assertions.h>
 #include <wtf/Vector.h>
 
+#include "FloatSize.h"
+
 namespace WebCore {
 
 #define STRING_BUFFER_SIZE 2048
@@ -168,6 +170,15 @@ static unsigned leftTruncateToBuffer(const String& string, unsigned length, unsi
     return length - adjustedStartIndex + 1;
 }
 
+static FloatSize stringSize(const Font& renderer, const UChar* characters, unsigned length, bool disableRoundingHacks)
+{
+    TextRun run(characters, length);
+    if (disableRoundingHacks)
+        run.disableRoundingHacks();
+    return renderer.floatSize(run);
+}
+    
+
 static float stringWidth(const Font& renderer, const UChar* characters, unsigned length, bool disableRoundingHacks)
 {
     TextRun run(characters, length);
@@ -176,13 +187,10 @@ static float stringWidth(const Font& renderer, const UChar* characters, unsigned
     return renderer.floatWidth(run);
 }
 
-static String truncateString(const String& string, float maxWidth, const Font& font, TruncationFunction truncateToBuffer, bool disableRoundingHacks, float *resultWidth)
+static String truncateString(const String& string, float maxWidth, const Font& font, TruncationFunction truncateToBuffer, bool disableRoundingHacks, FloatSize &resultSize)
 {
     if (string.isEmpty())
         return string;
-
-    if (resultWidth)
-        *resultWidth = 0;
 
     ASSERT(maxWidth >= 0);
     
@@ -202,10 +210,10 @@ static String truncateString(const String& string, float maxWidth, const Font& f
         truncatedLength = length;
     }
 
-    float width = stringWidth(font, stringBuffer, truncatedLength, disableRoundingHacks);
+    FloatSize size = stringSize(font, stringBuffer, truncatedLength, disableRoundingHacks);
+    float width = size.width();
     if (width <= maxWidth) {
-        if (resultWidth)
-            *resultWidth = width;
+        resultSize = size;
         return string;
     }
 
@@ -241,12 +249,12 @@ static String truncateString(const String& string, float maxWidth, const Font& f
         
         truncatedLength = truncateToBuffer(string, length, keepCount, stringBuffer);
 
-        width = stringWidth(font, stringBuffer, truncatedLength, disableRoundingHacks);
+        size = stringSize(font, stringBuffer, truncatedLength, disableRoundingHacks);
+        width = size.width();
         if (width <= maxWidth) {
             keepCountForLargestKnownToFit = keepCount;
             widthForLargestKnownToFit = width;
-            if (resultWidth)
-                *resultWidth = width;
+            resultSize = size;
         } else {
             keepCountForSmallestKnownToNotFit = keepCount;
             widthForSmallestKnownToNotFit = width;
@@ -267,12 +275,14 @@ static String truncateString(const String& string, float maxWidth, const Font& f
 
 String StringTruncator::centerTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks)
 {
-    return truncateString(string, maxWidth, font, centerTruncateToBuffer, disableRoundingHacks, 0);
+    FloatSize resultSize;
+    return truncateString(string, maxWidth, font, centerTruncateToBuffer, disableRoundingHacks, resultSize);    
 }
 
 String StringTruncator::rightTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks)
 {
-    return truncateString(string, maxWidth, font, rightTruncateToBuffer, disableRoundingHacks, 0);
+    FloatSize resultSize;
+    return truncateString(string, maxWidth, font, rightTruncateToBuffer, disableRoundingHacks, resultSize);
 }
 
 float StringTruncator::width(const String& string, const Font& font, bool disableRoundingHacks)
@@ -281,29 +291,34 @@ float StringTruncator::width(const String& string, const Font& font, bool disabl
 }
 
 
-String StringTruncator::centerTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth)
+FloatSize StringTruncator::size(const String& string, const Font& font, bool disableRoundingHacks)
 {
-    return truncateString(string, maxWidth, font, centerTruncateToBuffer, disableRoundingHacks, &resultWidth);
+    return stringSize(font, string.characters(), string.length(), disableRoundingHacks);
 }
 
-String StringTruncator::rightTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth)
+String StringTruncator::centerTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, FloatSize& resultSize)
 {
-    return truncateString(string, maxWidth, font, rightTruncateToBuffer, disableRoundingHacks, &resultWidth);
+    return truncateString(string, maxWidth, font, centerTruncateToBuffer, disableRoundingHacks, resultSize);
 }
 
-String StringTruncator::leftTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth)
+String StringTruncator::rightTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, FloatSize& resultSize)
 {
-    return truncateString(string, maxWidth, font, leftTruncateToBuffer, disableRoundingHacks, &resultWidth);
+    return truncateString(string, maxWidth, font, rightTruncateToBuffer, disableRoundingHacks, resultSize);
+}
+
+String StringTruncator::leftTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, FloatSize& resultSize)
+{
+    return truncateString(string, maxWidth, font, leftTruncateToBuffer, disableRoundingHacks, resultSize);
 }
     
-String StringTruncator::rightClipToCharacter(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth) 
+String StringTruncator::rightClipToCharacter(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, FloatSize& resultSize) 
 {
-    return truncateString(string, maxWidth, font, rightClipToCharacterBuffer, disableRoundingHacks, &resultWidth);
+    return truncateString(string, maxWidth, font, rightClipToCharacterBuffer, disableRoundingHacks, resultSize);
 }
 
-String StringTruncator::rightClipToWord(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth) 
+String StringTruncator::rightClipToWord(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, FloatSize& resultSize) 
 {
-    return truncateString(string, maxWidth, font, rightClipToWordBuffer, disableRoundingHacks, &resultWidth);
+    return truncateString(string, maxWidth, font, rightClipToWordBuffer, disableRoundingHacks, resultSize);
 }
     
 

@@ -38,7 +38,7 @@
 #include <wtf/MathExtras.h>
 
 namespace WebCore {
-
+    
 SimpleFontData::SimpleFontData(const FontPlatformData& f, bool customFont, bool loading, SVGFontData* svgFontData)
     : m_font(f)
     , m_treatAsFixedPitch(false)
@@ -72,7 +72,26 @@ SimpleFontData::SimpleFontData(const FontPlatformData& f, bool customFont, bool 
         return;
     }
 #endif
-
+    if (f.m_isImageFont) {
+        m_unitsPerEm = 1;
+        
+        double scale = f.size();
+        if (m_unitsPerEm)
+            scale /= m_unitsPerEm;
+        
+        m_ascent = scale / 3;  // should not be used for image glyphs
+        m_descent = scale / 3; // should not be used for image glyphs
+        m_xHeight = scale / 3; // should not be used for image glyphs
+        m_lineGap = scale / 3; // should not be used for image glyphs
+        m_lineSpacing = 0; // should not be used for image glyphs
+        
+        m_spaceGlyph = 0;
+        m_spaceWidth = 0;
+        m_adjustedSpaceWidth = 0;
+        m_missingGlyphData.fontData = this;
+        m_missingGlyphData.glyph = 0;
+        return;
+    }
     platformInit();
 
     GlyphPage* glyphPageZero = GlyphPageTreeNode::getRootChild(this, 0)->page();

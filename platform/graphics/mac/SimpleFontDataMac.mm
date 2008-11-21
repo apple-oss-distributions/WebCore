@@ -116,12 +116,18 @@ void SimpleFontData::determinePitch()
     // GSFont is null in the case of SVG fonts for example.
     if (f) {
         const char *fullName = GSFontGetFullName(f);
+        const char *familyName = GSFontGetFamilyName(f);
         m_treatAsFixedPitch = (GSFontIsFixedPitch(f) || (fullName && (strcasecmp(fullName, "Osaka-Mono") == 0 || strcasecmp(fullName, "MS-PGothic") == 0)));        
+        if (familyName && strcasecmp(familyName, "Courier New") == 0) // Special case Courier New to not be treated as fixed pitch, as this will make use of a hacked space width which is undesireable for iPhone (see rdar://6269783)
+            m_treatAsFixedPitch = false;
     }
 }
 
 float SimpleFontData::platformWidthForGlyph(Glyph glyph) const
 {
+    if (m_font.m_isImageFont)
+        return std::min(m_font.m_size + (m_font.m_size <= 15.0 ? 4.0 : 6.0), 22.0); // returns the proper scaled advance for the image size - see Font::drawGlyphs
+
     GSFontRef font = m_font.font();
     float pointSize = GSFontGetSize(font);
     CGAffineTransform m = CGAffineTransformMakeScale(pointSize, pointSize);

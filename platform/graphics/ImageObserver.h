@@ -28,6 +28,7 @@
 
 namespace WebCore {
 
+class IntSize;
 class Image;
 
 // Interface for notification about changes to an image, including decoding,
@@ -41,6 +42,8 @@ public:
 
     virtual bool shouldPauseAnimation(const Image*) = 0;
     virtual void animationAdvanced(const Image*) = 0;
+    
+    virtual bool shouldDecodeFrame(const Image* image, const IntSize& frameSize) = 0;
 };
 
 }

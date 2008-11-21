@@ -173,12 +173,11 @@ unsigned Cache::liveCapacity() const
     return m_capacity - deadCapacity();
 }
 
-void Cache::pruneLiveResources()
+void Cache::pruneLiveResources(bool critical)
 {
     if (!m_pruneEnabled)
         return;
-
-    unsigned capacity = liveCapacity();
+    unsigned capacity = critical ? 0 : liveCapacity();
     if (m_liveSize <= capacity)
         return;
 
@@ -196,7 +195,7 @@ void Cache::pruneLiveResources()
         if (current->isLoaded() && current->decodedSize()) {
             // Check to see if the remaining resources are too new to prune.
             double elapsedTime = currentTime - current->m_lastDecodedAccessTime;
-            if (elapsedTime < cMinDelayBeforeLiveDecodedPrune)
+            if (!critical && elapsedTime < cMinDelayBeforeLiveDecodedPrune)
                 return;
 
             // Destroy our decoded data. This will remove us from 

@@ -79,6 +79,7 @@ struct GraphicsContextState {
     , fillColor(Color::black)
     , textDrawingMode(cTextFill)
     , paintingDisabled(false)
+    , emojiDrawingEnabled(true)
     {}
     
     Font font;
@@ -88,6 +89,7 @@ struct GraphicsContextState {
     Color fillColor;
     int textDrawingMode;
     bool paintingDisabled;
+    bool emojiDrawingEnabled;
 };
         
 class GraphicsContextPrivate {
@@ -452,6 +454,16 @@ void GraphicsContext::setTextDrawingMode(int mode)
     if (paintingDisabled())
         return;
     setPlatformTextDrawingMode(mode);
+}
+
+bool GraphicsContext::emojiDrawingEnabled()
+{
+    return m_common->state.emojiDrawingEnabled;
+}
+
+void GraphicsContext::setEmojiDrawingEnabled(bool emojiDrawingEnabled)
+{
+    m_common->state.emojiDrawingEnabled = emojiDrawingEnabled;
 }
 
 #if !PLATFORM(CG)

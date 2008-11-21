@@ -35,6 +35,8 @@ class HTMLIFrameElement : public HTMLFrameElementBase
 public:
     HTMLIFrameElement(Document* doc);
 
+    virtual bool isKeyboardFocusable(KeyboardEvent*) const { return false; }
+    
     virtual HTMLTagStatus endTagRequirement() const { return TagStatusRequired; }
     virtual int tagPriority() const { return 1; }
 

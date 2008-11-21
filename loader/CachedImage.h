@@ -80,6 +80,8 @@ public:
 
     virtual bool shouldPauseAnimation(const Image*);
     virtual void animationAdvanced(const Image*);
+    
+    virtual bool shouldDecodeFrame(const Image* image, const IntSize& frameSize);
 
 private:
     void createImage();
@@ -88,11 +90,11 @@ private:
     Image* m_image;
 
 public:
-    bool markAccountedForLimit(); // Marks accounted and returns true if the image was not already marked accounted
+    unsigned animatedImageSize();
+    void stopAnimatedImage();
 private:
     bool checkOutOfMemory();
     int m_maxDataSize;
-    bool m_accountedForLimit;
 };
 
 }

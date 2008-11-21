@@ -680,7 +680,11 @@ static inline WKQuad emptyQuad()
 
 - (float)computedFontSize
 {
-    return [self _node]->renderStyle()->fontDescription().computedSize();
+    Node *node = [self _node];
+    RenderStyle *style = node->renderStyle();
+    if (!style)
+        return 0.0;
+    return style->fontDescription().computedSize();
 }
 
 - (DOMNode *)nextFocusNode

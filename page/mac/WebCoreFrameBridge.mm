@@ -570,10 +570,17 @@ static inline WebCoreFrameBridge *bridge(Frame *frame)
 
 - (DOMRange *)wordRangeContainingCaretSelection
 {
+    if (!m_frame)
+        return nil;
+
     // _wordRangeContainingCaretSelection modifies the active selection, so save/restore it
+    if (m_frame->editor() && m_frame->editor()->client())
+        m_frame->editor()->client()->suppressSelectionNotifications();
     Selection selection(m_frame->selectionController()->selection());
     DOMRange *range = [self _wordRangeContainingCaretSelection];
     m_frame->selectionController()->setSelection(selection);
+    if (m_frame->editor() && m_frame->editor()->client())
+        m_frame->editor()->client()->restoreSelectionNotifications();
     
     return range;
 }
@@ -1245,22 +1252,6 @@ static HTMLFormElement *formElementFromDOMElement(DOMElement *element)
     doc->removeMarkers(DocumentMarker::TextMatch);
 }
 
-#if !PUPLE_CHANGES
-- (NSArray *)rectsForTextMatches
-{
-    Document *doc = m_frame->document();
-    if (!doc)
-        return [NSArray array];
-    
-    NSMutableArray *result = [NSMutableArray array];
-    Vector<IntRect> rects = doc->renderedRectsForMarkers(DocumentMarker::TextMatch);
-    unsigned count = rects.size();
-    for (unsigned index = 0; index < count; ++index)
-        [result addObject:[NSValue valueWithRect:rects[index]]];
-    
-    return result;
-}
-#endif
 
 - (void)setTextSizeMultiplier:(float)multiplier
 {
@@ -1298,11 +1289,17 @@ static HTMLFormElement *formElementFromDOMElement(DOMElement *element)
 
 - (NSRect)caretRect
 {
+    if (m_frame && m_frame->editor() && m_frame->editor()->client())
+        m_frame->editor()->client()->suppressSelectionNotifications();
+
     NSRect rect = NSMakeRect(0, 0, 0, 0);
     SelectionController selectionController;
     Selection selection(m_frame->selectionController()->selection());
-    if (selection.isNone())
+    if (selection.isNone()) {
+        if (m_frame && m_frame->editor() && m_frame->editor()->client())
+            m_frame->editor()->client()->restoreSelectionNotifications();
         return rect;
+    }
     
     // If we ever support selection ranges, this code will need to be
     // improved. For now, collapse selection to the end.
@@ -1314,6 +1311,10 @@ static HTMLFormElement *formElementFromDOMElement(DOMElement *element)
 
     selectionController.setSelection(selection);
     FloatQuad caretQuad = selectionController.absoluteCaretQuad();
+
+    if (m_frame && m_frame->editor() && m_frame->editor()->client())
+        m_frame->editor()->client()->restoreSelectionNotifications();
+
     return caretQuad.boundingBox();
 }
 
@@ -1325,6 +1326,9 @@ static HTMLFormElement *formElementFromDOMElement(DOMElement *element)
 
     if (selection.isCaret())
         return [self caretRect];
+
+    if (m_frame && m_frame->editor() && m_frame->editor()->client())
+        m_frame->editor()->client()->suppressSelectionNotifications();
 
     Selection originalSelection(selection);
     Position pos;
@@ -1343,6 +1347,9 @@ static HTMLFormElement *formElementFromDOMElement(DOMElement *element)
     endController.setSelection(selection);
     FloatRect endRect(endController.absoluteCaretQuad().boundingBox());
 
+    if (m_frame && m_frame->editor() && m_frame->editor()->client())
+        m_frame->editor()->client()->restoreSelectionNotifications();
+
     return unionRect(startRect, endRect);
 }
 
@@ -1352,11 +1359,20 @@ static HTMLFormElement *formElementFromDOMElement(DOMElement *element)
     if (!selection.isCaret())
         return NSZeroRect;
 
-    if (!selection.expandUsingGranularity(WordGranularity))
-        return NSZeroRect;
+    NSRect result = NSZeroRect;
 
-    RefPtr<Range> range = selection.toRange();
-    return m_frame->firstRectForRange(range.get());
+    if (m_frame && m_frame->editor() && m_frame->editor()->client())
+        m_frame->editor()->client()->suppressSelectionNotifications();
+
+    if (selection.expandUsingGranularity(WordGranularity)) {
+        RefPtr<Range> range = selection.toRange();
+        result = m_frame->firstRectForRange(range.get());
+    }
+
+    if (m_frame && m_frame->editor() && m_frame->editor()->client())
+        m_frame->editor()->client()->restoreSelectionNotifications();
+
+    return result;
 }
 
 

@@ -97,6 +97,9 @@ EditorClient* Editor::client() const
 
 void Editor::handleKeyboardEvent(KeyboardEvent* event)
 {
+    if (event->type() != keypressEvent)
+        return;
+        
     if (EditorClient* c = client())
         if (selectionForCommand(event).isContentEditable())
             c->handleKeyboardEvent(event);

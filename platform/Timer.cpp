@@ -69,7 +69,9 @@ class TimerHeapElement {
 public:
     explicit TimerHeapElement(int i) : m_index(i) {
         Vector<TimerBase*>* timerHeap = threadSpecificTimers()->timerHeap;
-        m_timer = (*timerHeap)[m_index];
+        // Need to check timerHeap, as it's possible that nothing has been inserted via this thread yet. <rdar://problem/6121215>
+        if (timerHeap)
+            m_timer = (*timerHeap)[m_index];
         checkConsistency(); 
     }
     
@@ -105,6 +107,7 @@ inline TimerHeapElement& TimerHeapElement::operator=(const TimerHeapElement& o)
     m_timer = t;
     if (m_index != -1) {
         checkConsistency();
+        if (timerHeap)
         (*timerHeap)[m_index] = t;
         t->m_heapIndex = m_index;
     }
@@ -265,6 +268,7 @@ inline void TimerBase::heapDelete()
     Vector<TimerBase*>* timerHeap = threadSpecificTimers()->timerHeap;
     ASSERT(m_nextFireTime == 0);
     heapPop();
+    if (timerHeap)
     timerHeap->removeLast();
     m_heapIndex = -1;
 }
@@ -274,6 +278,7 @@ inline void TimerBase::heapDeleteMin()
     Vector<TimerBase*>* timerHeap = threadSpecificTimers()->timerHeap;
     ASSERT(m_nextFireTime == 0);
     heapPopMin();
+    if (timerHeap)
     timerHeap->removeLast();
     m_heapIndex = -1;
 }
@@ -313,6 +318,7 @@ void TimerBase::heapPopMin()
     Vector<TimerBase*>* timerHeap = threadSpecificTimers()->timerHeap;
     ASSERT(this == timerHeap->first());
     checkHeapIndex();
+    if (timerHeap)
     pop_heap(TimerHeapIterator(0), TimerHeapIterator(timerHeap->size()));
     checkHeapIndex();
     ASSERT(this == timerHeap->last());

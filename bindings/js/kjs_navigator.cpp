@@ -30,6 +30,7 @@
 #include "Frame.h"
 #include "FrameLoader.h"
 #include "Language.h"
+#include "NetworkStateNotifier.h"
 #include "Page.h"
 #include "PluginInfoStore.h"
 #include "Settings.h"
@@ -155,7 +156,7 @@ int KJS::PluginBase::m_plugInCacheRefCount = 0;
 
 const ClassInfo Navigator::info = { "Navigator", 0, &NavigatorTable };
 /*
-@begin NavigatorTable 13
+@begin NavigatorTable 16
   appCodeName   Navigator::AppCodeName                  DontDelete|ReadOnly
   appName       Navigator::AppName                      DontDelete|ReadOnly
   appVersion    Navigator::AppVersion                   DontDelete|ReadOnly
@@ -169,6 +170,7 @@ const ClassInfo Navigator::info = { "Navigator", 0, &NavigatorTable };
   vendor        Navigator::Vendor                       DontDelete|ReadOnly
   vendorSub     Navigator::VendorSub                    DontDelete|ReadOnly
   cookieEnabled Navigator::CookieEnabled                DontDelete|ReadOnly
+  onLine        Navigator::OnLine                       DontDelete|ReadOnly
   standalone    Navigator::Standalone                   DontDelete|ReadOnly
   javaEnabled   navigatorProtoFuncJavaEnabled  DontDelete|Function 0
 @end
@@ -295,6 +297,8 @@ JSValue* Navigator::getValueProperty(ExecState* exec, int token) const
     return new MimeTypes(exec);
   case CookieEnabled:
     return jsBoolean(cookiesEnabled(m_frame->document()));
+  case OnLine:
+    return jsBoolean(networkStateNotifier().onLine());
   case Standalone:
     return jsBoolean(isStandalone(m_frame));
   }

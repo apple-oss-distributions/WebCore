@@ -54,13 +54,6 @@ public:
     bool mapsEquivalent(const NamedMappedAttrMap* otherMap) const;
     int declCount() const;
 
-    MappedAttribute* attributeItem(unsigned index) const
-        { return static_cast<MappedAttribute*>(NamedAttrMap::attributeItem(index)); }
-    MappedAttribute* getAttributeItem(const QualifiedName& name) const
-        { return static_cast<MappedAttribute*>(NamedAttrMap::getAttributeItem(name)); }
-    MappedAttribute* getAttributeItem(const String& name) const
-        { return static_cast<MappedAttribute*>(NamedAttrMap::getAttributeItem(name)); }
-    
 private:
     ClassNames m_classNames;
     int m_mappedAttributeCount;

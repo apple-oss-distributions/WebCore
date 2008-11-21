@@ -44,12 +44,15 @@
 
 namespace WebCore {
 
+const unsigned maximumCacheSize = 5 * 1024 * 1024;
+
 ApplicationCacheGroup::ApplicationCacheGroup(const KURL& manifestURL)
     : m_manifestURL(manifestURL)
     , m_status(Idle)
     , m_savedNewestCachePointer(0)
     , m_frame(0)
     , m_storageID(0)
+    , m_loadedSize(0)
 {
 }
 
@@ -58,8 +61,7 @@ ApplicationCacheGroup::~ApplicationCacheGroup()
     ASSERT(!m_newestCache);
     ASSERT(m_caches.isEmpty());
     
-    if (m_cacheBeingUpdated)
-        stopLoading();
+    stopLoading();
     
     cacheStorage().cacheGroupDestroyed(this);
 }
@@ -107,6 +109,8 @@ void ApplicationCacheGroup::selectCache(Frame* frame, const KURL& manifestURL)
         if (mainResourceCache && manifestURL != mainResourceCache->group()->manifestURL()) {
             ApplicationCacheResource* resource = mainResourceCache->resourceForURL(documentLoader->originalURL().string());
             ASSERT(resource);
+            if (!resource)
+                return;
             
             resource->addType(ApplicationCacheResource::Foreign);
         }
@@ -233,19 +237,17 @@ void ApplicationCacheGroup::failedLoadingMainResource(DocumentLoader* loader)
 
 void ApplicationCacheGroup::stopLoading()
 {
-    ASSERT(m_cacheBeingUpdated);
-    
     if (m_manifestHandle) {
         ASSERT(!m_currentHandle);
-        
+
         m_manifestHandle->setClient(0);
         m_manifestHandle->cancel();
         m_manifestHandle = 0;
     }
     
     if (m_currentHandle) {
-        ASSERT(!m_manifestHandle);
-        
+        ASSERT(m_cacheBeingUpdated);
+
         m_currentHandle->setClient(0);
         m_currentHandle->cancel();
         m_currentHandle = 0;
@@ -382,12 +384,19 @@ void ApplicationCacheGroup::didReceiveData(ResourceHandle* handle, const char* d
     
     ASSERT(m_currentResource);
     m_currentResource->data()->append(data, length);
+
+    m_loadedSize += length;
 }
 
 void ApplicationCacheGroup::didFinishLoading(ResourceHandle* handle)
 {
     if (handle == m_manifestHandle) {
         didFinishLoadingManifest();
+        return;
+    }
+    
+    if (m_loadedSize > maximumCacheSize) {
+        cacheUpdateFailed();
         return;
     }
  
@@ -517,8 +526,7 @@ void ApplicationCacheGroup::didFinishLoadingManifest()
 
 void ApplicationCacheGroup::cacheUpdateFailed()
 {
-    if (m_cacheBeingUpdated)
-        stopLoading();
+    stopLoading();
         
     callListenersOnAssociatedDocuments(&DOMApplicationCache::callErrorListener);
 
@@ -565,6 +573,7 @@ void ApplicationCacheGroup::checkIfLoadIsComplete()
     
     m_status = Idle;
     m_frame = 0;
+    m_loadedSize = 0;
     
     Vector<RefPtr<DocumentLoader> > documentLoaders;
     

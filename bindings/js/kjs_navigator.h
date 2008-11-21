@@ -39,6 +39,7 @@ namespace KJS {
     static const ClassInfo info;
     enum { AppCodeName, AppName, AppVersion, Language, UserAgent, Platform,
            _Plugins, _MimeTypes, Product, ProductSub, Vendor, VendorSub, CookieEnabled
+           , OnLine
            , Standalone
            };
     WebCore::Frame *frame() const { return m_frame; }

@@ -61,6 +61,10 @@ void SVGImageLoader::updateFromElement()
 
     CachedImage *oldImage = image();
     if (newImage != oldImage) {
+        if (oldImage && oldImage->isLoaded())
+            doc->topDocument()->decrementTotalImageDataSize(oldImage);
+        if (newImage && newImage->isLoaded())
+            doc->topDocument()->incrementTotalImageDataSize(newImage);
         setLoadingImage(newImage);
         if (newImage)
             newImage->ref(this);

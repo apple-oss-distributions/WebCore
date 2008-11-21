@@ -52,7 +52,9 @@
 #include "HTMLGenericFormElement.h"
 #include "HTMLNames.h"
 #include "HTMLTableCellElement.h"
+#include "Cache.h"
 #include "HTMLTokenizer.h"
+#include "SystemMemory.h"
 #if ENABLE(HW_COMP)
 #include "LCLayer.h"
 #endif
@@ -929,7 +931,8 @@ void Frame::setNeedsReapplyStyles()
 
     // Invalidate the FrameView so that FrameView::layout will get called,
     // which calls reapplyStyles.
-    view()->invalidate();
+    if (view())
+        view()->invalidate();
 }
 
 bool Frame::needsReapplyStyles() const
@@ -1551,6 +1554,12 @@ void Frame::paint(GraphicsContext* p, const IntRect& rect)
         d->m_isPainting = false;
         
         d->m_view->didPaint();
+        // Painting can lead to decoding of large amounts of bitmaps
+        // If we are low on memory, wipe them out after the paint
+        const unsigned memoryReserve = 2 * 1024 * 1024;
+        bool safeMemory = hasEnoughMemoryFor(memoryReserve);
+        if (!safeMemory && isTopLevelPainter)
+            cache()->pruneLiveResources(true);
 
 #if ENABLE(DASHBOARD_SUPPORT)
         // Regions may have changed as a result of the visibility/z-index of element changing.
@@ -1615,7 +1624,8 @@ void Frame::forceLayout(bool allowSubtree)
     if (v) {
         v->layout(allowSubtree);
 #if ENABLE(IPHONE_PPT)
-        v->frame()->page()->mainFrame()->didForcedLayout();
+        if (v->frame() && v->frame()->page() && v->frame()->page()->mainFrame())
+            v->frame()->page()->mainFrame()->didForcedLayout();
 #endif
         // We cannot unschedule a pending relayout, since the force can be called with
         // a tiny rectangle from a drawRect update.  By unscheduling we in effect

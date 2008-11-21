@@ -158,10 +158,13 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
         return;
     }
 
-    // If the tile is greater than the screen size, tile it without using CGPattern
-    // since CGPattern will end up using a lot of memory when the tile size is large (4691859).
-    CGSize screenSize = GSMainScreenSize();
-    if (scaledTileSize.width() * scaledTileSize.height() > screenSize.width * screenSize.height) {
+    // CGPattern uses lots of memory got caching when the tile size is large (4691859, 6239505).
+    // Memory consumption depends on the transformed tile size which can get larger than the original
+    // tile if user zooms in enough.
+    const float maxPatternTilePixels = 256 * 256;
+    FloatRect transformedTileSize = ctxt->getCTM().mapRect(FloatRect(FloatPoint(), scaledTileSize));
+    float transformedTileSizePixels = transformedTileSize.width() * transformedTileSize.height();
+    if (transformedTileSizePixels > maxPatternTilePixels) {
         float fromY = (destRect.y() - oneTileRect.y()) / scale.height();
         float toY = oneTileRect.y();
         while (toY < CGRectGetMaxY(destRect)) {

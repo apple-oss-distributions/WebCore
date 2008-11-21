@@ -26,6 +26,7 @@
 #include "ContextMenuController.h"
 #include "EditorClient.h"
 #include "DragController.h"
+#include "EventNames.h"
 #include "FileSystem.h"
 #include "FocusController.h"
 #include "Frame.h"
@@ -35,6 +36,7 @@
 #include "HistoryItem.h"
 #include "InspectorController.h"
 #include "Logging.h"
+#include "NetworkStateNotifier.h"
 #include "ProgressTracker.h"
 #include "RenderWidget.h"
 #include "SelectionController.h"
@@ -49,6 +51,8 @@
 using namespace KJS;
 
 namespace WebCore {
+
+using namespace EventNames;
 
 static HashSet<Page*>* allPages;
 static HashMap<String, HashSet<Page*>*>* frameNamespaces;
@@ -68,6 +72,34 @@ int PageCounter::count = 0;
 static PageCounter pageCounter;
 #endif
 
+static void networkStateChanged()
+{
+    Vector<RefPtr<Frame> > frames;
+    
+    // Get all the frames of all the pages in all the page groups
+    HashSet<Page*>::iterator end = allPages->end();
+    for (HashSet<Page*>::iterator it = allPages->begin(); it != end; ++it) {
+        for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree()->traverseNext())
+            frames.append(frame);
+    }
+
+    AtomicString eventName = networkStateNotifier().onLine() ? onlineEvent : offlineEvent;
+    
+    for (unsigned i = 0; i < frames.size(); i++) {
+        Document* document = frames[i]->document();
+        
+        if (!document)
+            continue;
+
+        // If the document does not have a body the event should be dispatched to the document
+        EventTargetNode* eventTarget = document->body();
+        if (!eventTarget)
+            eventTarget = document;
+        
+        eventTarget->dispatchHTMLEvent(eventName, false, false);
+    }
+}
+    
 Page::Page(ChromeClient* chromeClient, ContextMenuClient* contextMenuClient, EditorClient* editorClient, DragClient* dragClient, InspectorClient* inspectorClient)
     : m_chrome(new Chrome(this, chromeClient))
     , m_dragCaretController(new SelectionController(0, true))
@@ -89,6 +121,8 @@ Page::Page(ChromeClient* chromeClient, ContextMenuClient* contextMenuClient, Edi
     if (!allPages) {
         allPages = new HashSet<Page*>;
         setFocusRingColorChangeFunction(setNeedsReapplyStyles);
+        
+        networkStateNotifier().setNetworkStateChangedFunction(networkStateChanged);
     }
 
     ASSERT(!allPages->contains(this));

@@ -36,6 +36,14 @@ namespace WebCore {
 
 bool GlyphPage::fill(unsigned offset, unsigned length, UChar* buffer, unsigned bufferLength, const SimpleFontData* fontData)
 {
+    if (fontData->isImageFont()) {
+        // Loop through at most 256 glyphs       
+        for (unsigned i= 0; i < GlyphPage::size; i++) {
+            setGlyphDataForIndex(i, buffer[i], fontData);
+        }
+        return true;        
+    }
+        
     CGGlyph glyphs[GlyphPage::size * 2];
     
     // We pass in either 256 or 512  UTF-16 characters
@@ -45,7 +53,7 @@ bool GlyphPage::fill(unsigned offset, unsigned length, UChar* buffer, unsigned b
     // If we get back more than 256 glyphs though we'll ignore all the ones after 256, this should not happen 
     // as the only time we pass in 512 characters is when they are surrogates.
     GSFontGetGlyphsForUnichars(fontData->platformData().font(), buffer, glyphs, bufferLength);
-	
+    
     // Loop through at most 256 glyphs
     bool haveGlyphs = false;
     for (unsigned i= 0; i < GlyphPage::size; i++) {
@@ -57,7 +65,8 @@ bool GlyphPage::fill(unsigned offset, unsigned length, UChar* buffer, unsigned b
             haveGlyphs = true;
         }
     }
-    return haveGlyphs;
+    return haveGlyphs;        
+
 }
 
 } // namespace WebCore

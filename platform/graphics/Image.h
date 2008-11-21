@@ -133,6 +133,9 @@ public:
     virtual bool getHBITMAP(HBITMAP) { return false; }
     virtual bool getHBITMAPOfSize(HBITMAP, LPSIZE) { return false; }
 #endif
+    
+    virtual unsigned animatedImageSize() { return 0; }
+    virtual void disableImageAnimation() { }
 
 protected:
     static void fillWithSolidColor(GraphicsContext* ctxt, const FloatRect& dstRect, const Color& color, CompositeOperator op);

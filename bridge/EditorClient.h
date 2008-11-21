@@ -122,6 +122,9 @@ public:
     virtual void formElementDidBlur(Element*) = 0;
     virtual void suppressFormNotifications() = 0;
     virtual void restoreFormNotifications() = 0;
+    virtual void suppressSelectionNotifications() = 0;
+    virtual void restoreSelectionNotifications() = 0;
+    virtual bool isSuppressingSelectionNotifications() = 0;
 
 #if PLATFORM(MAC)
     // FIXME: This should become SelectionController::toWebArchive()

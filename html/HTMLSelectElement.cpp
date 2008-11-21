@@ -180,7 +180,9 @@ void HTMLSelectElement::setSelectedIndex(int optionIndex, bool deselect, bool fi
     scrollToSelection();
 
     // This only gets called with fireOnChange for menu lists. 
-    if (fireOnChange && usesMenuList())
+    if (!usesMenuList())
+        listBoxOnChange();
+    else if (fireOnChange)
         menuListOnChange();
 }
 

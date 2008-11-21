@@ -84,7 +84,9 @@ class StyledElement;
         CSSStyleSelector(Document*, const String& userStyleSheet, StyleSheetList*, CSSStyleSheet*, bool strictParsing, bool matchAuthorAndUserStyles);
         ~CSSStyleSelector();
 
-        static void loadDefaultStyle();
+        static void loadSimpleDefaultStyle();
+        static void loadFullDefaultStyle();
+        static void loadViewSourceStyle();
 
         void initElementAndPseudoState(Element*);
         void initForStyleResolve(Element*, RenderStyle* parentStyle);

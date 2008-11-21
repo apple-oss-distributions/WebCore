@@ -1541,7 +1541,7 @@ bool HTMLTokenizer::write(const SegmentedString& str, bool appendData)
     m_state = state;
     
 #if ENABLE(IPHONE_PPT)
-    if (frame)
+    if (frame && frame->page() && frame->page()->mainFrame())
         frame->page()->mainFrame()->didParse(currentTime() - startTime);
 #endif
 

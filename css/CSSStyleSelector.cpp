@@ -247,6 +247,16 @@ CSSStyleSheet *CSSStyleSelector::m_svgSheet = 0;
 
 static CSSStyleSelector::Encodedurl *currentEncodedURL = 0;
 static PseudoState pseudoState;
+    
+static CSSStyleSheet* simpleDefaultStyleSheet;
+    
+// FIXME: It would be nice to use some mechanism that guarantees this is in sync with the real UA stylesheet.
+static const char* simpleUserAgentStyleSheet = "html,body,div{display:block}body{margin:8px}div:focus,span:focus{outline:auto 5px -webkit-focus-ring-color}";
+
+static bool elementCanUseSimpleDefaultStyle(Element* e)
+{
+    return e->hasTagName(htmlTag) || e->hasTagName(bodyTag) || e->hasTagName(divTag) || e->hasTagName(spanTag) || e->hasTagName(brTag);
+}
 
 static const MediaQueryEvaluator& screenEval()
 {
@@ -270,8 +280,15 @@ CSSStyleSelector::CSSStyleSelector(Document* doc, const String& userStyleSheet, 
     m_matchAuthorAndUserStyles = matchAuthorAndUserStyles;
 
     strictParsing = _strictParsing;
-    if (!m_defaultStyle)
-        loadDefaultStyle();
+    
+    Element* root = doc->documentElement();
+
+    if (!m_defaultStyle) {
+        if (!root || elementCanUseSimpleDefaultStyle(root))
+            loadSimpleDefaultStyle();
+        else
+            loadFullDefaultStyle();
+    }
 
     m_userStyle = 0;
 
@@ -286,8 +303,6 @@ CSSStyleSelector::CSSStyleSelector(Document* doc, const String& userStyleSheet, 
         m_medium = new MediaQueryEvaluator(view->mediaType());
     else
         m_medium = new MediaQueryEvaluator("all");
-
-    Element* root = doc->documentElement();
 
     if (root)
         m_rootDefaultStyle = styleForElement(root, 0, false, true); // dont ref, because the RenderStyle is allocated from global heap
@@ -420,15 +435,20 @@ template<typename T> CSSStyleSheet* parseUASheet(const T& array)
     return parseUASheet(array, sizeof(array));
 }
 
-void CSSStyleSelector::loadDefaultStyle()
+void CSSStyleSelector::loadFullDefaultStyle()
 {
-    if (m_defaultStyle)
-        return;
-
-    m_defaultStyle = new CSSRuleSet;
-    m_defaultPrintStyle = new CSSRuleSet;
-    m_defaultQuirksStyle = new CSSRuleSet;
-    m_defaultViewSourceStyle = new CSSRuleSet;
+    if (simpleDefaultStyleSheet) {
+        ASSERT(m_defaultStyle);
+        delete m_defaultStyle;
+        delete simpleDefaultStyleSheet;
+        m_defaultStyle = new CSSRuleSet;
+        simpleDefaultStyleSheet = 0;
+    } else {
+        ASSERT(!m_defaultStyle);
+        m_defaultStyle = new CSSRuleSet;
+        m_defaultPrintStyle = new CSSRuleSet;
+        m_defaultQuirksStyle = new CSSRuleSet;
+    }
 
     // Strict-mode rules.
     m_defaultSheet = parseUASheet(html4UserAgentStyleSheet);
@@ -438,8 +458,27 @@ void CSSStyleSelector::loadDefaultStyle()
     // Quirks-mode rules.
     m_quirksSheet = parseUASheet(quirksUserAgentStyleSheet);
     m_defaultQuirksStyle->addRulesFromSheet(m_quirksSheet, screenEval());
+}
+
+void CSSStyleSelector::loadSimpleDefaultStyle()
+{
+    ASSERT(!m_defaultStyle);
+    ASSERT(!simpleDefaultStyleSheet);
     
-    // View source rules.
+    m_defaultStyle = new CSSRuleSet;
+    m_defaultPrintStyle = new CSSRuleSet;
+    m_defaultQuirksStyle = new CSSRuleSet;
+    
+    simpleDefaultStyleSheet = parseUASheet(simpleUserAgentStyleSheet, strlen(simpleUserAgentStyleSheet));
+    m_defaultStyle->addRulesFromSheet(simpleDefaultStyleSheet, screenEval());
+    
+    // No need to initialize quirks sheet yet as there are no quirk rules for elements allowed in simple default style.
+}
+    
+void CSSStyleSelector::loadViewSourceStyle()
+{
+    ASSERT(!m_defaultViewSourceStyle);
+    m_defaultViewSourceStyle = new CSSRuleSet;
     m_viewSourceSheet = parseUASheet(sourceUserAgentStyleSheet);
     m_defaultViewSourceStyle->addRulesFromSheet(m_viewSourceSheet, screenEval());
 }
@@ -971,8 +1010,11 @@ void CSSStyleSelector::matchUARules(int& firstUARule, int& lastUARule)
         matchRules(m_defaultQuirksStyle, firstUARule, lastUARule);
         
     // If we're in view source mode, then we match rules from the view source style sheet.
-    if (m_document->frame() && m_document->frame()->inViewSourceMode())
+    if (m_document->frame() && m_document->frame()->inViewSourceMode()) {
+        if (!m_defaultViewSourceStyle)
+            loadViewSourceStyle();
         matchRules(m_defaultViewSourceStyle, firstUARule, lastUARule);
+    }
 }
 
 // If resolveForRootDefault is true, style based on user agent style sheet only. This is used in media queries, where
@@ -1021,6 +1063,9 @@ RenderStyle* CSSStyleSelector::styleForElement(Element* e, RenderStyle* defaultP
     else
         m_parentStyle = m_style;
 
+    if (simpleDefaultStyleSheet && !elementCanUseSimpleDefaultStyle(e))
+        loadFullDefaultStyle();
+
 #if ENABLE(SVG)
     if (e->isSVGElement() && !m_svgSheet) {
         // SVG rules.
@@ -1048,12 +1093,15 @@ RenderStyle* CSSStyleSelector::styleForElement(Element* e, RenderStyle* defaultP
                 // Walk our attribute list and add in each decl.
                 const NamedMappedAttrMap* map = m_styledElement->mappedAttributes();
                 for (unsigned i = 0; i < map->length(); i++) {
-                    MappedAttribute* attr = map->attributeItem(i);
-                    if (attr->decl()) {
-                        lastAuthorRule = m_matchedDecls.size();
-                        if (firstAuthorRule == -1)
-                            firstAuthorRule = lastAuthorRule;
-                        addMatchedDeclaration(attr->decl());
+                    Attribute* attr = map->attributeItem(i);
+                    if (attr->isMappedAttribute()) {
+                        MappedAttribute* mappedAttr = static_cast<MappedAttribute*>(attr);
+                        if (mappedAttr->decl()) {
+                            lastAuthorRule = m_matchedDecls.size();
+                            if (firstAuthorRule == -1)
+                                firstAuthorRule = lastAuthorRule;
+                            addMatchedDeclaration(mappedAttr->decl());
+                        }
                     }
                 }
             }

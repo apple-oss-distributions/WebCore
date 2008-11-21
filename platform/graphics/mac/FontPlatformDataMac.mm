@@ -36,6 +36,7 @@ FontPlatformData::FontPlatformData(GSFontRef f, bool b, bool o)
         CFRetain(f);
     m_size = f ? GSFontGetSize(f) : 0.0f;
     m_gsFont = 0; // fixme <rdar://problem/5607116>
+    m_isImageFont = false;
 }
 
 FontPlatformData::FontPlatformData(const FontPlatformData& f)
@@ -45,6 +46,7 @@ FontPlatformData::FontPlatformData(const FontPlatformData& f)
     m_syntheticOblique = f.m_syntheticOblique;
     m_size = f.m_size;
     m_gsFont = f.m_gsFont; //Does this need a retain/release? For now m_gsFont should always be nil, until we do: fixme <rdar://problem/5607116> Web fonts (CSS @font-face) broken in WebKit
+    m_isImageFont = f.m_isImageFont;
 }
 
 FontPlatformData:: ~FontPlatformData()

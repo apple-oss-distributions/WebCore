@@ -73,6 +73,7 @@ struct WidthIterator {
 
     unsigned m_currentCharacter;
     float m_runWidthSoFar;
+    float m_runHeightSoFar;
     float m_padding;
     float m_padPerSpace;
     float m_finalRoundingWidth;
@@ -87,6 +88,7 @@ WidthIterator::WidthIterator(const Font* font, const TextRun& run)
     , m_end(run.length())
     , m_currentCharacter(0)
     , m_runWidthSoFar(0)
+    , m_runHeightSoFar(0)
     , m_finalRoundingWidth(0)
 {
     // If the padding is non-zero, count the number of spaces in the run
@@ -211,6 +213,10 @@ void WidthIterator::advance(int offset, GlyphBuffer* glyphBuffer)
         const SimpleFontData* fontData = glyphData.fontData;
 
         ASSERT(fontData);
+        
+        float fontLineSpacing = fontData->lineSpacing();
+        if (fontLineSpacing > m_runHeightSoFar)
+            m_runHeightSoFar = fontLineSpacing;
 
         // Now that we have a glyph and font data, get its width.
         float width;
@@ -619,7 +625,7 @@ bool Font::canUseGlyphCache(const TextRun& run) const
     return true;
 }
 
-float Font::drawSimpleText(GraphicsContext* context, const TextRun& run, const FloatPoint& point, int from, int to) const
+FloatSize Font::drawSimpleText(GraphicsContext* context, const TextRun& run, const FloatPoint& point, int from, int to) const
 {
     // This glyph buffer holds our glyphs+advances+font data for each glyph.
     GlyphBuffer glyphBuffer;
@@ -632,10 +638,10 @@ float Font::drawSimpleText(GraphicsContext* context, const TextRun& run, const F
     
     // We couldn't generate any glyphs for the run.  Give up.
     if (glyphBuffer.isEmpty())
-        return 0.0;
+        return FloatSize();
     
     float afterWidth = it.m_runWidthSoFar;
-
+    
     if (run.rtl()) {
         float finalRoundingWidth = it.m_finalRoundingWidth;
         it.advance(run.length());
@@ -653,7 +659,7 @@ float Font::drawSimpleText(GraphicsContext* context, const TextRun& run, const F
     FloatPoint startPoint(startX, point.y());
     drawGlyphBuffer(context, glyphBuffer, run, startPoint);
 
-    return startPoint.x() - startX;
+    return FloatSize(startPoint.x() - startX, it.m_runHeightSoFar);
 }
 
 void Font::drawGlyphBuffer(GraphicsContext* context, const GlyphBuffer& glyphBuffer, 
@@ -685,24 +691,34 @@ void Font::drawGlyphBuffer(GraphicsContext* context, const GlyphBuffer& glyphBuf
     point.setX(nextX);
 }
 
-float Font::drawText(GraphicsContext* context, const TextRun& run, const FloatPoint& point, int from, int to) const
+FloatSize Font::drawText(GraphicsContext* context, const TextRun& run, const FloatPoint& point, int from, int to) const
 {
     // Don't draw anything while we are using custom fonts that are in the process of loading.
     if (m_fontList && m_fontList->loadingCustomFonts())
-        return 0.0f;
+        return FloatSize();
     
     to = (to == -1 ? run.length() : to);
 
 #if ENABLE(SVG_FONTS)
     if (primaryFont()->isSVGFont()) {
         drawTextUsingSVGFont(context, run, point, from, to);
-        return 0;
+        return FloatSize();
     }
 #endif
 
     return drawSimpleText(context, run, point, from, to);
 }
 
+FloatSize Font::floatSize(const TextRun& run) const
+{    
+    WidthIterator it(this, run);
+    it.advance(run.length(), 0);
+    FloatSize size;
+    size.setWidth(it.m_runWidthSoFar);
+    size.setHeight(it.m_runHeightSoFar);
+    return size;
+}
+    
 float Font::floatWidth(const TextRun& run) const
 {
 #if ENABLE(SVG_FONTS)

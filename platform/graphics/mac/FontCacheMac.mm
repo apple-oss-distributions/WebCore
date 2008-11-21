@@ -67,6 +67,7 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
     bool useCJFont = false;
     bool useKoreanFont = false;
     bool useCyrillicFont = false;
+    bool useImageFont = false;
     if (length > 0) {
         do {
             // This isn't a loop but a way to efficiently check for ranges of characters.
@@ -109,6 +110,12 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
             }
             if ( c <= 0xDFFF) {
                 useCJFont = true;
+                break;
+            }
+            if ( c < 0xE000)
+                break;
+            if ( c < 0xE600) {
+                useImageFont = true;
                 break;
             }
             if (c <= 0xF8FF)
@@ -199,12 +206,15 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
 		if ( glyphs[0] == 0 )
 			platformFont = getCachedFontPlatformData(font.fontDescription(), font.fontDescription().bold() ? cjkBold[secondaryCJKFont] : cjkPlain[secondaryCJKFont]);
     } else if (useKoreanFont) {
-        static AtomicString koreanFont("AppleGothic");
+        static const AtomicString koreanFont("AppleGothic");
         platformFont = getCachedFontPlatformData(font.fontDescription(), koreanFont);    
     } else if (useCyrillicFont) {
-        static AtomicString cyrillicPlain("HelveticaNeue");
-        static AtomicString cyrillicBold("HelveticaNeue-Bold");
+        static const AtomicString cyrillicPlain("HelveticaNeue");
+        static const AtomicString cyrillicBold("HelveticaNeue-Bold");
         platformFont = getCachedFontPlatformData(font.fontDescription(), font.fontDescription().bold() ? cyrillicBold : cyrillicPlain);
+    } else if (useImageFont) {
+        static const AtomicString image("AppleWebKitImage");
+        platformFont = getCachedFontPlatformData(font.fontDescription(), image);
     }
 
 	if ( platformFont != NULL )
@@ -288,6 +298,9 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
     if (equalIgnoringCase(family, courier))
         return 0;    
     
+    static const AtomicString image("AppleWebKitImage");
+    bool useImageFont = equalIgnoringCase(family, image);
+    
     GSFontTraitMask traits = 0;
     if (fontDescription.italic())
         traits |= GSItalicFontMask;
@@ -295,18 +308,27 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
         traits |= GSBoldFontMask;
     float size = fontDescription.computedPixelSize();
 	
-	GSFontRef gsFont= [WebFontCache createFontWithFamily: family traits: traits size: size];
-	if (!gsFont)
-		return 0;
-	
     GSFontTraitMask actualTraits = 0;
-    if (fontDescription.bold() || fontDescription.italic())
-        actualTraits = GSFontGetTraits(gsFont);
+    GSFontRef gsFont = 0;
+    if (!useImageFont) {
+
+        gsFont = [WebFontCache createFontWithFamily: family traits: traits size: size];
+        if (!gsFont)
+            return 0;        
+
+        if (fontDescription.bold() || fontDescription.italic())
+            actualTraits = GSFontGetTraits(gsFont);
+    }
     
     FontPlatformData* result = new FontPlatformData;
-    
+
     // Use the correct font for print vs. screen.
-    result->setFont(gsFont);
+    if (useImageFont) {
+        result->m_isImageFont = true;
+        result->m_size = size;        
+    } else
+        result->setFont(gsFont);
+    
     result->m_syntheticBold = (traits & GSBoldFontMask) && !(actualTraits & GSBoldFontMask);
     result->m_syntheticOblique = (traits & GSItalicFontMask) && !(actualTraits & GSItalicFontMask);	
     return result;

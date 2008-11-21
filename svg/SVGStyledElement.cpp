@@ -281,9 +281,12 @@ RenderStyle* SVGStyledElement::resolveStyle(RenderStyle* parentStyle)
 
 PassRefPtr<CSSValue> SVGStyledElement::getPresentationAttribute(const String& name)
 {
-    MappedAttribute* cssSVGAttr = mappedAttributes()->getAttributeItem(name);
-    if (!cssSVGAttr || !cssSVGAttr->style())
+    Attribute* attr = mappedAttributes()->getAttributeItem(name);
+    if (!attr || !attr->isMappedAttribute() || !attr->style())
         return 0;
+
+    MappedAttribute* cssSVGAttr = static_cast<MappedAttribute*>(attr);
+
     return cssSVGAttr->style()->getPropertyCSSValue(name);
 }
 

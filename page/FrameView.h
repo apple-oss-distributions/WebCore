@@ -98,6 +98,8 @@ public:
     void doDeferredRepaints();
     void deferredRepaintTimerFired(Timer<FrameView>*);
     void resetDeferredRepaintDelay();
+    IntSize offsetInWindow() const;
+    void setFrameGeometry(const IntRect &rect);
 
 #if ENABLE(HW_COMP)
     void scheduleLayerUpdate();

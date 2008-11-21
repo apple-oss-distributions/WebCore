@@ -38,6 +38,7 @@ namespace WebCore {
 
 class FloatPoint;
 class FloatRect;
+class FloatSize;
 class FontData;
 class FontFallbackList;
 class FontPlatformData;
@@ -166,7 +167,8 @@ public:
 
     void update(PassRefPtr<FontSelector>) const;
 
-    float drawText(GraphicsContext*, const TextRun&, const FloatPoint&, int from = 0, int to = -1) const;
+    FloatSize drawText(GraphicsContext*, const TextRun&, const FloatPoint&, int from = 0, int to = -1) const;
+    FloatSize floatSize(const TextRun&) const;
 
     int width(const TextRun&) const;
     float floatWidth(const TextRun&) const;
@@ -225,14 +227,14 @@ public:
 
 private:
     bool canUseGlyphCache(const TextRun&) const;
-    float drawSimpleText(GraphicsContext*, const TextRun&, const FloatPoint&, int from, int to) const;
+    FloatSize drawSimpleText(GraphicsContext*, const TextRun&, const FloatPoint&, int from, int to) const;
 #if ENABLE(SVG_FONTS)
     void drawTextUsingSVGFont(GraphicsContext*, const TextRun&, const FloatPoint&, int from, int to) const;
     float floatWidthUsingSVGFont(const TextRun&) const;
     FloatRect selectionRectForTextUsingSVGFont(const TextRun&, const IntPoint&, int h, int from, int to) const;
     int offsetForPositionForTextUsingSVGFont(const TextRun&, int position, bool includePartialGlyphs) const;
 #endif
-    void drawGlyphs(GraphicsContext*, const SimpleFontData*, const GlyphBuffer&, int from, int to, const FloatPoint&, bool setColor = true) const;
+    void drawGlyphs(GraphicsContext*, const SimpleFontData*, const GlyphBuffer&, int from, int to, const FloatPoint&) const;
     void drawGlyphBuffer(GraphicsContext*, const GlyphBuffer&, const TextRun&, FloatPoint&) const;
     float floatWidthForSimpleText(const TextRun&, GlyphBuffer*) const;
     int offsetForPositionForSimpleText(const TextRun&, int position, bool includePartialGlyphs) const;

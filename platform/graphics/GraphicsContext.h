@@ -188,6 +188,9 @@ namespace WebCore {
         int textDrawingMode();
         void setTextDrawingMode(int);
 
+        bool emojiDrawingEnabled();
+        void setEmojiDrawingEnabled(bool emojiDrawingEnabled);
+        
         void drawText(const TextRun&, const IntPoint&, int from = 0, int to = -1);
         void drawBidiText(const TextRun&, const IntPoint&);
         void drawHighlightForText(const TextRun&, const IntPoint&, int h, const Color& backgroundColor, int from = 0, int to = -1);

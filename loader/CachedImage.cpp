@@ -34,6 +34,8 @@
 #include "SystemTime.h"
 #include <wtf/Vector.h>
 
+#include "SystemMemory.h"
+
 #if PLATFORM(CG)
 #include "PDFDocumentImage.h"
 #endif
@@ -61,7 +63,6 @@ CachedImage::CachedImage(DocLoader* docLoader, const String& url, bool forCache)
     if (docLoader && docLoader->frame()) {
         m_maxDataSize = docLoader->frame()->maximumImageSize();
     }
-    m_accountedForLimit = false;
 }
 
 CachedImage::CachedImage(Image* image)
@@ -72,7 +73,6 @@ CachedImage::CachedImage(Image* image)
     m_loading = false;
 
     m_maxDataSize = 0;
-    m_accountedForLimit = false;
 }
 
 CachedImage::~CachedImage()
@@ -206,14 +206,20 @@ bool CachedImage::checkOutOfMemory()
     return false;
 }
 
-bool CachedImage::markAccountedForLimit()
+unsigned CachedImage::animatedImageSize()
 {
-    if (!m_accountedForLimit) {
-        m_accountedForLimit = true;
-        return true;
-    }
-    return false;
+    if (!m_image)
+        return 0;
+    return m_image->animatedImageSize();
 }
+    
+void CachedImage::stopAnimatedImage()
+{
+    if (!m_image)
+        return;
+    m_image->disableImageAnimation();
+}
+    
     
 void CachedImage::data(PassRefPtr<SharedBuffer> data, bool allDataReceived)
 {
@@ -318,6 +324,38 @@ void CachedImage::animationAdvanced(const Image* image)
 {
     if (image == m_image)
         notifyObservers();
+}
+    
+bool CachedImage::shouldDecodeFrame(const Image* image, const IntSize& frameSize)
+{
+    unsigned fullFrameBytes = frameSize.width() * frameSize.height();
+
+    const unsigned smallImageThreshold = 258 * 256 * 4;
+    if (fullFrameBytes < smallImageThreshold)
+        return true;
+
+    if (hasEnoughMemoryFor(fullFrameBytes))
+        return true;
+
+    // Low on memory, lets try to prune the cache
+    cache()->prune();
+    if (hasEnoughMemoryFor(fullFrameBytes))
+        return true;
+
+    // We are still low on memory, lets try some aggressive pruning of live decoded resources
+    cache()->pruneLiveResources(true);
+#if ENABLE(DENY_LOW_MEMORY_IMAGE_DECODING)
+    if (hasEnoughMemoryFor(fullFrameBytes))
+        return true;
+
+    // Still looking bad, don't decode the image at all.
+    return false;
+#else
+    // So we allow decoding anyway. This might cause crash or jetsam but as long as WebKit
+    // suffers from memory growth problems there are situations where restarting is the only way
+    // to access the content user is trying to see.
+    return true;
+#endif
 }
 
 } //namespace WebCore

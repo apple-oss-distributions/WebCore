@@ -35,6 +35,8 @@
 #include <wtf/Vector.h>
 #include "MIMETypeRegistry.h"
 
+#include "SystemTime.h"
+
 namespace WebCore {
 
 // Animated images >5MB are considered large enough that we'll only hang on to
@@ -43,6 +45,9 @@ const unsigned cLargeAnimationCutoff = 5242880;
 
 BitmapImage::BitmapImage(ImageObserver* observer)
     : Image(observer)
+    , m_imageAnimationDisabled(false)
+    , m_progressiveLoadChunkTime(0)
+    , m_progressiveLoadChunkCount(0)
     , m_currentFrame(0)
     , m_frames(0)
     , m_frameTimer(0)
@@ -112,6 +117,9 @@ void BitmapImage::cacheFrame(size_t index, float scaleHint)
     if (m_frames.size() < numFrames)
         m_frames.grow(numFrames);
 
+    if (m_sizeAvailable && imageObserver() && !imageObserver()->shouldDecodeFrame(this, m_size))
+        return;
+
     m_frames[index].m_frame = m_source.createFrameAtIndex(index, scaleHint, &m_frames[index].m_scale, &m_frames[index].m_bytes);
     if (numFrames == 1 && m_frames[index].m_frame)
         checkForSolidColor();
@@ -156,7 +164,18 @@ bool BitmapImage::dataChanged(bool allDataReceived)
     
     // Feed all the data we've seen so far to the image decoder.
     m_allDataReceived = allDataReceived;
-    m_source.setData(m_data.get(), allDataReceived);
+
+    static const double chunkLoadIntervals[] = {0.0, 1.0, 3.0, 6.0, 15.0};
+    double interval = chunkLoadIntervals[std::min(m_progressiveLoadChunkCount, 4u)];
+    
+    bool needsUpdate = false;
+    if (currentTime() - m_progressiveLoadChunkTime > interval) { // the first time through, the chunk time will be 0 and the image will get an update.
+        needsUpdate = true;
+        m_progressiveLoadChunkTime = currentTime();
+        m_progressiveLoadChunkCount++;
+    }
+    if (needsUpdate || allDataReceived)
+        m_source.setData(m_data.get(), allDataReceived);
     
     // Image properties will not be available until the first frame of the file
     // reaches kCGImageStatusIncomplete.
@@ -232,7 +251,7 @@ bool BitmapImage::shouldAnimate()
     // This is a fix for <rdar://problem/4812660> Memory bloat problem
     // We now cap animated gif decoded size to 2MB. (width * height * 4 bytes per pixel * number of frames)
     // If larger, does not animate.
-    return (m_animatingImageType && !m_animationFinished && imageObserver() && (width() * height() * 4 * frameCount() < 2097152));
+    return (m_animatingImageType && !m_animationFinished && imageObserver() && (width() * height() * 4 * frameCount() < 2097152) && !m_imageAnimationDisabled);
 }
 
 void BitmapImage::startAnimation()
@@ -310,4 +329,16 @@ void BitmapImage::advanceAnimation(Timer<BitmapImage>* timer)
     // CPU time spent doing the decoding).
 }
 
+unsigned BitmapImage::animatedImageSize()
+{
+    if (frameCount() <= 1)
+        return 0;
+    return (width() * height() * 4 * frameCount());
+}
+    
+void BitmapImage::disableImageAnimation()
+{
+    m_imageAnimationDisabled = true;
+}
+    
 }

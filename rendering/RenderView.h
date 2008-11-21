@@ -132,6 +132,7 @@ public:
 #if ENABLE(HW_COMP)
     void ensureRootCompositingLayer();
     LCLayer* rootCompositingLayer() const;
+    void updateLayerPosition();
     
     void noteUpdateContents(const IntRect& r);
     void noteUpdate();

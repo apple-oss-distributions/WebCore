@@ -146,6 +146,7 @@
 #include "HTMLTokenizer.h"
 #include "HTMLParserErrorCodes.h"
 #include "WKUtilities.h"
+#include "CachedImage.h"
 
 using namespace std;
 using namespace WTF;
@@ -316,7 +317,8 @@ Document::Document(DOMImplementation* impl, Frame* frame, bool isXHTML)
 #endif    
 	, m_loadComplete(false)
     , m_scrollEventListenerCount(0)
-    , m_imageDataCount(0)
+    , m_totalImageDataSize(0)
+    , m_animatedImageDataCount(0)
 {
     m_document.resetSkippingRef(this);
 
@@ -397,6 +399,9 @@ void Document::removedLastRef()
         m_activeNode = 0;
         m_titleElement = 0;
         m_documentElement = 0;
+        
+        // To avoid unnecessary hash lookups during teardown
+        m_documentImages.clear();
 
         removeAllChildren();
 
@@ -2055,6 +2060,8 @@ void Document::processViewport(const String & features)
     assert(!features.isNull());
     
     Frame *frame = this->frame();
+    if (!frame)
+        return;
     
     ViewportArguments arguments;
 
@@ -4350,14 +4357,38 @@ void Document::resetAutoSizingNodes()
     m_textAutoSizedNodes.clear();
 }
 
-void Document::incrementImageDataCount(unsigned count)
+void Document::incrementTotalImageDataSize(CachedImage* image)
 {
-    m_imageDataCount += count;
+    if (m_documentImages.add(image).second)
+        m_totalImageDataSize += image->encodedSize();
 }
 
-unsigned long Document::imageDataCount()
+void Document::decrementTotalImageDataSize(CachedImage* image)
 {
-    return m_imageDataCount;
+    if (m_documentImages.isEmpty())
+        return;
+    HashCountedSet<CachedImage*>::iterator it = m_documentImages.find(image);
+    if (it == m_documentImages.end())
+        return;
+    if (it->second == 1)
+        m_totalImageDataSize -= image->encodedSize();
+    m_documentImages.remove(it);
+}
+
+unsigned long Document::totalImageDataSize()
+{
+    // This is not fully accurate, it not include CSS loaded images for example
+    return m_totalImageDataSize;
+}        
+
+void Document::incrementAnimatedImageDataCount(unsigned count)
+{
+    m_animatedImageDataCount += count;
+}
+
+unsigned long Document::animatedImageDataCount()
+{
+    return m_animatedImageDataCount;
 }        
     
 

@@ -38,6 +38,8 @@
 #include "SQLiteTransaction.h"
 
 namespace WebCore {
+    
+const unsigned maximumCacheDatabaseSize = 256 * 1024 * 1024;
 
 static unsigned urlHostHash(const KURL& url)
 {
@@ -260,8 +262,17 @@ void ApplicationCacheStorage::openDatabase(bool createIfDoesNotExist)
         return;
     
     String applicationCachePath = pathByAppendingComponent(m_cacheDirectory, "ApplicationCache.db");
-    if (!createIfDoesNotExist && !fileExists(applicationCachePath))
+    bool exists = fileExists(applicationCachePath);
+    if (!createIfDoesNotExist && !exists)
         return;
+
+    if (exists) {
+        // The cache has grown too large, wipe it out and start rebuilding. This is not ideal but it is simple and safe.
+        long long fileSize = 0;
+        getFileSize(applicationCachePath, fileSize);
+        if (fileSize > maximumCacheDatabaseSize)
+            deleteFile(applicationCachePath);
+    }
 
     makeAllDirectories(m_cacheDirectory);
     m_database.open(applicationCachePath);

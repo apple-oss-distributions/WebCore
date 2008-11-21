@@ -88,6 +88,7 @@ public:
 
 #if PLATFORM(MAC)
     GSFontRef getGSFont() const { return m_font.font(); }
+    bool isImageFont() const { return m_font.m_isImageFont; };
 #endif
 
 #if PLATFORM(WIN)

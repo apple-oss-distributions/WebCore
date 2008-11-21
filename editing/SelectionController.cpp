@@ -29,6 +29,7 @@
 #include "DeleteSelectionCommand.h"
 #include "Document.h"
 #include "Editor.h"
+#include "EditorClient.h"
 #include "Element.h"
 #include "EventHandler.h"
 #include "EventNames.h"
@@ -129,7 +130,9 @@ void SelectionController::setSelection(const Selection& s, bool closeTyping, boo
     Selection oldSelection = m_sel;
 
     m_sel = s;
-    
+
+    if (!m_frame || !m_frame->editor() || !m_frame->editor()->client() ||
+        !m_frame->editor()->client()->isSuppressingSelectionNotifications()) {
     m_needsLayout = true;
     
     if (!s.isNone())
@@ -146,6 +149,8 @@ void SelectionController::setSelection(const Selection& s, bool closeTyping, boo
         m_frame->revealCaret(RenderLayer::gAlignToEdgeIfNeeded);
 
     notifyAccessibilityForSelectionChange();
+
+    }
 }
 
 static bool removingNodeRemovesPosition(Node* node, const Position& position)

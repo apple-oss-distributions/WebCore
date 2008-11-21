@@ -55,6 +55,8 @@ public:
 
     virtual CSSStyleDeclaration* style() const { return m_styleDecl.get(); }
 
+    virtual bool isMappedAttribute() { return true; }
+
     CSSMappedAttributeDeclaration* decl() const { return m_styleDecl.get(); }
     void setDecl(CSSMappedAttributeDeclaration* decl) { m_styleDecl = decl; }
 

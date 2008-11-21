@@ -484,17 +484,13 @@ bool RenderView::printing() const
 
 void RenderView::updateWidgetPositions()
 {
-#if ENABLE(HW_COMP)
-    if (m_rootLayer) {
-        FloatRect frameRect(0, 0, m_frameView->width(), m_frameView->height());
-        m_rootLayer->setBounds(frameRect);
-        m_rootLayer->setPosition(FloatPoint(m_frameView->x(), m_frameView->y()));
-    }
-#endif
-
     RenderObjectSet::iterator end = m_widgets.end();
     for (RenderObjectSet::iterator it = m_widgets.begin(); it != end; ++it)
         (*it)->updateWidgetPosition();
+
+#if ENABLE(HW_COMP)
+    updateLayerPosition();
+#endif
 }
 
 void RenderView::addWidget(RenderObject* o)
@@ -601,9 +597,16 @@ void RenderView::ensureRootCompositingLayer()
         return;
 
     m_rootLayer = LCRootLayer::rootLayer(FloatRect(0, 0, m_frameView->width(), m_frameView->height()));
-    m_rootLayer->setPosition(FloatPoint(m_frameView->x(), m_frameView->y()));
+    IntSize windowOffset = m_frameView->offsetInWindow();
+    m_rootLayer->setPosition(FloatPoint(windowOffset.width(), windowOffset.height()));
+#ifndef NDEBUG
     m_rootLayer->setName("Root Layer");
+#endif
 
+    // Turn on masking for iframes and frames.
+    if (document()->ownerElement())
+        m_rootLayer->setMasksToBounds(true);
+    
     wasAttached();
 
 }
@@ -611,6 +614,16 @@ void RenderView::ensureRootCompositingLayer()
 LCLayer* RenderView::rootCompositingLayer() const
 {
     return m_rootLayer;
+}
+
+void RenderView::updateLayerPosition()
+{
+    if (m_rootLayer) {
+        FloatRect frameRect(0, 0, m_frameView->width(), m_frameView->height());
+        m_rootLayer->setBounds(frameRect);
+        IntSize windowOffset = m_frameView->offsetInWindow();
+        m_rootLayer->setPosition(FloatPoint(windowOffset.width(), windowOffset.height()));
+    }
 }
 
 void RenderView::noteUpdateContents(const IntRect& r)

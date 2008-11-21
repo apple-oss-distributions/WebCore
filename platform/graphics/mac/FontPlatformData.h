@@ -47,6 +47,7 @@ struct FontPlatformData {
         : m_syntheticBold(false)
         , m_syntheticOblique(false)
         , m_gsFont(0)
+        , m_isImageFont(false)
         , m_size(0)
         , m_font((GSFontRef)-1)
     {}
@@ -55,6 +56,7 @@ struct FontPlatformData {
         : m_syntheticBold(b)
         , m_syntheticOblique(o)
         , m_gsFont(0)
+        , m_isImageFont(false)
         , m_size(s)
         , m_font(0)
     {
@@ -63,7 +65,7 @@ struct FontPlatformData {
     FontPlatformData(GSFontRef f = 0, bool b = false, bool o = false);
     
     FontPlatformData(GSFontRef f, float s, bool b , bool o)
-    : m_syntheticBold(b), m_syntheticOblique(o), m_gsFont(f), m_size(s), m_font(0)
+    : m_syntheticBold(b), m_syntheticOblique(o), m_gsFont(f), m_isImageFont(false), m_size(s), m_font(0)
     {
     }
 
@@ -77,19 +79,20 @@ struct FontPlatformData {
     bool m_syntheticOblique;
     
     GSFontRef m_gsFont;
+    bool m_isImageFont;
     float m_size;
 
     unsigned hash() const
     {
-        ASSERT(m_font != 0 || m_gsFont == 0);
-        uintptr_t hashCodes[2] = { (uintptr_t)m_font, m_syntheticBold << 1 | m_syntheticOblique };
+        ASSERT(m_font != 0 || m_gsFont == 0 || m_isImageFont != 0);
+        uintptr_t hashCodes[2] = { (uintptr_t)m_font, m_isImageFont << 2 | m_syntheticBold << 1 | m_syntheticOblique };
         return StringImpl::computeHash(reinterpret_cast<UChar*>(hashCodes), sizeof(hashCodes) / sizeof(UChar));
     }
 
     bool operator==(const FontPlatformData& other) const
     { 
         return m_font == other.m_font && m_syntheticBold == other.m_syntheticBold && m_syntheticOblique == other.m_syntheticOblique && 
-               m_gsFont == other.m_gsFont && m_size == other.m_size;
+               m_gsFont == other.m_gsFont && m_size == other.m_size && m_isImageFont == other.m_isImageFont;
     }
     GSFontRef font() const { return m_font; }
     void setFont(GSFontRef font);

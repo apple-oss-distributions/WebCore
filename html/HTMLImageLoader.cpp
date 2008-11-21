@@ -52,6 +52,8 @@ HTMLImageLoader::HTMLImageLoader(Element* elt)
 
 HTMLImageLoader::~HTMLImageLoader()
 {
+    if (m_image && m_image->isLoaded())
+        m_element->document()->topDocument()->decrementTotalImageDataSize(m_image);
     if (m_image)
         m_image->deref(this);
     m_element->document()->removeImage(this);
@@ -61,6 +63,10 @@ void HTMLImageLoader::setImage(CachedImage *newImage)
 {
     CachedImage *oldImage = m_image;
     if (newImage != oldImage) {
+        if (oldImage && oldImage->isLoaded())
+            m_element->document()->topDocument()->decrementTotalImageDataSize(oldImage);
+        if (newImage && newImage->isLoaded())
+            m_element->document()->topDocument()->incrementTotalImageDataSize(newImage);
         setLoadingImage(newImage);
         m_firedLoad = true;
         m_imageComplete = true;
@@ -123,6 +129,10 @@ void HTMLImageLoader::updateFromElement()
         if (!doc->ownerElement() && newImage)
             printf("Image requested at %d\n", doc->elapsedTime());
 #endif
+        if (oldImage && oldImage->isLoaded())
+            m_element->document()->topDocument()->decrementTotalImageDataSize(oldImage);
+        if (newImage && newImage->isLoaded())
+            m_element->document()->topDocument()->incrementTotalImageDataSize(newImage);
         setLoadingImage(newImage);
         if (newImage)
             newImage->ref(this);
@@ -149,19 +159,13 @@ void HTMLImageLoader::notifyFinished(CachedResource *image)
     Element* elem = element();
     Document* doc = elem->document();
     doc->dispatchImageLoadEventSoon(this);
-    unsigned encodedSize = m_image->encodedSize();
-    if (encodedSize > 0 && m_image->markAccountedForLimit()) {
-        Page *page = doc->page();
-        if (page && page->mainFrame() && page->mainFrame()->document()) {
-            Document *mainFrameDocument = page->mainFrame()->document();
-            if (mainFrameDocument) {
-                mainFrameDocument->incrementImageDataCount(encodedSize);
-                //encoded: m_image->encodedSize());
-                //decoded: 4 * m_image->imageSize().width() * m_image->imageSize().width());
-                // url : URL=%s\n , m_image->url().utf8().data()
-                // fprintf(stderr, "the document %p finished loading an image %p that is as huge as %d with a total of %lu\n", doc, m_image, m_image->encodedSize(), doc->page()->mainFrame()->document()->imageDataCount());                                                        
-            }
-        }
+    Document* mainFrameDocument = doc->topDocument();
+    mainFrameDocument->incrementTotalImageDataSize(m_image);
+    unsigned animatedImageSize = m_image->animatedImageSize();
+    if (animatedImageSize) {
+        mainFrameDocument->incrementAnimatedImageDataCount(animatedImageSize);
+        if (mainFrameDocument->animatedImageDataCount() > 2 * 1024 * 1024)
+            m_image->stopAnimatedImage();
     }
 #ifdef INSTRUMENT_LAYOUT_SCHEDULING
         if (!doc->ownerElement())
@@ -179,7 +183,7 @@ bool HTMLImageLoader::memoryLimitReached()
     Frame *mainFrame = element()->document()->page()->mainFrame();
     Document *mainFrameDocument = mainFrame->document();
     static unsigned long maxImageSize = mainFrame->maximumImageSize() / 2; //allow half as much total encoded data as the max decoded size of one image. We can tweak this value...
-    return (mainFrameDocument->imageDataCount() > maxImageSize);
+    return mainFrameDocument->totalImageDataSize() > maxImageSize;
 }
     
 }

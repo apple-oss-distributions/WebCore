@@ -5,6 +5,7 @@
 //
 
 #import <CoreGraphics/CoreGraphics.h>
+#import <CoreGraphics/CGSRegion.h>
 #import <GraphicsServices/GSEvent.h>
 #import "WKUtilities.h"
 
@@ -69,14 +70,16 @@ struct WKView {
 
     WKViewRef superview;
     CFMutableArrayRef subviews;
-    
-    CGRect dirtyRect;
+        
+    CGSBoundingShape *dirtyShape;
+    CGRect unionedDirtyRect;
     CGPoint origin;
     CGRect bounds;
     
     unsigned int isHidden:1;
+    unsigned int visibleSizeOverrideEnabled:1;
+    
     unsigned int autoresizingMask;
-    unsigned int visibleSizeOverrideEnabled;
     
     float scale;
     CGSize visibleSize;
@@ -119,6 +122,7 @@ void WKViewDisplay (WKViewRef view);
 void WKViewDisplayIfNeeded (WKViewRef view);
 void WKViewDisplayRect (WKViewRef view, CGRect rectToDraw);
 CGRect WKViewGetDirtyRect (WKViewRef view);
+void WKViewGetSeparateDirtyRectsInBase (WKViewRef view, CGRect **rects, unsigned *count, unsigned maxCount);
 
 void WKViewLockFocus (WKViewRef view);
 void WKViewUnlockFocus (WKViewRef view);

@@ -40,6 +40,9 @@
 
 #import "WKGraphics.h"
 #import <GraphicsServices/GraphicsServices.h>
+#import "WebCoreFrameBridge.h"
+#import "BitmapImage.h"
+#import "Threading.h"
 
 #define SYNTHETIC_OBLIQUE_ANGLE 14
 
@@ -55,10 +58,74 @@ namespace WebCore {
 
 
 
-void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, const GlyphBuffer& glyphBuffer, int from, int numGlyphs, const FloatPoint& point, bool setColor) const
+// 1600 bytes each (20 x 20 x 4 bytes pp), so 50 emoji is only ~80k.
+#define EMOJI_CACHE_SIZE 50
+
+static Image* smileImage(int imageNumber)
+{   
+    static HashMap<int,Image*> emojiCache;
+    
+    if (emojiCache.contains(imageNumber))
+        return emojiCache.get(imageNumber);
+    
+    char name[30];
+    snprintf(name, 29, "%c%c%c%c%c-%04X", 101, 109, 111, 106, 105, imageNumber);
+
+    NSBundle *bundle = [NSBundle bundleForClass:[WebCoreFrameBridge class]];
+    NSString *imagePath = [bundle pathForResource:[NSString stringWithUTF8String:name] ofType:@"png"];
+    NSData *namedImageData = [NSData dataWithContentsOfFile:imagePath];
+    if (namedImageData) {
+        Image *image = new BitmapImage;
+        image->setData(SharedBuffer::wrapNSData(namedImageData), true);
+        if (emojiCache.size() > EMOJI_CACHE_SIZE) {
+            deleteAllValues(emojiCache);
+            emojiCache.clear(); //primitive mechanism. LRU would be better. <rdar://problem/6265136> make emoji cache LRU
+        }
+            
+        emojiCache.add(imageNumber, image);
+        return image;
+    }
+    return 0;
+}
+    
+void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, const GlyphBuffer& glyphBuffer, int from, int numGlyphs, const FloatPoint& point) const
 {
     CGContextRef cgContext = WKGetCurrentGraphicsContext();
+    if (font->isImageFont()) {
+        if (!context->emojiDrawingEnabled())
+            return;
+        float advance = 0;
 
+        static Mutex emojiMutex;
+        MutexLocker locker(emojiMutex);
+        
+        for (int i = from; i < from + numGlyphs; i++) {
+            const Glyph glyph = glyphBuffer.glyphAt(i);
+            
+            const int pointSize = font->m_font.m_size;
+            const int imageGlyphSize = std::min(pointSize + (pointSize <= 15 ? 2 : 4), 20); // scale images below 16 pt.
+            IntRect dstRect;
+            dstRect.setWidth(imageGlyphSize);
+            dstRect.setHeight(imageGlyphSize);
+            dstRect.setX(point.x() + 1 + advance);
+            
+            // these magic rules place the image glyph vertically as per HI specifications.
+            if (font->m_font.m_size >= 26)
+                dstRect.setY(point.y() -  20);                
+            else if (font->m_font.m_size >= 16)
+                dstRect.setY(point.y() -  font->m_font.m_size * 0.35 - 10);
+            else
+                dstRect.setY(point.y() -  font->m_font.m_size);
+
+            Image *image = smileImage(glyph);
+            if (image)
+                context->drawImage(image, dstRect);
+            advance += glyphBuffer.advanceAt(i);
+        }
+        return;
+    }
+
+    
     bool originalShouldUseFontSmoothing = CGContextGetShouldSmoothFonts(cgContext);
     bool newShouldUseFontSmoothing = WebCoreShouldUseFontSmoothing();
     

@@ -59,6 +59,8 @@ namespace WebCore {
         virtual bool isFocusable() const;
 
         virtual bool childShouldCreateRenderer(Node*) const;
+                            
+        virtual bool willRespondToMouseClickEvents();
 
     protected:
         virtual const SVGElement* contextElement() const { return this; }

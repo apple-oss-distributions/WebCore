@@ -66,6 +66,8 @@ namespace WebCore { namespace EventNames {
     macro(mouseup) \
     macro(mousewheel) \
     macro(noupdate) \
+    macro(offline) \
+    macro(online) \
     macro(orientationchange) \
     macro(touchstart) \
     macro(touchmove) \
