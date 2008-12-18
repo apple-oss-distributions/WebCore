@@ -273,7 +273,7 @@ void ApplicationCacheGroup::documentLoaderDestroyed(DocumentLoader* loader)
         return;
     
     // We should only have the newest cache remaining, or there is an initial cache attempt in progress.
-    ASSERT(m_caches.size() == 1 || m_cacheBeingUpdated);
+    ASSERT(!m_caches.isEmpty() || m_cacheBeingUpdated);
         
     // If a cache update is in progress, stop it.
     if (m_caches.size() == 1) {
@@ -288,12 +288,13 @@ void ApplicationCacheGroup::documentLoaderDestroyed(DocumentLoader* loader)
         return;
     }
     
-    // There is an initial cache attempt in progress
-    ASSERT(m_cacheBeingUpdated);
-    ASSERT(m_caches.size() == 0);
-    
-    // Delete ourselves, causing the cache attempt to be stopped.
-    delete this;
+    if (m_caches.isEmpty()) {
+        // There is an initial cache attempt in progress
+        ASSERT(m_cacheBeingUpdated);
+        
+        // Delete ourselves, causing the cache attempt to be stopped.
+        delete this;
+    }        
 }    
 
 void ApplicationCacheGroup::cacheDestroyed(ApplicationCache* cache)
@@ -311,7 +312,6 @@ void ApplicationCacheGroup::cacheDestroyed(ApplicationCache* cache)
 
 void ApplicationCacheGroup::setNewestCache(PassRefPtr<ApplicationCache> newestCache)
 { 
-    ASSERT(!m_newestCache);
     ASSERT(!m_caches.contains(newestCache.get()));
     ASSERT(!newestCache->group());
            

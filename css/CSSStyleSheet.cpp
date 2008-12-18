@@ -37,6 +37,7 @@ CSSStyleSheet::CSSStyleSheet(CSSStyleSheet* parentSheet, const String& href, con
     , m_namespaces(0)
     , m_charset(charset)
     , m_loadCompleted(false)
+    , m_strictParsing(!parentSheet || parentSheet->useStrictParsing())
 {
 }
 
@@ -46,6 +47,7 @@ CSSStyleSheet::CSSStyleSheet(Node *parentNode, const String& href, const String&
     , m_namespaces(0)
     , m_charset(charset)
     , m_loadCompleted(false)
+    , m_strictParsing(false)
 {
 }
 
@@ -55,6 +57,7 @@ CSSStyleSheet::CSSStyleSheet(CSSRule *ownerRule, const String& href, const Strin
     , m_namespaces(0)
     , m_charset(charset)
     , m_loadCompleted(false)
+    , m_strictParsing(!ownerRule || ownerRule->useStrictParsing())
 {
 }
 

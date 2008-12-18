@@ -102,8 +102,8 @@ void StyleChange::init(PassRefPtr<CSSStyleDeclaration> style, const Position &po
     
     String styleText("");
 
-    DeprecatedValueListConstIterator<CSSProperty> end;
-    for (DeprecatedValueListConstIterator<CSSProperty> it = mutableStyle->valuesIterator(); it != end; ++it) {
+    CSSMutableStyleDeclaration::const_iterator end = mutableStyle->end();
+    for (CSSMutableStyleDeclaration::const_iterator it = mutableStyle->begin(); it != end; ++it) {
         const CSSProperty *property = &*it;
 
         // If position is empty or the position passed in already has the 
@@ -710,8 +710,8 @@ void ApplyStyleCommand::applyInlineStyle(CSSMutableStyleDeclaration *style)
 
 bool ApplyStyleCommand::isHTMLStyleNode(CSSMutableStyleDeclaration *style, HTMLElement *elem)
 {
-    DeprecatedValueListConstIterator<CSSProperty> end;
-    for (DeprecatedValueListConstIterator<CSSProperty> it = style->valuesIterator(); it != end; ++it) {
+    CSSMutableStyleDeclaration::const_iterator end = style->end();
+    for (CSSMutableStyleDeclaration::const_iterator it = style->begin(); it != end; ++it) {
         switch ((*it).id()) {
             case CSS_PROP_FONT_WEIGHT:
                 if (elem->hasLocalName(bTag))
@@ -744,8 +744,8 @@ void ApplyStyleCommand::removeHTMLFontStyle(CSSMutableStyleDeclaration *style, H
     if (!elem->hasLocalName(fontTag))
         return;
         
-    DeprecatedValueListConstIterator<CSSProperty> end;
-    for (DeprecatedValueListConstIterator<CSSProperty> it = style->valuesIterator(); it != end; ++it) {
+    CSSMutableStyleDeclaration::const_iterator end = style->end();
+    for (CSSMutableStyleDeclaration::const_iterator it = style->begin(); it != end; ++it) {
         switch ((*it).id()) {
             case CSS_PROP_COLOR:
                 removeNodeAttribute(elem, colorAttr);
@@ -772,8 +772,8 @@ void ApplyStyleCommand::removeCSSStyle(CSSMutableStyleDeclaration *style, HTMLEl
     if (!decl)
         return;
 
-    DeprecatedValueListConstIterator<CSSProperty> end;
-    for (DeprecatedValueListConstIterator<CSSProperty> it = style->valuesIterator(); it != end; ++it) {
+    CSSMutableStyleDeclaration::const_iterator end = style->end();
+    for (CSSMutableStyleDeclaration::const_iterator it = style->begin(); it != end; ++it) {
         int propertyID = (*it).id();
         RefPtr<CSSValue> value = decl->getPropertyCSSValue(propertyID);
         if (value && (propertyID != CSS_PROP_WHITE_SPACE || !isTabSpanNode(elem)))

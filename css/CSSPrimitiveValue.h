@@ -34,6 +34,7 @@ class Pair;
 class Rect;
 class RenderStyle;
 class StringImpl;
+class StyleBase;
 
 typedef int ExceptionCode;
 
@@ -82,6 +83,11 @@ public:
     template<typename T> CSSPrimitiveValue(T* val) { init(PassRefPtr<T>(val)); }
     template<typename T> CSSPrimitiveValue(PassRefPtr<T> val) { init(val); }
 
+    // These can return shared instances.
+    static CSSPrimitiveValue* createIdentifier(int ident);
+    static CSSPrimitiveValue* createColor(unsigned rgbValue);
+    static CSSPrimitiveValue* create(double value, UnitTypes type);
+ 
     virtual ~CSSPrimitiveValue();
 
     void cleanup();

@@ -25,6 +25,7 @@
 
 #include "AtomicString.h"
 #include "Color.h"
+#include "CSSSelectorList.h"
 #include "MediaQuery.h"
 #include <wtf/HashSet.h>
 #include <wtf/Vector.h>
@@ -224,7 +225,7 @@ namespace WebCore {
         CSSRule* createMediaRule(MediaList*, CSSRuleList*);
         CSSRuleList* createRuleList();
         WebKitCSSKeyframeRule* createKeyframeRule(float key);
-        CSSRule* createStyleRule(CSSSelector*);
+        CSSRule* createStyleRule(Vector<CSSSelector*>* selectors);
         CSSRule* createFontFaceRule();
         WebKitCSSKeyframesRule* createKeyframesRule();
 
@@ -235,6 +236,8 @@ namespace WebCore {
         MediaQuery* createFloatingMediaQuery(MediaQuery::Restrictor, const String&, Vector<MediaQueryExp*>*);
         MediaQuery* sinkFloatingMediaQuery(MediaQuery*);
 
+        Vector<CSSSelector*>* reusableSelectorVector() { return &m_reusableSelectorVector; }
+        
     public:
         bool strict;
         bool important;
@@ -291,6 +294,8 @@ namespace WebCore {
         MediaQuery* m_floatingMediaQuery;
         MediaQueryExp* m_floatingMediaQueryExp;
         Vector<MediaQueryExp*>* m_floatingMediaQueryExpList;
+        
+        Vector<CSSSelector*> m_reusableSelectorVector;
 
         // defines units allowed for a certain property, used in parseUnit
         enum Units {

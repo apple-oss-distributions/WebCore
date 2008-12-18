@@ -72,6 +72,7 @@
 #include "RenderWidget.h"
 #include "ResourceHandle.h"
 #include "ResourceRequest.h"
+#include "ScriptSourceCode.h"
 #include "SecurityOrigin.h"
 #include "SegmentedString.h"
 #include "Settings.h"
@@ -760,10 +761,10 @@ bool FrameLoader::executeIfJavaScriptURL(const KURL& url, bool userGesture, bool
 
 JSValue* FrameLoader::executeScript(const String& script, bool forceUserGesture)
 {
-    return executeScript(forceUserGesture ? String() : m_URL.string(), 0, script);
+    return executeScript(ScriptSourceCode(script, forceUserGesture ? KURL() : m_URL));
 }
 
-JSValue* FrameLoader::executeScript(const String& url, int baseLine, const String& script)
+JSValue* FrameLoader::executeScript(const ScriptSourceCode& sourceCode)
 {
     if (!m_frame->scriptProxy()->isEnabled())
         return 0;
@@ -771,7 +772,7 @@ JSValue* FrameLoader::executeScript(const String& url, int baseLine, const Strin
     bool wasRunningScript = m_isRunningScript;
     m_isRunningScript = true;
 
-    JSValue* result = m_frame->scriptProxy()->evaluate(url, baseLine, script);
+    JSValue* result = m_frame->scriptProxy()->evaluate(sourceCode);
 
     if (!wasRunningScript) {
         m_isRunningScript = false;

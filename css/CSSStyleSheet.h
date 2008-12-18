@@ -72,12 +72,16 @@ public:
     const String& charset() const { return m_charset; }
 
     bool loadCompleted() const { return m_loadCompleted; }
+    
+    void setStrictParsing(bool b) { m_strictParsing = b; }
+    bool useStrictParsing() const { return m_strictParsing; }
 
 protected:
     Document* m_doc;
     CSSNamespace* m_namespaces;
     String m_charset;
-    bool m_loadCompleted;
+    bool m_loadCompleted : 1;
+    bool m_strictParsing : 1;
 };
 
 } // namespace

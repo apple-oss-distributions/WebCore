@@ -30,6 +30,7 @@
 #include "SelectorNodeList.h"
 
 #include "CSSSelector.h"
+#include "CSSSelectorList.h"
 #include "CSSStyleSelector.h"
 #include "Document.h"
 #include "Element.h"
@@ -37,7 +38,7 @@
 
 namespace WebCore {
 
-SelectorNodeList::SelectorNodeList(PassRefPtr<Node> rootNode, CSSSelector* querySelector)
+SelectorNodeList::SelectorNodeList(PassRefPtr<Node> rootNode, const CSSSelectorList& querySelectorList)
 {
     Document* document = rootNode->document();
     CSSStyleSelector* styleSelector = document->styleSelector();
@@ -46,7 +47,7 @@ SelectorNodeList::SelectorNodeList(PassRefPtr<Node> rootNode, CSSSelector* query
             Element* element = static_cast<Element*>(n);
             styleSelector->initElementAndPseudoState(element);
             styleSelector->initForStyleResolve(element, 0);
-            for (CSSSelector* selector = querySelector; selector; selector = selector->next()) {
+            for (CSSSelector* selector = querySelectorList.first(); selector; selector = CSSSelectorList::next(selector)) {
                 if (styleSelector->checkSelector(selector)) {
                     m_nodes.append(n);
                     break;

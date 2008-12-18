@@ -76,6 +76,7 @@ namespace WebCore {
     class ResourceRequest;
     class ResourceResponse;
     class SecurityOrigin;
+    class ScriptSourceCode;
     class SharedBuffer;
     class SubstituteData;
     class TextResourceDecoder;
@@ -323,7 +324,7 @@ namespace WebCore {
         // Returns true if url is a JavaScript URL.
         bool executeIfJavaScriptURL(const KURL& url, bool userGesture = false, bool replaceDocument = true);
 
-        KJS::JSValue* executeScript(const String& url, int baseLine, const String& script);
+        KJS::JSValue* executeScript(const ScriptSourceCode& sourceCode);
         KJS::JSValue* executeScript(const String& script, bool forceUserGesture = false);
 
         void gotoAnchor();

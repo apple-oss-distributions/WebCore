@@ -735,6 +735,7 @@ String TextResourceDecoder::flush()
 {
     String result = m_decoder.decode(m_buffer.data(), m_buffer.size(), true);
     m_buffer.clear();
+    m_decoder.reset(m_decoder.encoding());
     return result;
 }
 

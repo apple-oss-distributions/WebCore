@@ -40,6 +40,7 @@ namespace WebCore {
 CachedScript::CachedScript(DocLoader* dl, const String& url, const String& charset)
     : CachedResource(url, Script)
     , m_encoding(charset)
+    , m_decodedDataDeletionTimer(this, &CachedScript::decodedDataDeletionTimerFired)
 {
     // It's javascript we want.
     // But some websites think their scripts are <some wrong mimetype here>
@@ -63,6 +64,11 @@ void CachedScript::ref(CachedResourceClient* c)
         c->notifyFinished(this);
 }
 
+void CachedScript::allReferencesRemoved()
+{
+    m_decodedDataDeletionTimer.startOneShot(0);
+}
+
 void CachedScript::setEncoding(const String& chs)
 {
     TextEncoding encoding(chs);
@@ -74,6 +80,17 @@ String CachedScript::encoding() const
 {
     return m_encoding.name();
 }
+    
+const String& CachedScript::script()
+{
+    if (!m_script && m_data) {
+        m_script = m_encoding.decode(m_data->data(), encodedSize());
+        setDecodedSize(m_script.length() * sizeof(UChar));
+    }
+    
+    m_decodedDataDeletionTimer.startOneShot(0);
+    return m_script;
+}
 
 void CachedScript::data(PassRefPtr<SharedBuffer> data, bool allDataReceived)
 {
@@ -82,8 +99,6 @@ void CachedScript::data(PassRefPtr<SharedBuffer> data, bool allDataReceived)
 
     m_data = data;
     setEncodedSize(m_data.get() ? m_data->size() : 0);
-    if (m_data.get())
-        m_script = m_encoding.decode(m_data->data(), encodedSize());
     m_loading = false;
     checkNotify();
 }
@@ -103,6 +118,17 @@ void CachedScript::error()
     m_loading = false;
     m_errorOccurred = true;
     checkNotify();
+}
+
+void CachedScript::destroyDecodedData()
+{
+    m_script = String();
+    setDecodedSize(0);
+}
+
+void CachedScript::decodedDataDeletionTimerFired(Timer<CachedScript>*)
+{
+    destroyDecodedData();
 }
 
 }

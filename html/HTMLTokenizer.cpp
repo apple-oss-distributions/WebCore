@@ -43,6 +43,7 @@
 #include "HTMLViewSourceDocument.h"
 #include "PreloadScanner.h"
 #include "Settings.h"
+#include "ScriptSourceCode.h"
 #include "SystemTime.h"
 #include "kjs_proxy.h"
 #include <wtf/ASCIICType.h>
@@ -472,7 +473,7 @@ HTMLTokenizer::State HTMLTokenizer::scriptHandler(State state)
             else
                 prependingSrc = src;
             setSrc(SegmentedString());
-            state = scriptExecution(scriptCode, state, String(), scriptStartLineno);
+            state = scriptExecution(ScriptSourceCode(scriptCode, KURL(m_doc->frame()->document()->url()), scriptStartLineno), state);
         }
     }
 
@@ -515,12 +516,11 @@ HTMLTokenizer::State HTMLTokenizer::scriptHandler(State state)
     return state;
 }
 
-HTMLTokenizer::State HTMLTokenizer::scriptExecution(const String& str, State state, const String& scriptURL, int baseLine)
+HTMLTokenizer::State HTMLTokenizer::scriptExecution(const ScriptSourceCode& sourceCode, State state)
 {
     if (m_fragment || !m_doc->frame())
         return state;
     m_executingScript++;
-    DeprecatedString url = scriptURL.isNull() ? m_doc->frame()->document()->url() : scriptURL.deprecatedString();
 
     SegmentedString *savedPrependingSrc = currentPrependingSrc;
     SegmentedString prependingSrc;
@@ -532,7 +532,7 @@ HTMLTokenizer::State HTMLTokenizer::scriptExecution(const String& str, State sta
 #endif
 
     m_state = state;
-    m_doc->frame()->loader()->executeScript(url, baseLine, str);
+    m_doc->frame()->loader()->executeScript(sourceCode);
     state = m_state;
 
     state.setAllowYield(true);
@@ -1780,7 +1780,6 @@ void HTMLTokenizer::notifyFinished(CachedResource*)
         CachedScript* cs = pendingScripts.dequeue();
         ASSERT(cache()->disabled() || cs->accessCount() > 0);
 
-        String scriptSource = cs->script();
 #ifdef TOKEN_DEBUG
         kdDebug( 6036 ) << "External script is:" << endl << scriptSource.deprecatedString() << endl;
 #endif
@@ -1788,7 +1787,7 @@ void HTMLTokenizer::notifyFinished(CachedResource*)
 
         // make sure we forget about the script before we execute the new one
         // infinite recursion might happen otherwise
-        String cachedScriptUrl(cs->url());
+        ScriptSourceCode sourceCode(cs);
         bool errorOccurred = cs->errorOccurred();
         cs->deref(this);
         RefPtr<Node> n = scriptNode.release();
@@ -1802,7 +1801,7 @@ void HTMLTokenizer::notifyFinished(CachedResource*)
             EventTargetNodeCast(n.get())->dispatchHTMLEvent(errorEvent, true, false);
         else {
             if (static_cast<HTMLScriptElement*>(n.get())->shouldExecuteAsJavaScript())
-                m_state = scriptExecution(scriptSource, m_state, cachedScriptUrl);
+                m_state = scriptExecution(sourceCode, m_state);
             EventTargetNodeCast(n.get())->dispatchHTMLEvent(loadEvent, false, false);
         }
 

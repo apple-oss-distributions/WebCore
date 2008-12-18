@@ -30,6 +30,7 @@
 
 #include "CachedResource.h"
 #include "TextEncoding.h"
+#include "Timer.h"
 
 namespace WebCore {
 
@@ -40,9 +41,10 @@ namespace WebCore {
         CachedScript(DocLoader*, const String& url, const String& charset);
         virtual ~CachedScript();
 
-        const String& script() const { return m_script; }
+        const String& script();
 
         virtual void ref(CachedResourceClient*);
+        virtual void allReferencesRemoved();
 
         virtual void setEncoding(const String&);
         virtual String encoding() const;
@@ -52,10 +54,15 @@ namespace WebCore {
         virtual bool schedule() const { return false; }
 
         void checkNotify();
+        
+        virtual void destroyDecodedData();
 
     private:
+        void decodedDataDeletionTimerFired(Timer<CachedScript>*);
+
         String m_script;
         TextEncoding m_encoding;
+        Timer<CachedScript> m_decodedDataDeletionTimer;
     };
 }
 

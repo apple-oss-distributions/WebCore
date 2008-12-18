@@ -34,6 +34,7 @@
 #include "kjs_proxy.h"
 #include "MIMETypeRegistry.h"
 #include "Text.h"
+#include "ScriptSourceCode.h"
 
 namespace WebCore {
 
@@ -236,7 +237,10 @@ void HTMLScriptElement::evaluateScript(const String& url, const String& script)
     if (frame) {
         if (frame->scriptProxy()->isEnabled()) {
             m_evaluated = true;
-            frame->scriptProxy()->evaluate(url, 0, script);
+            if (m_cachedScript)
+                frame->scriptProxy()->evaluate(ScriptSourceCode(m_cachedScript));
+            else
+                frame->scriptProxy()->evaluate(ScriptSourceCode(script, KURL(url.deprecatedString())));
             Document::updateDocumentsRendering();
         }
     }

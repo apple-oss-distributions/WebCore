@@ -28,6 +28,7 @@
 #include "CSSRule.h"
 #include "CSSRuleList.h"
 #include "CSSSelector.h"
+#include "CSSSelectorList.h"
 #include "CSSStyleRule.h"
 #include "CSSStyleSelector.h"
 #include "CSSStyleSheet.h"
@@ -1306,7 +1307,7 @@ PassRefPtr<Element> Node::querySelector(const String& selectors, ExceptionCode& 
     }
 
     CSSStyleSelector* styleSelector = document()->styleSelector();
-    CSSSelector* querySelector = static_cast<CSSStyleRule*>(rule.get())->selector();
+    const CSSSelectorList& querySelectorList = static_cast<CSSStyleRule*>(rule.get())->selectorList();
     
     // FIXME: We can speed this up by implementing caching similar to the one use by getElementById
     for (Node* n = firstChild(); n; n = n->traverseNextNode(this)) {
@@ -1314,7 +1315,7 @@ PassRefPtr<Element> Node::querySelector(const String& selectors, ExceptionCode& 
             Element* element = static_cast<Element*>(n);
             styleSelector->initElementAndPseudoState(element);
             styleSelector->initForStyleResolve(element, 0);
-            for (CSSSelector* selector = querySelector; selector; selector = selector->next()) {
+            for (CSSSelector* selector = querySelectorList.first(); selector; selector = CSSSelectorList::next(selector)) {
                 if (styleSelector->checkSelector(selector))
                     return element;
             }
@@ -1338,7 +1339,7 @@ PassRefPtr<NodeList> Node::querySelectorAll(const String& selectors, ExceptionCo
         return 0;
     }
     
-    SelectorNodeList* resultList = new SelectorNodeList(this, static_cast<CSSStyleRule*>(rule.get())->selector());
+    SelectorNodeList* resultList = new SelectorNodeList(this, static_cast<CSSStyleRule*>(rule.get())->selectorList());
 
     return resultList;
 }

@@ -136,6 +136,7 @@ static inline int getValueID(const char* tagStr, int len)
     float val;
     int prop_id;
     int attribute;
+    Vector<CSSSelector*>* selectorList;
     CSSSelector::Relation relation;
     bool b;
     int i;
@@ -272,7 +273,7 @@ static int cssyylex(YYSTYPE* yylval) { return CSSParser::current()->lex(yylval);
 %type <selector> specifier_list
 %type <selector> simple_selector
 %type <selector> selector
-%type <selector> selector_list
+%type <selectorList> selector_list
 %type <selector> class
 %type <selector> attrib
 %type <selector> pseudo
@@ -654,7 +655,13 @@ ruleset:
 
 selector_list:
     selector %prec UNIMPORTANT_TOK {
-        $$ = $1;
+        if ($1) {
+            CSSParser* p = static_cast<CSSParser*>(parser);
+            $$ = p->reusableSelectorVector();
+            deleteAllValues(*$$);
+            $$->shrink(0);
+            $$->append(p->sinkFloatingSelector($1));
+        }
     }
     | selector_list ',' maybe_space selector %prec UNIMPORTANT_TOK {
         if ($1 && $4) {
@@ -680,10 +687,10 @@ selector:
         else if ($$) {
             CSSParser* p = static_cast<CSSParser*>(parser);
             CSSSelector* end = $$;
-            while (end->m_tagHistory)
-                end = end->m_tagHistory;
+            while (end->tagHistory())
+                end = end->tagHistory();
             end->m_relation = $2;
-            end->m_tagHistory = p->sinkFloatingSelector($1);
+            end->setTagHistory(p->sinkFloatingSelector($1));
             if ($2 == CSSSelector::Descendant || $2 == CSSSelector::Child) {
                 if (Document* doc = p->document())
                     doc->setUsesDescendantRules(true);
@@ -787,10 +794,10 @@ specifier_list:
             $$ = $1;
             CSSParser* p = static_cast<CSSParser*>(parser);
             CSSSelector* end = $1;
-            while (end->m_tagHistory)
-                end = end->m_tagHistory;
+            while (end->tagHistory())
+                end = end->tagHistory();
             end->m_relation = CSSSelector::SubSelector;
-            end->m_tagHistory = p->sinkFloatingSelector($2);
+            end->setTagHistory(p->sinkFloatingSelector($2));
         }
     }
     | specifier_list error {
@@ -805,7 +812,6 @@ specifier:
         $$->m_match = CSSSelector::Id;
         if (!p->strict)
             $1.lower();
-        $$->m_attr = idAttr;
         $$->m_value = atomicString($1);
     }
   | HEX {
@@ -817,7 +823,6 @@ specifier:
             $$->m_match = CSSSelector::Id;
             if (!p->strict)
                 $1.lower();
-            $$->m_attr = idAttr;
             $$->m_value = atomicString($1);
         }
     }
@@ -833,7 +838,6 @@ class:
         $$->m_match = CSSSelector::Class;
         if (!p->strict)
             $2.lower();
-        $$->m_attr = classAttr;
         $$->m_value = atomicString($2);
     }
   ;
@@ -852,12 +856,12 @@ attr_name:
 attrib:
     '[' maybe_space attr_name ']' {
         $$ = static_cast<CSSParser*>(parser)->createFloatingSelector();
-        $$->m_attr = QualifiedName(nullAtom, atomicString($3), nullAtom);
+        $$->setAttribute(QualifiedName(nullAtom, atomicString($3), nullAtom));
         $$->m_match = CSSSelector::Set;
     }
     | '[' maybe_space attr_name match maybe_space ident_or_string maybe_space ']' {
         $$ = static_cast<CSSParser*>(parser)->createFloatingSelector();
-        $$->m_attr = QualifiedName(nullAtom, atomicString($3), nullAtom);
+        $$->setAttribute(QualifiedName(nullAtom, atomicString($3), nullAtom));
         $$->m_match = (CSSSelector::Match)$4;
         $$->m_value = atomicString($6);
     }
@@ -865,18 +869,16 @@ attrib:
         AtomicString namespacePrefix = atomicString($3);
         CSSParser* p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
-        $$->m_attr = QualifiedName(namespacePrefix,
-                                   atomicString($4),
-                                   static_cast<CSSStyleSheet*>(p->styleElement)->determineNamespace(namespacePrefix));
+        $$->setAttribute(QualifiedName(namespacePrefix, atomicString($4),
+                                   static_cast<CSSStyleSheet*>(p->styleElement)->determineNamespace(namespacePrefix)));
         $$->m_match = CSSSelector::Set;
     }
     | '[' maybe_space namespace_selector attr_name match maybe_space ident_or_string maybe_space ']' {
         AtomicString namespacePrefix = atomicString($3);
         CSSParser* p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
-        $$->m_attr = QualifiedName(namespacePrefix,
-                                   atomicString($4),
-                                   static_cast<CSSStyleSheet*>(p->styleElement)->determineNamespace(namespacePrefix));
+        $$->setAttribute(QualifiedName(namespacePrefix, atomicString($4),
+                                   static_cast<CSSStyleSheet*>(p->styleElement)->determineNamespace(namespacePrefix)));
         $$->m_match = (CSSSelector::Match)$5;
         $$->m_value = atomicString($7);
     }
@@ -953,7 +955,7 @@ pseudo:
         CSSParser *p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
         $$->m_match = CSSSelector::PseudoClass;
-        $$->m_argument = atomicString($3);
+        $$->setArgument(atomicString($3));
         $$->m_value = atomicString($2);
         CSSSelector::PseudoType type = $$->pseudoType();
         if (type == CSSSelector::PseudoUnknown)
@@ -971,7 +973,7 @@ pseudo:
         CSSParser *p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
         $$->m_match = CSSSelector::PseudoClass;
-        $$->m_argument = String::number($3);
+        $$->setArgument(String::number($3));
         $$->m_value = atomicString($2);
         CSSSelector::PseudoType type = $$->pseudoType();
         if (type == CSSSelector::PseudoUnknown)
@@ -989,7 +991,7 @@ pseudo:
         CSSParser *p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
         $$->m_match = CSSSelector::PseudoClass;
-        $$->m_argument = atomicString($3);
+        $$->setArgument(atomicString($3));
         $2.lower();
         $$->m_value = atomicString($2);
         CSSSelector::PseudoType type = $$->pseudoType();
@@ -1011,7 +1013,7 @@ pseudo:
             CSSParser* p = static_cast<CSSParser*>(parser);
             $$ = p->createFloatingSelector();
             $$->m_match = CSSSelector::PseudoClass;
-            $$->m_simpleSelector = p->sinkFloatingSelector($4);
+            $$->setSimpleSelector(p->sinkFloatingSelector($4));
             $2.lower();
             $$->m_value = atomicString($2);
         }

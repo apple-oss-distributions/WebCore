@@ -65,12 +65,7 @@ static NSString *toNSString(const UString &s)
     return [NSString stringWithCharacters:(const unichar *)s.data() length:s.size()];
 }
 
-// convert UString to NSURL
-static NSURL *toNSURL(const UString &s)
-{
-    if (s.isEmpty()) return nil;
-    return KURL(DeprecatedString(s)).getNSURL();
-}
+// debugger code removed
 
 // C++ interface to KJS debugger callbacks
 
@@ -92,46 +87,24 @@ class WebCoreScriptDebuggerImp : public KJS::Debugger {
     }
 
     // callbacks - relay to delegate
-    virtual bool sourceParsed(ExecState *state, int sid, const UString &url, const UString &source, int lineNumber, int errorLine, const UString &errorMsg) {
-        if (!_nested) {
-            _nested = true;
-            [[_objc delegate] parsedSource:toNSString(source) fromURL:toNSURL(url) sourceId:sid startLine:lineNumber errorLine:errorLine errorMessage:toNSString(errorMsg)];
-            _nested = false;
-        }
+    virtual bool sourceParsed(ExecState*, const SourceCode&, int, const UString&) {
+        // debuger code removed
         return true;
     }
-    virtual bool callEvent(ExecState *state, int sid, int lineno, JSObject *func, const List &args) {
-        if (!_nested) {
-            _nested = true;
-            _current = [_objc _enterFrame:state];
-            [[_objc delegate] enteredFrame:_current sourceId:sid line:lineno];
-            _nested = false;
-        }
+    virtual bool callEvent(ExecState*, intptr_t, int lineno, JSObject *func, const List &args) {
+        // debuger code removed
         return true;
     }
-    virtual bool atStatement(ExecState *state, int sid, int lineno, int lastLine) {
-        if (!_nested) {
-            _nested = true;
-            [[_objc delegate] hitStatement:_current sourceId:sid line:lineno];
-            _nested = false;
-        }
+    virtual bool atStatement(ExecState*, intptr_t, int lineno, int lastLine) {
+        // debuger code removed
         return true;
     }
-    virtual bool returnEvent(ExecState *state, int sid, int lineno, JSObject *func) {
-        if (!_nested) {
-            _nested = true;
-            [[_objc delegate] leavingFrame:_current sourceId:sid line:lineno];
-            _current = [_objc _leaveFrame];
-            _nested = false;
-        }
+    virtual bool returnEvent(ExecState*, intptr_t, int lineno, JSObject *func) {
+        // debuger code removed
         return true;
     }
-    virtual bool exception(ExecState *state, int sid, int lineno, JSValue *exception) {
-        if (!_nested) {
-            _nested = true;
-            [[_objc delegate] exceptionRaised:_current sourceId:sid line:lineno];
-            _nested = false;
-        }
+    virtual bool exception(ExecState*, intptr_t, int lineno, JSValue *exception) {
+        // debuger code removed
         return true;
     }
 
@@ -340,42 +313,8 @@ class WebCoreScriptDebuggerImp : public KJS::Debugger {
 // incorrect variable values. So this is not appropriate for evaluating arbitrary script.
 - (id)evaluateWebScript:(NSString *)script
 {
-    JSLock lock;
-
-    UString code = String(script);
-
-    ExecState* state = _state;
-    JSGlobalObject* globalObject = state->dynamicGlobalObject();
-
-    // find "eval"
-    JSObject *eval = NULL;
-    if (state->scopeNode()) {  // "eval" won't work without context (i.e. at global scope)
-        JSValue *v = globalObject->get(state, "eval");
-        if (v->isObject() && static_cast<JSObject *>(v)->implementsCall())
-            eval = static_cast<JSObject *>(v);
-        else
-            // no "eval" - fallback operates on global exec state
-            state = globalObject->globalExec();
-    }
-
-    JSValue *savedException = state->exception();
-    state->clearException();
-
-    // evaluate
-    JSValue *result;
-    if (eval) {
-        List args;
-        args.append(jsString(code));
-        result = eval->call(state, NULL, args);
-    } else
-        // no "eval", or no context (i.e. global scope) - use global fallback
-        result = Interpreter::evaluate(state, UString(), 0, code.data(), code.size(), globalObject).value();
-
-    if (state->hadException())
-        result = state->exception();    // (may be redundant depending on which eval path was used)
-    state->setException(savedException);
-
-    return [self _convertValueToObjcValue:result];
+    // debugger code removed
+    return 0;
 }
 
 @end

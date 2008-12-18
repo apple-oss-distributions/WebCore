@@ -32,6 +32,7 @@
 #import "WebCoreObjCExtras.h"
 #import "WebCoreFrameBridge.h"
 #import <JavaScriptCore/ExecState.h>
+#import <JavaScriptCore/SourceCode.h>
 #import <JavaScriptCore/objc_instance.h>
 #import <JavaScriptCore/runtime_object.h>
 #import <JavaScriptCore/APICast.h>
@@ -331,7 +332,7 @@ static void getListFromNSArray(ExecState *exec, NSArray *array, RootObject* root
     JSLock lock;
     
     [self _rootObject]->globalObject()->startTimeoutCheck();
-    Completion completion = Interpreter::evaluate([self _rootObject]->globalObject()->globalExec(), UString(), 0, String(script));
+    Completion completion = Interpreter::evaluate([self _rootObject]->globalObject()->globalExec(), makeSource(String(script)));
     [self _rootObject]->globalObject()->stopTimeoutCheck();
     ComplType type = completion.complType();
     

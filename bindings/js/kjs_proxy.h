@@ -36,6 +36,7 @@ class Event;
 class EventListener;
 class Frame;
 class Node;
+class ScriptSourceCode;
 class String;
 
 // FIXME: Rename this class to JSController and the Frame function to javaScript().
@@ -52,7 +53,7 @@ public:
         return m_globalObject;
     }
 
-    KJS::JSValue* evaluate(const String& filename, int baseLine, const String& code);
+    KJS::JSValue* evaluate(const ScriptSourceCode& sourceCode);
     void clear();
     EventListener* createHTMLEventHandler(const String& functionName, const String& code, Node*);
 #if ENABLE(SVG)

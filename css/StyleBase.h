@@ -37,7 +37,6 @@ namespace WebCore {
     public:
         StyleBase(StyleBase* parent)
             : m_parent(parent)
-            , m_strictParsing(!parent || parent->useStrictParsing())
         { }
         virtual ~StyleBase() { }
 
@@ -64,20 +63,11 @@ namespace WebCore {
         virtual bool isPageRule() { return false; }
         virtual bool isUnknownRule() { return false; }
         virtual bool isStyleDeclaration() { return false; }
-        virtual bool isValue() { return false; }
-        virtual bool isPrimitiveValue() const { return false; }
-        virtual bool isValueList() { return false; }
-        virtual bool isValueCustom() { return false; }
-#if ENABLE(SVG)
-        virtual bool isSVGColor() const { return false; }
-        virtual bool isSVGPaint() const { return false; }
-#endif
 
         virtual bool parseString(const String&, bool /*strict*/ = false) { return false; }
         virtual void checkLoaded();
 
-        void setStrictParsing(bool b) { m_strictParsing = b; }
-        bool useStrictParsing() const { return m_strictParsing; }
+        bool useStrictParsing() const { return !m_parent || m_parent->useStrictParsing(); }
 
         virtual void insertedIntoParent() { }
 
@@ -85,7 +75,6 @@ namespace WebCore {
 
     private:
         StyleBase* m_parent;
-        bool m_strictParsing;
     };
 }
 

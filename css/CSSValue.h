@@ -21,13 +21,14 @@
 #ifndef CSSValue_h
 #define CSSValue_h
 
-#include "StyleBase.h"
+#include "PlatformString.h"
+#include <wtf/RefCounted.h>
 
 namespace WebCore {
 
 typedef int ExceptionCode;
 
-class CSSValue : public StyleBase {
+class CSSValue : public RefCounted<CSSValue> {
 public:
     enum UnitTypes {
         CSS_INHERIT = 0,
@@ -37,7 +38,7 @@ public:
         CSS_INITIAL = 4
     };
 
-    CSSValue() : StyleBase(0) { }
+    virtual ~CSSValue() { }
 
     virtual unsigned short cssValueType() const { return CSS_CUSTOM; }
 
@@ -48,6 +49,12 @@ public:
     virtual bool isFontValue() { return false; }
     virtual bool isImplicitInitialValue() const { return false; }
     virtual bool isTransitionTimingFunctionValue() { return false; }
+    virtual bool isPrimitiveValue() const { return false; }
+    virtual bool isValueList() { return false; }
+#if ENABLE(SVG)
+    virtual bool isSVGColor() const { return false; }
+    virtual bool isSVGPaint() const { return false; }
+#endif
 };
 
 } // namespace WebCore

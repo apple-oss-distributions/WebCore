@@ -24,12 +24,17 @@
 #include "config.h"
 #include "CSSSelector.h"
 
+#include "wtf/Assertions.h"
+#include "HTMLNames.h"
+
 namespace WebCore {
+    
+using namespace HTMLNames;
 
 void CSSSelector::print()
 {
-    if (m_tagHistory)
-        m_tagHistory->print();
+    if (tagHistory())
+        tagHistory()->print();
 }
 
 unsigned int CSSSelector::specificity()
@@ -56,8 +61,8 @@ unsigned int CSSSelector::specificity()
             break;
     }
 
-    if (m_tagHistory)
-        s += m_tagHistory->specificity();
+    if (CSSSelector* tagHistory = this->tagHistory())
+        s += tagHistory->specificity();
 
     // make sure it doesn't overflow
     return s & 0xffffff;
@@ -251,14 +256,14 @@ bool CSSSelector::operator==(const CSSSelector& other)
     const CSSSelector* sel2 = &other;
 
     while (sel1 && sel2) {
-        if (sel1->m_tag != sel2->m_tag || sel1->m_attr != sel2->m_attr ||
+        if (sel1->m_tag != sel2->m_tag || sel1->attribute() != sel2->attribute() ||
              sel1->relation() != sel2->relation() || sel1->m_match != sel2->m_match ||
              sel1->m_value != sel2->m_value ||
              sel1->pseudoType() != sel2->pseudoType() ||
-             sel1->m_argument != sel2->m_argument)
+             sel1->argument() != sel2->argument())
             return false;
-        sel1 = sel1->m_tagHistory;
-        sel2 = sel2->m_tagHistory;
+        sel1 = sel1->tagHistory();
+        sel2 = sel2->tagHistory();
     }
 
     if (sel1 || sel2)
@@ -292,11 +297,11 @@ String CSSSelector::selectorText() const
             str += ":";
             str += cs->m_value;
             if (cs->pseudoType() == PseudoNot) {
-                if (CSSSelector* subSel = cs->m_simpleSelector)
+                if (CSSSelector* subSel = cs->simpleSelector())
                     str += subSel->selectorText();
                 str += ")";
             } else if (cs->pseudoType() == PseudoLang) {
-                str += cs->m_argument;
+                str += cs->argument();
                 str += ")";
             }
         } else if (cs->m_match == CSSSelector::PseudoElement) {
@@ -304,10 +309,10 @@ String CSSSelector::selectorText() const
             str += cs->m_value;
         } else if (cs->hasAttribute()) {
             str += "[";
-            const AtomicString& prefix = cs->m_attr.prefix();
+            const AtomicString& prefix = cs->attribute().prefix();
             if (!prefix.isNull())
                 str += prefix + "|";
-            str += cs->m_attr.localName();
+            str += cs->attribute().localName();
             switch (cs->m_match) {
                 case CSSSelector::Exact:
                     str += "=";
@@ -340,13 +345,13 @@ String CSSSelector::selectorText() const
                 str += "\"]";
             }
         }
-        if (cs->relation() != CSSSelector::SubSelector || !cs->m_tagHistory)
+        if (cs->relation() != CSSSelector::SubSelector || !cs->tagHistory())
             break;
-        cs = cs->m_tagHistory;
+        cs = cs->tagHistory();
     }
 
-    if (cs->m_tagHistory) {
-        String tagHistoryText = cs->m_tagHistory->selectorText();
+    if (CSSSelector* tagHistory = cs->tagHistory()) {
+        String tagHistoryText = tagHistory->selectorText();
         if (cs->relation() == CSSSelector::DirectAdjacent)
             str = tagHistoryText + " + " + str;
         else if (cs->relation() == CSSSelector::IndirectAdjacent)
@@ -360,5 +365,43 @@ String CSSSelector::selectorText() const
 
     return str;
 }
+    
+void CSSSelector::setTagHistory(CSSSelector* tagHistory) 
+{ 
+    if (m_hasRareData) 
+        m_data.m_rareData->m_tagHistory.set(tagHistory); 
+    else 
+        m_data.m_tagHistory = tagHistory; 
+}
 
+const QualifiedName& CSSSelector::attribute() const
+{ 
+    switch (m_match) {
+    case Id:
+        return idAttr;
+    case Class:
+        return classAttr;
+    default:
+        return m_hasRareData ? m_data.m_rareData->m_attribute : anyQName();
+    }
+}
+
+void CSSSelector::setAttribute(const QualifiedName& value) 
+{ 
+    createRareData(); 
+    m_data.m_rareData->m_attribute = value; 
+}
+    
+void CSSSelector::setArgument(const AtomicString& value) 
+{ 
+    createRareData(); 
+    m_data.m_rareData->m_argument = value; 
+}
+
+void CSSSelector::setSimpleSelector(CSSSelector* value)
+{
+    createRareData(); 
+    m_data.m_rareData->m_simpleSelector.set(value); 
+}
+    
 } // namespace WebCore

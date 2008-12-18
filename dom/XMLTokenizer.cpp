@@ -47,6 +47,7 @@
 #include "ResourceHandle.h"
 #include "ResourceRequest.h"
 #include "ResourceResponse.h"
+#include "ScriptSourceCode.h"
 #ifndef USE_QXMLSTREAM
 #include <libxml/parser.h>
 #include <libxml/parserInternals.h>
@@ -852,7 +853,7 @@ void XMLTokenizer::endElementNs()
                 if (child->isTextNode() || child->nodeType() == Node::CDATA_SECTION_NODE)
                     scriptCode += static_cast<CharacterData*>(child)->data();
             }
-            m_view->frame()->loader()->executeScript(m_doc->url(), m_scriptStartLine - 1, scriptCode);
+            m_view->frame()->loader()->executeScript(ScriptSourceCode(scriptCode, m_doc->url(), m_scriptStartLine - 1));
         }
         
         m_requestingScript = false;
@@ -1402,8 +1403,7 @@ void XMLTokenizer::notifyFinished(CachedResource* finishedObj)
     ASSERT(m_pendingScript == finishedObj);
     ASSERT(m_pendingScript->accessCount() > 0);
         
-    String cachedScriptUrl = m_pendingScript->url();
-    String scriptSource = m_pendingScript->script();
+    ScriptSourceCode sourceCode(m_pendingScript);
     bool errorOccurred = m_pendingScript->errorOccurred();
     m_pendingScript->deref(this);
     m_pendingScript = 0;
@@ -1414,7 +1414,7 @@ void XMLTokenizer::notifyFinished(CachedResource* finishedObj)
     if (errorOccurred) 
         EventTargetNodeCast(e.get())->dispatchHTMLEvent(errorEvent, true, false);
     else {
-        m_view->frame()->loader()->executeScript(cachedScriptUrl, 0, scriptSource);
+        m_view->frame()->loader()->executeScript(sourceCode);
         EventTargetNodeCast(e.get())->dispatchHTMLEvent(loadEvent, false, false);
     }
     

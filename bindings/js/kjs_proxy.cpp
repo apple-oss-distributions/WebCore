@@ -32,6 +32,7 @@
 #include "JSDOMWindow.h"
 #include "Page.h"
 #include "Settings.h"
+#include "ScriptSourceCode.h"
 #include "kjs_events.h"
 #include "kjs_window.h"
 
@@ -62,18 +63,20 @@ KJSProxy::~KJSProxy()
     }
 }
 
-JSValue* KJSProxy::evaluate(const String& filename, int baseLine, const String& str) 
+JSValue* KJSProxy::evaluate(const ScriptSourceCode& sourceCode) 
 {
     // evaluate code. Returns the JS return value or 0
     // if there was none, an error occured or the type couldn't be converted.
 
+    const SourceCode& jsSourceCode = sourceCode.jsSourceCode();
+
     initScriptIfNeeded();
-    // inlineCode is true for <a href="javascript:doSomething()">
+    // m_processingInlineCode is true for <a href="javascript:doSomething()">
     // and false for <script>doSomething()</script>. Check if it has the
     // expected value in all cases.
     // See smart window.open policy for where this is used.
     ExecState* exec = m_globalObject->globalExec();
-    m_processingInlineCode = filename.isNull();
+    m_processingInlineCode = jsSourceCode.provider()->url().isNull();
 
     JSLock lock;
 
@@ -84,7 +87,7 @@ JSValue* KJSProxy::evaluate(const String& filename, int baseLine, const String& 
     JSValue* thisNode = Window::retrieve(m_frame);
   
     m_globalObject->startTimeoutCheck();
-    Completion comp = Interpreter::evaluate(exec, filename, baseLine, reinterpret_cast<const KJS::UChar*>(str.characters()), str.length(), thisNode);
+    Completion comp = Interpreter::evaluate(exec, jsSourceCode, thisNode);
     m_globalObject->stopTimeoutCheck();
   
     if (comp.complType() == Normal || comp.complType() == ReturnValue) {
