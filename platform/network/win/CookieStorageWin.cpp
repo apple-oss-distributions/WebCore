@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
+ * Copyright (C) 2008 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -20,32 +20,31 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
 #include "config.h"
-#include "SystemTime.h"
 
-#include <JavaScriptCore/DateMath.h>
-#include <windows.h>
+#include "CookieStorageWin.h"
+
+#include <CFNetwork/CFHTTPCookiesPriv.h>
+#include <WebKitSystemInterface/WebKitSystemInterface.h>
+#include <wtf/RetainPtr.h>
 
 namespace WebCore {
 
-double currentTime()
+static RetainPtr<CFHTTPCookieStorageRef> s_cookieStorage;
+
+CFHTTPCookieStorageRef currentCookieStorage()
 {
-    // Call through to our high-resolution JSC time code, since calls like GetSystemTimeAsFileTime and ftime are only accurate within 15ms.
-    // This resolution can be improved with timeBeginPeriod/timeEndPeriod on Vista, but these calls don't
-    // improve the resolution of date/time getters (GetSystemTimeAsFileTime, ftime, etc.) on XP.
-    return KJS::getCurrentUTCTime() * 0.001;
+    if (s_cookieStorage)
+        return s_cookieStorage.get();
+    return wkGetDefaultHTTPCookieStorage();
 }
 
-float userIdleTime()
+void setCurrentCookieStorage(CFHTTPCookieStorageRef cookieStorage)
 {
-    LASTINPUTINFO lastInputInfo = {0};
-    lastInputInfo.cbSize = sizeof(LASTINPUTINFO);
-    if (::GetLastInputInfo(&lastInputInfo))
-        return (GetTickCount() - lastInputInfo.dwTime) * 0.001; // ::GetTickCount returns ms of uptime valid for up to 49.7 days.
-    return FLT_MAX; // return an arbitrarily high userIdleTime so that releasing pages from the page cache isn't postponed. 
+    s_cookieStorage = cookieStorage;
 }
 
 }
