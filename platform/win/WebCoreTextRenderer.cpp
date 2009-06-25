@@ -33,6 +33,8 @@
 
 namespace WebCore {
 
+static bool shouldUseFontSmoothing = true;
+
 static bool isOneLeftToRightRun(const TextRun& run)
 {
     for (int i = 0; i < run.length(); i++) {
@@ -50,10 +52,8 @@ static void doDrawTextAtPoint(GraphicsContext& context, const String& text, cons
     context.setFillColor(color);
     if (isOneLeftToRightRun(run))
         font.drawText(&context, run, point);
-    else {
-        context.setFont(font);
-        context.drawBidiText(run, point);
-    }
+    else
+        context.drawBidiText(font, run, point);
 
     if (underlinedIndex >= 0) {
         ASSERT(underlinedIndex < static_cast<int>(text.length()));
@@ -101,6 +101,26 @@ void WebCoreDrawDoubledTextAtPoint(GraphicsContext& context, const String& text,
 float WebCoreTextFloatWidth(const String& text, const Font& font)
 {
     return StringTruncator::width(text, font, false);
+}
+
+void WebCoreSetShouldUseFontSmoothing(bool smooth)
+{
+    shouldUseFontSmoothing = smooth;
+}
+
+bool WebCoreShouldUseFontSmoothing()
+{
+    return shouldUseFontSmoothing;
+}
+
+void WebCoreSetAlwaysUsesComplexTextCodePath(bool complex)
+{
+    Font::setCodePath(complex ? Font::Complex : Font::Auto);
+}
+
+bool WebCoreAlwaysUsesComplexTextCodePath()
+{
+    return Font::codePath() == Font::Complex;
 }
 
 } // namespace WebCore

@@ -24,6 +24,8 @@
 #define RenderButton_h
 
 #include "RenderFlexibleBox.h"
+#include "Timer.h"
+#include <wtf/OwnPtr.h>
 
 namespace WebCore {
 
@@ -37,16 +39,17 @@ public:
     RenderButton(Node*);
 
     virtual const char* renderName() const { return "RenderButton"; }
+    virtual bool isRenderButton() const { return true; }
 
     virtual void addChild(RenderObject* newChild, RenderObject *beforeChild = 0);
     virtual void removeChild(RenderObject*);
     virtual void removeLeftoverAnonymousBlock(RenderBlock*) { }
     virtual bool createsAnonymousWrapper() const { return true; }
 
-    virtual void setStyle(RenderStyle*);
+    void setupInnerStyle(RenderStyle*);
     virtual void updateFromElement();
 
-    virtual void updateBeforeAfterContent(RenderStyle::PseudoId);
+    virtual void updateBeforeAfterContent(PseudoId);
 
     virtual bool hasControlClip() const { return true; }
     virtual IntRect controlClipRect(int /*tx*/, int /*ty*/) const;
@@ -56,11 +59,34 @@ public:
     virtual bool canHaveChildren() const;
 
 protected:
+    virtual void styleWillChange(StyleDifference, const RenderStyle* newStyle);
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+
     virtual bool hasLineIfEmpty() const { return true; }
+
+    void timerFired(Timer<RenderButton>*);
 
     RenderTextFragment* m_buttonText;
     RenderBlock* m_inner;
+
+    OwnPtr<Timer<RenderButton> > m_timer;
+    bool m_default;
 };
+
+inline RenderButton* toRenderButton(RenderObject* o)
+{ 
+    ASSERT(!o || o->isRenderButton());
+    return static_cast<RenderButton*>(o);
+}
+
+inline const RenderButton* toRenderButton(const RenderObject* o)
+{ 
+    ASSERT(!o || o->isRenderButton());
+    return static_cast<const RenderButton*>(o);
+}
+
+// This will catch anyone doing an unnecessary cast.
+void toRenderButton(const RenderButton*);
 
 } // namespace WebCore
 
