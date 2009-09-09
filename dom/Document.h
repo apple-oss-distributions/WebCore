@@ -674,7 +674,9 @@ public:
     void addWindowEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture);
     void removeWindowEventListener(const AtomicString& eventType, EventListener*, bool useCapture);
     bool hasWindowEventListener(const AtomicString& eventType);
-    
+
+    void markWindowEventListeners();
+
     void addPendingFrameUnloadEventCount();
     void removePendingFrameUnloadEventCount();
     void addPendingFrameBeforeUnloadEventCount();
@@ -1232,6 +1234,9 @@ public:
     void validateAutoSizingNodes ();
     void resetAutoSizingNodes();
 
+    void setIsTelephoneNumberParsingEnabled(bool);
+    bool isTelephoneNumberParsingEnabled() const;
+
     void incrementScrollEventListenersCount();
     void decrementScrollEventListenersCount();
 
@@ -1245,6 +1250,7 @@ private:
     typedef HashMap<TextAutoSizingKey, RefPtr<TextAutoSizingValue>, TextAutoSizingHash, TextAutoSizingTraits> TextAutoSizingMap;
     TextAutoSizingMap m_textAutoSizedNodes;
 
+    bool m_isTelephoneNumberParsingEnabled;
     unsigned m_scrollEventListenerCount;
     
     HashCountedSet<CachedImage*> m_documentImages;

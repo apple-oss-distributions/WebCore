@@ -915,7 +915,12 @@ void SelectionController::paintCaret(GraphicsContext* p, int tx, int ty, const I
     drawingRect.move(tx, ty);
     IntRect caret = intersection(drawingRect, clipRect);
     if (!caret.isEmpty()) {
-        p->fillRect(caret, Color::black);
+        Color caretColor = Color::black;
+        Element* element = rootEditableElement();
+        if (element && element->renderer())
+            caretColor = element->renderer()->style()->color();
+
+        p->fillRect(caret, caretColor);
     }
 }
 
@@ -1459,14 +1464,6 @@ bool SelectionController::selectionAtWordStart() const
     }
     
     return result;
-}
-
-bool SelectionController::rangeAtSentenceStart(const Range *range) const
-{
-    if (!range)
-        return false;
-    Selection selection(range, DOWNSTREAM);
-    return _selectionAtSentenceStart(selection);
 }
 
 PassRefPtr<Range> SelectionController::rangeByMovingCurrentSelection(int amount) const

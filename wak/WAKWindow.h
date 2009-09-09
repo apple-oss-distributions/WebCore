@@ -66,6 +66,8 @@ typedef enum {
 - (void)setNeedsDisplayInRect:(CGRect)rect;
 - (BOOL)tilesOpaque;
 - (void)setTilesOpaque:(BOOL)opaque;
+- (NSString *)tileMinificationFilter;
+- (void)setTileMinificationFilter:(NSString *)filter;
 - (CGRect)visibleRect;
 - (void)removeAllNonVisibleTiles;
 - (void)removeAllTiles;

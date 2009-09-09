@@ -62,25 +62,13 @@ const FontPlatformData& FontPlatformData::operator=(const FontPlatformData& f)
     m_syntheticBold = f.m_syntheticBold;
     m_syntheticOblique = f.m_syntheticOblique;
     m_size = f.m_size;
-#if !PLATFORM(MAC)
-    m_cgFont = f.m_cgFont;
-    m_atsuFontID = f.m_atsuFontID;
-#else
     m_isImageFont = f.m_isImageFont;
-#endif
     if (m_font == f.m_font)
         return *this;
-#if !PLATFORM(MAC)
-    if (f.m_font && f.m_font != reinterpret_cast<NSFont *>(-1))
-        CFRetain(f.m_font);
-    if (m_font && m_font != reinterpret_cast<NSFont *>(-1))
-        CFRelease(m_font);
-#else
     if (f.m_font && f.m_font != reinterpret_cast<GSFontRef>(-1))
         CFRetain(f.m_font);
     if (m_font && m_font != reinterpret_cast<GSFontRef>(-1))
         CFRelease(m_font);
-#endif
     m_font = f.m_font;
     return *this;
 }

@@ -409,7 +409,7 @@ bool HTMLParser::insertNode(Node* n, bool flat)
         return false;
 
     bool parentAttached = current->attached();    
-    if (parentAttached && document->settings() && document->settings()->telephoneNumberParsingEnabled()) {
+    if (parentAttached && document->settings() && document->isTelephoneNumberParsingEnabled()) {
         protectNode = parseTelephoneNumbers(n).get();
         n = protectNode.get();
     }

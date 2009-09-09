@@ -81,7 +81,7 @@ void SplitTextNodeCommand::doUnapply()
     String prefixText = prefixTextNode->data();
 
     ExceptionCode ec = 0;
-    m_text2->insertData(0, prefixText, ec);
+    m_text2->insertData(0, prefixText, ec, false);
     if (ec)
         return;
 

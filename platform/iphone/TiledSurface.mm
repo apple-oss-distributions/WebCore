@@ -133,7 +133,7 @@
 
 namespace WebCore {
 
-bool canTileAggresively()
+static bool canTileAggresively()
 {
 #if PLATFORM(IPHONE_SIMULATOR)
     return true;
@@ -152,7 +152,7 @@ TiledSurface::Tile::Tile(TiledSurface* surface, const IntRect& tileRect)
     , m_rect(tileRect)
 {
     TileLayer* layer = m_tileLayer.get();
-    [layer setMinificationFilter:kCAFilterNearest];
+    [layer setMinificationFilter:surface->m_tileMinificationFilter];
     [layer setOpaque:m_surface->m_tilesOpaque];
     [layer setEdgeAntialiasingMask:0];
     [m_surface->m_hostCALayer.get() insertSublayer:layer atIndex:0];
@@ -197,6 +197,7 @@ TiledSurface::TiledSurface(CALayer* hostLayer, WAKWindow* window)
     , m_window(window)
     , m_webThreadCaller(AdoptNS, [[WebThreadCaller alloc] initWithTiledSurface:this])
     , m_tilingMode(Normal)
+    , m_tileMinificationFilter(kCAFilterLinear)
     , m_tileSize(512, 512)
     , m_tilesOpaque(true)
     , m_didCallWillStartScrollingOrZooming(false)
@@ -239,6 +240,31 @@ void TiledSurface::setTilesOpaque(bool opaque)
             Tile* tile = tileForIndex(xIndex, yIndex);
             if (tile)
                 [tile->tileLayer() setOpaque:opaque];
+        }
+    }
+}
+
+TileMinificationFilter TiledSurface::tileMinificationFilter() const
+{
+    return m_tileMinificationFilter;
+}
+
+void TiledSurface::setTileMinificationFilter(TileMinificationFilter filter)
+{
+    if (m_tileMinificationFilter == filter)
+        return;
+    
+    MutexLocker locker(m_tileMutex);
+    
+    m_tileMinificationFilter = filter;
+    
+    unsigned ySize = m_tileGrid.size();
+    for (unsigned yIndex = 0; yIndex < ySize; ++yIndex) {
+        unsigned xSize =  m_tileGrid[yIndex].size();
+        for (unsigned xIndex = 0; xIndex < xSize; ++xIndex) {
+            Tile* tile = tileForIndex(xIndex, yIndex);
+            if (tile)
+                [tile->tileLayer() setMinificationFilter:m_tileMinificationFilter];
         }
     }
 }
@@ -467,6 +493,15 @@ void TiledSurface::doLayoutTiles()
 
 void TiledSurface::layoutTiles()
 {
+    // If the view has shrunk, drop any unneeded tiles synchronously
+    IntRect frame = this->frame();
+    IntRect tiledArea = unionRect(m_previousCoverRect, m_previousKeepRect);
+    if (tiledArea.bottom() > frame.bottom() || tiledArea.right() > frame.right()) {
+        MutexLocker locker(m_tileMutex);
+        dropTilesOutsideRect(frame);
+    }
+
+    // Forward the call to the web thread for asynchronous tile creation and painting
     [m_webThreadCaller.get() doLayoutTiles];
 }
     
@@ -494,26 +529,12 @@ void TiledSurface::removeAllNonVisibleTiles()
     MutexLocker locker(m_tileMutex);
     
     IntSize size = this->size();
-    if (size.width() > m_tileSize.width() || size.height() > m_tileSize.height())
+    if (size.width() <= m_tileSize.width() && size.height() <= m_tileSize.height()) {
+        dropTilesOutsideRect(IntRect(IntPoint(), size));
         return;
-
-    IntRect visibleRect = this->visibleRect();
-    IntRect rectToIterate = unionRect(m_previousCoverRect, m_previousKeepRect);
-    
-    unsigned minXIndex;
-    unsigned minYIndex;
-    tileIndexForPoint(rectToIterate.topLeft(), minXIndex, minYIndex);
-    unsigned maxXIndex;
-    unsigned maxYIndex;
-    tileIndexForPoint(rectToIterate.bottomRight(), maxXIndex, maxYIndex);
-    
-    for (unsigned yIndex = minYIndex; yIndex <= maxYIndex; ++yIndex) {
-        for (unsigned xIndex = minXIndex; xIndex <= maxXIndex; ++xIndex) {
-            Tile* tile = tileForIndex(xIndex, yIndex);
-            if (tile && !tile->rect().intersects(visibleRect))
-                m_tileGrid[yIndex][xIndex] = 0;
-        }
     }
+
+    dropTilesOutsideRect(visibleRect());
 }
 
 void TiledSurface::removeAllTiles()
@@ -568,8 +589,28 @@ void TiledSurface::coverWithTiles(const IntRect& coverRect, const IntRect& keepR
     m_previousKeepRect = keepRect;
     
     // If we created a new tile we need to ensure that all tiles are showing the same version of the content.
-    if (tileAddedOrChanged)
+    if (tileAddedOrChanged && !m_savedDisplayRects.isEmpty())
         flushSavedDisplayRects();
+}
+
+void TiledSurface::dropTilesOutsideRect(const IntRect& keepRect)
+{
+    IntRect rectToIterate = unionRect(m_previousCoverRect, m_previousKeepRect);
+    
+    unsigned minXIndex;
+    unsigned minYIndex;
+    tileIndexForPoint(rectToIterate.topLeft(), minXIndex, minYIndex);
+    unsigned maxXIndex;
+    unsigned maxYIndex;
+    tileIndexForPoint(rectToIterate.bottomRight(), maxXIndex, maxYIndex);
+    
+    for (unsigned yIndex = minYIndex; yIndex <= maxYIndex; ++yIndex) {
+        for (unsigned xIndex = minXIndex; xIndex <= maxXIndex; ++xIndex) {
+            Tile* tile = tileForIndex(xIndex, yIndex);
+            if (tile && !tile->rect().intersects(keepRect))
+                m_tileGrid[yIndex][xIndex] = 0;
+        }
+    }
 }
 
 static bool shouldRepaintInPieces(const CGRect& dirtyRect, CGSRegionObj dirtyRegion)
@@ -762,8 +803,10 @@ void TiledSurface::prepareToDraw()
     // This will trigger document relayout if needed.
     [[m_window contentView] viewWillDraw];
 
-    MutexLocker locker(m_tileMutex);
-    flushSavedDisplayRects();
+    if (!m_savedDisplayRects.isEmpty()) {
+        MutexLocker locker(m_tileMutex);
+        flushSavedDisplayRects();
+    }
 }
 
 }

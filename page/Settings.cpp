@@ -94,6 +94,9 @@ Settings::Settings(Page* page)
     , m_minimumZoomFontSize(15.0f)
     , m_layoutInterval(cLayoutScheduleThreshold)
     , m_maxParseDuration(defaultTokenizerTimeDelay)
+    // FIXME: This should really be disabled by default as it makes platforms that don't support the feature download files
+    // they can't use by. Leaving enabled for now to not change existing behavior.
+    , m_downloadableBinaryFontsEnabled(true)
 {
     // A Frame may not have been created yet, so we initialize the AtomicString 
     // hash before trying to use it.
@@ -433,5 +436,10 @@ void Settings::setShouldPaintNativeControls(bool shouldPaintNativeControls)
     gShouldPaintNativeControls = shouldPaintNativeControls;
 }
 #endif
+
+void Settings::setDownloadableBinaryFontsEnabled(bool downloadableBinaryFontsEnabled)
+{
+    m_downloadableBinaryFontsEnabled = downloadableBinaryFontsEnabled;
+}
 
 } // namespace WebCore

@@ -52,9 +52,6 @@ namespace WebCore {
         const String& parentDirectory() const { return m_parentDirectory; }
         time_t lastModified() const { return m_lastModified; }
 
-        int compare(const PluginPackage&) const;
-        bool allowsMultipleInstances() const { return m_allowsMultipleInstances; }
-
         const MIMEToDescriptionsMap& mimeToDescriptions() const { return m_mimeToDescriptions; }
         const MIMEToExtensionsMap& mimeToExtensions() const { return m_mimeToExtensions; }
 

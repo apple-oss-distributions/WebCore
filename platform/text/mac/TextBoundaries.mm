@@ -28,10 +28,10 @@
 
 #import <CoreFoundation/CFStringTokenizer.h>
 #import <Foundation/Foundation.h>
+#import <unicode/ubrk.h>
 #import <unicode/uchar.h>
 #import <unicode/ustring.h>
 #import <unicode/utypes.h>
-#import <unicode/ubrk.h>
 
 using namespace WTF::Unicode;
 

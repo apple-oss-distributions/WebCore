@@ -222,6 +222,9 @@ namespace WebCore {
         static bool shouldPaintNativeControls() { return gShouldPaintNativeControls; }
 #endif
 
+        void setDownloadableBinaryFontsEnabled(bool);
+        bool downloadableBinaryFontsEnabled() const { return m_downloadableBinaryFontsEnabled; }
+
     private:
         Page* m_page;
         
@@ -280,6 +283,7 @@ namespace WebCore {
         float m_minimumZoomFontSize;
         int m_layoutInterval;
         double m_maxParseDuration;
+        bool m_downloadableBinaryFontsEnabled : 1;
 
 #if USE(SAFARI_THEME)
         static bool gShouldPaintNativeControls;

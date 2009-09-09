@@ -123,7 +123,7 @@ public:
     IntRect visibleContentRect(bool includeScrollbars = false) const;
     int visibleWidth() const { return visibleContentRect().width(); }
     int visibleHeight() const { return visibleContentRect().height(); }
-    IntRect actualVisualContentRect() const;
+    IntRect actualVisibleContentRect() const;
 
     // Methods for getting/setting the size webkit should use to layout the contents.  By default this is the same as the visible
     // content size.  Explicitly setting a layout size value will cause webkit to layout the contents using this size instead.

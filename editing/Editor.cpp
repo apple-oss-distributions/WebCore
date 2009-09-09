@@ -789,6 +789,15 @@ void Editor::clearLastEditCommand()
 {
     m_lastEditCommand.clear();
 }
+// If the selection is adjusted from UIKit without closing the typing, the typing command may
+// have a stale selection.
+void Editor::ensureLastEditCommandHasCurrentSelectionIfOpenForMoreTyping() {
+    if (TypingCommand::isOpenForMoreTypingCommand(m_lastEditCommand.get())) {
+        TypingCommand* typingCommand = static_cast<TypingCommand*>(m_lastEditCommand.get());
+        typingCommand->setEndingSelection(m_frame->selection()->selection());
+        typingCommand->setEndingSelectionOnLastInsertCommand(m_frame->selection()->selection());
+    }
+}
 
 
 void Editor::applyStyle(CSSStyleDeclaration* style, EditAction editingAction)

@@ -53,10 +53,10 @@ AccessibilityTable::AccessibilityTable(RenderObject* renderer)
     : AccessibilityRenderObject(renderer),
     m_headerContainer(0)
 {
-#if defined(BUILDING_ON_TIGER) || defined(BUILDING_ON_LEOPARD)
-    m_isAccessibilityTable = false;
-#else
+#if ACCESSIBILITY_TABLES
     m_isAccessibilityTable = isTableExposableThroughAccessibility();
+#else
+    m_isAccessibilityTable = false;
 #endif
 }
 

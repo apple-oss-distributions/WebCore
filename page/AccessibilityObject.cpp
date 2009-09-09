@@ -295,6 +295,21 @@ bool AccessibilityObject::press() const
     return true;
 }
 
+String AccessibilityObject::language() const
+{
+    AccessibilityObject* parent = parentObject();
+
+    // as a last resort, fall back to the content language specified in the meta tag
+    if (!parent) {
+        Document* doc = document();
+        if (doc)
+            return doc->contentLanguage();
+        return String();
+    }
+    
+    return parent->language();
+}
+    
 AXObjectCache* AccessibilityObject::axObjectCache() const
 {
     return 0;

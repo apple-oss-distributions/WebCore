@@ -59,8 +59,6 @@ namespace WebCore {
 
         virtual bool isHTMLTokenizer() const { return false; }
 
-        virtual void parsePending() { }
-
     protected:
         Tokenizer(bool viewSourceMode = false) 
             : m_parserStopped(false)

@@ -58,7 +58,7 @@ void DeleteFromTextNodeCommand::doUnapply()
     ASSERT(m_node);
 
     ExceptionCode ec;
-    m_node->insertData(m_offset, m_text, ec);
+    m_node->insertData(m_offset, m_text, ec, false);
 }
 
 } // namespace WebCore

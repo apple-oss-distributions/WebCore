@@ -141,7 +141,6 @@ public:
     bool selectionAtDocumentStart() const;
     bool selectionAtSentenceStart() const;
     bool selectionAtWordStart() const;
-    bool rangeAtSentenceStart(const Range *range) const;
     PassRefPtr<Range> rangeByMovingCurrentSelection(int amount) const;
     PassRefPtr<Range> rangeByExtendingCurrentSelection(int amount) const;
     void selectRangeOnElement(unsigned int location, unsigned int length, Node* node);

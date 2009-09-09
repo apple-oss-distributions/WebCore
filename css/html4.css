@@ -328,6 +328,7 @@ input[type="password"],
 input[type="search"],
 #if IPHONE
 textarea,
+input[type='range'],
 #endif
 isindex {
     -webkit-appearance: textfield;
@@ -459,6 +460,7 @@ input[type="button"], input[type="submit"], input[type="reset"], input[type="fil
     -webkit-box-sizing: border-box;
 }
 
+#if !IPHONE
 input[type="range"] {
     -webkit-appearance: slider-horizontal;
     padding: initial;
@@ -469,6 +471,7 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: sliderthumb-horizontal;
 }
+#endif
 
 input[type="button"]:disabled, input[type="submit"]:disabled, input[type="reset"]:disabled, input[type="file"]:disabled::-webkit-file-upload-button, button:disabled, select:disabled, keygen:disabled, optgroup:disabled, option:disabled {
     color: GrayText

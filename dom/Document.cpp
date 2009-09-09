@@ -340,6 +340,7 @@ Document::Document(Frame* frame, bool isXHTML)
 #if USE(LOW_BANDWIDTH_DISPLAY)
     , m_inLowBandwidthDisplay(false)
 #endif
+    , m_isTelephoneNumberParsingEnabled(false)
     , m_scrollEventListenerCount(0)
     , m_totalImageDataSize(0)
     , m_animatedImageDataCount(0)
@@ -399,6 +400,9 @@ Document::Document(Frame* frame, bool isXHTML)
 
     static int docID = 0;
     m_docID = docID++;
+
+    if (Settings* settings = this->settings())
+        setIsTelephoneNumberParsingEnabled(settings->telephoneNumberParsingEnabled());
 }
 
 void Document::removedLastRef()
@@ -2172,9 +2176,8 @@ static void setParserFeature(const String& keyString, const String& valueString,
 {
     UNUSED_PARAM(aDocument);
     Document* document = (Document *)userData;
-    if ((keyString == "telephone") && equalIgnoringCase(valueString, "no")) {
-        document->settings()->setTelephoneNumberParsingEnabled(false);
-    }
+    if ((keyString == "telephone") && equalIgnoringCase(valueString, "no"))
+        document->setIsTelephoneNumberParsingEnabled(false);
 }
 
 // Though isspace() considers \t and \v to be whitespace, Win IE doesn't.
@@ -2226,7 +2229,7 @@ void Document::processArguments(const String & features, void *userData, void (*
             i++;
         valueEnd = i;
         
-        assert(i <= length);
+        ASSERT(i <= length);
         
         String keyString(buffer.substring(keyBegin, keyEnd - keyBegin));
         String valueString(buffer.substring(valueBegin, valueEnd - valueBegin));
@@ -2236,7 +2239,7 @@ void Document::processArguments(const String & features, void *userData, void (*
 
 void Document::processViewport(const String & features)
 {
-    assert(!features.isNull());
+    ASSERT(!features.isNull());
     
     Frame *frame = this->frame();
     if (!frame)
@@ -2252,7 +2255,7 @@ void Document::processViewport(const String & features)
 
 void Document::processFormatDetection(const String & features)
 {
-    assert(!features.isNull());
+    ASSERT(!features.isNull());
     
     processArguments(features, this, setParserFeature);
 }
@@ -3102,6 +3105,13 @@ bool Document::hasWindowEventListener(const AtomicString& eventType)
             return true;
     }
     return false;
+}
+
+void Document::markWindowEventListeners()
+{
+    size_t size = m_windowEventListeners.size();
+    for (size_t i = 0; i < size; ++i)
+        m_windowEventListeners[i]->listener()->mark();
 }
 
 void Document::addPendingFrameUnloadEventCount() 
@@ -4226,6 +4236,16 @@ Vector<String> Document::formElementsState() const
         }
     }
     return stateVector;
+}
+
+void Document::setIsTelephoneNumberParsingEnabled(bool isTelephoneNumberParsingEnabled)
+{
+    m_isTelephoneNumberParsingEnabled = isTelephoneNumberParsingEnabled;
+}
+
+bool Document::isTelephoneNumberParsingEnabled() const
+{
+    return m_isTelephoneNumberParsingEnabled;
 }
 
 unsigned Document::formElementsCharacterCount() const

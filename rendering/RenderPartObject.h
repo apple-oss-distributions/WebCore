@@ -47,6 +47,7 @@ public:
     virtual void viewCleared();
 private:
     bool m_updatingWidget;
+    bool m_didResizeFrameToContent;
 };
 
 } // namespace WebCore

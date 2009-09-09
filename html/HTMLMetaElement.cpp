@@ -48,8 +48,6 @@ void HTMLMetaElement::parseMappedAttribute(MappedAttribute* attr)
         m_content = attr->value();
         process();
     } else if (attr->name() == nameAttr) {
-        if (equalIgnoringCase(attr->value(), "viewport"))
-            process();
         // Do nothing.
     } else
         HTMLElement::parseMappedAttribute(attr);

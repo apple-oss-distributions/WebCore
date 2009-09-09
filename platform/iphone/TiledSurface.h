@@ -22,17 +22,21 @@
 
 #ifdef __OBJC__
 @class CALayer;
+@class NSString;
 @class TileLayer;
 @class WAKWindow;
 @class WebThreadCaller;
 #else
 class CALayer;
+class NSString;
 class TileLayer;
 class WAKWindow;
 class WebThreadCaller;
 #endif
 
 namespace WebCore {
+
+    typedef const NSString* TileMinificationFilter;
 
     class TiledSurface : Noncopyable {
     public:
@@ -53,6 +57,9 @@ namespace WebCore {
         
         bool tilesOpaque() const;
         void setTilesOpaque(bool);
+        
+        TileMinificationFilter tileMinificationFilter() const;
+        void setTileMinificationFilter(TileMinificationFilter);
         
         void removeAllNonVisibleTiles();
         void removeAllTiles();
@@ -94,6 +101,7 @@ namespace WebCore {
         };
 
         void coverWithTiles(const IntRect& coverRect, const IntRect& keepRect);
+        void dropTilesOutsideRect(const IntRect& keepRect);
         Tile* tileForIndex(unsigned xIndex, unsigned yIndex) const;
         IntRect tileRectForIndex(unsigned xIndex, unsigned yIndex) const;
         TiledSurface::Tile* tileForPoint(const IntPoint& point) const;
@@ -117,6 +125,8 @@ namespace WebCore {
         RetainPtr<WebThreadCaller> m_webThreadCaller;
         
         TilingMode m_tilingMode;
+        TileMinificationFilter m_tileMinificationFilter;
+        
         IntPoint m_tileGridOrigin;
         IntSize m_tileSize;
         bool m_tilesOpaque;

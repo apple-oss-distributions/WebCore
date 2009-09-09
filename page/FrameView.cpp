@@ -930,11 +930,6 @@ void FrameView::layoutTimerFired(Timer<FrameView>*)
     if (m_frame->document() && !m_frame->document()->ownerElement())
         printf("Layout timer fired at %d\n", m_frame->document()->elapsedTime());
 #endif
-    // If a parse is pending, parse now.
-    // This prevents a the tokenizer timer from firing right after the layout timer
-    // which would cause a forced layout by the time drawing happens.
-    if (m_frame->document() && m_frame->document()->tokenizer())
-        m_frame->document()->tokenizer()->parsePending();
     layout();
 }
 

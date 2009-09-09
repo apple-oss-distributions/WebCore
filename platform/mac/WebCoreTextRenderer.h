@@ -30,7 +30,7 @@ extern "C" {
 #import <GraphicsServices/GSFont.h>
 
 extern void WebCoreDrawTextAtPoint(const UniChar*, unsigned length, CGPoint, GSFontRef, CGColorRef);
-extern float WebCoreTextFloatWidth(const UniChar*, unsigned length, CGFontRef);
+extern float WebCoreTextFloatWidth(const UniChar*, unsigned length, GSFontRef);
 extern void WebCoreSetShouldUseFontSmoothing(bool);
 extern bool WebCoreShouldUseFontSmoothing();
 extern void WebCoreSetAlwaysUsesComplexTextCodePath(bool);

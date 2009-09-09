@@ -53,6 +53,11 @@ void JSDOMWindow::mark()
 {
     Base::mark();
 
+    if (Frame* frame = impl()->frame()) {
+        if (Document* document = frame->document())
+            document->markWindowEventListeners();
+    }
+
     JSGlobalData& globalData = *Heap::heap(this)->globalData();
 
     markDOMObjectWrapper(globalData, impl()->optionalConsole());
@@ -186,7 +191,7 @@ JSValuePtr JSDOMWindow::postMessage(ExecState* exec, const ArgList& args)
 {
     DOMWindow* window = impl();
 
-    DOMWindow* source = asJSDOMWindow(exec->dynamicGlobalObject())->impl();
+    DOMWindow* source = asJSDOMWindow(exec->lexicalGlobalObject())->impl();
     String message = args.at(exec, 0).toString(exec);
 
     if (exec->hadException())

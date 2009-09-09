@@ -304,13 +304,17 @@ float ImageSource::frameDurationAtIndex(size_t index)
 
 bool ImageSource::frameHasAlphaAtIndex(size_t)
 {
+    if (!m_decoder)
+        return false;
+
     CFStringRef imageType = CGImageSourceGetType(m_decoder);
 
-    // Return false for JPEG
+    // Return false if there is no image type or the image type is JPEG, because
+    // JPEG does not support alpha transparency.
     if (!imageType || CFEqual(imageType, CFSTR("public.jpeg")))
         return false;
 
-    // FIXME: Return false for other non-transparent image formats.
+    // FIXME: Could return false for other non-transparent image formats.
     // FIXME: Could maybe return false for a GIF Frame if we have enough info in the GIF properties dictionary
     // to determine whether or not a transparent color was defined.
     return true;

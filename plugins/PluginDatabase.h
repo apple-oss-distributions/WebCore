@@ -47,8 +47,6 @@ namespace WebCore {
     public:
         static PluginDatabase* installedPlugins();
 
-        static bool isPreferredPluginPath(const String& path);
-
         bool refresh();
         Vector<PluginPackage*> plugins() const;
         bool isMIMETypeRegistered(const String& mimeType);

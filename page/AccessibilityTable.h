@@ -31,6 +31,8 @@
 
 #include "AccessibilityRenderObject.h"
 
+#define ACCESSIBILITY_TABLES 0
+
 namespace WebCore {
 
 class String;

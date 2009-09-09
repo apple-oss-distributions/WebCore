@@ -48,6 +48,12 @@ void InsertIntoTextNodeCommand::doApply()
     m_node->insertData(m_offset, m_text, ec);
 }
 
+void InsertIntoTextNodeCommand::doReapply()
+{
+    ExceptionCode ec;
+    m_node->insertData(m_offset, m_text, ec, false);
+}
+    
 void InsertIntoTextNodeCommand::doUnapply()
 {
     ExceptionCode ec;

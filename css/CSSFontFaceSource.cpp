@@ -49,13 +49,12 @@ namespace WebCore {
 
 CSSFontFaceSource::CSSFontFaceSource(const String& str, CachedFont* font)
     : m_string(str)
-    , m_font(0)
+    , m_font(font)
     , m_face(0)
 #if ENABLE(SVG_FONTS)
     , m_svgFontFaceElement(0)
 #endif
 {
-    UNUSED_PARAM(font);
     if (m_font)
         m_font->addClient(this);
 }

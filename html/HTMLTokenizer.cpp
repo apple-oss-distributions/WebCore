@@ -874,7 +874,9 @@ HTMLTokenizer::State HTMLTokenizer::parseEntity(SegmentedString& src, UChar*& de
                     }
                 } else {
                     // FIXME: We should eventually colorize entities by sending them as a special token.
-                    checkBuffer(11);
+                    // 12 bytes required: up to 10 bytes in m_cBuffer plus the
+                    // leading '&' and trailing ';'
+                    checkBuffer(12);
                     *dest++ = '&';
                     for (unsigned i = 0; i < cBufferPos; i++)
                         dest[i] = m_cBuffer[i];
@@ -885,7 +887,9 @@ HTMLTokenizer::State HTMLTokenizer::parseEntity(SegmentedString& src, UChar*& de
                     }
                 }
             } else {
-                checkBuffer(10);
+                // 11 bytes required: up to 10 bytes in m_cBuffer plus the
+                // leading '&'
+                checkBuffer(11);
                 // ignore the sequence, add it to the buffer as plaintext
                 *dest++ = '&';
                 for (unsigned i = 0; i < cBufferPos; i++)
@@ -1829,17 +1833,6 @@ void HTMLTokenizer::timerFired(Timer<HTMLTokenizer>*)
 
     // Invoke write() as though more data came in. This might cause us to get deleted.
     write(SegmentedString(), true);
-}
-
-void HTMLTokenizer::parsePending()
-{
-    if (m_timer.isActive()) {
-        m_timer.stop();
-        RefPtr<Frame> frame = m_fragment ? 0 : m_doc->frame();
-        bool didCallEnd = write(SegmentedString(), true);
-        if (didCallEnd && frame)
-            frame->loader()->tokenizerProcessedData();
-    }
 }
 
 void HTMLTokenizer::end()

@@ -40,7 +40,7 @@ public:
     unsigned length() const { return m_data->length(); }
     String substringData(unsigned offset, unsigned count, ExceptionCode&);
     void appendData(const String&, ExceptionCode&);
-    void insertData(unsigned offset, const String&, ExceptionCode&);
+    void insertData(unsigned offset, const String&, ExceptionCode&, bool canShowLastCharacterIfSecure = true);
     void deleteData(unsigned offset, unsigned count, ExceptionCode&);
     void replaceData(unsigned offset, unsigned count, const String &arg, ExceptionCode&);
 

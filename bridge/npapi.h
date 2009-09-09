@@ -43,8 +43,6 @@
 #ifndef _NPAPI_H_
 #define _NPAPI_H_
 
-#include <wtf/Platform.h>
-
 #ifdef INCLUDE_JAVA
 #include "jri.h"                /* Java Runtime Interface */
 #else

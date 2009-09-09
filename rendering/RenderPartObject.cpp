@@ -54,6 +54,7 @@ using namespace HTMLNames;
 RenderPartObject::RenderPartObject(Element* element)
     : RenderPart(element)
     , m_updatingWidget(false)
+    , m_didResizeFrameToContent(false)
 {
     // init RenderObject attributes
     setInline(true);
@@ -380,7 +381,8 @@ bool RenderPartObject::shouldResizeFrameToContent() const
 {
     Document* document = element() ? element()->document() : 0;
     return m_widget && m_widget->isFrameView() && document && element()->hasTagName(iframeTag) && document->frame() && 
-        document->frame()->settings() && document->frame()->settings()->flatFrameSetLayoutEnabled() && 
+        document->frame()->settings() && document->frame()->settings()->flatFrameSetLayoutEnabled() &&
+        !style()->width().isZero() && !style()->height().isZero() &&
         (static_cast<HTMLIFrameElement*>(element())->scrollingMode() != ScrollbarAlwaysOff || !style()->width().isFixed() || !style()->height().isFixed());
 }
 
@@ -390,13 +392,13 @@ void RenderPartObject::layout()
 
     if (shouldResizeFrameToContent()) {
         FrameView* childFrameView = static_cast<FrameView*>(m_widget);
-        RenderView* childRoot = childFrameView ? childFrameView->frame()->contentRenderer() : 0;
+        RenderView* childRoot = childFrameView->frame()->contentRenderer();
         if (childRoot && childRoot->prefWidthsDirty())
             childRoot->calcPrefWidths();
         
         RenderPart::calcWidth();
         RenderPart::calcHeight();
-        RenderPart::adjustOverflowForBoxShadowAndReflect();
+        adjustOverflowForBoxShadowAndReflect();
         
         bool scrolling = static_cast<HTMLIFrameElement*>(element())->scrollingMode() != ScrollbarAlwaysOff;
         if (childRoot && (scrolling || !style()->width().isFixed()))
@@ -414,15 +416,25 @@ void RenderPartObject::layout()
         
         updateWidgetPosition();
         
+        m_didResizeFrameToContent = true;
+        
         ASSERT(!childFrameView->layoutPending());
         ASSERT(!childRoot || !childRoot->needsLayout());
         ASSERT(!childRoot || !childRoot->firstChild() || !childRoot->firstChild()->firstChild() || !childRoot->firstChild()->firstChild()->needsLayout());
     } else {
-    calcWidth();
-    calcHeight();
-    adjustOverflowForBoxShadowAndReflect();
-
-    RenderPart::layout();
+        RenderPart::calcWidth();
+        RenderPart::calcHeight();
+        adjustOverflowForBoxShadowAndReflect();
+        
+        if (m_didResizeFrameToContent && m_widget) {
+            //  Acid3 test 46: We have to trigger a relayout to update media queries if we were in resized mode earlier.
+            updateWidgetPosition();
+            static_cast<FrameView*>(m_widget)->layout();
+        }
+        
+        m_didResizeFrameToContent = false;
+        
+        RenderPart::layout();
     }
 
     if (!m_widget && m_view)

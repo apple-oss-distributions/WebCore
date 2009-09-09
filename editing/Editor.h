@@ -124,6 +124,7 @@ public:
     void removeFormattingAndStyle();
 
     void clearLastEditCommand();
+    void ensureLastEditCommandHasCurrentSelectionIfOpenForMoreTyping();
 
     bool deleteWithDirection(SelectionController::EDirection, TextGranularity, bool killRing, bool isTypingAction);
     void deleteSelectionWithSmartDelete(bool smartDelete);

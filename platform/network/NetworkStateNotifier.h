@@ -46,17 +46,6 @@ private:
 
 };
 
-#if !PLATFORM(MAC) && !PLATFORM(WIN) && !PLATFORM(CHROMIUM)
-
-inline NetworkStateNotifier::NetworkStateNotifier()
-    : m_isOnLine(true)
-    , m_networkStateChangedFunction(0)
-{    
-}
-
-inline void NetworkStateNotifier::updateState() { }
-
-#endif
 
 NetworkStateNotifier& networkStateNotifier();
     

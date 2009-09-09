@@ -563,7 +563,7 @@ int DOMWindow::innerHeight() const
     if (!view)
         return 0;
     
-    return static_cast<int>(view->actualVisualContentRect().height() / m_frame->pageZoomFactor());
+    return static_cast<int>(view->actualVisibleContentRect().height() / m_frame->pageZoomFactor());
 }
 
 int DOMWindow::innerWidth() const
@@ -575,7 +575,7 @@ int DOMWindow::innerWidth() const
     if (!view)
         return 0;
 
-    return static_cast<int>(view->actualVisualContentRect().width() / m_frame->pageZoomFactor());
+    return static_cast<int>(view->actualVisibleContentRect().width() / m_frame->pageZoomFactor());
 }
 
 int DOMWindow::screenX() const
@@ -624,7 +624,7 @@ int DOMWindow::scrollX() const
     if (doc)
         doc->updateLayoutIgnorePendingStylesheets();
 
-    return static_cast<int>(view->actualVisualContentRect().x() / m_frame->pageZoomFactor());
+    return static_cast<int>(view->actualVisibleContentRect().x() / m_frame->pageZoomFactor());
 }
 
 int DOMWindow::scrollY() const
@@ -641,7 +641,7 @@ int DOMWindow::scrollY() const
     if (doc)
         doc->updateLayoutIgnorePendingStylesheets();
 
-    return static_cast<int>(view->actualVisualContentRect().y() / m_frame->pageZoomFactor());
+    return static_cast<int>(view->actualVisibleContentRect().y() / m_frame->pageZoomFactor());
 }
 
 bool DOMWindow::closed() const

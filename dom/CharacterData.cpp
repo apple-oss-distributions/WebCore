@@ -93,7 +93,7 @@ void CharacterData::appendData(const String& arg, ExceptionCode&)
     dispatchModifiedEvent(oldStr.get());
 }
 
-void CharacterData::insertData(unsigned offset, const String& arg, ExceptionCode& ec)
+void CharacterData::insertData(unsigned offset, const String& arg, ExceptionCode& ec, bool canShowLastCharacterIfSecure)
 {
     checkCharDataOperation(offset, ec);
     if (ec)
@@ -112,7 +112,7 @@ void CharacterData::insertData(unsigned offset, const String& arg, ExceptionCode
         attach();
     } else if (renderer()) {
         RenderText *renderText = toRenderText(renderer());
-        if (atEnd && renderText->isSecure()) {
+        if (atEnd && renderText->isSecure() && canShowLastCharacterIfSecure) {
             renderText->momentarilyRevealLastCharacter();
         }
         renderText->setTextWithOffset(m_data, offset, 0);            

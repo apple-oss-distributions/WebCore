@@ -44,7 +44,8 @@ private:
 
     virtual void doApply();
     virtual void doUnapply();
-
+    virtual void doReapply();
+    
     RefPtr<Text> m_node;
     unsigned m_offset;
     String m_text;

@@ -221,30 +221,6 @@ bool PluginPackage::fetchInfo()
     return true;
 }
 
-int PluginPackage::compare(const PluginPackage& compareTo) const
-{
-    // Sort plug-ins that allow multiple instances first.
-    bool AallowsMultipleInstances = allowsMultipleInstances();
-    bool BallowsMultipleInstances = compareTo.allowsMultipleInstances();
-    if (AallowsMultipleInstances != BallowsMultipleInstances)
-        return AallowsMultipleInstances ? -1 : 1;
-
-    // Sort plug-ins in a preferred path first.
-    bool AisInPreferredPath = PluginDatabase::isPreferredPluginPath(parentDirectory());
-    bool BisInPreferredPath = PluginDatabase::isPreferredPluginPath(compareTo.parentDirectory());
-    if (AisInPreferredPath != BisInPreferredPath)
-        return AisInPreferredPath ? -1 : 1;
-
-    int diff = strcmp(name().utf8().data(), compareTo.name().utf8().data());
-    if (diff)
-        return diff;
-
-    if (diff = compareFileVersion(compareTo.m_fileVersionLS, compareTo.m_fileVersionMS))
-        return diff;
-
-    return strcmp(parentDirectory().utf8().data(), compareTo.parentDirectory().utf8().data());
-}
-
 bool PluginPackage::load()
 {
     if (m_freeLibraryTimer.isActive()) {

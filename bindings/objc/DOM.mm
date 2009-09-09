@@ -459,6 +459,9 @@ id <DOMEventTarget> kit(WebCore::EventTargetNode* eventTargetNode)
     if (renderer) {
         Vector<FloatQuad> quads;
         renderer->absoluteQuads(quads);
+        if (quads.size() == 0)
+            return WebCore::emptyQuad();
+        
         if (quads.size() == 1)
             return wkQuadFromFloatQuad(quads[0]);
 
