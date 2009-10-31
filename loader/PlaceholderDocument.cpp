@@ -13,7 +13,7 @@
  * THIS SOFTWARE IS PROVIDED BY APPLE INC. ``AS IS'' AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL APPLE COMPUTER, INC. OR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL APPLE INC. OR
  * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
  * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
  * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
@@ -23,48 +23,25 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef GraphicsLayerClient_h
-#define GraphicsLayerClient_h
+#include "config.h"
+#include "PlaceholderDocument.h"
 
-#if USE(ACCELERATED_COMPOSITING)
+#include "CSSStyleSelector.h"
+#include "StyleSheetList.h"
 
 namespace WebCore {
 
-class GraphicsContext;
-class GraphicsLayer;
-class IntPoint;
-class IntRect;
-class FloatPoint;
+void PlaceholderDocument::attach()
+{
+    ASSERT(!attached());
 
-enum GraphicsLayerPaintingPhase {
-    GraphicsLayerPaintBackgroundMask = (1 << 0),
-    GraphicsLayerPaintForegroundMask = (1 << 1),
-    GraphicsLayerPaintAllMask = (GraphicsLayerPaintBackgroundMask | GraphicsLayerPaintForegroundMask)
-};
+    if (!styleSelector()) {
+        RefPtr<StyleSheetList> styleSheetList = StyleSheetList::create(this);
+        setStyleSelector(new CSSStyleSelector(this, userStyleSheet(), styleSheetList.get(), 0, true, false));
+    }
 
-enum AnimatedPropertyID {
-    AnimatedPropertyInvalid,
-    AnimatedPropertyWebkitTransform,
-    AnimatedPropertyOpacity,
-    AnimatedPropertyBackgroundColor
-};
-
-class GraphicsLayerClient {
-public:
-    virtual ~GraphicsLayerClient() {}
-
-    // Callback for when hardware-accelerated animation started.
-    virtual void notifyAnimationStarted(const GraphicsLayer*, double time) = 0;
-
-    // Notification that a layer property changed that requires a subsequent call to syncCompositingState()
-    // to appear on the screen.
-    virtual void notifySyncRequired(const GraphicsLayer*) = 0;
-    
-    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) = 0;
-};
+    // Skipping Document::attach().
+    ContainerNode::attach();
+}
 
 } // namespace WebCore
-
-#endif // USE(ACCELERATED_COMPOSITING)
-
-#endif // GraphicsLayerClient_h

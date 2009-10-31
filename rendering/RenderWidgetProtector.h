@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008 Apple Inc. All Rights Reserved.
- * Copyright (C) 2008 Google Inc.
+ * Copyright (C) 2009 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -21,38 +20,34 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#include "AXObjectCache.h"
+#ifndef RenderWidgetProtector_h
+#define RenderWidgetProtector_h
 
-#include "AccessibilityObject.h"
+#include "RenderWidget.h"
 
 namespace WebCore {
 
-void AXObjectCache::detachWrapper(AccessibilityObject* obj)
-{
-    // In Chromium, AccessibilityObjects are wrapped lazily.
-    if (AccessibilityObjectWrapper* wrapper = obj->wrapper())
-        wrapper->detach();
+class RenderWidgetProtector : private Noncopyable {
+public:
+    RenderWidgetProtector(RenderWidget* object)
+        : m_object(object)
+        , m_arena(object->ref())
+    {
+    }
+
+    ~RenderWidgetProtector()
+    {
+        m_object->deref(m_arena);
+    }
+
+private:
+    RenderWidget* m_object;
+    RenderArena* m_arena;
+};
+
 }
 
-void AXObjectCache::attachWrapper(AccessibilityObject*)
-{
-    // In Chromium, AccessibilityObjects are wrapped lazily.
-}
-
-void AXObjectCache::postPlatformNotification(AccessibilityObject*, const String&)
-{
-}
-
-void AXObjectCache::handleFocusedUIElementChanged()
-{
-}
-
-void AXObjectCache::handleScrolledToAnchor(const Node*)
-{
-}
-
-} // namespace WebCore
+#endif // RenderWidgetProtector_h
