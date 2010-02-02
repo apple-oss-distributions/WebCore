@@ -342,15 +342,21 @@ void RenderPartObject::updateWidget(bool onlyCreateNonNetscapePlugins)
             HTMLVideoElement* vid = static_cast<HTMLVideoElement*>(node());
             String poster = vid->poster();
             if (!poster.isEmpty()) {
-                paramNames.append("_media_element_poster_");
-                paramValues.append(poster);
+                KURL posterURL = frame->loader()->completeURL(poster);
+                if (posterURL.isValid() && frame->loader()->willLoadMediaElementURL(posterURL)) {
+                    paramNames.append("_media_element_poster_");
+                    paramValues.append(posterURL.string());
+                }
             }
         }
 
         url = o->initialURL();
         if (!url.isEmpty()) {
-            paramNames.append("_media_element_src_");
-            paramValues.append(url);
+            KURL srcURL = frame->loader()->completeURL(url);
+            if (srcURL.isValid() && frame->loader()->willLoadMediaElementURL(srcURL)) {
+                paramNames.append("_media_element_src_");
+                paramValues.append(srcURL.string());
+            }
         }
 
         serviceType = "application/x-media-element-proxy-plugin";
