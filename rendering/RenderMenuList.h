@@ -1,7 +1,8 @@
 /*
  * This file is part of the select element renderer in WebCore.
  *
- * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
+ * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
+ * Copyright (C) 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -37,10 +38,26 @@ namespace WebCore {
 class PopupMenu;
 class RenderText;
 
+#if ENABLE(NO_LISTBOX_RENDERING)
+class RenderMenuList : public RenderFlexibleBox, private ListPopupMenuClient {
+#else
 class RenderMenuList : public RenderFlexibleBox, private PopupMenuClient {
+#endif
+
 public:
     RenderMenuList(Element*);
-    ~RenderMenuList();
+    virtual ~RenderMenuList();
+
+public:
+    bool popupIsVisible() const { return m_popupIsVisible; }
+    void showPopup();
+    void hidePopup();
+
+    void setOptionsChanged(bool changed) { m_optionsChanged = changed; }
+
+    void didSetSelectedIndex();
+
+    String text() const;
 
 private:
     virtual bool isMenuList() const { return true; }
@@ -59,20 +76,14 @@ private:
 
     virtual void calcPrefWidths();
 
-public:
-    bool popupIsVisible() const { return m_popupIsVisible; }
-    void showPopup();
-    void hidePopup();
-
-    void setOptionsChanged(bool changed) { m_optionsChanged = changed; }
-
-    String text() const;
-
-private:
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+
+    virtual bool requiresForcedStyleRecalcPropagation() const { return true; }
 
     // PopupMenuClient methods
     virtual String itemText(unsigned listIndex) const;
+    virtual String itemToolTip(unsigned listIndex) const;
+    virtual String itemAccessibilityText(unsigned listIndex) const;
     virtual bool itemIsEnabled(unsigned listIndex) const;
     virtual PopupMenuStyle itemStyle(unsigned listIndex) const;
     virtual PopupMenuStyle menuStyle() const;
@@ -82,6 +93,7 @@ private:
     virtual int clientPaddingRight() const;
     virtual int listSize() const;
     virtual int selectedIndex() const;
+    virtual void popupDidHide();
     virtual bool itemIsSeparator(unsigned listIndex) const;
     virtual bool itemIsLabel(unsigned listIndex) const;
     virtual bool itemIsSelected(unsigned listIndex) const;
@@ -92,6 +104,11 @@ private:
     virtual FontSelector* fontSelector() const;
     virtual HostWindow* hostWindow() const;
     virtual PassRefPtr<Scrollbar> createScrollbar(ScrollbarClient*, ScrollbarOrientation, ScrollbarControlSize);
+
+#if ENABLE(NO_LISTBOX_RENDERING)
+    virtual void listBoxSelectItem(int listIndex, bool allowMultiplySelections, bool shift, bool fireOnChangeNow = true);
+    virtual bool multiple();
+#endif
 
     virtual bool hasLineIfEmpty() const { return true; }
 
@@ -109,9 +126,20 @@ private:
     bool m_optionsChanged;
     int m_optionsWidth;
 
+    int m_lastSelectedIndex;
+
     RefPtr<PopupMenu> m_popup;
     bool m_popupIsVisible;
 };
+
+inline RenderMenuList* toRenderMenuList(RenderObject* object)
+{ 
+    ASSERT(!object || object->isMenuList());
+    return static_cast<RenderMenuList*>(object);
+}
+
+// This will catch anyone doing an unnecessary cast.
+void toRenderMenuList(const RenderMenuList*);
 
 }
 

@@ -1,4 +1,5 @@
 /*
+ * Copyright (C) 2006, 2007, 2009 Apple Inc. All rights reserved.
  * Copyright (C) 2008 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
  *
  * This library is free software; you can redistribute it and/or
@@ -31,35 +32,44 @@ class InputElement;
 class SearchFieldCancelButtonElement;
 class SearchFieldResultsButtonElement;
 class SearchPopupMenu;
+class SpinButtonElement;
 class TextControlInnerElement;
 
 class RenderTextControlSingleLine : public RenderTextControl, private PopupMenuClient {
 public:
-    RenderTextControlSingleLine(Node*);
+    RenderTextControlSingleLine(Node*, bool);
     virtual ~RenderTextControlSingleLine();
-
-    virtual bool hasControlClip() const { return m_cancelButton; }
-    virtual bool isTextField() const { return true; }
 
     bool placeholderIsVisible() const { return m_placeholderVisible; }
     bool placeholderShouldBeVisible() const;
-    void updatePlaceholderVisibility();
 
     void addSearchResult();
     void stopSearchEventTimer();
 
     bool popupIsVisible() const { return m_searchPopupIsVisible; }
     void showPopup();
-    virtual void hidePopup(); // PopupMenuClient method
+    void hidePopup();
 
-    virtual void subtreeHasChanged();
-    virtual void paint(PaintInfo&, int tx, int ty);
-    virtual void layout();
-
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, int x, int y, int tx, int ty, HitTestAction);
     void forwardEvent(Event*);
 
     void capsLockStateMayHaveChanged();
+
+    // Decoration width outside of the text field.
+    int decorationWidthRight() const;
+
+private:
+    int preferredDecorationWidthRight() const;
+    virtual bool hasControlClip() const { return m_cancelButton; }
+    virtual IntRect controlClipRect(int tx, int ty) const;
+    virtual bool isTextField() const { return true; }
+
+    virtual void subtreeHasChanged();
+    virtual void paint(PaintInfo&, int tx, int ty);
+    virtual void paintBoxDecorations(PaintInfo&, int tx, int ty);
+    virtual void addFocusRingRects(Vector<IntRect>&, int tx, int ty);
+    virtual void layout();
+
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, int x, int y, int tx, int ty, HitTestAction);
 
     virtual void autoscroll();
 
@@ -70,10 +80,10 @@ public:
     virtual int scrollHeight() const;
     virtual void setScrollLeft(int);
     virtual void setScrollTop(int);
-    virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1.0f);
+    virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1.0f, Node** stopNode = 0);
 
-private:
     int textBlockWidth() const;
+    virtual float getAvgCharWidth(AtomicString family);
     virtual int preferredContentWidth(float charWidth) const;
     virtual void adjustControlHeightBasedOnLineHeight(int lineHeight);
 
@@ -82,10 +92,12 @@ private:
     virtual void cacheSelection(int start, int end);
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
+    virtual RenderStyle* textBaseStyle() const;
     virtual PassRefPtr<RenderStyle> createInnerTextStyle(const RenderStyle* startStyle) const;
     PassRefPtr<RenderStyle> createInnerBlockStyle(const RenderStyle* startStyle) const;
     PassRefPtr<RenderStyle> createResultsButtonStyle(const RenderStyle* startStyle) const;
     PassRefPtr<RenderStyle> createCancelButtonStyle(const RenderStyle* startStyle) const;
+    PassRefPtr<RenderStyle> createOuterSpinButtonStyle() const;
 
     void updateCancelButtonVisibility() const;
     EVisibility visibilityForCancelButton() const;
@@ -94,10 +106,11 @@ private:
     void startSearchEventTimer();
     void searchEventTimerFired(Timer<RenderTextControlSingleLine>*);
 
-private:
     // PopupMenuClient methods
     virtual void valueChanged(unsigned listIndex, bool fireEvents = true);
     virtual String itemText(unsigned listIndex) const;
+    virtual String itemToolTip(unsigned) const { return String(); }
+    virtual String itemAccessibilityText(unsigned) const { return String(); }
     virtual bool itemIsEnabled(unsigned listIndex) const;
     virtual PopupMenuStyle itemStyle(unsigned listIndex) const;
     virtual PopupMenuStyle menuStyle() const;
@@ -107,6 +120,7 @@ private:
     virtual int clientPaddingRight() const;
     virtual int listSize() const;
     virtual int selectedIndex() const;
+    virtual void popupDidHide();
     virtual bool itemIsSeparator(unsigned listIndex) const;
     virtual bool itemIsLabel(unsigned listIndex) const;
     virtual bool itemIsSelected(unsigned listIndex) const;
@@ -119,19 +133,27 @@ private:
 
     InputElement* inputElement() const;
 
-private:
-    bool m_placeholderVisible;
     bool m_searchPopupIsVisible;
     bool m_shouldDrawCapsLockIndicator;
 
     RefPtr<TextControlInnerElement> m_innerBlock;
     RefPtr<SearchFieldResultsButtonElement> m_resultsButton;
     RefPtr<SearchFieldCancelButtonElement> m_cancelButton;
+    RefPtr<TextControlInnerElement> m_outerSpinButton;
 
     Timer<RenderTextControlSingleLine> m_searchEventTimer;
     RefPtr<SearchPopupMenu> m_searchPopup;
     Vector<String> m_recentSearches;
 };
+
+inline RenderTextControlSingleLine* toRenderTextControlSingleLine(RenderObject* object)
+{ 
+    ASSERT(!object || object->isTextField());
+    return static_cast<RenderTextControlSingleLine*>(object);
+}
+
+// This will catch anyone doing an unnecessary cast.
+void toRenderTextControlSingleLine(const RenderTextControlSingleLine*);
 
 }
 
