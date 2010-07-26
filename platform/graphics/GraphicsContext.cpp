@@ -30,7 +30,6 @@
 #include "Generator.h"
 #include "GraphicsContextPrivate.h"
 #include "Font.h"
-#include "NotImplemented.h"
 
 using namespace std;
 
@@ -148,6 +147,11 @@ void GraphicsContext::setStrokeColor(const Color& color)
     setPlatformStrokeColor(color);
 }
 
+ColorSpace GraphicsContext::strokeColorSpace() const
+{
+    return m_common->state.strokeColorSpace;
+}
+
 void GraphicsContext::setShadow(const IntSize& size, int blur, const Color& color)
 {
     m_common->state.shadowSize = size;
@@ -196,16 +200,6 @@ WindRule GraphicsContext::fillRule() const
 void GraphicsContext::setFillRule(WindRule fillRule)
 {
     m_common->state.fillRule = fillRule;
-}
-
-GradientSpreadMethod GraphicsContext::spreadMethod() const
-{
-    return m_common->state.spreadMethod;
-}
-
-void GraphicsContext::setSpreadMethod(GradientSpreadMethod spreadMethod)
-{
-    m_common->state.spreadMethod = spreadMethod;
 }
 
 void GraphicsContext::setFillColor(const Color& color)
@@ -275,6 +269,31 @@ void GraphicsContext::setFillGradient(PassRefPtr<Gradient> gradient)
     m_common->state.fillGradient = gradient;
 }
 
+Gradient* GraphicsContext::fillGradient() const
+{
+    return m_common->state.fillGradient.get();
+}
+
+ColorSpace GraphicsContext::fillColorSpace() const
+{
+    return m_common->state.fillColorSpace;
+}
+
+Gradient* GraphicsContext::strokeGradient() const
+{
+    return m_common->state.strokeGradient.get();
+}
+
+Pattern* GraphicsContext::fillPattern() const
+{
+    return m_common->state.fillPattern.get();
+}
+
+Pattern* GraphicsContext::strokePattern() const
+{
+    return m_common->state.strokePattern.get();
+}
+
 void GraphicsContext::setShadowsIgnoreTransforms(bool ignoreTransforms)
 {
     m_common->state.shadowsIgnoreTransforms = ignoreTransforms;
@@ -337,7 +356,7 @@ float GraphicsContext::drawBidiText(const Font& font, const TextRun& run, const 
     BidiResolver<TextRunIterator, BidiCharacterRun> bidiResolver;
     WTF::Unicode::Direction paragraphDirection = run.ltr() ? WTF::Unicode::LeftToRight : WTF::Unicode::RightToLeft;
 
-    bidiResolver.setStatus(status ? *status : BidiStatus(paragraphDirection, paragraphDirection, paragraphDirection, new BidiContext(run.ltr() ? 0 : 1, paragraphDirection, run.directionalOverride())));
+    bidiResolver.setStatus(status ? *status : BidiStatus(paragraphDirection, paragraphDirection, paragraphDirection, BidiContext::create(run.ltr() ? 0 : 1, paragraphDirection, run.directionalOverride())));
 
     bidiResolver.setPosition(TextRunIterator(&run, 0));
     bidiResolver.createBidiRunsForLine(TextRunIterator(&run, length < 0 ? run.length() : length));

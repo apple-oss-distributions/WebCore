@@ -2,9 +2,12 @@
  *  WKClipView.h
  *  WebCore
  *
- *  Copyright (C) 2005, 2006, 2007, Apple Inc.  All rights reserved.
- *
+ *  Copyright (C) 2005, 2006, 2007, 2009 Apple Inc.  All rights reserved.
  */
+
+#ifndef WKClipView_h
+#define WKClipView_h
+
 #import "WKView.h"
 
 #ifdef __cplusplus
@@ -33,3 +36,5 @@ CGRect WKClipViewGetDocumentVisibleRect (WKClipViewRef view);
 #ifdef __cplusplus
 }
 #endif
+
+#endif // WKClipView_h

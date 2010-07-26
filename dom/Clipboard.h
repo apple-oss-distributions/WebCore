@@ -33,6 +33,8 @@
 
 namespace WebCore {
 
+    class FileList;
+
     // State available during IE's events for drag and drop and copy/paste
     class Clipboard : public RefCounted<Clipboard> {
     public:
@@ -53,15 +55,18 @@ namespace WebCore {
     
         // extensions beyond IE's API
         virtual HashSet<String> types() const = 0;
-    
+        virtual PassRefPtr<FileList> files() const = 0;
+
         IntPoint dragLocation() const { return m_dragLoc; }
         CachedImage* dragImage() const { return m_dragImage.get(); }
         virtual void setDragImage(CachedImage*, const IntPoint&) = 0;
-        Node* dragImageElement() { return m_dragImageElement.get(); }
+        Node* dragImageElement() const { return m_dragImageElement.get(); }
         virtual void setDragImageElement(Node*, const IntPoint&) = 0;
         
         virtual DragImageRef createDragImage(IntPoint& dragLocation) const = 0;
+#if ENABLE(DRAG_SUPPORT)
         virtual void declareAndWriteDragImage(Element*, const KURL&, const String& title, Frame*) = 0;
+#endif
         virtual void writeURL(const KURL&, const String&, Frame*) = 0;
         virtual void writeRange(Range*, Frame*) = 0;
 

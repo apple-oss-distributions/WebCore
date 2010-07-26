@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2008, 2009 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,7 +28,6 @@
 
 #include "JSDOMBinding.h"
 #include "runtime_method.h"
-#include "runtime_root.h"
 #include <runtime/Error.h>
 #include <runtime/ObjectPrototype.h>
 
@@ -40,36 +39,36 @@ using namespace Bindings;
 
 const ClassInfo RuntimeObjectImp::s_info = { "RuntimeObject", 0, 0, 0 };
 
-RuntimeObjectImp::RuntimeObjectImp(ExecState* exec, PassRefPtr<Instance> i)
+RuntimeObjectImp::RuntimeObjectImp(ExecState* exec, PassRefPtr<Instance> instance)
     : JSObject(getDOMStructure<RuntimeObjectImp>(exec))
-    , instance(i)
+    , m_instance(instance)
 {
-    instance->rootObject()->addRuntimeObject(this);
 }
-    
-RuntimeObjectImp::RuntimeObjectImp(ExecState*, PassRefPtr<Structure> structure, PassRefPtr<Instance> i)
+
+RuntimeObjectImp::RuntimeObjectImp(ExecState*, PassRefPtr<Structure> structure, PassRefPtr<Instance> instance)
     : JSObject(structure)
-    , instance(i)
+    , m_instance(instance)
 {
-    instance->rootObject()->addRuntimeObject(this);
 }
 
 RuntimeObjectImp::~RuntimeObjectImp()
 {
-    if (instance)
-        instance->rootObject()->removeRuntimeObject(this);
+    if (m_instance)
+        m_instance->willDestroyRuntimeObject();
 }
 
 void RuntimeObjectImp::invalidate()
 {
-    ASSERT(instance);
-    instance = 0;
+    ASSERT(m_instance);
+    if (m_instance)
+        m_instance->willInvalidateRuntimeObject();
+    m_instance = 0;
 }
 
-JSValuePtr RuntimeObjectImp::fallbackObjectGetter(ExecState* exec, const Identifier& propertyName, const PropertySlot& slot)
+JSValue RuntimeObjectImp::fallbackObjectGetter(ExecState* exec, const Identifier& propertyName, const PropertySlot& slot)
 {
     RuntimeObjectImp* thisObj = static_cast<RuntimeObjectImp*>(asObject(slot.slotBase()));
-    RefPtr<Instance> instance = thisObj->instance;
+    RefPtr<Instance> instance = thisObj->m_instance;
 
     if (!instance)
         return throwInvalidAccessError(exec);
@@ -77,17 +76,17 @@ JSValuePtr RuntimeObjectImp::fallbackObjectGetter(ExecState* exec, const Identif
     instance->begin();
 
     Class *aClass = instance->getClass();
-    JSValuePtr result = aClass->fallbackObject(exec, instance.get(), propertyName);
+    JSValue result = aClass->fallbackObject(exec, instance.get(), propertyName);
 
     instance->end();
             
     return result;
 }
 
-JSValuePtr RuntimeObjectImp::fieldGetter(ExecState* exec, const Identifier& propertyName, const PropertySlot& slot)
+JSValue RuntimeObjectImp::fieldGetter(ExecState* exec, const Identifier& propertyName, const PropertySlot& slot)
 {    
     RuntimeObjectImp* thisObj = static_cast<RuntimeObjectImp*>(asObject(slot.slotBase()));
-    RefPtr<Instance> instance = thisObj->instance;
+    RefPtr<Instance> instance = thisObj->m_instance;
 
     if (!instance)
         return throwInvalidAccessError(exec);
@@ -96,17 +95,17 @@ JSValuePtr RuntimeObjectImp::fieldGetter(ExecState* exec, const Identifier& prop
 
     Class *aClass = instance->getClass();
     Field* aField = aClass->fieldNamed(propertyName, instance.get());
-    JSValuePtr result = aField->valueFromInstance(exec, instance.get());
+    JSValue result = aField->valueFromInstance(exec, instance.get());
     
     instance->end();
             
     return result;
 }
 
-JSValuePtr RuntimeObjectImp::methodGetter(ExecState* exec, const Identifier& propertyName, const PropertySlot& slot)
+JSValue RuntimeObjectImp::methodGetter(ExecState* exec, const Identifier& propertyName, const PropertySlot& slot)
 {
     RuntimeObjectImp* thisObj = static_cast<RuntimeObjectImp*>(asObject(slot.slotBase()));
-    RefPtr<Instance> instance = thisObj->instance;
+    RefPtr<Instance> instance = thisObj->m_instance;
 
     if (!instance)
         return throwInvalidAccessError(exec);
@@ -115,7 +114,7 @@ JSValuePtr RuntimeObjectImp::methodGetter(ExecState* exec, const Identifier& pro
 
     Class *aClass = instance->getClass();
     MethodList methodList = aClass->methodsNamed(propertyName, instance.get());
-    JSValuePtr result = new (exec) RuntimeMethod(exec, propertyName, methodList);
+    JSValue result = new (exec) RuntimeMethod(exec, propertyName, methodList);
 
     instance->end();
             
@@ -124,11 +123,13 @@ JSValuePtr RuntimeObjectImp::methodGetter(ExecState* exec, const Identifier& pro
 
 bool RuntimeObjectImp::getOwnPropertySlot(ExecState *exec, const Identifier& propertyName, PropertySlot& slot)
 {
-    if (!instance) {
+    if (!m_instance) {
         throwInvalidAccessError(exec);
         return false;
     }
     
+    RefPtr<Instance> instance = m_instance;
+
     instance->begin();
     
     Class *aClass = instance->getClass();
@@ -165,14 +166,14 @@ bool RuntimeObjectImp::getOwnPropertySlot(ExecState *exec, const Identifier& pro
     return instance->getOwnPropertySlot(this, exec, propertyName, slot);
 }
 
-void RuntimeObjectImp::put(ExecState* exec, const Identifier& propertyName, JSValuePtr value, PutPropertySlot& slot)
+void RuntimeObjectImp::put(ExecState* exec, const Identifier& propertyName, JSValue value, PutPropertySlot& slot)
 {
-    if (!instance) {
+    if (!m_instance) {
         throwInvalidAccessError(exec);
         return;
     }
     
-    RefPtr<Instance> protector(instance);
+    RefPtr<Instance> instance = m_instance;
     instance->begin();
 
     // Set the value of the property.
@@ -191,31 +192,37 @@ bool RuntimeObjectImp::deleteProperty(ExecState*, const Identifier&)
     return false;
 }
 
-JSValuePtr RuntimeObjectImp::defaultValue(ExecState* exec, PreferredPrimitiveType hint) const
+JSValue RuntimeObjectImp::defaultValue(ExecState* exec, PreferredPrimitiveType hint) const
 {
-    if (!instance)
+    if (!m_instance)
         return throwInvalidAccessError(exec);
     
-    RefPtr<Instance> protector(instance);
+    RefPtr<Instance> instance = m_instance;
+
     instance->begin();
-    JSValuePtr result = instance->defaultValue(exec, hint);
+    JSValue result = instance->defaultValue(exec, hint);
     instance->end();
     return result;
 }
 
-static JSValuePtr callRuntimeObject(ExecState* exec, JSObject* function, JSValuePtr, const ArgList& args)
+static JSValue JSC_HOST_CALL callRuntimeObject(ExecState* exec, JSObject* function, JSValue, const ArgList& args)
 {
     RefPtr<Instance> instance(static_cast<RuntimeObjectImp*>(function)->getInternalInstance());
     instance->begin();
-    JSValuePtr result = instance->invokeDefaultMethod(exec, args);
+    JSValue result = instance->invokeDefaultMethod(exec, args);
     instance->end();
     return result;
 }
 
 CallType RuntimeObjectImp::getCallData(CallData& callData)
 {
-    if (!instance || !instance->supportsInvokeDefaultMethod())
+    if (!m_instance)
         return CallTypeNone;
+    
+    RefPtr<Instance> instance = m_instance;
+    if (!instance->supportsInvokeDefaultMethod())
+        return CallTypeNone;
+    
     callData.native.function = callRuntimeObject;
     return CallTypeHost;
 }
@@ -224,7 +231,7 @@ static JSObject* callRuntimeConstructor(ExecState* exec, JSObject* constructor, 
 {
     RefPtr<Instance> instance(static_cast<RuntimeObjectImp*>(constructor)->getInternalInstance());
     instance->begin();
-    JSValuePtr result = instance->invokeConstruct(exec, args);
+    JSValue result = instance->invokeConstruct(exec, args);
     instance->end();
     
     ASSERT(result);
@@ -233,19 +240,26 @@ static JSObject* callRuntimeConstructor(ExecState* exec, JSObject* constructor, 
 
 ConstructType RuntimeObjectImp::getConstructData(ConstructData& constructData)
 {
-    if (!instance || !instance->supportsConstruct())
+    if (!m_instance)
         return ConstructTypeNone;
+    
+    RefPtr<Instance> instance = m_instance;
+    if (!instance->supportsConstruct())
+        return ConstructTypeNone;
+    
     constructData.native.function = callRuntimeConstructor;
     return ConstructTypeHost;
 }
 
 void RuntimeObjectImp::getPropertyNames(ExecState* exec, PropertyNameArray& propertyNames)
 {
-    if (!instance) {
+    if (!m_instance) {
         throwInvalidAccessError(exec);
         return;
     }
-    
+
+    RefPtr<Instance> instance = m_instance;
+
     instance->begin();
     instance->getPropertyNames(exec, propertyNames);
     instance->end();

@@ -33,15 +33,19 @@
 #import "DOMHTMLInputElementInternal.h"
 #import "DOMHTMLSelectElementInternal.h"
 #import "DOMHTMLTextAreaElementInternal.h"
+#import "DOMNodeInternal.h"
 #import "DOMPrivate.h"
 #import "DocumentFragment.h"
 #import "FrameView.h"
+#import "HTMLCollection.h"
 #import "HTMLDocument.h"
 #import "HTMLInputElement.h"
 #import "HTMLSelectElement.h"
 #import "HTMLTextAreaElement.h"
+#import "Page.h"
 #import "Range.h"
 #import "RenderTextControl.h"
+#import "Settings.h"
 #import "markup.h"
 
 #import "DOMHTMLElementInternal.h"
@@ -156,6 +160,25 @@ using namespace WebCore;
 
 @end
 
+#ifdef BUILDING_ON_TIGER
+@implementation DOMHTMLDocument (DOMHTMLDocumentOverrides)
+
+- (DOMNode *)firstChild
+{
+    WebCore::HTMLDocument* coreHTMLDocument = core(self);
+    if (!coreHTMLDocument->page() || !coreHTMLDocument->page()->settings()->needsTigerMailQuirks())
+        return kit(coreHTMLDocument->firstChild());
+
+    WebCore::Node* child = coreHTMLDocument->firstChild();
+    while (child && child->nodeType() == WebCore::Node::DOCUMENT_TYPE_NODE)
+        child = child->nextSibling();
+    
+    return kit(child);
+}
+
+@end
+#endif
+
 @implementation DOMHTMLInputElement (FormAutoFillTransition)
 
 - (BOOL)_isTextField
@@ -228,7 +251,7 @@ using namespace WebCore;
 
 Class kitClass(WebCore::HTMLCollection* collection)
 {
-    if (collection->type() == WebCore::HTMLCollection::SelectOptions)
+    if (collection->type() == WebCore::SelectOptions)
         return [DOMHTMLOptionsCollection class];
     return [DOMHTMLCollection class];
 }

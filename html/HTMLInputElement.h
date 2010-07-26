@@ -33,7 +33,7 @@ namespace WebCore {
 class FileList;
 class HTMLImageLoader;
 class KURL;
-class Selection;
+class VisibleSelection;
 
 class HTMLInputElement : public HTMLFormControlElementWithState, public InputElement {
 public:
@@ -78,7 +78,7 @@ public:
     virtual void aboutToUnload();
     virtual bool shouldUseInputMethod() const;
 
-    virtual const AtomicString& name() const;
+    virtual const AtomicString& formControlName() const;
  
     bool autoComplete() const;
 
@@ -86,9 +86,9 @@ public:
     virtual bool isChecked() const { return checked() && (inputType() == CHECKBOX || inputType() == RADIO); }
     virtual bool isIndeterminate() const { return indeterminate(); }
     
-    bool readOnly() const { return isReadOnlyControl(); }
+    bool readOnly() const { return isReadOnlyFormControl(); }
 
-    virtual bool isTextControl() const { return isTextField(); }
+    virtual bool isTextFormControl() const { return isTextField(); }
 
     bool isTextButton() const { return m_type == SUBMIT || m_type == RESET || m_type == BUTTON; }
     virtual bool isRadioButton() const { return m_type == RADIO; }
@@ -102,13 +102,15 @@ public:
     bool indeterminate() const { return m_indeterminate; }
     void setIndeterminate(bool);
     virtual int size() const;
-    virtual const AtomicString& type() const;
+    virtual const AtomicString& formControlType() const;
     void setType(const String&);
 
     virtual String value() const;
     virtual void setValue(const String&);
 
-    virtual String placeholderValue() const;
+    virtual String placeholder() const;
+    virtual void setPlaceholder(const String&);
+
     virtual bool searchEventsShouldBeDispatched() const;
 
     String valueWithDefault() const;
@@ -116,8 +118,8 @@ public:
     virtual void setValueFromRenderer(const String&);
     void setFileListFromRenderer(const Vector<String>&);
 
-    virtual bool saveState(String& value) const;
-    virtual void restoreState(const String&);
+    virtual bool saveFormControlState(String& value) const;
+    virtual void restoreFormControlState(const String&);
 
     virtual bool canStartSelection() const;
     
@@ -192,10 +194,13 @@ public:
     int maxLength() const;
     void setMaxLength(int);
 
+    bool multiple() const;
+    void setMultiple(bool);
+
     String useMap() const;
     void setUseMap(const String&);
 
-    bool isAutofilled() const { return m_autofilled; }
+    virtual bool isAutofilled() const { return m_autofilled; }
     void setAutofilled(bool value = true);
 
     FileList* files();
@@ -204,7 +209,7 @@ public:
     void addSearchResult();
     void onSearch();
 
-    Selection selection() const;
+    VisibleSelection selection() const;
 
     virtual String constrainValue(const String& proposedValue) const;
 
@@ -222,6 +227,11 @@ public:
 protected:
     virtual void willMoveToNewOwnerDocument();
     virtual void didMoveToNewOwnerDocument();
+
+    void updatePlaceholderVisibility()
+    {
+        InputElement::updatePlaceholderVisibility(m_data, this, this, true);
+    }
 
 private:
     bool storesValueSeparateFromAttribute() const;

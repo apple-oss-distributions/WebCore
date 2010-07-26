@@ -34,11 +34,11 @@
 #include "SharedBuffer.h"
 
 #include "GIFImageDecoder.h"
+#include "ICOImageDecoder.h"
 #include "JPEGImageDecoder.h"
 #include "PNGImageDecoder.h"
 #include "BMPImageDecoder.h"
 #include "XBMImageDecoder.h"
-#include "ICOImageDecoder.h"
 
 #include "SkBitmap.h"
 
@@ -100,16 +100,16 @@ ImageSource::~ImageSource()
 
 void ImageSource::clear(bool destroyAll, size_t clearBeforeFrame, SharedBuffer* data, bool allDataReceived)
 {
-    // TODO(darin): Figure out what to do with the |data| and |allDataReceived| params.
-
-    if (destroyAll) {
-        delete m_decoder;
-        m_decoder = 0;
+    if (!destroyAll) {
+        if (m_decoder)
+            m_decoder->clearFrameBufferCache(clearBeforeFrame);
         return;
     }
 
-    if (m_decoder)
-        m_decoder->clearFrameBufferCache(clearBeforeFrame);
+    delete m_decoder;
+    m_decoder = 0;
+    if (data)
+        setData(data, allDataReceived);
 }
 
 bool ImageSource::initialized() const
@@ -185,9 +185,8 @@ NativeImagePtr ImageSource::createFrameAtIndex(size_t index)
         return 0;
 
     // Copy the bitmap.  The pixel data is refcounted internally by SkBitmap, so
-    // this doesn't cost much.  This pointer will be owned by the BitmapImage
-    // and freed in FrameData::clear().
-    return new NativeImageSkia(buffer->bitmap());
+    // this doesn't cost much.  
+    return buffer->asNewNativeImage();
 }
 
 bool ImageSource::frameIsCompleteAtIndex(size_t index)

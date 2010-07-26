@@ -152,6 +152,10 @@ private:
     void calculatePositionAndSize(const IntRect&, FrameView*);
     void invalidateItem(int index);
 
+    static LRESULT CALLBACK PopupMenuWndProc(HWND, UINT, WPARAM, LPARAM);
+    LRESULT wndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+    static void registerClass();
+
     RefPtr<Scrollbar> m_scrollbar;
     HWND m_popup;
     HDC m_DC;
@@ -163,6 +167,7 @@ private:
     int m_wheelDelta;
     int m_focusedIndex;
     bool m_scrollbarCapturingMouse;
+    bool m_showPopup;
 #elif PLATFORM(GTK)
     IntPoint m_menuPosition;
     GtkMenu* m_popup;

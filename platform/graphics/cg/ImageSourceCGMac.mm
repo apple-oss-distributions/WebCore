@@ -26,3 +26,4 @@
 #import "config.h"
 #import "ImageSourceCG.h"
 
+// FIXME: <rdar://problem/6564538>

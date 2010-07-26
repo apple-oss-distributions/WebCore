@@ -27,7 +27,7 @@
 
 #include "CString.h"
 #include "DocumentFragment.h"
-#include "HTMLNames.h"
+#include "HTMLElement.h"
 #include "NodeWithIndex.h"
 #include "ProcessingInstruction.h"
 #include "Text.h"
@@ -37,6 +37,9 @@
 #include "visible_units.h"
 #include <stdio.h>
 #include <wtf/RefCountedLeakCounter.h>
+
+#include "HTMLNames.h"
+#include "htmlediting.h"
 
 namespace WebCore {
 
@@ -90,13 +93,20 @@ PassRefPtr<Range> Range::create(PassRefPtr<Document> ownerDocument, PassRefPtr<N
 
 PassRefPtr<Range> Range::create(PassRefPtr<Document> ownerDocument, const Position& start, const Position& end)
 {
-    return adoptRef(new Range(ownerDocument, start.container.get(), start.posOffset, end.container.get(), end.posOffset));
+    return adoptRef(new Range(ownerDocument, start.node(), start.deprecatedEditingOffset(), end.node(), end.deprecatedEditingOffset()));
 }
 
+PassRefPtr<Range> Range::create(PassRefPtr<Document> ownerDocument, const VisiblePosition& visibleStart, const VisiblePosition& visibleEnd)
+{
+    Position start = rangeCompliantEquivalent(visibleStart.deepEquivalent());
+    Position end = rangeCompliantEquivalent(visibleEnd.deepEquivalent());
+    return adoptRef(new Range(ownerDocument, start.anchorNode(), start.deprecatedEditingOffset(), end.anchorNode(), end.deprecatedEditingOffset()));
+}
+    
 Range::~Range()
 {
-    if (m_start.container())
-        m_ownerDocument->detachRange(this);
+    // Always detach (even if we've already detached) to fix https://bugs.webkit.org/show_bug.cgi?id=26044
+    m_ownerDocument->detachRange(this);
 
 #ifndef NDEBUG
     rangeCounter.decrement();
@@ -208,7 +218,7 @@ void Range::setStart(PassRefPtr<Node> refNode, int offset, ExceptionCode& ec)
     if (startRootContainer != endRootContainer)
         collapse(true, ec);
     // check if new start after end
-    else if (compareBoundaryPoints(m_start.container(), m_start.offset(), m_end.container(), m_end.offset()) > 0)
+    else if (compareBoundaryPoints(m_start, m_end) > 0)
         collapse(true, ec);
 }
 
@@ -246,7 +256,7 @@ void Range::setEnd(PassRefPtr<Node> refNode, int offset, ExceptionCode& ec)
     if (startRootContainer != endRootContainer)
         collapse(false, ec);
     // check if new end before start
-    if (compareBoundaryPoints(m_start.container(), m_start.offset(), m_end.container(), m_end.offset()) > 0)
+    if (compareBoundaryPoints(m_start, m_end) > 0)
         collapse(false, ec);
 }
 
@@ -265,17 +275,17 @@ void Range::collapse(bool toStart, ExceptionCode& ec)
 
 bool Range::isPointInRange(Node* refNode, int offset, ExceptionCode& ec)
 {
-    if (!refNode) {
-        ec = NOT_FOUND_ERR;
-        return false;
-    }
-
-    if (!m_start.container() && refNode->attached()) {
+    if (!m_start.container()) {
         ec = INVALID_STATE_ERR;
         return false;
     }
 
-    if (m_start.container() && !refNode->attached()) {
+    if (!refNode) {
+        ec = HIERARCHY_REQUEST_ERR;
+        return false;
+    }
+
+    if (!refNode->attached()) {
         // Firefox doesn't throw an exception for this case; it returns false.
         return false;
     }
@@ -300,22 +310,17 @@ short Range::comparePoint(Node* refNode, int offset, ExceptionCode& ec)
     // This method returns -1, 0 or 1 depending on if the point described by the 
     // refNode node and an offset within the node is before, same as, or after the range respectively.
 
-    if (!refNode) {
-        ec = NOT_FOUND_ERR;
-        return 0;
-    }
-
-    if (!m_start.container() && refNode->attached()) {
+    if (!m_start.container()) {
         ec = INVALID_STATE_ERR;
         return 0;
     }
 
-    if (m_start.container() && !refNode->attached()) {
-        // Firefox doesn't throw an exception for this case; it returns -1.
-        return -1;
+    if (!refNode) {
+        ec = HIERARCHY_REQUEST_ERR;
+        return 0;
     }
 
-    if (refNode->document() != m_ownerDocument) {
+    if (!refNode->attached() || refNode->document() != m_ownerDocument) {
         ec = WRONG_DOCUMENT_ERR;
         return 0;
     }
@@ -384,7 +389,6 @@ Range::CompareResults Range::compareNode(Node* refNode, ExceptionCode& ec)
     }
 }
 
-
 short Range::compareBoundaryPoints(CompareHow how, const Range* sourceRange, ExceptionCode& ec) const
 {
     if (!m_start.container()) {
@@ -423,17 +427,13 @@ short Range::compareBoundaryPoints(CompareHow how, const Range* sourceRange, Exc
 
     switch (how) {
         case START_TO_START:
-            return compareBoundaryPoints(m_start.container(), m_start.offset(),
-                sourceRange->m_start.container(), sourceRange->m_start.offset());
+            return compareBoundaryPoints(m_start, sourceRange->m_start);
         case START_TO_END:
-            return compareBoundaryPoints(m_end.container(), m_end.offset(),
-                sourceRange->m_start.container(), sourceRange->m_start.offset());
+            return compareBoundaryPoints(m_end, sourceRange->m_start);
         case END_TO_END:
-            return compareBoundaryPoints(m_end.container(), m_end.offset(),
-                sourceRange->m_end.container(), sourceRange->m_end.offset());
+            return compareBoundaryPoints(m_end, sourceRange->m_end);
         case END_TO_START:
-            return compareBoundaryPoints(m_start.container(), m_start.offset(),
-                sourceRange->m_end.container(), sourceRange->m_end.offset());
+            return compareBoundaryPoints(m_start, sourceRange->m_end);
     }
 
     ec = SYNTAX_ERR;
@@ -531,14 +531,14 @@ short Range::compareBoundaryPoints(Node* containerA, int offsetA, Node* containe
     return 0;
 }
 
-short Range::compareBoundaryPoints(const Position& a, const Position& b)
+short Range::compareBoundaryPoints(const RangeBoundaryPoint& boundaryA, const RangeBoundaryPoint& boundaryB)
 {
-    return compareBoundaryPoints(a.container.get(), a.posOffset, b.container.get(), b.posOffset);
+    return compareBoundaryPoints(boundaryA.container(), boundaryA.offset(), boundaryB.container(), boundaryB.offset());
 }
 
 bool Range::boundaryPointsValid() const
 {
-    return m_start.container() && compareBoundaryPoints(m_start.container(), m_start.offset(), m_end.container(), m_end.offset()) <= 0;
+    return m_start.container() && compareBoundaryPoints(m_start, m_end) <= 0;
 }
 
 void Range::deleteContents(ExceptionCode& ec)
@@ -560,8 +560,8 @@ bool Range::intersectsNode(Node* refNode, ExceptionCode& ec)
         return false;
     }
     
-    if (!m_start.container() && refNode->attached()
-            || m_start.container() && !refNode->attached()
+    if ((!m_start.container() && refNode->attached())
+            || (m_start.container() && !refNode->attached())
             || refNode->document() != m_ownerDocument) {
         // Firefox doesn't throw an exception for these cases; it returns false.
         return false;
@@ -846,6 +846,17 @@ PassRefPtr<DocumentFragment> Range::processContents(ActionType action, Exception
             processEnd = processEnd->parentNode();
     }
 
+    // Collapse the range, making sure that the result is not within a node that was partially selected.
+    if (action == EXTRACT_CONTENTS || action == DELETE_CONTENTS) {
+        if (partialStart)
+            setStart(partialStart->parentNode(), partialStart->nodeIndex() + 1, ec);
+        else if (partialEnd)
+            setStart(partialEnd->parentNode(), partialEnd->nodeIndex(), ec);
+        if (ec)
+            return 0;
+        m_end = m_start;
+    }
+
     // Now add leftContents, stuff in between, and rightContents to the fragment
     // (or just delete the stuff in between)
 
@@ -985,7 +996,7 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionCode& ec)
         // This special case doesn't seem to match the DOM specification, but it's currently required
         // to pass Acid3. We might later decide to remove this.
         if (collapsed)
-            m_end.setToChild(newText.get());
+            m_end.setToBeforeChild(newText.get());
     } else {
         RefPtr<Node> lastChild;
         if (collapsed)
@@ -1068,6 +1079,7 @@ PassRefPtr<DocumentFragment> Range::createContextualFragment(const String& marku
 
 void Range::detach(ExceptionCode& ec)
 {
+    // Check first to see if we've already detached:
     if (!m_start.container()) {
         ec = INVALID_STATE_ERR;
         return;
@@ -1349,8 +1361,8 @@ void Range::selectNodeContents(Node* refNode, ExceptionCode& ec)
         }
     }
 
-    m_start.setToStart(refNode);
-    m_end.setToEnd(refNode);
+    m_start.setToStartOfNode(refNode);
+    m_end.setToEndOfNode(refNode);
 }
 
 void Range::surroundContents(PassRefPtr<Node> passNewParent, ExceptionCode& ec)
@@ -1579,30 +1591,30 @@ IntRect Range::boundingBox()
 {
     IntRect result;
     Vector<IntRect> rects;
-    addLineBoxRects(rects);
+    textRects(rects);
     const size_t n = rects.size();
     for (size_t i = 0; i < n; ++i)
         result.unite(rects[i]);
     return result;
 }
 
-void Range::addLineBoxRects(Vector<IntRect>& rects, bool useSelectionHeight)
+void Range::textRects(Vector<IntRect>& rects, bool useSelectionHeight)
 {
     if (!m_start.container() || !m_end.container())
         return;
 
     Node* startContainer = m_start.container();
     Node* endContainer = m_end.container();
-    
+
     Node* stopNode = pastLastNode();
-    for (Node* node = firstNode(); node && node != stopNode; node = node->traverseNextNode()) {
+    for (Node* node = firstNode(); node != stopNode; node = node->traverseNextNode()) {
         RenderObject* r = node->renderer();
-        // only ask leaf render objects for their line box rects
-        if (r && !r->firstChild()) {
-            int startOffset = node == startContainer ? m_start.offset() : 0;
-            int endOffset = node == endContainer ? m_end.offset() : INT_MAX;
-            r->addLineBoxRects(rects, startOffset, endOffset, useSelectionHeight);
-        }
+        if (!r || !r->isText())
+            continue;
+        RenderText* renderText = toRenderText(r);
+        int startOffset = node == startContainer ? m_start.offset() : 0;
+        int endOffset = node == endContainer ? m_end.offset() : INT_MAX;
+        renderText->absoluteRectsForRange(rects, startOffset, endOffset, useSelectionHeight);
     }
 }
 
@@ -1839,7 +1851,7 @@ static inline void boundaryNodeWillBeRemoved(RangeBoundaryPoint& boundary, Node*
 
     for (Node* n = boundary.container(); n; n = n->parentNode()) {
         if (n == nodeToBeRemoved) {
-            boundary.setToChild(nodeToBeRemoved);
+            boundary.setToBeforeChild(nodeToBeRemoved);
             return;
         }
     }

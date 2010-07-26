@@ -3,6 +3,7 @@
  * Copyright (C) 2005, 2006, 2007 Apple Inc. All rights reserved.
  * Copyright (C) 2007 Samuel Weinig (sam@webkit.org)
  * Copyright (C) 2008 Nokia Corporation and/or its subsidiary(-ies)
+ * Copyright (C) 2008, 2009 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -51,6 +52,23 @@ namespace WebCore {
     class PendingCallbacks;
     class ScriptElement;
 
+#if !USE(QXMLSTREAM)
+    class XMLParserContext : public RefCounted<XMLParserContext> {
+    public:
+        static PassRefPtr<XMLParserContext> createMemoryParser(xmlSAXHandlerPtr, void*, const char*);
+        static PassRefPtr<XMLParserContext> createStringParser(xmlSAXHandlerPtr, void*);
+        ~XMLParserContext();
+        xmlParserCtxtPtr context() const { return m_context; }
+
+    private:
+        XMLParserContext(xmlParserCtxtPtr context)
+            : m_context(context)
+        {
+        }
+        xmlParserCtxtPtr m_context;
+    };
+#endif
+
     class XMLTokenizer : public Tokenizer, public CachedResourceClient {
     public:
         XMLTokenizer(Document*, FrameView* = 0);
@@ -60,7 +78,7 @@ namespace WebCore {
         enum ErrorType { warning, nonFatal, fatal };
 
         // from Tokenizer
-        virtual bool write(const SegmentedString&, bool appendData);
+        virtual void write(const SegmentedString&, bool appendData);
         virtual void finish();
         virtual bool isWaitingForScripts() const;
         virtual void stopParsing();
@@ -72,6 +90,10 @@ namespace WebCore {
 
         void setIsXHTMLDocument(bool isXHTML) { m_isXHTMLDocument = isXHTML; }
         bool isXHTMLDocument() const { return m_isXHTMLDocument; }
+#if ENABLE(XHTMLMP)
+        void setIsXHTMLMPDocument(bool isXHTML) { m_isXHTMLMPDocument = isXHTML; }
+        bool isXHTMLMPDocument() const { return m_isXHTMLMPDocument; }
+#endif
 #if ENABLE(WML)
         bool isWMLDocument() const;
 #endif
@@ -119,7 +141,10 @@ public:
         friend bool parseXMLDocumentFragment(const String& chunk, DocumentFragment* fragment, Element* parent);
 
         void initializeParserContext(const char* chunk = 0);
-        void setCurrentNode(Node*);
+
+        void pushCurrentNode(Node*);
+        void popCurrentNode();
+        void clearCurrentNodeStack();
 
         void insertErrorMessageBlock();
 
@@ -138,17 +163,22 @@ public:
         QXmlStreamReader m_stream;
         bool m_wroteText;
 #else
-        xmlParserCtxtPtr m_context;
+        xmlParserCtxtPtr context() const { return m_context ? m_context->context() : 0; };
+        RefPtr<XMLParserContext> m_context;
         OwnPtr<PendingCallbacks> m_pendingCallbacks;
         Vector<xmlChar> m_bufferedText;
 #endif
         Node* m_currentNode;
-        bool m_currentNodeIsReferenced;
+        Vector<Node*> m_currentNodeStack;
 
         bool m_sawError;
         bool m_sawXSLTransform;
         bool m_sawFirstElement;
         bool m_isXHTMLDocument;
+#if ENABLE(XHTMLMP)
+        bool m_isXHTMLMPDocument;
+        bool m_hasDocTypeDeclaration;
+#endif
 
         bool m_parserPaused;
         bool m_requestingScript;

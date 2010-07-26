@@ -22,20 +22,21 @@
 #include "config.h"
 #include "RenderTextControl.h"
 
+#include "AXObjectCache.h"
 #include "CharacterNames.h"
 #include "Editor.h"
 #include "Event.h"
 #include "EventNames.h"
 #include "Frame.h"
 #include "HTMLBRElement.h"
-#include "HTMLFormControlElement.h"
 #include "HTMLNames.h"
 #include "HitTestResult.h"
+#include "RenderLayer.h"
 #include "RenderText.h"
 #include "ScrollbarTheme.h"
 #include "SelectionController.h"
-#include "TextControlInnerElements.h"
 #include "Text.h"
+#include "TextControlInnerElements.h"
 #include "TextIterator.h"
 
 using namespace std;
@@ -85,7 +86,7 @@ void RenderTextControl::styleDidChange(StyleDifference diff, const RenderStyle* 
     RenderBlock::styleDidChange(diff, oldStyle);
 
     if (m_innerText) {
-        RenderBlock* textBlockRenderer = static_cast<RenderBlock*>(m_innerText->renderer());
+        RenderBlock* textBlockRenderer = toRenderBlock(m_innerText->renderer());
         RefPtr<RenderStyle> textBlockStyle = createInnerTextStyle(style());
         // We may have set the width and the height in the old style in layout().
         // Reset them now to avoid getting a spurious layout hint.
@@ -98,8 +99,22 @@ void RenderTextControl::styleDidChange(StyleDifference diff, const RenderStyle* 
         }
     }
 
-    setHasOverflowClip(false);
     setReplaced(isInline());
+}
+
+static inline bool updateUserModifyProperty(Node* node, RenderStyle* style)
+{
+    bool isEnabled = true;
+    bool isReadOnlyControl = false;
+
+    if (node->isElementNode()) {
+        Element* element = static_cast<Element*>(node);
+        isEnabled = element->isEnabledFormControl();
+        isReadOnlyControl = element->isReadOnlyFormControl();
+    }
+
+    style->setUserModify((isReadOnlyControl || !isEnabled) ? READ_ONLY : READ_WRITE_PLAINTEXT_ONLY);
+    return !isEnabled;
 }
 
 void RenderTextControl::adjustInnerTextStyle(const RenderStyle* startStyle, RenderStyle* textBlockStyle) const
@@ -107,9 +122,9 @@ void RenderTextControl::adjustInnerTextStyle(const RenderStyle* startStyle, Rend
     // The inner block, if present, always has its direction set to LTR,
     // so we need to inherit the direction from the element.
     textBlockStyle->setDirection(style()->direction());
-    textBlockStyle->setUserModify((node()->isReadOnlyControl() || !node()->isEnabled()) ? READ_ONLY : READ_WRITE_PLAINTEXT_ONLY);
 
-    if (!node()->isEnabled())
+    bool disabled = updateUserModifyProperty(node(), textBlockStyle);
+    if (disabled)
         textBlockStyle->setColor(disabledTextColor(textBlockStyle->color(), startStyle->backgroundColor()));
 }
 
@@ -138,7 +153,7 @@ int RenderTextControl::textBlockWidth() const
 
 void RenderTextControl::updateFromElement()
 {
-    m_innerText->renderer()->style()->setUserModify((node()->isReadOnlyControl() || !node()->isEnabled()) ? READ_ONLY : READ_WRITE_PLAINTEXT_ONLY); 
+    updateUserModifyProperty(node(), m_innerText->renderer()->style());
 }
 
 void RenderTextControl::setInnerTextValue(const String& innerTextValue)
@@ -154,8 +169,12 @@ void RenderTextControl::setInnerTextValue(const String& innerTextValue)
 
     if (value != text() || !m_innerText->hasChildNodes()) {
         if (value != text()) {
-            if (Frame* frame = document()->frame())
+            if (Frame* frame = document()->frame()) {
                 frame->editor()->clearUndoRedoOperations();
+                
+                if (AXObjectCache::accessibilityEnabled())
+                    document()->axObjectCache()->postNotification(this, "AXValueChanged", false);
+            }
         }
 
         ExceptionCode ec = 0;
@@ -171,7 +190,7 @@ void RenderTextControl::setInnerTextValue(const String& innerTextValue)
         m_userEdited = false;
     }
 
-    formControlElement()->setValueMatchesRenderer();
+    static_cast<Element*>(node())->setFormControlValueMatchesRenderer(true);
 }
 
 void RenderTextControl::setUserEdited(bool isUserEdited)
@@ -217,7 +236,7 @@ void RenderTextControl::setSelectionRange(int start, int end)
     end = max(end, 0);
     start = min(max(start, 0), end);
 
-    document()->updateLayout();
+    ASSERT(!document()->childNeedsAndNotInStyleRecalc());
 
     if (style()->visibility() == HIDDEN || !m_innerText || !m_innerText->renderer() || !m_innerText->renderBox()->height()) {
         cacheSelection(start, end);
@@ -230,8 +249,7 @@ void RenderTextControl::setSelectionRange(int start, int end)
     else
         endPosition = visiblePositionForIndex(end);
 
-
-    Selection newSelection = Selection(startPosition, endPosition);
+    VisibleSelection newSelection = VisibleSelection(startPosition, endPosition);
 
     if (Frame* frame = document()->frame())
         frame->selection()->setSelection(newSelection);
@@ -242,10 +260,10 @@ void RenderTextControl::setSelectionRange(int start, int end)
         frame->setSelectionGranularity(CharacterGranularity);
 }
 
-Selection RenderTextControl::selection(int start, int end) const
+VisibleSelection RenderTextControl::selection(int start, int end) const
 {
-    return Selection(VisiblePosition(m_innerText.get(), start, VP_DEFAULT_AFFINITY),
-                     VisiblePosition(m_innerText.get(), end, VP_DEFAULT_AFFINITY));
+    return VisibleSelection(VisiblePosition(m_innerText.get(), start, VP_DEFAULT_AFFINITY),
+                            VisiblePosition(m_innerText.get(), end, VP_DEFAULT_AFFINITY));
 }
 
 VisiblePosition RenderTextControl::visiblePositionForIndex(int index)
@@ -274,7 +292,7 @@ int RenderTextControl::indexForVisiblePosition(const VisiblePosition& pos)
     RefPtr<Range> range = Range::create(document());
     range->setStart(m_innerText.get(), 0, ec);
     ASSERT(!ec);
-    range->setEnd(indexPosition.node(), indexPosition.offset(), ec);
+    range->setEnd(indexPosition.node(), indexPosition.deprecatedEditingOffset(), ec);
     ASSERT(!ec);
     return TextIterator::rangeLength(range.get());
 }
@@ -303,26 +321,14 @@ String RenderTextControl::text()
     if (!m_innerText)
         return "";
  
-    Frame* frame = document()->frame();
-    Text* compositionNode = frame ? frame->editor()->compositionNode() : 0;
-
     Vector<UChar> result;
 
     for (Node* n = m_innerText.get(); n; n = n->traverseNextNode(m_innerText.get())) {
         if (n->hasTagName(brTag))
             result.append(&newlineCharacter, 1);
         else if (n->isTextNode()) {
-            Text* text = static_cast<Text*>(n);
-            String data = text->data();
-            unsigned length = data.length();
-            if (text != compositionNode)
-                result.append(data.characters(), length);
-            else {
-                unsigned compositionStart = min(frame->editor()->compositionStart(), length);
-                unsigned compositionEnd = min(max(compositionStart, frame->editor()->compositionEnd()), length);
-                result.append(data.characters(), compositionStart);
-                result.append(data.characters() + compositionEnd, length - compositionEnd);
-            }
+            String data = static_cast<Text*>(n)->data();
+            result.append(data.characters(), data.length());
         }
     }
 
@@ -343,6 +349,7 @@ static void getNextSoftBreak(RootInlineBox*& line, Node*& breakNode, unsigned& b
         }
     }
     breakNode = 0;
+    breakOffset = 0;
 }
 
 String RenderTextControl::textWithHardLineBreaks()
@@ -363,9 +370,6 @@ String RenderTextControl::textWithHardLineBreaks()
     if (!box)
         return "";
 
-    Frame* frame = document()->frame();
-    Text* compositionNode = frame ? frame->editor()->compositionNode() : 0;
-
     Node* breakNode;
     unsigned breakOffset;
     RootInlineBox* line = box->root();
@@ -380,19 +384,7 @@ String RenderTextControl::textWithHardLineBreaks()
             Text* text = static_cast<Text*>(n);
             String data = text->data();
             unsigned length = data.length();
-            unsigned compositionStart = (text == compositionNode)
-                ? min(frame->editor()->compositionStart(), length) : 0;
-            unsigned compositionEnd = (text == compositionNode)
-                ? min(max(compositionStart, frame->editor()->compositionEnd()), length) : 0;
             unsigned position = 0;
-            while (breakNode == n && breakOffset < compositionStart) {
-                result.append(data.characters() + position, breakOffset - position);
-                position = breakOffset;
-                result.append(&newlineCharacter, 1);
-                getNextSoftBreak(line, breakNode, breakOffset);
-            }
-            result.append(data.characters() + position, compositionStart - position);
-            position = compositionEnd;
             while (breakNode == n && breakOffset <= length) {
                 if (breakOffset > position) {
                     result.append(data.characters() + position, breakOffset - position);
@@ -426,7 +418,7 @@ void RenderTextControl::calcHeight()
     setHeight(height() + paddingTop() + paddingBottom() + borderTop() + borderBottom());
 
     // We are able to have a horizontal scrollbar if the overflow style is scroll, or if its auto and there's no word wrap.
-    if (m_innerText->renderer()->style()->overflowX() == OSCROLL ||  (m_innerText->renderer()->style()->overflowX() == OAUTO && m_innerText->renderer()->style()->wordWrap() == NormalWordWrap))
+    if (style()->overflowX() == OSCROLL ||  (style()->overflowX() == OAUTO && m_innerText->renderer()->style()->wordWrap() == NormalWordWrap))
         setHeight(height() + scrollbarThickness());
 
     RenderBlock::calcHeight();
@@ -435,6 +427,7 @@ void RenderTextControl::calcHeight()
 void RenderTextControl::hitInnerTextElement(HitTestResult& result, int xPos, int yPos, int tx, int ty)
 {
     result.setInnerNode(m_innerText.get());
+    result.setInnerNonSharedNode(m_innerText.get());
     result.setLocalPoint(IntPoint(xPos - tx - x() - m_innerText->renderBox()->x(),
                                   yPos - ty - y() - m_innerText->renderBox()->y()));
 }
@@ -463,10 +456,10 @@ void RenderTextControl::calcPrefWidths()
     if (style()->width().isFixed() && style()->width().value() > 0)
         m_minPrefWidth = m_maxPrefWidth = calcContentBoxWidth(style()->width().value());
     else {
-        // Figure out how big a text control needs to be for a given number of characters
-        // (using "0" as the nominal character).
-        const UChar ch = '0';
-        float charWidth = style()->font().floatWidth(TextRun(&ch, 1, false, 0, 0, false, false, false));
+        // Figure out how big a text control needs to be for a given number of characters 
+        // (using "0" as the nominal character). 
+        const UChar ch = '0'; 
+        float charWidth = style()->font().floatWidth(TextRun(&ch, 1, false, 0, 0, false, false, false)); 
         m_maxPrefWidth = preferredContentWidth(charWidth) + m_innerText->renderBox()->paddingLeft() + m_innerText->renderBox()->paddingRight();
     }
 
@@ -497,68 +490,13 @@ void RenderTextControl::selectionChanged(bool userTriggered)
 
     if (Frame* frame = document()->frame()) {
         if (frame->selection()->isRange() && userTriggered)
-            static_cast<EventTargetNode*>(node())->dispatchEventForType(eventNames().selectEvent, true, false);
+            node()->dispatchEvent(eventNames().selectEvent, true, false);
     }
 }
 
 void RenderTextControl::addFocusRingRects(GraphicsContext* graphicsContext, int tx, int ty)
 {
     graphicsContext->addFocusRingRect(IntRect(tx, ty, width(), height()));
-}
-
-void RenderTextControl::autoscroll()
-{
-    RenderLayer* layer = m_innerText->renderBox()->layer();
-    if (layer)
-        layer->autoscroll();
-}
-
-int RenderTextControl::scrollWidth() const
-{
-    if (m_innerText)
-        return m_innerText->scrollWidth();
-    return RenderBlock::scrollWidth();
-}
-
-int RenderTextControl::scrollHeight() const
-{
-    if (m_innerText)
-        return m_innerText->scrollHeight();
-    return RenderBlock::scrollHeight();
-}
-
-int RenderTextControl::scrollLeft() const
-{
-    if (m_innerText)
-        return m_innerText->scrollLeft();
-    return RenderBlock::scrollLeft();
-}
-
-int RenderTextControl::scrollTop() const
-{
-    if (m_innerText)
-        return m_innerText->scrollTop();
-    return RenderBlock::scrollTop();
-}
-
-void RenderTextControl::setScrollLeft(int newLeft)
-{
-    if (m_innerText)
-        m_innerText->setScrollLeft(newLeft);
-}
-
-void RenderTextControl::setScrollTop(int newTop)
-{
-    if (m_innerText)
-        m_innerText->setScrollTop(newTop);
-}
-
-bool RenderTextControl::scroll(ScrollDirection direction, ScrollGranularity granularity, float multiplier)
-{
-    RenderLayer* layer = m_innerText->renderBox()->layer();
-    if (layer && layer->scroll(direction, granularity, multiplier))
-        return true;
-    return RenderBlock::scroll(direction, granularity, multiplier);
 }
 
 bool RenderTextControl::canScroll() const
@@ -576,11 +514,6 @@ int RenderTextControl::innerLineHeight() const
 HTMLElement* RenderTextControl::innerTextElement() const
 {
     return m_innerText.get();
-}
-
-FormControlElement* RenderTextControl::formControlElement() const
-{
-    return toFormControlElement(static_cast<Element*>(node()));
 }
 
 } // namespace WebCore

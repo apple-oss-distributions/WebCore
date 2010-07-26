@@ -2,9 +2,12 @@
  *  WKScrollView.h
  *  WebCore
  *
- *  Copyright (C) 2005, 2006, 2007, Apple Inc.  All rights reserved.
- *
+ *  Copyright (C) 2005, 2006, 2007, 2008, 2009 Apple Inc.  All rights reserved.
  */
+
+#ifndef WKScrollView_h
+#define WKScrollView_h
+
 #import "WKView.h"
 
 #ifdef __cplusplus
@@ -27,7 +30,6 @@ struct WKScrollView {
     
     CGPoint mouseDownPoint;
     CGPoint lastDraggedPoint;
-    unsigned int mouseDraggedStartedPan:1;
 };
 
 extern WKClassInfo WKScrollViewClassInfo;
@@ -50,3 +52,5 @@ bool WKScrollViewScrollToPoint(WKScrollViewRef view, CGPoint point);
 #ifdef __cplusplus
 }
 #endif
+
+#endif // WKScrollView_h

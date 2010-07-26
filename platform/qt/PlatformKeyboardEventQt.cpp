@@ -192,6 +192,55 @@ static int windowsKeyCodeForKeyEvent(unsigned int keycode)
         case Qt::Key_Alt:
             return VK_MENU; // (12) ALT key
 
+        case Qt::Key_F1:
+            return VK_F1;
+        case Qt::Key_F2:
+            return VK_F2;
+        case Qt::Key_F3:
+            return VK_F3;
+        case Qt::Key_F4:
+            return VK_F4;
+        case Qt::Key_F5:
+            return VK_F5;
+        case Qt::Key_F6:
+            return VK_F6;
+        case Qt::Key_F7:
+            return VK_F7;
+        case Qt::Key_F8:
+            return VK_F8;
+        case Qt::Key_F9:
+            return VK_F9;
+        case Qt::Key_F10:
+            return VK_F11;
+        case Qt::Key_F11:
+            return VK_F11;
+        case Qt::Key_F12:
+            return VK_F12;
+        case Qt::Key_F13:
+            return VK_F13;
+        case Qt::Key_F14:
+            return VK_F14;
+        case Qt::Key_F15:
+            return VK_F15;
+        case Qt::Key_F16:
+            return VK_F16;
+        case Qt::Key_F17:
+            return VK_F17;
+        case Qt::Key_F18:
+            return VK_F18;
+        case Qt::Key_F19:
+            return VK_F19;
+        case Qt::Key_F20:
+            return VK_F20;
+        case Qt::Key_F21:
+            return VK_F21;
+        case Qt::Key_F22:
+            return VK_F22;
+        case Qt::Key_F23:
+            return VK_F23;
+        case Qt::Key_F24:
+            return VK_F24;
+
         case Qt::Key_Pause:
             return VK_PAUSE; // (13) PAUSE key
         case Qt::Key_CapsLock:
@@ -462,6 +511,15 @@ void PlatformKeyboardEvent::disambiguateKeyDownEvent(Type type, bool)
         m_text = String();
         m_unmodifiedText = String();
     } else {
+        /*
+            When we receive shortcut events like Ctrl+V then the text in the QKeyEvent is
+            empty. If we're asked to disambiguate the event into a Char keyboard event,
+            we try to detect this situation and still set the text, to ensure that the
+            general event handling sends a key press event after this disambiguation.
+        */
+        if (m_text.isEmpty() && m_windowsVirtualKeyCode && m_qtEvent->key() < Qt::Key_Escape)
+            m_text.append(UChar(m_windowsVirtualKeyCode));
+
         m_keyIdentifier = String();
         m_windowsVirtualKeyCode = 0;
     }

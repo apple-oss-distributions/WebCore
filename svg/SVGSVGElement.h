@@ -156,6 +156,7 @@ namespace WebCore
         bool m_useCurrentView;
         RefPtr<SMILTimeContainer> m_timeContainer;
         FloatPoint m_translation;
+        float m_scale;
         mutable OwnPtr<SVGViewSpec> m_viewSpec;
         IntSize m_containerSize;
         bool m_hasSetContainerSize;

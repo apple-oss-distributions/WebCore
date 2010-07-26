@@ -29,6 +29,8 @@
 #include "FrameLoader.h"
 #include "HTMLNames.h"
 #include "KURL.h"
+#include "MappedAttribute.h"
+#include "XSSAuditor.h"
 
 namespace WebCore {
 
@@ -47,6 +49,7 @@ HTMLBaseElement::~HTMLBaseElement()
 void HTMLBaseElement::parseMappedAttribute(MappedAttribute* attr)
 {
     if (attr->name() == hrefAttr) {
+        m_hrefAttrValue = attr->value();
         m_href = parseURL(attr->value());
         process();
     } else if (attr->name() == targetAttr) {
@@ -77,7 +80,7 @@ void HTMLBaseElement::process()
     if (!inDocument())
         return;
 
-    if (!m_href.isEmpty())
+    if (!m_href.isEmpty() && (!document()->frame() || document()->frame()->script()->xssAuditor()->canSetBaseElementURL(m_hrefAttrValue)))
         document()->setBaseElementURL(KURL(document()->url(), m_href));
 
     if (!m_target.isEmpty())

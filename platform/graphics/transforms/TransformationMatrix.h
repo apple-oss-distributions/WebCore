@@ -32,6 +32,14 @@
 
 #if PLATFORM(CG)
 #include <CoreGraphics/CGAffineTransform.h>
+#elif PLATFORM(CAIRO)
+#include <cairo.h>
+#elif PLATFORM(QT)
+#include <QTransform>
+#elif PLATFORM(SKIA)
+#include <SkMatrix.h>
+#elif PLATFORM(WX) && USE(WXGC)
+#include <wx/graphics.h>
 #endif
 
 namespace WebCore {
@@ -108,7 +116,7 @@ public:
     // Like the version above, except that it rounds the mapped point to the nearest integer value.
     IntPoint mapPoint(const IntPoint& p) const
     {
-        return roundedIntPoint(mapPoint(p));
+        return roundedIntPoint(mapPoint(FloatPoint(p)));
     }
 
     // If the matrix has 3D components, the z component of the result is
@@ -285,11 +293,21 @@ public:
 
 #if PLATFORM(CG)
     operator CGAffineTransform() const;
+#elif PLATFORM(CAIRO)
+    operator cairo_matrix_t() const;
+#elif PLATFORM(QT)
+    operator QTransform() const;
+#elif PLATFORM(SKIA)
+    operator SkMatrix() const;
+#elif PLATFORM(WX) && USE(WXGC)
+    operator wxGraphicsMatrix() const;
+#endif
+
+#if PLATFORM(WIN)
+    operator XFORM() const;
 #endif
 
 private:
-    TransformationMatrix makeMapBetweenRects(const FloatRect& source, const FloatRect& dest);
-
     // multiply passed 2D point by matrix (assume z=0)
     void multVecMatrix(double x, double y, double& dstX, double& dstY) const;
     

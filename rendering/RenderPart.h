@@ -1,9 +1,7 @@
 /*
- * This file is part of the KDE project.
- *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 2000 Simon Hausmann <hausmann@kde.org>
- * Copyright (C) 2006 Apple Computer, Inc.
+ * Copyright (C) 2006, 2009 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -29,33 +27,33 @@
 
 namespace WebCore {
 
-class Frame;
-class HTMLFrameOwnerElement;
+// Renderer for frames via RenderPartObject, and plug-ins via RenderEmbeddedObject.
 
+// FIXME: This class is subclassed in RenderPartObject for iframes, which is in turn
+// subclassed in RenderEmbeddedObject for object and embed. This class itself could be removed.
 class RenderPart : public RenderWidget {
 public:
     RenderPart(Element*);
     virtual ~RenderPart();
     
-    virtual bool isRenderPart() const { return true; }
-    virtual const char* renderName() const { return "RenderPart"; }
-
-    virtual void setWidget(Widget*);
-
-    // FIXME: This should not be necessary.
-    // Remove this once WebKit knows to properly schedule layouts using WebCore when objects resize.
-    virtual void updateWidgetPosition();
-
     bool hasFallbackContent() const { return m_hasFallbackContent; }
 
+    virtual void setWidget(PassRefPtr<Widget>);
     virtual void viewCleared();
 
 protected:
     bool m_hasFallbackContent;
 
 private:
-    virtual void deleteWidget();
+    virtual bool isRenderPart() const { return true; }
+    virtual const char* renderName() const { return "RenderPart"; }
 };
+
+inline RenderPart* toRenderPart(RenderObject* o)
+{ 
+    ASSERT(!o || o->isRenderPart());
+    return static_cast<RenderPart*>(o);
+}
 
 }
 

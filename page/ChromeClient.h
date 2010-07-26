@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple, Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2008, 2009 Apple, Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,11 +20,15 @@
 #ifndef ChromeClient_h
 #define ChromeClient_h
 
+#include "Console.h"
+#include "Cursor.h"
 #include "FocusDirection.h"
 #include "GraphicsContext.h"
+#include "HTMLParserQuirks.h"
 #include "HostWindow.h"
 #include "ScrollTypes.h"
 #include <wtf/Forward.h>
+#include <wtf/PassOwnPtr.h>
 #include <wtf/Vector.h>
 
 #include "Console.h"
@@ -60,7 +64,7 @@ namespace WebCore {
     class Page;
     class String;
     class Widget;
-    
+
     struct FrameLoadRequest;
     struct ViewportArguments;
     struct WindowFeatures;
@@ -80,7 +84,7 @@ namespace WebCore {
         
         virtual float scaleFactor() = 0;
     
-        virtual void focus(bool userGesture) = 0;
+        virtual void focus() = 0;
         virtual void unfocus() = 0;
 
         virtual bool canTakeFocus(FocusDirection) = 0;
@@ -90,7 +94,7 @@ namespace WebCore {
         // Frame wants to create the new Page.  Also, the newly created window
         // should not be shown to the user until the ChromeClient of the newly
         // created Page has its show method called.
-        virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&, const bool userGesture) = 0;
+        virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&) = 0;
         virtual void show() = 0;
 
         virtual bool canRunModal() = 0;
@@ -110,7 +114,7 @@ namespace WebCore {
 
         virtual void setResizable(bool) = 0;
         
-        virtual void addMessageToConsole(MessageSource source, MessageLevel level, const String& message, unsigned lineNumber, const String& sourceID) = 0;
+        virtual void addMessageToConsole(MessageSource, MessageLevel, const String& message, unsigned int lineNumber, const String& sourceID) = 0;
 
         virtual bool canRunBeforeUnloadConfirmPanel() = 0;
         virtual bool runBeforeUnloadConfirmPanel(const String& message, Frame* frame) = 0;
@@ -133,7 +137,7 @@ namespace WebCore {
         virtual IntRect windowToScreen(const IntRect&) const = 0;
         virtual PlatformWidget platformWindow() const = 0;
         virtual void contentsSizeChanged(Frame*, const IntSize&) const = 0;
-        virtual void scrollRectIntoView(const IntRect&, const ScrollView*) const {} // Platforms other than Mac can implement this if it ever becomes necessary for them to do so.
+        virtual void scrollRectIntoView(const IntRect&, const ScrollView*) const = 0; // Currently only Mac has a non empty implementation.
         // End methods used by HostWindow.
 
         virtual void mouseDidMoveOverElement(const HitTestResult&, unsigned modifierFlags) = 0;
@@ -142,7 +146,9 @@ namespace WebCore {
 
         virtual void print(Frame*) = 0;
 
+#if ENABLE(DATABASE)
         virtual void exceededDatabaseQuota(Frame*, const String& databaseName) = 0;
+#endif
 
 #if ENABLE(DASHBOARD_SUPPORT)
         virtual void dashboardRegionsChanged();
@@ -156,49 +162,51 @@ namespace WebCore {
             
         virtual bool shouldReplaceWithGeneratedFileForUpload(const String& path, String& generatedFilename);
         virtual String generateReplacementFile(const String& path);
-        
-        virtual void enableSuddenTermination();
-        virtual void disableSuddenTermination();
 
         virtual bool paintCustomScrollbar(GraphicsContext*, const FloatRect&, ScrollbarControlSize, 
                                           ScrollbarControlState, ScrollbarPart pressedPart, bool vertical,
                                           float value, float proportion, ScrollbarControlPartMask);
         virtual bool paintCustomScrollCorner(GraphicsContext*, const FloatRect&);
 
-#if ENABLE(TOUCH_EVENTS)
-        virtual void eventRegionsChanged(const HashMap< RefPtr<Node>, unsigned>&) const = 0;
-        virtual void didPreventDefaultForEvent() const = 0;
-#endif
-        virtual void didReceiveDocType(Frame*) const = 0;
-        virtual void setNeedsScrollNotifications(Frame*, bool) const = 0;
-        virtual void observedContentChange(Frame*) const = 0;
-        virtual void clearContentChangeObservers(Frame*) const = 0;
-        virtual void didReceiveViewportArguments(Frame*, const ViewportArguments&) const = 0;
-        virtual void notifyRevealedSelectionByScrollingFrame(Frame*) const = 0;
-        virtual bool isStopping() const = 0;
-        virtual void didLayout() const = 0;
+        virtual void didPreventDefaultForEvent() = 0;
+        virtual void didReceiveDocType(Frame*) = 0;
+        virtual void setNeedsScrollNotifications(Frame*, bool) = 0;
+        virtual void observedContentChange(Frame*) = 0;
+        virtual void clearContentChangeObservers(Frame*) = 0;
+        virtual void didReceiveViewportArguments(Frame*, const ViewportArguments&) = 0;
+        virtual void notifyRevealedSelectionByScrollingFrame(Frame*) = 0;
+        virtual bool isStopping() = 0;
+        virtual void didLayout() = 0;
+        
+        // FIXME: See <rdar://problem/5975559>
+        virtual void suppressFormNotifications() = 0;
+        virtual void restoreFormNotifications() = 0;
 
         // This is an synchronous call. The ChromeClient can display UI asking the user for permission
         // to use Geolococation. The ChromeClient must call Geolocation::setShouldClearCache() appropriately.
         virtual bool requestGeolocationPermissionForFrame(Frame*, Geolocation*) { return false; }
-        
+            
         virtual void runOpenPanel(Frame*, PassRefPtr<FileChooser>) = 0;
+
 
         // Notification that the given form element has changed. This function
         // will be called frequently, so handling should be very fast.
         virtual void formStateDidChange(const Node*) = 0;
+        
+        virtual void formDidFocus(const Node*) = 0;
+        virtual void formDidBlur(const Node*) = 0;
 
-        virtual HTMLParserQuirks* createHTMLParserQuirks() = 0;
+        virtual PassOwnPtr<HTMLParserQuirks> createHTMLParserQuirks() = 0;
 
 #if USE(ACCELERATED_COMPOSITING)
         // Pass 0 as the GraphicsLayer to detatch the root layer.
-        virtual void attachRootGraphicsLayer(Frame*, GraphicsLayer*) { }
+        virtual void attachRootGraphicsLayer(Frame*, GraphicsLayer*) = 0;
         // Sets a flag to specify that the next time content is drawn to the window,
         // the changes appear on the screen in synchrony with updates to GraphicsLayers.
-        virtual void setNeedsOneShotDrawingSynchronization() { }
+        virtual void setNeedsOneShotDrawingSynchronization() = 0;
         // Sets a flag to specify that the view needs to be updated, so we need
         // to do an eager layout before the drawing.
-        virtual void scheduleViewUpdate() { }
+        virtual void scheduleCompositingLayerSync() = 0;
 #endif
 
 #if PLATFORM(MAC)

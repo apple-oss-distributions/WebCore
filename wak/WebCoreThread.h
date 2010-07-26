@@ -2,14 +2,13 @@
  *  WebCoreThread.h
  *  WebCore
  *
- *  Copyright (C) 2006, 2007, Apple Inc.  All rights reserved.
- *
+ *  Copyright (C) 2006, 2007, 2008, 2009 Apple Inc.  All rights reserved.
  */
-
-#import <GraphicsServices/GSEvent.h>
 
 #ifndef WebCoreThread_h
 #define WebCoreThread_h
+
+#import <CoreGraphics/CoreGraphics.h>
 
 #if defined(__cplusplus)
 extern "C" {

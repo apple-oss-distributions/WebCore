@@ -41,9 +41,10 @@ namespace WebCore {
 
 #define ELLIPSIS_CHARACTER 0x2026
 #define SPACE_CHARACTER 0x0020
-    
-typedef unsigned TruncationFunction(const String&, unsigned length, unsigned keepCount, UChar* buffer);
 
+    
+typedef unsigned TruncationFunction(const String&, unsigned length, unsigned keepCount, UChar* buffer, bool insertEllipsis);
+    
 static inline int textBreakAtOrPreceding(TextBreakIterator* it, int offset)
 {
     if (isTextBreak(it, offset))
@@ -58,8 +59,8 @@ static inline int boundedTextBreakFollowing(TextBreakIterator* it, int offset, i
     int result = textBreakFollowing(it, offset);
     return result == TextBreakDone ? length : result;
 }
-
-static unsigned centerTruncateToBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer)
+    
+static unsigned centerTruncateToBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer, bool insertEllipsis)
 {
     ASSERT(keepCount < length);
     ASSERT(keepCount < STRING_BUFFER_SIZE);
@@ -83,17 +84,21 @@ static unsigned centerTruncateToBuffer(const String& string, unsigned length, un
     while ((length - omitEnd) > 1 && string[omitEnd] == SPACE_CHARACTER)
         omitEnd++;
 
-    unsigned truncatedLength = omitStart + 1 + (length - omitEnd);
+    unsigned truncatedLength = insertEllipsis ? omitStart + 1 + (length - omitEnd) : length - (omitEnd - omitStart);
     ASSERT(truncatedLength <= length);
 
     memcpy(buffer, string.characters(), sizeof(UChar) * omitStart);
-    buffer[omitStart] = horizontalEllipsis;
-    memcpy(&buffer[omitStart + 1], &string.characters()[omitEnd], sizeof(UChar) * (length - omitEnd));
+    if (insertEllipsis) {
+        buffer[omitStart] = horizontalEllipsis;
+        memcpy(&buffer[omitStart + 1], &string.characters()[omitEnd], sizeof(UChar) * (length - omitEnd));    
+    } else {
+        memcpy(&buffer[omitStart], &string.characters()[omitEnd], sizeof(UChar) * (length - omitEnd));
+    }
     
     return truncatedLength;
 }
 
-static unsigned rightTruncateToBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer)
+static unsigned rightTruncateToBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer, bool insertEllipsis)
 {
     ASSERT(keepCount < length);
     ASSERT(keepCount < STRING_BUFFER_SIZE);
@@ -108,16 +113,19 @@ static unsigned rightTruncateToBuffer(const String& string, unsigned length, uns
     
     TextBreakIterator* it = characterBreakIterator(string.characters(), length);
     unsigned keepLength = textBreakAtOrPreceding(it, keepCount);
-    unsigned truncatedLength = keepLength + 1;
+    unsigned truncatedLength = insertEllipsis ? keepLength + 1 : keepLength;
 
     memcpy(buffer, string.characters(), sizeof(UChar) * keepLength);
-    buffer[keepLength] = horizontalEllipsis;
+    if (insertEllipsis)
+        buffer[keepLength] = horizontalEllipsis;
     
     return truncatedLength;
 }
     
-static unsigned rightClipToCharacterBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer)
+static unsigned rightClipToCharacterBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer, bool insertEllipsis)
 {
+    UNUSED_PARAM(insertEllipsis);
+    
     ASSERT(keepCount < length);
     ASSERT(keepCount < STRING_BUFFER_SIZE);
     
@@ -128,8 +136,10 @@ static unsigned rightClipToCharacterBuffer(const String& string, unsigned length
     return keepLength;
 }
 
-static unsigned rightClipToWordBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer)
+static unsigned rightClipToWordBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer, bool insertEllipsis)
 {
+    UNUSED_PARAM(insertEllipsis);
+    
     ASSERT(keepCount < length);
     ASSERT(keepCount < STRING_BUFFER_SIZE);
     
@@ -137,12 +147,15 @@ static unsigned rightClipToWordBuffer(const String& string, unsigned length, uns
     unsigned keepLength = textBreakAtOrPreceding(it, keepCount);
     memcpy(buffer, string.characters(), sizeof(UChar) * keepLength);
     
+    // Motivated by rdar://problem/7439327> truncation should not include a trailing space
+    while ((keepLength > 0) && (string[keepLength - 1] == SPACE_CHARACTER))
+        keepLength--;
     return keepLength;
 }
     
 
 
-static unsigned leftTruncateToBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer)
+static unsigned leftTruncateToBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer, bool insertEllipsis)
 {
     ASSERT(keepCount < length);
     ASSERT(keepCount < STRING_BUFFER_SIZE);
@@ -161,10 +174,16 @@ static unsigned leftTruncateToBuffer(const String& string, unsigned length, unsi
     while (adjustedStartIndex < length && string[adjustedStartIndex] == SPACE_CHARACTER)
         adjustedStartIndex++;
     
-    buffer[0] = horizontalEllipsis;
-    memcpy(&buffer[1], &string.characters()[adjustedStartIndex], sizeof(UChar) * (length - adjustedStartIndex + 1));
-    
-    return length - adjustedStartIndex + 1;
+    if (insertEllipsis) {
+        buffer[0] = horizontalEllipsis;
+        memcpy(&buffer[1], &string.characters()[adjustedStartIndex], sizeof(UChar) * (length - adjustedStartIndex + 1));
+        
+        return length - adjustedStartIndex + 1;
+    } else {
+        memcpy(&buffer[0], &string.characters()[adjustedStartIndex], sizeof(UChar) * (length - adjustedStartIndex + 1));
+        
+        return length - adjustedStartIndex;
+    }    
 }
 
 static float stringWidth(const Font& renderer, const UChar* characters, unsigned length, bool disableRoundingHacks)
@@ -175,7 +194,7 @@ static float stringWidth(const Font& renderer, const UChar* characters, unsigned
     return renderer.floatWidth(run);
 }
 
-static String truncateString(const String& string, float maxWidth, const Font& font, TruncationFunction truncateToBuffer, bool disableRoundingHacks, float *resultWidth)
+static String truncateString(const String& string, float maxWidth, const Font& font, TruncationFunction truncateToBuffer, bool disableRoundingHacks, float *resultWidth, bool insertEllipsis = true,  float customTruncationElementWidth = 0, bool alwaysTruncate = false)
 {
     if (string.isEmpty())
         return string;
@@ -185,16 +204,16 @@ static String truncateString(const String& string, float maxWidth, const Font& f
 
     ASSERT(maxWidth >= 0);
     
-    float currentEllipsisWidth = stringWidth(font, &horizontalEllipsis, 1, disableRoundingHacks);
-    
+    float currentEllipsisWidth = insertEllipsis ? stringWidth(font, &horizontalEllipsis, 1, disableRoundingHacks) : customTruncationElementWidth;
     UChar stringBuffer[STRING_BUFFER_SIZE];
     unsigned truncatedLength;
     unsigned keepCount;
     unsigned length = string.length();
 
-    if (length > STRING_BUFFER_SIZE) {
-        keepCount = STRING_BUFFER_SIZE - 1; // need 1 character for the ellipsis
-        truncatedLength = centerTruncateToBuffer(string, length, keepCount, stringBuffer);
+    if (length > STRING_BUFFER_SIZE) {            
+        if (insertEllipsis)
+            keepCount = STRING_BUFFER_SIZE - 1; // need 1 character for the ellipsis
+        truncatedLength = centerTruncateToBuffer(string, length, keepCount, stringBuffer, insertEllipsis);
     } else {
         keepCount = length;
         memcpy(stringBuffer, string.characters(), sizeof(UChar) * length);
@@ -202,6 +221,8 @@ static String truncateString(const String& string, float maxWidth, const Font& f
     }
 
     float width = stringWidth(font, stringBuffer, truncatedLength, disableRoundingHacks);
+    if (!insertEllipsis && alwaysTruncate)
+        width += customTruncationElementWidth;
     if (width <= maxWidth) {
         if (resultWidth)
             *resultWidth = width;
@@ -238,9 +259,11 @@ static String truncateString(const String& string, float maxWidth, const Font& f
         ASSERT(keepCount < keepCountForSmallestKnownToNotFit);
         ASSERT(keepCount > keepCountForLargestKnownToFit);
         
-        truncatedLength = truncateToBuffer(string, length, keepCount, stringBuffer);
-
+        truncatedLength = truncateToBuffer(string, length, keepCount, stringBuffer, insertEllipsis);
+        
         width = stringWidth(font, stringBuffer, truncatedLength, disableRoundingHacks);
+        if (!insertEllipsis)
+            width += customTruncationElementWidth;
         if (width <= maxWidth) {
             keepCountForLargestKnownToFit = keepCount;
             widthForLargestKnownToFit = width;
@@ -258,7 +281,7 @@ static String truncateString(const String& string, float maxWidth, const Font& f
     
     if (keepCount != keepCountForLargestKnownToFit) {
         keepCount = keepCountForLargestKnownToFit;
-        truncatedLength = truncateToBuffer(string, length, keepCount, stringBuffer);
+        truncatedLength = truncateToBuffer(string, length, keepCount, stringBuffer, insertEllipsis);
     }
     
     return String(stringBuffer, truncatedLength);
@@ -280,29 +303,29 @@ float StringTruncator::width(const String& string, const Font& font, bool disabl
 }
 
 
-String StringTruncator::centerTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth)
+String StringTruncator::centerTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis, float customTruncationElementWidth)
 {
-    return truncateString(string, maxWidth, font, centerTruncateToBuffer, disableRoundingHacks, &resultWidth);
+    return truncateString(string, maxWidth, font, centerTruncateToBuffer, disableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth);
 }
 
-String StringTruncator::rightTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth)
+String StringTruncator::rightTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis, float customTruncationElementWidth)
 {
-    return truncateString(string, maxWidth, font, rightTruncateToBuffer, disableRoundingHacks, &resultWidth);
+    return truncateString(string, maxWidth, font, rightTruncateToBuffer, disableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth);
 }
 
-String StringTruncator::leftTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth)
+String StringTruncator::leftTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis, float customTruncationElementWidth)
 {
-    return truncateString(string, maxWidth, font, leftTruncateToBuffer, disableRoundingHacks, &resultWidth);
+    return truncateString(string, maxWidth, font, leftTruncateToBuffer, disableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth);
 }
     
-String StringTruncator::rightClipToCharacter(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth) 
+String StringTruncator::rightClipToCharacter(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis, float customTruncationElementWidth) 
 {
-    return truncateString(string, maxWidth, font, rightClipToCharacterBuffer, disableRoundingHacks, &resultWidth);
+    return truncateString(string, maxWidth, font, rightClipToCharacterBuffer, disableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth);
 }
 
-String StringTruncator::rightClipToWord(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth) 
+String StringTruncator::rightClipToWord(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis,  float customTruncationElementWidth, bool alwaysTruncate) 
 {
-    return truncateString(string, maxWidth, font, rightClipToWordBuffer, disableRoundingHacks, &resultWidth);
+    return truncateString(string, maxWidth, font, rightClipToWordBuffer, disableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth, alwaysTruncate);
 }
     
 

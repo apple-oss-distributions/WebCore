@@ -58,6 +58,7 @@ BitmapImage::BitmapImage(ImageObserver* observer)
     , m_repetitionsComplete(0)
     , m_desiredFrameStartTime(0)
     , m_isSolidColor(false)
+    , m_checkedForSolidColor(false)
     , m_animationFinished(false)
     , m_allDataReceived(false)
     , m_haveSize(false)
@@ -80,7 +81,7 @@ void BitmapImage::destroyDecodedData(bool destroyAll)
 {
     int deltaBytes = 0;
     const size_t clearBeforeFrame = destroyAll ? m_frames.size() : m_currentFrame;
-    for (size_t i = 0; i < clearBeforeFrame; ++i) {
+    for (size_t i = 1; i < clearBeforeFrame; ++i) {
         // The underlying frame isn't actually changing (we're just trying to
         // save the memory for the framebuffer data), so we don't need to clear
         // the metadata.
@@ -100,7 +101,7 @@ void BitmapImage::destroyDecodedDataIfNecessary(bool destroyAll)
     // Animated images >5MB are considered large enough that we'll only hang on
     // to one frame at a time.
     static const unsigned cLargeAnimationCutoff = 2097152;
-    if (frameCount() * frameBytes(m_size) > cLargeAnimationCutoff)
+    if (m_frames.size() * frameBytes(m_size) > cLargeAnimationCutoff)
         destroyDecodedData(destroyAll);
 }
 

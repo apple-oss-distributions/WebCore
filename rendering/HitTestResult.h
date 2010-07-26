@@ -30,8 +30,8 @@ namespace WebCore {
 class Element;
 class Frame;
 class Image;
-class KURL;
 class IntRect;
+class KURL;
 class Node;
 class Scrollbar;
 class String;
@@ -65,12 +65,14 @@ public:
     IntRect boundingBox() const;
     bool isSelected() const;
     String spellingToolTip() const;
+    String replacedString() const;
     String title() const;
     String altDisplayString() const;
     String titleDisplayString() const;
     Image* image() const;
     IntRect imageRect() const;
     KURL absoluteImageURL() const;
+    KURL absoluteMediaURL() const;
     KURL absoluteLinkURL() const;
     String textContent() const;
     bool isLiveLink() const;

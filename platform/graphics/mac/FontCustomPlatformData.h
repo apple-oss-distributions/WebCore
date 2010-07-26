@@ -22,9 +22,10 @@
 #define FontCustomPlatformData_h
 
 #include "FontRenderingMode.h"
+#include <CoreFoundation/CFBase.h>
 #include <wtf/Noncopyable.h>
 
-#include <GraphicsServices/GSFont.h>
+#include <GraphicsServices/GraphicsServices.h>
 
 
 namespace WebCore {

@@ -146,6 +146,10 @@ public:
     virtual bool getHBITMAPOfSize(HBITMAP, LPSIZE);
 #endif
 
+#if PLATFORM(GTK)
+    virtual GdkPixbuf* getGdkPixbuf();
+#endif
+
     virtual NativeImagePtr nativeImageForCurrentFrame() { return frameAtIndex(currentFrame()); }
 
 #if ENABLE(RESPECT_EXIF_ORIENTATION)    
@@ -174,7 +178,7 @@ protected:
     virtual void drawFrameMatchingSourceSize(GraphicsContext*, const FloatRect& dstRect, const IntSize& srcSize, CompositeOperator);
 #endif
     virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator);
-#if PLATFORM(QT) || PLATFORM(WX)
+#if PLATFORM(WX)
     virtual void drawPattern(GraphicsContext*, const FloatRect& srcRect, const TransformationMatrix& patternTransform,
                              const FloatPoint& phase, CompositeOperator, const FloatRect& destRect);
 #endif    
@@ -185,7 +189,9 @@ protected:
     bool frameIsCompleteAtIndex(size_t);
     float frameDurationAtIndex(size_t);
     bool frameHasAlphaAtIndex(size_t); 
+#if ENABLE(RESPECT_EXIF_ORIENTATION)    
     int frameOrientationAtIndex(size_t);
+#endif
 
     // Decodes and caches a frame. Never accessed except internally.
     virtual unsigned animatedImageSize();
@@ -237,9 +243,18 @@ protected:
     void invalidatePlatformData();
     
     // Checks to see if the image is a 1x1 solid color.  We optimize these images and just do a fill rect instead.
+    // This check should happen regardless whether m_checkedForSolidColor is already set, as the frame may have
+    // changed.
     void checkForSolidColor();
     
-    virtual bool mayFillWithSolidColor() const { return m_isSolidColor && m_currentFrame == 0; }
+    virtual bool mayFillWithSolidColor()
+    {
+        if (!m_checkedForSolidColor && frameCount() > 0) {
+            checkForSolidColor();
+            ASSERT(m_checkedForSolidColor);
+        }
+        return m_isSolidColor && m_currentFrame == 0;
+    }
     virtual Color solidColor() const { return m_solidColor; }
     
     ImageSource m_source;
@@ -260,6 +275,7 @@ protected:
 
     Color m_solidColor;  // If we're a 1x1 solid color, this is the color to use to fill.
     bool m_isSolidColor;  // Whether or not we are a 1x1 solid image.
+    bool m_checkedForSolidColor; // Whether we've checked the frame for solid color.
 
     bool m_animationFinished;  // Whether or not we've completed the entire animation.
 

@@ -5,7 +5,7 @@
  *                     2000-2001 Simon Hausmann <hausmann@kde.org>
  *                     2000-2001 Dirk Mueller <mueller@kde.org>
  *                     2000 Stefan Schimanski <1Stein@gmx.de>
- * Copyright (C) 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
  * Copyright (C) 2008 Nokia Corporation and/or its subsidiary(-ies)
  * Copyright (C) 2008 Eric Seidel <eric@webkit.org>
  *
@@ -29,6 +29,7 @@
 #define Frame_h
 
 #include "AnimationController.h"
+#include "Document.h"
 #include "DragImage.h"
 #include "EditAction.h"
 #include "Editor.h"
@@ -36,14 +37,14 @@
 #include "FrameLoader.h"
 #include "FrameTree.h"
 #include "Range.h"
-#include "RenderLayer.h"
+#include "ScrollBehavior.h"
 #include "ScriptController.h"
 #include "SelectionController.h"
 #include "TextGranularity.h"
 
-#include "Frame.h"
+#include "FloatSize.h"
+
 #include "KURL.h"
-#include <GraphicsServices/GSEvent.h>
 
 #if PLATFORM(WIN)
 #include "FrameWin.h"
@@ -69,20 +70,22 @@ typedef struct HBITMAP__* HBITMAP;
 
 namespace WebCore {
 
+class CSSMutableStyleDeclaration;
 class Editor;
 class EventHandler;
 class FrameLoader;
 class FrameLoaderClient;
-class FramePrivate;
 class FrameTree;
+class FrameView;
 class HTMLFrameOwnerElement;
 class HTMLTableCellElement;
-class ScriptController;
 class RegularExpression;
 class RenderLayer;
 class RenderPart;
-class Selection;
+class ScriptController;
 class SelectionController;
+class Settings;
+class VisibleSelection;
 class Widget;
 
 #if FRAME_LOADS_USER_STYLESHEET
@@ -109,7 +112,7 @@ public:
     {
         return adoptRef(new Frame(page, ownerElement, client));
     }
-    void setView(FrameView*);
+    void setView(PassRefPtr<FrameView>);
     ~Frame();
     
     void init();
@@ -117,6 +120,7 @@ public:
     void initWithSimpleHTMLDocument(const String& style, bool editable, const KURL& url);
 
     Page* page() const;
+    void detachFromPage();
     HTMLFrameOwnerElement* ownerElement() const;
 
     void pageDestroyed();
@@ -145,7 +149,9 @@ public:
     bool excludeFromTextSearch() const;
     void setExcludeFromTextSearch(bool);
 
-    friend class FramePrivate;
+    void createView(const IntSize&, const Color&, bool, const IntSize &, bool,
+                    ScrollbarMode = ScrollbarAuto, ScrollbarMode = ScrollbarAuto);
+
 
     float documentScale() const;
     void setDocumentScale(float);
@@ -175,24 +181,18 @@ public:
     static void cancelAllKeepAlive();
 #endif
 
-#if ENABLE(IPHONE_PPT)
     void didParse(double);
     void didLayout(bool, double);
     void didForcedLayout();
     void getPPTStats(unsigned& parseCount, unsigned& layoutCount, unsigned& forcedLayoutCount, CFTimeInterval& parseDuration, CFTimeInterval& layoutDuration);
     void clearPPTStats();
-#endif
-
-    void formElementDidSetValue(Element*);
-    void formElementDidFocus(Element*);
-    void formElementDidBlur(Element*);
 
     const ViewportArguments& viewportArguments() const;
     void setViewportArguments(const ViewportArguments&);
     NSDictionary* dictionaryForViewportArguments(const ViewportArguments& arguments) const;
         
-    inline void betterApproximateNode(int x, int y, NodeQualifier aQualifer, Node* & best, Node* failedNode, IntPoint &bestPoint, IntRect &bestRect, IntRect& testRect);
-    inline Node* qualifyingNodeAtViewportLocation(CGPoint* aViewportLocation, NodeQualifier aQualifer, bool shouldApproximate);
+    void betterApproximateNode(const IntPoint& testPoint, NodeQualifier aQualifer, Node*& best, Node* failedNode, IntPoint &bestPoint, IntRect &bestRect, const IntRect& testRect);
+    Node* qualifyingNodeAtViewportLocation(CGPoint* aViewportLocation, NodeQualifier aQualifer, bool shouldApproximate);
     
     Node* nodeRespondingToClickEvents(CGPoint* aViewportLocation);
     Node* nodeRespondingToScrollWheelEvents(CGPoint* aViewportLocation);
@@ -206,8 +206,13 @@ public:
 
     void setDocument(PassRefPtr<Document>);
 
+#if ENABLE(ORIENTATION_EVENTS)
+    // Orientation is the interface orientation in degrees. Some examples are:
+    //  0 is straight up; -90 is when the device is rotated 90 clockwise;
+    //  90 is when rotated counter clockwise.
     void sendOrientationChangeEvent(int orientation);
-    int orientation() const;
+    int orientation() const { return m_orientation; }
+#endif
 
     void clearTimers();
     static void clearTimers(FrameView*, Document*);
@@ -230,25 +235,9 @@ public:
 private:
     void lifeSupportTimerFired(Timer<Frame>*);
 
-// === to be moved into Document
-
-public:
-    bool isFrameSet() const;
-
-// === to be moved into EventHandler
-
-public:
-    void sendResizeEvent();
-    void sendScrollEvent();
-
 // === to be moved into FrameView
 
 public: 
-    void forceLayout(bool allowSubtree = false);
-    void forceLayoutWithPageWidthRange(float minPageWidth, float maxPageWidth, bool adjustViewSize);
-
-    void adjustPageHeight(float* newBottom, float oldTop, float oldBottom, float bottomLimit);
-
     void setZoomFactor(float scale, bool isTextOnly);
     float zoomFactor() const;
     bool isZoomFactorTextOnly() const;
@@ -262,7 +251,7 @@ public:
 public:
     void focusWindow();
     void unfocusWindow();
-    bool shouldClose();
+    bool shouldClose(RegisteredEventListenerVector* alternateEventListeners = 0);
     void scheduleClose();
 
     void setJSStatusBarText(const String&);
@@ -276,8 +265,8 @@ public:
     String selectedText() const;  
     bool findString(const String&, bool forward, bool caseFlag, bool wrapFlag, bool startInSelection);
 
-    const Selection& mark() const; // Mark, to be used as emacs uses it.
-    void setMark(const Selection&);
+    const VisibleSelection& mark() const; // Mark, to be used as emacs uses it.
+    void setMark(const VisibleSelection&);
 
     /**
      * Clears the current selection.
@@ -293,8 +282,8 @@ public:
 
     IntRect firstRectForRange(Range*) const;
     
-    void respondToChangedSelection(const Selection& oldSelection, bool closeTyping);
-    bool shouldChangeSelection(const Selection& oldSelection, const Selection& newSelection, EAffinity, bool stillSelecting) const;
+    void respondToChangedSelection(const VisibleSelection& oldSelection, bool closeTyping);
+    bool shouldChangeSelection(const VisibleSelection& oldSelection, const VisibleSelection& newSelection, EAffinity, bool stillSelecting) const;
 
     RenderStyle* styleForSelectionStart(Node*& nodeToRemove) const;
 
@@ -319,8 +308,8 @@ public:
     TextGranularity selectionGranularity() const;
     void setSelectionGranularity(TextGranularity);
 
-    bool shouldChangeSelection(const Selection&) const;
-    bool shouldDeleteSelection(const Selection&) const;
+    bool shouldChangeSelection(const VisibleSelection&) const;
+    bool shouldDeleteSelection(const VisibleSelection&) const;
     void clearCaretRectIfNeeded();
     void setFocusedNodeIfNeeded();
     void selectionLayoutChanged();
@@ -328,8 +317,6 @@ public:
 
     void setSingleLineSelectionBehavior(bool b);
     bool singleLineSelectionBehavior() const;
-
-    void invalidateSelection();
 
     void setCaretVisible(bool = true);
     void paintCaret(GraphicsContext*, int tx, int ty, const IntRect& clipRect) const;  
@@ -357,7 +344,7 @@ public:
 
     HTMLFormElement* currentForm() const;
 
-    void revealSelection(const RenderLayer::ScrollAlignment& = RenderLayer::gAlignCenterIfNeeded, bool revealExtent = false);
+    void revealSelection(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded, bool revealExtent = false);
     void setSelectionFromNone();
     void setCaretBlinks(bool flag = true);
 
@@ -394,8 +381,10 @@ public:
     NSMutableDictionary* dashboardRegionsDictionary();
 #endif
 
+    CGImageRef selectionImage(bool forceBlackText = false) const;
 
 private:    
+    CGImageRef imageFromRect(NSRect) const;
 
 // === to be moved into Editor
 
@@ -405,28 +394,30 @@ public:
 
 #endif
 
-    // Used to be in WebCoreFrameBridge
+public:
+    void setVisibleSize(const FloatSize& size);
+    const FloatSize& visibleSize() const;
+
 public:
     int preferredHeight() const;
     int innerLineHeight(DOMNode *node) const;
     void updateLayout() const;
     NSRect caretRect() const;
     NSRect rectForScrollToVisible() const;
+    NSRect rectForSelection(VisibleSelection&) const;
     void createDefaultFieldEditorDocumentStructure() const;
     void moveSelectionToStartOrEndOfCurrentWord();
     unsigned formElementsCharacterCount() const;
     void setTimersPaused(bool);
     bool timersPaused() const { return m_timersPausedCount; }
-    const FloatSize& visibleSize() const;
-    void setVisibleSize(const FloatSize& size);
     void setRangedSelectionBaseToCurrentSelection();
     void setRangedSelectionBaseToCurrentSelectionStart();
     void setRangedSelectionBaseToCurrentSelectionEnd();
     void clearRangedSelectionInitialExtent();
     void setRangedSelectionInitialExtentToCurrentSelectionStart();
     void setRangedSelectionInitialExtentToCurrentSelectionEnd();
-    Selection rangedSelectionBase() const;
-    Selection rangedSelectionInitialExtent() const;
+    VisibleSelection rangedSelectionBase() const;
+    VisibleSelection rangedSelectionInitialExtent() const;
 
 #if PLATFORM(WIN)
 
@@ -458,7 +449,7 @@ private:
     TextGranularity m_selectionGranularity;
 
     mutable SelectionController m_selectionController;
-    mutable Selection m_mark;
+    mutable VisibleSelection m_mark;
     Timer<Frame> m_caretBlinkTimer;
     mutable Editor m_editor;
     mutable EventHandler m_eventHandler;
@@ -472,21 +463,21 @@ private:
     IntPoint m_overflowAutoScrollPos;
     ViewportArguments m_viewportArguments;
     bool m_embeddedEditingMode;
+    VisibleSelection m_rangedSelectionBase;
+    VisibleSelection m_rangedSelectionInitialExtent;
     FloatSize m_visibleSize;
-    int m_orientation;
-    Selection m_rangedSelectionBase;
-    Selection m_rangedSelectionInitialExtent;
-
-#if ENABLE(IPHONE_PPT)
     unsigned m_parseCount;
     unsigned m_layoutCount;
     unsigned m_forcedLayoutCount;
     CFTimeInterval m_parseDuration;
     CFTimeInterval m_layoutDuration;
-#endif
 
     Timer<Frame> m_lifeSupportTimer;
 
+#if ENABLE(ORIENTATION_EVENTS)
+    int m_orientation;
+#endif
+    
     String m_userStyleSheet;
 
     bool m_caretVisible;

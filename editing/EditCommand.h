@@ -28,7 +28,7 @@
 
 #include "EditAction.h"
 #include "Element.h"
-#include "Selection.h"
+#include "VisibleSelection.h"
 
 namespace WebCore {
 
@@ -47,8 +47,8 @@ public:
 
     virtual EditAction editingAction() const;
 
-    const Selection& startingSelection() const { return m_startingSelection; }
-    const Selection& endingSelection() const { return m_endingSelection; }
+    const VisibleSelection& startingSelection() const { return m_startingSelection; }
+    const VisibleSelection& endingSelection() const { return m_endingSelection; }
 
     Element* startingRootEditableElement() const { return m_startingRootEditableElement.get(); }
     Element* endingRootEditableElement() const { return m_endingRootEditableElement.get(); }
@@ -58,13 +58,16 @@ public:
     
     virtual bool preservesTypingStyle() const;
 
-    void setStartingSelection(const Selection&);
-    void setEndingSelection(const Selection&);
-
 protected:
     EditCommand(Document*);
 
     Document* document() const { return m_document.get(); }
+
+public:
+    void setStartingSelection(const VisibleSelection&);
+    void setEndingSelection(const VisibleSelection&);
+
+protected:
     PassRefPtr<CSSMutableStyleDeclaration> styleAtPosition(const Position&);
     void updateLayout() const;
 
@@ -74,8 +77,8 @@ private:
     virtual void doReapply(); // calls doApply()
 
     RefPtr<Document> m_document;
-    Selection m_startingSelection;
-    Selection m_endingSelection;
+    VisibleSelection m_startingSelection;
+    VisibleSelection m_endingSelection;
     RefPtr<Element> m_startingRootEditableElement;
     RefPtr<Element> m_endingRootEditableElement;
     CompositeEditCommand* m_parent;

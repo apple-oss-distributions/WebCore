@@ -76,7 +76,11 @@ using JSC::UString;
 #include <QWidget>
 #include <QKeyEvent>
 QT_BEGIN_NAMESPACE
-extern Q_GUI_EXPORT OSWindowRef qt_mac_window_for(const QWidget *w);
+#if QT_VERSION < 0x040500
+extern Q_GUI_EXPORT WindowPtr qt_mac_window_for(const QWidget* w);
+#else
+extern Q_GUI_EXPORT OSWindowRef qt_mac_window_for(const QWidget* w);
+#endif
 QT_END_NAMESPACE
 #endif
 
@@ -158,8 +162,6 @@ void PluginView::init()
     m_npWindow.clipRect.right = 0;
     m_npWindow.clipRect.bottom = 0;
 
-    setIsNPAPIPlugin(true);
-
     show();
 
     m_status = PluginStatusLoadedSuccessfully;
@@ -218,15 +220,15 @@ void PluginView::stop()
 
 NPError PluginView::getValueStatic(NPNVariable variable, void* value)
 {
-    LOG(Plugin, "PluginView::getValueStatic(%d)", variable);
+    LOG(Plugins, "PluginView::getValueStatic(%d)", variable);
 
     switch (variable) {
     case NPNVToolkit:
-        *((uint32 *)value) = 0;
+        *static_cast<uint32*>(value) = 0;
         return NPERR_NO_ERROR;
 
     case NPNVjavascriptEnabledBool:
-        *((uint32 *)value) = true;
+        *static_cast<NPBool*>(value) = true;
         return NPERR_NO_ERROR;
 
     default:
@@ -236,7 +238,7 @@ NPError PluginView::getValueStatic(NPNVariable variable, void* value)
 
 NPError PluginView::getValue(NPNVariable variable, void* value)
 {
-    LOG(Plugin, "PluginView::getValue(%d)", variable);
+    LOG(Plugins, "PluginView::getValue(%d)", variable);
 
     switch (variable) {
     case NPNVWindowNPObject: {
@@ -277,7 +279,7 @@ NPError PluginView::getValue(NPNVariable variable, void* value)
     }
 
     case NPNVsupportsCoreGraphicsBool:
-        *((uint32 *)value) = true;
+        *static_cast<NPBool*>(value) = true;
         return NPERR_NO_ERROR;
 
     default:
@@ -297,31 +299,25 @@ void PluginView::setParent(ScrollView* parent)
 
 void PluginView::show()
 {
-    LOG(Plugin, "PluginView::show()");
+    LOG(Plugins, "PluginView::show()");
 
     setSelfVisible(true);
-
-    if (isParentVisible() && platformPluginWidget())
-        platformPluginWidget()->setVisible(true);
 
     Widget::show();
 }
 
 void PluginView::hide()
 {
-    LOG(Plugin, "PluginView::hide()");
+    LOG(Plugins, "PluginView::hide()");
 
     setSelfVisible(false);
-
-    if (isParentVisible() && platformPluginWidget())
-        platformPluginWidget()->setVisible(false);
 
     Widget::hide();
 }
 
 void PluginView::setFocus()
 {
-    LOG(Plugin, "PluginView::setFocus()");
+    LOG(Plugins, "PluginView::setFocus()");
 
     if (platformPluginWidget())
        platformPluginWidget()->setFocus(Qt::OtherFocusReason);
@@ -347,9 +343,6 @@ void PluginView::setParentVisible(bool visible)
         return;
 
     Widget::setParentVisible(visible);
-
-    if (isSelfVisible() && platformPluginWidget())
-        platformPluginWidget()->setVisible(visible);
 }
 
 void PluginView::setNPWindowRect(const IntRect&)
@@ -404,7 +397,10 @@ void PluginView::updatePluginWidget()
     IntRect oldWindowRect = m_windowRect;
     IntRect oldClipRect = m_clipRect;
 
-    m_windowRect = IntRect(frameView->contentsToWindow(frameRect().location()), frameRect().size());
+    m_windowRect = frameView->contentsToWindow(frameRect());
+    IntPoint offset = topLevelOffsetFor(platformPluginWidget());
+    m_windowRect.move(offset.x(), offset.y());
+
     m_clipRect = windowClipRect();
     m_clipRect.move(-m_windowRect.x(), -m_windowRect.y());
 
@@ -445,11 +441,8 @@ void PluginView::paint(GraphicsContext* context, const IntRect& rect)
 
 void PluginView::invalidateRect(const IntRect& rect)
 {
-    if (platformPluginWidget()) {
-        // TODO: optimize
-        platformPluginWidget()->update();
-        return;
-    }
+    if (platformPluginWidget())
+        platformPluginWidget()->update(convertToContainingWindow(rect));
 }
 
 void PluginView::invalidateRect(NPRect* rect)
@@ -517,9 +510,9 @@ void PluginView::handleMouseEvent(MouseEvent* event)
 
 void PluginView::handleKeyboardEvent(KeyboardEvent* event)
 {
-    LOG(Plugin, "PluginView::handleKeyboardEvent() ----------------- ");
+    LOG(Plugins, "PluginView::handleKeyboardEvent() ----------------- ");
 
-    LOG(Plugin, "PV::hKE(): KE.keyCode: 0x%02X, KE.charCode: %d",
+    LOG(Plugins, "PV::hKE(): KE.keyCode: 0x%02X, KE.charCode: %d",
             event->keyCode(), event->charCode());
 
     EventRecord record;
@@ -555,7 +548,7 @@ void PluginView::handleKeyboardEvent(KeyboardEvent* event)
 
     WTF::RetainPtr<CFStringRef> cfText(WTF::AdoptCF, text.createCFString());
 
-    LOG(Plugin, "PV::hKE(): PKE.text: %s, PKE.unmodifiedText: %s, PKE.keyIdentifier: %s",
+    LOG(Plugins, "PV::hKE(): PKE.text: %s, PKE.unmodifiedText: %s, PKE.keyIdentifier: %s",
             text.ascii().data(), platformEvent->unmodifiedText().ascii().data(),
             platformEvent->keyIdentifier().ascii().data());
 
@@ -571,9 +564,9 @@ void PluginView::handleKeyboardEvent(KeyboardEvent* event)
     record.message = ((keyCode & 0xFF) << 8) | (charCodes[0] & 0xFF);
     record.when = TickCount();
 
-    LOG(Plugin, "PV::hKE(): record.modifiers: %d", record.modifiers);
+    LOG(Plugins, "PV::hKE(): record.modifiers: %d", record.modifiers);
 
-    LOG(Plugin, "PV::hKE(): PKE.qtEvent()->nativeVirtualKey: 0x%02X, charCode: %d",
+    LOG(Plugins, "PV::hKE(): PKE.qtEvent()->nativeVirtualKey: 0x%02X, charCode: %d",
                keyCode, int(uchar(charCodes[0])));
 
     if (!dispatchNPEvent(record))
@@ -633,10 +626,6 @@ Point PluginView::globalMousePosForPlugin() const
 {
     Point pos;
     GetGlobalMouse(&pos);
-
-    IntPoint offset = topLevelOffsetFor(platformPluginWidget());
-    pos.h -= offset.x();
-    pos.v -= offset.y();
 
     float scaleFactor = tigerOrBetter() ? HIGetScaleFactor() : 1;
 
@@ -705,5 +694,9 @@ NPError PluginView::handlePostReadFile(Vector<char>& buffer, uint32 len, const c
 }
 
 } // namespace WebCore
+
+#else
+
+#include "../PluginViewNone.cpp"
 
 #endif // !__LP64__

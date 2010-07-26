@@ -81,7 +81,7 @@ void ApplicationCache::addResource(PassRefPtr<ApplicationCacheResource> resource
     
     if (m_storageID) {
         ASSERT(!resource->storageID());
-        ASSERT(resource->type() & (ApplicationCacheResource::Dynamic | ApplicationCacheResource::Implicit));
+        ASSERT(resource->type() & ApplicationCacheResource::Master);
         
         // Add the resource to the storage.
         cacheStorage().store(resource.get(), this);
@@ -111,7 +111,7 @@ ApplicationCacheResource* ApplicationCache::resourceForURL(const String& url)
 
 bool ApplicationCache::requestIsHTTPOrHTTPSGet(const ResourceRequest& request)
 {
-    if (!request.url().protocolIs("http") && !request.url().protocolIs("https"))
+    if (!request.url().protocolInHTTPFamily())
         return false;
     
     if (!equalIgnoringCase(request.httpMethod(), "GET"))
@@ -129,32 +129,6 @@ ApplicationCacheResource* ApplicationCache::resourceForRequest(const ResourceReq
     return resourceForURL(request.url());
 }
 
-unsigned ApplicationCache::numDynamicEntries() const
-{
-    // FIXME: Implement
-    return 0;
-}
-    
-String ApplicationCache::dynamicEntry(unsigned) const
-{
-    // FIXME: Implement
-    return String();
-}
-    
-bool ApplicationCache::addDynamicEntry(const String& url)
-{
-    if (!equalIgnoringCase(m_group->manifestURL().protocol(), KURL(url).protocol()))
-        return false;
-
-    // FIXME: Implement
-    return true;
-}
-    
-void ApplicationCache::removeDynamicEntry(const String&)
-{
-    // FIXME: Implement
-}
-
 void ApplicationCache::setOnlineWhitelist(const Vector<KURL>& onlineWhitelist)
 {
     ASSERT(m_onlineWhitelist.isEmpty());
@@ -163,6 +137,9 @@ void ApplicationCache::setOnlineWhitelist(const Vector<KURL>& onlineWhitelist)
 
 bool ApplicationCache::isURLInOnlineWhitelist(const KURL& url)
 {
+    if (m_allowAllNetworkRequests)
+        return true;
+
     size_t whitelistSize = m_onlineWhitelist.size();
     for (size_t i = 0; i < whitelistSize; ++i) {
         if (protocolHostAndPortAreEqual(url, m_onlineWhitelist[i]) && url.string().startsWith(m_onlineWhitelist[i].string()))

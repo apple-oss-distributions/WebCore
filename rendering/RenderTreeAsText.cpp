@@ -26,6 +26,7 @@
 #include "config.h"
 #include "RenderTreeAsText.h"
 
+#include "CSSMutableStyleDeclaration.h"
 #include "CharacterNames.h"
 #include "Document.h"
 #include "Frame.h"
@@ -44,9 +45,11 @@
 #include <wtf/Vector.h>
 
 #if ENABLE(SVG)
-#include "RenderSVGRoot.h"
+#include "RenderPath.h"
 #include "RenderSVGContainer.h"
+#include "RenderSVGImage.h"
 #include "RenderSVGInlineText.h"
+#include "RenderSVGRoot.h"
 #include "RenderSVGText.h"
 #include "SVGRenderTreeAsText.h"
 #endif
@@ -170,13 +173,13 @@ static TextStream &operator<<(TextStream& ts, const RenderObject& o)
     if (o.style() && o.style()->zIndex())
         ts << " zI: " << o.style()->zIndex();
 
-    if (o.element()) {
-        String tagName = getTagName(o.element());
+    if (o.node()) {
+        String tagName = getTagName(o.node());
         if (!tagName.isEmpty()) {
             ts << " {" << tagName << "}";
             // flag empty or unstyled AppleStyleSpan because we never
             // want to leave them in the DOM
-            if (isEmptyOrUnstyledAppleStyleSpan(o.element()))
+            if (isEmptyOrUnstyledAppleStyleSpan(o.node()))
                 ts << " *empty or unstyled AppleStyleSpan*";
         }
     }
@@ -192,21 +195,19 @@ static TextStream &operator<<(TextStream& ts, const RenderObject& o)
         r = IntRect(text.firstRunX(), text.firstRunY(), linesBox.width(), linesBox.height());
         if (adjustForTableCells && !text.firstTextBox())
             adjustForTableCells = false;
-    } else if (o.isBox()) {
-        if (o.isRenderInline()) {
-            // FIXME: Would be better not to just dump 0, 0 as the x and y here.
-            const RenderInline& inlineFlow = static_cast<const RenderInline&>(o);
-            r = IntRect(0, 0, inlineFlow.linesBoundingBox().width(), inlineFlow.linesBoundingBox().height());
-            adjustForTableCells = false;
-        } else if (o.isTableCell()) {
-            // FIXME: Deliberately dump the "inner" box of table cells, since that is what current results reflect.  We'd like
-            // to clean up the results to dump both the outer box and the intrinsic padding so that both bits of information are
-            // captured by the results.
-            const RenderTableCell& cell = static_cast<const RenderTableCell&>(o);
-            r = IntRect(cell.x(), cell.y() + cell.intrinsicPaddingTop(), cell.width(), cell.height() - cell.intrinsicPaddingTop() - cell.intrinsicPaddingBottom());
-        } else
-            r = toRenderBox(&o)->frameRect();
-    }
+    } else if (o.isRenderInline()) {
+        // FIXME: Would be better not to just dump 0, 0 as the x and y here.
+        const RenderInline& inlineFlow = *toRenderInline(&o);
+        r = IntRect(0, 0, inlineFlow.linesBoundingBox().width(), inlineFlow.linesBoundingBox().height());
+        adjustForTableCells = false;
+    } else if (o.isTableCell()) {
+        // FIXME: Deliberately dump the "inner" box of table cells, since that is what current results reflect.  We'd like
+        // to clean up the results to dump both the outer box and the intrinsic padding so that both bits of information are
+        // captured by the results.
+        const RenderTableCell& cell = static_cast<const RenderTableCell&>(o);
+        r = IntRect(cell.x(), cell.y() + cell.intrinsicPaddingTop(), cell.width(), cell.height() - cell.intrinsicPaddingTop() - cell.intrinsicPaddingBottom());
+    } else if (o.isBox())
+        r = toRenderBox(&o)->frameRect();
 
     // FIXME: Temporary in order to ensure compatibility with existing layout test results.
     if (adjustForTableCells)
@@ -237,10 +238,10 @@ static TextStream &operator<<(TextStream& ts, const RenderObject& o)
             o.style()->textStrokeWidth() > 0)
             ts << " [textStrokeWidth=" << o.style()->textStrokeWidth() << "]";
 
-        if (!o.isBox())
+        if (!o.isBoxModelObject())
             return ts;
 
-        const RenderBox& box = *toRenderBox(&o);
+        const RenderBoxModelObject& box = *toRenderBoxModelObject(&o);
         if (box.borderTop() || box.borderRight() || box.borderBottom() || box.borderLeft()) {
             ts << " [border:";
 
@@ -376,6 +377,10 @@ void write(TextStream& ts, const RenderObject& o, int indent)
             write(ts, static_cast<const RenderSVGInlineText&>(o), indent);
         return;
     }
+    if (o.isSVGImage()) {
+        write(ts, static_cast<const RenderSVGImage&>(o), indent);
+        return;
+    }
 #endif
 
     writeIndent(ts, indent);
@@ -405,7 +410,7 @@ void write(TextStream& ts, const RenderObject& o, int indent)
                 view->layout();
                 RenderLayer* l = root->layer();
                 if (l)
-                    writeLayers(ts, l, l, IntRect(l->xPos(), l->yPos(), l->width(), l->height()), indent + 1);
+                    writeLayers(ts, l, l, IntRect(l->x(), l->y(), l->width(), l->height()), indent + 1);
             }
         }
     }
@@ -433,9 +438,9 @@ static void write(TextStream& ts, RenderLayer& l,
             ts << " scrollX " << l.scrollXOffset();
         if (l.scrollYOffset())
             ts << " scrollY " << l.scrollYOffset();
-        if (l.renderer()->clientWidth() != l.scrollWidth())
+        if (l.renderBox() && l.renderBox()->clientWidth() != l.scrollWidth())
             ts << " scrollWidth " << l.scrollWidth();
-        if (l.renderer()->clientHeight() != l.scrollHeight())
+        if (l.renderBox() && l.renderBox()->clientHeight() != l.scrollHeight())
             ts << " scrollHeight " << l.scrollHeight();
     }
 
@@ -509,7 +514,7 @@ static String nodePosition(Node* node)
 
 static void writeSelection(TextStream& ts, const RenderObject* o)
 {
-    Node* n = o->element();
+    Node* n = o->node();
     if (!n || !n->isDocumentNode())
         return;
 
@@ -518,15 +523,15 @@ static void writeSelection(TextStream& ts, const RenderObject* o)
     if (!frame)
         return;
 
-    Selection selection = frame->selection()->selection();
+    VisibleSelection selection = frame->selection()->selection();
     if (selection.isCaret()) {
-        ts << "caret: position " << selection.start().offset() << " of " << nodePosition(selection.start().node());
+        ts << "caret: position " << selection.start().deprecatedEditingOffset() << " of " << nodePosition(selection.start().node());
         if (selection.affinity() == UPSTREAM)
             ts << " (upstream affinity)";
         ts << "\n";
     } else if (selection.isRange())
-        ts << "selection start: position " << selection.start().offset() << " of " << nodePosition(selection.start().node()) << "\n"
-           << "selection end:   position " << selection.end().offset() << " of " << nodePosition(selection.end().node()) << "\n";
+        ts << "selection start: position " << selection.start().deprecatedEditingOffset() << " of " << nodePosition(selection.start().node()) << "\n"
+           << "selection end:   position " << selection.end().deprecatedEditingOffset() << " of " << nodePosition(selection.end().node()) << "\n";
 }
 
 String externalRepresentation(RenderObject* o)
@@ -542,7 +547,7 @@ String externalRepresentation(RenderObject* o)
         o->view()->frameView()->layout();
     if (o->hasLayer()) {
         RenderLayer* l = toRenderBox(o)->layer();
-        writeLayers(ts, l, l, IntRect(l->xPos(), l->yPos(), l->width(), l->height()));
+        writeLayers(ts, l, l, IntRect(l->x(), l->y(), l->width(), l->height()));
         writeSelection(ts, o);
     }
     return ts.release();

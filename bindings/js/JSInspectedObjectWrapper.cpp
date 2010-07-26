@@ -26,6 +26,8 @@
 #include "config.h"
 #include "JSInspectedObjectWrapper.h"
 
+#if ENABLE(INSPECTOR)
+
 #include "JSInspectorCallbackWrapper.h"
 #include <runtime/JSGlobalObject.h>
 #include <wtf/StdLibExtras.h>
@@ -34,7 +36,7 @@ using namespace JSC;
 
 namespace WebCore {
 
-ASSERT_CLASS_FITS_IN_CELL(JSInspectedObjectWrapper)
+ASSERT_CLASS_FITS_IN_CELL(JSInspectedObjectWrapper);
 
 typedef HashMap<JSObject*, JSInspectedObjectWrapper*> WrapperMap;
 typedef HashMap<JSGlobalObject*, WrapperMap*> GlobalObjectWrapperMap;
@@ -47,7 +49,7 @@ static GlobalObjectWrapperMap& wrappers()
 
 const ClassInfo JSInspectedObjectWrapper::s_info = { "JSInspectedObjectWrapper", &JSQuarantinedObjectWrapper::s_info, 0, 0 };
 
-JSValuePtr JSInspectedObjectWrapper::wrap(ExecState* unwrappedExec, JSValuePtr unwrappedValue)
+JSValue JSInspectedObjectWrapper::wrap(ExecState* unwrappedExec, JSValue unwrappedValue)
 {
     if (!unwrappedValue.isObject())
         return unwrappedValue;
@@ -57,11 +59,11 @@ JSValuePtr JSInspectedObjectWrapper::wrap(ExecState* unwrappedExec, JSValuePtr u
     if (unwrappedObject->inherits(&JSInspectedObjectWrapper::s_info))
         return unwrappedObject;
 
-    if (WrapperMap* wrapperMap = wrappers().get(unwrappedExec->dynamicGlobalObject()))
+    if (WrapperMap* wrapperMap = wrappers().get(unwrappedExec->lexicalGlobalObject()))
         if (JSInspectedObjectWrapper* wrapper = wrapperMap->get(unwrappedObject))
             return wrapper;
 
-    JSValuePtr prototype = unwrappedObject->prototype();
+    JSValue prototype = unwrappedObject->prototype();
     ASSERT(prototype.isNull() || prototype.isObject());
 
     if (prototype.isNull())
@@ -96,7 +98,7 @@ JSInspectedObjectWrapper::~JSInspectedObjectWrapper()
     }
 }
 
-JSValuePtr JSInspectedObjectWrapper::prepareIncomingValue(ExecState*, JSValuePtr value) const
+JSValue JSInspectedObjectWrapper::prepareIncomingValue(ExecState*, JSValue value) const
 {
     // The Inspector is only allowed to pass primitive values and wrapped objects to objects from the inspected page.
 
@@ -125,3 +127,5 @@ JSValuePtr JSInspectedObjectWrapper::prepareIncomingValue(ExecState*, JSValuePtr
 }
 
 } // namespace WebCore
+
+#endif // ENABLE(INSPECTOR)

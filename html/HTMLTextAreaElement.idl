@@ -46,10 +46,8 @@ module html {
                  attribute long selectionEnd;
         void setSelectionRange(in long start, in long end);
         
-#if WTF_PLATFORM_IPHONE
                 attribute  boolean  autocorrect;
                 attribute  boolean  autocapitalize;
-#endif
     };
 
 }

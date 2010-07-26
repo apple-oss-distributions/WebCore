@@ -45,6 +45,44 @@ namespace WebCore {
     
 const unsigned maximumCacheDatabaseSize = 256 * 1024 * 1024;
 
+class ResourceStorageIDJournal {
+public:  
+    ~ResourceStorageIDJournal()
+    {
+        size_t size = m_records.size();
+        for (size_t i = 0; i < size; ++i)
+            m_records[i].restore();
+    }
+
+    void add(ApplicationCacheResource* resource, unsigned storageID)
+    {
+        m_records.append(Record(resource, storageID));
+    }
+
+    void commit()
+    {
+        m_records.clear();
+    }
+
+private:
+    class Record {
+    public:
+        Record() : m_resource(0), m_storageID(0) { }
+        Record(ApplicationCacheResource* resource, unsigned storageID) : m_resource(resource), m_storageID(storageID) { }
+
+        void restore()
+        {
+            m_resource->setStorageID(m_storageID);
+        }
+
+    private:
+        ApplicationCacheResource* m_resource;
+        unsigned m_storageID;
+    };
+
+    Vector<Record> m_records;
+};
+
 static unsigned urlHostHash(const KURL& url)
 {
     unsigned hostStart = url.hostStart();
@@ -330,7 +368,8 @@ bool ApplicationCacheStorage::executeSQLCommand(const String& sql)
     return result;
 }
 
-static const int schemaVersion = 3;
+// This version identifier should be incremented as necessary. It is not necessarily related to the non-PLATFORM(IPHONE) schema version.
+static const int schemaVersion = 4;
     
 void ApplicationCacheStorage::verifySchemaVersion()
 {
@@ -391,6 +430,7 @@ void ApplicationCacheStorage::openDatabase(bool createIfDoesNotExist)
                       "manifestHostHash INTEGER NOT NULL ON CONFLICT FAIL, manifestURL TEXT UNIQUE ON CONFLICT FAIL, newestCache INTEGER)");
     executeSQLCommand("CREATE TABLE IF NOT EXISTS Caches (id INTEGER PRIMARY KEY AUTOINCREMENT, cacheGroup INTEGER)");
     executeSQLCommand("CREATE TABLE IF NOT EXISTS CacheWhitelistURLs (url TEXT NOT NULL ON CONFLICT FAIL, cache INTEGER NOT NULL ON CONFLICT FAIL)");
+    executeSQLCommand("CREATE TABLE IF NOT EXISTS CacheAllowsAllNetworkRequests (wildcard INTEGER NOT NULL ON CONFLICT FAIL, cache INTEGER NOT NULL ON CONFLICT FAIL)");
     executeSQLCommand("CREATE TABLE IF NOT EXISTS FallbackURLs (namespace TEXT NOT NULL ON CONFLICT FAIL, fallbackURL TEXT NOT NULL ON CONFLICT FAIL, "
                       "cache INTEGER NOT NULL ON CONFLICT FAIL)");
     executeSQLCommand("CREATE TABLE IF NOT EXISTS CacheEntries (cache INTEGER NOT NULL ON CONFLICT FAIL, type INTEGER, resource INTEGER NOT NULL)");
@@ -403,6 +443,7 @@ void ApplicationCacheStorage::openDatabase(bool createIfDoesNotExist)
                       " FOR EACH ROW BEGIN"
                       "  DELETE FROM CacheEntries WHERE cache = OLD.id;"
                       "  DELETE FROM CacheWhitelistURLs WHERE cache = OLD.id;"
+                      "  DELETE FROM CacheAllowsAllNetworkRequests WHERE cache = OLD.id;"
                       "  DELETE FROM FallbackURLs WHERE cache = OLD.id;"
                       " END");
 
@@ -447,10 +488,11 @@ bool ApplicationCacheStorage::store(ApplicationCacheGroup* group)
     return true;
 }    
 
-bool ApplicationCacheStorage::store(ApplicationCache* cache)
+bool ApplicationCacheStorage::store(ApplicationCache* cache, ResourceStorageIDJournal* storageIDJournal)
 {
     ASSERT(cache->storageID() == 0);
     ASSERT(cache->group()->storageID() != 0);
+    ASSERT(storageIDJournal);
     
     SQLiteStatement statement(m_database, "INSERT INTO Caches (cacheGroup) VALUES (?)");
     if (statement.prepare() != SQLResultOk)
@@ -467,8 +509,13 @@ bool ApplicationCacheStorage::store(ApplicationCache* cache)
     {
         ApplicationCache::ResourceMap::const_iterator end = cache->end();
         for (ApplicationCache::ResourceMap::const_iterator it = cache->begin(); it != end; ++it) {
+            unsigned oldStorageID = it->second->storageID();
             if (!store(it->second.get(), cacheStorageID))
                 return false;
+
+            // Storing the resource succeeded. Log its old storageID in case
+            // it needs to be restored later.
+            storageIDJournal->add(it->second.get(), oldStorageID);
         }
     }
     
@@ -486,6 +533,18 @@ bool ApplicationCacheStorage::store(ApplicationCache* cache)
             if (!executeStatement(statement))
                 return false;
         }
+    }
+
+    // Store online whitelist wildcard flag.
+    {
+        SQLiteStatement statement(m_database, "INSERT INTO CacheAllowsAllNetworkRequests (wildcard, cache) VALUES (?, ?)");
+        statement.prepare();
+
+        statement.bindInt64(1, cache->allowsAllNetworkRequests());
+        statement.bindInt64(2, cacheStorageID);
+
+        if (!executeStatement(statement))
+            return false;
     }
     
     // Store fallback URLs.
@@ -582,9 +641,6 @@ bool ApplicationCacheStorage::storeUpdatedType(ApplicationCacheResource* resourc
     ASSERT_UNUSED(cache, cache->storageID());
     ASSERT(resource->storageID());
 
-    // FIXME: If the resource gained a Dynamic bit, it should be re-inserted at the end for correct order.
-    ASSERT(!(resource->type() & ApplicationCacheResource::Dynamic));
-    
     // First, insert the data
     SQLiteStatement entryStatement(m_database, "UPDATE CacheEntries SET type=? WHERE resource=?");
     if (entryStatement.prepare() != SQLResultOk)
@@ -629,8 +685,13 @@ bool ApplicationCacheStorage::storeNewestCache(ApplicationCacheGroup* group)
     ASSERT(!group->isObsolete());
     ASSERT(!group->newestCache()->storageID());
     
+    // Log the storageID changes to the in-memory resource objects. The journal
+    // object will roll them back automatically in case a database operation
+    // fails and this method returns early.
+    ResourceStorageIDJournal storageIDJournal;
+
     // Store the newest cache
-    if (!store(group->newestCache()))
+    if (!store(group->newestCache(), &storageIDJournal))
         return false;
     
     // Update the newest cache in the group.
@@ -645,6 +706,7 @@ bool ApplicationCacheStorage::storeNewestCache(ApplicationCacheGroup* group)
     if (!executeStatement(statement))
         return false;
     
+    storageIDJournal.commit();
     storeCacheTransaction.commit();
     return true;
 }
@@ -734,6 +796,21 @@ PassRefPtr<ApplicationCache> ApplicationCacheStorage::loadCache(unsigned storage
         LOG_ERROR("Could not load cache online whitelist, error \"%s\"", m_database.lastErrorMsg());
 
     cache->setOnlineWhitelist(whitelist);
+
+    // Load online whitelist wildcard flag.
+    SQLiteStatement whitelistWildcardStatement(m_database, "SELECT wildcard FROM CacheAllowsAllNetworkRequests WHERE cache=?");
+    if (whitelistWildcardStatement.prepare() != SQLResultOk)
+        return 0;
+    whitelistWildcardStatement.bindInt64(1, storageID);
+    
+    result = whitelistWildcardStatement.step();
+    if (result != SQLResultRow)
+        LOG_ERROR("Could not load cache online whitelist wildcard flag, error \"%s\"", m_database.lastErrorMsg());
+
+    cache->setAllowsAllNetworkRequests(whitelistWildcardStatement.getColumnInt64(0));
+
+    if (whitelistWildcardStatement.step() != SQLResultDone)
+        LOG_ERROR("Too many rows for online whitelist wildcard flag");
 
     // Load fallback URLs.
     SQLiteStatement fallbackStatement(m_database, "SELECT namespace, fallbackURL FROM FallbackURLs WHERE cache=?");

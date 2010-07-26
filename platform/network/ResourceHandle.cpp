@@ -34,6 +34,8 @@
 
 namespace WebCore {
 
+static bool shouldForceContentSniffing;
+
 static bool portAllowed(const ResourceRequest&);
 
 ResourceHandle::ResourceHandle(const ResourceRequest& request, ResourceHandleClient* client, bool defersLoading,
@@ -45,6 +47,9 @@ ResourceHandle::ResourceHandle(const ResourceRequest& request, ResourceHandleCli
 PassRefPtr<ResourceHandle> ResourceHandle::create(const ResourceRequest& request, ResourceHandleClient* client,
     Frame* frame, bool defersLoading, bool shouldContentSniff, bool mightDownloadFromHandle)
 {
+    if (shouldContentSniff)
+        shouldContentSniff = shouldContentSniffURL(request.url());
+
     RefPtr<ResourceHandle> newHandle(adoptRef(new ResourceHandle(request, client, defersLoading, shouldContentSniff, mightDownloadFromHandle)));
 
     if (!request.url().isValid()) {
@@ -181,6 +186,11 @@ static bool portAllowed(const ResourceRequest& request)
         3659, // apple-sasl / PasswordServer [Apple addition]
         4045, // lockd
         6000, // X11
+        6665, // Alternate IRC [Apple addition]
+        6666, // Alternate IRC [Apple addition]
+        6667, // Standard IRC [Apple addition]
+        6668, // Alternate IRC [Apple addition]
+        6669, // Alternate IRC [Apple addition]
     };
     const unsigned short* const blockedPortListEnd = blockedPortList
         + sizeof(blockedPortList) / sizeof(blockedPortList[0]);
@@ -200,4 +210,24 @@ static bool portAllowed(const ResourceRequest& request)
     return false;
 }
   
+bool ResourceHandle::shouldContentSniff() const
+{
+    return d->m_shouldContentSniff;
+}
+
+bool ResourceHandle::shouldContentSniffURL(const KURL& url)
+{
+#if PLATFORM(MAC)
+    if (shouldForceContentSniffing)
+        return true;
+#endif
+    // We shouldn't content sniff file URLs as their MIME type should be established via their extension.
+    return !url.protocolIs("file");
+}
+
+void ResourceHandle::forceContentSniffing()
+{
+    shouldForceContentSniffing = true;
+}
+
 } // namespace WebCore

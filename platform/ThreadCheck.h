@@ -26,6 +26,7 @@
 #ifndef ThreadCheck_h
 #define ThreadCheck_h
 
-#define WebCoreThreadViolationCheck() do {} while (0)
+#define WebCoreThreadViolationCheckRoundOne() do {} while (0)
+#define WebCoreThreadViolationCheckRoundTwo() do {} while (0)
 
 #endif

@@ -26,13 +26,19 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef WebCoreURLResponseIPhone_h
+#define WebCoreURLResponseIPhone_h
+
+#ifdef __OBJC__
 #include "WebCoreURLResponse.h"
+#endif
 
 #include "MIMETypeRegistry.h"
 #include "PlatformString.h"
 
 namespace WebCore {
 
+    
 inline bool shouldUseQuickLookForMIMEType(const String& mimeType)
 {
     if ((   !MIMETypeRegistry::isSupportedNonImageMIMEType(mimeType)    // ignore supported non-image MIME types
@@ -48,4 +54,7 @@ inline bool shouldUseQuickLookForMIMEType(const String& mimeType)
     return false;
 }
 
-}
+
+} // namespace WebCore
+
+#endif // WebCoreURLResponseIPhone_h

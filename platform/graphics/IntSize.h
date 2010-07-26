@@ -48,9 +48,6 @@ QT_BEGIN_NAMESPACE
 class QSize;
 QT_END_NAMESPACE
 #endif
-#if PLATFORM(SYMBIAN)
-class TSize;
-#endif
 
 namespace WebCore {
 
@@ -66,11 +63,18 @@ public:
     void setHeight(int height) { m_height = height; }
 
     bool isEmpty() const { return m_width <= 0 || m_height <= 0; }
-
+    bool isZero() const { return !m_width && !m_height; }
+    
     void expand(int width, int height)
     {
         m_width += width;
         m_height += height;
+    }
+    
+    void scale(float scale)
+    {
+        m_width = static_cast<int>(static_cast<float>(m_width) * scale);
+        m_height = static_cast<int>(static_cast<float>(m_height) * scale);
     }
     
     IntSize expandedTo(const IntSize& other) const
@@ -104,10 +108,6 @@ public:
 #if PLATFORM(QT)
     IntSize(const QSize&);
     operator QSize() const;
-#endif
-#if PLATFORM(SYMBIAN)
-    IntSize(const TSize&);
-    operator TSize() const;
 #endif
 
 

@@ -30,6 +30,7 @@
 #include <wtf/Vector.h>
 
 #include "SelectionRect.h"
+#include "VisiblePosition.h"
 
 namespace WebCore {
 
@@ -42,6 +43,7 @@ public:
     static PassRefPtr<Range> create(PassRefPtr<Document>);
     static PassRefPtr<Range> create(PassRefPtr<Document>, PassRefPtr<Node> startContainer, int startOffset, PassRefPtr<Node> endContainer, int endOffset);
     static PassRefPtr<Range> create(PassRefPtr<Document>, const Position&, const Position&);
+    static PassRefPtr<Range> create(PassRefPtr<Document>, const VisiblePosition &, const VisiblePosition &);
     ~Range();
 
     Document* ownerDocument() const { return m_ownerDocument.get(); }
@@ -68,7 +70,7 @@ public:
     enum CompareHow { START_TO_START, START_TO_END, END_TO_END, END_TO_START };
     short compareBoundaryPoints(CompareHow, const Range* sourceRange, ExceptionCode&) const;
     static short compareBoundaryPoints(Node* containerA, int offsetA, Node* containerB, int offsetB);
-    static short compareBoundaryPoints(const Position&, const Position&);
+    static short compareBoundaryPoints(const RangeBoundaryPoint& boundaryA, const RangeBoundaryPoint& boundaryB);
     bool boundaryPointsValid() const;
     bool intersectsNode(Node* refNode, ExceptionCode&);
     void deleteContents(ExceptionCode&);
@@ -93,8 +95,8 @@ public:
     void surroundContents(PassRefPtr<Node>, ExceptionCode&);
     void setStartBefore(Node*, ExceptionCode&);
 
-    const Position& startPosition() const { return m_start.position(); }
-    const Position& endPosition() const { return m_end.position(); }
+    const Position startPosition() const { return m_start.toPosition(); }
+    const Position endPosition() const { return m_end.toPosition(); }
 
     Node* firstNode() const;
     Node* pastLastNode() const;
@@ -104,7 +106,7 @@ public:
     Node* shadowTreeRootNode() const;
 
     IntRect boundingBox();
-    void addLineBoxRects(Vector<IntRect>&, bool useSelectionHeight = false);
+    void textRects(Vector<IntRect>&, bool useSelectionHeight = false);
     void collectSelectionRects(Vector<SelectionRect>&);
 
     void nodeChildrenChanged(ContainerNode*);

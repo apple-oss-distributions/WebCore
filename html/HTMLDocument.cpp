@@ -151,9 +151,12 @@ Element* HTMLDocument::activeElement()
 
 bool HTMLDocument::hasFocus()
 {
-    if (!page()->focusController()->isActive())
+    Page* page = this->page();
+    if (!page)
         return false;
-    if (Frame* focusedFrame = page()->focusController()->focusedFrame()) {
+    if (!page->focusController()->isActive())
+        return false;
+    if (Frame* focusedFrame = page->focusController()->focusedFrame()) {
         if (focusedFrame->tree()->isDescendantOf(frame()))
             return true;
     }
@@ -281,6 +284,11 @@ void HTMLDocument::releaseEvents()
 Tokenizer *HTMLDocument::createTokenizer()
 {
     bool reportErrors = true;
+#if ENABLE(INSPECTOR)
+    if (Page* page = this->page())
+        reportErrors = page->inspectorController()->windowVisible();
+#endif
+
     return new HTMLTokenizer(this, reportErrors);
 }
 
@@ -417,5 +425,11 @@ void HTMLDocument::clear()
     // We've long had a comment saying that IE doesn't support this.
     // But I do see it in the documentation for Mozilla.
 }
-    
+
+bool HTMLDocument::isFrameSet() const
+{
+    HTMLElement* bodyElement = body();
+    return bodyElement && bodyElement->renderer() && bodyElement->hasTagName(framesetTag);
+}
+
 }

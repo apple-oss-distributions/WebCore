@@ -61,6 +61,10 @@ class NativeImageSkia;
 #include <QPixmap>
 #endif
 
+#if PLATFORM(GTK)
+typedef struct _GdkPixbuf GdkPixbuf;
+#endif
+
 namespace WebCore {
 
 class TransformationMatrix;
@@ -145,6 +149,10 @@ public:
     virtual unsigned animatedImageSize() { return 0; }
     virtual void disableImageAnimation() { }
 
+#if PLATFORM(GTK)
+    virtual GdkPixbuf* getGdkPixbuf() { return 0; }
+#endif
+
 protected:
     Image(ImageObserver* = 0);
 
@@ -158,7 +166,7 @@ protected:
     void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, TileRule hRule, TileRule vRule, CompositeOperator);
 
     // Supporting tiled drawing
-    virtual bool mayFillWithSolidColor() const { return false; }
+    virtual bool mayFillWithSolidColor() { return false; }
     virtual Color solidColor() const { return Color(); }
     
     virtual void drawPattern(GraphicsContext*, const FloatRect& srcRect, const TransformationMatrix& patternTransform,

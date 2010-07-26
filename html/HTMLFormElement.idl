@@ -37,12 +37,10 @@ module html {
                  attribute [ConvertNullToNullString] DOMString       method;
                  attribute [ConvertNullToNullString] DOMString       target;
         
-        [IPhoneApplyOnWebThread] [Custom] void submit();
+        [IPhoneApplyOnWebThread, Custom] void submit();
         [IPhoneApplyOnWebThread] void reset();
 
-#if WTF_PLATFORM_IPHONE
                 attribute  boolean  autocorrect;
                 attribute  boolean  autocapitalize;
-#endif
     };
 }

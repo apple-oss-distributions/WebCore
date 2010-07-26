@@ -85,11 +85,11 @@ public:
 
 private:
     FontCache();
+    ~FontCache();
 
     // These methods are implemented by each platform.
     FontPlatformData* getSimilarFontPlatformData(const Font&);
     FontPlatformData* getCustomFallbackFont(const UInt32 c, const Font&);
-    bool requiresCustomFallbackFont(const UInt32 c);
     FontPlatformData* createFontPlatformData(const FontDescription&, const AtomicString& family);
 
     friend class SimpleFontData;

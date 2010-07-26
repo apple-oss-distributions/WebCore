@@ -49,7 +49,7 @@ public:
 
     virtual void imageChanged(WrappedImagePtr, const IntRect* = 0);
 
-    virtual InlineBox* createInlineBox(bool, bool, bool);
+    virtual InlineBox* createInlineBox();
 
     virtual int lineHeight(bool firstLine, bool isRootLineBox = false) const;
     virtual int baselinePosition(bool firstLine, bool isRootLineBox = false) const;
@@ -60,9 +60,8 @@ public:
 
     bool isInside() const;
 
-    virtual SelectionState selectionState() const { return m_selectionState; }
     virtual void setSelectionState(SelectionState);
-    virtual IntRect selectionRectForRepaint(RenderBox* repaintContainer, bool clipToVisibleContent = true);
+    virtual IntRect selectionRectForRepaint(RenderBoxModelObject* repaintContainer, bool clipToVisibleContent = true);
     virtual bool canBeSelectionLeaf() const { return true; }
 
     void updateMargins();
@@ -77,7 +76,6 @@ private:
     String m_text;
     RefPtr<StyleImage> m_image;
     RenderListItem* m_listItem;
-    SelectionState m_selectionState;
 };
 
 } // namespace WebCore

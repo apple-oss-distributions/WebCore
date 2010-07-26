@@ -62,12 +62,13 @@ namespace WebCore {
     class PageGroup;
     class PluginData;
     class ProgressTracker;
-    class Selection;
+    class RenderTheme;
+    class VisibleSelection;
     class SelectionController;
-#if ENABLE(DOM_STORAGE)
-    class SessionStorage;
-#endif
     class Settings;
+#if ENABLE(DOM_STORAGE)
+    class StorageNamespace;
+#endif
 #if ENABLE(WML)
     class WMLPageState;
 #endif
@@ -80,7 +81,9 @@ namespace WebCore {
 
         Page(ChromeClient*, ContextMenuClient*, EditorClient*, DragClient*, InspectorClient*);
         ~Page();
-        
+
+        RenderTheme* theme() const { return m_theme.get(); };
+
         static void refreshPlugins(bool reload);
         PluginData* pluginData() const;
 
@@ -114,11 +117,24 @@ namespace WebCore {
 
         Chrome* chrome() const { return m_chrome.get(); }
         SelectionController* dragCaretController() const { return m_dragCaretController.get(); }
+#if ENABLE(DRAG_SUPPORT)
+        DragController* dragController() const { return m_dragController.get(); }
+#endif
         FocusController* focusController() const { return m_focusController.get(); }
+#if ENABLE(CONTEXT_MENUS)
+        ContextMenuController* contextMenuController() const { return m_contextMenuController.get(); }
+#endif
+#if ENABLE(INSPECTOR)
+        InspectorController* inspectorController() const { return m_inspectorController.get(); }
+#endif
         Settings* settings() const { return m_settings.get(); }
         ProgressTracker* progress() const { return m_progress.get(); }
 
-
+#if ENABLE(INSPECTOR)
+        void setParentInspectorController(InspectorController* controller) { m_parentInspectorController = controller; }
+        InspectorController* parentInspectorController() const { return m_parentInspectorController; }
+#endif
+        
         void setTabKeyCyclesThroughElements(bool b) { m_tabKeyCyclesThroughElements = b; }
         bool tabKeyCyclesThroughElements() const { return m_tabKeyCyclesThroughElements; }
 
@@ -134,7 +150,7 @@ namespace WebCore {
         OwnPtr<SchedulePairHashSet> m_scheduledRunLoopPairs;
 #endif
 
-        const Selection& selection() const;
+        const VisibleSelection& selection() const;
 
         void setDefersLoading(bool);
         bool defersLoading() const { return m_defersLoading; }
@@ -156,11 +172,6 @@ namespace WebCore {
 
         void userStyleSheetLocationChanged();
         const String& userStyleSheet() const;
-        
-        void changePendingUnloadEventCount(int delta);
-        unsigned pendingUnloadEventCount();
-        void changePendingBeforeUnloadEventCount(int delta);
-        unsigned pendingBeforeUnloadEventCount();
 
         static void setDebuggerForAllPages(JSC::Debugger*);
         void setDebugger(JSC::Debugger*);
@@ -178,8 +189,8 @@ namespace WebCore {
         static void visitedStateChanged(PageGroup*, LinkHash visitedHash);
 
 #if ENABLE(DOM_STORAGE)
-        SessionStorage* sessionStorage(bool optionalCreate = true);
-        void setSessionStorage(PassRefPtr<SessionStorage>);
+        StorageNamespace* sessionStorage(bool optionalCreate = true);
+        void setSessionStorage(PassRefPtr<StorageNamespace>);
 #endif
 
 #if ENABLE(WML)
@@ -205,7 +216,16 @@ namespace WebCore {
 
         OwnPtr<Chrome> m_chrome;
         OwnPtr<SelectionController> m_dragCaretController;
+#if ENABLE(DRAG_SUPPORT)
+        OwnPtr<DragController> m_dragController;
+#endif
         OwnPtr<FocusController> m_focusController;
+#if ENABLE(CONTEXT_MENUS)
+        OwnPtr<ContextMenuController> m_contextMenuController;
+#endif
+#if ENABLE(INSPECTOR)
+        RefPtr<InspectorController> m_inspectorController;
+#endif
         OwnPtr<Settings> m_settings;
         OwnPtr<ProgressTracker> m_progress;
         
@@ -215,6 +235,8 @@ namespace WebCore {
         RefPtr<HistoryItem> m_globalHistoryItem;
 
         mutable RefPtr<PluginData> m_pluginData;
+
+        RefPtr<RenderTheme> m_theme;
 
         EditorClient* m_editorClient;
 
@@ -231,6 +253,9 @@ namespace WebCore {
 
         bool m_javaScriptURLsAreAllowed;
 
+#if ENABLE(INSPECTOR)
+        InspectorController* m_parentInspectorController;
+#endif
 
         String m_userStyleSheetPath;
         mutable String m_userStyleSheet;
@@ -241,15 +266,12 @@ namespace WebCore {
         PageGroup* m_group;
 
         JSC::Debugger* m_debugger;
-        
-        unsigned m_pendingUnloadEventCount;
-        unsigned m_pendingBeforeUnloadEventCount;
 
         double m_customHTMLTokenizerTimeDelay;
         int m_customHTMLTokenizerChunkSize;
 
 #if ENABLE(DOM_STORAGE)
-        RefPtr<SessionStorage> m_sessionStorage;
+        RefPtr<StorageNamespace> m_sessionStorage;
 #endif
 
 #if PLATFORM(WIN) || (PLATFORM(WX) && defined(__WXMSW__)) || (PLATFORM(QT) && defined(Q_WS_WIN))

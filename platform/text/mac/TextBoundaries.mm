@@ -92,7 +92,7 @@ static CFStringTokenizerRef tokenizerForString(CFStringRef str)
 // Simple case: a word is a stream of characters
 // delimited by a special set of word-delimiting characters.
 static void findSimpleWordBoundary(const UChar* chars, int len, int position, int* start, int* end)
-{
+{    
     int startPos = position;
     while (startPos > 0 && !isWordDelimitingCharacter(chars[startPos-1]))
         startPos--;
@@ -143,7 +143,7 @@ void findWordBoundary(const UChar* chars, int len, int position, int* start, int
     // single contiguous run of characters, providing as much context as is possible.
     // We only need one character to determine if the text is complex.
     UChar32 ch;
-    int i = 0;
+    int i = pos;
     U16_NEXT(chars,i,len,ch);
     bool isComplex = requiresContextForWordBoundary(ch);
     if (isComplex) {

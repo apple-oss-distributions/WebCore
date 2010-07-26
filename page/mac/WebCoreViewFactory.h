@@ -39,16 +39,79 @@
 - (NSString *)fileButtonNoFileSelectedLabel;
 - (NSString *)copyImageUnknownFileLabel;
 
+#if ENABLE(CONTEXT_MENUS)
+// Context menu item titles
+- (NSString *)contextMenuItemTagOpenLinkInNewWindow;
+- (NSString *)contextMenuItemTagDownloadLinkToDisk;
+- (NSString *)contextMenuItemTagCopyLinkToClipboard;
+- (NSString *)contextMenuItemTagOpenImageInNewWindow;
+- (NSString *)contextMenuItemTagDownloadImageToDisk;
+- (NSString *)contextMenuItemTagCopyImageToClipboard;
+- (NSString *)contextMenuItemTagOpenFrameInNewWindow;
+- (NSString *)contextMenuItemTagCopy;
+- (NSString *)contextMenuItemTagGoBack;
+- (NSString *)contextMenuItemTagGoForward;
+- (NSString *)contextMenuItemTagStop;
+- (NSString *)contextMenuItemTagReload;
+- (NSString *)contextMenuItemTagCut;
+- (NSString *)contextMenuItemTagPaste;
+- (NSString *)contextMenuItemTagNoGuessesFound;
+- (NSString *)contextMenuItemTagIgnoreSpelling;
+- (NSString *)contextMenuItemTagLearnSpelling;
+- (NSString *)contextMenuItemTagSearchInSpotlight;
+- (NSString *)contextMenuItemTagSearchWeb;
+- (NSString *)contextMenuItemTagLookUpInDictionary;
+- (NSString *)contextMenuItemTagOpenLink;
+- (NSString *)contextMenuItemTagIgnoreGrammar;
+- (NSString *)contextMenuItemTagSpellingMenu;
+- (NSString *)contextMenuItemTagShowSpellingPanel:(bool)show;
+- (NSString *)contextMenuItemTagCheckSpelling;
+- (NSString *)contextMenuItemTagCheckSpellingWhileTyping;
+- (NSString *)contextMenuItemTagCheckGrammarWithSpelling;
+- (NSString *)contextMenuItemTagFontMenu;
+- (NSString *)contextMenuItemTagShowFonts;
+- (NSString *)contextMenuItemTagBold;
+- (NSString *)contextMenuItemTagItalic;
+- (NSString *)contextMenuItemTagUnderline;
+- (NSString *)contextMenuItemTagOutline;
+- (NSString *)contextMenuItemTagStyles;
+- (NSString *)contextMenuItemTagShowColors;
+- (NSString *)contextMenuItemTagSpeechMenu;
+- (NSString *)contextMenuItemTagStartSpeaking;
+- (NSString *)contextMenuItemTagStopSpeaking;
+- (NSString *)contextMenuItemTagWritingDirectionMenu;
+- (NSString *)contextMenuItemTagTextDirectionMenu;
+- (NSString *)contextMenuItemTagDefaultDirection;
+- (NSString *)contextMenuItemTagLeftToRight;
+- (NSString *)contextMenuItemTagRightToLeft;
+- (NSString *)contextMenuItemTagCorrectSpellingAutomatically;
+- (NSString *)contextMenuItemTagSubstitutionsMenu;
+- (NSString *)contextMenuItemTagShowSubstitutions:(bool)show;
+- (NSString *)contextMenuItemTagSmartCopyPaste;
+- (NSString *)contextMenuItemTagSmartQuotes;
+- (NSString *)contextMenuItemTagSmartDashes;
+- (NSString *)contextMenuItemTagSmartLinks;
+- (NSString *)contextMenuItemTagTextReplacement;
+- (NSString *)contextMenuItemTagTransformationsMenu;
+- (NSString *)contextMenuItemTagMakeUpperCase;
+- (NSString *)contextMenuItemTagMakeLowerCase;
+- (NSString *)contextMenuItemTagCapitalize;
+- (NSString *)contextMenuItemTagChangeBack:(NSString *)replacedString;
+- (NSString *)contextMenuItemTagInspectElement;
+#endif // ENABLE(CONTEXT_MENUS)
+
 
 - (NSString *)defaultLanguageCode;
 
 - (NSString *)imageTitleForFilename:(NSString *)filename width:(int)width height:(int)height;
 
 
-
 - (NSString *)multipleFileUploadTextForNumberOfFiles:(unsigned)numberOfFiles;
 // FTP Directory Related
 - (NSString *)unknownFileSizeText;
+
+- (NSString *)mediaElementLoadingStateText;
+- (NSString *)mediaElementLiveBroadcastStateText;
 
 - (NSString *)htmlSelectMultipleItems:(int)num;
 @end

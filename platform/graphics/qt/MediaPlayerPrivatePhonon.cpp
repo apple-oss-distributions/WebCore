@@ -27,6 +27,7 @@
 #include "FrameView.h"
 #include "GraphicsContext.h"
 #include "NotImplemented.h"
+#include "TimeRanges.h"
 #include "Widget.h"
 #include <wtf/HashSet.h>
 
@@ -36,7 +37,10 @@
 #include <QMetaEnum>
 #include <QUrl>
 #include <QEvent>
-#include <phonon>
+
+#include <Phonon/AudioOutput>
+#include <Phonon/MediaObject>
+#include <Phonon/VideoWidget>
 
 using namespace Phonon;
 
@@ -158,6 +162,13 @@ bool MediaPlayerPrivate::hasVideo() const
     return hasVideo;
 }
 
+bool MediaPlayerPrivate::hasAudio() const
+{
+    bool hasAudio = m_mediaObject->hasAudio();
+    LOG(Media, "MediaPlayerPrivatePhonon::hasAudio() -> %s", hasAudio ? "true" : "false");
+    return hasAudio;
+}
+
 void MediaPlayerPrivate::load(const String& url)
 {
     LOG(Media, "MediaPlayerPrivatePhonon::load(\"%s\")", url.utf8().data());
@@ -250,10 +261,10 @@ void MediaPlayerPrivate::setEndTime(float endTime)
     notImplemented();
 }
 
-float MediaPlayerPrivate::maxTimeBuffered() const
+PassRefPtr<TimeRanges> MediaPlayerPrivate::buffered() const;
 {
     notImplemented();
-    return 0.0f;
+    return TimeRanges::create();
 }
 
 float MediaPlayerPrivate::maxTimeSeekable() const

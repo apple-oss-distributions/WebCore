@@ -1,27 +1,18 @@
 //
 //  WKWindow.h
 //
-//  Copyright (C) 2005, 2006, 2007, 2008, Apple Inc.  All rights reserved.
+//  Copyright (C) 2005, 2006, 2007, 2008, 2009 Apple Inc.  All rights reserved.
 //
+
 #ifndef WKWindow_h
 #define WKWindow_h
-
-#import <CoreGraphics/CoreGraphics.h>
-#import <CoreGraphics/CGSTypes.h>
-#import <GraphicsServices/GSEvent.h>
 
 #import "WebCoreThread.h"
 #import "WKTypes.h"
 #import "WKUtilities.h"
+#import <CoreGraphics/CoreGraphics.h>
 
-#ifdef __cplusplus
-namespace WebCore {
-    class TiledSurface;
-}
-typedef WebCore::TiledSurface TiledSurface;
-#else
-typedef struct TiledSurface TiledSurface;
-#endif
+@class WebEvent;
 
 #ifdef __OBJC__
 @class WAKWindow;
@@ -39,15 +30,21 @@ struct WKWindow {
     CGRect frame;
     WKViewRef contentView;
     WKViewRef responderView;
-    TiledSurface* tiledSurface;
+    CGSize screenSize;
+    CGSize availableScreenSize;
     unsigned int useOrientationDependentFontAntialiasing:1;
-    unsigned int isOffscreen:1;
 };
 
 extern WKClassInfo WKWindowClassInfo;
 
 WKWindowRef WKWindowCreate(WAKWindow* wakWindow, CGRect contentRect);
 
+void WKWindowSetScreenSize(WKWindowRef window, CGSize size);
+CGSize WKWindowGetScreenSize(WKWindowRef window);
+
+void WKWindowSetAvailableScreenSize(WKWindowRef window, CGSize size);
+CGSize WKWindowGetAvailableScreenSize(WKWindowRef window);
+    
 void WKWindowSetContentView (WKWindowRef window, WKViewRef aView);
 WKViewRef WKWindowGetContentView (WKWindowRef window);
 
@@ -58,14 +55,14 @@ void WKWindowClose (WKWindowRef window);
 
 bool WKWindowMakeFirstResponder (WKWindowRef window, WKViewRef view);
 WKViewRef WKWindowFirstResponder (WKWindowRef window);
-void WKWindowSendEvent (WKWindowRef window, GSEventRef event);
+void WKWindowSendEvent (WKWindowRef window, WebEvent *event);
 
 CGPoint WKWindowConvertBaseToScreen (WKWindowRef window, CGPoint point);
 CGPoint WKWindowConvertScreenToBase (WKWindowRef window, CGPoint point);
 
 void WKWindowSetFrame(WKWindowRef window, CGRect frame, bool display);
 
-GSEventRef WKEventGetCurrentEvent(void);
+WebEvent *WKEventGetCurrentEvent(void);
 
 void WKWindowPrepareForDrawing(WKWindowRef window);
 
@@ -74,13 +71,8 @@ void WKWindowSetNeedsDisplayInRect(WKWindowRef window, CGRect rect);
     
 void WKWindowDrawRect(WKWindowRef window, CGRect dirtyRect);
 
-void WKWindowSetOffscreen(WKWindowRef window, bool flag);
-    
-void WKWindowSetTiledSurface(WKWindowRef window, TiledSurface*);
-TiledSurface* WKWindowGetTiledSurface(WKWindowRef window);
-
 #ifdef __cplusplus
 }
 #endif
 
-#endif
+#endif // WKWindow_h

@@ -29,9 +29,14 @@
 #include "IntSize.h"
 #include <wtf/Platform.h>
 
+#if PLATFORM(QT)
+#include <QDataStream>
+#endif
+
 #if PLATFORM(CG)
 typedef struct CGPoint CGPoint;
 #endif
+
 
 
 #if PLATFORM(WIN)
@@ -43,9 +48,6 @@ class QPoint;
 QT_END_NAMESPACE
 #elif PLATFORM(GTK)
 typedef struct _GdkPoint GdkPoint;
-#endif
-#if PLATFORM(SYMBIAN)
-class TPoint;
 #endif
 
 #if PLATFORM(WX)
@@ -63,6 +65,7 @@ class IntPoint {
 public:
     IntPoint() : m_x(0), m_y(0) { }
     IntPoint(int x, int y) : m_x(x), m_y(y) { }
+    explicit IntPoint(const IntSize& size) : m_x(size.width()), m_y(size.height()) { }
 
     int x() const { return m_x; }
     int y() const { return m_y; }
@@ -70,6 +73,7 @@ public:
     void setX(int x) { m_x = x; }
     void setY(int y) { m_y = y; }
 
+    void move(const IntSize& s) { move(s.width(), s.height()); } 
     void move(int dx, int dy) { m_x += dx; m_y += dy; }
     
     IntPoint expandedTo(const IntPoint& other) const
@@ -106,10 +110,6 @@ public:
 #elif PLATFORM(GTK)
     IntPoint(const GdkPoint&);
     operator GdkPoint() const;
-#endif
-#if PLATFORM(SYMBIAN)
-    IntPoint(const TPoint&);
-    operator TPoint() const;
 #endif
 
 #if PLATFORM(WX)
@@ -163,6 +163,23 @@ inline bool operator!=(const IntPoint& a, const IntPoint& b)
 {
     return a.x() != b.x() || a.y() != b.y();
 }
+
+#if PLATFORM(QT)
+inline QDataStream& operator<<(QDataStream& stream, const IntPoint& point)
+{
+    stream << point.x() << point.y();
+    return stream;
+}
+
+inline QDataStream& operator>>(QDataStream& stream, IntPoint& point)
+{
+    int x, y;
+    stream >> x >> y;
+    point.setX(x);
+    point.setY(y);
+    return stream;
+}
+#endif
 
 } // namespace WebCore
 

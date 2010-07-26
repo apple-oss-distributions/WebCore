@@ -25,7 +25,6 @@
 #include <runtime/Completion.h>
 #include <runtime/Lookup.h>
 #include <runtime/JSFunction.h>
-#include "ScriptState.h"
 #include <wtf/Noncopyable.h>
 
 namespace JSC {
@@ -60,6 +59,21 @@ namespace WebCore {
 #endif
     };
 
+    // Base class for all constructor objects in this binding except Window.
+    class DOMConstructorObject : public DOMObject {
+    public:
+        static PassRefPtr<JSC::Structure> createStructure(JSC::JSValue prototype)
+        {
+            return JSC::Structure::create(prototype, JSC::TypeInfo(JSC::ObjectType, JSC::HasStandardGetOwnPropertySlot | JSC::ImplementsHasInstance));
+        }
+
+    protected:
+        explicit DOMConstructorObject(PassRefPtr<JSC::Structure> structure)
+            : DOMObject(structure)
+        {
+        }
+    };
+
     DOMObject* getCachedDOMObjectWrapper(JSC::JSGlobalData&, void* objectHandle);
     void cacheDOMObjectWrapper(JSC::JSGlobalData&, void* objectHandle, DOMObject* wrapper);
     void forgetDOMObject(JSC::JSGlobalData&, void* objectHandle);
@@ -81,6 +95,14 @@ namespace WebCore {
     JSC::JSObject* getCachedDOMConstructor(JSC::ExecState*, const JSC::ClassInfo*);
     void cacheDOMConstructor(JSC::ExecState*, const JSC::ClassInfo*, JSC::JSObject* constructor);
 
+    inline JSDOMGlobalObject* deprecatedGlobalObjectForPrototype(JSC::ExecState* exec)
+    {
+        // FIXME: Callers to this function should be using the global object
+        // from which the object is being created, instead of assuming the lexical one.
+        // e.g. subframe.document.body should use the subframe's global object, not the lexical one.
+        return static_cast<JSDOMGlobalObject*>(exec->lexicalGlobalObject());
+    }
+
     template<class WrapperClass> inline JSC::Structure* getDOMStructure(JSC::ExecState* exec, JSDOMGlobalObject* globalObject)
     {
         if (JSC::Structure* structure = getCachedDOMStructure(globalObject, &WrapperClass::s_info))
@@ -89,7 +111,8 @@ namespace WebCore {
     }
     template<class WrapperClass> inline JSC::Structure* getDOMStructure(JSC::ExecState* exec)
     {
-        return getDOMStructure<WrapperClass>(exec, static_cast<JSDOMGlobalObject*>(exec->lexicalGlobalObject()));
+        // FIXME: This function is wrong.  It uses the wrong global object for creating the prototype structure.
+        return getDOMStructure<WrapperClass>(exec, deprecatedGlobalObjectForPrototype(exec));
     }
     template<class WrapperClass> inline JSC::JSObject* getDOMPrototype(JSC::ExecState* exec, JSC::JSGlobalObject* globalObject)
     {
@@ -104,7 +127,7 @@ namespace WebCore {
         cacheDOMObjectWrapper(exec->globalData(), object, wrapper);
         return wrapper;
     }
-    template<class WrapperClass, class DOMClass> inline JSC::JSValuePtr getDOMObjectWrapper(JSC::ExecState* exec, DOMClass* object)
+    template<class WrapperClass, class DOMClass> inline JSC::JSValue getDOMObjectWrapper(JSC::ExecState* exec, DOMClass* object)
     {
         if (!object)
             return JSC::jsNull();
@@ -123,7 +146,7 @@ namespace WebCore {
         cacheDOMObjectWrapper(exec->globalData(), object, wrapper);
         return wrapper;
     }
-    template<class WrapperClass, class DOMClass> inline JSC::JSValuePtr getDOMObjectWrapper(JSC::ExecState* exec, DOMClass* object, SVGElement* context)
+    template<class WrapperClass, class DOMClass> inline JSC::JSValue getDOMObjectWrapper(JSC::ExecState* exec, DOMClass* object, SVGElement* context)
     {
         if (!object)
             return JSC::jsNull();
@@ -142,7 +165,7 @@ namespace WebCore {
         cacheDOMNodeWrapper(node->document(), node, wrapper);
         return wrapper;
     }
-    template<class WrapperClass, class DOMClass> inline JSC::JSValuePtr getDOMNodeWrapper(JSC::ExecState* exec, DOMClass* node)
+    template<class WrapperClass, class DOMClass> inline JSC::JSValue getDOMNodeWrapper(JSC::ExecState* exec, DOMClass* node)
     {
         if (!node)
             return JSC::jsNull();
@@ -153,29 +176,29 @@ namespace WebCore {
 
     const JSC::HashTable* getHashTableForGlobalData(JSC::JSGlobalData&, const JSC::HashTable* staticTable);
 
-    void reportException(JSC::ExecState*, JSC::JSValuePtr exception);
+    void reportException(JSC::ExecState*, JSC::JSValue exception);
     void reportCurrentException(JSC::ExecState*);
 
     // Convert a DOM implementation exception code into a JavaScript exception in the execution state.
     void setDOMException(JSC::ExecState*, ExceptionCode);
 
-    JSC::JSValuePtr jsStringOrNull(JSC::ExecState*, const String&); // null if the string is null
-    JSC::JSValuePtr jsStringOrNull(JSC::ExecState*, const KURL&); // null if the URL is null
+    JSC::JSValue jsStringOrNull(JSC::ExecState*, const String&); // null if the string is null
+    JSC::JSValue jsStringOrNull(JSC::ExecState*, const KURL&); // null if the URL is null
 
-    JSC::JSValuePtr jsStringOrUndefined(JSC::ExecState*, const String&); // undefined if the string is null
-    JSC::JSValuePtr jsStringOrUndefined(JSC::ExecState*, const KURL&); // undefined if the URL is null
+    JSC::JSValue jsStringOrUndefined(JSC::ExecState*, const String&); // undefined if the string is null
+    JSC::JSValue jsStringOrUndefined(JSC::ExecState*, const KURL&); // undefined if the URL is null
 
-    JSC::JSValuePtr jsStringOrFalse(JSC::ExecState*, const String&); // boolean false if the string is null
-    JSC::JSValuePtr jsStringOrFalse(JSC::ExecState*, const KURL&); // boolean false if the URL is null
+    JSC::JSValue jsStringOrFalse(JSC::ExecState*, const String&); // boolean false if the string is null
+    JSC::JSValue jsStringOrFalse(JSC::ExecState*, const KURL&); // boolean false if the URL is null
 
     // See JavaScriptCore for explanation: Should be used for any UString that is already owned by another
     // object, to let the engine know that collecting the JSString wrapper is unlikely to save memory.
-    JSC::JSValuePtr jsOwnedStringOrNull(JSC::ExecState*, const JSC::UString&); 
+    JSC::JSValue jsOwnedStringOrNull(JSC::ExecState*, const JSC::UString&); 
 
-    JSC::UString valueToStringWithNullCheck(JSC::ExecState*, JSC::JSValuePtr); // null if the value is null
-    JSC::UString valueToStringWithUndefinedOrNullCheck(JSC::ExecState*, JSC::JSValuePtr); // null if the value is null or undefined
+    JSC::UString valueToStringWithNullCheck(JSC::ExecState*, JSC::JSValue); // null if the value is null
+    JSC::UString valueToStringWithUndefinedOrNullCheck(JSC::ExecState*, JSC::JSValue); // null if the value is null or undefined
 
-    template <typename T> inline JSC::JSValuePtr toJS(JSC::ExecState* exec, PassRefPtr<T> ptr) { return toJS(exec, ptr.get()); }
+    template <typename T> inline JSC::JSValue toJS(JSC::ExecState* exec, PassRefPtr<T> ptr) { return toJS(exec, ptr.get()); }
 
     bool checkNodeSecurity(JSC::ExecState*, Node*);
 
@@ -184,10 +207,14 @@ namespace WebCore {
     // because we do not want current property values involved at all.
     bool allowsAccessFromFrame(JSC::ExecState*, Frame*);
     bool allowsAccessFromFrame(JSC::ExecState*, Frame*, String& message);
+    bool shouldAllowNavigation(JSC::ExecState*, Frame*);
     void printErrorMessageForFrame(Frame*, const String& message);
-    JSC::JSValuePtr objectToStringFunctionGetter(JSC::ExecState*, const JSC::Identifier& propertyName, const JSC::PropertySlot&);
+    JSC::JSValue objectToStringFunctionGetter(JSC::ExecState*, const JSC::Identifier& propertyName, const JSC::PropertySlot&);
 
-    ScriptState* scriptStateFromNode(Node*);
+    Frame* toLexicalFrame(JSC::ExecState*);
+    Frame* toDynamicFrame(JSC::ExecState*);
+    bool processingUserGesture(JSC::ExecState*);
+    KURL completeURL(JSC::ExecState*, const String& relativeURL);
 
 } // namespace WebCore
 

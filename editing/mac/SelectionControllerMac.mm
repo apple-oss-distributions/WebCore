@@ -27,19 +27,14 @@
 #import "SelectionController.h"
 
 #import "AXObjectCache.h"
-#import "Document.h"
 #import "Frame.h"
-#import "FrameView.h"
 #import "RenderView.h"
-#import "Selection.h"
 #import "WebCoreViewFactory.h"
-
 
 namespace WebCore {
 
 void SelectionController::notifyAccessibilityForSelectionChange()
 {
 }
-
 
 } // namespace WebCore

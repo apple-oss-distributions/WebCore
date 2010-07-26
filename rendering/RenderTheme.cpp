@@ -44,6 +44,12 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
+static Color& customFocusRingColor()
+{
+    DEFINE_STATIC_LOCAL(Color, color, ());
+    return color;
+}
+
 RenderTheme::RenderTheme()
 #if USE(NEW_THEME)
     : m_theme(platformTheme())
@@ -64,7 +70,7 @@ void RenderTheme::adjustStyle(CSSStyleSelector* selector, RenderStyle* style, El
     else if (style->display() == COMPACT || style->display() == RUN_IN || style->display() == LIST_ITEM || style->display() == TABLE)
         style->setDisplay(BLOCK);
 
-    if (UAHasAppearance && theme()->isControlStyled(style, border, background, backgroundColor)) {
+    if (UAHasAppearance && isControlStyled(style, border, background, backgroundColor)) {
         if (part == MenulistPart) {
             style->setAppearance(MenulistButtonPart);
             part = MenulistButtonPart;
@@ -254,6 +260,10 @@ bool RenderTheme::paint(RenderObject* o, const RenderObject::PaintInfo& paintInf
             return paintMediaSeekBackButton(o, paintInfo, r);
         case MediaSeekForwardButtonPart:
             return paintMediaSeekForwardButton(o, paintInfo, r);
+        case MediaRewindButtonPart:
+            return paintMediaRewindButton(o, paintInfo, r);
+        case MediaReturnToRealtimeButtonPart:
+            return paintMediaReturnToRealtimeButton(o, paintInfo, r);
         case MediaSliderPart:
             return paintMediaSliderTrack(o, paintInfo, r);
         case MediaSliderThumbPart:
@@ -264,8 +274,8 @@ bool RenderTheme::paint(RenderObject* o, const RenderObject::PaintInfo& paintInf
             return paintMediaTimeRemaining(o, paintInfo, r);
         case MediaCurrentTimePart:
             return paintMediaCurrentTime(o, paintInfo, r);
-        case MediaTimelineContainerPart:
-            return paintMediaTimelineContainer(o, paintInfo, r);
+        case MediaControlsBackgroundPart:
+            return paintMediaControlsBackground(o, paintInfo, r);
         case MenulistButtonPart:
         case TextFieldPart:
         case TextAreaPart:
@@ -531,7 +541,7 @@ ControlStates RenderTheme::controlStatesForRenderer(const RenderObject* o) const
 
 bool RenderTheme::isActive(const RenderObject* o) const
 {
-    Node* node = o->element();
+    Node* node = o->node();
     if (!node)
         return false;
 
@@ -548,28 +558,39 @@ bool RenderTheme::isActive(const RenderObject* o) const
 
 bool RenderTheme::isChecked(const RenderObject* o) const
 {
-    if (!o->element())
+    if (!o->node() || !o->node()->isElementNode())
         return false;
-    return o->element()->isChecked();
+
+    InputElement* inputElement = toInputElement(static_cast<Element*>(o->node()));
+    if (!inputElement)
+        return false;
+
+    return inputElement->isChecked();
 }
 
 bool RenderTheme::isIndeterminate(const RenderObject* o) const
 {
-    if (!o->element())
+    if (!o->node() || !o->node()->isElementNode())
         return false;
-    return o->element()->isIndeterminate();
+
+    InputElement* inputElement = toInputElement(static_cast<Element*>(o->node()));
+    if (!inputElement)
+        return false;
+
+    return inputElement->isIndeterminate();
 }
 
 bool RenderTheme::isEnabled(const RenderObject* o) const
 {
-    if (!o->element())
+    Node* node = o->node();
+    if (!node || !node->isElementNode())
         return true;
-    return o->element()->isEnabled();
+    return static_cast<Element*>(node)->isEnabledFormControl();
 }
 
 bool RenderTheme::isFocused(const RenderObject* o) const
 {
-    Node* node = o->element();
+    Node* node = o->node();
     if (!node)
         return false;
     Document* document = node->document();
@@ -579,23 +600,24 @@ bool RenderTheme::isFocused(const RenderObject* o) const
 
 bool RenderTheme::isPressed(const RenderObject* o) const
 {
-    if (!o->element())
+    if (!o->node())
         return false;
-    return o->element()->active();
+    return o->node()->active();
 }
 
 bool RenderTheme::isReadOnlyControl(const RenderObject* o) const
 {
-    if (!o->element())
+    Node* node = o->node();
+    if (!node || !node->isElementNode())
         return false;
-    return o->element()->isReadOnlyControl();
+    return static_cast<Element*>(node)->isReadOnlyFormControl();
 }
 
 bool RenderTheme::isHovered(const RenderObject* o) const
 {
-    if (!o->element())
+    if (!o->node())
         return false;
-    return o->element()->hovered();
+    return o->node()->hovered();
 }
 
 bool RenderTheme::isDefault(const RenderObject* o) const
@@ -668,10 +690,6 @@ void RenderTheme::adjustMenuListStyle(CSSStyleSelector*, RenderStyle*, Element*)
 }
 
 void RenderTheme::adjustMenuListButtonStyle(CSSStyleSelector*, RenderStyle*, Element*) const
-{
-}
-
-void RenderTheme::adjustButtonInnerStyle(RenderStyle*) const
 {
 }
 
@@ -785,9 +803,24 @@ Color RenderTheme::systemColor(int cssValueId) const
     return Color();
 }
 
-Color RenderTheme::platformTextSearchHighlightColor() const
+Color RenderTheme::platformActiveTextSearchHighlightColor() const
 {
-    return Color(255, 255, 0);
+    return Color(255, 150, 50); // Orange.
+}
+
+Color RenderTheme::platformInactiveTextSearchHighlightColor() const
+{
+    return Color(255, 255, 0); // Yellow.
+}
+
+void RenderTheme::setCustomFocusRingColor(const Color& c)
+{
+    customFocusRingColor() = c;
+}
+
+Color RenderTheme::focusRingColor()
+{
+    return customFocusRingColor().isValid() ? customFocusRingColor() : defaultTheme()->platformFocusRingColor();
 }
 
 } // namespace WebCore

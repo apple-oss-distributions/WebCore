@@ -32,14 +32,24 @@
 #include <GraphicsServices/GraphicsServices.h>
 
 #ifdef __OBJC__
+@class NSArray;
 @class NSButtonCell;
 @class NSData;
+@class NSDate;
 @class NSEvent;
 @class NSFont;
+@class NSImage;
+@class NSMenu;
 @class NSMutableURLRequest;
+@class NSString;
+@class NSTextFieldCell;
+@class NSURLConnection;
 @class NSURLRequest;
+@class NSURLResponse;
+@class NSView;
 @class QTMovie;
 @class QTMovieView;
+@class CALayer;
 #else
 typedef struct NSArray NSArray;
 typedef struct NSButtonCell NSButtonCell;
@@ -59,6 +69,7 @@ typedef struct NSView NSView;
 typedef struct objc_object *id;
 typedef struct QTMovie QTMovie;
 typedef struct QTMovieView QTMovieView;
+typedef struct CALayer CALayer;
 #endif
 
 #ifdef __cplusplus
@@ -86,11 +97,13 @@ extern void (*wkSetNSURLConnectionDefersCallbacks)(NSURLConnection *, BOOL);
 extern void (*wkSetNSURLRequestShouldContentSniff)(NSMutableURLRequest *, BOOL);
 extern void (*wkSetPatternBaseCTM)(CGContextRef, CGAffineTransform);
 extern void (*wkSetPatternPhaseInUserSpace)(CGContextRef, CGPoint);
+extern CGAffineTransform (*wkGetUserToBaseCTM)(CGContextRef);
 extern void (*wkSetUpFontCache)();
 extern void (*wkSignalCFReadStreamEnd)(CFReadStreamRef stream);
 extern void (*wkSignalCFReadStreamError)(CFReadStreamRef stream, CFStreamError *error);
 extern void (*wkSignalCFReadStreamHasBytes)(CFReadStreamRef stream);
 extern unsigned (*wkInitializeMaximumHTTPConnectionCountPerHost)(unsigned preferredConnectionCount);
+extern BOOL (*wkIsLatchingWheelEvent)(NSEvent *);
 
 #ifndef BUILDING_ON_TIGER
 extern void (*wkGetGlyphsForCharacters)(CGFontRef, const UniChar[], CGGlyph[], size_t);
@@ -113,6 +126,9 @@ extern BOOL (*wkSupportsMultipartXMixedReplace)(NSMutableURLRequest *);
 
 extern BOOL (*wkUseSharedMediaUI)();
 
+extern CGSize (*wkGetViewportScreenSize)(void);
+extern void (*wkSetLayerContentsScale)(CALayer *);
+    
 #ifdef __cplusplus
 }
 #endif

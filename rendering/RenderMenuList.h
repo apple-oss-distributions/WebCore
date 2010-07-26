@@ -34,16 +34,13 @@
 
 namespace WebCore {
 
-class HTMLSelectElement;
 class PopupMenu;
 class RenderText;
 
 class RenderMenuList : public RenderFlexibleBox, private PopupMenuClient {
 public:
-    RenderMenuList(HTMLSelectElement*);
+    RenderMenuList(Element*);
     ~RenderMenuList();
-    
-    HTMLSelectElement* selectElement();
 
 private:
     virtual bool isMenuList() const { return true; }
@@ -85,6 +82,7 @@ private:
     virtual int clientPaddingRight() const;
     virtual int listSize() const;
     virtual int selectedIndex() const;
+    virtual void popupDidHide();
     virtual bool itemIsSeparator(unsigned listIndex) const;
     virtual bool itemIsLabel(unsigned listIndex) const;
     virtual bool itemIsSelected(unsigned listIndex) const;

@@ -25,6 +25,7 @@
 
 #include "config.h"
 #include "ImageSource.h"
+
 #if ENABLE(RESPECT_EXIF_ORIENTATION)
 #include "BitmapImage.h"
 #endif
@@ -38,6 +39,7 @@
 #include <CoreGraphics/CoreGraphics.h>
 #include <ImageIO/ImageIO.h>
 #include <ImageIO/CGImageSourcePrivate.h>
+#include <wtf/UnusedParam.h>
 
 namespace WebCore {
 
@@ -55,17 +57,30 @@ ImageSource::~ImageSource()
     clear(true);
 }
 
-void ImageSource::clear(bool, size_t, SharedBuffer* data, bool allDataReceived)
+void ImageSource::clear(bool destroyAllFrames, size_t, SharedBuffer* data, bool allDataReceived)
 {
-    // We always destroy the decoder, because there is no API to get it to
-    // selectively release some of the frames it's holding, and if we don't
-    // release any of them, we use too much memory on large images.
+#if PLATFORM(MAC) && !defined(BUILDING_ON_TIGER) && !defined(BUILDING_ON_LEOPARD)
+    // Recent versions of ImageIO discard previously decoded image frames if the client
+    // application no longer holds references to them, so there's no need to throw away
+    // the decoder unless we're explicitly asked to destroy all of the frames.
+
+    if (!destroyAllFrames)
+        return;
+#else
+    // Older versions of ImageIO hold references to previously decoded image frames.
+    // There is no API to selectively release some of the frames it is holding, and
+    // if we don't release the frames we use too much memory on large images.
+    // Destroying the decoder is the only way to release previous frames.
+
+    UNUSED_PARAM(destroyAllFrames);
+#endif
+
     if (m_decoder) {
         CFRelease(m_decoder);
         m_decoder = 0;
     }
     if (data)
-      setData(data, allDataReceived);
+        setData(data, allDataReceived);
 }
 
 CFDictionaryRef ImageSource::imageSourceOptions(int requestedSubsampling) const

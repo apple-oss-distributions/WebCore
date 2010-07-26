@@ -119,11 +119,28 @@ namespace WebCore {
         ContextMenuItemTagRightToLeft,
         ContextMenuItemTagPDFSinglePageScrolling,
         ContextMenuItemTagPDFFacingPagesScrolling,
+#if ENABLE(INSPECTOR)
         ContextMenuItemTagInspectElement,
+#endif
         ContextMenuItemTagTextDirectionMenu, // Text Direction sub-menu
         ContextMenuItemTagTextDirectionDefault,
         ContextMenuItemTagTextDirectionLeftToRight,
         ContextMenuItemTagTextDirectionRightToLeft,
+#if PLATFORM(MAC)
+        ContextMenuItemTagCorrectSpellingAutomatically,
+        ContextMenuItemTagSubstitutionsMenu,
+        ContextMenuItemTagShowSubstitutions,
+        ContextMenuItemTagSmartCopyPaste,
+        ContextMenuItemTagSmartQuotes,
+        ContextMenuItemTagSmartDashes,
+        ContextMenuItemTagSmartLinks,
+        ContextMenuItemTagTextReplacement,
+        ContextMenuItemTagTransformationsMenu,
+        ContextMenuItemTagMakeUpperCase,
+        ContextMenuItemTagMakeLowerCase,
+        ContextMenuItemTagCapitalize,
+        ContextMenuItemTagChangeBack,
+#endif
         ContextMenuItemBaseApplicationTag = 10000
     };
 
@@ -135,7 +152,7 @@ namespace WebCore {
     };
 
 #if PLATFORM(MAC)
-    typedef void* PlatformMenuItemDescription;
+    typedef NSMenuItem* PlatformMenuItemDescription;
 #elif PLATFORM(WIN)
     typedef LPMENUITEMINFO PlatformMenuItemDescription;
 #elif PLATFORM(QT)

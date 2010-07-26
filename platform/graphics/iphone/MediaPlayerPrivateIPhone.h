@@ -35,13 +35,11 @@
 #include <wtf/RetainPtr.h>
 
 #ifdef __OBJC__
-@class WebMediaPlayerHelper;
+@class NSObject;
 @class WebCoreMediaPlayerNotificationHelper;
-@class WKLayer;
 #else
-class WebMediaPlayerHelper;
+class NSObject;
 class WebCoreMediaPlayerNotificationHelper;
-class WKLayer;
 #endif
 
 class MediaPlayerMobileInterface;
@@ -56,6 +54,7 @@ public:
 
     void deliverNotification(MediaPlayerProxyNotificationType notification);
     bool callbacksDelayed() { return (m_delayCallbacks > 0); }
+    void prepareToPlay();
 
 private:
     MediaPlayerPrivateiPhone(MediaPlayer *player);
@@ -68,8 +67,12 @@ private:
 
     IntSize naturalSize() const;
     bool hasVideo() const;
+    bool hasAudio() const;
 
+    bool canLoadPoster() const { return true; }
     void setPoster(const String& url);
+
+    void setControls(bool);
 
     void load(const String& url);
     void cancelLoad();
@@ -99,6 +102,8 @@ private:
     
     float maxTimeBuffered() const;
     float maxTimeSeekable() const;
+    PassRefPtr<TimeRanges> buffered() const;
+
     unsigned bytesLoaded() const;
     bool totalBytesKnown() const;
     unsigned totalBytes() const;
@@ -108,25 +113,35 @@ private:
     
     void paint(GraphicsContext* context, const IntRect& r);
 
+#if USE(ACCELERATED_COMPOSITING)
+    bool supportsAcceleratedRendering() const;
+#endif
+
     void setMediaPlayerProxy(WebMediaPlayerProxy* proxy);
+    void processPendingRequests();
 
     void setDelayCallbacks(bool doDelay) { m_delayCallbacks += (doDelay ? 1 : -1); }
 
-    bool usingNetwork() { return m_usingNetwork; }
-    bool inFullscreen() { return m_inFullScreen; }
+    bool usingNetwork() const { return m_usingNetwork; }
+    bool inFullscreen() const { return m_inFullScreen; }
 
 private:
-    MediaPlayer *m_mediaPlayerClient;
-    RetainPtr<WebMediaPlayerHelper> m_mediaPlayerHelper;
+    MediaPlayer* m_mediaPlayer;
+    RetainPtr<NSObject> m_mediaPlayerHelper;    // this is the MediaPlayerProxy.
+    RetainPtr<WebCoreMediaPlayerNotificationHelper> m_objcHelper;
+
     MediaPlayer::NetworkState m_networkState;
     MediaPlayer::ReadyState m_readyState;
-    RetainPtr<WebCoreMediaPlayerNotificationHelper> m_objcHelper;
+
     int m_delayCallbacks;
     int m_changingVolume;
     float m_requestedRate;
-    bool m_visible;
-    bool m_usingNetwork;
-    bool m_inFullScreen;
+    bool m_visible : 1;
+    bool m_usingNetwork : 1;
+    bool m_inFullScreen : 1;
+    bool m_shouldPrepareToPlay : 1;
+    bool m_preparingToPlay : 1;
+    bool m_pauseRequested : 1;
 };
 
 }   // namespace WebCore

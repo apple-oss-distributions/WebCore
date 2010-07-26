@@ -92,9 +92,11 @@ public:
 
 private:
     typedef void (DOMApplicationCache::*ListenerFunction)();
-    void postListenerTask(ListenerFunction, const HashSet<DocumentLoader*>&);
-    void postListenerTask(ListenerFunction, const Vector<RefPtr<DocumentLoader> >& loaders);
-    void postListenerTask(ListenerFunction, DocumentLoader*);
+    static void postListenerTask(ListenerFunction, const HashSet<DocumentLoader*>&);
+    static void postListenerTask(ListenerFunction, const Vector<RefPtr<DocumentLoader> >& loaders);
+    static void postListenerTask(ListenerFunction, DocumentLoader*);
+
+    PassRefPtr<ResourceHandle> createResourceHandle(const KURL&, ApplicationCacheResource* newestCachedResource);
 
     virtual void didReceiveResponse(ResourceHandle*, const ResourceResponse&);
     virtual void didReceiveData(ResourceHandle*, const char*, int, int lengthReceived);
@@ -132,6 +134,8 @@ private:
 
     // List of pending master entries, used during the update process to ensure that new master entries are cached.
     HashSet<DocumentLoader*> m_pendingMasterResourceLoaders;
+    // How many of the above pending master entries have not yet finished downloading.
+    int m_downloadingPendingMasterResourceLoadersCount;
     
     // These are all the document loaders that are associated with a cache in this group.
     HashSet<DocumentLoader*> m_associatedDocumentLoaders;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007 Apple Inc.  All rights reserved.
+ * Copyright (C) 2007, 2009 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,13 +33,21 @@
 namespace WebCore {
     
 class HTMLMediaElement;
+#if USE(ACCELERATED_COMPOSITING)
+class GraphicsLayer;
+#endif
 
 class RenderVideo : public RenderMedia {
 public:
     RenderVideo(HTMLMediaElement*);
     virtual ~RenderVideo();
 
+    static IntSize defaultSize();
+
     virtual const char* renderName() const { return "RenderVideo"; }
+
+    virtual bool requiresLayer() const { return true; }
+    virtual bool isVideo() const { return true; }
 
     virtual void paintReplaced(PaintInfo& paintInfo, int tx, int ty);
 
@@ -51,8 +59,15 @@ public:
     virtual void calcPrefWidths();
     
     void videoSizeChanged();
+    IntRect videoBox() const;
     
     void updateFromElement();
+
+#if USE(ACCELERATED_COMPOSITING)
+    bool supportsAcceleratedRendering() const;
+    virtual void acceleratedRenderingStateChanged();
+    GraphicsLayer* videoGraphicsLayer() const;
+#endif
 
 protected:
     virtual void intrinsicSizeChanged() { videoSizeChanged(); }
@@ -64,8 +79,6 @@ private:
     bool isWidthSpecified() const;
     bool isHeightSpecified() const;
     
-    IntRect videoBox() const;
-
     void updatePlayer();
 };
 

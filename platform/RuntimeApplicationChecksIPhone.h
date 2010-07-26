@@ -29,6 +29,7 @@
 namespace WebCore {
 
 bool applicationIsMobileMail();
+bool applicationIsMobileSafari();
 
 } // namespace WebCore
 

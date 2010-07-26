@@ -40,8 +40,6 @@
 #include <CoreFoundation/CoreFoundation.h>
 #endif
 
-#include <GraphicsServices/GSEvent.h>
-
 namespace WebCore {
 
 Image::Image(ImageObserver* observer)

@@ -5,7 +5,7 @@
  * Copyright (C) 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
  * Copyright (C) 2007 Alexey Proskuryakov <ap@webkit.org>
  * Copyright (C) 2007, 2008 Eric Seidel <eric@webkit.org>
- * Copyright (C) 2008 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
+ * Copyright (C) 2008, 2009 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -62,6 +62,7 @@
 #include "HTMLNames.h"
 #include "HTMLTextAreaElement.h"
 #include "LinkHash.h"
+#include "MappedAttribute.h"
 #include "MatrixTransformOperation.h"
 #include "Matrix3DTransformOperation.h"
 #include "MediaList.h"
@@ -110,6 +111,10 @@
 #include "WMLNames.h"
 #endif
 
+#if PLATFORM(QT)
+#include <qwebhistoryinterface.h>
+#endif
+
 using namespace std;
 
 namespace WebCore {
@@ -137,6 +142,16 @@ if (isInitial) { \
     m_style->set##Prop(RenderStyle::initial##Value());\
     return;\
 }
+
+#define HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(prop, Prop) \
+HANDLE_INHERIT_AND_INITIAL(prop, Prop) \
+if (primitiveValue) \
+    m_style->set##Prop(*primitiveValue);
+
+#define HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE_WITH_VALUE(prop, Prop, Value) \
+HANDLE_INHERIT_AND_INITIAL_WITH_VALUE(prop, Prop, Value) \
+if (primitiveValue) \
+    m_style->set##Prop(*primitiveValue);
 
 #define HANDLE_FILL_LAYER_INHERIT_AND_INITIAL(layerType, LayerType, prop, Prop) \
 if (isInherit) { \
@@ -511,13 +526,13 @@ static void loadFullDefaultStyle()
     }
 
     // Strict-mode rules.
-    String defaultRules = String(html4UserAgentStyleSheet, sizeof(html4UserAgentStyleSheet)) + theme()->extraDefaultStyleSheet();
+    String defaultRules = String(htmlUserAgentStyleSheet, sizeof(htmlUserAgentStyleSheet)) + RenderTheme::defaultTheme()->extraDefaultStyleSheet();
     CSSStyleSheet* defaultSheet = parseUASheet(defaultRules);
     defaultStyle->addRulesFromSheet(defaultSheet, screenEval());
     defaultPrintStyle->addRulesFromSheet(defaultSheet, printEval());
 
     // Quirks-mode rules.
-    String quirksRules = String(quirksUserAgentStyleSheet, sizeof(quirksUserAgentStyleSheet)) + theme()->extraQuirksStyleSheet();
+    String quirksRules = String(quirksUserAgentStyleSheet, sizeof(quirksUserAgentStyleSheet)) + RenderTheme::defaultTheme()->extraQuirksStyleSheet();
     CSSStyleSheet* quirksSheet = parseUASheet(quirksRules);
     defaultQuirksStyle->addRulesFromSheet(quirksSheet, screenEval());
 }
@@ -687,10 +702,10 @@ void CSSStyleSelector::matchRulesForList(CSSRuleDataList* rules, int& firstRuleI
             
             // If we're matching normal rules, set a pseudo bit if 
             // we really just matched a pseudo-element.
-            if (m_dynamicPseudo != RenderStyle::NOPSEUDO && m_checker.m_pseudoStyle == RenderStyle::NOPSEUDO) {
+            if (m_dynamicPseudo != NOPSEUDO && m_checker.m_pseudoStyle == NOPSEUDO) {
                 if (m_checker.m_collectRulesOnly)
                     return;
-                if (m_dynamicPseudo < RenderStyle::FIRST_INTERNAL_PSEUDOID)
+                if (m_dynamicPseudo < FIRST_INTERNAL_PSEUDOID)
                     m_style->setHasPseudoStyle(m_dynamicPseudo);
             } else {
                 // Update our first/last rule indices in the matched rules array.
@@ -791,7 +806,7 @@ void CSSStyleSelector::initElementAndPseudoState(Element* e)
     pseudoState = PseudoUnknown;
 }
 
-void CSSStyleSelector::initForStyleResolve(Element* e, RenderStyle* parentStyle, RenderStyle::PseudoId pseudoID)
+void CSSStyleSelector::initForStyleResolve(Element* e, RenderStyle* parentStyle, PseudoId pseudoID)
 {
     m_checker.m_pseudoStyle = pseudoID;
 
@@ -849,7 +864,7 @@ CSSStyleSelector::SelectorChecker::SelectorChecker(Document* document, bool stri
     : m_document(document)
     , m_strictParsing(strictParsing)
     , m_collectRulesOnly(false)
-    , m_pseudoStyle(RenderStyle::NOPSEUDO)
+    , m_pseudoStyle(NOPSEUDO)
     , m_documentIsHTML(document->isHTMLDocument())
 {
 }
@@ -863,9 +878,26 @@ PseudoState CSSStyleSelector::SelectorChecker::checkPseudoState(Element* element
     if (!checkVisited)
         return PseudoAnyLink;
 
+#if PLATFORM(QT)
+    Vector<UChar, 512> url;
+    visitedURL(m_document->baseURL(), *attr, url);
+    if (url.isEmpty())
+        return PseudoLink;
+
+    // If the Qt4.4 interface for the history is used, we will have to fallback
+    // to the old global history.
+    QWebHistoryInterface* iface = QWebHistoryInterface::defaultInterface();
+    if (iface)
+        return iface->historyContains(QString(reinterpret_cast<QChar*>(url.data()), url.size())) ? PseudoVisited : PseudoLink;
+
+    LinkHash hash = visitedLinkHash(url.data(), url.size());
+    if (!hash)
+        return PseudoLink;
+#else
     LinkHash hash = visitedLinkHash(m_document->baseURL(), *attr);
     if (!hash)
         return PseudoLink;
+#endif
 
     Frame* frame = m_document->frame();
     if (!frame)
@@ -882,7 +914,7 @@ PseudoState CSSStyleSelector::SelectorChecker::checkPseudoState(Element* element
 bool CSSStyleSelector::SelectorChecker::checkSelector(CSSSelector* sel, Element* element) const
 {
     pseudoState = PseudoUnknown;
-    RenderStyle::PseudoId dynamicPseudo = RenderStyle::NOPSEUDO;
+    PseudoId dynamicPseudo = NOPSEUDO;
 
     return checkSelector(sel, element, 0, dynamicPseudo, true, false) == SelectorMatches;
 }
@@ -937,21 +969,30 @@ bool CSSStyleSelector::canShareStyleWithElement(Node* n)
             (s->hovered() == m_element->hovered()) &&
             (s->active() == m_element->active()) &&
             (s->focused() == m_element->focused()) &&
-            (s != s->document()->getCSSTarget() && m_element != m_element->document()->getCSSTarget()) &&
+            (s != s->document()->cssTarget() && m_element != m_element->document()->cssTarget()) &&
             (s->getAttribute(typeAttr) == m_element->getAttribute(typeAttr)) &&
             (s->getAttribute(XMLNames::langAttr) == m_element->getAttribute(XMLNames::langAttr)) &&
             (s->getAttribute(langAttr) == m_element->getAttribute(langAttr)) &&
             (s->getAttribute(readonlyAttr) == m_element->getAttribute(readonlyAttr)) &&
             (s->getAttribute(cellpaddingAttr) == m_element->getAttribute(cellpaddingAttr))) {
-            bool isControl = s->isControl();
-            if (isControl != m_element->isControl())
+            bool isControl = s->isFormControlElement();
+            if (isControl != m_element->isFormControlElement())
                 return false;
-            if (isControl && (s->isEnabled() != m_element->isEnabled()) ||
-                             (s->isIndeterminate() != m_element->isIndeterminate()) ||
-                             (s->isChecked() != m_element->isChecked()) ||
-                             (s->isAutofilled() != m_element->isAutofilled()))
-                return false;
-            
+            if (isControl) {
+                InputElement* thisInputElement = toInputElement(s);
+                InputElement* otherInputElement = toInputElement(m_element);
+                if (thisInputElement && otherInputElement) {
+                    if ((thisInputElement->isAutofilled() != otherInputElement->isAutofilled()) ||
+                        (thisInputElement->isChecked() != otherInputElement->isChecked()) ||
+                        (thisInputElement->isIndeterminate() != otherInputElement->isIndeterminate()))
+                    return false;
+                } else
+                    return false;
+
+                if (s->isEnabledFormControl() != m_element->isEnabledFormControl())
+                    return false;
+            }
+
             if (style->transitions() || style->animations())
                 return false;
 
@@ -1097,7 +1138,7 @@ PassRefPtr<RenderStyle> CSSStyleSelector::styleForElement(Element* e, RenderStyl
     static bool loadedMediaStyleSheet;
     if (!loadedMediaStyleSheet && (e->hasTagName(videoTag) || e->hasTagName(audioTag))) {
         loadedMediaStyleSheet = true;
-        String mediaRules = String(mediaControlsUserAgentStyleSheet, sizeof(mediaControlsUserAgentStyleSheet)) + theme()->extraMediaControlsStyleSheet();
+        String mediaRules = String(mediaControlsUserAgentStyleSheet, sizeof(mediaControlsUserAgentStyleSheet)) + RenderTheme::defaultTheme()->extraMediaControlsStyleSheet();
         CSSStyleSheet* mediaControlsSheet = parseUASheet(mediaRules);
         defaultStyle->addRulesFromSheet(mediaControlsSheet, screenEval());
         defaultPrintStyle->addRulesFromSheet(mediaControlsSheet, printEval());
@@ -1215,7 +1256,7 @@ PassRefPtr<RenderStyle> CSSStyleSelector::styleForElement(Element* e, RenderStyl
         m_style->setPseudoState(pseudoState);
 
     // If we have first-letter pseudo style, do not share this style
-    if (m_style->hasPseudoStyle(RenderStyle::FIRST_LETTER))
+    if (m_style->hasPseudoStyle(FIRST_LETTER))
         m_style->setUnique();
 
     // Now return the style.
@@ -1273,8 +1314,13 @@ void CSSStyleSelector::keyframeStylesForAnimation(Element* e, const RenderStyle*
 
         // Add all the animating properties to the list
         CSSMutableStyleDeclaration::const_iterator end = kf->style()->end();
-        for (CSSMutableStyleDeclaration::const_iterator it = kf->style()->begin(); it != end; ++it)
-            list.addProperty((*it).id());
+        for (CSSMutableStyleDeclaration::const_iterator it = kf->style()->begin(); it != end; ++it) {
+            int property = (*it).id();
+            // Timing-function within keyframes is special, because it is not animated; it just
+            // describes the timing function between this keyframe and the next.
+            if (property != CSSPropertyWebkitAnimationTimingFunction)
+                list.addProperty(property);
+        }
         
         // Add this keyframe style to all the indicated key times
         Vector<float> keys;
@@ -1297,7 +1343,7 @@ void CSSStyleSelector::keyframeStylesForAnimation(Element* e, const RenderStyle*
         list.clear();
 }
 
-PassRefPtr<RenderStyle> CSSStyleSelector::pseudoStyleForElement(RenderStyle::PseudoId pseudo, Element* e, RenderStyle* parentStyle)
+PassRefPtr<RenderStyle> CSSStyleSelector::pseudoStyleForElement(PseudoId pseudo, Element* e, RenderStyle* parentStyle)
 {
     if (!e)
         return 0;
@@ -1363,6 +1409,22 @@ PassRefPtr<RenderStyle> CSSStyleSelector::pseudoStyleForElement(RenderStyle::Pse
     // Now return the style.
     return m_style.release();
 }
+
+#if ENABLE(DATAGRID)
+
+PassRefPtr<RenderStyle> CSSStyleSelector::pseudoStyleForDataGridColumn(DataGridColumn*, RenderStyle*)
+{
+    // FIXME: Implement
+    return 0;
+}
+
+PassRefPtr<RenderStyle> CSSStyleSelector::pseudoStyleForDataGridColumnHeader(DataGridColumn*, RenderStyle*)
+{
+    // FIXME: Implement
+    return 0;
+}
+
+#endif
 
 static void addIntrinsicMargins(RenderStyle* style)
 {
@@ -1431,7 +1493,10 @@ void CSSStyleSelector::adjustRenderStyle(RenderStyle* style, Element *e)
         // Table headers with a text-align of auto will change the text-align to center.
         if (e && e->hasTagName(thTag) && style->textAlign() == TAAUTO)
             style->setTextAlign(CENTER);
-        
+
+        if (e && e->hasTagName(legendTag))
+            style->setDisplay(BLOCK);
+
         // Mutate the display to BLOCK or TABLE for certain cases, e.g., if someone attempts to
         // position or float an inline, compact, or run-in.  Cache the original display, since it
         // may be needed for positioned elements that have to compute their static normal flow
@@ -1476,7 +1541,7 @@ void CSSStyleSelector::adjustRenderStyle(RenderStyle* style, Element *e)
     // Button, legend, input, select and textarea all consider width values of 'auto' to be 'intrinsic'.
     // This will be important when we use block flows for all form controls.
     if (e && (e->hasTagName(legendTag) || e->hasTagName(buttonTag) || e->hasTagName(inputTag) ||
-              e->hasTagName(selectTag) || e->hasTagName(textareaTag)
+              e->hasTagName(selectTag) || e->hasTagName(textareaTag) || e->hasTagName(datagridTag)
 #if ENABLE(WML)
               || e->hasTagName(WMLNames::insertedLegendTag)
               || e->hasTagName(WMLNames::inputTag)
@@ -1484,6 +1549,12 @@ void CSSStyleSelector::adjustRenderStyle(RenderStyle* style, Element *e)
        )) {
         if (style->width().isAuto())
             style->setWidth(Length(Intrinsic));
+
+        // Textarea considers overflow visible as auto.
+        if (e && e->hasTagName(textareaTag)) {
+            style->setOverflowX(style->overflowX() == OVISIBLE ? OAUTO : style->overflowX());
+            style->setOverflowY(style->overflowY() == OVISIBLE ? OAUTO : style->overflowY());
+        }
     }
 
     // Finally update our text decorations in effect, but don't allow text-decoration to percolate through
@@ -1530,7 +1601,7 @@ void CSSStyleSelector::adjustRenderStyle(RenderStyle* style, Element *e)
 
     // Important: Intrinsic margins get added to controls before the theme has adjusted the style, since the theme will
     // alter fonts and heights/widths.
-    if (e && e->isControl() && style->fontSize() >= 11) {
+    if (e && e->isFormControlElement() && style->fontSize() >= 11) {
         // Don't apply intrinsic margins to image buttons.  The designer knows how big the images are,
         // so we have to treat all image buttons as though they were explicitly sized.
         if (!e->hasTagName(inputTag) || static_cast<HTMLInputElement*>(e)->inputType() != HTMLInputElement::IMAGE)
@@ -1539,7 +1610,7 @@ void CSSStyleSelector::adjustRenderStyle(RenderStyle* style, Element *e)
 
     // Let the theme also have a crack at adjusting the style.
     if (style->hasAppearance())
-        theme()->adjustStyle(this, style, e, m_hasUAAppearance, m_borderData, m_backgroundData, m_backgroundColor);
+        RenderTheme::defaultTheme()->adjustStyle(this, style, e, m_hasUAAppearance, m_borderData, m_backgroundData, m_backgroundColor);
 
 #if ENABLE(SVG)
     if (e && e->isSVGElement()) {
@@ -1621,14 +1692,14 @@ PassRefPtr<CSSRuleList> CSSStyleSelector::pseudoStyleRulesForElement(Element*, c
 
 bool CSSStyleSelector::checkSelector(CSSSelector* sel)
 {
-    m_dynamicPseudo = RenderStyle::NOPSEUDO;
+    m_dynamicPseudo = NOPSEUDO;
 
     // Check the selector
     SelectorMatch match = m_checker.checkSelector(sel, m_element, &m_selectorAttrs, m_dynamicPseudo, true, false, style(), m_parentStyle);
     if (match != SelectorMatches)
         return false;
 
-    if (m_checker.m_pseudoStyle != RenderStyle::NOPSEUDO && m_checker.m_pseudoStyle != m_dynamicPseudo)
+    if (m_checker.m_pseudoStyle != NOPSEUDO && m_checker.m_pseudoStyle != m_dynamicPseudo)
         return false;
 
     return true;
@@ -1639,7 +1710,7 @@ bool CSSStyleSelector::checkSelector(CSSSelector* sel)
 // * SelectorMatches         - the selector matches the element e
 // * SelectorFailsLocally    - the selector fails for the element e
 // * SelectorFailsCompletely - the selector fails for e and any sibling or ancestor of e
-CSSStyleSelector::SelectorMatch CSSStyleSelector::SelectorChecker::checkSelector(CSSSelector* sel, Element* e, HashSet<AtomicStringImpl*>* selectorAttrs, RenderStyle::PseudoId& dynamicPseudo, bool isAncestor, bool isSubSelector, RenderStyle* elementStyle, RenderStyle* elementParentStyle) const
+CSSStyleSelector::SelectorMatch CSSStyleSelector::SelectorChecker::checkSelector(CSSSelector* sel, Element* e, HashSet<AtomicStringImpl*>* selectorAttrs, PseudoId& dynamicPseudo, bool isAncestor, bool isSubSelector, RenderStyle* elementStyle, RenderStyle* elementParentStyle) const
 {
 #if ENABLE(SVG)
     // Spec: CSS2 selectors cannot be applied to the (conceptually) cloned DOM tree
@@ -1662,7 +1733,7 @@ CSSStyleSelector::SelectorMatch CSSStyleSelector::SelectorChecker::checkSelector
 
     if (relation != CSSSelector::SubSelector)
         // Bail-out if this selector is irrelevant for the pseudoStyle
-        if (m_pseudoStyle != RenderStyle::NOPSEUDO && m_pseudoStyle != dynamicPseudo)
+        if (m_pseudoStyle != NOPSEUDO && m_pseudoStyle != dynamicPseudo)
             return SelectorFailsCompletely;
 
     switch (relation) {
@@ -1722,8 +1793,8 @@ CSSStyleSelector::SelectorMatch CSSStyleSelector::SelectorChecker::checkSelector
             // a selector is invalid if something follows a pseudo-element
             // We make an exception for scrollbar pseudo elements and allow a set of pseudo classes (but nothing else)
             // to follow the pseudo elements.
-            if (elementStyle && dynamicPseudo != RenderStyle::NOPSEUDO && 
-                !((RenderScrollbar::scrollbarForStyleResolve() || dynamicPseudo == RenderStyle::SCROLLBAR_CORNER || dynamicPseudo == RenderStyle::RESIZER) && sel->m_match == CSSSelector::PseudoClass))
+            if (elementStyle && dynamicPseudo != NOPSEUDO && dynamicPseudo != SELECTION &&
+                !((RenderScrollbar::scrollbarForStyleResolve() || dynamicPseudo == SCROLLBAR_CORNER || dynamicPseudo == RESIZER) && sel->m_match == CSSSelector::PseudoClass))
                 return SelectorFailsCompletely;
             return checkSelector(sel, e, selectorAttrs, dynamicPseudo, isAncestor, true, elementStyle, elementParentStyle);
     }
@@ -1798,7 +1869,7 @@ static bool htmlAttributeHasCaseInsensitiveValue(const QualifiedName& attr)
     return isPossibleHTMLAttr && htmlCaseInsensitiveAttributesSet->contains(attr.localName().impl());
 }
 
-bool CSSStyleSelector::SelectorChecker::checkOneSelector(CSSSelector* sel, Element* e, HashSet<AtomicStringImpl*>* selectorAttrs, RenderStyle::PseudoId& dynamicPseudo, bool isAncestor, bool isSubSelector, RenderStyle* elementStyle, RenderStyle* elementParentStyle) const
+bool CSSStyleSelector::SelectorChecker::checkOneSelector(CSSSelector* sel, Element* e, HashSet<AtomicStringImpl*>* selectorAttrs, PseudoId& dynamicPseudo, bool isAncestor, bool isSubSelector, RenderStyle* elementStyle, RenderStyle* elementParentStyle) const
 {
     if (!e)
         return false;
@@ -1898,15 +1969,19 @@ bool CSSStyleSelector::SelectorChecker::checkOneSelector(CSSSelector* sel, Eleme
             for (CSSSelector* subSel = sel->simpleSelector(); subSel; subSel = subSel->tagHistory()) {
                 // :not cannot nest. I don't really know why this is a
                 // restriction in CSS3, but it is, so let's honor it.
-                if (subSel->simpleSelector())
-                    break;
+                // the parser enforces that this never occurs
+                ASSERT(!subSel->simpleSelector());
+
                 if (!checkOneSelector(subSel, e, selectorAttrs, dynamicPseudo, isAncestor, true, elementStyle, elementParentStyle))
                     return true;
             }
-        } else if (dynamicPseudo != RenderStyle::NOPSEUDO && (RenderScrollbar::scrollbarForStyleResolve() || dynamicPseudo == RenderStyle::SCROLLBAR_CORNER || dynamicPseudo == RenderStyle::RESIZER)) {
+        } else if (dynamicPseudo != NOPSEUDO && (RenderScrollbar::scrollbarForStyleResolve() || dynamicPseudo == SCROLLBAR_CORNER || dynamicPseudo == RESIZER)) {
             // CSS scrollbars match a specific subset of pseudo classes, and they have specialized rules for each
             // (since there are no elements involved).
             return checkScrollbarPseudoClass(sel, dynamicPseudo);
+        } else if (dynamicPseudo == SELECTION) {
+            if (sel->pseudoType() == CSSSelector::PseudoWindowInactive)
+                return !m_document->page()->focusController()->isActive();
         }
         
         // Normal element pseudo class checking.
@@ -2201,7 +2276,7 @@ bool CSSStyleSelector::SelectorChecker::checkOneSelector(CSSSelector* sel, Eleme
                 break;
             }
             case CSSSelector::PseudoTarget:
-                if (e == e->document()->getCSSTarget())
+                if (e == e->document()->cssTarget())
                     return true;
                 break;
             case CSSSelector::PseudoAnyLink:
@@ -2210,10 +2285,13 @@ bool CSSStyleSelector::SelectorChecker::checkOneSelector(CSSSelector* sel, Eleme
                 if (pseudoState == PseudoAnyLink || pseudoState == PseudoLink || pseudoState == PseudoVisited)
                     return true;
                 break;
-            case CSSSelector::PseudoAutofill:
-                if (e)
-                    return e->isAutofilled();
+            case CSSSelector::PseudoAutofill: {
+                if (!e || !e->isFormControlElement())
+                    break;
+                if (InputElement* inputElement = toInputElement(e))
+                    return inputElement->isAutofilled();
                 break;
+            }
             case CSSSelector::PseudoLink:
                 if (pseudoState == PseudoUnknown || pseudoState == PseudoAnyLink)
                     pseudoState = checkPseudoState(e);
@@ -2265,37 +2343,60 @@ bool CSSStyleSelector::SelectorChecker::checkOneSelector(CSSSelector* sel, Eleme
                 }
                 break;
             case CSSSelector::PseudoEnabled:
-                if (e && e->isControl() && !e->isInputTypeHidden())
+                if (e && e->isFormControlElement()) {
+                    InputElement* inputElement = toInputElement(e);
+                    if (inputElement && inputElement->isInputTypeHidden())
+                        break;
                     // The UI spec states that you can't match :enabled unless you are an object that can
                     // "receive focus and be activated."  We will limit matching of this pseudo-class to elements
                     // that are non-"hidden" controls.
-                    return e->isEnabled();                    
+                    return e->isEnabledFormControl();
+                }
                 break;
             case CSSSelector::PseudoFullPageMedia:
                 return e && e->document() && e->document()->isMediaDocument();
                 break;
             case CSSSelector::PseudoDisabled:
-                if (e && e->isControl() && !e->isInputTypeHidden())
+                if (e && e->isFormControlElement()) {
+                    InputElement* inputElement = toInputElement(e);
+                    if (inputElement && inputElement->isInputTypeHidden())
+                        break;
+
                     // The UI spec states that you can't match :enabled unless you are an object that can
                     // "receive focus and be activated."  We will limit matching of this pseudo-class to elements
                     // that are non-"hidden" controls.
-                    return !e->isEnabled();                    
+                    return !e->isEnabledFormControl();
+                }
                 break;
-            case CSSSelector::PseudoReadOnly:
-                return e && e->isTextControl() && e->isReadOnlyControl();
-            case CSSSelector::PseudoReadWrite:
-                return e && e->isTextControl() && !e->isReadOnlyControl();
-            case CSSSelector::PseudoChecked:
+            case CSSSelector::PseudoReadOnly: {
+                if (!e || !e->isFormControlElement())
+                    return false;
+                return e->isTextFormControl() && e->isReadOnlyFormControl();
+            }
+            case CSSSelector::PseudoReadWrite: {
+                if (!e || !e->isFormControlElement())
+                    return false;
+                return e->isTextFormControl() && !e->isReadOnlyFormControl();
+            }
+            case CSSSelector::PseudoChecked: {
+                if (!e || !e->isFormControlElement())
+                    break;
                 // Even though WinIE allows checked and indeterminate to co-exist, the CSS selector spec says that
                 // you can't be both checked and indeterminate.  We will behave like WinIE behind the scenes and just
                 // obey the CSS spec here in the test for matching the pseudo.
-                if (e && e->isChecked() && !e->isIndeterminate())
+                InputElement* inputElement = toInputElement(e);
+                if (inputElement && inputElement->isChecked() && !inputElement->isIndeterminate())
                     return true;
                 break;
-            case CSSSelector::PseudoIndeterminate:
-                if (e && e->isIndeterminate())
+            }
+            case CSSSelector::PseudoIndeterminate: {
+                if (!e || !e->isFormControlElement())
+                    break;
+                InputElement* inputElement = toInputElement(e);
+                if (inputElement && inputElement->isIndeterminate())
                     return true;
                 break;
+            }
             case CSSSelector::PseudoRoot:
                 if (e == e->document()->documentElement())
                     return true;
@@ -2339,93 +2440,102 @@ bool CSSStyleSelector::SelectorChecker::checkOneSelector(CSSSelector* sel, Eleme
         switch (sel->pseudoType()) {
             // Pseudo-elements:
             case CSSSelector::PseudoFirstLine:
-                dynamicPseudo = RenderStyle::FIRST_LINE;
+                dynamicPseudo = FIRST_LINE;
                 return true;
             case CSSSelector::PseudoFirstLetter:
-                dynamicPseudo = RenderStyle::FIRST_LETTER;
+                dynamicPseudo = FIRST_LETTER;
                 if (Document* doc = e->document())
                     doc->setUsesFirstLetterRules(true);
                 return true;
             case CSSSelector::PseudoSelection:
-                dynamicPseudo = RenderStyle::SELECTION;
+                dynamicPseudo = SELECTION;
                 return true;
             case CSSSelector::PseudoBefore:
-                dynamicPseudo = RenderStyle::BEFORE;
+                dynamicPseudo = BEFORE;
                 return true;
             case CSSSelector::PseudoAfter:
-                dynamicPseudo = RenderStyle::AFTER;
+                dynamicPseudo = AFTER;
                 return true;
             case CSSSelector::PseudoFileUploadButton:
-                dynamicPseudo = RenderStyle::FILE_UPLOAD_BUTTON;
+                dynamicPseudo = FILE_UPLOAD_BUTTON;
                 return true;
             case CSSSelector::PseudoInputPlaceholder:
-                dynamicPseudo = RenderStyle::INPUT_PLACEHOLDER;
+                dynamicPseudo = INPUT_PLACEHOLDER;
                 return true;
             case CSSSelector::PseudoSliderThumb:
-                dynamicPseudo = RenderStyle::SLIDER_THUMB;
+                dynamicPseudo = SLIDER_THUMB;
                 return true; 
             case CSSSelector::PseudoSearchCancelButton:
-                dynamicPseudo = RenderStyle::SEARCH_CANCEL_BUTTON;
+                dynamicPseudo = SEARCH_CANCEL_BUTTON;
                 return true; 
             case CSSSelector::PseudoSearchDecoration:
-                dynamicPseudo = RenderStyle::SEARCH_DECORATION;
+                dynamicPseudo = SEARCH_DECORATION;
                 return true;
             case CSSSelector::PseudoSearchResultsDecoration:
-                dynamicPseudo = RenderStyle::SEARCH_RESULTS_DECORATION;
+                dynamicPseudo = SEARCH_RESULTS_DECORATION;
                 return true;
             case CSSSelector::PseudoSearchResultsButton:
-                dynamicPseudo = RenderStyle::SEARCH_RESULTS_BUTTON;
+                dynamicPseudo = SEARCH_RESULTS_BUTTON;
                 return true;
             case CSSSelector::PseudoMediaControlsPanel:
-                dynamicPseudo = RenderStyle::MEDIA_CONTROLS_PANEL;
+                dynamicPseudo = MEDIA_CONTROLS_PANEL;
                 return true;
             case CSSSelector::PseudoMediaControlsMuteButton:
-                dynamicPseudo = RenderStyle::MEDIA_CONTROLS_MUTE_BUTTON;
+                dynamicPseudo = MEDIA_CONTROLS_MUTE_BUTTON;
                 return true;
             case CSSSelector::PseudoMediaControlsPlayButton:
-                dynamicPseudo = RenderStyle::MEDIA_CONTROLS_PLAY_BUTTON;
+                dynamicPseudo = MEDIA_CONTROLS_PLAY_BUTTON;
                 return true;
             case CSSSelector::PseudoMediaControlsTimelineContainer:
-                dynamicPseudo = RenderStyle::MEDIA_CONTROLS_TIMELINE_CONTAINER;
+                dynamicPseudo = MEDIA_CONTROLS_TIMELINE_CONTAINER;
                  return true;
             case CSSSelector::PseudoMediaControlsCurrentTimeDisplay:
-                dynamicPseudo = RenderStyle::MEDIA_CONTROLS_CURRENT_TIME_DISPLAY;
+                dynamicPseudo = MEDIA_CONTROLS_CURRENT_TIME_DISPLAY;
                 return true;
             case CSSSelector::PseudoMediaControlsTimeRemainingDisplay:
-                dynamicPseudo = RenderStyle::MEDIA_CONTROLS_TIME_REMAINING_DISPLAY;
+                dynamicPseudo = MEDIA_CONTROLS_TIME_REMAINING_DISPLAY;
                 return true;
             case CSSSelector::PseudoMediaControlsTimeline:
-                dynamicPseudo = RenderStyle::MEDIA_CONTROLS_TIMELINE;
+                dynamicPseudo = MEDIA_CONTROLS_TIMELINE;
                 return true;
             case CSSSelector::PseudoMediaControlsSeekBackButton:
-                dynamicPseudo = RenderStyle::MEDIA_CONTROLS_SEEK_BACK_BUTTON;
+                dynamicPseudo = MEDIA_CONTROLS_SEEK_BACK_BUTTON;
                 return true;
             case CSSSelector::PseudoMediaControlsSeekForwardButton:
-                dynamicPseudo = RenderStyle::MEDIA_CONTROLS_SEEK_FORWARD_BUTTON;
+                dynamicPseudo = MEDIA_CONTROLS_SEEK_FORWARD_BUTTON;
+                return true;
+            case CSSSelector::PseudoMediaControlsRewindButton:
+                dynamicPseudo = MEDIA_CONTROLS_REWIND_BUTTON;
+                return true;
+            case CSSSelector::PseudoMediaControlsReturnToRealtimeButton:
+                dynamicPseudo = MEDIA_CONTROLS_RETURN_TO_REALTIME_BUTTON;
+                return true;
+            case CSSSelector::PseudoMediaControlsStatusDisplay:
+                dynamicPseudo = MEDIA_CONTROLS_STATUS_DISPLAY;
                 return true;
             case CSSSelector::PseudoMediaControlsFullscreenButton:
-                dynamicPseudo = RenderStyle::MEDIA_CONTROLS_FULLSCREEN_BUTTON;
+                dynamicPseudo = MEDIA_CONTROLS_FULLSCREEN_BUTTON;
                 return true;
             case CSSSelector::PseudoScrollbar:
-                dynamicPseudo = RenderStyle::SCROLLBAR;
+                dynamicPseudo = SCROLLBAR;
                 return true;
             case CSSSelector::PseudoScrollbarButton:
-                dynamicPseudo = RenderStyle::SCROLLBAR_BUTTON;
+                dynamicPseudo = SCROLLBAR_BUTTON;
                 return true;
             case CSSSelector::PseudoScrollbarCorner:
-                dynamicPseudo = RenderStyle::SCROLLBAR_CORNER;
+                dynamicPseudo = SCROLLBAR_CORNER;
                 return true;
             case CSSSelector::PseudoScrollbarThumb:
-                dynamicPseudo = RenderStyle::SCROLLBAR_THUMB;
+                dynamicPseudo = SCROLLBAR_THUMB;
                 return true;
             case CSSSelector::PseudoScrollbarTrack:
-                dynamicPseudo = RenderStyle::SCROLLBAR_TRACK;
+                dynamicPseudo = SCROLLBAR_TRACK;
                 return true;
             case CSSSelector::PseudoScrollbarTrackPiece:
-                dynamicPseudo = RenderStyle::SCROLLBAR_TRACK_PIECE;
+                dynamicPseudo = SCROLLBAR_TRACK_PIECE;
                 return true;
             case CSSSelector::PseudoResizer:
-                dynamicPseudo = RenderStyle::RESIZER;
+                dynamicPseudo = RESIZER;
                 return true;
             case CSSSelector::PseudoUnknown:
             case CSSSelector::PseudoNotParsed:
@@ -2439,7 +2549,7 @@ bool CSSStyleSelector::SelectorChecker::checkOneSelector(CSSSelector* sel, Eleme
     return true;
 }
 
-bool CSSStyleSelector::SelectorChecker::checkScrollbarPseudoClass(CSSSelector* sel, RenderStyle::PseudoId&) const
+bool CSSStyleSelector::SelectorChecker::checkScrollbarPseudoClass(CSSSelector* sel, PseudoId&) const
 {
     RenderScrollbar* scrollbar = RenderScrollbar::scrollbarForStyleResolve();
     ScrollbarPart part = RenderScrollbar::partForStyleResolve();
@@ -2650,7 +2760,7 @@ void CSSRuleSet::addRulesFromSheet(CSSStyleSheet* sheet, const MediaQueryEvaluat
 // -------------------------------------------------------------------------------------
 // this is mostly boring stuff on how to apply a certain rule to the renderstyle...
 
-static Length convertToLength(CSSPrimitiveValue *primitiveValue, RenderStyle *style, bool *ok = 0)
+static Length convertToLength(CSSPrimitiveValue *primitiveValue, RenderStyle *style, double multiplier = 1, bool *ok = 0)
 {
     // This function is tolerant of a null style value. The only place style is used is in
     // length measurements, like 'ems' and 'px'. And in those cases style is only used
@@ -2666,7 +2776,7 @@ static Length convertToLength(CSSPrimitiveValue *primitiveValue, RenderStyle *st
             if (ok)
                 *ok = false;
         } else if (CSSPrimitiveValue::isUnitTypeLength(type))
-            l = Length(primitiveValue->computeLengthIntForLength(style), Fixed);
+            l = Length(primitiveValue->computeLengthIntForLength(style, multiplier), Fixed);
         else if (type == CSSPrimitiveValue::CSS_PERCENTAGE)
             l = Length(primitiveValue->getDoubleValue(), Percent);
         else if (type == CSSPrimitiveValue::CSS_NUMBER)
@@ -2841,26 +2951,17 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
                 return;
         }
         return;
-        
     case CSSPropertyBorderTopStyle:
-        HANDLE_INHERIT_AND_INITIAL_WITH_VALUE(borderTopStyle, BorderTopStyle, BorderStyle)
-        if (primitiveValue)
-            m_style->setBorderTopStyle(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE_WITH_VALUE(borderTopStyle, BorderTopStyle, BorderStyle)
         return;
     case CSSPropertyBorderRightStyle:
-        HANDLE_INHERIT_AND_INITIAL_WITH_VALUE(borderRightStyle, BorderRightStyle, BorderStyle)
-        if (primitiveValue)
-            m_style->setBorderRightStyle(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE_WITH_VALUE(borderRightStyle, BorderRightStyle, BorderStyle)
         return;
     case CSSPropertyBorderBottomStyle:
-        HANDLE_INHERIT_AND_INITIAL_WITH_VALUE(borderBottomStyle, BorderBottomStyle, BorderStyle)
-        if (primitiveValue)
-            m_style->setBorderBottomStyle(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE_WITH_VALUE(borderBottomStyle, BorderBottomStyle, BorderStyle)
         return;
     case CSSPropertyBorderLeftStyle:
-        HANDLE_INHERIT_AND_INITIAL_WITH_VALUE(borderLeftStyle, BorderLeftStyle, BorderStyle)
-        if (primitiveValue)
-            m_style->setBorderLeftStyle(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE_WITH_VALUE(borderLeftStyle, BorderLeftStyle, BorderStyle)
         return;
     case CSSPropertyOutlineStyle:
         HANDLE_INHERIT_AND_INITIAL_WITH_VALUE(outlineStyle, OutlineStyle, BorderStyle)
@@ -2872,49 +2973,23 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
         }
         return;
     case CSSPropertyCaptionSide:
-    {
-        HANDLE_INHERIT_AND_INITIAL(captionSide, CaptionSide)
-        if (primitiveValue)
-            m_style->setCaptionSide(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(captionSide, CaptionSide)
         return;
-    }
     case CSSPropertyClear:
-    {
-        HANDLE_INHERIT_AND_INITIAL(clear, Clear)
-        if (primitiveValue)
-            m_style->setClear(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(clear, Clear)
         return;
-    }
     case CSSPropertyDirection:
-    {
-        HANDLE_INHERIT_AND_INITIAL(direction, Direction)
-        if (primitiveValue)
-            m_style->setDirection(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(direction, Direction)
         return;
-    }
     case CSSPropertyDisplay:
-    {
-        HANDLE_INHERIT_AND_INITIAL(display, Display)
-        if (primitiveValue)
-            m_style->setDisplay(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(display, Display)
         return;
-    }
-
     case CSSPropertyEmptyCells:
-    {
-        HANDLE_INHERIT_AND_INITIAL(emptyCells, EmptyCells)
-        if (primitiveValue)
-            m_style->setEmptyCells(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(emptyCells, EmptyCells)
         return;
-    }
     case CSSPropertyFloat:
-    {
-        HANDLE_INHERIT_AND_INITIAL(floating, Floating)
-        if (primitiveValue)
-            m_style->setFloating(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(floating, Floating)
         return;
-    }
-
     case CSSPropertyFontStyle:
     {
         FontDescription fontDescription = m_style->fontDescription();
@@ -3025,21 +3100,11 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
     }
         
     case CSSPropertyListStylePosition:
-    {
-        HANDLE_INHERIT_AND_INITIAL(listStylePosition, ListStylePosition)
-        if (primitiveValue)
-            m_style->setListStylePosition(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(listStylePosition, ListStylePosition)
         return;
-    }
-
     case CSSPropertyListStyleType:
-    {
-        HANDLE_INHERIT_AND_INITIAL(listStyleType, ListStyleType)
-        if (primitiveValue)
-            m_style->setListStyleType(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(listStyleType, ListStyleType)
         return;
-    }
-
     case CSSPropertyOverflow:
     {
         if (isInherit) {
@@ -3062,35 +3127,17 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
     }
 
     case CSSPropertyOverflowX:
-    {
-        HANDLE_INHERIT_AND_INITIAL(overflowX, OverflowX)
-        m_style->setOverflowX(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(overflowX, OverflowX)
         return;
-    }
-
     case CSSPropertyOverflowY:
-    {
-        HANDLE_INHERIT_AND_INITIAL(overflowY, OverflowY)
-        m_style->setOverflowY(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(overflowY, OverflowY)
         return;
-    }
-
     case CSSPropertyPageBreakBefore:
-    {
-        HANDLE_INHERIT_AND_INITIAL_WITH_VALUE(pageBreakBefore, PageBreakBefore, PageBreak)
-        if (primitiveValue)
-            m_style->setPageBreakBefore(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE_WITH_VALUE(pageBreakBefore, PageBreakBefore, PageBreak)
         return;
-    }
-
     case CSSPropertyPageBreakAfter:
-    {
-        HANDLE_INHERIT_AND_INITIAL_WITH_VALUE(pageBreakAfter, PageBreakAfter, PageBreak)
-        if (primitiveValue)
-            m_style->setPageBreakAfter(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE_WITH_VALUE(pageBreakAfter, PageBreakAfter, PageBreak)
         return;
-    }
-
     case CSSPropertyPageBreakInside: {
         HANDLE_INHERIT_AND_INITIAL_WITH_VALUE(pageBreakInside, PageBreakInside, PageBreak)
         if (!primitiveValue)
@@ -3102,13 +3149,8 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
     }
         
     case CSSPropertyPosition:
-    {
-        HANDLE_INHERIT_AND_INITIAL(position, Position)
-        if (primitiveValue)
-            m_style->setPosition(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(position, Position)
         return;
-    }
-
     case CSSPropertyTableLayout: {
         HANDLE_INHERIT_AND_INITIAL(tableLayout, TableLayout)
 
@@ -3120,26 +3162,17 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
         return;
     }
         
-    case CSSPropertyUnicodeBidi: {
-        HANDLE_INHERIT_AND_INITIAL(unicodeBidi, UnicodeBidi)
-        m_style->setUnicodeBidi(*primitiveValue);
+    case CSSPropertyUnicodeBidi: 
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(unicodeBidi, UnicodeBidi)
         return;
-    }
-    case CSSPropertyTextTransform: {
-        HANDLE_INHERIT_AND_INITIAL(textTransform, TextTransform)
-        m_style->setTextTransform(*primitiveValue);
+    case CSSPropertyTextTransform: 
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(textTransform, TextTransform)
         return;
-    }
-
     case CSSPropertyVisibility:
-    {
-        HANDLE_INHERIT_AND_INITIAL(visibility, Visibility)
-        m_style->setVisibility(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(visibility, Visibility)
         return;
-    }
     case CSSPropertyWhiteSpace:
-        HANDLE_INHERIT_AND_INITIAL(whiteSpace, WhiteSpace)
-        m_style->setWhiteSpace(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(whiteSpace, WhiteSpace)
         return;
 
     case CSSPropertyBackgroundPosition:
@@ -3181,7 +3214,7 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
         HANDLE_INHERIT_AND_INITIAL(horizontalBorderSpacing, HorizontalBorderSpacing)
         if (!primitiveValue)
             return;
-        short spacing =  primitiveValue->computeLengthShort(style(), zoomFactor);
+        short spacing = primitiveValue->computeLengthShort(style(), zoomFactor);
         m_style->setHorizontalBorderSpacing(spacing);
         return;
     }
@@ -3189,7 +3222,7 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
         HANDLE_INHERIT_AND_INITIAL(verticalBorderSpacing, VerticalBorderSpacing)
         if (!primitiveValue)
             return;
-        short spacing =  primitiveValue->computeLengthShort(style(), zoomFactor);
+        short spacing = primitiveValue->computeLengthShort(style(), zoomFactor);
         m_style->setVerticalBorderSpacing(spacing);
         return;
     }
@@ -3432,38 +3465,21 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
         return;
     }
 
-    case CSSPropertyWordBreak: {
-        HANDLE_INHERIT_AND_INITIAL(wordBreak, WordBreak)
-        m_style->setWordBreak(*primitiveValue);
+    case CSSPropertyWordBreak:
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(wordBreak, WordBreak)
         return;
-    }
-
-    case CSSPropertyWordWrap: {
-        HANDLE_INHERIT_AND_INITIAL(wordWrap, WordWrap)
-        m_style->setWordWrap(*primitiveValue);
+    case CSSPropertyWordWrap:
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(wordWrap, WordWrap)
         return;
-    }
-
     case CSSPropertyWebkitNbspMode:
-    {
-        HANDLE_INHERIT_AND_INITIAL(nbspMode, NBSPMode)
-        m_style->setNBSPMode(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(nbspMode, NBSPMode)
         return;
-    }
-
     case CSSPropertyWebkitLineBreak:
-    {
-        HANDLE_INHERIT_AND_INITIAL(khtmlLineBreak, KHTMLLineBreak)
-        m_style->setKHTMLLineBreak(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(khtmlLineBreak, KHTMLLineBreak)
         return;
-    }
-
     case CSSPropertyWebkitMatchNearestMailBlockquoteColor:
-    {
-        HANDLE_INHERIT_AND_INITIAL(matchNearestMailBlockquoteColor, MatchNearestMailBlockquoteColor)
-        m_style->setMatchNearestMailBlockquoteColor(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(matchNearestMailBlockquoteColor, MatchNearestMailBlockquoteColor)
         return;
-    }
 
     case CSSPropertyResize:
     {
@@ -3890,8 +3906,7 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
                 right = m_parentStyle->clipRight();
                 bottom = m_parentStyle->clipBottom();
                 left = m_parentStyle->clipLeft();
-            }
-            else {
+            } else {
                 hasClip = false;
                 top = right = bottom = left = Length();
             }
@@ -3904,11 +3919,10 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
             Rect* rect = primitiveValue->getRectValue();
             if (!rect)
                 return;
-            top = convertToLength(rect->top(), style());
-            right = convertToLength(rect->right(), style());
-            bottom = convertToLength(rect->bottom(), style());
-            left = convertToLength(rect->left(), style());
-
+            top = convertToLength(rect->top(), style(), zoomFactor);
+            right = convertToLength(rect->right(), style(), zoomFactor);
+            bottom = convertToLength(rect->bottom(), style(), zoomFactor);
+            left = convertToLength(rect->left(), style(), zoomFactor);
         } else if (primitiveValue->getIdent() != CSSValueAuto) {
             return;
         }
@@ -3956,7 +3970,7 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
                     break;
                 case CSSPrimitiveValue::CSS_ATTR: {
                     // FIXME: Can a namespace be specified for an attr(foo)?
-                    if (m_style->styleType() == RenderStyle::NOPSEUDO)
+                    if (m_style->styleType() == NOPSEUDO)
                         m_style->setUnique();
                     else
                         m_parentStyle->setUnique();
@@ -4289,6 +4303,9 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
                 m_fontDirty = true;
         } else if (isInitial) {
             Settings* settings = m_checker.m_document->settings();
+            ASSERT(settings); // If we're doing style resolution, this document should always be in a frame and thus have settings
+            if (!settings)
+                return;
             FontDescription fontDescription;
             fontDescription.setGenericFamily(FontDescription::StandardFamily);
             fontDescription.setRenderingMode(settings->fontRenderingMode());
@@ -4314,6 +4331,9 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
             if (fontDescription.isAbsoluteSize()) {
                 // Make sure the rendering mode and printer font settings are updated.
                 Settings* settings = m_checker.m_document->settings();
+                ASSERT(settings); // If we're doing style resolution, this document should always be in a frame and thus have settings
+                if (!settings)
+                    return;
                 fontDescription.setRenderingMode(settings->fontRenderingMode());
                 fontDescription.setUsePrinterFont(m_checker.m_document->printing());
            
@@ -4497,7 +4517,21 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
         HANDLE_INHERIT_AND_INITIAL(outlineOffset, OutlineOffset)
         m_style->setOutlineOffset(primitiveValue->computeLengthInt(style(), zoomFactor));
         return;
-
+    case CSSPropertyTextRendering: {
+        FontDescription fontDescription = m_style->fontDescription();
+        if (isInherit) 
+            fontDescription.setTextRenderingMode(m_parentStyle->fontDescription().textRenderingMode());
+        else if (isInitial)
+            fontDescription.setTextRenderingMode(AutoTextRendering);
+        else {
+            if (!primitiveValue)
+                return;
+            fontDescription.setTextRenderingMode(*primitiveValue);
+        }
+        if (m_style->setFontDescription(fontDescription))
+            m_fontDirty = true;
+        return;
+    }
     case CSSPropertyTextShadow:
     case CSSPropertyWebkitBoxShadow: {
         if (isInherit) {
@@ -4579,19 +4613,13 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
             m_style->setBackfaceVisibility((primitiveValue->getIdent() == CSSValueVisible) ? BackfaceVisibilityVisible : BackfaceVisibilityHidden);
         return;
     case CSSPropertyWebkitBoxDirection:
-        HANDLE_INHERIT_AND_INITIAL(boxDirection, BoxDirection)
-        if (primitiveValue)
-            m_style->setBoxDirection(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(boxDirection, BoxDirection)
         return;
     case CSSPropertyWebkitBoxLines:
-        HANDLE_INHERIT_AND_INITIAL(boxLines, BoxLines)
-        if (primitiveValue)
-            m_style->setBoxLines(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(boxLines, BoxLines)
         return;
     case CSSPropertyWebkitBoxOrient:
-        HANDLE_INHERIT_AND_INITIAL(boxOrient, BoxOrient)
-        if (primitiveValue)
-            m_style->setBoxOrient(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(boxOrient, BoxOrient)
         return;
     case CSSPropertyWebkitBoxPack:
     {
@@ -4673,19 +4701,14 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
         return;
     }
     case CSSPropertyWebkitColumnRuleStyle:
-        HANDLE_INHERIT_AND_INITIAL_WITH_VALUE(columnRuleStyle, ColumnRuleStyle, BorderStyle)
-        m_style->setColumnRuleStyle(*primitiveValue);
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE_WITH_VALUE(columnRuleStyle, ColumnRuleStyle, BorderStyle)
         return;
-    case CSSPropertyWebkitColumnBreakBefore: {
-        HANDLE_INHERIT_AND_INITIAL_WITH_VALUE(columnBreakBefore, ColumnBreakBefore, PageBreak)
-        m_style->setColumnBreakBefore(*primitiveValue);
+    case CSSPropertyWebkitColumnBreakBefore:
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE_WITH_VALUE(columnBreakBefore, ColumnBreakBefore, PageBreak)
         return;
-    }
-    case CSSPropertyWebkitColumnBreakAfter: {
-        HANDLE_INHERIT_AND_INITIAL_WITH_VALUE(columnBreakAfter, ColumnBreakAfter, PageBreak)
-        m_style->setColumnBreakAfter(*primitiveValue);
+    case CSSPropertyWebkitColumnBreakAfter:
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE_WITH_VALUE(columnBreakAfter, ColumnBreakAfter, PageBreak)
         return;
-    }
     case CSSPropertyWebkitColumnBreakInside: {
         HANDLE_INHERIT_AND_INITIAL_WITH_VALUE(columnBreakInside, ColumnBreakInside, PageBreak)
         EPageBreak pb = *primitiveValue;
@@ -4776,42 +4799,28 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
         }
         else {
             bool ok = true;
-            Length l = convertToLength(primitiveValue, style(), &ok);
+            Length l = convertToLength(primitiveValue, style(), 1, &ok);
             if (ok)
                 m_style->setMarqueeIncrement(l);
         }
         return;
     }
-    case CSSPropertyWebkitMarqueeStyle: {
-        HANDLE_INHERIT_AND_INITIAL(marqueeBehavior, MarqueeBehavior)      
-        if (primitiveValue)
-            m_style->setMarqueeBehavior(*primitiveValue);
+    case CSSPropertyWebkitMarqueeStyle:
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(marqueeBehavior, MarqueeBehavior)      
         return;
-    }
-    case CSSPropertyWebkitMarqueeDirection: {
-        HANDLE_INHERIT_AND_INITIAL(marqueeDirection, MarqueeDirection)
-        if (primitiveValue)
-            m_style->setMarqueeDirection(*primitiveValue);
+    case CSSPropertyWebkitMarqueeDirection:
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(marqueeDirection, MarqueeDirection)
         return;
-    }
-    case CSSPropertyWebkitUserDrag: {
-        HANDLE_INHERIT_AND_INITIAL(userDrag, UserDrag)      
-        if (primitiveValue)
-            m_style->setUserDrag(*primitiveValue);
+    case CSSPropertyWebkitUserDrag:
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(userDrag, UserDrag)      
         return;
-    }
-    case CSSPropertyWebkitUserModify: {
-        HANDLE_INHERIT_AND_INITIAL(userModify, UserModify)      
-        if (primitiveValue)
-            m_style->setUserModify(*primitiveValue);
+    case CSSPropertyWebkitUserModify:
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(userModify, UserModify)      
         return;
-    }
-    case CSSPropertyWebkitUserSelect: {
-        HANDLE_INHERIT_AND_INITIAL(userSelect, UserSelect)      
-        if (primitiveValue)
-            m_style->setUserSelect(*primitiveValue);
+    case CSSPropertyWebkitUserSelect:
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(userSelect, UserSelect)      
         return;
-    }
+
     case CSSPropertyTextOverflow: {
         // This property is supported by WinIE, and so we leave off the "-webkit-" in order to
         // work with WinIE-specific pages that use the property.
@@ -4832,25 +4841,22 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
         }
         return;
     }
-    case CSSPropertyWebkitMarginTopCollapse: {
-        HANDLE_INHERIT_AND_INITIAL(marginTopCollapse, MarginTopCollapse)
-        if (primitiveValue)
-            m_style->setMarginTopCollapse(*primitiveValue);
-        return;
-    }
-    case CSSPropertyWebkitMarginBottomCollapse: {
-        HANDLE_INHERIT_AND_INITIAL(marginBottomCollapse, MarginBottomCollapse)
-        if (primitiveValue)
-            m_style->setMarginBottomCollapse(*primitiveValue);
-        return;
-    }
 
-    // Apple-specific changes.  Do not merge these properties into KHTML.
+    case CSSPropertyWebkitMarginTopCollapse:
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(marginTopCollapse, MarginTopCollapse)
+        return;
+    case CSSPropertyWebkitMarginBottomCollapse:
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(marginBottomCollapse, MarginBottomCollapse)
+        return;
     case CSSPropertyWebkitLineClamp: {
         HANDLE_INHERIT_AND_INITIAL(lineClamp, LineClamp)
         if (!primitiveValue)
             return;
-        m_style->setLineClamp(primitiveValue->getIntValue(CSSPrimitiveValue::CSS_PERCENTAGE));
+        int type = primitiveValue->primitiveType();
+        if (type == CSSPrimitiveValue::CSS_NUMBER)
+            m_style->setLineClamp(LineClampValue(primitiveValue->getIntValue(CSSPrimitiveValue::CSS_NUMBER), LineClampLineCount));
+        else if (type == CSSPrimitiveValue::CSS_PERCENTAGE)
+            m_style->setLineClamp(LineClampValue(primitiveValue->getIntValue(CSSPrimitiveValue::CSS_PERCENTAGE), LineClampPercentage));
         return;
     }
     case CSSPropertyWebkitHighlight: {
@@ -4883,12 +4889,10 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
         m_fontDirty = true;
         return;
     }
-    case CSSPropertyWebkitTextSecurity: {
-        HANDLE_INHERIT_AND_INITIAL(textSecurity, TextSecurity)
-        if (primitiveValue)
-            m_style->setTextSecurity(*primitiveValue);
+    case CSSPropertyWebkitTextSecurity:
+        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(textSecurity, TextSecurity)
         return;
-    }
+
 #if ENABLE(DASHBOARD_SUPPORT)
     case CSSPropertyWebkitDashboardRegion: {
         HANDLE_INHERIT_AND_INITIAL(dashboardRegions, DashboardRegions)
@@ -5013,10 +5017,17 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
             m_style->setPerspective(0);
             return;
         }
-
-        if (primitiveValue->primitiveType() != CSSPrimitiveValue::CSS_NUMBER)
+        
+        float perspectiveValue;
+        int type = primitiveValue->primitiveType();
+        if (CSSPrimitiveValue::isUnitTypeLength(type))
+            perspectiveValue = static_cast<float>(primitiveValue->computeLengthIntForLength(style(), zoomFactor));
+        else if (type == CSSPrimitiveValue::CSS_NUMBER) {
+            // For backward compatibility, treat valueless numbers as px.
+            perspectiveValue = CSSPrimitiveValue::create(primitiveValue->getDoubleValue(), CSSPrimitiveValue::CSS_PX)->computeLengthFloat(style(), zoomFactor);
+        } else
             return;
-        float perspectiveValue = static_cast<float>(primitiveValue->getDoubleValue());
+
         if (perspectiveValue >= 0.0f)
             m_style->setPerspective(perspectiveValue);
         return;
@@ -5165,13 +5176,6 @@ void CSSStyleSelector::applyProperty(int id, CSSValue *value)
     case CSSPropertyFontStretch:
     case CSSPropertyPage:
     case CSSPropertyQuotes:
-    case CSSPropertyScrollbar3dlightColor:
-    case CSSPropertyScrollbarArrowColor:
-    case CSSPropertyScrollbarDarkshadowColor:
-    case CSSPropertyScrollbarFaceColor:
-    case CSSPropertyScrollbarHighlightColor:
-    case CSSPropertyScrollbarShadowColor:
-    case CSSPropertyScrollbarTrackColor:
     case CSSPropertySize:
     case CSSPropertyTextLineThrough:
     case CSSPropertyTextLineThroughColor:
@@ -5483,7 +5487,8 @@ void CSSStyleSelector::mapAnimationPlayState(Animation* layer, CSSValue* value)
     }
 
     CSSPrimitiveValue* primitiveValue = static_cast<CSSPrimitiveValue*>(value);
-    layer->setPlayState((primitiveValue->getIdent() == CSSValuePaused) ? AnimPlayStatePaused : AnimPlayStatePlaying);
+    EAnimPlayState playState = (primitiveValue->getIdent() == CSSValuePaused) ? AnimPlayStatePaused : AnimPlayStatePlaying;
+    layer->setPlayState(playState);
 }
 
 void CSSStyleSelector::mapAnimationProperty(Animation* animation, CSSValue* value)
@@ -5818,7 +5823,7 @@ static Color colorForCSSValue(int cssValueId)
         if (col->cssValueId == cssValueId)
             return col->color;
     }
-    return theme()->systemColor(cssValueId);
+    return RenderTheme::defaultTheme()->systemColor(cssValueId);
 }
 
 Color CSSStyleSelector::getColorFromPrimitiveValue(CSSPrimitiveValue* primitiveValue)
@@ -5841,7 +5846,7 @@ Color CSSStyleSelector::getColorFromPrimitiveValue(CSSPrimitiveValue* primitiveV
         } else if (ident == CSSValueWebkitActivelink)
             col = m_element->document()->activeLinkColor();
         else if (ident == CSSValueWebkitFocusRingColor)
-            col = focusRingColor();
+            col = RenderTheme::focusRingColor();
         else if (ident == CSSValueCurrentcolor)
             col = m_style->color();
         else
@@ -5877,7 +5882,7 @@ void CSSStyleSelector::SelectorChecker::allVisitedStateChanged()
         return;
     for (Node* node = m_document; node; node = node->traverseNextNode()) {
         if (node->isLink())
-            node->setChanged();
+            node->setNeedsStyleRecalc();
     }
 }
 
@@ -5888,7 +5893,7 @@ void CSSStyleSelector::SelectorChecker::visitedStateChanged(LinkHash visitedHash
     for (Node* node = m_document; node; node = node->traverseNextNode()) {
         const AtomicString* attr = linkAttribute(node);
         if (attr && visitedLinkHash(m_document->baseURL(), *attr) == visitedHash)
-            node->setChanged();
+            node->setNeedsStyleRecalc();
     }
 }
 
@@ -5921,8 +5926,10 @@ static TransformOperation::OperationType getTransformOperationType(WebKitCSSTran
     return TransformOperation::NONE;
 }
 
-bool CSSStyleSelector::createTransformOperations(CSSValue* inValue, RenderStyle* inStyle, TransformOperations& outOperations)
+bool CSSStyleSelector::createTransformOperations(CSSValue* inValue, RenderStyle* style, TransformOperations& outOperations)
 {
+    float zoomFactor = style ? style->effectiveZoom() : 1;
+
     TransformOperations operations;
     if (inValue && !inValue->isPrimitiveValue()) {
         CSSValueList* list = static_cast<CSSValueList*>(inValue);
@@ -5986,13 +5993,13 @@ bool CSSStyleSelector::createTransformOperations(CSSValue* inValue, RenderStyle*
                     Length tx = Length(0, Fixed);
                     Length ty = Length(0, Fixed);
                     if (val->operationType() == WebKitCSSTransformValue::TranslateYTransformOperation)
-                        ty = convertToLength(firstValue, inStyle, &ok);
+                        ty = convertToLength(firstValue, style, zoomFactor, &ok);
                     else { 
-                        tx = convertToLength(firstValue, inStyle, &ok);
+                        tx = convertToLength(firstValue, style, zoomFactor, &ok);
                         if (val->operationType() != WebKitCSSTransformValue::TranslateXTransformOperation) {
                             if (val->length() > 1) {
                                 CSSPrimitiveValue* secondValue = static_cast<CSSPrimitiveValue*>(val->itemWithoutBoundsCheck(1));
-                                ty = convertToLength(secondValue, inStyle, &ok);
+                                ty = convertToLength(secondValue, style, zoomFactor, &ok);
                             }
                         }
                     }
@@ -6010,19 +6017,19 @@ bool CSSStyleSelector::createTransformOperations(CSSValue* inValue, RenderStyle*
                     Length ty = Length(0, Fixed);
                     Length tz = Length(0, Fixed);
                     if (val->operationType() == WebKitCSSTransformValue::TranslateZTransformOperation)
-                        tz = convertToLength(firstValue, inStyle, &ok);
+                        tz = convertToLength(firstValue, style, zoomFactor, &ok);
                     else if (val->operationType() == WebKitCSSTransformValue::TranslateYTransformOperation)
-                        ty = convertToLength(firstValue, inStyle, &ok);
+                        ty = convertToLength(firstValue, style, zoomFactor, &ok);
                     else { 
-                        tx = convertToLength(firstValue, inStyle, &ok);
+                        tx = convertToLength(firstValue, style, zoomFactor, &ok);
                         if (val->operationType() != WebKitCSSTransformValue::TranslateXTransformOperation) {
                             if (val->length() > 2) {
                                 CSSPrimitiveValue* thirdValue = static_cast<CSSPrimitiveValue*>(val->itemWithoutBoundsCheck(2));
-                                tz = convertToLength(thirdValue, inStyle, &ok);
+                                tz = convertToLength(thirdValue, style, zoomFactor, &ok);
                             }
                             if (val->length() > 1) {
                                 CSSPrimitiveValue* secondValue = static_cast<CSSPrimitiveValue*>(val->itemWithoutBoundsCheck(1));
-                                ty = convertToLength(secondValue, inStyle, &ok);
+                                ty = convertToLength(secondValue, style, zoomFactor, &ok);
                             }
                         }
                     }

@@ -23,7 +23,10 @@
 #include "StyleRareNonInheritedData.h"
 
 #include "CSSStyleSelector.h"
+#include "ContentData.h"
+#include "RenderCounter.h"
 #include "RenderStyle.h"
+#include "StyleImage.h"
 
 namespace WebCore {
 
@@ -123,7 +126,7 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && marquee == o.marquee
         && m_multiCol == o.m_multiCol
         && m_transform == o.m_transform
-        && m_content == o.m_content
+        && contentDataEquivalent(o)
         && m_counterDirectives == o.m_counterDirectives
         && userDrag == o.userDrag
         && textOverflow == o.textOverflow
@@ -153,9 +156,24 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         ;
 }
 
+bool StyleRareNonInheritedData::contentDataEquivalent(const StyleRareNonInheritedData& o) const
+{
+    ContentData* c1 = m_content.get();
+    ContentData* c2 = o.m_content.get();
+
+    while (c1 && c2) {
+        if (!c1->dataEquivalent(*c2))
+            return false;
+        c1 = c1->next();
+        c2 = c2->next();
+    }
+
+    return !c1 && !c2;
+}
+
 bool StyleRareNonInheritedData::shadowDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    if (!m_boxShadow && o.m_boxShadow || m_boxShadow && !o.m_boxShadow)
+    if ((!m_boxShadow && o.m_boxShadow) || (m_boxShadow && !o.m_boxShadow))
         return false;
     if (m_boxShadow && o.m_boxShadow && (*m_boxShadow != *o.m_boxShadow))
         return false;
@@ -175,7 +193,7 @@ bool StyleRareNonInheritedData::reflectionDataEquivalent(const StyleRareNonInher
 
 bool StyleRareNonInheritedData::animationDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    if (!m_animations && o.m_animations || m_animations && !o.m_animations)
+    if ((!m_animations && o.m_animations) || (m_animations && !o.m_animations))
         return false;
     if (m_animations && o.m_animations && (*m_animations != *o.m_animations))
         return false;
@@ -184,7 +202,7 @@ bool StyleRareNonInheritedData::animationDataEquivalent(const StyleRareNonInheri
 
 bool StyleRareNonInheritedData::transitionDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    if (!m_transitions && o.m_transitions || m_transitions && !o.m_transitions)
+    if ((!m_transitions && o.m_transitions) || (m_transitions && !o.m_transitions))
         return false;
     if (m_transitions && o.m_transitions && (*m_transitions != *o.m_transitions))
         return false;

@@ -27,6 +27,10 @@
 #define MediaPlayerProxy_h
 
 #ifdef __OBJC__
+#import <Foundation/NSGeometry.h>
+#endif
+
+#ifdef __OBJC__
 @class WebMediaPlayerProxy;
 #else
 class WebMediaPlayerProxy;
@@ -36,31 +40,27 @@ enum MediaPlayerProxyNotificationType {
 
     MediaPlayerNotificationMediaValidated = 1,
     MediaPlayerNotificationMediaFailedToValidate,
-    
     MediaPlayerNotificationStartUsingNetwork,
     MediaPlayerNotificationStopUsingNetwork,
-
     MediaPlayerNotificationEnteredFullScreen,
     MediaPlayerNotificationExitedFullScreen,
-    
     MediaPlayerNotificationReadyForInspection,
     MediaPlayerNotificationReadyForPlayback,
     MediaPlayerNotificationDidPlayToTheEnd,
-
     MediaPlayerNotificationPlaybackFailed,
-
     MediaPlayerNotificationStreamLikelyToKeepUp,
     MediaPlayerNotificationStreamUnlikelyToKeepUp,
     MediaPlayerNotificationStreamBufferFull,
     MediaPlayerNotificationStreamRanDry,
     MediaPlayerNotificationFileLoaded,
-
     MediaPlayerNotificationSizeDidChange,
     MediaPlayerNotificationVolumeDidChange,
     MediaPlayerNotificationMutedDidChange,
     MediaPlayerNotificationTimeJumped,
-    
     MediaPlayerNotificationPlayPauseButtonPressed,
+    MediaPlayerNotificationRateDidChange,
+    MediaPlayerNotificationGainFocus,
+    MediaPlayerNotificationLoseFocus,
 };
 
 #ifdef __OBJC__
@@ -75,6 +75,10 @@ enum MediaPlayerProxyNotificationType {
 
 - (void)_setPoster:(NSURL *)url;
 
+- (void)_setControls:(BOOL)controls;
+- (void)_setAutobuffer:(BOOL)autobuffer;
+ 
+- (void)_prepareForPlayback;
 - (void)_play;
 - (void)_pause;
 

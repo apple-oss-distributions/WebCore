@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
  *           (C) 2006 Graham Dennis (graham.dennis@gmail.com)
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,7 +28,7 @@
 #define Settings_h
 
 #include "AtomicString.h"
-#include "FontDescription.h"
+#include "FontRenderingMode.h"
 #include "KURL.h"
 
 #include "Document.h"
@@ -38,7 +38,7 @@ namespace WebCore {
     class Page;
 
     enum EditableLinkBehavior {
-        EditableLinkDefaultBehavior = 0,
+        EditableLinkDefaultBehavior,
         EditableLinkAlwaysLive,
         EditableLinkOnlyLiveWithShiftKey,
         EditableLinkLiveWhenNotFocused,
@@ -50,6 +50,21 @@ namespace WebCore {
         TextDirectionSubmenuAutomaticallyIncluded,
         TextDirectionSubmenuAlwaysIncluded
     };
+
+    // There are multiple editing details that are different on Windows than Macintosh.
+    // We use a single switch for all of them. Some examples:
+    //
+    //    1) Clicking below the last line of an editable area puts the caret at the end
+    //       of the last line on Mac, but in the middle of the last line on Windows.
+    //    2) Pushing the down arrow key on the last line puts the caret at the end of the
+    //       last line on Mac, but does nothing on Windows. A similar case exists on the
+    //       top line.
+    //
+    // This setting is intended to control these sorts of behaviors. There are some other
+    // behaviors with individual function calls on EditorClient (smart copy and paste and
+    // selecting the space after a double click) that could be combined with this if
+    // if possible in the future.
+    enum EditingBehavior { EditingMacBehavior, EditingWindowsBehavior };
 
     class Settings {
     public:
@@ -91,8 +106,14 @@ namespace WebCore {
         void setJavaScriptEnabled(bool);
         bool isJavaScriptEnabled() const { return m_isJavaScriptEnabled; }
 
+        void setWebSecurityEnabled(bool);
+        bool isWebSecurityEnabled() const { return m_isWebSecurityEnabled; }
+
+        void setAllowUniversalAccessFromFileURLs(bool);
+        bool allowUniversalAccessFromFileURLs() const { return m_allowUniversalAccessFromFileURLs; }
+
         void setJavaScriptCanOpenWindowsAutomatically(bool);
-        bool JavaScriptCanOpenWindowsAutomatically() const { return m_javaScriptCanOpenWindowsAutomatically; }
+        bool javaScriptCanOpenWindowsAutomatically() const { return m_javaScriptCanOpenWindowsAutomatically; }
 
         void setJavaEnabled(bool);
         bool isJavaEnabled() const { return m_isJavaEnabled; }
@@ -108,9 +129,15 @@ namespace WebCore {
 
         void setPrivateBrowsingEnabled(bool);
         bool privateBrowsingEnabled() const { return m_privateBrowsingEnabled; }
-        
+
+        void setCaretBrowsingEnabled(bool);
+        bool caretBrowsingEnabled() const { return m_caretBrowsingEnabled; }
+
         void setDefaultTextEncodingName(const String&);
         const String& defaultTextEncodingName() const { return m_defaultTextEncodingName; }
+        
+        void setUsesEncodingDetector(bool);
+        bool usesEncodingDetector() const { return m_usesEncodingDetector; }
 
         void setUserStyleSheetLocation(const KURL&);
         const KURL& userStyleSheetLocation() const { return m_userStyleSheetLocation; }
@@ -137,6 +164,15 @@ namespace WebCore {
 
         void setNeedsKeyboardEventDisambiguationQuirks(bool);
         bool needsKeyboardEventDisambiguationQuirks() const { return m_needsKeyboardEventDisambiguationQuirks; }
+
+        void setTreatsAnyTextCSSLinkAsStylesheet(bool);
+        bool treatsAnyTextCSSLinkAsStylesheet() const { return m_treatsAnyTextCSSLinkAsStylesheet; }
+
+        void setNeedsLeopardMailQuirks(bool);
+        bool needsLeopardMailQuirks() const { return m_needsLeopardMailQuirks; }
+
+        void setNeedsTigerMailQuirks(bool);
+        bool needsTigerMailQuirks() const { return m_needsTigerMailQuirks; }
 
         void setDOMPasteAllowed(bool);
         bool isDOMPasteAllowed() const { return m_isDOMPasteAllowed; }
@@ -170,6 +206,9 @@ namespace WebCore {
 
         void setTelephoneNumberParsingEnabled(bool flag) { m_telephoneNumberParsingEnabled = flag; }
         bool telephoneNumberParsingEnabled() const { return m_telephoneNumberParsingEnabled; }
+        
+        void setFoundationCachingEnabled(bool flag) { m_foundationCachingEnabled = flag; }
+        bool foundationCachingEnabled() const { return m_foundationCachingEnabled; }
 
         void setMinimumZoomFontSize(float size) { m_minimumZoomFontSize = size; }
         float minimumZoomFontSize() const { return m_minimumZoomFontSize; }
@@ -192,12 +231,12 @@ namespace WebCore {
         void setWebArchiveDebugModeEnabled(bool);
         bool webArchiveDebugModeEnabled() const { return m_webArchiveDebugModeEnabled; }
 
+        void setLocalFileContentSniffingEnabled(bool);
+        bool localFileContentSniffingEnabled() const { return m_localFileContentSniffingEnabled; }
+
         void setLocalStorageDatabasePath(const String&);
         const String& localStorageDatabasePath() const { return m_localStorageDatabasePath; }
         
-        void disableRangeMutationForOldAppleMail(bool);
-        bool rangeMutationDisabledForOldAppleMail() const { return m_rangeMutationDisabledForOldAppleMail; }
-
         void setApplicationChromeMode(bool);
         bool inApplicationChromeMode() const { return m_inApplicationChromeMode; }
 
@@ -222,8 +261,25 @@ namespace WebCore {
         static bool shouldPaintNativeControls() { return gShouldPaintNativeControls; }
 #endif
 
+        void setAllowScriptsToCloseWindows(bool);
+        bool allowScriptsToCloseWindows() const { return m_allowScriptsToCloseWindows; }
+
+        void setEditingBehavior(EditingBehavior behavior) { m_editingBehavior = behavior; }
+        EditingBehavior editingBehavior() const { return static_cast<EditingBehavior>(m_editingBehavior); }
+        
         void setDownloadableBinaryFontsEnabled(bool);
         bool downloadableBinaryFontsEnabled() const { return m_downloadableBinaryFontsEnabled; }
+
+        void setXSSAuditorEnabled(bool);
+        bool xssAuditorEnabled() const { return m_xssAuditorEnabled; }
+
+        void setAcceleratedCompositingEnabled(bool);
+        bool acceleratedCompositingEnabled() const { return m_acceleratedCompositingEnabled; }
+
+#if PLATFORM(WIN)
+        static void setShouldUseHighResolutionTimers(bool);
+        static bool shouldUseHighResolutionTimers() { return gShouldUseHighResolutionTimers; }
+#endif
 
     private:
         Page* m_page;
@@ -244,13 +300,21 @@ namespace WebCore {
         int m_minimumLogicalFontSize;
         int m_defaultFontSize;
         int m_defaultFixedFontSize;
+        size_t m_maximumDecodedImageSize;
+        long long m_maximumResourceDataLength;
+        float m_minimumZoomFontSize;
+        int m_layoutInterval;
+        double m_maxParseDuration;
         bool m_isJavaEnabled : 1;
         bool m_loadsImagesAutomatically : 1;
         bool m_privateBrowsingEnabled : 1;
+        bool m_caretBrowsingEnabled : 1;
         bool m_arePluginsEnabled : 1;
         bool m_databasesEnabled : 1;
         bool m_localStorageEnabled : 1;
         bool m_isJavaScriptEnabled : 1;
+        bool m_isWebSecurityEnabled : 1;
+        bool m_allowUniversalAccessFromFileURLs: 1;
         bool m_javaScriptCanOpenWindowsAutomatically : 1;
         bool m_shouldPrintBackgrounds : 1;
         bool m_textAreasAreResizable : 1;
@@ -259,6 +323,9 @@ namespace WebCore {
 #endif
         bool m_needsAdobeFrameReloadingQuirk : 1;
         bool m_needsKeyboardEventDisambiguationQuirks : 1;
+        bool m_treatsAnyTextCSSLinkAsStylesheet : 1;
+        bool m_needsLeopardMailQuirks : 1;
+        bool m_needsTigerMailQuirks : 1;
         bool m_isDOMPasteAllowed : 1;
         bool m_shrinksStandaloneImagesToFit : 1;
         bool m_usesPageCache: 1;
@@ -270,23 +337,27 @@ namespace WebCore {
         unsigned m_fontRenderingMode : 1;
         bool m_flatFrameSetLayoutEnabled : 1;
         bool m_standalone : 1;     
-        bool m_telephoneNumberParsingEnabled : 1;   
+        bool m_telephoneNumberParsingEnabled : 1;
+        bool m_foundationCachingEnabled : 1;
         bool m_webArchiveDebugModeEnabled : 1;
+        bool m_localFileContentSniffingEnabled : 1;
         bool m_inApplicationChromeMode : 1;
         bool m_offlineWebApplicationCacheEnabled : 1;
-        bool m_rangeMutationDisabledForOldAppleMail : 1;
         bool m_shouldPaintCustomScrollbars : 1;
         bool m_zoomsTextOnly : 1;
         bool m_enforceCSSMIMETypeInStrictMode : 1;
-        size_t m_maximumDecodedImageSize;
-        long long m_maximumResourceDataLength;
-        float m_minimumZoomFontSize;
-        int m_layoutInterval;
-        double m_maxParseDuration;
+        bool m_usesEncodingDetector : 1;
+        bool m_allowScriptsToCloseWindows : 1;
+        unsigned m_editingBehavior : 1;
         bool m_downloadableBinaryFontsEnabled : 1;
+        bool m_xssAuditorEnabled : 1;
+        bool m_acceleratedCompositingEnabled : 1;
 
 #if USE(SAFARI_THEME)
         static bool gShouldPaintNativeControls;
+#endif
+#if PLATFORM(WIN)
+        static bool gShouldUseHighResolutionTimers;
 #endif
     };
 

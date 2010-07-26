@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
  * Copyright (C) 2007 Nicholas Shanks <webkit@nickshanks.com>
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,7 +35,7 @@
 #import "FontPlatformData.h"
 #import "WebCoreSystemInterface.h"
 #import "WebFontCache.h"
-#include <wtf/StdLibExtras.h>
+#import <wtf/StdLibExtras.h>
 
 #import "CharacterNames.h"
 
@@ -56,9 +56,13 @@ static inline bool isGSFontWeightBold(NSInteger fontWeight)
     return fontWeight >= FontWeight600;
 }
 
+static inline bool requiresCustomFallbackFont(const UInt32 character)
+{
+    return character == AppleLogo || character == BigDot;
+}
+
 const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, const UChar* characters, int length)
 {
-    //printf("iPhone looks for font for unicode char %u\n", *characters);
     // Unlike OS X, our fallback font on iPhone is Arial Unicode, which doesn't have some apple-specific glyphs like F8FF.
     // Fall back to the Apple Fallback font in this case.
     if (length > 0 && requiresCustomFallbackFont(*characters))
@@ -145,6 +149,18 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
             }
             if (c <= 0xF8FF)
                 break;
+            if (c < 0xFB00) {
+                useCJFont = true;
+                break;
+            }
+            if (c < 0xFE20)
+                break;
+            if (c < 0xFE70) {
+                useCJFont = true;
+                break;
+            }
+            if (c < 0xFF00)
+                break;
             if (c < 0xFFF0) {
                 useCJFont = true;
                 break;
@@ -154,19 +170,19 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
         } while (0);
     }
         
-	FontPlatformData* platformFont = NULL;
+    FontPlatformData* platformFont = NULL;
     
-	if (useCJFont) {
-		// by default, Chinese font is preferred,  fall back on Japanese
+    if (useCJFont) {
+        // by default, Chinese font is preferred,  fall back on Japanese
 
-		enum CJKFontVariant {
-			kCJKFontUseHiragino	= 0,
-			kCJKFontUseSTHeitiSC,
-			kCJKFontUseSTHeitiTC,
-			kCJKFontUseSTHeitiJ,
-			kCJKFontUseSTHeitiK,
-			kCJKFontsUseHKGPW3UI
-		};
+        enum CJKFontVariant {
+            kCJKFontUseHiragino = 0,
+            kCJKFontUseSTHeitiSC,
+            kCJKFontUseSTHeitiTC,
+            kCJKFontUseSTHeitiJ,
+            kCJKFontUseSTHeitiK,
+            kCJKFontsUseHKGPW3UI
+        };
 
         DEFINE_STATIC_LOCAL(AtomicString, plainHiragino, ("HiraKakuProN-W3"));
         DEFINE_STATIC_LOCAL(AtomicString, plainSTHeitiSC, ("STHeitiSC-Light"));
@@ -174,7 +190,7 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
         DEFINE_STATIC_LOCAL(AtomicString, plainSTHeitiJ, ("STHeitiJ-Light"));
         DEFINE_STATIC_LOCAL(AtomicString, plainSTHeitiK, ("STHeitiK-Light"));
         DEFINE_STATIC_LOCAL(AtomicString, plainHKGPW3UI, ("HKGPW3UI"));
-        static AtomicString* cjkPlain[] = { 	
+        static AtomicString* cjkPlain[] = {     
             &plainHiragino,
             &plainSTHeitiSC,
             &plainSTHeitiTC,
@@ -189,7 +205,7 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
         DEFINE_STATIC_LOCAL(AtomicString, boldSTHeitiJ, ("STHeitiJ-Medium"));
         DEFINE_STATIC_LOCAL(AtomicString, boldSTHeitiK, ("STHeitiK-Medium"));
         DEFINE_STATIC_LOCAL(AtomicString, boldHKGPW3UI, ("HKGPW3UI"));
-        static AtomicString* cjkBold[] = { 	
+        static AtomicString* cjkBold[] = {  
             &boldHiragino,
             &boldSTHeitiSC,
             &boldSTHeitiTC,
@@ -198,34 +214,34 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
             &boldHKGPW3UI,
         };
 
-		//default below is for Simplified Chinese user: zh-Hans - note that Hiragino is the
-		//the secondary font as we want its for Hiragana and Katakana. The other CJK fonts
-		//do not, and should not, contain Hiragana or Katakana glyphs.
-		static CJKFontVariant preferredCJKFont = kCJKFontUseSTHeitiSC;
-		static CJKFontVariant secondaryCJKFont = kCJKFontsUseHKGPW3UI;
-		
-		static bool CJKFontInitialized = false;
-		if (!CJKFontInitialized) {
-			CJKFontInitialized = true;
-			// Testing: languageName = (CFStringRef)@"ja";
-			NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-			NSArray *languages = [defaults stringArrayForKey:@"AppleLanguages"];
-			
+        //default below is for Simplified Chinese user: zh-Hans - note that Hiragino is the
+        //the secondary font as we want its for Hiragana and Katakana. The other CJK fonts
+        //do not, and should not, contain Hiragana or Katakana glyphs.
+        static CJKFontVariant preferredCJKFont = kCJKFontUseSTHeitiSC;
+        static CJKFontVariant secondaryCJKFont = kCJKFontsUseHKGPW3UI;
+        
+        static bool CJKFontInitialized = false;
+        if (!CJKFontInitialized) {
+            CJKFontInitialized = true;
+            // Testing: languageName = (CFStringRef)@"ja";
+            NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+            NSArray *languages = [defaults stringArrayForKey:@"AppleLanguages"];
+            
             if( languages ) {
                 CFStringRef languageName = NULL;
                 for( NSString *language in languages) {
                     languageName = CFLocaleCreateCanonicalLanguageIdentifierFromString(NULL, (CFStringRef)language);
                     if ( CFEqual(languageName, CFSTR("zh-Hans")) )
                         break;                                  //Simplified Chinese - default settings
-                    else if ( CFEqual(languageName, CFSTR("ja")) ) {	
-                        preferredCJKFont=kCJKFontUseHiragino;	//japanese - prefer Hiragino and STHeiti Japanse Variant
+                    else if ( CFEqual(languageName, CFSTR("ja")) ) {    
+                        preferredCJKFont=kCJKFontUseHiragino;   //japanese - prefer Hiragino and STHeiti Japanse Variant
                         secondaryCJKFont=kCJKFontUseSTHeitiJ;
                         break;
-                    } else if ( CFEqual(languageName, CFSTR("ko")) ) {	
-                        preferredCJKFont=kCJKFontUseSTHeitiK;	//korean - prefer STHeiti Korean Variant 
+                    } else if ( CFEqual(languageName, CFSTR("ko")) ) {  
+                        preferredCJKFont=kCJKFontUseSTHeitiK;   //korean - prefer STHeiti Korean Variant 
                         break;
                     } else if ( CFEqual(languageName, CFSTR("zh-Hant")) ) {
-                        preferredCJKFont=kCJKFontUseSTHeitiTC;	//Traditional Chinese - prefer STHeiti Traditional Variant
+                        preferredCJKFont=kCJKFontUseSTHeitiTC;  //Traditional Chinese - prefer STHeiti Traditional Variant
                         break;
                     }
                     CFRelease(languageName);
@@ -234,17 +250,21 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
                 if( languageName )
                     CFRelease(languageName);
             }
-		}
+        }
         
-		platformFont = getCachedFontPlatformData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? *cjkBold[preferredCJKFont] : *cjkPlain[preferredCJKFont]);
-		
-		CGGlyph glyphs[2];
-		// CGFontGetGlyphsForUnichars takes UTF-16 buffer. Should only be 1 codepoint but since we may pass in two UTF-16 characters,
-		// make room for 2 glyphs just to be safe.
-		GSFontGetGlyphsForUnichars(platformFont->font(), characters, glyphs, length);
-		
-		if ( glyphs[0] == 0 )
-			platformFont = getCachedFontPlatformData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? *cjkBold[secondaryCJKFont] : *cjkPlain[secondaryCJKFont]);
+        platformFont = getCachedFontPlatformData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? *cjkBold[preferredCJKFont] : *cjkPlain[preferredCJKFont]);
+        bool useSecondaryFont = true;
+        if (platformFont) {
+            CGGlyph glyphs[2];
+            // CGFontGetGlyphsForUnichars takes UTF-16 buffer. Should only be 1 codepoint but since we may pass in two UTF-16 characters,
+            // make room for 2 glyphs just to be safe.
+            GSFontGetGlyphsForUnichars(platformFont->font(), characters, glyphs, length);
+
+            useSecondaryFont = (glyphs[0] == 0);
+        }
+
+        if (useSecondaryFont)
+            platformFont = getCachedFontPlatformData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? *cjkBold[secondaryCJKFont] : *cjkPlain[secondaryCJKFont]);
     } else if (useKoreanFont) {
         DEFINE_STATIC_LOCAL(AtomicString, koreanFont, ("AppleGothic"));
         platformFont = getCachedFontPlatformData(font.fontDescription(), koreanFont);    
@@ -269,8 +289,8 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
         platformFont = getCachedFontPlatformData(font.fontDescription(), image);
     }
 
-	if ( platformFont != NULL )
-		return getCachedFontData(platformFont);
+    if ( platformFont != NULL )
+        return getCachedFontData(platformFont);
 
     return getCachedFontData(getLastResortFallbackFont(font.fontDescription()));
 }
@@ -299,15 +319,15 @@ FontPlatformData* FontCache::getSimilarFontPlatformData(const Font& font)
 
 FontPlatformData* FontCache::getLastResortFallbackFont(const FontDescription& fontDescription)
 {
-    DEFINE_STATIC_LOCAL(AtomicString, arialUnicodeMSStr, ("ArialUnicodeMS"));
-    FontPlatformData* platformFont = getCachedFontPlatformData(fontDescription, arialUnicodeMSStr);    
+    DEFINE_STATIC_LOCAL(AtomicString, fallbackFontStr, (".PhoneFallback"));
+    FontPlatformData* platformFont = getCachedFontPlatformData(fontDescription, fallbackFontStr);
 
     return platformFont;
 }
 
 FontPlatformData* FontCache::getCustomFallbackFont(const UInt32 c, const Font& font)
 {
-    assert(requiresCustomFallbackFont(c));
+    ASSERT(requiresCustomFallbackFont(c));
     
     if (c == AppleLogo) {
         DEFINE_STATIC_LOCAL(AtomicString, helveticaStr, ("Helvetica"));
@@ -319,12 +339,6 @@ FontPlatformData* FontCache::getCustomFallbackFont(const UInt32 c, const Font& f
         return platformFont;
     }
     return NULL;
-}
-
-inline bool FontCache::requiresCustomFallbackFont(const UInt32 c)
-{
-    return (c == AppleLogo ||
-            c == BigDot);
 }
 
 void FontCache::getTraitsInFamily(const AtomicString& familyName, Vector<unsigned>& traitsMasks)
@@ -349,7 +363,7 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
     if (isGSFontWeightBold(fontDescription.weight()))
         traits |= GSBoldFontMask;
     float size = fontDescription.computedPixelSize();
-	
+    
     GSFontTraitMask actualTraits = 0;
     GSFontRef gsFont = 0;
     if (!useImageFont) {
@@ -361,8 +375,11 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
         if (isGSFontWeightBold(fontDescription.weight()) || fontDescription.italic())
             actualTraits = GSFontGetTraits(gsFont);
     }
-    
-    FontPlatformData* result = new FontPlatformData;
+
+    bool syntheticBold = (traits & GSBoldFontMask) && !(actualTraits & GSBoldFontMask);
+    bool syntheticOblique = (traits & GSItalicFontMask) && !(actualTraits & GSItalicFontMask);  
+
+    FontPlatformData* result = new FontPlatformData((GSFontRef)NULL, syntheticBold, syntheticOblique);
 
     // Use the correct font for print vs. screen.
     if (useImageFont) {
@@ -370,9 +387,7 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
         result->m_size = size;        
     } else
         result->setFont(gsFont);
-    
-    result->m_syntheticBold = (traits & GSBoldFontMask) && !(actualTraits & GSBoldFontMask);
-    result->m_syntheticOblique = (traits & GSItalicFontMask) && !(actualTraits & GSItalicFontMask);	
+
     return result;
 }
 

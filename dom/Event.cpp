@@ -35,8 +35,8 @@ Event::Event()
     , m_defaultPrevented(false)
     , m_defaultHandled(false)
     , m_cancelBubble(false)
-    , m_currentTarget(0)
     , m_eventPhase(0)
+    , m_currentTarget(0)
     , m_createTime(static_cast<DOMTimeStamp>(currentTime() * 1000.0))
 {
 }
@@ -49,8 +49,8 @@ Event::Event(const AtomicString& eventType, bool canBubbleArg, bool cancelableAr
     , m_defaultPrevented(false)
     , m_defaultHandled(false)
     , m_cancelBubble(false)
-    , m_currentTarget(0)
     , m_eventPhase(0)
+    , m_currentTarget(0)
     , m_createTime(static_cast<DOMTimeStamp>(currentTime() * 1000.0))
 {
 }
@@ -124,6 +124,11 @@ bool Event::isOverflowEvent() const
     return false;
 }
 
+bool Event::isPageTransitionEvent() const
+{
+    return false;
+}
+
 bool Event::isProgressEvent() const
 {
     return false;
@@ -158,7 +163,6 @@ bool Event::isStorageEvent() const
 }
 #endif
 
-#if ENABLE(TOUCH_EVENTS)
 bool Event::isTouchEvent() const
 {
     return false;
@@ -168,7 +172,6 @@ bool Event::isGestureEvent() const
 {
     return false;
 }
-#endif
 
 bool Event::storesResultAsString() const
 {

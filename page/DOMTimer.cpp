@@ -27,7 +27,6 @@
 #include "config.h"
 #include "DOMTimer.h"
 
-#include "Document.h"
 #include "ScheduledAction.h"
 #include "ScriptExecutionContext.h"
 #include <wtf/HashSet.h>
@@ -45,7 +44,7 @@ namespace WebCore {
 
 static const int maxTimerNestingLevel = 5;
 static const double oneMillisecond = 0.001;
-static const double minTimerInterval = 0.010; // 10 milliseconds
+double DOMTimer::s_minTimerInterval = 0.010; // 10 milliseconds
 
 static int timerNestingLevel = 0;
 
@@ -54,6 +53,9 @@ DOMTimer::DOMTimer(ScriptExecutionContext* context, ScheduledAction* action, int
     , m_action(action)
     , m_nextFireInterval(0)
     , m_repeatInterval(0)
+#if !ASSERT_DISABLED
+    , m_suspended(false)
+#endif
 {
     static int lastUsedTimeoutId = 0;
     ++lastUsedTimeoutId;
@@ -64,18 +66,15 @@ DOMTimer::DOMTimer(ScriptExecutionContext* context, ScheduledAction* action, int
     
     m_nestingLevel = timerNestingLevel + 1;
 
-    // FIXME: Move the timeout map and API to ScriptExecutionContext to be able
-    // to create timeouts from Workers.
-    ASSERT(scriptExecutionContext() && scriptExecutionContext()->isDocument());
-    static_cast<Document*>(scriptExecutionContext())->addTimeout(m_timeoutId, this);
+    scriptExecutionContext()->addTimeout(m_timeoutId, this);
 
     double intervalMilliseconds = max(oneMillisecond, timeout * oneMillisecond);
 
     // Use a minimum interval of 10 ms to match other browsers, but only once we've
     // nested enough to notice that we're repeating.
     // Faster timers might be "better", but they're incompatible.
-    if (intervalMilliseconds < minTimerInterval && m_nestingLevel >= maxTimerNestingLevel)
-        intervalMilliseconds = minTimerInterval;
+    if (intervalMilliseconds < s_minTimerInterval && m_nestingLevel >= maxTimerNestingLevel)
+        intervalMilliseconds = s_minTimerInterval;
     if (singleShot)
         startOneShot(intervalMilliseconds);
     else
@@ -85,8 +84,7 @@ DOMTimer::DOMTimer(ScriptExecutionContext* context, ScheduledAction* action, int
 DOMTimer::~DOMTimer()
 {
     if (scriptExecutionContext()) {
-        ASSERT(scriptExecutionContext()->isDocument());
-        static_cast<Document*>(scriptExecutionContext())->removeTimeout(m_timeoutId);
+        scriptExecutionContext()->removeTimeout(m_timeoutId);
     }
 }
     
@@ -96,6 +94,22 @@ int DOMTimer::install(ScriptExecutionContext* context, ScheduledAction* action, 
     // The timer is deleted when context is deleted (DOMTimer::contextDestroyed) or explicitly via DOMTimer::removeById(),
     // or if it is a one-time timer and it has fired (DOMTimer::fired).
     DOMTimer* timer = new DOMTimer(context, action, timeout, singleShot);
+    if (context->isDocument()) {
+        Document* document = static_cast<Document*>(context);
+        bool deferTimeout = (document->frame() && document->frame()->timersPaused());
+        if (!deferTimeout) {
+            if (timeout <= 100 && singleShot) {
+                WKSetObservedContentChange(WKContentIndeterminateChange);
+                WebThreadAddObservedContentModifier(timer); // Will only take affect if not already visibility change.
+            }
+        } else {
+            // window is in suspended state, we should not fire new timers.
+            // Instead we make sure to suspend the new timer.
+            // FIXME: <rdar://problem/6560725>
+            if (timer)
+                timer->suspend();
+        }
+    }
     return timer->m_timeoutId;
 }
 
@@ -106,8 +120,7 @@ void DOMTimer::removeById(ScriptExecutionContext* context, int timeoutId)
     // respectively
     if (timeoutId <= 0)
         return;
-    ASSERT(context && context->isDocument());
-    delete static_cast<Document*>(context)->findTimeout(timeoutId);
+    delete context->findTimeout(timeoutId);
 }
 
 void DOMTimer::fired()
@@ -120,10 +133,10 @@ void DOMTimer::fired()
 
     // Simple case for non-one-shot timers.
     if (isActive()) {
-        if (repeatInterval() && repeatInterval() < minTimerInterval) {
+        if (repeatInterval() && repeatInterval() < s_minTimerInterval) {
             m_nestingLevel++;
             if (m_nestingLevel >= maxTimerNestingLevel)
-                augmentRepeatInterval(minTimerInterval - repeatInterval());
+                augmentRepeatInterval(s_minTimerInterval - repeatInterval());
         }
         
         // No access to member variables after this point, it can delete the timer.
@@ -140,13 +153,13 @@ void DOMTimer::fired()
     bool shouldReportLackOfChanges = WebThreadCountOfObservedContentModifiers() == 1;
     bool shouldBeginObservingChanges = WebThreadContainsObservedContentModifier(this);
 
-    if (shouldBeginObservingChanges)
+    if (shouldBeginObservingChanges) {
         WKBeginObservingContentChanges(false);
+        WebThreadRemoveObservedContentModifier(this);
+    }
     action->execute(context);
     if (shouldBeginObservingChanges) {
         WKStopObservingContentChanges();
-
-        WebThreadRemoveObservedContentModifier(this);
 
         if (WKObservedContentChange() == WKContentVisibilityChange || shouldReportLackOfChanges)
             if (document && document->page())
@@ -178,7 +191,10 @@ void DOMTimer::stop()
 
 void DOMTimer::suspend() 
 { 
-    ASSERT(m_nextFireInterval == 0 && m_repeatInterval == 0); 
+#if !ASSERT_DISABLED
+    ASSERT(!m_suspended);
+    m_suspended = true;
+#endif
     m_nextFireInterval = nextFireInterval();
     m_repeatInterval = repeatInterval();
     TimerBase::stop();
@@ -186,9 +202,11 @@ void DOMTimer::suspend()
  
 void DOMTimer::resume() 
 { 
+#if !ASSERT_DISABLED
+    ASSERT(m_suspended);
+    m_suspended = false;
+#endif
     start(m_nextFireInterval, m_repeatInterval);
-    m_nextFireInterval = 0;
-    m_repeatInterval = 0;
 } 
  
  

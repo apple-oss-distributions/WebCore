@@ -1,8 +1,12 @@
 //
 //  WKGraphics.h
 //
-//  Copyright (C) 2005, 2006, 2007, Apple Inc.  All rights reserved.
+//  Copyright (C) 2005, 2006, 2007, 2009 Apple Inc.  All rights reserved.
 //
+
+#ifndef WKGraphics_h
+#define WKGraphics_h
+
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreGraphics/CoreGraphicsPrivate.h>
 
@@ -52,3 +56,5 @@ private:
     CGFontAntialiasingStyle m_oldAntialiasingStyle;
 };
 #endif
+
+#endif // WKGraphics_h

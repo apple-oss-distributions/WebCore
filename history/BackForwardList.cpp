@@ -58,13 +58,6 @@ void BackForwardList::addItem(PassRefPtr<HistoryItem> prpItem)
     if (m_capacity == 0 || !m_enabled)
         return;
 
-    // We shouldn't ever need to add a back/forward item that has the
-    // same URL as our current item, and this causes problems when we
-    // try to restore MobileSafari's back/forward state from disk.
-    HistoryItem *currentHistoryItem = currentItem();
-    if (currentHistoryItem && currentHistoryItem->urlString() == prpItem->urlString())
-        return;
-        
     // Toss anything in the forward list    
     if (m_current != NoCurrentItemIndex) {
         unsigned targetSize = m_current + 1;

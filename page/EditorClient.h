@@ -50,7 +50,7 @@ class HTMLElement;
 class KeyboardEvent;
 class Node;
 class Range;
-class Selection;
+class VisibleSelection;
 class String;
 class VisiblePosition;
 
@@ -61,6 +61,24 @@ struct GrammarDetail {
     String userDescription;
 };
 
+enum TextCheckingType {
+    TextCheckingTypeSpelling    = 1 << 1,
+    TextCheckingTypeGrammar     = 1 << 2,
+    TextCheckingTypeLink        = 1 << 5,
+    TextCheckingTypeQuote       = 1 << 6,
+    TextCheckingTypeDash        = 1 << 7,
+    TextCheckingTypeReplacement = 1 << 8,
+    TextCheckingTypeCorrection  = 1 << 9
+};
+
+struct TextCheckingResult {
+    TextCheckingType type;
+    int location;
+    int length;
+    Vector<GrammarDetail> details;
+    String replacement;
+};
+ 
 class EditorClient {
 public:
     virtual ~EditorClient() {  }
@@ -118,11 +136,6 @@ public:
     virtual bool doTextFieldCommandFromEvent(Element*, KeyboardEvent*) = 0;
     virtual void textWillBeDeletedInTextField(Element*) = 0;
     virtual void textDidChangeInTextArea(Element*) = 0;
-    virtual void formElementDidSetValue(Element*) = 0;
-    virtual void formElementDidFocus(Element*) = 0;
-    virtual void formElementDidBlur(Element*) = 0;
-    virtual void suppressFormNotifications() = 0;
-    virtual void restoreFormNotifications() = 0;
     virtual void suppressSelectionNotifications() = 0;
     virtual void restoreSelectionNotifications() = 0;
     virtual void startDelayingAndCoalescingContentChangeNotifications() = 0;
@@ -135,10 +148,13 @@ public:
 #endif
 #endif
 
+
     virtual void ignoreWordInSpellDocument(const String&) = 0;
     virtual void learnWord(const String&) = 0;
     virtual void checkSpellingOfString(const UChar*, int length, int* misspellingLocation, int* misspellingLength) = 0;
+    virtual String getAutoCorrectSuggestionForMisspelledWord(const String& misspelledWord) = 0;
     virtual void checkGrammarOfString(const UChar*, int length, Vector<GrammarDetail>&, int* badGrammarLocation, int* badGrammarLength) = 0;
+    virtual void checkTextOfParagraph(const UChar* text, int length, uint64_t checkingTypes, Vector<TextCheckingResult>& results) = 0;
     virtual void updateSpellingUIWithGrammarString(const String&, const GrammarDetail& detail) = 0;
     virtual void updateSpellingUIWithMisspelledWord(const String&) = 0;
     virtual void showSpellingUI(bool show) = 0;
@@ -150,3 +166,4 @@ public:
 }
 
 #endif // EditorClient_h
+

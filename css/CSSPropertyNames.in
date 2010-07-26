@@ -99,13 +99,6 @@ position
 quotes
 resize
 right
-scrollbar-3dlight-color
-scrollbar-arrow-color
-scrollbar-darkshadow-color
-scrollbar-face-color
-scrollbar-highlight-color
-scrollbar-shadow-color
-scrollbar-track-color
 size
 src
 table-layout
@@ -123,6 +116,7 @@ text-overline-color
 text-overline-mode
 text-overline-style
 text-overline-width
+text-rendering
 text-shadow
 text-transform
 text-underline

@@ -20,7 +20,6 @@
 #include "config.h"
 #include "JSDocument.h"
 
-#include "DOMWindow.h"
 #include "ExceptionCode.h"
 #include "Frame.h"
 #include "FrameLoader.h"
@@ -28,9 +27,7 @@
 #include "JSDOMWindowCustom.h"
 #include "JSHTMLDocument.h"
 #include "JSLocation.h"
-#include "JSNodeList.h"
 #include "Location.h"
-#include "NodeList.h"
 #include "ScriptController.h"
 
 #if ENABLE(SVG)
@@ -38,11 +35,9 @@
 #include "SVGDocument.h"
 #endif
 
-#if ENABLE(TOUCH_EVENTS)
 #include "TouchList.h"
 #include "JSTouch.h"
 #include "JSTouchList.h"
-#endif
 
 using namespace JSC;
 
@@ -50,12 +45,12 @@ namespace WebCore {
 
 void JSDocument::mark()
 {
-    JSEventTargetNode::mark();
+    JSNode::mark();
     markDOMNodesForDocument(impl());
     markActiveObjectsForContext(*Heap::heap(this)->globalData(), impl());
 }
 
-JSValuePtr JSDocument::location(ExecState* exec) const
+JSValue JSDocument::location(ExecState* exec) const
 {
     Frame* frame = static_cast<Document*>(impl())->frame();
     if (!frame)
@@ -71,7 +66,7 @@ JSValuePtr JSDocument::location(ExecState* exec) const
     return jsLocation;
 }
 
-void JSDocument::setLocation(ExecState* exec, JSValuePtr value)
+void JSDocument::setLocation(ExecState* exec, JSValue value)
 {
     Frame* frame = static_cast<Document*>(impl())->frame();
     if (!frame)
@@ -89,7 +84,7 @@ void JSDocument::setLocation(ExecState* exec, JSValuePtr value)
     frame->loader()->scheduleLocationChange(str, activeFrame->loader()->outgoingReferrer(), !activeFrame->script()->anyPageIsProcessingUserGesture(), false, userGesture);
 }
 
-JSValuePtr toJS(ExecState* exec, Document* document)
+JSValue toJS(ExecState* exec, Document* document)
 {
     if (!document)
         return jsNull();
@@ -120,18 +115,16 @@ JSValuePtr toJS(ExecState* exec, Document* document)
     return wrapper;
 }
 
-#if ENABLE(TOUCH_EVENTS)
-JSValuePtr JSDocument::createTouchList(ExecState* exec, const ArgList& args)
+JSValue JSDocument::createTouchList(ExecState* exec, const ArgList& args)
 {
     RefPtr<TouchList> touchList = TouchList::create();
     
     int sz = args.size();
     for (int i = 0; i < sz; i++) {
-        touchList->append(toTouch(args.at(exec, i)));
+        touchList->append(toTouch(args.at(i)));
     }
     
     return toJS(exec, touchList.release());
 }
-#endif
 
 } // namespace WebCore

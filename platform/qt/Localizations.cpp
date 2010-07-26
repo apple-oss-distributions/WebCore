@@ -30,7 +30,6 @@
 
 #include "IntSize.h"
 #include "LocalizedStrings.h"
-#include "NotImplemented.h"
 #include "PlatformString.h"
 
 #include <QCoreApplication>
@@ -245,12 +244,12 @@ String contextMenuItemTagDefaultDirection()
 
 String contextMenuItemTagLeftToRight()
 {
-    return QCoreApplication::translate("QWebPage", "LTR", "Left to Right context menu item");
+    return QCoreApplication::translate("QWebPage", "Left to Right", "Left to Right context menu item");
 }
 
 String contextMenuItemTagRightToLeft()
 {
-    return QCoreApplication::translate("QWebPage", "RTL", "Right to Left context menu item");
+    return QCoreApplication::translate("QWebPage", "Right to Left", "Right to Left context menu item");
 }
 
 String contextMenuItemTagInspectElement()
@@ -351,6 +350,16 @@ String unknownFileSizeText()
 String imageTitle(const String& filename, const IntSize& size)
 {
     return QCoreApplication::translate("QWebPage", "%1 (%2x%3 pixels)", "Title string for images").arg(filename).arg(size.width()).arg(size.height());
+}
+
+String mediaElementLoadingStateText()
+{
+    return QCoreApplication::translate("QWebPage", "Loading...", "Media controller status message when the media is loading");
+}
+
+String mediaElementLiveBroadcastStateText()
+{
+    return QCoreApplication::translate("QWebPage", "Live Broadcast", "Media controller status message when watching a live broadcast");
 }
 
 }

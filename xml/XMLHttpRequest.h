@@ -34,7 +34,7 @@ namespace WebCore {
 
 class Document;
 class File;
-class ResourceRequest;
+struct ResourceRequest;
 class TextResourceDecoder;
 class ThreadableLoader;
 
@@ -63,6 +63,8 @@ public:
     String statusText(ExceptionCode&) const;
     int status(ExceptionCode&) const;
     State readyState() const;
+    bool withCredentials() const { return m_includeCredentials; }
+    void setWithCredentials(bool, ExceptionCode&);
     void open(const String& method, const KURL&, bool async, ExceptionCode&);
     void open(const String& method, const KURL&, bool async, const String& user, ExceptionCode&);
     void open(const String& method, const KURL&, bool async, const String& user, const String& password, ExceptionCode&);
@@ -129,15 +131,14 @@ private:
     virtual void didReceiveResponse(const ResourceResponse&);
     virtual void didReceiveData(const char* data, int lengthReceived);
     virtual void didFinishLoading(unsigned long identifier);
-    virtual void didFail();
-    virtual void didGetCancelled();
+    virtual void didFail(const ResourceError&);
+    virtual void didFailRedirectCheck();
     virtual void didReceiveAuthenticationCancellation(const ResourceResponse&);
 
     // Special versions for the preflight
     void didReceiveResponsePreflight(const ResourceResponse&);
     void didFinishLoadingPreflight();
 
-    void processSyncLoadResults(unsigned long identifier, const Vector<char>& data, const ResourceResponse&, ExceptionCode&);
     void updateAndDispatchOnProgress(unsigned int len);
 
     String responseMIMEType() const;
@@ -218,17 +219,20 @@ private:
 
     bool m_error;
 
+    bool m_uploadEventsAllowed;
     bool m_uploadComplete;
 
     bool m_sameOriginRequest;
     bool m_allowAccess;
     bool m_inPreflight;
+    bool m_didTellLoaderAboutRequest;
 
     // Used for onprogress tracking
     long long m_receivedLength;
     
     unsigned m_lastSendLineNumber;
     String m_lastSendURL;
+    ExceptionCode m_exceptionCode;
 };
 
 } // namespace WebCore

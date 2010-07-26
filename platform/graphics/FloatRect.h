@@ -91,6 +91,8 @@ public:
     float right() const { return x() + width(); }
     float bottom() const { return y() + height(); }
 
+    FloatPoint center() const { return IntPoint(x() + width() / 2, y() + height() / 2); }
+
     void move(const FloatSize& delta) { m_location += delta; } 
     void move(float dx, float dy) { m_location.move(dx, dy); } 
 
@@ -127,11 +129,6 @@ public:
 #if PLATFORM(QT)
     FloatRect(const QRectF&);
     operator QRectF() const;
-#endif
-#if PLATFORM(SYMBIAN)
-    FloatRect(const TRect&);
-    operator TRect() const;
-    TRect rect() const;
 #endif
 
 #if PLATFORM(WX) && USE(WXGC)

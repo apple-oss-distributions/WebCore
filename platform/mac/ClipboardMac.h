@@ -41,6 +41,7 @@ class NSPasteboard;
 namespace WebCore {
 
 class Frame;
+class FileList;
 
 class ClipboardMac : public Clipboard, public CachedResourceClient {
 public:
@@ -60,12 +61,15 @@ public:
     
     // extensions beyond IE's API
     virtual HashSet<String> types() const;
+    virtual PassRefPtr<FileList> files() const;
 
     void setDragImage(CachedImage*, const IntPoint&);
     void setDragImageElement(Node *, const IntPoint&);
     
     virtual DragImageRef createDragImage(IntPoint& dragLoc) const;
+#if ENABLE(DRAG_SUPPORT)
     virtual void declareAndWriteDragImage(Element*, const KURL&, const String& title, Frame*);
+#endif
     virtual void writeRange(Range*, Frame* frame);
     virtual void writeURL(const KURL&, const String&, Frame* frame);
     

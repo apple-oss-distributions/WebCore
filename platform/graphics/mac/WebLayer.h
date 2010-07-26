@@ -40,15 +40,18 @@ namespace WebCore {
 - (void)setLayerOwner:(WebCore::GraphicsLayer*)layer;
 - (WebCore::GraphicsLayer*)layerOwner;
 
-- (float)contentsScale;
-- (void)setContentsScale:(float)scale;
-
 @end
+
+#if defined(BUILDING_ON_LEOPARD)
+@interface CALayer(WebLayerInternal)
+- (CGAffineTransform)contentsTransform;
+- (void)setContentsTransform:(CGAffineTransform)t;
+@end
+#endif
 
 @interface WebLayer : CALayer 
 {
     WebCore::GraphicsLayer* m_layerOwner;
-    float m_contentsScale;
 }
 
 // Class method allows us to share implementation across TiledLayerMac and WebLayer

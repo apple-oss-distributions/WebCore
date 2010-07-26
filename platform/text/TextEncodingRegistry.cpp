@@ -38,7 +38,7 @@
 #include <wtf/StringExtras.h>
 #include <wtf/Threading.h>
 
-#if USE(ICU_UNICODE)
+#if USE(ICU_UNICODE) || USE(GLIB_ICU_UNICODE_HYBRID)
 #include "TextCodecICU.h"
 #endif
 #if PLATFORM(QT)
@@ -122,6 +122,10 @@ static TextEncodingNameMap* textEncodingNameMap;
 static TextCodecMap* textCodecMap;
 static bool didExtendTextCodecMaps;
 
+static const char* const textEncodingNameBlacklist[] = {
+    "UTF-7"
+};
+
 #if ERROR_DISABLED
 
 static inline void checkExistingName(const char*, const char*) { }
@@ -164,6 +168,30 @@ static void addToTextCodecMap(const char* name, NewTextCodecFunction function, c
     textCodecMap->add(atomicName, TextCodecFactory(function, additionalData));
 }
 
+static void pruneBlacklistedCodecs()
+{
+    size_t blacklistedCodecListLength = sizeof(textEncodingNameBlacklist) / sizeof(textEncodingNameBlacklist[0]);
+    for (size_t i = 0; i < blacklistedCodecListLength; ++i) {
+        const char* atomicName = textEncodingNameMap->get(textEncodingNameBlacklist[i]);
+        if (!atomicName)
+            continue;
+
+        Vector<const char*> names;
+        TextEncodingNameMap::const_iterator it = textEncodingNameMap->begin();
+        TextEncodingNameMap::const_iterator end = textEncodingNameMap->end();
+        for (; it != end; ++it) {
+            if (it->second == atomicName)
+                names.append(it->first);
+        }
+
+        size_t length = names.size();
+        for (size_t j = 0; j < length; ++j)
+            textEncodingNameMap->remove(names[j]);
+
+        textCodecMap->remove(atomicName);
+    }
+}
+
 static void buildBaseTextCodecMaps()
 {
     // This method may be called on the main thread or on the WebThread.
@@ -184,7 +212,7 @@ static void buildBaseTextCodecMaps()
     TextCodecUserDefined::registerEncodingNames(addToTextEncodingNameMap);
     TextCodecUserDefined::registerCodecs(addToTextCodecMap);
 
-#if USE(ICU_UNICODE)
+#if USE(ICU_UNICODE) || USE(GLIB_ICU_UNICODE_HYBRID)
     TextCodecICU::registerBaseEncodingNames(addToTextEncodingNameMap);
     TextCodecICU::registerBaseCodecs(addToTextCodecMap);
 #endif
@@ -192,7 +220,7 @@ static void buildBaseTextCodecMaps()
 
 static void extendTextCodecMaps()
 {
-#if USE(ICU_UNICODE)
+#if USE(ICU_UNICODE) || USE(GLIB_ICU_UNICODE_HYBRID)
     TextCodecICU::registerExtendedEncodingNames(addToTextEncodingNameMap);
     TextCodecICU::registerExtendedCodecs(addToTextCodecMap);
 #endif
@@ -202,9 +230,11 @@ static void extendTextCodecMaps()
     TextCodecQt::registerCodecs(addToTextCodecMap);
 #endif
 
+
+    pruneBlacklistedCodecs();
 }
 
-std::auto_ptr<TextCodec> newTextCodec(const TextEncoding& encoding)
+PassOwnPtr<TextCodec> newTextCodec(const TextEncoding& encoding)
 {
     MutexLocker lock(encodingRegistryMutex());
 

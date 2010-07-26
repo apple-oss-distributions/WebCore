@@ -33,6 +33,92 @@
 
 namespace WebCore {
 
+extern "C" {
+
+// Kill ring calls. Would be better to use NSKillRing.h, but that's not available as API or SPI.
+
+void _NSInitializeKillRing();
+void _NSAppendToKillRing(NSString *);
+void _NSPrependToKillRing(NSString *);
+NSString *_NSYankFromKillRing();
+void _NSNewKillRingSequence();
+void _NSSetKillRingToYankedState();
+
+}
+
+PassRefPtr<Clipboard> Editor::newGeneralClipboard(ClipboardAccessPolicy policy)
+{
+    return ClipboardMac::create(false, [NSPasteboard generalPasteboard], policy, 0);
+}
+
+static void initializeKillRingIfNeeded()
+{
+    static bool initializedKillRing = false;
+    if (!initializedKillRing) {
+        initializedKillRing = true;
+        _NSInitializeKillRing();
+    }
+}
+
+void Editor::appendToKillRing(const String& string)
+{
+    initializeKillRingIfNeeded();
+    _NSAppendToKillRing(string);
+}
+
+void Editor::prependToKillRing(const String& string)
+{
+    initializeKillRingIfNeeded();
+    _NSPrependToKillRing(string);
+}
+
+String Editor::yankFromKillRing()
+{
+    initializeKillRingIfNeeded();
+    return _NSYankFromKillRing();
+}
+
+void Editor::startNewKillRingSequence()
+{
+    initializeKillRingIfNeeded();
+    _NSNewKillRingSequence();
+}
+
+void Editor::setKillRingToYankedState()
+{
+    initializeKillRingIfNeeded();
+    _NSSetKillRingToYankedState();
+}
+
+void Editor::showFontPanel()
+{
+    [[NSFontManager sharedFontManager] orderFrontFontPanel:nil];
+}
+
+void Editor::showStylesPanel()
+{
+    [[NSFontManager sharedFontManager] orderFrontStylesPanel:nil];
+}
+
+void Editor::showColorPanel()
+{
+    [[NSApplication sharedApplication] orderFrontColorPanel:nil];
+}
+
+// FIXME: We want to use the platform-independent code instead. But when we last
+// tried to do so it seemed that we first need to move more of the logic from
+// -[WebHTMLView.cpp _documentFragmentFromPasteboard] into PasteboardMac.
+
+void Editor::paste()
+{
+    ASSERT(m_frame->document());
+    FrameView* view = m_frame->view();
+    if (!view)
+        return;
+    DocLoader* loader = m_frame->document()->docLoader();
+    loader->setAllowStaleResources(true);
+    [view->documentView() tryToPerform:@selector(paste:) with:nil];
+    loader->setAllowStaleResources(false);
+}
 
 } // namespace WebCore
-

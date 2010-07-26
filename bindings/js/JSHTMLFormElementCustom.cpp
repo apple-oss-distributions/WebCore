@@ -43,7 +43,7 @@ bool JSHTMLFormElement::canGetItemsForName(ExecState*, HTMLFormElement* form, co
     return namedItems.size();
 }
 
-JSValuePtr JSHTMLFormElement::nameGetter(ExecState* exec, const Identifier& propertyName, const PropertySlot& slot)
+JSValue JSHTMLFormElement::nameGetter(ExecState* exec, const Identifier& propertyName, const PropertySlot& slot)
 {
     HTMLFormElement* form = static_cast<HTMLFormElement*>(static_cast<JSHTMLElement*>(asObject(slot.slotBase()))->impl());
     
@@ -57,12 +57,12 @@ JSValuePtr JSHTMLFormElement::nameGetter(ExecState* exec, const Identifier& prop
     return jsUndefined();
 }
 
-JSValuePtr JSHTMLFormElement::submit(ExecState* exec, const ArgList&)
+JSValue JSHTMLFormElement::submit(ExecState* exec, const ArgList&)
 {
     Frame* activeFrame = asJSDOMWindow(exec->dynamicGlobalObject())->impl()->frame();
     if (!activeFrame)
         return jsUndefined();
-    static_cast<HTMLFormElement*>(impl())->submit(0, false, !activeFrame->script()->anyPageIsProcessingUserGesture(), false);
+    static_cast<HTMLFormElement*>(impl())->submit(0, false, !activeFrame->script()->anyPageIsProcessingUserGesture());
     return jsUndefined();
 }
 

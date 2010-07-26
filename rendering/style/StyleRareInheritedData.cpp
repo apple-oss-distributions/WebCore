@@ -88,6 +88,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && nbspMode == o.nbspMode
         && khtmlLineBreak == o.khtmlLineBreak
         && textSizeAdjust == o.textSizeAdjust
+        && resize == o.resize
         && userSelect == o.userSelect
         && tapHighlightColor == o.tapHighlightColor
         && touchCalloutEnabled == o.touchCalloutEnabled
@@ -98,7 +99,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
 
 bool StyleRareInheritedData::shadowDataEquivalent(const StyleRareInheritedData& o) const
 {
-    if (!textShadow && o.textShadow || textShadow && !o.textShadow)
+    if ((!textShadow && o.textShadow) || (textShadow && !o.textShadow))
         return false;
     if (textShadow && o.textShadow && (*textShadow != *o.textShadow))
         return false;

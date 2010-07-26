@@ -52,8 +52,6 @@ RenderTable::RenderTable(Node* node)
     , m_firstBody(0)
     , m_tableLayout(0)
     , m_currentBorder(0)
-    , m_frame(Void)
-    , m_rules(None)
     , m_hasColElements(false)
     , m_needsSectionRecalc(0)
     , m_hSpacing(0)
@@ -110,8 +108,7 @@ void RenderTable::addChild(RenderObject* child, RenderObject* beforeChild)
     if (!beforeChild && isAfterContent(lastChild()))
         beforeChild = lastChild();
 
-    bool wrapInAnonymousSection = true;
-    bool isTableElement = element() && element()->hasTagName(tableTag);
+    bool wrapInAnonymousSection = !child->isPositioned();
 
     if (child->isRenderBlock() && child->style()->display() == TABLE_CAPTION) {
         // First caption wins.
@@ -123,7 +120,7 @@ void RenderTable::addChild(RenderObject* child, RenderObject* beforeChild)
                 m_caption = 0;
         }
         if (!m_caption)
-            m_caption = static_cast<RenderBlock*>(child);
+            m_caption = toRenderBlock(child);
         wrapInAnonymousSection = false;
     } else if (child->isTableCol()) {
         m_hasColElements = true;
@@ -131,56 +128,44 @@ void RenderTable::addChild(RenderObject* child, RenderObject* beforeChild)
     } else if (child->isTableSection()) {
         switch (child->style()->display()) {
             case TABLE_HEADER_GROUP:
-                if (child->isTableSection()) {
-                    resetSectionPointerIfNotBefore(m_head, beforeChild);
-                    if (!m_head) {
-                        m_head = static_cast<RenderTableSection*>(child);
-                    } else {
-                        resetSectionPointerIfNotBefore(m_firstBody, beforeChild);
-                        if (!m_firstBody) 
-                            m_firstBody = static_cast<RenderTableSection*>(child);
-                    }
+                resetSectionPointerIfNotBefore(m_head, beforeChild);
+                if (!m_head) {
+                    m_head = static_cast<RenderTableSection*>(child);
+                } else {
+                    resetSectionPointerIfNotBefore(m_firstBody, beforeChild);
+                    if (!m_firstBody) 
+                        m_firstBody = static_cast<RenderTableSection*>(child);
                 }
                 wrapInAnonymousSection = false;
                 break;
             case TABLE_FOOTER_GROUP:
-                if (child->isTableSection()) {
-                    resetSectionPointerIfNotBefore(m_foot, beforeChild);
-                    if (!m_foot) {
-                        m_foot = static_cast<RenderTableSection*>(child);
-                        wrapInAnonymousSection = false;
-                        break;
-                    }
+                resetSectionPointerIfNotBefore(m_foot, beforeChild);
+                if (!m_foot) {
+                    m_foot = static_cast<RenderTableSection*>(child);
+                    wrapInAnonymousSection = false;
+                    break;
                 }
                 // Fall through.
             case TABLE_ROW_GROUP:
-                if (child->isTableSection()) {
-                    resetSectionPointerIfNotBefore(m_firstBody, beforeChild);
-                    if (!m_firstBody)
-                        m_firstBody = static_cast<RenderTableSection*>(child);
-                }
+                resetSectionPointerIfNotBefore(m_firstBody, beforeChild);
+                if (!m_firstBody)
+                    m_firstBody = static_cast<RenderTableSection*>(child);
                 wrapInAnonymousSection = false;
                 break;
             default:
                 ASSERT_NOT_REACHED();
         }
-    } else if (child->isTableCell() || child->isTableRow()) {
+    } else if (child->isTableCell() || child->isTableRow())
         wrapInAnonymousSection = true;
-    } else {
-        // Allow a form to just sit at the top level.
-        wrapInAnonymousSection = !isTableElement || !child->element() || !(child->element()->hasTagName(formTag) && document()->isHTMLDocument());
-
-        // FIXME: Allow the delete button container element to sit at the top level. This is needed until http://bugs.webkit.org/show_bug.cgi?id=11363 is fixed.
-        if (wrapInAnonymousSection && child->element() && child->element()->isHTMLElement() && static_cast<HTMLElement*>(child->element())->id() == DeleteButtonController::containerElementIdentifier)
-            wrapInAnonymousSection = false;
-    }
+    else
+        wrapInAnonymousSection = true;
 
     if (!wrapInAnonymousSection) {
         // If the next renderer is actually wrapped in an anonymous table section, we need to go up and find that.
         while (beforeChild && !beforeChild->isTableSection() && !beforeChild->isTableCol() && beforeChild->style()->display() != TABLE_CAPTION)
             beforeChild = beforeChild->parent();
 
-        RenderContainer::addChild(child, beforeChild);
+        RenderBox::addChild(child, beforeChild);
         return;
     }
 
@@ -208,6 +193,12 @@ void RenderTable::addChild(RenderObject* child, RenderObject* beforeChild)
     section->addChild(child);
 }
 
+void RenderTable::removeChild(RenderObject* oldChild)
+{
+    RenderBox::removeChild(oldChild);
+    setNeedsSectionRecalc();
+}
+
 void RenderTable::calcWidth()
 {
     if (isPositioned())
@@ -224,7 +215,7 @@ void RenderTable::calcWidth()
     } else {
         // An auto width table should shrink to fit within the line width if necessary in order to 
         // avoid overlapping floats.
-        availableWidth = cb->lineWidth(y());
+        availableWidth = cb->lineWidth(y(), false);
         
         // Subtract out any fixed margins from our available width for auto width tables.
         int marginTotal = 0;
@@ -287,17 +278,22 @@ void RenderTable::layout()
     bool collapsing = collapseBorders();
 
     for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-        // FIXME: What about a form that has a display value that makes it a table section?
-        if (child->needsLayout() && !(child->element() && child->element()->hasTagName(formTag) && !child->isTableSection()))
-            child->layout();
         if (child->isTableSection()) {
+            child->layoutIfNeeded();
             RenderTableSection* section = static_cast<RenderTableSection*>(child);
             calculatedHeight += section->calcRowHeight();
             if (collapsing)
                 section->recalcOuterBorder();
             ASSERT(!section->needsLayout());
+        } else if (child->isTableCol()) {
+            child->layoutIfNeeded();
+            ASSERT(!child->needsLayout());
         }
     }
+
+    // Only lay out one caption, since it's the only one we're going to end up painting.
+    if (m_caption)
+        m_caption->layoutIfNeeded();
 
     m_overflowWidth = width() + (collapsing ? outerBorderRight() - borderRight() : 0);
     m_overflowLeft = collapsing ? borderLeft() - outerBorderLeft() : 0;
@@ -518,16 +514,9 @@ void RenderTable::paintBoxDecorations(PaintInfo& paintInfo, int tx, int ty)
             ty += captionHeight;
     }
 
-    int my = max(ty, paintInfo.rect.y());
-    int mh;
-    if (ty < paintInfo.rect.y())
-        mh = max(0, h - (paintInfo.rect.y() - ty));
-    else
-        mh = min(paintInfo.rect.height(), h);
-
     paintBoxShadow(paintInfo.context, tx, ty, w, h, style());
     
-    paintFillLayers(paintInfo, style()->backgroundColor(), style()->backgroundLayers(), my, mh, tx, ty, w, h);
+    paintFillLayers(paintInfo, style()->backgroundColor(), style()->backgroundLayers(), tx, ty, w, h);
 
     if (style()->hasBorder() && !collapseBorders())
         paintBorder(paintInfo.context, tx, ty, w, h, style());
@@ -549,14 +538,7 @@ void RenderTable::paintMask(PaintInfo& paintInfo, int tx, int ty)
             ty += captionHeight;
     }
 
-    int my = max(ty, paintInfo.rect.y());
-    int mh;
-    if (ty < paintInfo.rect.y())
-        mh = max(0, h - (paintInfo.rect.y() - ty));
-    else
-        mh = min(paintInfo.rect.height(), h);
-    
-    paintMaskImages(paintInfo, my, mh, tx, ty, w, h);
+    paintMaskImages(paintInfo, tx, ty, w, h);
 }
 
 void RenderTable::calcPrefWidths()
@@ -665,7 +647,7 @@ void RenderTable::recalcSections() const
         switch (child->style()->display()) {
             case TABLE_CAPTION:
                 if (!m_caption && child->isRenderBlock()) {
-                    m_caption = static_cast<RenderBlock*>(child);
+                    m_caption = toRenderBlock(child);
                     m_caption->setNeedsLayout(true);
                 }
                 break;
@@ -723,12 +705,6 @@ void RenderTable::recalcSections() const
     ASSERT(selfNeedsLayout());
 
     m_needsSectionRecalc = false;
-}
-
-RenderObject* RenderTable::removeChildNode(RenderObject* child, bool fullRemove)
-{
-    setNeedsSectionRecalc();
-    return RenderContainer::removeChildNode(child, fullRemove);
 }
 
 int RenderTable::calcBorderLeft() const
@@ -906,8 +882,7 @@ int RenderTable::outerBorderBottom() const
         bottomSection = m_foot;
     else {
         RenderObject* child;
-        for (child = lastChild(); child && !child->isTableSection(); child = child->previousSibling())
-            ;
+        for (child = lastChild(); child && !child->isTableSection(); child = child->previousSibling()) { }
         bottomSection = child ? static_cast<RenderTableSection*>(child) : 0;
     }
     if (bottomSection) {
@@ -1120,7 +1095,7 @@ void RenderTable::updateFirstLetter()
 {
 }
 
-int RenderTable::getBaselineOfFirstLineBox() const
+int RenderTable::firstLineBoxBaseline() const
 {
     RenderTableSection* firstNonEmptySection = m_head ? m_head : (m_firstBody ? m_firstBody : m_foot);
     if (firstNonEmptySection && !firstNonEmptySection->numRows())
@@ -1129,12 +1104,12 @@ int RenderTable::getBaselineOfFirstLineBox() const
     if (!firstNonEmptySection)
         return -1;
 
-    return firstNonEmptySection->y() + firstNonEmptySection->getBaselineOfFirstLineBox();
+    return firstNonEmptySection->y() + firstNonEmptySection->firstLineBoxBaseline();
 }
 
-IntRect RenderTable::getOverflowClipRect(int tx, int ty)
+IntRect RenderTable::overflowClipRect(int tx, int ty)
 {
-    IntRect rect = RenderBlock::getOverflowClipRect(tx, ty);
+    IntRect rect = RenderBlock::overflowClipRect(tx, ty);
     
     // If we have a caption, expand the clip to include the caption.
     // FIXME: Technically this is wrong, but it's virtually impossible to fix this
@@ -1156,7 +1131,7 @@ bool RenderTable::nodeAtPoint(const HitTestRequest& request, HitTestResult& resu
     ty += y();
 
     // Check kids first.
-    if (!hasOverflowClip() || getOverflowClipRect(tx, ty).contains(xPos, yPos)) {
+    if (!hasOverflowClip() || overflowClipRect(tx, ty).contains(xPos, yPos)) {
         for (RenderObject* child = lastChild(); child; child = child->previousSibling()) {
             if (child->isBox() && !toRenderBox(child)->hasSelfPaintingLayer() && (child->isTableSection() || child == m_caption) &&
                 child->nodeAtPoint(request, result, xPos, yPos, tx, ty, action)) {

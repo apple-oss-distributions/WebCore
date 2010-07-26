@@ -80,6 +80,7 @@ BitmapImage::BitmapImage(CGImageRef cgImage, ImageObserver* observer)
     , m_repetitionCountStatus(Unknown)
     , m_repetitionsComplete(0)
     , m_isSolidColor(false)
+    , m_checkedForSolidColor(false)
     , m_animationFinished(true)
     , m_allDataReceived(true)
     , m_haveSize(true)
@@ -107,6 +108,7 @@ BitmapImage::BitmapImage(CGImageRef cgImage, ImageObserver* observer)
 
 void BitmapImage::checkForSolidColor()
 {
+    m_checkedForSolidColor = true;
     if (frameCount() > 1)
         m_isSolidColor = false;
     else {
@@ -320,8 +322,7 @@ void Image::drawPattern(GraphicsContext* ctxt, const FloatRect& tileRect, const 
         subImage = CGImageCreateWithImageInRect(tileImage, tileRect);
     }
     
-#if !defined(BUILDING_ON_TIGER)
-// FIXME: <rdar://problem/5660638>
+#ifndef BUILDING_ON_TIGER
     // Leopard has an optimized call for the tiling of image patterns, but we can only use it if the image has been decoded enough that
     // its buffer is the same size as the overall image.  Because a partially decoded CGImageRef with a smaller width or height than the
     // overall image buffer needs to tile with "gaps", we can't use the optimized tiling call in that case.
@@ -347,7 +348,6 @@ void Image::drawPattern(GraphicsContext* ctxt, const FloatRect& tileRect, const 
     matrix = CGAffineTransformConcat(matrix, CGContextGetCTM(context));
     // The top of a partially-decoded image is drawn at the bottom of the tile. Map it to the top.
     matrix = CGAffineTransformTranslate(matrix, 0, size().height() - h);
-
     matrix = CGAffineTransformScale(matrix, 1, -1);
     matrix = CGAffineTransformTranslate(matrix, 0, -h);
     CGPatternRef pattern = CGPatternCreate(subImage, CGRectMake(0, 0, tileRect.width(), tileRect.height()),
@@ -377,7 +377,7 @@ void Image::drawPattern(GraphicsContext* ctxt, const FloatRect& tileRect, const 
     
     CGColorRelease(color);
     
-#if !defined(BUILDING_ON_TIGER)
+#ifndef BUILDING_ON_TIGER
     }
 #endif
 

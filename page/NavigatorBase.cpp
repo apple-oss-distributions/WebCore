@@ -31,14 +31,14 @@
 #include "PlatformString.h"
 
 extern "C" {
-#include <GraphicsServices/GSCapabilities.h>
+#include <GraphicsServices/GraphicsServices.h>
 }
 
 #ifndef WEBCORE_NAVIGATOR_PLATFORM
 #define WEBCORE_NAVIGATOR_PLATFORM (String(GSGetDeviceName()))
-#elif PLATFORM(MAC) && PLATFORM(PPC)
+#elif PLATFORM(MAC) && (PLATFORM(PPC) || PLATFORM(PPC64))
 #define WEBCORE_NAVIGATOR_PLATFORM "MacPPC"
-#elif PLATFORM(MAC) && PLATFORM(X86)
+#elif PLATFORM(MAC) && (PLATFORM(X86) || PLATFORM(X86_64))
 #define WEBCORE_NAVIGATOR_PLATFORM "MacIntel"
 #elif PLATFORM(WIN_OS)
 #define WEBCORE_NAVIGATOR_PLATFORM "Win32"

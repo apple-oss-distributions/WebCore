@@ -47,8 +47,8 @@ EditCommand::EditCommand(Document* document)
 {
     ASSERT(m_document);
     ASSERT(m_document->frame());
-    DeleteButtonController* deleteButton = m_document->frame()->editor()->deleteButtonController();
-    setStartingSelection(avoidIntersectionWithNode(m_document->frame()->selection()->selection(), deleteButton ? deleteButton->containerElement() : 0));
+    DeleteButtonController* deleteButtonController = m_document->frame()->editor()->deleteButtonController();
+    setStartingSelection(avoidIntersectionWithNode(m_document->frame()->selection()->selection(), deleteButtonController ? deleteButtonController->containerElement() : 0));
     setEndingSelection(m_startingSelection);
 }
 
@@ -89,10 +89,10 @@ void EditCommand::apply()
 
     DeleteButtonController* deleteButtonController = frame->editor()->deleteButtonController();
     if (deleteButtonController)
-        deleteButtonController->disable();
+    deleteButtonController->disable();
     doApply();
     if (deleteButtonController)
-        deleteButtonController->enable();
+    deleteButtonController->enable();
 
     if (!m_parent) {
         updateLayout();
@@ -126,10 +126,10 @@ void EditCommand::unapply()
     
     DeleteButtonController* deleteButtonController = frame->editor()->deleteButtonController();
     if (deleteButtonController)
-        deleteButtonController->disable();
+    deleteButtonController->disable();
     doUnapply();
     if (deleteButtonController)
-        deleteButtonController->enable();
+    deleteButtonController->enable();
 
     if (!m_parent) {
         updateLayout();
@@ -153,10 +153,10 @@ void EditCommand::reapply()
 
     DeleteButtonController* deleteButtonController = frame->editor()->deleteButtonController();
     if (deleteButtonController)
-        deleteButtonController->disable();
+    deleteButtonController->disable();
     doReapply();
     if (deleteButtonController)
-        deleteButtonController->enable();
+    deleteButtonController->enable();
 
     if (!m_parent) {
         updateLayout();
@@ -174,7 +174,7 @@ EditAction EditCommand::editingAction() const
     return EditActionUnspecified;
 }
 
-void EditCommand::setStartingSelection(const Selection& s)
+void EditCommand::setStartingSelection(const VisibleSelection& s)
 {
     Element* root = s.rootEditableElement();
     for (EditCommand* cmd = this; ; cmd = cmd->m_parent) {
@@ -185,7 +185,7 @@ void EditCommand::setStartingSelection(const Selection& s)
     }
 }
 
-void EditCommand::setEndingSelection(const Selection &s)
+void EditCommand::setEndingSelection(const VisibleSelection &s)
 {
     Element* root = s.rootEditableElement();
     for (EditCommand* cmd = this; cmd; cmd = cmd->m_parent) {

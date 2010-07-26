@@ -28,6 +28,9 @@
 
 #include <wtf/Platform.h>
 
+#ifdef __OBJC__
+#include "WAKAppKitStubs.h"
+#endif
 
 namespace WebCore {
 

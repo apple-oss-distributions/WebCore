@@ -27,6 +27,7 @@
 #include "Frame.h"
 #include "HTMLDocument.h"
 #include "HTMLNames.h"
+#include "MappedAttribute.h"
 #include "RenderApplet.h"
 #include "RenderInline.h"
 #include "Settings.h"
@@ -115,9 +116,11 @@ RenderObject* HTMLAppletElement::createRenderer(RenderArena*, RenderStyle* style
         HashMap<String, String> args;
 
         args.set("code", getAttribute(codeAttr));
+
         const AtomicString& codeBase = getAttribute(codebaseAttr);
-        if(!codeBase.isNull())
+        if (!codeBase.isNull())
             args.set("codeBase", codeBase);
+
         const AtomicString& name = getAttribute(document()->isHTMLDocument() ? nameAttr : idAttr);
         if (!name.isNull())
             args.set("name", name);

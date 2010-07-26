@@ -45,6 +45,32 @@ AuthenticationChallenge core(NSURLAuthenticationChallenge *);
 ProtectionSpace core(NSURLProtectionSpace *);
 Credential core(NSURLCredential *);
 
+class WebCoreCredentialStorage {
+public:
+    static void saveToPersistentStorage(NSURLProtectionSpace *protectionSpace, NSURLCredential *credential)
+    {
+        if ([credential persistence] == NSURLCredentialPersistenceNone)
+            credential = [NSURLCredential credentialWithUser:[credential user] password:[credential password] persistence:NSURLCredentialPersistenceForSession];
+        [[NSURLCredentialStorage sharedCredentialStorage] setDefaultCredential:credential forProtectionSpace:protectionSpace];
+    }
+
+    static void set(NSURLCredential *credential, NSURLProtectionSpace *protectionSpace)
+    {
+        if (!m_storage)
+            m_storage = [[NSMutableDictionary alloc] init];
+        [m_storage setObject:credential forKey:protectionSpace];
+        saveToPersistentStorage(protectionSpace, credential);
+    }
+
+    static NSURLCredential *get(NSURLProtectionSpace *protectionSpace)
+    {
+        return static_cast<NSURLCredential *>([m_storage objectForKey:protectionSpace]);
+    }
+
+private:
+    static NSMutableDictionary* m_storage;
+};
+
 }
 #endif
 

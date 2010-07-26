@@ -1,24 +1,31 @@
 //
 //  WAKWindow.h
 //
-//  Copyright (C) 2005, 2006, 2007, 2009 Apple Inc.  All rights reserved.
+//  Copyright (C) 2005, 2006, 2007, 2008, 2009 Apple Inc.  All rights reserved.
 //
 
 #ifndef WAKWindow_h
 #define WAKWindow_h
 
-#import <Foundation/Foundation.h>
-
-#import <CoreGraphics/CoreGraphics.h>
-
 #import "WAKAppKitStubs.h"
-
 #import "WAKResponder.h"
 #import "WAKView.h"
-#import "WKWindow.h"
 #import "WKContentObservation.h"
+#import "WKWindow.h"
+#import <CoreGraphics/CoreGraphics.h>
+#import <Foundation/Foundation.h>
 
 @class CALayer;
+@class WebEvent;
+
+#ifdef __cplusplus
+namespace WebCore {
+    class TileCache;
+}
+typedef WebCore::TileCache TileCache;
+#else
+typedef struct TileCache TileCache;
+#endif
 
 typedef enum {
     kWAKWindowTilingModeNormal,
@@ -28,14 +35,25 @@ typedef enum {
     kWAKWindowTilingModeDisabled
 } WAKWindowTilingMode;
 
+typedef enum {
+    kWAKTilingDirectionUp,
+    kWAKTilingDirectionDown,
+    kWAKTilingDirectionLeft,
+    kWAKTilingDirectionRight,
+} WAKTilingDirection;
+
 @interface WAKWindow : WAKResponder
 {
-    WKWindowRef window;
+    WKWindowRef _wkWindow;
+    CALayer* _hostLayer;
+    TileCache* _tileCache;
 }
 // Create layer hosted window
 - (id)initWithLayer:(CALayer *)hostLayer;
 // Create unhosted window for manual painting
 - (id)initWithFrame:(CGRect)frame;
+
+- (CALayer*)hostLayer;
 
 - (void)setContentView:(WAKView *)aView;
 - (WAKView *)contentView;
@@ -43,21 +61,19 @@ typedef enum {
 - (WAKResponder *)firstResponder;
 - (NSPoint)convertBaseToScreen:(NSPoint)aPoint;
 - (NSPoint)convertScreenToBase:(NSPoint)aPoint;
-- (void)endEditingFor:(id)anObject;
-- (int)windowNumber;
-- (GSEventRef)currentEvent;
 - (BOOL)isKeyWindow;
+- (void)makeKeyWindow;
 - (NSSelectionDirection)keyViewSelectionDirection;
 - (BOOL)makeFirstResponder:(NSResponder *)aResponder;
 - (WKWindowRef)_windowRef;
 - (void)setFrame:(NSRect)frameRect display:(BOOL)flag;
-- (void)sendGSEvent:(id)aGSEventRef;
-- (void)sendGSEvent:(id)aGSEventRef contentChange:(WKContentChange *)aContentChange;
-
-- (id)attachedSheet;
-
-- (BOOL)_needsToResetDragMargins;
-- (void)_setNeedsToResetDragMargins:(BOOL)flag;
+- (CGRect)frame;
+- (void)setScreenSize:(CGSize)size;
+- (CGSize)screenSize;
+- (void)setAvailableScreenSize:(CGSize)size;
+- (CGSize)availableScreenSize;
+- (void)sendEvent:(WebEvent *)anEvent;
+- (void)sendEvent:(WebEvent *)anEvent contentChange:(WKContentChange *)aContentChange;
 
 // Tiling support
 - (void)layoutTiles;
@@ -73,7 +89,10 @@ typedef enum {
 - (void)removeAllTiles;
 - (void)setTilingMode:(WAKWindowTilingMode)mode;
 - (WAKWindowTilingMode)tilingMode;
+- (void)setTilingDirection:(WAKTilingDirection)tilingDirection;
+- (WAKTilingDirection)tilingDirection;
 - (BOOL)hasPendingDraw;
+- (void)hostLayerSizeChanged;
 
 - (BOOL)useOrientationDependentFontAntialiasing;
 - (void)setUseOrientationDependentFontAntialiasing:(BOOL)aa;

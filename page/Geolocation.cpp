@@ -33,7 +33,7 @@
 #include "PositionError.h"
 
 namespace WebCore {
-    
+
 Geolocation::GeoNotifier::GeoNotifier(PassRefPtr<PositionCallback> successCallback, PassRefPtr<PositionErrorCallback> errorCallback, PassRefPtr<PositionOptions> options)
     : m_successCallback(successCallback)
     , m_errorCallback(errorCallback)
@@ -77,7 +77,7 @@ void Geolocation::disconnectFrame()
         m_frame->document()->setUsingGeolocation(false);
     m_frame = 0;
 }
-    
+
 void Geolocation::getCurrentPosition(PassRefPtr<PositionCallback> successCallback, PassRefPtr<PositionErrorCallback> errorCallback, PassRefPtr<PositionOptions> options)
 {
     RefPtr<GeoNotifier> notifier = GeoNotifier::create(successCallback, errorCallback, options);
@@ -271,11 +271,11 @@ void Geolocation::requestPermission()
 void Geolocation::geolocationServicePositionChanged(GeolocationService* service)
 {
     ASSERT(service->lastPosition());
-
+    
     requestPermission();
     if (!isAllowed())
         return;
-
+    
     sendPositionToOneShots(service->lastPosition());
     sendPositionToWatchers(service->lastPosition());
         

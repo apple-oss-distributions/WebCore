@@ -33,7 +33,7 @@
 #include "EventNames.h"
 #include "FrameView.h"
 #include "HTMLNames.h"
-#include "PlatformString.h"
+#include "MappedAttribute.h"
 #include "RegisteredEventListener.h"
 #include "RenderObject.h"
 #include "SVGCursorElement.h"
@@ -44,6 +44,7 @@
 #include "SVGSVGElement.h"
 #include "SVGURIReference.h"
 #include "SVGUseElement.h"
+#include "ScriptEventListener.h"
 #include "XMLNames.h"
 
 namespace WebCore {
@@ -150,41 +151,39 @@ void SVGElement::parseMappedAttribute(MappedAttribute* attr)
 {
     // standard events
     if (attr->name() == onloadAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().loadEvent, attr);
+        setAttributeEventListener(eventNames().loadEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == onclickAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().clickEvent, attr);
+        setAttributeEventListener(eventNames().clickEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == onmousedownAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().mousedownEvent, attr);
+        setAttributeEventListener(eventNames().mousedownEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == onmousemoveAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().mousemoveEvent, attr);
+        setAttributeEventListener(eventNames().mousemoveEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == onmouseoutAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().mouseoutEvent, attr);
+        setAttributeEventListener(eventNames().mouseoutEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == onmouseoverAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().mouseoverEvent, attr);
+        setAttributeEventListener(eventNames().mouseoverEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == onmouseupAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().mouseupEvent, attr);
+        setAttributeEventListener(eventNames().mouseupEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == SVGNames::onfocusinAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().DOMFocusInEvent, attr);
+        setAttributeEventListener(eventNames().DOMFocusInEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == SVGNames::onfocusoutAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().DOMFocusOutEvent, attr);
+        setAttributeEventListener(eventNames().DOMFocusOutEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == SVGNames::onactivateAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().DOMActivateEvent, attr);
-#if ENABLE(TOUCH_EVENTS)
+        setAttributeEventListener(eventNames().DOMActivateEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == ontouchstartAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().touchstartEvent, attr);
+        setAttributeEventListener(eventNames().touchstartEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == ontouchmoveAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().touchmoveEvent, attr);
+        setAttributeEventListener(eventNames().touchmoveEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == ontouchendAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().touchendEvent, attr);
+        setAttributeEventListener(eventNames().touchendEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == ontouchcancelAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().touchcancelEvent, attr);
+        setAttributeEventListener(eventNames().touchcancelEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == ongesturestartAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().gesturestartEvent, attr);
+        setAttributeEventListener(eventNames().gesturestartEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == ongesturechangeAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().gesturechangeEvent, attr);
+        setAttributeEventListener(eventNames().gesturechangeEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == ongestureendAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().gestureendEvent, attr);
-#endif
+        setAttributeEventListener(eventNames().gestureendEvent, createAttributeEventListener(this, attr));
     else
         StyledElement::parseMappedAttribute(attr);
 }

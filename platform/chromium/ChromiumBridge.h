@@ -76,15 +76,21 @@ namespace WebCore {
         static void clipboardWriteImage(const NativeImageSkia*, const KURL&, const String&);
 
         // Cookies ------------------------------------------------------------
-        static void setCookies(const KURL& url, const KURL& policyURL, const String& value);
-        static String cookies(const KURL& url, const KURL& policyURL);
+        static void setCookies(const KURL& url, const KURL& firstPartyForCookies, const String& value);
+        static String cookies(const KURL& url, const KURL& firstPartyForCookies);
 
         // DNS ----------------------------------------------------------------
         static void prefetchDNS(const String& hostname);
 
+        // File ---------------------------------------------------------------
+        static bool getFileSize(const String& path, long long& result);
+
         // Font ---------------------------------------------------------------
 #if PLATFORM(WIN_OS)
         static bool ensureFontLoaded(HFONT font);
+#endif
+#if PLATFORM(LINUX)
+        static String getFontFamilyForCharacters(const UChar*, size_t numCharacters);
 #endif
 
         // Forms --------------------------------------------------------------
@@ -92,6 +98,7 @@ namespace WebCore {
 
         // JavaScript ---------------------------------------------------------
         static void notifyJSOutOfMemory(Frame*);
+        static bool allowScriptDespiteSettings(const KURL& documentURL);
 
         // Language -----------------------------------------------------------
         static String computedDefaultLanguage();
@@ -100,11 +107,10 @@ namespace WebCore {
         static bool layoutTestMode();
 
         // MimeType -----------------------------------------------------------
-        static bool isSupportedImageMIMEType(const char* mimeType);
-        static bool isSupportedJavascriptMIMEType(const char* mimeType);
-        static bool isSupportedNonImageMIMEType(const char* mimeType);
-        static bool matchesMIMEType(const String& pattern, const String& type);
-        static String mimeTypeForExtension(const String& ext);
+        static bool isSupportedImageMIMEType(const String& mimeType);
+        static bool isSupportedJavaScriptMIMEType(const String& mimeType);
+        static bool isSupportedNonImageMIMEType(const String& mimeType);
+        static String mimeTypeForExtension(const String& fileExtension);
         static String mimeTypeFromFile(const String& filePath);
         static String preferredExtensionForMIMEType(const String& mimeType);
 
@@ -114,7 +120,7 @@ namespace WebCore {
         static bool popupsAllowed(NPP);
 
         // Protocol -----------------------------------------------------------
-        static String uiResourceProtocol();
+        static String uiResourceProtocol();  // deprecated
 
         // Resources ----------------------------------------------------------
         static PassRefPtr<Image> loadPlatformImageResource(const char* name);
@@ -134,7 +140,9 @@ namespace WebCore {
         // StatsCounters ------------------------------------------------------
         static void decrementStatsCounter(const char* name);
         static void incrementStatsCounter(const char* name);
-        static void initV8CounterFunction();
+
+        // Sudden Termination
+        static void suddenTerminationChanged(bool enabled);
 
         // SystemTime ---------------------------------------------------------
         static double currentTime();
@@ -153,14 +161,13 @@ namespace WebCore {
             GraphicsContext*, int part, int state, int classicState, const IntRect&, const IntRect& alignRect);
         static void paintTextField(
             GraphicsContext*, int part, int state, int classicState, const IntRect&, const Color&, bool fillContentArea, bool drawEdges);
+        static void paintTrackbar(
+            GraphicsContext*, int part, int state, int classicState, const IntRect&);
 #endif
 
         // Trace Event --------------------------------------------------------
         static void traceEventBegin(const char* name, void* id, const char* extra);
         static void traceEventEnd(const char* name, void* id, const char* extra);
-
-        // URL ----------------------------------------------------------------
-        static KURL inspectorURL();
 
         // Visited links ------------------------------------------------------
         static LinkHash visitedLinkHash(const UChar* url, unsigned length);

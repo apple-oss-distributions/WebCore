@@ -41,10 +41,10 @@ namespace WebCore {
 
 const ClassInfo JSWorkerConstructor::s_info = { "WorkerConstructor", 0, 0, 0 };
 
-JSWorkerConstructor::JSWorkerConstructor(ExecState* exec)
-    : DOMObject(JSWorkerConstructor::createStructure(exec->lexicalGlobalObject()->objectPrototype()))
+JSWorkerConstructor::JSWorkerConstructor(ExecState* exec, JSDOMGlobalObject* globalObject)
+    : DOMConstructorObject(JSWorkerConstructor::createStructure(globalObject->objectPrototype()))
 {
-    putDirect(exec->propertyNames().prototype, JSWorkerPrototype::self(exec, exec->lexicalGlobalObject()), None);
+    putDirect(exec->propertyNames().prototype, JSWorkerPrototype::self(exec, globalObject), None);
     putDirect(exec->propertyNames().length, jsNumber(exec, 1), ReadOnly|DontDelete|DontEnum);
 }
 
@@ -53,7 +53,7 @@ static JSObject* constructWorker(ExecState* exec, JSObject*, const ArgList& args
     if (args.size() == 0)
         return throwError(exec, SyntaxError, "Not enough arguments");
 
-    UString scriptURL = args.at(exec, 0).toString(exec);
+    UString scriptURL = args.at(0).toString(exec);
     if (exec->hadException())
         return 0;
 

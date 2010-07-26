@@ -38,11 +38,11 @@ namespace WebCore {
     public:
         static String centerTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks = true);
         static String rightTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks = true);
-        static String centerTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks, float& resultWidth);
-        static String rightTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks, float& resultWidth);
-        static String leftTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks, float& resultWidth);
-        static String rightClipToCharacter(const String&, float maxWidth, const Font&, bool disableRoundingHacks, float& resultWidth);
-        static String rightClipToWord(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth);
+        static String centerTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis = true, float customTruncationElementWidth = 0);
+        static String rightTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis = true, float customTruncationElementWidth = 0);
+        static String leftTruncate(const String&, float maxWidth, const Font&, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis = true, float customTruncationElementWidth = 0);
+        static String rightClipToCharacter(const String&, float maxWidth, const Font&, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis = true, float customTruncationElementWidth = 0);
+        static String rightClipToWord(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis = true, float customTruncationElementWidth = 0, bool alwaysTruncate = false);
         static float width(const String&, const Font&, bool disableRoundingHacks = true);
     };
     

@@ -1,55 +1,36 @@
 //
 //  WAKAppKitStubs.h
 //
-//  Copyright (C) 2005, 2006, 2007, 2008, Apple Inc.  All rights reserved.
+//  Copyright (C) 2005, 2006, 2007, 2008, 2009 Apple Inc.  All rights reserved.
 //
 /* Unicodes we reserve for function keys on the keyboard,  OpenStep reserves the range 0xF700-0xF8FF for this purpose.  The availability of various keys will be system dependent. */
 
-// Include Platform.h so that other applications including this file don't have to.
 #ifndef WAKAppKitStubs_h
 #define WAKAppKitStubs_h
 
-#import <JavaScriptCore/Platform.h>
+#import "WKTypes.h"
 #import <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
+// FIXME: <rdar://problem/6669434> Switch from using NSGeometry methods to CGGeometry methods
+#import <Foundation/NSGeometry.h>
 
-#import "WKTypes.h"
-
-#ifndef NSView
+#ifndef NSClipView
 #define NSClipView WAKClipView
+#endif
+#ifndef NSView
 #define NSView WAKView
-#define NSScroller WAKScroller
+#endif
+#ifndef NSScrollView
 #define NSScrollView WAKScrollView
+#endif
+#ifndef WebDynamicScrollBarsView
 #define WebDynamicScrollBarsView WAKScrollView
+#endif
+#ifndef NSWindow
 #define NSWindow WAKWindow
+#endif
+#ifndef NSResponder
 #define NSResponder WAKResponder
-
-#define NSPoint CGPoint
-#define NSSize CGSize
-#define NSRect CGRect
-
-#define NSZeroPoint CGPointZero
-#define NSZeroSize CGSizeZero
-#define NSZeroRect CGRectZero
-
-#define NSMakePoint CGPointMake
-#define NSMakeSize CGSizeMake
-#define NSMakeRect CGRectMake
-
-#define NSEqualPoints CGPointEqualToPoint
-#define NSEqualSizes CGSizeEqualToSize
-#define NSEqualRects CGRectEqualToRect
-
-#define NSPointInRect(x,y) CGRectContainsPoint(y,x)
-#define NSInsetRect CGRectInset
-#define NSIntersectionRect CGRectIntersection
-#define NSIsEmptyRect CGRectIsEmpty
-#define NSMaxX CGRectGetMaxX
-#define NSMaxY CGRectGetMaxY
-#define NSContainsRect CGRectContainsRect
-#define NSWidth CGRectGetWidth
-#define NSHeight CGRectGetHeight
-
 #endif
 
 enum {
@@ -212,13 +193,6 @@ void *WKAutorelease(id object);
 + (void)setHiddenUntilMouseMoves:(BOOL)flag;
 @end
 
-@interface NSValue (CGRidiculousness)
-+ (id)valueWithSize:(CGSize)aSize;
-- (CGSize)sizeValue;
-+ (id)valueWithRect:(CGRect)aRect;
-- (CGRect)rectValue;
-@end
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -230,5 +204,4 @@ void WKBeep(void);
 }
 #endif
 
-#endif
-
+#endif // WAKAppKitStubs_h

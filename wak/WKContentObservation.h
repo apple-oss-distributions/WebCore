@@ -2,9 +2,12 @@
  *  WKContentObservation.h
  *  WebCore
  *
- *  Copyright (C) 2007, 2008, Apple Inc.  All rights reserved.
+ *  Copyright (C) 2007, 2008, 2009 Apple Inc.  All rights reserved.
  *
  */
+
+#ifndef WKContentObservation_h
+#define WKContentObservation_h
 
 
 #ifdef __cplusplus
@@ -19,7 +22,6 @@ typedef enum
 }   WKContentChange;
 
 bool WKObservingContentChanges(void);
-bool WKObservingIndeterminateContentChanges(void);
 
 void WKStopObservingContentChanges(void);
 void WKBeginObservingContentChanges(bool allowsIntedeterminateChanges);
@@ -38,3 +40,5 @@ void WebThreadRemoveObservedContentModifier(void * aContentModifier);
 }
 #endif
 
+
+#endif // WKContentObservation_h

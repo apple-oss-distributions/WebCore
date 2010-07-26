@@ -47,16 +47,23 @@ String CSSCanvasValue::cssText() const
 void CSSCanvasValue::canvasChanged(HTMLCanvasElement*, const FloatRect& changedRect)
 {
     IntRect imageChangeRect = enclosingIntRect(changedRect);
-    HashMap<RenderObject*, IntSize>::const_iterator end = m_clients.end();
-    for (HashMap<RenderObject*, IntSize>::const_iterator curr = m_clients.begin(); curr != end; ++curr)
+    RenderObjectSizeCountMap::const_iterator end = m_clients.end();
+    for (RenderObjectSizeCountMap::const_iterator curr = m_clients.begin(); curr != end; ++curr)
         curr->first->imageChanged(static_cast<WrappedImagePtr>(this), &imageChangeRect);
 }
 
 void CSSCanvasValue::canvasResized(HTMLCanvasElement*)
 {
-    HashMap<RenderObject*, IntSize>::const_iterator end = m_clients.end();
-    for (HashMap<RenderObject*, IntSize>::const_iterator curr = m_clients.begin(); curr != end; ++curr)
+    RenderObjectSizeCountMap::const_iterator end = m_clients.end();
+    for (RenderObjectSizeCountMap::const_iterator curr = m_clients.begin(); curr != end; ++curr)
         curr->first->imageChanged(static_cast<WrappedImagePtr>(this));
+}
+
+void CSSCanvasValue::canvasDestroyed(HTMLCanvasElement* element)
+{
+    ASSERT(element == m_element);
+    if (element == m_element)
+        m_element = 0;
 }
 
 IntSize CSSCanvasValue::fixedSize(const RenderObject* renderer)

@@ -32,7 +32,6 @@
 #import "GraphicsContext.h"
 #import "GraphicsLayer.h"
 #import <QuartzCore/QuartzCore.h>
-#import "WebCoreTextRenderer.h"
 #import <wtf/UnusedParam.h>
 
 #import "WKGraphics.h"
@@ -50,17 +49,25 @@ using namespace WebCore;
 
 + (void)drawContents:(WebCore::GraphicsLayer*)layerContents ofLayer:(CALayer*)layer intoContext:(CGContextRef)context
 {
-    UNUSED_PARAM(layer);
+    if (!layerContents)
+        return;
 
     WKSetCurrentGraphicsContext(context);
 
     CGContextSaveGState(context);
 
     CGContextSetShouldAntialias(context, NO);
-    
-    if (layerContents && layerContents->client()) {
+
+    CGRect layerBounds = [layer bounds];
+    if (layerContents->contentsOrientation() == WebCore::GraphicsLayer::CompositingCoordinatesBottomUp) {
+        CGContextScaleCTM(context, 1, -1);
+        CGContextTranslateCTM(context, 0, -layerBounds.size.height);
+    }
+
+    if (layerContents->client()) {
         WKFontAntialiasingStateSaver fontAntialiasingState(true);
         fontAntialiasingState.setup([WAKWindow hasLandscapeOrientation]);
+
         GraphicsContext graphicsContext(context);
 
         // It's important to get the clip from the context, because it may be significantly
@@ -78,29 +85,23 @@ using namespace WebCore;
         // FIXME: ideally we'd avoid calling -setNeedsDisplay on a layer that is a plain color,
         // so CA never makes backing store for it (which is what -setNeedsDisplay will do above).
         CGContextSetRGBFillColor(context, 0.0f, 1.0f, 0.0f, 1.0f);
-        CGRect aBounds = [layer bounds];
-        CGContextFillRect(context, aBounds);
+        CGContextFillRect(context, layerBounds);
     }
 #endif
 
-    CGContextRestoreGState(context);
-
-#ifdef SUPPORT_DEBUG_INDICATORS
-    if (layerContents && layerContents->showRepaintCounter()) {
+    if (layerContents->showRepaintCounter()) {
         bool isTiledLayer = [layer isKindOfClass:[CATiledLayer class]];
 
         char text[16]; // that's a lot of repaints
         snprintf(text, sizeof(text), "%d", layerContents->incrementRepaintCount());
 
-        CGAffineTransform a = CGContextGetCTM(context);
-        
         CGContextSaveGState(context);
         if (isTiledLayer)
             CGContextSetRGBFillColor(context, 0.0f, 1.0f, 0.0f, 0.8f);
         else
             CGContextSetRGBFillColor(context, 1.0f, 0.0f, 0.0f, 0.8f);
         
-        CGRect aBounds = [layer bounds];
+        CGRect aBounds = layerBounds;
 
         aBounds.size.width = 10 + 12 * strlen(text);
         aBounds.size.height = 25;
@@ -114,7 +115,8 @@ using namespace WebCore;
         
         CGContextRestoreGState(context);        
     }
-#endif // SUPPORT_DEBUG_INDICATORS
+
+    CGContextRestoreGState(context);
 }
 
 // Disable default animations
@@ -124,22 +126,13 @@ using namespace WebCore;
     return nil;
 }
 
-- (id)init
-{
-    if ((self = [super init]))
-        m_contentsScale = 1.0f;
-    
-    return self;
-}
-
 // Implement this so presentationLayer can get our custom attributes
 - (id)initWithLayer:(id)layer
 {
     if ((self = [super initWithLayer:layer])) {
         m_layerOwner = [(WebLayer*)layer layerOwner];
-        m_contentsScale = [layer contentsScale];
     }
-    
+
     return self;
 }
 
@@ -152,128 +145,22 @@ using namespace WebCore;
 - (void)setNeedsDisplayInRect:(CGRect)dirtyRect
 {
     if (m_layerOwner && m_layerOwner->client() && m_layerOwner->drawsContent()) {
-        [CATransaction lock];
+#if defined(BUILDING_ON_LEOPARD)
+        dirtyRect = CGRectApplyAffineTransform(dirtyRect, [self contentsTransform]);
+#endif
+        [super setNeedsDisplayInRect:dirtyRect];
 
-        id layerContents = [self contents];
-        if (layerContents && CFGetTypeID(layerContents) == CABackingStoreGetTypeID()) {
-            CABackingStoreRef backingStore = (CABackingStoreRef)layerContents;
-            
-            if (CGRectIsInfinite(dirtyRect))
-                CABackingStoreInvalidate(backingStore, 0);
-            else {
-                CGRect layerBounds = [self bounds];
-                CGAffineTransform layerToBackingTransform;
-
-                // CA layers default to flipped on iPhone
-                int32_t height = ceilf(layerBounds.size.height * m_contentsScale);
-
-                layerToBackingTransform = CGAffineTransformMakeTranslation(0.0f, height);
-                layerToBackingTransform = CGAffineTransformScale(layerToBackingTransform, 1.0f, -1.0f);
-                layerToBackingTransform = CGAffineTransformScale(layerToBackingTransform, m_contentsScale, m_contentsScale);
-
-                CGRect backingDirtyRect = CGRectApplyAffineTransform(dirtyRect, layerToBackingTransform);
-                CABackingStoreInvalidate(backingStore, &backingDirtyRect);
-            
-#ifdef SUPPORT_DEBUG_INDICATORS
-                if (m_layerOwner->showRepaintCounter()) {
-                    CGRect counterRect = CGRectMake(layerBounds.origin.x, layerBounds.origin.y, 46, 25);
-                    counterRect = CGRectApplyAffineTransform(counterRect, layerToBackingTransform);
-                    CABackingStoreInvalidate(backingStore, &counterRect);
-                }
-#endif // SUPPORT_DEBUG_INDICATORS
-            }
-        }
-
-        // just sets the 'display needed' flag on the layer
-        [super setNeedsDisplayInRect:CGRectNull];
-        [CATransaction unlock];
-    }
-}
-
-static void backing_store_callback(CGContextRef inContext, void *info)
-{
-    WebLayer* self = reinterpret_cast<WebLayer*>(info);
-    
-    [self drawScaledContentsInContext:inContext];
-}
-
-- (void)display
-{
-    CGRect layerBounds = [self bounds];
-    if (layerBounds.size.width <= 0.0f || layerBounds.size.height <= 0.0f)
-        return;
-
-    // This method is almost always called without the web thread lock held,
-    // in which case we need to grab the lock. It can be called with the
-    // web thread lock held via LCLayer::setParentLayer, which does a 
-    // synchronous commit, and is always called on the web thread. In
-    // that case the flag is set, indicating that we don't need to grab the
-    // web thread lock. This is all because the web thread lock is not re-entrant
-    // on the web thread, for policy reasons.
-    bool locked = false;
-    if (!WebThreadIsCurrent()  /* || !LCLayer::gInSynchronousCommit */) {
-        WebThreadLock();
-        locked = true;
-    }
-
-    ASSERT(WebThreadIsLocked());
-
-    [CATransaction lock];
-
-    id contents = [self contents];
-    
-    CABackingStoreRef backingStore;
-
-    if (contents && CFGetTypeID(contents) == CABackingStoreGetTypeID()) {
-        backingStore = (CABackingStoreRef)CFRetain(contents);
-    } else {
-        backingStore = CABackingStoreCreate();
-        CABackingStoreInvalidate(backingStore, NULL);
-    }
-    
-    [CATransaction unlock];
-    
-    if (backingStore) {
-        // FIXME cap to max size
-        int32_t width  = ceilf(layerBounds.size.width * m_contentsScale);
-        int32_t height = ceilf(layerBounds.size.height * m_contentsScale);
-        
-        uint32_t flags;
-        if ([self isOpaque])
-            flags = kCABackingStoreOpaque;
-        else
-            flags = kCABackingStoreCleared;
-        
-        CABackingStoreUpdate(backingStore, width, height, flags, backing_store_callback, self);
-        
-        if ((id)backingStore != contents)
-            [self setContents:(id)backingStore];
-        
-        [self setContentsChanged];
-        CFRelease(backingStore);
-    }
-    else {
 #ifndef NDEBUG
-        NSLog(@"*** failed to create backing store for layer %@", self);
+        if (m_layerOwner->showRepaintCounter()) {
+            CGRect bounds = [self bounds];
+            CGRect indicatorRect = CGRectMake(bounds.origin.x, bounds.origin.y, 46, 25);
+#if defined(BUILDING_ON_LEOPARD)
+            indicatorRect = CGRectApplyAffineTransform(indicatorRect, [self contentsTransform]);
+#endif
+            [super setNeedsDisplayInRect:indicatorRect];
+        }
 #endif
     }
-    
-    if (locked)
-        WebThreadUnlock();
-}
-
-- (void)drawScaledContentsInContext:(CGContextRef)inContext
-{
-    // CA layers default to flipped on iPhone
-    CGRect layerBounds = [self bounds];
-    int32_t height = ceilf(layerBounds.size.height * m_contentsScale);
-
-    CGContextTranslateCTM(inContext, 0.0f, height);
-    CGContextScaleCTM(inContext, 1.0f, -1.0f);
-
-    CGContextScaleCTM(inContext, m_contentsScale, m_contentsScale);
-
-    [self drawInContext:inContext];
 }
 
 - (void)drawInContext:(CGContextRef)context
@@ -295,22 +182,6 @@ static void backing_store_callback(CGContextRef inContext, void *info)
 - (GraphicsLayer*)layerOwner
 {
     return m_layerOwner;
-}
-
-- (float)contentsScale
-{
-    return m_contentsScale;
-}
-
-- (void)setContentsScale:(float)scale
-{
-    if (scale != m_contentsScale)
-    {
-        m_contentsScale = scale;
-        
-        [self setContents:nil];
-        [self setNeedsDisplay];
-    }
 }
 
 @end

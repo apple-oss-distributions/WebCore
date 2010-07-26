@@ -28,12 +28,11 @@
 #import "Logging.h"
 #import "SimpleFontData.h"
 #import "WebCoreSystemInterface.h"
-#import "WebCoreTextRenderer.h"
 
+#import "BitmapImage.h"
+#import "WAKView.h"
 #import "WKGraphics.h"
 #import <GraphicsServices/GraphicsServices.h>
-#import "WAKView.h"
-#import "BitmapImage.h"
 #import <wtf/StdLibExtras.h>
 #import <wtf/Threading.h>
 
@@ -77,7 +76,12 @@ static PassRefPtr<Image> smileImage(int imageNumber)
     }
     return 0;
 }
-    
+
+bool Font::canReturnFallbackFontsForComplexText()
+{
+    return true;
+}
+
 void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, const GlyphBuffer& glyphBuffer, int from, int numGlyphs, const FloatPoint& point, bool /*setColor*/) const
 {
     CGContextRef cgContext = WKGetCurrentGraphicsContext();
@@ -93,7 +97,7 @@ void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, cons
         for (int i = from; i < from + numGlyphs; i++) {
             const Glyph glyph = glyphBuffer.glyphAt(i);
             
-            const int pointSize = font->m_font.m_size;
+            const int pointSize = font->platformData().m_size;
             const int imageGlyphSize = std::min(pointSize + (pointSize <= 15 ? 2 : 4), 20); // scale images below 16 pt.
             IntRect dstRect;
             dstRect.setWidth(imageGlyphSize);
@@ -101,12 +105,12 @@ void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, cons
             dstRect.setX(point.x() + 1 + advance);
             
             // these magic rules place the image glyph vertically as per HI specifications.
-            if (font->m_font.m_size >= 26)
+            if (font->platformData().m_size >= 26)
                 dstRect.setY(point.y() -  20);                
-            else if (font->m_font.m_size >= 16)
-                dstRect.setY(point.y() -  font->m_font.m_size * 0.35f - 10);
+            else if (font->platformData().m_size >= 16)
+                dstRect.setY(point.y() -  font->platformData().m_size * 0.35f - 10);
             else
-                dstRect.setY(point.y() -  font->m_font.m_size);
+                dstRect.setY(point.y() -  font->platformData().m_size);
 
             RefPtr<Image> image = smileImage(glyph);
             if (image)
@@ -117,7 +121,7 @@ void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, cons
     }
 
     bool originalShouldUseFontSmoothing = CGContextGetShouldSmoothFonts(cgContext);
-    bool newShouldUseFontSmoothing = WebCoreShouldUseFontSmoothing();
+    bool newShouldUseFontSmoothing = shouldUseSmoothing();
     
     if (originalShouldUseFontSmoothing != newShouldUseFontSmoothing)
         CGContextSetShouldSmoothFonts(cgContext, newShouldUseFontSmoothing);
@@ -125,13 +129,13 @@ void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, cons
 #if !PLATFORM(IPHONE_SIMULATOR)
     // Font smoothing style
     CGFontSmoothingStyle originalFontSmoothingStyle = CGContextGetFontSmoothingStyle(cgContext);
-    CGFontSmoothingStyle fontSmoothingStyle = WebCoreFontSmoothingStyle();
+    CGFontSmoothingStyle fontSmoothingStyle = Font::smoothingStyle();
     if (newShouldUseFontSmoothing && fontSmoothingStyle != originalFontSmoothingStyle)
         CGContextSetFontSmoothingStyle(cgContext, fontSmoothingStyle);
     
     // Font antialiasing style
     CGFontAntialiasingStyle originalFontAntialiasingStyle = CGContextGetFontAntialiasingStyle(cgContext);
-    CGFontAntialiasingStyle fontAntialiasingStyle = WebCoreFontAntialiasingStyle();
+    CGFontAntialiasingStyle fontAntialiasingStyle = Font::antialiasingStyle();
     if (fontAntialiasingStyle != originalFontAntialiasingStyle)
         CGContextSetFontAntialiasingStyle(cgContext, fontAntialiasingStyle);
 #endif
@@ -164,8 +168,8 @@ void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, cons
         context->setFillColor(shadowFillColor);
         CGContextSetTextPosition(cgContext, point.x() + shadowSize.width(), point.y() + shadowSize.height());
         CGContextShowGlyphsWithAdvances(cgContext, glyphBuffer.glyphs(from), glyphBuffer.advances(from), numGlyphs);
-        if (font->m_syntheticBoldOffset) {
-            CGContextSetTextPosition(cgContext, point.x() + shadowSize.width() + font->m_syntheticBoldOffset, point.y() + shadowSize.height());
+        if (font->syntheticBoldOffset()) {
+            CGContextSetTextPosition(cgContext, point.x() + shadowSize.width() + font->syntheticBoldOffset(), point.y() + shadowSize.height());
             CGContextShowGlyphsWithAdvances(cgContext, glyphBuffer.glyphs(from), glyphBuffer.advances(from), numGlyphs);
         }
         context->setFillColor(fillColor);
@@ -173,8 +177,8 @@ void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, cons
 
     CGContextSetTextPosition(cgContext, point.x(), point.y());
     CGContextShowGlyphsWithAdvances(cgContext, glyphBuffer.glyphs(from), glyphBuffer.advances(from), numGlyphs);
-    if (font->m_syntheticBoldOffset) {
-        CGContextSetTextPosition(cgContext, point.x() + font->m_syntheticBoldOffset, point.y());
+    if (font->syntheticBoldOffset()) {
+        CGContextSetTextPosition(cgContext, point.x() + font->syntheticBoldOffset(), point.y());
         CGContextShowGlyphsWithAdvances(cgContext, glyphBuffer.glyphs(from), glyphBuffer.advances(from), numGlyphs);
     }
 

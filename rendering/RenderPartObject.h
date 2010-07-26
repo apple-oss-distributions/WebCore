@@ -1,9 +1,7 @@
 /*
- * This file is part of the KDE project.
- *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 2000 Simon Hausmann <hausmann@kde.org>
- * Copyright (C) 2006 Apple Computer, Inc.
+ * Copyright (C) 2006, 2009 Apple Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -29,24 +27,23 @@
 
 namespace WebCore {
 
+// Renderer for iframes. Is subclassed in RenderEmbeddedObject for object and embed.
 class RenderPartObject : public RenderPart {
 public:
     RenderPartObject(Element*);
-    virtual ~RenderPartObject();
 
+    virtual void calcWidth();
+    virtual void calcHeight();
+
+private:
     virtual const char* renderName() const { return "RenderPartObject"; }
 
     virtual void layout();
 
-    bool shouldResizeFrameToContent() const;
-    virtual void calcWidth();
-    virtual void calcHeight();
-    void setUpdatingWidget(bool updatingWidget) { m_updatingWidget = updatingWidget; }
-    void updateWidget(bool onlyCreateNonNetscapePlugins);
-
     virtual void viewCleared();
-private:
-    bool m_updatingWidget;
+
+    bool suggestResizeFrameToContent() const;
+
     bool m_didResizeFrameToContent;
 };
 

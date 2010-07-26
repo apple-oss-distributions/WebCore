@@ -45,7 +45,12 @@ typedef unsigned WPARAM;
 typedef long LPARAM;
 #endif
 
-#include <GraphicsServices/GSEvent.h>
+#include <wtf/RetainPtr.h>
+#ifdef __OBJC__
+@class WebEvent;
+#else
+class WebEvent;
+#endif
 
 #if PLATFORM(GTK)
 typedef struct _GdkEventKey GdkEventKey;
@@ -128,8 +133,8 @@ namespace WebCore {
         static bool currentCapsLockState();
 
 #if PLATFORM(MAC)
-        PlatformKeyboardEvent(GSEventRef);
-        GSEventRef gsEvent() const { return m_gsEvent.get(); }
+        PlatformKeyboardEvent(WebEvent *);
+        WebEvent *event() const { return m_Event.get(); }
 #endif
 
 #if PLATFORM(WIN)
@@ -169,7 +174,7 @@ namespace WebCore {
         bool m_metaKey;
 
 #if PLATFORM(MAC)
-        RetainPtr<__GSEvent> m_gsEvent;
+        RetainPtr<WebEvent> m_Event;
 #endif
 #if PLATFORM(WIN) || PLATFORM(CHROMIUM)
         bool m_isSystemKey;

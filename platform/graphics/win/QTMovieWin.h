@@ -53,14 +53,21 @@ enum {
     QTMovieLoadStateComplete = 100000L
 };
 
+typedef const struct __CFURL * CFURLRef;
+
 class QTMOVIEWIN_API QTMovieWin {
 public:
     static bool initializeQuickTime();
 
+    typedef void (*SetTaskTimerDelayFunc)(double);
+    typedef void (*StopTaskTimerFunc)();
+    static void setTaskTimerFuncs(SetTaskTimerDelayFunc, StopTaskTimerFunc);
+    static void taskTimerFired();
+
     QTMovieWin(QTMovieWinClient*);
     ~QTMovieWin();
 
-    void load(const UChar* url, int len);
+    void load(const UChar* url, int len, bool preservesPitch);
     long loadState() const;
     float maxTimeLoaded() const;
 
@@ -75,6 +82,7 @@ public:
     void setCurrentTime(float) const;
 
     void setVolume(float);
+    void setPreservesPitch(bool);
 
     unsigned dataSize() const;
 
@@ -84,15 +92,20 @@ public:
     void setVisible(bool);
     void paint(HDC, int x, int y);
 
-    void disableUnsupportedTracks(unsigned& enabledTrackCount);
+    void disableUnsupportedTracks(unsigned& enabledTrackCount, unsigned& totalTrackCount);
+    void setDisabled(bool);
 
     bool hasVideo() const;
+    bool hasAudio() const;
 
     static unsigned countSupportedTypes();
     static void getSupportedType(unsigned index, const UChar*& str, unsigned& len);
 
 private:
+    void load(CFURLRef, bool preservesPitch);
+
     QTMovieWinPrivate* m_private;
+    bool m_disabled;
     friend class QTMovieWinPrivate;
 };
 

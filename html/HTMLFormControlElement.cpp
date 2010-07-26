@@ -25,6 +25,7 @@
 #include "config.h"
 #include "HTMLFormControlElement.h"
 
+#include "ChromeClient.h"
 #include "Document.h"
 #include "EventHandler.h"
 #include "Event.h"
@@ -35,6 +36,9 @@
 #include "HTMLNames.h"
 #include "HTMLParser.h"
 #include "HTMLTokenizer.h"
+#include "MappedAttribute.h"
+#include "Page.h"
+#include "RenderBox.h"
 #include "RenderTheme.h"
 
 namespace WebCore {
@@ -68,17 +72,17 @@ void HTMLFormControlElement::parseMappedAttribute(MappedAttribute *attr)
         bool oldDisabled = m_disabled;
         m_disabled = !attr->isNull();
         if (oldDisabled != m_disabled) {
-            setChanged();
+            setNeedsStyleRecalc();
             if (renderer() && renderer()->style()->hasAppearance())
-                theme()->stateChanged(renderer(), EnabledState);
+                renderer()->theme()->stateChanged(renderer(), EnabledState);
         }
     } else if (attr->name() == readonlyAttr) {
         bool oldReadOnly = m_readOnly;
         m_readOnly = !attr->isNull();
         if (oldReadOnly != m_readOnly) {
-            setChanged();
+            setNeedsStyleRecalc();
             if (renderer() && renderer()->style()->hasAppearance())
-                theme()->stateChanged(renderer(), ReadOnlyState);
+                renderer()->theme()->stateChanged(renderer(), ReadOnlyState);
         }
     } else
         HTMLElement::parseMappedAttribute(attr);
@@ -99,8 +103,12 @@ void HTMLFormControlElement::attach()
     // Focus the element if it should honour its autofocus attribute.
     // We have to determine if the element is a TextArea/Input/Button/Select,
     // if input type hidden ignore autofocus. So if disabled or readonly.
-    if (autofocus() && renderer() && !document()->ignoreAutofocus() && !isReadOnlyControl() &&
-            ((hasTagName(inputTag) && !isInputTypeHidden()) || hasTagName(selectTag) ||
+    bool isInputTypeHidden = false;
+    if (hasTagName(inputTag))
+        isInputTypeHidden = static_cast<HTMLInputElement*>(this)->isInputTypeHidden();
+
+    if (autofocus() && renderer() && !document()->ignoreAutofocus() && !isReadOnlyFormControl() &&
+            ((hasTagName(inputTag) && !isInputTypeHidden) || hasTagName(selectTag) ||
               hasTagName(buttonTag) || hasTagName(textareaTag)))
          focus();
 }
@@ -147,7 +155,7 @@ void HTMLFormControlElement::removedFromTree(bool deep)
     HTMLElement::removedFromTree(deep);
 }
 
-const AtomicString& HTMLFormControlElement::name() const
+const AtomicString& HTMLFormControlElement::formControlName() const
 {
     const AtomicString& n = getAttribute(nameAttr);
     return n.isNull() ? emptyAtom : n;
@@ -158,9 +166,9 @@ void HTMLFormControlElement::setName(const AtomicString &value)
     setAttribute(nameAttr, value);
 }
 
-void HTMLFormControlElement::onChange()
+void HTMLFormControlElement::dispatchFormControlChangeEvent()
 {
-    dispatchEventForType(eventNames().changeEvent, true, false);
+    dispatchEvent(eventNames().changeEvent, true, false);
 }
 
 bool HTMLFormControlElement::disabled() const
@@ -234,9 +242,25 @@ bool HTMLFormControlElement::willValidate() const
     //      The control does not have a repetition template as an ancestor.
     //      The control does not have a datalist element as an ancestor.
     //      The control is not an output element.
-    return form() && name().length() && !disabled() && !isReadOnlyControl();
+    return form() && name().length() && !disabled() && !isReadOnlyFormControl();
 }
     
+void HTMLFormControlElement::dispatchFocusEvent()
+{
+    if (document()->frame() && document()->frame()->page())
+        document()->frame()->page()->chrome()->client()->formDidFocus(this);
+
+    HTMLElement::dispatchFocusEvent();
+}
+
+void HTMLFormControlElement::dispatchBlurEvent()
+{
+    if (document()->frame() && document()->frame()->page())
+        document()->frame()->page()->chrome()->client()->formDidBlur(this);
+
+    HTMLElement::dispatchBlurEvent();
+}
+
 bool HTMLFormControlElement::supportsFocus() const
 {
     return isFocusable() || (!disabled() && !document()->haveStylesheetsLoaded());
@@ -258,23 +282,23 @@ void HTMLFormControlElement::removeFromForm()
 HTMLFormControlElementWithState::HTMLFormControlElementWithState(const QualifiedName& tagName, Document* doc, HTMLFormElement* f)
     : HTMLFormControlElement(tagName, doc, f)
 {
-    FormControlElementWithState::registerFormControlElementWithState(this, document());
+    document()->registerFormElementWithState(this);
 }
 
 HTMLFormControlElementWithState::~HTMLFormControlElementWithState()
 {
-    FormControlElementWithState::unregisterFormControlElementWithState(this, document());
+    document()->unregisterFormElementWithState(this);
 }
 
 void HTMLFormControlElementWithState::willMoveToNewOwnerDocument()
 {
-    FormControlElementWithState::unregisterFormControlElementWithState(this, document());
+    document()->unregisterFormElementWithState(this);
     HTMLFormControlElement::willMoveToNewOwnerDocument();
 }
 
 void HTMLFormControlElementWithState::didMoveToNewOwnerDocument()
 {
-    FormControlElementWithState::registerFormControlElementWithState(this, document());
+    document()->registerFormElementWithState(this);
     HTMLFormControlElement::didMoveToNewOwnerDocument();
 }
 
@@ -285,26 +309,10 @@ void HTMLFormControlElementWithState::finishParsingChildren()
     if (doc->hasStateForNewFormElements()) {
         String state;
         if (doc->takeStateForFormElement(name().impl(), type().impl(), state))
-            restoreState(state);
+            restoreFormControlState(state);
     }
 }
 
-void HTMLFormControlElement::dispatchFocusEvent()
-{
-    if (document()->frame())
-        document()->frame()->formElementDidFocus(this);
-    
-    HTMLElement::dispatchFocusEvent();
-}
-
-void HTMLFormControlElement::dispatchBlurEvent()
-{
-    if (document()->frame())
-        document()->frame()->formElementDidBlur(this);
-    
-    HTMLElement::dispatchBlurEvent();
-}
-    
 bool HTMLFormControlElement::autocorrect() const
 {
     if (hasAttribute(autocorrectAttr))

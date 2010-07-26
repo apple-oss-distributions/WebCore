@@ -29,16 +29,18 @@
 #include "config.h"
 #include "DatabaseTracker.h"
 
+#if ENABLE(DATABASE)
+
 #include "ChromeClient.h"
 #include "Database.h"
 #include "DatabaseTrackerClient.h"
 #include "Document.h"
-#include "FileSystem.h"
 #include "Logging.h"
 #include "OriginQuotaManager.h"
 #include "Page.h"
 #include "SecurityOrigin.h"
 #include "SecurityOriginHash.h"
+#include "SQLiteFileSystem.h"
 #include "SQLiteStatement.h"
 #include <wtf/MainThread.h>
 #include <wtf/StdLibExtras.h>
@@ -69,6 +71,7 @@ DatabaseTracker::DatabaseTracker()
     , m_thread(currentThread())
 #endif
 {
+    SQLiteFileSystem::registerSQLiteVFS();
 }
 
 void DatabaseTracker::setDatabaseDirectoryPath(const String& path)
@@ -87,26 +90,20 @@ const String& DatabaseTracker::databaseDirectoryPath() const
 String DatabaseTracker::trackerDatabasePath() const
 {
     ASSERT(WebThreadIsLockedOrDisabled());
-    if (m_databaseDirectoryPath.isEmpty())
-        return String();
-    return pathByAppendingComponent(m_databaseDirectoryPath, "Databases.db");
+    return SQLiteFileSystem::appendDatabaseFileNameToPath(m_databaseDirectoryPath, "Databases.db");
 }
 
 void DatabaseTracker::openTrackerDatabase(bool createIfDoesNotExist)
 {
     ASSERT(WebThreadIsLockedOrDisabled());
-    
+
     if (m_database.isOpen())
         return;
 
     String databasePath = trackerDatabasePath();
-    if (databasePath.isEmpty())
+    if (!SQLiteFileSystem::ensureDatabaseFileExists(databasePath, createIfDoesNotExist))
         return;
 
-    if (!createIfDoesNotExist && !fileExists(databasePath))
-        return;
-
-    makeAllDirectories(m_databaseDirectoryPath);
     if (!m_database.open(databasePath)) {
         // FIXME: What do do here?
         return;
@@ -126,7 +123,7 @@ void DatabaseTracker::openTrackerDatabase(bool createIfDoesNotExist)
 bool DatabaseTracker::canEstablishDatabase(Document* document, const String& name, const String& displayName, unsigned long estimatedSize)
 {
     ASSERT(WebThreadIsLockedOrDisabled());
-    
+
     // Populate the origins before we establish a database; this guarantees that quotaForOrigin
     // can run on the database thread later.
     populateOrigins();
@@ -174,7 +171,7 @@ bool DatabaseTracker::hasEntryForOrigin(SecurityOrigin* origin)
 bool DatabaseTracker::hasEntryForDatabase(SecurityOrigin* origin, const String& databaseIdentifier)
 {
     ASSERT(WebThreadIsLockedOrDisabled());
-    
+
     openTrackerDatabase(false);
     if (!m_database.isOpen())
         return false;
@@ -192,15 +189,13 @@ bool DatabaseTracker::hasEntryForDatabase(SecurityOrigin* origin, const String& 
 String DatabaseTracker::originPath(SecurityOrigin* origin) const
 {
     ASSERT(WebThreadIsLockedOrDisabled());
-    if (m_databaseDirectoryPath.isEmpty())
-        return String();
-    return pathByAppendingComponent(m_databaseDirectoryPath, origin->databaseIdentifier());
+    return SQLiteFileSystem::appendDatabaseFileNameToPath(m_databaseDirectoryPath, origin->databaseIdentifier());
 }
 
 String DatabaseTracker::fullPathForDatabase(SecurityOrigin* origin, const String& name, bool createIfNotExists)
 {
     ASSERT(WebThreadIsLockedOrDisabled());
-    
+
     if (m_proposedDatabase && m_proposedDatabase->first == origin && m_proposedDatabase->second.name() == name)
         return String();
 
@@ -208,7 +203,7 @@ String DatabaseTracker::fullPathForDatabase(SecurityOrigin* origin, const String
     String originPath = this->originPath(origin);
     
     // Make sure the path for this SecurityOrigin exists
-    if (createIfNotExists && !makeAllDirectories(originPath))
+    if (createIfNotExists && !SQLiteFileSystem::ensureDatabaseDirectoryExists(originPath))
         return String();
     
     // See if we have a path for this database yet
@@ -226,7 +221,7 @@ String DatabaseTracker::fullPathForDatabase(SecurityOrigin* origin, const String
     int result = statement.step();
 
     if (result == SQLResultRow)
-        return pathByAppendingComponent(originPath, statement.getColumnText(0));
+        return SQLiteFileSystem::appendDatabaseFileNameToPath(originPath, statement.getColumnText(0));
     if (!createIfNotExists)
         return String();
         
@@ -243,33 +238,20 @@ String DatabaseTracker::fullPathForDatabase(SecurityOrigin* origin, const String
         return String();
     result = sequenceStatement.step();
 
-    // This has a range of 2^63 and starts at 0 for every time a user resets Safari -
-    // I can't imagine it'd over overflow
-    int64_t seq = 0;
-    if (result == SQLResultRow) {
-        seq = sequenceStatement.getColumnInt64(0);
-    } else if (result != SQLResultDone)
-        return String();
-    sequenceStatement.finalize();
-
-    String filename;
-    do {
-        ++seq;
-        filename = pathByAppendingComponent(originPath, String::format("%016llx.db", seq));
-    } while (fileExists(filename));
-
-    if (!addDatabase(origin, name, String::format("%016llx.db", seq)))
+    String fileName = SQLiteFileSystem::getFileNameForNewDatabase(originPath, origin->databaseIdentifier(), name, &m_database);
+    if (!addDatabase(origin, name, fileName))
         return String();
 
     // If this origin's quota is being tracked (open handle to a database in this origin), add this new database
     // to the quota manager now
+    String fullFilePath = SQLiteFileSystem::appendDatabaseFileNameToPath(originPath, fileName);
     {
         Locker<OriginQuotaManager> locker(originQuotaManager());
         if (originQuotaManager().tracksOrigin(origin))
-            originQuotaManager().addDatabase(origin, name, filename);
+            originQuotaManager().addDatabase(origin, name, fullFilePath);
     }
     
-    return filename;
+    return fullFilePath;
 }
 
 void DatabaseTracker::populateOrigins()
@@ -278,7 +260,7 @@ void DatabaseTracker::populateOrigins()
         return;
 
     ASSERT(WebThreadIsLockedOrDisabled());
-    
+
     m_quotaMap.set(new QuotaMap);
     m_quotaManager.set(new OriginQuotaManager);
 
@@ -369,7 +351,7 @@ DatabaseDetails DatabaseTracker::detailsForNameAndOrigin(const String& name, Sec
 void DatabaseTracker::setDatabaseDetails(SecurityOrigin* origin, const String& name, const String& displayName, unsigned long estimatedSize)
 {
     ASSERT(WebThreadIsLockedOrDisabled());
-    
+
     String originIdentifier = origin->databaseIdentifier();
     int64_t guid = 0;
     
@@ -421,13 +403,12 @@ void DatabaseTracker::setDatabaseDetails(SecurityOrigin* origin, const String& n
 unsigned long long DatabaseTracker::usageForDatabase(const String& name, SecurityOrigin* origin)
 {
     ASSERT(WebThreadIsLockedOrDisabled());
-    
+
     String path = fullPathForDatabase(origin, name, false);
     if (path.isEmpty())
         return 0;
         
-    long long size;
-    return getFileSize(path, size) ? size : 0;
+    return SQLiteFileSystem::getDatabaseFileSize(path);
 }
 
 void DatabaseTracker::addOpenDatabase(Database* database)
@@ -668,7 +649,7 @@ void DatabaseTracker::deleteOrigin(SecurityOrigin* origin)
         return;
     }
 
-    deleteEmptyDirectory(originPath(origin));
+    SQLiteFileSystem::deleteEmptyDatabaseDirectory(originPath(origin));
 
     RefPtr<SecurityOrigin> originPossiblyLastReference = origin;
     {
@@ -682,8 +663,8 @@ void DatabaseTracker::deleteOrigin(SecurityOrigin* origin)
         if (m_quotaMap->isEmpty()) {
             if (m_database.isOpen())
                 m_database.close();
-            deleteFile(trackerDatabasePath());
-            deleteEmptyDirectory(m_databaseDirectoryPath);
+           SQLiteFileSystem::deleteDatabaseFile(trackerDatabasePath());
+           SQLiteFileSystem::deleteEmptyDatabaseDirectory(m_databaseDirectoryPath);
         }
     }
 
@@ -766,7 +747,7 @@ bool DatabaseTracker::deleteDatabaseFile(SecurityOrigin* origin, const String& n
     for (unsigned i = 0; i < deletedDatabases.size(); ++i)
         deletedDatabases[i]->markAsDeletedAndClose();
 
-    return deleteFile(fullPath);
+    return SQLiteFileSystem::deleteDatabaseFile(fullPath);
 }
 
 void DatabaseTracker::setClient(DatabaseTrackerClient* client)
@@ -833,3 +814,4 @@ void DatabaseTracker::notifyDatabasesChanged(void*)
 
 
 } // namespace WebCore
+#endif

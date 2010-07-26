@@ -40,7 +40,5 @@
 #import <WebCore/DOMUIEvent.h>
 #import <WebCore/DOMWheelEvent.h>
 
-#if ENABLE(TOUCH_EVENTS)
 #import <WebCore/DOMTouchEvent.h>
 #import <WebCore/DOMGestureEvent.h>
-#endif

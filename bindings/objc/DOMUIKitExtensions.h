@@ -6,6 +6,32 @@
 //
 
 
+#import <WebCore/DOMElement.h>
+#import <WebCore/DOMExtensions.h>
+#import <WebCore/DOMHTMLAreaElement.h>
+#import <WebCore/DOMHTMLImageElement.h>
+#import <WebCore/DOMHTMLSelectElement.h>
+#import <WebCore/DOMNode.h>
+#import <WebCore/DOMRange.h>
+
+typedef enum { 
+    // The first four match SelectionController::EDirection.  The last two don't have WebKit counterparts because
+    // they aren't necessary until there is support vertical layout.
+    WebTextAdjustmentForward,
+    WebTextAdjustmentBackward,
+    WebTextAdjustmentRight,
+    WebTextAdjustmentLeft,
+    WebTextAdjustmentUp,
+    WebTextAdjustmentDown
+} WebTextAdjustmentDirection; 
+
+@interface DOMRange (UIKitExtensions)
+
+- (void)move:(UInt32)amount inDirection:(WebTextAdjustmentDirection)direction;
+- (void)extend:(UInt32)amount inDirection:(WebTextAdjustmentDirection)direction;
+
+@end
+
 @interface DOMNode (UIKitExtensions)
 - (NSArray *)borderRadii;
 - (NSArray *)boundingBoxes;
@@ -17,7 +43,6 @@
 - (CGFloat)textHeight;
 - (DOMNode *)findExplodedTextNodeAtPoint:(CGPoint)point;  // A second-chance pass to look for text nodes missed by the hit test.
 @end
-
 
 @interface DOMHTMLAreaElement (UIKitExtensions)
 - (CGRect)boundingBoxWithOwner:(DOMNode *)anOwner;
@@ -32,7 +57,7 @@
 @end
 
 @interface DOMHTMLImageElement (WebDOMHTMLImageElementOperationsPrivate)
-- (NSData *)createNSDataRepresentation:(BOOL)rawImageData;
+- (NSData *)dataRepresentation:(BOOL)rawImageData;
 - (NSString *)mimeType;
 @end
 

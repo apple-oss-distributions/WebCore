@@ -212,7 +212,6 @@ void ImageBuffer::putImageData(ImageData* source, const IntRect& sourceRect, con
 
 static RetainPtr<CFStringRef> utiFromMIMEType(const String& mimeType)
 {
-    // <rdar://problem/6148917> MERGE: Fix canvas.toDataURL() on iPhone WebKit
     // FIXME: Add Windows support for all the supported UTIs when a way to convert from MIMEType to UTI reliably is found.
     // For now, only support PNG, JPEG, and GIF. See <rdar://problem/6095286>.
     static const CFStringRef kUTTypePNG = CFSTR("public.png");

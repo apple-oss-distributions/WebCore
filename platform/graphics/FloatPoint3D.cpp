@@ -21,7 +21,6 @@
 
 #include "config.h"
 
-#if ENABLE(SVG) || USE(ACCELERATED_COMPOSITING)
 #include <math.h>
 #include "FloatPoint.h"
 #include "FloatPoint3D.h"
@@ -62,4 +61,3 @@ void FloatPoint3D::normalize()
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG) || USE(ACCELERATED_COMPOSITING)

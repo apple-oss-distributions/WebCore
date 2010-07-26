@@ -26,6 +26,7 @@
 
 #include "CSSMediaRule.h"
 #include "CSSParser.h"
+#include "CSSPrimitiveValue.h"
 #include "CSSPropertyNames.h"
 #include "CSSRuleList.h"
 #include "CSSSelector.h"
@@ -1180,7 +1181,7 @@ pseudo:
     }
     // used by :not
     | ':' NOTFUNCTION maybe_space simple_selector maybe_space ')' {
-        if (!$4)
+        if (!$4 || $4->simpleSelector() || $4->tagHistory())
             $$ = 0;
         else {
             CSSParser* p = static_cast<CSSParser*>(parser);
@@ -1380,7 +1381,9 @@ term:
   | variable_reference maybe_space {
       $$ = $1;
   }
-  | '%' maybe_space {} /* Handle width: %; */
+  | '%' maybe_space { /* Handle width: %; */
+      $$.id = 0; $$.unit = 0;
+  }
   ;
 
 unary_term:

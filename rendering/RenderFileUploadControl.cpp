@@ -22,6 +22,7 @@
 #include "RenderFileUploadControl.h"
 
 #include "FileList.h"
+#include "Frame.h"
 #include "FrameView.h"
 #include "GraphicsContext.h"
 #include "HTMLInputElement.h"
@@ -81,10 +82,10 @@ void RenderFileUploadControl::styleDidChange(StyleDifference diff, const RenderS
 
 void RenderFileUploadControl::valueChanged()
 {
-    // onChange may destroy this renderer
+    // dispatchFormControlChangeEvent may destroy this renderer
 
     HTMLInputElement* inputElement = static_cast<HTMLInputElement*>(node());
-    inputElement->onChange();
+    inputElement->dispatchFormControlChangeEvent();
  
     // only repaint if it doesn't seem we have been destroyed
         repaint();
@@ -131,7 +132,7 @@ int RenderFileUploadControl::maxFilenameWidth() const
 
 PassRefPtr<RenderStyle> RenderFileUploadControl::createButtonStyle(const RenderStyle* parentStyle) const
 {
-    RefPtr<RenderStyle> style = getCachedPseudoStyle(RenderStyle::FILE_UPLOAD_BUTTON);
+    RefPtr<RenderStyle> style = getCachedPseudoStyle(FILE_UPLOAD_BUTTON);
     if (!style) {
         style = RenderStyle::create();
         if (parentStyle)

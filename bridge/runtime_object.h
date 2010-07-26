@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2008, 2009 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,20 +34,20 @@ namespace JSC {
 class RuntimeObjectImp : public JSObject {
 public:
     RuntimeObjectImp(ExecState*, PassRefPtr<Bindings::Instance>);
-
     virtual ~RuntimeObjectImp();
 
     virtual bool getOwnPropertySlot(ExecState*, const Identifier& propertyName, PropertySlot&);
-    virtual void put(ExecState*, const Identifier& propertyName, JSValuePtr, PutPropertySlot&);
-    virtual bool deleteProperty(ExecState* , const Identifier& propertyName);
-    virtual JSValuePtr defaultValue(ExecState*, PreferredPrimitiveType) const;
+    virtual void put(ExecState*, const Identifier& propertyName, JSValue, PutPropertySlot&);
+    virtual bool deleteProperty(ExecState*, const Identifier& propertyName);
+    virtual JSValue defaultValue(ExecState*, PreferredPrimitiveType) const;
     virtual CallType getCallData(CallData&);
     virtual ConstructType getConstructData(ConstructData&);
     
     virtual void getPropertyNames(ExecState*, PropertyNameArray&);
 
-    virtual void invalidate();
-    Bindings::Instance* getInternalInstance() const { return instance.get(); }
+    void invalidate();
+
+    Bindings::Instance* getInternalInstance() const { return m_instance.get(); }
 
     static JSObject* throwInvalidAccessError(ExecState*);
 
@@ -58,7 +58,7 @@ public:
         return globalObject->objectPrototype();
     }
 
-    static PassRefPtr<Structure> createStructure(JSValuePtr prototype)
+    static PassRefPtr<Structure> createStructure(JSValue prototype)
     {
         return Structure::create(prototype, TypeInfo(ObjectType));
     }
@@ -69,11 +69,11 @@ protected:
 private:
     virtual const ClassInfo* classInfo() const { return &s_info; }
     
-    static JSValuePtr fallbackObjectGetter(ExecState*, const Identifier&, const PropertySlot&);
-    static JSValuePtr fieldGetter(ExecState*, const Identifier&, const PropertySlot&);
-    static JSValuePtr methodGetter(ExecState*, const Identifier&, const PropertySlot&);
+    static JSValue fallbackObjectGetter(ExecState*, const Identifier&, const PropertySlot&);
+    static JSValue fieldGetter(ExecState*, const Identifier&, const PropertySlot&);
+    static JSValue methodGetter(ExecState*, const Identifier&, const PropertySlot&);
 
-    RefPtr<Bindings::Instance> instance;
+    RefPtr<Bindings::Instance> m_instance;
 };
     
 } // namespace

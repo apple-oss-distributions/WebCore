@@ -34,6 +34,8 @@
 
 #include "StringHash.h"
 
+using namespace std;
+
 namespace WebCore {
 
 inline RenderStyle* defaultStyle()
@@ -58,14 +60,7 @@ PassRefPtr<RenderStyle> RenderStyle::clone(const RenderStyle* other)
 }
 
 RenderStyle::RenderStyle()
-    : box(defaultStyle()->box)
-    , visual(defaultStyle()->visual)
-    , background(defaultStyle()->background)
-    , surround(defaultStyle()->surround)
-    , rareNonInheritedData(defaultStyle()->rareNonInheritedData)
-    , rareInheritedData(defaultStyle()->rareInheritedData)
-    , inherited(defaultStyle()->inherited)
-    , m_pseudoState(PseudoUnknown)
+    : m_pseudoState(PseudoUnknown)
     , m_affectedByAttributeSelectors(false)
     , m_unique(false)
     , m_affectedByEmpty(false)
@@ -78,6 +73,13 @@ RenderStyle::RenderStyle()
     , m_firstChildState(false)
     , m_lastChildState(false)
     , m_childIndex(0)
+    , box(defaultStyle()->box)
+    , visual(defaultStyle()->visual)
+    , background(defaultStyle()->background)
+    , surround(defaultStyle()->surround)
+    , rareNonInheritedData(defaultStyle()->rareNonInheritedData)
+    , rareInheritedData(defaultStyle()->rareInheritedData)
+    , inherited(defaultStyle()->inherited)
 #if ENABLE(SVG)
     , m_svgStyle(defaultStyle()->m_svgStyle)
 #endif
@@ -123,15 +125,6 @@ RenderStyle::RenderStyle(bool)
 
 RenderStyle::RenderStyle(const RenderStyle& o)
     : RefCounted<RenderStyle>()
-    , inherited_flags(o.inherited_flags)
-    , noninherited_flags(o.noninherited_flags)
-    , box(o.box)
-    , visual(o.visual)
-    , background(o.background)
-    , surround(o.surround)
-    , rareNonInheritedData(o.rareNonInheritedData)
-    , rareInheritedData(o.rareInheritedData)
-    , inherited(o.inherited)
     , m_pseudoState(o.m_pseudoState)
     , m_affectedByAttributeSelectors(false)
     , m_unique(false)
@@ -145,9 +138,18 @@ RenderStyle::RenderStyle(const RenderStyle& o)
     , m_firstChildState(false)
     , m_lastChildState(false)
     , m_childIndex(0)
+    , box(o.box)
+    , visual(o.visual)
+    , background(o.background)
+    , surround(o.surround)
+    , rareNonInheritedData(o.rareNonInheritedData)
+    , rareInheritedData(o.rareInheritedData)
+    , inherited(o.inherited)
 #if ENABLE(SVG)
     , m_svgStyle(o.m_svgStyle)
 #endif
+    , inherited_flags(o.inherited_flags)
+    , noninherited_flags(o.noninherited_flags)
 {
 }
 
@@ -189,7 +191,7 @@ bool RenderStyle::isStyleAvailable() const
     return this != CSSStyleSelector::styleNotYetAvailable();
 }
 
-static inline int pseudoBit(RenderStyle::PseudoId pseudo)
+static inline int pseudoBit(PseudoId pseudo)
 {
     return 1 << (pseudo - 1);
 }
@@ -208,7 +210,7 @@ void RenderStyle::setHasPseudoStyle(PseudoId pseudo)
     noninherited_flags._pseudoBits |= pseudoBit(pseudo);
 }
 
-RenderStyle* RenderStyle::getCachedPseudoStyle(PseudoId pid)
+RenderStyle* RenderStyle::getCachedPseudoStyle(PseudoId pid) const
 {
     if (!m_cachedPseudoStyle || styleType() != NOPSEUDO)
         return 0;
@@ -227,7 +229,14 @@ RenderStyle* RenderStyle::addCachedPseudoStyle(PassRefPtr<RenderStyle> pseudo)
     return m_cachedPseudoStyle.get();
 }
 
-bool RenderStyle::inheritedNotEqual(RenderStyle* other) const
+void RenderStyle::getPseudoStyleCache(PseudoStyleCache& cache) const
+{
+    ASSERT(cache.isEmpty());
+    for (RenderStyle* pseudoStyle = m_cachedPseudoStyle.get(); pseudoStyle; pseudoStyle = pseudoStyle->m_cachedPseudoStyle.get())
+        cache.append(pseudoStyle);
+}
+
+bool RenderStyle::inheritedNotEqual(const RenderStyle* other) const
 {
     return inherited_flags != other->inherited_flags ||
            inherited != other->inherited ||
@@ -254,7 +263,7 @@ uint32_t RenderStyle::hashForTextAutosizing() const
     hash ^= rareNonInheritedData->m_appearance;
     hash ^= rareNonInheritedData->marginTopCollapse;
     hash ^= rareNonInheritedData->marginBottomCollapse;
-    hash ^= rareNonInheritedData->lineClamp;
+    hash ^= rareNonInheritedData->lineClamp.value();
     hash ^= rareInheritedData->wordWrap;
     hash ^= rareInheritedData->nbspMode;
     hash ^= rareInheritedData->khtmlLineBreak;
@@ -462,14 +471,14 @@ StyleDifference RenderStyle::diff(const RenderStyle* other, unsigned& changedCon
         // In the collapsing border model, 'hidden' suppresses other borders, while 'none'
         // does not, so these style differences can be width differences.
         if (inherited_flags._border_collapse &&
-            (borderTopStyle() == BHIDDEN && other->borderTopStyle() == BNONE ||
-             borderTopStyle() == BNONE && other->borderTopStyle() == BHIDDEN ||
-             borderBottomStyle() == BHIDDEN && other->borderBottomStyle() == BNONE ||
-             borderBottomStyle() == BNONE && other->borderBottomStyle() == BHIDDEN ||
-             borderLeftStyle() == BHIDDEN && other->borderLeftStyle() == BNONE ||
-             borderLeftStyle() == BNONE && other->borderLeftStyle() == BHIDDEN ||
-             borderRightStyle() == BHIDDEN && other->borderRightStyle() == BNONE ||
-             borderRightStyle() == BNONE && other->borderRightStyle() == BHIDDEN))
+            ((borderTopStyle() == BHIDDEN && other->borderTopStyle() == BNONE) ||
+             (borderTopStyle() == BNONE && other->borderTopStyle() == BHIDDEN) ||
+             (borderBottomStyle() == BHIDDEN && other->borderBottomStyle() == BNONE) ||
+             (borderBottomStyle() == BNONE && other->borderBottomStyle() == BHIDDEN) ||
+             (borderLeftStyle() == BHIDDEN && other->borderLeftStyle() == BNONE) ||
+             (borderLeftStyle() == BNONE && other->borderLeftStyle() == BHIDDEN) ||
+             (borderRightStyle() == BHIDDEN && other->borderRightStyle() == BNONE) ||
+             (borderRightStyle() == BNONE && other->borderRightStyle() == BHIDDEN)))
             return StyleDifferenceLayout;
     }
 
@@ -608,39 +617,6 @@ void RenderStyle::clearCursorList()
         inherited.access()->cursorData = 0;
 }
 
-bool RenderStyle::contentDataEquivalent(const RenderStyle* otherStyle) const
-{
-    ContentData* c1 = rareNonInheritedData->m_content.get();
-    ContentData* c2 = otherStyle->rareNonInheritedData->m_content.get();
-
-    while (c1 && c2) {
-        if (c1->m_type != c2->m_type)
-            return false;
-
-        switch (c1->m_type) {
-            case CONTENT_NONE:
-                break;
-            case CONTENT_TEXT:
-                if (!equal(c1->m_content.m_text, c2->m_content.m_text))
-                    return false;
-                break;
-            case CONTENT_OBJECT:
-                if (!StyleImage::imagesEquivalent(c1->m_content.m_image, c2->m_content.m_image))
-                    return false;
-                break;
-            case CONTENT_COUNTER:
-                if (*c1->m_content.m_counter != *c2->m_content.m_counter)
-                    return false;
-                break;
-        }
-
-        c1 = c1->m_next;
-        c2 = c2->m_next;
-    }
-
-    return !c1 && !c2;
-}
-
 void RenderStyle::clearContent()
 {
     if (rareNonInheritedData->m_content)
@@ -654,8 +630,8 @@ void RenderStyle::setContent(PassRefPtr<StyleImage> image, bool add)
 
     OwnPtr<ContentData>& content = rareNonInheritedData.access()->m_content;
     ContentData* lastContent = content.get();
-    while (lastContent && lastContent->m_next)
-        lastContent = lastContent->m_next;
+    while (lastContent && lastContent->next())
+        lastContent = lastContent->next();
 
     bool reuseContent = !add;
     ContentData* newContentData;
@@ -666,34 +642,30 @@ void RenderStyle::setContent(PassRefPtr<StyleImage> image, bool add)
         newContentData = new ContentData;
 
     if (lastContent && !reuseContent)
-        lastContent->m_next = newContentData;
+        lastContent->setNext(newContentData);
     else
         content.set(newContentData);
 
-    newContentData->m_content.m_image = image.releaseRef();
-    newContentData->m_type = CONTENT_OBJECT;
+    newContentData->setImage(image);
 }
 
-void RenderStyle::setContent(StringImpl* s, bool add)
+void RenderStyle::setContent(PassRefPtr<StringImpl> s, bool add)
 {
     if (!s)
         return; // The string is null. Nothing to do. Just bail.
 
     OwnPtr<ContentData>& content = rareNonInheritedData.access()->m_content;
     ContentData* lastContent = content.get();
-    while (lastContent && lastContent->m_next)
-        lastContent = lastContent->m_next;
+    while (lastContent && lastContent->next())
+        lastContent = lastContent->next();
 
     bool reuseContent = !add;
     if (add && lastContent) {
-        if (lastContent->m_type == CONTENT_TEXT) {
+        if (lastContent->isText()) {
             // We can augment the existing string and share this ContentData node.
-            StringImpl* oldStr = lastContent->m_content.m_text;
-            String newStr = oldStr;
-            newStr.append(s);
-            newStr.impl()->ref();
-            oldStr->deref();
-            lastContent->m_content.m_text = newStr.impl();
+            String newStr = lastContent->text();
+            newStr.append(s.get());
+            lastContent->setText(newStr.impl());
             return;
         }
     }
@@ -706,13 +678,11 @@ void RenderStyle::setContent(StringImpl* s, bool add)
         newContentData = new ContentData;
 
     if (lastContent && !reuseContent)
-        lastContent->m_next = newContentData;
+        lastContent->setNext(newContentData);
     else
         content.set(newContentData);
 
-    newContentData->m_content.m_text = s;
-    newContentData->m_content.m_text->ref();
-    newContentData->m_type = CONTENT_TEXT;
+    newContentData->setText(s);
 }
 
 void RenderStyle::setContent(CounterContent* c, bool add)
@@ -722,8 +692,8 @@ void RenderStyle::setContent(CounterContent* c, bool add)
 
     OwnPtr<ContentData>& content = rareNonInheritedData.access()->m_content;
     ContentData* lastContent = content.get();
-    while (lastContent && lastContent->m_next)
-        lastContent = lastContent->m_next;
+    while (lastContent && lastContent->next())
+        lastContent = lastContent->next();
 
     bool reuseContent = !add;
     ContentData* newContentData = 0;
@@ -734,12 +704,11 @@ void RenderStyle::setContent(CounterContent* c, bool add)
         newContentData = new ContentData;
 
     if (lastContent && !reuseContent)
-        lastContent->m_next = newContentData;
+        lastContent->setNext(newContentData);
     else
         content.set(newContentData);
 
-    newContentData->m_content.m_counter = c;
-    newContentData->m_type = CONTENT_COUNTER;
+    newContentData->setCounter(c);
 }
 
 void RenderStyle::applyTransform(TransformationMatrix& transform, const IntSize& borderBoxSize, ApplyTransformOrigin applyOrigin) const
@@ -814,6 +783,58 @@ void RenderStyle::setBoxShadow(ShadowData* shadowData, bool add)
 
     shadowData->next = rareData->m_boxShadow.release();
     rareData->m_boxShadow.set(shadowData);
+}
+
+void RenderStyle::getBorderRadiiForRect(const IntRect& r, IntSize& topLeft, IntSize& topRight, IntSize& bottomLeft, IntSize& bottomRight) const
+{
+    topLeft = surround->border.topLeft;
+    topRight = surround->border.topRight;
+    
+    bottomLeft = surround->border.bottomLeft;
+    bottomRight = surround->border.bottomRight;
+
+    // Constrain corner radii using CSS3 rules:
+    // http://www.w3.org/TR/css3-background/#the-border-radius
+    
+    float factor = 1;
+    unsigned radiiSum;
+
+    // top
+    radiiSum = static_cast<unsigned>(topLeft.width()) + static_cast<unsigned>(topRight.width()); // Casts to avoid integer overflow.
+    if (radiiSum > static_cast<unsigned>(r.width()))
+        factor = min(static_cast<float>(r.width()) / radiiSum, factor);
+
+    // bottom
+    radiiSum = static_cast<unsigned>(bottomLeft.width()) + static_cast<unsigned>(bottomRight.width());
+    if (radiiSum > static_cast<unsigned>(r.width()))
+        factor = min(static_cast<float>(r.width()) / radiiSum, factor);
+    
+    // left
+    radiiSum = static_cast<unsigned>(topLeft.height()) + static_cast<unsigned>(bottomLeft.height());
+    if (radiiSum > static_cast<unsigned>(r.height()))
+        factor = min(static_cast<float>(r.height()) / radiiSum, factor);
+    
+    // right
+    radiiSum = static_cast<unsigned>(topRight.height()) + static_cast<unsigned>(bottomRight.height());
+    if (radiiSum > static_cast<unsigned>(r.height()))
+        factor = min(static_cast<float>(r.height()) / radiiSum, factor);
+    
+    // Scale all radii by f if necessary.
+    if (factor < 1) {
+        // If either radius on a corner becomes zero, reset both radii on that corner.
+        topLeft.scale(factor);
+        if (!topLeft.width() || !topLeft.height())
+            topLeft = IntSize();
+        topRight.scale(factor);
+        if (!topRight.width() || !topRight.height())
+            topRight = IntSize();
+        bottomLeft.scale(factor);
+        if (!bottomLeft.width() || !bottomLeft.height())
+            bottomLeft = IntSize();
+        bottomRight.scale(factor);
+        if (!bottomRight.width() || !bottomRight.height())
+            bottomRight = IntSize();
+    }
 }
 
 const CounterDirectiveMap* RenderStyle::counterDirectives() const

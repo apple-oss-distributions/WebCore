@@ -25,11 +25,11 @@
 
 #include "config.h"
 #include "DragImage.h"
+
+#if ENABLE(DRAG_SUPPORT)
 #include "DragController.h"
 
 #include "Frame.h"
-
-#include <wtf/UnusedParam.h>
 
 namespace WebCore {
     
@@ -67,8 +67,12 @@ DragImageRef fitDragImageToMaxSize(DragImageRef image, const IntSize& srcSize, c
     
 DragImageRef createDragImageForSelection(Frame* frame)
 {
-    UNUSED_PARAM(frame);
-    return 0;
+    DragImageRef image = frame->dragImageForSelection();
+    if (image)
+        dissolveDragImageToFraction(image, DragController::DragImageAlpha);
+    return image;
 }
 
-}
+} // namespace WebCore
+
+#endif // ENABLE(DRAG_SUPPORT)

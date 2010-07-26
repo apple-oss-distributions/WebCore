@@ -57,6 +57,7 @@ Scrollbar::Scrollbar(ScrollbarClient* client, ScrollbarOrientation orientation, 
     , m_visibleSize(0)
     , m_totalSize(0)
     , m_currentPos(0)
+    , m_dragOrigin(0)
     , m_lineStep(0)
     , m_pageStep(0)
     , m_pixelStep(1)
@@ -92,13 +93,7 @@ bool Scrollbar::setValue(int v)
     v = max(min(v, m_totalSize - m_visibleSize), 0);
     if (value() == v)
         return false; // Our value stayed the same.
-    m_currentPos = v;
-
-    updateThumbPosition();
-
-    if (client())
-        client()->valueChanged(this);
-    
+    setCurrentPos(v);
     return true;
 }
 
@@ -139,20 +134,7 @@ bool Scrollbar::scroll(ScrollDirection direction, ScrollGranularity granularity,
         
     float newPos = m_currentPos + step * multiplier;
     float maxPos = m_totalSize - m_visibleSize;
-    newPos = max(min(newPos, maxPos), 0.0f);
-
-    if (newPos == m_currentPos)
-        return false;
-    
-    int oldValue = value();
-    m_currentPos = newPos;
-    updateThumbPosition();
-    
-    if (value() != oldValue && client())
-        client()->valueChanged(this);
-    
-    // return true even if the integer value did not change so that scroll event gets eaten
-    return true;
+    return setCurrentPos(max(min(newPos, maxPos), 0.0f));
 }
 
 void Scrollbar::updateThumbPosition()
@@ -269,15 +251,30 @@ void Scrollbar::moveThumb(int pos)
     int thumbLen = theme()->thumbLength(this);
     int trackLen = theme()->trackLength(this);
     int maxPos = trackLen - thumbLen;
-    int delta = pos - pressedPos();
+    int delta = pos - m_pressedPos;
     if (delta > 0)
         delta = min(maxPos - thumbPos, delta);
     else if (delta < 0)
         delta = max(-thumbPos, delta);
-    if (delta) {
-        setValue(static_cast<int>(static_cast<float>(thumbPos + delta) * maximum() / (trackLen - thumbLen)));
-        setPressedPos(pressedPos() + theme()->thumbPosition(this) - thumbPos);
-    }
+    if (delta)
+        setCurrentPos(static_cast<float>(thumbPos + delta) * maximum() / (trackLen - thumbLen));
+}
+
+bool Scrollbar::setCurrentPos(float pos)
+{
+    if (pos == m_currentPos)
+        return false;
+
+    int oldValue = value();
+    int oldThumbPos = theme()->thumbPosition(this);
+    m_currentPos = pos;
+    updateThumbPosition();
+    if (m_pressedPart == ThumbPart)
+        setPressedPos(m_pressedPos + theme()->thumbPosition(this) - oldThumbPos);
+
+    if (value() != oldValue && client())
+        client()->valueChanged(this);
+    return true;
 }
 
 void Scrollbar::setHoveredPart(ScrollbarPart part)
@@ -287,7 +284,7 @@ void Scrollbar::setHoveredPart(ScrollbarPart part)
 
     if ((m_hoveredPart == NoPart || part == NoPart) && theme()->invalidateOnMouseEnterExit())
         invalidate();  // Just invalidate the whole scrollbar, since the buttons at either end change anyway.
-    else if (m_pressedPart == NoPart) {
+    else if (m_pressedPart == NoPart) {  // When there's a pressed part, we don't draw a hovered state, so there's no reason to invalidate.
         theme()->invalidatePart(this, part);
         theme()->invalidatePart(this, m_hoveredPart);
     }
@@ -301,6 +298,8 @@ void Scrollbar::setPressedPart(ScrollbarPart part)
     m_pressedPart = part;
     if (m_pressedPart != NoPart)
         theme()->invalidatePart(this, m_pressedPart);
+    else if (m_hoveredPart != NoPart)  // When we no longer have a pressed part, we can start drawing a hovered state on the hovered part.
+        theme()->invalidatePart(this, m_hoveredPart);
 }
 
 
@@ -331,9 +330,10 @@ bool Scrollbar::mouseDown(const PlatformMouseEvent& evt)
     setPressedPart(theme()->hitTest(this, evt));
     int pressedPos = (orientation() == HorizontalScrollbar ? convertFromContainingWindow(evt.pos()).x() : convertFromContainingWindow(evt.pos()).y());
     
-    if ((pressedPart() == BackTrackPart || pressedPart() == ForwardTrackPart) && theme()->shouldCenterOnThumb(this, evt)) {
+    if ((m_pressedPart == BackTrackPart || m_pressedPart == ForwardTrackPart) && theme()->shouldCenterOnThumb(this, evt)) {
         setHoveredPart(ThumbPart);
         setPressedPart(ThumbPart);
+        m_dragOrigin = m_currentPos;
         int thumbLen = theme()->thumbLength(this);
         int desiredPos = pressedPos;
         // Set the pressed position to the middle of the thumb so that when we do the move, the delta
@@ -341,7 +341,8 @@ bool Scrollbar::mouseDown(const PlatformMouseEvent& evt)
         m_pressedPos = theme()->trackPosition(this) + theme()->thumbPosition(this) + thumbLen / 2;
         moveThumb(desiredPos);
         return true;
-    }
+    } else if (m_pressedPart == ThumbPart)
+        m_dragOrigin = m_currentPos;
     
     m_pressedPos = pressedPos;
 
@@ -354,9 +355,9 @@ void Scrollbar::setFrameRect(const IntRect& rect)
     // Get our window resizer rect and see if we overlap.  Adjust to avoid the overlap
     // if necessary.
     IntRect adjustedRect(rect);
-    if (parent()) {
-        bool overlapsResizer = false;
-        ScrollView* view = parent();
+    bool overlapsResizer = false;
+    ScrollView* view = parent();
+    if (view && !rect.isEmpty() && !view->windowResizerRect().isEmpty()) {
         IntRect resizerRect = view->convertFromContainingWindow(view->windowResizerRect());
         if (rect.intersects(resizerRect)) {
             if (orientation() == HorizontalScrollbar) {
@@ -373,11 +374,11 @@ void Scrollbar::setFrameRect(const IntRect& rect)
                 }
             }
         }
-
-        if (overlapsResizer != m_overlapsResizer) {
-            m_overlapsResizer = overlapsResizer;
+    }
+    if (overlapsResizer != m_overlapsResizer) {
+        m_overlapsResizer = overlapsResizer;
+        if (view)
             view->adjustScrollbarsAvoidingResizerCount(m_overlapsResizer ? 1 : -1);
-        }
     }
 
     Widget::setFrameRect(adjustedRect);
@@ -411,9 +412,36 @@ void Scrollbar::invalidateRect(const IntRect& rect)
         m_client->invalidateScrollbarRect(this, rect);
 }
 
-PlatformMouseEvent Scrollbar::transformEvent(const PlatformMouseEvent& event)
+IntRect Scrollbar::convertToContainingView(const IntRect& localRect) const
 {
-    return event;
+    if (m_client)
+        return m_client->convertFromScrollbarToContainingView(this, localRect);
+
+    return Widget::convertToContainingView(localRect);
+}
+
+IntRect Scrollbar::convertFromContainingView(const IntRect& parentRect) const
+{
+    if (m_client)
+        return m_client->convertFromContainingViewToScrollbar(this, parentRect);
+
+    return Widget::convertFromContainingView(parentRect);
+}
+
+IntPoint Scrollbar::convertToContainingView(const IntPoint& localPoint) const
+{
+    if (m_client)
+        return m_client->convertFromScrollbarToContainingView(this, localPoint);
+
+    return Widget::convertToContainingView(localPoint);
+}
+
+IntPoint Scrollbar::convertFromContainingView(const IntPoint& parentPoint) const
+{
+    if (m_client)
+        return m_client->convertFromContainingViewToScrollbar(this, parentPoint);
+
+    return Widget::convertFromContainingView(parentPoint);
 }
 
 }

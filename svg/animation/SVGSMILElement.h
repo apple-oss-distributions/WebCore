@@ -134,7 +134,8 @@ private:
         };
         bool parseCondition(const String&, BeginOrEnd beginOrEnd);
         void parseBeginOrEnd(const String&, BeginOrEnd beginOrEnd);
-        
+        Element* eventBaseFor(const Condition&);
+
         void connectConditions();
         void disconnectConditions();
         

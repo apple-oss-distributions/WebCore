@@ -2,18 +2,17 @@
 //  WAKScrollView.h
 //  WebCore
 //
-//  Copyright (C) 2005, 2006, 2007, Apple Inc.  All rights reserved.
+//  Copyright (C) 2005, 2006, 2007, 2008, 2009 Apple Inc.  All rights reserved.
 //
 
-#import <Foundation/Foundation.h>
+#ifndef WAKScrollView_h
+#define WAKScrollView_h
 
-#import "WAKClipView.h"
 #import "WAKView.h"
 #import "WebCoreFrameView.h"
+#import <Foundation/Foundation.h>
 
-@interface WAKScroller : WAKView
-+ (float)scrollerWidth;
-@end
+@class WAKClipView;
 
 @interface WAKScrollView : WAKView <WebCoreFrameScrollView>
 {
@@ -30,23 +29,12 @@
 - (BOOL)hasVerticalScroller;
 - (void)setHasHorizontalScroller:(BOOL)flag;
 - (BOOL)hasHorizontalScroller;
-- (void)setVerticalScroller:(WAKScroller *)anObject;
-- (WAKScroller *)verticalScroller;
-- (void)setHorizontalScroller:(WAKScroller *)anObject;
-- (WAKScroller *)horizontalScroller;
 - (void)reflectScrolledClipView:(WAKClipView *)aClipView;
 - (void)setDrawsBackground:(BOOL)flag;
 - (float)verticalLineScroll;
 - (void)setLineScroll:(float)aFloat;
 - (BOOL)drawsBackground;
 - (float)horizontalLineScroll;
-
-- (void)setAllowsHorizontalScrolling:(BOOL)flag;
-- (BOOL)allowsHorizontalScrolling;
-- (void)setAllowsVerticalScrolling:(BOOL)flag;
-- (BOOL)allowsVerticalScrolling;
-- (void)setAllowsScrolling:(BOOL)flag;
-- (BOOL)allowsScrolling;
 
 - (void)setDelegate:(id)delegate;
 - (id)delegate;
@@ -58,3 +46,5 @@
 @interface NSObject (WAKScrollViewDelegate)
 - (BOOL)scrollView:(WAKScrollView *)scrollView shouldScrollToPoint:(CGPoint)point;
 @end
+
+#endif // WAKScrollView_h

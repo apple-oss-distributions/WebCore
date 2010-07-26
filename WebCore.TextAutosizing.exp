@@ -1,0 +1,3 @@
+__ZN7WebCore12RenderObject19resetTextAutosizingEv
+__ZN7WebCore5Frame14setVisibleSizeERKNS_9FloatSizeE
+__ZN7WebCore9FloatSizeC1ERK6CGSize

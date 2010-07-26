@@ -49,9 +49,7 @@ namespace WebCore {
 #if ENABLE(XPATH)
     class XPathNSResolver;
 #endif
-#if ENABLE(TOUCH_EVENTS)
     class Touch;
-#endif
 }
 
 @interface DOMNodeFilter : DOMObject <DOMNodeFilter>

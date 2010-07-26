@@ -1,12 +1,18 @@
 /*
  * Copyright (C) 2008, Apple Inc. All rights reserved.
  *
- * No license or rights are granted by Apple expressly or by implication,
- * estoppel, or otherwise, to Apple copyrights, patents, trademarks, trade
- * secrets or other rights.
+ * Permission is granted by Apple to use this file to the extent
+ * necessary to relink with LGPL WebKit files.
+ *
+ * No license or rights are granted by Apple expressly or by
+ * implication, estoppel, or otherwise, to Apple patents and
+ * trademarks. For the sake of clarity, no license or rights are
+ * granted by Apple expressly or by implication, estoppel, or otherwise,
+ * under any Apple patents, copyrights and trademarks to underlying
+ * implementations of any application programming interfaces (APIs)
+ * or to any functionality that is invoked by calling any API.
  */
 
-#if defined(ENABLE_TOUCH_EVENTS)
 @interface DOMTouch : DOMObject
 @property(readonly, retain) id <DOMEventTarget> target;
 @property(readonly) unsigned identifier;
@@ -43,4 +49,3 @@
 
 - (void)initGestureEvent:(NSString *)type canBubble:(BOOL)canBubble cancelable:(BOOL)cancelable view:(DOMAbstractView *)view detail:(int)detail screenX:(int)screenX screenY:(int)screenY clientX:(int)clientX clientY:(int)clientY ctrlKey:(BOOL)ctrlKey altKey:(BOOL)altKey shiftKey:(BOOL)shiftKey metaKey:(BOOL)metaKey target:(id <DOMEventTarget>)target scale:(float)scale rotation:(float)rotation;
 @end
-#endif // ENABLE(TOUCH_EVENTS)

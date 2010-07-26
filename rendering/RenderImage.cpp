@@ -89,8 +89,7 @@ private:
     Timer<RenderImage> m_highQualityRepaintTimer;
 };
 
-class RenderImageScaleObserver
-{
+class RenderImageScaleObserver {
 public:
     static bool shouldImagePaintAtLowQuality(RenderImage*, const IntSize&);
 
@@ -205,8 +204,8 @@ void RenderImage::collectSelectionRects(Vector<SelectionRect>& rects, unsigned, 
         imageRect = IntRect(0, inlineBox->root()->selectionTop(), width(), inlineBox->root()->selectionBottom());
         isFirstOnLine = !inlineBox->prevOnLineExists();
         isLastOnLine = !inlineBox->nextOnLineExists();
-        int leftOffset = cb->leftSelectionOffset(cb, inlineBox->yPos());
-        int rightOffset = cb->rightSelectionOffset(cb, inlineBox->yPos());
+        int leftOffset = cb->leftSelectionOffset(cb, inlineBox->y());
+        int rightOffset = cb->rightSelectionOffset(cb, inlineBox->y());
         lineExtentRect = IntRect(leftOffset, imageRect.y(), rightOffset - leftOffset, imageRect.height());
     }
     
@@ -467,7 +466,7 @@ void RenderImage::paintReplaced(PaintInfo& paintInfo, int tx, int ty)
         IntSize contentSize(cWidth, cHeight);
         bool useLowQualityScaling = RenderImageScaleObserver::shouldImagePaintAtLowQuality(this, contentSize);
         IntRect rect(IntPoint(tx + leftBorder + leftPad, ty + topBorder + topPad), contentSize);
-        HTMLImageElement* imageElt = (element() && element()->hasTagName(imgTag)) ? static_cast<HTMLImageElement*>(element()) : 0;
+        HTMLImageElement* imageElt = (node() && node()->hasTagName(imgTag)) ? static_cast<HTMLImageElement*>(node()) : 0;
         CompositeOperator compositeOperator = imageElt ? imageElt->compositeOperator() : CompositeSourceOver;
         context->drawImage(image(cWidth, cHeight), rect, compositeOperator, useLowQualityScaling);
     }
@@ -480,41 +479,42 @@ int RenderImage::minimumReplacedHeight() const
 
 HTMLMapElement* RenderImage::imageMap()
 {
-    HTMLImageElement* i = element() && element()->hasTagName(imgTag) ? static_cast<HTMLImageElement*>(element()) : 0;
+    HTMLImageElement* i = node() && node()->hasTagName(imgTag) ? static_cast<HTMLImageElement*>(node()) : 0;
     return i ? i->document()->getImageMap(i->useMap()) : 0;
 }
 
 bool RenderImage::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, int _x, int _y, int _tx, int _ty, HitTestAction hitTestAction)
 {
-    bool inside = RenderReplaced::nodeAtPoint(request, result, _x, _y, _tx, _ty, hitTestAction);
+    HitTestResult tempResult(result.point());
+    bool inside = RenderReplaced::nodeAtPoint(request, tempResult, _x, _y, _tx, _ty, hitTestAction);
 
-    if (inside && element()) {
+    if (inside && node()) {
         int tx = _tx + x();
         int ty = _ty + y();
         
-        HTMLMapElement* map = imageMap();
-        if (map) {
-            // we're a client side image map
-            inside = map->mapMouseEvent(_x - tx, _y - ty, IntSize(contentWidth(), contentHeight()), result);
-            result.setInnerNonSharedNode(element());
+        if (HTMLMapElement* map = imageMap()) {
+            if (map->mapMouseEvent(_x - tx, _y - ty, IntSize(contentWidth(), contentHeight()), tempResult))
+                tempResult.setInnerNonSharedNode(node());
         }
     }
 
+    if (inside)
+        result = tempResult;
     return inside;
 }
 
 void RenderImage::updateAltText()
 {
-    if (!element())
+    if (!node())
         return;
 
-    if (element()->hasTagName(inputTag))
-        m_altText = static_cast<HTMLInputElement*>(element())->altText();
-    else if (element()->hasTagName(imgTag))
-        m_altText = static_cast<HTMLImageElement*>(element())->altText();
+    if (node()->hasTagName(inputTag))
+        m_altText = static_cast<HTMLInputElement*>(node())->altText();
+    else if (node()->hasTagName(imgTag))
+        m_altText = static_cast<HTMLImageElement*>(node())->altText();
 #if ENABLE(WML)
-    else if (element()->hasTagName(WMLNames::imgTag))
-        m_altText = static_cast<WMLImageElement*>(element())->altText();
+    else if (node()->hasTagName(WMLNames::imgTag))
+        m_altText = static_cast<WMLImageElement*>(node())->altText();
 #endif
 }
 

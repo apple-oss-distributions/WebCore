@@ -39,6 +39,7 @@ VPATH = \
     $(WebCore)/storage \
     $(WebCore)/xml \
     $(WebCore)/wml \
+    $(WebCore)/workers \
     $(WebCore)/svg \
 #
 
@@ -67,17 +68,20 @@ DOM_CLASSES = \
     CanvasPattern \
     CanvasRenderingContext2D \
     CharacterData \
+    ClientRect \
+    ClientRectList \
     Clipboard \
     Comment \
     Console \
     Coordinates \
     Counter \
+    DataGridColumn \
+    DataGridColumnList \
     DOMApplicationCache \
     DOMCoreException \
     DOMImplementation \
     DOMParser \
     DOMSelection \
-    DOMStringList \
     DOMWindow \
     Database \
     Document \
@@ -91,7 +95,6 @@ DOM_CLASSES = \
     EventException \
     EventListener \
     EventTarget \
-    EventTargetNode \
     File \
     FileList \
     Geolocation \
@@ -108,6 +111,10 @@ DOM_CLASSES = \
     HTMLButtonElement \
     HTMLCanvasElement \
     HTMLCollection \
+    HTMLDataGridElement \
+    HTMLDataGridCellElement \
+    HTMLDataGridColElement \
+    HTMLDataGridRowElement \
     HTMLDListElement \
     HTMLDirectoryElement \
     HTMLDivElement \
@@ -162,6 +169,7 @@ DOM_CLASSES = \
     HTMLVideoElement \
     History \
     ImageData \
+    InspectorController \
     KeyboardEvent \
     Location \
     MediaError \
@@ -181,6 +189,7 @@ DOM_CLASSES = \
     NodeList \
     Notation \
     OverflowEvent \
+    PageTransitionEvent \
     Plugin \
     PluginArray \
     PositionCallback \
@@ -386,11 +395,9 @@ DOM_CLASSES = \
 .PHONY : all
 
 all : \
-    $(filter-out JSEventListener.h JSRGBColor.h,$(DOM_CLASSES:%=JS%.h)) \
+    $(filter-out JSEventListener.h JSEventTarget.h JSRGBColor.h,$(DOM_CLASSES:%=JS%.h)) \
     \
-    JSDOMWindowBase.lut.h \
     JSRGBColor.lut.h \
-    JSWorkerContextBase.lut.h \
     \
     JSJavaScriptCallFrame.h \
     \
@@ -399,6 +406,7 @@ all : \
     CSSValueKeywords.h \
     ColorData.c \
     DocTypeStrings.cpp \
+    HTMLElementFactory.cpp \
     HTMLEntityNames.c \
     HTMLNames.cpp \
     WMLElementFactory.cpp \
@@ -415,6 +423,8 @@ all : \
 
 # --------
 
+ADDITIONAL_IDL_DEFINES :=
+
 ifeq ($(OS),MACOS)
 
 FRAMEWORK_FLAGS = $(shell echo $(FRAMEWORK_SEARCH_PATHS) | perl -e 'print "-F " . join(" -F ", split(" ", <>));')
@@ -429,6 +439,31 @@ else
 
 ENABLE_DASHBOARD_SUPPORT = 0
 
+endif
+
+ifeq ($(shell /usr/bin/gcc -isysroot $(SDKROOT) -E -P -dM -F $(BUILT_PRODUCTS_DIR) $(FRAMEWORK_FLAGS) WebCore/ForwardingHeaders/wtf/Platform.h | grep ENABLE_CONTEXT_MENUS | cut -d' ' -f3), 1)
+    ENABLE_CONTEXT_MENUS = 1
+else
+    ENABLE_CONTEXT_MENUS = 0
+endif
+
+ifeq ($(shell /usr/bin/gcc -isysroot $(SDKROOT) -E -P -dM -F $(BUILT_PRODUCTS_DIR) $(FRAMEWORK_FLAGS) WebCore/ForwardingHeaders/wtf/Platform.h | grep ENABLE_DRAG_SUPPORT | cut -d' ' -f3), 1)
+    ENABLE_DRAG_SUPPORT = 1
+else
+    ENABLE_DRAG_SUPPORT = 0
+endif
+
+ifeq ($(shell /usr/bin/gcc -isysroot $(SDKROOT) -E -P -dM -F $(BUILT_PRODUCTS_DIR) $(FRAMEWORK_FLAGS) WebCore/ForwardingHeaders/wtf/Platform.h | grep ENABLE_INSPECTOR | cut -d' ' -f3), 1)
+    ENABLE_INSPECTOR = 1
+else
+    ENABLE_INSPECTOR = 0
+endif
+
+ifeq ($(shell /usr/bin/gcc -isysroot $(SDKROOT) -E -P -dM -F $(BUILT_PRODUCTS_DIR) $(FRAMEWORK_FLAGS) WebCore/ForwardingHeaders/wtf/Platform.h | grep ENABLE_ORIENTATION_EVENTS | cut -d' ' -f3), 1)
+    ENABLE_ORIENTATION_EVENTS = 1
+    ADDITIONAL_IDL_DEFINES := $(ADDITIONAL_IDL_DEFINES) ENABLE_ORIENTATION_EVENTS
+else
+    ENABLE_ORIENTATION_EVENTS = 0
 endif
 
 # CSS property names and value keywords
@@ -518,7 +553,7 @@ XPathGrammar.cpp : xml/XPathGrammar.y $(PROJECT_FILE)
 
 # user agent style sheets
 
-USER_AGENT_STYLE_SHEETS = html4.css.out quirks.css.out view-source.css.out themeWin.css.out themeWinQuirks.css.out 
+USER_AGENT_STYLE_SHEETS = html.css.out quirks.css.out view-source.css.out themeWin.css.out themeWinQuirks.css.out 
 
 ifeq ($(findstring ENABLE_SVG,$(FEATURE_DEFINES)), ENABLE_SVG)
     USER_AGENT_STYLE_SHEETS := $(USER_AGENT_STYLE_SHEETS) svg.css.out
@@ -560,15 +595,17 @@ endif
 
 ifdef HTML_FLAGS
 
-HTMLNames.cpp : dom/make_names.pl html/HTMLTagNames.in html/HTMLAttributeNames.in
-	perl -I $(WebCore)/bindings/scripts $< --tags $(WebCore)/html/HTMLTagNames.in --attrs $(WebCore)/html/HTMLAttributeNames.in --wrapperFactory --extraDefines "$(HTML_FLAGS)"
+HTMLElementFactory.cpp HTMLNames.cpp : dom/make_names.pl html/HTMLTagNames.in html/HTMLAttributeNames.in
+	perl -I $(WebCore)/bindings/scripts $< --tags $(WebCore)/html/HTMLTagNames.in --attrs $(WebCore)/html/HTMLAttributeNames.in --factory --wrapperFactory --extraDefines "$(HTML_FLAGS)"
 
 else
 
-HTMLNames.cpp : dom/make_names.pl html/HTMLTagNames.in html/HTMLAttributeNames.in
-	perl -I $(WebCore)/bindings/scripts $< --tags $(WebCore)/html/HTMLTagNames.in --attrs $(WebCore)/html/HTMLAttributeNames.in --wrapperFactory
+HTMLElementFactory.cpp HTMLNames.cpp : dom/make_names.pl html/HTMLTagNames.in html/HTMLAttributeNames.in
+	perl -I $(WebCore)/bindings/scripts $< --tags $(WebCore)/html/HTMLTagNames.in --attrs $(WebCore)/html/HTMLAttributeNames.in --factory --wrapperFactory
 
 endif
+
+JSHTMLElementWrapperFactory.cpp : HTMLNames.cpp
 
 XMLNames.cpp : dom/make_names.pl xml/xmlattrs.in
 	perl -I $(WebCore)/bindings/scripts $< --attrs $(WebCore)/xml/xmlattrs.in
@@ -591,8 +628,8 @@ ifeq ($(findstring ENABLE_SVG_FONTS,$(FEATURE_DEFINES)), ENABLE_SVG_FONTS)
     SVG_FLAGS := $(SVG_FLAGS) ENABLE_SVG_FONTS=1
 endif
 
-ifeq ($(findstring ENABLE_SVG_FILTERS,$(FEATURE_DEFINES)), ENABLE_SVG_FILTERS)
-    SVG_FLAGS := $(SVG_FLAGS) ENABLE_SVG_FILTERS=1
+ifeq ($(findstring ENABLE_FILTERS,$(FEATURE_DEFINES)), ENABLE_FILTERS)
+    SVG_FLAGS := $(SVG_FLAGS) ENABLE_FILTERS=1
 ifeq ($(findstring ENABLE_SVG_DOM_OBJC_BINDINGS,$(FEATURE_DEFINES)), ENABLE_SVG_DOM_OBJC_BINDINGS)
     WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.SVG.Filters.exp
 endif
@@ -687,7 +724,7 @@ GENERATE_BINDINGS_SCRIPTS = \
 #
 
 JS%.h : %.idl $(GENERATE_BINDINGS_SCRIPTS) bindings/scripts/CodeGeneratorJS.pm
-	$(GENERATE_BINDINGS) --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator JS $<
+	$(GENERATE_BINDINGS) --defines "$(FEATURE_DEFINES) $(ADDITIONAL_IDL_DEFINES) LANGUAGE_JAVASCRIPT" --generator JS $<
 
 # ------------------------
 
@@ -697,7 +734,7 @@ ifeq ($(OS),MACOS)
 
 all : $(filter-out DOMDOMWindow.h DOMMimeType.h DOMPlugin.h,$(DOM_CLASSES:%=DOM%.h))
 
-all : CharsetData.cpp WebCore.exp
+all : CharsetData.cpp WebCore.exp WebCore.LP64.exp
 
 # --------
 
@@ -710,29 +747,51 @@ CharsetData.cpp : platform/text/mac/make-charset-table.pl platform/text/mac/char
 
 # export file
 
-ifeq ($(findstring ENABLE_TOUCH_EVENTS,$(FEATURE_DEFINES)), ENABLE_TOUCH_EVENTS)
-    WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.Touch.exp
+WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.Touch.exp
+
+ifeq ($(PLATFORM_NAME), macosx)
+    WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.macosx.exp
+
+WebCore.macosx.exp: WebCore.base.exp
+	grep '^#' $^ | sed -e 's/^#//' > $@
 endif
 
-ifeq ($(shell /usr/bin/gcc -isysroot $(SDKROOT) -E -P -dM -F $(BUILT_PRODUCTS_DIR) $(FRAMEWORK_FLAGS) WebCore/ForwardingHeaders/wtf/Platform.h | grep ' WTF_PLATFORM_IPHONE ' | cut -d' ' -f3), 1)
-    WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.iPhone.exp
-endif
+WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.iPhone.exp
 
-ifeq ($(findstring ENABLE_IPHONE_PPT,$(FEATURE_DEFINES)), ENABLE_IPHONE_PPT)
-    WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.iPhonePPT.exp
-endif
+WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.iPhonePPT.exp
+
+WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.TextAutosizing.exp
 
 ifeq ($(shell /usr/bin/gcc -isysroot $(SDKROOT) -E -P -dM -F $(BUILT_PRODUCTS_DIR) $(FRAMEWORK_FLAGS) WebCore/ForwardingHeaders/wtf/Platform.h | grep ENABLE_MAC_JAVA_BRIDGE | cut -d' ' -f3), 1)
     WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.JNI.exp
 endif
 
-# See also "Generate 64-bit Export File" build phase script in WebCore.xcodeproj/project.pbxproj
 ifeq ($(shell /usr/bin/gcc -isysroot $(SDKROOT) -E -P -dM -F $(BUILT_PRODUCTS_DIR) $(FRAMEWORK_FLAGS) WebCore/ForwardingHeaders/wtf/Platform.h | grep ENABLE_NETSCAPE_PLUGIN_API | cut -d' ' -f3), 1)
     WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.NPAPI.exp
 endif
 
+ifeq ($(shell /usr/bin/gcc -isysroot $(SDKROOT) -E -P -dM -F $(BUILT_PRODUCTS_DIR) $(FRAMEWORK_FLAGS) WebCore/ForwardingHeaders/wtf/Platform.h | grep WTF_USE_PLUGIN_HOST_PROCESS | cut -d' ' -f3), 1)
+    WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.PluginHostProcess.exp
+endif
+
+ifeq ($(ENABLE_CONTEXT_MENUS), 1)
+    WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.ContextMenus.exp
+endif
+
 ifeq ($(ENABLE_DASHBOARD_SUPPORT), 1)
     WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.DashboardSupport.exp
+endif
+
+ifeq ($(ENABLE_DRAG_SUPPORT), 1)
+    WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.DragSupport.exp
+endif
+
+ifeq ($(ENABLE_INSPECTOR), 1)
+    WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.Inspector.exp
+endif
+
+ifeq ($(ENABLE_ORIENTATION_EVENTS), 1)
+    WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.OrientationEvents.exp
 endif
 
 ifeq ($(findstring 10.4,$(MACOSX_DEPLOYMENT_TARGET)), 10.4)
@@ -746,12 +805,16 @@ endif
 WebCore.exp : WebCore.base.exp $(WEBCORE_EXPORT_DEPENDENCIES)
 	cat $^ > $@
 
+# Switch NSRect, NSSize and NSPoint with their CG counterparts for 64-bit.
+WebCore.LP64.exp : WebCore.exp
+	cat $^ | sed -e s/7_NSRect/6CGRect/ -e s/7_NSSize/6CGSize/ -e s/8_NSPoint/7CGPoint/ > $@
+
 # --------
 
 # Objective-C bindings
 
 DOM%.h : %.idl $(GENERATE_BINDINGS_SCRIPTS) bindings/scripts/CodeGeneratorObjC.pm bindings/objc/PublicDOMInterfaces.h
-	$(GENERATE_BINDINGS) --defines "$(FEATURE_DEFINES) LANGUAGE_OBJECTIVE_C" --generator ObjC $<
+	$(GENERATE_BINDINGS) --defines "$(FEATURE_DEFINES) $(ADDITIONAL_IDL_DEFINES) LANGUAGE_OBJECTIVE_C" --generator ObjC $<
 
 # --------
 

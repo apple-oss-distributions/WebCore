@@ -101,6 +101,11 @@ gboolean mediaPlayerPrivateBufferingCallback(GstBus* bus, GstMessage* message, g
     return true;
 }
 
+static void mediaPlayerPrivateRepaintCallback(WebKitVideoSink*, MediaPlayerPrivate* playerPrivate)
+{
+    playerPrivate->repaint();
+}
+
 MediaPlayerPrivateInterface* MediaPlayerPrivate::create(MediaPlayer* player) 
 { 
     return new MediaPlayerPrivate(player);
@@ -191,19 +196,23 @@ float MediaPlayerPrivate::duration() const
     if (!m_playBin)
         return 0.0;
 
-    GstFormat fmt = GST_FORMAT_TIME;
-    gint64 len = 0;
+    GstFormat timeFormat = GST_FORMAT_TIME;
+    gint64 timeLength = 0;
 
-    if (gst_element_query_duration(m_playBin, &fmt, &len))
-        LOG_VERBOSE(Media, "Duration: %" GST_TIME_FORMAT, GST_TIME_ARGS(len));
-    else
-        LOG_VERBOSE(Media, "Duration query failed ");
-
-    if ((GstClockTime)len == GST_CLOCK_TIME_NONE) {
+    // FIXME: We try to get the duration, but we do not trust the
+    // return value of the query function only; the problem we are
+    // trying to work-around here is that pipelines in stream mode may
+    // not be able to figure out the duration, but still return true!
+    // See https://bugs.webkit.org/show_bug.cgi?id=24639.
+    if (!gst_element_query_duration(m_playBin, &timeFormat, &timeLength) || timeLength <= 0) {
+        LOG_VERBOSE(Media, "Time duration query failed.");
         m_isStreaming = true;
         return numeric_limits<float>::infinity();
     }
-    return (float) (len / 1000000000.0);
+
+    LOG_VERBOSE(Media, "Duration: %" GST_TIME_FORMAT, GST_TIME_ARGS(timeLength));
+
+    return (float) (timeLength / 1000000000.0);
     // FIXME: handle 3.14.9.5 properly
 }
 
@@ -321,6 +330,14 @@ bool MediaPlayerPrivate::hasVideo() const
     return currentVideo > -1;
 }
 
+bool MediaPlayerPrivate::hasAudio() const
+{
+    gint currentAudio = -1;
+    if (m_playBin)
+        g_object_get(G_OBJECT(m_playBin), "current-audio", &currentAudio, 0);
+    return currentAudio > -1;
+}
+
 void MediaPlayerPrivate::setVolume(float volume)
 {
     m_volume = volume;
@@ -376,12 +393,13 @@ MediaPlayer::ReadyState MediaPlayerPrivate::readyState() const
     return m_readyState;
 }
 
-float MediaPlayerPrivate::maxTimeBuffered() const
+PassRefPtr<TimeRanges> MediaPlayerPrivate::buffered() const;
 {
-    notImplemented();
-    LOG_VERBOSE(Media, "maxTimeBuffered");
-    // rtsp streams are not buffered
-    return m_isStreaming ? 0 : maxTimeLoaded();
+    RefPtr<TimeRanges> timeRanges = TimeRanges::create();
+    float loaded = maxTimeLoaded();
+    if (!m_errorOccured && !m_isStreaming && loaded > 0)
+        timeRanges->add(0, loaded);
+    return timeRanges.release();
 }
 
 float MediaPlayerPrivate::maxTimeSeekable() const
@@ -605,7 +623,7 @@ MediaPlayer::SupportsType MediaPlayerPrivate::supportsType(const String& type, c
 {
     // FIXME: query the engine to see what types are supported
     notImplemented();
-    return type == "video/x-theora+ogg" ? (!codecs.isEmpty() ? MediaPlayer::MayBeSupported : MediaPlayer::IsSupported) : MediaPlayer::IsNotSupported;
+    return type == "video/x-theora+ogg" ? (codecs.isEmpty() ? MediaPlayer::MayBeSupported : MediaPlayer::IsSupported) : MediaPlayer::IsNotSupported;
 }
 
 void MediaPlayerPrivate::createGSTPlayBin(String url)
@@ -629,10 +647,11 @@ void MediaPlayerPrivate::createGSTPlayBin(String url)
     g_object_set(m_playBin, "audio-sink", audioSink, NULL);
     g_object_set(m_playBin, "video-sink", m_videoSink, NULL);
 
+    g_signal_connect(m_videoSink, "repaint-requested", G_CALLBACK(mediaPlayerPrivateRepaintCallback), this);
+
     setVolume(m_volume);
 }
 
 }
 
 #endif
-

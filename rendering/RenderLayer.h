@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003 Apple Computer, Inc.
+ * Copyright (C) 2003, 2009 Apple Inc. All rights reserved.
  *
  * Portions are Copyright (C) 1998 Netscape Communications Corporation.
  *
@@ -44,14 +44,16 @@
 #ifndef RenderLayer_h
 #define RenderLayer_h
 
-#include "ScrollbarClient.h"
 #include "RenderBox.h"
+#include "ScrollBehavior.h"
+#include "ScrollbarClient.h"
 #include "Timer.h"
 #include <wtf/OwnPtr.h>
 
 namespace WebCore {
 
 class CachedResource;
+class HitTestRequest;
 class HitTestResult;
 class HitTestingTransformState;
 class RenderFrameSet;
@@ -69,8 +71,6 @@ class TransformationMatrix;
 class RenderLayerBacking;
 class RenderLayerCompositor;
 #endif
-
-struct HitTestRequest;
 
 class ClipRects {
 public:
@@ -162,38 +162,13 @@ private:
 
 class RenderLayer : public ScrollbarClient {
 public:
-    enum ScrollBehavior {
-        noScroll,
-        alignCenter,
-        alignTop,
-        alignBottom, 
-        alignLeft,
-        alignRight,
-        alignToClosestEdge
-    };
-
-    struct ScrollAlignment {
-        ScrollBehavior m_rectVisible;
-        ScrollBehavior m_rectHidden;
-        ScrollBehavior m_rectPartial;
-    };
-
     friend class RenderReplica;
 
-    static const ScrollAlignment gAlignCenterIfNeeded;
-    static const ScrollAlignment gAlignToEdgeIfNeeded;
-    static const ScrollAlignment gAlignCenterAlways;
-    static const ScrollAlignment gAlignTopAlways;
-    static const ScrollAlignment gAlignBottomAlways;
-
-    static ScrollBehavior getVisibleBehavior(const ScrollAlignment& s) { return s.m_rectVisible; }
-    static ScrollBehavior getPartialBehavior(const ScrollAlignment& s) { return s.m_rectPartial; }
-    static ScrollBehavior getHiddenBehavior(const ScrollAlignment& s) { return s.m_rectHidden; }
-
-    RenderLayer(RenderBox*);
+    RenderLayer(RenderBoxModelObject*);
     ~RenderLayer();
 
-    RenderBox* renderer() const { return m_renderer; }
+    RenderBoxModelObject* renderer() const { return m_renderer; }
+    RenderBox* renderBox() const { return m_renderer && m_renderer->isBox() ? toRenderBox(m_renderer) : 0; }
     RenderLayer* parent() const { return m_parent; }
     RenderLayer* previousSibling() const { return m_previous; }
     RenderLayer* nextSibling() const { return m_next; }
@@ -213,7 +188,7 @@ public:
     // if layer compositing is being used,
     void setBackingNeedsRepaint();
     void setBackingNeedsRepaintInRect(const IntRect& r); // r is in the coordinate space of the layer's render object
-    void repaintIncludingNonCompositingDescendants(RenderBox* repaintContainer);
+    void repaintIncludingNonCompositingDescendants(RenderBoxModelObject* repaintContainer);
 #endif
 
     void styleChanged(StyleDifference, const RenderStyle*);
@@ -241,12 +216,12 @@ public:
         return curr;
     }
     
-    int xPos() const { return m_x; }
-    int yPos() const { return m_y; }
-    void setPos(int xPos, int yPos)
+    int x() const { return m_x; }
+    int y() const { return m_y; }
+    void setLocation(int x, int y)
     {
-        m_x = xPos;
-        m_y = yPos;
+        m_x = x;
+        m_y = y;
     }
 
     int width() const { return m_width; }
@@ -271,9 +246,9 @@ public:
     void scrollToOffset(int x, int y, bool updateScrollbars = true, bool repaint = true);
     void scrollToXOffset(int x) { scrollToOffset(x, m_scrollY); }
     void scrollToYOffset(int y) { scrollToOffset(m_scrollX + m_scrollOriginX, y); }
-    void scrollRectToVisible(const IntRect&, bool scrollToAnchor = false, const ScrollAlignment& alignX = gAlignCenterIfNeeded, const ScrollAlignment& alignY = gAlignCenterIfNeeded);
+    void scrollRectToVisible(const IntRect&, bool scrollToAnchor = false, const ScrollAlignment& alignX = ScrollAlignment::alignCenterIfNeeded, const ScrollAlignment& alignY = ScrollAlignment::alignCenterIfNeeded);
 
-    IntRect getRectToExpose(const IntRect& visibleRect, const IntRect& exposeRect, const ScrollAlignment& alignX, const ScrollAlignment& alignY);    
+    IntRect getRectToExpose(const IntRect& visibleRect, const IntRect& exposeRect, const ScrollAlignment& alignX, const ScrollAlignment& alignY);
 
     void setHasHorizontalScrollbar(bool);
     void setHasVerticalScrollbar(bool);
@@ -287,9 +262,10 @@ public:
     int verticalScrollbarWidth() const;
     int horizontalScrollbarHeight() const;
 
+    bool hasOverflowControls() const;
     void positionOverflowControls(int tx, int ty);
     bool isPointInResizeControl(const IntPoint& absolutePoint) const;
-    bool hitTestOverflowControls(HitTestResult&);
+    bool hitTestOverflowControls(HitTestResult&, const IntPoint& localPoint);
     IntSize offsetFromResizeCorner(const IntPoint& absolutePoint) const;
 
     void paintOverflowControls(GraphicsContext*, int tx, int ty, const IntRect& damageRect);
@@ -314,9 +290,19 @@ public:
     // Allows updates of layer content without repainting.
     void rendererContentChanged();
 #endif
+
+    // Returns true if the accelerated compositing is enabled
+    bool hasAcceleratedCompositing() const;
     
     void updateLayerPosition();
-    void updateLayerPositions(bool doFullRepaint = false, bool checkForRepaint = true);
+    
+    enum UpdateLayerPositionsFlag {
+        DoFullRepaint = 1,
+        CheckForRepaint = 1 << 1,
+        UpdateCompositingLayers = 1 << 2,
+    };
+    typedef unsigned UpdateLayerPositionsFlags;
+    void updateLayerPositions(UpdateLayerPositionsFlags = DoFullRepaint | UpdateCompositingLayers);
 
     void updateTransform();
 
@@ -397,12 +383,13 @@ public:
 
     // Return a cached repaint rect, computed relative to the layer renderer's containerForRepaint.
     IntRect repaintRect() const { return m_repaintRect; }
+    void computeRepaintRects();
     void setNeedsFullRepaint(bool f = true) { m_needsFullRepaint = f; }
     
     int staticX() const { return m_staticX; }
     int staticY() const { return m_staticY; }
     void setStaticX(int staticX) { m_staticX = staticX; }
-    void setStaticY(int staticY) { m_staticY = staticY; }
+    void setStaticY(int staticY);
 
     bool adjustForPurpleCaretWhenScrolling() const { return m_adjustForPurpleCaretWhenScrolling; }
     void setAdjustForPurpleCaretWhenScrolling(bool b) { m_adjustForPurpleCaretWhenScrolling = b; }
@@ -423,8 +410,6 @@ public:
     bool preserves3D() const { return renderer()->style()->transformStyle3D() == TransformStyle3DPreserve3D; }
     bool has3DTransform() const { return m_transform && !m_transform->isAffine(); }
 
-    void destroy(RenderArena*);
-
      // Overloaded new operator.  Derived classes must override operator new
     // in order to allocate out of the RenderArena.
     void* operator new(size_t, RenderArena*) throw();
@@ -434,11 +419,13 @@ public:
 
 #if USE(ACCELERATED_COMPOSITING)
     bool isComposited() const { return m_backing != 0; }
+    bool hasCompositedMask() const;
     RenderLayerBacking* backing() const { return m_backing.get(); }
     RenderLayerBacking* ensureBacking();
     void clearBacking();
 #else
     bool isComposited() const { return false; }
+    bool hasCompositedMask() const { return false; }
 #endif
 
     bool paintsWithTransparency() const
@@ -462,13 +449,26 @@ private:
     void setFirstChild(RenderLayer* first) { m_first = first; }
     void setLastChild(RenderLayer* last) { m_last = last; }
 
+    int renderBoxX() const { return renderer()->isBox() ? toRenderBox(renderer())->x() : 0; }
+    int renderBoxY() const { return renderer()->isBox() ? toRenderBox(renderer())->y() : 0; }
+
     void collectLayers(Vector<RenderLayer*>*&, Vector<RenderLayer*>*&);
 
     void updateLayerListsIfNeeded();
+    void updateCompositingAndLayerListsIfNeeded();
     
+    enum PaintLayerFlag {
+        PaintLayerHaveTransparency = 1,
+        PaintLayerAppliedTransform = 1 << 1,
+        PaintLayerTemporaryClipRects = 1 << 2,
+        PaintLayerPaintingReflection = 1 << 3
+    };
+    
+    typedef unsigned PaintLayerFlags;
+
     void paintLayer(RenderLayer* rootLayer, GraphicsContext*, const IntRect& paintDirtyRect,
-                    bool haveTransparency, PaintRestriction, RenderObject* paintingRoot,
-                    bool appliedTransform = false, bool temporaryClipRects = false);
+                    PaintRestriction, RenderObject* paintingRoot, RenderObject::OverlapTestRequestMap* = 0,
+                    PaintLayerFlags paintFlags = 0);
 
     RenderLayer* hitTestLayer(RenderLayer* rootLayer, RenderLayer* containerLayer, const HitTestRequest& request, HitTestResult& result,
                             const IntRect& hitTestRect, const IntPoint& hitTestPoint, bool appliedTransform,
@@ -484,11 +484,18 @@ private:
 
     bool shouldBeNormalFlowOnly() const; 
 
+    // ScrollBarClient interface
     virtual void valueChanged(Scrollbar*);
     virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&);
     virtual bool isActive() const;
     virtual bool scrollbarCornerPresent() const;
-
+    virtual IntRect convertFromScrollbarToContainingView(const Scrollbar*, const IntRect&) const;
+    virtual IntRect convertFromContainingViewToScrollbar(const Scrollbar*, const IntRect&) const;
+    virtual IntPoint convertFromScrollbarToContainingView(const Scrollbar*, const IntPoint&) const;
+    virtual IntPoint convertFromContainingViewToScrollbar(const Scrollbar*, const IntPoint&) const;
+    
+    IntSize scrollbarOffset(const Scrollbar*) const;
+    
     void updateOverflowStatus(bool horizontalOverflow, bool verticalOverflow);
 
     void childVisibilityChanged(bool newVisibility);
@@ -506,10 +513,14 @@ private:
     Node* enclosingElement() const;
 
     void createReflection();
+    void removeReflection();
+
     void updateReflectionStyle();
     bool paintingInsideReflection() const { return m_paintingInsideReflection; }
+    void setPaintingInsideReflection(bool b) { m_paintingInsideReflection = b; }
     
     void parentClipRects(const RenderLayer* rootLayer, ClipRects&, bool temporaryClipRects = false) const;
+    IntRect backgroundClipRect(const RenderLayer* rootLayer, bool temporaryClipRects) const;
 
     RenderLayer* enclosingTransformedAncestor() const;
 
@@ -523,8 +534,8 @@ private:
     bool hasCompositingDescendant() const { return m_hasCompositingDescendant; }
     void setHasCompositingDescendant(bool b)  { m_hasCompositingDescendant = b; }
     
-    bool mustOverlayCompositedLayers() const { return m_mustOverlayCompositedLayers; }
-    void setMustOverlayCompositedLayers(bool b) { m_mustOverlayCompositedLayers = b; }
+    bool mustOverlapCompositedLayers() const { return m_mustOverlapCompositedLayers; }
+    void setMustOverlapCompositedLayers(bool b) { m_mustOverlapCompositedLayers = b; }
 #endif
 
 #if USE(ACCELERATED_COMPOSITING)
@@ -534,9 +545,13 @@ private:
 private:
     friend class RenderLayerBacking;
     friend class RenderLayerCompositor;
+    friend class RenderBoxModelObject;
+
+    // Only safe to call from RenderBoxModelObject::destroyLayer(RenderArena*)
+    void destroy(RenderArena*);
 
 protected:
-    RenderBox* m_renderer;
+    RenderBoxModelObject* m_renderer;
 
     RenderLayer* m_parent;
     RenderLayer* m_previous;
@@ -617,7 +632,7 @@ protected:
                                             // in a preserves3D hierarchy. Hint to do 3D-aware hit testing.
 #if USE(ACCELERATED_COMPOSITING)
     bool m_hasCompositingDescendant : 1;
-    bool m_mustOverlayCompositedLayers : 1;
+    bool m_mustOverlapCompositedLayers : 1;
 #endif
 
     bool m_adjustForPurpleCaretWhenScrolling : 1;

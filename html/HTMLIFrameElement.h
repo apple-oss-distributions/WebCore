@@ -30,7 +30,7 @@ namespace WebCore {
 
 class HTMLIFrameElement : public HTMLFrameElementBase {
 public:
-    HTMLIFrameElement(const QualifiedName&, Document*, bool createdByParser);
+    HTMLIFrameElement(const QualifiedName&, Document*);
 
     virtual bool isKeyboardFocusable(KeyboardEvent*) const { return false; }
     
@@ -43,8 +43,6 @@ public:
     virtual void insertedIntoDocument();
     virtual void removedFromDocument();
     
-    virtual void attach();
-
     virtual bool rendererIsNeeded(RenderStyle*);
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
     

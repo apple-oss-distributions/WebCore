@@ -6,7 +6,6 @@
  * secrets or other rights.
  */
 
-#if defined(ENABLE_TOUCH_EVENTS)
         [AppleCopyright] Touch               createTouch(in DOMWindow view,
                                         in EventTarget target,
                                         in long identifier,
@@ -17,4 +16,3 @@
             raises (DOMException);
         [AppleCopyright, Custom] TouchList           createTouchList()
             raises (DOMException);
-#endif

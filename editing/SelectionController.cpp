@@ -30,12 +30,8 @@
 #include "DeleteSelectionCommand.h"
 #include "Document.h"
 #include "Editor.h"
-#include "EditorClient.h"
-#include "RenderObject.h"
-#include "RenderStyle.h"
 #include "Element.h"
 #include "EventHandler.h"
-#include "EventNames.h"
 #include "ExceptionCode.h"
 #include "FocusController.h"
 #include "FloatQuad.h"
@@ -57,6 +53,10 @@
 #include "visible_units.h"
 #include <stdio.h>
 
+#include "EditorClient.h"
+#include "RenderObject.h"
+#include "RenderStyle.h"
+
 #define EDIT_DEBUG 0
 
 namespace WebCore {
@@ -73,38 +73,40 @@ SelectionController::SelectionController(Frame* frame, bool isDragCaretControlle
     , m_lastChangeWasHorizontalExtension(false)
     , m_isDragCaretController(isDragCaretController)
     , m_isCaretBlinkingSuspended(false)
-    , m_focused(false)
+    , m_focused(frame && frame->page() && frame->page()->focusController()->focusedFrame() == frame)
     , m_closeTypingSuppressions(0)
 {
 }
 
 void SelectionController::moveTo(const VisiblePosition &pos, bool userTriggered)
 {
-    setSelection(Selection(pos.deepEquivalent(), pos.deepEquivalent(), pos.affinity()), true, true, userTriggered);
+    setSelection(VisibleSelection(pos.deepEquivalent(), pos.deepEquivalent(), pos.affinity()), true, true, userTriggered);
 }
 
 void SelectionController::moveTo(const VisiblePosition &base, const VisiblePosition &extent, bool userTriggered)
 {
-    setSelection(Selection(base.deepEquivalent(), extent.deepEquivalent(), base.affinity()), true, true, userTriggered);
+    setSelection(VisibleSelection(base.deepEquivalent(), extent.deepEquivalent(), base.affinity()), true, true, userTriggered);
 }
 
 void SelectionController::moveTo(const Position &pos, EAffinity affinity, bool userTriggered)
 {
-    setSelection(Selection(pos, affinity), true, true, userTriggered);
+    setSelection(VisibleSelection(pos, affinity), true, true, userTriggered);
 }
 
 void SelectionController::moveTo(const Range *r, EAffinity affinity, bool userTriggered)
 {
-    setSelection(Selection(startPosition(r), endPosition(r), affinity), true, true, userTriggered);
+    setSelection(VisibleSelection(startPosition(r), endPosition(r), affinity), true, true, userTriggered);
 }
 
 void SelectionController::moveTo(const Position &base, const Position &extent, EAffinity affinity, bool userTriggered)
 {
-    setSelection(Selection(base, extent, affinity), true, true, userTriggered);
+    setSelection(VisibleSelection(base, extent, affinity), true, true, userTriggered);
 }
 
-void SelectionController::setSelection(const Selection& s, bool closeTyping, bool clearTypingStyle, bool userTriggered)
+void SelectionController::setSelection(const VisibleSelection& s, bool closeTyping, bool clearTypingStyle, bool userTriggered)
 {
+    m_lastChangeWasHorizontalExtension = false;
+
     if (m_isDragCaretController) {
         invalidateCaretRect();
         m_sel = s;
@@ -138,7 +140,7 @@ void SelectionController::setSelection(const Selection& s, bool closeTyping, boo
     if (m_sel == s)
         return;
     
-    Selection oldSelection = m_sel;
+    VisibleSelection oldSelection = m_sel;
 
     m_sel = s;
     
@@ -155,7 +157,7 @@ void SelectionController::setSelection(const Selection& s, bool closeTyping, boo
     m_frame->notifyRendererOfSelectionChange(userTriggered);
     m_frame->respondToChangedSelection(oldSelection, closeTyping);
     if (userTriggered)
-        m_frame->revealSelection(RenderLayer::gAlignToEdgeIfNeeded, true);
+        m_frame->revealSelection(ScrollAlignment::alignToEdgeIfNeeded, true);
 
     notifyAccessibilityForSelectionChange();
 }
@@ -207,8 +209,7 @@ void SelectionController::nodeWillBeRemoved(Node *node)
         else
             m_sel.setWithoutValidation(m_sel.end(), m_sel.start());
     // FIXME: This could be more efficient if we had an isNodeInRange function on Ranges.
-    } else if (Range::compareBoundaryPoints(m_sel.start(), Position(node, 0)) == -1 &&
-               Range::compareBoundaryPoints(m_sel.end(), Position(node, 0)) == 1) {
+    } else if (comparePositions(m_sel.start(), Position(node, 0)) == -1 && comparePositions(m_sel.end(), Position(node, 0)) == 1) {
         // If we did nothing here, when this node's renderer was destroyed, the rect that it 
         // occupied would be invalidated, but, selection gaps that change as a result of 
         // the removal wouldn't be invalidated.
@@ -218,45 +219,86 @@ void SelectionController::nodeWillBeRemoved(Node *node)
 
     if (clearRenderTreeSelection) {
         RefPtr<Document> document = m_sel.start().node()->document();
-        document->updateRendering();
-        if (RenderView* view = static_cast<RenderView*>(document->renderer()))
+        document->updateStyleIfNeeded();
+        if (RenderView* view = toRenderView(document->renderer()))
             view->clearSelection();
     }
 
     if (clearDOMTreeSelection)
-        setSelection(Selection(), false, false);
+        setSelection(VisibleSelection(), false, false);
 }
 
 void SelectionController::willBeModified(EAlteration alter, EDirection direction)
 {
-    switch (alter) {
-        case MOVE:
-            m_lastChangeWasHorizontalExtension = false;
+    if (alter != EXTEND)
+        return;
+    if (m_lastChangeWasHorizontalExtension)
+        return;
+
+    Position start = m_sel.start();
+    Position end = m_sel.end();
+    // FIXME: This is probably not correct for right and left when the direction is RTL.
+    switch (direction) {
+        case RIGHT:
+        case FORWARD:
+            m_sel.setBase(start);
+            m_sel.setExtent(end);
             break;
-        case EXTEND:
-            if (!m_lastChangeWasHorizontalExtension) {
-                m_lastChangeWasHorizontalExtension = true;
-                Position start = m_sel.start();
-                Position end = m_sel.end();
-                switch (direction) {
-                    // FIXME: right for bidi?
-                    case RIGHT:
-                    case FORWARD:
-                        m_sel.setBase(start);
-                        m_sel.setExtent(end);
-                        break;
-                    case LEFT:
-                    case BACKWARD:
-                        m_sel.setBase(end);
-                        m_sel.setExtent(start);
-                        break;
-                }
-            }
+        case LEFT:
+        case BACKWARD:
+            m_sel.setBase(end);
+            m_sel.setExtent(start);
             break;
     }
 }
 
-VisiblePosition SelectionController::modifyExtendingRightForward(TextGranularity granularity)
+TextDirection SelectionController::directionOfEnclosingBlock() {
+    Node* n = m_sel.extent().node();
+    Node* enclosingBlockNode = enclosingBlock(n);
+    if (!enclosingBlockNode)
+        return LTR;
+    RenderObject* renderer = enclosingBlockNode->renderer();
+    if (renderer)
+        return renderer->style()->direction();
+    return LTR;
+}
+
+VisiblePosition SelectionController::modifyExtendingRight(TextGranularity granularity)
+{
+    VisiblePosition pos(m_sel.extent(), m_sel.affinity());
+
+    // The difference between modifyExtendingRight and modifyExtendingForward is:
+    // modifyExtendingForward always extends forward logically.
+    // modifyExtendingRight behaves the same as modifyExtendingForward except for extending character or word,
+    // it extends forward logically if the enclosing block is LTR direction,
+    // but it extends backward logically if the enclosing block is RTL direction.
+    switch (granularity) {
+        case CharacterGranularity:
+            if (directionOfEnclosingBlock() == LTR)
+                pos = pos.next(true);                
+            else
+                pos = pos.previous(true);
+            break;
+        case WordGranularity:
+            if (directionOfEnclosingBlock() == LTR)
+                pos = nextWordPosition(pos);
+            else
+                pos = previousWordPosition(pos);
+            break;
+        case SentenceGranularity:
+        case LineGranularity:
+        case ParagraphGranularity:
+        case SentenceBoundary:
+        case LineBoundary:
+        case ParagraphBoundary:
+        case DocumentBoundary:
+            // FIXME: implement all of the above?
+            pos = modifyExtendingForward(granularity);
+    }
+    return pos;
+}    
+        
+VisiblePosition SelectionController::modifyExtendingForward(TextGranularity granularity)
 {
     VisiblePosition pos(m_sel.extent(), m_sel.affinity());
     switch (granularity) {
@@ -279,7 +321,7 @@ VisiblePosition SelectionController::modifyExtendingRightForward(TextGranularity
             pos = endOfSentence(VisiblePosition(m_sel.end(), m_sel.affinity()));
             break;
         case LineBoundary:
-            pos = endOfLine(VisiblePosition(m_sel.end(), m_sel.affinity()));
+            pos = logicalEndOfLine(VisiblePosition(m_sel.end(), m_sel.affinity()));
             break;
         case ParagraphBoundary:
             pos = endOfParagraph(VisiblePosition(m_sel.end(), m_sel.affinity()));
@@ -353,7 +395,7 @@ VisiblePosition SelectionController::modifyMovingForward(TextGranularity granula
             pos = endOfSentence(VisiblePosition(m_sel.end(), m_sel.affinity()));
             break;
         case LineBoundary:
-            pos = endOfLine(VisiblePosition(m_sel.end(), m_sel.affinity()));
+            pos = logicalEndOfLine(VisiblePosition(m_sel.end(), m_sel.affinity()));
             break;
         case ParagraphBoundary:
             pos = endOfParagraph(VisiblePosition(m_sel.end(), m_sel.affinity()));
@@ -370,10 +412,44 @@ VisiblePosition SelectionController::modifyMovingForward(TextGranularity granula
     return pos;
 }
 
-VisiblePosition SelectionController::modifyExtendingLeftBackward(TextGranularity granularity)
+VisiblePosition SelectionController::modifyExtendingLeft(TextGranularity granularity)
 {
     VisiblePosition pos(m_sel.extent(), m_sel.affinity());
-        
+
+    // The difference between modifyExtendingLeft and modifyExtendingBackward is:
+    // modifyExtendingBackward always extends backward logically.
+    // modifyExtendingLeft behaves the same as modifyExtendingBackward except for extending character or word,
+    // it extends backward logically if the enclosing block is LTR direction,
+    // but it extends forward logically if the enclosing block is RTL direction.
+    switch (granularity) {
+        case CharacterGranularity:
+            if (directionOfEnclosingBlock() == LTR)
+                pos = pos.previous(true);
+            else
+                pos = pos.next(true);
+            break;
+        case WordGranularity:
+            if (directionOfEnclosingBlock() == LTR)
+                pos = previousWordPosition(pos);
+            else
+                pos = nextWordPosition(pos);
+            break;
+        case SentenceGranularity:
+        case LineGranularity:
+        case ParagraphGranularity:
+        case SentenceBoundary:
+        case LineBoundary:
+        case ParagraphBoundary:
+        case DocumentBoundary:
+            pos = modifyExtendingBackward(granularity);
+    }
+    return pos;
+}
+       
+VisiblePosition SelectionController::modifyExtendingBackward(TextGranularity granularity)
+{
+    VisiblePosition pos(m_sel.extent(), m_sel.affinity());
+
     // Extending a selection backward by word or character from just after a table selects
     // the table.  This "makes sense" from the user perspective, esp. when deleting.
     // It was done here instead of in VisiblePosition because we want VPs to iterate
@@ -398,7 +474,7 @@ VisiblePosition SelectionController::modifyExtendingLeftBackward(TextGranularity
             pos = startOfSentence(VisiblePosition(m_sel.start(), m_sel.affinity()));
             break;
         case LineBoundary:
-            pos = startOfLine(VisiblePosition(m_sel.start(), m_sel.affinity()));
+            pos = logicalStartOfLine(VisiblePosition(m_sel.start(), m_sel.affinity()));
             break;
         case ParagraphBoundary:
             pos = startOfParagraph(VisiblePosition(m_sel.start(), m_sel.affinity()));
@@ -465,7 +541,7 @@ VisiblePosition SelectionController::modifyMovingBackward(TextGranularity granul
             pos = startOfSentence(VisiblePosition(m_sel.start(), m_sel.affinity()));
             break;
         case LineBoundary:
-            pos = startOfLine(VisiblePosition(m_sel.start(), m_sel.affinity()));
+            pos = logicalStartOfLine(VisiblePosition(m_sel.start(), m_sel.affinity()));
             break;
         case ParagraphBoundary:
             pos = startOfParagraph(VisiblePosition(m_sel.start(), m_sel.affinity()));
@@ -485,8 +561,8 @@ bool SelectionController::modify(EAlteration alter, EDirection dir, TextGranular
 {
     if (userTriggered) {
         SelectionController trialSelectionController;
-        trialSelectionController.setLastChangeWasHorizontalExtension(m_lastChangeWasHorizontalExtension);
         trialSelectionController.setSelection(m_sel);
+        trialSelectionController.setLastChangeWasHorizontalExtension(m_lastChangeWasHorizontalExtension);
         trialSelectionController.modify(alter, dir, granularity, false);
 
         bool change = m_frame->shouldChangeSelection(trialSelectionController.selection());
@@ -505,11 +581,11 @@ bool SelectionController::modify(EAlteration alter, EDirection dir, TextGranular
             if (alter == MOVE)
                 pos = modifyMovingRight(granularity);
             else
-                pos = modifyExtendingRightForward(granularity);
+                pos = modifyExtendingRight(granularity);
             break;
         case FORWARD:
             if (alter == EXTEND)
-                pos = modifyExtendingRightForward(granularity);
+                pos = modifyExtendingForward(granularity);
             else
                 pos = modifyMovingForward(granularity);
             break;
@@ -517,11 +593,11 @@ bool SelectionController::modify(EAlteration alter, EDirection dir, TextGranular
             if (alter == MOVE)
                 pos = modifyMovingLeft(granularity);
             else
-                pos = modifyExtendingLeftBackward(granularity);
+                pos = modifyExtendingLeft(granularity);
             break;
         case BACKWARD:
             if (alter == EXTEND)
-                pos = modifyExtendingLeftBackward(granularity);
+                pos = modifyExtendingBackward(granularity);
             else
                 pos = modifyMovingBackward(granularity);
             break;
@@ -559,6 +635,8 @@ bool SelectionController::modify(EAlteration alter, EDirection dir, TextGranular
 
     setNeedsLayout();
 
+    m_lastChangeWasHorizontalExtension = alter == EXTEND;
+
     return true;
 }
 
@@ -580,6 +658,7 @@ bool SelectionController::modify(EAlteration alter, int verticalDistance, bool u
     if (userTriggered) {
         SelectionController trialSelectionController;
         trialSelectionController.setSelection(m_sel);
+        trialSelectionController.setLastChangeWasHorizontalExtension(m_lastChangeWasHorizontalExtension);
         trialSelectionController.modify(alter, verticalDistance, false);
 
         bool change = m_frame->shouldChangeSelection(trialSelectionController.selection());
@@ -649,6 +728,8 @@ bool SelectionController::modify(EAlteration alter, int verticalDistance, bool u
     if (userTriggered)
         m_frame->setSelectionGranularity(CharacterGranularity);
 
+    m_lastChangeWasHorizontalExtension = alter == EXTEND;
+
     return true;
 }
 
@@ -704,27 +785,27 @@ int SelectionController::xPosForVerticalArrowNavigation(EPositionType type)
 
 void SelectionController::clear()
 {
-    setSelection(Selection());
+    setSelection(VisibleSelection());
 }
 
 void SelectionController::setBase(const VisiblePosition &pos, bool userTriggered)
 {
-    setSelection(Selection(pos.deepEquivalent(), m_sel.extent(), pos.affinity()), true, true, userTriggered);
+    setSelection(VisibleSelection(pos.deepEquivalent(), m_sel.extent(), pos.affinity()), true, true, userTriggered);
 }
 
 void SelectionController::setExtent(const VisiblePosition &pos, bool userTriggered)
 {
-    setSelection(Selection(m_sel.base(), pos.deepEquivalent(), pos.affinity()), true, true, userTriggered);
+    setSelection(VisibleSelection(m_sel.base(), pos.deepEquivalent(), pos.affinity()), true, true, userTriggered);
 }
 
 void SelectionController::setBase(const Position &pos, EAffinity affinity, bool userTriggered)
 {
-    setSelection(Selection(pos, m_sel.extent(), affinity), true, true, userTriggered);
+    setSelection(VisibleSelection(pos, m_sel.extent(), affinity), true, true, userTriggered);
 }
 
 void SelectionController::setExtent(const Position &pos, EAffinity affinity, bool userTriggered)
 {
-    setSelection(Selection(m_sel.base(), pos, affinity), true, true, userTriggered);
+    setSelection(VisibleSelection(m_sel.base(), pos, affinity), true, true, userTriggered);
 }
 
 void SelectionController::setNeedsLayout(bool flag)
@@ -739,7 +820,7 @@ void SelectionController::layout()
         return;
     }
 
-    m_sel.start().node()->document()->updateRendering();
+    m_sel.start().node()->document()->updateStyleIfNeeded();
     
     m_caretRect = IntRect();
         
@@ -757,7 +838,6 @@ void SelectionController::layout()
             RenderObject* caretPainter = caretRenderer();
 
             // Compute an offset between the renderer and the caretPainter
-            IntSize offsetFromPainter;
             bool unrooted = false;
             while (renderer != caretPainter) {
                 RenderObject* containerObject = renderer->container();
@@ -765,15 +845,12 @@ void SelectionController::layout()
                     unrooted = true;
                     break;
                 }
-                offsetFromPainter += renderer->offsetFromContainer(containerObject);
+                localRect.move(renderer->offsetFromContainer(containerObject, localRect.location()));
                 renderer = containerObject;
             }
             
-            if (!unrooted) {
-                // Move the caret rect to the coords of the painter
-                localRect.move(offsetFromPainter);
+            if (!unrooted)
                 m_caretRect = localRect;
-            }
             
             m_absCaretBoundsDirty = true;
         }
@@ -837,7 +914,7 @@ IntRect SelectionController::caretRepaintRect() const
 
 bool SelectionController::recomputeCaretRect()
 {
-    if (!m_frame || !m_frame->document())
+    if (!m_frame)
         return false;
         
     FrameView* v = m_frame->document()->view();
@@ -855,6 +932,7 @@ bool SelectionController::recomputeCaretRect()
     IntRect oldAbsCaretBounds = m_absCaretBounds;
     // FIXME: Rename m_caretRect to m_localCaretRect.
     m_absCaretBounds = absoluteBoundsForLocalRect(m_caretRect);
+    m_absCaretBoundsDirty = false;
     
     if (oldAbsCaretBounds == m_absCaretBounds)
         return false;
@@ -863,7 +941,7 @@ bool SelectionController::recomputeCaretRect()
     // We believe that we need to inflate the local rect before transforming it to obtain the repaint bounds.
     m_absoluteCaretRepaintBounds = caretRepaintRect();
     
-    if (RenderView* view = static_cast<RenderView*>(m_frame->document()->renderer())) {
+    if (RenderView* view = toRenderView(m_frame->document()->renderer())) {
         // FIXME: make caret repainting container-aware.
         view->repaintRectangleInViewAndCompositedLayers(oldAbsoluteCaretRepaintBounds, false);
         view->repaintRectangleInViewAndCompositedLayers(m_absoluteCaretRepaintBounds, false);
@@ -897,7 +975,7 @@ void SelectionController::invalidateCaretRect()
     m_needsLayout = true;
 
     if (!caretRectChanged) {
-        if (RenderView* view = static_cast<RenderView*>(d->renderer()))
+        if (RenderView* view = toRenderView(d->renderer()))
             view->repaintRectangleInViewAndCompositedLayers(caretRepaintRect(), false);
     }
 }
@@ -943,9 +1021,9 @@ void SelectionController::debugRenderer(RenderObject *r, bool selected) const
         if (selected) {
             int offset = 0;
             if (r->node() == m_sel.start().node())
-                offset = m_sel.start().offset();
+                offset = m_sel.start().deprecatedEditingOffset();
             else if (r->node() == m_sel.end().node())
-                offset = m_sel.end().offset();
+                offset = m_sel.end().deprecatedEditingOffset();
                 
             int pos;
             InlineTextBox *box = textRenderer->findNextInlineTextBox(offset, pos);
@@ -1007,7 +1085,8 @@ bool SelectionController::contains(const IntPoint& point)
     if (!document->renderer()) 
         return false;
     
-    HitTestRequest request(true, true);
+    HitTestRequest request(HitTestRequest::ReadOnly |
+                           HitTestRequest::Active);
     HitTestResult result(point);
     document->renderView()->layer()->hitTest(request, result);
     Node* innerNode = result.innerNode();
@@ -1053,8 +1132,6 @@ void SelectionController::selectFrameElementInParentIfFullySelected()
 
     // Get to the <iframe> or <frame> (or even <object>) element in the parent frame.
     Document* doc = m_frame->document();
-    if (!doc)
-        return;
     Element* ownerElement = doc->ownerElement();
     if (!ownerElement)
         return;
@@ -1072,7 +1149,7 @@ void SelectionController::selectFrameElementInParentIfFullySelected()
     VisiblePosition afterOwnerElement(VisiblePosition(ownerElementParent, ownerElementNodeIndex + 1, VP_UPSTREAM_IF_POSSIBLE));
 
     // Focus on the parent frame, and then select from before this element to after.
-    Selection newSelection(beforeOwnerElement, afterOwnerElement);
+    VisibleSelection newSelection(beforeOwnerElement, afterOwnerElement);
     if (parent->shouldChangeSelection(newSelection)) {
         page->focusController()->setFocusedFrame(parent);
         parent->selection()->setSelection(newSelection);
@@ -1082,8 +1159,6 @@ void SelectionController::selectFrameElementInParentIfFullySelected()
 void SelectionController::selectAll()
 {
     Document* document = m_frame->document();
-    if (!document)
-        return;
     
     if (document->focusedNode() && document->focusedNode()->canSelectAll()) {
         document->focusedNode()->selectAll();
@@ -1100,7 +1175,7 @@ void SelectionController::selectAll()
     }
     if (!root)
         return;
-    Selection newSelection(Selection::selectionFromContentsOfNode(root));
+    VisibleSelection newSelection(VisibleSelection::selectionFromContentsOfNode(root));
     if (m_frame->shouldChangeSelection(newSelection))
         setSelection(newSelection);
     selectFrameElementInParentIfFullySelected();
@@ -1148,7 +1223,7 @@ bool SelectionController::setSelectedRange(Range* range, EAffinity affinity, boo
         return false;
     if (endContainer && visibleEnd.isNull())
         return false;
-    setSelection(Selection(visibleStart, visibleEnd), closeTyping);
+    setSelection(VisibleSelection(visibleStart, visibleEnd), closeTyping);
     return true;
 }
 
@@ -1204,9 +1279,6 @@ void SelectionController::setFocused(bool flag)
     m_focused = flag;
 
     focusedOrActiveStateChanged();
-
-    if (Document* doc = m_frame->document())
-        doc->dispatchWindowEvent(flag ? eventNames().focusEvent : eventNames().blurEvent, false, false);
 }
 
 bool SelectionController::isFocusedAndActive() const
@@ -1229,42 +1301,12 @@ void SelectionController::showTreeForThis() const
 #endif
     
 
-static inline bool operator<(const Position& a, const Position& b)
-{
-    if (a.isNull() || b.isNull())
-        return false;
-    if (a.container == b.container) {
-        return a.posOffset < b.posOffset;
-    } 
-    else {
-        unsigned short result = b.container->compareDocumentPosition(a.container.get());
-        return (result == DOCUMENT_POSITION_PRECEDING);
-    }
-}
-
-static inline bool operator>(const Position& a, const Position& b) 
-{
-    if (a.isNull() || b.isNull())
-        return false;
-    return (a != b && b < a);
-}
-
-static inline bool operator<(const VisiblePosition& a, const VisiblePosition& b)
-{
-    return a.deepEquivalent() < b.deepEquivalent();
-}
-
-static inline bool operator>(const VisiblePosition& a, const VisiblePosition& b) 
-{
-    return a.deepEquivalent() > b.deepEquivalent();
-}
-
 void SelectionController::expandSelectionToElementContainingCaretSelection()
 {
     RefPtr<Range> range = elementRangeContainingCaretSelection();
     if (!range)
         return;
-    Selection selection(range.get(), DOWNSTREAM);
+    VisibleSelection selection(range.get(), DOWNSTREAM);
     setSelection(selection);
 }
 
@@ -1273,7 +1315,7 @@ PassRefPtr<Range> SelectionController::elementRangeContainingCaretSelection() co
     if (m_sel.isNone())
         return NULL;
     
-    Selection selection = m_sel;
+    VisibleSelection selection = m_sel;
     if (selection.isNone())
         return NULL;
     
@@ -1297,19 +1339,19 @@ PassRefPtr<Range> SelectionController::elementRangeContainingCaretSelection() co
     selection.setBase(startVisiblePos);
     selection.setExtent(endVisiblePos);
     
-    return selection.toRange();
+    return selection.toNormalizedRange();
 }
     
 void SelectionController::expandSelectionToWordContainingCaretSelection()
 {
-    Selection selection(wordSelectionContainingCaretSelection(m_sel));        
+    VisibleSelection selection(wordSelectionContainingCaretSelection(m_sel));        
     if (selection.isCaretOrRange())
         setSelection(selection);
 }
 
 PassRefPtr<Range> SelectionController::wordRangeContainingCaretSelection()
 {    
-    return wordSelectionContainingCaretSelection(m_sel).toRange();
+    return wordSelectionContainingCaretSelection(m_sel).toNormalizedRange();
 }
 
 void SelectionController::expandSelectionToStartOfWordContainingCaretSelection()
@@ -1320,7 +1362,7 @@ void SelectionController::expandSelectionToStartOfWordContainingCaretSelection()
     VisiblePosition s1(m_sel.start());
     VisiblePosition e1(m_sel.end());
 
-    Selection expanded(wordSelectionContainingCaretSelection(m_sel));
+    VisibleSelection expanded(wordSelectionContainingCaretSelection(m_sel));
     VisiblePosition s2(expanded.start());
 
     // Don't allow the start to become greater after the expansion.
@@ -1335,7 +1377,7 @@ UChar SelectionController::characterInRelationToCaretSelection(int amount) const
     if (m_sel.isNone())
         return 0;
     
-    Selection selection = m_sel;
+    VisibleSelection selection = m_sel;
     ASSERT(selection.isCaretOrRange());
     
     VisiblePosition visiblePosition(selection.start(), VP_DEFAULT_AFFINITY);
@@ -1358,7 +1400,7 @@ UChar SelectionController::characterBeforeCaretSelection() const
     if (m_sel.isNone())
         return 0;
 
-    Selection selection = m_sel;
+    VisibleSelection selection = m_sel;
     ASSERT(selection.isCaretOrRange());
     
     VisiblePosition visiblePosition(selection.start(), VP_DEFAULT_AFFINITY);
@@ -1370,7 +1412,7 @@ UChar SelectionController::characterAfterCaretSelection() const
     if (m_sel.isNone())
         return 0;
 
-    Selection selection = m_sel;
+    VisibleSelection selection = m_sel;
     ASSERT(selection.isCaretOrRange());
     
     VisiblePosition visiblePosition(selection.end(), VP_DEFAULT_AFFINITY);
@@ -1382,7 +1424,7 @@ int SelectionController::wordOffsetInRange(const Range *range) const
     if (!range)
         return -1;
     
-    Selection selection = m_sel;
+    VisibleSelection selection = m_sel;
     if (!selection.isCaret())
         return -1;
 
@@ -1390,7 +1432,7 @@ int SelectionController::wordOffsetInRange(const Range *range) const
     // the same node after it is expanded. Improve to handle more complicated
     // cases.
     ExceptionCode ec = 0;
-    int result = selection.start().offset() - range->startOffset(ec);
+    int result = selection.start().deprecatedEditingOffset() - range->startOffset(ec);
     ASSERT(!ec);
     if (result < 0)
         result = 0;
@@ -1412,12 +1454,12 @@ bool SelectionController::spaceFollowsWordInRange(const Range *range) const
 
 bool SelectionController::selectionAtDocumentStart() const
 {
-    Selection selection = m_sel;
+    VisibleSelection selection = m_sel;
     if (selection.isNone())
         return false;
 
     Position startPos(selection.start());
-    VisiblePosition pos(startPos.node(), startPos.offset(), VP_DEFAULT_AFFINITY);
+    VisiblePosition pos(startPos.node(), startPos.deprecatedEditingOffset(), VP_DEFAULT_AFFINITY);
     if (pos.isNull())
         return false;
 
@@ -1426,7 +1468,7 @@ bool SelectionController::selectionAtDocumentStart() const
 
 bool SelectionController::selectionAtSentenceStart() const
 {
-    Selection selection = m_sel;
+    VisibleSelection selection = m_sel;
     if (selection.isNone())
         return false;
 
@@ -1435,12 +1477,12 @@ bool SelectionController::selectionAtSentenceStart() const
 
 bool SelectionController::selectionAtWordStart() const
 {
-    Selection selection = m_sel;
+    VisibleSelection selection = m_sel;
     if (selection.isNone())
         return false;
 
     Position startPos(selection.start());
-    VisiblePosition pos(startPos.node(), startPos.offset(), VP_DEFAULT_AFFINITY);
+    VisiblePosition pos(startPos.node(), startPos.deprecatedEditingOffset(), VP_DEFAULT_AFFINITY);
     if (pos.isNull())
         return false;
 
@@ -1484,14 +1526,14 @@ void SelectionController::selectRangeOnElement(unsigned int location, unsigned i
     ASSERT(!ec);
     resultRange->setEnd(node, location + length, ec);
     ASSERT(!ec);
-    Selection selection = Selection(resultRange.get(), SEL_DEFAULT_AFFINITY);
+    VisibleSelection selection = VisibleSelection(resultRange.get(), SEL_DEFAULT_AFFINITY);
     setSelection(selection, true);
 }
 
-Selection SelectionController::wordSelectionContainingCaretSelection(const Selection& selection)
+VisibleSelection SelectionController::wordSelectionContainingCaretSelection(const VisibleSelection& selection)
 {
     if (selection.isNone())
-        return Selection();
+        return VisibleSelection();
     
     ASSERT(selection.isCaretOrRange());
     SelectionController controller;
@@ -1502,13 +1544,13 @@ Selection SelectionController::wordSelectionContainingCaretSelection(const Selec
     VisiblePosition startVisiblePosBeforeExpansion(startPosBeforeExpansion, VP_DEFAULT_AFFINITY);
     VisiblePosition endVisiblePosBeforeExpansion(endPosBeforeExpansion, VP_DEFAULT_AFFINITY);
     if (endVisiblePosBeforeExpansion.isNull())
-        return Selection();
+        return VisibleSelection();
     
     if (isEndOfParagraph(endVisiblePosBeforeExpansion)) {
         UChar c(endVisiblePosBeforeExpansion.characterBefore());
         if (isSpaceOrNewline(c) || c == 0xA0) {
             //fprintf(stderr, "end of paragraph with space\n");
-            return Selection();
+            return VisibleSelection();
         }
     }
     
@@ -1541,7 +1583,7 @@ Selection SelectionController::wordSelectionContainingCaretSelection(const Selec
     
     if (startVisiblePos.isNull() || endVisiblePos.isNull()) {
         //fprintf(stderr, "start or end is nil [1]\n");
-        return Selection();
+        return VisibleSelection();
     }
     
     if (isEndOfLine(endVisiblePosBeforeExpansion)) {
@@ -1549,13 +1591,13 @@ Selection SelectionController::wordSelectionContainingCaretSelection(const Selec
         if (previous == endVisiblePos) {
             // empty document
             //fprintf(stderr, "empty document\n");
-            return Selection();
+            return VisibleSelection();
         }
         UChar c(previous.characterAfter());
         if (isSpaceOrNewline(c) || c == 0xA0) {
             // space at end of line
             //fprintf(stderr, "space at end of line [1]\n");
-            return Selection();
+            return VisibleSelection();
         }
     }
     
@@ -1566,13 +1608,13 @@ Selection SelectionController::wordSelectionContainingCaretSelection(const Selec
         if (isEndOfLine(previous)) {
             // on empty line
             //fprintf(stderr, "on empty line\n");
-            return Selection();
+            return VisibleSelection();
         }
         UChar c(previous.characterAfter());
         if (isSpaceOrNewline(c) || c == 0xA0) {
             // space at end of line
             //fprintf(stderr, "space at end of line [2]\n");
-            return Selection();
+            return VisibleSelection();
         }
         controller.moveTo(startVisiblePos);
         controller.modify(SelectionController::EXTEND, SelectionController::BACKWARD, WordGranularity);
@@ -1582,7 +1624,7 @@ Selection SelectionController::wordSelectionContainingCaretSelection(const Selec
         endVisiblePos = VisiblePosition(endPos, VP_DEFAULT_AFFINITY);
         if (startVisiblePos.isNull() || endVisiblePos.isNull()) {
             //fprintf(stderr, "start or end is nil [2]\n");
-            return Selection();
+            return VisibleSelection();
         }
     }
     
@@ -1605,13 +1647,13 @@ Selection SelectionController::wordSelectionContainingCaretSelection(const Selec
         endVisiblePos = endVisiblePosBeforeExpansion;
     }
 
-    return Selection(startVisiblePos, endVisiblePos);    
+    return VisibleSelection(startVisiblePos, endVisiblePos);    
 }
 
-bool SelectionController::_selectionAtSentenceStart(const Selection& sel) const
+bool SelectionController::_selectionAtSentenceStart(const VisibleSelection& sel) const
 {
     Position startPos(sel.start());
-    VisiblePosition pos(startPos.node(), startPos.offset(), VP_DEFAULT_AFFINITY);
+    VisiblePosition pos(startPos.node(), startPos.deprecatedEditingOffset(), VP_DEFAULT_AFFINITY);
     if (pos.isNull())
         return false;
 
@@ -1649,27 +1691,14 @@ PassRefPtr<Range> SelectionController::_rangeByAlteringCurrentSelection(EAlterat
         return NULL;
         
     if (amount == 0)
-        return toRange();
+        return toNormalizedRange();
 
     SelectionController selectionController;
     selectionController.setSelection(m_sel);
     SelectionController::EDirection direction = amount > 0 ? SelectionController::FORWARD : SelectionController::BACKWARD;
     for (int i = 0; i < abs(amount); i++)
         selectionController.modify(alteration, direction, CharacterGranularity);
-    return selectionController.toRange();
-}
-
-bool SelectionController::selectionIsCaretInDisplayBlockElementAtOffset(int offset) const
-{
-    if (!m_sel.isCaret())
-        return false;
-
-    Position pos(m_sel.start());
-    RenderObject *renderer = pos.container->renderer();
-    if (!renderer)
-        return false;
-
-    return renderer->style()->display() == BLOCK && pos.posOffset == offset;
+    return selectionController.toNormalizedRange();
 }
 
 }

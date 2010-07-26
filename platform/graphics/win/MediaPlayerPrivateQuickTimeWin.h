@@ -52,7 +52,8 @@ public:
     
     IntSize naturalSize() const;
     bool hasVideo() const;
-    
+    bool hasAudio() const;
+
     void load(const String& url);
     void cancelLoad();
     
@@ -69,13 +70,14 @@ public:
     
     void setRate(float);
     void setVolume(float);
+    void setPreservesPitch(bool);
     
     int dataRate() const;
     
     MediaPlayer::NetworkState networkState() const { return m_networkState; }
     MediaPlayer::ReadyState readyState() const { return m_readyState; }
     
-    float maxTimeBuffered() const;
+    PassRefPtr<TimeRanges> buffered() const;
     float maxTimeSeekable() const;
     unsigned bytesLoaded() const;
     bool totalBytesKnown() const;
@@ -89,6 +91,7 @@ public:
     
     void paint(GraphicsContext*, const IntRect&);
     
+    bool hasSingleSecurityOrigin() const;
 
 private:
     MediaPlayerPrivate(MediaPlayer*);
@@ -98,6 +101,7 @@ private:
     void cancelSeek();
     void seekTimerFired(Timer<MediaPlayerPrivate>*);
     float maxTimeLoaded() const;
+    void sawUnsupportedTracks();
 
     virtual void movieEnded(QTMovieWin*);
     virtual void movieLoadStateChanged(QTMovieWin*);
@@ -105,7 +109,7 @@ private:
     virtual void movieNewImageAvailable(QTMovieWin*);
 
     // engine support
-    static MediaPlayerPrivateInterface* MediaPlayerPrivate::create(MediaPlayer*);
+    static MediaPlayerPrivateInterface* create(MediaPlayer*);
     static void getSupportedTypes(HashSet<String>& types);
     static MediaPlayer::SupportsType supportsType(const String& type, const String& codecs);
     static bool isAvailable();
@@ -118,6 +122,8 @@ private:
     MediaPlayer::NetworkState m_networkState;
     MediaPlayer::ReadyState m_readyState;
     unsigned m_enabledTrackCount;
+    unsigned m_totalTrackCount;
+    bool m_hasUnsupportedTracks;
     bool m_startedPlaying;
     bool m_isStreaming;
 #if DRAW_FRAME_RATE

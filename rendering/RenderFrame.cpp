@@ -1,10 +1,8 @@
-/**
- * This file is part of the KDE project.
- *
+/*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 2000 Simon Hausmann <hausmann@kde.org>
  *           (C) 2000 Stefan Schimanski (1Stein@gmx.de)
- * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
+ * Copyright (C) 2004, 2005, 2006, 2009 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Nokia Corporation.
  *
  * This library is free software; you can redistribute it and/or
@@ -26,17 +24,15 @@
 
 #include "config.h"
 #include "RenderFrame.h"
-#include "RenderFrameSet.h"
+
+#include "FrameView.h"
+#include "HTMLFrameElement.h"
+
 #include "Document.h"
 #include "Frame.h"
 #include "RenderView.h"
-#include "FrameView.h"
-#include "HTMLFrameSetElement.h"
-#include "HTMLNames.h"
 
 namespace WebCore {
-
-using namespace HTMLNames;
 
 RenderFrame::RenderFrame(HTMLFrameElement* frame)
     : RenderPart(frame)
@@ -46,26 +42,30 @@ RenderFrame::RenderFrame(HTMLFrameElement* frame)
 
 FrameEdgeInfo RenderFrame::edgeInfo() const
 {
-    return FrameEdgeInfo(element()->noResize(), element()->hasFrameBorder());
+    HTMLFrameElement* element = static_cast<HTMLFrameElement*>(node());
+    return FrameEdgeInfo(element->noResize(), element->hasFrameBorder());
 }
 
 void RenderFrame::viewCleared()
 {
-    if (element() && m_widget && m_widget->isFrameView()) {
-        FrameView* view = static_cast<FrameView*>(m_widget);
-        int marginw = element()->getMarginWidth();
-        int marginh = element()->getMarginHeight();
+    HTMLFrameElement* element = static_cast<HTMLFrameElement*>(node());
+    if (!element || !widget() || !widget()->isFrameView())
+        return;
 
-        if (marginw != -1)
-            view->setMarginWidth(marginw);
-        if (marginh != -1)
-            view->setMarginHeight(marginh);
-    }
+    FrameView* view = static_cast<FrameView*>(widget());
+
+    int marginw = element->getMarginWidth();
+    int marginh = element->getMarginHeight();
+
+    if (marginw != -1)
+        view->setMarginWidth(marginw);
+    if (marginh != -1)
+        view->setMarginHeight(marginh);
 }
 
 void RenderFrame::layoutWithFlattening(bool flexibleWidth, bool flexibleHeight)
 {
-    FrameView* childFrameView = static_cast<FrameView*>(m_widget);
+    FrameView* childFrameView = static_cast<FrameView*>(widget());
     RenderView* childRoot = childFrameView ? childFrameView->frame()->contentRenderer() : 0;
     // don't expand frames set to have zero width or height
     if (!width() || !height() || !childRoot) {
@@ -84,10 +84,10 @@ void RenderFrame::layoutWithFlattening(bool flexibleWidth, bool flexibleHeight)
     if (childRoot->prefWidthsDirty())
         childRoot->calcPrefWidths();
     
-    bool scrolling = element()->scrollingMode() != ScrollbarAlwaysOff;
+    bool scrolling = static_cast<HTMLFrameElement*>(node())->scrollingMode() != ScrollbarAlwaysOff;
     
     // if scrollbars are off assume it is ok for this frame to become really narrow
-    if (scrolling || flexibleWidth || childFrameView->frame()->isFrameSet())
+    if (scrolling || flexibleWidth || childFrameView->frame()->document()->isFrameSet())
          setWidth(max(width(), childRoot->minPrefWidth()));
  
     // update again to pass the width to the child frame
@@ -97,9 +97,9 @@ void RenderFrame::layoutWithFlattening(bool flexibleWidth, bool flexibleHeight)
         childFrameView->layout();
     while (childFrameView->layoutPending() || childRoot->needsLayout());
         
-    if (scrolling || flexibleHeight || childFrameView->frame()->isFrameSet())
+    if (scrolling || flexibleHeight || childFrameView->frame()->document()->isFrameSet())
         setHeight(max(height(), childFrameView->contentsHeight()));
-    if (scrolling || flexibleWidth || childFrameView->frame()->isFrameSet())
+    if (scrolling || flexibleWidth || childFrameView->frame()->document()->isFrameSet())
         setWidth(max(width(), childFrameView->contentsWidth()));
     
     updateWidgetPosition();

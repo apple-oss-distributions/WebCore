@@ -110,14 +110,15 @@ bool ResourceLoader::load(const ResourceRequest& r)
     
     ResourceRequest clientRequest(r);
     willSendRequest(clientRequest, ResourceResponse());
+
+    // If this ResourceLoader was stopped as a result of willSendRequest, bail out
+    if (m_reachedTerminalState)
+        return false;
+
     if (clientRequest.isNull()) {
         didFail(frameLoader()->cancelledError(r));
         return false;
     }
-    
-    // If this ResourceLoader was stopped as a result of willSendRequest, bail out
-    if (m_reachedTerminalState)
-        return false;
         
     if (m_documentLoader->scheduleArchiveLoad(this, clientRequest, r.url()))
         return true;
@@ -471,6 +472,11 @@ bool ResourceLoader::canAuthenticateAgainstProtectionSpace(const ProtectionSpace
 {
     RefPtr<ResourceLoader> protector(this);
     return frameLoader()->canAuthenticateAgainstProtectionSpace(this, protectionSpace);
+}
+    
+CFDictionaryRef ResourceLoader::connectionProperties()
+{
+    return frameLoader()->connectionProperties(this);
 }
 
 void ResourceLoader::receivedCancellation(const AuthenticationChallenge&)

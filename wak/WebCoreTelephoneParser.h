@@ -2,9 +2,11 @@
  *  WebCoreTelephoneParser.h
  *  WebCore
  *
- *  Copyright (C) 2007, 2008, Apple Inc.  All rights reserved.
- *
+ *  Copyright (C) 2007, 2008, 2009 Apple Inc.  All rights reserved.
  */
+
+#ifndef WebCoreTelephoneParser_h
+#define WebCoreTelephoneParser_h
 
 #include "string.h"
 
@@ -25,3 +27,5 @@ void WebCoreFindTelephoneNumber(const UniChar string[], unsigned len, int *start
 #ifdef __cplusplus
 }
 #endif
+
+#endif // WebCoreTelephoneParser_h

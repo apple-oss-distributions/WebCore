@@ -45,6 +45,7 @@ ImplicitAnimation::ImplicitAnimation(const Animation* transition, int animatingP
     , m_transitionProperty(transition->property())
     , m_animatingProperty(animatingProperty)
     , m_overridden(false)
+    , m_active(true)
     , m_fromStyle(fromStyle)
 {
     ASSERT(animatingProperty != cAnimateAll);
@@ -52,9 +53,9 @@ ImplicitAnimation::ImplicitAnimation(const Animation* transition, int animatingP
 
 ImplicitAnimation::~ImplicitAnimation()
 {
-    // Do the cleanup here instead of in the base class so the specialized methods get called
+    // // Make sure to tell the renderer that we are ending. This will make sure any accelerated animations are removed.
     if (!postActive())
-        updateStateMachine(AnimationStateInputEndAnimation, -1);
+        endAnimation();
 }
 
 bool ImplicitAnimation::shouldSendEventForListener(Document::ListenerType inListenerType) const
@@ -105,13 +106,13 @@ void ImplicitAnimation::getAnimatedStyle(RefPtr<RenderStyle>& animatedStyle)
     blendProperties(this, m_animatingProperty, animatedStyle.get(), m_fromStyle.get(), m_toStyle.get(), progress(1, 0, 0));
 }
 
-bool ImplicitAnimation::startAnimation(double beginTime)
+bool ImplicitAnimation::startAnimation(double timeOffset)
 {
 #if USE(ACCELERATED_COMPOSITING)
     if (m_object && m_object->hasLayer()) {
-        RenderLayer* layer = toRenderBox(m_object)->layer();
+        RenderLayer* layer = toRenderBoxModelObject(m_object)->layer();
         if (layer->isComposited())
-            return layer->backing()->startTransition(beginTime, m_animatingProperty, m_fromStyle.get(), m_toStyle.get());
+            return layer->backing()->startTransition(timeOffset, m_animatingProperty, m_fromStyle.get(), m_toStyle.get());
     }
 #else
     UNUSED_PARAM(beginTime);
@@ -119,11 +120,11 @@ bool ImplicitAnimation::startAnimation(double beginTime)
     return false;
 }
 
-void ImplicitAnimation::endAnimation(bool /*reset*/)
+void ImplicitAnimation::endAnimation()
 {
 #if USE(ACCELERATED_COMPOSITING)
     if (m_object && m_object->hasLayer()) {
-        RenderLayer* layer = toRenderBox(m_object)->layer();
+        RenderLayer* layer = toRenderBoxModelObject(m_object)->layer();
         if (layer->isComposited())
             layer->backing()->transitionFinished(m_animatingProperty);
     }
@@ -141,10 +142,8 @@ void ImplicitAnimation::onAnimationEnd(double elapsedTime)
     if (keyframeAnim)
         keyframeAnim->setUnanimatedStyle(m_toStyle);
     
-    if (!sendTransitionEvent(eventNames().webkitTransitionEndEvent, elapsedTime)) {
-        // We didn't dispatch an event, which would call endAnimation(), so we'll just call it here.
-        endAnimation(true);
-    }
+    sendTransitionEvent(eventNames().webkitTransitionEndEvent, elapsedTime);
+    endAnimation();
 }
 
 bool ImplicitAnimation::sendTransitionEvent(const AtomicString& eventType, double elapsedTime)
@@ -171,7 +170,7 @@ bool ImplicitAnimation::sendTransitionEvent(const AtomicString& eventType, doubl
 
             // Restore the original (unanimated) style
             if (eventType == eventNames().webkitTransitionEndEvent && element->renderer())
-                setChanged(element.get());
+                setNeedsStyleRecalc(element.get());
 
             return true; // Did dispatch an event
         }
@@ -211,6 +210,10 @@ bool ImplicitAnimation::affectsProperty(int property) const
 
 bool ImplicitAnimation::isTargetPropertyEqual(int prop, const RenderStyle* targetStyle)
 {
+    // We can get here for a transition that has not started yet. This would make m_toStyle unset and null. 
+    // So we check that here (see <https://bugs.webkit.org/show_bug.cgi?id=26706>)
+    if (!m_toStyle)
+        return false;
     return propertiesEqual(prop, m_toStyle.get(), targetStyle);
 }
 

@@ -140,7 +140,7 @@ public:
     HTMLTokenizer(DocumentFragment*);
     virtual ~HTMLTokenizer();
 
-    virtual bool write(const SegmentedString&, bool appendData);
+    virtual void write(const SegmentedString&, bool appendData);
     virtual void finish();
     virtual void setForceSynchronous(bool force);
     virtual bool isWaitingForScripts() const;
@@ -175,7 +175,7 @@ private:
     State parseDoctype(SegmentedString&, State);
     State parseServer(SegmentedString&, State);
     State parseText(SegmentedString&, State);
-    State parseSpecial(SegmentedString&, State);
+    State parseNonHTMLText(SegmentedString&, State);
     State parseTag(SegmentedString&, State);
     State parseEntity(SegmentedString&, UChar*& dest, State, unsigned& cBufferPos, bool start, bool parsingTag);
     State parseProcessingInstruction(SegmentedString&, State);
@@ -290,7 +290,7 @@ private:
         bool forceSynchronous() const { return testBit(ForceSynchronous); }
         void setForceSynchronous(bool v) { setBit(ForceSynchronous, v); }
 
-        bool inAnySpecial() const { return m_bits & (InScript | InStyle | InXmp | InTextArea | InTitle | InIFrame); }
+        bool inAnyNonHTMLText() const { return m_bits & (InScript | InStyle | InXmp | InTextArea | InTitle | InIFrame); }
         bool hasTagState() const { return m_bits & TagMask; }
         bool hasEntityState() const { return m_bits & EntityMask; }
 

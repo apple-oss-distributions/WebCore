@@ -89,6 +89,7 @@ namespace WebCore {
         void didCancelAuthenticationChallenge(const AuthenticationChallenge&);
 
         virtual bool canAuthenticateAgainstProtectionSpace(const ProtectionSpace&);
+        virtual CFDictionaryRef connectionProperties();
 
         virtual void receivedCancellation(const AuthenticationChallenge&);
 
@@ -106,10 +107,14 @@ namespace WebCore {
         virtual void didReceiveAuthenticationChallenge(ResourceHandle*, const AuthenticationChallenge& challenge) { didReceiveAuthenticationChallenge(challenge); } 
         virtual void didCancelAuthenticationChallenge(ResourceHandle*, const AuthenticationChallenge& challenge) { didCancelAuthenticationChallenge(challenge); } 
         virtual bool canAuthenticateAgainstProtectionSpace(ResourceHandle*, const ProtectionSpace& protectionSpace) { return canAuthenticateAgainstProtectionSpace(protectionSpace); }
+        virtual CFDictionaryRef connectionProperties(ResourceHandle*) { return connectionProperties(); }
         virtual void receivedCancellation(ResourceHandle*, const AuthenticationChallenge& challenge) { receivedCancellation(challenge); }
         virtual void willCacheResponse(ResourceHandle*, CacheStoragePolicy&);
 #if PLATFORM(MAC)
         virtual NSCachedURLResponse* willCacheResponse(ResourceHandle*, NSCachedURLResponse*);
+#endif
+#if USE(CFNETWORK)
+        virtual bool shouldCacheResponse(ResourceHandle*, CFCachedURLResponseRef);
 #endif
 
         ResourceHandle* handle() const { return m_handle.get(); }

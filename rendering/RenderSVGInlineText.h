@@ -37,21 +37,22 @@ public:
         
     virtual void styleDidChange(StyleDifference, const RenderStyle*);
 
-    virtual void absoluteRects(Vector<IntRect>& rects, int tx, int ty, bool topLevel = true);
-    virtual void absoluteQuads(Vector<FloatQuad>&, bool topLevel = true);
+    virtual void absoluteRects(Vector<IntRect>& rects, int tx, int ty);
+    virtual void absoluteQuads(Vector<FloatQuad>&);
 
     virtual bool requiresLayer() const { return false; }
-    virtual IntRect selectionRectForRepaint(RenderBox* repaintContainer, bool clipToVisibleContent = true);
+    virtual IntRect selectionRectForRepaint(RenderBoxModelObject* repaintContainer, bool clipToVisibleContent = true);
     virtual bool isSVGText() const { return true; }
-    virtual InlineTextBox* createInlineTextBox();
 
     virtual IntRect localCaretRect(InlineBox*, int caretOffset, int* extraWidthToEndOfLine = 0);
-    virtual VisiblePosition positionForCoordinates(int x, int y);
+    virtual VisiblePosition positionForPoint(const IntPoint&);
 
     virtual void destroy();
 
 private:
-    IntRect computeRepaintRectForRange(RenderBox* repaintContainer, int startPos, int endPos);
+    virtual InlineTextBox* createTextBox();
+    IntRect computeRepaintRectForRange(RenderBoxModelObject* repaintContainer, int startPos, int endPos);
+    FloatQuad computeRepaintQuadForRange(RenderBoxModelObject* repaintContainer, int startPos, int endPos);
 };
 
 }

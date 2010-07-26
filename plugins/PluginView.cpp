@@ -71,7 +71,7 @@
 using JSC::ExecState;
 using JSC::JSLock;
 using JSC::JSObject;
-using JSC::JSValuePtr;
+using JSC::JSValue;
 using JSC::UString;
 
 using std::min;
@@ -86,7 +86,7 @@ static int s_callingPlugin;
 
 static String scriptStringIfJavaScriptURL(const KURL& url)
 {
-    if (!url.protocolIs("javascript"))
+    if (!protocolIsJavaScript(url))
         return String();
 
     // This returns an unescaped string
@@ -205,7 +205,7 @@ static char* createUTF8String(const String& str)
     return result;
 }
 
-static bool getString(ScriptController* proxy, JSValuePtr result, String& string)
+static bool getString(ScriptController* proxy, JSValue result, String& string)
 {
     if (!proxy || !result || result.isUndefined())
         return false;
@@ -239,8 +239,12 @@ void PluginView::performRequest(PluginRequest* request)
             m_streams.add(stream);
             stream->start();
         } else {
+            // If the target frame is our frame, we could destroy the
+            // PluginView, so we protect it. <rdar://problem/6991251>
+            RefPtr<PluginView> protect(this);
+
             m_parentFrame->loader()->load(request->frameLoadRequest().resourceRequest(), targetFrameName, false);
-      
+
             // FIXME: <rdar://problem/4807469> This should be sent when the document has finished loading
             if (request->sendNotification()) {
                 PluginView::setCurrentPluginView(this);
@@ -260,7 +264,7 @@ void PluginView::performRequest(PluginRequest* request)
     
     // Executing a script can cause the plugin view to be destroyed, so we keep a reference to the parent frame.
     RefPtr<Frame> parentFrame = m_parentFrame;
-    JSValuePtr result = m_parentFrame->loader()->executeScript(jsString, request->shouldAllowPopups()).jsValue();
+    JSValue result = m_parentFrame->loader()->executeScript(jsString, request->shouldAllowPopups()).jsValue();
 
     if (targetFrameName.isNull()) {
         String resultString;
@@ -397,12 +401,12 @@ int32 PluginView::write(NPStream* stream, int32 len, void* buffer)
 
 NPError PluginView::destroyStream(NPStream* stream, NPReason reason)
 {
-    PluginStream* browserStream = static_cast<PluginStream*>(stream->ndata);
-
     if (!stream || PluginStream::ownerForStream(stream) != m_instance)
         return NPERR_INVALID_INSTANCE_ERROR;
 
+    PluginStream* browserStream = static_cast<PluginStream*>(stream->ndata);
     browserStream->cancelAndDestroyStream(reason);
+
     return NPERR_NO_ERROR;
 }
 
@@ -481,6 +485,11 @@ PassRefPtr<JSC::Bindings::Instance> PluginView::bindingInstance()
     if (!m_plugin || !m_plugin->pluginFuncs()->getvalue)
         return 0;
 
+    // On Windows, calling Java's NPN_GetValue can allow the message loop to
+    // run, allowing loading to take place or JavaScript to run. Protect the
+    // PluginView from destruction. <rdar://problem/6978804>
+    RefPtr<PluginView> protect(this);
+
     NPError npErr;
     {
         PluginView::setCurrentPluginView(this);
@@ -489,6 +498,13 @@ PassRefPtr<JSC::Bindings::Instance> PluginView::bindingInstance()
         npErr = m_plugin->pluginFuncs()->getvalue(m_instance, NPPVpluginScriptableNPObject, &object);
         setCallingPlugin(false);
         PluginView::setCurrentPluginView(0);
+    }
+
+    if (hasOneRef()) {
+        // The renderer for the PluginView was destroyed during the above call, and
+        // the PluginView will be destroyed when this function returns, so we
+        // return null.
+        return 0;
     }
 
     if (npErr != NPERR_NO_ERROR || !object)
@@ -558,9 +574,6 @@ PluginView::PluginView(Frame* parentFrame, const IntSize& size, PluginPackage* p
 #if PLATFORM(GTK) || defined(Q_WS_X11)
     , m_needsXEmbed(false)
 #endif
-#if PLATFORM(QT)
-    , m_isNPAPIPlugin(false)
-#endif
 #if PLATFORM(WIN_OS) && !PLATFORM(WX) && ENABLE(NETSCAPE_PLUGIN_API)
     , m_pluginWndProc(0)
     , m_lastMessage(0)
@@ -594,6 +607,14 @@ PluginView::PluginView(Frame* parentFrame, const IntSize& size, PluginPackage* p
     m_mode = m_loadManually ? NP_FULL : NP_EMBED;
 
     resize(size);
+}
+
+void PluginView::focusPluginElement()
+{
+    // Focus the plugin
+    if (Page* page = m_parentFrame->page())
+        page->focusController()->setFocusedFrame(m_parentFrame);
+    m_parentFrame->document()->setFocusedNode(m_element);
 }
 
 void PluginView::didReceiveResponse(const ResourceResponse& response)
@@ -661,7 +682,7 @@ bool PluginView::isCallingPlugin()
     return s_callingPlugin > 0;
 }
 
-PluginView* PluginView::create(Frame* parentFrame, const IntSize& size, Element* element, const KURL& url, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually)
+PassRefPtr<PluginView> PluginView::create(Frame* parentFrame, const IntSize& size, Element* element, const KURL& url, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually)
 {
     // if we fail to find a plugin for this MIME type, findPlugin will search for
     // a plugin by the file extension and update the MIME type, so pass a mutable String
@@ -674,7 +695,7 @@ PluginView* PluginView::create(Frame* parentFrame, const IntSize& size, Element*
         plugin = PluginDatabase::installedPlugins()->findPlugin(url, mimeTypeCopy);
     }
 
-    return new PluginView(parentFrame, size, plugin, element, url, paramNames, paramValues, mimeTypeCopy, loadManually);
+    return adoptRef(new PluginView(parentFrame, size, plugin, element, url, paramNames, paramValues, mimeTypeCopy, loadManually));
 }
 
 void PluginView::freeStringArray(char** stringArray, int length)

@@ -21,14 +21,14 @@
 #include "config.h"
 #include "Page.h"
 
+#include "CSSStyleSelector.h"
 #include "Chrome.h"
 #include "ChromeClient.h"
 #include "ContextMenuClient.h"
 #include "ContextMenuController.h"
-#include "CSSStyleSelector.h"
-#include "EditorClient.h"
 #include "DOMWindow.h"
 #include "DragController.h"
+#include "EditorClient.h"
 #include "EventNames.h"
 #include "FileSystem.h"
 #include "FocusController.h"
@@ -36,29 +36,30 @@
 #include "FrameLoader.h"
 #include "FrameTree.h"
 #include "FrameView.h"
+#include "HTMLElement.h"
 #include "HistoryItem.h"
 #include "InspectorController.h"
 #include "Logging.h"
-#include "NetworkStateNotifier.h"
 #include "Navigator.h"
+#include "NetworkStateNotifier.h"
 #include "PageGroup.h"
 #include "PluginData.h"
 #include "ProgressTracker.h"
 #include "RenderWidget.h"
+#include "RenderTheme.h"
+#include "ScriptController.h"
 #include "SelectionController.h"
 #include "Settings.h"
 #include "StringHash.h"
 #include "TextResourceDecoder.h"
 #include "Widget.h"
-#include "ScriptController.h"
 #include <wtf/HashMap.h>
 #include <wtf/RefCountedLeakCounter.h>
 #include <wtf/StdLibExtras.h>
 
 #if ENABLE(DOM_STORAGE)
-#include "LocalStorage.h"
-#include "SessionStorage.h"
 #include "StorageArea.h"
+#include "StorageNamespace.h"
 #endif
 
 #if ENABLE(JAVASCRIPT_DEBUGGER)
@@ -89,29 +90,27 @@ static void networkStateChanged()
     }
 
     AtomicString eventName = networkStateNotifier().onLine() ? eventNames().onlineEvent : eventNames().offlineEvent;
-    
-    for (unsigned i = 0; i < frames.size(); i++) {
-        Document* document = frames[i]->document();
-        
-        if (!document)
-            continue;
-
-        // If the document does not have a body the event should be dispatched to the document
-        EventTargetNode* eventTarget = document->body();
-        if (!eventTarget)
-            eventTarget = document;
-        
-        eventTarget->dispatchEventForType(eventName, false, false);
-    }
+    for (unsigned i = 0; i < frames.size(); i++)
+        frames[i]->document()->dispatchWindowEvent(eventName, false, false);
 }
 
 Page::Page(ChromeClient* chromeClient, ContextMenuClient* contextMenuClient, EditorClient* editorClient, DragClient* dragClient, InspectorClient* inspectorClient)
     : m_chrome(new Chrome(this, chromeClient))
     , m_dragCaretController(new SelectionController(0, true))
+#if ENABLE(DRAG_SUPPORT)
+    , m_dragController(new DragController(this, dragClient))
+#endif
     , m_focusController(new FocusController(this))
+#if ENABLE(CONTEXT_MENUS)
+    , m_contextMenuController(new ContextMenuController(this, contextMenuClient))
+#endif
+#if ENABLE(INSPECTOR)
+    , m_inspectorController(InspectorController::create(this, inspectorClient))
+#endif
     , m_settings(new Settings(this))
     , m_progress(new ProgressTracker)
     , m_backForwardList(BackForwardList::create(this))
+    , m_theme(RenderTheme::themeForPage(this))
     , m_editorClient(editorClient)
     , m_frameCount(0)
     , m_tabKeyCyclesThroughElements(true)
@@ -121,18 +120,25 @@ Page::Page(ChromeClient* chromeClient, ContextMenuClient* contextMenuClient, Edi
     , m_areMemoryCacheClientCallsEnabled(true)
     , m_mediaVolume(1)
     , m_javaScriptURLsAreAllowed(true)
+#if ENABLE(INSPECTOR)
+    , m_parentInspectorController(0)
+#endif
     , m_didLoadUserStyleSheet(false)
     , m_userStyleSheetModificationTime(0)
     , m_group(0)
     , m_debugger(0)
-    , m_pendingUnloadEventCount(0)
-    , m_pendingBeforeUnloadEventCount(0)
     , m_customHTMLTokenizerTimeDelay(-1)
     , m_customHTMLTokenizerChunkSize(-1)
 {
-    UNUSED_PARAM(dragClient);
+#if !ENABLE(CONTEXT_MENUS)
     UNUSED_PARAM(contextMenuClient);
+#endif
+#if !ENABLE(DRAG_SUPPORT)
+    UNUSED_PARAM(dragClient);
+#endif
+#if !ENABLE(INSPECTOR)
     UNUSED_PARAM(inspectorClient);
+#endif
 
     if (!allPages) {
         allPages = new HashSet<Page*>;
@@ -162,6 +168,11 @@ Page::~Page()
         frame->pageDestroyed();
 
     m_editorClient->pageDestroyed();
+#if ENABLE(INSPECTOR)
+    if (m_parentInspectorController)
+        m_parentInspectorController->pageDestroyed();
+    m_inspectorController->inspectedPageDestroyed();
+#endif
 
     m_backForwardList->close();
 
@@ -211,7 +222,19 @@ bool Page::goForward()
 void Page::goToItem(HistoryItem* item, FrameLoadType type)
 {
     // Abort any current load if we're going to a history item
-    m_mainFrame->loader()->stopAllLoaders();
+
+    // Define what to do with any open database connections. By default we stop them and terminate the database thread.
+    DatabasePolicy databasePolicy = DatabasePolicyStop;
+
+#if ENABLE(DATABASE)
+    // If we're navigating the history via a fragment on the same document, then we do not want to stop databases.
+    const KURL& currentURL = m_mainFrame->loader()->url();
+    const KURL& newURL = item->url();
+
+    if (newURL.hasRef() && equalIgnoringRef(currentURL, newURL))
+        databasePolicy = DatabasePolicyContinue;
+#endif
+    m_mainFrame->loader()->stopAllLoaders(databasePolicy);
     m_mainFrame->loader()->goToItem(item, type);
 }
 
@@ -229,7 +252,7 @@ void Page::setGroupName(const String& name)
     }
 
     if (name.isEmpty())
-        m_group = 0;
+        m_group = m_singlePageGroup.get();
     else {
         m_singlePageGroup.clear();
         m_group = PageGroup::pageGroup(name);
@@ -354,13 +377,12 @@ void Page::unmarkAllTextMatches()
 
     Frame* frame = mainFrame();
     do {
-        if (Document* document = frame->document())
-            document->removeMarkers(DocumentMarker::TextMatch);
+        frame->document()->removeMarkers(DocumentMarker::TextMatch);
         frame = incrementFrame(frame, true, false);
     } while (frame);
 }
 
-const Selection& Page::selection() const
+const VisibleSelection& Page::selection() const
 {
     return focusController()->focusedOrMainFrame()->selection()->selection();
 }
@@ -400,8 +422,7 @@ void Page::setMediaVolume(float volume)
 
     m_mediaVolume = volume;
     for (Frame* frame = mainFrame(); frame; frame = frame->tree()->traverseNext()) {
-        if (frame->document())
-            frame->document()->mediaVolumeDidChange();
+        frame->document()->mediaVolumeDidChange();
     }
 }
 
@@ -473,7 +494,9 @@ const String& Page::userStyleSheet() const
     if (!data)
         return m_userStyleSheet;
 
-    m_userStyleSheet = TextResourceDecoder::create("text/css")->decode(data->data(), data->size());
+    RefPtr<TextResourceDecoder> decoder = TextResourceDecoder::create("text/css");
+    m_userStyleSheet = decoder->decode(data->data(), data->size());
+    m_userStyleSheet += decoder->flush();
 
     return m_userStyleSheet;
 }
@@ -546,60 +569,19 @@ void Page::setDebugger(JSC::Debugger* debugger)
 }
 
 #if ENABLE(DOM_STORAGE)
-SessionStorage* Page::sessionStorage(bool optionalCreate)
+StorageNamespace* Page::sessionStorage(bool optionalCreate)
 {
     if (!m_sessionStorage && optionalCreate)
-        m_sessionStorage = SessionStorage::create(this);
+        m_sessionStorage = StorageNamespace::sessionStorageNamespace();
 
     return m_sessionStorage.get();
 }
 
-void Page::setSessionStorage(PassRefPtr<SessionStorage> newStorage)
+void Page::setSessionStorage(PassRefPtr<StorageNamespace> newStorage)
 {
-    ASSERT(newStorage->page() == this);
     m_sessionStorage = newStorage;
 }
 #endif
-    
-unsigned Page::pendingUnloadEventCount()
-{
-    return m_pendingUnloadEventCount;
-}
-    
-void Page::changePendingUnloadEventCount(int delta) 
-{
-    if (!delta)
-        return;
-    ASSERT( (delta + (int)m_pendingUnloadEventCount) >= 0 );
-    
-    if (m_pendingUnloadEventCount == 0)
-        m_chrome->disableSuddenTermination();
-    else if ((m_pendingUnloadEventCount + delta) == 0)
-        m_chrome->enableSuddenTermination();
-    
-    m_pendingUnloadEventCount += delta;
-    return; 
-}
-    
-unsigned Page::pendingBeforeUnloadEventCount()
-{
-    return m_pendingBeforeUnloadEventCount;
-}
-    
-void Page::changePendingBeforeUnloadEventCount(int delta) 
-{
-    if (!delta)
-        return;
-    ASSERT( (delta + (int)m_pendingBeforeUnloadEventCount) >= 0 );
-    
-    if (m_pendingBeforeUnloadEventCount == 0)
-        m_chrome->disableSuddenTermination();
-    else if ((m_pendingBeforeUnloadEventCount + delta) == 0)
-        m_chrome->enableSuddenTermination();
-    
-    m_pendingBeforeUnloadEventCount += delta;
-    return; 
-}
 
 #if ENABLE(WML)
 WMLPageState* Page::wmlPageState()

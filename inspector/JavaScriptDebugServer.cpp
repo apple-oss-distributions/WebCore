@@ -29,6 +29,8 @@
 #include "config.h"
 #include "JavaScriptDebugServer.h"
 
+#if ENABLE(JAVASCRIPT_DEBUGGER)
+
 #include "DOMWindow.h"
 #include "EventLoop.h"
 #include "Frame.h"
@@ -272,6 +274,19 @@ static Page* toPage(JSGlobalObject* globalObject)
     return frame ? frame->page() : 0;
 }
 
+void JavaScriptDebugServer::detach(JSGlobalObject* globalObject)
+{
+    // If we're detaching from the currently executing global object, manually tear down our
+    // stack, since we won't get further debugger callbacks to do so. Also, resume execution,
+    // since there's no point in staying paused once a window closes.
+    if (m_currentCallFrame && m_currentCallFrame->dynamicGlobalObject() == globalObject) {
+        m_currentCallFrame = 0;
+        m_pauseOnCallFrame = 0;
+        continueProgram();
+    }
+    Debugger::detach(globalObject);
+}
+
 void JavaScriptDebugServer::sourceParsed(ExecState* exec, const SourceCode& source, int errorLine, const UString& errorMessage)
 {
     if (m_callingListeners)
@@ -362,12 +377,11 @@ void JavaScriptDebugServer::setJavaScriptPaused(Frame* frame, bool paused)
 
     frame->script()->setPaused(paused);
 
-    if (Document* document = frame->document()) {
-        if (paused)
-            document->suspendActiveDOMObjects();
-        else
-            document->resumeActiveDOMObjects();
-    }
+    Document* document = frame->document();
+    if (paused)
+        document->suspendActiveDOMObjects();
+    else
+        document->resumeActiveDOMObjects();
 
     setJavaScriptPaused(frame->view(), paused);
 }
@@ -385,12 +399,12 @@ void JavaScriptDebugServer::setJavaScriptPaused(FrameView* view, bool paused)
     if (!view)
         return;
 
-    const HashSet<Widget*>* children = view->children();
+    const HashSet<RefPtr<Widget> >* children = view->children();
     ASSERT(children);
 
-    HashSet<Widget*>::const_iterator end = children->end();
-    for (HashSet<Widget*>::const_iterator it = children->begin(); it != end; ++it) {
-        Widget* widget = *it;
+    HashSet<RefPtr<Widget> >::const_iterator end = children->end();
+    for (HashSet<RefPtr<Widget> >::const_iterator it = children->begin(); it != end; ++it) {
+        Widget* widget = (*it).get();
         if (!widget->isPluginView())
             continue;
         static_cast<PluginView*>(widget)->setJavaScriptPaused(paused);
@@ -431,6 +445,8 @@ void JavaScriptDebugServer::pauseIfNeeded(Page* page)
     setJavaScriptPaused(page->group(), false);
 
     m_paused = false;
+
+    dispatchFunctionToListeners(&JavaScriptDebugListener::didContinue, page);
 }
 
 void JavaScriptDebugServer::callEvent(const DebuggerCallFrame& debuggerCallFrame, intptr_t sourceID, int lineNumber)
@@ -549,8 +565,11 @@ void JavaScriptDebugServer::recompileAllJSFunctions(Timer<JavaScriptDebugServer>
     Vector<ProtectedPtr<JSFunction> > functions;
     Heap::iterator heapEnd = globalData->heap.primaryHeapEnd();
     for (Heap::iterator it = globalData->heap.primaryHeapBegin(); it != heapEnd; ++it) {
-        if ((*it)->isObject(&JSFunction::info))
-            functions.append(static_cast<JSFunction*>(*it));
+        if ((*it)->isObject(&JSFunction::info)) {
+            JSFunction* function = static_cast<JSFunction*>(*it);
+            if (!function->isHostFunction())
+                functions.append(function);
+        }
     }
 
     typedef HashMap<RefPtr<FunctionBodyNode>, RefPtr<FunctionBodyNode> > FunctionBodyMap;
@@ -580,7 +599,7 @@ void JavaScriptDebugServer::recompileAllJSFunctions(Timer<JavaScriptDebugServer>
         result.first->second = newBody;
         function->setBody(newBody.release());
 
-        if (hasListeners())
+        if (hasListeners() && function->scope().globalObject()->debugger() == this)
             sourceProviders.add(sourceCode.provider(), exec);
     }
 
@@ -620,3 +639,5 @@ void JavaScriptDebugServer::didRemoveLastListener()
 }
 
 } // namespace WebCore
+
+#endif // ENABLE(JAVASCRIPT_DEBUGGER)

@@ -28,6 +28,8 @@
 
 #include "IntPoint.h"
 #include "PlatformString.h"
+#include <wtf/OwnPtr.h>
+#include <wtf/PassOwnPtr.h>
 
 #include "Document.h"
 
@@ -38,6 +40,8 @@ typedef struct objc_object* id;
 
 #if PLATFORM(QT)
 #include <QVariant>
+#include <QByteArray>
+#include <QDataStream>
 #endif
 
 namespace WebCore {
@@ -48,11 +52,16 @@ class FormData;
 class HistoryItem;
 class Image;
 class KURL;
-class ResourceRequest;
+struct ResourceRequest;
 
 typedef Vector<RefPtr<HistoryItem> > HistoryItemVector;
 
 extern void (*notifyHistoryItemChanged)();
+
+enum VisitCountBehavior {
+    IncreaseVisitCount,
+    DoNotIncreaseVisitCount
+};
 
 class HistoryItem : public RefCounted<HistoryItem> {
     friend class PageCache;
@@ -80,8 +89,7 @@ public:
     const String& urlString() const;
     const String& title() const;
     
-    void setInPageCache(bool inPageCache) { m_isInPageCache = inPageCache; }
-    bool isInPageCache() const { return m_isInPageCache; }
+    bool isInPageCache() const { return m_cachedPage; }
     
     double lastVisitedTime() const;
     
@@ -123,6 +131,8 @@ public:
     void setIsTargetItem(bool);
     
     void setFormInfoFromRequest(const ResourceRequest&);
+    void setFormData(PassRefPtr<FormData>);
+    void setFormContentType(const String&);
 
     void recordInitialVisit();
 
@@ -136,15 +146,16 @@ public:
     HistoryItem* targetItem();
     const HistoryItemVector& children() const;
     bool hasChildren() const;
+    void clearChildren();
 
     // This should not be called directly for HistoryItems that are already included
     // in GlobalHistory. The WebKit api for this is to use -[WebHistory setLastVisitedTimeInterval:forItem:] instead.
     void setLastVisitedTime(double);
-    void visited(const String& title, double time);
+    void visited(const String& title, double time, VisitCountBehavior);
 
     void addRedirectURL(const String&);
     Vector<String>* redirectURLs() const;
-    void setRedirectURLs(std::auto_ptr<Vector<String> >);
+    void setRedirectURLs(PassOwnPtr<Vector<String> >);
 
     bool isCurrentDocument(Document*) const;
     
@@ -161,6 +172,9 @@ public:
 #if PLATFORM(QT)
     QVariant userData() const { return m_userData; }
     void setUserData(const QVariant& userData) { m_userData = userData; }
+
+    bool restoreState(QDataStream& buffer, int version);
+    QDataStream& saveState(QDataStream& out, int version) const;
 #endif
 
 #ifndef NDEBUG
@@ -169,8 +183,8 @@ public:
 #endif
 
     void adoptVisitCounts(Vector<int>& dailyCounts, Vector<int>& weeklyCounts);
-    const Vector<int>& dailyVisitCounts() { return m_dailyVisitCounts; }
-    const Vector<int>& weeklyVisitCounts() { return m_weeklyVisitCounts; }
+    const Vector<int>& dailyVisitCounts() const { return m_dailyVisitCounts; }
+    const Vector<int>& weeklyVisitCounts() const { return m_weeklyVisitCounts; }
 
     float scale() const { return m_scale; }
     bool scaleIsInitial() const { return m_scaleIsInitial; }
@@ -188,9 +202,13 @@ private:
 
     void padDailyCountsForNewVisit(double time);
     void collapseDailyVisitsToWeekly();
-    void recordVisitAtTime(double);
+    void recordVisitAtTime(double, VisitCountBehavior = IncreaseVisitCount);
 
     HistoryItem* findTargetItem();
+
+    /* When adding new member variables to this class, please notify the Qt team.
+     * qt/HistoryItemQt.cpp contains code to serialize history items.
+     */
 
     String m_urlString;
     String m_originalURLString;
@@ -209,7 +227,6 @@ private:
     HistoryItemVector m_children;
     
     bool m_lastVisitWasFailure;
-    bool m_isInPageCache;
     bool m_isTargetItem;
     int m_visitCount;
     Vector<int> m_dailyVisitCounts;

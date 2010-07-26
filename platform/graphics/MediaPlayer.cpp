@@ -35,6 +35,7 @@
 #include "FrameView.h"
 #include "Frame.h"
 #include "Document.h"
+#include "TimeRanges.h"
 
 #include "MediaPlayerPrivateIPhone.h"
 
@@ -49,12 +50,16 @@ public:
     virtual void load(const String&) { }
     virtual void cancelLoad() { }
     
+    virtual void prepareToPlay() { }
     virtual void play() { }
     virtual void pause() { }    
+
+    virtual bool supportsFullscreen() const { return false; }
 
     virtual IntSize naturalSize() const { return IntSize(0, 0); }
 
     virtual bool hasVideo() const { return false; }
+    virtual bool hasAudio() const { return false; }
 
     virtual void setVisible(bool) { }
 
@@ -67,6 +72,7 @@ public:
     virtual void setEndTime(float) { }
 
     virtual void setRate(float) { }
+    virtual void setPreservesPitch(bool) { }
     virtual bool paused() const { return false; }
 
     virtual void setVolume(float) { }
@@ -75,7 +81,7 @@ public:
     virtual MediaPlayer::ReadyState readyState() const { return MediaPlayer::HaveNothing; }
 
     virtual float maxTimeSeekable() const { return 0; }
-    virtual float maxTimeBuffered() const { return 0; }
+    virtual PassRefPtr<TimeRanges> buffered() const { return TimeRanges::create(); }
 
     virtual int dataRate() const { return 0; }
 
@@ -87,11 +93,16 @@ public:
 
     virtual void paint(GraphicsContext*, const IntRect&) { }
 
+    virtual bool canLoadPoster() const { return false; }
+    virtual void setPoster(const String&) { }
+
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
-    virtual void setPoster(const String& /*url*/) { }
     virtual void deliverNotification(MediaPlayerProxyNotificationType) { }
     virtual void setMediaPlayerProxy(WebMediaPlayerProxy*) { }
+    virtual void setControls(bool) { }
 #endif
+
+    virtual bool hasSingleSecurityOrigin() const { return true; }
 };
 
 static MediaPlayerPrivateInterface* createNullMediaPlayer(MediaPlayer* player) 
@@ -125,8 +136,8 @@ static Vector<MediaPlayerFactory*>& installedMediaEngines()
 
     if (!enginesQueried) {
         enginesQueried = true;
-
         MediaPlayerPrivateiPhone::registerMediaEngine(addMediaEngine);
+
         // register additional engines here
     }
     
@@ -173,6 +184,7 @@ MediaPlayer::MediaPlayer(MediaPlayerClient* client)
     , m_visible(false)
     , m_rate(1.0f)
     , m_volume(1.0f)
+    , m_preservesPitch(true)
     , m_autobuffer(false)
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
     , m_playerProxy(0)
@@ -197,11 +209,20 @@ void MediaPlayer::load(const String& url, const ContentType& contentType)
     String type = contentType.type();
     String codecs = contentType.parameter("codecs");
 
-    // if we don't know the MIME type, see if the path can help
-    if (type.isEmpty()) 
-        type = MIMETypeRegistry::getMIMETypeForPath(url);
+    // if we don't know the MIME type, see if the extension can help
+    if (type.isEmpty() || type == "application/octet-stream" || type == "text/plain") {
+        int pos = url.reverseFind('.');
+        if (pos >= 0) {
+            String extension = url.substring(pos + 1);
+            String mediaType = MIMETypeRegistry::getMediaMIMETypeForExtension(extension);
+            if (!mediaType.isEmpty())
+                type = mediaType;
+        }
+    }
 
-    MediaPlayerFactory* engine = chooseBestEngineForTypeAndCodecs(type, codecs);
+    MediaPlayerFactory* engine = 0;
+    if (!type.isEmpty())
+        engine = chooseBestEngineForTypeAndCodecs(type, codecs);
 
     // if we didn't find an engine that claims the MIME type, just use the first engine
     if (!engine)
@@ -224,18 +245,26 @@ void MediaPlayer::load(const String& url, const ContentType& contentType)
         m_private.set(createNullMediaPlayer(this));
 }    
 
-#if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
+bool MediaPlayer::canLoadPoster() const
+{
+    return m_private->canLoadPoster();
+}
+    
 void MediaPlayer::setPoster(const String& url)
 {
     m_private->setPoster(url);
 }    
-#endif
 
 void MediaPlayer::cancelLoad()
 {
     m_private->cancelLoad();
 }    
 
+void MediaPlayer::prepareToPlay()
+{
+    m_private->prepareToPlay();
+}
+    
 void MediaPlayer::play()
 {
     m_private->play();
@@ -249,6 +278,11 @@ void MediaPlayer::pause()
 float MediaPlayer::duration() const
 {
     return m_private->duration();
+}
+
+float MediaPlayer::startTime() const
+{
+    return m_private->startTime();
 }
 
 float MediaPlayer::currentTime() const
@@ -271,14 +305,29 @@ bool MediaPlayer::seeking() const
     return m_private->seeking();
 }
 
+bool MediaPlayer::supportsFullscreen() const
+{
+    return m_private->supportsFullscreen();
+}
+
+bool MediaPlayer::supportsSave() const
+{
+    return m_private->supportsSave();
+}
+
 IntSize MediaPlayer::naturalSize()
 {
     return m_private->naturalSize();
 }
 
-bool MediaPlayer::hasVideo()
+bool MediaPlayer::hasVideo() const
 {
     return m_private->hasVideo();
+}
+
+bool MediaPlayer::hasAudio() const
+{
+    return m_private->hasAudio();
 }
 
 bool MediaPlayer::inMediaDocument()
@@ -321,6 +370,17 @@ void MediaPlayer::setRate(float rate)
     m_private->setRate(rate);   
 }
 
+bool MediaPlayer::preservesPitch() const
+{
+    return m_preservesPitch;
+}
+
+void MediaPlayer::setPreservesPitch(bool preservesPitch)
+{
+    m_preservesPitch = preservesPitch;
+    m_private->setPreservesPitch(preservesPitch);
+}
+
 int MediaPlayer::dataRate() const
 {
     return m_private->dataRate();
@@ -331,9 +391,9 @@ void MediaPlayer::setEndTime(float time)
     m_private->setEndTime(time);
 }
 
-float MediaPlayer::maxTimeBuffered()
+PassRefPtr<TimeRanges> MediaPlayer::buffered()
 {
-    return m_private->maxTimeBuffered();
+    return m_private->buffered();
 }
 
 float MediaPlayer::maxTimeSeekable()
@@ -391,6 +451,11 @@ void MediaPlayer::paint(GraphicsContext* p, const IntRect& r)
     m_private->paint(p, r);
 }
 
+void MediaPlayer::paintCurrentFrameInContext(GraphicsContext* p, const IntRect& r)
+{
+    m_private->paintCurrentFrameInContext(p, r);
+}
+
 MediaPlayer::SupportsType MediaPlayer::supportsType(ContentType contentType)
 {
     String type = contentType.type();
@@ -430,8 +495,36 @@ void MediaPlayer::setMediaPlayerProxy(WebMediaPlayerProxy* proxy)
     m_playerProxy = proxy;
     m_private->setMediaPlayerProxy(proxy);
 }
+
+void MediaPlayer::setControls(bool controls)
+{
+    m_private->setControls(controls);
+}    
 #endif
 
+#if USE(ACCELERATED_COMPOSITING)
+void MediaPlayer::acceleratedRenderingStateChanged()
+{
+    m_private->acceleratedRenderingStateChanged();
+}
+
+bool MediaPlayer::supportsAcceleratedRendering() const
+{
+    return m_private->supportsAcceleratedRendering();
+}
+#endif // USE(ACCELERATED_COMPOSITING)
+
+bool MediaPlayer::hasSingleSecurityOrigin() const
+{
+    return m_private->hasSingleSecurityOrigin();
+}
+
+MediaPlayer::MovieLoadType MediaPlayer::movieLoadType() const
+{
+    return m_private->movieLoadType();
+}
+
+// Client callbacks.
 void MediaPlayer::networkStateChanged()
 {
     if (m_mediaPlayerClient)
@@ -481,4 +574,5 @@ void MediaPlayer::rateChanged()
 }
 
 }
+
 #endif

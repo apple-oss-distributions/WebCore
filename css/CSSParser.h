@@ -75,6 +75,8 @@ namespace WebCore {
         bool parse4Values(int propId, const int* properties, bool important);
         bool parseContent(int propId, bool important);
 
+        PassRefPtr<CSSValue> parseAttr(CSSParserValueList* args);
+
         PassRefPtr<CSSValue> parseBackgroundColor();
 
         bool parseFillImage(RefPtr<CSSValue>&);
@@ -147,7 +149,7 @@ namespace WebCore {
 
         PassRefPtr<CSSValueList> parseTransform();
         bool parseTransformOrigin(int propId, int& propId1, int& propId2, int& propId3, RefPtr<CSSValue>&, RefPtr<CSSValue>&, RefPtr<CSSValue>&);
-        bool parsePerspectiveOrigin(int propId, int& propId1, int& propId,  RefPtr<CSSValue>&, RefPtr<CSSValue>&);
+        bool parsePerspectiveOrigin(int propId, int& propId1, int& propId2,  RefPtr<CSSValue>&, RefPtr<CSSValue>&);
         bool parseVariable(CSSVariablesDeclaration*, const String& variableName, const String& variableValue);
         void parsePropertyWithResolvedVariables(int propId, bool important, CSSMutableStyleDeclaration*, CSSParserValueList*);
 

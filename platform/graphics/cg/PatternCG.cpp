@@ -50,21 +50,23 @@ static void patternReleaseCallback(void* info)
     static_cast<Image*>(info)->deref();
 }
 
-CGPatternRef Pattern::createPlatformPattern(const TransformationMatrix& transform) const
+CGPatternRef Pattern::createPlatformPattern(const TransformationMatrix& userSpaceTransformation) const
 {
     IntRect tileRect = tileImage()->rect();
 
-    TransformationMatrix patternTransform = transform;
+    TransformationMatrix patternTransform = m_patternSpaceTransformation;
+    patternTransform.multiply(userSpaceTransformation);
     patternTransform.scaleNonUniform(1, -1);
     patternTransform.translate(0, -tileRect.height());
 
     // If FLT_MAX should also be used for xStep or yStep, nothing is rendered. Using fractions of FLT_MAX also
     // result in nothing being rendered.
     // INT_MAX is almost correct, but there seems to be some number wrapping occuring making the fill
-    // pattern is not filled correctly. 
-    // So, just pick a really large number that works. 
-    float xStep = m_repeatX ? tileRect.width() : (100000000.0f);
-    float yStep = m_repeatY ? tileRect.height() : (100000000.0f);
+    // pattern is not filled correctly.
+    // To make error of floating point less than 1, we need to use a big number which is smaller than the
+    // number of mantissa of float (1 << 23).
+    CGFloat xStep = m_repeatX ? tileRect.width() : ((1 << 23) - 1);
+    CGFloat yStep = m_repeatY ? tileRect.height() : ((1 << 23) - 1);
 
     // The pattern will release the tile when it's done rendering in patternReleaseCallback
     tileImage()->ref();

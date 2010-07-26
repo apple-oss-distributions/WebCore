@@ -94,8 +94,9 @@ public:
     void paintCollapsedBorder(GraphicsContext*, int x, int y, int w, int h);
     void paintBackgroundsBehindCell(PaintInfo&, int tx, int ty, RenderObject* backgroundObject);
 
-    virtual IntRect clippedOverflowRectForRepaint(RenderBox* repaintContainer);
-    virtual void computeRectForRepaint(RenderBox* repaintContainer, IntRect&, bool fixed = false);
+    virtual IntSize offsetFromContainer(RenderObject*, const IntPoint&) const;
+    virtual IntRect clippedOverflowRectForRepaint(RenderBoxModelObject* repaintContainer);
+    virtual void computeRectForRepaint(RenderBoxModelObject* repaintContainer, IntRect&, bool fixed = false);
 
     virtual int baselinePosition(bool firstLine = false, bool isRootLineBox = false) const;
 
@@ -115,9 +116,6 @@ public:
 protected:
     virtual void styleWillChange(StyleDifference, const RenderStyle* newStyle);
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
-
-    virtual void mapLocalToContainer(RenderBox* repaintContainer, bool useTransforms, bool fixed, TransformState&) const;
-    virtual void mapAbsoluteToLocalPoint(bool fixed, bool useTransforms, TransformState&) const;
 
 private:
     int m_row;

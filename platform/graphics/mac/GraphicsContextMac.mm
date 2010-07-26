@@ -29,10 +29,13 @@
 #import "../cg/GraphicsContextPlatformPrivateCG.h"
 #import <wtf/StdLibExtras.h>
 
+#import "Color.h"
 #import "WKGraphics.h"
 #import <wtf/UnusedParam.h>
 
 #import "WebCoreSystemInterface.h"
+
+@class NSColor;
 
 // FIXME: More of this should use CoreGraphics instead of AppKit.
 // FIXME: More of this should move into GraphicsContextCG.cpp.
@@ -69,13 +72,14 @@ static CGPatternRef createSpellingPattern(bool& usingDot)
     usingDot = true;
     return spellingPattern;
 }
-    
+
+// WebKit on Mac is a standard platform component, so it must use the standard platform artwork for underline.
 void GraphicsContext::drawLineForMisspellingOrBadGrammar(const IntPoint& point, int width, bool grammar)
 {
     if (paintingDisabled())
         return;
         
-    // These are the same for misspelling or bad grammar
+    // These are the same for misspelling or bad grammar.
     int patternHeight = cMisspellingLineThickness;
     int patternWidth = cMisspellingLinePatternWidth;
  
@@ -100,7 +104,7 @@ void GraphicsContext::drawLineForMisspellingOrBadGrammar(const IntPoint& point, 
     // FIXME: This code should not be using wkSetPatternPhaseInUserSpace, as this approach is wrong
     // for transforms.
 
-    // Draw underline
+    // Draw underline.
     CGContextRef context = WKGetCurrentGraphicsContext();
     CGContextSaveGState(context);
 
@@ -108,16 +112,9 @@ void GraphicsContext::drawLineForMisspellingOrBadGrammar(const IntPoint& point, 
 
     wkSetPatternPhaseInUserSpace(context, point);
 
-    WKRectFillUsingOperation(context, CGRectMake(point.x(), point.y(), width, patternHeight), kCGCompositeDover);
+    WKRectFillUsingOperation(context, CGRectMake(point.x(), point.y(), width, patternHeight), kCGCompositeSover);
     
     CGContextRestoreGState(context);
-}
-
-void GraphicsContext::setPenFromCGColor (CGColorRef color)
-{
-    float r, g, b, a;
-    GSColorGetRGBAComponents(color, &r, &g, &b, &a);
-    setStrokeColor(makeRGBA((int)(r * 255), (int)(g * 255), (int)(b * 255), (int)(a * 255)));
 }
 
 }

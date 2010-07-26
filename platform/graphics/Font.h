@@ -28,6 +28,7 @@
 #include "TextRun.h"
 #include "FontDescription.h"
 #include "SimpleFontData.h"
+#include "TypesettingFeatures.h"
 #include <wtf/HashMap.h>
 #include <wtf/MathExtras.h>
 
@@ -78,8 +79,8 @@ public:
 
     float drawText(GraphicsContext*, const TextRun&, const FloatPoint&, int from = 0, int to = -1) const;
 
-    int width(const TextRun& run) const { return lroundf(floatWidth(run)); }
-    float floatWidth(const TextRun&) const;
+    int width(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFonts = 0) const { return lroundf(floatWidth(run, fallbackFonts)); }
+    float floatWidth(const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts = 0) const;
     float floatWidth(const TextRun& run, int extraCharsAvailable, int& charsConsumed, String& glyphName) const;
 
     int offsetForPosition(const TextRun&, int position, bool includePartialGlyphs) const;
@@ -95,6 +96,12 @@ public:
     bool isPrinterFont() const { return m_fontDescription.usePrinterFont(); }
     
     FontRenderingMode renderingMode() const { return m_fontDescription.renderingMode(); }
+
+    TypesettingFeatures typesettingFeatures() const
+    {
+        TextRenderingMode textRenderingMode = m_fontDescription.textRenderingMode();
+        return textRenderingMode == OptimizeLegibility || textRenderingMode == GeometricPrecision ? Kerning | Ligatures : 0;
+    }
 
     FontFamily& firstFamily() { return m_fontDescription.firstFamily(); }
     const FontFamily& family() const { return m_fontDescription.family(); }
@@ -112,23 +119,27 @@ public:
     int lineGap() const { return primaryFont()->lineGap(); }
     float xHeight() const { return primaryFont()->xHeight(); }
     unsigned unitsPerEm() const { return primaryFont()->unitsPerEm(); }
-    int spaceWidth() const { return (int)ceilf(primaryFont()->m_adjustedSpaceWidth + m_letterSpacing); }
+    int spaceWidth() const { return (int)ceilf(primaryFont()->adjustedSpaceWidth() + m_letterSpacing); }
     int tabWidth() const { return 8 * spaceWidth(); }
 
-    const SimpleFontData* primaryFont() const {
-        if (!m_cachedPrimaryFont)
-            cachePrimaryFont();
-        return m_cachedPrimaryFont;
-    }
-
+    const SimpleFontData* primaryFont() const;
     const FontData* fontDataAt(unsigned) const;
-    const GlyphData& glyphDataForCharacter(UChar32, bool mirror, bool forceSmallCaps = false) const;
+    GlyphData glyphDataForCharacter(UChar32, bool mirror, bool forceSmallCaps = false) const;
     // Used for complex text, and does not utilize the glyph map cache.
     const FontData* fontDataForCharacters(const UChar*, int length) const;
 
 #if PLATFORM(QT)
     QFont font() const;
 #endif
+
+    static void setShouldUseSmoothing(bool);
+    static bool shouldUseSmoothing();
+
+    static void setSmoothingStyle(CGFontSmoothingStyle);
+    static CGFontSmoothingStyle smoothingStyle();
+
+    static void setAntialiasingStyle(CGFontAntialiasingStyle);
+    static CGFontAntialiasingStyle antialiasingStyle();
 
 private:
 #if ENABLE(SVG_FONTS)
@@ -144,16 +155,17 @@ private:
     float drawSimpleText(GraphicsContext*, const TextRun&, const FloatPoint&, int from, int to) const;
     void drawGlyphs(GraphicsContext*, const SimpleFontData*, const GlyphBuffer&, int from, int to, const FloatPoint&, bool setColor = true) const;
     void drawGlyphBuffer(GraphicsContext*, const GlyphBuffer&, const TextRun&, FloatPoint&) const;
-    float floatWidthForSimpleText(const TextRun&, GlyphBuffer*) const;
+    float floatWidthForSimpleText(const TextRun&, GlyphBuffer*, HashSet<const SimpleFontData*>* fallbackFonts = 0) const;
     int offsetForPositionForSimpleText(const TextRun&, int position, bool includePartialGlyphs) const;
     FloatRect selectionRectForSimpleText(const TextRun&, const IntPoint&, int h, int from, int to) const;
+
+    static bool canReturnFallbackFontsForComplexText();
 #endif
 
     float drawComplexText(GraphicsContext*, const TextRun&, const FloatPoint&, int from, int to) const;
-    float floatWidthForComplexText(const TextRun&) const;
+    float floatWidthForComplexText(const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts = 0) const;
     int offsetForPositionForComplexText(const TextRun&, int position, bool includePartialGlyphs) const;
     FloatRect selectionRectForComplexText(const TextRun&, const IntPoint&, int h, int from, int to) const;
-    void cachePrimaryFont() const;
 
     friend struct WidthIterator;
 
@@ -190,9 +202,6 @@ public:
 private:
     FontDescription m_fontDescription;
     mutable RefPtr<FontFallbackList> m_fontList;
-    mutable HashMap<int, GlyphPageTreeNode*> m_pages;
-    mutable GlyphPageTreeNode* m_pageZero;
-    mutable const SimpleFontData* m_cachedPrimaryFont;
     float m_letterSpacing;
     float m_wordSpacing;
     bool m_isPlatformFont;

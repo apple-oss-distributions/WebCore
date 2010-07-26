@@ -50,6 +50,7 @@ ScriptCachedFrameData::ScriptCachedFrameData(Frame* frame)
     ScriptController* scriptController = frame->script();
     if (scriptController->haveWindowShell()) {
         m_window = scriptController->windowShell()->window();
+        scriptController->attachDebugger(0);
     }
 }
 
@@ -85,7 +86,7 @@ void ScriptCachedFrameData::clear()
 {
     JSLock lock(false);
 
-    if (!m_window) {
+    if (m_window) {
         m_window = 0;
         gcController().garbageCollectSoon();
     }

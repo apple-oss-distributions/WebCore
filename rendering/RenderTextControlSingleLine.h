@@ -50,7 +50,7 @@ public:
 
     bool popupIsVisible() const { return m_searchPopupIsVisible; }
     void showPopup();
-    virtual void hidePopup(); // PopupMenuClient method
+    void hidePopup();
 
     virtual void subtreeHasChanged();
     virtual void paint(PaintInfo&, int tx, int ty);
@@ -59,9 +59,20 @@ public:
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, int x, int y, int tx, int ty, HitTestAction);
     void forwardEvent(Event*);
 
-private:
-    virtual void capsLockStateMayHaveChanged();
+    void capsLockStateMayHaveChanged();
 
+    virtual void autoscroll();
+
+    // Subclassed to forward to our inner div.
+    virtual int scrollLeft() const;
+    virtual int scrollTop() const;
+    virtual int scrollWidth() const;
+    virtual int scrollHeight() const;
+    virtual void setScrollLeft(int);
+    virtual void setScrollTop(int);
+    virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1.0f, Node** stopNode = 0);
+
+private:
     int textBlockWidth() const;
     virtual int preferredContentWidth(float charWidth) const;
     virtual void adjustControlHeightBasedOnLineHeight(int lineHeight);
@@ -96,6 +107,7 @@ private:
     virtual int clientPaddingRight() const;
     virtual int listSize() const;
     virtual int selectedIndex() const;
+    virtual void popupDidHide();
     virtual bool itemIsSeparator(unsigned listIndex) const;
     virtual bool itemIsLabel(unsigned listIndex) const;
     virtual bool itemIsSelected(unsigned listIndex) const;

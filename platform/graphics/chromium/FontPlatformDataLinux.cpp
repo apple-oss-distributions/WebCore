@@ -86,13 +86,17 @@ void FontPlatformData::setupPaint(SkPaint* paint) const
 {
     const float ts = m_textSize > 0 ? m_textSize : 12;
 
-    paint->setAntiAlias(false);
+    paint->setAntiAlias(true);
     paint->setSubpixelText(false);
     paint->setTextSize(SkFloatToScalar(ts));
     paint->setTypeface(m_typeface);
     paint->setFakeBoldText(m_fakeBold);
     paint->setTextSkewX(m_fakeItalic ? -SK_Scalar1 / 4 : 0);
-    paint->setTextEncoding(SkPaint::kUTF16_TextEncoding);
+}
+
+SkFontID FontPlatformData::uniqueID() const
+{
+    return m_typeface->uniqueID();
 }
 
 bool FontPlatformData::operator==(const FontPlatformData& a) const

@@ -21,6 +21,7 @@
 #ifndef TextSizeAdjustment_h
 #define TextSizeAdjustment_h
 
+
 enum TextSizeAdjustmentType { AutoTextSizeAdjustment = -1, NoTextSizeAdjustment = -2 };
 
 class TextSizeAdjustment {
@@ -40,5 +41,6 @@ public:
 private:
     float m_value;
 };
+
 
 #endif // TextSizeAdjustment_h

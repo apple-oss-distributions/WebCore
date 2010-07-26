@@ -28,7 +28,6 @@
 #include "CharacterNames.h"
 #include "Document.h"
 #include "GraphicsContext.h"
-#include "ListMarkerBox.h"
 #include "RenderLayer.h"
 #include "RenderListItem.h"
 #include "RenderView.h"
@@ -159,7 +158,7 @@ static int toArmenianUnder10000(int number, bool upper, bool addCircumflex, UCha
 
     int lowerOffset = upper ? 0 : 0x0030;
 
-    if (int thousands = number / 1000)
+    if (int thousands = number / 1000) {
         if (thousands == 7) {
             letters[length++] = 0x0548 + lowerOffset;
             letters[length++] = 0x0552 + lowerOffset;
@@ -170,6 +169,7 @@ static int toArmenianUnder10000(int number, bool upper, bool addCircumflex, UCha
             if (addCircumflex)
                 letters[length++] = 0x0302;
         }
+    }
 
     if (int hundreds = (number / 100) % 10) {
         letters[length++] = (0x0543 - 1 + lowerOffset) + hundreds;
@@ -472,7 +472,6 @@ String listMarkerText(EListStyleType type, int value)
 RenderListMarker::RenderListMarker(RenderListItem* item)
     : RenderBox(item->document())
     , m_listItem(item)
-    , m_selectionState(SelectionNone)
 {
     // init RenderObject attributes
     setInline(true);   // our object is Inline
@@ -506,12 +505,11 @@ void RenderListMarker::styleDidChange(StyleDifference diff, const RenderStyle* o
     }
 }
 
-InlineBox* RenderListMarker::createInlineBox(bool, bool unusedIsRootLineBox, bool)
+InlineBox* RenderListMarker::createInlineBox()
 {
-    ASSERT_UNUSED(unusedIsRootLineBox, !unusedIsRootLineBox);
-    ListMarkerBox* box = new (renderArena()) ListMarkerBox(this);
-    m_inlineBoxWrapper = box;
-    return box;
+    InlineBox* result = RenderBox::createInlineBox();
+    result->setIsText(isText());
+    return result;
 }
 
 bool RenderListMarker::isImage() const
@@ -878,14 +876,14 @@ IntRect RenderListMarker::getRelativeMarkerRect()
 
 void RenderListMarker::setSelectionState(SelectionState state)
 {
-    m_selectionState = state;
+    RenderBox::setSelectionState(state);
     if (InlineBox* box = inlineBoxWrapper())
         if (RootInlineBox* root = box->root())
             root->setHasSelectedChildren(state != SelectionNone);
     containingBlock()->setSelectionState(state);
 }
 
-IntRect RenderListMarker::selectionRectForRepaint(RenderBox* repaintContainer, bool clipToVisibleContent)
+IntRect RenderListMarker::selectionRectForRepaint(RenderBoxModelObject* repaintContainer, bool clipToVisibleContent)
 {
     ASSERT(!needsLayout());
 

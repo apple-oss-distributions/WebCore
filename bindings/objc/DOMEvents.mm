@@ -42,10 +42,8 @@
 #import "DOMSVGZoomEvent.h"
 #endif
 
-#if ENABLE(TOUCH_EVENTS)
 #import "DOMGestureEvent.h"
 #import "DOMTouchEvent.h"
-#endif
 
 Class kitClass(WebCore::Event* impl)
 {
@@ -62,12 +60,10 @@ Class kitClass(WebCore::Event* impl)
         if (impl->isSVGZoomEvent())
             return [DOMSVGZoomEvent class];
 #endif
-#if ENABLE(TOUCH_EVENTS)
         if (impl->isTouchEvent())
             return [DOMTouchEvent class];
         if (impl->isGestureEvent())
             return [DOMGestureEvent class];
-#endif
         return [DOMUIEvent class];
     }
     if (impl->isMutationEvent())

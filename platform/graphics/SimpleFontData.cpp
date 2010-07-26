@@ -32,19 +32,21 @@
 
 #include "Font.h"
 #include "FontCache.h"
+
 #if ENABLE(SVG_FONTS)
 #include "SVGFontData.h"
 #include "SVGFontFaceElement.h"
+#include "SVGGlyphElement.h"
 #endif
 
 #include <wtf/MathExtras.h>
 #include <wtf/UnusedParam.h>
 
 namespace WebCore {
-    
+
 SimpleFontData::SimpleFontData(const FontPlatformData& f, bool customFont, bool loading, SVGFontData* svgFontData)
     : m_unitsPerEm(defaultUnitsPerEm)
-    , m_font(f)
+    , m_platformData(f)
     , m_treatAsFixedPitch(false)
 #if ENABLE(SVG_FONTS)
     , m_svgFontData(svgFontData)
@@ -57,18 +59,18 @@ SimpleFontData::SimpleFontData(const FontPlatformData& f, bool customFont, bool 
     UNUSED_PARAM(svgFontData);
 #else
     if (SVGFontFaceElement* svgFontFaceElement = svgFontData ? svgFontData->svgFontFaceElement() : 0) {
-       m_unitsPerEm = svgFontFaceElement->unitsPerEm();
+        m_unitsPerEm = svgFontFaceElement->unitsPerEm();
 
-       double scale = f.size();
-       if (m_unitsPerEm)
-           scale /= m_unitsPerEm;
+        double scale = f.size();
+        if (m_unitsPerEm)
+            scale /= m_unitsPerEm;
 
         m_ascent = static_cast<int>(svgFontFaceElement->ascent() * scale);
         m_descent = static_cast<int>(svgFontFaceElement->descent() * scale);
         m_xHeight = static_cast<int>(svgFontFaceElement->xHeight() * scale);
         m_lineGap = 0.1f * f.size();
         m_lineSpacing = m_ascent + m_descent + m_lineGap;
-    
+
         m_spaceGlyph = 0;
         m_spaceWidth = 0;
         m_adjustedSpaceWidth = 0;
@@ -78,6 +80,7 @@ SimpleFontData::SimpleFontData(const FontPlatformData& f, bool customFont, bool 
         return;
     }
 #endif
+
     if (f.m_isImageFont) {
         m_unitsPerEm = 1;
         
@@ -98,11 +101,13 @@ SimpleFontData::SimpleFontData(const FontPlatformData& f, bool customFont, bool 
         m_missingGlyphData.glyph = 0;
         return;
     }
+
     platformInit();
     platformGlyphInit();
 }
 
 #if !PLATFORM(QT)
+// Estimates of avgCharWidth and maxCharWidth for platforms that don't support accessing these values from the font.
 void SimpleFontData::platformGlyphInit()
 {
     GlyphPage* glyphPageZero = GlyphPageTreeNode::getRootChild(this, 0)->page();
@@ -157,20 +162,6 @@ SimpleFontData::~SimpleFontData()
         GlyphPageTreeNode::pruneTreeFontData(this);
     }
 }
-
-#if !PLATFORM(QT)
-float SimpleFontData::widthForGlyph(Glyph glyph) const
-{
-    float width = m_glyphToWidthMap.widthForGlyph(glyph);
-    if (width != cGlyphWidthUnknown)
-        return width;
-    
-    width = platformWidthForGlyph(glyph);
-    m_glyphToWidthMap.setWidthForGlyph(glyph, width);
-    
-    return width;
-}
-#endif
 
 const SimpleFontData* SimpleFontData::fontDataForCharacter(UChar32) const
 {

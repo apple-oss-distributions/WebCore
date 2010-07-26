@@ -2,12 +2,15 @@
  *  WebCoreThreadSafe.h
  *  WebCore
  *
- *  Copyright (C) 2006, 2007, Apple Inc.  All rights reserved.
- *
+ *  Copyright (C) 2006, 2007, 2008, 2009 Apple Inc.  All rights reserved.
  */
 
+#ifndef WebCoreThreadSafe_h
+#define WebCoreThreadSafe_h
+
 #import <Foundation/Foundation.h>
-#import <GraphicsServices/GraphicsServices.h>
+
+@class WebEvent;
 
 // Listing of methods that are currently thread-safe.
 
@@ -31,7 +34,7 @@
 @end
 
 @interface WAKWindow : WAKResponder
-- (void)sendGSEvent:(GSEventRef)event;
+- (void)sendEvent:(WebEvent *)event;
 @end
 
 @protocol WebPolicyDecisionListener <NSObject>
@@ -43,3 +46,5 @@
 
 @interface DOMObject : WebScriptObject
 @end
+
+#endif // WebCoreThreadSafe_h

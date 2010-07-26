@@ -81,9 +81,7 @@ void Path::translate(const FloatSize& size)
 
 FloatRect Path::boundingRect() const
 {
-    SkRect rect;
-    m_path->computeBounds(&rect, SkPath::kExact_BoundsType);
-    return rect;
+    return m_path->getBounds();
 }
 
 void Path::moveTo(const FloatPoint& point)
@@ -274,10 +272,8 @@ static FloatRect boundingBoxForCurrentStroke(const GraphicsContext* context)
     SkPaint paint;
     context->platformContext()->setupPaintForStroking(&paint, 0, 0);
     SkPath boundingPath;
-    paint.getFillPath(context->platformContext()->currentPath(), &boundingPath);
-    SkRect r;
-    boundingPath.computeBounds(&r, SkPath::kExact_BoundsType);
-    return r;
+    paint.getFillPath(context->platformContext()->currentPathInLocalCoordinates(), &boundingPath);
+    return boundingPath.getBounds();
 }
 
 FloatRect Path::strokeBoundingRect(StrokeStyleApplier* applier)

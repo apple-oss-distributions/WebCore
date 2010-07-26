@@ -1,8 +1,12 @@
 //
 //  WKTypes.h
 //
-//  Copyright (C) 2005, 2006, 2007, Apple Inc.  All rights reserved.
+//  Copyright (C) 2005, 2006, 2007, 2009 Apple Inc.  All rights reserved.
 //
+
+#ifndef WKTypes_h
+#define WKTypes_h
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -18,3 +22,5 @@ typedef struct WKView* WKViewRef;
 #ifdef __cplusplus
 }
 #endif
+
+#endif // WKTypes_h

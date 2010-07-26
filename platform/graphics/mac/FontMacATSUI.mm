@@ -30,6 +30,7 @@
 #import "Logging.h"
 #import "ShapeArabic.h"
 #import "SimpleFontData.h"
+#import <AppKit/NSGraphicsContext.h>
 #import <wtf/OwnArrayPtr.h>
 
 #define SYNTHETIC_OBLIQUE_ANGLE 14
@@ -46,13 +47,15 @@ namespace WebCore {
 
 struct ATSULayoutParameters : Noncopyable
 {
-    ATSULayoutParameters(const TextRun& run)
+    ATSULayoutParameters(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFonts = 0)
         : m_run(run)
         , m_font(0)
         , m_hasSyntheticBold(false)
         , m_syntheticBoldPass(false)
         , m_padPerSpace(0)
-    {}
+        , m_fallbackFonts(fallbackFonts)
+    {
+    }
 
     ~ATSULayoutParameters()
     {
@@ -72,6 +75,7 @@ struct ATSULayoutParameters : Noncopyable
     bool m_hasSyntheticBold;
     bool m_syntheticBoldPass;
     float m_padPerSpace;
+    HashSet<const SimpleFontData*>* m_fallbackFonts;
 };
 
 static TextRun copyRunForDirectionalOverrideIfNecessary(const TextRun& run, OwnArrayPtr<UChar>& charactersWithOverride)
@@ -101,12 +105,12 @@ static bool fontHasMirroringInfo(ATSUFontID fontID)
     return false;
 }
 
-static void disableLigatures(const SimpleFontData* fontData)
+static void disableLigatures(const SimpleFontData* fontData, TextRenderingMode textMode)
 {
     // Don't be too aggressive: if the font doesn't contain 'a', then assume that any ligatures it contains are
     // in characters that always go through ATSUI, and therefore allow them. Geeza Pro is an example.
     // See bugzilla 5166.
-    if (fontData->platformData().allowsLigatures())
+    if (textMode == OptimizeLegibility || textMode == GeometricPrecision || fontData->platformData().allowsLigatures())
         return;
 
     ATSUFontFeatureType featureTypes[] = { kLigaturesType };
@@ -116,14 +120,14 @@ static void disableLigatures(const SimpleFontData* fontData)
         LOG_ERROR("ATSUSetFontFeatures failed (%d) -- ligatures remain enabled", status);
 }
 
-static void initializeATSUStyle(const SimpleFontData* fontData)
+static void initializeATSUStyle(const SimpleFontData* fontData, TextRenderingMode textMode)
 {
     if (fontData->m_ATSUStyleInitialized)
         return;
 
     ATSUFontID fontID = fontData->platformData().m_atsuFontID;
     if (!fontID) {
-        LOG_ERROR("unable to get ATSUFontID for %@", fontData->m_font.font());
+        LOG_ERROR("unable to get ATSUFontID for %@", fontData->platformData().font());
         return;
     }
 
@@ -133,23 +137,32 @@ static void initializeATSUStyle(const SimpleFontData* fontData)
         LOG_ERROR("ATSUCreateStyle failed (%d)", status);
 
     CGAffineTransform transform = CGAffineTransformMakeScale(1, -1);
-    if (fontData->m_font.m_syntheticOblique)
+    if (fontData->platformData().m_syntheticOblique)
         transform = CGAffineTransformConcat(transform, CGAffineTransformMake(1, 0, -tanf(SYNTHETIC_OBLIQUE_ANGLE * acosf(0) / 90), 1, 0, 0));
     Fixed fontSize = FloatToFixed(fontData->platformData().m_size);
     ByteCount styleSizes[4] = { sizeof(Fixed), sizeof(ATSUFontID), sizeof(CGAffineTransform), sizeof(Fract) };
-    // Turn off automatic kerning until it is supported in the CG code path (bug 6136)
-    Fract kerningInhibitFactor = FloatToFract(1.0);
     
-    ATSUAttributeTag styleTags[4] = { kATSUSizeTag, kATSUFontTag, kATSUFontMatrixTag, kATSUKerningInhibitFactorTag };
-    ATSUAttributeValuePtr styleValues[4] = { &fontSize, &fontID, &transform, &kerningInhibitFactor };
-    status = ATSUSetAttributes(fontData->m_ATSUStyle, 4, styleTags, styleSizes, styleValues);
-    if (status != noErr)
-        LOG_ERROR("ATSUSetAttributes failed (%d)", status);
+    bool allowKerning = textMode == OptimizeLegibility || textMode == GeometricPrecision;
+    if (!allowKerning) {
+        // Turn off automatic kerning until it is supported in the CG code path (bug 6136)
+        Fract kerningInhibitFactor = FloatToFract(1.0);
+        ATSUAttributeTag styleTags[4] = { kATSUSizeTag, kATSUFontTag, kATSUFontMatrixTag, kATSUKerningInhibitFactorTag };
+        ATSUAttributeValuePtr styleValues[4] = { &fontSize, &fontID, &transform, &kerningInhibitFactor };
+        status = ATSUSetAttributes(fontData->m_ATSUStyle, 4, styleTags, styleSizes, styleValues);
+        if (status != noErr)
+            LOG_ERROR("ATSUSetAttributes failed (%d)", status);
+    } else {
+        ATSUAttributeTag styleTags[3] = { kATSUSizeTag, kATSUFontTag, kATSUFontMatrixTag };
+        ATSUAttributeValuePtr styleValues[3] = { &fontSize, &fontID, &transform, };
+        status = ATSUSetAttributes(fontData->m_ATSUStyle, 3, styleTags, styleSizes, styleValues);
+        if (status != noErr)
+            LOG_ERROR("ATSUSetAttributes failed (%d)", status);
+    }
 
     fontData->m_ATSUMirrors = fontHasMirroringInfo(fontID);
 
     // Turn off ligatures such as 'fi' to match the CG code path's behavior, until bug 6135 is fixed.
-    disableLigatures(fontData);
+    disableLigatures(fontData, textMode);
 
     fontData->m_ATSUStyleInitialized = true;
 }
@@ -179,7 +192,6 @@ static OSStatus overrideLayoutOperation(ATSULayoutOperationSelector, ATSULineRef
         bool shouldRound = false;
         bool syntheticBoldPass = params->m_syntheticBoldPass;
         Fixed syntheticBoldOffset = 0;
-        ATSGlyphRef spaceGlyph = 0;
         bool hasExtraSpacing = (params->m_font->letterSpacing() || params->m_font->wordSpacing() || params->m_run.padding()) && !params->m_run.spacingDisabled();
         float padding = params->m_run.padding();
         // In the CoreGraphics code path, the rounding hack is applied in logical order.
@@ -189,27 +201,28 @@ static OSStatus overrideLayoutOperation(ATSULayoutOperationSelector, ATSULineRef
         for (i = 1; i < count; i++) {
             bool isLastChar = i == count - 1;
             renderer = renderers[offset / 2];
-            if (renderer != lastRenderer) {
-                lastRenderer = renderer;
-                spaceGlyph = renderer->m_spaceGlyph;
-                // The CoreGraphics interpretation of NSFontAntialiasedIntegerAdvancementsRenderingMode seems
-                // to be "round each glyph's width to the nearest integer". This is not the same as ATSUI
-                // does in any of its device-metrics modes.
-                shouldRound = renderer->platformData().roundsGlyphAdvances();
-                if (syntheticBoldPass)
-                    syntheticBoldOffset = FloatToFixed(renderer->m_syntheticBoldOffset);
-            }
             float width;
             if (nextCh == zeroWidthSpace || Font::treatAsZeroWidthSpace(nextCh) && !Font::treatAsSpace(nextCh)) {
                 width = 0;
-                layoutRecords[i-1].glyphID = spaceGlyph;
+                layoutRecords[i-1].glyphID = renderer->spaceGlyph();
             } else {
                 width = FixedToFloat(layoutRecords[i].realPos - lastNativePos);
+                if (renderer != lastRenderer && width) {
+                    lastRenderer = renderer;
+                    // The CoreGraphics interpretation of NSFontAntialiasedIntegerAdvancementsRenderingMode seems
+                    // to be "round each glyph's width to the nearest integer". This is not the same as ATSUI
+                    // does in any of its device-metrics modes.
+                    shouldRound = renderer->platformData().roundsGlyphAdvances();
+                    if (syntheticBoldPass)
+                        syntheticBoldOffset = FloatToFixed(renderer->syntheticBoldOffset());
+                    if (params->m_fallbackFonts && renderer != params->m_font->primaryFont())
+                        params->m_fallbackFonts->add(renderer);
+                }
                 if (shouldRound)
                     width = roundf(width);
-                width += renderer->m_syntheticBoldOffset;
-                if (renderer->m_treatAsFixedPitch ? width == renderer->m_spaceWidth : (layoutRecords[i-1].flags & kATSGlyphInfoIsWhiteSpace))
-                    width = renderer->m_adjustedSpaceWidth;
+                width += renderer->syntheticBoldOffset();
+                if (renderer->pitch() == FixedPitch ? width == renderer->spaceWidth() : (layoutRecords[i-1].flags & kATSGlyphInfoIsWhiteSpace))
+                    width = renderer->adjustedSpaceWidth();
             }
             lastNativePos = layoutRecords[i].realPos;
 
@@ -257,7 +270,7 @@ static OSStatus overrideLayoutOperation(ATSULayoutOperationSelector, ATSULineRef
                 if (syntheticBoldOffset)
                     layoutRecords[i-1].realPos += syntheticBoldOffset;
                 else
-                    layoutRecords[i-1].glyphID = spaceGlyph;
+                    layoutRecords[i-1].glyphID = renderer->spaceGlyph();
             }
             layoutRecords[i].realPos = FloatToFixed(lastAdjustedPos);
         }
@@ -325,7 +338,7 @@ void ATSULayoutParameters::initialize(const Font* font, const GraphicsContext* g
     OSStatus status;
     ATSULayoutOperationOverrideSpecifier overrideSpecifier;
     
-    initializeATSUStyle(fontData);
+    initializeATSUStyle(fontData, m_font->fontDescription().textRenderingMode());
     
     // FIXME: This is currently missing the following required features that the CoreGraphics code path has:
     // - \n, \t, and nonbreaking space render as a space.
@@ -389,7 +402,7 @@ void ATSULayoutParameters::initialize(const Font* font, const GraphicsContext* g
             const FontData* fallbackFontData = m_font->fontDataForCharacters(m_run.characters() + substituteOffset, substituteLength);
             substituteFontData = fallbackFontData ? fallbackFontData->fontDataForCharacter(m_run[0]) : 0;
             if (substituteFontData) {
-                initializeATSUStyle(substituteFontData);
+                initializeATSUStyle(substituteFontData, m_font->fontDescription().textRenderingMode());
                 if (substituteFontData->m_ATSUStyle)
                     ATSUSetRunStyle(layout, substituteFontData->m_ATSUStyle, substituteOffset, substituteLength);
             } else
@@ -408,7 +421,7 @@ void ATSULayoutParameters::initialize(const Font* font, const GraphicsContext* g
             if (i == substituteOffset || i == substituteOffset + substituteLength) {
                 if (isSmallCap) {
                     isSmallCap = false;
-                    initializeATSUStyle(r->smallCapsFontData(m_font->fontDescription()));
+                    initializeATSUStyle(r->smallCapsFontData(m_font->fontDescription()), m_font->fontDescription().textRenderingMode());
                     ATSUSetRunStyle(layout, r->smallCapsFontData(m_font->fontDescription())->m_ATSUStyle, firstSmallCap, i - firstSmallCap);
                 }
                 if (i == substituteOffset && substituteLength > 0)
@@ -452,14 +465,14 @@ void ATSULayoutParameters::initialize(const Font* font, const GraphicsContext* g
                 } else {
                     if (isSmallCap) {
                         isSmallCap = false;
-                        initializeATSUStyle(smallCapsData);
+                        initializeATSUStyle(smallCapsData, m_font->fontDescription().textRenderingMode());
                         ATSUSetRunStyle(layout, smallCapsData->m_ATSUStyle, firstSmallCap, i - firstSmallCap);
                     }
                     m_fonts[i] = r;
                 }
             } else
                 m_fonts[i] = r;
-            if (m_fonts[i]->m_syntheticBoldOffset)
+            if (m_fonts[i]->syntheticBoldOffset())
                 m_hasSyntheticBold = true;
         }
         substituteOffset += substituteLength;
@@ -500,8 +513,8 @@ FloatRect Font::selectionRectForComplexText(const TextRun& run, const IntPoint& 
         firstGlyphBounds = zeroTrapezoid;
     }
     
-    float beforeWidth = MIN(FixedToFloat(firstGlyphBounds.lowerLeft.x), FixedToFloat(firstGlyphBounds.upperLeft.x));
-    float afterWidth = MAX(FixedToFloat(firstGlyphBounds.lowerRight.x), FixedToFloat(firstGlyphBounds.upperRight.x));
+    float beforeWidth = min(FixedToFloat(firstGlyphBounds.lowerLeft.x), FixedToFloat(firstGlyphBounds.upperLeft.x));
+    float afterWidth = max(FixedToFloat(firstGlyphBounds.lowerRight.x), FixedToFloat(firstGlyphBounds.upperRight.x));
     
     FloatRect rect(point.x() + floorf(beforeWidth), point.y(), roundf(afterWidth) - floorf(beforeWidth), h);
 
@@ -569,12 +582,12 @@ void Font::drawComplexText(GraphicsContext* graphicsContext, const TextRun& run,
         graphicsContext->setShadow(shadowSize, shadowBlur, shadowColor);
 }
 
-float Font::floatWidthForComplexText(const TextRun& run) const
+float Font::floatWidthForComplexText(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFonts) const
 {
     if (run.length() == 0)
         return 0;
 
-    ATSULayoutParameters params(run);
+    ATSULayoutParameters params(run, fallbackFonts);
     params.initialize(this);
     
     OSStatus status;
@@ -587,8 +600,8 @@ float Font::floatWidthForComplexText(const TextRun& run) const
     if (actualNumBounds != 1)
         LOG_ERROR("unexpected result from ATSUGetGlyphBounds(): actualNumBounds(%d) != 1", actualNumBounds);
 
-    return MAX(FixedToFloat(firstGlyphBounds.upperRight.x), FixedToFloat(firstGlyphBounds.lowerRight.x)) -
-           MIN(FixedToFloat(firstGlyphBounds.upperLeft.x), FixedToFloat(firstGlyphBounds.lowerLeft.x));
+    return max(FixedToFloat(firstGlyphBounds.upperRight.x), FixedToFloat(firstGlyphBounds.lowerRight.x)) -
+           min(FixedToFloat(firstGlyphBounds.upperLeft.x), FixedToFloat(firstGlyphBounds.lowerLeft.x));
 }
 
 int Font::offsetForPositionForComplexText(const TextRun& run, int x, bool /*includePartialGlyphs*/) const

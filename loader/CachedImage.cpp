@@ -55,6 +55,7 @@ CachedImage::CachedImage(const String& url)
     : CachedResource(url, ImageResource)
     , m_image(0)
     , m_decodedDataDeletionTimer(this, &CachedImage::decodedDataDeletionTimerFired)
+    , m_httpStatusCodeErrorOccurred(false)
 {
     m_status = Unknown;
 }
@@ -63,6 +64,7 @@ CachedImage::CachedImage(Image* image)
     : CachedResource(String(), ImageResource)
     , m_image(image)
     , m_decodedDataDeletionTimer(this, &CachedImage::decodedDataDeletionTimerFired)
+    , m_httpStatusCodeErrorOccurred(false)
 {
     m_status = Cached;
     m_loading = false;
@@ -86,10 +88,8 @@ void CachedImage::load(DocLoader* docLoader)
         m_loading = false;
 }
 
-void CachedImage::addClient(CachedResourceClient* c)
+void CachedImage::didAddClient(CachedResourceClient* c)
 {
-    CachedResource::addClient(c);
-
     if (m_decodedDataDeletionTimer.isActive())
         m_decodedDataDeletionTimer.stop();
     

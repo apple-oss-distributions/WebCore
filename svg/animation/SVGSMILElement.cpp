@@ -24,6 +24,7 @@
  */
 
 #include "config.h"
+
 #if ENABLE(SVG_ANIMATION)
 #include "SVGSMILElement.h"
 
@@ -34,11 +35,12 @@
 #include "FloatConversion.h"
 #include "FrameView.h"
 #include "HTMLNames.h"
+#include "MappedAttribute.h"
+#include "SMILTimeContainer.h"
 #include "SVGNames.h"
 #include "SVGParserUtilities.h"
 #include "SVGSVGElement.h"
 #include "SVGURIReference.h"
-#include "SMILTimeContainer.h"
 #include "XLinkNames.h"
 #include <math.h>
 #include <wtf/MathExtras.h>
@@ -54,35 +56,32 @@ static const double invalidCachedTime = -1.;
     
 class ConditionEventListener : public EventListener {
 public:
-    static PassRefPtr<ConditionEventListener> create(SVGSMILElement* animation, Element* eventBase, SVGSMILElement::Condition* condition)
+    static PassRefPtr<ConditionEventListener> create(SVGSMILElement* animation, SVGSMILElement::Condition* condition)
     {
-        return adoptRef(new ConditionEventListener(animation, eventBase, condition));
+        return adoptRef(new ConditionEventListener(animation, condition));
     }
 
-    void unregister()
+    void disconnectAnimation()
     {
-        // If this has only one ref then the event base is dead already and we don't need to remove ourself.
-        if (!hasOneRef())
-            m_eventBase->removeEventListener(m_condition->m_name, this, false);
+        m_animation = 0;
     }
 
     virtual void handleEvent(Event* event, bool) 
     {
+        if (!m_animation)
+            return;
         m_animation->handleConditionEvent(event, m_condition);
     }
 
 private:
-    ConditionEventListener(SVGSMILElement* animation, Element* eventBase, SVGSMILElement::Condition* condition) 
+    ConditionEventListener(SVGSMILElement* animation, SVGSMILElement::Condition* condition) 
         : m_animation(animation)
         , m_condition(condition) 
-        , m_eventBase(eventBase)
     {
-        m_eventBase->addEventListener(m_condition->m_name, this, false);
     }
 
     SVGSMILElement* m_animation;
     SVGSMILElement::Condition* m_condition;
-    Element* m_eventBase;
 };
     
 SVGSMILElement::Condition::Condition(Type type, BeginOrEnd beginOrEnd, const String& baseID, const String& name, SMILTime offset, int repeats)
@@ -371,6 +370,11 @@ void SVGSMILElement::attributeChanged(Attribute* attr, bool preserveDecls)
     }
 }
 
+inline Element* SVGSMILElement::eventBaseFor(const Condition& condition)
+{
+    return condition.m_baseID.isEmpty() ? targetElement() : document()->getElementById(condition.m_baseID);
+}
+
 void SVGSMILElement::connectConditions()
 {
     if (m_conditionsConnected)
@@ -380,11 +384,12 @@ void SVGSMILElement::connectConditions()
         Condition& condition = m_conditions[n];
         if (condition.m_type == Condition::EventBase) {
             ASSERT(!condition.m_syncbase);
-            Element* eventBase = condition.m_baseID.isEmpty() ? targetElement() : document()->getElementById(condition.m_baseID);
+            Element* eventBase = eventBaseFor(condition);
             if (!eventBase)
                 continue;
             ASSERT(!condition.m_eventListener);
-            condition.m_eventListener = ConditionEventListener::create(this, eventBase, &condition);
+            condition.m_eventListener = ConditionEventListener::create(this, &condition);
+            eventBase->addEventListener(condition.m_name, condition.m_eventListener, false);
         } else if (condition.m_type == Condition::Syncbase) {
             ASSERT(!condition.m_baseID.isEmpty());
             condition.m_syncbase = document()->getElementById(condition.m_baseID);
@@ -407,10 +412,10 @@ void SVGSMILElement::disconnectConditions()
         Condition& condition = m_conditions[n];
         if (condition.m_type == Condition::EventBase) {
             ASSERT(!condition.m_syncbase);
-            if (condition.m_eventListener) {
-                condition.m_eventListener->unregister();
-                condition.m_eventListener = 0;
-            }
+            if (!condition.m_eventListener)
+                continue;
+            condition.m_eventListener->disconnectAnimation();
+            condition.m_eventListener = 0;
         } else if (condition.m_type == Condition::Syncbase) {
             if (condition.m_syncbase) {
                 ASSERT(isSMILElement(condition.m_syncbase.get()));

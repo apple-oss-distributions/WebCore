@@ -36,11 +36,9 @@
 
 namespace WebCore {
 
-class HTMLSelectElement;
-
 class RenderListBox : public RenderBlock, private ScrollbarClient {
 public:
-    RenderListBox(HTMLSelectElement*);
+    RenderListBox(Element*);
     ~RenderListBox();
 
     virtual const char* renderName() const { return "RenderListBox"; }
@@ -57,7 +55,7 @@ public:
 
     virtual bool isPointInOverflowControl(HitTestResult&, int x, int y, int tx, int ty);
 
-    virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1.0f);
+    virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier = 1.0f, Node** stopNode = 0);
 
     virtual void calcPrefWidths();
     virtual int baselinePosition(bool firstLine, bool isRootLineBox) const;
@@ -92,6 +90,8 @@ public:
     virtual void setScrollLeft(int);
     virtual void setScrollTop(int);
 
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, int x, int y, int tx, int ty, HitTestAction);
+
 protected:
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
@@ -101,6 +101,10 @@ private:
     virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&);
     virtual bool isActive() const;
     virtual bool scrollbarCornerPresent() const { return false; } // We don't support resize on list boxes yet.  If we did this would have to change.
+    virtual IntRect convertFromScrollbarToContainingView(const Scrollbar*, const IntRect&) const;
+    virtual IntRect convertFromContainingViewToScrollbar(const Scrollbar*, const IntRect&) const;
+    virtual IntPoint convertFromScrollbarToContainingView(const Scrollbar*, const IntPoint&) const;
+    virtual IntPoint convertFromContainingViewToScrollbar(const Scrollbar*, const IntPoint&) const;
 
     void setHasVerticalScrollbar(bool hasScrollbar);
     PassRefPtr<Scrollbar> createScrollbar();

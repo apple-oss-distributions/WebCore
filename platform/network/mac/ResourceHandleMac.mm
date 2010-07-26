@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006-2009 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,43 +33,42 @@
 #import "FormDataStreamMac.h"
 #import "Frame.h"
 #import "FrameLoader.h"
+#import "Logging.h"
+#import "MIMETypeRegistry.h"
 #import "Page.h"
 #import "ResourceError.h"
 #import "ResourceResponse.h"
 #import "SchedulePair.h"
+#import "Settings.h"
 #import "SharedBuffer.h"
 #import "SubresourceLoader.h"
 #import "WebCoreSystemInterface.h"
+#import "WebCoreURLResponse.h"
 #import <wtf/UnusedParam.h>
 
 #import "NSURLConnectionIPhone.h"
+#import "RuntimeApplicationChecksIPhone.h"
 #import "Settings.h"
-#import "SoftLinking.h"
+#import "WebCoreThreadMessage.h"
+
+#import "MobileQuickLook.h"
 #import "WebCoreURLResponseIPhone.h"
+#import <Foundation/NSFileManager_NSURLExtras.h>
 #import <MobileQuickLook/QLPreviewConverter.h>
-#import <objc/objc-runtime.h>
 
 #ifdef BUILDING_ON_TIGER
 typedef int NSInteger;
 #endif
-
-SOFT_LINK_PRIVATE_FRAMEWORK(MobileQuickLook)
-
-SOFT_LINK_CLASS(MobileQuickLook, QLPreviewConverter)
-#define QLPreviewConverter getQLPreviewConverterClass()
-
-SOFT_LINK(MobileQuickLook, QLPreviewGetSupportedMIMETypes, NSSet *, (), ())
 
 using namespace WebCore;
 
 @interface WebCoreResourceHandleAsDelegate : NSObject <NSURLAuthenticationChallengeSender>
 {
     ResourceHandle* m_handle;
-#ifndef BUILDING_ON_TIGER
-    NSURL *m_url;
-#endif
     id m_converter;
     BOOL m_finishedLoadingDataIntoConverter;
+    NSMutableData *m_content;
+    NSString *m_quicklookContentFilename;
 }
 - (id)initWithHandle:(ResourceHandle*)handle;
 - (void)detachHandle;
@@ -79,16 +78,23 @@ using namespace WebCore;
 - (NSData *)_bufferedData;
 @end
 
+@interface NSURLRequest (Details)
+- (id)_propertyForKey:(NSString *)key;
+@end
+
 #ifndef BUILDING_ON_TIGER
 
 @interface WebCoreSynchronousLoader : NSObject {
     NSURL *m_url;
+    NSString *m_user;
+    NSString *m_pass;
+    BOOL m_allowStoredCredentials;
     NSURLResponse *m_response;
     NSMutableData *m_data;
     NSError *m_error;
     BOOL m_isDone;
 }
-+ (NSData *)loadRequest:(NSURLRequest *)request returningResponse:(NSURLResponse **)response error:(NSError **)error;
++ (NSData *)loadRequest:(NSURLRequest *)request allowStoredCredentials:(BOOL)allowStoredCredentials returningResponse:(NSURLResponse **)response error:(NSError **)error;
 @end
 
 static NSString *WebCoreSynchronousLoaderRunLoopMode = @"WebCoreSynchronousLoaderRunLoopMode";
@@ -104,53 +110,6 @@ static unsigned inNSURLConnectionCallback;
 #ifndef NDEBUG
 static bool isInitializingConnection;
 #endif
-
-static NSSet *QLPreviewGetSupportedMIMETypesSet()
-{
-    DEFINE_STATIC_LOCAL(RetainPtr<NSSet>, set, (QLPreviewGetSupportedMIMETypes()));
-    return set.get();
-}
-
-static NSMutableDictionary *QLPreviewConverterDictionary()
-{
-    DEFINE_STATIC_LOCAL(RetainPtr<NSMutableDictionary>, dictionary, ([NSMutableDictionary dictionary]));
-    return dictionary.get();
-}
-
-void addQLPreviewConverterForURL(NSURL *url, id converter)
-{
-    NSMutableDictionary *dictionary = QLPreviewConverterDictionary();
-    @synchronized(dictionary) {
-         [dictionary setObject:converter forKey:url];
-    }
-}
-
-void removeQLPreviewConverterForURL(NSURL *url)
-{
-    NSMutableDictionary *dictionary = QLPreviewConverterDictionary();
-    @synchronized(dictionary) {
-        [dictionary removeObjectForKey:url];
-    }
-}
-
-const KURL safeQLURLForDocumentURLAndResourceURL(const KURL& documentURL, const String& resourceURL)
-{
-    NSMutableDictionary *dictionary = QLPreviewConverterDictionary();
-    id converter = nil;
-    NSURL *nsDocumentURL = documentURL;
-    @synchronized(dictionary) {
-        converter = [dictionary objectForKey:nsDocumentURL];
-    }
-
-    if (!converter)
-        return KURL(resourceURL);
-
-    NSURLRequest *request = [[NSURLRequest alloc] initWithURL:[NSURL URLWithString:resourceURL]];
-    NSURLRequest *safeRequest = [converter safeRequestForRequest:request];
-    [request release];
-
-    return [safeRequest URL];
-}
 
 class CallbackGuard {
 public:
@@ -176,6 +135,8 @@ ResourceHandleInternal::~ResourceHandleInternal()
 ResourceHandle::~ResourceHandle()
 {
     releaseDelegate();
+
+    LOG(Network, "Handle %p destroyed", this);
 }
 
 static const double MaxFoundationVersionWithoutdidSendBodyDataDelegate = 677.21;
@@ -213,26 +174,48 @@ bool ResourceHandle::start(Frame* frame)
     } else 
         delegate = ResourceHandle::delegate();
 
+    if ((!d->m_user.isEmpty() || !d->m_pass.isEmpty()) && !d->m_request.url().protocolInHTTPFamily()) {
+        // Credentials for ftp can only be passed in URL, the connection:didReceiveAuthenticationChallenge: delegate call won't be made.
+        KURL urlWithCredentials(d->m_request.url());
+        urlWithCredentials.setUser(d->m_user);
+        urlWithCredentials.setPass(d->m_pass);
+        d->m_request.setURL(urlWithCredentials);
+    }
+
     if (!ResourceHandle::didSendBodyDataDelegateExists())
         associateStreamWithResourceHandle([d->m_request.nsURLRequest() HTTPBodyStream], this);
+
+#ifdef BUILDING_ON_TIGER
+    // A conditional request sent by WebCore (e.g. to update appcache) can be for a resource that is not cacheable by NSURLConnection,
+    // which can get confused and fail to load it in this case.
+    if (d->m_request.isConditional())
+        d->m_request.setCachePolicy(ReloadIgnoringCacheData);
+#endif
+
+    d->m_needsSiteSpecificQuirks = frame->settings() && frame->settings()->needsSiteSpecificQuirks();
 
     NSURLConnection *connection;
     
     long long maxContentLength = 10485760; 
-    if (frame->settings()) //webcore settings can be nil
+    bool useCache = false;
+    if (frame->settings()) { //webcore settings can be nil
         maxContentLength = frame->settings()->maximumResourceDataLength();
+        useCache = d->m_request.isMainResourceRequest() || frame->settings()->foundationCachingEnabled();
+    }
 
-    if (d->m_shouldContentSniff) 
-        connection = [[NSURLConnectionIPhone alloc] _initWithRequest:d->m_request.nsURLRequest() delegate:delegate usesCache:NO maxContentLength:maxContentLength];
+    NSDictionary *connectionProperties = (NSDictionary *)client()->connectionProperties(this);
+
+    if (d->m_shouldContentSniff || frame->settings()->localFileContentSniffingEnabled()) 
+        connection = [[NSURLConnectionIPhone alloc] _initWithRequest:d->m_request.nsURLRequest() delegate:delegate usesCache:useCache maxContentLength:maxContentLength startImmediately:YES connectionProperties:connectionProperties];
     else {
         NSMutableURLRequest *request = [d->m_request.nsURLRequest() mutableCopy];
         wkSetNSURLRequestShouldContentSniff(request, NO);
-        connection = [[NSURLConnectionIPhone alloc] _initWithRequest:request delegate:delegate usesCache:NO maxContentLength:maxContentLength];
+        connection = [[NSURLConnectionIPhone alloc] _initWithRequest:request delegate:delegate usesCache:useCache maxContentLength:maxContentLength startImmediately:YES connectionProperties:connectionProperties];
         [request release];
     }
 
     if (WebThreadNotCurrent()) {
-        NSInvocation *invocation = WebThreadCreateNSInvocation(connection, @selector(start));
+        NSInvocation *invocation = WebThreadMakeNSInvocation(connection, @selector(start));
         WebThreadCallAPI(invocation);
     } else
         [(NSURLConnectionIPhone *)connection start];
@@ -240,6 +223,8 @@ bool ResourceHandle::start(Frame* frame)
 #ifndef NDEBUG
     isInitializingConnection = NO;
 #endif
+
+    LOG(Network, "Handle %p starting connection %p for %@", this, connection, d->m_request.nsURLRequest());
     
     d->m_connection = connection;
 
@@ -259,6 +244,8 @@ bool ResourceHandle::start(Frame* frame)
 
 void ResourceHandle::cancel()
 {
+    LOG(Network, "Handle %p cancel connection %p", this, d->m_connection.get());
+
     if (!ResourceHandle::didSendBodyDataDelegateExists())
         disassociateStreamWithResourceHandle([d->m_request.nsURLRequest() HTTPBodyStream]);
     [d->m_connection.get() cancel];
@@ -266,6 +253,8 @@ void ResourceHandle::cancel()
 
 void ResourceHandle::setDefersLoading(bool defers)
 {
+    LOG(Network, "Handle %p setDefersLoading(%s)", this, defers ? "true" : "false");
+
     d->m_defersLoading = defers;
     if (d->m_connection)
         wkSetNSURLConnectionDefersCallbacks(d->m_connection.get(), defers);
@@ -342,6 +331,7 @@ bool ResourceHandle::loadsBlocked()
 
 bool ResourceHandle::willLoadFromCache(ResourceRequest& request)
 {
+#ifndef BUILDING_ON_TIGER
     request.setCachePolicy(ReturnCacheDataDontLoad);
     NSURLResponse *nsURLResponse = nil;
     BEGIN_BLOCK_OBJC_EXCEPTIONS;
@@ -351,9 +341,14 @@ bool ResourceHandle::willLoadFromCache(ResourceRequest& request)
     END_BLOCK_OBJC_EXCEPTIONS;
     
     return nsURLResponse;
+#else
+    // <rdar://problem/6803217> - Re-enable after <rdar://problem/6786454> is resolved.
+    UNUSED_PARAM(request);
+    return false;
+#endif
 }
 
-void ResourceHandle::loadResourceSynchronously(const ResourceRequest& request, ResourceError& error, ResourceResponse& response, Vector<char>& data, Frame*)
+void ResourceHandle::loadResourceSynchronously(const ResourceRequest& request, StoredCredentials storedCredentials, ResourceError& error, ResourceResponse& response, Vector<char>& data, Frame*)
 {
     NSError *nsError = nil;
     
@@ -362,12 +357,21 @@ void ResourceHandle::loadResourceSynchronously(const ResourceRequest& request, R
 
     ASSERT(!request.isEmpty());
     
+    NSURLRequest *nsRequest;
+    if (!shouldContentSniffURL(request.url())) {
+        NSMutableURLRequest *mutableRequest = [[request.nsURLRequest() mutableCopy] autorelease];
+        wkSetNSURLRequestShouldContentSniff(mutableRequest, NO);
+        nsRequest = mutableRequest;
+    } else
+        nsRequest = request.nsURLRequest();
+            
     BEGIN_BLOCK_OBJC_EXCEPTIONS;
     
 #ifndef BUILDING_ON_TIGER
-    result = [WebCoreSynchronousLoader loadRequest:request.nsURLRequest() returningResponse:&nsURLResponse error:&nsError];
+    result = [WebCoreSynchronousLoader loadRequest:nsRequest allowStoredCredentials:(storedCredentials == AllowStoredCredentials) returningResponse:&nsURLResponse error:&nsError];
 #else
-    result = [NSURLConnection sendSynchronousRequest:request.nsURLRequest() returningResponse:&nsURLResponse error:&nsError];
+    UNUSED_PARAM(storedCredentials);
+    result = [NSURLConnection sendSynchronousRequest:nsRequest returningResponse:&nsURLResponse error:&nsError];
 #endif
     END_BLOCK_OBJC_EXCEPTIONS;
 
@@ -394,6 +398,16 @@ void ResourceHandle::loadResourceSynchronously(const ResourceRequest& request, R
     error = nsError;
 }
 
+void ResourceHandle::willSendRequest(ResourceRequest& request, const ResourceResponse& redirectResponse)
+{
+    const KURL& url = request.url();
+    d->m_user = url.user();
+    d->m_pass = url.pass();
+    request.removeCredentials();
+
+    client()->willSendRequest(this, request, redirectResponse);
+}
+
 bool ResourceHandle::shouldUseCredentialStorage()
 {
     if (client())
@@ -409,7 +423,29 @@ void ResourceHandle::didReceiveAuthenticationChallenge(const AuthenticationChall
     // Since NSURLConnection networking relies on keeping a reference to the original NSURLAuthenticationChallenge,
     // we make sure that is actually present
     ASSERT(challenge.nsURLAuthenticationChallenge());
-        
+
+    if (!d->m_user.isNull() && !d->m_pass.isNull()) {
+        NSURLCredential *credential = [[NSURLCredential alloc] initWithUser:d->m_user
+                                                                   password:d->m_pass
+                                                                persistence:NSURLCredentialPersistenceNone];
+        d->m_currentMacChallenge = challenge.nsURLAuthenticationChallenge();
+        d->m_currentWebChallenge = challenge;
+        receivedCredential(challenge, core(credential));
+        [credential release];
+        // FIXME: Per the specification, the user shouldn't be asked for credentials if there were incorrect ones provided explicitly.
+        d->m_user = String();
+        d->m_pass = String();
+        return;
+    }
+
+    if (!challenge.previousFailureCount() && (!client() || client()->shouldUseCredentialStorage(this))) {
+        NSURLCredential *credential = WebCoreCredentialStorage::get([mac(challenge) protectionSpace]);
+        if (credential) {
+            [challenge.sender() useCredential:credential forAuthenticationChallenge:mac(challenge)];
+            return;
+        }
+    }
+
     d->m_currentMacChallenge = challenge.nsURLAuthenticationChallenge();
     NSURLAuthenticationChallenge *webChallenge = [[NSURLAuthenticationChallenge alloc] initWithAuthenticationChallenge:d->m_currentMacChallenge 
                                                                                        sender:(id<NSURLAuthenticationChallengeSender>)delegate()];
@@ -444,7 +480,24 @@ void ResourceHandle::receivedCredential(const AuthenticationChallenge& challenge
     if (challenge != d->m_currentWebChallenge)
         return;
 
-    [[d->m_currentMacChallenge sender] useCredential:mac(credential) forAuthenticationChallenge:d->m_currentMacChallenge];
+#ifdef BUILDING_ON_TIGER
+    if (credential.persistence() == CredentialPersistenceNone) {
+        // NSURLCredentialPersistenceNone doesn't work on Tiger, so we have to use session persistence.
+        Credential webCredential(credential.user(), credential.password(), CredentialPersistenceForSession);
+        WebCoreCredentialStorage::set(mac(webCredential), [d->m_currentMacChallenge protectionSpace]);
+        [[d->m_currentMacChallenge sender] useCredential:mac(webCredential) forAuthenticationChallenge:d->m_currentMacChallenge];
+    } else
+#else
+    if (credential.persistence() == CredentialPersistenceForSession && (!d->m_needsSiteSpecificQuirks || ![[[mac(challenge) protectionSpace] host] isEqualToString:@"gallery.me.com"])) {
+        // Manage per-session credentials internally, because once NSURLCredentialPersistenceForSession is used, there is no way
+        // to ignore it for a particular request (short of removing it altogether).
+        // <rdar://problem/6867598> gallery.me.com is temporarily whitelisted, so that QuickTime plug-in could see the credentials.
+        Credential webCredential(credential.user(), credential.password(), CredentialPersistenceNone);
+        WebCoreCredentialStorage::set(mac(webCredential), [d->m_currentMacChallenge protectionSpace]);
+        [[d->m_currentMacChallenge sender] useCredential:mac(webCredential) forAuthenticationChallenge:d->m_currentMacChallenge];
+    } else
+#endif
+        [[d->m_currentMacChallenge sender] useCredential:mac(credential) forAuthenticationChallenge:d->m_currentMacChallenge];
 
     clearAuthentication();
 }
@@ -484,24 +537,25 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
     return self;
 }
 
-#ifndef BUILDING_ON_TIGER
 - (void)dealloc
 {
     [m_converter release];
     m_converter = nil;
-    [m_url release];
+    [m_content release];
+    m_content = nil;
+    [m_quicklookContentFilename release];
+    m_quicklookContentFilename = nil;
     [super dealloc];
 }
-#endif
 
 - (void)detachHandle
 {
     m_handle = 0;
 }
 
-- (NSURLRequest *)connection:(NSURLConnection *)unusedConnection willSendRequest:(NSURLRequest *)newRequest redirectResponse:(NSURLResponse *)redirectResponse
+- (NSURLRequest *)connection:(NSURLConnection *)connection willSendRequest:(NSURLRequest *)newRequest redirectResponse:(NSURLResponse *)redirectResponse
 {
-    UNUSED_PARAM(unusedConnection);
+    UNUSED_PARAM(connection);
 
     // the willSendRequest call may cancel this load, in which case self could be deallocated
     RetainPtr<WebCoreResourceHandleAsDelegate> protect(self);
@@ -513,14 +567,34 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
     if (!redirectResponse)
         return newRequest;
     
+    LOG(Network, "Handle %p delegate connection:%p willSendRequest:%@ redirectResponse:%p", m_handle, connection, [newRequest description], redirectResponse);
+
+    if (redirectResponse && [redirectResponse isKindOfClass:[NSHTTPURLResponse class]] && [(NSHTTPURLResponse *)redirectResponse statusCode] == 307) {
+        String originalMethod = m_handle->request().httpMethod();
+        if (!equalIgnoringCase(originalMethod, String([newRequest HTTPMethod]))) {
+            NSMutableURLRequest *mutableRequest = [newRequest mutableCopy];
+            [mutableRequest setHTTPMethod:originalMethod];
+    
+            FormData* body = m_handle->request().httpBody();
+            if (!equalIgnoringCase(originalMethod, "GET") && body && !body->isEmpty())
+                WebCore::setHTTPBody(mutableRequest, body);
+
+            String originalContentType = m_handle->request().httpContentType();
+            if (!originalContentType.isEmpty())
+                [mutableRequest setValue:originalContentType forHTTPHeaderField:@"Content-Type"];
+
+            newRequest = [mutableRequest autorelease];
+        }
+    }
+
     CallbackGuard guard;
     ResourceRequest request = newRequest;
-    m_handle->client()->willSendRequest(m_handle, request, redirectResponse);
-#ifndef BUILDING_ON_TIGER
-    NSURL *copy = [[request.nsURLRequest() URL] copy];
-    [m_url release];
-    m_url = copy;
-#endif
+
+    // Should not set Referer after a redirect from a secure resource to non-secure one.
+    if (!request.url().protocolIs("https") && protocolIs(request.httpReferrer(), "https"))
+        request.clearHTTPReferrer();
+
+    m_handle->willSendRequest(request, redirectResponse);
 
     if (!ResourceHandle::didSendBodyDataDelegateExists()) {
         // The client may change the request's body stream, in which case we have to re-associate
@@ -536,46 +610,32 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
     return request.nsURLRequest();
 }
 
-- (BOOL)connectionShouldUseCredentialStorage:(NSURLConnection *)unusedConnection
+- (BOOL)connectionShouldUseCredentialStorage:(NSURLConnection *)connection
 {
-    UNUSED_PARAM(unusedConnection);
+    UNUSED_PARAM(connection);
 
-    if (!m_handle)
-        return NO;
+    LOG(Network, "Handle %p delegate connectionShouldUseCredentialStorage:%p", m_handle, connection);
 
-    CallbackGuard guard;
-    return m_handle->shouldUseCredentialStorage();
+    return NO;
 }
 
-- (void)connection:(NSURLConnection *)unusedConnection didReceiveAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge
+- (void)connection:(NSURLConnection *)connection didReceiveAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge
 {
-    UNUSED_PARAM(unusedConnection);
+    UNUSED_PARAM(connection);
 
-#ifndef BUILDING_ON_TIGER
-    if ([challenge previousFailureCount] == 0) {
-        NSString *user = [m_url user];
-        NSString *password = [m_url password];
+    LOG(Network, "Handle %p delegate connection:%p didReceiveAuthenticationChallenge:%p", m_handle, connection, challenge);
 
-        if (user && password) {
-            NSURLCredential *credential = [[NSURLCredential alloc] initWithUser:user
-                                                                     password:password
-                                                                  persistence:NSURLCredentialPersistenceForSession];
-            [[challenge sender] useCredential:credential forAuthenticationChallenge:challenge];
-            [credential release];
-            return;
-        }
-    }
-#endif
-    
     if (!m_handle)
         return;
     CallbackGuard guard;
     m_handle->didReceiveAuthenticationChallenge(core(challenge));
 }
 
-- (void)connection:(NSURLConnection *)unusedConnection didCancelAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge
+- (void)connection:(NSURLConnection *)connection didCancelAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge
 {
-    UNUSED_PARAM(unusedConnection);
+    UNUSED_PARAM(connection);
+
+    LOG(Network, "Handle %p delegate connection:%p didCancelAuthenticationChallenge:%p", m_handle, connection, challenge);
 
     if (!m_handle)
         return;
@@ -597,26 +657,72 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
 - (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)r
 {
 
+    LOG(Network, "Handle %p delegate connection:%p didReceiveResponse:%p (HTTP status %d, reported MIMEType '%s')", m_handle, connection, r, [r respondsToSelector:@selector(statusCode)] ? [(id)r statusCode] : 0, [[r MIMEType] UTF8String]);
+
     if (!m_handle || !m_handle->client())
         return;
     CallbackGuard guard;
 
-    if (shouldUseQuickLookForMIMEType([r MIMEType])) {
-        if ([QLPreviewGetSupportedMIMETypesSet() containsObject:[r _webcore_MIMEType]]) {
-            m_converter = [[QLPreviewConverter alloc] initWithConnection:connection delegate:self response:r options:nil];
-            r = [m_converter previewResponse];
-            // We must use the generated URL from the new NSURLResponse object
-            // so that it matches the URL removed from -[WebDataSource dealloc].
-            addQLPreviewConverterForURL([r URL], m_converter);
+    [r adjustMIMETypeIfNecessary];
+
+    if ([m_handle->request().nsURLRequest() _propertyForKey:@"ForceHTMLMIMEType"])
+        [r _setMIMEType:@"text/html"];
+
+#if ENABLE(WML)
+    const KURL& url = [r URL];
+    if (url.isLocalFile()) {
+        // FIXME: Workaround for <rdar://problem/6917571>: The WML file extension ".wml" is not mapped to
+        // the right MIME type, work around that CFNetwork problem, to unbreak WML support for local files.
+        const String& path = url.path();
+  
+        DEFINE_STATIC_LOCAL(const String, wmlExt, (".wml"));
+        if (path.endsWith(wmlExt, false)) {
+            static NSString* defaultMIMETypeString = [(NSString*) defaultMIMEType() retain];
+            if ([[r MIMEType] isEqualToString:defaultMIMETypeString])
+                [r _setMIMEType:@"text/vnd.wap.wml"];
         }
+    }
+#endif
+
+    if ([QLPreviewGetSupportedMIMETypesSet() containsObject:[r MIMEType]]) {
+        m_converter = [[QLPreviewConverterClass() alloc] initWithConnection:connection delegate:self response:r options:nil];
+        r = [m_converter previewResponse];
+
+        // QL consumes the incoming data, we need to store it so that it
+        // can be opened in the handling application.
+        if (applicationIsMobileSafari()) {
+            m_content = [[NSMutableData alloc] init];
+
+            NSString *downloadDirectory = [NSTemporaryDirectory() stringByAppendingPathComponent:@"QuickLookContent-XXXXXXXX"];
+            const char* downloadDirectoryCString = [downloadDirectory UTF8String];
+            if (downloadDirectoryCString) {
+                const size_t length = strlen(downloadDirectoryCString) + 1; // For NULL terminator.
+                Vector<char> directoryData;
+                directoryData.append(downloadDirectoryCString, length);
+                if (mkdtemp(directoryData.data()))
+                    downloadDirectory = [NSString stringWithUTF8String:directoryData.data()];
+            }
+
+            NSString *newContentPath = [downloadDirectory stringByAppendingPathComponent:[m_converter previewFileName]];
+            m_quicklookContentFilename = [[[NSFileManager defaultManager] _web_pathWithUniqueFilenameForPath:newContentPath] retain];
+        } else {
+            ASSERT(!m_content);
+            ASSERT(!m_quicklookContentFilename);
+        }
+
+        // We must use the generated URL from the new NSURLResponse object
+        // so that it matches the URL removed from -[WebDataSource dealloc].
+        addQLPreviewConverterWithFileForURL([r URL], m_converter, m_quicklookContentFilename);
     }
 
     m_handle->client()->didReceiveResponse(m_handle, r);
 }
 
-- (void)connection:(NSURLConnection *)unusedConnection didReceiveData:(NSData *)data lengthReceived:(long long)lengthReceived
+- (void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data lengthReceived:(long long)lengthReceived
 {
-    UNUSED_PARAM(unusedConnection);
+    UNUSED_PARAM(connection);
+
+    LOG(Network, "Handle %p delegate connection:%p didReceiveData:%p lengthReceived:%lld", m_handle, connection, data, lengthReceived);
 
     if ([data length] == 0) // <rdar://problem/5532931>
         return;
@@ -630,15 +736,19 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
 
     if (m_converter && !m_finishedLoadingDataIntoConverter) {
         [m_converter appendData:data];
+        if (m_content)
+            [m_content appendData:data];
         return;
     }
 
     m_handle->client()->didReceiveData(m_handle, (const char*)[data bytes], [data length], static_cast<int>(lengthReceived));
 }
 
-- (void)connection:(NSURLConnection *)unusedConnection willStopBufferingData:(NSData *)data
+- (void)connection:(NSURLConnection *)connection willStopBufferingData:(NSData *)data
 {
-    UNUSED_PARAM(unusedConnection);
+    UNUSED_PARAM(connection);
+
+    LOG(Network, "Handle %p delegate connection:%p willStopBufferingData:%p", m_handle, connection, data);
 
     if (!m_handle || !m_handle->client())
         return;
@@ -649,10 +759,12 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
     m_handle->client()->willStopBufferingData(m_handle, (const char*)[data bytes], static_cast<int>([data length]));
 }
 
-- (void)connection:(NSURLConnection *)unusedConnection didSendBodyData:(NSInteger)unusedBytesWritten totalBytesWritten:(NSInteger)totalBytesWritten totalBytesExpectedToWrite:(NSInteger)totalBytesExpectedToWrite
+- (void)connection:(NSURLConnection *)connection didSendBodyData:(NSInteger)bytesWritten totalBytesWritten:(NSInteger)totalBytesWritten totalBytesExpectedToWrite:(NSInteger)totalBytesExpectedToWrite
 {
-    UNUSED_PARAM(unusedConnection);
-    UNUSED_PARAM(unusedBytesWritten);
+    UNUSED_PARAM(connection);
+    UNUSED_PARAM(bytesWritten);
+
+    LOG(Network, "Handle %p delegate connection:%p didSendBodyData:%d totalBytesWritten:%d totalBytesExpectedToWrite:%d", m_handle, connection, bytesWritten, totalBytesWritten, totalBytesExpectedToWrite);
 
     if (!m_handle || !m_handle->client())
         return;
@@ -660,9 +772,11 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
     m_handle->client()->didSendData(m_handle, totalBytesWritten, totalBytesExpectedToWrite);
 }
 
-- (void)connectionDidFinishLoading:(NSURLConnection *)unusedConnection
+- (void)connectionDidFinishLoading:(NSURLConnection *)connection
 {
-    UNUSED_PARAM(unusedConnection);
+    UNUSED_PARAM(connection);
+
+    LOG(Network, "Handle %p delegate connectionDidFinishLoading:%p", m_handle, connection);
 
     if (!m_handle || !m_handle->client())
         return;
@@ -671,6 +785,12 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
     if (m_converter && !m_finishedLoadingDataIntoConverter) {
         m_finishedLoadingDataIntoConverter = YES;
         [m_converter finishedAppendingData];
+        if (m_content && m_quicklookContentFilename) {
+            [[NSFileManager defaultManager] _web_createFileAtPathWithIntermediateDirectories:m_quicklookContentFilename 
+                                                                                    contents:m_content
+                                                                                  attributes:QLFileAttributes()
+                                                                         directoryAttributes:QLDirectoryAttributes()];
+        }
         return;
     }
 
@@ -680,19 +800,25 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
     m_handle->client()->didFinishLoading(m_handle);
 }
 
-- (void)connection:(NSURLConnection *)unusedConnection didFailWithError:(NSError *)error
+- (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error
 {
-    UNUSED_PARAM(unusedConnection);
+    UNUSED_PARAM(connection);
+
+    LOG(Network, "Handle %p delegate connection:%p didFailWithError:%@", m_handle, connection, error);
 
     if (!m_handle || !m_handle->client())
         return;
     CallbackGuard guard;
 
     if (m_converter) {
-        removeQLPreviewConverterForURL(m_url);
+        removeQLPreviewConverterForURL([m_handle->request().nsURLRequest() URL]);
         [m_converter finishConverting];
         [m_converter release];
         m_converter = nil;
+        [m_content release];
+        m_content = nil;
+        [m_quicklookContentFilename release];
+        m_quicklookContentFilename = nil;
     }
 
     if (!ResourceHandle::didSendBodyDataDelegateExists())
@@ -714,6 +840,8 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
 
 - (NSCachedURLResponse *)connection:(NSURLConnection *)connection willCacheResponse:(NSCachedURLResponse *)cachedResponse
 {
+    LOG(Network, "Handle %p delegate connection:%p willCacheResponse:%p", m_handle, connection, cachedResponse);
+
 #ifdef BUILDING_ON_TIGER
     // On Tiger CFURLConnection can sometimes call the connection:willCacheResponse: delegate method on
     // a secondary thread instead of the main thread. If this happens perform the work on the main thread.
@@ -801,6 +929,8 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
 - (void)dealloc
 {
     [m_url release];
+    [m_user release];
+    [m_pass release];
     [m_response release];
     [m_data release];
     [m_error release];
@@ -808,10 +938,9 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
     [super dealloc];
 }
 
-- (NSURLRequest *)connection:(NSURLConnection *)unusedConnection willSendRequest:(NSURLRequest *)newRequest redirectResponse:(NSURLResponse *)unusedRedirectResponse
+- (NSURLRequest *)connection:(NSURLConnection *)unusedConnection willSendRequest:(NSURLRequest *)newRequest redirectResponse:(NSURLResponse *)redirectResponse
 {
     UNUSED_PARAM(unusedConnection);
-    UNUSED_PARAM(unusedRedirectResponse);
 
     // FIXME: This needs to be fixed to follow the redirect correctly even for cross-domain requests.
     if (m_url && !protocolHostAndPortAreEqual(m_url, [newRequest URL])) {
@@ -824,27 +953,55 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
     [m_url release];
     m_url = copy;
 
+    if (redirectResponse) {
+        // Take user/pass out of the URL.
+        [m_user release];
+        [m_pass release];
+        m_user = [[m_url user] copy];
+        m_pass = [[m_url password] copy];
+        if (m_user || m_pass) {
+            ResourceRequest requestWithoutCredentials = newRequest;
+            requestWithoutCredentials.removeCredentials();
+            return requestWithoutCredentials.nsURLRequest();
+        }
+    }
+
     return newRequest;
+}
+
+- (BOOL)connectionShouldUseCredentialStorage:(NSURLConnection *)unusedConnection
+{
+    UNUSED_PARAM(unusedConnection);
+
+    return NO;
 }
 
 - (void)connection:(NSURLConnection *)unusedConnection didReceiveAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge
 {
     UNUSED_PARAM(unusedConnection);
 
-    if ([challenge previousFailureCount] == 0) {
-        NSString *user = [m_url user];
-        NSString *password = [m_url password];
-        
-        if (user && password) {
-            NSURLCredential *credential = [[NSURLCredential alloc] initWithUser:user
-                                                                     password:password
-                                                                  persistence:NSURLCredentialPersistenceForSession];
+    if (m_user && m_pass) {
+        NSURLCredential *credential = [[NSURLCredential alloc] initWithUser:m_user
+                                                                   password:m_pass
+                                                                persistence:NSURLCredentialPersistenceNone];
+        WebCoreCredentialStorage::set(credential, [challenge protectionSpace]);
+        [[challenge sender] useCredential:credential forAuthenticationChallenge:challenge];
+        [credential release];
+        [m_user release];
+        [m_pass release];
+        m_user = 0;
+        m_pass = 0;
+        return;
+    }
+    if ([challenge previousFailureCount] == 0 && m_allowStoredCredentials) {
+        NSURLCredential *credential = WebCoreCredentialStorage::get([challenge protectionSpace]);
+        ASSERT([credential persistence] == NSURLCredentialPersistenceNone);
+        if (credential) {
             [[challenge sender] useCredential:credential forAuthenticationChallenge:challenge];
-            [credential release];
             return;
         }
     }
-    
+    // FIXME: The user should be asked for credentials, as in async case.
     [[challenge sender] continueWithoutCredentialForAuthenticationChallenge:challenge];
 }
 
@@ -900,11 +1057,26 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
     return [[m_error retain] autorelease];
 }
 
-+ (NSData *)loadRequest:(NSURLRequest *)request returningResponse:(NSURLResponse **)response error:(NSError **)error
++ (NSData *)loadRequest:(NSURLRequest *)request allowStoredCredentials:(BOOL)allowStoredCredentials returningResponse:(NSURLResponse **)response error:(NSError **)error
 {
     WebCoreSynchronousLoader *delegate = [[WebCoreSynchronousLoader alloc] init];
-    
-    NSURLConnection *connection = [[NSURLConnection alloc] initWithRequest:request delegate:delegate startImmediately:NO];
+
+    NSURL *url = [request URL];
+    delegate->m_user = [[url user] copy];
+    delegate->m_pass = [[url password] copy];
+    delegate->m_allowStoredCredentials = allowStoredCredentials;
+
+    NSURLConnection *connection;
+
+    // Take user/pass out of the URL.
+    // Credentials for ftp can only be passed in URL, the connection:didReceiveAuthenticationChallenge: delegate call won't be made.
+    if ((delegate->m_user || delegate->m_pass) && KURL(url).protocolInHTTPFamily()) {
+        ResourceRequest requestWithoutCredentials = request;
+        requestWithoutCredentials.removeCredentials();
+        connection = [[NSURLConnection alloc] initWithRequest:requestWithoutCredentials.nsURLRequest() delegate:delegate startImmediately:NO];
+    } else
+        connection = [[NSURLConnection alloc] initWithRequest:request delegate:delegate startImmediately:NO];
+
     [connection scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:WebCoreSynchronousLoaderRunLoopMode];
     [connection start];
     

@@ -29,10 +29,6 @@
 
 #include <wtf/Platform.h>
 
-// Don't pull in <ctype.h> through headers like <GraphicsServices/GSEvent.h>
-// since WebCore uses <wtf/ASCIICType.h>
-#define _DONT_USE_CTYPE_INLINE_
-
 #if defined(__APPLE__)
 #ifdef __cplusplus
 #define NULL __null
@@ -105,20 +101,8 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 
-#include <AvailabilityMacros.h>
-
-#if defined(__APPLE__)
-#if MAC_OS_X_VERSION_MAX_ALLOWED <= MAC_OS_X_VERSION_10_4
-#define BUILDING_ON_TIGER 1
-#elif MAC_OS_X_VERSION_MAX_ALLOWED <= MAC_OS_X_VERSION_10_5
-#define BUILDING_ON_LEOPARD 1
-#endif
-#endif
-
 #ifdef __OBJC__
-#import "WKTypes.h"
-#import "WAKAppKitStubs.h"
-#import "WebCoreThreadMessage.h"
+#import <Foundation/Foundation.h>
 #endif
 
 #ifdef __cplusplus

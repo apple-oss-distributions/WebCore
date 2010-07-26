@@ -37,13 +37,13 @@ class HTMLElement;
 class Node;
 class Position;
 class Range;
-class Selection;
 class String;
 class VisiblePosition;
+class VisibleSelection;
 
 Position rangeCompliantEquivalent(const Position&);
 Position rangeCompliantEquivalent(const VisiblePosition&);
-int maxDeepOffset(const Node*);
+int lastOffsetForEditing(const Node*);
 bool isAtomicNode(const Node*);
 bool editingIgnoresContent(const Node*);
 bool canHaveChildrenForEditing(const Node*);
@@ -51,6 +51,7 @@ Node* highestEditableRoot(const Position&);
 VisiblePosition firstEditablePositionAfterPositionInRoot(const Position&, Node*);
 VisiblePosition lastEditablePositionBeforePositionInRoot(const Position&, Node*);
 int comparePositions(const Position&, const Position&);
+int comparePositions(const VisiblePosition&, const VisiblePosition&);
 Node* lowestEditableAncestor(Node*);
 bool isContentEditable(const Node*);
 Position nextCandidate(const Position&);
@@ -72,7 +73,7 @@ Position positionBeforeNode(const Node*);
 Position positionAfterNode(const Node*);
 
 PassRefPtr<Range> avoidIntersectionWithNode(const Range*, Node*);
-Selection avoidIntersectionWithNode(const Selection&, Node*);
+VisibleSelection avoidIntersectionWithNode(const VisibleSelection&, Node*);
 
 bool isSpecialElement(const Node*);
 bool validBlockTag(const String&);
@@ -94,6 +95,7 @@ PassRefPtr<Element> createTabSpanElement(Document*, PassRefPtr<Node> tabTextNode
 PassRefPtr<Element> createTabSpanElement(Document*, const String& tabText);
 
 bool isNodeRendered(const Node*);
+bool isRenderedAsNonInlineTableImageOrHR(const Node*);
 bool isMailBlockquote(const Node*);
 Node* nearestMailBlockquote(const Node*);
 unsigned numEnclosingMailBlockquotes(const Position&);
@@ -122,7 +124,8 @@ Node* enclosingAnchorElement(const Position&);
 bool isListElement(Node*);
 HTMLElement* enclosingList(Node*);
 HTMLElement* outermostEnclosingList(Node*);
-Node* enclosingListChild(Node*);
+HTMLElement* enclosingListChild(Node*);
+bool canMergeLists(Element* firstList, Element* secondList);
 Node* highestAncestor(Node*);
 bool isTableElement(Node*);
 bool isTableCell(const Node*);
@@ -130,10 +133,10 @@ bool isTableCell(const Node*);
 bool lineBreakExistsAtPosition(const Position&);
 bool lineBreakExistsAtVisiblePosition(const VisiblePosition&);
 
-Selection selectionForParagraphIteration(const Selection&);
+VisibleSelection selectionForParagraphIteration(const VisibleSelection&);
 
 int indexForVisiblePosition(VisiblePosition&);
-
+bool isVisibilyAdjacent(const Position& first, const Position& second);
 }
 
 #endif

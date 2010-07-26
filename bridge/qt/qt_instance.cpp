@@ -43,16 +43,10 @@ namespace Bindings {
 typedef QMultiHash<void*, QtInstance*> QObjectInstanceMap;
 static QObjectInstanceMap cachedInstances;
 
-// Cache JSObjects
-typedef QHash<QtInstance*, JSObject*> InstanceJSObjectMap;
-static InstanceJSObjectMap cachedObjects;
-
 // Derived RuntimeObject
 class QtRuntimeObjectImp : public RuntimeObjectImp {
 public:
     QtRuntimeObjectImp(ExecState*, PassRefPtr<Instance>);
-    ~QtRuntimeObjectImp();
-    virtual void invalidate();
 
     static const ClassInfo s_info;
 
@@ -64,9 +58,6 @@ public:
         RuntimeObjectImp::mark();
     }
 
-protected:
-    void removeFromCache();
-        
 private:
     virtual const ClassInfo* classInfo() const { return &s_info; }
 };
@@ -78,32 +69,14 @@ QtRuntimeObjectImp::QtRuntimeObjectImp(ExecState* exec, PassRefPtr<Instance> ins
 {
 }
 
-QtRuntimeObjectImp::~QtRuntimeObjectImp()
-{
-    removeFromCache();
-}
-
-void QtRuntimeObjectImp::invalidate()
-{
-    removeFromCache();
-    RuntimeObjectImp::invalidate();
-}
-
-void QtRuntimeObjectImp::removeFromCache()
-{
-    JSLock lock(false);
-    QtInstance* key = cachedObjects.key(this);
-    if (key)
-        cachedObjects.remove(key);
-}
-
 // QtInstance
-QtInstance::QtInstance(QObject* o, PassRefPtr<RootObject> rootObject)
+QtInstance::QtInstance(QObject* o, PassRefPtr<RootObject> rootObject, QScriptEngine::ValueOwnership ownership)
     : Instance(rootObject)
     , m_class(0)
     , m_object(o)
     , m_hashkey(o)
     , m_defaultMethod(0)
+    , m_ownership(ownership)
 {
 }
 
@@ -111,7 +84,6 @@ QtInstance::~QtInstance()
 {
     JSLock lock(false);
 
-    cachedObjects.remove(this);
     cachedInstances.remove(m_hashkey);
 
     // clean up (unprotect from gc) the JSValues we've created
@@ -121,9 +93,23 @@ QtInstance::~QtInstance()
         delete f;
     }
     m_fields.clear();
+
+    if (m_object) {
+        switch (m_ownership) {
+        case QScriptEngine::QtOwnership:
+            break;
+        case QScriptEngine::AutoOwnership:
+            if (m_object->parent())
+                break;
+            // fall through!
+        case QScriptEngine::ScriptOwnership:
+            delete m_object;
+            break;
+        }
+    }
 }
 
-PassRefPtr<QtInstance> QtInstance::getQtInstance(QObject* o, PassRefPtr<RootObject> rootObject)
+PassRefPtr<QtInstance> QtInstance::getQtInstance(QObject* o, PassRefPtr<RootObject> rootObject, QScriptEngine::ValueOwnership ownership)
 {
     JSLock lock(false);
 
@@ -132,7 +118,7 @@ PassRefPtr<QtInstance> QtInstance::getQtInstance(QObject* o, PassRefPtr<RootObje
             return instance;
     }
 
-    RefPtr<QtInstance> ret = QtInstance::create(o, rootObject);
+    RefPtr<QtInstance> ret = QtInstance::create(o, rootObject, ownership);
     cachedInstances.insert(o, ret.get());
 
     return ret.release();
@@ -143,7 +129,7 @@ bool QtInstance::getOwnPropertySlot(JSObject* object, ExecState* exec, const Ide
     return object->JSObject::getOwnPropertySlot(exec, propertyName, slot);
 }
 
-void QtInstance::put(JSObject* object, ExecState* exec, const Identifier& propertyName, JSValuePtr value, PutPropertySlot& slot)
+void QtInstance::put(JSObject* object, ExecState* exec, const Identifier& propertyName, JSValue value, PutPropertySlot& slot)
 {
     object->JSObject::put(exec, propertyName, value, slot);
 }
@@ -164,16 +150,10 @@ Class* QtInstance::getClass() const
     return m_class;
 }
 
-RuntimeObjectImp* QtInstance::createRuntimeObject(ExecState* exec)
+RuntimeObjectImp* QtInstance::newRuntimeObject(ExecState* exec)
 {
     JSLock lock(false);
-    RuntimeObjectImp* ret = static_cast<RuntimeObjectImp*>(cachedObjects.value(this));
-    if (!ret) {
-        ret = new (exec) QtRuntimeObjectImp(exec, this);
-        cachedObjects.insert(this, ret);
-        ret = static_cast<RuntimeObjectImp*>(cachedObjects.value(this));
-    }
-    return ret;
+    return new (exec) QtRuntimeObjectImp(exec, this);
 }
 
 void QtInstance::mark()
@@ -184,7 +164,7 @@ void QtInstance::mark()
         if (val && !val->marked())
             val->mark();
     }
-    foreach(JSValuePtr val, m_children.values()) {
+    foreach(JSValue val, m_children.values()) {
         if (val && !val.marked())
             val.mark();
     }
@@ -232,14 +212,14 @@ void QtInstance::getPropertyNames(ExecState* exec, PropertyNameArray& array)
     }
 }
 
-JSValuePtr QtInstance::invokeMethod(ExecState*, const MethodList&, const ArgList&)
+JSValue QtInstance::invokeMethod(ExecState*, const MethodList&, const ArgList&)
 {
     // Implemented via fallbackMethod & QtRuntimeMetaMethod::callAsFunction
     return jsUndefined();
 }
 
 
-JSValuePtr QtInstance::defaultValue(ExecState* exec, PreferredPrimitiveType hint) const
+JSValue QtInstance::defaultValue(ExecState* exec, PreferredPrimitiveType hint) const
 {
     if (hint == PreferString)
         return stringValue(exec);
@@ -248,7 +228,7 @@ JSValuePtr QtInstance::defaultValue(ExecState* exec, PreferredPrimitiveType hint
     return valueOf(exec);
 }
 
-JSValuePtr QtInstance::stringValue(ExecState* exec) const
+JSValue QtInstance::stringValue(ExecState* exec) const
 {
     // Hmm.. see if there is a toString defined
     QByteArray buf;
@@ -292,25 +272,25 @@ JSValuePtr QtInstance::stringValue(ExecState* exec) const
     return jsString(exec, buf.constData());
 }
 
-JSValuePtr QtInstance::numberValue(ExecState* exec) const
+JSValue QtInstance::numberValue(ExecState* exec) const
 {
     return jsNumber(exec, 0);
 }
 
-JSValuePtr QtInstance::booleanValue() const
+JSValue QtInstance::booleanValue() const
 {
     // ECMA 9.2
     return jsBoolean(true);
 }
 
-JSValuePtr QtInstance::valueOf(ExecState* exec) const
+JSValue QtInstance::valueOf(ExecState* exec) const
 {
     return stringValue(exec);
 }
 
 // In qt_runtime.cpp
-JSValuePtr convertQVariantToValue(ExecState*, PassRefPtr<RootObject> root, const QVariant& variant);
-QVariant convertValueToQVariant(ExecState*, JSValuePtr, QMetaType::Type hint, int *distance);
+JSValue convertQVariantToValue(ExecState*, PassRefPtr<RootObject> root, const QVariant& variant);
+QVariant convertValueToQVariant(ExecState*, JSValue, QMetaType::Type hint, int *distance);
 
 const char* QtField::name() const
 {
@@ -323,7 +303,7 @@ const char* QtField::name() const
     return ""; // deleted child object
 }
 
-JSValuePtr QtField::valueFromInstance(ExecState* exec, const Instance* inst) const
+JSValue QtField::valueFromInstance(ExecState* exec, const Instance* inst) const
 {
     const QtInstance* instance = static_cast<const QtInstance*>(inst);
     QObject* obj = instance->getObject();
@@ -340,7 +320,7 @@ JSValuePtr QtField::valueFromInstance(ExecState* exec, const Instance* inst) con
         else if (m_type == DynamicProperty)
             val = obj->property(m_dynamicProperty);
 
-        JSValuePtr ret = convertQVariantToValue(exec, inst->rootObject(), val);
+        JSValue ret = convertQVariantToValue(exec, inst->rootObject(), val);
 
         // Need to save children so we can mark them
         if (m_type == ChildObject)
@@ -353,7 +333,7 @@ JSValuePtr QtField::valueFromInstance(ExecState* exec, const Instance* inst) con
     }
 }
 
-void QtField::setValueToInstance(ExecState* exec, const Instance* inst, JSValuePtr aValue) const
+void QtField::setValueToInstance(ExecState* exec, const Instance* inst, JSValue aValue) const
 {
     if (m_type == ChildObject) // QtScript doesn't allow setting to a named child
         return;

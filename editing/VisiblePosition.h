@@ -47,6 +47,8 @@ namespace WebCore {
 
 class InlineBox;
 
+enum StayInEditableContent { MayLeaveEditableContent, MustStayInEditableContent };
+
 class VisiblePosition {
 public:
     // NOTE: UPSTREAM affinity will be used only if pos is at end of a wrapped line,
@@ -63,6 +65,8 @@ public:
     Position deepEquivalent() const { return m_deepPosition; }
     EAffinity affinity() const { ASSERT(m_affinity == UPSTREAM || m_affinity == DOWNSTREAM); return m_affinity; }
     void setAffinity(EAffinity affinity) { m_affinity = affinity; }
+
+    // FIXME: Change the following functions' parameter from a boolean to StayInEditableContent.
 
     // next() and previous() will increment/decrement by a character cluster.
     VisiblePosition next(bool stayInEditableContent = false) const;
@@ -124,6 +128,26 @@ inline bool operator!=(const VisiblePosition& a, const VisiblePosition& b)
 {
     return !(a == b);
 }
+    
+inline bool operator<(const VisiblePosition& a, const VisiblePosition& b)
+{
+    return a.deepEquivalent() < b.deepEquivalent();
+}
+
+inline bool operator>(const VisiblePosition& a, const VisiblePosition& b) 
+{
+    return a.deepEquivalent() > b.deepEquivalent();
+}
+
+inline bool operator<=(const VisiblePosition& a, const VisiblePosition& b)
+{
+    return a.deepEquivalent() <= b.deepEquivalent();
+}
+
+inline bool operator>=(const VisiblePosition& a, const VisiblePosition& b) 
+{
+    return a.deepEquivalent() >= b.deepEquivalent();
+}    
 
 PassRefPtr<Range> makeRange(const VisiblePosition&, const VisiblePosition&);
 bool setStart(Range*, const VisiblePosition&);

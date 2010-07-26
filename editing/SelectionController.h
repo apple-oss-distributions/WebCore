@@ -27,8 +27,8 @@
 #define SelectionController_h
 
 #include "IntRect.h"
-#include "Selection.h"
 #include "Range.h"
+#include "VisibleSelection.h"
 #include <wtf/Noncopyable.h>
 
 namespace WebCore {
@@ -56,8 +56,8 @@ public:
     void moveTo(const Position&, EAffinity, bool userTriggered = false);
     void moveTo(const Position&, const Position&, EAffinity, bool userTriggered = false);
 
-    const Selection& selection() const { return m_sel; }
-    void setSelection(const Selection&, bool closeTyping = true, bool clearTypingStyle = true, bool userTriggered = false);
+    const VisibleSelection& selection() const { return m_sel; }
+    void setSelection(const VisibleSelection&, bool closeTyping = true, bool clearTypingStyle = true, bool userTriggered = false);
     bool setSelectedRange(Range*, EAffinity, bool closeTyping);
     void selectAll();
     void clear();
@@ -67,7 +67,7 @@ public:
 
     bool contains(const IntPoint&);
 
-    Selection::EState state() const { return m_sel.state(); }
+    VisibleSelection::SelectionType selectionType() const { return m_sel.selectionType(); }
 
     EAffinity affinity() const { return m_sel.affinity(); }
 
@@ -102,8 +102,9 @@ public:
     bool isRange() const { return m_sel.isRange(); }
     bool isCaretOrRange() const { return m_sel.isCaretOrRange(); }
     bool isInPasswordField() const;
+    bool isAll(StayInEditableContent stayInEditableContent = MustStayInEditableContent) const { return m_sel.isAll(stayInEditableContent); }
     
-    PassRefPtr<Range> toRange() const { return m_sel.toRange(); }
+    PassRefPtr<Range> toNormalizedRange() const { return m_sel.toNormalizedRange(); }
 
     void debugRenderer(RenderObject*, bool selected) const;
     
@@ -119,6 +120,7 @@ public:
 
     // Focus
     void setFocused(bool);
+    bool isFocused() const { return m_focused; }
     bool isFocusedAndActive() const;
     void pageActivationChanged();
 
@@ -144,21 +146,24 @@ public:
     PassRefPtr<Range> rangeByMovingCurrentSelection(int amount) const;
     PassRefPtr<Range> rangeByExtendingCurrentSelection(int amount) const;
     void selectRangeOnElement(unsigned int location, unsigned int length, Node* node);
-    bool selectionIsCaretInDisplayBlockElementAtOffset(int offset) const;
     void suppressCloseTyping() { ++m_closeTypingSuppressions; }
     void restoreCloseTyping() { --m_closeTypingSuppressions; }
 private:
-    static Selection wordSelectionContainingCaretSelection(const Selection&);
-    bool _selectionAtSentenceStart(const Selection& sel) const;
+    static VisibleSelection wordSelectionContainingCaretSelection(const VisibleSelection&);
+    bool _selectionAtSentenceStart(const VisibleSelection& sel) const;
     PassRefPtr<Range> _rangeByAlteringCurrentSelection(EAlteration alteration, int amount) const;
 
 private:
     enum EPositionType { START, END, BASE, EXTENT };
 
-    VisiblePosition modifyExtendingRightForward(TextGranularity);
+    TextDirection directionOfEnclosingBlock();
+
+    VisiblePosition modifyExtendingRight(TextGranularity);
+    VisiblePosition modifyExtendingForward(TextGranularity);
     VisiblePosition modifyMovingRight(TextGranularity);
     VisiblePosition modifyMovingForward(TextGranularity);
-    VisiblePosition modifyExtendingLeftBackward(TextGranularity);
+    VisiblePosition modifyExtendingLeft(TextGranularity);
+    VisiblePosition modifyExtendingBackward(TextGranularity);
     VisiblePosition modifyMovingLeft(TextGranularity);
     VisiblePosition modifyMovingBackward(TextGranularity);
 
@@ -167,7 +172,7 @@ private:
 
     int xPosForVerticalArrowNavigation(EPositionType);
     
-#if PLATFORM(MAC)
+#if PLATFORM(MAC) || PLATFORM(GTK)
     void notifyAccessibilityForSelectionChange();
 #else
     void notifyAccessibilityForSelectionChange() {};
@@ -181,7 +186,7 @@ private:
     Frame* m_frame;
     int m_xPosForVerticalArrowNavigation;
 
-    Selection m_sel;
+    VisibleSelection m_sel;
 
     IntRect m_caretRect;        // caret rect in coords local to the renderer responsible for painting the caret
     IntRect m_absCaretBounds;   // absolute bounding rect for the caret
@@ -216,3 +221,4 @@ void showTree(const WebCore::SelectionController*);
 #endif
 
 #endif // SelectionController_h
+

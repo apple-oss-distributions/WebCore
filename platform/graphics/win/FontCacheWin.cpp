@@ -33,8 +33,9 @@
 #include "SimpleFontData.h"
 #include "StringHash.h"
 #include "UnicodeRange.h"
-#include <windows.h>
 #include <mlang.h>
+#include <windows.h>
+#include <wtf/StdLibExtras.h>
 #if PLATFORM(CG)
 #include <ApplicationServices/ApplicationServices.h>
 #include <WebKitSystemInterface/WebKitSystemInterface.h>
@@ -305,7 +306,17 @@ FontPlatformData* FontCache::getLastResortFallbackFont(const FontDescription& fo
     // FIXME: Would be even better to somehow get the user's default font here.  For now we'll pick
     // the default that the user would get without changing any prefs.
     static AtomicString timesStr("Times New Roman");
-    return getCachedFontPlatformData(fontDescription, timesStr);
+    if (FontPlatformData* platformFont = getCachedFontPlatformData(fontDescription, timesStr))
+        return platformFont;
+
+    DEFINE_STATIC_LOCAL(String, defaultGUIFontFamily, ());
+    if (defaultGUIFontFamily.isEmpty()) {
+        HFONT defaultGUIFont = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        LOGFONT logFont;
+        GetObject(defaultGUIFont, sizeof(logFont), &logFont);
+        defaultGUIFontFamily = String(logFont.lfFaceName, wcsnlen(logFont.lfFaceName, LF_FACESIZE));
+    }
+    return getCachedFontPlatformData(fontDescription, defaultGUIFontFamily);
 }
 
 static LONG toGDIFontWeight(FontWeight fontWeight)
@@ -422,7 +433,24 @@ static HFONT createGDIFont(const AtomicString& family, LONG desiredWeight, bool 
     matchData.m_chosen.lfQuality = DEFAULT_QUALITY;
     matchData.m_chosen.lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE;
 
-    return CreateFontIndirect(&matchData.m_chosen);
+    HFONT result = CreateFontIndirect(&matchData.m_chosen);
+    if (!result)
+        return 0;
+
+    HDC dc = GetDC(0);
+    SaveDC(dc);
+    SelectObject(dc, result);
+    WCHAR actualName[LF_FACESIZE];
+    GetTextFace(dc, LF_FACESIZE, actualName);
+    RestoreDC(dc, -1);
+    ReleaseDC(0, dc);
+
+    if (wcsicmp(matchData.m_chosen.lfFaceName, actualName)) {
+        DeleteObject(result);
+        result = 0;
+    }
+
+    return result;
 }
 
 struct TraitsInFamilyProcData {

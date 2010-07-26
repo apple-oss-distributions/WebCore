@@ -156,7 +156,8 @@ public:
 
     bool isTransformFunctionListValid() const { return m_transformFunctionListValid; }
     
-    void pauseAtTime(double t);
+    // Freeze the animation; used by DumpRenderTree.
+    void freezeAtTime(double t);
     
     double beginAnimationUpdateTime() const;
     
@@ -185,8 +186,13 @@ protected:
     virtual void onAnimationStart(double /*elapsedTime*/) { }
     virtual void onAnimationIteration(double /*elapsedTime*/) { }
     virtual void onAnimationEnd(double /*elapsedTime*/) { }
-    virtual bool startAnimation(double /*beginTime*/) { return false; }
-    virtual void endAnimation(bool /*reset*/) { }
+    
+    // timeOffset is an offset from the current time when the animation should start. Negative values are OK.
+    // Return value indicates whether to expect an asynchronous notifyAnimationStarted() callback.
+    virtual bool startAnimation(double /*timeOffset*/) { return false; }
+    // timeOffset is the time at which the animation is being paused.
+    virtual void pauseAnimation(double /*timeOffset*/) { }
+    virtual void endAnimation() { }
 
     void goIntoEndingOrLoopingState();
 
@@ -199,7 +205,7 @@ protected:
     // Return true if we need to start software animation timers
     static bool blendProperties(const AnimationBase* anim, int prop, RenderStyle* dst, const RenderStyle* a, const RenderStyle* b, double progress);
 
-    static void setChanged(Node*);
+    static void setNeedsStyleRecalc(Node*);
     
     void getTimeToNextEvent(double& time, bool& isLooping) const;
 

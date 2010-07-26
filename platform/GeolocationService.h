@@ -46,14 +46,14 @@ public:
 class GeolocationService : public Noncopyable {
 public:
     static GeolocationService* create(GeolocationServiceClient*);
-    virtual ~GeolocationService() {}
+    virtual ~GeolocationService() { }
     
     virtual bool startUpdating(PositionOptions*) { return false; }
-    virtual void stopUpdating() {}
+    virtual void stopUpdating() { }
     
     virtual void suspend() { }
     virtual void resume() { }
-    
+
     virtual Geoposition* lastPosition() const { return 0; }
     virtual PositionError* lastError() const { return 0; }
 
@@ -63,14 +63,14 @@ public:
     void positionChanged();
     void errorOccurred();
     void cachePolicyChanged();
-    
+
 protected:
     GeolocationService(GeolocationServiceClient*);
 
 private:
     GeolocationServiceClient* m_geolocationServiceClient;
 };
-    
+
 } // namespace WebCore
 
 #endif // GeolocationService_h

@@ -42,10 +42,13 @@
 #include "HTMLImageElement.h"
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
+#include "ScriptEventListener.h"
 #include "MIMETypeRegistry.h"
+#include "MappedAttribute.h"
 #include "Page.h"
 #include "RenderTextControl.h"
 #include <limits>
+#include <wtf/CurrentTime.h>
 #include <wtf/RandomNumber.h>
 
 #if PLATFORM(WX)
@@ -53,15 +56,19 @@
 #include <wx/filename.h>
 #endif
 
-#if PLATFORM(WIN_OS)
-#include <shlwapi.h>
-#endif
-
 using namespace std;
 
 namespace WebCore {
 
 using namespace HTMLNames;
+
+static int64_t generateFormDataIdentifier()
+{
+    // Initialize to the current time to reduce the likelihood of generating
+    // identifiers that overlap with those from past/future browser sessions.
+    static int64_t nextIdentifier = static_cast<int64_t>(currentTime() * 1000000.0);
+    return ++nextIdentifier;
+}
 
 HTMLFormElement::HTMLFormElement(const QualifiedName& tagName, Document* doc)
     : HTMLElement(tagName, doc)
@@ -72,6 +79,7 @@ HTMLFormElement::HTMLFormElement(const QualifiedName& tagName, Document* doc)
     , m_doingsubmit(false)
     , m_inreset(false)
     , m_malformed(false)
+    , m_demoted(false)
 {
     ASSERT(hasTagName(formTag));
 }
@@ -100,6 +108,31 @@ void HTMLFormElement::attach()
     HTMLElement::attach();
 }
 
+bool HTMLFormElement::rendererIsNeeded(RenderStyle* style)
+{
+    if (!isDemoted())
+        return HTMLElement::rendererIsNeeded(style);
+    
+    Node* node = parentNode();
+    RenderObject* parentRenderer = node->renderer();
+    bool parentIsTableElementPart = (parentRenderer->isTable() && node->hasTagName(tableTag))
+        || (parentRenderer->isTableRow() && node->hasTagName(trTag))
+        || (parentRenderer->isTableSection() && node->hasTagName(tbodyTag))
+        || (parentRenderer->isTableCol() && node->hasTagName(colTag)) 
+        || (parentRenderer->isTableCell() && node->hasTagName(trTag));
+
+    if (!parentIsTableElementPart)
+        return true;
+
+    EDisplay display = style->display();
+    bool formIsTablePart = display == TABLE || display == INLINE_TABLE || display == TABLE_ROW_GROUP
+        || display == TABLE_HEADER_GROUP || display == TABLE_FOOTER_GROUP || display == TABLE_ROW
+        || display == TABLE_COLUMN_GROUP || display == TABLE_COLUMN || display == TABLE_CELL
+        || display == TABLE_CAPTION;
+
+    return formIsTablePart;
+}
+
 void HTMLFormElement::insertedIntoDocument()
 {
     if (document()->isHTMLDocument())
@@ -118,7 +151,7 @@ void HTMLFormElement::removedFromDocument()
 
 void HTMLFormElement::handleLocalEvents(Event* event, bool useCapture)
 {
-    EventTargetNode* targetNode = event->target()->toNode();
+    Node* targetNode = event->target()->toNode();
     if (!useCapture && targetNode && targetNode != this && (event->type() == eventNames().submitEvent || event->type() == eventNames().resetEvent)) {
         event->stopPropagation();
         return;
@@ -204,7 +237,8 @@ PassRefPtr<FormData> HTMLFormElement::createFormData(const CString& boundary)
                         if (!path.isEmpty()) {
                             if (Page* page = document()->page()) {
                                 String generatedFileName;
-                                if (shouldGenerateFile = page->chrome()->client()->shouldReplaceWithGeneratedFileForUpload(path, generatedFileName))
+                                shouldGenerateFile = page->chrome()->client()->shouldReplaceWithGeneratedFileForUpload(path, generatedFileName);
+                                if (shouldGenerateFile)
                                     fileName = generatedFileName;
                             }
                         }
@@ -242,6 +276,8 @@ PassRefPtr<FormData> HTMLFormElement::createFormData(const CString& boundary)
         m_formDataBuilder.addBoundaryToMultiPartHeader(encodedData, boundary, true);
 
     result->appendData(encodedData.data(), encodedData.size());
+
+    result->setIdentifier(generateFormDataIdentifier());
     return result;
 }
 
@@ -259,7 +295,7 @@ bool HTMLFormElement::prepareSubmit(Event* event)
     m_insubmit = true;
     m_doingsubmit = false;
 
-    if (dispatchEventForType(eventNames().submitEvent, true, true) && !m_doingsubmit)
+    if (dispatchEvent(eventNames().submitEvent, true, true) && !m_doingsubmit)
         m_doingsubmit = true;
 
     m_insubmit = false;
@@ -292,7 +328,7 @@ static void transferMailtoPostFormDataToURL(RefPtr<FormData>& data, KURL& url, c
     url.setQuery(query);
 }
 
-void HTMLFormElement::submit(Event* event, bool activateSubmitButton, bool lockHistory, bool lockBackForwardList)
+void HTMLFormElement::submit(Event* event, bool activateSubmitButton, bool lockHistory)
 {
     FrameView* view = document()->view();
     Frame* frame = document()->frame();
@@ -353,14 +389,14 @@ void HTMLFormElement::submit(Event* event, bool activateSubmitButton, bool lockH
                 m_url = url.string();
             }
 
-            frame->loader()->submitForm("POST", m_url, data.release(), m_target, m_formDataBuilder.encodingType(), String(), lockHistory, lockBackForwardList, event, formState.release());
+            frame->loader()->submitForm("POST", m_url, data.release(), m_target, m_formDataBuilder.encodingType(), String(), lockHistory, event, formState.release());
         } else {
             Vector<char> boundary = m_formDataBuilder.generateUniqueBoundaryString();
-            frame->loader()->submitForm("POST", m_url, createFormData(boundary.data()), m_target, m_formDataBuilder.encodingType(), boundary.data(), lockHistory, lockBackForwardList, event, formState.release());
+            frame->loader()->submitForm("POST", m_url, createFormData(boundary.data()), m_target, m_formDataBuilder.encodingType(), boundary.data(), lockHistory, event, formState.release());
         }
     } else {
         m_formDataBuilder.setIsMultiPartForm(false);
-        frame->loader()->submitForm("GET", m_url, createFormData(CString()), m_target, String(), String(), lockHistory, lockBackForwardList, event, formState.release());
+        frame->loader()->submitForm("GET", m_url, createFormData(CString()), m_target, String(), String(), lockHistory, event, formState.release());
     }
 
     if (needButtonActivation && firstSuccessfulSubmitButton)
@@ -379,7 +415,7 @@ void HTMLFormElement::reset()
 
     // ### DOM2 labels this event as not cancelable, however
     // common browsers( sick! ) allow it be cancelled.
-    if ( !dispatchEventForType(eventNames().resetEvent,true, true) ) {
+    if ( !dispatchEvent(eventNames().resetEvent,true, true) ) {
         m_inreset = false;
         return;
     }
@@ -449,9 +485,9 @@ void HTMLFormElement::parseMappedAttribute(MappedAttribute* attr)
         else
             document()->unregisterForDocumentActivationCallbacks(this);
     } else if (attr->name() == onsubmitAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().submitEvent, attr);
+        setAttributeEventListener(eventNames().submitEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == onresetAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().resetEvent, attr);
+        setAttributeEventListener(eventNames().resetEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == nameAttr) {
         const AtomicString& newName = attr->value();
         if (inDocument() && document()->isHTMLDocument()) {
@@ -628,68 +664,14 @@ void HTMLFormElement::willMoveToNewOwnerDocument()
 {
     if (!m_autocomplete)
         document()->unregisterForDocumentActivationCallbacks(this);
+    HTMLElement::willMoveToNewOwnerDocument();
 }
 
 void HTMLFormElement::didMoveToNewOwnerDocument()
 {
-    if(m_autocomplete)
+    if (!m_autocomplete)
         document()->registerForDocumentActivationCallbacks(this);
-}
-
-void HTMLFormElement::CheckedRadioButtons::addButton(HTMLFormControlElement* element)
-{
-    // We only want to add radio buttons.
-    if (!element->isRadioButton())
-        return;
-
-    // Without a name, there is no group.
-    if (element->name().isEmpty())
-        return;
-
-    HTMLInputElement* inputElement = static_cast<HTMLInputElement*>(element);
-
-    // We only track checked buttons.
-    if (!inputElement->checked())
-        return;
-
-    if (!m_nameToCheckedRadioButtonMap)
-        m_nameToCheckedRadioButtonMap.set(new NameToInputMap);
-
-    pair<NameToInputMap::iterator, bool> result = m_nameToCheckedRadioButtonMap->add(element->name().impl(), inputElement);
-    if (result.second)
-        return;
-    
-    HTMLInputElement* oldCheckedButton = result.first->second;
-    if (oldCheckedButton == inputElement)
-        return;
-
-    result.first->second = inputElement;
-    oldCheckedButton->setChecked(false);
-}
-
-HTMLInputElement* HTMLFormElement::CheckedRadioButtons::checkedButtonForGroup(const AtomicString& name) const
-{
-    if (!m_nameToCheckedRadioButtonMap)
-        return 0;
-    
-    return m_nameToCheckedRadioButtonMap->get(name.impl());
-}
-
-void HTMLFormElement::CheckedRadioButtons::removeButton(HTMLFormControlElement* element)
-{
-    if (element->name().isEmpty() || !m_nameToCheckedRadioButtonMap)
-        return;
-    
-    NameToInputMap::iterator it = m_nameToCheckedRadioButtonMap->find(element->name().impl());
-    if (it == m_nameToCheckedRadioButtonMap->end() || it->second != element)
-        return;
-    
-    ASSERT(element->isRadioButton());
-    ASSERT(element->isChecked());
-    
-    m_nameToCheckedRadioButtonMap->remove(it);
-    if (m_nameToCheckedRadioButtonMap->isEmpty())
-        m_nameToCheckedRadioButtonMap.clear();
+    HTMLElement::didMoveToNewOwnerDocument();
 }
 
 } // namespace

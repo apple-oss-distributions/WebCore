@@ -27,13 +27,13 @@
 #include "GCController.h"
 #include "HTMLPlugInElement.h"
 #include "JSDocument.h"
-#include "JSLazyEventListener.h"
 #include "NP_jsobject.h"
 #include "Page.h"
 #include "PageGroup.h"
 #include "ScriptSourceCode.h"
 #include "ScriptValue.h"
 #include "Settings.h"
+#include "XSSAuditor.h"
 #include "npruntime_impl.h"
 #include "runtime_root.h"
 #include <debugger/Debugger.h>
@@ -45,16 +45,18 @@ namespace WebCore {
 
 ScriptController::ScriptController(Frame* frame)
     : m_frame(frame)
-    , m_handlerLineno(0)
+    , m_handlerLineNumber(0)
     , m_sourceURL(0)
     , m_processingTimerCallback(false)
     , m_paused(false)
+    , m_allowPopupsFromPlugin(false)
 #if ENABLE(NETSCAPE_PLUGIN_API)
     , m_windowScriptNPObject(0)
 #endif
 #if PLATFORM(MAC)
     , m_windowScriptObject(0)
 #endif
+    , m_XSSAuditor(new XSSAuditor(frame))
 {
 #if PLATFORM(MAC) && ENABLE(MAC_JAVA_BRIDGE)
     static bool initializedJavaJSBindings;
@@ -79,9 +81,14 @@ ScriptController::~ScriptController()
 
 ScriptValue ScriptController::evaluate(const ScriptSourceCode& sourceCode) 
 {
+    if (!m_XSSAuditor->canEvaluate(sourceCode.source())) {
+        // This script is not safe to be evaluated.
+        return JSValue();
+    }
+
     // evaluate code. Returns the JS return value or 0
     // if there was none, an error occured or the type couldn't be converted.
-    
+
     const SourceCode& jsSourceCode = sourceCode.jsSourceCode();
 
     initScriptIfNeeded();
@@ -96,13 +103,15 @@ ScriptValue ScriptController::evaluate(const ScriptSourceCode& sourceCode)
 
     JSLock lock(false);
 
+    RefPtr<Frame> protect = m_frame;
+
+    m_windowShell->window()->globalData()->timeoutChecker.start();
+    Completion comp = JSC::evaluate(exec, exec->dynamicGlobalObject()->globalScopeChain(), jsSourceCode, m_windowShell);
+    m_windowShell->window()->globalData()->timeoutChecker.stop();
+
     // Evaluating the JavaScript could cause the frame to be deallocated
     // so we start the keep alive timer here.
     m_frame->keepAlive();
-
-    m_windowShell->window()->startTimeoutCheck();
-    Completion comp = JSC::evaluate(exec, exec->dynamicGlobalObject()->globalScopeChain(), jsSourceCode, m_windowShell);
-    m_windowShell->window()->stopTimeoutCheck();
 
     if (comp.complType() == Normal || comp.complType() == ReturnValue) {
         m_sourceURL = savedSourceURL;
@@ -113,7 +122,7 @@ ScriptValue ScriptController::evaluate(const ScriptSourceCode& sourceCode)
         reportException(exec, comp.value());
 
     m_sourceURL = savedSourceURL;
-    return noValue();
+    return JSValue();
 }
 
 void ScriptController::clearWindowShell()
@@ -122,8 +131,13 @@ void ScriptController::clearWindowShell()
         return;
 
     JSLock lock(false);
-    m_windowShell->window()->clear();
+
+    // Clear the debugger from the current window before setting the new window.
+    attachDebugger(0);
+
+    m_windowShell->window()->willRemoveFromWindowShell();
     m_windowShell->setWindow(m_frame->domWindow());
+
     if (Page* page = m_frame->page()) {
         attachDebugger(page->debugger());
         m_windowShell->window()->setProfileGroup(page->group().identifier());
@@ -132,24 +146,6 @@ void ScriptController::clearWindowShell()
     // There is likely to be a lot of garbage now.
     gcController().garbageCollectSoon();
 }
-
-PassRefPtr<EventListener> ScriptController::createInlineEventListener(const String& functionName, const String& code, Node* node)
-{
-    initScriptIfNeeded();
-    JSLock lock(false);
-    return JSLazyEventListener::create(JSLazyEventListener::HTMLLazyEventListener, functionName, code, m_windowShell->window(), node, m_handlerLineno);
-}
-
-#if ENABLE(SVG)
-
-PassRefPtr<EventListener> ScriptController::createSVGEventHandler(const String& functionName, const String& code, Node* node)
-{
-    initScriptIfNeeded();
-    JSLock lock(false);
-    return JSLazyEventListener::create(JSLazyEventListener::SVGLazyEventListener, functionName, code, m_windowShell->window(), node, m_handlerLineno);
-}
-
-#endif
 
 void ScriptController::initScript()
 {
@@ -171,7 +167,7 @@ void ScriptController::initScript()
 
 bool ScriptController::processingUserGesture() const
 {
-    return processingUserGestureEvent() || isJavaScriptAnchorNavigation();
+    return m_allowPopupsFromPlugin || processingUserGestureEvent() || isJavaScriptAnchorNavigation();
 }
 
 bool ScriptController::processingUserGestureEvent() const
@@ -184,12 +180,10 @@ bool ScriptController::processingUserGestureEvent() const
         if ( // mouse events
             type == eventNames().clickEvent || type == eventNames().mousedownEvent ||
             type == eventNames().mouseupEvent || type == eventNames().dblclickEvent ||
-#if ENABLE(TOUCH_EVENTS)
             type == eventNames().touchstartEvent || type == eventNames().touchmoveEvent ||
             type == eventNames().touchendEvent || type == eventNames().touchcancelEvent ||
             type == eventNames().gesturestartEvent || type == eventNames().gesturechangeEvent ||
             type == eventNames().gestureendEvent ||
-#endif            
             // keyboard events
             type == eventNames().keydownEvent || type == eventNames().keypressEvent ||
             type == eventNames().keyupEvent ||
@@ -313,22 +307,31 @@ NPObject* ScriptController::windowScriptNPObject()
 
 NPObject* ScriptController::createScriptObjectForPluginElement(HTMLPlugInElement* plugin)
 {
-    // Can't create NPObjects when JavaScript is disabled
-    if (!isEnabled())
+    JSObject* object = jsObjectForPluginElement(plugin);
+    if (!object)
         return _NPN_CreateNoScriptObject();
+
+    // Wrap the JSObject in an NPObject
+    return _NPN_CreateScriptObject(0, object, bindingRootObject());
+}
+
+#endif
+
+JSObject* ScriptController::jsObjectForPluginElement(HTMLPlugInElement* plugin)
+{
+    // Can't create JSObjects when JavaScript is disabled
+    if (!isEnabled())
+        return 0;
 
     // Create a JSObject bound to this element
     JSLock lock(false);
     ExecState* exec = globalObject()->globalExec();
-    JSValuePtr jsElementValue = toJS(exec, plugin);
+    JSValue jsElementValue = toJS(exec, plugin);
     if (!jsElementValue || !jsElementValue.isObject())
-        return _NPN_CreateNoScriptObject();
-
-    // Wrap the JSObject in an NPObject
-    return _NPN_CreateScriptObject(0, jsElementValue.getObject(), bindingRootObject());
+        return 0;
+    
+    return jsElementValue.getObject();
 }
-
-#endif
 
 #if !PLATFORM(MAC)
 

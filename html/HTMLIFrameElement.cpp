@@ -28,14 +28,15 @@
 #include "Frame.h"
 #include "HTMLDocument.h"
 #include "HTMLNames.h"
+#include "MappedAttribute.h"
 #include "RenderPartObject.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLIFrameElement::HTMLIFrameElement(const QualifiedName& tagName, Document* doc, bool createdByParser)
-    : HTMLFrameElementBase(tagName, doc, createdByParser)
+HTMLIFrameElement::HTMLIFrameElement(const QualifiedName& tagName, Document* document)
+    : HTMLFrameElementBase(tagName, document)
 {
     ASSERT(hasTagName(iframeTag));
 }
@@ -110,14 +111,6 @@ void HTMLIFrameElement::removedFromDocument()
         static_cast<HTMLDocument*>(document())->removeExtraNamedItem(m_name);
 
     HTMLFrameElementBase::removedFromDocument();
-}
-
-void HTMLIFrameElement::attach()
-{
-    HTMLFrameElementBase::attach();
-
-    if (RenderPartObject* renderPartObject = static_cast<RenderPartObject*>(renderer()))
-        renderPartObject->updateWidget(false);
 }
 
 bool HTMLIFrameElement::isURLAttribute(Attribute* attr) const

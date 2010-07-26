@@ -28,6 +28,7 @@
 #import "config.h"
 #import "Frame.h"
 
+#import "Base64.h"
 #import "BlockExceptions.h"
 #import "ColorMac.h"
 #import "Cursor.h"
@@ -56,7 +57,6 @@
 #import "WebCoreViewFactory.h"
 #import "visible_units.h"
 
-#import <runtime/JSLock.h>
 #import <wtf/StdLibExtras.h>
 
 #if ENABLE(DASHBOARD_SUPPORT)
@@ -64,7 +64,6 @@
 #endif
 
 #import "EventListener.h"
-#import <GraphicsServices/GraphicsServices.h>
 #import <wtf/GetPtr.h>
 #import <wtf/UnusedParam.h>
 
@@ -78,8 +77,6 @@
 @end
  
 using namespace std;
-
-using JSC::JSLock;
 
 namespace WebCore {
 
@@ -165,7 +162,7 @@ NSString* Frame::searchForNSLabelsAboveCell(RegularExpression* regExp, HTMLTable
 
         if (cellAboveRenderer) {
             HTMLTableCellElement* aboveCell =
-                static_cast<HTMLTableCellElement*>(cellAboveRenderer->element());
+                static_cast<HTMLTableCellElement*>(cellAboveRenderer->node());
 
             if (aboveCell) {
                 // search within the above cell we found for a match
@@ -307,8 +304,6 @@ void Frame::setUseSecureKeyboardEntry(bool enable)
 NSMutableDictionary* Frame::dashboardRegionsDictionary()
 {
     Document* doc = document();
-    if (!doc)
-        return nil;
 
     const Vector<DashboardRegionValue>& regions = doc->dashboardRegions();
     size_t n = regions.size();
@@ -368,7 +363,6 @@ void Frame::setViewportArguments(const ViewportArguments& arguments)
     m_viewportArguments = arguments;
 }
 
-#if ENABLE(IPHONE_PPT)
 static int sAllLayouts = 0;
 
 void Frame::didParse(double duration)
@@ -408,13 +402,28 @@ void Frame::clearPPTStats()
     m_parseDuration = 0.0;
     m_layoutDuration = 0.0;
 }
-#endif // ENABLE(IPHONE_PPT)
 
 void Frame::setUserStyleSheetLocation(const KURL& url)
 {
     delete m_userStyleSheetLoader;
     m_userStyleSheetLoader = 0;
-    if (m_doc && m_doc->docLoader())
+
+    // Data URLs with base64-encoded UTF-8 style sheets are common. We can process them
+    // synchronously and avoid using a loader. 
+    if (url.protocolIs("data") && url.string().startsWith("data:text/css;charset=utf-8;base64,")) {
+        const unsigned prefixLength = 35;
+        Vector<char> encodedData(url.string().length() - prefixLength);
+        for (unsigned i = prefixLength; i < url.string().length(); ++i)
+            encodedData[i - prefixLength] = static_cast<char>(url.string()[i]);
+
+        Vector<char> styleSheetAsUTF8;
+        if (base64Decode(encodedData, styleSheetAsUTF8)) {
+            m_doc->setUserStyleSheet(String::fromUTF8(styleSheetAsUTF8.data()));
+            return;
+        }
+    }
+
+    if (m_doc->docLoader())
         m_userStyleSheetLoader = new UserStyleSheetLoader(m_doc, url.string());
 }
 

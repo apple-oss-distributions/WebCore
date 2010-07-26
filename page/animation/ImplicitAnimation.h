@@ -47,8 +47,9 @@ public:
     int animatingProperty() const { return m_animatingProperty; }
 
     virtual void onAnimationEnd(double elapsedTime);
-    virtual bool startAnimation(double beginTime);
-    virtual void endAnimation(bool reset);
+    virtual bool startAnimation(double timeOffset);
+    virtual void pauseAnimation(double /*timeOffset*/) { }
+    virtual void endAnimation();
 
     virtual void animate(CompositeAnimation*, RenderObject*, const RenderStyle* currentStyle, RenderStyle* targetStyle, RefPtr<RenderStyle>& animatedStyle);
     virtual void getAnimatedStyle(RefPtr<RenderStyle>& animatedStyle);
@@ -66,6 +67,9 @@ public:
     void blendPropertyValueInStyle(int, RenderStyle* currentStyle);
 
     virtual double timeToNextService();
+    
+    bool active() const { return m_active; }
+    void setActive(bool b) { m_active = b; }
 
 protected:
     bool shouldSendEventForListener(Document::ListenerType) const;    
@@ -80,6 +84,7 @@ private:
     int m_transitionProperty;   // Transition property as specified in the RenderStyle. May be cAnimateAll
     int m_animatingProperty;    // Specific property for this ImplicitAnimation
     bool m_overridden;          // true when there is a keyframe animation that overrides the transitioning property
+    bool m_active;              // used for culling the list of transitions
 
     // The two styles that we are blending.
     RefPtr<RenderStyle> m_fromStyle;

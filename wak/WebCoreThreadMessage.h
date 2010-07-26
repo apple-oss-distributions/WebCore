@@ -2,14 +2,17 @@
  *  WebCoreThreadMessage.h
  *  WebCore
  *
- *  Copyright (C) 2006, 2007, 2008, Apple Inc.  All rights reserved.
+ *  Copyright (C) 2006, 2007, 2008, 2009 Apple Inc.  All rights reserved.
  *
  */
+
+#ifndef WebCoreThreadMessage_h
+#define WebCoreThreadMessage_h
 
 #import <Foundation/Foundation.h>
 
 #ifdef __OBJC__
-#import <WebCore/WebCoreThread.h>
+#import "WebCoreThread.h"
 #endif // __OBJC__
 
 #if defined(__cplusplus)
@@ -38,9 +41,21 @@ void WebThreadPostNotification(NSString *name, id object, id userInfo);
 void WebThreadCallDelegateAsync(NSInvocation *invocation);
 void WebThreadPostNotificationAsync(NSString *name, id object, id userInfo);
 
-// Convenience method for creating an NSInvocation object
-NSInvocation *WebThreadCreateNSInvocation(id target, SEL selector);
+// Convenience method for making an NSInvocation object
+NSInvocation *WebThreadMakeNSInvocation(id target, SEL selector);
+
+// Deprecated since the method name doesn't match Cocoa memory management rules.  See <rdar://problem/6794574>.
+#if defined(__cplusplus)
+inline NSInvocation *WebThreadCreateNSInvocation(id target, SEL selector)
+{
+    return WebThreadMakeNSInvocation(target, selector);
+}
+#else
+#define WebThreadCreateNSInvocation WebThreadMakeNSInvocation
+#endif
 
 #if defined(__cplusplus)
 }
 #endif
+
+#endif // WebCoreThreadMessage_h

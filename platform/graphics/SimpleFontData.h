@@ -27,6 +27,7 @@
 #include "FontPlatformData.h"
 #include "GlyphPageTreeNode.h"
 #include "GlyphWidthMap.h"
+#include "TypesettingFeatures.h"
 #include <wtf/OwnPtr.h>
 
 #if USE(ATSUI)
@@ -61,7 +62,7 @@ public:
     virtual ~SimpleFontData();
 
 public:
-    const FontPlatformData& platformData() const { return m_font; }
+    const FontPlatformData& platformData() const { return m_platformData; }
     SimpleFontData* smallCapsFontData(const FontDescription& fontDescription) const;
 
     // vertical metrics
@@ -74,6 +75,15 @@ public:
 
     float widthForGlyph(Glyph) const;
     float platformWidthForGlyph(Glyph) const;
+
+    float spaceWidth() const { return m_spaceWidth; }
+    float adjustedSpaceWidth() const { return m_adjustedSpaceWidth; }
+
+#if PLATFORM(CG) || PLATFORM(CAIRO)
+    float syntheticBoldOffset() const { return m_syntheticBoldOffset; }
+#endif
+
+    Glyph spaceGlyph() const { return m_spaceGlyph; }
 
     virtual const SimpleFontData* fontDataForCharacter(UChar32) const;
     virtual bool containsCharacters(const UChar*, int length) const;
@@ -94,12 +104,12 @@ public:
 
     const GlyphData& missingGlyphData() const { return m_missingGlyphData; }
 
-    GSFontRef getGSFont() const { return m_font.font(); }
-    bool isImageFont() const { return m_font.m_isImageFont; };
+    GSFontRef getGSFont() const { return m_platformData.font(); }
+    bool isImageFont() const { return m_platformData.m_isImageFont; };
 
 #if USE(CORE_TEXT)
     CTFontRef getCTFont() const;
-    CFDictionaryRef getCFStringAttributes() const;
+    CFDictionaryRef getCFStringAttributes(TypesettingFeatures) const;
 #endif
 
 #if USE(ATSUI)
@@ -113,7 +123,7 @@ public:
 #endif
 
 #if PLATFORM(QT)
-    QFont getQtFont() const { return m_font.font(); }
+    QFont getQtFont() const { return m_platformData.font(); }
 #endif
 
 #if PLATFORM(WIN)
@@ -130,14 +140,14 @@ public:
 #endif
 
 #if PLATFORM(WX)
-    wxFont getWxFont() const { return m_font.font(); }
+    wxFont* getWxFont() const { return m_platformData.font(); }
 #endif
 
 private:
     void platformInit();
     void platformGlyphInit();
     void platformDestroy();
-    
+
     void commonInit();
 
 #if PLATFORM(WIN)
@@ -146,7 +156,6 @@ private:
     float widthForGDIGlyph(Glyph glyph) const;
 #endif
 
-public:
     int m_ascent;
     int m_descent;
     int m_lineSpacing;
@@ -154,7 +163,7 @@ public:
     float m_xHeight;
     unsigned m_unitsPerEm;
 
-    FontPlatformData m_font;
+    FontPlatformData m_platformData;
 
     mutable GlyphWidthMap m_glyphToWidthMap;
 
@@ -175,22 +184,30 @@ public:
 
     mutable SimpleFontData* m_smallCapsFontData;
 
-#if PLATFORM(CG) || PLATFORM(WIN)
+#if PLATFORM(CG) || PLATFORM(CAIRO)
     float m_syntheticBoldOffset;
 #endif
 
+#ifdef BUILDING_ON_TIGER
+public:
+    void* m_styleGroup;
+
+private:
+#endif
 
 #if USE(ATSUI)
-    mutable ATSUStyle m_ATSUStyle;
-    mutable bool m_ATSUStyleInitialized;
+public:
+    mutable HashMap<unsigned, ATSUStyle> m_ATSUStyleMap;
     mutable bool m_ATSUMirrors;
     mutable bool m_checkedShapesArabic;
     mutable bool m_shapesArabic;
+
+private:
 #endif
 
 #if USE(CORE_TEXT)
     mutable RetainPtr<CTFontRef> m_CTFont;
-    mutable RetainPtr<CFDictionaryRef> m_CFStringAttributes;
+    mutable HashMap<unsigned, RetainPtr<CFDictionaryRef> > m_CFStringAttributes;
 #endif
 
 #if PLATFORM(WIN)
@@ -199,6 +216,21 @@ public:
     mutable SCRIPT_FONTPROPERTIES* m_scriptFontProperties;
 #endif
 };
+    
+    
+#if !PLATFORM(QT)
+ALWAYS_INLINE float SimpleFontData::widthForGlyph(Glyph glyph) const
+{
+    float width = m_glyphToWidthMap.widthForGlyph(glyph);
+    if (width != cGlyphWidthUnknown)
+        return width;
+    
+    width = platformWidthForGlyph(glyph);
+    m_glyphToWidthMap.setWidthForGlyph(glyph, width);
+    
+    return width;
+}
+#endif
 
 } // namespace WebCore
 

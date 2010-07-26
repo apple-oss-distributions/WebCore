@@ -30,7 +30,9 @@
 #include "HTMLDocument.h"
 #include "HTMLFormElement.h"
 #include "HTMLNames.h"
+#include "MappedAttribute.h"
 #include "RenderImage.h"
+#include "ScriptEventListener.h"
 
 using namespace std;
 
@@ -52,8 +54,6 @@ HTMLImageElement::HTMLImageElement(const QualifiedName& tagName, Document* doc, 
 
 HTMLImageElement::~HTMLImageElement()
 {
-    if (m_form)
-        m_form->removeImgElement(this);
 }
 
 bool HTMLImageElement::mapToEntry(const QualifiedName& attrName, MappedAttributeEntry& result) const
@@ -80,7 +80,7 @@ void HTMLImageElement::parseMappedAttribute(MappedAttribute* attr)
     const QualifiedName& attrName = attr->name();
     if (attrName == altAttr) {
         if (renderer() && renderer()->isImage())
-            static_cast<RenderImage*>(renderer())->updateAltText();
+            toRenderImage(renderer())->updateAltText();
     } else if (attrName == srcAttr)
         m_imageLoader.updateFromElementIgnoringPreviousError();
     else if (attrName == widthAttr)
@@ -113,9 +113,9 @@ void HTMLImageElement::parseMappedAttribute(MappedAttribute* attr)
     } else if (attrName == ismapAttr)
         ismap = true;
     else if (attrName == onabortAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().abortEvent, attr);
+        setAttributeEventListener(eventNames().abortEvent, createAttributeEventListener(this, attr));
     else if (attrName == onloadAttr)
-        setInlineEventListenerForTypeAndAttribute(eventNames().loadEvent, attr);
+        setAttributeEventListener(eventNames().loadEvent, createAttributeEventListener(this, attr));
     else if (attrName == compositeAttr) {
         if (!parseCompositeOperator(attr->value(), m_compositeOperator))
             m_compositeOperator = CompositeSourceOver;
@@ -166,7 +166,7 @@ void HTMLImageElement::attach()
     HTMLElement::attach();
 
     if (renderer() && renderer()->isImage()) {
-        RenderImage* imageObj = static_cast<RenderImage*>(renderer());
+        RenderImage* imageObj = toRenderImage(renderer());
         if (imageObj->hasImage())
             return;
         imageObj->setCachedImage(m_imageLoader.image());
@@ -203,6 +203,30 @@ void HTMLImageElement::removedFromDocument()
     }
 
     HTMLElement::removedFromDocument();
+}
+
+void HTMLImageElement::insertedIntoTree(bool deep)
+{
+    if (!m_form) {
+        // m_form can be non-null if it was set in constructor.
+        for (Node* ancestor = parentNode(); ancestor; ancestor = ancestor->parentNode()) {
+            if (ancestor->hasTagName(formTag)) {
+                m_form = static_cast<HTMLFormElement*>(ancestor);
+                m_form->registerImgElement(this);
+                break;
+            }
+        }
+    }
+
+    HTMLElement::insertedIntoTree(deep);
+}
+
+void HTMLImageElement::removedFromTree(bool deep)
+{
+    if (m_form)
+        m_form->removeImgElement(this);
+    m_form = 0;
+    HTMLElement::removedFromTree(deep);
 }
 
 int HTMLImageElement::width(bool ignorePendingStylesheets) const
@@ -436,6 +460,10 @@ void HTMLImageElement::addSubresourceAttributeURLs(ListHashSet<KURL>& urls) cons
 
 bool HTMLImageElement::willRespondToMouseClickEvents()
 {
+    if (renderer() && renderer()->style() && !renderer()->style()->touchCalloutEnabled())
+        return HTMLElement::willRespondToMouseClickEvents();
+
+    
     return true;
 }
 

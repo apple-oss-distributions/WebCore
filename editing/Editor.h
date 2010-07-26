@@ -102,8 +102,8 @@ public:
     bool shouldDeleteRange(Range*) const;
     bool shouldApplyStyle(CSSStyleDeclaration*, Range*);
     
-    void respondToChangedSelection(const Selection& oldSelection);
-    void respondToChangedContents(const Selection& endingSelection);
+    void respondToChangedSelection(const VisibleSelection& oldSelection);
+    void respondToChangedContents(const VisibleSelection& endingSelection);
 
     TriState selectionHasStyle(CSSStyleDeclaration*) const;
     const SimpleFontData* fontForSelection(bool&) const;
@@ -146,6 +146,9 @@ public:
     bool selectionStartHasStyle(CSSStyleDeclaration*) const;
 
     bool clientIsEditable() const;
+    
+    void setShouldStyleWithCSS(bool flag) { m_shouldStyleWithCSS = flag; }
+    bool shouldStyleWithCSS() const { return m_shouldStyleWithCSS; }
 
     class Command {
     public:
@@ -187,9 +190,13 @@ public:
     bool isSelectionMisspelled();
     Vector<String> guessesForMisspelledSelection();
     Vector<String> guessesForUngrammaticalSelection();
+    Vector<String> guessesForMisspelledOrUngrammaticalSelection(bool& misspelled, bool& ungrammatical);
+    bool spellCheckingEnabledInFocusedNode() const;
     void markMisspellingsAfterTypingToPosition(const VisiblePosition&);
-    void markMisspellings(const Selection&);
-    void markBadGrammar(const Selection&);
+    void markMisspellings(const VisibleSelection&, RefPtr<Range>& firstMisspellingRange);
+    void markBadGrammar(const VisibleSelection&);
+    void markMisspellingsAndBadGrammar(const VisibleSelection& spellingSelection, bool markGrammar, const VisibleSelection& grammarSelection);
+    void markAllMisspellingsAndBadGrammarInRanges(bool markSpelling, Range* spellingRange, bool markGrammar, Range* grammarRange, bool performTextCheckingReplacements);
     void showSpellingGuessPanel();
     bool spellingPanelIsShowing();
 
@@ -244,7 +251,7 @@ public:
 
     void clear();
 
-    Selection selectionForCommand(Event*);
+    VisibleSelection selectionForCommand(Event*);
 
     void appendToKillRing(const String&);
     void prependToKillRing(const String&);
@@ -255,7 +262,7 @@ public:
     PassRefPtr<Range> selectedRange();
 
     void confirmMarkedText();
-    void setTextAsChildOfElement(const String&, Element*, bool);
+    void setTextAsChildOfElement(const String&, Element*);
     void setTextAlignmentForChangedBaseWritingDirection(WritingDirection);
     
     // We should make these functions private when their callers in Frame are moved over here to Editor
@@ -276,6 +283,7 @@ private:
     Vector<CompositionUnderline> m_customCompositionUnderlines;
     bool m_ignoreCompositionSelectionChange;
     bool m_shouldStartNewKillRingSequence;
+    bool m_shouldStyleWithCSS;
 
     bool canDeleteRange(Range*) const;
     bool canSmartReplaceWithPasteboard(Pasteboard*);
@@ -293,7 +301,7 @@ private:
     PassRefPtr<Range> firstVisibleRange(const String&, bool caseFlag);
     PassRefPtr<Range> lastVisibleRange(const String&, bool caseFlag);
     
-    void changeSelectionAfterCommand(const Selection& newSelection, bool closeTyping, bool clearTypingStyle, EditCommand*);
+    void changeSelectionAfterCommand(const VisibleSelection& newSelection, bool closeTyping, bool clearTypingStyle, EditCommand*);
 };
 
 inline void Editor::setStartNewKillRingSequence(bool flag)

@@ -43,4 +43,7 @@ namespace WebCore {
 @end
 
 @protocol WebCoreFrameView
+#ifdef __cplusplus
+- (WebCore::Frame*)_web_frame;
+#endif
 @end

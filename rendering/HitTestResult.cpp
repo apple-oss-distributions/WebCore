@@ -26,6 +26,7 @@
 #include "HTMLAnchorElement.h"
 #include "HTMLImageElement.h"
 #include "HTMLInputElement.h"
+#include "HTMLMediaElement.h"
 #include "HTMLNames.h"
 #include "RenderImage.h"
 #include "Scrollbar.h"
@@ -159,6 +160,20 @@ String HitTestResult::spellingToolTip() const
     return marker->description;
 }
 
+String HitTestResult::replacedString() const
+{
+    // Return the replaced string associated with this point, if any. This marker is created when a string is autocorrected, 
+    // and is used for generating a contextual menu item that allows it to easily be changed back if desired.
+    if (!m_innerNonSharedNode)
+        return String();
+    
+    DocumentMarker* marker = m_innerNonSharedNode->document()->markerContainingPoint(m_point, DocumentMarker::Replacement);
+    if (!marker)
+        return String();
+    
+    return marker->description;
+}    
+    
 String HitTestResult::title() const
 {
     // Find the title in the nearest enclosing DOM node.
@@ -194,7 +209,7 @@ String HitTestResult::altDisplayString() const
         HTMLInputElement* input = static_cast<HTMLInputElement*>(m_innerNonSharedNode.get());
         return displayString(input->alt(), m_innerNonSharedNode.get());
     }
-    
+
 #if ENABLE(WML)
     if (m_innerNonSharedNode->hasTagName(WMLNames::imgTag)) {
         WMLImageElement* image = static_cast<WMLImageElement*>(m_innerNonSharedNode.get());
@@ -249,6 +264,24 @@ KURL HitTestResult::absoluteImageURL() const
        ) {
         Element* element = static_cast<Element*>(m_innerNonSharedNode.get());
         urlString = element->getAttribute(element->imageSourceAttributeName());
+    } else
+        return KURL();
+
+    return m_innerNonSharedNode->document()->completeURL(parseURL(urlString));
+}
+
+KURL HitTestResult::absoluteMediaURL() const
+{
+    if (!(m_innerNonSharedNode && m_innerNonSharedNode->document()))
+        return KURL();
+
+    if (!(m_innerNonSharedNode->renderer() && m_innerNonSharedNode->renderer()->isMedia()))
+        return KURL();
+
+    AtomicString urlString;
+    if (m_innerNonSharedNode->hasTagName(HTMLNames::videoTag) || m_innerNonSharedNode->hasTagName(HTMLNames::audioTag)) {
+        HTMLMediaElement* mediaElement = static_cast<HTMLMediaElement*>(m_innerNonSharedNode.get());
+        urlString = mediaElement->currentSrc();
     } else
         return KURL();
 

@@ -29,6 +29,7 @@
 #import "DOMInternal.h" // import first to make the private/public trick work
 #import "DOM.h"
 
+#import "DOMPrivate.h"
 #import "DOMRangeInternal.h"
 #import "DOMElementInternal.h"
 #import "DOMNodeInternal.h"
@@ -46,8 +47,11 @@
 #import "SVGElementInstance.h"
 #endif
 
+#import "HTMLLinkElement.h"
 #import "KeyboardEvent.h"
 #import "KURL.h"
+#import "MediaList.h"
+#import "MediaQueryEvaluator.h"
 #import "NodeRenderStyle.h"
 #import "RenderView.h"
 #import "Touch.h"
@@ -58,6 +62,9 @@
 
 using namespace JSC;
 using namespace WebCore;
+
+// FIXME: Would be nice to break this up into separate files to match how other WebKit
+// code is organized.
 
 //------------------------------------------------------------------------------------------
 // DOMNode
@@ -167,7 +174,7 @@ static void createElementClassMap()
     addElementClass(SVGNames::defsTag, [DOMSVGDefsElement class]);
     addElementClass(SVGNames::descTag, [DOMSVGDescElement class]);
     addElementClass(SVGNames::ellipseTag, [DOMSVGEllipseElement class]);
-#if ENABLE(SVG_FILTERS)
+#if ENABLE(FILTERS)
     addElementClass(SVGNames::feBlendTag, [DOMSVGFEBlendElement class]);
     addElementClass(SVGNames::feColorMatrixTag, [DOMSVGFEColorMatrixElement class]);
     addElementClass(SVGNames::feComponentTransferTag, [DOMSVGFEComponentTransferElement class]);
@@ -388,7 +395,7 @@ Class kitClass(WebCore::Node* impl)
             if (static_cast<WebCore::Document*>(impl)->isSVGDocument())
                 return [DOMSVGDocument class];
 #endif
-                return [DOMDocument class];
+            return [DOMDocument class];
         case WebCore::Node::DOCUMENT_TYPE_NODE:
             return [DOMDocumentType class];
         case WebCore::Node::DOCUMENT_FRAGMENT_NODE:
@@ -422,11 +429,6 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
     return nil;
 }
 
-id <DOMEventTarget> kit(WebCore::EventTargetNode* eventTargetNode)
-{
-    return kit(static_cast<WebCore::EventTarget*>(eventTargetNode));
-}
-
 @implementation DOMNode (DOMNodeExtensions)
 
 - (CGRect)boundingBox
@@ -436,19 +438,12 @@ id <DOMEventTarget> kit(WebCore::EventTargetNode* eventTargetNode)
     WebCore::RenderObject* renderer = core(self)->renderer();
     if (!renderer)
         return CGRectZero;
-    return renderer->absoluteBoundingBoxRect(true /* respect transforms */);
+    return renderer->absoluteBoundingBoxRect();
 }
 
 - (NSArray *)lineBoxRects
 {
-    // FIXME: Could we move this function to WebCore::Node and autogenerate?
-    core(self)->document()->updateLayoutIgnorePendingStylesheets();
-    WebCore::RenderObject* renderer = core(self)->renderer();
-    if (!renderer)
-        return nil;
-    Vector<WebCore::IntRect> rects;
-    renderer->addLineBoxRects(rects);
-    return kit(rects);
+    return [self textRects];
 }
 
 // quad in page coordinates, taking transforms into account. c.f. - (NSRect)boundingBox;
@@ -614,6 +609,19 @@ id <DOMEventTarget> kit(WebCore::EventTargetNode* eventTargetNode)
 @implementation DOMNode (DOMNodeExtensionsPendingPublic)
 
 
+- (NSArray *)textRects
+{
+    // FIXME: Could we move this function to WebCore::Node and autogenerate?
+    core(self)->document()->updateLayoutIgnorePendingStylesheets();
+    if (!core(self)->renderer())
+        return nil;
+    RefPtr<Range> range = Range::create(core(self)->document());
+    WebCore::ExceptionCode ec = 0;
+    range->selectNodeContents(core(self), ec);
+    Vector<WebCore::IntRect> rects;
+    range->textRects(rects);
+    return kit(rects);
+}
 @end
 
 @implementation DOMRange (DOMRangeExtensions)
@@ -625,13 +633,19 @@ id <DOMEventTarget> kit(WebCore::EventTargetNode* eventTargetNode)
     return core(self)->boundingBox();
 }
 
-- (NSArray *)lineBoxRects
+- (NSArray *)textRects
 {
     // FIXME: The call to updateLayoutIgnorePendingStylesheets should be moved into WebCore::Range.
     Vector<WebCore::IntRect> rects;
     core(self)->ownerDocument()->updateLayoutIgnorePendingStylesheets();
-    core(self)->addLineBoxRects(rects);
+    core(self)->textRects(rects);
     return kit(rects);
+}
+
+- (NSArray *)lineBoxRects
+{
+    // FIXME: Remove this once all clients stop using it and we drop Leopard support.
+    return [self textRects];
 }
 
 @end
@@ -648,24 +662,12 @@ id <DOMEventTarget> kit(WebCore::EventTargetNode* eventTargetNode)
 
 - (GSFontRef)_font
 {
-    RenderObject *renderer = core(self)->renderer();
+    RenderObject* renderer = core(self)->renderer();
     if (!renderer)
         return nil;
     return renderer->style()->font().primaryFont()->getGSFont();
 }
 
-
-- (CGRect)_windowClipRect
-{
-    WebCore::RenderObject* renderer = core(self)->renderer();
-    if (renderer && renderer->view()) {
-        WebCore::FrameView* frameView = renderer->view()->frameView();
-        if (!frameView)
-            return WebCore::IntRect();
-        return frameView->windowClipRectForLayer(renderer->enclosingLayer(), true);
-    }
-    return WebCore::IntRect();
-}
 
 - (NSURL *)_getURLAttribute:(NSString *)name
 {
@@ -674,17 +676,6 @@ id <DOMEventTarget> kit(WebCore::EventTargetNode* eventTargetNode)
     WebCore::Element* element = core(self);
     ASSERT(element);
     return element->document()->completeURL(parseURL(element->getAttribute(name)));
-}
-
-// FIXME: this should be implemented in the implementation
-- (void *)_NPObject
-{
-#if ENABLE(NETSCAPE_PLUGIN_API)
-    WebCore::Element* element = [self _element];
-    if (element->hasTagName(WebCore::HTMLNames::appletTag) || element->hasTagName(WebCore::HTMLNames::embedTag) || element->hasTagName(WebCore::HTMLNames::objectTag))
-        return static_cast<WebCore::HTMLPlugInElement*>(element)->getNPObject();
-#endif
-    return 0;
 }
 
 - (BOOL)isFocused
@@ -696,6 +687,39 @@ id <DOMEventTarget> kit(WebCore::EventTargetNode* eventTargetNode)
 
 @end
 
+@implementation DOMHTMLLinkElement (WebPrivate)
+- (BOOL)_mediaQueryMatchesForOrientation:(int)orientation
+{
+    HTMLLinkElement* link = static_cast<HTMLLinkElement*>(core(self));
+    String media = link->media();
+    if (media.isEmpty())
+        return true;
+    Document* document = link->document();
+    FrameView* frameView = document->frame() ? document->frame()->view() : 0;
+    if (!frameView)
+        return false;
+    int layoutWidth = frameView->layoutWidth();
+    int layoutHeight = frameView->layoutHeight();
+    IntSize savedFixedLayoutSize = frameView->fixedLayoutSize();
+    bool savedUseFixedLayout = frameView->useFixedLayout();
+    if ((orientation == WebMediaQueryOrientationPortrait && layoutWidth > layoutHeight) ||
+        (orientation == WebMediaQueryOrientationLandscape && layoutWidth < layoutHeight)) {
+        // temporarily swap the orientation for the evaluation
+        frameView->setFixedLayoutSize(IntSize(layoutHeight, layoutWidth));
+        frameView->setUseFixedLayout(true);
+    }
+    
+    RefPtr<MediaList> mediaList = MediaList::createAllowingDescriptionSyntax(media);
+    MediaQueryEvaluator screenEval("screen", document->frame(), document->renderer() ? document->renderer()->style() : 0);
+    
+    bool result = screenEval.eval(mediaList.get());
+
+    frameView->setFixedLayoutSize(savedFixedLayoutSize);
+    frameView->setUseFixedLayout(savedUseFixedLayout);
+
+    return result;
+}
+@end
 
 //------------------------------------------------------------------------------------------
 // DOMRange

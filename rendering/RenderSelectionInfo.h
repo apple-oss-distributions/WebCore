@@ -47,12 +47,12 @@ public:
     }
     
     RenderObject* object() const { return m_object; }
-    RenderBox* repaintContainer() const { return m_repaintContainer; }
+    RenderBoxModelObject* repaintContainer() const { return m_repaintContainer; }
     RenderObject::SelectionState state() const { return m_state; }
 
 protected:
     RenderObject* m_object;
-    RenderBox* m_repaintContainer;
+    RenderBoxModelObject* m_repaintContainer;
     RenderObject::SelectionState m_state;
 };
 
@@ -91,7 +91,7 @@ public:
         m_object->repaintUsingContainer(m_repaintContainer, m_rects);
     }
     
-    RenderBlock* block() const { ASSERT(m_object->isRenderBlock()); return static_cast<RenderBlock*>(m_object); }
+    RenderBlock* block() const { return toRenderBlock(m_object); }
     GapRects rects() const { return m_rects; }
 
 private:

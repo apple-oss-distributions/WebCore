@@ -62,10 +62,13 @@ static HashSet<QTMovieWinPrivate*>* gTaskList;
 static Vector<CFStringRef>* gSupportedTypes = 0;
 static SInt32 quickTimeVersion = 0;
 
+static QTMovieWin::SetTaskTimerDelayFunc gSetTaskTimerDelay = 0;
+static QTMovieWin::StopTaskTimerFunc gStopTaskTimer = 0;
+
 static void updateTaskTimer(int maxInterval = 1000)
 {
     if (!gTaskList->size()) {
-        stopSharedTimer();
+        gStopTaskTimer();
         return;    
     }
     
@@ -73,7 +76,7 @@ static void updateTaskTimer(int maxInterval = 1000)
     QTGetTimeUntilNextTask(&intervalInMS, 1000);
     if (intervalInMS > maxInterval)
         intervalInMS = maxInterval;
-    setSharedTimerFireDelay(static_cast<float>(intervalInMS) / 1000);
+    gSetTaskTimerDelay(static_cast<float>(intervalInMS) / 1000);
 }
 
 class QTMovieWinPrivate : Noncopyable {
@@ -91,6 +94,7 @@ public:
     void createGWorld();
     void deleteGWorld();
     void clearGWorld();
+    void cacheMovieScale();
 
     void setSize(int, int);
 
@@ -112,6 +116,14 @@ public:
     int m_gWorldHeight;
     GWorldPtr m_savedGWorld;
     long m_loadError;
+    float m_widthScaleFactor;
+    float m_heightScaleFactor;
+    CFURLRef m_currentURL;
+    float m_timeToRestore;
+    float m_rateToRestore;
+#if !ASSERT_DISABLED
+    bool m_scaleCached;
+#endif
 };
 
 QTMovieWinPrivate::QTMovieWinPrivate()
@@ -133,6 +145,14 @@ QTMovieWinPrivate::QTMovieWinPrivate()
     , m_gWorldHeight(0)
     , m_savedGWorld(0)
     , m_loadError(0)
+    , m_widthScaleFactor(1)
+    , m_heightScaleFactor(1)
+    , m_currentURL(0)
+    , m_timeToRestore(-1.0f)
+    , m_rateToRestore(-1.0f)
+#if !ASSERT_DISABLED
+    , m_scaleCached(false)
+#endif
 {
 }
 
@@ -145,9 +165,11 @@ QTMovieWinPrivate::~QTMovieWinPrivate()
         DisposeMovieController(m_movieController);
     if (m_movie)
         DisposeMovie(m_movie);
+    if (m_currentURL)
+        CFRelease(m_currentURL);
 }
 
-static void taskTimerFired()
+void QTMovieWin::taskTimerFired()
 {
     // The hash content might change during task()
     Vector<QTMovieWinPrivate*> tasks;
@@ -179,6 +201,26 @@ void QTMovieWinPrivate::endTask()
     updateTaskTimer();
 }
 
+void QTMovieWinPrivate::cacheMovieScale()
+{
+    Rect naturalRect;
+    Rect initialRect;
+
+    GetMovieNaturalBoundsRect(m_movie, &naturalRect);
+    GetMovieBox(m_movie, &initialRect);
+
+    int naturalWidth = naturalRect.right - naturalRect.left;
+    int naturalHeight = naturalRect.bottom - naturalRect.top;
+
+    if (naturalWidth)
+        m_widthScaleFactor = (initialRect.right - initialRect.left) / naturalWidth;
+    if (naturalHeight)
+        m_heightScaleFactor = (initialRect.bottom - initialRect.top) / naturalHeight;
+#if !ASSERT_DISABLED
+    m_scaleCached = true;;
+#endif
+}
+
 void QTMovieWinPrivate::task() 
 {
     ASSERT(m_tasking);
@@ -192,20 +234,37 @@ void QTMovieWinPrivate::task()
 
     // GetMovieLoadState documentation says that you should not call it more often than every quarter of a second.
     if (systemTime() >= m_lastLoadStateCheckTime + 0.25 || m_loadError) { 
-        // If load fails QT's load state is kMovieLoadStateComplete.
+        // If load fails QT's load state is QTMovieLoadStateComplete.
         // This is different from QTKit API and seems strange.
-        long loadState = m_loadError ? kMovieLoadStateError : GetMovieLoadState(m_movie);
+        long loadState = m_loadError ? QTMovieLoadStateError : GetMovieLoadState(m_movie);
         if (loadState != m_loadState) {
 
             // we only need to erase the movie gworld when the load state changes to loaded while it
             //  is visible as the gworld is destroyed/created when visibility changes
-            if (loadState >= QTMovieLoadStateLoaded && m_loadState < QTMovieLoadStateLoaded && m_visible)
-                clearGWorld();
+            bool shouldRestorePlaybackState = false;
+            if (loadState >= QTMovieLoadStateLoaded && m_loadState < QTMovieLoadStateLoaded) {
+                if (m_visible)
+                    clearGWorld();
+                cacheMovieScale();
+                shouldRestorePlaybackState = true;
+            }
 
             m_loadState = loadState;
-            if (!m_movieController && m_loadState >= kMovieLoadStateLoaded)
+            if (!m_movieController && m_loadState >= QTMovieLoadStateLoaded)
                 createMovieController();
             m_client->movieLoadStateChanged(m_movieWin);
+            
+            if (shouldRestorePlaybackState && m_timeToRestore != -1.0f) {
+                m_movieWin->setCurrentTime(m_timeToRestore);
+                m_timeToRestore = -1.0f;
+                m_movieWin->setRate(m_rateToRestore);
+                m_rateToRestore = -1.0f;
+            }
+
+            if (m_movieWin->m_disabled) {
+                endTask();
+                return;
+            }
         }
         m_lastLoadStateCheckTime = systemTime();
     }
@@ -259,7 +318,7 @@ void QTMovieWinPrivate::registerDrawingCallback()
 
 void QTMovieWinPrivate::drawingComplete()
 {
-    if (!m_gWorld || m_loadState < kMovieLoadStateLoaded)
+    if (!m_gWorld || m_movieWin->m_disabled || m_loadState < QTMovieLoadStateLoaded)
         return;
     m_client->movieNewImageAvailable(m_movieWin);
 }
@@ -284,7 +343,7 @@ void QTMovieWinPrivate::updateGWorld()
 void QTMovieWinPrivate::createGWorld()
 {
     ASSERT(!m_gWorld);
-    if (!m_movie)
+    if (!m_movie || m_loadState < QTMovieLoadStateLoaded)
         return;
 
     m_gWorldWidth = max(cGWorldMinWidth, m_width);
@@ -334,8 +393,17 @@ void QTMovieWinPrivate::setSize(int width, int height)
         return;
     m_width = width;
     m_height = height;
-    if (!m_movie)
+
+    // Do not change movie box before reaching load state loaded as we grab
+    // the initial size when task() sees that state for the first time, and
+    // we need the initial size to be able to scale movie properly. 
+    if (!m_movie || m_loadState < QTMovieLoadStateLoaded)
         return;
+
+#if !ASSERT_DISABLED
+    ASSERT(m_scaleCached);
+#endif
+
     Rect bounds; 
     bounds.top = 0;
     bounds.left = 0; 
@@ -364,6 +432,7 @@ void QTMovieWinPrivate::deleteGWorld()
 
 QTMovieWin::QTMovieWin(QTMovieWinClient* client)
     : m_private(new QTMovieWinPrivate())
+    , m_disabled(false)
 {
     m_private->m_movieWin = this;
     m_private->m_client = client;
@@ -377,6 +446,8 @@ QTMovieWin::~QTMovieWin()
 
 void QTMovieWin::play()
 {
+    m_private->m_timeToRestore = -1.0f;
+
     if (m_private->m_movieController)
         MCDoAction(m_private->m_movieController, mcActionPrerollAndPlay, (void *)GetMoviePreferredRate(m_private->m_movie));
     else
@@ -386,6 +457,8 @@ void QTMovieWin::play()
 
 void QTMovieWin::pause()
 {
+    m_private->m_timeToRestore = -1.0f;
+
     if (m_private->m_movieController)
         MCDoAction(m_private->m_movieController, mcActionPlay, 0);
     else
@@ -403,7 +476,9 @@ float QTMovieWin::rate() const
 void QTMovieWin::setRate(float rate)
 {
     if (!m_private->m_movie)
-        return;
+        return;    
+    m_private->m_timeToRestore = -1.0f;
+    
     if (m_private->m_movieController)
         MCDoAction(m_private->m_movieController, mcActionPrerollAndPlay, (void *)FloatToFixed(rate));
     else
@@ -433,6 +508,9 @@ void QTMovieWin::setCurrentTime(float time) const
 {
     if (!m_private->m_movie)
         return;
+
+    m_private->m_timeToRestore = -1.0f;
+    
     m_private->m_seeking = true;
     TimeScale scale = GetMovieTimeScale(m_private->m_movie);
     if (m_private->m_movieController){
@@ -448,6 +526,25 @@ void QTMovieWin::setVolume(float volume)
     if (!m_private->m_movie)
         return;
     SetMovieVolume(m_private->m_movie, static_cast<short>(volume * 256));
+}
+
+void QTMovieWin::setPreservesPitch(bool preservesPitch)
+{
+    if (!m_private->m_movie || !m_private->m_currentURL)
+        return;
+
+    OSErr error;
+    bool prop = false;
+
+    error = QTGetMovieProperty(m_private->m_movie, kQTPropertyClass_Audio, kQTAudioPropertyID_RateChangesPreservePitch,
+                               sizeof(kQTAudioPropertyID_RateChangesPreservePitch), static_cast<QTPropertyValuePtr>(&prop), 0);
+
+    if (error || prop == preservesPitch)
+        return;
+
+    m_private->m_timeToRestore = currentTime();
+    m_private->m_rateToRestore = rate();
+    load(m_private->m_currentURL, preservesPitch);
 }
 
 unsigned QTMovieWin::dataSize() const
@@ -478,8 +575,8 @@ void QTMovieWin::getNaturalSize(int& width, int& height)
 
     if (m_private->m_movie)
         GetMovieNaturalBoundsRect(m_private->m_movie, &rect);
-    width = rect.right;
-    height = rect.bottom;
+    width = (rect.right - rect.left) * m_private->m_widthScaleFactor;
+    height = (rect.bottom - rect.top) * m_private->m_heightScaleFactor;
 }
 
 void QTMovieWin::setSize(int width, int height)
@@ -513,8 +610,22 @@ void QTMovieWin::paint(HDC hdc, int x, int y)
          0, 0, m_private->m_width, m_private->m_height, blendFunction);
 }
 
-void QTMovieWin::load(const UChar* url, int len)
+void QTMovieWin::load(const UChar* url, int len, bool preservesPitch)
 {
+    CFStringRef urlStringRef = CFStringCreateWithCharacters(kCFAllocatorDefault, reinterpret_cast<const UniChar*>(url), len);
+    CFURLRef cfURL = CFURLCreateWithString(kCFAllocatorDefault, urlStringRef, 0);
+
+    load(cfURL, preservesPitch);
+
+    CFRelease(cfURL);
+    CFRelease(urlStringRef);
+}
+
+void QTMovieWin::load(CFURLRef url, bool preservesPitch)
+{
+    if (!url)
+        return;
+
     if (m_private->m_movie) {
         m_private->endTask();
         if (m_private->m_gWorld)
@@ -524,6 +635,7 @@ void QTMovieWin::load(const UChar* url, int len)
         m_private->m_movieController = 0;
         DisposeMovie(m_private->m_movie);
         m_private->m_movie = 0;
+        m_private->m_loadState = 0;
     }  
 
     // Define a property array for NewMovieFromProperties. 8 should be enough for our needs. 
@@ -531,23 +643,33 @@ void QTMovieWin::load(const UChar* url, int len)
     ItemCount moviePropCount = 0; 
 
     bool boolTrue = true;
-
-    // Create a URL data reference of type CFURL 
-    CFStringRef urlStringRef = CFStringCreateWithCharacters(kCFAllocatorDefault, reinterpret_cast<const UniChar*>(url), len);
     
     // Disable streaming support for now. 
-    if (CFStringHasPrefix(urlStringRef, CFSTR("rtsp:"))) {
+    CFStringRef scheme = CFURLCopyScheme(url);
+    bool isRTSP = CFStringHasPrefix(scheme, CFSTR("rtsp:"));
+    CFRelease(scheme);
+
+    if (isRTSP) {
         m_private->m_loadError = noMovieFound;
         goto end;
     }
 
-    CFURLRef urlRef = CFURLCreateWithString(kCFAllocatorDefault, urlStringRef, 0); 
+    if (m_private->m_currentURL) {
+        if (m_private->m_currentURL != url) {
+            CFRelease(m_private->m_currentURL);
+            m_private->m_currentURL = url;
+            CFRetain(url);
+        }
+    } else {
+        m_private->m_currentURL = url;
+        CFRetain(url);
+    }
 
     // Add the movie data location to the property array 
     movieProps[moviePropCount].propClass = kQTPropertyClass_DataLocation; 
     movieProps[moviePropCount].propID = kQTDataLocationPropertyID_CFURL; 
-    movieProps[moviePropCount].propValueSize = sizeof(urlRef); 
-    movieProps[moviePropCount].propValueAddress = &urlRef; 
+    movieProps[moviePropCount].propValueSize = sizeof(m_private->m_currentURL); 
+    movieProps[moviePropCount].propValueAddress = &(m_private->m_currentURL); 
     movieProps[moviePropCount].propStatus = 0; 
     moviePropCount++; 
 
@@ -591,25 +713,39 @@ void QTMovieWin::load(const UChar* url, int len)
     movieProps[moviePropCount].propValueSize = sizeof(boolTrue); 
     movieProps[moviePropCount].propValueAddress = &boolTrue; 
     movieProps[moviePropCount].propStatus = 0; 
+    moviePropCount++;
+
+    movieProps[moviePropCount].propClass = kQTPropertyClass_Audio; 
+    movieProps[moviePropCount].propID = kQTAudioPropertyID_RateChangesPreservePitch;
+    movieProps[moviePropCount].propValueSize = sizeof(preservesPitch); 
+    movieProps[moviePropCount].propValueAddress = &preservesPitch; 
+    movieProps[moviePropCount].propStatus = 0; 
     moviePropCount++; 
 
+    ASSERT(moviePropCount <= sizeof(movieProps)/sizeof(movieProps[0]));
     m_private->m_loadError = NewMovieFromProperties(moviePropCount, movieProps, 0, NULL, &m_private->m_movie);
 
-    CFRelease(urlRef);
 end:
     m_private->startTask();
     // get the load fail callback quickly 
     if (m_private->m_loadError)
         updateTaskTimer(0);
-    else
-        m_private->registerDrawingCallback();
+    else {
+        OSType mode = kQTApertureMode_CleanAperture;
 
-    CFRelease(urlStringRef);
+        // Set the aperture mode property on a movie to signal that we want aspect ratio
+        // and clean aperture dimensions. Don't worry about errors, we can't do anything if
+        // the installed version of QT doesn't support it and it isn't serious enough to 
+        // warrant failing.
+        QTSetMovieProperty(m_private->m_movie, kQTPropertyClass_Visual, kQTVisualPropertyID_ApertureMode, sizeof(mode), &mode);
+        m_private->registerDrawingCallback();
+    }
 }
 
-void QTMovieWin::disableUnsupportedTracks(unsigned& enabledTrackCount)
+void QTMovieWin::disableUnsupportedTracks(unsigned& enabledTrackCount, unsigned& totalTrackCount)
 {
     if (!m_private->m_movie) {
+        totalTrackCount = 0;
         enabledTrackCount = 0;
         return;
     }
@@ -623,11 +759,16 @@ void QTMovieWin::disableUnsupportedTracks(unsigned& enabledTrackCount)
         allowedTrackTypes->add(BaseMediaType);
         allowedTrackTypes->add('clcp'); // Closed caption
         allowedTrackTypes->add('sbtl'); // Subtitle
+        allowedTrackTypes->add('odsm'); // MPEG-4 object descriptor stream
+        allowedTrackTypes->add('sdsm'); // MPEG-4 scene description stream
+        allowedTrackTypes->add(TimeCodeMediaType);
+        allowedTrackTypes->add(TimeCode64MediaType);
     }
 
     long trackCount = GetMovieTrackCount(m_private->m_movie);
     enabledTrackCount = trackCount;
-    
+    totalTrackCount = trackCount;
+
     // Track indexes are 1-based. yuck. These things must descend from old-
     // school mac resources or something.
     for (long trackIndex = 1; trackIndex <= trackCount; trackIndex++) {
@@ -658,6 +799,12 @@ void QTMovieWin::disableUnsupportedTracks(unsigned& enabledTrackCount)
             continue;
         
         if (!allowedTrackTypes->contains(mediaType)) {
+
+            // Different mpeg variants import as different track types so check for the "mpeg 
+            // characteristic" instead of hard coding the (current) list of mpeg media types.
+            if (GetMovieIndTrackType(m_private->m_movie, 1, 'mpeg', movieTrackCharacteristic | movieTrackEnabledOnly))
+                continue;
+
             SetTrackEnabled(currentTrack, false);
             --enabledTrackCount;
         }
@@ -710,12 +857,24 @@ void QTMovieWin::disableUnsupportedTracks(unsigned& enabledTrackCount)
     }
 }
 
+void QTMovieWin::setDisabled(bool b)
+{
+    m_disabled = b;
+}
+
 
 bool QTMovieWin::hasVideo() const
 {
     if (!m_private->m_movie)
         return false;
     return (GetMovieIndTrackType(m_private->m_movie, 1, VisualMediaCharacteristic, movieTrackCharacteristic | movieTrackEnabledOnly));
+}
+
+bool QTMovieWin::hasAudio() const
+{
+    if (!m_private->m_movie)
+        return false;
+    return (GetMovieIndTrackType(m_private->m_movie, 1, AudioMediaCharacteristic, movieTrackCharacteristic | movieTrackEnabledOnly));
 }
 
 pascal OSErr movieDrawingCompleteProc(Movie movie, long data)
@@ -841,6 +1000,12 @@ void QTMovieWin::getSupportedType(unsigned index, const UChar*& str, unsigned& l
     
 }
 
+void QTMovieWin::setTaskTimerFuncs(SetTaskTimerDelayFunc setTaskTimerDelay, StopTaskTimerFunc stopTaskTimer)
+{
+    gSetTaskTimerDelay = setTaskTimerDelay;
+    gStopTaskTimer = stopTaskTimer;
+}
+
 bool QTMovieWin::initializeQuickTime() 
 {
     static bool initialized = false;
@@ -860,7 +1025,6 @@ bool QTMovieWin::initializeQuickTime()
             return false;
         }
         EnterMovies();
-        setSharedTimerFiredFunction(taskTimerFired);
         gMovieDrawingCompleteUPP = NewMovieDrawingCompleteUPP(movieDrawingCompleteProc);
         initializationSucceeded = true;
     }
@@ -871,7 +1035,6 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
     switch (fdwReason) {
         case DLL_PROCESS_ATTACH:
-            setSharedTimerInstanceHandle(hinstDLL);
             return TRUE;
         case DLL_PROCESS_DETACH:
         case DLL_THREAD_ATTACH:

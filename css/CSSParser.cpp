@@ -363,7 +363,7 @@ bool CSSParser::parseMediaQuery(MediaList* queries, const String& string)
 
 void CSSParser::addProperty(int propId, PassRefPtr<CSSValue> value, bool important)
 {
-    CSSProperty* prop = new CSSProperty(propId, value, important, m_currentShorthand, m_implicitShorthand);
+    auto_ptr<CSSProperty> prop(new CSSProperty(propId, value, important, m_currentShorthand, m_implicitShorthand));
     if (m_numParsedProperties >= m_maxParsedProperties) {
         m_maxParsedProperties += 32;
         if (m_maxParsedProperties > UINT_MAX / sizeof(CSSProperty*))
@@ -371,7 +371,7 @@ void CSSParser::addProperty(int propId, PassRefPtr<CSSValue> value, bool importa
         m_parsedProperties = static_cast<CSSProperty**>(fastRealloc(m_parsedProperties,
                                                        m_maxParsedProperties * sizeof(CSSProperty*)));
     }
-    m_parsedProperties[m_numParsedProperties++] = prop;
+    m_parsedProperties[m_numParsedProperties++] = prop.release();
 }
 
 void CSSParser::rollbackLastProperties(int num)
@@ -765,16 +765,6 @@ bool CSSParser::parseValue(int propId, bool important)
     case CSSPropertyWebkitBorderVerticalSpacing:
         valid_primitive = validUnit(value, FLength|FNonNeg, m_strict);
         break;
-    case CSSPropertyScrollbarFaceColor:         // IE5.5
-    case CSSPropertyScrollbarShadowColor:       // IE5.5
-    case CSSPropertyScrollbarHighlightColor:    // IE5.5
-    case CSSPropertyScrollbar3dlightColor:      // IE5.5
-    case CSSPropertyScrollbarDarkshadowColor:   // IE5.5
-    case CSSPropertyScrollbarTrackColor:        // IE5.5
-    case CSSPropertyScrollbarArrowColor:        // IE5.5
-        if (m_strict)
-            break;
-        /* nobreak */
     case CSSPropertyOutlineColor:        // <color> | invert | inherit
         // Outline color has "invert" as additional keyword.
         // Also, we want to allow the special focus color even in strict parsing mode.
@@ -800,7 +790,7 @@ bool CSSParser::parseValue(int propId, bool important)
                                     // since we use this in our UA sheets.
         else if (id == CSSValueCurrentcolor)
             valid_primitive = true;
-        else if (id >= CSSValueAqua && id <= CSSValueWindowtext || id == CSSValueMenu ||
+        else if ((id >= CSSValueAqua && id <= CSSValueWindowtext) || id == CSSValueMenu ||
              (id >= CSSValueWebkitFocusRingColor && id < CSSValueWebkitText && !m_strict)) {
             valid_primitive = true;
         } else {
@@ -835,7 +825,7 @@ bool CSSParser::parseValue(int propId, bool important)
             } else if (m_strict && nrcoords == 2)
                 hotspot = IntPoint(coords[0], coords[1]);
             if (m_strict || coords.size() == 0) {
-                if (!uri.isNull())
+                if (!uri.isNull() && m_styleSheet)
                     list->append(CSSCursorImageValue::create(m_styleSheet->completeURL(uri), hotspot));
             }
             if ((m_strict && !value) || (value && !(value->unit == CSSParserValue::Operator && value->iValue == ',')))
@@ -901,7 +891,7 @@ bool CSSParser::parseValue(int propId, bool important)
         } else if (value->unit == CSSPrimitiveValue::CSS_URI) {
             // ### allow string in non strict mode?
             String uri = parseURL(value->string);
-            if (!uri.isNull()) {
+            if (!uri.isNull() && m_styleSheet) {
                 parsedValue = CSSImageValue::create(m_styleSheet->completeURL(uri));
                 m_valueList->next();
             }
@@ -1113,7 +1103,7 @@ bool CSSParser::parseValue(int propId, bool important)
             CSSParserValue* val;
             RefPtr<CSSValue> parsedValue;
             while ((val = m_valueList->current())) {
-                if (val->unit == CSSPrimitiveValue::CSS_URI) {
+                if (val->unit == CSSPrimitiveValue::CSS_URI && m_styleSheet) {
                     String value = parseURL(val->string);
                     parsedValue = CSSPrimitiveValue::create(m_styleSheet->completeURL(value), CSSPrimitiveValue::CSS_URI);
                 }
@@ -1327,7 +1317,8 @@ bool CSSParser::parseValue(int propId, bool important)
         if (id == CSSValueNone)
             valid_primitive = true;
         else {
-            if (validUnit(value, FNumber|FNonNeg, m_strict)) {
+            // Accepting valueless numbers is a quirk of the -webkit prefixed version of the property.
+            if (validUnit(value, FNumber|FLength|FNonNeg, m_strict)) {
                 RefPtr<CSSValue> val = CSSPrimitiveValue::create(value->fValue, (CSSPrimitiveValue::UnitTypes)value->unit);
                 if (val) {
                     addProperty(propId, val.release(), important);
@@ -1407,6 +1398,11 @@ bool CSSParser::parseValue(int propId, bool important)
             id == CSSValueWave)
             valid_primitive = true;
         break;
+    case CSSPropertyTextRendering: // auto | optimizeSpeed | optimizeLegibility | geometricPrecision
+        if (id == CSSValueAuto || id == CSSValueOptimizespeed || id == CSSValueOptimizelegibility
+            || id == CSSValueGeometricprecision)
+            valid_primitive = true;
+        break;
     case CSSPropertyTextLineThroughWidth:
     case CSSPropertyTextOverlineWidth:
     case CSSPropertyTextUnderlineWidth:
@@ -1451,7 +1447,9 @@ bool CSSParser::parseValue(int propId, bool important)
     // Apple specific properties.  These will never be standardized and are purely to
     // support custom WebKit-based Apple applications.
     case CSSPropertyWebkitLineClamp:
-        valid_primitive = (!id && validUnit(value, FPercent, false));
+        // When specifying number of lines, don't allow 0 as a valid value
+        // When specifying either type of unit, require non-negative integers
+        valid_primitive = (!id && (value->unit == CSSPrimitiveValue::CSS_PERCENTAGE || value->fValue) && validUnit(value, FInteger | FPercent | FNonNeg, false));
         break;
     case CSSPropertyWebkitTextSizeAdjust:
 // We actually want to merge the following into TOT
@@ -2034,7 +2032,7 @@ bool CSSParser::parseContent(int propId, bool important)
 
     while (CSSParserValue* val = m_valueList->current()) {
         RefPtr<CSSValue> parsedValue;
-        if (val->unit == CSSPrimitiveValue::CSS_URI) {
+        if (val->unit == CSSPrimitiveValue::CSS_URI && m_styleSheet) {
             // url
             String value = parseURL(val->string);
             parsedValue = CSSImageValue::create(m_styleSheet->completeURL(value));
@@ -2044,20 +2042,9 @@ bool CSSParser::parseContent(int propId, bool important)
             if (!args)
                 return false;
             if (equalIgnoringCase(val->function->name, "attr(")) {
-                if (args->size() != 1)
+                parsedValue = parseAttr(args);
+                if (!parsedValue)
                     return false;
-                CSSParserValue* a = args->current();
-                if (a->unit != CSSPrimitiveValue::CSS_IDENT)
-                    return false;
-                String attrName = a->string;
-                // CSS allows identifiers with "-" at the start, like "-webkit-mask-image".
-                // But HTML attribute names can't have those characters, and we should not
-                // even parse them inside attr().
-                if (attrName[0] == '-')
-                    return false;
-                if (document()->isHTMLDocument())
-                    attrName = attrName.lower();
-                parsedValue = CSSPrimitiveValue::create(attrName, CSSPrimitiveValue::CSS_ATTR);
             } else if (equalIgnoringCase(val->function->name, "counter(")) {
                 parsedValue = parseCounterContent(args, false);
                 if (!parsedValue)
@@ -2098,6 +2085,29 @@ bool CSSParser::parseContent(int propId, bool important)
     return false;
 }
 
+PassRefPtr<CSSValue> CSSParser::parseAttr(CSSParserValueList* args)
+{
+    if (args->size() != 1)
+        return 0;
+
+    CSSParserValue* a = args->current();
+
+    if (a->unit != CSSPrimitiveValue::CSS_IDENT)
+        return 0;
+
+    String attrName = a->string;
+    // CSS allows identifiers with "-" at the start, like "-webkit-mask-image".
+    // But HTML attribute names can't have those characters, and we should not
+    // even parse them inside attr().
+    if (attrName[0] == '-')
+        return 0;
+
+    if (document()->isHTMLDocument())
+        attrName = attrName.lower();
+    
+    return CSSPrimitiveValue::create(attrName, CSSPrimitiveValue::CSS_ATTR);
+}
+
 PassRefPtr<CSSValue> CSSParser::parseBackgroundColor()
 {
     int id = m_valueList->current()->id;
@@ -2115,7 +2125,7 @@ bool CSSParser::parseFillImage(RefPtr<CSSValue>& value)
     }
     if (m_valueList->current()->unit == CSSPrimitiveValue::CSS_URI) {
         String uri = parseURL(m_valueList->current()->string);
-        if (!uri.isNull())
+        if (!uri.isNull() && m_styleSheet)
             value = CSSImageValue::create(m_styleSheet->completeURL(uri));
         return true;
     }
@@ -2284,7 +2294,10 @@ bool CSSParser::parseFillProperty(int propId, int& propId1, int& propId2,
                 case CSSPropertyWebkitBackgroundOrigin:
                 case CSSPropertyWebkitMaskClip:
                 case CSSPropertyWebkitMaskOrigin:
-                    if (val->id == CSSValueBorder || val->id == CSSValuePadding || val->id == CSSValueContent || val->id == CSSValueText) {
+                    // The first three values here are deprecated and should not be allowed to apply when we drop the -webkit-
+                    // from the property names.
+                    if (val->id == CSSValueBorder || val->id == CSSValuePadding || val->id == CSSValueContent ||
+                        val->id == CSSValueBorderBox || val->id == CSSValuePaddingBox || val->id == CSSValueContentBox || val->id == CSSValueText) {
                         currValue = CSSPrimitiveValue::createIdentifier(val->id);
                         m_valueList->next();
                     }
@@ -3166,6 +3179,12 @@ bool CSSParser::parseFontWeight(bool important)
     return false;
 }
 
+static bool isValidFormatFunction(CSSParserValue* val)
+{
+    CSSParserValueList* args = val->function->args;
+    return equalIgnoringCase(val->function->name, "format(") && (args->current()->unit == CSSPrimitiveValue::CSS_STRING || args->current()->unit == CSSPrimitiveValue::CSS_IDENT);
+}
+
 bool CSSParser::parseFontFaceSrc()
 {
     RefPtr<CSSValueList> values(CSSValueList::createCommaSeparated());
@@ -3176,7 +3195,7 @@ bool CSSParser::parseFontFaceSrc()
     RefPtr<CSSFontFaceSrcValue> uriValue;
     while ((val = m_valueList->current())) {
         RefPtr<CSSFontFaceSrcValue> parsedValue;
-        if (val->unit == CSSPrimitiveValue::CSS_URI && !expectComma) {
+        if (val->unit == CSSPrimitiveValue::CSS_URI && !expectComma && m_styleSheet) {
             String value = parseURL(val->string);
             parsedValue = CSSFontFaceSrcValue::create(m_styleSheet->completeURL(value));
             uriValue = parsedValue;
@@ -3192,7 +3211,7 @@ bool CSSParser::parseFontFaceSrc()
                     CSSParserValue* a = args->current();
                     uriValue.clear();
                     parsedValue = CSSFontFaceSrcValue::createLocal(a->string);
-                } else if (equalIgnoringCase(val->function->name, "format(") && allowFormat && uriValue) {
+                } else if (allowFormat && uriValue && isValidFormatFunction(val)) {
                     expectComma = true;
                     allowFormat = false;
                     uriValue->setFormat(args->current()->string);
@@ -3555,7 +3574,7 @@ bool CSSParser::parseShadow(int propId, bool important)
         else {
             // The only other type of value that's ok is a color value.
             RefPtr<CSSPrimitiveValue> parsedColor;
-            bool isColor = (val->id >= CSSValueAqua && val->id <= CSSValueWindowtext || val->id == CSSValueMenu ||
+            bool isColor = ((val->id >= CSSValueAqua && val->id <= CSSValueWindowtext) || val->id == CSSValueMenu ||
                             (val->id >= CSSValueWebkitFocusRingColor && val->id <= CSSValueWebkitText && !m_strict));
             if (isColor) {
                 if (!context.allowColor)
@@ -3777,7 +3796,7 @@ bool CSSParser::parseBorderImage(int propId, bool important, RefPtr<CSSValue>& r
     // Look for an image initially.  If the first value is not a URI, then we're done.
     BorderImageParseContext context;
     CSSParserValue* val = m_valueList->current();
-    if (val->unit == CSSPrimitiveValue::CSS_URI) {        
+    if (val->unit == CSSPrimitiveValue::CSS_URI && m_styleSheet) {        
         String uri = parseURL(val->string);
         if (uri.isNull())
             return false;

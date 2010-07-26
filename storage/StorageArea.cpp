@@ -26,111 +26,22 @@
 #include "config.h"
 #include "StorageArea.h"
 
-#include "CString.h"
-#include "ExceptionCode.h"
-#include "SecurityOrigin.h"
-#include "StorageMap.h"
+#if PLATFORM(CHROMIUM)
+#error "Chromium should not compile this file and instead define its own version of these factories that navigate the multi-process boundry."
+#endif
+
+#if ENABLE(DOM_STORAGE)
+
+#include "StorageAreaImpl.h"
 
 namespace WebCore {
 
-StorageArea::StorageArea(SecurityOrigin* origin)
-    : m_securityOrigin(origin)
-    , m_storageMap(StorageMap::create())
+PassRefPtr<StorageArea> StorageArea::create(StorageType storageType, SecurityOrigin* origin, PassRefPtr<StorageSyncManager> syncManager)
 {
-}
-
-StorageArea::StorageArea(SecurityOrigin* origin, StorageArea* area)
-    : m_securityOrigin(origin)
-    , m_storageMap(area->m_storageMap)
-{
-}
-
-StorageArea::~StorageArea()
-{
-}
-
-unsigned StorageArea::internalLength() const
-{
-    return m_storageMap->length();
-}
-
-String StorageArea::internalKey(unsigned index, ExceptionCode& ec) const
-{
-    String key;
-    
-    if (!m_storageMap->key(index, key)) {
-        ec = INDEX_SIZE_ERR;
-        return String();
-    }
-        
-    return key;
-}
-
-String StorageArea::internalGetItem(const String& key) const
-{
-    return m_storageMap->getItem(key);
-}
-
-void StorageArea::internalSetItem(const String& key, const String& value, ExceptionCode& ec, Frame* frame)
-{
-    ASSERT(!value.isNull());
-    
-    // FIXME: For LocalStorage where a disk quota will be enforced, here is where we need to do quota checking.
-    //        If we decide to enforce a memory quota for SessionStorage, this is where we'd do that, also.
-    // if (<over quota>) {
-    //     ec = INVALID_ACCESS_ERR;
-    //     return;
-    // }
-    
-    String oldValue = m_storageMap->getItem(key);
-    unsigned long long usage = m_storageMap->totalUsage();
-    if (oldValue != value) {
-        usage = usage + value.length() * sizeof(UChar) - oldValue.length();
-    } else {
-        usage += (key.length() + value.length()) * sizeof(UChar);
-    }
-    
-    if (usage > 5 * 1024 * 1024) {
-        ec = QUOTA_EXCEEDED_ERR;
-        return;
-    }
-    RefPtr<StorageMap> newMap = m_storageMap->setItem(key, value, oldValue);
-    
-    if (newMap)
-        m_storageMap = newMap.release();
-
-    // Only notify the client if an item was actually changed
-    if (oldValue != value)
-        itemChanged(key, oldValue, value, frame);
-}
-
-void StorageArea::internalRemoveItem(const String& key, Frame* frame)
-{   
-    String oldValue;
-    RefPtr<StorageMap> newMap = m_storageMap->removeItem(key, oldValue);
-    if (newMap)
-        m_storageMap = newMap.release();
-
-    // Only notify the client if an item was actually removed
-    if (!oldValue.isNull())
-        itemRemoved(key, oldValue, frame);
-}
-
-void StorageArea::internalClear(Frame* frame)
-{
-    m_storageMap = StorageMap::create();
-    
-    areaCleared(frame);
-}
-
-bool StorageArea::internalContains(const String& key) const
-{
-    return m_storageMap->contains(key);
-}
-
-void StorageArea::importItem(const String& key, const String& value)
-{
-    m_storageMap->importItem(key, value);
+    return StorageAreaImpl::create(storageType, origin, syncManager);
 }
 
 }
+
+#endif // ENABLE(DOM_STORAGE)
+

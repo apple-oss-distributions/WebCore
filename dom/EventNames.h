@@ -27,7 +27,6 @@
 
 namespace WebCore {
 
-// IPHONE: Added orientationchange, touchstart, touchmove, touchend, touchcancel, gesturestart, gesturechange, gestureend to original list
 #define DOM_EVENT_NAMES_FOR_EACH(macro) \
     \
     macro(abort) \
@@ -60,6 +59,7 @@ namespace WebCore {
     macro(keypress) \
     macro(keyup) \
     macro(load) \
+    macro(loadend) \
     macro(loadstart) \
     macro(message) \
     macro(mousedown) \
@@ -72,15 +72,9 @@ namespace WebCore {
     macro(obsolete) \
     macro(offline) \
     macro(online) \
-    macro(orientationchange) \
-    macro(touchstart) \
-    macro(touchmove) \
-    macro(touchend) \
-    macro(touchcancel) \
-    macro(gesturestart) \
-    macro(gesturechange) \
-    macro(gestureend) \
     macro(overflowchanged) \
+    macro(pagehide) \
+    macro(pageshow) \
     macro(paste) \
     macro(readystatechange) \
     macro(reset) \
@@ -138,8 +132,18 @@ namespace WebCore {
     \
     macro(webkitTransitionEnd) \
     \
+    macro(orientationchange) \
+    \
+    macro(touchstart) \
+    macro(touchmove) \
+    macro(touchend) \
+    macro(touchcancel) \
+    \
+    macro(gesturestart) \
+    macro(gesturechange) \
+    macro(gestureend) \
+    \
 // end of DOM_EVENT_NAMES_FOR_EACH
-
 
     class EventNames {
         int dummy; // Needed to make initialization macro work.

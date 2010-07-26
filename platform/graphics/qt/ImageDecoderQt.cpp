@@ -197,7 +197,8 @@ ImageDecoderQt* ImageDecoderQt::create(const SharedBuffer& data)
 }
 
 ImageDecoderQt::ImageDecoderQt(const QString &imageFormat)
-    : m_imageFormat(imageFormat)
+    : m_hasAlphaChannel(false)
+    , m_imageFormat(imageFormat)
 {
 }
 
@@ -212,12 +213,11 @@ bool ImageDecoderQt::hasFirstImageHeader() const
 
 void ImageDecoderQt::reset()
 {
+    m_hasAlphaChannel = false;
     m_failed = false;
     m_imageList.clear();
     m_pixmapCache.clear();
-    m_sizeAvailable = false;
     m_loopCount = cAnimationNone;
-    m_size = IntSize(-1, -1);
 }
 
 void ImageDecoderQt::setData(const IncomingData &data, bool allDataReceived)
@@ -229,6 +229,9 @@ void ImageDecoderQt::setData(const IncomingData &data, bool allDataReceived)
         qDebug() << " setData " << data.size() << " image bytes, complete=" << allDataReceived;
 
     const  ReadContext::ReadResult readResult =  readContext.read(allDataReceived);
+
+    if (hasFirstImageHeader())
+        m_hasAlphaChannel = m_imageList[0].m_image.hasAlphaChannel();
 
     if (debugImageDecoderQt)
         qDebug()  << " read returns " << readResult;
@@ -242,8 +245,8 @@ void ImageDecoderQt::setData(const IncomingData &data, bool allDataReceived)
     case ReadContext::ReadComplete:
         // Did we read anything - try to set the size.
         if (hasFirstImageHeader()) {
-            m_sizeAvailable = true;
-            m_size = m_imageList[0].m_image.size();
+            QSize imgSize = m_imageList[0].m_image.size();
+            setSize(imgSize.width(), imgSize.height());
 
             if (readContext.reader()->supportsAnimation()) {
                 if (readContext.reader()->loopCount() != -1)
@@ -257,11 +260,11 @@ void ImageDecoderQt::setData(const IncomingData &data, bool allDataReceived)
 }
 
 
-bool ImageDecoderQt::isSizeAvailable() const
+bool ImageDecoderQt::isSizeAvailable()
 {
     if (debugImageDecoderQt)
-        qDebug() << " ImageDecoderQt::isSizeAvailable() returns" << m_sizeAvailable;
-    return m_sizeAvailable;
+        qDebug() << " ImageDecoderQt::isSizeAvailable() returns" << ImageDecoder::isSizeAvailable();
+    return ImageDecoder::isSizeAvailable();
 }
 
 int ImageDecoderQt::frameCount() const
@@ -280,7 +283,7 @@ int ImageDecoderQt::repetitionCount() const
 
 bool ImageDecoderQt::supportsAlpha() const
 {
-    return hasFirstImageHeader() && m_imageList[0].m_image.hasAlphaChannel();
+    return m_hasAlphaChannel;
 }
 
 int ImageDecoderQt::duration(size_t index) const
@@ -314,6 +317,10 @@ QPixmap* ImageDecoderQt::imageAtIndex(size_t index) const
     if (!m_pixmapCache.contains(index)) {
         m_pixmapCache.insert(index,
                              QPixmap::fromImage(m_imageList[index].m_image));
+
+        // store null image since the converted pixmap is already in pixmap cache
+        Q_ASSERT(m_imageList[index].m_imageState == ImageComplete);
+        m_imageList[index].m_image = QImage();
     }
     return  &m_pixmapCache[index];
 }

@@ -46,7 +46,6 @@ HistoryItem::HistoryItem()
     : m_lastVisitedTime(0)
     , m_lastVisitWasHTTPNonGet(false)
     , m_lastVisitWasFailure(false)
-    , m_isInPageCache(false)
     , m_isTargetItem(false)
     , m_visitCount(0)
     , m_scale(0.0f)
@@ -61,7 +60,6 @@ HistoryItem::HistoryItem(const String& urlString, const String& title, double ti
     , m_lastVisitedTime(time)
     , m_lastVisitWasHTTPNonGet(false)
     , m_lastVisitWasFailure(false)
-    , m_isInPageCache(false)
     , m_isTargetItem(false)
     , m_visitCount(0)
     , m_scale(0.0f)
@@ -78,7 +76,6 @@ HistoryItem::HistoryItem(const String& urlString, const String& title, const Str
     , m_lastVisitedTime(time)
     , m_lastVisitWasHTTPNonGet(false)
     , m_lastVisitWasFailure(false)
-    , m_isInPageCache(false)
     , m_isTargetItem(false)
     , m_visitCount(0)
     , m_scale(0.0f)
@@ -96,7 +93,6 @@ HistoryItem::HistoryItem(const KURL& url, const String& target, const String& pa
     , m_lastVisitedTime(0)
     , m_lastVisitWasHTTPNonGet(false)
     , m_lastVisitWasFailure(false)
-    , m_isInPageCache(false)
     , m_isTargetItem(false)
     , m_visitCount(0)
     , m_scale(0.0f)
@@ -107,7 +103,7 @@ HistoryItem::HistoryItem(const KURL& url, const String& target, const String& pa
 
 HistoryItem::~HistoryItem()
 {
-    ASSERT(!m_isInPageCache);
+    ASSERT(!m_cachedPage);
     iconDatabase()->releaseIconForPageURL(m_urlString);
 }
 
@@ -124,7 +120,6 @@ inline HistoryItem::HistoryItem(const HistoryItem& item)
     , m_lastVisitWasHTTPNonGet(item.m_lastVisitWasHTTPNonGet)
     , m_scrollPoint(item.m_scrollPoint)
     , m_lastVisitWasFailure(item.m_lastVisitWasFailure)
-    , m_isInPageCache(item.m_isInPageCache)
     , m_isTargetItem(item.m_isTargetItem)
     , m_visitCount(item.m_visitCount)
     , m_dailyVisitCounts(item.m_dailyVisitCounts)
@@ -133,6 +128,8 @@ inline HistoryItem::HistoryItem(const HistoryItem& item)
     , m_scale(item.m_scale)
     , m_scaleIsInitial(item.m_scaleIsInitial)
 {
+    ASSERT(!item.m_cachedPage);
+
     if (item.m_formData)
         m_formData = item.m_formData->copy();
         
@@ -300,14 +297,16 @@ void HistoryItem::collapseDailyVisitsToWeekly()
         m_weeklyVisitCounts.shrink(maxWeeklyCounts);
 }
 
-void HistoryItem::recordVisitAtTime(double time)
+void HistoryItem::recordVisitAtTime(double time, VisitCountBehavior visitCountBehavior)
 {
     padDailyCountsForNewVisit(time);
 
     m_lastVisitedTime = time;
-    m_visitCount++;
 
-    m_dailyVisitCounts[0]++;
+    if (visitCountBehavior == IncreaseVisitCount) {
+        ++m_visitCount;
+        ++m_dailyVisitCounts[0];
+    }
 
     collapseDailyVisitsToWeekly();
 }
@@ -318,10 +317,10 @@ void HistoryItem::setLastVisitedTime(double time)
         recordVisitAtTime(time);
 }
 
-void HistoryItem::visited(const String& title, double time)
+void HistoryItem::visited(const String& title, double time, VisitCountBehavior visitCountBehavior)
 {
     m_title = title;
-    recordVisitAtTime(time);
+    recordVisitAtTime(time, visitCountBehavior);
 }
 
 int HistoryItem::visitCount() const
@@ -448,6 +447,11 @@ bool HistoryItem::hasChildren() const
     return !m_children.isEmpty();
 }
 
+void HistoryItem::clearChildren()
+{
+    m_children.clear();
+}
+
 String HistoryItem::formContentType() const
 {
     return m_formContentType;
@@ -466,6 +470,16 @@ void HistoryItem::setFormInfoFromRequest(const ResourceRequest& request)
         m_formData = 0;
         m_formContentType = String();
     }
+}
+
+void HistoryItem::setFormData(PassRefPtr<FormData> formData)
+{
+    m_formData = formData;
+}
+
+void HistoryItem::setFormContentType(const String& formContentType)
+{
+    m_formContentType = formContentType;
 }
 
 FormData* HistoryItem::formData()
@@ -505,9 +519,9 @@ Vector<String>* HistoryItem::redirectURLs() const
     return m_redirectURLs.get();
 }
 
-void HistoryItem::setRedirectURLs(std::auto_ptr<Vector<String> > redirectURLs)
+void HistoryItem::setRedirectURLs(PassOwnPtr<Vector<String> > redirectURLs)
 {
-    m_redirectURLs.adopt(redirectURLs);
+    m_redirectURLs = redirectURLs;
 }
 
 #ifndef NDEBUG

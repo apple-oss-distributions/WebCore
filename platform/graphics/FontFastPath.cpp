@@ -24,6 +24,7 @@
 
 #include "CharacterNames.h"
 #include "FontCache.h"
+#include "FontFallbackList.h"
 #include "FloatRect.h"
 #include "GlyphBuffer.h"
 #include "GlyphPageTreeNode.h"
@@ -39,11 +40,13 @@ using namespace Unicode;
 
 namespace WebCore {
 
-const GlyphData& Font::glyphDataForCharacter(UChar32 c, bool mirror, bool forceSmallCaps) const
+GlyphData Font::glyphDataForCharacter(UChar32 c, bool mirror, bool forceSmallCaps) const
 {
+    ASSERT(isMainThread() || pthread_main_np());
+
     bool useSmallCapsFont = forceSmallCaps;
     if (m_fontDescription.smallCaps()) {
-        UChar32 upperC = Unicode::toUpper(c);
+        UChar32 upperC = toUpper(c);
         if (upperC != c) {
             c = upperC;
             useSmallCapsFont = true;
@@ -59,13 +62,13 @@ const GlyphData& Font::glyphDataForCharacter(UChar32 c, bool mirror, bool forceS
 
     unsigned pageNumber = (c / GlyphPage::size);
 
-    GlyphPageTreeNode* node = pageNumber ? m_pages.get(pageNumber) : m_pageZero;
+    GlyphPageTreeNode* node = pageNumber ? m_fontList->m_pages.get(pageNumber) : m_fontList->m_pageZero;
     if (!node) {
         node = GlyphPageTreeNode::getRootChild(fontDataAt(0), pageNumber);
         if (pageNumber)
-            m_pages.set(pageNumber, node);
+            m_fontList->m_pages.set(pageNumber, node);
         else
-            m_pageZero = node;
+            m_fontList->m_pageZero = node;
     }
 
     GlyphPage* page;
@@ -74,7 +77,7 @@ const GlyphData& Font::glyphDataForCharacter(UChar32 c, bool mirror, bool forceS
         while (true) {
             page = node->page();
             if (page) {
-                const GlyphData& data = page->glyphDataForCharacter(c);
+                GlyphData data = page->glyphDataForCharacter(c);
                 if (data.fontData && (!forceFallback || node->isSystemFallback()))
                     return data;
                 if (node->isSystemFallback())
@@ -84,15 +87,15 @@ const GlyphData& Font::glyphDataForCharacter(UChar32 c, bool mirror, bool forceS
             // Proceed with the fallback list.
             node = node->getChild(fontDataAt(node->level()), pageNumber);
             if (pageNumber)
-                m_pages.set(pageNumber, node);
+                m_fontList->m_pages.set(pageNumber, node);
             else
-                m_pageZero = node;
+                m_fontList->m_pageZero = node;
         }
     } else {
         while (true) {
             page = node->page();
             if (page) {
-                const GlyphData& data = page->glyphDataForCharacter(c);
+                GlyphData data = page->glyphDataForCharacter(c);
                 if (data.fontData) {
                     // The smallCapsFontData function should not normally return 0.
                     // But if it does, we will just render the capital letter big.
@@ -103,7 +106,7 @@ const GlyphData& Font::glyphDataForCharacter(UChar32 c, bool mirror, bool forceS
                     GlyphPageTreeNode* smallCapsNode = GlyphPageTreeNode::getRootChild(smallCapsFontData, pageNumber);
                     const GlyphPage* smallCapsPage = smallCapsNode->page();
                     if (smallCapsPage) {
-                        const GlyphData& data = smallCapsPage->glyphDataForCharacter(c);
+                        GlyphData data = smallCapsPage->glyphDataForCharacter(c);
                         if (data.fontData)
                             return data;
                     }
@@ -120,9 +123,9 @@ const GlyphData& Font::glyphDataForCharacter(UChar32 c, bool mirror, bool forceS
             // Proceed with the fallback list.
             node = node->getChild(fontDataAt(node->level()), pageNumber);
             if (pageNumber)
-                m_pages.set(pageNumber, node);
+                m_fontList->m_pages.set(pageNumber, node);
             else
-                m_pageZero = node;
+                m_fontList->m_pageZero = node;
         }
     }
 
@@ -154,7 +157,7 @@ const GlyphData& Font::glyphDataForCharacter(UChar32 c, bool mirror, bool forceS
     if (characterFontData) {
         // Got the fallback glyph and font.
         GlyphPage* fallbackPage = GlyphPageTreeNode::getRootChild(characterFontData, pageNumber)->page();
-        const GlyphData& data = fallbackPage && fallbackPage->glyphDataForCharacter(c).fontData ? fallbackPage->glyphDataForCharacter(c) : characterFontData->missingGlyphData();
+        GlyphData data = fallbackPage && fallbackPage->fontDataForCharacter(c) ? fallbackPage->glyphDataForCharacter(c) : characterFontData->missingGlyphData();
         // Cache it so we don't have to do system fallback again next time.
         if (!useSmallCapsFont)
             page->setGlyphDataForCharacter(c, data.glyph, data.fontData);
@@ -163,7 +166,7 @@ const GlyphData& Font::glyphDataForCharacter(UChar32 c, bool mirror, bool forceS
 
     // Even system fallback can fail; use the missing glyph in that case.
     // FIXME: It would be nicer to use the missing glyph from the last resort font instead.
-    const GlyphData& data = primaryFont()->missingGlyphData();
+    GlyphData data = primaryFont()->missingGlyphData();
     if (!useSmallCapsFont)
         page->setGlyphDataForCharacter(c, data.glyph, data.fontData);
     return data;
@@ -234,11 +237,14 @@ bool Font::canUseGlyphCache(const TextRun& run) const
             return false;
     }
 
+    if (typesettingFeatures())
+        return false;
+
     return true;
 
 }
 
-    float Font::drawSimpleText(GraphicsContext* context, const TextRun& run, const FloatPoint& point, int from, int to) const
+float Font::drawSimpleText(GraphicsContext* context, const TextRun& run, const FloatPoint& point, int from, int to) const
 {
     // This glyph buffer holds our glyphs+advances+font data for each glyph.
     GlyphBuffer glyphBuffer;
@@ -303,9 +309,9 @@ void Font::drawGlyphBuffer(GraphicsContext* context, const GlyphBuffer& glyphBuf
     point.setX(nextX);
 }
 
-float Font::floatWidthForSimpleText(const TextRun& run, GlyphBuffer* glyphBuffer) const
+float Font::floatWidthForSimpleText(const TextRun& run, GlyphBuffer* glyphBuffer, HashSet<const SimpleFontData*>* fallbackFonts) const
 {
-    WidthIterator it(this, run);
+    WidthIterator it(this, run, fallbackFonts);
     it.advance(run.length(), glyphBuffer);
     return it.m_runWidthSoFar;
 }

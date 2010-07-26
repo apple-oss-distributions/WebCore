@@ -31,6 +31,7 @@
 
 #import <Foundation/Foundation.h>
 
+
 #ifdef BUILDING_ON_TIGER
 typedef unsigned NSUInteger;
 #endif
@@ -57,7 +58,7 @@ void ResourceRequest::doUpdateResourceRequest()
     m_url = [m_nsRequest.get() URL];
     m_cachePolicy = (ResourceRequestCachePolicy)[m_nsRequest.get() cachePolicy];
     m_timeoutInterval = [m_nsRequest.get() timeoutInterval];
-    m_mainDocumentURL = [m_nsRequest.get() mainDocumentURL];
+    m_firstPartyForCookies = [m_nsRequest.get() mainDocumentURL];
     
     if (NSString* method = [m_nsRequest.get() HTTPMethod])
         m_httpMethod = method;
@@ -66,6 +67,7 @@ void ResourceRequest::doUpdateResourceRequest()
     NSDictionary *headers = [m_nsRequest.get() allHTTPHeaderFields];
     NSEnumerator *e = [headers keyEnumerator];
     NSString *name;
+    m_httpHeaderFields.clear();
     while ((name = [e nextObject]))
         m_httpHeaderFields.set(name, [headers objectForKey:name]);
 
@@ -78,7 +80,7 @@ void ResourceRequest::doUpdateResourceRequest()
         for (NSUInteger i = 0; i < count; ++i) {
             CFStringEncoding encoding = CFStringConvertNSStringEncodingToEncoding([(NSNumber *)[encodingFallbacks objectAtIndex:i] unsignedLongValue]);
             if (encoding != kCFStringEncodingInvalidId)
-                m_responseContentDispositionEncodingFallbackArray.append(CFStringGetNameOfEncoding(encoding));
+                m_responseContentDispositionEncodingFallbackArray.append(CFStringConvertEncodingToIANACharSetName(encoding));
         }
     }
 
@@ -107,20 +109,25 @@ void ResourceRequest::doUpdatePlatformRequest()
     wkSupportsMultipartXMixedReplace(nsRequest);
 #endif
 
+
     [nsRequest setCachePolicy:(NSURLRequestCachePolicy)cachePolicy()];
     if (timeoutInterval() != unspecifiedTimeoutInterval)
         [nsRequest setTimeoutInterval:timeoutInterval()];
-    [nsRequest setMainDocumentURL:mainDocumentURL()];
+    [nsRequest setMainDocumentURL:firstPartyForCookies()];
     if (!httpMethod().isEmpty())
         [nsRequest setHTTPMethod:httpMethod()];
     [nsRequest setHTTPShouldHandleCookies:allowHTTPCookies()];
-    
+
+    // Cannot just use setAllHTTPHeaderFields here, because it does not remove headers.
+    NSArray *oldHeaderFieldNames = [[nsRequest allHTTPHeaderFields] allKeys];
+    for (unsigned i = [oldHeaderFieldNames count]; i != 0; --i)
+        [nsRequest setValue:nil forHTTPHeaderField:[oldHeaderFieldNames objectAtIndex:i - 1]];
     HTTPHeaderMap::const_iterator end = httpHeaderFields().end();
     for (HTTPHeaderMap::const_iterator it = httpHeaderFields().begin(); it != end; ++it)
         [nsRequest setValue:it->second forHTTPHeaderField:it->first];
 
-    // The below check can be removed once we require a version of Foundation with -[NSMutableURLRequest setContentDispositionEncodingFallbackArray] method.
-    static bool supportsContentDispositionEncodingFallbackArray = [NSMutableURLRequest instancesRespondToSelector:@selector(setContentDispositionEncodingFallbackArray)];
+    // The below check can be removed once we require a version of Foundation with -[NSMutableURLRequest setContentDispositionEncodingFallbackArray:] method.
+    static bool supportsContentDispositionEncodingFallbackArray = [NSMutableURLRequest instancesRespondToSelector:@selector(setContentDispositionEncodingFallbackArray:)];
     if (supportsContentDispositionEncodingFallbackArray) {
         NSMutableArray *encodingFallbacks = [NSMutableArray array];
         unsigned count = m_responseContentDispositionEncodingFallbackArray.size();

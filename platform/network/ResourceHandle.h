@@ -28,7 +28,12 @@
 
 #include "AuthenticationChallenge.h"
 #include "HTTPHeaderMap.h"
+#include "ThreadableLoader.h"
 #include <wtf/OwnPtr.h>
+
+#if USE(SOUP)
+typedef struct _SoupSession SoupSession;
+#endif
 
 #if PLATFORM(CF)
 typedef const struct __CFData * CFDataRef;
@@ -80,7 +85,7 @@ class ProtectionSpace;
 class ResourceError;
 class ResourceHandleClient;
 class ResourceHandleInternal;
-class ResourceRequest;
+struct ResourceRequest;
 class ResourceResponse;
 class SchedulePair;
 class SharedBuffer;
@@ -100,7 +105,7 @@ public:
     // FIXME: should not need the Frame
     static PassRefPtr<ResourceHandle> create(const ResourceRequest&, ResourceHandleClient*, Frame*, bool defersLoading, bool shouldContentSniff, bool mightDownloadFromHandle = false);
 
-    static void loadResourceSynchronously(const ResourceRequest&, ResourceError&, ResourceResponse&, Vector<char>& data, Frame* frame);
+    static void loadResourceSynchronously(const ResourceRequest&, StoredCredentials, ResourceError&, ResourceResponse&, Vector<char>& data, Frame* frame);
     static bool willLoadFromCache(ResourceRequest&);
 #if PLATFORM(MAC)
     static bool didSendBodyDataDelegateExists();
@@ -109,6 +114,7 @@ public:
     ~ResourceHandle();
 
 #if PLATFORM(MAC) || USE(CFNETWORK)
+    void willSendRequest(ResourceRequest&, const ResourceResponse& redirectResponse);
     bool shouldUseCredentialStorage();
 #endif
 #if PLATFORM(MAC) || USE(CFNETWORK) || USE(CURL)
@@ -148,6 +154,11 @@ public:
     PassRefPtr<SharedBuffer> bufferedData();
     static bool supportsBufferedData();
 
+    bool shouldContentSniff() const;
+    static bool shouldContentSniffURL(const KURL&);
+
+    static void forceContentSniffing();
+
 #if USE(WININET)
     void setHasReceivedResponse(bool = true);
     bool hasReceivedResponse() const;
@@ -161,6 +172,10 @@ public:
 
 #if PLATFORM(QT) || USE(CURL) || USE(SOUP)
     ResourceHandleInternal* getInternal() { return d.get(); }
+#endif
+
+#if USE(SOUP)
+    static SoupSession* defaultSession();
 #endif
 
     // Used to work around the fact that you don't get any more NSURLConnection callbacks until you return from the one you're in.
@@ -183,7 +198,7 @@ private:
 #if USE(SOUP)
     bool startData(String urlString);
     bool startHttp(String urlString);
-    bool startGio(String urlString);
+    bool startGio(KURL url);
 #endif
 
     void scheduleFailure(FailureType);
@@ -193,10 +208,6 @@ private:
     friend class ResourceHandleInternal;
     OwnPtr<ResourceHandleInternal> d;
 };
-
-void addQLPreviewConverterForURL(NSURL *, id converter);
-void removeQLPreviewConverterForURL(NSURL *);
-const KURL safeQLURLForDocumentURLAndResourceURL(const KURL& documentURL, const String& resourceURL);
 
 }
 

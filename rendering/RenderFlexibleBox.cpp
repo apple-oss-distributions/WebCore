@@ -36,7 +36,8 @@ namespace WebCore {
 
 class FlexBoxIterator {
 public:
-    FlexBoxIterator(RenderFlexibleBox* parent) {
+    FlexBoxIterator(RenderFlexibleBox* parent)
+    {
         box = parent;
         if (box->style()->boxOrient() == HORIZONTAL && box->style()->direction() == RTL)
             forward = box->style()->boxDirection() != BNORMAL;
@@ -56,17 +57,20 @@ public:
         reset();
     }
 
-    void reset() {
+    void reset()
+    {
         current = 0;
         currentOrdinal = forward ? 0 : lastOrdinal+1;
     }
 
-    RenderBox* first() {
+    RenderBox* first()
+    {
         reset();
         return next();
     }
     
-    RenderBox* next() {
+    RenderBox* next()
+    {
         do { 
             if (!current) {
                 if (forward) {
@@ -224,9 +228,9 @@ void RenderFlexibleBox::layoutBlock(bool relayoutChildren)
     // For overflow:scroll blocks, ensure we have both scrollbars in place always.
     if (scrollsOverflow()) {
         if (style()->overflowX() == OSCROLL)
-            m_layer->setHasHorizontalScrollbar(true);
+            layer()->setHasHorizontalScrollbar(true);
         if (style()->overflowY() == OSCROLL)
-            m_layer->setHasVerticalScrollbar(true);
+            layer()->setHasVerticalScrollbar(true);
     }
 
     if (isHorizontal())
@@ -292,7 +296,7 @@ void RenderFlexibleBox::layoutBlock(bool relayoutChildren)
     // Update our scrollbars if we're overflow:auto/scroll/hidden now that we know if
     // we overflow or not.
     if (hasOverflowClip())
-        m_layer->updateScrollInfoAfterLayout();
+        layer()->updateScrollInfoAfterLayout();
 
     // Repaint with our new bounds if they are different from our old bounds.
     repainter.repaintAfterLayout();
@@ -336,7 +340,9 @@ void RenderFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
         }
         child = iterator.next();
     }
-    
+
+    RenderBlock::startDelayUpdateScrollInfo();
+
     // We do 2 passes.  The first pass is simply to lay everyone out at
     // their preferred widths.  The second pass handles flexing the children.
     do {
@@ -368,9 +374,10 @@ void RenderFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
     
             // Update our height and overflow height.
             if (style()->boxAlign() == BBASELINE) {
-                int ascent = child->marginTop() + child->getBaselineOfFirstLineBox();
+                int ascent = child->firstLineBoxBaseline();
                 if (ascent == -1)
-                    ascent = child->marginTop() + child->height() + child->marginBottom();
+                    ascent = child->height() + child->marginBottom();
+                ascent += child->marginTop();
                 int descent = (child->marginTop() + child->height() + child->marginBottom()) - ascent;
                 
                 // Update our maximum ascent.
@@ -410,13 +417,13 @@ void RenderFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
         while (child) {
             if (child->isPositioned()) {
                 child->containingBlock()->insertPositionedObject(child);
-                if (child->hasStaticX()) {
+                if (child->style()->hasStaticX()) {
                     if (style()->direction() == LTR)
-                        child->setStaticX(xPos);
-                    else child->setStaticX(width() - xPos);
+                        child->layer()->setStaticX(xPos);
+                    else child->layer()->setStaticX(width() - xPos);
                 }
-                if (child->hasStaticY())
-                    child->setStaticY(yPos);
+                if (child->style()->hasStaticY())
+                    child->layer()->setStaticY(yPos);
                 child = iterator.next();
                 continue;
             }
@@ -425,7 +432,7 @@ void RenderFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
             // fill the height of a containing box by default.
             // Now do a layout.
             int oldChildHeight = child->height();
-            toRenderBox(child)->calcHeight();
+            child->calcHeight();
             if (oldChildHeight != child->height())
                 child->setChildNeedsLayout(true, false);
             child->layoutIfNeeded();
@@ -438,9 +445,10 @@ void RenderFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
                     childY += child->marginTop() + max(0, (contentHeight() - (child->height() + child->marginTop() + child->marginBottom()))/2);
                     break;
                 case BBASELINE: {
-                    int ascent = child->marginTop() + child->getBaselineOfFirstLineBox();
+                    int ascent = child->firstLineBoxBaseline();
                     if (ascent == -1)
-                        ascent = child->marginTop() + child->height() + child->marginBottom();
+                        ascent = child->height() + child->marginBottom();
+                    ascent += child->marginTop();
                     childY += child->marginTop() + (maxAscent - ascent);
                     break;
                 }
@@ -455,7 +463,7 @@ void RenderFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
             placeChild(child, xPos, childY);
 
             if (child->isRenderBlock())
-                static_cast<RenderBlock*>(child)->addVisualOverflow(static_cast<RenderBlock*>(child)->floatRect());
+                toRenderBlock(child)->addVisualOverflow(toRenderBlock(child)->floatRect());
 
             m_overflowHeight = max(m_overflowHeight, childY + child->overflowHeight(false));
             m_overflowTop = min(m_overflowTop, child->y() + child->overflowTop(false));
@@ -559,7 +567,9 @@ void RenderFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
     } while (haveFlex);
 
     m_flexingChildren = false;
-    
+
+    RenderBlock::finishDelayUpdateScrollInfo();
+
     if (remainingSpace > 0 && ((style()->direction() == LTR && style()->boxPack() != BSTART) ||
                                (style()->direction() == RTL && style()->boxPack() != BEND))) {
         // Children must be repositioned.
@@ -646,7 +656,7 @@ void RenderFlexibleBox::layoutVerticalBox(bool relayoutChildren)
 {
     int xPos = borderLeft() + paddingLeft();
     int yPos = borderTop() + paddingTop();
-    if( style()->direction() == RTL )
+    if (style()->direction() == RTL)
         xPos = width() - paddingRight() - borderRight();
     int toAdd = borderBottom() + paddingBottom() + horizontalScrollbarHeight();
     bool heightSpecified = false;
@@ -682,7 +692,7 @@ void RenderFlexibleBox::layoutVerticalBox(bool relayoutChildren)
 
     // We confine the line clamp ugliness to vertical flexible boxes (thus keeping it out of
     // mainstream block layout); this is not really part of the XUL box model.
-    bool haveLineClamp = style()->lineClamp() >= 0 && style()->lineClamp() <= 100;
+    bool haveLineClamp = !style()->lineClamp().isNone();
     if (haveLineClamp) {
         int maxLineCount = 0;
         child = iterator.first();
@@ -694,26 +704,27 @@ void RenderFlexibleBox::layoutVerticalBox(bool relayoutChildren)
                     
                     // Dirty all the positioned objects.
                     if (child->isRenderBlock()) {
-                        static_cast<RenderBlock*>(child)->markPositionedObjectsForLayout();
-                        static_cast<RenderBlock*>(child)->clearTruncation();
+                        toRenderBlock(child)->markPositionedObjectsForLayout();
+                        toRenderBlock(child)->clearTruncation();
                     }
                 }
                 child->layoutIfNeeded();
                 if (child->style()->height().isAuto() && child->isBlockFlow())
-                    maxLineCount = max(maxLineCount, static_cast<RenderBlock*>(child)->lineCount());
+                    maxLineCount = max(maxLineCount, toRenderBlock(child)->lineCount());
             }
             child = iterator.next();
         }
         
         // Get the # of lines and then alter all block flow children with auto height to use the
         // specified height. We always try to leave room for at least one line.
-        int numVisibleLines = max(1, static_cast<int>((maxLineCount + 1) * style()->lineClamp() / 100.0));
+        LineClampValue lineClamp = style()->lineClamp();
+        int numVisibleLines = lineClamp.isPercentage() ? max(1, (maxLineCount + 1) * lineClamp.value() / 100) : lineClamp.value();
         if (numVisibleLines < maxLineCount) {
             for (child = iterator.first(); child; child = iterator.next()) {
                 if (child->isPositioned() || !child->style()->height().isAuto() || !child->isBlockFlow())
                     continue;
                 
-                RenderBlock* blockChild = static_cast<RenderBlock*>(child);
+                RenderBlock* blockChild = toRenderBlock(child);
                 int lineCount = blockChild->lineCount();
                 if (lineCount <= numVisibleLines)
                     continue;
@@ -738,50 +749,53 @@ void RenderFlexibleBox::layoutVerticalBox(bool relayoutChildren)
                 if (!lastLine)
                     continue;
                 
-                // See if the last item is an anchor
-                InlineBox* anchorBox = lastLine->lastChild();
-                if (!anchorBox)
-                    continue;
-                if (!anchorBox->object()->element())
-                    continue;
-                if (!anchorBox->object()->element()->isLink())
-                    continue;
-                
                 RootInlineBox* lastVisibleLine = blockChild->lineAtIndex(numVisibleLines-1);
                 if (!lastVisibleLine)
                     continue;
 
                 const UChar ellipsisAndSpace[2] = { horizontalEllipsis, ' ' };
                 DEFINE_STATIC_LOCAL(AtomicString, ellipsisAndSpaceStr, (ellipsisAndSpace, 2));
-
+                DEFINE_STATIC_LOCAL(AtomicString, ellipsisStr, (&horizontalEllipsis, 1));
                 const Font& font = style(numVisibleLines == 1)->font();
-                int ellipsisAndSpaceWidth = font.width(TextRun(ellipsisAndSpace, 2));
 
-                // Get ellipsis width + " " + anchor width
-                int totalWidth = ellipsisAndSpaceWidth + anchorBox->width();
-                
+                // Get ellipsis width, and if the last child is an anchor, it will go after the ellipsis, so add in a space and the anchor width too 
+                int totalWidth;
+                InlineBox* anchorBox = lastLine->lastChild();
+                if (anchorBox && anchorBox->renderer()->node() && anchorBox->renderer()->node()->isLink())
+                    totalWidth = anchorBox->width() + font.width(TextRun(ellipsisAndSpace, 2));
+                else {
+                    anchorBox = 0;
+                    totalWidth = font.width(TextRun(&horizontalEllipsis, 1));
+                }
+                                
                 // See if this width can be accommodated on the last visible line
-                RenderBlock* destBlock = static_cast<RenderBlock*>(lastVisibleLine->object());
-                RenderBlock* srcBlock = static_cast<RenderBlock*>(lastLine->object());
+                RenderBlock* destBlock = toRenderBlock(lastVisibleLine->renderer());
+                RenderBlock* srcBlock = toRenderBlock(lastLine->renderer());
                 
                 // FIXME: Directions of src/destBlock could be different from our direction and from one another.
                 if (srcBlock->style()->direction() != LTR)
                     continue;
                 if (destBlock->style()->direction() != LTR)
                     continue;
+                int ltr = true;
 
-                int blockEdge = destBlock->rightOffset(lastVisibleLine->yPos());
-                if (!lastVisibleLine->canAccommodateEllipsis(true, blockEdge, 
-                                                             lastVisibleLine->xPos() + lastVisibleLine->width(),
+                int blockRightEdge = destBlock->rightOffset(lastVisibleLine->y(), false);
+                int blockLeftEdge = destBlock->leftOffset(lastVisibleLine->y(), false);
+
+                int blockEdge = ltr ? blockRightEdge : blockLeftEdge;
+                if (!lastVisibleLine->canAccommodateEllipsis(ltr, blockEdge,
+                                                             lastVisibleLine->x() + lastVisibleLine->width(),
                                                              totalWidth))
                     continue;
 
                 // Let the truncation code kick in.
-                lastVisibleLine->placeEllipsis(ellipsisAndSpaceStr, true, blockEdge, totalWidth, anchorBox);
+                lastVisibleLine->placeEllipsis(anchorBox ? ellipsisAndSpaceStr : ellipsisStr, ltr, blockLeftEdge, blockRightEdge, totalWidth, anchorBox);
                 destBlock->setHasMarkupTruncation(true);
             }
         }
     }
+
+    RenderBlock::startDelayUpdateScrollInfo();
 
     // We do 2 passes.  The first pass is simply to lay everyone out at
     // their preferred widths.  The second pass handles flexing the children.
@@ -801,14 +815,14 @@ void RenderFlexibleBox::layoutVerticalBox(bool relayoutChildren)
             if (child->isPositioned())
             {
                 child->containingBlock()->insertPositionedObject(child);
-                if (child->hasStaticX()) {
+                if (child->style()->hasStaticX()) {
                     if (style()->direction() == LTR)
-                        child->setStaticX(borderLeft()+paddingLeft());
+                        child->layer()->setStaticX(borderLeft()+paddingLeft());
                     else
-                        child->setStaticX(borderRight()+paddingRight());
+                        child->layer()->setStaticX(borderRight()+paddingRight());
                 }
-                if (child->hasStaticY())
-                    child->setStaticY(height());
+                if (child->style()->hasStaticY())
+                    child->layer()->setStaticY(height());
                 child = iterator.next();
                 continue;
             } 
@@ -848,7 +862,7 @@ void RenderFlexibleBox::layoutVerticalBox(bool relayoutChildren)
             setHeight(height() + child->height() + child->marginBottom());
     
             if (child->isRenderBlock())
-                static_cast<RenderBlock*>(child)->addVisualOverflow(static_cast<RenderBlock*>(child)->floatRect());
+                toRenderBlock(child)->addVisualOverflow(toRenderBlock(child)->floatRect());
 
             // See if this child has made our overflow need to grow.
             m_overflowWidth = max(child->x() + child->overflowWidth(false), m_overflowWidth);
@@ -970,6 +984,8 @@ void RenderFlexibleBox::layoutVerticalBox(bool relayoutChildren)
                 haveFlex = false;
         }        
     } while (haveFlex);
+
+    RenderBlock::finishDelayUpdateScrollInfo();
 
     if (style()->boxPack() != BSTART && remainingSpace > 0) {
         // Children must be repositioned.

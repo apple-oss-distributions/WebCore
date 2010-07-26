@@ -2,12 +2,16 @@
 //  WAKStringDrawing.h
 //  WebKit
 //
-//  Copyright (C) 2005, 2006, 2007, 2008, Apple Inc.  All rights reserved.
+//  Copyright (C) 2005, 2006, 2007, 2008, 2009 Apple Inc.  All rights reserved.
 //
+
+#ifndef WAKStringDrawing_h
+#define WAKStringDrawing_h
 
 #import <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
 #import <GraphicsServices/GraphicsServices.h>
+
 
 typedef enum {
     // The order of the enum items is important, and it is used for >= comparisions
@@ -38,6 +42,7 @@ typedef enum {
 // Size after applying ellipsis style and clipping to width.
 - (CGSize)_web_sizeWithFont:(GSFontRef)font forWidth:(float)width ellipsis:(WebEllipsisStyle)ellipsisStyle;
 - (CGSize)_web_sizeWithFont:(GSFontRef)font forWidth:(float)width ellipsis:(WebEllipsisStyle)ellipsisStyle letterSpacing:(float)letterSpacing;
+- (CGSize)_web_sizeWithFont:(GSFontRef)font forWidth:(float)width ellipsis:(WebEllipsisStyle)ellipsisStyle letterSpacing:(float)letterSpacing resultRange:(NSRange *)resultRangeOut;
 
 // Draw text to fit width.  Clip or apply ellipsis according to style.
 - (CGSize)_web_drawAtPoint:(CGPoint)point forWidth:(float)width withFont:(GSFontRef)font ellipsis:(WebEllipsisStyle)ellipsisStyle;
@@ -47,11 +52,17 @@ typedef enum {
 // Wrap and clip to rect.
 - (CGSize)_web_drawInRect:(CGRect)rect withFont:(GSFontRef)font ellipsis:(WebEllipsisStyle)ellipsisStyle alignment:(WebTextAlignment)alignment;
 - (CGSize)_web_drawInRect:(CGRect)rect withFont:(GSFontRef)font ellipsis:(WebEllipsisStyle)ellipsisStyle alignment:(WebTextAlignment)alignment lineSpacing:(int)lineSpacing;
-- (CGSize)_web_drawInRect:(CGRect)rect withFont:(GSFontRef)font ellipsis:(WebEllipsisStyle)ellipsisStyle alignment:(WebTextAlignment)alignment lineSpacing:(int)lineSpacing includeEmoji:(BOOL)includeEmoji;
+- (CGSize)_web_drawInRect:(CGRect)rect withFont:(GSFontRef)font ellipsis:(WebEllipsisStyle)ellipsisStyle alignment:(WebTextAlignment)alignment lineSpacing:(int)lineSpacing includeEmoji:(BOOL)includeEmoj truncationRect:(CGRect *)truncationRect;
 - (CGSize)_web_sizeInRect:(CGRect)rect withFont:(GSFontRef)font ellipsis:(WebEllipsisStyle)ellipsisStyle;
 - (CGSize)_web_sizeInRect:(CGRect)rect withFont:(GSFontRef)font ellipsis:(WebEllipsisStyle)ellipsisStyle lineSpacing:(int)lineSpacing;
 
 // Determine the secured version of this string
 - (NSString *)_web_securedStringIncludingLastCharacter:(BOOL)includingLastCharacter;
 
+// Clip or apply ellipsis according to style. Return the string which results.
+- (NSString *)_web_stringForWidth:(float)width withFont:(GSFontRef)font ellipsis:(WebEllipsisStyle)ellipsisStyle letterSpacing:(float)letterSpacing includeEmoji:(BOOL)includeEmoji;
+
 @end
+
+
+#endif // WAKStringDrawing_h

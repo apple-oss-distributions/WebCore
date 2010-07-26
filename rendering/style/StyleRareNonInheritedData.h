@@ -29,6 +29,7 @@
 #include "CursorData.h"
 #include "DataRef.h"
 #include "FillLayer.h"
+#include "LineClampValue.h"
 #include "NinePieceImage.h"
 #include "StyleTransformData.h"
 #include <wtf/OwnPtr.h>
@@ -70,13 +71,14 @@ public:
 
     bool operator==(const StyleRareNonInheritedData&) const;
     bool operator!=(const StyleRareNonInheritedData& o) const { return !(*this == o); }
- 
+
+    bool contentDataEquivalent(const StyleRareNonInheritedData& o) const;
     bool shadowDataEquivalent(const StyleRareNonInheritedData& o) const;
     bool reflectionDataEquivalent(const StyleRareNonInheritedData& o) const;
     bool animationDataEquivalent(const StyleRareNonInheritedData&) const;
     bool transitionDataEquivalent(const StyleRareNonInheritedData&) const;
 
-    int lineClamp; // An Apple extension.
+    LineClampValue lineClamp; // An Apple extension.
 #if ENABLE(DASHBOARD_SUPPORT)
     Vector<StyleDashboardRegion> m_dashboardRegions;
 #endif

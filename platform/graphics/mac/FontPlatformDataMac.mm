@@ -1,7 +1,7 @@
 /*
  * This file is part of the internal font implementation.
  *
- * Copyright (C) 2006-7 Apple Computer, Inc.
+ * Copyright (C) 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,18 +25,18 @@
 
 #import "WebCoreSystemInterface.h"
 
-#if USE(CORE_TEXT)
 #import <CoreText/CoreText.h>
-#endif
 
 namespace WebCore {
 
-FontPlatformData::FontPlatformData(GSFontRef f, bool b, bool o)
-: m_syntheticBold(b), m_syntheticOblique(o), m_font(f)
+FontPlatformData::FontPlatformData(GSFontRef gsFont, bool syntheticBold, bool syntheticOblique)
+    : m_syntheticBold(syntheticBold)
+    , m_syntheticOblique(syntheticOblique)
+    , m_font(gsFont)
 {
-    if (f)
-        CFRetain(f);
-    m_size = f ? GSFontGetSize(f) : 0.0f;
+    if (gsFont)
+        CFRetain(gsFont);
+    m_size = gsFont ? GSFontGetSize(gsFont) : 0.0f;
     m_gsFont = 0; // fixme <rdar://problem/5607116>
     m_isImageFont = false;
 }
@@ -85,6 +85,7 @@ void FontPlatformData::setFont(GSFontRef font)
     m_size = font ? GSFontGetSize(font) : 0.0f;
     m_gsFont = 0; // fixme <rdar://problem/5607116>
 }
+
 
 bool FontPlatformData::allowsLigatures() const
 {

@@ -32,16 +32,17 @@
 
 namespace WebCore {
 
-HTMLFrameOwnerElement::HTMLFrameOwnerElement(const QualifiedName& tagName, Document* document, bool createdByParser)
+HTMLFrameOwnerElement::HTMLFrameOwnerElement(const QualifiedName& tagName, Document* document)
     : HTMLElement(tagName, document)
     , m_contentFrame(0)
-    , m_createdByParser(createdByParser)
 {
 }
 
 void HTMLFrameOwnerElement::willRemove()
 {
     if (Frame* frame = contentFrame()) {
+        if (Document* document = contentDocument())
+            document->updateTotalImageDataSizeBeforeDetaching();
         frame->disconnectOwnerElement();
         frame->loader()->frameDetached();
     }

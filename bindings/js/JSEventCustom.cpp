@@ -37,6 +37,7 @@
 #include "JSMouseEvent.h"
 #include "JSMutationEvent.h"
 #include "JSOverflowEvent.h"
+#include "JSPageTransitionEvent.h"
 #include "JSProgressEvent.h"
 #include "JSTextEvent.h"
 #include "JSUIEvent.h"
@@ -49,6 +50,7 @@
 #include "MouseEvent.h"
 #include "MutationEvent.h"
 #include "OverflowEvent.h"
+#include "PageTransitionEvent.h"
 #include "ProgressEvent.h"
 #include "TextEvent.h"
 #include "UIEvent.h"
@@ -77,12 +79,12 @@ using namespace JSC;
 
 namespace WebCore {
 
-JSValuePtr JSEvent::clipboardData(ExecState* exec) const
+JSValue JSEvent::clipboardData(ExecState* exec) const
 {
     return impl()->isClipboardEvent() ? toJS(exec, impl()->clipboardData()) : jsUndefined();
 }
 
-JSValuePtr toJS(ExecState* exec, Event* event)
+JSValue toJS(ExecState* exec, Event* event)
 {
     JSLock lock(false);
 
@@ -106,12 +108,10 @@ JSValuePtr toJS(ExecState* exec, Event* event)
         else if (event->isSVGZoomEvent())
             wrapper = CREATE_SVG_OBJECT_WRAPPER(exec, SVGZoomEvent, event, 0);
 #endif
-#if ENABLE(TOUCH_EVENTS)
         else if (event->isTouchEvent())
             wrapper = CREATE_DOM_OBJECT_WRAPPER(exec, TouchEvent, event);
         else if (event->isGestureEvent())
             wrapper = CREATE_DOM_OBJECT_WRAPPER(exec, GestureEvent, event);
-#endif
         else
             wrapper = CREATE_DOM_OBJECT_WRAPPER(exec, UIEvent, event);
     } else if (event->isMutationEvent())
@@ -120,6 +120,8 @@ JSValuePtr toJS(ExecState* exec, Event* event)
         wrapper = CREATE_DOM_OBJECT_WRAPPER(exec, OverflowEvent, event);
     else if (event->isMessageEvent())
         wrapper = CREATE_DOM_OBJECT_WRAPPER(exec, MessageEvent, event);
+    else if (event->isPageTransitionEvent())
+        wrapper = CREATE_DOM_OBJECT_WRAPPER(exec, PageTransitionEvent, event);
     else if (event->isProgressEvent()) {
         if (event->isXMLHttpRequestProgressEvent())
             wrapper = CREATE_DOM_OBJECT_WRAPPER(exec, XMLHttpRequestProgressEvent, event);

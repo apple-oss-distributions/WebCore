@@ -1,13 +1,20 @@
 //
 //  WKView.h
 //
-//  Copyright (C) 2005, 2006, 2007, 2008, Apple Inc.  All rights reserved.
+//  Copyright (C) 2005, 2006, 2007, 2008, 2009 Apple Inc.  All rights reserved.
 //
 
-#import <CoreGraphics/CoreGraphics.h>
-#import <CoreGraphics/CGSRegion.h>
-#import <GraphicsServices/GSEvent.h>
+#ifndef WKView_h
+#define WKView_h
+
 #import "WKUtilities.h"
+#import <CoreGraphics/CoreGraphics.h>
+
+#ifdef __OBJC__
+@class WebEvent;
+#else
+typedef void* WebEvent;
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,7 +43,7 @@ typedef enum {
 } WKViewResponderCallbackType;
 
 typedef void (*WKViewDrawCallback)(WKViewRef view, CGRect dirtyRect, void *userInfo); 
-typedef bool (*WKViewEventCallback)(WKViewRef view, GSEventRef event, void *userInfo);
+typedef bool (*WKViewEventCallback)(WKViewRef view, WebEvent *event, void *userInfo);
 typedef void (*WKViewNotificationCallback)(WKViewRef view, WKViewNotificationType type, void *userInfo);
 typedef void (*WKViewLayoutCallback)(WKViewRef view, void *userInfo, bool force);
 typedef bool (*WKViewResponderCallback)(WKViewRef view, WKViewResponderCallbackType type, void *userInfo);
@@ -153,9 +160,8 @@ void WKViewScrollToRect(WKViewRef view, CGRect rect);
 
 void WKViewLayout(WKViewRef view, bool force);
 
-CGImageRef WKViewCreateImage(WKViewRef view);
-
 #ifdef __cplusplus
 }
 #endif
 
+#endif // WKView_h

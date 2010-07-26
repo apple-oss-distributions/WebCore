@@ -63,8 +63,9 @@ protected:
     virtual void onAnimationStart(double elapsedTime);
     virtual void onAnimationIteration(double elapsedTime);
     virtual void onAnimationEnd(double elapsedTime);
-    virtual bool startAnimation(double beginTime);
-    virtual void endAnimation(bool reset);
+    virtual bool startAnimation(double timeOffset);
+    virtual void pauseAnimation(double timeOffset);
+    virtual void endAnimation();
 
     virtual void overrideAnimations();
     virtual void resumeOverriddenAnimations();
@@ -81,7 +82,7 @@ private:
     virtual ~KeyframeAnimation();
     
     // Get the styles surrounding the current animation time and the progress between them
-    void getKeyframeAnimationInterval(const RenderStyle*& fromStyle, const RenderStyle*& fromStyle, double& progress) const;
+    void getKeyframeAnimationInterval(const RenderStyle*& fromStyle, const RenderStyle*& toStyle, double& progress) const;
 
     // The keyframes that we are blending.
     KeyframeList m_keyframes;

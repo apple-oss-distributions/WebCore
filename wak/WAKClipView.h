@@ -2,12 +2,14 @@
 //  WAKClipView.h
 //  WebCore
 //
-//  Copyright 2008 Apple. All rights reserved.
+//  Copyright 2008, 2009 Apple.  All rights reserved.
 //
 
-#import <Foundation/Foundation.h>
+#ifndef WAKClipView_h
+#define WAKClipView_h
 
 #import "WAKView.h"
+#import <Foundation/Foundation.h>
 
 @interface WAKClipView : WAKView
 {
@@ -18,3 +20,5 @@
 - (void)setCopiesOnScroll:(BOOL)flag;
 - (CGRect)documentVisibleRect;
 @end
+
+#endif // WAKClipView_h

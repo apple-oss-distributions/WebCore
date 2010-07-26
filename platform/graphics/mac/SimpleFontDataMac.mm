@@ -48,6 +48,8 @@
 #include <wtf/UnusedParam.h>
 
 
+using namespace std;
+
 namespace WebCore {
   
 const float smallCapsFontSizeMultiplier = 0.7f;
@@ -56,16 +58,16 @@ static inline float scaleEmToUnits(float x, unsigned unitsPerEm) { return x * (c
 
 void SimpleFontData::platformInit()
 {
-    m_syntheticBoldOffset = m_font.m_syntheticBold ? ceilf(GSFontGetSize(m_font.font())  / 24.0f) : 0.f;
+    m_syntheticBoldOffset = m_platformData.m_syntheticBold ? ceilf(GSFontGetSize(m_platformData.font())  / 24.0f) : 0.f;
     m_spaceGlyph = 0;
     m_spaceWidth = 0;
     m_adjustedSpaceWidth = 0;
-    m_ascent = ceilf(GSFontGetAscent(m_font.font()));
-    m_descent = ceilf(-GSFontGetDescent(m_font.font()));
-    m_lineSpacing = GSFontGetLineSpacing(m_font.font());
-    m_lineGap = GSFontGetLineGap(m_font.font());
-    m_xHeight = GSFontGetXHeight(m_font.font());
-    m_unitsPerEm = GSFontGetUnitsPerEm(m_font.font());    
+    m_ascent = ceilf(GSFontGetAscent(m_platformData.font()));
+    m_descent = ceilf(-GSFontGetDescent(m_platformData.font()));
+    m_lineSpacing = GSFontGetLineSpacing(m_platformData.font());
+    m_lineGap = GSFontGetLineGap(m_platformData.font());
+    m_xHeight = GSFontGetXHeight(m_platformData.font());
+    m_unitsPerEm = GSFontGetUnitsPerEm(m_platformData.font());    
 }
 
 void SimpleFontData::platformDestroy()
@@ -76,22 +78,22 @@ SimpleFontData* SimpleFontData::smallCapsFontData(const FontDescription& fontDes
 {
     if (!m_smallCapsFontData) {
         if (isCustomFont()) {
-            FontPlatformData smallCapsFontData(m_font);
+            FontPlatformData smallCapsFontData(m_platformData);
             smallCapsFontData.m_size = smallCapsFontData.m_size * smallCapsFontSizeMultiplier;
             m_smallCapsFontData = new SimpleFontData(smallCapsFontData, true, false);
         } else {
             BEGIN_BLOCK_OBJC_EXCEPTIONS;
-            GSFontTraitMask fontTraits= GSFontGetTraits(m_font.font());
-            FontPlatformData smallCapsFont(GSFontCreateWithName(GSFontGetFamilyName(m_font.font()), fontTraits, GSFontGetSize(m_font.font()) * smallCapsFontSizeMultiplier));
+            GSFontTraitMask fontTraits= GSFontGetTraits(m_platformData.font());
+            FontPlatformData smallCapsFont(GSFontCreateWithName(GSFontGetFamilyName(m_platformData.font()), fontTraits, GSFontGetSize(m_platformData.font()) * smallCapsFontSizeMultiplier));
             
             // AppKit resets the type information (screen/printer) when you convert a font to a different size.
             // We have to fix up the font that we're handed back.
             UNUSED_PARAM(fontDescription);
 
             if (smallCapsFont.font()) {
-                if (m_font.m_syntheticBold)
+                if (m_platformData.m_syntheticBold)
                     fontTraits |= GSBoldFontMask;
-                if (m_font.m_syntheticOblique)
+                if (m_platformData.m_syntheticOblique)
                     fontTraits |= GSItalicFontMask;
 
                 GSFontTraitMask smallCapsFontTraits= GSFontGetTraits(smallCapsFont.font());
@@ -115,7 +117,7 @@ bool SimpleFontData::containsCharacters(const UChar* characters, int length) con
 
 void SimpleFontData::determinePitch()
 {
-    GSFontRef f = m_font.font();
+    GSFontRef f = m_platformData.font();
     m_treatAsFixedPitch = false;
     // GSFont is null in the case of SVG fonts for example.
     if (f) {
@@ -129,10 +131,10 @@ void SimpleFontData::determinePitch()
 
 float SimpleFontData::platformWidthForGlyph(Glyph glyph) const
 {
-    if (m_font.m_isImageFont)
-        return std::min(m_font.m_size + (m_font.m_size <= 15.0f ? 4.0f : 6.0f), 22.0f); // returns the proper scaled advance for the image size - see Font::drawGlyphs
+    if (m_platformData.m_isImageFont)
+        return std::min(m_platformData.m_size + (m_platformData.m_size <= 15.0f ? 4.0f : 6.0f), 22.0f); // returns the proper scaled advance for the image size - see Font::drawGlyphs
 
-    GSFontRef font = m_font.font();
+    GSFontRef font = m_platformData.font();
     float pointSize = GSFontGetSize(font);
     CGAffineTransform m = CGAffineTransformMakeScale(pointSize, pointSize);
     CGSize advance;
@@ -150,9 +152,9 @@ void SimpleFontData::checkShapesArabic() const
 
     m_checkedShapesArabic = true;
     
-    ATSUFontID fontID = m_font.m_atsuFontID;
+    ATSUFontID fontID = m_platformData.m_atsuFontID;
     if (!fontID) {
-        LOG_ERROR("unable to get ATSUFontID for %@", m_font.font());
+        LOG_ERROR("unable to get ATSUFontID for %@", m_platformData.font());
         return;
     }
 
@@ -178,18 +180,20 @@ void SimpleFontData::checkShapesArabic() const
 CTFontRef SimpleFontData::getCTFont() const
 {
     if (!m_CTFont) {
-        m_CTFont.adoptCF(CTFontCreateWithGraphicsFont(GSFontGetCGFont(m_font.font()), m_font.size(), &CGAffineTransformIdentity, NULL));
+        m_CTFont.adoptCF(CTFontCreateWithGraphicsFont(GSFontGetCGFont(m_platformData.font()), m_platformData.size(), &CGAffineTransformIdentity, NULL));
     }
     return m_CTFont.get();
 }
 
-CFDictionaryRef SimpleFontData::getCFStringAttributes() const
+CFDictionaryRef SimpleFontData::getCFStringAttributes(TypesettingFeatures typesettingFeatures) const
 {
-    if (m_CFStringAttributes)
-        return m_CFStringAttributes.get();
+    unsigned key = typesettingFeatures + 1;
+    pair<HashMap<unsigned, RetainPtr<CFDictionaryRef> >::iterator, bool> addResult = m_CFStringAttributes.add(key, RetainPtr<CFDictionaryRef>());
+    RetainPtr<CFDictionaryRef>& attributesDictionary = addResult.first->second;
+    if (!addResult.second)
+        return attributesDictionary.get();
 
-    static const float kerningAdjustmentValue = 0;
-    static CFNumberRef kerningAdjustment = CFNumberCreate(kCFAllocatorDefault, kCFNumberFloatType, &kerningAdjustmentValue);
+    bool allowLigatures = platformData().allowsLigatures() || (typesettingFeatures & Ligatures);
 
     static const int ligaturesNotAllowedValue = 0;
     static CFNumberRef ligaturesNotAllowed = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &ligaturesNotAllowedValue);
@@ -197,12 +201,25 @@ CFDictionaryRef SimpleFontData::getCFStringAttributes() const
     static const int ligaturesAllowedValue = 1;
     static CFNumberRef ligaturesAllowed = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &ligaturesAllowedValue);
 
-    static const void* attributeKeys[] = { kCTFontAttributeName, kCTKernAttributeName, kCTLigatureAttributeName };
-    const void* attributeValues[] = { getCTFont(), kerningAdjustment, platformData().allowsLigatures() ? ligaturesAllowed : ligaturesNotAllowed };
+    if (!(typesettingFeatures & Kerning)) {
+        static const float kerningAdjustmentValue = 0;
+        static CFNumberRef kerningAdjustment = CFNumberCreate(kCFAllocatorDefault, kCFNumberFloatType, &kerningAdjustmentValue);
+        static const void* keysWithKerningDisabled[] = { kCTFontAttributeName, kCTKernAttributeName, kCTLigatureAttributeName };
+        const void* valuesWithKerningDisabled[] = { getCTFont(), kerningAdjustment, allowLigatures
+            ? ligaturesAllowed : ligaturesNotAllowed };
+        attributesDictionary.adoptCF(CFDictionaryCreate(NULL, keysWithKerningDisabled, valuesWithKerningDisabled,
+            sizeof(keysWithKerningDisabled) / sizeof(*keysWithKerningDisabled),
+            &kCFCopyStringDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+    } else {
+        // By omitting the kCTKernAttributeName attribute, we get Core Text's standard kerning.
+        static const void* keysWithKerningEnabled[] = { kCTFontAttributeName, kCTLigatureAttributeName };
+        const void* valuesWithKerningEnabled[] = { getCTFont(), allowLigatures ? ligaturesAllowed : ligaturesNotAllowed };
+        attributesDictionary.adoptCF(CFDictionaryCreate(NULL, keysWithKerningEnabled, valuesWithKerningEnabled,
+            sizeof(keysWithKerningEnabled) / sizeof(*keysWithKerningEnabled),
+            &kCFCopyStringDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+    }
 
-    m_CFStringAttributes.adoptCF(CFDictionaryCreate(NULL, attributeKeys, attributeValues, sizeof(attributeKeys) / sizeof(*attributeKeys), &kCFCopyStringDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
-
-    return m_CFStringAttributes.get();
+    return attributesDictionary.get();
 }
 
 #endif

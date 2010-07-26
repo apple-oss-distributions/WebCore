@@ -38,6 +38,7 @@
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
+#include <wtf/Vector.h>
 
 namespace WebCore {
 
@@ -63,10 +64,10 @@ public:
     
     void setIsAllowed(bool);
     bool isAllowed() const { return m_allowGeolocation == Yes; }
-
+    
     void setShouldClearCache(bool shouldClearCache) { m_shouldClearCache = shouldClearCache; }
     bool shouldClearCache() const { return m_shouldClearCache; }
-    
+
 private:
     Geolocation(Frame*);
 
@@ -102,13 +103,14 @@ private:
     void startTimers();
     
     void handleError(PositionError*);
-    
+
     void requestPermission();
-    
+
+    // GeolocationServiceClient
     virtual void geolocationServicePositionChanged(GeolocationService*);
     virtual void geolocationServiceErrorOccurred(GeolocationService*);
     virtual void geolocationServiceCachePolicyChanged(GeolocationService*);
-    
+
     typedef HashSet<RefPtr<GeoNotifier> > GeoNotifierSet;
     typedef HashMap<int, RefPtr<GeoNotifier> > GeoNotifierMap;
     
@@ -119,6 +121,7 @@ private:
 
     enum {
         Unknown,
+        InProgress,
         Yes,
         No
     } m_allowGeolocation;
