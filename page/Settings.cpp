@@ -26,15 +26,18 @@
 #include "config.h"
 #include "Settings.h"
 
+#include "BackForwardList.h"
 #include "Frame.h"
 #include "FrameTree.h"
 #include "FrameView.h"
 #include "HistoryItem.h"
 #include "Page.h"
 #include "PageCache.h"
+#include "StorageMap.h"
 #include <limits>
 
 #include "HTMLTokenizer.h"
+#include "SystemMemory.h"
 
 using namespace std;
 
@@ -50,7 +53,7 @@ static void setNeedsReapplyStylesInAllFrames(Page* page)
 bool Settings::gShouldPaintNativeControls = true;
 #endif
 
-#if PLATFORM(WIN)
+#if PLATFORM(WIN) || (OS(WINDOWS) && PLATFORM(WX))
 bool Settings::gShouldUseHighResolutionTimers = true;
 #endif
 
@@ -62,15 +65,22 @@ Settings::Settings(Page* page)
     , m_minimumLogicalFontSize(0)
     , m_defaultFontSize(0)
     , m_defaultFixedFontSize(0)
-    , m_maximumDecodedImageSize(12582912)
+    , m_maximumDecodedImageSize(12582912) // Possibly overridden in constructor body
     , m_maximumResourceDataLength(10485760)
     , m_minimumZoomFontSize(15.0f)
     , m_layoutInterval(cLayoutScheduleThreshold)
     , m_maxParseDuration(defaultTokenizerTimeDelay)
+    , m_alwaysUseBaselineOfPrimaryFont(false)
+#if ENABLE(DOM_STORAGE)
+    , m_localStorageQuota(5 * 1024 * 1024)  // Suggested by the HTML5 spec.
+    , m_sessionStorageQuota(StorageMap::noQuota)
+#endif
+    , m_pluginAllowedRunTime(numeric_limits<unsigned>::max())
     , m_isJavaEnabled(false)
     , m_loadsImagesAutomatically(false)
     , m_privateBrowsingEnabled(false)
     , m_caretBrowsingEnabled(false)
+    , m_areImagesEnabled(true)
     , m_arePluginsEnabled(false)
     , m_databasesEnabled(false)
     , m_localStorageEnabled(false)
@@ -97,10 +107,12 @@ Settings::Settings(Page* page)
     , m_authorAndUserStylesEnabled(true)
     , m_needsSiteSpecificQuirks(false)
     , m_fontRenderingMode(0)
-    , m_flatFrameSetLayoutEnabled(true)
+    , m_frameFlatteningEnabled(false)
     , m_standalone(false)
     , m_telephoneNumberParsingEnabled(false)
     , m_foundationCachingEnabled(false)
+    , m_mediaPlaybackAllowsInline(false)
+    , m_mediaPlaybackRequiresUserAction(true)
     , m_webArchiveDebugModeEnabled(false)
     , m_localFileContentSniffingEnabled(false)
     , m_inApplicationChromeMode(false)
@@ -111,7 +123,8 @@ Settings::Settings(Page* page)
     , m_usesEncodingDetector(false)
     , m_allowScriptsToCloseWindows(false)
     , m_editingBehavior(
-#if PLATFORM(MAC)
+#if PLATFORM(MAC) || (PLATFORM(CHROMIUM) && OS(DARWIN))
+        // (PLATFORM(MAC) is always false in Chromium, hence the extra condition.)
         EditingMacBehavior
 #else
         EditingWindowsBehavior
@@ -122,7 +135,23 @@ Settings::Settings(Page* page)
     , m_downloadableBinaryFontsEnabled(true)
     , m_xssAuditorEnabled(false)
     , m_acceleratedCompositingEnabled(true)
+    , m_showDebugBorders(false)
+    , m_showRepaintCounter(false)
+    , m_experimentalNotificationsEnabled(false)
+    , m_webGLEnabled(false)
+    , m_geolocationEnabled(true)
+    , m_loadDeferringEnabled(true)
 {
+    // This limit is also calculated in WebKit's WebPreferences.
+    // If we have more than 256MB of physical memory, allow 5.0MP images, otherwise allow 3.0MP images
+    static size_t defaultMaximumDecodedImageSize;
+    if (!defaultMaximumDecodedImageSize) {
+        if (systemTotalMemory() > 256 << 20)
+            defaultMaximumDecodedImageSize = 5 * 4 * 1024 * 1024;
+        else
+            defaultMaximumDecodedImageSize = 3 * 4 * 1024 * 1024;
+    }
+    m_maximumDecodedImageSize = defaultMaximumDecodedImageSize;
     // A Frame may not have been created yet, so we initialize the AtomicString 
     // hash before trying to use it.
     AtomicString::init();
@@ -247,6 +276,11 @@ void Settings::setJavaEnabled(bool isJavaEnabled)
     m_isJavaEnabled = isJavaEnabled;
 }
 
+void Settings::setImagesEnabled(bool areImagesEnabled)
+{
+    m_areImagesEnabled = areImagesEnabled;
+}
+
 void Settings::setPluginsEnabled(bool arePluginsEnabled)
 {
     m_arePluginsEnabled = arePluginsEnabled;
@@ -261,6 +295,18 @@ void Settings::setLocalStorageEnabled(bool localStorageEnabled)
 {
     m_localStorageEnabled = localStorageEnabled;
 }
+
+#if ENABLE(DOM_STORAGE)
+void Settings::setLocalStorageQuota(unsigned localStorageQuota)
+{
+    m_localStorageQuota = localStorageQuota;
+}
+
+void Settings::setSessionStorageQuota(unsigned sessionStorageQuota)
+{
+    m_sessionStorageQuota = sessionStorageQuota;
+}
+#endif
 
 void Settings::setPrivateBrowsingEnabled(bool privateBrowsingEnabled)
 {
@@ -285,7 +331,6 @@ void Settings::setUserStyleSheetLocation(const KURL& userStyleSheetLocation)
     m_userStyleSheetLocation = userStyleSheetLocation;
 
     m_page->userStyleSheetLocationChanged();
-    setNeedsReapplyStylesInAllFrames(m_page);
 }
 
 void Settings::setShouldPrintBackgrounds(bool shouldPrintBackgrounds)
@@ -436,6 +481,11 @@ void Settings::setNeedsSiteSpecificQuirks(bool needsQuirks)
     m_needsSiteSpecificQuirks = needsQuirks;
 }
 
+void Settings::setFrameFlatteningEnabled(bool frameFlatteningEnabled)
+{
+    m_frameFlatteningEnabled = frameFlatteningEnabled;
+}
+
 void Settings::setWebArchiveDebugModeEnabled(bool enabled)
 {
     m_webArchiveDebugModeEnabled = enabled;
@@ -521,11 +571,55 @@ void Settings::setAcceleratedCompositingEnabled(bool enabled)
     setNeedsReapplyStylesInAllFrames(m_page);
 }
 
-#if PLATFORM(WIN)
+void Settings::setShowDebugBorders(bool enabled)
+{
+    if (m_showDebugBorders == enabled)
+        return;
+        
+    m_showDebugBorders = enabled;
+    setNeedsReapplyStylesInAllFrames(m_page);
+}
+
+void Settings::setShowRepaintCounter(bool enabled)
+{
+    if (m_showRepaintCounter == enabled)
+        return;
+        
+    m_showRepaintCounter = enabled;
+    setNeedsReapplyStylesInAllFrames(m_page);
+}
+
+void Settings::setExperimentalNotificationsEnabled(bool enabled)
+{
+    m_experimentalNotificationsEnabled = enabled;
+}
+
+void Settings::setPluginAllowedRunTime(unsigned runTime)
+{
+    m_pluginAllowedRunTime = runTime;
+    m_page->pluginAllowedRunTimeChanged();
+}
+
+#if PLATFORM(WIN) || (OS(WINDOWS) && PLATFORM(WX))
 void Settings::setShouldUseHighResolutionTimers(bool shouldUseHighResolutionTimers)
 {
     gShouldUseHighResolutionTimers = shouldUseHighResolutionTimers;
 }
 #endif
+
+void Settings::setWebGLEnabled(bool enabled)
+{
+    m_webGLEnabled = enabled;
+}
+
+void Settings::setGeolocationEnabled(bool enabled)
+{
+    m_geolocationEnabled = enabled;
+}
+
+void Settings::setLoadDeferringEnabled(bool enabled)
+{
+    m_loadDeferringEnabled = enabled;
+}
 
 } // namespace WebCore

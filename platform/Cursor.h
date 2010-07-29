@@ -40,11 +40,18 @@ typedef struct _GdkCursor GdkCursor;
 #include <QCursor>
 #elif PLATFORM(CHROMIUM)
 #include "PlatformCursor.h"
+#elif PLATFORM(HAIKU)
+#include <app/Cursor.h>
 #endif
 
 
 #if PLATFORM(WX)
 class wxCursor;
+#endif
+
+#if PLATFORM(WIN)
+typedef struct HICON__ *HICON;
+typedef HICON HCURSOR;
 #endif
 
 namespace WebCore {

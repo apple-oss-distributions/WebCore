@@ -59,7 +59,7 @@ CachedResource::CachedResource(const String& url, Type type)
     , m_docLoader(0)
     , m_handleCount(0)
     , m_resourceToRevalidate(0)
-    , m_isBeingRevalidated(false)
+    , m_proxyResource(0)
 {
 #ifndef NDEBUG
     cachedResourceLeakCounter.increment();
@@ -89,6 +89,8 @@ CachedResource::CachedResource(const String& url, Type type)
 
 CachedResource::~CachedResource()
 {
+    ASSERT(!m_resourceToRevalidate); // Should be true because canDelete() checks this.
+    ASSERT(canDelete());
     ASSERT(!inCache());
     ASSERT(!m_deleted);
     ASSERT(url().isNull() || cache()->resourceForURL(url()) != this);
@@ -97,17 +99,14 @@ CachedResource::~CachedResource()
     cachedResourceLeakCounter.decrement();
 #endif
 
-    if (m_resourceToRevalidate)
-        m_resourceToRevalidate->m_isBeingRevalidated = false;
-
     if (m_docLoader)
         m_docLoader->removeCachedResource(this);
 }
     
-void CachedResource::load(DocLoader* docLoader, bool incremental, bool skipCanLoadCheck, bool sendResourceLoadCallbacks)
+void CachedResource::load(DocLoader* docLoader, bool incremental, SecurityCheckPolicy securityCheck, bool sendResourceLoadCallbacks)
 {
     m_sendResourceLoadCallbacks = sendResourceLoadCallbacks;
-    cache()->loader()->load(docLoader, this, incremental, skipCanLoadCheck, sendResourceLoadCallbacks);
+    cache()->loader()->load(docLoader, this, incremental, securityCheck, sendResourceLoadCallbacks);
     m_loading = true;
 }
 
@@ -243,6 +242,12 @@ void CachedResource::setDecodedSize(unsigned size)
         cache()->insertInLRUList(this);
         
         // Insert into or remove from the live decoded list if necessary.
+        // When inserting into the LiveDecodedResourcesList it is possible
+        // that the m_lastDecodedAccessTime is still zero or smaller than
+        // the m_lastDecodedAccessTime of the current list head. This is a
+        // violation of the invariant that the list is to be kept sorted
+        // by access time. The weakening of the invariant does not pose
+        // a problem. For more details please see: https://bugs.webkit.org/show_bug.cgi?id=30209
         if (m_decodedSize && !m_inLiveDecodedResourcesList && hasClients())
             cache()->insertInLiveDecodedResourcesList(this);
         else if (!m_decodedSize && m_inLiveDecodedResourcesList)
@@ -298,18 +303,26 @@ void CachedResource::setResourceToRevalidate(CachedResource* resource)
     ASSERT(resource);
     ASSERT(!m_resourceToRevalidate);
     ASSERT(resource != this);
-    ASSERT(!resource->m_isBeingRevalidated);
     ASSERT(m_handlesToRevalidate.isEmpty());
     ASSERT(resource->type() == type());
-    resource->m_isBeingRevalidated = true;
+
+    // The following assert should be investigated whenever it occurs. Although it should never fire, it currently does in rare circumstances.
+    // https://bugs.webkit.org/show_bug.cgi?id=28604.
+    // So the code needs to be robust to this assert failing thus the "if (m_resourceToRevalidate->m_proxyResource == this)" in CachedResource::clearResourceToRevalidate.
+    ASSERT(!resource->m_proxyResource);
+
+    resource->m_proxyResource = this;
     m_resourceToRevalidate = resource;
 }
 
 void CachedResource::clearResourceToRevalidate() 
 { 
     ASSERT(m_resourceToRevalidate);
-    m_resourceToRevalidate->m_isBeingRevalidated = false;
-    m_resourceToRevalidate->deleteIfPossible();
+    // A resource may start revalidation before this method has been called, so check that this resource is still the proxy resource before clearing it out.
+    if (m_resourceToRevalidate->m_proxyResource == this) {
+        m_resourceToRevalidate->m_proxyResource = 0;
+        m_resourceToRevalidate->deleteIfPossible();
+    }
     m_handlesToRevalidate.clear();
     m_resourceToRevalidate = 0;
     deleteIfPossible();
@@ -403,7 +416,7 @@ bool CachedResource::mustRevalidate(CachePolicy cachePolicy) const
 
 bool CachedResource::isSafeToMakePurgeable() const
 { 
-    return !hasClients() && !m_isBeingRevalidated && !m_resourceToRevalidate; 
+    return !hasClients() && !m_proxyResource && !m_resourceToRevalidate;
 }
 
 bool CachedResource::makePurgeable(bool purgeable) 
@@ -418,7 +431,7 @@ bool CachedResource::makePurgeable(bool purgeable)
         if (!m_data)
             return false;
         
-        // Should not make buffer purgeable if it has refs othen than this since we don't want two copies.
+        // Should not make buffer purgeable if it has refs other than this since we don't want two copies.
         if (!m_data->hasOneRef())
             return false;
         

@@ -223,12 +223,6 @@ DOMImplementation* DOMImplementation::getInterface(const String& /*feature*/)
 PassRefPtr<Document> DOMImplementation::createDocument(const String& namespaceURI,
     const String& qualifiedName, DocumentType* doctype, ExceptionCode& ec)
 {
-    // WRONG_DOCUMENT_ERR: Raised if doctype has already been used with a different document or was
-    // created from a different implementation.
-    bool shouldThrowWrongDocErr = false;
-    if (doctype && doctype->document())
-        shouldThrowWrongDocErr = true;
-
     RefPtr<Document> doc;
 #if ENABLE(SVG)
     if (namespaceURI == SVGNames::svgNamespaceURI)
@@ -245,23 +239,26 @@ PassRefPtr<Document> DOMImplementation::createDocument(const String& namespaceUR
     else
         doc = Document::create(0);
 
-    // now get the interesting parts of the doctype
-    if (doctype)
-        doc->addChild(doctype);
-
+    RefPtr<Node> documentElement;
     if (!qualifiedName.isEmpty()) {
-        RefPtr<Node> documentElement = doc->createElementNS(namespaceURI, qualifiedName, ec);
+        documentElement = doc->createElementNS(namespaceURI, qualifiedName, ec);
         if (ec)
             return 0;
-        doc->addChild(documentElement.release());
     }
 
+    // WRONG_DOCUMENT_ERR: Raised if doctype has already been used with a different document or was
+    // created from a different implementation.
     // Hixie's interpretation of the DOM Core spec suggests we should prefer
-    // other exceptions to WRONG_DOCUMENT_ERR (based on order mentioned in spec)
-    if (shouldThrowWrongDocErr) {
+    // other exceptions to WRONG_DOCUMENT_ERR (based on order mentioned in spec).
+    if (doctype && doctype->document()) {
         ec = WRONG_DOCUMENT_ERR;
         return 0;
     }
+
+    if (doctype)
+        doc->addChild(doctype);
+    if (documentElement)
+        doc->addChild(documentElement.release());
 
     return doc.release();
 }
@@ -296,9 +293,10 @@ bool DOMImplementation::isXMLMIMEType(const String& mimeType)
 
 bool DOMImplementation::isTextMIMEType(const String& mimeType)
 {
-    if (MIMETypeRegistry::isSupportedJavaScriptMIMEType(mimeType) ||
-        (mimeType.startsWith("text/") && mimeType != "text/html" &&
-         mimeType != "text/xml" && mimeType != "text/xsl"))
+    if (MIMETypeRegistry::isSupportedJavaScriptMIMEType(mimeType)
+        || mimeType == "application/json" // Render JSON as text/plain.
+        || (mimeType.startsWith("text/") && mimeType != "text/html"
+            && mimeType != "text/xml" && mimeType != "text/xsl"))
         return true;
 
     return false;
@@ -308,7 +306,8 @@ PassRefPtr<HTMLDocument> DOMImplementation::createHTMLDocument(const String& tit
 {
     RefPtr<HTMLDocument> d = HTMLDocument::create(0);
     d->open();
-    d->write("<!doctype html><html><head><title>" + title + "</title></head><body></body></html>");
+    d->write("<!doctype html><html><body></body></html>");
+    d->setTitle(title);
     return d.release();
 }
 

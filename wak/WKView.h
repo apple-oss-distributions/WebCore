@@ -124,6 +124,7 @@ void WKViewSetNeedsDisplay (WKViewRef view);
 void WKViewSetNeedsDisplayInRect (WKViewRef view, CGRect invalidRect);
 void WKViewDisplay (WKViewRef view);
 void WKViewDisplayRect (WKViewRef view, CGRect rectToDraw);
+void WKViewDisplayRectInContext (WKViewRef view, CGRect rectToDraw, CGContextRef context);
 
 void WKViewLockFocus (WKViewRef view);
 void WKViewUnlockFocus (WKViewRef view);

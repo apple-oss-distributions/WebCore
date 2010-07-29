@@ -27,17 +27,13 @@
 #include <wtf/ASCIICType.h>
 #include <wtf/CrossThreadRefCounted.h>
 #include <wtf/OwnFastMallocPtr.h>
-#include <wtf/PassRefPtr.h>
 #include <wtf/PtrAndFlags.h>
 #include <wtf/RefCounted.h>
+#include <wtf/StringHashFunctions.h>
 #include <wtf/Vector.h>
 #include <wtf/unicode/Unicode.h>
 
-#if USE(JSC)
-#include <runtime/UString.h>
-#endif
-
-#if PLATFORM(CF) || (PLATFORM(QT) && PLATFORM(DARWIN))
+#if PLATFORM(CF)
 typedef const struct __CFString * CFStringRef;
 #endif
 
@@ -45,9 +41,12 @@ typedef const struct __CFString * CFStringRef;
 @class NSString;
 #endif
 
+namespace JSC {
+class UString;
+}
+
 namespace WebCore {
 
-class AtomicString;
 class StringBuffer;
 
 struct CStringTranslator;
@@ -60,26 +59,19 @@ enum TextCaseSensitivity { TextCaseSensitive, TextCaseInsensitive };
 typedef bool (*CharacterMatchFunctionPtr)(UChar);
 
 class StringImpl : public RefCounted<StringImpl> {
-    friend class AtomicString;
     friend struct CStringTranslator;
     friend struct HashAndCharactersTranslator;
     friend struct UCharBufferTranslator;
 private:
     friend class ThreadGlobalData;
     StringImpl();
+    
+    // This adopts the UChar* without copying the buffer.
     StringImpl(const UChar*, unsigned length);
-    StringImpl(const char*, unsigned length);
 
-    struct AdoptBuffer { };
-    StringImpl(UChar*, unsigned length, AdoptBuffer);
-
-    struct WithTerminatingNullCharacter { };
-    StringImpl(const StringImpl&, WithTerminatingNullCharacter);
-
-    // For AtomicString.
-    StringImpl(const UChar*, unsigned length, unsigned hash);
-    StringImpl(const char*, unsigned length, unsigned hash);
-
+    // For use only by AtomicString's XXXTranslator helpers.
+    void setHash(unsigned hash) { ASSERT(!m_hash); m_hash = hash; }
+    
     typedef CrossThreadRefCounted<OwnFastMallocPtr<UChar> > SharedUChar;
 
 public:
@@ -111,18 +103,15 @@ public:
 
     unsigned hash() { if (m_hash == 0) m_hash = computeHash(m_data, m_length); return m_hash; }
     unsigned existingHash() const { ASSERT(m_hash); return m_hash; }
-    static unsigned computeHash(const UChar*, unsigned len);
-    static unsigned computeHash(const char*);
+    inline static unsigned computeHash(const UChar* data, unsigned length) { return WTF::stringHash(data, length); }
+    inline static unsigned computeHash(const char* data) { return WTF::stringHash(data); }
     
-    // Makes a deep copy. Helpful only if you need to use a String on another thread.
+    // Returns a StringImpl suitable for use on another thread.
+    PassRefPtr<StringImpl> crossThreadString();
+    // Makes a deep copy. Helpful only if you need to use a String on another thread
+    // (use crossThreadString if the method call doesn't need to be threadsafe).
     // Since StringImpl objects are immutable, there's no other reason to make a copy.
-    PassRefPtr<StringImpl> copy();
-
-    // Makes a deep copy like copy() but only for a substring.
-    // (This ensures that you always get something suitable for a thread while subtring
-    // may not.  For example, in the empty string case, substring returns empty() which
-    // is not safe for another thread.)
-    PassRefPtr<StringImpl> substringCopy(unsigned pos, unsigned len  = UINT_MAX);
+    PassRefPtr<StringImpl> threadsafeCopy() const;
 
     PassRefPtr<StringImpl> substring(unsigned pos, unsigned len = UINT_MAX);
 
@@ -146,7 +135,6 @@ public:
     double toDouble(bool* ok = 0);
     float toFloat(bool* ok = 0);
 
-    bool isLower();
     PassRefPtr<StringImpl> lower();
     PassRefPtr<StringImpl> upper();
     PassRefPtr<StringImpl> secure(UChar aChar, bool last = true);
@@ -166,7 +154,7 @@ public:
     int reverseFind(UChar, int index);
     int reverseFind(StringImpl*, int index, bool caseSensitive = true);
     
-    bool startsWith(StringImpl* m_data, bool caseSensitive = true) { return reverseFind(m_data, 0, caseSensitive) == 0; }
+    bool startsWith(StringImpl* str, bool caseSensitive = true) { return reverseFind(str, 0, caseSensitive) == 0; }
     bool endsWith(StringImpl*, bool caseSensitive = true);
 
     PassRefPtr<StringImpl> replace(UChar, UChar);
@@ -181,7 +169,7 @@ public:
 
     WTF::Unicode::Direction defaultWritingDirection();
 
-#if PLATFORM(CF) || (PLATFORM(QT) && PLATFORM(DARWIN))
+#if PLATFORM(CF)
     CFStringRef createCFString();
 #endif
 #ifdef __OBJC__
@@ -197,21 +185,22 @@ private:
     void* operator new(size_t size, void* address);
 
     static PassRefPtr<StringImpl> createStrippingNullCharactersSlowCase(const UChar*, unsigned length);
+    
+    // The StringImpl struct and its data may be allocated within a single heap block.
+    // In this case, the m_data pointer is an "internal buffer", and does not need to be deallocated.
+    bool bufferIsInternal() { return m_data == reinterpret_cast<const UChar*>(this + 1); }
 
     enum StringImplFlags {
         HasTerminatingNullCharacter,
         InTable,
     };
 
-    unsigned m_length;
     const UChar* m_data;
+    unsigned m_length;
     mutable unsigned m_hash;
     PtrAndFlags<SharedUChar, StringImplFlags> m_sharedBufferAndFlags;
-
-    // In some cases, we allocate the StringImpl struct and its data
-    // within a single heap buffer. In this case, the m_data pointer
-    // is an "internal buffer", and does not need to be deallocated.
-    bool m_bufferIsInternal;
+    // There is a fictitious variable-length UChar array at the end, which is used
+    // as the internal buffer by the createUninitialized and create methods.
 };
 
 bool equal(StringImpl*, StringImpl*);
@@ -221,91 +210,10 @@ inline bool equal(const char* a, StringImpl* b) { return equal(b, a); }
 bool equalIgnoringCase(StringImpl*, StringImpl*);
 bool equalIgnoringCase(StringImpl*, const char*);
 inline bool equalIgnoringCase(const char* a, StringImpl* b) { return equalIgnoringCase(b, a); }
+bool equalIgnoringCase(const UChar* a, const char* b, unsigned length);
+inline bool equalIgnoringCase(const char* a, const UChar* b, unsigned length) { return equalIgnoringCase(b, a, length); }
 
-// Golden ratio - arbitrary start value to avoid mapping all 0's to all 0's
-// or anything like that.
-const unsigned phi = 0x9e3779b9U;
-
-// Paul Hsieh's SuperFastHash
-// http://www.azillionmonkeys.com/qed/hash.html
-inline unsigned StringImpl::computeHash(const UChar* data, unsigned length)
-{
-    unsigned hash = phi;
-    
-    // Main loop.
-    for (unsigned pairCount = length >> 1; pairCount; pairCount--) {
-        hash += data[0];
-        unsigned tmp = (data[1] << 11) ^ hash;
-        hash = (hash << 16) ^ tmp;
-        data += 2;
-        hash += hash >> 11;
-    }
-    
-    // Handle end case.
-    if (length & 1) {
-        hash += data[0];
-        hash ^= hash << 11;
-        hash += hash >> 17;
-    }
-
-    // Force "avalanching" of final 127 bits.
-    hash ^= hash << 3;
-    hash += hash >> 5;
-    hash ^= hash << 2;
-    hash += hash >> 15;
-    hash ^= hash << 10;
-
-    // This avoids ever returning a hash code of 0, since that is used to
-    // signal "hash not computed yet", using a value that is likely to be
-    // effectively the same as 0 when the low bits are masked.
-    hash |= !hash << 31;
-    
-    return hash;
-}
-
-// Paul Hsieh's SuperFastHash
-// http://www.azillionmonkeys.com/qed/hash.html
-inline unsigned StringImpl::computeHash(const char* data)
-{
-    // This hash is designed to work on 16-bit chunks at a time. But since the normal case
-    // (above) is to hash UTF-16 characters, we just treat the 8-bit chars as if they
-    // were 16-bit chunks, which should give matching results
-
-    unsigned hash = phi;
-    
-    // Main loop
-    for (;;) {
-        unsigned char b0 = data[0];
-        if (!b0)
-            break;
-        unsigned char b1 = data[1];
-        if (!b1) {
-            hash += b0;
-            hash ^= hash << 11;
-            hash += hash >> 17;
-            break;
-        }
-        hash += b0;
-        unsigned tmp = (b1 << 11) ^ hash;
-        hash = (hash << 16) ^ tmp;
-        data += 2;
-        hash += hash >> 11;
-    }
-    
-    // Force "avalanching" of final 127 bits.
-    hash ^= hash << 3;
-    hash += hash >> 5;
-    hash ^= hash << 2;
-    hash += hash >> 15;
-    hash ^= hash << 10;
-
-    // This avoids ever returning a hash code of 0, since that is used to
-    // signal "hash not computed yet", using a value that is likely to be
-    // effectively the same as 0 when the low bits are masked.
-    hash |= !hash << 31;
-    
-    return hash;
-}
+bool equalIgnoringNullity(StringImpl*, StringImpl*);
 
 static inline bool isSpaceOrNewline(UChar c)
 {

@@ -33,6 +33,10 @@
 
 #include "V8Attr.h"
 #include "V8BarInfo.h"
+#include "V8BeforeLoadEvent.h"
+#include "V8Blob.h"
+#include "V8WebGLActiveInfo.h"
+#include "V8CanvasRenderingContext.h"
 #include "V8CanvasRenderingContext2D.h"
 #include "V8CanvasGradient.h"
 #include "V8CanvasPattern.h"
@@ -43,6 +47,7 @@
 #include "V8ClientRectList.h"
 #include "V8Clipboard.h"
 #include "V8Comment.h"
+#include "V8CompositionEvent.h"
 #include "V8Console.h"
 #include "V8Counter.h"
 #include "V8CSSStyleDeclaration.h"
@@ -62,7 +67,6 @@
 #include "V8CSSVariablesRule.h"
 #include "V8DataGridColumn.h"
 #include "V8DataGridColumnList.h"
-#include "V8Database.h"
 #include "V8Document.h"
 #include "V8DocumentFragment.h"
 #include "V8DocumentType.h"
@@ -72,8 +76,8 @@
 #include "V8File.h"
 #include "V8FileList.h"
 #include "V8History.h"
+#include "V8HTMLAllCollection.h"
 #include "V8HTMLCanvasElement.h"
-#include "V8UndetectableHTMLCollection.h"
 #include "V8HTMLCollection.h"
 #include "V8HTMLDocument.h"
 #include "V8HTMLElement.h"
@@ -108,6 +112,7 @@
 #include "V8HTMLHtmlElement.h"
 #include "V8HTMLIFrameElement.h"
 #include "V8HTMLImageElement.h"
+#include "V8HTMLImageElementConstructor.h"
 #include "V8HTMLInputElement.h"
 #include "V8HTMLIsIndexElement.h"
 #include "V8HTMLLabelElement.h"
@@ -122,6 +127,7 @@
 #include "V8HTMLOListElement.h"
 #include "V8HTMLOptGroupElement.h"
 #include "V8HTMLOptionElement.h"
+#include "V8HTMLOptionElementConstructor.h"
 #include "V8HTMLParagraphElement.h"
 #include "V8HTMLParamElement.h"
 #include "V8HTMLPreElement.h"
@@ -139,7 +145,7 @@
 #include "V8HTMLTitleElement.h"
 #include "V8HTMLUListElement.h"
 #include "V8ImageData.h"
-#include "V8InspectorController.h"
+#include "V8Media.h"
 #include "V8MediaList.h"
 #include "V8MessageChannel.h"
 #include "V8MessageEvent.h"
@@ -149,6 +155,7 @@
 #include "V8NodeList.h"
 #include "V8NodeFilter.h"
 #include "V8Notation.h"
+#include "V8PopStateEvent.h"
 #include "V8ProcessingInstruction.h"
 #include "V8ProgressEvent.h"
 #include "V8StyleSheet.h"
@@ -157,10 +164,12 @@
 #include "V8DOMCoreException.h"
 #include "V8DOMParser.h"
 #include "V8DOMWindow.h"
+#include "V8ErrorEvent.h"
 #include "V8Event.h"
 #include "V8EventException.h"
 #include "V8KeyboardEvent.h"
 #include "V8MouseEvent.h"
+#include "V8ValidityState.h"
 #include "V8WebKitAnimationEvent.h"
 #include "V8WebKitCSSKeyframeRule.h"
 #include "V8WebKitCSSKeyframesRule.h"
@@ -178,32 +187,27 @@
 #include "V8Navigator.h"
 #include "V8MimeType.h"
 #include "V8MimeTypeArray.h"
+#include "V8PageTransitionEvent.h"
 #include "V8Plugin.h"
 #include "V8PluginArray.h"
 #include "V8Range.h"
 #include "V8RangeException.h"
 #include "V8Rect.h"
-#include "V8SQLError.h"
-#include "V8SQLResultSet.h"
-#include "V8SQLResultSetRowList.h"
-#include "V8SQLTransaction.h"
 #include "V8NodeIterator.h"
 #include "V8TextMetrics.h"
 #include "V8TreeWalker.h"
 #include "V8StyleSheetList.h"
 #include "V8DOMImplementation.h"
-#include "V8XPathResult.h"
-#include "V8XPathException.h"
-#include "V8XPathExpression.h"
-#include "V8XPathNSResolver.h"
 #include "V8XMLHttpRequest.h"
 #include "V8XMLHttpRequestException.h"
 #include "V8XMLHttpRequestProgressEvent.h"
 #include "V8XMLHttpRequestUpload.h"
 #include "V8XMLSerializer.h"
-#include "V8XPathEvaluator.h"
-#include "V8XSLTProcessor.h"
 #include "V8RGBColor.h"
+
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+#include "V8DOMApplicationCache.h"
+#endif
 
 #if ENABLE(DOM_STORAGE)
 #include "V8Storage.h"
@@ -218,7 +222,7 @@
 #include "V8SVGSetElement.h"
 #endif
 
-#if ENABLE(SVG_FILTERS)
+#if ENABLE(SVG) && ENABLE(FILTERS)
 #include "V8SVGComponentTransferFunctionElement.h"
 #include "V8SVGFEBlendElement.h"
 #include "V8SVGFEColorMatrixElement.h"
@@ -236,6 +240,7 @@
 #include "V8SVGFEImageElement.h"
 #include "V8SVGFEMergeElement.h"
 #include "V8SVGFEMergeNodeElement.h"
+#include "V8SVGFEMorphologyElement.h"
 #include "V8SVGFEOffsetElement.h"
 #include "V8SVGFEPointLightElement.h"
 #include "V8SVGFESpecularLightingElement.h"
@@ -246,12 +251,13 @@
 #endif
 
 #if ENABLE(SVG_FONTS)
-#include "V8SVGDefinitionSrcElement.h"
+#include "V8SVGFontElement.h"
 #include "V8SVGFontFaceElement.h"
 #include "V8SVGFontFaceFormatElement.h"
 #include "V8SVGFontFaceNameElement.h"
 #include "V8SVGFontFaceSrcElement.h"
 #include "V8SVGFontFaceUriElement.h"
+#include "V8SVGMissingGlyphElement.h"
 #endif
 
 #if ENABLE(SVG_FOREIGN_OBJECT)
@@ -356,12 +362,12 @@
 #include "V8SVGTransform.h"
 #include "V8SVGTransformList.h"
 #include "V8SVGUnitTypes.h"
-#include "V8SVGURIReference.h"
 #include "V8SVGZoomEvent.h"
 #endif
 
 #if ENABLE(VIDEO)
 #include "V8HTMLAudioElement.h"
+#include "V8HTMLAudioElementConstructor.h"
 #include "V8HTMLMediaElement.h"
 #include "V8HTMLSourceElement.h"
 #include "V8HTMLVideoElement.h"
@@ -369,12 +375,85 @@
 #include "V8TimeRanges.h"
 #endif
 
+#if ENABLE(WEB_SOCKETS)
+#include "V8WebSocket.h"
+#endif
+
 #if ENABLE(WORKERS)
+#include "V8AbstractWorker.h"
+#include "V8DedicatedWorkerContext.h"
 #include "V8Worker.h"
 #include "V8WorkerContext.h"
 #include "V8WorkerLocation.h"
 #include "V8WorkerNavigator.h"
 #endif
+
+#if ENABLE(NOTIFICATIONS)
+#include "V8Notification.h"
+#include "V8NotificationCenter.h"
+#endif
+
+#if ENABLE(SHARED_WORKERS)
+#include "V8SharedWorker.h"
+#include "V8SharedWorkerContext.h"
+#endif
+
+#if ENABLE(3D_CANVAS)
+#include "V8WebGLRenderingContext.h"
+#include "V8WebGLArrayBuffer.h"
+#include "V8WebGLArray.h"
+#include "V8WebGLByteArray.h"
+#include "V8WebGLBuffer.h"
+#include "V8WebGLContextAttributes.h"
+#include "V8WebGLFloatArray.h"
+#include "V8WebGLFramebuffer.h"
+#include "V8WebGLIntArray.h"
+#include "V8WebGLProgram.h"
+#include "V8WebGLRenderbuffer.h"
+#include "V8WebGLShader.h"
+#include "V8WebGLShortArray.h"
+#include "V8WebGLTexture.h"
+#include "V8WebGLUniformLocation.h"
+#include "V8WebGLUnsignedByteArray.h"
+#include "V8WebGLUnsignedIntArray.h"
+#include "V8WebGLUnsignedShortArray.h"
+#endif
+
+#if ENABLE(DATABASE)
+#include "V8Database.h"
+#include "V8SQLError.h"
+#include "V8SQLResultSet.h"
+#include "V8SQLResultSetRowList.h"
+#include "V8SQLTransaction.h"
+#endif
+
+#if ENABLE(XPATH)
+#include "V8XPathResult.h"
+#include "V8XPathException.h"
+#include "V8XPathExpression.h"
+#include "V8XPathNSResolver.h"
+#include "V8XPathEvaluator.h"
+#endif
+
+#if ENABLE(XSLT)
+#include "V8XSLTProcessor.h"
+#endif
+
+#if ENABLE(INSPECTOR)
+#include "V8InjectedScriptHost.h"
+#include "V8InspectorBackend.h"
+#include "V8InspectorFrontendHost.h"
+#endif
+
+#if ENABLE(EVENTSOURCE)
+#include "V8EventSource.h"
+#endif
+
+// Geolocation
+#include "V8Coordinates.h"
+#include "V8Geolocation.h"
+#include "V8Geoposition.h"
+#include "V8PositionError.h"
 
 namespace WebCore {
 

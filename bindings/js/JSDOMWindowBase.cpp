@@ -24,6 +24,7 @@
 #include "JSDOMWindowBase.h"
 
 #include "CString.h"
+#include "Chrome.h"
 #include "Console.h"
 #include "DOMWindow.h"
 #include "Frame.h"
@@ -42,15 +43,16 @@ using namespace JSC;
 
 namespace WebCore {
 
-const ClassInfo JSDOMWindowBase::s_info = { "Window", 0, 0, 0 };
+const ClassInfo JSDOMWindowBase::s_info = { "Window", &JSDOMGlobalObject::s_info, 0, 0 };
 
 JSDOMWindowBase::JSDOMWindowBaseData::JSDOMWindowBaseData(PassRefPtr<DOMWindow> window, JSDOMWindowShell* shell)
-    : impl(window)
+    : JSDOMGlobalObjectData(shell->world(), destroyJSDOMWindowBaseData)
+    , impl(window)
     , shell(shell)
 {
 }
 
-JSDOMWindowBase::JSDOMWindowBase(PassRefPtr<Structure> structure, PassRefPtr<DOMWindow> window, JSDOMWindowShell* shell)
+JSDOMWindowBase::JSDOMWindowBase(NonNullPassRefPtr<Structure> structure, PassRefPtr<DOMWindow> window, JSDOMWindowShell* shell)
     : JSDOMGlobalObject(structure, new JSDOMWindowBaseData(window, shell), shell)
 {
     GlobalPropertyInfo staticGlobals[] = {
@@ -65,7 +67,7 @@ void JSDOMWindowBase::updateDocument()
 {
     ASSERT(d()->impl->document());
     ExecState* exec = globalExec();
-    symbolTablePutWithAttributes(Identifier(exec, "document"), toJS(exec, d()->impl->document()), DontDelete | ReadOnly);
+    symbolTablePutWithAttributes(Identifier(exec, "document"), toJS(exec, this, d()->impl->document()), DontDelete | ReadOnly);
 }
 
 ScriptExecutionContext* JSDOMWindowBase::scriptExecutionContext() const
@@ -76,7 +78,7 @@ ScriptExecutionContext* JSDOMWindowBase::scriptExecutionContext() const
 String JSDOMWindowBase::crossDomainAccessErrorMessage(const JSGlobalObject* other) const
 {
     KURL originURL = asJSDOMWindow(other)->impl()->url();
-    KURL targetURL = impl()->frame()->document()->url();
+    KURL targetURL = d()->shell->window()->impl()->url();
     if (originURL.isNull() || targetURL.isNull())
         return String();
 
@@ -87,21 +89,7 @@ String JSDOMWindowBase::crossDomainAccessErrorMessage(const JSGlobalObject* othe
 
 void JSDOMWindowBase::printErrorMessage(const String& message) const
 {
-    if (message.isEmpty())
-        return;
-
-    Frame* frame = impl()->frame();
-    if (!frame)
-        return;
-
-    Settings* settings = frame->settings();
-    if (!settings)
-        return;
-    
-    if (settings->privateBrowsingEnabled())
-        return;
-
-    impl()->console()->addMessage(JSMessageSource, ErrorMessageLevel, message, 1, String()); // FIXME: provide a real line number and source URL.
+    printErrorMessageForFrame(impl()->frame(), message);
 }
 
 ExecState* JSDOMWindowBase::globalExec()
@@ -176,30 +164,48 @@ JSDOMWindowShell* JSDOMWindowBase::shell() const
 
 JSGlobalData* JSDOMWindowBase::commonJSGlobalData()
 {
-    static JSGlobalData* globalData;
+    ASSERT(isMainThread() || pthread_main_np());
+
+    static JSGlobalData* globalData = 0;
     if (!globalData) {
         globalData = JSGlobalData::createLeaked().releaseRef();
         globalData->timeoutChecker.setTimeoutInterval(10000); // 10 seconds
+#ifndef NDEBUG
+        globalData->mainThreadOnly = true;
+#endif
+        globalData->clientData = new WebCoreJSClientData(globalData);
     }
 
     return globalData;
 }
 
-JSValue toJS(ExecState*, DOMWindow* domWindow)
+void JSDOMWindowBase::destroyJSDOMWindowBaseData(void* jsDOMWindowBaseData)
+{
+    delete static_cast<JSDOMWindowBaseData*>(jsDOMWindowBaseData);
+}
+
+// JSDOMGlobalObject* is ignored, accessing a window in any context will
+// use that DOMWindow's prototype chain.
+JSValue toJS(ExecState* exec, JSDOMGlobalObject*, DOMWindow* domWindow)
+{
+    return toJS(exec, domWindow);
+}
+
+JSValue toJS(ExecState* exec, DOMWindow* domWindow)
 {
     if (!domWindow)
         return jsNull();
     Frame* frame = domWindow->frame();
     if (!frame)
         return jsNull();
-    return frame->script()->windowShell();
+    return frame->script()->windowShell(currentWorld(exec));
 }
 
-JSDOMWindow* toJSDOMWindow(Frame* frame)
+JSDOMWindow* toJSDOMWindow(Frame* frame, DOMWrapperWorld* world)
 {
     if (!frame)
         return 0;
-    return frame->script()->windowShell()->window();
+    return frame->script()->windowShell(world)->window();
 }
 
 JSDOMWindow* toJSDOMWindow(JSValue value)

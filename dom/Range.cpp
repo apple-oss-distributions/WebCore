@@ -3,7 +3,7 @@
  * (C) 2000 Gunnstein Lye (gunnstein@netcom.no)
  * (C) 2000 Frederik Holljen (frederik.holljen@hig.no)
  * (C) 2001 Peter Kelly (pmk@post.com)
- * Copyright (C) 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -26,13 +26,17 @@
 #include "RangeException.h"
 
 #include "CString.h"
+#include "ClientRect.h"
+#include "ClientRectList.h"
 #include "DocumentFragment.h"
+#include "FrameView.h"
 #include "HTMLElement.h"
 #include "NodeWithIndex.h"
 #include "ProcessingInstruction.h"
 #include "Text.h"
 #include "TextIterator.h"
 #include "VisiblePosition.h"
+#include "htmlediting.h"
 #include "markup.h"
 #include "visible_units.h"
 #include <stdio.h>
@@ -93,6 +97,7 @@ PassRefPtr<Range> Range::create(PassRefPtr<Document> ownerDocument, PassRefPtr<N
 
 PassRefPtr<Range> Range::create(PassRefPtr<Document> ownerDocument, const Position& start, const Position& end)
 {
+    // FIXME: we shouldn't be using deprecatedEditingOffset here
     return adoptRef(new Range(ownerDocument, start.node(), start.deprecatedEditingOffset(), end.node(), end.deprecatedEditingOffset()));
 }
 
@@ -304,7 +309,7 @@ bool Range::isPointInRange(Node* refNode, int offset, ExceptionCode& ec)
         && compareBoundaryPoints(refNode, offset, m_end.container(), m_end.offset()) <= 0;
 }
 
-short Range::comparePoint(Node* refNode, int offset, ExceptionCode& ec)
+short Range::comparePoint(Node* refNode, int offset, ExceptionCode& ec) const
 {
     // http://developer.mozilla.org/en/docs/DOM:range.comparePoint
     // This method returns -1, 0 or 1 depending on if the point described by the 
@@ -342,7 +347,7 @@ short Range::comparePoint(Node* refNode, int offset, ExceptionCode& ec)
     return 0;
 }
 
-Range::CompareResults Range::compareNode(Node* refNode, ExceptionCode& ec)
+Range::CompareResults Range::compareNode(Node* refNode, ExceptionCode& ec) const
 {
     // http://developer.mozilla.org/en/docs/DOM:range.compareNode
     // This method returns 0, 1, 2, or 3 based on if the node is before, after,
@@ -595,7 +600,7 @@ PassRefPtr<DocumentFragment> Range::processContents(ActionType action, Exception
 
     RefPtr<DocumentFragment> fragment;
     if (action == EXTRACT_CONTENTS || action == CLONE_CONTENTS)
-        fragment = new DocumentFragment(m_ownerDocument.get());
+        fragment = DocumentFragment::create(m_ownerDocument.get());
     
     ec = 0;
     if (collapsed(ec))
@@ -671,7 +676,7 @@ PassRefPtr<DocumentFragment> Range::processContents(ActionType action, Exception
     }
 
     // Complex case: Start and end containers are different.
-    // There are three possiblities here:
+    // There are three possibilities here:
     // 1. Start container == commonRoot (End container must be a descendant)
     // 2. End container == commonRoot (Start container must be a descendant)
     // 3. Neither is commonRoot, they are both descendants
@@ -735,7 +740,7 @@ PassRefPtr<DocumentFragment> Range::processContents(ActionType action, Exception
         for (; leftParent != commonRoot; leftParent = leftParent->parentNode()) {
             if (action == EXTRACT_CONTENTS || action == CLONE_CONTENTS) {
                 RefPtr<Node> leftContentsParent = leftParent->cloneNode(false);
-                leftContentsParent->appendChild(leftContents,ec);
+                leftContentsParent->appendChild(leftContents, ec);
                 leftContents = leftContentsParent;
             }
 
@@ -743,11 +748,11 @@ PassRefPtr<DocumentFragment> Range::processContents(ActionType action, Exception
             for (; n; n = next) {
                 next = n->nextSibling();
                 if (action == EXTRACT_CONTENTS)
-                    leftContents->appendChild(n,ec); // will remove n from leftParent
+                    leftContents->appendChild(n, ec); // will remove n from leftParent
                 else if (action == CLONE_CONTENTS)
-                    leftContents->appendChild(n->cloneNode(true),ec);
+                    leftContents->appendChild(n->cloneNode(true), ec);
                 else
-                    leftParent->removeChild(n,ec);
+                    leftParent->removeChild(n, ec);
             }
             n = leftParent->nextSibling();
         }
@@ -805,7 +810,7 @@ PassRefPtr<DocumentFragment> Range::processContents(ActionType action, Exception
         for (; rightParent != commonRoot; rightParent = rightParent->parentNode()) {
             if (action == EXTRACT_CONTENTS || action == CLONE_CONTENTS) {
                 RefPtr<Node> rightContentsParent = rightParent->cloneNode(false);
-                rightContentsParent->appendChild(rightContents,ec);
+                rightContentsParent->appendChild(rightContents, ec);
                 rightContents = rightContentsParent;
             }
             Node* prev;
@@ -1422,7 +1427,7 @@ void Range::surroundContents(PassRefPtr<Node> passNewParent, ExceptionCode& ec)
     // although this will fail below for another reason).
     if (parentOfNewParent->isCharacterDataNode())
         parentOfNewParent = parentOfNewParent->parentNode();
-    if (!parentOfNewParent->childTypeAllowed(newParent->nodeType())) {
+    if (!parentOfNewParent || !parentOfNewParent->childTypeAllowed(newParent->nodeType())) {
         ec = HIERARCHY_REQUEST_ERR;
         return;
     }
@@ -1600,11 +1605,11 @@ IntRect Range::boundingBox()
 
 void Range::textRects(Vector<IntRect>& rects, bool useSelectionHeight)
 {
-    if (!m_start.container() || !m_end.container())
-        return;
-
     Node* startContainer = m_start.container();
     Node* endContainer = m_end.container();
+
+    if (!startContainer || !endContainer)
+        return;
 
     Node* stopNode = pastLastNode();
     for (Node* node = firstNode(); node != stopNode; node = node->traverseNextNode()) {
@@ -1613,8 +1618,28 @@ void Range::textRects(Vector<IntRect>& rects, bool useSelectionHeight)
             continue;
         RenderText* renderText = toRenderText(r);
         int startOffset = node == startContainer ? m_start.offset() : 0;
-        int endOffset = node == endContainer ? m_end.offset() : INT_MAX;
+        int endOffset = node == endContainer ? m_end.offset() : numeric_limits<int>::max();
         renderText->absoluteRectsForRange(rects, startOffset, endOffset, useSelectionHeight);
+    }
+}
+
+void Range::textQuads(Vector<FloatQuad>& quads, bool useSelectionHeight)
+{
+    Node* startContainer = m_start.container();
+    Node* endContainer = m_end.container();
+
+    if (!startContainer || !endContainer)
+        return;
+
+    Node* stopNode = pastLastNode();
+    for (Node* node = firstNode(); node != stopNode; node = node->traverseNextNode()) {
+        RenderObject* r = node->renderer();
+        if (!r || !r->isText())
+            continue;
+        RenderText* renderText = toRenderText(r);
+        int startOffset = node == startContainer ? m_start.offset() : 0;
+        int endOffset = node == endContainer ? m_end.offset() : numeric_limits<int>::max();
+        renderText->absoluteQuadsForRange(quads, startOffset, endOffset, useSelectionHeight);
     }
 }
 
@@ -1842,6 +1867,31 @@ void Range::nodeChildrenChanged(ContainerNode* container)
     boundaryNodeChildrenChanged(m_end, container);
 }
 
+static inline void boundaryNodeChildrenWillBeRemoved(RangeBoundaryPoint& boundary, ContainerNode* container)
+{
+    for (Node* nodeToBeRemoved = container->firstChild(); nodeToBeRemoved; nodeToBeRemoved = nodeToBeRemoved->nextSibling()) {
+        if (boundary.childBefore() == nodeToBeRemoved) {
+            boundary.setToStartOfNode(container);
+            return;
+        }
+
+        for (Node* n = boundary.container(); n; n = n->parentNode()) {
+            if (n == nodeToBeRemoved) {
+                boundary.setToStartOfNode(container);
+                return;
+            }
+        }
+    }
+}
+
+void Range::nodeChildrenWillBeRemoved(ContainerNode* container)
+{
+    ASSERT(container);
+    ASSERT(container->document() == m_ownerDocument);
+    boundaryNodeChildrenWillBeRemoved(m_start, container);
+    boundaryNodeChildrenWillBeRemoved(m_end, container);
+}
+
 static inline void boundaryNodeWillBeRemoved(RangeBoundaryPoint& boundary, Node* nodeToBeRemoved)
 {
     if (boundary.childBefore() == nodeToBeRemoved) {
@@ -1948,4 +1998,125 @@ void Range::textNodeSplit(Text* oldNode)
     boundaryTextNodesSplit(m_end, oldNode);
 }
 
+void Range::expand(const String& unit, ExceptionCode& ec)
+{
+    VisiblePosition start(startPosition());
+    VisiblePosition end(endPosition());
+    if (unit == "word") {
+        start = startOfWord(start);
+        end = endOfWord(end);
+    } else if (unit == "sentence") {
+        start = startOfSentence(start);
+        end = endOfSentence(end);
+    } else if (unit == "block") {
+        start = startOfParagraph(start);
+        end = endOfParagraph(end);
+    } else if (unit == "document") {
+        start = startOfDocument(start);
+        end = endOfDocument(end);
+    } else
+        return;
+    setStart(start.deepEquivalent().containerNode(), start.deepEquivalent().computeOffsetInContainerNode(), ec);
+    setEnd(end.deepEquivalent().containerNode(), end.deepEquivalent().computeOffsetInContainerNode(), ec);
 }
+
+PassRefPtr<ClientRectList> Range::getClientRects() const
+{
+    if (!m_start.container())
+        return 0;
+
+    m_ownerDocument->updateLayoutIgnorePendingStylesheets();
+
+    Vector<FloatQuad> quads;
+    getBorderAndTextQuads(quads);
+
+    return ClientRectList::create(quads);
+}
+
+PassRefPtr<ClientRect> Range::getBoundingClientRect() const
+{
+    if (!m_start.container())
+        return 0;
+
+    m_ownerDocument->updateLayoutIgnorePendingStylesheets();
+
+    Vector<FloatQuad> quads;
+    getBorderAndTextQuads(quads);
+
+    if (quads.isEmpty())
+        return ClientRect::create();
+
+    IntRect result;
+    for (size_t i = 0; i < quads.size(); ++i)
+        result.unite(quads[i].enclosingBoundingBox());
+
+    return ClientRect::create(result);
+}
+
+static void adjustFloatQuadsForScrollAndAbsoluteZoom(Vector<FloatQuad>& quads, Document* document, RenderObject* renderer)
+{
+    FrameView* view = document->view();
+    if (!view)
+        return;
+
+    IntRect visibleContentRect = view->visibleContentRect();
+    for (size_t i = 0; i < quads.size(); ++i) {
+        quads[i].move(-visibleContentRect.x(), -visibleContentRect.y());
+        adjustFloatQuadForAbsoluteZoom(quads[i], renderer);
+    }
+}
+
+void Range::getBorderAndTextQuads(Vector<FloatQuad>& quads) const
+{
+    Node* startContainer = m_start.container();
+    Node* endContainer = m_end.container();
+    Node* stopNode = pastLastNode();
+
+    HashSet<Node*> nodeSet;
+    for (Node* node = firstNode(); node != stopNode; node = node->traverseNextNode()) {
+        if (node->isElementNode())
+            nodeSet.add(node);
+    }
+
+    for (Node* node = firstNode(); node != stopNode; node = node->traverseNextNode()) {
+        if (node->isElementNode()) {
+            if (!nodeSet.contains(node->parentNode())) {
+                if (RenderBoxModelObject* renderBoxModelObject = static_cast<Element*>(node)->renderBoxModelObject()) {
+                    Vector<FloatQuad> elementQuads;
+                    renderBoxModelObject->absoluteQuads(elementQuads);
+                    adjustFloatQuadsForScrollAndAbsoluteZoom(elementQuads, m_ownerDocument.get(), renderBoxModelObject);
+
+                    quads.append(elementQuads);
+                }
+            }
+        } else if (node->isTextNode()) {
+            if (RenderObject* renderer = static_cast<Text*>(node)->renderer()) {
+                RenderText* renderText = toRenderText(renderer);
+                int startOffset = (node == startContainer) ? m_start.offset() : 0;
+                int endOffset = (node == endContainer) ? m_end.offset() : INT_MAX;
+                
+                Vector<FloatQuad> textQuads;
+                renderText->absoluteQuadsForRange(textQuads, startOffset, endOffset);
+                adjustFloatQuadsForScrollAndAbsoluteZoom(textQuads, m_ownerDocument.get(), renderText);
+
+                quads.append(textQuads);
+            }
+        }
+    }
+}
+
+} // namespace WebCore
+
+#ifndef NDEBUG
+
+void showTree(const WebCore::Range* range)
+{
+    if (range && range->boundaryPointsValid()) {
+        WebCore::Position start = range->startPosition();
+        WebCore::Position end = range->endPosition();
+        start.node()->showTreeAndMark(start.node(), "S", end.node(), "E");
+        fprintf(stderr, "start offset: %d, end offset: %d\n", start.deprecatedEditingOffset(), end.deprecatedEditingOffset());
+    }
+}
+
+#endif

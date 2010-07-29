@@ -30,6 +30,7 @@
 #include "config.h"
 #include "ResourceLoader.h"
 
+#include "ApplicationCacheHost.h"
 #include "DocumentLoader.h"
 #include "Frame.h"
 #include "FrameLoader.h"
@@ -93,8 +94,9 @@ void ResourceLoader::releaseResources()
 
     if (m_handle) {
         // Clear out the ResourceHandle's client so that it doesn't try to call
-        // us back after we release it.
-        m_handle->setClient(0);
+        // us back after we release it, unless it has been replaced by someone else.
+        if (m_handle->client() == this)
+            m_handle->setClient(0);
         m_handle = 0;
     }
 
@@ -119,12 +121,12 @@ bool ResourceLoader::load(const ResourceRequest& r)
         didFail(frameLoader()->cancelledError(r));
         return false;
     }
-        
+    
     if (m_documentLoader->scheduleArchiveLoad(this, clientRequest, r.url()))
         return true;
     
 #if ENABLE(OFFLINE_WEB_APPLICATIONS)
-    if (m_documentLoader->scheduleApplicationCacheLoad(this, clientRequest, r.url()))
+    if (m_documentLoader->applicationCacheHost()->maybeLoadResource(this, clientRequest, r.url()))
         return true;
 #endif
 
@@ -195,38 +197,27 @@ void ResourceLoader::clearResourceData()
         m_resourceData->clear();
 }
 
-#if ENABLE(OFFLINE_WEB_APPLICATIONS)
-bool ResourceLoader::scheduleLoadFallbackResourceFromApplicationCache(ApplicationCache* cache)
-{
-    if (documentLoader()->scheduleLoadFallbackResourceFromApplicationCache(this, m_request, cache)) {
-        handle()->cancel();
-        return true;
-    }
-    return false;
-}
-#endif
-
 void ResourceLoader::willSendRequest(ResourceRequest& request, const ResourceResponse& redirectResponse)
 {
     // Protect this in this delegate method since the additional processing can do
     // anything including possibly derefing this; one example of this is Radar 3266216.
     RefPtr<ResourceLoader> protector(this);
-        
+
     ASSERT(!m_reachedTerminalState);
 
     if (m_sendResourceLoadCallbacks) {
         if (!m_identifier) {
             m_identifier = m_frame->page()->progress()->createUniqueIdentifier();
-            frameLoader()->assignIdentifierToInitialRequest(m_identifier, request);
+            frameLoader()->notifier()->assignIdentifierToInitialRequest(m_identifier, documentLoader(), request);
 
             // If this ResourceLoader was stopped as a result of assignIdentifierToInitialRequest, bail out
             if (m_reachedTerminalState)
                 return;
         }
 
-        frameLoader()->willSendRequest(this, request, redirectResponse);
+        frameLoader()->notifier()->willSendRequest(this, request, redirectResponse);
     }
-    
+
     m_request = request;
 }
 
@@ -248,7 +239,7 @@ void ResourceLoader::didReceiveResponse(const ResourceResponse& r)
         data->removeGeneratedFilesIfNeeded();
         
     if (m_sendResourceLoadCallbacks)
-        frameLoader()->didReceiveResponse(this, m_response);
+        frameLoader()->notifier()->didReceiveResponse(this, m_response);
 }
 
 void ResourceLoader::didReceiveData(const char* data, int length, long long lengthReceived, bool allAtOnce)
@@ -268,7 +259,7 @@ void ResourceLoader::didReceiveData(const char* data, int length, long long leng
     // However, with today's computers and networking speeds, this won't happen in practice.
     // Could be an issue with a giant local file.
     if (m_sendResourceLoadCallbacks && m_frame)
-        frameLoader()->didReceiveData(this, data, length, static_cast<int>(lengthReceived));
+        frameLoader()->notifier()->didReceiveData(this, data, length, static_cast<int>(lengthReceived));
 }
 
 void ResourceLoader::willStopBufferingData(const char* data, int length)
@@ -302,7 +293,7 @@ void ResourceLoader::didFinishLoadingOnePart()
         return;
     m_calledDidFinishLoad = true;
     if (m_sendResourceLoadCallbacks)
-        frameLoader()->didFinishLoad(this);
+        frameLoader()->notifier()->didFinishLoad(this);
 }
 
 void ResourceLoader::didFail(const ResourceError& error)
@@ -319,7 +310,7 @@ void ResourceLoader::didFail(const ResourceError& error)
         data->removeGeneratedFilesIfNeeded();
 
     if (m_sendResourceLoadCallbacks && !m_calledDidFinishLoad)
-        frameLoader()->didFailToLoad(this, error);
+        frameLoader()->notifier()->didFailToLoad(this, error);
 
     releaseResources();
 }
@@ -336,7 +327,7 @@ void ResourceLoader::didCancel(const ResourceError& error)
     // load itself to be cancelled (which could happen with a javascript that 
     // changes the window location). This is used to prevent both the body
     // of this method and the body of connectionDidFinishLoading: running
-    // for a single delegate. Cancelling wins.
+    // for a single delegate. Canceling wins.
     m_cancelled = true;
     
     if (m_handle)
@@ -348,7 +339,7 @@ void ResourceLoader::didCancel(const ResourceError& error)
         m_handle = 0;
     }
     if (m_sendResourceLoadCallbacks && !m_calledDidFinishLoad)
-        frameLoader()->didFailToLoad(this, error);
+        frameLoader()->notifier()->didFailToLoad(this, error);
 
     releaseResources();
 }
@@ -391,10 +382,8 @@ ResourceError ResourceLoader::cannotShowURLError()
 void ResourceLoader::willSendRequest(ResourceHandle*, ResourceRequest& request, const ResourceResponse& redirectResponse)
 {
 #if ENABLE(OFFLINE_WEB_APPLICATIONS)
-    if (!redirectResponse.isNull() && !protocolHostAndPortAreEqual(request.url(), redirectResponse.url())) {
-        if (scheduleLoadFallbackResourceFromApplicationCache())
-            return;
-    }
+    if (documentLoader()->applicationCacheHost()->maybeLoadFallbackForRedirect(this, request, redirectResponse))
+        return;
 #endif
     willSendRequest(request, redirectResponse);
 }
@@ -407,10 +396,8 @@ void ResourceLoader::didSendData(ResourceHandle*, unsigned long long bytesSent, 
 void ResourceLoader::didReceiveResponse(ResourceHandle*, const ResourceResponse& response)
 {
 #if ENABLE(OFFLINE_WEB_APPLICATIONS)
-    if (response.httpStatusCode() / 100 == 4 || response.httpStatusCode() / 100 == 5) {
-        if (scheduleLoadFallbackResourceFromApplicationCache())
-            return;
-    }
+    if (documentLoader()->applicationCacheHost()->maybeLoadFallbackForResponse(this, response))
+        return;
 #endif
     didReceiveResponse(response);
 }
@@ -428,10 +415,8 @@ void ResourceLoader::didFinishLoading(ResourceHandle*)
 void ResourceLoader::didFail(ResourceHandle*, const ResourceError& error)
 {
 #if ENABLE(OFFLINE_WEB_APPLICATIONS)
-    if (!error.isCancellation()) {
-        if (documentLoader()->scheduleLoadFallbackResourceFromApplicationCache(this, m_request))
-            return;
-    }
+    if (documentLoader()->applicationCacheHost()->maybeLoadFallbackForError(this, error))
+        return;
 #endif
     didFail(error);
 }
@@ -457,7 +442,7 @@ void ResourceLoader::didReceiveAuthenticationChallenge(const AuthenticationChall
     // Protect this in this delegate method since the additional processing can do
     // anything including possibly derefing this; one example of this is Radar 3266216.
     RefPtr<ResourceLoader> protector(this);
-    frameLoader()->didReceiveAuthenticationChallenge(this, challenge);
+    frameLoader()->notifier()->didReceiveAuthenticationChallenge(this, challenge);
 }
 
 void ResourceLoader::didCancelAuthenticationChallenge(const AuthenticationChallenge& challenge)
@@ -465,7 +450,7 @@ void ResourceLoader::didCancelAuthenticationChallenge(const AuthenticationChalle
     // Protect this in this delegate method since the additional processing can do
     // anything including possibly derefing this; one example of this is Radar 3266216.
     RefPtr<ResourceLoader> protector(this);
-    frameLoader()->didCancelAuthenticationChallenge(this, challenge);
+    frameLoader()->notifier()->didCancelAuthenticationChallenge(this, challenge);
 }
 
 bool ResourceLoader::canAuthenticateAgainstProtectionSpace(const ProtectionSpace& protectionSpace)

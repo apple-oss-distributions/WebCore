@@ -30,10 +30,10 @@
 #if USE(ACCELERATED_COMPOSITING)
 @interface NSView (WebKitSecretsWebCoreKnowsAbout)
 - (BOOL)willProvidePluginLayer;
+- (void)attachPluginLayer;
 - (CALayer *)pluginLayer;
 @end
 #endif
-
 namespace WebCore {
 
 void PluginWidget::invalidateRect(const IntRect& rect)
@@ -55,6 +55,13 @@ bool PluginWidget::willProvidePluginLayer() const
     return [platformWidget() respondsToSelector:@selector(willProvidePluginLayer)]
         && [platformWidget() willProvidePluginLayer];
 }
+
+void PluginWidget::attachPluginLayer()
+{
+    if ([platformWidget() respondsToSelector:@selector(attachPluginLayer)])
+        [platformWidget() attachPluginLayer];
+}
+
 #endif // USE(ACCELERATED_COMPOSITING)
 
 } // namespace WebCore

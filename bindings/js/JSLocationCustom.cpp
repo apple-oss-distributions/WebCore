@@ -24,6 +24,7 @@
 #include "JSLocationCustom.h"
 
 #include "DOMWindow.h"
+#include "ExceptionCode.h"
 #include "Frame.h"
 #include "FrameLoader.h"
 #include "JSDOMBinding.h"
@@ -31,6 +32,7 @@
 #include "KURL.h"
 #include "Location.h"
 #include "ScriptController.h"
+#include <runtime/JSFunction.h>
 #include <runtime/PrototypeFunction.h>
 
 using namespace JSC;
@@ -93,6 +95,45 @@ bool JSLocation::getOwnPropertySlotDelegate(ExecState* exec, const Identifier& p
     return true;
 }
 
+bool JSLocation::getOwnPropertyDescriptorDelegate(ExecState* exec, const Identifier& propertyName, PropertyDescriptor& descriptor)
+{
+    Frame* frame = impl()->frame();
+    if (!frame) {
+        descriptor.setUndefined();
+        return true;
+    }
+    
+    // throw out all cross domain access
+    if (!allowsAccessFromFrame(exec, frame))
+        return true;
+    
+    // Check for the few functions that we allow, even when called cross-domain.
+    const HashEntry* entry = JSLocationPrototype::s_info.propHashTable(exec)->entry(exec, propertyName);
+    PropertySlot slot;
+    if (entry && (entry->attributes() & Function)) {
+        if (entry->function() == jsLocationPrototypeFunctionReplace) {
+            slot.setCustom(this, nonCachingStaticReplaceFunctionGetter);
+            descriptor.setDescriptor(slot.getValue(exec, propertyName), entry->attributes());
+            return true;
+        } else if (entry->function() == jsLocationPrototypeFunctionReload) {
+            slot.setCustom(this, nonCachingStaticReloadFunctionGetter);
+            descriptor.setDescriptor(slot.getValue(exec, propertyName), entry->attributes());
+            return true;
+        } else if (entry->function() == jsLocationPrototypeFunctionAssign) {
+            slot.setCustom(this, nonCachingStaticAssignFunctionGetter);
+            descriptor.setDescriptor(slot.getValue(exec, propertyName), entry->attributes());
+            return true;
+        }
+    }
+    
+    // FIXME: Other implementers of the Window cross-domain scheme (Window, History) allow toString,
+    // but for now we have decided not to, partly because it seems silly to return "[Object Location]" in
+    // such cases when normally the string form of Location would be the URL.
+
+    descriptor.setUndefined();
+    return true;
+}
+
 bool JSLocation::putDelegate(ExecState* exec, const Identifier& propertyName, JSValue value, PutPropertySlot& slot)
 {
     Frame* frame = impl()->frame();
@@ -128,19 +169,19 @@ bool JSLocation::deleteProperty(ExecState* exec, const Identifier& propertyName)
     return Base::deleteProperty(exec, propertyName);
 }
 
-void JSLocation::getPropertyNames(ExecState* exec, PropertyNameArray& propertyNames)
+void JSLocation::getOwnPropertyNames(ExecState* exec, PropertyNameArray& propertyNames, EnumerationMode mode)
 {
     // Only allow the location object to enumerated by frames in the same origin.
     if (!allowsAccessFromFrame(exec, impl()->frame()))
         return;
-    Base::getPropertyNames(exec, propertyNames);
+    Base::getOwnPropertyNames(exec, propertyNames, mode);
 }
 
-void JSLocation::defineGetter(ExecState* exec, const Identifier& propertyName, JSObject* getterFunction)
+void JSLocation::defineGetter(ExecState* exec, const Identifier& propertyName, JSObject* getterFunction, unsigned attributes)
 {
     if (propertyName == exec->propertyNames().toString || propertyName == exec->propertyNames().valueOf)
         return;
-    Base::defineGetter(exec, propertyName, getterFunction);
+    Base::defineGetter(exec, propertyName, getterFunction, attributes);
 }
 
 static void navigateIfAllowed(ExecState* exec, Frame* frame, const KURL& url, bool lockHistory, bool lockBackForwardList)
@@ -150,7 +191,7 @@ static void navigateIfAllowed(ExecState* exec, Frame* frame, const KURL& url, bo
         return;
 
     if (!protocolIsJavaScript(url) || allowsAccessFromFrame(exec, frame))
-        frame->loader()->scheduleLocationChange(url.string(), lexicalFrame->loader()->outgoingReferrer(), lockHistory, lockBackForwardList, processingUserGesture(exec));
+        frame->redirectScheduler()->scheduleLocationChange(url.string(), lexicalFrame->loader()->outgoingReferrer(), lockHistory, lockBackForwardList, processingUserGesture(exec));
 }
 
 void JSLocation::setHref(ExecState* exec, JSValue value)
@@ -174,7 +215,10 @@ void JSLocation::setProtocol(ExecState* exec, JSValue value)
     ASSERT(frame);
 
     KURL url = frame->loader()->url();
-    url.setProtocol(value.toString(exec));
+    if (!url.setProtocol(value.toString(exec))) {
+        setDOMException(exec, SYNTAX_ERR);
+        return;
+    }
 
     navigateIfAllowed(exec, frame, url, !frame->script()->anyPageIsProcessingUserGesture(), false);
 }
@@ -211,8 +255,9 @@ void JSLocation::setPort(ExecState* exec, JSValue value)
     const UString& portString = value.toString(exec);
     int port = charactersToInt(portString.data(), portString.size());
     if (port < 0 || port > 0xFFFF)
-        port = 0;
-    url.setPort(port);
+        url.removePort();
+    else
+        url.setPort(port);
 
     navigateIfAllowed(exec, frame, url, !frame->script()->anyPageIsProcessingUserGesture(), false);
 }
@@ -245,13 +290,13 @@ void JSLocation::setHash(ExecState* exec, JSValue value)
     ASSERT(frame);
 
     KURL url = frame->loader()->url();
-    String oldRef = url.ref();
+    String oldFragmentIdentifier = url.fragmentIdentifier();
     String str = value.toString(exec);
     if (str.startsWith("#"))
         str = str.substring(1);
-    if (oldRef == str || (oldRef.isNull() && str.isEmpty()))
+    if (equalIgnoringNullity(oldFragmentIdentifier, str))
         return;
-    url.setRef(str);
+    url.setFragmentIdentifier(str);
 
     navigateIfAllowed(exec, frame, url, !frame->script()->anyPageIsProcessingUserGesture(), false);
 }
@@ -280,7 +325,7 @@ JSValue JSLocation::reload(ExecState* exec, const ArgList&)
         return jsUndefined();
 
     if (!protocolIsJavaScript(frame->loader()->url()))
-        frame->loader()->scheduleRefresh(processingUserGesture(exec));
+        frame->redirectScheduler()->scheduleRefresh(processingUserGesture(exec));
     return jsUndefined();
 }
 
@@ -316,11 +361,11 @@ bool JSLocationPrototype::putDelegate(ExecState* exec, const Identifier& propert
     return (propertyName == exec->propertyNames().toString || propertyName == exec->propertyNames().valueOf);
 }
 
-void JSLocationPrototype::defineGetter(ExecState* exec, const Identifier& propertyName, JSObject* getterFunction)
+void JSLocationPrototype::defineGetter(ExecState* exec, const Identifier& propertyName, JSObject* getterFunction, unsigned attributes)
 {
     if (propertyName == exec->propertyNames().toString || propertyName == exec->propertyNames().valueOf)
         return;
-    Base::defineGetter(exec, propertyName, getterFunction);
+    Base::defineGetter(exec, propertyName, getterFunction, attributes);
 }
 
 } // namespace WebCore

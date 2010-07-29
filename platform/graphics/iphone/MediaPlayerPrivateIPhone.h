@@ -68,11 +68,15 @@ private:
     IntSize naturalSize() const;
     bool hasVideo() const;
     bool hasAudio() const;
+    bool supportsFullscreen() const { return true; }
 
     bool canLoadPoster() const { return true; }
     void setPoster(const String& url);
 
     void setControls(bool);
+
+    void enterFullScreen();
+    void exitFullScreen();
 
     void load(const String& url);
     void cancelLoad();

@@ -29,13 +29,15 @@
 #include <wtf/Noncopyable.h>
 #include <wtf/Threading.h>
 
+#include "WebCoreThread.h"
+
 namespace WebCore {
 
 // Time intervals are all in seconds.
 
 class TimerHeapElement;
 
-class TimerBase : Noncopyable {
+class TimerBase : public Noncopyable {
 public:
     TimerBase();
     virtual ~TimerBase();
@@ -100,6 +102,13 @@ private:
     TimerFiredClass* m_object;
     TimerFiredFunction m_function;
 };
+
+inline bool TimerBase::isActive() const
+{
+    // For iPhone timers are always run on the main thread or the Web Thread.
+    ASSERT(WebThreadIsCurrent() || pthread_main_np());
+    return m_nextFireTime;
+}
 
 }
 

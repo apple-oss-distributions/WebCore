@@ -2,8 +2,6 @@
     Copyright (C) 2004, 2005, 2008 Nikolas Zimmermann <zimmermann@kde.org>
                   2004, 2005, 2006, 2007 Rob Buis <buis@kde.org>
 
-    This file is part of the KDE project
-
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Library General Public
     License as published by the Free Software Foundation; either
@@ -30,8 +28,6 @@
 
 namespace WebCore {
 
-    extern char SVGStyledTransformableElementIdentifier[];
-
     class TransformationMatrix;
 
     class SVGStyledTransformableElement : public SVGStyledLocatableElement,
@@ -53,6 +49,7 @@ namespace WebCore {
         virtual FloatRect getBBox() const;
 
         virtual void parseMappedAttribute(MappedAttribute*);
+        virtual void synchronizeProperty(const QualifiedName&);
         bool isKnownAttribute(const QualifiedName&);
 
         // "base class" methods for all the elements which render as paths
@@ -61,8 +58,7 @@ namespace WebCore {
         virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
 
     protected:
-        ANIMATED_PROPERTY_DECLARATIONS(SVGStyledTransformableElement, SVGStyledTransformableElementIdentifier,
-                                       SVGNames::transformAttrString, SVGTransformList, Transform, transform)
+        DECLARE_ANIMATED_PROPERTY(SVGStyledTransformableElement, SVGNames::transformAttr, SVGTransformList*, Transform, transform)
 
     private:
         // Used by <animateMotion>

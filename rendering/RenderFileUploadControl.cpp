@@ -21,6 +21,7 @@
 #include "config.h"
 #include "RenderFileUploadControl.h"
 
+#include "Chrome.h"
 #include "FileList.h"
 #include "Frame.h"
 #include "FrameView.h"
@@ -63,6 +64,11 @@ RenderFileUploadControl::RenderFileUploadControl(HTMLInputElement* input)
     : RenderBlock(input)
     , m_button(0)
 {
+    FileList* list = input->files();
+    Vector<String> filenames;
+    unsigned length = list ? list->length() : 0;
+    for (unsigned i = 0; i < length; ++i)
+        filenames.append(list->item(i)->path());
 }
 
 RenderFileUploadControl::~RenderFileUploadControl()
@@ -95,6 +101,11 @@ bool RenderFileUploadControl::allowsMultipleFiles()
 {
     HTMLInputElement* input = static_cast<HTMLInputElement*>(node());
     return !input->getAttribute(multipleAttr).isNull();
+}
+
+String RenderFileUploadControl::acceptTypes()
+{
+    return static_cast<HTMLInputElement*>(node())->accept();
 }
 
 void RenderFileUploadControl::click()
@@ -203,7 +214,7 @@ String RenderFileUploadControl::buttonValue()
     return m_button->value();
 }
 
-String RenderFileUploadControl::fileTextValue()
+String RenderFileUploadControl::fileTextValue() const
 {
     return "";
 }

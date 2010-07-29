@@ -45,11 +45,12 @@ public:
     virtual ~ScriptValue() {}
 
     JSC::JSValue jsValue() const { return m_value.get(); }
-    bool getString(String& result) const;
+    bool getString(ScriptState*, String& result) const;
     String toString(ScriptState* scriptState) const { return m_value.get().toString(scriptState); }
     bool isEqual(ScriptState*, const ScriptValue&) const;
     bool isNull() const;
     bool isUndefined() const;
+    bool isObject() const;
     bool hasNoValue() const { return m_value == JSC::JSValue(); }
 
 private:

@@ -110,7 +110,12 @@ public:
     {
         return m_value->IsUndefined();
     }
-    
+
+    bool isObject() const
+    {
+        return m_value->IsObject();
+    }
+
     bool hasNoValue() const
     {
         return m_value.IsEmpty();
@@ -128,12 +133,13 @@ public:
         m_value.Clear();
     }
 
-    ~ScriptValue() 
+    virtual ~ScriptValue() 
     {
         clear();
     }
 
     v8::Handle<v8::Value> v8Value() const { return m_value; }
+    bool getString(ScriptState*, String& result) const { return getString(result); }
     bool getString(String& result) const;
     String toString(ScriptState*) const;
 

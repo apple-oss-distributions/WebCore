@@ -33,6 +33,9 @@
 #include "FloatPoint.h"
 #include "FloatPoint3D.h"
 #include "FloatSize.h"
+#if ENABLE(3D_CANVAS)
+#include "GraphicsContext3D.h"
+#endif
 #include "GraphicsLayerClient.h"
 #include "IntRect.h"
 #include "TransformationMatrix.h"
@@ -50,6 +53,16 @@ typedef CALayer* NativeLayer;
 typedef void* PlatformLayer;
 typedef void* NativeLayer;
 #endif
+#elif PLATFORM(WIN)
+namespace WebCore {
+class WKCACFLayer;
+typedef WKCACFLayer PlatformLayer;
+typedef void* NativeLayer;
+}
+#elif PLATFORM(QT)
+class QGraphicsItem;
+typedef QGraphicsItem PlatformLayer;
+typedef QGraphicsItem* NativeLayer;
 #else
 typedef void* PlatformLayer;
 typedef void* NativeLayer;
@@ -169,6 +182,9 @@ public:
     GraphicsLayer* parent() const { return m_parent; };
     void setParent(GraphicsLayer* layer) { m_parent = layer; } // Internal use only.
     
+    // Returns true if the layer has the given layer as an ancestor (excluding self).
+    bool hasAncestor(GraphicsLayer*) const;
+    
     const Vector<GraphicsLayer*>& children() const { return m_children; }
     // Returns true if the child list changed.
     virtual bool setChildren(const Vector<GraphicsLayer*>&);
@@ -186,6 +202,16 @@ public:
     GraphicsLayer* maskLayer() const { return m_maskLayer; }
     virtual void setMaskLayer(GraphicsLayer* layer) { m_maskLayer = layer; }
     
+    // The given layer will replicate this layer and its children; the replica renders behind this layer.
+    virtual void setReplicatedByLayer(GraphicsLayer*);
+    // Whether this layer is being replicated by another layer.
+    bool isReplicated() const { return m_replicaLayer; }
+    // The layer that replicates this layer (if any).
+    GraphicsLayer* replicaLayer() const { return m_replicaLayer; }
+
+    const FloatPoint& replicatedLayerPosition() const { return m_replicatedLayerPosition; }
+    void setReplicatedLayerPosition(const FloatPoint& p) { m_replicatedLayerPosition = p; }
+
     // Offset is origin of the renderer minus origin of the graphics layer (so either zero or negative).
     IntSize offsetFromRenderer() const { return m_offsetFromRenderer; }
     void setOffsetFromRenderer(const IntSize& offset) { m_offsetFromRenderer = offset; }
@@ -262,8 +288,14 @@ public:
     virtual PlatformLayer* contentsLayerForMedia() const { return 0; }
     virtual void setContentsBackgroundColor(const Color&) { }
     
+#if ENABLE(3D_CANVAS)
+    virtual void setContentsToGraphicsContext3D(const GraphicsContext3D*) { }
+    virtual void setGraphicsContext3DNeedsDisplay() { }
+#endif
     // Callback from the underlying graphics system to draw layer contents.
     void paintGraphicsLayerContents(GraphicsContext&, const IntRect& clip);
+    // Callback from the underlying graphics system when the layer has been displayed
+    virtual void didDisplay(PlatformLayer*) { }
     
     virtual PlatformLayer* platformLayer() const { return 0; }
     
@@ -290,8 +322,8 @@ public:
     virtual void setContentsOrientation(CompositingCoordinatesOrientation orientation) { m_contentsOrientation = orientation; }
     CompositingCoordinatesOrientation contentsOrientation() const { return m_contentsOrientation; }
 
-    static bool showDebugBorders();
-    static bool showRepaintCounter();
+    bool showDebugBorders() { return m_client ? m_client->showDebugBorders() : false; }
+    bool showRepaintCounter() { return m_client ? m_client->showRepaintCounter() : false; }
     
     void updateDebugIndicators();
     
@@ -317,6 +349,10 @@ protected:
 
     virtual void setOpacityInternal(float) { }
     
+    // The layer being replicated.
+    GraphicsLayer* replicatedLayer() const { return m_replicatedLayer; }
+    virtual void setReplicatedLayer(GraphicsLayer* layer) { m_replicatedLayer = layer; }
+
     GraphicsLayer(GraphicsLayerClient*);
 
     void dumpProperties(TextStream&, int indent) const;
@@ -358,6 +394,11 @@ protected:
     GraphicsLayer* m_parent;
 
     GraphicsLayer* m_maskLayer; // Reference to mask layer. We don't own this.
+
+    GraphicsLayer* m_replicaLayer; // A layer that replicates this layer. We only allow one, for now.
+                                   // The replica is not parented; this is the primary reference to it.
+    GraphicsLayer* m_replicatedLayer; // For a replica layer, a reference to the original layer.
+    FloatPoint m_replicatedLayerPosition; // For a replica layer, the position of the replica.
 
     IntRect m_contentsRect;
 

@@ -25,6 +25,7 @@
 
 #include "config.h"
 #include "JavaScriptCallFrame.h"
+#include "JSDOMBinding.h"
 
 #if ENABLE(JAVASCRIPT_DEBUGGER)
 
@@ -104,7 +105,7 @@ JSValue JavaScriptCallFrame::evaluate(const UString& script, JSValue& exception)
     if (!m_isValid)
         return jsNull();
 
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
     return m_debuggerCallFrame.evaluate(script, exception);
 }
 

@@ -22,6 +22,7 @@
 #include "SelectElement.h"
 
 #include "CharacterNames.h"
+#include "Chrome.h"
 #include "ChromeClient.h"
 #include "Element.h"
 #include "EventHandler.h"
@@ -47,7 +48,10 @@
 #include "WMLSelectElement.h"
 #endif
 
+// Configure platform-specific behavior when focused pop-up receives arrow/space/return keystroke.
+// (PLATFORM(MAC) and PLATFORM(GTK) are always false in Chromium, hence the extra tests.)
 #define ARROW_KEYS_POP_MENU 0
+#define SPACE_OR_RETURN_POP_MENU 0
 
 using std::min;
 using std::max;
@@ -208,22 +212,19 @@ void SelectElement::scrollToSelection(SelectElementData& data, Element* element)
         renderer->repaint();
 }
 
-void SelectElement::recalcStyle(SelectElementData& data, Element* element)
+void SelectElement::setOptionsChangedOnRenderer(SelectElementData& data, Element* element)
 {
-    RenderObject* renderer = element->renderer();
-    if (element->childNeedsStyleRecalc() && renderer) {
-        static_cast<RenderMenuList*>(renderer)->setOptionsChanged(true);
-    } else if (data.shouldRecalcListItems())
-        recalcListItems(data, element);
+    if (RenderObject* renderer = element->renderer()) {
+        UNUSED_PARAM(data);
+        toRenderMenuList(renderer)->setOptionsChanged(true);
+    }
 }
 
 void SelectElement::setRecalcListItems(SelectElementData& data, Element* element)
 {
     data.setShouldRecalcListItems(true);
     data.setActiveSelectionAnchorIndex(-1); // Manual selection anchor is reset when manipulating the select programmatically.
-    if (RenderObject* renderer = element->renderer()) {
-        static_cast<RenderMenuList*>(renderer)->setOptionsChanged(true);
-    }
+    setOptionsChangedOnRenderer(data, element);
     element->setNeedsStyleRecalc();
 }
 
@@ -231,6 +232,8 @@ void SelectElement::recalcListItems(SelectElementData& data, const Element* elem
 {
     Vector<Element*>& listItems = data.rawListItems();
     listItems.clear();
+
+    data.setShouldRecalcListItems(false);
 
     OptionElement* foundSelected = 0;
     for (Node* currentNode = element->firstChild(); currentNode;) {
@@ -277,8 +280,6 @@ void SelectElement::recalcListItems(SelectElementData& data, const Element* elem
         // <select>'s subtree at this point.
         currentNode = currentNode->traverseNextSibling(element);
     }
-
-    data.setShouldRecalcListItems(false);
 }
 
 int SelectElement::selectedIndex(const SelectElementData& data, const Element* element)
@@ -329,6 +330,8 @@ void SelectElement::setSelectedIndex(SelectElementData& data, Element* element, 
         data.setUserDrivenChange(userDrivenChange);
         if (fireOnChangeNow)
             menuListOnChange(data, element);
+        if (RenderMenuList* menuList = toRenderMenuList(element->renderer()))
+            menuList->didSetSelectedIndex();
     }
 
     if (Frame* frame = element->document()->frame())
@@ -425,7 +428,7 @@ void SelectElement::restoreFormControlState(SelectElementData& data, Element* el
             optionElement->setSelectedState(state[i] == 'X');
     }
 
-    element->setNeedsStyleRecalc();
+    setOptionsChangedOnRenderer(data, element);
 }
 
 void SelectElement::parseMultipleAttribute(SelectElementData& data, Element* element, MappedAttribute* attribute)
@@ -460,12 +463,14 @@ bool SelectElement::appendFormData(SelectElementData& data, Element* element, Fo
     // We return the first one if it was a combobox select
     if (!successful && !data.multiple() && data.size() <= 1 && items.size()) {
         OptionElement* optionElement = toOptionElement(items[0]);
-        const AtomicString& value = optionElement->value();
-        if (value.isNull())
-            list.appendData(name, optionElement->text().stripWhiteSpace());
-        else
-            list.appendData(name, value);
-        successful = true;
+        if (optionElement) {
+            const AtomicString& value = optionElement->value();
+            if (value.isNull())
+                list.appendData(name, optionElement->text().stripWhiteSpace());
+            else
+                list.appendData(name, value);
+            successful = true;
+        }
     }
 
     return successful;
@@ -473,8 +478,8 @@ bool SelectElement::appendFormData(SelectElementData& data, Element* element, Fo
 
 void SelectElement::reset(SelectElementData& data, Element* element)
 {
-    bool optionSelected = false;
     OptionElement* firstOption = 0;
+    OptionElement* selectedOption = 0;
 
     const Vector<Element*>& items = data.listItems(element);
     for (unsigned i = 0; i < items.size(); ++i) {
@@ -483,8 +488,10 @@ void SelectElement::reset(SelectElementData& data, Element* element)
             continue;
 
         if (!items[i]->getAttribute(HTMLNames::selectedAttr).isNull()) {
+            if (selectedOption && !data.multiple())
+                selectedOption->setSelectedState(false);
             optionElement->setSelectedState(true);
-            optionSelected = true;
+            selectedOption = optionElement;
         } else
             optionElement->setSelectedState(false);
 
@@ -492,11 +499,35 @@ void SelectElement::reset(SelectElementData& data, Element* element)
             firstOption = optionElement;
     }
 
-    if (!optionSelected && firstOption && data.usesMenuList())
+    if (!selectedOption && firstOption && data.usesMenuList())
         firstOption->setSelectedState(true);
 
+    setOptionsChangedOnRenderer(data, element);
     element->setNeedsStyleRecalc();
 }
+    
+#if !ARROW_KEYS_POP_MENU
+enum SkipDirection {
+    SkipBackwards = -1,
+    SkipForwards = 1
+};
+
+// Returns the index of the next valid list item |skip| items past |listIndex| in direction |direction|.
+static int nextValidIndex(const Vector<Element*>& listItems, int listIndex, SkipDirection direction, int skip)
+{
+    int lastGoodIndex = listIndex;
+    int size = listItems.size();
+    for (listIndex += direction; listIndex >= 0 && listIndex < size; listIndex += direction) {
+        --skip;
+        if (!listItems[listIndex]->disabled() && isOptionElement(listItems[listIndex])) {
+            lastGoodIndex = listIndex;
+            if (skip <= 0)
+                break;
+        }
+    }
+    return lastGoodIndex;
+}
+#endif
 
 void SelectElement::menuListDefaultEventHandler(SelectElementData& data, Element* element, Event* event, HTMLFormElement* htmlForm)
 {
@@ -517,30 +548,36 @@ void SelectElement::menuListDefaultEventHandler(SelectElementData& data, Element
             // Save the selection so it can be compared to the new selection when dispatching change events during setSelectedIndex,
             // which gets called from RenderMenuList::valueChanged, which gets called after the user makes a selection from the menu.
             saveLastSelection(data, element);
-            if (RenderMenuList* menuList = static_cast<RenderMenuList*>(element->renderer()))
+            if (RenderMenuList* menuList = toRenderMenuList(element->renderer()))
                 menuList->showPopup();
             handled = true;
         }
 #else
         const Vector<Element*>& listItems = data.listItems(element);
-        int size = listItems.size();
 
         int listIndex = optionToListIndex(data, element, selectedIndex(data, element));
         if (keyIdentifier == "Down" || keyIdentifier == "Right") {
-            for (listIndex += 1;
-                 listIndex >= 0 && listIndex < size && (listItems[listIndex]->disabled() || !isOptionElement(listItems[listIndex]));
-                 ++listIndex) { }
-            if (listIndex >= 0 && listIndex < size)
-                setSelectedIndex(data, element, listToOptionIndex(data, element, listIndex));
+            listIndex = nextValidIndex(listItems, listIndex, SkipForwards, 1);
             handled = true;
         } else if (keyIdentifier == "Up" || keyIdentifier == "Left") {
-            for (listIndex -= 1;
-                 listIndex >= 0 && listIndex < size && (listItems[listIndex]->disabled() || !isOptionElement(listItems[listIndex]));
-                 --listIndex) { }
-            if (listIndex >= 0 && listIndex < size)
-                setSelectedIndex(data, element, listToOptionIndex(data, element, listIndex));
+            listIndex = nextValidIndex(listItems, listIndex, SkipBackwards, 1);
+            handled = true;
+        } else if (keyIdentifier == "PageDown") {
+            listIndex = nextValidIndex(listItems, listIndex, SkipForwards, 3);
+            handled = true;
+        } else if (keyIdentifier == "PageUp") {
+            listIndex = nextValidIndex(listItems, listIndex, SkipBackwards, 3);
+            handled = true;
+        } else if (keyIdentifier == "Home") {
+            listIndex = nextValidIndex(listItems, -1, SkipForwards, 1);
+            handled = true;
+        } else if (keyIdentifier == "End") {
+            listIndex = nextValidIndex(listItems, listItems.size(), SkipBackwards, 1);
             handled = true;
         }
+        
+        if (handled && listIndex >= 0 && (unsigned)listIndex < listItems.size())
+            setSelectedIndex(data, element, listToOptionIndex(data, element, listIndex));
 #endif
         if (handled)
             event->setDefaultHandled();
@@ -555,13 +592,23 @@ void SelectElement::menuListDefaultEventHandler(SelectElementData& data, Element
         int keyCode = static_cast<KeyboardEvent*>(event)->keyCode();
         bool handled = false;
 
-#if ARROW_KEYS_POP_MENU
+#if SPACE_OR_RETURN_POP_MENU
+        if (keyCode == ' ' || keyCode == '\r') {
+            element->focus();
+            // Save the selection so it can be compared to the new selection when dispatching change events during setSelectedIndex,
+            // which gets called from RenderMenuList::valueChanged, which gets called after the user makes a selection from the menu.
+            saveLastSelection(data, element);
+            if (RenderMenuList* menuList = toRenderMenuList(element->renderer()))
+                menuList->showPopup();
+            handled = true;
+        }
+#elif ARROW_KEYS_POP_MENU
         if (keyCode == ' ') {
             element->focus();
             // Save the selection so it can be compared to the new selection when dispatching change events during setSelectedIndex,
             // which gets called from RenderMenuList::valueChanged, which gets called after the user makes a selection from the menu.
             saveLastSelection(data, element);
-            if (RenderMenuList* menuList = static_cast<RenderMenuList*>(element->renderer()))
+            if (RenderMenuList* menuList = toRenderMenuList(element->renderer()))
                 menuList->showPopup();
             handled = true;
         } else if (keyCode == '\r') {
@@ -598,7 +645,7 @@ void SelectElement::listBoxDefaultEventHandler(SelectElementData& data, Element*
         // Convert to coords relative to the list box if needed.
         MouseEvent* mouseEvent = static_cast<MouseEvent*>(event);
         IntPoint localOffset = roundedIntPoint(element->renderer()->absoluteToLocal(mouseEvent->absoluteLocation(), false, true));
-        int listIndex = static_cast<RenderListBox*>(element->renderer())->listIndexAtOffset(localOffset.x(), localOffset.y());
+        int listIndex = toRenderListBox(element->renderer())->listIndexAtOffset(localOffset.x(), localOffset.y());
         if (listIndex >= 0) {
             // Save the selection so it can be compared to the new selection when dispatching change events during mouseup, or after autoscroll finishes.
             saveLastSelection(data, element);
@@ -606,7 +653,7 @@ void SelectElement::listBoxDefaultEventHandler(SelectElementData& data, Element*
             data.setActiveSelectionState(true);
             
             bool multiSelectKeyPressed = false;
-#if PLATFORM(MAC)
+#if PLATFORM(MAC) || (PLATFORM(CHROMIUM) && OS(DARWIN))
             multiSelectKeyPressed = mouseEvent->metaKey();
 #else
             multiSelectKeyPressed = mouseEvent->ctrlKey();
@@ -691,7 +738,7 @@ void SelectElement::listBoxDefaultEventHandler(SelectElementData& data, Element*
                 setActiveSelectionAnchorIndex(data, element, data.activeSelectionEndIndex());
             }
 
-            static_cast<RenderListBox*>(element->renderer())->scrollToRevealElementAtListIndex(endIndex);
+            toRenderListBox(element->renderer())->scrollToRevealElementAtListIndex(endIndex);
             updateListBoxSelection(data, element, deselectOthers);
             listBoxOnChange(data, element);
             event->setDefaultHandled();
@@ -799,16 +846,24 @@ void SelectElement::typeAheadFind(SelectElementData& data, Element* element, Key
     int index = (optionToListIndex(data, element, selected >= 0 ? selected : 0) + searchStartOffset) % itemCount;
     ASSERT(index >= 0);
 
+    // Compute a case-folded copy of the prefix string before beginning the search for
+    // a matching element. This code uses foldCase to work around the fact that
+    // String::startWith does not fold non-ASCII characters. This code can be changed
+    // to use startWith once that is fixed.
+    String prefixWithCaseFolded(prefix.foldCase());
     for (int i = 0; i < itemCount; ++i, index = (index + 1) % itemCount) {
         OptionElement* optionElement = toOptionElement(items[index]);
         if (!optionElement || items[index]->disabled())
             continue;
 
+        // Fold the option string and check if its prefix is equal to the folded prefix.
         String text = optionElement->textIndentedToRespectGroupLabel();
-        if (stripLeadingWhiteSpace(text).startsWith(prefix, false)) {
+        if (stripLeadingWhiteSpace(text).foldCase().startsWith(prefixWithCaseFolded)) {
             setSelectedIndex(data, element, listToOptionIndex(data, element, index));
             if (!data.usesMenuList())
                 listBoxOnChange(data, element);
+
+            setOptionsChangedOnRenderer(data, element);
             element->setNeedsStyleRecalc();
             return;
         }
@@ -871,7 +926,7 @@ SelectElementData::SelectElementData()
 
 void SelectElementData::checkListItems(const Element* element) const
 {
-#ifndef NDEBUG
+#if !ASSERT_DISABLED
     const Vector<Element*>& items = m_listItems;
     SelectElement::recalcListItems(*const_cast<SelectElementData*>(this), element, false);
     ASSERT(items == m_listItems);

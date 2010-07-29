@@ -1,6 +1,4 @@
 /*
- * This file is part of the DOM implementation for KDE.
- *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Dirk Mueller (mueller@kde.org)
@@ -108,10 +106,11 @@ RenderBox* RenderFieldset::findLegend() const
 {
     for (RenderObject* legend = firstChild(); legend; legend = legend->nextSibling()) {
         if (!legend->isFloatingOrPositioned() && legend->node() &&
-            legend->node()->hasTagName(legendTag)
+            (legend->node()->hasTagName(legendTag)
 #if ENABLE(WML)
             || legend->node()->hasTagName(WMLNames::insertedLegendTag)
 #endif
+            )
            )
             return toRenderBox(legend);
     }
@@ -131,9 +130,10 @@ void RenderFieldset::paintBoxDecorations(PaintInfo& paintInfo, int tx, int ty)
     h -= yOff;
     ty += yOff;
 
-    paintBoxShadow(paintInfo.context, tx, ty, w, h, style());
+    paintBoxShadow(paintInfo.context, tx, ty, w, h, style(), Normal);
 
     paintFillLayers(paintInfo, style()->backgroundColor(), style()->backgroundLayers(), tx, ty, w, h);
+    paintBoxShadow(paintInfo.context, tx, ty, w, h, style(), Inset);
 
     if (!style()->hasBorder())
         return;

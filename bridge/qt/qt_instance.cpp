@@ -50,13 +50,21 @@ public:
 
     static const ClassInfo s_info;
 
-    virtual void mark()
+    virtual void markChildren(MarkStack& markStack)
     {
+        RuntimeObjectImp::markChildren(markStack);
         QtInstance* instance = static_cast<QtInstance*>(getInternalInstance());
         if (instance)
-            instance->mark();
-        RuntimeObjectImp::mark();
+            instance->markAggregate(markStack);
     }
+
+    static PassRefPtr<Structure> createStructure(JSValue prototype)
+    {
+        return Structure::create(prototype, TypeInfo(ObjectType,  StructureFlags), AnonymousSlotCount);
+    }
+
+protected:
+    static const unsigned StructureFlags = RuntimeObjectImp::StructureFlags | OverridesMarkChildren;
 
 private:
     virtual const ClassInfo* classInfo() const { return &s_info; }
@@ -65,7 +73,7 @@ private:
 const ClassInfo QtRuntimeObjectImp::s_info = { "QtRuntimeObject", &RuntimeObjectImp::s_info, 0, 0 };
 
 QtRuntimeObjectImp::QtRuntimeObjectImp(ExecState* exec, PassRefPtr<Instance> instance)
-    : RuntimeObjectImp(exec, WebCore::getDOMStructure<QtRuntimeObjectImp>(exec), instance)
+    : RuntimeObjectImp(exec, WebCore::deprecatedGetDOMStructure<QtRuntimeObjectImp>(exec), instance)
 {
 }
 
@@ -82,16 +90,14 @@ QtInstance::QtInstance(QObject* o, PassRefPtr<RootObject> rootObject, QScriptEng
 
 QtInstance::~QtInstance()
 {
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
 
     cachedInstances.remove(m_hashkey);
 
     // clean up (unprotect from gc) the JSValues we've created
     m_methods.clear();
 
-    foreach(QtField* f, m_fields.values()) {
-        delete f;
-    }
+    qDeleteAll(m_fields);
     m_fields.clear();
 
     if (m_object) {
@@ -111,12 +117,19 @@ QtInstance::~QtInstance()
 
 PassRefPtr<QtInstance> QtInstance::getQtInstance(QObject* o, PassRefPtr<RootObject> rootObject, QScriptEngine::ValueOwnership ownership)
 {
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
 
-    foreach(QtInstance* instance, cachedInstances.values(o)) {
-        if (instance->rootObject() == rootObject)
-            return instance;
-    }
+    foreach(QtInstance* instance, cachedInstances.values(o))
+        if (instance->rootObject() == rootObject) {
+            // The garbage collector removes instances, but it may happen that the wrapped
+            // QObject dies before the gc kicks in. To handle that case we have to do an additional
+            // check if to see if the instance's wrapped object is still alive. If it isn't, then
+            // we have to create a new wrapper.
+            if (!instance->getObject())
+                cachedInstances.remove(instance->hashKey());
+            else
+                return instance;
+        }
 
     RefPtr<QtInstance> ret = QtInstance::create(o, rootObject, ownership);
     cachedInstances.insert(o, ret.get());
@@ -132,6 +145,19 @@ bool QtInstance::getOwnPropertySlot(JSObject* object, ExecState* exec, const Ide
 void QtInstance::put(JSObject* object, ExecState* exec, const Identifier& propertyName, JSValue value, PutPropertySlot& slot)
 {
     object->JSObject::put(exec, propertyName, value, slot);
+}
+
+void QtInstance::removeCachedMethod(JSObject* method)
+{
+    if (m_defaultMethod == method)
+        m_defaultMethod = 0;
+
+    for(QHash<QByteArray, JSObject*>::Iterator it = m_methods.begin(),
+        end = m_methods.end(); it != end; ++it)
+        if (it.value() == method) {
+            m_methods.erase(it);
+            return;
+        }
 }
 
 QtInstance* QtInstance::getInstance(JSObject* object)
@@ -152,21 +178,17 @@ Class* QtInstance::getClass() const
 
 RuntimeObjectImp* QtInstance::newRuntimeObject(ExecState* exec)
 {
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
     return new (exec) QtRuntimeObjectImp(exec, this);
 }
 
-void QtInstance::mark()
+void QtInstance::markAggregate(MarkStack& markStack)
 {
     if (m_defaultMethod)
-        m_defaultMethod->mark();
+        markStack.append(m_defaultMethod);
     foreach(JSObject* val, m_methods.values()) {
-        if (val && !val->marked())
-            val->mark();
-    }
-    foreach(JSValue val, m_children.values()) {
-        if (val && !val.marked())
-            val.mark();
+        if (val)
+            markStack.append(val);
     }
 }
 
@@ -320,13 +342,7 @@ JSValue QtField::valueFromInstance(ExecState* exec, const Instance* inst) const
         else if (m_type == DynamicProperty)
             val = obj->property(m_dynamicProperty);
 
-        JSValue ret = convertQVariantToValue(exec, inst->rootObject(), val);
-
-        // Need to save children so we can mark them
-        if (m_type == ChildObject)
-            instance->m_children.insert(ret);
-
-        return ret;
+        return convertQVariantToValue(exec, inst->rootObject(), val);
     } else {
         QString msg = QString(QLatin1String("cannot access member `%1' of deleted QObject")).arg(QLatin1String(name()));
         return throwError(exec, GeneralError, msg.toLatin1().constData());

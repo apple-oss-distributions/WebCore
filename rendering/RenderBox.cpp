@@ -3,7 +3,7 @@
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2005 Allan Sandfeld Jensen (kde@carewolf.com)
  *           (C) 2005, 2006 Samuel Weinig (sam.weinig@gmail.com)
- * Copyright (C) 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -26,6 +26,7 @@
 #include "RenderBox.h"
 
 #include "CachedImage.h"
+#include "Chrome.h"
 #include "ChromeClient.h"
 #include "Document.h"
 #include "FrameView.h"
@@ -139,6 +140,8 @@ void RenderBox::styleWillChange(StyleDifference diff, const RenderStyle* newStyl
             markContainingBlocksForLayout();
             if (style()->position() == StaticPosition)
                 repaint();
+            else if (newStyle->position() == AbsolutePosition || newStyle->position() == FixedPosition)
+                parent()->setChildNeedsLayout(true);
             if (isFloating() && !isPositioned() && (newStyle->position() == AbsolutePosition || newStyle->position() == FixedPosition))
                 removeFloatingOrPositionedChildFromBlockLists();
         }
@@ -327,11 +330,11 @@ IntRect RenderBox::outlineBoundsForRepaint(RenderBoxModelObject* repaintContaine
     return box;
 }
 
-void RenderBox::addFocusRingRects(GraphicsContext* graphicsContext, int tx, int ty)
+void RenderBox::addFocusRingRects(Vector<IntRect>& rects, int tx, int ty)
 {
-    graphicsContext->addFocusRingRect(IntRect(tx, ty, width(), height()));
+    if (width() && height())
+        rects.append(IntRect(tx, ty, width(), height()));
 }
-
 
 IntRect RenderBox::reflectionBox() const
 {
@@ -416,6 +419,11 @@ bool RenderBox::scroll(ScrollDirection direction, ScrollGranularity granularity,
     if (b && !b->isRenderView())
         return b->scroll(direction, granularity, multiplier, stopNode);
     return false;
+}
+
+bool RenderBox::canBeScrolledAndHasScrollableArea() const
+{
+   return canBeProgramaticallyScrolled(false) && (scrollHeight() != clientHeight() || scrollWidth() != clientWidth());
 }
     
 bool RenderBox::canBeProgramaticallyScrolled(bool) const
@@ -555,13 +563,14 @@ void RenderBox::paintRootBoxDecorations(PaintInfo& paintInfo, int tx, int ty)
 {
     const FillLayer* bgLayer = style()->backgroundLayers();
     Color bgColor = style()->backgroundColor();
+    RenderObject* bodyObject = 0;
     if (!style()->hasBackground() && node() && node()->hasTagName(HTMLNames::htmlTag)) {
         // Locate the <body> element using the DOM.  This is easier than trying
         // to crawl around a render tree with potential :before/:after content and
         // anonymous blocks created by inline <body> tags etc.  We can locate the <body>
         // render object very easily via the DOM.
         HTMLElement* body = document()->body();
-        RenderObject* bodyObject = (body && body->hasLocalName(bodyTag)) ? body->renderer() : 0;
+        bodyObject = (body && body->hasLocalName(bodyTag)) ? body->renderer() : 0;
         if (bodyObject) {
             bgLayer = bodyObject->style()->backgroundLayers();
             bgColor = bodyObject->style()->backgroundColor();
@@ -589,7 +598,7 @@ void RenderBox::paintRootBoxDecorations(PaintInfo& paintInfo, int tx, int ty)
     int bw = max(w + marginLeft() + marginRight() + borderLeft() + borderRight(), rw);
     int bh = max(h + marginTop() + marginBottom() + borderTop() + borderBottom(), rh);
 
-    paintFillLayers(paintInfo, bgColor, bgLayer, bx, by, bw, bh);
+    paintFillLayers(paintInfo, bgColor, bgLayer, bx, by, bw, bh, CompositeSourceOver, bodyObject);
 
     if (style()->hasBorder() && style()->display() != INLINE)
         paintBorder(paintInfo.context, tx, ty, w, h, style());
@@ -624,7 +633,7 @@ void RenderBox::paintBoxDecorations(PaintInfo& paintInfo, int tx, int ty)
 
     // FIXME: Should eventually give the theme control over whether the box shadow should paint, since controls could have
     // custom shadows of their own.
-    paintBoxShadow(paintInfo.context, tx, ty, w, h, style());
+    paintBoxShadow(paintInfo.context, tx, ty, w, h, style(), Normal);
 
     // If we have a native theme appearance, paint that before painting our background.
     // The theme will tell us whether or not we should also paint the CSS background.
@@ -638,6 +647,7 @@ void RenderBox::paintBoxDecorations(PaintInfo& paintInfo, int tx, int ty)
         if (style()->hasAppearance())
             theme()->paintDecorations(this, paintInfo, IntRect(tx, ty, w, h));
     }
+    paintBoxShadow(paintInfo.context, tx, ty, w, h, style(), Inset);
 
     // The theme will tell us whether or not we should also paint the CSS border.
     if ((!style()->hasAppearance() || (!themePainted && theme()->paintBorderOnly(this, paintInfo, IntRect(tx, ty, w, h)))) && style()->hasBorder())
@@ -739,18 +749,18 @@ IntRect RenderBox::maskClipRect()
     return result;
 }
 
-void RenderBox::paintFillLayers(const PaintInfo& paintInfo, const Color& c, const FillLayer* fillLayer, int tx, int ty, int width, int height, CompositeOperator op)
+void RenderBox::paintFillLayers(const PaintInfo& paintInfo, const Color& c, const FillLayer* fillLayer, int tx, int ty, int width, int height, CompositeOperator op, RenderObject* backgroundObject)
 {
     if (!fillLayer)
         return;
 
-    paintFillLayers(paintInfo, c, fillLayer->next(), tx, ty, width, height, op);
-    paintFillLayer(paintInfo, c, fillLayer, tx, ty, width, height, op);
+    paintFillLayers(paintInfo, c, fillLayer->next(), tx, ty, width, height, op, backgroundObject);
+    paintFillLayer(paintInfo, c, fillLayer, tx, ty, width, height, op, backgroundObject);
 }
 
-void RenderBox::paintFillLayer(const PaintInfo& paintInfo, const Color& c, const FillLayer* fillLayer, int tx, int ty, int width, int height, CompositeOperator op)
+void RenderBox::paintFillLayer(const PaintInfo& paintInfo, const Color& c, const FillLayer* fillLayer, int tx, int ty, int width, int height, CompositeOperator op, RenderObject* backgroundObject)
 {
-    paintFillLayerExtended(paintInfo, c, fillLayer, tx, ty, width, height, 0, op);
+    paintFillLayerExtended(paintInfo, c, fillLayer, tx, ty, width, height, 0, op, backgroundObject);
 }
 
 void RenderBox::imageChanged(WrappedImagePtr image, const IntRect*)
@@ -960,18 +970,20 @@ void RenderBox::mapLocalToContainer(RenderBoxModelObject* repaintContainer, bool
         }
     }
 
-    if (style()->position() == FixedPosition)
-        fixed = true;
-
     bool containerSkipped;
     RenderObject* o = container(repaintContainer, &containerSkipped);
     if (!o)
         return;
 
+    bool isFixedPos = style()->position() == FixedPosition;
     bool hasTransform = hasLayer() && layer()->transform();
-    if (hasTransform)
-        fixed = false;  // Elements with transforms act as a containing block for fixed position descendants
-
+    if (hasTransform) {
+        // If this box has a transform, it acts as a fixed position container for fixed descendants,
+        // and may itself also be fixed position. So propagate 'fixed' up only if this box is fixed position.
+        fixed &= isFixedPos;
+    } else
+        fixed |= isFixedPos;
+    
     IntSize containerOffset = offsetFromContainer(o, roundedIntPoint(transformState.mappedPoint()));
 
     bool preserve3D = useTransforms && (o->style()->preserves3D() || style()->preserves3D());
@@ -998,12 +1010,14 @@ void RenderBox::mapAbsoluteToLocalPoint(bool fixed, bool useTransforms, Transfor
     // We don't expect absoluteToLocal() to be called during layout (yet)
     ASSERT(!view() || !view()->layoutStateEnabled());
     
-    if (style()->position() == FixedPosition)
-        fixed = true;
-
+    bool isFixedPos = style()->position() == FixedPosition;
     bool hasTransform = hasLayer() && layer()->transform();
-    if (hasTransform)
-        fixed = false;  // Elements with transforms act as a containing block for fixed position descendants
+    if (hasTransform) {
+        // If this box has a transform, it acts as a fixed position container for fixed descendants,
+        // and may itself also be fixed position. So propagate 'fixed' up only if this box is fixed position.
+        fixed &= isFixedPos;
+    } else
+        fixed |= isFixedPos;
     
     RenderObject* o = container();
     if (!o)
@@ -1105,7 +1119,7 @@ IntRect RenderBox::clippedOverflowRectForRepaint(RenderBoxModelObject* repaintCo
     if (style()->visibility() != VISIBLE && !enclosingLayer()->hasVisibleContent())
         return IntRect();
 
-    IntRect r = overflowRect(false);
+    IntRect r = visibleOverflowRect();
 
     RenderView* v = view();
     if (v) {
@@ -1486,7 +1500,7 @@ void RenderBox::calcHeight()
     // height since we don't set a height in RenderView when we're printing. So without this quirk, the 
     // height has nothing to be a percentage of, and it ends up being 0. That is bad.
     bool printingNeedsBaseHeight = document()->printing() && h.isPercent()
-        && (isRoot() || isBody() && document()->documentElement()->renderer()->style()->height().isPercent());
+        && (isRoot() || (isBody() && document()->documentElement()->renderer()->style()->height().isPercent()));
     if (stretchesToViewHeight() || printingNeedsBaseHeight) {
         int margins = collapsedMarginTop() + collapsedMarginBottom();
         int visHeight = document()->printing() ? view()->frameView()->visibleHeight() : view()->viewHeight();
@@ -1520,7 +1534,7 @@ int RenderBox::calcHeightUsing(const Length& h)
 int RenderBox::calcPercentageHeight(const Length& height)
 {
     int result = -1;
-    bool includeBorderPadding = isTable();
+    bool skippedAutoHeightContainingBlock = false;
     RenderBlock* cb = containingBlock();
     if (style()->htmlHacks()) {
         // In quirks mode, blocks with auto height are skipped, and we keep looking for an enclosing
@@ -1528,6 +1542,7 @@ int RenderBox::calcPercentageHeight(const Length& height)
         // specification, which states that percentage heights just revert to auto if the containing
         // block has an auto height.
         while (!cb->isRenderView() && !cb->isBody() && !cb->isTableCell() && !cb->isPositioned() && cb->style()->height().isAuto()) {
+            skippedAutoHeightContainingBlock = true;
             cb = cb->containingBlock();
             cb->addPercentHeightDescendant(this);
         }
@@ -1537,25 +1552,29 @@ int RenderBox::calcPercentageHeight(const Length& height)
     // explicitly specified that can be used for any percentage computations.
     bool isPositionedWithSpecifiedHeight = cb->isPositioned() && (!cb->style()->height().isAuto() || (!cb->style()->top().isAuto() && !cb->style()->bottom().isAuto()));
 
+    bool includeBorderPadding = isTable();
+
     // Table cells violate what the CSS spec says to do with heights.  Basically we
     // don't care if the cell specified a height or not.  We just always make ourselves
     // be a percentage of the cell's current content height.
     if (cb->isTableCell()) {
-        result = cb->overrideSize();
-        if (result == -1) {
-            // Normally we would let the cell size intrinsically, but scrolling overflow has to be
-            // treated differently, since WinIE lets scrolled overflow regions shrink as needed.
-            // While we can't get all cases right, we can at least detect when the cell has a specified
-            // height or when the table has a specified height.  In these cases we want to initially have
-            // no size and allow the flexing of the table or the cell to its specified height to cause us
-            // to grow to fill the space.  This could end up being wrong in some cases, but it is
-            // preferable to the alternative (sizing intrinsically and making the row end up too big).
-            RenderTableCell* cell = static_cast<RenderTableCell*>(cb);
-            if (scrollsOverflowY() && (!cell->style()->height().isAuto() || !cell->table()->style()->height().isAuto()))
-                return 0;
-            return -1;
+        if (!skippedAutoHeightContainingBlock) {
+            result = cb->overrideSize();
+            if (result == -1) {
+                // Normally we would let the cell size intrinsically, but scrolling overflow has to be
+                // treated differently, since WinIE lets scrolled overflow regions shrink as needed.
+                // While we can't get all cases right, we can at least detect when the cell has a specified
+                // height or when the table has a specified height.  In these cases we want to initially have
+                // no size and allow the flexing of the table or the cell to its specified height to cause us
+                // to grow to fill the space.  This could end up being wrong in some cases, but it is
+                // preferable to the alternative (sizing intrinsically and making the row end up too big).
+                RenderTableCell* cell = toRenderTableCell(cb);
+                if (scrollsOverflowY() && (!cell->style()->height().isAuto() || !cell->table()->style()->height().isAuto()))
+                    return 0;
+                return -1;
+            }
+            includeBorderPadding = true;
         }
-        includeBorderPadding = true;
     }
     // Otherwise we only use our percentage height if our containing block had a specified
     // height.
@@ -1931,7 +1950,7 @@ void RenderBox::calcAbsoluteHorizontalValues(Length width, const RenderBoxModelO
                                              int& widthValue, int& marginLeftValue, int& marginRightValue, int& xPos)
 {
     // 'left' and 'right' cannot both be 'auto' because one would of been
-    // converted to the static postion already
+    // converted to the static position already
     ASSERT(!(left.isAuto() && right.isAuto()));
 
     int leftValue = 0;
@@ -1965,7 +1984,7 @@ void RenderBox::calcAbsoluteHorizontalValues(Length width, const RenderBoxModelO
         if (marginLeft.isAuto() && marginRight.isAuto()) {
             // Both margins auto, solve for equality
             if (availableSpace >= 0) {
-                marginLeftValue = availableSpace / 2; // split the diference
+                marginLeftValue = availableSpace / 2; // split the difference
                 marginRightValue = availableSpace - marginLeftValue;  // account for odd valued differences
             } else {
                 // see FIXME 1
@@ -2250,7 +2269,7 @@ void RenderBox::calcAbsoluteVerticalValues(Length h, const RenderBoxModelObject*
         if (marginTop.isAuto() && marginBottom.isAuto()) {
             // Both margins auto, solve for equality
             // NOTE: This may result in negative values.
-            marginTopValue = availableSpace / 2; // split the diference
+            marginTopValue = availableSpace / 2; // split the difference
             marginBottomValue = availableSpace - marginTopValue; // account for odd valued differences
         } else if (marginTop.isAuto()) {
             // Solve for top margin
@@ -2328,7 +2347,7 @@ void RenderBox::calcAbsoluteVerticalValues(Length h, const RenderBoxModelObject*
 void RenderBox::calcAbsoluteHorizontalReplaced()
 {
     // The following is based off of the W3C Working Draft from April 11, 2006 of
-    // CSS 2.1: Section 10.3.8 "Absolutly positioned, replaced elements"
+    // CSS 2.1: Section 10.3.8 "Absolutely positioned, replaced elements"
     // <http://www.w3.org/TR/2005/WD-CSS21-20050613/visudet.html#abs-replaced-width>
     // (block-style-comments in this function correspond to text from the spec and
     // the numbers correspond to numbers in spec)
@@ -2419,7 +2438,7 @@ void RenderBox::calcAbsoluteHorizontalReplaced()
 
         int difference = availableSpace - (leftValue + rightValue);
         if (difference > 0) {
-            m_marginLeft = difference / 2; // split the diference
+            m_marginLeft = difference / 2; // split the difference
             m_marginRight = difference - m_marginLeft; // account for odd valued differences
         } else {
             // see FIXME 1
@@ -2506,7 +2525,7 @@ void RenderBox::calcAbsoluteHorizontalReplaced()
 void RenderBox::calcAbsoluteVerticalReplaced()
 {
     // The following is based off of the W3C Working Draft from April 11, 2006 of
-    // CSS 2.1: Section 10.6.5 "Absolutly positioned, replaced elements"
+    // CSS 2.1: Section 10.6.5 "Absolutely positioned, replaced elements"
     // <http://www.w3.org/TR/2005/WD-CSS21-20050613/visudet.html#abs-replaced-height>
     // (block-style-comments in this function correspond to text from the spec and
     // the numbers correspond to numbers in spec)
@@ -2570,7 +2589,7 @@ void RenderBox::calcAbsoluteVerticalReplaced()
     int bottomValue = 0;
 
     if (marginTop.isAuto() && marginBottom.isAuto()) {
-        // 'top' and 'bottom' cannot be 'auto' due to step 2 and 3 combinded.
+        // 'top' and 'bottom' cannot be 'auto' due to step 2 and 3 combined.
         ASSERT(!(top.isAuto() || bottom.isAuto()));
 
         topValue = top.calcValue(containerHeight);
@@ -2651,9 +2670,9 @@ IntRect RenderBox::localCaretRect(InlineBox* box, int caretOffset, int* extraWid
 
     if (box) {
         RootInlineBox* rootBox = box->root();
-        int top = rootBox->topOverflow();
+        int top = rootBox->lineTop();
         rect.setY(top);
-        rect.setHeight(rootBox->bottomOverflow() - top);
+        rect.setHeight(rootBox->lineBottom() - top);
     }
 
     // If height of box is smaller than font height, use the latter one,
@@ -2706,16 +2725,11 @@ int RenderBox::leftmostPosition(bool /*includeOverflowInterior*/, bool includeSe
     return left;
 }
 
-bool RenderBox::isAfterContent(RenderObject* child) const
-{
-    return (child && child->style()->styleType() == AFTER && (!child->isText() || child->isBR()));
-}
-
 VisiblePosition RenderBox::positionForPoint(const IntPoint& point)
 {
     // no children...return this render object's element, if there is one, and offset 0
     if (!firstChild())
-        return createVisiblePosition(firstDeepEditingPositionForNode(node()));
+        return createVisiblePosition(node() ? firstDeepEditingPositionForNode(node()) : Position(0, 0));
 
     int xPos = point.x();
     int yPos = point.y();
@@ -2816,6 +2830,81 @@ bool RenderBox::shrinkToAvoidFloats() const
 bool RenderBox::avoidsFloats() const
 {
     return isReplaced() || hasOverflowClip() || isHR();
+}
+
+void RenderBox::addShadowOverflow()
+{
+    int shadowLeft;
+    int shadowRight;
+    int shadowTop;
+    int shadowBottom;
+    style()->getBoxShadowExtent(shadowTop, shadowRight, shadowBottom, shadowLeft);
+    IntRect borderBox = borderBoxRect();
+    int overflowLeft = borderBox.x() + shadowLeft;
+    int overflowRight = borderBox.right() + shadowRight;
+    int overflowTop = borderBox.y() + shadowTop;
+    int overflowBottom = borderBox.bottom() + shadowBottom;
+    addVisualOverflow(IntRect(overflowLeft, overflowTop, overflowRight - overflowLeft, overflowBottom - overflowTop));
+}
+
+void RenderBox::addOverflowFromChild(RenderBox* child, const IntSize& delta)
+{
+    // Update our overflow in case the child spills out the block, but only if we were going to paint
+    // the child block ourselves.
+    if (child->hasSelfPaintingLayer())
+        return;
+
+    // Only propagate layout overflow from the child if the child isn't clipping its overflow.  If it is, then
+    // its overflow is internal to it, and we don't care about it.
+    IntRect childLayoutOverflowRect = child->hasOverflowClip() ? child->borderBoxRect() : child->layoutOverflowRect();
+    childLayoutOverflowRect.move(delta);
+    addLayoutOverflow(childLayoutOverflowRect);
+            
+    // Add in visual overflow from the child.  Even if the child clips its overflow, it may still
+    // have visual overflow of its own set from box shadows or reflections.  It is unnecessary to propagate this
+    // overflow if we are clipping our own overflow.
+    if (hasOverflowClip())
+        return;
+    IntRect childVisualOverflowRect = child->visualOverflowRect();
+    childVisualOverflowRect.move(delta);
+    addVisualOverflow(childVisualOverflowRect);
+}
+
+void RenderBox::addLayoutOverflow(const IntRect& rect)
+{
+    IntRect borderBox = borderBoxRect();
+    if (borderBox.contains(rect))
+        return;
+        
+    if (!m_overflow)
+        m_overflow.set(new RenderOverflow(borderBox));
+    
+    m_overflow->addLayoutOverflow(rect);
+}
+
+void RenderBox::addVisualOverflow(const IntRect& rect)
+{
+    IntRect borderBox = borderBoxRect();
+    if (borderBox.contains(rect))
+        return;
+        
+    if (!m_overflow)
+        m_overflow.set(new RenderOverflow(borderBox));
+    
+    m_overflow->addVisualOverflow(rect);
+}
+
+void RenderBox::clearLayoutOverflow()
+{
+    if (!m_overflow)
+        return;
+    
+    if (visualOverflowRect() == borderBoxRect()) {
+        m_overflow.clear();
+        return;
+    }
+    
+    m_overflow->resetLayoutOverflow(borderBoxRect());
 }
 
 #if ENABLE(SVG)

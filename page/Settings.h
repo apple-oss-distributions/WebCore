@@ -66,7 +66,7 @@ namespace WebCore {
     // if possible in the future.
     enum EditingBehavior { EditingMacBehavior, EditingWindowsBehavior };
 
-    class Settings {
+    class Settings : public Noncopyable {
     public:
         Settings(Page*);
 
@@ -100,6 +100,8 @@ namespace WebCore {
         void setDefaultFixedFontSize(int);
         int defaultFixedFontSize() const { return m_defaultFixedFontSize; }
 
+        // Unlike areImagesEnabled, this only suppresses the network load of
+        // the image URL.  A cached image will still be rendered if requested.
         void setLoadsImagesAutomatically(bool);
         bool loadsImagesAutomatically() const { return m_loadsImagesAutomatically; }
 
@@ -118,6 +120,9 @@ namespace WebCore {
         void setJavaEnabled(bool);
         bool isJavaEnabled() const { return m_isJavaEnabled; }
 
+        void setImagesEnabled(bool);
+        bool areImagesEnabled() const { return m_areImagesEnabled; }
+
         void setPluginsEnabled(bool);
         bool arePluginsEnabled() const { return m_arePluginsEnabled; }
 
@@ -126,6 +131,17 @@ namespace WebCore {
 
         void setLocalStorageEnabled(bool);
         bool localStorageEnabled() const { return m_localStorageEnabled; }
+
+#if ENABLE(DOM_STORAGE)
+        void setLocalStorageQuota(unsigned);
+        unsigned localStorageQuota() const { return m_localStorageQuota; }
+        
+        // Allow clients concerned with memory consumption to set a quota on session storage
+        // since the memory used won't be released until the Page is destroyed.
+        // Default is noQuota.
+        void setSessionStorageQuota(unsigned);
+        unsigned sessionStorageQuota() const { return m_sessionStorageQuota; }
+#endif
 
         void setPrivateBrowsingEnabled(bool);
         bool privateBrowsingEnabled() const { return m_privateBrowsingEnabled; }
@@ -194,10 +210,10 @@ namespace WebCore {
         
         void setDeveloperExtrasEnabled(bool);
         bool developerExtrasEnabled() const { return m_developerExtrasEnabled; }
-
-        void setFlatFrameSetLayoutEnabled(bool);
-        bool flatFrameSetLayoutEnabled() const { return m_flatFrameSetLayoutEnabled; }
-
+ 
+        void setFrameFlatteningEnabled(bool);
+        bool frameFlatteningEnabled() const { return m_frameFlatteningEnabled; }
+        
         void setStandalone(bool flag);
         bool standalone() const { return m_standalone; }
 
@@ -210,6 +226,12 @@ namespace WebCore {
         void setFoundationCachingEnabled(bool flag) { m_foundationCachingEnabled = flag; }
         bool foundationCachingEnabled() const { return m_foundationCachingEnabled; }
 
+        void setMediaPlaybackAllowsInline(bool flag) { m_mediaPlaybackAllowsInline = flag; }
+        bool mediaPlaybackAllowsInline() const { return m_mediaPlaybackAllowsInline; }
+
+        void setMediaPlaybackRequiresUserAction(bool flag) { m_mediaPlaybackRequiresUserAction = flag; }
+        bool mediaPlaybackRequiresUserAction() const { return m_mediaPlaybackRequiresUserAction; }
+
         void setMinimumZoomFontSize(float size) { m_minimumZoomFontSize = size; }
         float minimumZoomFontSize() const { return m_minimumZoomFontSize; }
 
@@ -218,6 +240,10 @@ namespace WebCore {
 
         void setMaxParseDuration(double maxParseDuration) { m_maxParseDuration = maxParseDuration; }
         double maxParseDuration() const { return m_maxParseDuration; }
+
+        void setAlwaysUseBaselineOfPrimaryFont(bool flag) { m_alwaysUseBaselineOfPrimaryFont = flag; }
+        bool alwaysUseBaselineOfPrimaryFont() const { return m_alwaysUseBaselineOfPrimaryFont; }
+
         
         void setAuthorAndUserStylesEnabled(bool);
         bool authorAndUserStylesEnabled() const { return m_authorAndUserStylesEnabled; }
@@ -276,10 +302,31 @@ namespace WebCore {
         void setAcceleratedCompositingEnabled(bool);
         bool acceleratedCompositingEnabled() const { return m_acceleratedCompositingEnabled; }
 
-#if PLATFORM(WIN)
+        void setShowDebugBorders(bool);
+        bool showDebugBorders() const { return m_showDebugBorders; }
+
+        void setShowRepaintCounter(bool);
+        bool showRepaintCounter() const { return m_showRepaintCounter; }
+
+        void setExperimentalNotificationsEnabled(bool);
+        bool experimentalNotificationsEnabled() const { return m_experimentalNotificationsEnabled; }
+
+#if PLATFORM(WIN) || (OS(WINDOWS) && PLATFORM(WX))
         static void setShouldUseHighResolutionTimers(bool);
         static bool shouldUseHighResolutionTimers() { return gShouldUseHighResolutionTimers; }
 #endif
+
+        void setPluginAllowedRunTime(unsigned);
+        unsigned pluginAllowedRunTime() const { return m_pluginAllowedRunTime; }
+
+        void setWebGLEnabled(bool);
+        bool webGLEnabled() const { return m_webGLEnabled; }
+
+        void setGeolocationEnabled(bool);
+        bool geolocationEnabled() const { return m_geolocationEnabled; }
+
+        void setLoadDeferringEnabled(bool);
+        bool loadDeferringEnabled() const { return m_loadDeferringEnabled; }
 
     private:
         Page* m_page;
@@ -305,10 +352,17 @@ namespace WebCore {
         float m_minimumZoomFontSize;
         int m_layoutInterval;
         double m_maxParseDuration;
+        bool m_alwaysUseBaselineOfPrimaryFont;
+#if ENABLE(DOM_STORAGE)
+        unsigned m_localStorageQuota;
+        unsigned m_sessionStorageQuota;
+#endif
+        unsigned m_pluginAllowedRunTime;
         bool m_isJavaEnabled : 1;
         bool m_loadsImagesAutomatically : 1;
         bool m_privateBrowsingEnabled : 1;
         bool m_caretBrowsingEnabled : 1;
+        bool m_areImagesEnabled : 1;
         bool m_arePluginsEnabled : 1;
         bool m_databasesEnabled : 1;
         bool m_localStorageEnabled : 1;
@@ -335,10 +389,12 @@ namespace WebCore {
         bool m_authorAndUserStylesEnabled : 1;
         bool m_needsSiteSpecificQuirks : 1;
         unsigned m_fontRenderingMode : 1;
-        bool m_flatFrameSetLayoutEnabled : 1;
+        bool m_frameFlatteningEnabled : 1;
         bool m_standalone : 1;     
         bool m_telephoneNumberParsingEnabled : 1;
         bool m_foundationCachingEnabled : 1;
+        bool m_mediaPlaybackAllowsInline : 1;
+        bool m_mediaPlaybackRequiresUserAction : 1;
         bool m_webArchiveDebugModeEnabled : 1;
         bool m_localFileContentSniffingEnabled : 1;
         bool m_inApplicationChromeMode : 1;
@@ -352,11 +408,17 @@ namespace WebCore {
         bool m_downloadableBinaryFontsEnabled : 1;
         bool m_xssAuditorEnabled : 1;
         bool m_acceleratedCompositingEnabled : 1;
+        bool m_showDebugBorders : 1;
+        bool m_showRepaintCounter : 1;
+        bool m_experimentalNotificationsEnabled : 1;
+        bool m_webGLEnabled : 1;
+        bool m_geolocationEnabled : 1;
+        bool m_loadDeferringEnabled : 1;
 
 #if USE(SAFARI_THEME)
         static bool gShouldPaintNativeControls;
 #endif
-#if PLATFORM(WIN)
+#if PLATFORM(WIN) || (OS(WINDOWS) && PLATFORM(WX))
         static bool gShouldUseHighResolutionTimers;
 #endif
     };

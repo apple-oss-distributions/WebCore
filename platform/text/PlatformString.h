@@ -31,17 +31,7 @@
 #include <objc/objc.h>
 #endif
 
-#if USE(JSC)
-#include <runtime/Identifier.h>
-#else
-// runtime/Identifier.h brings in a variety of wtf headers.  We explicitly
-// include them in the case of non-JSC builds to keep things consistent.
-#include <wtf/HashMap.h>
-#include <wtf/HashSet.h>
-#include <wtf/OwnPtr.h>
-#endif
-
-#if PLATFORM(CF) || (PLATFORM(QT) && PLATFORM(DARWIN))
+#if PLATFORM(CF)
 typedef const struct __CFString * CFStringRef;
 #endif
 
@@ -54,6 +44,17 @@ QT_END_NAMESPACE
 
 #if PLATFORM(WX)
 class wxString;
+#endif
+
+#if PLATFORM(HAIKU)
+class BString;
+#endif
+
+#if USE(JSC)
+namespace JSC {
+class Identifier;
+class UString;
+}
 #endif
 
 namespace WebCore {
@@ -189,23 +190,20 @@ public:
 
     bool percentage(int& percentage) const;
 
-    // Makes a deep copy. Helpful only if you need to use a String on another thread.
+    // Returns a StringImpl suitable for use on another thread.
+    String crossThreadString() const;
+    // Makes a deep copy. Helpful only if you need to use a String on another thread
+    // (use crossThreadString if the method call doesn't need to be threadsafe).
     // Since the underlying StringImpl objects are immutable, there's no other reason
     // to ever prefer copy() over plain old assignment.
-    String copy() const;
-
-    // Makes a deep copy like copy() but only for a substring.
-    // (This ensures that you always get something suitable for a thread while subtring
-    // may not.  For example, in the empty string case, StringImpl::substring returns
-    // empty() which is not safe for another thread.)
-    String substringCopy(unsigned pos, unsigned len  = UINT_MAX) const;
+    String threadsafeCopy() const;
 
     bool isNull() const { return !m_impl; }
     bool isEmpty() const;
 
     StringImpl* impl() const { return m_impl.get(); }
 
-#if PLATFORM(CF) || (PLATFORM(QT) && PLATFORM(DARWIN))
+#if PLATFORM(CF)
     String(CFStringRef);
     CFStringRef createCFString() const;
 #endif
@@ -229,6 +227,11 @@ public:
     operator wxString() const;
 #endif
 
+#if PLATFORM(HAIKU)
+    String(const BString&);
+    operator BString() const;
+#endif
+
 #ifndef NDEBUG
     Vector<char> ascii() const;
 #endif
@@ -244,6 +247,14 @@ public:
     
     // Determines the writing direction using the Unicode Bidi Algorithm rules P2 and P3.
     WTF::Unicode::Direction defaultWritingDirection() const { return m_impl ? m_impl->defaultWritingDirection() : WTF::Unicode::LeftToRight; }
+
+    // Counts the number of grapheme clusters. A surrogate pair or a sequence
+    // of a non-combining character and following combining characters is
+    // counted as 1 grapheme cluster.
+    unsigned numGraphemeClusters() const;
+    // Returns the number of characters which will be less than or equal to
+    // the specified grapheme cluster length.
+    unsigned numCharactersInGraphemeClusters(unsigned) const;
 
 private:
     RefPtr<StringImpl> m_impl;
@@ -271,6 +282,13 @@ inline bool operator!=(const char* a, const String& b) { return !equal(a, b.impl
 inline bool equalIgnoringCase(const String& a, const String& b) { return equalIgnoringCase(a.impl(), b.impl()); }
 inline bool equalIgnoringCase(const String& a, const char* b) { return equalIgnoringCase(a.impl(), b); }
 inline bool equalIgnoringCase(const char* a, const String& b) { return equalIgnoringCase(a, b.impl()); }
+
+inline bool equalPossiblyIgnoringCase(const String& a, const String& b, bool ignoreCase) 
+{
+    return ignoreCase ? equalIgnoringCase(a, b) : (a == b);
+}
+
+inline bool equalIgnoringNullity(const String& a, const String& b) { return equalIgnoringNullity(a.impl(), b.impl()); }
 
 inline bool operator!(const String& str) { return str.isNull(); }
 

@@ -37,6 +37,7 @@ namespace WebCore {
         SVGFontElement(const QualifiedName&, Document*);
         virtual ~SVGFontElement();
 
+        virtual void synchronizeProperty(const QualifiedName&);
         virtual bool rendererIsNeeded(RenderStyle*) { return false; }    
 
         void invalidateGlyphCache();
@@ -47,10 +48,10 @@ namespace WebCore {
 
         SVGMissingGlyphElement* firstMissingGlyphElement() const;
 
-    protected:
-        virtual const SVGElement* contextElement() const { return this; }
-
     private:
+        // SVGExternalResourcesRequired
+        DECLARE_ANIMATED_PROPERTY(SVGFontElement, SVGNames::externalResourcesRequiredAttr, bool, ExternalResourcesRequired, externalResourcesRequired)
+
         void ensureGlyphCache() const;
 
         typedef Vector<SVGHorizontalKerningPair> KerningPairVector;

@@ -44,16 +44,6 @@ void WebThreadPostNotificationAsync(NSString *name, id object, id userInfo);
 // Convenience method for making an NSInvocation object
 NSInvocation *WebThreadMakeNSInvocation(id target, SEL selector);
 
-// Deprecated since the method name doesn't match Cocoa memory management rules.  See <rdar://problem/6794574>.
-#if defined(__cplusplus)
-inline NSInvocation *WebThreadCreateNSInvocation(id target, SEL selector)
-{
-    return WebThreadMakeNSInvocation(target, selector);
-}
-#else
-#define WebThreadCreateNSInvocation WebThreadMakeNSInvocation
-#endif
-
 #if defined(__cplusplus)
 }
 #endif

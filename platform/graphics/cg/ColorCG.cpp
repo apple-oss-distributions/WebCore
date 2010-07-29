@@ -29,9 +29,9 @@
 #if PLATFORM(CG)
 
 #include <wtf/Assertions.h>
+#include <wtf/RetainPtr.h>
 #include <CoreGraphics/CoreGraphics.h>
 #include <CoreGraphics/CGColorTransform.h>
-#include <wtf/RetainPtr.h>
 #include <wtf/StdLibExtras.h>
 
 namespace WebCore {
@@ -108,7 +108,7 @@ Color::Color(CGColorRef color)
     m_color = makeRGBA(r * 255, g * 255, b * 255, a * 255);
 }
 
-#if PLATFORM(WIN_OS)
+#if OS(WINDOWS)
 
 CGColorRef createCGColor(const Color& c)
 {
@@ -116,13 +116,12 @@ CGColorRef createCGColor(const Color& c)
     CMProfileRef prof = NULL;
     CMGetSystemProfile(&prof);
 
-    CGColorSpaceRef rgbSpace = CGColorSpaceCreateWithPlatformColorSpace(prof);
+    RetainPtr<CGColorSpaceRef> rgbSpace(AdoptCF, CGColorSpaceCreateWithPlatformColorSpace(prof));
 
-    if (rgbSpace != NULL)
-    {
-        float components[4] = {c.red() / 255.0f, c.green() / 255.0f, c.blue() / 255.0f, c.alpha() / 255.0f};
-        color = CGColorCreate(rgbSpace, components);
-        CGColorSpaceRelease(rgbSpace);
+    if (rgbSpace) {
+        CGFloat components[4] = { static_cast<CGFloat>(c.red()) / 255, static_cast<CGFloat>(c.green()) / 255,
+                                  static_cast<CGFloat>(c.blue()) / 255, static_cast<CGFloat>(c.alpha()) / 255 };
+        color = CGColorCreate(rgbSpace.get(), components);
     }
 
     CMCloseProfile(prof);
@@ -130,7 +129,7 @@ CGColorRef createCGColor(const Color& c)
     return color;
 }
 
-#endif // PLATFORM(WIN_OS)
+#endif // OS(WINDOWS)
 
 
 CGColorRef createCGColor(const Color &color)

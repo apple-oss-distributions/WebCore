@@ -27,10 +27,11 @@
 #define GIFImageDecoder_h
 
 #include "ImageDecoder.h"
+#include <wtf/OwnPtr.h>
+
+class GIFImageReader;
 
 namespace WebCore {
-
-    class GIFImageDecoderPrivate;
 
     // This class decodes the GIF image format.
     class GIFImageDecoder : public ImageDecoder {
@@ -48,7 +49,7 @@ namespace WebCore {
 
         // The total number of frames for the image.  Will scan the image data for the answer
         // (without necessarily decoding all of the individual frames).
-        virtual int frameCount();
+        virtual size_t frameCount();
 
         // The number of repetitions to perform for an animation loop.
         virtual int repetitionCount() const;
@@ -66,7 +67,7 @@ namespace WebCore {
         // Callbacks from the GIF reader.
         bool sizeNowAvailable(unsigned width, unsigned height);
         void decodingHalted(unsigned bytesLeft);
-        void haveDecodedRow(unsigned frameIndex, unsigned char* rowBuffer, unsigned char* rowEnd, unsigned rowNumber, 
+        bool haveDecodedRow(unsigned frameIndex, unsigned char* rowBuffer, unsigned char* rowEnd, unsigned rowNumber, 
                             unsigned repeatCount, bool writeTransparentPixels);
         void frameComplete(unsigned frameIndex, unsigned frameDuration, RGBA32Buffer::FrameDisposalMethod disposalMethod);
         void gifComplete();
@@ -80,7 +81,8 @@ namespace WebCore {
         bool m_frameCountValid;
         bool m_currentBufferSawAlpha;
         mutable int m_repetitionCount;
-        GIFImageDecoderPrivate* m_reader;
+        OwnPtr<GIFImageReader> m_reader;
+        unsigned m_readOffset;
     };
 
 } // namespace WebCore

@@ -29,16 +29,22 @@
 #include "CachedFramePlatformData.h"
 #include "CString.h"
 #include "DocumentLoader.h"
+#include "ExceptionCode.h"
 #include "EventNames.h"
 #include "Frame.h"
 #include "FrameLoaderClient.h"
 #include "FrameView.h"
 #include "Logging.h"
+#include "PageTransitionEvent.h"
 #include <wtf/RefCountedLeakCounter.h>
 
 #if ENABLE(SVG)
 #include "SVGDocumentExtensions.h"
 #endif
+
+#include "Chrome.h"
+#include "ChromeClient.h"
+#include "Page.h"
 
 namespace WebCore {
 
@@ -97,7 +103,7 @@ void CachedFrameBase::restore()
     for (unsigned i = 0; i < m_childFrames.size(); ++i)
         m_childFrames[i]->open();
 
-    m_document->dispatchPageTransitionEvent(EventNames().pageshowEvent, true);
+    m_document->dispatchWindowEvent(PageTransitionEvent::create(eventNames().pageshowEvent, true), m_document);
 }
 
 CachedFrame::CachedFrame(Frame* frame)
@@ -134,18 +140,25 @@ CachedFrame::CachedFrame(Frame* frame)
     for (unsigned i = 0; i < m_childFrames.size(); ++i)
         frame->tree()->removeChild(m_childFrames[i]->view()->frame());
 
+    if (!m_isMainFrame)
+        frame->page()->decrementFrameCount();
+
 #ifndef NDEBUG
     if (m_isMainFrame)
         LOG(PageCache, "Finished creating CachedFrame for main frame url '%s' and DocumentLoader %p\n", m_url.string().utf8().data(), m_documentLoader.get());
     else
         LOG(PageCache, "Finished creating CachedFrame for child frame with url '%s' and DocumentLoader %p\n", m_url.string().utf8().data(), m_documentLoader.get());
 #endif
+
 }
 
 void CachedFrame::open()
 {
     ASSERT(m_view);
     m_view->frame()->loader()->open(*this);
+
+    if (!m_isMainFrame)
+        m_view->frame()->page()->incrementFrameCount();
 }
 
 void CachedFrame::clear()
@@ -216,6 +229,15 @@ void CachedFrame::setCachedFramePlatformData(CachedFramePlatformData* data)
 CachedFramePlatformData* CachedFrame::cachedFramePlatformData()
 {
     return m_cachedFramePlatformData.get();
+}
+
+int CachedFrame::descendantFrameCount() const
+{
+    int count = m_childFrames.size();
+    for (size_t i = 0; i < m_childFrames.size(); ++i)
+        count += m_childFrames[i]->descendantFrameCount();
+    
+    return count;
 }
 
 } // namespace WebCore

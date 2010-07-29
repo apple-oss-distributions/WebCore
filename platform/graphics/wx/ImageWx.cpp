@@ -31,6 +31,7 @@
 #include "FloatRect.h"
 #include "GraphicsContext.h"
 #include "ImageObserver.h"
+#include "NotImplemented.h"
 #include "TransformationMatrix.h"
 
 #include <math.h>
@@ -44,9 +45,6 @@
 #include <wx/graphics.h>
 #include <wx/image.h>
 #include <wx/thread.h>
-
-// This function loads resources from WebKit
-Vector<char> loadResourceIntoArray(const char*);
 
 namespace WebCore {
 
@@ -72,7 +70,9 @@ bool FrameData::clear(bool clearMetadata)
 
 PassRefPtr<Image> Image::loadPlatformResource(const char *name)
 {
-    Vector<char> arr = loadResourceIntoArray(name);
+    // FIXME: We need to have some 'placeholder' graphics for things like missing
+    // plugins or broken images.
+    Vector<char> arr;
     RefPtr<Image> img = BitmapImage::create();
     RefPtr<SharedBuffer> buffer = SharedBuffer::create(arr.data(), arr.size());
     img->setData(buffer, true);
@@ -86,13 +86,13 @@ void BitmapImage::initPlatformData()
 
 // Drawing Routines
 
-void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dst, const FloatRect& src, CompositeOperator op)
+void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dst, const FloatRect& src, ColorSpace styleColorSpace, CompositeOperator op)
 {
     if (!m_source.initialized())
         return;
 
     if (mayFillWithSolidColor()) {
-        fillWithSolidColor(ctxt, dst, solidColor(), op);
+        fillWithSolidColor(ctxt, dst, solidColor(), styleColorSpace, op);
         return;
     }
 
@@ -176,7 +176,7 @@ void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dst, const FloatR
         observer->didDraw(this);
 }
 
-void BitmapImage::drawPattern(GraphicsContext* ctxt, const FloatRect& srcRect, const TransformationMatrix& patternTransform, const FloatPoint& phase, CompositeOperator, const FloatRect& dstRect)
+void BitmapImage::drawPattern(GraphicsContext* ctxt, const FloatRect& srcRect, const TransformationMatrix& patternTransform, const FloatPoint& phase, ColorSpace, CompositeOperator, const FloatRect& dstRect)
 {
     if (!m_source.initialized())
         return;
@@ -259,6 +259,11 @@ void BitmapImage::checkForSolidColor()
 void BitmapImage::invalidatePlatformData()
 {
 
+}
+
+void Image::drawPattern(GraphicsContext*, const FloatRect& srcRect, const TransformationMatrix& patternTransform, const FloatPoint& phase, ColorSpace, CompositeOperator, const FloatRect& destRect)
+{
+    notImplemented();
 }
 
 }

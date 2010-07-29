@@ -118,7 +118,6 @@ String pathByAppendingComponent(const String& path, const String& component)
 
 bool makeAllDirectories(const String& path)
 {
-    struct stat sb;
     CString fullPath = fileSystemRepresentation(path);
     if (!access(fullPath.data(), F_OK))
         return true;
@@ -131,12 +130,12 @@ bool makeAllDirectories(const String& path)
     for (; *p; ++p)
         if (*p == '/') {
             *p = '\0';
-            if (0 != stat(fullPath.data(), &sb))
+            if (access(fullPath.data(), F_OK))
                 if (mkdir(fullPath.data(), S_IRWXU))
                     return false;
             *p = '/';
         }
-    if (0 != stat(fullPath.data(), &sb))
+    if (access(fullPath.data(), F_OK))
         if (mkdir(fullPath.data(), S_IRWXU))
             return false;
 

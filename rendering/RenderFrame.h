@@ -36,14 +36,21 @@ public:
 
     FrameEdgeInfo edgeInfo() const;
 
-    void layoutWithFlattening(bool flexibleWidth, bool flexibleHeight);
-
 private:
     virtual const char* renderName() const { return "RenderFrame"; }
     virtual bool isFrame() const { return true; }
 
     virtual void viewCleared();
 };
+
+inline RenderFrame* toRenderFrame(RenderObject* object)
+{
+    ASSERT(!object || object->isFrame());
+    return static_cast<RenderFrame*>(object);
+}
+
+// This will catch anyone doing an unnecessary cast.
+void toRenderFrame(const RenderFrame*);
 
 } // namespace WebCore
 

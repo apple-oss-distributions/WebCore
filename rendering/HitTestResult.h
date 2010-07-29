@@ -1,6 +1,4 @@
 /*
- * This file is part of the HTML rendering engine for KDE.
- *
  * Copyright (C) 2006 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
@@ -23,6 +21,7 @@
 #define HitTestResult_h
 
 #include "IntPoint.h"
+#include "TextDirection.h"
 #include <wtf/RefPtr.h>
 
 namespace WebCore {
@@ -62,11 +61,10 @@ public:
     void setIsOverWidget(bool b) { m_isOverWidget = b; }
 
     Frame* targetFrame() const;
-    IntRect boundingBox() const;
     bool isSelected() const;
-    String spellingToolTip() const;
+    String spellingToolTip(TextDirection&) const;
     String replacedString() const;
-    String title() const;
+    String title(TextDirection&) const;
     String altDisplayString() const;
     String titleDisplayString() const;
     Image* image() const;

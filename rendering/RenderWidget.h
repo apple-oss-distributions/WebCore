@@ -40,6 +40,11 @@ public:
 
     void updateWidgetPosition();
 
+    void showSubstituteImage(PassRefPtr<Image>);
+
+    static void suspendWidgetHierarchyUpdates();
+    static void resumeWidgetHierarchyUpdates();
+
 protected:
     RenderWidget(Node*);
 
@@ -59,16 +64,32 @@ private:
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, int x, int y, int tx, int ty, HitTestAction);
     virtual void setOverlapTestResult(bool);
 
-    void setWidgetGeometry(const IntRect&);
+    bool setWidgetGeometry(const IntRect&);
 
     friend class RenderWidgetProtector;
     RenderArena* ref() { ++m_refCount; return renderArena(); }
     void deref(RenderArena*);
 
     RefPtr<Widget> m_widget;
+    RefPtr<Image> m_substituteImage;
     FrameView* m_frameView;
     int m_refCount;
 };
+
+inline RenderWidget* toRenderWidget(RenderObject* object)
+{
+    ASSERT(!object || object->isWidget());
+    return static_cast<RenderWidget*>(object);
+}
+
+inline const RenderWidget* toRenderWidget(const RenderObject* object)
+{
+    ASSERT(!object || object->isWidget());
+    return static_cast<const RenderWidget*>(object);
+}
+
+// This will catch anyone doing an unnecessary cast.
+void toRenderWidget(const RenderWidget*);
 
 } // namespace WebCore
 

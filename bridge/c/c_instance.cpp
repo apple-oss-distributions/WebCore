@@ -70,7 +70,7 @@ void CInstance::moveGlobalExceptionToExecState(ExecState* exec)
         return;
 
     {
-        JSLock lock(false);
+        JSLock lock(SilenceAssertionsOnly);
         throwError(exec, GeneralError, globalExceptionString());
     }
 
@@ -121,20 +121,24 @@ JSValue CInstance::invokeMethod(ExecState* exec, const MethodList& methodList, c
         convertValueToNPVariant(exec, args.at(i), &cArgs[i]);
 
     // Invoke the 'C' method.
+    bool retval = true;
     NPVariant resultVariant;
     VOID_TO_NPVARIANT(resultVariant);
 
     {
-        JSLock::DropAllLocks dropAllLocks(false);
+        JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly);
         ASSERT(globalExceptionString().isNull());
-        _object->_class->invoke(_object, ident, cArgs.data(), count, &resultVariant);
+        retval = _object->_class->invoke(_object, ident, cArgs.data(), count, &resultVariant);
         moveGlobalExceptionToExecState(exec);
     }
+    
+    if (!retval)
+        throwError(exec, GeneralError, "Error calling method on NPObject!");
 
     for (i = 0; i < count; i++)
         _NPN_ReleaseVariantValue(&cArgs[i]);
 
-    JSValue resultValue = convertNPVariantToValue(exec, &resultVariant, _rootObject.get());
+    JSValue resultValue = convertNPVariantToValue(exec, &resultVariant, m_rootObject.get());
     _NPN_ReleaseVariantValue(&resultVariant);
     return resultValue;
 }
@@ -153,19 +157,23 @@ JSValue CInstance::invokeDefaultMethod(ExecState* exec, const ArgList& args)
         convertValueToNPVariant(exec, args.at(i), &cArgs[i]);
 
     // Invoke the 'C' method.
+    bool retval = true;
     NPVariant resultVariant;
     VOID_TO_NPVARIANT(resultVariant);
     {
-        JSLock::DropAllLocks dropAllLocks(false);
+        JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly);
         ASSERT(globalExceptionString().isNull());
-        _object->_class->invokeDefault(_object, cArgs.data(), count, &resultVariant);
+        retval = _object->_class->invokeDefault(_object, cArgs.data(), count, &resultVariant);
         moveGlobalExceptionToExecState(exec);
     }
+    
+    if (!retval)
+        throwError(exec, GeneralError, "Error calling method on NPObject!");
 
     for (i = 0; i < count; i++)
         _NPN_ReleaseVariantValue(&cArgs[i]);
 
-    JSValue resultValue = convertNPVariantToValue(exec, &resultVariant, _rootObject.get());
+    JSValue resultValue = convertNPVariantToValue(exec, &resultVariant, m_rootObject.get());
     _NPN_ReleaseVariantValue(&resultVariant);
     return resultValue;
 }
@@ -188,19 +196,23 @@ JSValue CInstance::invokeConstruct(ExecState* exec, const ArgList& args)
         convertValueToNPVariant(exec, args.at(i), &cArgs[i]);
 
     // Invoke the 'C' method.
+    bool retval = true;
     NPVariant resultVariant;
     VOID_TO_NPVARIANT(resultVariant);
     {
-        JSLock::DropAllLocks dropAllLocks(false);
+        JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly);
         ASSERT(globalExceptionString().isNull());
-        _object->_class->construct(_object, cArgs.data(), count, &resultVariant);
+        retval = _object->_class->construct(_object, cArgs.data(), count, &resultVariant);
         moveGlobalExceptionToExecState(exec);
     }
+    
+    if (!retval)
+        throwError(exec, GeneralError, "Error calling method on NPObject!");
 
     for (i = 0; i < count; i++)
         _NPN_ReleaseVariantValue(&cArgs[i]);
 
-    JSValue resultValue = convertNPVariantToValue(exec, &resultVariant, _rootObject.get());
+    JSValue resultValue = convertNPVariantToValue(exec, &resultVariant, m_rootObject.get());
     _NPN_ReleaseVariantValue(&resultVariant);
     return resultValue;
 }
@@ -247,7 +259,7 @@ void CInstance::getPropertyNames(ExecState* exec, PropertyNameArray& nameArray)
     NPIdentifier* identifiers;
 
     {
-        JSLock::DropAllLocks dropAllLocks(false);
+        JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly);
         ASSERT(globalExceptionString().isNull());
         bool ok = _object->_class->enumerate(_object, &identifiers, &count);
         moveGlobalExceptionToExecState(exec);

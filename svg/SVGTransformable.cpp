@@ -154,12 +154,12 @@ bool SVGTransformable::parseTransformValue(unsigned type, const UChar*& ptr, con
     return true;
 }
 
-static const UChar skewXDesc[] =  {'s','k','e','w', 'X'};
-static const UChar skewYDesc[] =  {'s','k','e','w', 'Y'};
-static const UChar scaleDesc[] =  {'s','c','a','l', 'e'};
-static const UChar translateDesc[] =  {'t','r','a','n', 's', 'l', 'a', 't', 'e'};
-static const UChar rotateDesc[] =  {'r','o','t','a', 't', 'e'};
-static const UChar matrixDesc[] =  {'m','a','t','r', 'i', 'x'};
+static const UChar skewXDesc[] =  {'s', 'k', 'e', 'w', 'X'};
+static const UChar skewYDesc[] =  {'s', 'k', 'e', 'w', 'Y'};
+static const UChar scaleDesc[] =  {'s', 'c', 'a', 'l', 'e'};
+static const UChar translateDesc[] =  {'t', 'r', 'a', 'n', 's', 'l', 'a', 't', 'e'};
+static const UChar rotateDesc[] =  {'r', 'o', 't', 'a', 't', 'e'};
+static const UChar matrixDesc[] =  {'m', 'a', 't', 'r', 'i', 'x'};
 
 static inline bool parseAndSkipType(const UChar*& currTransform, const UChar* end, unsigned short& type)
 {
@@ -190,18 +190,23 @@ static inline bool parseAndSkipType(const UChar*& currTransform, const UChar* en
 bool SVGTransformable::parseTransformAttribute(SVGTransformList* list, const AtomicString& transform)
 {
     const UChar* start = transform.characters();
-    const UChar* end = start + transform.length();
-    return parseTransformAttribute(list, start, end);
+    return parseTransformAttribute(list, start, start + transform.length());
 }
 
-bool SVGTransformable::parseTransformAttribute(SVGTransformList* list, const UChar*& currTransform, const UChar* end)
+bool SVGTransformable::parseTransformAttribute(SVGTransformList* list, const UChar*& currTransform, const UChar* end, TransformParsingMode mode)
 {
+    ExceptionCode ec = 0;
+    if (mode == ClearList) {
+        list->clear(ec);
+        ASSERT(!ec);
+    }
+
     bool delimParsed = false;
     while (currTransform < end) {
         delimParsed = false;
         unsigned short type = SVGTransform::SVG_TRANSFORM_UNKNOWN;
         skipOptionalSpaces(currTransform, end);
-        
+
         if (!parseAndSkipType(currTransform, end, type))
             return false;
 
@@ -209,12 +214,11 @@ bool SVGTransformable::parseTransformAttribute(SVGTransformList* list, const UCh
         if (!parseTransformValue(type, currTransform, end, t))
             return false;
 
-        ExceptionCode ec = 0;
         list->appendItem(t, ec);
         skipOptionalSpaces(currTransform, end);
         if (currTransform < end && *currTransform == ',') {
             delimParsed = true;
-            currTransform++;
+            ++currTransform;
         }
         skipOptionalSpaces(currTransform, end);
     }

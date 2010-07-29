@@ -47,6 +47,7 @@ typedef enum {
     WKWindowRef _wkWindow;
     CALayer* _hostLayer;
     TileCache* _tileCache;
+    CGRect _cachedVisibleRect;
 }
 // Create layer hosted window
 - (id)initWithLayer:(CALayer *)hostLayer;
@@ -65,6 +66,7 @@ typedef enum {
 - (void)makeKeyWindow;
 - (NSSelectionDirection)keyViewSelectionDirection;
 - (BOOL)makeFirstResponder:(NSResponder *)aResponder;
+- (WAKView *)_newFirstResponderAfterResigning;
 - (WKWindowRef)_windowRef;
 - (void)setFrame:(NSRect)frameRect display:(BOOL)flag;
 - (CGRect)frame;
@@ -72,6 +74,8 @@ typedef enum {
 - (CGSize)screenSize;
 - (void)setAvailableScreenSize:(CGSize)size;
 - (CGSize)availableScreenSize;
+- (void)setScreenScale:(CGFloat)scale;
+- (CGFloat)screenScale;
 - (void)sendEvent:(WebEvent *)anEvent;
 - (void)sendEvent:(WebEvent *)anEvent contentChange:(WKContentChange *)aContentChange;
 
@@ -93,6 +97,9 @@ typedef enum {
 - (WAKTilingDirection)tilingDirection;
 - (BOOL)hasPendingDraw;
 - (void)hostLayerSizeChanged;
+
+- (void)willRotate;
+- (void)didRotate;
 
 - (BOOL)useOrientationDependentFontAntialiasing;
 - (void)setUseOrientationDependentFontAntialiasing:(BOOL)aa;

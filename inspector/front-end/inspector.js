@@ -1,19 +1,20 @@
 /*
  * Copyright (C) 2006, 2007, 2008 Apple Inc.  All rights reserved.
  * Copyright (C) 2007 Matt Lilek (pewtermoose@gmail.com).
+ * Copyright (C) 2009 Joseph Pecoraro
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
  *
  * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer. 
+ *     notice, this list of conditions and the following disclaimer.
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution. 
+ *     documentation and/or other materials provided with the distribution.
  * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission. 
+ *     from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -27,23 +28,85 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-var Preferences = {
-    ignoreWhitespace: true,
-    showUserAgentStyles: true,
-    maxInlineTextChildLength: 80,
-    minConsoleHeight: 75,
-    minSidebarWidth: 100,
-    minElementsSidebarWidth: 200,
-    minScriptsSidebarWidth: 200,
-    showInheritedComputedStyleProperties: false,
-    styleRulesExpandedState: {},
-    showMissingLocalizedStrings: false
+function preloadImages()
+{
+    (new Image()).src = "Images/clearConsoleButtonGlyph.png";
+    (new Image()).src = "Images/consoleButtonGlyph.png";
+    (new Image()).src = "Images/dockButtonGlyph.png";
+    (new Image()).src = "Images/enableOutlineButtonGlyph.png";
+    (new Image()).src = "Images/enableSolidButtonGlyph.png";
+    (new Image()).src = "Images/excludeButtonGlyph.png";
+    (new Image()).src = "Images/focusButtonGlyph.png";
+    (new Image()).src = "Images/largerResourcesButtonGlyph.png";
+    (new Image()).src = "Images/nodeSearchButtonGlyph.png";
+    (new Image()).src = "Images/pauseOnExceptionButtonGlyph.png";
+    (new Image()).src = "Images/percentButtonGlyph.png";
+    (new Image()).src = "Images/recordButtonGlyph.png";
+    (new Image()).src = "Images/recordToggledButtonGlyph.png";
+    (new Image()).src = "Images/reloadButtonGlyph.png";
+    (new Image()).src = "Images/undockButtonGlyph.png";
 }
+
+preloadImages();
 
 var WebInspector = {
     resources: {},
     resourceURLMap: {},
+    cookieDomains: {},
     missingLocalizedStrings: {},
+    pendingDispatches: 0,
+
+    // RegExp groups:
+    // 1 - scheme
+    // 2 - hostname
+    // 3 - ?port
+    // 4 - ?path
+    // 5 - ?fragment
+    URLRegExp: /^(http[s]?|file):\/\/([^\/:]*)(?::([\d]+))?(?:(\/[^#]*)(?:#(.*))?)?$/i,
+
+    get platform()
+    {
+        if (!("_platform" in this))
+            this._platform = this._detectPlatform();
+
+        return this._platform;
+    },
+
+    _detectPlatform: function()
+    {
+        const userAgent = navigator.userAgent;
+        var nativePlatform = InspectorFrontendHost.platform();
+
+        if (nativePlatform === "windows") {
+            var match = userAgent.match(/Windows NT (\d+)\.(?:\d+)/);
+            if (match && match[1] >= 6)
+                return WebInspector.OS.WindowsVistaOrLater;
+            return WebInspector.OS.Windows;
+        } else if (nativePlatform === "mac") {
+            var match = userAgent.match(/Mac OS X\s*(?:(\d+)_(\d+))?/);
+            if (!match || match[1] != 10)
+                return WebInspector.OS.MacSnowLeopard;
+            switch (Number(match[2])) {
+                case 4:
+                    return WebInspector.OS.MacTiger;
+                case 5:
+                    return WebInspector.OS.MacLeopard;
+                case 6:
+                default:
+                    return WebInspector.OS.MacSnowLeopard;
+            }
+        }
+
+        return nativePlatform;
+    },
+
+    get port()
+    {
+        if (!("_port" in this))
+            this._port = InspectorFrontendHost.port();
+
+        return this._port;
+    },
 
     get previousFocusElement()
     {
@@ -68,7 +131,7 @@ var WebInspector = {
             // there isn't already a caret selection inside.
             var selection = window.getSelection();
             if (selection.isCollapsed && !this._currentFocusElement.isInsertionCaretInside()) {
-                var selectionRange = document.createRange();
+                var selectionRange = this._currentFocusElement.ownerDocument.createRange();
                 selectionRange.setStart(this._currentFocusElement, 0);
                 selectionRange.setEnd(this._currentFocusElement, 0);
 
@@ -117,6 +180,38 @@ var WebInspector = {
                 }
             }
         }
+
+        for (var panelName in WebInspector.panels) {
+            if (WebInspector.panels[panelName] == x)
+                InspectorBackend.storeLastActivePanel(panelName);
+        }
+    },
+
+    _createPanels: function()
+    {
+        var hiddenPanels = (InspectorFrontendHost.hiddenPanels() || "").split(',');
+        if (hiddenPanels.indexOf("elements") === -1)
+            this.panels.elements = new WebInspector.ElementsPanel();
+        if (hiddenPanels.indexOf("resources") === -1)
+            this.panels.resources = new WebInspector.ResourcesPanel();
+        if (hiddenPanels.indexOf("scripts") === -1)
+            this.panels.scripts = new WebInspector.ScriptsPanel();
+        if (hiddenPanels.indexOf("timeline") === -1)
+            this.panels.timeline = new WebInspector.TimelinePanel();
+        if (hiddenPanels.indexOf("profiles") === -1) {
+            this.panels.profiles = new WebInspector.ProfilesPanel();
+            this.panels.profiles.registerProfileType(new WebInspector.CPUProfileType());
+        }
+
+        if (hiddenPanels.indexOf("storage") === -1 && hiddenPanels.indexOf("databases") === -1)
+            this.panels.storage = new WebInspector.StoragePanel();
+
+        // FIXME: Uncomment when ready.
+        // if (hiddenPanels.indexOf("audits") === -1)
+        //    this.panels.audits = new WebInspector.AuditsPanel();
+
+        if (hiddenPanels.indexOf("console") === -1)
+            this.panels.console = new WebInspector.ConsolePanel();
     },
 
     get attached()
@@ -137,12 +232,12 @@ var WebInspector = {
         var body = document.body;
 
         if (x) {
-            InspectorController.attach();
+            InspectorFrontendHost.attach();
             body.removeStyleClass("detached");
             body.addStyleClass("attached");
             dockToggleButton.title = WebInspector.UIString("Undock into separate window.");
         } else {
-            InspectorController.detach();
+            InspectorFrontendHost.detach();
             body.removeStyleClass("attached");
             body.addStyleClass("detached");
             dockToggleButton.title = WebInspector.UIString("Dock to main window.");
@@ -231,6 +326,53 @@ var WebInspector = {
             errorWarningElement.title = null;
     },
 
+    get styleChanges()
+    {
+        return this._styleChanges;
+    },
+
+    set styleChanges(x)
+    {
+        x = Math.max(x, 0);
+
+        if (this._styleChanges === x)
+            return;
+        this._styleChanges = x;
+        this._updateChangesCount();
+    },
+
+    _updateChangesCount: function()
+    {
+        // TODO: Remove immediate return when enabling the Changes Panel
+        return;
+
+        var changesElement = document.getElementById("changes-count");
+        if (!changesElement)
+            return;
+
+        if (!this.styleChanges) {
+            changesElement.addStyleClass("hidden");
+            return;
+        }
+
+        changesElement.removeStyleClass("hidden");
+        changesElement.removeChildren();
+
+        if (this.styleChanges) {
+            var styleChangesElement = document.createElement("span");
+            styleChangesElement.id = "style-changes-count";
+            styleChangesElement.textContent = this.styleChanges;
+            changesElement.appendChild(styleChangesElement);
+        }
+
+        if (this.styleChanges) {
+            if (this.styleChanges === 1)
+                changesElement.title = WebInspector.UIString("%d style change", this.styleChanges);
+            else
+                changesElement.title = WebInspector.UIString("%d style changes", this.styleChanges);
+        }
+    },
+
     get hoveredDOMNode()
     {
         return this._hoveredDOMNode;
@@ -238,7 +380,7 @@ var WebInspector = {
 
     set hoveredDOMNode(x)
     {
-        if (objectsAreSame(this._hoveredDOMNode, x))
+        if (this._hoveredDOMNode === x)
             return;
 
         this._hoveredDOMNode = x;
@@ -264,41 +406,63 @@ var WebInspector = {
         }
 
         if (this._hoveredDOMNode) {
-            InspectorController.highlightDOMNode(this._hoveredDOMNode);
+            InspectorBackend.highlightDOMNode(this._hoveredDOMNode.id);
             this.showingDOMNodeHighlight = true;
         } else {
-            InspectorController.hideDOMNodeHighlight();
+            InspectorBackend.hideDOMNodeHighlight();
             this.showingDOMNodeHighlight = false;
         }
     }
 }
 
+WebInspector.OS = {
+    Windows: "windows",
+    WindowsVistaOrLater: "windows-vista-or-later",
+    MacTiger: "mac-tiger",
+    MacLeopard: "mac-leopard",
+    MacSnowLeopard: "mac-snowleopard"
+}
+
 WebInspector.loaded = function()
 {
-    var platform = InspectorController.platform();
-    document.body.addStyleClass("platform-" + platform);
+    InspectorBackend.setInjectedScriptSource("(" + injectedScriptConstructor + ");");
 
-    this.console = new WebInspector.Console();
+    var platform = WebInspector.platform;
+    document.body.addStyleClass("platform-" + platform);
+    var port = WebInspector.port;
+    document.body.addStyleClass("port-" + port);
+
+    this.settings = new WebInspector.Settings();
+
+    this.drawer = new WebInspector.Drawer();
+    this.console = new WebInspector.ConsoleView(this.drawer);
+    // TODO: Uncomment when enabling the Changes Panel
+    // this.changes = new WebInspector.ChangesView(this.drawer);
+    // TODO: Remove class="hidden" from inspector.html on button#changes-status-bar-item
+    this.drawer.visibleView = this.console;
+    this.domAgent = new WebInspector.DOMAgent();
+
+    this.resourceCategories = {
+        documents: new WebInspector.ResourceCategory("documents", WebInspector.UIString("Documents"), "rgb(47,102,236)"),
+        stylesheets: new WebInspector.ResourceCategory("stylesheets", WebInspector.UIString("Stylesheets"), "rgb(157,231,119)"),
+        images: new WebInspector.ResourceCategory("images", WebInspector.UIString("Images"), "rgb(164,60,255)"),
+        scripts: new WebInspector.ResourceCategory("scripts", WebInspector.UIString("Scripts"), "rgb(255,121,0)"),
+        xhr: new WebInspector.ResourceCategory("xhr", WebInspector.UIString("XHR"), "rgb(231,231,10)"),
+        fonts: new WebInspector.ResourceCategory("fonts", WebInspector.UIString("Fonts"), "rgb(255,82,62)"),
+        other: new WebInspector.ResourceCategory("other", WebInspector.UIString("Other"), "rgb(186,186,186)")
+    };
 
     this.panels = {};
-    var hiddenPanels = (InspectorController.hiddenPanels() || "").split(',');
-    if (hiddenPanels.indexOf("elements") === -1)
-        this.panels.elements = new WebInspector.ElementsPanel();
-    if (hiddenPanels.indexOf("resources") === -1)
-        this.panels.resources = new WebInspector.ResourcesPanel();
-    if (hiddenPanels.indexOf("scripts") === -1)
-        this.panels.scripts = new WebInspector.ScriptsPanel();
-    if (hiddenPanels.indexOf("profiles") === -1)
-        this.panels.profiles = new WebInspector.ProfilesPanel();
-    if (hiddenPanels.indexOf("databases") === -1)
-        this.panels.databases = new WebInspector.DatabasesPanel();
+    this._createPanels();
 
     var toolbarElement = document.getElementById("toolbar");
     var previousToolbarItem = toolbarElement.children[0];
 
+    this.panelOrder = [];
     for (var panelName in this.panels) {
         var panel = this.panels[panelName];
         var panelToolbarItem = panel.toolbarItem;
+        this.panelOrder.push(panel);
         panelToolbarItem.addEventListener("click", this._toolbarItemClicked.bind(this));
         if (previousToolbarItem)
             toolbarElement.insertBefore(panelToolbarItem, previousToolbarItem.nextSibling);
@@ -306,18 +470,6 @@ WebInspector.loaded = function()
             toolbarElement.insertBefore(panelToolbarItem, toolbarElement.firstChild);
         previousToolbarItem = panelToolbarItem;
     }
-
-    this.currentPanel = this.panels.elements;
-
-    this.resourceCategories = {
-        documents: new WebInspector.ResourceCategory(WebInspector.UIString("Documents"), "documents"),
-        stylesheets: new WebInspector.ResourceCategory(WebInspector.UIString("Stylesheets"), "stylesheets"),
-        images: new WebInspector.ResourceCategory(WebInspector.UIString("Images"), "images"),
-        scripts: new WebInspector.ResourceCategory(WebInspector.UIString("Scripts"), "scripts"),
-        xhr: new WebInspector.ResourceCategory(WebInspector.UIString("XHR"), "xhr"),
-        fonts: new WebInspector.ResourceCategory(WebInspector.UIString("Fonts"), "fonts"),
-        other: new WebInspector.ResourceCategory(WebInspector.UIString("Other"), "other")
-    };
 
     this.Tips = {
         ResourceNotCompressed: {id: 0, message: WebInspector.UIString("You could save bandwidth by having your web server compress this transfer with gzip or zlib.")}
@@ -333,20 +485,10 @@ WebInspector.loaded = function()
     window.addEventListener("resize", this.windowResize.bind(this), true);
 
     document.addEventListener("focus", this.focusChanged.bind(this), true);
-    document.addEventListener("keydown", this.documentKeyDown.bind(this), true);
-    document.addEventListener("keyup", this.documentKeyUp.bind(this), true);
+    document.addEventListener("keydown", this.documentKeyDown.bind(this), false);
     document.addEventListener("beforecopy", this.documentCanCopy.bind(this), true);
     document.addEventListener("copy", this.documentCopy.bind(this), true);
-
-    var mainPanelsElement = document.getElementById("main-panels");
-    mainPanelsElement.handleKeyEvent = this.mainKeyDown.bind(this);
-    mainPanelsElement.handleKeyUpEvent = this.mainKeyUp.bind(this);
-    mainPanelsElement.handleCopyEvent = this.mainCopy.bind(this);
-
-    // Focus the mainPanelsElement in a timeout so it happens after the initial focus,
-    // so it doesn't get reset to the first toolbar button. This initial focus happens
-    // on Mac when the window is made key and the WebHTMLView becomes the first responder.
-    setTimeout(function() { WebInspector.currentFocusElement = mainPanelsElement }, 0);
+    document.addEventListener("contextmenu", this.contextMenuEventFired.bind(this), true);
 
     var dockToggleButton = document.getElementById("dock-status-bar-item");
     dockToggleButton.addEventListener("click", this.toggleAttach.bind(this), false);
@@ -357,29 +499,36 @@ WebInspector.loaded = function()
         dockToggleButton.title = WebInspector.UIString("Dock to main window.");
 
     var errorWarningCount = document.getElementById("error-warning-count");
-    errorWarningCount.addEventListener("click", this.console.show.bind(this.console), false);
+    errorWarningCount.addEventListener("click", this.showConsole.bind(this), false);
     this._updateErrorAndWarningCounts();
 
+    this.styleChanges = 0;
+    // TODO: Uncomment when enabling the Changes Panel
+    // var changesElement = document.getElementById("changes-count");
+    // changesElement.addEventListener("click", this.showChanges.bind(this), false);
+    // this._updateErrorAndWarningCounts();
+
     var searchField = document.getElementById("search");
-    searchField.addEventListener("keydown", this.searchKeyDown.bind(this), false);
-    searchField.addEventListener("keyup", this.searchKeyUp.bind(this), false);
     searchField.addEventListener("search", this.performSearch.bind(this), false); // when the search is emptied
+    searchField.addEventListener("mousedown", this._searchFieldManualFocus.bind(this), false); // when the search field is manually selected
+    searchField.addEventListener("keydown", this._searchKeyDown.bind(this), true);
 
-    document.getElementById("toolbar").addEventListener("mousedown", this.toolbarDragStart, true);
-    document.getElementById("close-button").addEventListener("click", this.close, true);
+    toolbarElement.addEventListener("mousedown", this.toolbarDragStart, true);
+    document.getElementById("close-button-left").addEventListener("click", this.close, true);
+    document.getElementById("close-button-right").addEventListener("click", this.close, true);
 
-    InspectorController.loaded();
+    InspectorFrontendHost.loaded();
 }
 
 var windowLoaded = function()
 {
-    var localizedStringsURL = InspectorController.localizedStringsURL();
+    var localizedStringsURL = InspectorFrontendHost.localizedStringsURL();
     if (localizedStringsURL) {
         var localizedStringsScriptElement = document.createElement("script");
         localizedStringsScriptElement.addEventListener("load", WebInspector.loaded.bind(WebInspector), false);
         localizedStringsScriptElement.type = "text/javascript";
         localizedStringsScriptElement.src = localizedStringsURL;
-        document.getElementsByTagName("head").item(0).appendChild(localizedStringsScriptElement);
+        document.head.appendChild(localizedStringsScriptElement);
     } else
         WebInspector.loaded();
 
@@ -392,29 +541,45 @@ window.addEventListener("load", windowLoaded, false);
 WebInspector.dispatch = function() {
     var methodName = arguments[0];
     var parameters = Array.prototype.slice.call(arguments, 1);
-    WebInspector[methodName].apply(this, parameters);
+
+    // We'd like to enforce asynchronous interaction between the inspector controller and the frontend.
+    // This is important to LayoutTests.
+    function delayDispatch()
+    {
+        WebInspector[methodName].apply(WebInspector, parameters);
+        WebInspector.pendingDispatches--;
+    }
+    WebInspector.pendingDispatches++;
+    setTimeout(delayDispatch, 0);
 }
 
 WebInspector.windowUnload = function(event)
 {
-    InspectorController.windowUnloading();
+    InspectorFrontendHost.windowUnloading();
 }
 
 WebInspector.windowResize = function(event)
 {
-    if (this.currentPanel && this.currentPanel.resize)
+    if (this.currentPanel)
         this.currentPanel.resize();
+    this.drawer.resize();
 }
 
 WebInspector.windowFocused = function(event)
 {
-    if (event.target.nodeType === Node.DOCUMENT_NODE)
+    // Fires after blur, so when focusing on either the main inspector
+    // or an <iframe> within the inspector we should always remove the
+    // "inactive" class.
+    if (event.target.document.nodeType === Node.DOCUMENT_NODE)
         document.body.removeStyleClass("inactive");
 }
 
-WebInspector.windowBlured = function(event)
+WebInspector.windowBlurred = function(event)
 {
-    if (event.target.nodeType === Node.DOCUMENT_NODE)
+    // Leaving the main inspector or an <iframe> within the inspector.
+    // We can add "inactive" now, and if we are moving the focus to another
+    // part of the inspector then windowFocused will correct this.
+    if (event.target.document.nodeType === Node.DOCUMENT_NODE)
         document.body.addStyleClass("inactive");
 }
 
@@ -430,7 +595,7 @@ WebInspector.setAttachedWindow = function(attached)
 
 WebInspector.close = function(event)
 {
-    InspectorController.closeWindow();
+    InspectorFrontendHost.closeWindow();
 }
 
 WebInspector.documentClick = function(event)
@@ -445,18 +610,17 @@ WebInspector.documentClick = function(event)
     function followLink()
     {
         // FIXME: support webkit-html-external-link links here.
-        if (anchor.href in WebInspector.resourceURLMap) {
+        if (WebInspector.canShowSourceLineForURL(anchor.href, anchor.preferredPanel)) {
             if (anchor.hasStyleClass("webkit-html-external-link")) {
                 anchor.removeStyleClass("webkit-html-external-link");
                 anchor.addStyleClass("webkit-html-resource-link");
             }
 
-            WebInspector.showResourceForURL(anchor.href, anchor.lineNumber, anchor.preferredPanel);
+            WebInspector.showSourceLineForURL(anchor.href, anchor.lineNumber, anchor.preferredPanel);
         } else {
-            var profileStringRegEx = new RegExp("webkit-profile://.+/([0-9]+)");
-            var profileString = profileStringRegEx.exec(anchor.href);
+            var profileString = WebInspector.ProfileType.URLRegExp.exec(anchor.href);
             if (profileString)
-                WebInspector.showProfileById(profileString[1])
+                WebInspector.showProfileForURL(anchor.href);
         }
     }
 
@@ -476,125 +640,158 @@ WebInspector.documentClick = function(event)
 
 WebInspector.documentKeyDown = function(event)
 {
-    if (!this.currentFocusElement)
-        return;
-    if (this.currentFocusElement.handleKeyEvent)
+    if (this.currentFocusElement && this.currentFocusElement.handleKeyEvent) {
         this.currentFocusElement.handleKeyEvent(event);
-    else if (this.currentFocusElement.id && this.currentFocusElement.id.length && WebInspector[this.currentFocusElement.id + "KeyDown"])
-        WebInspector[this.currentFocusElement.id + "KeyDown"](event);
-
-    if (!event.handled) {
-        var isMac = InspectorController.platform().indexOf("mac-") === 0;
-
-        switch (event.keyIdentifier) {
-            case "U+001B": // Escape key
-                this.console.visible = !this.console.visible;
-                event.preventDefault();
-                break;
-
-            case "U+0046": // F key
-                if (isMac)
-                    var isFindKey = event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
-                else
-                    var isFindKey = event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
-
-                if (isFindKey) {
-                    var searchField = document.getElementById("search");
-                    searchField.focus();
-                    searchField.select();
-                    event.preventDefault();
-                }
-
-                break;
-
-            case "U+0047": // G key
-                if (isMac)
-                    var isFindAgainKey = event.metaKey && !event.ctrlKey && !event.altKey;
-                else
-                    var isFindAgainKey = event.ctrlKey && !event.metaKey && !event.altKey;
-
-                if (isFindAgainKey) {
-                    if (event.shiftKey) {
-                        if (this.currentPanel.jumpToPreviousSearchResult)
-                            this.currentPanel.jumpToPreviousSearchResult();
-                    } else if (this.currentPanel.jumpToNextSearchResult)
-                        this.currentPanel.jumpToNextSearchResult();
-                    event.preventDefault();
-                }
-
-                break;
+        if (event.handled) {
+            event.preventDefault();
+            return;
         }
     }
-}
 
-WebInspector.documentKeyUp = function(event)
-{
-    if (!this.currentFocusElement || !this.currentFocusElement.handleKeyUpEvent)
-        return;
-    this.currentFocusElement.handleKeyUpEvent(event);
+    if (this.currentPanel && this.currentPanel.handleShortcut) {
+        this.currentPanel.handleShortcut(event);
+        if (event.handled) {
+            event.preventDefault();
+            return;
+        }
+    }
+
+    var isMac = WebInspector.isMac();
+
+    switch (event.keyIdentifier) {
+        case "U+001B": // Escape key
+            event.preventDefault();
+            if (this.drawer.fullPanel)
+                return;
+
+            this.drawer.visible = !this.drawer.visible;
+            break;
+
+        case "U+0046": // F key
+            if (isMac)
+                var isFindKey = event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
+            else
+                var isFindKey = event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
+
+            if (isFindKey) {
+                var searchField = document.getElementById("search");
+                searchField.focus();
+                searchField.select();
+                event.preventDefault();
+            }
+
+            break;
+
+        case "U+0047": // G key
+            if (isMac)
+                var isFindAgainKey = event.metaKey && !event.ctrlKey && !event.altKey;
+            else
+                var isFindAgainKey = event.ctrlKey && !event.metaKey && !event.altKey;
+
+            if (isFindAgainKey) {
+                if (event.shiftKey) {
+                    if (this.currentPanel.jumpToPreviousSearchResult)
+                        this.currentPanel.jumpToPreviousSearchResult();
+                } else if (this.currentPanel.jumpToNextSearchResult)
+                    this.currentPanel.jumpToNextSearchResult();
+                event.preventDefault();
+            }
+
+            break;
+
+        // Windows and Mac have two different definitions of [, so accept both.
+        case "U+005B":
+        case "U+00DB": // [ key
+            if (isMac)
+                var isRotateLeft = event.metaKey && !event.shiftKey && !event.ctrlKey && !event.altKey;
+            else
+                var isRotateLeft = event.ctrlKey && !event.shiftKey && !event.metaKey && !event.altKey;
+
+            if (isRotateLeft) {
+                var index = this.panelOrder.indexOf(this.currentPanel);
+                index = (index === 0) ? this.panelOrder.length - 1 : index - 1;
+                this.panelOrder[index].toolbarItem.click();
+                event.preventDefault();
+            }
+
+            break;
+
+        // Windows and Mac have two different definitions of ], so accept both.
+        case "U+005D":
+        case "U+00DD":  // ] key
+            if (isMac)
+                var isRotateRight = event.metaKey && !event.shiftKey && !event.ctrlKey && !event.altKey;
+            else
+                var isRotateRight = event.ctrlKey && !event.shiftKey && !event.metaKey && !event.altKey;
+
+            if (isRotateRight) {
+                var index = this.panelOrder.indexOf(this.currentPanel);
+                index = (index + 1) % this.panelOrder.length;
+                this.panelOrder[index].toolbarItem.click();
+                event.preventDefault();
+            }
+
+            break;
+
+        case "U+0041": // A key
+            if (isMac)
+                var shouldShowAuditsPanel = event.metaKey && !event.shiftKey && !event.ctrlKey && event.altKey;
+            else
+                var shouldShowAuditsPanel = event.ctrlKey && !event.shiftKey && !event.metaKey && event.altKey;
+
+            if (shouldShowAuditsPanel) {
+                if (!this.panels.audits)
+                    this.panels.audits = new WebInspector.AuditsPanel();
+                this.currentPanel = this.panels.audits;
+            }
+
+            break;
+    }
 }
 
 WebInspector.documentCanCopy = function(event)
 {
-    if (!this.currentFocusElement)
-        return;
-    // Calling preventDefault() will say "we support copying, so enable the Copy menu".
-    if (this.currentFocusElement.handleCopyEvent)
-        event.preventDefault();
-    else if (this.currentFocusElement.id && this.currentFocusElement.id.length && WebInspector[this.currentFocusElement.id + "Copy"])
+    if (this.currentPanel && this.currentPanel.handleCopyEvent)
         event.preventDefault();
 }
 
 WebInspector.documentCopy = function(event)
 {
-    if (!this.currentFocusElement)
-        return;
-    if (this.currentFocusElement.handleCopyEvent)
-        this.currentFocusElement.handleCopyEvent(event);
-    else if (this.currentFocusElement.id && this.currentFocusElement.id.length && WebInspector[this.currentFocusElement.id + "Copy"])
-        WebInspector[this.currentFocusElement.id + "Copy"](event);
-}
-
-WebInspector.mainKeyDown = function(event)
-{
-    if (this.currentPanel && this.currentPanel.handleKeyEvent)
-        this.currentPanel.handleKeyEvent(event);
-}
-
-WebInspector.mainKeyUp = function(event)
-{
-    if (this.currentPanel && this.currentPanel.handleKeyUpEvent)
-        this.currentPanel.handleKeyUpEvent(event);
-}
-
-WebInspector.mainCopy = function(event)
-{
     if (this.currentPanel && this.currentPanel.handleCopyEvent)
         this.currentPanel.handleCopyEvent(event);
 }
 
-WebInspector.animateStyle = function(animations, duration, callback, complete)
+WebInspector.contextMenuEventFired = function(event)
 {
-    if (complete === undefined)
-        complete = 0;
-    var slice = (1000 / 30); // 30 frames per second
+    if (event.handled || event.target.hasStyleClass("popup-glasspane"))
+        event.preventDefault();
+}
 
-    var defaultUnit = "px";
-    var propertyUnit = {opacity: ""};
+WebInspector.animateStyle = function(animations, duration, callback)
+{
+    var interval;
+    var complete = 0;
 
-    for (var i = 0; i < animations.length; ++i) {
+    const intervalDuration = (1000 / 30); // 30 frames per second.
+    const animationsLength = animations.length;
+    const propertyUnit = {opacity: ""};
+    const defaultUnit = "px";
+
+    function cubicInOut(t, b, c, d)
+    {
+        if ((t/=d/2) < 1) return c/2*t*t*t + b;
+        return c/2*((t-=2)*t*t + 2) + b;
+    }
+
+    // Pre-process animations.
+    for (var i = 0; i < animationsLength; ++i) {
         var animation = animations[i];
-        var element = null;
-        var start = null;
-        var current = null;
-        var end = null;
+        var element = null, start = null, end = null, key = null;
         for (key in animation) {
             if (key === "element")
                 element = animation[key];
             else if (key === "start")
                 start = animation[key];
-            else if (key === "current")
-                current = animation[key];
             else if (key === "end")
                 end = animation[key];
         }
@@ -602,49 +799,54 @@ WebInspector.animateStyle = function(animations, duration, callback, complete)
         if (!element || !end)
             continue;
 
-        var computedStyle = element.ownerDocument.defaultView.getComputedStyle(element);
         if (!start) {
+            var computedStyle = element.ownerDocument.defaultView.getComputedStyle(element);
             start = {};
             for (key in end)
                 start[key] = parseInt(computedStyle.getPropertyValue(key));
             animation.start = start;
-        } else if (complete == 0)
+        } else
             for (key in start)
                 element.style.setProperty(key, start[key] + (key in propertyUnit ? propertyUnit[key] : defaultUnit));
+    }
 
-        if (!current) {
-            current = {};
-            for (key in start)
-                current[key] = start[key];
-            animation.current = current;
-        }
+    function animateLoop()
+    {
+        // Advance forward.
+        complete += intervalDuration;
+        var next = complete + intervalDuration;
 
-        function cubicInOut(t, b, c, d)
-        {
-            if ((t/=d/2) < 1) return c/2*t*t*t + b;
-            return c/2*((t-=2)*t*t + 2) + b;
-        }
+        // Make style changes.
+        for (var i = 0; i < animationsLength; ++i) {
+            var animation = animations[i];
+            var element = animation.element;
+            var start = animation.start;
+            var end = animation.end;
+            if (!element || !end)
+                continue;
 
-        var style = element.style;
-        for (key in end) {
-            var startValue = start[key];
-            var currentValue = current[key];
-            var endValue = end[key];
-            if ((complete + slice) < duration) {
-                var delta = (endValue - startValue) / (duration / slice);
-                var newValue = cubicInOut(complete, startValue, endValue - startValue, duration);
-                style.setProperty(key, newValue + (key in propertyUnit ? propertyUnit[key] : defaultUnit));
-                current[key] = newValue;
-            } else {
-                style.setProperty(key, endValue + (key in propertyUnit ? propertyUnit[key] : defaultUnit));
+            var style = element.style;
+            for (key in end) {
+                var endValue = end[key];
+                if (next < duration) {
+                    var startValue = start[key];
+                    var newValue = cubicInOut(complete, startValue, endValue - startValue, duration);
+                    style.setProperty(key, newValue + (key in propertyUnit ? propertyUnit[key] : defaultUnit));
+                } else
+                    style.setProperty(key, endValue + (key in propertyUnit ? propertyUnit[key] : defaultUnit));
             }
+        }
+
+        // End condition.
+        if (complete >= duration) {
+            clearInterval(interval);
+            if (callback)
+                callback();
         }
     }
 
-    if (complete < duration)
-        setTimeout(WebInspector.animateStyle, slice, animations, duration, callback, complete + slice);
-    else if (callback)
-        callback();
+    interval = setInterval(animateLoop, intervalDuration);
+    return interval;
 }
 
 WebInspector.updateSearchLabel = function()
@@ -664,11 +866,12 @@ WebInspector.updateSearchLabel = function()
 WebInspector.toggleAttach = function()
 {
     this.attached = !this.attached;
+    this.drawer.resize();
 }
 
 WebInspector.toolbarDragStart = function(event)
 {
-    if (!WebInspector.attached && InspectorController.platform() !== "mac-leopard")
+    if ((!WebInspector.attached && WebInspector.platform !== "mac-leopard") || WebInspector.port == "qt")
         return;
 
     var target = event.target;
@@ -702,14 +905,14 @@ WebInspector.toolbarDrag = function(event)
     if (WebInspector.attached) {
         var height = window.innerHeight - (event.screenY - toolbar.lastScreenY);
 
-        InspectorController.setAttachedWindowHeight(height);
+        InspectorFrontendHost.setAttachedWindowHeight(height);
     } else {
         var x = event.screenX - toolbar.lastScreenX;
         var y = event.screenY - toolbar.lastScreenY;
 
         // We cannot call window.moveBy here because it restricts the movement
         // of the window at the edges.
-        InspectorController.moveByUnrestricted(x, y);
+        InspectorFrontendHost.moveWindowBy(x, y);
     }
 
     toolbar.lastScreenX = event.screenX;
@@ -718,7 +921,7 @@ WebInspector.toolbarDrag = function(event)
     event.preventDefault();
 }
 
-WebInspector.elementDragStart = function(element, dividerDrag, elementDragEnd, event, cursor) 
+WebInspector.elementDragStart = function(element, dividerDrag, elementDragEnd, event, cursor)
 {
     if (this._elementDraggingEventListener || this._elementEndDraggingEventListener)
         this.elementDragEnd(event);
@@ -749,7 +952,12 @@ WebInspector.elementDragEnd = function(event)
 
 WebInspector.showConsole = function()
 {
-    this.console.show();
+    this.drawer.showView(this.console);
+}
+
+WebInspector.showChanges = function()
+{
+    this.drawer.showView(this.changes);
 }
 
 WebInspector.showElementsPanel = function()
@@ -767,52 +975,74 @@ WebInspector.showScriptsPanel = function()
     this.currentPanel = this.panels.scripts;
 }
 
+WebInspector.showTimelinePanel = function()
+{
+    this.currentPanel = this.panels.timeline;
+}
+
 WebInspector.showProfilesPanel = function()
 {
     this.currentPanel = this.panels.profiles;
 }
 
-WebInspector.showDatabasesPanel = function()
+WebInspector.showStoragePanel = function()
 {
-    this.currentPanel = this.panels.databases;
+    this.currentPanel = this.panels.storage;
 }
 
-WebInspector.addResource = function(identifier, payload)
+WebInspector.showConsolePanel = function()
 {
-    var resource = new WebInspector.Resource(
-        payload.requestHeaders,
-        payload.requestURL,
-        payload.host,
-        payload.path,
-        payload.lastPathComponent,
-        identifier,
-        payload.isMainResource,
-        payload.cached);
-    this.resources[identifier] = resource;
-    this.resourceURLMap[resource.url] = resource;
+    this.currentPanel = this.panels.console;
+}
 
-    if (resource.mainResource) {
-        this.mainResource = resource;
-        this.panels.elements.reset();
-    }
+WebInspector.clearConsoleMessages = function()
+{
+    WebInspector.console.clearMessages();
+}
 
-    if (this.panels.resources)
-        this.panels.resources.addResource(resource);
+WebInspector.selectDatabase = function(o)
+{
+    WebInspector.showStoragePanel();
+    WebInspector.panels.storage.selectDatabase(o);
+}
+
+WebInspector.selectDOMStorage = function(o)
+{
+    WebInspector.showStoragePanel();
+    WebInspector.panels.storage.selectDOMStorage(o);
 }
 
 WebInspector.updateResource = function(identifier, payload)
 {
     var resource = this.resources[identifier];
-    if (!resource)
-        return;
+    if (!resource) {
+        resource = new WebInspector.Resource(identifier, payload.url);
+        this.resources[identifier] = resource;
+        this.resourceURLMap[resource.url] = resource;
+        if (this.panels.resources)
+            this.panels.resources.addResource(resource);
+    }
 
     if (payload.didRequestChange) {
-        resource.url = payload.url;
-        resource.domain = payload.domain;
+        resource.domain = payload.host;
         resource.path = payload.path;
         resource.lastPathComponent = payload.lastPathComponent;
         resource.requestHeaders = payload.requestHeaders;
         resource.mainResource = payload.mainResource;
+        resource.requestMethod = payload.requestMethod;
+        resource.requestFormData = payload.requestFormData;
+        resource.cached = payload.cached;
+        resource.documentURL = payload.documentURL;
+
+        if (resource.mainResource)
+            this.mainResource = resource;
+
+        var match = payload.documentURL.match(WebInspector.URLRegExp);
+        if (match) {
+            var protocol = match[1].toLowerCase();
+            if (protocol.indexOf("http") === 0 || protocol === "file")
+                this.addCookieDomain(protocol === "file" ? "" : match[2]);
+        }
     }
 
     if (payload.didResponseChange) {
@@ -827,7 +1057,7 @@ WebInspector.updateResource = function(identifier, payload)
     if (payload.didTypeChange) {
         resource.type = payload.type;
     }
-    
+
     if (payload.didLengthChange) {
         resource.contentLength = payload.contentLength;
     }
@@ -844,6 +1074,25 @@ WebInspector.updateResource = function(identifier, payload)
             resource.responseReceivedTime = payload.responseReceivedTime;
         if (payload.endTime)
             resource.endTime = payload.endTime;
+
+        if (payload.loadEventTime) {
+            // This loadEventTime is for the main resource, and we want to show it
+            // for all resources on this page. This means we want to set it as a member
+            // of the resources panel instead of the individual resource.
+            if (this.panels.resources)
+                this.panels.resources.mainResourceLoadTime = payload.loadEventTime;
+            if (this.panels.audits)
+                this.panels.audits.mainResourceLoadTime = payload.loadEventTime;
+        }
+
+        if (payload.domContentEventTime) {
+            // This domContentEventTime is for the main resource, so it should go in
+            // the resources panel for the same reasons as above.
+            if (this.panels.resources)
+                this.panels.resources.mainResourceDOMContentTime = payload.domContentEventTime;
+            if (this.panels.audits)
+                this.panels.audits.mainResourceDOMContentTime = payload.domContentEventTime;
+        }
     }
 }
 
@@ -863,21 +1112,44 @@ WebInspector.removeResource = function(identifier)
 
 WebInspector.addDatabase = function(payload)
 {
+    if (!this.panels.storage)
+        return;
     var database = new WebInspector.Database(
-        payload.database,
+        payload.id,
         payload.domain,
         payload.name,
         payload.version);
-    this.panels.databases.addDatabase(database);
+    this.panels.storage.addDatabase(database);
+}
+
+WebInspector.addCookieDomain = function(domain)
+{
+    // Eliminate duplicate domains from the list.
+    if (domain in this.cookieDomains)
+        return;
+    this.cookieDomains[domain] = true;
+
+    if (!this.panels.storage)
+        return;
+    this.panels.storage.addCookieDomain(domain);
 }
 
 WebInspector.addDOMStorage = function(payload)
 {
+    if (!this.panels.storage)
+        return;
     var domStorage = new WebInspector.DOMStorage(
-        payload.domStorage,
+        payload.id,
         payload.host,
         payload.isLocalStorage);
-    this.panels.databases.addDOMStorage(domStorage);
+    this.panels.storage.addDOMStorage(domStorage);
+}
+
+WebInspector.updateDOMStorage = function(storageId)
+{
+    if (!this.panels.storage)
+        return;
+    this.panels.storage.updateDOMStorage(storageId);
 }
 
 WebInspector.resourceTrackingWasEnabled = function()
@@ -925,9 +1197,10 @@ WebInspector.failedToParseScriptSource = function(sourceURL, source, startingLin
     this.panels.scripts.addScript(null, sourceURL, source, startingLine, errorLine, errorMessage);
 }
 
-WebInspector.pausedScript = function()
+WebInspector.pausedScript = function(callFrames)
 {
-    this.panels.scripts.debuggerPaused();
+    callFrames = JSON.parse(callFrames);
+    this.panels.scripts.debuggerPaused(callFrames);
 }
 
 WebInspector.resumedScript = function()
@@ -957,16 +1230,12 @@ WebInspector.reset = function()
 
     this.resources = {};
     this.resourceURLMap = {};
+    this.cookieDomains = {};
     this.hoveredDOMNode = null;
 
     delete this.mainResource;
 
     this.console.clearMessages();
-}
-
-WebInspector.inspectedWindowCleared = function(inspectedWindow)
-{
-    this.panels.elements.inspectedWindowCleared(inspectedWindow);
 }
 
 WebInspector.resourceURLChanged = function(resource, oldURL)
@@ -975,27 +1244,137 @@ WebInspector.resourceURLChanged = function(resource, oldURL)
     this.resourceURLMap[resource.url] = resource;
 }
 
-WebInspector.addMessageToConsole = function(payload)
+WebInspector.didCommitLoad = function()
+{
+    // Cleanup elements panel early on inspected page refresh.
+    WebInspector.setDocument(null);
+}
+
+WebInspector.updateConsoleMessageExpiredCount = function(count)
+{
+    var message = String.sprintf(WebInspector.UIString("%d console messages are not shown."), count);
+    WebInspector.console.addMessage(new WebInspector.ConsoleTextMessage(message, WebInspector.ConsoleMessage.MessageLevel.Warning));
+}
+
+WebInspector.addConsoleMessage = function(payload, argumentsStringified, opt_args)
 {
     var consoleMessage = new WebInspector.ConsoleMessage(
         payload.source,
+        payload.type,
         payload.level,
         payload.line,
         payload.url,
         payload.groupLevel,
         payload.repeatCount);
-    consoleMessage.setMessageBody(Array.prototype.slice.call(arguments, 1));
+    var parsedArguments = [];
+    for (var i = 2; i < arguments.length; i++) {
+        if (argumentsStringified)
+            parsedArguments.push(JSON.parse(arguments[i]));
+        else
+            parsedArguments.push(arguments[i]);
+    }
+    consoleMessage.setMessageBody(parsedArguments);
     this.console.addMessage(consoleMessage);
 }
 
-WebInspector.addProfile = function(profile)
+WebInspector.updateConsoleMessageRepeatCount = function(count)
 {
-    this.panels.profiles.addProfile(profile);
+    this.console.updateMessageRepeatCount(count);
+}
+
+WebInspector.log = function(message)
+{
+    // remember 'this' for setInterval() callback
+    var self = this;
+
+    // return indication if we can actually log a message
+    function isLogAvailable()
+    {
+        return WebInspector.ConsoleMessage && WebInspector.ObjectProxy && self.console;
+    }
+
+    // flush the queue of pending messages
+    function flushQueue()
+    {
+        var queued = WebInspector.log.queued;
+        if (!queued)
+            return;
+
+        for (var i = 0; i < queued.length; ++i)
+            logMessage(queued[i]);
+
+        delete WebInspector.log.queued;
+    }
+
+    // flush the queue if it console is available
+    // - this function is run on an interval
+    function flushQueueIfAvailable()
+    {
+        if (!isLogAvailable())
+            return;
+
+        clearInterval(WebInspector.log.interval);
+        delete WebInspector.log.interval;
+
+        flushQueue();
+    }
+
+    // actually log the message
+    function logMessage(message)
+    {
+        var repeatCount = 1;
+        if (message == WebInspector.log.lastMessage)
+            repeatCount = WebInspector.log.repeatCount + 1;
+
+        WebInspector.log.lastMessage = message;
+        WebInspector.log.repeatCount = repeatCount;
+
+        // ConsoleMessage expects a proxy object
+        message = new WebInspector.ObjectProxy(null, null, [], 0, message, false);
+
+        // post the message
+        var msg = new WebInspector.ConsoleMessage(
+            WebInspector.ConsoleMessage.MessageSource.Other,
+            WebInspector.ConsoleMessage.MessageType.Log,
+            WebInspector.ConsoleMessage.MessageLevel.Debug,
+            -1,
+            null,
+            null,
+            repeatCount,
+            message);
+
+        self.console.addMessage(msg);
+    }
+
+    // if we can't log the message, queue it
+    if (!isLogAvailable()) {
+        if (!WebInspector.log.queued)
+            WebInspector.log.queued = [];
+
+        WebInspector.log.queued.push(message);
+
+        if (!WebInspector.log.interval)
+            WebInspector.log.interval = setInterval(flushQueueIfAvailable, 1000);
+
+        return;
+    }
+
+    // flush the pending queue if any
+    flushQueue();
+
+    // log the message
+    logMessage(message);
+}
+
+WebInspector.addProfileHeader = function(profile)
+{
+    this.panels.profiles.addProfileHeader(profile);
 }
 
 WebInspector.setRecordingProfile = function(isProfiling)
 {
-    this.panels.profiles.setRecordingProfile(isProfiling);
+    this.panels.profiles.getProfileType(WebInspector.CPUProfileType.TypeId).setRecordingProfile(isProfiling);
+    this.panels.profiles.updateProfileTypeButtons();
 }
 
 WebInspector.drawLoadingPieChart = function(canvas, percent) {
@@ -1007,7 +1386,7 @@ WebInspector.drawLoadingPieChart = function(canvas, percent) {
     var r = 7;
 
     g.beginPath();
-    g.arc(cx, cy, r, 0, Math.PI * 2, false); 
+    g.arc(cx, cy, r, 0, Math.PI * 2, false);
     g.closePath();
 
     g.lineWidth = 1;
@@ -1021,15 +1400,16 @@ WebInspector.drawLoadingPieChart = function(canvas, percent) {
 
     g.beginPath();
     g.moveTo(cx, cy);
-    g.arc(cx, cy, r, startangle, endangle, false); 
+    g.arc(cx, cy, r, startangle, endangle, false);
     g.closePath();
 
     g.fillStyle = darkColor;
     g.fill();
 }
 
-WebInspector.updateFocusedNode = function(node)
+WebInspector.updateFocusedNode = function(nodeId)
 {
+    var node = WebInspector.domAgent.nodeForId(nodeId);
     if (!node)
         // FIXME: Should we deselect if null is passed in?
         return;
@@ -1063,31 +1443,34 @@ WebInspector.resourceForURL = function(url)
     return null;
 }
 
-WebInspector.showResourceForURL = function(url, line, preferredPanel)
+WebInspector._choosePanelToShowSourceLineForURL = function(url, preferredPanel)
 {
-    var resource = this.resourceForURL(url);
-    if (!resource)
-        return false;
+    preferredPanel = preferredPanel || "resources";
+    var panel = this.panels[preferredPanel];
+    if (panel && panel.canShowSourceLineForURL(url))
+        return panel;
+    panel = this.panels.resources;
+    return panel.canShowSourceLineForURL(url) ? panel : null;
+}
 
-    if (preferredPanel && preferredPanel in WebInspector.panels) {
-        var panel = this.panels[preferredPanel];
-        if (!("showResource" in panel))
-            panel = null;
-        else if ("canShowResource" in panel && !panel.canShowResource(resource))
-            panel = null;
-    }
+WebInspector.canShowSourceLineForURL = function(url, preferredPanel)
+{
+    return !!this._choosePanelToShowSourceLineForURL(url, preferredPanel);
+}
 
-    this.currentPanel = panel || this.panels.resources;
+WebInspector.showSourceLineForURL = function(url, line, preferredPanel)
+{
+    this.currentPanel = this._choosePanelToShowSourceLineForURL(url, preferredPanel);
     if (!this.currentPanel)
         return false;
-    this.currentPanel.showResource(resource, line);
+    this.currentPanel.showSourceLineForURL(url, line);
     return true;
 }
 
 WebInspector.linkifyStringAsFragment = function(string)
 {
     var container = document.createDocumentFragment();
-    var linkStringRegEx = new RegExp("(?:[a-zA-Z][a-zA-Z0-9+.-]{2,}://|www\\.)[\\w$\\-_+*'=\\|/\\\\(){}[\\]%@&#~,:;.!?]{2,}[\\w$\\-_+*=\\|/\\\\({%@&#~]");
+    var linkStringRegEx = /(?:[a-zA-Z][a-zA-Z0-9+.-]{2,}:\/\/|www\.)[\w$\-_+*'=\|\/\\(){}[\]%@&#~,:;.!?]{2,}[\w$\-_+*=\|\/\\({%@&#~]/;
 
     while (string) {
         var linkString = linkStringRegEx.exec(string);
@@ -1100,13 +1483,9 @@ WebInspector.linkifyStringAsFragment = function(string)
         var nonLink = string.substring(0, linkIndex);
         container.appendChild(document.createTextNode(nonLink));
 
-        var profileStringRegEx = new RegExp("webkit-profile://(.+)/[0-9]+");
-        var profileStringMatches = profileStringRegEx.exec(title);
-        var profileTitle;
+        var profileStringMatches = WebInspector.ProfileType.URLRegExp.exec(title);
         if (profileStringMatches)
-            profileTitle = profileStringMatches[1];
-        if (profileTitle)
-            title = WebInspector.panels.profiles.displayTitleForProfileLink(profileTitle);
+            title = WebInspector.panels.profiles.displayTitleForProfileLink(profileStringMatches[2], profileStringMatches[1]);
 
         var realURL = (linkString.indexOf("www.") === 0 ? "http://" + linkString : linkString);
         container.appendChild(WebInspector.linkifyURLAsNode(realURL, title, null, (realURL in WebInspector.resourceURLMap)));
@@ -1119,12 +1498,13 @@ WebInspector.linkifyStringAsFragment = function(string)
     return container;
 }
 
-WebInspector.showProfileById = function(uid) {
+WebInspector.showProfileForURL = function(url)
+{
     WebInspector.showProfilesPanel();
-    WebInspector.panels.profiles.showProfileById(uid);
+    WebInspector.panels.profiles.showProfileForURL(url);
 }
 
-WebInspector.linkifyURLAsNode = function(url, linkText, classes, isExternal)
+WebInspector.linkifyURLAsNode = function(url, linkText, classes, isExternal, tooltipText)
 {
     if (!linkText)
         linkText = url;
@@ -1134,42 +1514,55 @@ WebInspector.linkifyURLAsNode = function(url, linkText, classes, isExternal)
     var a = document.createElement("a");
     a.href = url;
     a.className = classes;
-    a.title = url;
+    a.title = tooltipText || url;
     a.target = "_blank";
     a.textContent = linkText;
-    
+
     return a;
 }
 
-WebInspector.linkifyURL = function(url, linkText, classes, isExternal)
+WebInspector.linkifyURL = function(url, linkText, classes, isExternal, tooltipText)
 {
     // Use the DOM version of this function so as to avoid needing to escape attributes.
     // FIXME:  Get rid of linkifyURL entirely.
-    return WebInspector.linkifyURLAsNode(url, linkText, classes, isExternal).outerHTML;
+    return WebInspector.linkifyURLAsNode(url, linkText, classes, isExternal, tooltipText).outerHTML;
 }
 
 WebInspector.addMainEventListeners = function(doc)
 {
-    doc.defaultView.addEventListener("focus", this.windowFocused.bind(this), true);
-    doc.defaultView.addEventListener("blur", this.windowBlured.bind(this), true);
+    doc.defaultView.addEventListener("focus", this.windowFocused.bind(this), false);
+    doc.defaultView.addEventListener("blur", this.windowBlurred.bind(this), false);
     doc.addEventListener("click", this.documentClick.bind(this), true);
 }
 
-WebInspector.searchKeyDown = function(event)
+WebInspector._searchFieldManualFocus = function(event)
 {
-    if (event.keyIdentifier !== "Enter")
-        return;
-
-    // Call preventDefault since this was the Enter key. This prevents a "search" event
-    // from firing for key down. We handle the Enter key on key up in searchKeyUp. This
-    // stops performSearch from being called twice in a row.
-    event.preventDefault();
+    this.currentFocusElement = event.target;
+    this._previousFocusElement = event.target;
 }
 
-WebInspector.searchKeyUp = function(event)
+WebInspector._searchKeyDown = function(event)
 {
-    if (event.keyIdentifier !== "Enter")
-        return;
+    // Escape Key will clear the field and clear the search results
+    if (event.keyCode === WebInspector.KeyboardShortcut.KeyCodes.Esc) {
+        // If focus belongs here and text is empty - nothing to do, return unhandled.
+        if (event.target.value === "" && this.currentFocusElement === this.previousFocusElement)
+            return;
+        event.preventDefault();
+        event.stopPropagation();
+        // When search was selected manually and is currently blank, we'd like Esc stay unhandled
+        // and hit console drawer handler.
+        event.target.value = "";
+
+        this.performSearch(event);
+        this.currentFocusElement = this.previousFocusElement;
+        if (this.currentFocusElement === event.target)
+            this.currentFocusElement.select();
+        return false;
+    }
+
+    if (!isEnterKey(event))
+        return false;
 
     // Select all of the text so the user can easily type an entirely new query.
     event.target.select();
@@ -1178,14 +1571,33 @@ WebInspector.searchKeyUp = function(event)
     // performance is poor because of searching on every key. The search field has
     // the incremental attribute set, so we still get incremental searches.
     this.performSearch(event);
+
+    // Call preventDefault since this was the Enter key. This prevents a "search" event
+    // from firing for key down. This stops performSearch from being called twice in a row.
+    event.preventDefault();
 }
 
 WebInspector.performSearch = function(event)
 {
     var query = event.target.value;
     var forceSearch = event.keyIdentifier === "Enter";
+    var isShortSearch = (query.length < 3);
 
-    if (!query || !query.length || (!forceSearch && query.length < 3)) {
+    // Clear a leftover short search flag due to a non-conflicting forced search.
+    if (isShortSearch && this.shortSearchWasForcedByKeyEvent && this.currentQuery !== query)
+        delete this.shortSearchWasForcedByKeyEvent;
+
+    // Indicate this was a forced search on a short query.
+    if (isShortSearch && forceSearch)
+        this.shortSearchWasForcedByKeyEvent = true;
+
+    if (!query || !query.length || (!forceSearch && isShortSearch)) {
+        // Prevent clobbering a short search forced by the user.
+        if (this.shortSearchWasForcedByKeyEvent) {
+            delete this.shortSearchWasForcedByKeyEvent;
+            return;
+        }
+
         delete this.currentQuery;
 
         for (var panelName in this.panels) {
@@ -1217,6 +1629,11 @@ WebInspector.performSearch = function(event)
 
     this.currentPanel.currentQuery = query;
     this.currentPanel.performSearch(query);
+}
+
+WebInspector.addNodesToSearchResult = function(nodeIds)
+{
+    WebInspector.panels.elements.addNodesToSearchResult(nodeIds);
 }
 
 WebInspector.updateSearchMatchesCount = function(matches, panel)
@@ -1253,7 +1670,8 @@ WebInspector.UIString = function(string)
         string = window.localizedStrings[string];
     else {
         if (!(string in this.missingLocalizedStrings)) {
-            console.error("Localized string \"" + string + "\" not found.");
+            if (!WebInspector.InspectorBackendStub)
+                console.error("Localized string \"" + string + "\" not found.");
             this.missingLocalizedStrings[string] = true;
         }
 
@@ -1264,19 +1682,27 @@ WebInspector.UIString = function(string)
     return String.vsprintf(string, Array.prototype.slice.call(arguments, 1));
 }
 
+WebInspector.isMac = function()
+{
+    if (!("_isMac" in this))
+        this._isMac = WebInspector.platform.indexOf("mac-") === 0;
+
+    return this._isMac;
+}
+
 WebInspector.isBeingEdited = function(element)
 {
     return element.__editing;
 }
 
-WebInspector.startEditing = function(element, committedCallback, cancelledCallback, context)
+WebInspector.startEditing = function(element, committedCallback, cancelledCallback, context, multiline)
 {
     if (element.__editing)
         return;
     element.__editing = true;
 
-    var oldText = element.textContent;
-    var oldHandleKeyEvent = element.handleKeyEvent;
+    var oldText = getContent(element);
+    var moveDirection = "";
 
     element.addStyleClass("editing");
 
@@ -1288,6 +1714,13 @@ WebInspector.startEditing = function(element, committedCallback, cancelledCallba
         editingCommitted.call(element);
     }
 
+    function getContent(element) {
+        if (element.tagName === "INPUT" && element.type === "text")
+            return element.value;
+        else
+            return element.textContent;
+    }
+
     function cleanUpAfterEditing() {
         delete this.__editing;
 
@@ -1296,44 +1729,50 @@ WebInspector.startEditing = function(element, committedCallback, cancelledCallba
         this.scrollTop = 0;
         this.scrollLeft = 0;
 
-        this.handleKeyEvent = oldHandleKeyEvent;
         element.removeEventListener("blur", blurEventListener, false);
+        element.removeEventListener("keydown", keyDownEventListener, true);
 
         if (element === WebInspector.currentFocusElement || element.isAncestor(WebInspector.currentFocusElement))
             WebInspector.currentFocusElement = WebInspector.previousFocusElement;
     }
 
     function editingCancelled() {
-        this.innerText = oldText;
+        if (this.tagName === "INPUT" && this.type === "text")
+            this.value = oldText;
+        else
+            this.textContent = oldText;
 
         cleanUpAfterEditing.call(this);
 
-        cancelledCallback(this, context);
+        if (cancelledCallback)
+            cancelledCallback(this, context);
     }
 
     function editingCommitted() {
         cleanUpAfterEditing.call(this);
 
-        committedCallback(this, this.textContent, oldText, context);
+        if (committedCallback)
+            committedCallback(this, getContent(this), oldText, context, moveDirection);
     }
 
-    element.handleKeyEvent = function(event) {
-        if (oldHandleKeyEvent)
-            oldHandleKeyEvent(event);
-        if (event.handled)
-            return;
-
-        if (event.keyIdentifier === "Enter") {
+    function keyDownEventListener(event) {
+        var isMetaOrCtrl = WebInspector.isMac() ?
+            event.metaKey && !event.shiftKey && !event.ctrlKey && !event.altKey :
+            event.ctrlKey && !event.shiftKey && !event.metaKey && !event.altKey;
+        if (isEnterKey(event) && (!multiline || isMetaOrCtrl)) {
             editingCommitted.call(element);
             event.preventDefault();
-        } else if (event.keyCode === 27) { // Escape key
+            event.stopPropagation();
+        } else if (event.keyCode === WebInspector.KeyboardShortcut.KeyCodes.Esc) {
             editingCancelled.call(element);
             event.preventDefault();
-            event.handled = true;
-        }
+            event.stopPropagation();
+        } else if (event.keyIdentifier === "U+0009") // Tab key
+            moveDirection = (event.shiftKey ? "backward" : "forward");
     }
 
     element.addEventListener("blur", blurEventListener, false);
+    element.addEventListener("keydown", keyDownEventListener, true);
 
     WebInspector.currentFocusElement = element;
 }

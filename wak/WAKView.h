@@ -66,6 +66,7 @@ extern NSString *WAKViewDidScrollNotification;
 - (void)displayIfNeeded;
 - (void)displayRect:(NSRect)rect;
 - (void)displayRectIgnoringOpacity:(NSRect)rect;
+- (void)displayRectIgnoringOpacity:(NSRect)rect inContext:(CGContextRef)context;
 - (void)drawRect:(CGRect)rect;
 - (void)viewWillDraw;
 

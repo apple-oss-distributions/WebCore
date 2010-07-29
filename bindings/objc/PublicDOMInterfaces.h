@@ -237,7 +237,14 @@
 @interface DOMEntityReference : DOMNode WEBKIT_VERSION_1_3
 @end
 
-@interface DOMFile : DOMObject WEBKIT_VERSION_4_0
+@interface DOMBlob : DOMObject WEBKIT_VERSION_4_0
+@property(readonly) unsigned long long size;
+@end
+
+@interface DOMFile : DOMBlob WEBKIT_VERSION_4_0
+@property(readonly, copy) NSString *name;
+
+// FIXME: obsolete properties. To be removed.
 @property(readonly, copy) NSString *fileName;
 @property(readonly) unsigned long long fileSize;
 @end
@@ -950,6 +957,7 @@
 @property(readonly, retain) DOMCSSPrimitiveValue *green;
 @property(readonly, retain) DOMCSSPrimitiveValue *blue;
 @property(readonly, retain) DOMCSSPrimitiveValue *alpha;
+- (CGColorRef)color AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 @end
 
 @interface DOMCSSRule : DOMObject WEBKIT_VERSION_1_3

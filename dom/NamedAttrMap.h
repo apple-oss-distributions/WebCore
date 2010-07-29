@@ -72,6 +72,8 @@ public:
     Attribute* attributeItem(unsigned index) const { return m_attributes[index].get(); }
     Attribute* getAttributeItem(const QualifiedName&) const;
 
+    void copyAttributesToVector(Vector<RefPtr<Attribute> >&);
+
     void shrinkToLength() { m_attributes.shrinkCapacity(length()); }
     void reserveInitialCapacity(unsigned capacity) { m_attributes.reserveInitialCapacity(capacity); }
 
@@ -94,20 +96,53 @@ public:
     void addAttribute(PassRefPtr<Attribute>);
     void removeAttribute(const QualifiedName&);
 
+    Element* element() const { return m_element; }
+
 protected:
     virtual void clearAttributes();
-
-    Element* element() const { return m_element; }
 
 private:
     void detachAttributesFromElement();
     void detachFromElement();
     Attribute* getAttributeItem(const String& name, bool shouldIgnoreAttributeCase) const;
+    Attribute* getAttributeItemSlowCase(const String& name, bool shouldIgnoreAttributeCase) const;
 
     Element* m_element;
     Vector<RefPtr<Attribute> > m_attributes;
     AtomicString m_id;
 };
+
+inline Attribute* NamedNodeMap::getAttributeItem(const QualifiedName& name) const
+{
+    unsigned len = length();
+    for (unsigned i = 0; i < len; ++i) {
+        if (m_attributes[i]->name().matches(name))
+            return m_attributes[i].get();
+    }
+    return 0;
+}
+
+// We use a boolean parameter instead of calling shouldIgnoreAttributeCase so that the caller
+// can tune the behaviour (hasAttribute is case sensitive whereas getAttribute is not).
+inline Attribute* NamedNodeMap::getAttributeItem(const String& name, bool shouldIgnoreAttributeCase) const
+{
+    unsigned len = length();
+    bool doSlowCheck = shouldIgnoreAttributeCase;
+    
+    // Optimize for the case where the attribute exists and its name exactly matches.
+    for (unsigned i = 0; i < len; ++i) {
+        const QualifiedName& attrName = m_attributes[i]->name();
+        if (!attrName.hasPrefix()) {
+            if (name == attrName.localName())
+                return m_attributes[i].get();
+        } else
+            doSlowCheck = true;
+    }
+
+    if (doSlowCheck)
+        return getAttributeItemSlowCase(name, shouldIgnoreAttributeCase);
+    return 0;
+}
 
 } //namespace
 

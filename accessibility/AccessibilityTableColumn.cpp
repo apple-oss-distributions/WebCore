@@ -29,12 +29,12 @@
 #include "config.h"
 #include "AccessibilityTableColumn.h"
 
-#include "AccessibilityTableCell.h"
 #include "AXObjectCache.h"
+#include "AccessibilityTableCell.h"
 #include "HTMLNames.h"
 #include "RenderTable.h"
-#include "RenderTableSection.h"
 #include "RenderTableCell.h"
+#include "RenderTableSection.h"
 
 using namespace std;
 
@@ -105,7 +105,7 @@ AccessibilityObject* AccessibilityTableColumn::headerObject()
     if (!renderer->isTable())
         return 0;
     
-    RenderTable* table = static_cast<RenderTable*>(renderer);
+    RenderTable* table = toRenderTable(renderer);
     
     AccessibilityObject* headerObject = 0;
     

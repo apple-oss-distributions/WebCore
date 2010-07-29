@@ -37,11 +37,14 @@ class RenderSVGText : public RenderSVGBlock {
 public:
     RenderSVGText(SVGTextElement* node);
 
+private:
     virtual const char* renderName() const { return "RenderSVGText"; }
+
+    virtual const SVGRenderBase* toSVGRenderBase() const { return this; }
 
     virtual bool isSVGText() const { return true; }
 
-    virtual TransformationMatrix localToParentTransform() const { return m_localTransform; }
+    virtual const TransformationMatrix& localToParentTransform() const { return m_localTransform; }
 
     virtual void paint(PaintInfo&, int tx, int ty);
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, int x, int y, int tx, int ty, HitTestAction);
@@ -59,9 +62,9 @@ public:
     virtual void mapLocalToContainer(RenderBoxModelObject* repaintContainer, bool useTransforms, bool fixed, TransformState&) const;
 
     virtual FloatRect objectBoundingBox() const;
+    virtual FloatRect strokeBoundingBox() const;
     virtual FloatRect repaintRectInLocalCoordinates() const;
 
-private:
     // FIXME: This can be removed when localTransform() is removed from RenderObject
     virtual TransformationMatrix localTransform() const { return m_localTransform; }
 

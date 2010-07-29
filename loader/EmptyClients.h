@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2006 Eric Seidel (eric@webkit.org)
- * Copyright (C) 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2008, 2009, 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -39,6 +39,7 @@
 #include "FormState.h"
 #include "FrameLoaderClient.h"
 #include "InspectorClient.h"
+#include "PluginHalterClient.h"
 #include "ResourceError.h"
 #include "SharedBuffer.h"
 
@@ -75,6 +76,8 @@ public:
     virtual bool canTakeFocus(FocusDirection) { return false; }
     virtual void takeFocus(FocusDirection) { }
 
+    virtual void focusedNodeChanged(Node*) { }
+
     virtual Page* createWindow(Frame*, const FrameLoadRequest&, const WindowFeatures&) { return 0; }
     virtual void show() { }
 
@@ -95,7 +98,7 @@ public:
 
     virtual void setResizable(bool) { }
 
-    virtual void addMessageToConsole(MessageSource, MessageLevel, const String&, unsigned, const String&) { }
+    virtual void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String&, unsigned, const String&) { }
 
     virtual bool canRunBeforeUnloadConfirmPanel() { return false; }
     virtual bool runBeforeUnloadConfirmPanel(const String&, Frame*) { return true; }
@@ -120,17 +123,26 @@ public:
     virtual void scroll(const IntSize&, const IntRect&, const IntRect&) { }
     virtual IntPoint screenToWindow(const IntPoint& p) const { return p; }
     virtual IntRect windowToScreen(const IntRect& r) const { return r; }
-    virtual PlatformWidget platformWindow() const { return 0; }
+    virtual PlatformPageClient platformPageClient() const { return 0; }
     virtual void contentsSizeChanged(Frame*, const IntSize&) const { }
 
+    virtual void scrollbarsModeDidChange() const { }
     virtual void mouseDidMoveOverElement(const HitTestResult&, unsigned) { }
 
-    virtual void setToolTip(const String&) { }
+    virtual void setToolTip(const String&, TextDirection) { }
 
     virtual void print(Frame*) { }
 
 #if ENABLE(DATABASE)
     virtual void exceededDatabaseQuota(Frame*, const String&) { }
+#endif
+
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+    virtual void reachedMaxAppCacheSize(int64_t) { }
+#endif
+
+#if ENABLE(NOTIFICATIONS)
+    virtual NotificationPresenter* notificationPresenter() const { return 0; }
 #endif
 
     virtual void runOpenPanel(Frame*, PassRefPtr<FileChooser>) { }
@@ -145,7 +157,7 @@ public:
 
     virtual void scrollRectIntoView(const IntRect&, const ScrollView*) const {}
 
-    virtual bool requestGeolocationPermissionForFrame(Frame*, Geolocation*) { return false; }
+    virtual void requestGeolocationPermissionForFrame(Frame*, Geolocation*) {}
 
 #if USE(ACCELERATED_COMPOSITING)
     virtual void attachRootGraphicsLayer(Frame*, GraphicsLayer*) {};
@@ -167,7 +179,7 @@ public:
     virtual void restoreFormNotifications() { }
 };
 
-class EmptyFrameLoaderClient : public FrameLoaderClient {
+class EmptyFrameLoaderClient : public FrameLoaderClient, public Noncopyable {
 public:
     virtual ~EmptyFrameLoaderClient() {  }
     virtual void frameLoaderDestroyed() { }
@@ -176,6 +188,7 @@ public:
 
     virtual void makeRepresentation(DocumentLoader*) { }
     virtual void forceLayout() { }
+    virtual void forceLayoutWithoutRecalculatingStyles() { }
     virtual void forceLayoutForNonHTML() { }
 
     virtual void setCopiesOnScroll() { }
@@ -206,6 +219,9 @@ public:
     virtual void dispatchDidCancelClientRedirect() { }
     virtual void dispatchWillPerformClientRedirect(const KURL&, double, double) { }
     virtual void dispatchDidChangeLocationWithinPage() { }
+    virtual void dispatchDidPushStateWithinPage() { }
+    virtual void dispatchDidReplaceStateWithinPage() { }
+    virtual void dispatchDidPopStateWithinPage() { }
     virtual void dispatchWillClose() { }
     virtual void dispatchDidReceiveIcon() { }
     virtual void dispatchDidStartProvisionalLoad() { }
@@ -285,30 +301,36 @@ public:
     virtual void updateGlobalHistory() { }
     virtual void updateGlobalHistoryRedirectLinks() { }
     virtual bool shouldGoToHistoryItem(HistoryItem*) const { return false; }
+    virtual void dispatchDidAddBackForwardItem(HistoryItem*) const { }
+    virtual void dispatchDidRemoveBackForwardItem(HistoryItem*) const { };
+    virtual void dispatchDidChangeBackForwardIndex() const { }
     virtual void saveViewStateToItem(HistoryItem*) { }
     virtual bool canCachePage() const { return false; }
-
+    virtual void didDisplayInsecureContent() { }
+    virtual void didRunInsecureContent(SecurityOrigin*) { }
     virtual PassRefPtr<Frame> createFrame(const KURL&, const String&, HTMLFrameOwnerElement*, const String&, bool, int, int) { return 0; }
     virtual PassRefPtr<Widget> createPlugin(const IntSize&, HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool) { return 0; }
     virtual PassRefPtr<Widget> createJavaAppletWidget(const IntSize&, HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&) { return 0; }
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
     virtual PassRefPtr<Widget> createMediaPlayerProxyPlugin(const IntSize&, HTMLMediaElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&) { return 0; }
-    virtual void destroyMediaPlayerProxyPlugin(Widget*) { }
+    virtual void hideMediaPlayerProxyPlugin(Widget*) { }
+    virtual void showMediaPlayerProxyPlugin(Widget*) { }
 #endif
 
     virtual ObjectContentType objectContentType(const KURL&, const String&) { return ObjectContentType(); }
     virtual String overrideMediaType() const { return String(); }
 
     virtual void redirectDataToPlugin(Widget*) { }
-    virtual void windowObjectCleared() { }
+    virtual void dispatchDidClearWindowObjectInWorld(DOMWrapperWorld*) { }
     virtual void documentElementAvailable() { }
     virtual void didPerformFirstNavigation() const { }
 
     virtual void registerForIconNotification(bool) { }
 
 #if USE(V8)
-    virtual void didCreateScriptContext() { }
-    virtual void didDestroyScriptContext() { }
+    virtual void didCreateScriptContextForFrame() { }
+    virtual void didDestroyScriptContextForFrame() { }
+    virtual void didCreateIsolatedScriptContext() { }
 #endif
 
 #if PLATFORM(MAC)
@@ -320,7 +342,7 @@ public:
 
 };
 
-class EmptyEditorClient : public EditorClient {
+class EmptyEditorClient : public EditorClient, public Noncopyable {
 public:
     virtual ~EmptyEditorClient() { }
     virtual void pageDestroyed() { }
@@ -429,7 +451,7 @@ public:
 };
 
 #if ENABLE(CONTEXT_MENUS)
-class EmptyContextMenuClient : public ContextMenuClient {
+class EmptyContextMenuClient : public ContextMenuClient, public Noncopyable {
 public:
     virtual ~EmptyContextMenuClient() {  }
     virtual void contextMenuDestroyed() { }
@@ -452,7 +474,7 @@ public:
 #endif // ENABLE(CONTEXT_MENUS)
 
 #if ENABLE(DRAG_SUPPORT)
-class EmptyDragClient : public DragClient {
+class EmptyDragClient : public DragClient, public Noncopyable {
 public:
     virtual ~EmptyDragClient() {}
     virtual void willPerformDragDestinationAction(DragDestinationAction, DragData*) { }
@@ -466,7 +488,7 @@ public:
 #endif // ENABLE(DRAG_SUPPORT)
 
 #if ENABLE(INSPECTOR)
-class EmptyInspectorClient : public InspectorClient {
+class EmptyInspectorClient : public InspectorClient, public Noncopyable {
 public:
     virtual ~EmptyInspectorClient() { }
 
@@ -490,9 +512,10 @@ public:
     virtual void hideHighlight() { }
     virtual void inspectedURLChanged(const String&) { }
 
-    virtual void populateSetting(const String&, InspectorController::Setting&) { }
-    virtual void storeSetting(const String&, const InspectorController::Setting&) { }
-    virtual void removeSetting(const String&) { }
+    virtual void populateSetting(const String&, String*) { }
+    virtual void storeSetting(const String&, const String&) { }
+
+    virtual void inspectorWindowObjectCleared() { }
 };
 #endif // ENABLE(INSPECTOR)
 

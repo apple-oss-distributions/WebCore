@@ -26,7 +26,7 @@
 #import "config.h"
 #import "GraphicsContext.h"
 
-#import "../cg/GraphicsContextPlatformPrivateCG.h"
+#import "GraphicsContextPlatformPrivateCG.h"
 #import <wtf/StdLibExtras.h>
 
 #import "Color.h"
@@ -46,8 +46,12 @@ namespace WebCore {
 // calls in this file are all exception-safe, so we don't block
 // exceptions for those.
 
-void GraphicsContext::drawFocusRing(const Color& color)
+    
+void GraphicsContext::drawFocusRing(const Vector<IntRect>& rects, int width, int offset, const Color& color)
 {
+    UNUSED_PARAM(rects);
+    UNUSED_PARAM(width);
+    UNUSED_PARAM(offset);
     UNUSED_PARAM(color);
 }
 
@@ -105,7 +109,7 @@ void GraphicsContext::drawLineForMisspellingOrBadGrammar(const IntPoint& point, 
     // for transforms.
 
     // Draw underline.
-    CGContextRef context = WKGetCurrentGraphicsContext();
+    CGContextRef context = platformContext();
     CGContextSaveGState(context);
 
     WKSetPattern(context, spellingPattern.get(), YES, YES);

@@ -28,13 +28,19 @@
 #if USE(ACCELERATED_COMPOSITING)
 
 #include "AnimationController.h"
+#if ENABLE(3D_CANVAS)    
+#include "WebGLRenderingContext.h"
+#endif
 #include "CSSPropertyNames.h"
 #include "CSSStyleSelector.h"
 #include "FrameView.h"
 #include "GraphicsContext.h"
 #include "GraphicsLayer.h"
+#include "HTMLCanvasElement.h"
 #include "HTMLElement.h"
 #include "HTMLNames.h"
+#include "InspectorTimelineAgent.h"
+#include "KeyframeList.h"
 #include "PluginWidget.h"
 #include "RenderBox.h"
 #include "RenderImage.h"
@@ -42,6 +48,7 @@
 #include "RenderEmbeddedObject.h"
 #include "RenderVideo.h"
 #include "RenderView.h"
+#include "Settings.h"
 
 #include "RenderLayerBacking.h"
 
@@ -49,9 +56,22 @@ using namespace std;
 
 namespace WebCore {
 
+using namespace HTMLNames;
+
 static bool hasBorderOutlineOrShadow(const RenderStyle*);
 static bool hasBoxDecorationsOrBackground(const RenderStyle*);
 static bool hasBoxDecorationsOrBackgroundImage(const RenderStyle*);
+
+static inline bool is3DCanvas(RenderObject* renderer)
+{
+#if ENABLE(3D_CANVAS)    
+    if (renderer->isCanvas())
+        return static_cast<HTMLCanvasElement*>(renderer->node())->is3D();
+#else
+    UNUSED_PARAM(renderer);
+#endif
+    return false;
+}
 
 RenderLayerBacking::RenderLayerBacking(RenderLayer* layer)
     : m_owningLayer(layer)
@@ -78,13 +98,18 @@ void RenderLayerBacking::createGraphicsLayer()
             m_graphicsLayer->setName("Document Node");
         else {
             if (renderer()->node()->isHTMLElement() && renderer()->node()->hasID())
-                m_graphicsLayer->setName(renderer()->renderName() + String(" ") + static_cast<HTMLElement*>(renderer()->node())->id());
+                m_graphicsLayer->setName(renderer()->renderName() + String(" ") + static_cast<HTMLElement*>(renderer()->node())->getIDAttribute());
             else
                 m_graphicsLayer->setName(renderer()->renderName());
         }
-    } else
+    } else if (m_owningLayer->isReflection())
+        m_graphicsLayer->setName("Reflection");
+    else
         m_graphicsLayer->setName("Anonymous Node");
 #endif  // NDEBUG
+
+    if (Frame* frame = renderer()->document()->frame())
+        m_graphicsLayer->setContentsScale(frame->contentsScale());
 
     updateLayerOpacity(renderer()->style());
     updateLayerTransform(renderer()->style());
@@ -143,7 +168,7 @@ void RenderLayerBacking::updateCompositedBounds()
     setCompositedBounds(layerBounds);
 }
 
-void RenderLayerBacking::updateAfterLayout(UpdateDepth updateDepth)
+void RenderLayerBacking::updateAfterLayout(UpdateDepth updateDepth, bool isUpdateRoot)
 {
     RenderLayerCompositor* layerCompositor = compositor();
     if (!layerCompositor->compositingLayersNeedRebuild()) {
@@ -157,7 +182,7 @@ void RenderLayerBacking::updateAfterLayout(UpdateDepth updateDepth)
         updateCompositedBounds();
         layerCompositor->updateCompositingDescendantGeometry(m_owningLayer, m_owningLayer, updateDepth);
         
-        if (!m_owningLayer->parent()) {
+        if (isUpdateRoot) {
             updateGraphicsLayerGeometry();
             layerCompositor->updateRootLayerPosition();
         }
@@ -178,14 +203,31 @@ bool RenderLayerBacking::updateGraphicsLayerConfiguration()
     if (updateMaskLayer(m_owningLayer->renderer()->hasMask()))
         m_graphicsLayer->setMaskLayer(m_maskLayer.get());
 
+    if (m_owningLayer->hasReflection()) {
+        if (m_owningLayer->reflectionLayer()->backing()) {
+            GraphicsLayer* reflectionLayer = m_owningLayer->reflectionLayer()->backing()->graphicsLayer();
+            m_graphicsLayer->setReplicatedByLayer(reflectionLayer);
+        }
+    } else
+        m_graphicsLayer->setReplicatedByLayer(0);
+
     if (isDirectlyCompositedImage())
         updateImageContents();
 
     if (renderer()->isEmbeddedObject() && toRenderEmbeddedObject(renderer())->allowsAcceleratedCompositing()) {
         PluginWidget* pluginWidget = static_cast<PluginWidget*>(toRenderEmbeddedObject(renderer())->widget());
-        if (pluginWidget)
-            m_graphicsLayer->setContentsToMedia(pluginWidget->platformLayer());
+        if (pluginWidget && !m_graphicsLayer->contentsLayerForMedia())
+            pluginWidget->attachPluginLayer();
     }
+
+#if ENABLE(3D_CANVAS)    
+    if (is3DCanvas(renderer())) {
+        HTMLCanvasElement* canvas = static_cast<HTMLCanvasElement*>(renderer()->node());
+        WebGLRenderingContext* context = static_cast<WebGLRenderingContext*>(canvas->renderingContext());
+        if (context->graphicsContext3D()->platformGraphicsContext3D())
+            m_graphicsLayer->setContentsToGraphicsContext3D(context->graphicsContext3D());
+    }
+#endif
 
     return layerConfigChanged;
 }
@@ -206,7 +248,7 @@ void RenderLayerBacking::updateGraphicsLayerGeometry()
         updateLayerOpacity(renderer()->style());
     
     RenderStyle* style = renderer()->style();
-    m_graphicsLayer->setPreserves3D(style->transformStyle3D() == TransformStyle3DPreserve3D);
+    m_graphicsLayer->setPreserves3D(style->transformStyle3D() == TransformStyle3DPreserve3D && !renderer()->hasReflection());
     m_graphicsLayer->setBackfaceVisibility(style->backfaceVisibility() == BackfaceVisibilityVisible);
 
     RenderLayer* compAncestor = m_owningLayer->ancestorCompositingLayer();
@@ -327,6 +369,17 @@ void RenderLayerBacking::updateGraphicsLayerGeometry()
         m_foregroundLayer->setOffsetFromRenderer(foregroundOffset);
     }
 
+    if (m_owningLayer->reflectionLayer() && m_owningLayer->reflectionLayer()->isComposited()) {
+        RenderLayerBacking* reflectionBacking = m_owningLayer->reflectionLayer()->backing();
+        reflectionBacking->updateGraphicsLayerGeometry();
+        
+        // The reflection layer has the bounds of m_owningLayer->reflectionLayer(),
+        // but the reflected layer is the bounds of this layer, so we need to position it appropriately.
+        FloatRect layerBounds = compositedBounds();
+        FloatRect reflectionLayerBounds = reflectionBacking->compositedBounds();
+        reflectionBacking->graphicsLayer()->setReplicatedLayerPosition(FloatPoint() + (layerBounds.location() - reflectionLayerBounds.location()));
+    }
+
     m_graphicsLayer->setContentsRect(contentsBox());
     m_graphicsLayer->setDrawsContent(containsPaintedContent());
 }
@@ -399,6 +452,8 @@ bool RenderLayerBacking::updateForegroundLayer(bool needsForegroundLayer)
 #endif
             m_foregroundLayer->setDrawsContent(true);
             m_foregroundLayer->setPaintingPhase(GraphicsLayerPaintForeground);
+            if (Frame* frame = renderer()->document()->frame())
+                m_foregroundLayer->setContentsScale(frame->contentsScale());
             layerChanged = true;
         }
     } else if (m_foregroundLayer) {
@@ -424,6 +479,8 @@ bool RenderLayerBacking::updateMaskLayer(bool needsMaskLayer)
 #endif
             m_maskLayer->setDrawsContent(true);
             m_maskLayer->setPaintingPhase(GraphicsLayerPaintMask);
+            if (Frame* frame = renderer()->document()->frame())
+                m_maskLayer->setContentsScale(frame->contentsScale());
             layerChanged = true;
         }
     } else if (m_maskLayer) {
@@ -561,7 +618,7 @@ bool RenderLayerBacking::isSimpleContainerCompositingLayer() const
         
         // Now look at the body's renderer.
         HTMLElement* body = renderObject->document()->body();
-        RenderObject* bodyObject = (body && body->hasLocalName(HTMLNames::bodyTag)) ? body->renderer() : 0;
+        RenderObject* bodyObject = (body && body->hasLocalName(bodyTag)) ? body->renderer() : 0;
         if (!bodyObject)
             return false;
         
@@ -640,7 +697,7 @@ bool RenderLayerBacking::hasNonCompositingContent() const
 
 bool RenderLayerBacking::containsPaintedContent() const
 {
-    if (isSimpleContainerCompositingLayer() || paintingGoesToWindow() || m_artificiallyInflatedBounds)
+    if (isSimpleContainerCompositingLayer() || paintingGoesToWindow() || m_artificiallyInflatedBounds || m_owningLayer->isReflection())
         return false;
 
     if (isDirectlyCompositedImage())
@@ -648,7 +705,7 @@ bool RenderLayerBacking::containsPaintedContent() const
 
     // FIXME: we could optimize cases where the image, video or canvas is known to fill the border box entirely,
     // and set background color on the layer in that case, instead of allocating backing store and painting.
-    if (renderer()->isVideo())
+    if (renderer()->isVideo() || is3DCanvas(renderer()))
         return hasBoxDecorationsOrBackground(renderer()->style());
 
     return true;
@@ -659,9 +716,7 @@ bool RenderLayerBacking::containsPaintedContent() const
 bool RenderLayerBacking::isDirectlyCompositedImage() const
 {
     RenderObject* renderObject = renderer();
-    return renderObject->isImage()
-            && !renderObject->hasMask() && !renderObject->hasReflection()
-            && !hasBoxDecorationsOrBackground(renderObject->style());
+    return renderObject->isImage() && !hasBoxDecorationsOrBackground(renderObject->style());
 }
 
 void RenderLayerBacking::rendererContentChanged()
@@ -670,12 +725,19 @@ void RenderLayerBacking::rendererContentChanged()
         updateImageContents();
         return;
     }
+
+#if ENABLE(3D_CANVAS)    
+    if (is3DCanvas(renderer())) {
+        m_graphicsLayer->setGraphicsContext3DNeedsDisplay();
+        return;
+    }
+#endif
 }
 
 void RenderLayerBacking::updateImageContents()
 {
     ASSERT(renderer()->isImage());
-    RenderImage* imageRenderer = static_cast<RenderImage*>(renderer());
+    RenderImage* imageRenderer = toRenderImage(renderer());
 
     CachedImage* cachedImage = imageRenderer->cachedImage();
     if (!cachedImage)
@@ -738,7 +800,7 @@ IntRect RenderLayerBacking::contentsBox() const
     IntRect contentsRect;
 #if ENABLE(VIDEO)
     if (renderer()->isVideo()) {
-        RenderVideo* videoRenderer = static_cast<RenderVideo*>(renderer());
+        RenderVideo* videoRenderer = toRenderVideo(renderer());
         contentsRect = videoRenderer->videoBox();
     } else
 #endif
@@ -749,13 +811,16 @@ IntRect RenderLayerBacking::contentsBox() const
     return contentsRect;
 }
 
-void RenderLayerBacking::setDocumentScale(float scale)
+void RenderLayerBacking::updateContentsScale(float scale)
 {
     if (m_graphicsLayer)
         m_graphicsLayer->setContentsScale(scale);
 
     if (m_foregroundLayer)
         m_foregroundLayer->setContentsScale(scale);
+
+    if (m_maskLayer)
+        m_maskLayer->setContentsScale(scale);
 }
 
 // Map the given point from coordinates in the GraphicsLayer to RenderLayer coordinates.
@@ -827,7 +892,7 @@ static void restoreClip(GraphicsContext* p, const IntRect& paintDirtyRect, const
 // Share this with RenderLayer::paintLayer, which would have to be educated about GraphicsLayerPaintingPhase?
 void RenderLayerBacking::paintIntoLayer(RenderLayer* rootLayer, GraphicsContext* context,
                     const IntRect& paintDirtyRect,      // in the coords of rootLayer
-                    PaintRestriction paintRestriction, GraphicsLayerPaintingPhase paintingPhase,
+                    PaintBehavior paintBehavior, GraphicsLayerPaintingPhase paintingPhase,
                     RenderObject* paintingRoot)
 {
     if (paintingGoesToWindow()) {
@@ -837,14 +902,6 @@ void RenderLayerBacking::paintIntoLayer(RenderLayer* rootLayer, GraphicsContext*
     
     m_owningLayer->updateLayerListsIfNeeded();
     
-    // Paint the reflection first if we have one.
-    if (m_owningLayer->hasReflection()) {
-        // Mark that we are now inside replica painting.
-        m_owningLayer->setPaintingInsideReflection(true);
-        m_owningLayer->reflectionLayer()->paintLayer(rootLayer, context, paintDirtyRect, paintRestriction, paintingRoot, 0, RenderLayer::PaintLayerPaintingReflection);
-        m_owningLayer->setPaintingInsideReflection(false);
-    }
-
     // Calculate the clip rects we should use.
     IntRect layerBounds, damageRect, clipRectToApply, outlineRect;
     m_owningLayer->calculateRects(rootLayer, paintDirtyRect, layerBounds, damageRect, clipRectToApply, outlineRect);
@@ -862,7 +919,7 @@ void RenderLayerBacking::paintIntoLayer(RenderLayer* rootLayer, GraphicsContext*
     if (paintingRoot && !renderer()->isDescendantOf(paintingRoot))
         paintingRootForRenderer = paintingRoot;
 
-    bool shouldPaint = m_owningLayer->hasVisibleContent() && m_owningLayer->isSelfPaintingLayer();
+    bool shouldPaint = (m_owningLayer->hasVisibleContent() || m_owningLayer->hasVisibleDescendant()) && m_owningLayer->isSelfPaintingLayer();
 
     if (shouldPaint && (paintingPhase & GraphicsLayerPaintBackground)) {
         // If this is the root then we need to send in a bigger bounding box
@@ -877,9 +934,9 @@ void RenderLayerBacking::paintIntoLayer(RenderLayer* rootLayer, GraphicsContext*
             
             int rw;
             int rh;
-            if (box->view()->frameView()) {
-                rw = box->view()->frameView()->contentsWidth();
-                rh = box->view()->frameView()->contentsHeight();
+            if (FrameView* frameView = box->view()->frameView()) {
+                rw = frameView->contentsWidth();
+                rh = frameView->contentsHeight();
             } else {
                 rw = box->view()->width();
                 rh = box->view()->height();
@@ -908,8 +965,8 @@ void RenderLayerBacking::paintIntoLayer(RenderLayer* rootLayer, GraphicsContext*
         restoreClip(context, paintDirtyRect, damageRect);
     }
                 
-    bool forceBlackText = paintRestriction == PaintRestrictionSelectionOnlyBlackText;
-    bool selectionOnly  = paintRestriction == PaintRestrictionSelectionOnly || paintRestriction == PaintRestrictionSelectionOnlyBlackText;
+    bool forceBlackText = paintBehavior & PaintBehaviorForceBlackText;
+    bool selectionOnly  = paintBehavior & PaintBehaviorSelectionOnly;
 
     if (shouldPaint && (paintingPhase & GraphicsLayerPaintForeground)) {
         // Now walk the sorted list of children with negative z-indices. Only RenderLayers without compositing layers will paint.
@@ -917,7 +974,7 @@ void RenderLayerBacking::paintIntoLayer(RenderLayer* rootLayer, GraphicsContext*
         Vector<RenderLayer*>* negZOrderList = m_owningLayer->negZOrderList();
         if (negZOrderList) {
             for (Vector<RenderLayer*>::iterator it = negZOrderList->begin(); it != negZOrderList->end(); ++it)
-                it[0]->paintLayer(rootLayer, context, paintDirtyRect, paintRestriction, paintingRoot);
+                it[0]->paintLayer(rootLayer, context, paintDirtyRect, paintBehavior, paintingRoot);
         }
 
         // Set up the clip used when painting our children.
@@ -953,14 +1010,14 @@ void RenderLayerBacking::paintIntoLayer(RenderLayer* rootLayer, GraphicsContext*
         Vector<RenderLayer*>* normalFlowList = m_owningLayer->normalFlowList();
         if (normalFlowList) {
             for (Vector<RenderLayer*>::iterator it = normalFlowList->begin(); it != normalFlowList->end(); ++it)
-                it[0]->paintLayer(rootLayer, context, paintDirtyRect, paintRestriction, paintingRoot);
+                it[0]->paintLayer(rootLayer, context, paintDirtyRect, paintBehavior, paintingRoot);
         }
 
         // Now walk the sorted list of children with positive z-indices.
         Vector<RenderLayer*>* posZOrderList = m_owningLayer->posZOrderList();
         if (posZOrderList) {
             for (Vector<RenderLayer*>::iterator it = posZOrderList->begin(); it != posZOrderList->end(); ++it)
-                it[0]->paintLayer(rootLayer, context, paintDirtyRect, paintRestriction, paintingRoot);
+                it[0]->paintLayer(rootLayer, context, paintDirtyRect, paintBehavior, paintingRoot);
         }
     }
     
@@ -980,9 +1037,27 @@ void RenderLayerBacking::paintIntoLayer(RenderLayer* rootLayer, GraphicsContext*
     ASSERT(!m_owningLayer->m_usedTransparency);
 }
 
+#if ENABLE(INSPECTOR)
+static InspectorTimelineAgent* inspectorTimelineAgent(RenderObject* renderer)
+{
+    Frame* frame = renderer->document()->frame();
+    if (!frame)
+        return 0;
+    Page* page = frame->page();
+    if (!page)
+        return 0;
+    return page->inspectorTimelineAgent();
+}
+#endif
+
 // Up-call from compositing layer drawing callback.
 void RenderLayerBacking::paintContents(const GraphicsLayer*, GraphicsContext& context, GraphicsLayerPaintingPhase paintingPhase, const IntRect& clip)
 {
+#if ENABLE(INSPECTOR)
+    if (InspectorTimelineAgent* timelineAgent = inspectorTimelineAgent(m_owningLayer->renderer()))
+        timelineAgent->willPaint(clip);
+#endif
+
     // We have to use the same root as for hit testing, because both methods
     // can compute and cache clipRects.
     IntRect enclosingBBox = compositedBounds();
@@ -999,7 +1074,22 @@ void RenderLayerBacking::paintContents(const GraphicsLayer*, GraphicsContext& co
     IntRect dirtyRect = enclosingBBox;
     dirtyRect.intersect(clipRect);
 
-    paintIntoLayer(m_owningLayer, &context, dirtyRect, PaintRestrictionNone, paintingPhase, renderer());
+    paintIntoLayer(m_owningLayer, &context, dirtyRect, PaintBehaviorNormal, paintingPhase, renderer());
+
+#if ENABLE(INSPECTOR)
+    if (InspectorTimelineAgent* timelineAgent = inspectorTimelineAgent(m_owningLayer->renderer()))
+        timelineAgent->didPaint();
+#endif
+}
+
+bool RenderLayerBacking::showDebugBorders() const
+{
+    return compositor() ? compositor()->showDebugBorders() : false;
+}
+
+bool RenderLayerBacking::showRepaintCounter() const
+{
+    return compositor() ? compositor()->showRepaintCounter() : false;
 }
 
 bool RenderLayerBacking::startAnimation(double timeOffset, const Animation* anim, const KeyframeList& keyframes)

@@ -40,6 +40,12 @@ public:
     virtual ~DatabaseTrackerClient() { }
     virtual void dispatchDidModifyOrigin(SecurityOrigin*) = 0;
     virtual void dispatchDidModifyDatabase(SecurityOrigin*, const String& databaseName) = 0;
+
+    virtual void dispatchDidAddNewOrigin(SecurityOrigin*) = 0;
+    virtual void dispatchDidDeleteDatabase() = 0;
+    virtual void dispatchDidDeleteDatabaseOrigin() = 0;
+    virtual void willBeginFirstTransaction() = 0;
+    virtual void didFinishLastTransaction() = 0;
 };
 
 } // namespace WebCore

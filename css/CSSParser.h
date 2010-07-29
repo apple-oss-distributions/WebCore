@@ -82,7 +82,8 @@ namespace WebCore {
         bool parseFillImage(RefPtr<CSSValue>&);
         PassRefPtr<CSSValue> parseFillPositionXY(bool& xFound, bool& yFound);
         void parseFillPosition(RefPtr<CSSValue>&, RefPtr<CSSValue>&);
-        PassRefPtr<CSSValue> parseFillSize();
+        void parseFillRepeat(RefPtr<CSSValue>&, RefPtr<CSSValue>&);
+        PassRefPtr<CSSValue> parseFillSize(int propId, bool &allowComma);
         
         bool parseFillProperty(int propId, int& propId1, int& propId2, RefPtr<CSSValue>&, RefPtr<CSSValue>&);
         bool parseFillShorthand(int propId, const int* properties, int numProperties, bool important);
@@ -94,6 +95,7 @@ namespace WebCore {
         PassRefPtr<CSSValue> parseAnimationDelay();
         PassRefPtr<CSSValue> parseAnimationDirection();
         PassRefPtr<CSSValue> parseAnimationDuration();
+        PassRefPtr<CSSValue> parseAnimationFillMode();
         PassRefPtr<CSSValue> parseAnimationIterationCount();
         PassRefPtr<CSSValue> parseAnimationName();
         PassRefPtr<CSSValue> parseAnimationPlayState();
@@ -140,6 +142,7 @@ namespace WebCore {
         // CSS3 Parsing Routines (for properties specific to CSS3)
         bool parseShadow(int propId, bool important);
         bool parseBorderImage(int propId, bool important, RefPtr<CSSValue>&);
+        bool parseBorderRadius(int propId, bool important);
         
         bool parseReflect(int propId, bool important);
 
@@ -185,14 +188,16 @@ namespace WebCore {
         MediaQuery* createFloatingMediaQuery(Vector<MediaQueryExp*>*);
         MediaQuery* sinkFloatingMediaQuery(MediaQuery*);
 
+        void addNamespace(const AtomicString& prefix, const AtomicString& uri);
+
         bool addVariable(const CSSParserString&, CSSParserValueList*);
         bool addVariableDeclarationBlock(const CSSParserString&);
         bool checkForVariables(CSSParserValueList*);
         void addUnresolvedProperty(int propId, bool important);
+        void invalidBlockHit();
         
         Vector<CSSSelector*>* reusableSelectorVector() { return &m_reusableSelectorVector; }
-        
-    public:
+
         bool m_strict;
         bool m_important;
         int m_id;
@@ -211,6 +216,7 @@ namespace WebCore {
         bool m_implicitShorthand;
 
         bool m_hasFontFaceOnlyValues;
+        bool m_hadSyntacticallyValidCSSRule;
 
         Vector<String> m_variableNames;
         Vector<RefPtr<CSSValue> > m_variableValues;
@@ -218,13 +224,14 @@ namespace WebCore {
         AtomicString m_defaultNamespace;
 
         // tokenizer methods and data
-    public:
         int lex(void* yylval);
         int token() { return yyTok; }
         UChar* text(int* length);
         int lex();
         
     private:
+        void recheckAtKeyword(const UChar* str, int len);
+    
         void clearProperties();
 
         void setupParser(const char* prefix, const String&, const char* suffix);
@@ -246,6 +253,10 @@ namespace WebCore {
         int yyleng;
         int yyTok;
         int yy_start;
+
+        bool m_allowImportRules;
+        bool m_allowVariablesRules;
+        bool m_allowNamespaceDeclarations;
 
         Vector<RefPtr<StyleBase> > m_parsedStyleObjects;
         Vector<RefPtr<CSSRuleList> > m_parsedRuleLists;
@@ -287,7 +298,7 @@ namespace WebCore {
     int cssPropertyID(const String&);
     int cssValueKeywordID(const CSSParserString&);
 
-    class ShorthandScope {
+    class ShorthandScope : public FastAllocBase {
     public:
         ShorthandScope(CSSParser* parser, int propId) : m_parser(parser)
         {

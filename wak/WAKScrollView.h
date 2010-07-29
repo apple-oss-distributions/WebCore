@@ -40,6 +40,7 @@
 - (id)delegate;
 
 - (CGRect)actualDocumentVisibleRect;
+- (void)setActualScrollPosition:(CGPoint)point;
 
 @end
 

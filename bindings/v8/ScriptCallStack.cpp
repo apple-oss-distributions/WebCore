@@ -31,6 +31,8 @@
 #include "config.h"
 #include "ScriptCallStack.h"
 
+#include "ScriptController.h"
+
 #include <v8.h>
 
 #include "V8Binding.h"
@@ -38,9 +40,22 @@
 
 namespace WebCore {
 
-ScriptCallStack::ScriptCallStack(const v8::Arguments& arguments, unsigned skipArgumentCount)
-    : m_lastCaller(String(), V8Proxy::sourceName(), V8Proxy::sourceLineNumber() + 1, arguments, skipArgumentCount)
-    , m_scriptState(new ScriptState(V8Proxy::retrieveFrame()))
+ScriptCallStack* ScriptCallStack::create(const v8::Arguments& arguments, unsigned skipArgumentCount) {
+    String sourceName;
+    int sourceLineNumber;
+    if (!V8Proxy::sourceName(sourceName)) {
+        return 0;
+    }
+    if (!V8Proxy::sourceLineNumber(sourceLineNumber)) {
+        return 0;
+    }
+    sourceLineNumber += 1;
+    return new ScriptCallStack(arguments, skipArgumentCount, sourceName, sourceLineNumber);
+}
+
+ScriptCallStack::ScriptCallStack(const v8::Arguments& arguments, unsigned skipArgumentCount, String sourceName, int sourceLineNumber)
+    : m_lastCaller(String(), sourceName, sourceLineNumber, arguments, skipArgumentCount)
+    , m_scriptState(ScriptState::current())
 {
 }
 

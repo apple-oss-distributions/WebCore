@@ -42,6 +42,7 @@ typedef struct _GdkEventMotion GdkEventMotion;
 #if PLATFORM(QT)
 QT_BEGIN_NAMESPACE
 class QInputEvent;
+class QGraphicsSceneMouseEvent;
 QT_END_NAMESPACE
 #endif
 
@@ -54,6 +55,10 @@ typedef long LPARAM;
 
 #if PLATFORM(WX)
 class wxMouseEvent;
+#endif
+
+#if PLATFORM(HAIKU)
+class BMessage;
 #endif
 
 namespace WebCore {
@@ -115,12 +120,15 @@ namespace WebCore {
         PlatformMouseEvent(GdkEventMotion*);
 #endif
 
-#if PLATFORM(MAC) && defined(__OBJC__)
+#if PLATFORM(MAC)
+#if defined(__OBJC__)
         PlatformMouseEvent(WebEvent *, id windowView);
+#endif
 #endif
 
 #if PLATFORM(QT)
         PlatformMouseEvent(QInputEvent*, int clickCount);
+        PlatformMouseEvent(QGraphicsSceneMouseEvent*, int clickCount);
 #endif
 
 #if PLATFORM(WIN)
@@ -131,6 +139,10 @@ namespace WebCore {
 
 #if PLATFORM(WX)
         PlatformMouseEvent(const wxMouseEvent&, const wxPoint& globalPoint, int clickCount);
+#endif
+
+#if PLATFORM(HAIKU)
+        PlatformMouseEvent(const BMessage*);
 #endif
 
     protected:

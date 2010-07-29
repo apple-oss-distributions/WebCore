@@ -67,10 +67,11 @@ static Color disabledTextColor(const Color& textColor, const Color& backgroundCo
     return disabledColor;
 }
 
-RenderTextControl::RenderTextControl(Node* node)
+RenderTextControl::RenderTextControl(Node* node, bool placeholderVisible)
     : RenderBlock(node)
-    , m_edited(false)
-    , m_userEdited(false)
+    , m_placeholderVisible(placeholderVisible)
+    , m_wasChangedSinceLastChangeEvent(false)
+    , m_lastChangeWasUserEdit(false)
 {
 }
 
@@ -92,14 +93,22 @@ void RenderTextControl::styleDidChange(StyleDifference diff, const RenderStyle* 
         // Reset them now to avoid getting a spurious layout hint.
         textBlockRenderer->style()->setHeight(Length());
         textBlockRenderer->style()->setWidth(Length());
-        textBlockRenderer->setStyle(textBlockStyle);
-        for (Node* n = m_innerText->firstChild(); n; n = n->traverseNextNode(m_innerText.get())) {
-            if (n->renderer())
-                n->renderer()->setStyle(textBlockStyle);
-        }
+        setInnerTextStyle(textBlockStyle);
     }
 
     setReplaced(isInline());
+}
+
+void RenderTextControl::setInnerTextStyle(PassRefPtr<RenderStyle> style)
+{
+    if (m_innerText) {
+        RefPtr<RenderStyle> textStyle = style;
+        m_innerText->renderer()->setStyle(textStyle);
+        for (Node* n = m_innerText->firstChild(); n; n = n->traverseNextNode(m_innerText.get())) {
+            if (n->renderer())
+                n->renderer()->setStyle(textStyle);
+        }
+    }
 }
 
 static inline bool updateUserModifyProperty(Node* node, RenderStyle* style)
@@ -173,7 +182,7 @@ void RenderTextControl::setInnerTextValue(const String& innerTextValue)
                 frame->editor()->clearUndoRedoOperations();
                 
                 if (AXObjectCache::accessibilityEnabled())
-                    document()->axObjectCache()->postNotification(this, "AXValueChanged", false);
+                    document()->axObjectCache()->postNotification(this, AXObjectCache::AXValueChanged, false);
             }
         }
 
@@ -186,17 +195,17 @@ void RenderTextControl::setInnerTextValue(const String& innerTextValue)
             ASSERT(!ec);
         }
 
-        m_edited = false;
-        m_userEdited = false;
+        // We set m_lastChangeWasUserEdit to false since this change was not explicitly made by the user (say, via typing on the keyboard), see <rdar://problem/5359921>.
+        m_lastChangeWasUserEdit = false;
     }
 
     static_cast<Element*>(node())->setFormControlValueMatchesRenderer(true);
 }
 
-void RenderTextControl::setUserEdited(bool isUserEdited)
+void RenderTextControl::setLastChangeWasUserEdit(bool lastChangeWasUserEdit)
 {
-    m_userEdited = isUserEdited;
-    document()->setIgnoreAutofocus(isUserEdited);
+    m_lastChangeWasUserEdit = lastChangeWasUserEdit;
+    document()->setIgnoreAutofocus(lastChangeWasUserEdit);
 }
 
 int RenderTextControl::selectionStart()
@@ -299,8 +308,8 @@ int RenderTextControl::indexForVisiblePosition(const VisiblePosition& pos)
 
 void RenderTextControl::subtreeHasChanged()
 {
-    m_edited = true;
-    m_userEdited = true;
+    m_wasChangedSinceLastChangeEvent = true;
+    m_lastChangeWasUserEdit = true;
 }
 
 String RenderTextControl::finishText(Vector<UChar>& result) const
@@ -439,11 +448,76 @@ void RenderTextControl::forwardEvent(Event* event)
     m_innerText->defaultEventHandler(event);
 }
 
-IntRect RenderTextControl::controlClipRect(int tx, int ty) const
+static const char* fontFamiliesWithInvalidCharWidth[] = {
+    "American Typewriter",
+    "Arial Hebrew",
+    "Chalkboard",
+    "Cochin",
+    "Corsiva Hebrew",
+    "Courier",
+    "Euphemia UCAS",
+    "Geneva",
+    "Gill Sans",
+    "Hei",
+    "Helvetica",
+    "Hoefler Text",
+    "InaiMathi",
+    "Kai",
+    "Lucida Grande",
+    "Marker Felt",
+    "Monaco",
+    "Mshtakan",
+    "New Peninim MT",
+    "Osaka",
+    "Raanana",
+    "STHeiti",
+    "Symbol",
+    "Times",
+    "Apple Braille",
+    "Apple LiGothic",
+    "Apple LiSung",
+    "Apple Symbols",
+    "AppleGothic",
+    "AppleMyungjo",
+    "#GungSeo",
+    "#HeadLineA",
+    "#PCMyungjo",
+    "#PilGi",
+};
+
+// For font families where any of the fonts don't have a valid entry in the OS/2 table
+// for avgCharWidth, fallback to the legacy webkit behavior of getting the avgCharWidth
+// from the width of a '0'. This only seems to apply to a fixed number of Mac fonts,
+// but, in order to get similar rendering across platforms, we do this check for
+// all platforms.
+bool RenderTextControl::hasValidAvgCharWidth(AtomicString family)
 {
-    IntRect clipRect = contentBoxRect();
-    clipRect.move(tx, ty);
-    return clipRect;
+    static HashSet<AtomicString>* fontFamiliesWithInvalidCharWidthMap = 0;
+    
+    if (!fontFamiliesWithInvalidCharWidthMap) {
+        fontFamiliesWithInvalidCharWidthMap = new HashSet<AtomicString>;
+        
+        for (unsigned i = 0; i < sizeof(fontFamiliesWithInvalidCharWidth) / sizeof(fontFamiliesWithInvalidCharWidth[0]); i++)
+            fontFamiliesWithInvalidCharWidthMap->add(AtomicString(fontFamiliesWithInvalidCharWidth[i]));
+    }
+
+    return !fontFamiliesWithInvalidCharWidthMap->contains(family);
+}
+
+float RenderTextControl::getAvgCharWidth(AtomicString family)
+{
+    if (hasValidAvgCharWidth(family))
+        return roundf(style()->font().primaryFont()->avgCharWidth());
+
+    const UChar ch = '0'; 
+    return style()->font().floatWidth(TextRun(&ch, 1, false, 0, 0, false, false, false));
+}
+
+float RenderTextControl::scaleEmToUnits(int x) const
+{
+    // This matches the unitsPerEm value for MS Shell Dlg and Courier New from the "head" font table.
+    float unitsPerEm = 2048.0f;
+    return roundf(style()->font().size() * x / unitsPerEm);
 }
 
 void RenderTextControl::calcPrefWidths()
@@ -456,11 +530,9 @@ void RenderTextControl::calcPrefWidths()
     if (style()->width().isFixed() && style()->width().value() > 0)
         m_minPrefWidth = m_maxPrefWidth = calcContentBoxWidth(style()->width().value());
     else {
-        // Figure out how big a text control needs to be for a given number of characters 
-        // (using "0" as the nominal character). 
-        const UChar ch = '0'; 
-        float charWidth = style()->font().floatWidth(TextRun(&ch, 1, false, 0, 0, false, false, false)); 
-        m_maxPrefWidth = preferredContentWidth(charWidth) + m_innerText->renderBox()->paddingLeft() + m_innerText->renderBox()->paddingRight();
+        // Use average character width. Matches IE.
+        AtomicString family = style()->font().family().family();
+        m_maxPrefWidth = preferredContentWidth(getAvgCharWidth(family)) + m_innerText->renderBox()->paddingLeft() + m_innerText->renderBox()->paddingRight();
     }
 
     if (style()->minWidth().isFixed() && style()->minWidth().value() > 0) {
@@ -490,13 +562,14 @@ void RenderTextControl::selectionChanged(bool userTriggered)
 
     if (Frame* frame = document()->frame()) {
         if (frame->selection()->isRange() && userTriggered)
-            node()->dispatchEvent(eventNames().selectEvent, true, false);
+            node()->dispatchEvent(Event::create(eventNames().selectEvent, true, false));
     }
 }
 
-void RenderTextControl::addFocusRingRects(GraphicsContext* graphicsContext, int tx, int ty)
+void RenderTextControl::addFocusRingRects(Vector<IntRect>& rects, int tx, int ty)
 {
-    graphicsContext->addFocusRingRect(IntRect(tx, ty, width(), height()));
+    if (width() && height())
+        rects.append(IntRect(tx, ty, width(), height()));
 }
 
 bool RenderTextControl::canScroll() const
@@ -514,6 +587,20 @@ int RenderTextControl::innerLineHeight() const
 HTMLElement* RenderTextControl::innerTextElement() const
 {
     return m_innerText.get();
+}
+
+void RenderTextControl::updatePlaceholderVisibility(bool placeholderShouldBeVisible, bool placeholderValueChanged)
+{
+    bool oldPlaceholderVisible = m_placeholderVisible;
+    m_placeholderVisible = placeholderShouldBeVisible;
+    if (oldPlaceholderVisible != m_placeholderVisible || placeholderValueChanged) {
+        // Sets the inner text style to the normal style or :placeholder style.
+        setInnerTextStyle(createInnerTextStyle(textBaseStyle()));
+
+        // updateFromElement() of the subclasses updates the text content
+        // to the element's value(), placeholder(), or the empty string.
+        updateFromElement();
+    }
 }
 
 } // namespace WebCore

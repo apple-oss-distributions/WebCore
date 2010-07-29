@@ -25,6 +25,8 @@
 #ifndef CachedResourceClient_h
 #define CachedResourceClient_h
 
+#include <wtf/FastAllocBase.h>
+
 #if ENABLE(XBL)
 namespace XBL {
     class XBLDocument;
@@ -40,6 +42,7 @@ namespace WebCore {
     class String;
     class Image;
     class IntRect;
+    class KURL;
 
     /**
      * @internal
@@ -48,7 +51,7 @@ namespace WebCore {
      * inherit from this class and overload one of the 3 functions
      *
      */
-    class CachedResourceClient
+    class CachedResourceClient : public FastAllocBase
     {
     public:
         virtual ~CachedResourceClient() { }
@@ -64,9 +67,9 @@ namespace WebCore {
         virtual bool willRenderImage(CachedImage*) { return false; }
 
         virtual bool memoryLimitReached() { return false; }
-        
-        virtual void setCSSStyleSheet(const String& /*URL*/, const String& /*charset*/, const CachedCSSStyleSheet*) { }
-        virtual void setXSLStyleSheet(const String& /*URL*/, const String& /*sheet*/) { }
+
+        virtual void setCSSStyleSheet(const String& /* href */, const KURL& /* baseURL */, const String& /* charset */, const CachedCSSStyleSheet*) { }
+        virtual void setXSLStyleSheet(const String& /* href */, const KURL& /* baseURL */, const String& /* sheet */) { }
 
         virtual void fontLoaded(CachedFont*) {};
 

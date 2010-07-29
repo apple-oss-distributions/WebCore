@@ -40,6 +40,7 @@
 #include "MIMETypeRegistry.h"
 #include "markup.h"
 #include "NamedNodeMap.h"
+#include "Pasteboard.h"
 #include "PlatformString.h"
 #include "Range.h"
 #include "RenderImage.h"
@@ -52,7 +53,7 @@ using namespace HTMLNames;
 // We provide the IE clipboard types (URL and Text), and the clipboard types specified in the WHATWG Web Applications 1.0 draft
 // see http://www.whatwg.org/specs/web-apps/current-work/ Section 6.3.5.3
 
-enum ClipboardDataType { ClipboardDataTypeNone, ClipboardDataTypeURL, ClipboardDataTypeText };
+enum ClipboardDataType { ClipboardDataTypeNone, ClipboardDataTypeURL, ClipboardDataTypeText, ClipboardDataTypeDownloadURL };
 
 static ClipboardDataType clipboardTypeFromMIMEType(const String& type)
 {
@@ -63,6 +64,8 @@ static ClipboardDataType clipboardTypeFromMIMEType(const String& type)
         return ClipboardDataTypeText;
     if (cleanType == "url" || cleanType == "text/uri-list")
         return ClipboardDataTypeURL;
+    if (cleanType == "downloadurl")
+        return ClipboardDataTypeDownloadURL;
 
     return ClipboardDataTypeNone;
 }
@@ -92,6 +95,7 @@ void ClipboardChromium::clearData(const String& type)
         m_dataObject->url = KURL();
         m_dataObject->urlTitle = "";
     }
+
     if (dataType == ClipboardDataTypeText)
         m_dataObject->plainText = "";
 }
@@ -116,7 +120,11 @@ String ClipboardChromium::getData(const String& type, bool& success) const
         if (!isForDragging()) {
             // If this isn't for a drag, it's for a cut/paste event handler.
             // In this case, we need to check the clipboard.
-            text = ChromiumBridge::clipboardReadPlainText();
+            PasteboardPrivate::ClipboardBuffer buffer = 
+                Pasteboard::generalPasteboard()->isSelectionMode() ?
+                PasteboardPrivate::SelectionBuffer : 
+                PasteboardPrivate::StandardBuffer;
+            text = ChromiumBridge::clipboardReadPlainText(buffer);
             success = !text.isEmpty();
         } else if (!m_dataObject->plainText.isEmpty()) {
             success = true;
@@ -142,7 +150,7 @@ bool ClipboardChromium::setData(const String& type, const String& data)
     ClipboardDataType winType = clipboardTypeFromMIMEType(type);
 
     if (winType == ClipboardDataTypeURL) {
-        m_dataObject->url = KURL(data);
+        m_dataObject->url = KURL(ParsedURLString, data);
         return m_dataObject->url.isValid();
     }
 
@@ -150,6 +158,15 @@ bool ClipboardChromium::setData(const String& type, const String& data)
         m_dataObject->plainText = data;
         return true;
     }
+    
+    if (winType == ClipboardDataTypeDownloadURL) {
+        KURL url = KURL(ParsedURLString, data);
+        if (url.isValid()) {
+            m_dataObject->downloadURL = url;
+            return true;
+        }
+    }
+
     return false;
 }
 
@@ -162,6 +179,9 @@ HashSet<String> ClipboardChromium::types() const
 
     if (!m_dataObject)
         return results;
+
+    if (!m_dataObject->filenames.isEmpty())
+        results.add("Files");
 
     if (m_dataObject->url.isValid()) {
         results.add("URL");
@@ -178,8 +198,17 @@ HashSet<String> ClipboardChromium::types() const
 
 PassRefPtr<FileList> ClipboardChromium::files() const
 {
-    notImplemented();
-    return 0;
+    if (policy() != ClipboardReadable)
+        return FileList::create();
+
+    if (!m_dataObject || m_dataObject->filenames.isEmpty())
+        return FileList::create();
+
+    RefPtr<FileList> fileList = FileList::create();
+    for (size_t i = 0; i < m_dataObject->filenames.size(); ++i)
+        fileList->append(File::create(m_dataObject->filenames.at(i)));
+
+    return fileList.release();
 }
 
 void ClipboardChromium::setDragImage(CachedImage* image, Node* node, const IntPoint& loc)
@@ -252,7 +281,7 @@ static CachedImage* getCachedImage(Element* element)
     if (!renderer || !renderer->isImage())
         return 0;
 
-    RenderImage* image = static_cast<RenderImage*>(renderer);
+    RenderImage* image = toRenderImage(renderer);
     if (image->cachedImage() && !image->cachedImage()->errorOccurred())
         return image->cachedImage();
 
@@ -303,7 +332,7 @@ void ClipboardChromium::declareAndWriteDragImage(Element* element, const KURL& u
     if (imageURL.isEmpty())
         return;
 
-    String fullURL = frame->document()->completeURL(parseURL(imageURL));
+    String fullURL = frame->document()->completeURL(deprecatedParseURL(imageURL));
     if (fullURL.isEmpty())
         return;
 
@@ -334,10 +363,13 @@ void ClipboardChromium::writeRange(Range* selectedRange, Frame* frame)
 
     m_dataObject->textHtml = createMarkup(selectedRange, 0,
         AnnotateForInterchange);
+#if OS(DARWIN)
+    m_dataObject->textHtml = String("<meta charset='utf-8' id='webkit-interchange-charset'>") + m_dataObject->textHtml;
+#endif
     m_dataObject->htmlBaseUrl = frame->document()->url();
 
     String str = frame->selectedText();
-#if PLATFORM(WIN_OS)
+#if OS(WINDOWS)
     replaceNewlinesWithWindowsStyleNewlines(str);
 #endif
     replaceNBSPWithSpace(str);

@@ -2,8 +2,6 @@
     Copyright (C) 2004, 2005, 2006, 2007 Nikolas Zimmermann <zimmermann@kde.org>
                   2004, 2005, 2006 Rob Buis <buis@kde.org>
 
-    This file is part of the KDE project
-
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Library General Public
     License as published by the Free Software Foundation; either
@@ -25,12 +23,11 @@
 
 #if ENABLE(SVG) && ENABLE(FILTERS)
 #include "SVGFilterBuilder.h"
+#include "SVGNames.h"
 #include "SVGResourceFilter.h"
 #include "SVGStyledElement.h"
 
 namespace WebCore {
-
-    extern char SVGFilterPrimitiveStandardAttributesIdentifier[];
 
     class SVGResourceFilter;
 
@@ -42,6 +39,7 @@ namespace WebCore {
         virtual bool isFilterEffect() const { return true; }
 
         virtual void parseMappedAttribute(MappedAttribute*);
+        virtual void synchronizeProperty(const QualifiedName&);
         virtual bool build(SVGResourceFilter*) = 0;
 
         virtual bool rendererIsNeeded(RenderStyle*) { return false; }
@@ -49,14 +47,13 @@ namespace WebCore {
     protected:
         friend class SVGResourceFilter;
         void setStandardAttributes(SVGResourceFilter*, FilterEffect*) const;
-        virtual const SVGElement* contextElement() const { return this; }
 
     private:
-        ANIMATED_PROPERTY_DECLARATIONS(SVGFilterPrimitiveStandardAttributes, SVGFilterPrimitiveStandardAttributesIdentifier, SVGNames::xAttrString, SVGLength, X, x)
-        ANIMATED_PROPERTY_DECLARATIONS(SVGFilterPrimitiveStandardAttributes, SVGFilterPrimitiveStandardAttributesIdentifier, SVGNames::yAttrString, SVGLength, Y, y)
-        ANIMATED_PROPERTY_DECLARATIONS(SVGFilterPrimitiveStandardAttributes, SVGFilterPrimitiveStandardAttributesIdentifier, SVGNames::widthAttrString, SVGLength, Width, width)
-        ANIMATED_PROPERTY_DECLARATIONS(SVGFilterPrimitiveStandardAttributes, SVGFilterPrimitiveStandardAttributesIdentifier, SVGNames::heightAttrString, SVGLength, Height, height)
-        ANIMATED_PROPERTY_DECLARATIONS(SVGFilterPrimitiveStandardAttributes, SVGFilterPrimitiveStandardAttributesIdentifier, SVGNames::resultAttrString, String, Result, result)
+        DECLARE_ANIMATED_PROPERTY(SVGFilterPrimitiveStandardAttributes, SVGNames::xAttr, SVGLength, X, x)
+        DECLARE_ANIMATED_PROPERTY(SVGFilterPrimitiveStandardAttributes, SVGNames::yAttr, SVGLength, Y, y)
+        DECLARE_ANIMATED_PROPERTY(SVGFilterPrimitiveStandardAttributes, SVGNames::widthAttr, SVGLength, Width, width)
+        DECLARE_ANIMATED_PROPERTY(SVGFilterPrimitiveStandardAttributes, SVGNames::heightAttr, SVGLength, Height, height)
+        DECLARE_ANIMATED_PROPERTY(SVGFilterPrimitiveStandardAttributes, SVGNames::resultAttr, String, Result, result)
     };
 
 } // namespace WebCore

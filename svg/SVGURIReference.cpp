@@ -27,10 +27,7 @@
 
 namespace WebCore {
 
-char SVGURIReferenceIdentifier[] = "SVGURIReference";
-
 SVGURIReference::SVGURIReference()
-    : m_href(this, XLinkNames::hrefAttr)
 {
 }
 

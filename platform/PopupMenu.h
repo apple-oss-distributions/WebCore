@@ -42,12 +42,13 @@ typedef struct HDC__* HDC;
 typedef struct HBITMAP__* HBITMAP;
 #elif PLATFORM(QT)
 namespace WebCore {
-    class QWebPopup;
+class QtAbstractWebPopup;
 }
 #elif PLATFORM(GTK)
 typedef struct _GtkMenu GtkMenu;
 typedef struct _GtkMenuItem GtkMenuItem;
 typedef struct _GtkWidget GtkWidget;
+#include "GRefPtrGtk.h"
 #include <wtf/HashMap.h>
 #include <glib.h>
 #elif PLATFORM(WX)
@@ -59,6 +60,8 @@ class wxMenu;
 #include <wx/event.h>
 #elif PLATFORM(CHROMIUM)
 #include "PopupMenuPrivate.h"
+#elif PLATFORM(HAIKU)
+class BMenu;
 #endif
 
 namespace WebCore {
@@ -91,6 +94,8 @@ public:
 
 #if PLATFORM(WIN)
     Scrollbar* scrollbar() const { return m_scrollbar.get(); }
+
+    static LPCTSTR popupClassName();
 
     bool up(unsigned lines = 1);
     bool down(unsigned lines = 1);
@@ -139,9 +144,7 @@ private:
     void populate();
 
 #elif PLATFORM(QT)
-    void clear();
-    void populate(const IntRect&);
-    QWebPopup* m_popup;
+    QtAbstractWebPopup* m_popup;
 #elif PLATFORM(WIN)
     // ScrollBarClient
     virtual void valueChanged(Scrollbar*);
@@ -170,7 +173,7 @@ private:
     bool m_showPopup;
 #elif PLATFORM(GTK)
     IntPoint m_menuPosition;
-    GtkMenu* m_popup;
+    GRefPtr<GtkMenu> m_popup;
     HashMap<GtkWidget*, int> m_indexMap;
     static void menuItemActivated(GtkMenuItem* item, PopupMenu*);
     static void menuUnmapped(GtkWidget*, PopupMenu*);
@@ -181,6 +184,8 @@ private:
     void OnMenuItemSelected(wxCommandEvent&);
 #elif PLATFORM(CHROMIUM)
     PopupMenuPrivate p;
+#elif PLATFORM(HAIKU)
+    BMenu* m_menu;
 #endif
 
 };

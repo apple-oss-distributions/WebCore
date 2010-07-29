@@ -56,26 +56,97 @@ static HashMap<String, String, CaseFoldingHash>* mediaMIMETypeForExtensionMap;
 
 static void initializeSupportedImageMIMETypes()
 {
-    // assume that all implementations at least support the following standard
-    // image types:
-    // FIXME: <rdar://problem/6564538>
-    static const char* types[] = {
-        // JPEG MIME Type Variants
-        "image/jpeg", "image/jpg", "image/jp_", "image/jpe_", "application/jpg", "application/x-jpg", "image/pjpeg", "image/pipeg", "image/vnd.switfview-jpeg", "image/x-xbitmap", 
-        // GIF MIME Type Variants
-        "image/gif", "image/x-xbitmap", "image/gi_", 
-        // PNG MIME Type Variants
-        "image/png", "application/png", "application/x-png",
-        // TIFF MIME Type Variants
-        "image/tif", "image/x-tif", "image/tiff", "image/x-tiff", "application/tif", "application/x-tif", "application/tiff", "application/x-tiff",
-        // BMP MIME Type Variants
-        "image/bmp", "image/x-bmp", "image/x-bitmap", "image/x-win-bitmap", "image/x-windows-bmp", "image/ms-bmp", "image/x-ms-bmp", "application/bmp", "application/x-bmp", "application/x-win-bitmap",
-    };
+#if PLATFORM(CG)
+    RetainPtr<CFArrayRef> supportedTypes(AdoptCF, CGImageSourceCopyTypeIdentifiers());
+    CFIndex count = CFArrayGetCount(supportedTypes.get());
+    for (CFIndex i = 0; i < count; i++) {
+        RetainPtr<CFStringRef> supportedType(AdoptCF, reinterpret_cast<CFStringRef>(CFArrayGetValueAtIndex(supportedTypes.get(), i)));
+        String mimeType = MIMETypeForImageSourceType(supportedType.get());
+        if (!mimeType.isEmpty()) {
+            supportedImageMIMETypes->add(mimeType);
+            supportedImageResourceMIMETypes->add(mimeType);
+        }
+    }
 
+    // On Tiger and Leopard, com.microsoft.bmp doesn't have a MIME type in the registry.
+    supportedImageMIMETypes->add("image/bmp");
+    supportedImageResourceMIMETypes->add("image/bmp");
+
+    // Favicons don't have a MIME type in the registry either.
+    supportedImageMIMETypes->add("image/vnd.microsoft.icon");
+    supportedImageMIMETypes->add("image/x-icon");
+    supportedImageResourceMIMETypes->add("image/vnd.microsoft.icon");
+    supportedImageResourceMIMETypes->add("image/x-icon");
+
+    //  We only get one MIME type per UTI, hence our need to add these manually
+    supportedImageMIMETypes->add("image/pjpeg");
+    supportedImageResourceMIMETypes->add("image/pjpeg");
+
+    //  We don't want to try to treat all binary data as an image
+    supportedImageMIMETypes->remove("application/octet-stream");
+    supportedImageResourceMIMETypes->remove("application/octet-stream");
+
+    //  Don't treat pdf/postscript as images directly
+    supportedImageMIMETypes->remove("application/pdf");
+    supportedImageMIMETypes->remove("application/postscript");
+
+    // Add malformed image mimetype for compatibility with Mail and to handle malformed mimetypes from the net
+    // These were removed for <rdar://problem/6564538> Re-enable UTI code in WebCore now that MobileCoreServices exists
+    // But Mail relies on atleast image/tif reported as being supported (should be image/tiff)
+    // This can be removed when Mail addresses:
+    // <rdar://problem/7879510> Mail should use standard image mimetypes 
+    // and we fix sniffing so that it corrects items such as image/jpg -> image/jpeg
+    static const char* types[] = {
+        // JPEG (image/jpeg) MIME Type Variants
+        "image/jpg", "image/jp_", "image/jpe_", "application/jpg", "application/x-jpg", "image/pipeg", "image/vnd.switfview-jpeg", "image/x-xbitmap",
+        // GIF (image/gif) MIME Type Variants
+        "image/gi_",
+        // PNG (image/png) MIME Type Variants
+        "application/png", "application/x-png",
+        // TIFF (image/tiff) MIME Type Variants
+        "image/x-tif", "image/tif", "image/x-tiff", "application/tif", "application/x-tif", "application/tiff", "application/x-tiff",
+        // BMP (image/bmp, image/x-bitmap) MIME Type Variants
+        "image/x-bmp", "image/x-win-bitmap", "image/x-windows-bmp", "image/ms-bmp", "image/x-ms-bmp", "application/bmp", "application/x-bmp", "application/x-win-bitmap",
+    };
     for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
         supportedImageMIMETypes->add(types[i]);
         supportedImageResourceMIMETypes->add(types[i]);
     }
+
+#elif PLATFORM(QT)
+    QList<QByteArray> formats = QImageReader::supportedImageFormats();
+    for (size_t i = 0; i < static_cast<size_t>(formats.size()); ++i) {
+#if ENABLE(SVG)
+        /*
+         * Qt has support for SVG, but we want to use KSVG2
+         */
+        if (formats.at(i).toLower().startsWith("svg"))
+            continue;
+#endif
+        String mimeType = MIMETypeRegistry::getMIMETypeForExtension(formats.at(i).constData());
+        supportedImageMIMETypes->add(mimeType);
+        supportedImageResourceMIMETypes->add(mimeType);
+    }
+
+    supportedImageMIMETypes->remove("application/octet-stream");
+    supportedImageResourceMIMETypes->remove("application/octet-stream");
+#else
+    // assume that all implementations at least support the following standard
+    // image types:
+    static const char* types[] = {
+        "image/jpeg",
+        "image/png",
+        "image/gif",
+        "image/bmp",
+        "image/vnd.microsoft.icon",    // ico
+        "image/x-icon",    // ico
+        "image/x-xbitmap"  // xbm
+    };
+    for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
+        supportedImageMIMETypes->add(types[i]);
+        supportedImageResourceMIMETypes->add(types[i]);
+    }
+#endif
 }
 
 static void initializeSupportedImageMIMETypesForEncoding()
@@ -83,15 +154,17 @@ static void initializeSupportedImageMIMETypesForEncoding()
     supportedImageMIMETypesForEncoding = new HashSet<String>;
 
 #if PLATFORM(CG)
-    // FIXME: <rdar://problem/6564538> Use UTI types on iPhone
-    // FIXME: Add Windows support for all the supported UTI's when a way to convert from MIMEType to UTI reliably is found.
-    // For now, only support PNG, JPEG and GIF.  See <rdar://problem/6095286>.
-    supportedImageMIMETypesForEncoding->add("image/png");
-    supportedImageMIMETypesForEncoding->add("image/jpeg");
-    supportedImageMIMETypesForEncoding->add("image/gif");
+    RetainPtr<CFArrayRef> supportedTypes(AdoptCF, CGImageDestinationCopyTypeIdentifiers());
+    CFIndex count = CFArrayGetCount(supportedTypes.get());
+    for (CFIndex i = 0; i < count; i++) {
+        RetainPtr<CFStringRef> supportedType(AdoptCF, reinterpret_cast<CFStringRef>(CFArrayGetValueAtIndex(supportedTypes.get(), i)));
+        String mimeType = MIMETypeForImageSourceType(supportedType.get());
+        if (!mimeType.isEmpty())
+            supportedImageMIMETypesForEncoding->add(mimeType);
+    }
 #elif PLATFORM(QT)
     QList<QByteArray> formats = QImageWriter::supportedImageFormats();
-    for (size_t i = 0; i < formats.size(); ++i) {
+    for (int i = 0; i < formats.size(); ++i) {
         String mimeType = MIMETypeRegistry::getMIMETypeForExtension(formats.at(i).constData());
         supportedImageMIMETypesForEncoding->add(mimeType);
     }
@@ -145,6 +218,7 @@ static void initializeSupportedNonImageMimeTypes()
 #if ENABLE(XHTMLMP)
         "application/vnd.wap.xhtml+xml",
 #endif
+        "application/json",
 #if ENABLE(SVG)
         "image/svg+xml",
 #endif
@@ -152,7 +226,12 @@ static void initializeSupportedNonImageMimeTypes()
         "application/x-ftp-directory",
 #endif
         "multipart/x-mixed-replace"
+        // Note: ADDING a new type here will probably render it as HTML. This can
+        // result in cross-site scripting.
     };
+    COMPILE_ASSERT(sizeof(types) / sizeof(types[0]) <= 16,
+                   nonimage_mime_types_must_be_less_than_or_equal_to_16);
+
     for (size_t i = 0; i < sizeof(types)/sizeof(types[0]); ++i)
         supportedNonImageMIMETypes->add(types[i]);
 
@@ -175,8 +254,8 @@ static void initializeMediaTypeMaps()
     static const TypeExtensionPair pairs[] = {
     
         // Ogg
-        { "application/ogg", "ogg" },
         { "application/ogg", "ogx" },
+        { "audio/ogg", "ogg" },
         { "audio/ogg", "oga" },
         { "video/ogg", "ogv" },
 

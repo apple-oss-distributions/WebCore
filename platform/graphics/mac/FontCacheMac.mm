@@ -77,6 +77,7 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
     bool useCyrillicFont = false;
     bool useArabicFont = false;
     bool useHebrewFont = false;
+    bool useIndicFont = false;
     bool useThaiFont = false;
     bool useImageFont = false;
     if (length > 0) {
@@ -107,8 +108,12 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
                 useArabicFont = true;
                 break;
             }
-            if (c < 0xE00)
+            if (c < 0x900)
                 break;
+            if (c < 0xE00) {
+                useIndicFont = true;
+                break;
+            }
             if (c <= 0xE7F) {
                 useThaiFont = true;
                 break;
@@ -280,6 +285,61 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
         DEFINE_STATIC_LOCAL(AtomicString, hebrewPlain, ("ArialHebrew"));
         DEFINE_STATIC_LOCAL(AtomicString, hebrewBold, ("ArialHebrew-Bold"));
         platformFont = getCachedFontPlatformData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? hebrewBold : hebrewPlain);
+    } else if (useIndicFont) {
+        DEFINE_STATIC_LOCAL(AtomicString, devanagariFont, ("DevanagariSangamMN"));
+        DEFINE_STATIC_LOCAL(AtomicString, bengaliFont, ("BanglaSangamMN"));
+        DEFINE_STATIC_LOCAL(AtomicString, gurmukhiFont, ("GurmukhiMN")); // Might be replaced in a future release with a Sangam version.
+        DEFINE_STATIC_LOCAL(AtomicString, gujaratiFont, ("GujaratiSangamMN"));
+        DEFINE_STATIC_LOCAL(AtomicString, oriyaFont, ("OriyaSangamMN"));
+        DEFINE_STATIC_LOCAL(AtomicString, tamilFont, ("TamilSangamMN"));
+        DEFINE_STATIC_LOCAL(AtomicString, teluguFont, ("TeluguSangamMN"));
+        DEFINE_STATIC_LOCAL(AtomicString, kannadaFont, ("KannadaSangamMN"));
+        DEFINE_STATIC_LOCAL(AtomicString, malayalamFont, ("MalayalamSangamMN"));
+        DEFINE_STATIC_LOCAL(AtomicString, sinhalaFont, ("SinhalaSangamMN"));
+
+        DEFINE_STATIC_LOCAL(AtomicString, devanagariFontBold, ("DevanagariSangamMN-Bold"));
+        DEFINE_STATIC_LOCAL(AtomicString, bengaliFontBold, ("BanglaSangamMN-Bold"));
+        DEFINE_STATIC_LOCAL(AtomicString, gurmukhiFontBold, ("GurmukhiMN-Bold")); // Might be replaced in a future release with a Sangam version.
+        DEFINE_STATIC_LOCAL(AtomicString, gujaratiFontBold, ("GujaratiSangamMN-Bold"));
+        DEFINE_STATIC_LOCAL(AtomicString, oriyaFontBold, ("OriyaSangamMN-Bold"));
+        DEFINE_STATIC_LOCAL(AtomicString, tamilFontBold, ("TamilSangamMN-Bold"));
+        DEFINE_STATIC_LOCAL(AtomicString, teluguFontBold, ("TeluguSangamMN-Bold"));
+        DEFINE_STATIC_LOCAL(AtomicString, kannadaFontBold, ("KannadaSangamMN-Bold"));
+        DEFINE_STATIC_LOCAL(AtomicString, malayalamFontBold, ("MalayalamSangamMN-Bold"));
+        DEFINE_STATIC_LOCAL(AtomicString, sinhalaFontBold, ("SinhalaSangamMN-Bold"));
+
+        static AtomicString* indicUnicodePageFonts[] = {
+            &devanagariFont,
+            &bengaliFont,
+            &gurmukhiFont,
+            &gujaratiFont,
+            &oriyaFont,
+            &tamilFont,
+            &teluguFont,
+            &kannadaFont,
+            &malayalamFont,
+            &sinhalaFont
+        };
+
+        static AtomicString* indicUnicodePageFontsBold[] = {
+            &devanagariFontBold,
+            &bengaliFontBold,
+            &gurmukhiFontBold,
+            &gujaratiFontBold,
+            &oriyaFontBold,
+            &tamilFontBold,
+            &teluguFontBold,
+            &kannadaFontBold,
+            &malayalamFontBold,
+            &sinhalaFontBold
+        };
+
+        uint32_t indicPageOrderIndex = (c - 0x0900) / 0x0080;    // Indic scripts start at 0x0900 in Unicode. Each script is allocalted a block of 0x80 characters.
+        if (indicPageOrderIndex < (sizeof(indicUnicodePageFonts) / sizeof(AtomicString*))) {
+            AtomicString* indicFontString = isGSFontWeightBold(font.fontDescription().weight()) ? indicUnicodePageFontsBold[indicPageOrderIndex] : indicUnicodePageFonts[indicPageOrderIndex];
+            if (indicFontString)
+                platformFont = getCachedFontPlatformData(font.fontDescription(), *indicFontString);
+        }
     } else if (useThaiFont) {
         DEFINE_STATIC_LOCAL(AtomicString, thaiPlain, ("Thonburi"));
         DEFINE_STATIC_LOCAL(AtomicString, thaiBold, ("Thonburi-Bold"));

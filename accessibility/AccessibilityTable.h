@@ -60,6 +60,7 @@ public:
     AccessibilityChildrenVector& columns();
     AccessibilityChildrenVector& rows();
     
+    virtual bool supportsSelectedRows() { return false; }
     unsigned columnCount();
     unsigned rowCount();
     
@@ -75,17 +76,15 @@ public:
     // an object that contains, as children, all the objects that act as headers
     AccessibilityObject* headerContainer();
     
-    bool isTableExposableThroughAccessibility() { return m_canBeExposedAsAccessibilityTable; }
-
 protected:    
     AccessibilityChildrenVector m_rows;
     AccessibilityChildrenVector m_columns;
     
-    bool determineAccessibilityExposibility();
-    
     AccessibilityTableHeaderContainer* m_headerContainer;
-    mutable bool m_isAccessibilityTable; 
-    mutable bool m_canBeExposedAsAccessibilityTable;
+    mutable bool m_isAccessibilityTable;
+    
+public:
+    bool isTableExposableThroughAccessibility();
 };
     
 } // namespace WebCore 

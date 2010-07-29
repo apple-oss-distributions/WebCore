@@ -49,7 +49,7 @@ namespace WebCore {
 
     typedef const NSString* TileMinificationFilter;
 
-    class TileCache : Noncopyable {
+    class TileCache : public Noncopyable {
     public:
         TileCache(WAKWindow*);
         ~TileCache();

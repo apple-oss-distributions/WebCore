@@ -48,6 +48,8 @@ class QPoint;
 QT_END_NAMESPACE
 #elif PLATFORM(GTK)
 typedef struct _GdkPoint GdkPoint;
+#elif PLATFORM(HAIKU)
+class BPoint;
 #endif
 
 #if PLATFORM(WX)
@@ -110,6 +112,9 @@ public:
 #elif PLATFORM(GTK)
     IntPoint(const GdkPoint&);
     operator GdkPoint() const;
+#elif PLATFORM(HAIKU)
+    explicit IntPoint(const BPoint&);
+    operator BPoint() const;
 #endif
 
 #if PLATFORM(WX)

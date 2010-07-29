@@ -56,11 +56,32 @@ static inline IMP method_getImplementation(Method method)
 
 typedef std::pair<Class, id> ClassAndIdPair;
 
+static void deallocCallback(void* context)
+{
+    ClassAndIdPair* pair = static_cast<ClassAndIdPair*>(context);
+    
+    Method method = class_getInstanceMethod(pair->first, @selector(dealloc));
+    
+    IMP imp = method_getImplementation(method);
+    imp(pair->second, @selector(dealloc));
+    
+    delete pair;
+}
 
 bool WebCoreObjCScheduleDeallocateOnMainThread(Class cls, id object)
 {
-    UNUSED_PARAM(cls);
-    UNUSED_PARAM(object);
-    return false;
+    ASSERT([object isKindOfClass:cls]);
+    
+#if USE(WEB_THREAD)
+    if (isMainThread())
+        return false;
+#else
+    if (pthread_main_np() != 0)
+        return false;
+#endif
+    
+    ClassAndIdPair* pair = new ClassAndIdPair(cls, object);
+    callOnMainThread(deallocCallback, pair);
+    return true;
 }
 

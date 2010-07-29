@@ -14,7 +14,7 @@
 
 namespace WebCore {
 
-class SelectionRect {
+class SelectionRect : public FastAllocBase {
 public:
     SelectionRect();
     explicit SelectionRect(const IntRect &);

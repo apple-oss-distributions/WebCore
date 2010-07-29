@@ -31,6 +31,7 @@
 
 #import <Foundation/Foundation.h>
 
+#import "loader.h"
 
 #ifdef BUILDING_ON_TIGER
 typedef unsigned NSUInteger;
@@ -62,7 +63,7 @@ void ResourceRequest::doUpdateResourceRequest()
     
     if (NSString* method = [m_nsRequest.get() HTTPMethod])
         m_httpMethod = method;
-    m_allowHTTPCookies = [m_nsRequest.get() HTTPShouldHandleCookies];
+    m_allowCookies = [m_nsRequest.get() HTTPShouldHandleCookies];
     
     NSDictionary *headers = [m_nsRequest.get() allHTTPHeaderFields];
     NSEnumerator *e = [headers keyEnumerator];
@@ -109,6 +110,8 @@ void ResourceRequest::doUpdatePlatformRequest()
     wkSupportsMultipartXMixedReplace(nsRequest);
 #endif
 
+    if (isHttpPipeliningEnabled())
+        wkSupportsHttpPipelining(nsRequest, priority());
 
     [nsRequest setCachePolicy:(NSURLRequestCachePolicy)cachePolicy()];
     if (timeoutInterval() != unspecifiedTimeoutInterval)
@@ -116,7 +119,7 @@ void ResourceRequest::doUpdatePlatformRequest()
     [nsRequest setMainDocumentURL:firstPartyForCookies()];
     if (!httpMethod().isEmpty())
         [nsRequest setHTTPMethod:httpMethod()];
-    [nsRequest setHTTPShouldHandleCookies:allowHTTPCookies()];
+    [nsRequest setHTTPShouldHandleCookies:allowCookies()];
 
     // Cannot just use setAllHTTPHeaderFields here, because it does not remove headers.
     NSArray *oldHeaderFieldNames = [[nsRequest allHTTPHeaderFields] allKeys];

@@ -23,6 +23,7 @@
 #import "config.h"
 #import "FontPlatformData.h"
 
+#import "PlatformString.h"
 #import "WebCoreSystemInterface.h"
 
 #import <CoreText/CoreText.h>
@@ -96,5 +97,13 @@ bool FontPlatformData::allowsLigatures() const
     RetainPtr<CFCharacterSetRef> characterSet(AdoptCF, CTFontCopyCharacterSet(ctFont.get()));
     return !(characterSet.get() && CFCharacterSetIsCharacterMember(characterSet.get(), 'a'));
 }
+
+#ifndef NDEBUG
+String FontPlatformData::description() const
+{
+    RetainPtr<CFStringRef> cgFontDescription(AdoptCF, CFCopyDescription(GSFontGetCGFont(m_font)));
+    return String(cgFontDescription.get()) + " " + String::number(m_size) + (m_syntheticBold ? " synthetic bold" : "") + (m_syntheticOblique ? " syntheitic oblique" : "");
+}
+#endif
 
 } // namespace WebCore

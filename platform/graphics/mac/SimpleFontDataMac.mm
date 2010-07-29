@@ -50,11 +50,12 @@
 
 using namespace std;
 
+using namespace std;
+
 namespace WebCore {
   
 const float smallCapsFontSizeMultiplier = 0.7f;
-const float contextDPI = 72.0f;
-static inline float scaleEmToUnits(float x, unsigned unitsPerEm) { return x * (contextDPI / (contextDPI * unitsPerEm)); }
+static inline float scaleEmToUnits(float x, unsigned unitsPerEm) { return x / unitsPerEm; }
 
 void SimpleFontData::platformInit()
 {
@@ -68,6 +69,17 @@ void SimpleFontData::platformInit()
     m_lineGap = GSFontGetLineGap(m_platformData.font());
     m_xHeight = GSFontGetXHeight(m_platformData.font());
     m_unitsPerEm = GSFontGetUnitsPerEm(m_platformData.font());    
+}
+
+
+void SimpleFontData::platformCharWidthInit()
+{
+    m_avgCharWidth = 0;
+    m_maxCharWidth = 0;
+
+
+    // Fallback to a cross-platform estimate, which will populate these values if they are non-positive.
+    initCharWidths();
 }
 
 void SimpleFontData::platformDestroy()
@@ -131,10 +143,11 @@ void SimpleFontData::determinePitch()
 
 float SimpleFontData::platformWidthForGlyph(Glyph glyph) const
 {
-    if (m_platformData.m_isImageFont)
-        return std::min(m_platformData.m_size + (m_platformData.m_size <= 15.0f ? 4.0f : 6.0f), 22.0f); // returns the proper scaled advance for the image size - see Font::drawGlyphs
-
-    GSFontRef font = m_platformData.font();
+    if (platformData().m_isImageFont) {
+        // returns the proper scaled advance for the image size - see Font::drawGlyphs
+        return std::min(platformData().m_size + (platformData().m_size <= 15.0f ? 4.0f : 6.0f), 22.0f);
+    }
+    GSFontRef font = platformData().font();
     float pointSize = GSFontGetSize(font);
     CGAffineTransform m = CGAffineTransformMakeScale(pointSize, pointSize);
     CGSize advance;
@@ -145,6 +158,21 @@ float SimpleFontData::platformWidthForGlyph(Glyph glyph) const
     return advance.width + m_syntheticBoldOffset;
 }
 
+FloatRect SimpleFontData::platformBoundsForGlyph(Glyph glyph) const
+{
+    FloatRect boundingBox;
+#ifndef BUILDING_ON_TIGER
+    CGRect box;
+    CGFontGetGlyphBBoxes(GSFontGetCGFont(platformData().font()), &glyph, 1, &box);
+    float pointSize = platformData().m_size;
+    CGFloat scale = pointSize / unitsPerEm();
+    boundingBox = CGRectApplyAffineTransform(box, CGAffineTransformMakeScale(scale, -scale));
+    if (m_syntheticBoldOffset)
+        boundingBox.setWidth(boundingBox.width() + m_syntheticBoldOffset);
+#endif
+    return boundingBox;
+}
+        
 #if USE(ATSUI)
 void SimpleFontData::checkShapesArabic() const
 {

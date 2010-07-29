@@ -45,6 +45,7 @@ bool WebThreadNotCurrent(void);
 // These are for <rdar://problem/6817341> Many apps crashing calling -[UIFieldEditor text] in secondary thread
 // Don't use them to solve any random problems you might have.
 void WebThreadLockFromAnyThread();
+void WebThreadLockFromAnyThreadNoLog();
 void WebThreadUnlockFromAnyThread();
 
 static inline bool WebThreadShouldYield(void) { return webThreadShouldYield; }

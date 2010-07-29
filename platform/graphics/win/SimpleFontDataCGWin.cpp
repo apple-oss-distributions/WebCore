@@ -115,11 +115,26 @@ void SimpleFontData::platformInit()
         m_xHeight = scaleEmToUnits(iXHeight, m_unitsPerEm) * pointSize;
     }
 }
+FloatRect SimpleFontData::platformBoundsForGlyph(Glyph glyph) const
+{
+    if (m_platformData.useGDI())
+        return boundsForGDIGlyph(glyph);
+
+    CGRect box;
+    CGFontGetGlyphBBoxes(m_platformData.cgFont(), &glyph, 1, &box);
+    float pointSize = m_platformData.size();
+    CGFloat scale = pointSize / unitsPerEm();
+    FloatRect boundingBox = CGRectApplyAffineTransform(box, CGAffineTransformMakeScale(scale, -scale));
+    if (m_syntheticBoldOffset)
+        boundingBox.setWidth(boundingBox.width() + m_syntheticBoldOffset);
+
+    return boundingBox;
+}
 
 float SimpleFontData::platformWidthForGlyph(Glyph glyph) const
 {
     if (m_platformData.useGDI())
-       return widthForGDIGlyph(glyph);
+        return widthForGDIGlyph(glyph);
 
     CGFontRef font = m_platformData.cgFont();
     float pointSize = m_platformData.size();

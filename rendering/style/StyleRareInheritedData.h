@@ -64,13 +64,14 @@ public:
     unsigned wordWrap : 1; // EWordWrap 
     unsigned nbspMode : 1; // ENBSPMode
     unsigned khtmlLineBreak : 1; // EKHTMLLineBreak
-    TextSizeAdjustment textSizeAdjust; // An Apple extension to an Apple extension.
     unsigned resize : 2; // EResize
     unsigned userSelect : 1;  // EUserSelect
+    unsigned colorSpace : 1; // ColorSpace
     unsigned touchCalloutEnabled : 1;
     Color tapHighlightColor;
     Color compositionFillColor;
     Color compositionFrameColor;
+    TextSizeAdjustment textSizeAdjust; // An Apple extension to an Apple extension.
     
 private:
     StyleRareInheritedData();

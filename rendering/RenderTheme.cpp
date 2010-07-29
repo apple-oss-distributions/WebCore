@@ -1,7 +1,7 @@
 /**
  * This file is part of the theme implementation for form controls in WebCore.
  *
- * Copyright (C) 2005, 2006, 2007, 2008 Apple Computer, Inc.
+ * Copyright (C) 2005, 2006, 2007, 2008, 2009 Apple Computer, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -30,6 +30,7 @@
 #include "GraphicsContext.h"
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
+#include "MediaControlElements.h"
 #include "Page.h"
 #include "RenderStyle.h"
 #include "RenderView.h"
@@ -86,7 +87,10 @@ void RenderTheme::adjustStyle(CSSStyleSelector* selector, RenderStyle* style, El
     
 #if USE(NEW_THEME)
     switch (part) {
+        case ListButtonPart:
         case CheckboxPart:
+        case InnerSpinButtonPart:
+        case OuterSpinButtonPart:
         case RadioPart:
         case PushButtonPart:
         case SquareButtonPart:
@@ -172,9 +176,14 @@ void RenderTheme::adjustStyle(CSSStyleSelector* selector, RenderStyle* style, El
             return adjustRadioStyle(selector, style, e);
         case PushButtonPart:
         case SquareButtonPart:
+        case ListButtonPart:
         case DefaultButtonPart:
         case ButtonPart:
             return adjustButtonStyle(selector, style, e);
+        case InnerSpinButtonPart:
+            return adjustInnerSpinButtonStyle(selector, style, e);
+        case OuterSpinButtonPart:
+            return adjustOuterSpinButtonStyle(selector, style, e);
 #endif
         case TextFieldPart:
             return adjustTextFieldStyle(selector, style, e);
@@ -185,6 +194,7 @@ void RenderTheme::adjustStyle(CSSStyleSelector* selector, RenderStyle* style, El
         case MenulistButtonPart:
             return adjustMenuListButtonStyle(selector, style, e);
         case MediaSliderPart:
+        case MediaVolumeSliderPart:
         case SliderHorizontalPart:
         case SliderVerticalPart:
             return adjustSliderTrackStyle(selector, style, e);
@@ -217,8 +227,11 @@ bool RenderTheme::paint(RenderObject* o, const RenderObject::PaintInfo& paintInf
         case RadioPart:
         case PushButtonPart:
         case SquareButtonPart:
+        case ListButtonPart:
         case DefaultButtonPart:
         case ButtonPart:
+        case InnerSpinButtonPart:
+        case OuterSpinButtonPart:
             m_theme->paint(part, controlStatesForRenderer(o), const_cast<GraphicsContext*>(paintInfo.context), r, o->style()->effectiveZoom(), o->view()->frameView());
             return false;
         default:
@@ -235,9 +248,14 @@ bool RenderTheme::paint(RenderObject* o, const RenderObject::PaintInfo& paintInf
             return paintRadio(o, paintInfo, r);
         case PushButtonPart:
         case SquareButtonPart:
+        case ListButtonPart:
         case DefaultButtonPart:
         case ButtonPart:
             return paintButton(o, paintInfo, r);
+        case InnerSpinButtonPart:
+            return paintInnerSpinButton(o, paintInfo, r);
+        case OuterSpinButtonPart:
+            return paintOuterSpinButton(o, paintInfo, r);
 #endif
         case MenulistPart:
             return paintMenuList(o, paintInfo, r);
@@ -264,11 +282,21 @@ bool RenderTheme::paint(RenderObject* o, const RenderObject::PaintInfo& paintInf
             return paintMediaRewindButton(o, paintInfo, r);
         case MediaReturnToRealtimeButtonPart:
             return paintMediaReturnToRealtimeButton(o, paintInfo, r);
+        case MediaToggleClosedCaptionsButtonPart:
+            return paintMediaToggleClosedCaptionsButton(o, paintInfo, r);
         case MediaSliderPart:
             return paintMediaSliderTrack(o, paintInfo, r);
         case MediaSliderThumbPart:
             if (o->parent()->isSlider())
                 return paintMediaSliderThumb(o, paintInfo, r);
+            break;
+        case MediaVolumeSliderContainerPart:
+            return paintMediaVolumeSliderContainer(o, paintInfo, r);
+        case MediaVolumeSliderPart:
+            return paintMediaVolumeSliderTrack(o, paintInfo, r);
+        case MediaVolumeSliderThumbPart:
+            if (o->parent()->isSlider())
+                return paintMediaVolumeSliderThumb(o, paintInfo, r);
             break;
         case MediaTimeRemainingPart:
             return paintMediaTimeRemaining(o, paintInfo, r);
@@ -337,6 +365,25 @@ bool RenderTheme::hitTestMediaControlPart(RenderObject* o, const IntPoint& absPo
 
     FloatPoint localPoint = o->absoluteToLocal(absPoint, false, true);  // respect transforms
     return toRenderBox(o)->borderBoxRect().contains(roundedIntPoint(localPoint));
+}
+
+bool RenderTheme::shouldRenderMediaControlPart(ControlPart part, Element* e)
+{
+    HTMLMediaElement* mediaElement = static_cast<HTMLMediaElement*>(e);
+    switch (part) {
+    case MediaMuteButtonPart:
+        return mediaElement->hasAudio();
+    case MediaRewindButtonPart:
+        return mediaElement->movieLoadType() != MediaPlayer::LiveStream;
+    case MediaReturnToRealtimeButtonPart:
+        return mediaElement->movieLoadType() == MediaPlayer::LiveStream;
+    case MediaFullscreenButtonPart:
+        return mediaElement->supportsFullscreen();
+    case MediaToggleClosedCaptionsButtonPart:
+        return mediaElement->hasClosedCaptions();
+    default:
+        return true;
+    }
 }
 #endif
 
@@ -502,7 +549,7 @@ bool RenderTheme::supportsFocusRing(const RenderStyle* style) const
 
 bool RenderTheme::stateChanged(RenderObject* o, ControlState state) const
 {
-    // Default implementation assumes the controls dont respond to changes in :hover state
+    // Default implementation assumes the controls don't respond to changes in :hover state
     if (state == HoverState && !supportsHover(o->style()))
         return false;
 
@@ -622,6 +669,10 @@ bool RenderTheme::isHovered(const RenderObject* o) const
 
 bool RenderTheme::isDefault(const RenderObject* o) const
 {
+    // A button should only have the default appearance if the page is active
+    if (!isActive(o))
+        return false;
+
     if (!o->document())
         return false;
 
@@ -673,6 +724,14 @@ void RenderTheme::adjustButtonStyle(CSSStyleSelector*, RenderStyle* style, Eleme
     // Most platforms will completely honor all CSS, and so we have no need to adjust the style
     // at all by default.  We will still allow the theme a crack at setting up a desired vertical size.
     setButtonSize(style);
+}
+
+void RenderTheme::adjustInnerSpinButtonStyle(CSSStyleSelector*, RenderStyle*, Element*) const
+{
+}
+
+void RenderTheme::adjustOuterSpinButtonStyle(CSSStyleSelector*, RenderStyle*, Element*) const
+{
 }
 
 #endif

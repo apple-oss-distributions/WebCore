@@ -8,8 +8,6 @@
               (C) 2000-2003 Dirk Mueller (mueller@kde.org)
               (C) 2002-2003 Apple Computer, Inc.
 
-    This file is part of the KDE project
-
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Library General Public
     License as published by the Free Software Foundation; either
@@ -33,6 +31,9 @@
 #include "Color.h"
 #include "Path.h"
 #include "PlatformString.h"
+#include "ShadowData.h"
+#include <wtf/OwnPtr.h>
+#include <wtf/PassOwnPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
 
@@ -60,13 +61,20 @@
 #define SVG_RS_DEFINE_ATTRIBUTE_DATAREF_WITH_INITIAL_REFCOUNTED(Data, Group, Variable, Type, Name, Initial) \
     Data* Name() const { return Group->Variable.get(); } \
     void set##Type(PassRefPtr<Data> obj) { \
-        if(!(Group->Variable == obj)) \
+        if (!(Group->Variable == obj)) \
             Group.access()->Variable = obj; \
     } \
     static Data* initial##Type() { return Initial; }
 
+#define SVG_RS_DEFINE_ATTRIBUTE_DATAREF_WITH_INITIAL_OWNPTR(Data, Group, Variable, Type, Name, Initial) \
+    Data* Name() const { return Group->Variable.get(); } \
+    void set##Type(Data* obj) { \
+        Group.access()->Variable.set(obj); \
+    } \
+    static Data* initial##Type() { return Initial; }
+
 #define SVG_RS_SET_VARIABLE(Group, Variable, Value) \
-    if(!(Group->Variable == Value)) \
+    if (!(Group->Variable == Value)) \
         Group.access()->Variable = Value;
 
 namespace WebCore {
@@ -278,6 +286,24 @@ namespace WebCore {
     private:
         StyleMiscData();
         StyleMiscData(const StyleMiscData&);
+    };
+    
+    class StyleShadowSVGData : public RefCounted<StyleShadowSVGData> {
+    public:
+        static PassRefPtr<StyleShadowSVGData> create() { return adoptRef(new StyleShadowSVGData); }
+        PassRefPtr<StyleShadowSVGData> copy() const { return adoptRef(new StyleShadowSVGData(*this)); }
+        
+        bool operator==(const StyleShadowSVGData& other) const;
+        bool operator!=(const StyleShadowSVGData& other) const
+        {
+            return !(*this == other);
+        }
+
+        OwnPtr<ShadowData> shadow;
+
+    private:
+        StyleShadowSVGData();
+        StyleShadowSVGData(const StyleShadowSVGData& other);
     };
 
 } // namespace WebCore

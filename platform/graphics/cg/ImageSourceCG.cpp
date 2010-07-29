@@ -37,13 +37,37 @@
 #include "MIMETypeRegistry.h"
 #include "SharedBuffer.h"
 #include <CoreGraphics/CoreGraphics.h>
+#include <CoreGraphics/CGImagePrivate.h>
 #include <ImageIO/ImageIO.h>
 #include <ImageIO/CGImageSourcePrivate.h>
 #include <wtf/UnusedParam.h>
 
+using namespace std;
+
 namespace WebCore {
 
 static const CFStringRef kCGImageSourceShouldPreferRGB32 = CFSTR("kCGImageSourceShouldPreferRGB32");
+
+#if !PLATFORM(MAC)
+size_t sharedBufferGetBytesAtPosition(void* info, void* buffer, off_t position, size_t count)
+{
+    SharedBuffer* sharedBuffer = static_cast<SharedBuffer*>(info);
+    size_t sourceSize = sharedBuffer->size();
+    if (position >= sourceSize)
+        return 0;
+
+    const char* source = sharedBuffer->data() + position;
+    size_t amount = min<size_t>(count, sourceSize - position);
+    memcpy(buffer, source, amount);
+    return amount;
+}
+
+void sharedBufferRelease(void* info)
+{
+    SharedBuffer* sharedBuffer = static_cast<SharedBuffer*>(info);
+    sharedBuffer->deref();
+}
+#endif
 
 ImageSource::ImageSource()
     : m_decoder(0)
@@ -113,20 +137,26 @@ void ImageSource::setData(SharedBuffer* data, bool allDataReceived)
 #if PLATFORM(MAC)
     // On Mac the NSData inside the SharedBuffer can be secretly appended to without the SharedBuffer's knowledge.  We use SharedBuffer's ability
     // to wrap itself inside CFData to get around this, ensuring that ImageIO is really looking at the SharedBuffer.
-    CFDataRef cfData = data->createCFData();
+    RetainPtr<CFDataRef> cfData(AdoptCF, data->createCFData());
+    CGImageSourceUpdateData(m_decoder, cfData.get(), allDataReceived);
 #else
-    // If no NSData is available, then we know SharedBuffer will always just be a vector.  That means no secret changes can occur to it behind the
-    // scenes.  We use CFDataCreateWithBytesNoCopy in that case.
-    CFDataRef cfData = CFDataCreateWithBytesNoCopy(0, reinterpret_cast<const UInt8*>(data->data()), data->size(), kCFAllocatorNull);
+    // Create a CGDataProvider to wrap the SharedBuffer.
+    data->ref();
+    // We use the GetBytesAtPosition callback rather than the GetBytePointer one because SharedBuffer
+    // does not provide a way to lock down the byte pointer and guarantee that it won't move, which
+    // is a requirement for using the GetBytePointer callback.
+    CGDataProviderDirectCallbacks providerCallbacks = { 0, 0, 0, sharedBufferGetBytesAtPosition, sharedBufferRelease };
+    RetainPtr<CGDataProviderRef> dataProvider(AdoptCF, CGDataProviderCreateDirect(data, data->size(), &providerCallbacks));
+    CGImageSourceUpdateDataProvider(m_decoder, dataProvider.get(), allDataReceived);
 #endif
-    CGImageSourceUpdateData(m_decoder, cfData, allDataReceived);
-    CFRelease(cfData);
 }
 
 String ImageSource::filenameExtension() const
 {
-    // FIXME: <rdar://problem/6564538>
-    return String();
+    if (!m_decoder)
+        return String();
+    CFStringRef imageSourceType = CGImageSourceGetType(m_decoder);
+    return WebCore::preferredExtensionForImageSourceType(imageSourceType);
 }
 
 bool ImageSource::isSizeAvailable()
@@ -136,12 +166,11 @@ bool ImageSource::isSizeAvailable()
 
     // Ragnaros yells: TOO SOON! You have awakened me TOO SOON, Executus!
     if (imageSourceStatus >= kCGImageStatusIncomplete) {
-        CFDictionaryRef image0Properties = CGImageSourceCopyPropertiesAtIndex(m_decoder, 0, imageSourceOptions());
+        RetainPtr<CFDictionaryRef> image0Properties(AdoptCF, CGImageSourceCopyPropertiesAtIndex(m_decoder, 0, imageSourceOptions()));
         if (image0Properties) {
-            CFNumberRef widthNumber = (CFNumberRef)CFDictionaryGetValue(image0Properties, kCGImagePropertyPixelWidth);
-            CFNumberRef heightNumber = (CFNumberRef)CFDictionaryGetValue(image0Properties, kCGImagePropertyPixelHeight);
+            CFNumberRef widthNumber = (CFNumberRef)CFDictionaryGetValue(image0Properties.get(), kCGImagePropertyPixelWidth);
+            CFNumberRef heightNumber = (CFNumberRef)CFDictionaryGetValue(image0Properties.get(), kCGImagePropertyPixelHeight);
             result = widthNumber && heightNumber;
-            CFRelease(image0Properties);
         }
     }
     
@@ -151,13 +180,13 @@ bool ImageSource::isSizeAvailable()
 IntSize ImageSource::frameSizeAtIndex(size_t index) const
 {
     IntSize result;
-    CFDictionaryRef properties = CGImageSourceCopyPropertiesAtIndex(m_decoder, index, imageSourceOptions());
+    RetainPtr<CFDictionaryRef> properties(AdoptCF, CGImageSourceCopyPropertiesAtIndex(m_decoder, index, imageSourceOptions()));
     if (properties) {
         int w = 0, h = 0;
-        CFNumberRef num = (CFNumberRef)CFDictionaryGetValue(properties, kCGImagePropertyPixelWidth);
+        CFNumberRef num = (CFNumberRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyPixelWidth);
         if (num)
             CFNumberGetValue(num, kCFNumberIntType, &w);
-        num = (CFNumberRef)CFDictionaryGetValue(properties, kCGImagePropertyPixelHeight);
+        num = (CFNumberRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyPixelHeight);
         if (num)
             CFNumberGetValue(num, kCFNumberIntType, &h);
 #if ENABLE(RESPECT_EXIF_ORIENTATION)
@@ -173,7 +202,7 @@ IntSize ImageSource::frameSizeAtIndex(size_t index) const
 
         if (!m_isProgressive)
         {
-            CFDictionaryRef jfifProperties = (CFDictionaryRef)CFDictionaryGetValue(properties, kCGImagePropertyJFIFDictionary);
+            CFDictionaryRef jfifProperties = (CFDictionaryRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyJFIFDictionary);
             if (jfifProperties) {
                 CFBooleanRef isProgCFBool = (CFBooleanRef)CFDictionaryGetValue(jfifProperties, kCGImagePropertyJFIFIsProgressive);
                 if (isProgCFBool)
@@ -198,8 +227,6 @@ IntSize ImageSource::frameSizeAtIndex(size_t index) const
                 result = size();
             }
         }    
-
-        CFRelease(properties);
     }
     return result;
 }
@@ -237,17 +264,15 @@ int ImageSource::repetitionCount()
         return result;
 
     // A property with value 0 means loop forever.
-    CFDictionaryRef properties = CGImageSourceCopyProperties(m_decoder, imageSourceOptions());
+    RetainPtr<CFDictionaryRef> properties(AdoptCF, CGImageSourceCopyProperties(m_decoder, imageSourceOptions()));
     if (properties) {
-        CFDictionaryRef gifProperties = (CFDictionaryRef)CFDictionaryGetValue(properties, kCGImagePropertyGIFDictionary);
+        CFDictionaryRef gifProperties = (CFDictionaryRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyGIFDictionary);
         if (gifProperties) {
             CFNumberRef num = (CFNumberRef)CFDictionaryGetValue(gifProperties, kCGImagePropertyGIFLoopCount);
             if (num)
                 CFNumberGetValue(num, kCFNumberIntType, &result);
         } else
             result = cAnimationNone; // Turns out we're not a GIF after all, so we don't animate.
-        
-        CFRelease(properties);
     }
     
     return result;
@@ -265,26 +290,27 @@ CGImageRef ImageSource::createFrameAtIndex(size_t index, float scaleHint, float*
 
     // subsampling can be 0, 1, 2 or 3, which means full-, quarter-, sixteenth- and sixty-fourth-size, respectively.
     int subsampling = (int)log2f(1.0f / std::max(0.1f, std::min(1.0f, scaleHint)));
-    CGImageRef image = CGImageSourceCreateImageAtIndex(m_decoder, index, imageSourceOptions(subsampling));
+    RetainPtr<CGImageRef> image(AdoptCF, CGImageSourceCreateImageAtIndex(m_decoder, index, imageSourceOptions(subsampling)));
+
+    CGImageSetCachingFlags(image.get(), kCGImageCachingTemporary);
 #if ENABLE(RESPECT_EXIF_ORIENTATION)
-    *actualScaleOut = static_cast<float>(CGImageGetWidth(image)) / ((orientationAtIndex(index) & 0x01) ? size().width() : size().height());
+    *actualScaleOut = static_cast<float>(CGImageGetWidth(image.get())) / ((orientationAtIndex(index) & 0x01) ? size().width() : size().height());
 #else
-    *actualScaleOut = float(CGImageGetWidth(image)) / float(size().width()); // height could be anything while downloading
+    *actualScaleOut = static_cast<float>(CGImageGetWidth(image.get())) / static_cast<float>(size().width()); // height could be anything while downloading
 #endif
-    *bytesOut = CGImageGetBytesPerRow(image) * CGImageGetHeight(image);
+    *bytesOut = CGImageGetBytesPerRow(image.get()) * CGImageGetHeight(image.get());
     CFStringRef imageUTI = CGImageSourceGetType(m_decoder);
     static const CFStringRef xbmUTI = CFSTR("public.xbitmap-image");
     if (!imageUTI || !CFEqual(imageUTI, xbmUTI))
-        return image;
+        return image.releaseRef();
     
     // If it is an xbm image, mask out all the white areas to render them transparent.
     const CGFloat maskingColors[6] = {255, 255,  255, 255, 255, 255};
-    CGImageRef maskedImage = CGImageCreateWithMaskingColors(image, maskingColors);
+    RetainPtr<CGImageRef> maskedImage(AdoptCF, CGImageCreateWithMaskingColors(image.get(), maskingColors));
     if (!maskedImage)
-        return image;
-        
-    CGImageRelease(image);
-    return maskedImage; 
+        return image.releaseRef();
+
+    return maskedImage.releaseRef();
 }
 
 bool ImageSource::frameIsCompleteAtIndex(size_t index)
@@ -298,15 +324,14 @@ float ImageSource::frameDurationAtIndex(size_t index)
         return 0;
 
     float duration = 0;
-    CFDictionaryRef properties = CGImageSourceCopyPropertiesAtIndex(m_decoder, index, imageSourceOptions());
+    RetainPtr<CFDictionaryRef> properties(AdoptCF, CGImageSourceCopyPropertiesAtIndex(m_decoder, index, imageSourceOptions()));
     if (properties) {
-        CFDictionaryRef typeProperties = (CFDictionaryRef)CFDictionaryGetValue(properties, kCGImagePropertyGIFDictionary);
+        CFDictionaryRef typeProperties = (CFDictionaryRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyGIFDictionary);
         if (typeProperties) {
             CFNumberRef num = (CFNumberRef)CFDictionaryGetValue(typeProperties, kCGImagePropertyGIFDelayTime);
             if (num)
                 CFNumberGetValue(num, kCFNumberFloatType, &duration);
         }
-        CFRelease(properties);
     }
 
     // Many annoying ads specify a 0 duration to make an image flash as quickly as possible.

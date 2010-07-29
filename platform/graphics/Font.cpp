@@ -24,7 +24,6 @@
 #include "config.h"
 #include "Font.h"
 
-#include "CharacterNames.h"
 #include "FloatRect.h"
 #include "FontCache.h"
 #include "FontFallbackList.h"
@@ -180,14 +179,14 @@ float Font::drawText(GraphicsContext* context, const TextRun& run, const FloatPo
 #endif
 
 #if USE(FONT_FAST_PATH)
-    if (canUseGlyphCache(run))
+    if (codePath(run) != Complex)
         return drawSimpleText(context, run, point, from, to);
 #endif
 
     return drawComplexText(context, run, point, from, to);
 }
 
-float Font::floatWidth(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFonts) const
+float Font::floatWidth(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFonts, GlyphOverflow* glyphOverflow) const
 {
 #if ENABLE(SVG_FONTS)
     if (primaryFont()->isSVGFont())
@@ -195,15 +194,16 @@ float Font::floatWidth(const TextRun& run, HashSet<const SimpleFontData*>* fallb
 #endif
 
 #if USE(FONT_FAST_PATH)
-    if (canUseGlyphCache(run)) {
+    CodePath codePathToUse = codePath(run);
+    if (codePathToUse != Complex) {
         // If the complex text implementation cannot return fallback fonts, avoid
         // returning them for simple text as well.
         static bool returnFallbackFonts = canReturnFallbackFontsForComplexText();
-        return floatWidthForSimpleText(run, 0, returnFallbackFonts ? fallbackFonts : 0);
+        return floatWidthForSimpleText(run, 0, returnFallbackFonts ? fallbackFonts : 0, codePathToUse == SimpleWithGlyphOverflow ? glyphOverflow : 0);
     }
 #endif
 
-    return floatWidthForComplexText(run, fallbackFonts);
+    return floatWidthForComplexText(run, fallbackFonts, glyphOverflow);
 }
 
 float Font::floatWidth(const TextRun& run, int extraCharsAvailable, int& charsConsumed, String& glyphName) const
@@ -219,7 +219,7 @@ float Font::floatWidth(const TextRun& run, int extraCharsAvailable, int& charsCo
     glyphName = "";
 
 #if USE(FONT_FAST_PATH)
-    if (canUseGlyphCache(run))
+    if (codePath(run) != Complex)
         return floatWidthForSimpleText(run, 0);
 #endif
 
@@ -236,7 +236,7 @@ FloatRect Font::selectionRectForText(const TextRun& run, const IntPoint& point, 
     to = (to == -1 ? run.length() : to);
 
 #if USE(FONT_FAST_PATH)
-    if (canUseGlyphCache(run))
+    if (codePath(run) != Complex)
         return selectionRectForSimpleText(run, point, h, from, to);
 #endif
 
@@ -251,7 +251,7 @@ int Font::offsetForPosition(const TextRun& run, int x, bool includePartialGlyphs
 #endif
 
 #if USE(FONT_FAST_PATH)
-    if (canUseGlyphCache(run))
+    if (codePath(run) != Complex)
         return offsetForPositionForSimpleText(run, x, includePartialGlyphs);
 #endif
 
@@ -268,6 +268,22 @@ bool Font::isSVGFont() const
 FontSelector* Font::fontSelector() const
 {
     return m_fontList ? m_fontList->fontSelector() : 0;
+}
+
+String Font::normalizeSpaces(const String& string)
+{
+    unsigned length = string.length();
+    Vector<UChar, 256> buffer(length);
+    bool didReplacement = false;
+
+    for (unsigned i = 0; i < length; ++i) {
+        UChar originalCharacter = string[i];
+        buffer[i] = normalizeSpaces(originalCharacter);
+        if (buffer[i] != originalCharacter)
+            didReplacement = true;
+    }
+
+    return didReplacement ? String(buffer.data(), length) : string;
 }
 
 static bool shouldUseFontSmoothing = true;

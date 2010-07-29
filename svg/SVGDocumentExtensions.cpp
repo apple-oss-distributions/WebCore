@@ -34,6 +34,7 @@
 #include "Frame.h"
 #include "FrameLoader.h"
 #include "Page.h"
+#include "SVGSMILElement.h"
 #include "SVGSVGElement.h"
 #include "SMILTimeContainer.h"
 #include "XMLTokenizer.h"
@@ -86,16 +87,27 @@ void SVGDocumentExtensions::unpauseAnimations()
         (*itr)->unpauseAnimations();
 }
 
+bool SVGDocumentExtensions::sampleAnimationAtTime(const String& elementId, SVGSMILElement* element, double time)
+{
+    ASSERT(element);
+    SMILTimeContainer* container = element->timeContainer();
+    if (!container || container->isPaused())
+        return false;
+
+    container->sampleAnimationAtTime(elementId, time);
+    return true;
+}
+
 void SVGDocumentExtensions::reportWarning(const String& message)
 {
     if (Frame* frame = m_doc->frame())
-        frame->domWindow()->console()->addMessage(JSMessageSource, ErrorMessageLevel, "Warning: " + message, m_doc->tokenizer() ? m_doc->tokenizer()->lineNumber() : 1, String());
+        frame->domWindow()->console()->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, "Warning: " + message, m_doc->tokenizer() ? m_doc->tokenizer()->lineNumber() : 1, String());
 }
 
 void SVGDocumentExtensions::reportError(const String& message)
 {
     if (Frame* frame = m_doc->frame())
-        frame->domWindow()->console()->addMessage(JSMessageSource, ErrorMessageLevel, "Error: " + message, m_doc->tokenizer() ? m_doc->tokenizer()->lineNumber() : 1, String());
+        frame->domWindow()->console()->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, "Error: " + message, m_doc->tokenizer() ? m_doc->tokenizer()->lineNumber() : 1, String());
 }
 
 void SVGDocumentExtensions::addPendingResource(const AtomicString& id, SVGStyledElement* obj)

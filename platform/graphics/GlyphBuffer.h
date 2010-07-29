@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2007-2008 Torch Mobile Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -52,6 +53,8 @@ class SimpleFontData;
 #if PLATFORM(CAIRO)
 // FIXME: Why does Cairo use such a huge struct instead of just an offset into an array?
 typedef cairo_glyph_t GlyphBufferGlyph;
+#elif OS(WINCE)
+typedef wchar_t GlyphBufferGlyph;
 #else
 typedef Glyph GlyphBufferGlyph;
 #endif
@@ -60,6 +63,10 @@ typedef Glyph GlyphBufferGlyph;
 // can be passed directly to CGContextShowGlyphsWithAdvances in FontMac.mm
 #if PLATFORM(CG)
 typedef CGSize GlyphBufferAdvance;
+#elif OS(WINCE)
+// There is no cross-platform code that uses the height of GlyphBufferAdvance,
+// so we can save memory space on embedded devices by storing only the width
+typedef float GlyphBufferAdvance;
 #else
 typedef FloatSize GlyphBufferAdvance;
 #endif
@@ -120,6 +127,8 @@ public:
     {
 #if PLATFORM(CG)
         return m_advances[index].width;
+#elif OS(WINCE)
+        return m_advances[index];
 #else
         return m_advances[index].width();
 #endif
@@ -150,6 +159,8 @@ public:
 #if PLATFORM(CG)
         CGSize advance = { width, 0 };
         m_advances.append(advance);
+#elif OS(WINCE)
+        m_advances.append(width);
 #else
         m_advances.append(FloatSize(width, 0));
 #endif
@@ -164,6 +175,7 @@ public:
 #endif
     }
     
+#if !OS(WINCE)
     void add(Glyph glyph, const SimpleFontData* font, GlyphBufferAdvance advance)
     {
         m_fontData.append(font);
@@ -177,6 +189,7 @@ public:
 
         m_advances.append(advance);
     }
+#endif
     
 private:
     Vector<const SimpleFontData*, 2048> m_fontData;

@@ -24,6 +24,7 @@
 #include "Event.h"
 
 #include "AtomicString.h"
+#include "UserGestureIndicator.h"
 #include <wtf/CurrentTime.h>
 
 namespace WebCore {
@@ -94,6 +95,11 @@ bool Event::isTextEvent() const
     return false;
 }
 
+bool Event::isCompositionEvent() const
+{
+    return false;
+}
+
 bool Event::isDragEvent() const
 {
     return false;
@@ -129,6 +135,11 @@ bool Event::isPageTransitionEvent() const
     return false;
 }
 
+bool Event::isPopStateEvent() const
+{
+    return false;
+}
+
 bool Event::isProgressEvent() const
 {
     return false;
@@ -149,6 +160,11 @@ bool Event::isXMLHttpRequestProgressEvent() const
     return false;
 }
 
+bool Event::isBeforeLoadEvent() const
+{
+    return false;
+}
+
 #if ENABLE(SVG)
 bool Event::isSVGZoomEvent() const
 {
@@ -163,6 +179,13 @@ bool Event::isStorageEvent() const
 }
 #endif
 
+#if ENABLE(WORKERS)
+bool Event::isErrorEvent() const
+{
+    return false;
+}
+#endif
+
 bool Event::isTouchEvent() const
 {
     return false;
@@ -171,6 +194,30 @@ bool Event::isTouchEvent() const
 bool Event::isGestureEvent() const
 {
     return false;
+}
+
+bool Event::fromUserGesture()
+{
+    if (!UserGestureIndicator::processingUserGesture())
+        return false;
+
+    const AtomicString& type = this->type();
+    return
+        // mouse events
+        type == eventNames().clickEvent || type == eventNames().mousedownEvent 
+        || type == eventNames().mouseupEvent || type == eventNames().dblclickEvent 
+        // keyboard events
+        || type == eventNames().keydownEvent || type == eventNames().keypressEvent
+        || type == eventNames().keyupEvent
+        // touch events
+        || type == eventNames().touchstartEvent || type == eventNames().touchmoveEvent
+        || type == eventNames().touchendEvent || type == eventNames().touchcancelEvent
+        || type == eventNames().gesturestartEvent || type == eventNames().gesturechangeEvent
+        || type == eventNames().gestureendEvent
+        // other accepted events
+        || type == eventNames().selectEvent || type == eventNames().changeEvent
+        || type == eventNames().focusEvent || type == eventNames().blurEvent
+        || type == eventNames().submitEvent;
 }
 
 bool Event::storesResultAsString() const

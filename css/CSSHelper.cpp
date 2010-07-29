@@ -27,7 +27,7 @@
 
 namespace WebCore {
 
-String parseURL(const String& url)
+String deprecatedParseURL(const String& url)
 {
     StringImpl* i = url.impl();
     if (!i)
@@ -36,7 +36,7 @@ String parseURL(const String& url)
     int o = 0;
     int l = i->length();
 
-    while (o < l && (*i)[o] <= ' ') {
+    while (0 < l && (*i)[o] <= ' ') {
         ++o;
         --l;
     }
@@ -53,7 +53,7 @@ String parseURL(const String& url)
         l -= 5;
     }
 
-    while (o < l && (*i)[o] <= ' ') {
+    while (0 < l && (*i)[o] <= ' ') {
         ++o;
         --l;
     }
@@ -65,7 +65,7 @@ String parseURL(const String& url)
         l -= 2;
     }
 
-    while (o < l && (*i)[o] <= ' ') {
+    while (0 < l && (*i)[o] <= ' ') {
         ++o;
         --l;
     }

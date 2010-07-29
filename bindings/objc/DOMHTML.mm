@@ -149,7 +149,7 @@ using namespace WebCore;
 
 - (DOMDocumentFragment *)_createDocumentFragmentWithMarkupString:(NSString *)markupString baseURLString:(NSString *)baseURLString
 {
-    NSURL *baseURL = core(self)->completeURL(WebCore::parseURL(baseURLString));
+    NSURL *baseURL = core(self)->completeURL(WebCore::deprecatedParseURL(baseURLString));
     return [self createDocumentFragmentWithMarkupString:markupString baseURL:baseURL];
 }
 
@@ -207,7 +207,12 @@ using namespace WebCore;
         return NSMakeRange(start, end - start); 
     }
     return NSMakeRange(NSNotFound, 0);
-}    
+}
+
+- (BOOL)_isAutofilled
+{
+    return core(self)->isAutofilled();
+}
 
 - (void)_setAutofilled:(BOOL)filled
 {
@@ -223,8 +228,9 @@ using namespace WebCore;
 
 - (void)_activateItemAtIndex:(int)index
 {
+    // Use the setSelectedIndexByUser function so a change event will be fired. <rdar://problem/6760590>
     if (WebCore::HTMLSelectElement* select = core(self))
-        select->setSelectedIndex(index);
+        select->setSelectedIndexByUser(index, true, true);
 }
 
 @end
@@ -234,7 +240,7 @@ using namespace WebCore;
 - (BOOL)_isEdited
 {
     WebCore::RenderObject *renderer = core(self)->renderer();
-    return renderer && [self _isTextField] && static_cast<WebCore::RenderTextControl *>(renderer)->isUserEdited();
+    return renderer && [self _isTextField] && static_cast<WebCore::RenderTextControl *>(renderer)->lastChangeWasUserEdit();
 }
 
 @end
@@ -244,7 +250,7 @@ using namespace WebCore;
 - (BOOL)_isEdited
 {
     WebCore::RenderObject* renderer = core(self)->renderer();
-    return renderer && static_cast<WebCore::RenderTextControl*>(renderer)->isUserEdited();
+    return renderer && static_cast<WebCore::RenderTextControl*>(renderer)->lastChangeWasUserEdit();
 }
 
 @end

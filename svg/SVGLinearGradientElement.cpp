@@ -40,10 +40,10 @@ namespace WebCore {
 
 SVGLinearGradientElement::SVGLinearGradientElement(const QualifiedName& tagName, Document* doc)
     : SVGGradientElement(tagName, doc)
-    , m_x1(this, SVGNames::x1Attr, LengthModeWidth)
-    , m_y1(this, SVGNames::y1Attr, LengthModeHeight)
-    , m_x2(this, SVGNames::x2Attr, LengthModeWidth, "100%")
-    , m_y2(this, SVGNames::y2Attr, LengthModeHeight)
+    , m_x1(LengthModeWidth)
+    , m_y1(LengthModeHeight)
+    , m_x2(LengthModeWidth, "100%")
+    , m_y2(LengthModeHeight)
 {
     // Spec: If the x2 attribute is not specified, the effect is as if a value of "100%" were specified.
 }
@@ -78,14 +78,43 @@ void SVGLinearGradientElement::svgAttributeChanged(const QualifiedName& attrName
         m_resource->invalidate();
 }
 
+void SVGLinearGradientElement::synchronizeProperty(const QualifiedName& attrName)
+{
+    SVGGradientElement::synchronizeProperty(attrName);
+
+    if (attrName == anyQName()) {
+        synchronizeX1();
+        synchronizeY1();
+        synchronizeX2();
+        synchronizeY2();
+        return;
+    }
+
+    if (attrName == SVGNames::x1Attr)
+        synchronizeX1();
+    else if (attrName == SVGNames::y1Attr)
+        synchronizeY1();
+    else if (attrName == SVGNames::x2Attr)
+        synchronizeX2();
+    else if (attrName == SVGNames::y2Attr)
+        synchronizeY2();
+}
+
 void SVGLinearGradientElement::buildGradient() const
 {
     LinearGradientAttributes attributes = collectGradientProperties();
 
     RefPtr<SVGPaintServerLinearGradient> linearGradient = WTF::static_pointer_cast<SVGPaintServerLinearGradient>(m_resource);
 
-    FloatPoint startPoint = FloatPoint::narrowPrecision(attributes.x1(), attributes.y1());
-    FloatPoint endPoint = FloatPoint::narrowPrecision(attributes.x2(), attributes.y2());
+    FloatPoint startPoint;
+    FloatPoint endPoint;
+    if (attributes.boundingBoxMode()) {
+        startPoint = FloatPoint(attributes.x1().valueAsPercentage(), attributes.y1().valueAsPercentage());
+        endPoint = FloatPoint(attributes.x2().valueAsPercentage(), attributes.y2().valueAsPercentage());
+    } else {
+        startPoint = FloatPoint(attributes.x1().value(this), attributes.y1().value(this));
+        endPoint = FloatPoint(attributes.x2().value(this), attributes.y2().value(this));
+    }
 
     RefPtr<Gradient> gradient = Gradient::create(startPoint, endPoint);
     gradient->setSpreadMethod(attributes.spreadMethod());
@@ -142,16 +171,16 @@ LinearGradientAttributes SVGLinearGradientElement::collectGradientProperties() c
             const SVGLinearGradientElement* linear = static_cast<const SVGLinearGradientElement*>(current);
 
             if (!attributes.hasX1() && current->hasAttribute(SVGNames::x1Attr))
-                attributes.setX1(linear->x1().valueAsPercentage());
+                attributes.setX1(linear->x1());
 
             if (!attributes.hasY1() && current->hasAttribute(SVGNames::y1Attr))
-                attributes.setY1(linear->y1().valueAsPercentage());
+                attributes.setY1(linear->y1());
 
             if (!attributes.hasX2() && current->hasAttribute(SVGNames::x2Attr))
-                attributes.setX2(linear->x2().valueAsPercentage());
+                attributes.setX2(linear->x2());
 
             if (!attributes.hasY2() && current->hasAttribute(SVGNames::y2Attr))
-                attributes.setY2(linear->y2().valueAsPercentage());
+                attributes.setY2(linear->y2());
         }
 
         processedGradients.add(current);

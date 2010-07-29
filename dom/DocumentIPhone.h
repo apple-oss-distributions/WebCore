@@ -30,6 +30,7 @@ public:
     void getTouchRects(Vector<IntRect>&);
 private:
     void setTouchEventListenersDirty(bool);
+    IntRect eventRectRelativeToRoot(RenderObject*);
     void touchEventsChangedTimerFired(Timer<Document>*);
     void checkChildRenderers(RenderObject*, const IntRect& containingRect, Vector<IntRect>& nodeRects);
     void removeTouchEventListenersInDocument(Document*);

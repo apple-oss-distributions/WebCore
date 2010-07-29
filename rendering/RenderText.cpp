@@ -25,7 +25,9 @@
 #include "config.h"
 #include "RenderText.h"
 
+#include "AXObjectCache.h"
 #include "CharacterNames.h"
+#include "EllipsisBox.h"
 #include "FloatQuad.h"
 #include "FrameView.h"
 #include "InlineTextBox.h"
@@ -72,7 +74,7 @@ RenderText::RenderText(Node* node, PassRefPtr<StringImpl> str)
      , m_linesDirty(false)
      , m_containsReversedText(false)
      , m_isAllASCII(charactersAreAllASCII(m_text.get()))
-     , m_knownNotToUseFallbackFonts(false)
+     , m_knownToHaveNoOverflowAndNoFallbackFonts(false)
      , m_shouldSecureLastCharacter(true)
      , m_hasSecureLastCharacterTimer(false)
      , m_candidateComputedTextSize(0)
@@ -120,7 +122,7 @@ void RenderText::styleDidChange(StyleDifference diff, const RenderStyle* oldStyl
     // need to relayout.
     if (diff == StyleDifferenceLayout) {
         setNeedsLayoutAndPrefWidthsRecalc();
-        m_knownNotToUseFallbackFonts = false;
+        m_knownToHaveNoOverflowAndNoFallbackFonts = false;
     }
 
     ETextTransform oldTransform = oldStyle ? oldStyle->textTransform() : TTNONE;
@@ -224,7 +226,7 @@ void RenderText::deleteTextBoxes()
 PassRefPtr<StringImpl> RenderText::originalText() const
 {
     Node* e = node();
-    return e ? static_cast<Text*>(e)->string() : 0;
+    return e ? static_cast<Text*>(e)->dataImpl() : 0;
 }
 
 void RenderText::absoluteRects(Vector<IntRect>& rects, int tx, int ty)
@@ -396,23 +398,23 @@ VisiblePosition RenderText::positionForPoint(const IntPoint& point)
     int offset;
 
     // FIXME: We should be able to roll these special cases into the general cases in the loop below.
-    if (firstTextBox() && point.y() <  firstTextBox()->root()->bottomOverflow() && point.x() < firstTextBox()->m_x) {
+    if (firstTextBox() && point.y() <  firstTextBox()->root()->lineBottom() && point.x() < firstTextBox()->m_x) {
         // at the y coordinate of the first line or above
         // and the x coordinate is to the left of the first text box left edge
         offset = firstTextBox()->offsetForPosition(point.x());
         return createVisiblePosition(offset + firstTextBox()->start(), DOWNSTREAM);
     }
-    if (lastTextBox() && point.y() >= lastTextBox()->root()->topOverflow() && point.x() >= lastTextBox()->m_x + lastTextBox()->m_width) {
+    if (lastTextBox() && point.y() >= lastTextBox()->root()->lineTop() && point.x() >= lastTextBox()->m_x + lastTextBox()->m_width) {
         // at the y coordinate of the last line or below
         // and the x coordinate is to the right of the last text box right edge
         offset = lastTextBox()->offsetForPosition(point.x());
-        return createVisiblePosition(offset + lastTextBox()->start(), DOWNSTREAM);
+        return createVisiblePosition(offset + lastTextBox()->start(), VP_UPSTREAM_IF_POSSIBLE);
     }
 
     InlineTextBox* lastBoxAbove = 0;
     for (InlineTextBox* box = firstTextBox(); box; box = box->nextTextBox()) {
-        if (point.y() >= box->root()->topOverflow()) {
-            int bottom = box->root()->nextRootBox() ? box->root()->nextRootBox()->topOverflow() : box->root()->bottomOverflow();
+        if (point.y() >= box->root()->lineTop()) {
+            int bottom = box->root()->nextRootBox() ? box->root()->nextRootBox()->lineTop() : box->root()->lineBottom();
             if (point.y() < bottom) {
                 offset = box->offsetForPosition(point.x());
 
@@ -456,8 +458,8 @@ IntRect RenderText::localCaretRect(InlineBox* inlineBox, int caretOffset, int* e
 
     InlineTextBox* box = static_cast<InlineTextBox*>(inlineBox);
 
-    int height = box->root()->bottomOverflow() - box->root()->topOverflow();
-    int top = box->root()->topOverflow();
+    int height = box->root()->lineBottom() - box->root()->lineTop();
+    int top = box->root()->lineTop();
 
     int left = box->positionForOffset(caretOffset);
 
@@ -496,7 +498,7 @@ IntRect RenderText::localCaretRect(InlineBox* inlineBox, int caretOffset, int* e
     return IntRect(left, top, caretWidth, height);
 }
 
-ALWAYS_INLINE int RenderText::widthFromCache(const Font& f, int start, int len, int xPos, HashSet<const SimpleFontData*>* fallbackFonts) const
+ALWAYS_INLINE int RenderText::widthFromCache(const Font& f, int start, int len, int xPos, HashSet<const SimpleFontData*>* fallbackFonts, GlyphOverflow* glyphOverflow) const
 {
     if (f.isFixedPitch() && !f.isSmallCaps() && m_isAllASCII) {
         int monospaceCharacterWidth = f.spaceWidth();
@@ -526,7 +528,7 @@ ALWAYS_INLINE int RenderText::widthFromCache(const Font& f, int start, int len, 
         return w;
     }
 
-    return f.width(TextRun(text()->characters() + start, len, allowTabs(), xPos), fallbackFonts);
+    return f.width(TextRun(text()->characters() + start, len, allowTabs(), xPos), fallbackFonts, glyphOverflow);
 }
 
 void RenderText::trimmedPrefWidths(int leadWidth,
@@ -595,7 +597,7 @@ void RenderText::trimmedPrefWidths(int leadWidth,
                 linelen++;
 
             if (linelen) {
-                endMaxW = widthFromCache(f, i, linelen, leadWidth + endMaxW, 0);
+                endMaxW = widthFromCache(f, i, linelen, leadWidth + endMaxW, 0, 0);
                 if (firstLine) {
                     firstLine = false;
                     leadWidth = 0;
@@ -640,14 +642,15 @@ int RenderText::maxPrefWidth() const
 void RenderText::calcPrefWidths(int leadWidth)
 {
     HashSet<const SimpleFontData*> fallbackFonts;
-    calcPrefWidths(leadWidth, fallbackFonts);
-    if (fallbackFonts.isEmpty())
-        m_knownNotToUseFallbackFonts = true;
+    GlyphOverflow glyphOverflow;
+    calcPrefWidths(leadWidth, fallbackFonts, glyphOverflow);
+    if (fallbackFonts.isEmpty() && !glyphOverflow.left && !glyphOverflow.right && !glyphOverflow.top && !glyphOverflow.bottom)
+        m_knownToHaveNoOverflowAndNoFallbackFonts = true;
 }
 
-void RenderText::calcPrefWidths(int leadWidth, HashSet<const SimpleFontData*>& fallbackFonts)
+void RenderText::calcPrefWidths(int leadWidth, HashSet<const SimpleFontData*>& fallbackFonts, GlyphOverflow& glyphOverflow)
 {
-    ASSERT(m_hasTab || prefWidthsDirty() || !m_knownNotToUseFallbackFonts);
+    ASSERT(m_hasTab || prefWidthsDirty() || !m_knownToHaveNoOverflowAndNoFallbackFonts);
 
     m_minWidth = 0;
     m_beginMinWidth = 0;
@@ -676,6 +679,8 @@ void RenderText::calcPrefWidths(int leadWidth, HashSet<const SimpleFontData*>& f
     bool firstLine = true;
     int nextBreakable = -1;
     int lastWordBoundary = 0;
+
+    int firstGlyphLeftOverflow = -1;
 
     bool breakNBSP = style()->autoWrap() && style()->nbspMode() == SPACE;
     bool breakAll = (style()->wordBreak() == BreakAllWordBreak || style()->wordBreak() == BreakWordBreak) && style()->autoWrap();
@@ -719,7 +724,9 @@ void RenderText::calcPrefWidths(int leadWidth, HashSet<const SimpleFontData*>& f
             lastWordBoundary++;
             continue;
         } else if (c == softHyphen) {
-            currMaxWidth += widthFromCache(f, lastWordBoundary, i - lastWordBoundary, leadWidth + currMaxWidth, &fallbackFonts);
+            currMaxWidth += widthFromCache(f, lastWordBoundary, i - lastWordBoundary, leadWidth + currMaxWidth, &fallbackFonts, &glyphOverflow);
+            if (firstGlyphLeftOverflow < 0)
+                firstGlyphLeftOverflow = glyphOverflow.left;
             lastWordBoundary = i + 1;
             continue;
         }
@@ -742,13 +749,15 @@ void RenderText::calcPrefWidths(int leadWidth, HashSet<const SimpleFontData*>& f
 
         int wordLen = j - i;
         if (wordLen) {
-            int w = widthFromCache(f, i, wordLen, leadWidth + currMaxWidth, &fallbackFonts);
+            int w = widthFromCache(f, i, wordLen, leadWidth + currMaxWidth, &fallbackFonts, &glyphOverflow);
+            if (firstGlyphLeftOverflow < 0)
+                firstGlyphLeftOverflow = glyphOverflow.left;
             currMinWidth += w;
             if (betweenWords) {
                 if (lastWordBoundary == i)
                     currMaxWidth += w;
                 else
-                    currMaxWidth += widthFromCache(f, lastWordBoundary, j - lastWordBoundary, leadWidth + currMaxWidth, &fallbackFonts);
+                    currMaxWidth += widthFromCache(f, lastWordBoundary, j - lastWordBoundary, leadWidth + currMaxWidth, &fallbackFonts, &glyphOverflow);
                 lastWordBoundary = j;
             }
 
@@ -801,12 +810,16 @@ void RenderText::calcPrefWidths(int leadWidth, HashSet<const SimpleFontData*>& f
                 currMaxWidth = 0;
             } else {
                 currMaxWidth += f.width(TextRun(txt + i, 1, allowTabs(), leadWidth + currMaxWidth));
+                glyphOverflow.right = 0;
                 needsWordSpacing = isSpace && !previousCharacterIsSpace && i == len - 1;
             }
             ASSERT(lastWordBoundary == i);
             lastWordBoundary++;
         }
     }
+
+    if (firstGlyphLeftOverflow > 0)
+        glyphOverflow.left = firstGlyphLeftOverflow;
 
     if ((needsWordSpacing && len > 1) || (ignoringSpaces && !firstWord))
         currMaxWidth += wordSpacing;
@@ -826,6 +839,17 @@ void RenderText::calcPrefWidths(int leadWidth, HashSet<const SimpleFontData*>& f
     setPrefWidthsDirty(false);
 }
 
+bool RenderText::isAllCollapsibleWhitespace()
+{
+    int length = textLength();
+    const UChar* text = characters();
+    for (int i = 0; i < length; i++) {
+        if (!style()->isCollapsibleWhiteSpace(text[i]))
+            return false;
+    }
+    return true;
+}
+    
 bool RenderText::containsOnlyWhitespace(unsigned from, unsigned len) const
 {
     unsigned currPos;
@@ -882,7 +906,9 @@ void RenderText::setSelectionState(SelectionState state)
         }
     }
 
-    containingBlock()->setSelectionState(state);
+    // The returned value can be null in case of an orphaned tree.
+    if (RenderBlock* cb = containingBlock())
+        cb->setSelectionState(state);
 }
 
 void RenderText::setTextWithOffset(PassRefPtr<StringImpl> text, unsigned offset, unsigned len, bool force)
@@ -1069,7 +1095,11 @@ void RenderText::setText(PassRefPtr<StringImpl> text, bool force)
 
     setTextInternal(text);
     setNeedsLayoutAndPrefWidthsRecalc();
-    m_knownNotToUseFallbackFonts = false;
+    m_knownToHaveNoOverflowAndNoFallbackFonts = false;
+    
+    AXObjectCache* axObjectCache = document()->axObjectCache();
+    if (axObjectCache->accessibilityEnabled())
+        axObjectCache->contentChanged(this);
 }
 
 void RenderText::secureLastCharacter(Timer<RenderText>*)
@@ -1181,7 +1211,7 @@ void RenderText::positionLineBox(InlineBox* box)
     m_containsReversedText |= s->direction() == RTL;
 }
 
-unsigned RenderText::width(unsigned from, unsigned len, int xPos, bool firstLine, HashSet<const SimpleFontData*>* fallbackFonts) const
+unsigned RenderText::width(unsigned from, unsigned len, int xPos, bool firstLine, HashSet<const SimpleFontData*>* fallbackFonts, GlyphOverflow* glyphOverflow) const
 {
     if (from >= textLength())
         return 0;
@@ -1189,10 +1219,10 @@ unsigned RenderText::width(unsigned from, unsigned len, int xPos, bool firstLine
     if (from + len > textLength())
         len = textLength() - from;
 
-    return width(from, len, style(firstLine)->font(), xPos, fallbackFonts);
+    return width(from, len, style(firstLine)->font(), xPos, fallbackFonts, glyphOverflow);
 }
 
-unsigned RenderText::width(unsigned from, unsigned len, const Font& f, int xPos, HashSet<const SimpleFontData*>* fallbackFonts) const
+unsigned RenderText::width(unsigned from, unsigned len, const Font& f, int xPos, HashSet<const SimpleFontData*>* fallbackFonts, GlyphOverflow* glyphOverflow) const
 {
     ASSERT(from + len <= textLength());
     if (!characters())
@@ -1202,18 +1232,19 @@ unsigned RenderText::width(unsigned from, unsigned len, const Font& f, int xPos,
     if (&f == &style()->font()) {
         if (!style()->preserveNewline() && !from && len == textLength()) {
             if (fallbackFonts) {
-                if (prefWidthsDirty() || !m_knownNotToUseFallbackFonts) {
-                    const_cast<RenderText*>(this)->calcPrefWidths(0, *fallbackFonts);
-                    if (fallbackFonts->isEmpty())
-                        m_knownNotToUseFallbackFonts = true;
+                ASSERT(glyphOverflow);
+                if (prefWidthsDirty() || !m_knownToHaveNoOverflowAndNoFallbackFonts) {
+                    const_cast<RenderText*>(this)->calcPrefWidths(0, *fallbackFonts, *glyphOverflow);
+                    if (fallbackFonts->isEmpty() && !glyphOverflow->left && !glyphOverflow->right && !glyphOverflow->top && !glyphOverflow->bottom)
+                        m_knownToHaveNoOverflowAndNoFallbackFonts = true;
                 }
                 w = m_maxWidth;
             } else
                 w = maxPrefWidth();
         } else
-            w = widthFromCache(f, from, len, xPos, fallbackFonts);
+            w = widthFromCache(f, from, len, xPos, fallbackFonts, glyphOverflow);
     } else
-        w = f.width(TextRun(text()->characters() + from, len, allowTabs(), xPos), fallbackFonts);
+        w = f.width(TextRun(text()->characters() + from, len, allowTabs(), xPos), fallbackFonts, glyphOverflow);
 
     return w;
 }
@@ -1277,8 +1308,24 @@ IntRect RenderText::selectionRectForRepaint(RenderBoxModelObject* repaintContain
         return IntRect();
 
     IntRect rect;
-    for (InlineTextBox* box = firstTextBox(); box; box = box->nextTextBox())
+    for (InlineTextBox* box = firstTextBox(); box; box = box->nextTextBox()) {
         rect.unite(box->selectionRect(0, 0, startPos, endPos));
+
+        // Check if there are ellipsis which fall within the selection.
+        unsigned short truncation = box->truncation();
+        if (truncation != cNoTruncation) {
+            if (EllipsisBox* ellipsis = box->root()->ellipsisBox()) {
+                int ePos = min<int>(endPos - box->start(), box->len());
+                int sPos = max<int>(startPos - box->start(), 0);
+                // The ellipsis should be considered to be selected if the end of
+                // the selection is past the beginning of the truncation and the
+                // beginning of the selection is before or at the beginning of the
+                // truncation.
+                if (ePos >= truncation && sPos <= truncation)
+                    rect.unite(ellipsis->selectionRect(0, 0));
+            }
+        }
+    }
 
     if (clipToVisibleContent)
         computeRectForRepaint(repaintContainer, rect);

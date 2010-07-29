@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007 Apple Inc.
+ * Copyright (C) 2006, 2007, 2009 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -34,13 +34,9 @@ class HTMLInputElement;
 class RenderFileUploadControl : public RenderBlock {
 public:
     RenderFileUploadControl(HTMLInputElement*);
-    ~RenderFileUploadControl();
+    virtual ~RenderFileUploadControl();
 
-    virtual const char* renderName() const { return "RenderFileUploadControl"; }
-
-    virtual void updateFromElement();
-    virtual void calcPrefWidths();
-    virtual void paintObject(PaintInfo&, int tx, int ty);
+    virtual bool isFileUploadControl() const { return true; }
 
     void click();
 
@@ -48,19 +44,40 @@ public:
     
 
     String buttonValue();
-    String fileTextValue();
+    String fileTextValue() const;
     
     bool allowsMultipleFiles();
-
-protected:
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+    String acceptTypes();
 
 private:
+    virtual const char* renderName() const { return "RenderFileUploadControl"; }
+
+    virtual void updateFromElement();
+    virtual void calcPrefWidths();
+    virtual void paintObject(PaintInfo&, int tx, int ty);
+
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+
     int maxFilenameWidth() const;
     PassRefPtr<RenderStyle> createButtonStyle(const RenderStyle* parentStyle) const;
 
     RefPtr<HTMLInputElement> m_button;
 };
+
+inline RenderFileUploadControl* toRenderFileUploadControl(RenderObject* object)
+{
+    ASSERT(!object || object->isFileUploadControl());
+    return static_cast<RenderFileUploadControl*>(object);
+}
+
+inline const RenderFileUploadControl* toRenderFileUploadControl(const RenderObject* object)
+{
+    ASSERT(!object || object->isFileUploadControl());
+    return static_cast<const RenderFileUploadControl*>(object);
+}
+
+// This will catch anyone doing an unnecessary cast.
+void toRenderFileUploadControl(const RenderFileUploadControl*);
 
 } // namespace WebCore
 

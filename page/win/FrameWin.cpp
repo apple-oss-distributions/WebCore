@@ -24,14 +24,14 @@
  */
 
 #include "config.h"
-#include "runtime.h"
 #include "FrameWin.h"
 
-#include "TransformationMatrix.h"
-#include "FloatRect.h"
+#include "Bridge.h"
 #include "Document.h"
+#include "FloatRect.h"
 #include "RenderView.h"
 #include "Settings.h"
+#include "TransformationMatrix.h"
 
 using std::min;
 
@@ -47,7 +47,7 @@ void computePageRectsForFrame(Frame* frame, const IntRect& printRect, float head
     if (!frame->document() || !frame->view() || !frame->document()->renderer())
         return;
  
-    RenderView* root = static_cast<RenderView*>(frame->document()->renderer());
+    RenderView* root = toRenderView(frame->document()->renderer());
 
     if (!root) {
         LOG_ERROR("document to be printed has no renderer");
@@ -61,7 +61,7 @@ void computePageRectsForFrame(Frame* frame, const IntRect& printRect, float head
     
     float ratio = static_cast<float>(printRect.height()) / static_cast<float>(printRect.width());
  
-    float pageWidth  = static_cast<float>(root->overflowWidth());
+    float pageWidth  = static_cast<float>(root->rightLayoutOverflow());
     float pageHeight = pageWidth * ratio;
     outPageHeight = static_cast<int>(pageHeight);   // this is the height of the page adjusted by margins
     pageHeight -= (headerHeight + footerHeight);

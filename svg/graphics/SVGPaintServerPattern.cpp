@@ -103,7 +103,7 @@ bool SVGPaintServerPattern::setup(GraphicsContext*& context, const RenderObject*
     bool isFilled = (type & ApplyToFillTargetType) && style->hasFill();
     bool isStroked = (type & ApplyToStrokeTargetType) && style->hasStroke();
 
-    ASSERT(isFilled && !isStroked || !isFilled && isStroked);
+    ASSERT((isFilled && !isStroked) || (!isFilled && isStroked));
 
     m_ownerElement->buildPattern(targetRect);
     if (!tile())
@@ -118,7 +118,7 @@ bool SVGPaintServerPattern::setup(GraphicsContext*& context, const RenderObject*
         // Draw the first cell of the pattern manually to support overflow="visible" on all platforms.
         int tileWidth = static_cast<int>(patternBoundaries().width() + 0.5f);
         int tileHeight = static_cast<int>(patternBoundaries().height() + 0.5f);
-        OwnPtr<ImageBuffer> tileImage = ImageBuffer::create(IntSize(tileWidth, tileHeight), false);
+        OwnPtr<ImageBuffer> tileImage = ImageBuffer::create(IntSize(tileWidth, tileHeight));
   
         GraphicsContext* tileImageContext = tileImage->context();
 
@@ -131,7 +131,7 @@ bool SVGPaintServerPattern::setup(GraphicsContext*& context, const RenderObject*
             tileImageContext->translate(0, patternBoundaries().height());
             for (int j = numX; j > 0; j--) {
                 tileImageContext->translate(patternBoundaries().width(), 0);
-                tileImageContext->drawImage(tile()->image(), tileRect, tileRect);
+                tileImageContext->drawImage(tile()->image(), object->style()->colorSpace(), tileRect, tileRect);
             }
             tileImageContext->translate(-patternBoundaries().width() * numX, 0);
         }

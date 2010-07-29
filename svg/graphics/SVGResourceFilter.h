@@ -43,13 +43,18 @@ class Filter;
 class FilterEffect;
 class GraphicsContext;
 class SVGFilterBuilder;
+class SVGFilterElement;
 class SVGFilterPrimitiveStandardAttributes;
 
 class SVGResourceFilter : public SVGResource {
 public:
-    SVGResourceFilter();
+    static PassRefPtr<SVGResourceFilter> create(const SVGFilterElement* ownerElement) { return adoptRef(new SVGResourceFilter(ownerElement)); }
+    virtual ~SVGResourceFilter();
     
     virtual SVGResourceType resourceType() const { return FilterResourceType; }
+
+    void setFilterResolution(const FloatSize& filterResSize) { m_filterResSize = filterResSize; }
+    void setHasFilterResolution(bool filterRes) { m_filterRes = filterRes; }
 
     bool filterBoundingBoxMode() const { return m_filterBBoxMode; }
     void setFilterBoundingBoxMode(bool bboxMode) { m_filterBBoxMode = bboxMode; }
@@ -57,44 +62,40 @@ public:
     bool effectBoundingBoxMode() const { return m_effectBBoxMode; }
     void setEffectBoundingBoxMode(bool bboxMode) { m_effectBBoxMode = bboxMode; }
 
-    bool xBoundingBoxMode() const { return m_xBBoxMode; }
-    void setXBoundingBoxMode(bool bboxMode) { m_xBBoxMode = bboxMode; }
-
-    bool yBoundingBoxMode() const { return m_yBBoxMode; }
-    void setYBoundingBoxMode(bool bboxMode) { m_yBBoxMode = bboxMode; }
-
     FloatRect filterRect() const { return m_filterRect; }
     void setFilterRect(const FloatRect& rect) { m_filterRect = rect; }
 
-    FloatRect filterBoundingBox() { return m_filterBBox; }
+    float scaleX() const { return m_scaleX; }
+    float scaleY() const { return m_scaleY; }
+
+    FloatRect filterBoundingBox(const FloatRect& obb) const;
     void setFilterBoundingBox(const FloatRect& rect) { m_filterBBox = rect; }
 
-    FloatRect itemBoundingBox() { return m_itemBBox; }
-    void setItemBoundingBox(const FloatRect& rect) { m_itemBBox = rect; }
-
-    FloatRect filterBBoxForItemBBox(const FloatRect& itemBBox) const;
-
-    virtual TextStream& externalRepresentation(TextStream&) const;
-
-    void prepareFilter(GraphicsContext*&, const RenderObject*);
+    bool prepareFilter(GraphicsContext*&, const RenderObject*);
     void applyFilter(GraphicsContext*&, const RenderObject*);
+
+    bool fitsInMaximumImageSize(const FloatSize&);
 
     void addFilterEffect(SVGFilterPrimitiveStandardAttributes*, PassRefPtr<FilterEffect>);
 
     SVGFilterBuilder* builder() { return m_filterBuilder.get(); }
+
+    virtual TextStream& externalRepresentation(TextStream&) const;
     
 private:
+    SVGResourceFilter(const SVGFilterElement*);
+
+    const SVGFilterElement* m_ownerElement;
 
     bool m_filterBBoxMode : 1;
     bool m_effectBBoxMode : 1;
-
-    bool m_xBBoxMode : 1;
-    bool m_yBBoxMode : 1;
+    bool m_filterRes : 1;
+    float m_scaleX;
+    float m_scaleY;
 
     FloatRect m_filterRect;
-
     FloatRect m_filterBBox;
-    FloatRect m_itemBBox;
+    FloatSize m_filterResSize;
 
     OwnPtr<SVGFilterBuilder> m_filterBuilder;
     GraphicsContext* m_savedContext;
@@ -102,7 +103,7 @@ private:
     RefPtr<Filter> m_filter;
 };
 
-SVGResourceFilter* getFilterById(Document*, const AtomicString&);
+SVGResourceFilter* getFilterById(Document*, const AtomicString&, const RenderObject*);
 
 } // namespace WebCore
 

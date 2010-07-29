@@ -159,7 +159,8 @@ bool PluginPackage::fetchInfo()
             plist = readPListFile(path.get(), /*createFile*/ true, m_module);
         }
 
-        mimeDict = (CFDictionaryRef)CFDictionaryGetValue(plist.get(), CFSTR("WebPluginMIMETypes"));
+        if (plist)
+            mimeDict = (CFDictionaryRef)CFDictionaryGetValue(plist.get(), CFSTR("WebPluginMIMETypes"));
     }
 
     if (!mimeDict)
@@ -176,7 +177,7 @@ bool PluginPackage::fetchInfo()
 
             WTF::RetainPtr<CFDictionaryRef> extensionsDict = (CFDictionaryRef)values[i];
 
-            WTF:RetainPtr<CFNumberRef> enabled = (CFNumberRef)CFDictionaryGetValue(extensionsDict.get(), CFSTR("WebPluginTypeEnabled"));
+            WTF::RetainPtr<CFNumberRef> enabled = (CFNumberRef)CFDictionaryGetValue(extensionsDict.get(), CFSTR("WebPluginTypeEnabled"));
             if (enabled) {
                 int enabledValue = 0;
                 if (CFNumberGetValue(enabled.get(), kCFNumberIntType, &enabledValue) && enabledValue == 0)
@@ -246,9 +247,6 @@ bool PluginPackage::fetchInfo()
 
 bool PluginPackage::isPluginBlacklisted()
 {
-    if (name() == "Silverlight Plug-In" || name().startsWith("QuickTime Plug-in"))
-        return true;
-
     return false;
 }
 

@@ -119,8 +119,8 @@ GraphicsContext::GraphicsContext(PlatformGraphicsContext* context)
     setPaintingDisabled(!context);
     if (context) {
         // Make sure the context starts in sync with our state.
-        setPlatformFillColor(fillColor());
-        setPlatformStrokeColor(strokeColor());
+        setPlatformFillColor(fillColor(), DeviceColorSpace);
+        setPlatformStrokeColor(strokeColor(), DeviceColorSpace);
     }
 #if USE(WXGC)
     m_data->context = (wxGCDC*)context;
@@ -252,7 +252,7 @@ void GraphicsContext::drawConvexPolygon(size_t npoints, const FloatPoint* points
     delete [] polygon;
 }
 
-void GraphicsContext::fillRect(const FloatRect& rect, const Color& color)
+void GraphicsContext::fillRect(const FloatRect& rect, const Color& color, ColorSpace colorSpace)
 {
     if (paintingDisabled())
         return;
@@ -262,7 +262,7 @@ void GraphicsContext::fillRect(const FloatRect& rect, const Color& color)
     m_data->context->DrawRectangle(rect.x(), rect.y(), rect.width(), rect.height());
 }
 
-void GraphicsContext::fillRoundedRect(const IntRect& rect, const IntSize& topLeft, const IntSize& topRight, const IntSize& bottomLeft, const IntSize& bottomRight, const Color& color)
+void GraphicsContext::fillRoundedRect(const IntRect& rect, const IntSize& topLeft, const IntSize& topRight, const IntSize& bottomLeft, const IntSize& bottomRight, const Color& color, ColorSpace colorSpace)
 {
     if (paintingDisabled())
         return;
@@ -270,7 +270,12 @@ void GraphicsContext::fillRoundedRect(const IntRect& rect, const IntSize& topLef
     notImplemented();
 }
 
-void GraphicsContext::drawFocusRing(const Color& color)
+void GraphicsContext::drawFocusRing(const Vector<Path>& paths, int width, int offset, const Color& color)
+{
+    // FIXME: implement
+}
+
+void GraphicsContext::drawFocusRing(const Vector<IntRect>& rects, int width, int offset, const Color& color)
 {
     if (paintingDisabled())
         return;
@@ -342,6 +347,11 @@ void GraphicsContext::drawLineForMisspellingOrBadGrammar(const IntPoint& origin,
 void GraphicsContext::clip(const Path&) 
 { 
     notImplemented();
+}
+
+void GraphicsContext::canvasClip(const Path& path)
+{
+    clip(path);
 }
 
 void GraphicsContext::clipToImageBuffer(const FloatRect&, const ImageBuffer*)
@@ -433,7 +443,7 @@ void GraphicsContext::addPath(const Path& path)
     notImplemented();
 }
 
-void GraphicsContext::setPlatformStrokeColor(const Color& color)
+void GraphicsContext::setPlatformStrokeColor(const Color& color, ColorSpace colorSpace)
 {
     if (paintingDisabled())
         return;
@@ -452,7 +462,7 @@ void GraphicsContext::setPlatformStrokeThickness(float thickness)
 
 }
 
-void GraphicsContext::setPlatformFillColor(const Color& color)
+void GraphicsContext::setPlatformFillColor(const Color& color, ColorSpace colorSpace)
 {
     if (paintingDisabled())
         return;
@@ -505,5 +515,128 @@ void GraphicsContext::fillRect(const FloatRect& rect)
     if (paintingDisabled())
         return;
 }
+
+void GraphicsContext::setPlatformShadow(IntSize const&,int,Color const&, ColorSpace) 
+{ 
+    notImplemented(); 
+}
+
+void GraphicsContext::clearPlatformShadow() 
+{ 
+    notImplemented(); 
+}
+
+void GraphicsContext::beginTransparencyLayer(float) 
+{ 
+    notImplemented(); 
+}
+
+void GraphicsContext::endTransparencyLayer() 
+{ 
+    notImplemented(); 
+}
+
+void GraphicsContext::clearRect(const FloatRect&) 
+{ 
+    notImplemented(); 
+}
+
+void GraphicsContext::strokeRect(const FloatRect&, float)
+{ 
+    notImplemented(); 
+}
+
+void GraphicsContext::setLineCap(LineCap) 
+{
+    notImplemented(); 
+}
+
+void GraphicsContext::setLineJoin(LineJoin)
+{
+    notImplemented();
+}
+
+void GraphicsContext::setMiterLimit(float)
+{
+    notImplemented();
+}
+
+void GraphicsContext::setAlpha(float)
+{
+    notImplemented();
+}
+
+void GraphicsContext::addInnerRoundedRectClip(const IntRect& rect, int thickness)
+{
+    notImplemented();
+}
+
+#if OS(WINDOWS)
+HDC GraphicsContext::getWindowsContext(const IntRect& dstRect, bool supportAlphaBlend, bool mayCreateBitmap)
+{
+    if (dstRect.isEmpty())
+        return 0;
+
+    // Create a bitmap DC in which to draw.
+    BITMAPINFO bitmapInfo;
+    bitmapInfo.bmiHeader.biSize          = sizeof(BITMAPINFOHEADER);
+    bitmapInfo.bmiHeader.biWidth         = dstRect.width();
+    bitmapInfo.bmiHeader.biHeight        = dstRect.height();
+    bitmapInfo.bmiHeader.biPlanes        = 1;
+    bitmapInfo.bmiHeader.biBitCount      = 32;
+    bitmapInfo.bmiHeader.biCompression   = BI_RGB;
+    bitmapInfo.bmiHeader.biSizeImage     = 0;
+    bitmapInfo.bmiHeader.biXPelsPerMeter = 0;
+    bitmapInfo.bmiHeader.biYPelsPerMeter = 0;
+    bitmapInfo.bmiHeader.biClrUsed       = 0;
+    bitmapInfo.bmiHeader.biClrImportant  = 0;
+
+    void* pixels = 0;
+    HBITMAP bitmap = ::CreateDIBSection(0, &bitmapInfo, DIB_RGB_COLORS, &pixels, 0, 0);
+    if (!bitmap)
+        return 0;
+
+    HDC displayDC = ::GetDC(0);
+    HDC bitmapDC = ::CreateCompatibleDC(displayDC);
+    ::ReleaseDC(0, displayDC);
+
+    ::SelectObject(bitmapDC, bitmap);
+
+    // Fill our buffer with clear if we're going to alpha blend.
+    if (supportAlphaBlend) {
+        BITMAP bmpInfo;
+        GetObject(bitmap, sizeof(bmpInfo), &bmpInfo);
+        int bufferSize = bmpInfo.bmWidthBytes * bmpInfo.bmHeight;
+        memset(bmpInfo.bmBits, 0, bufferSize);
+    }
+    return bitmapDC;
+}
+
+void GraphicsContext::releaseWindowsContext(HDC hdc, const IntRect& dstRect, bool supportAlphaBlend, bool mayCreateBitmap)
+{
+    if (hdc) {
+
+        if (!dstRect.isEmpty()) {
+
+            HBITMAP bitmap = static_cast<HBITMAP>(GetCurrentObject(hdc, OBJ_BITMAP));
+            BITMAP info;
+            GetObject(bitmap, sizeof(info), &info);
+            ASSERT(info.bmBitsPixel == 32);
+
+            wxBitmap bmp;
+            bmp.SetHBITMAP(bitmap);
+#if !wxCHECK_VERSION(2,9,0)
+            if (supportAlphaBlend)
+                bmp.UseAlpha();
+#endif
+            m_data->context->DrawBitmap(bmp, dstRect.x(), dstRect.y(), supportAlphaBlend);
+
+            ::DeleteObject(bitmap);
+        }
+
+        ::DeleteDC(hdc);
+    }
+}
+#endif
 
 }

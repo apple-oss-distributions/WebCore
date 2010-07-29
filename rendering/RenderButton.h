@@ -1,6 +1,4 @@
 /*
- * This file is part of the html renderer for KDE.
- *
  * Copyright (C) 2005 Apple Computer
  *
  * This library is free software; you can redistribute it and/or
@@ -55,7 +53,8 @@ public:
     virtual IntRect controlClipRect(int /*tx*/, int /*ty*/) const;
 
     void setText(const String&);
-    
+    String text() const;
+
     virtual bool canHaveChildren() const;
     
     virtual void layout();
@@ -75,16 +74,16 @@ protected:
     bool m_default;
 };
 
-inline RenderButton* toRenderButton(RenderObject* o)
+inline RenderButton* toRenderButton(RenderObject* object)
 { 
-    ASSERT(!o || o->isRenderButton());
-    return static_cast<RenderButton*>(o);
+    ASSERT(!object || object->isRenderButton());
+    return static_cast<RenderButton*>(object);
 }
 
-inline const RenderButton* toRenderButton(const RenderObject* o)
+inline const RenderButton* toRenderButton(const RenderObject* object)
 { 
-    ASSERT(!o || o->isRenderButton());
-    return static_cast<const RenderButton*>(o);
+    ASSERT(!object || object->isRenderButton());
+    return static_cast<const RenderButton*>(object);
 }
 
 // This will catch anyone doing an unnecessary cast.

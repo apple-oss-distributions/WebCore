@@ -3,8 +3,6 @@
 #
 # Copyright (C) 2005 Nikolas Zimmermann <wildfox@kde.org>
 # 
-# This file is part of the KDE project
-# 
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Library General Public
 # License as published by the Free Software Foundation; either
@@ -160,6 +158,7 @@ sub parseExtendedAttributes
         # Attributes with no value are set to be true
         $value = 1 unless defined $value;
         $attrs{$name} = $value;
+        die("Invalid extended attribute name: '$name'\n") if $name =~ /\s/;
     }
 
     return \%attrs;
@@ -309,7 +308,11 @@ sub ParseInterface
                 $methodException =~ s/\s+//g;
                 @{$newDataNode->raisesExceptions} = split(/,/, $methodException);
 
-                my @params = split(/,/, $methodSignature);
+                # Split arguments at commas but only if the comma
+                # is not within attribute brackets, expressed here
+                # as being followed by a ']' without a preceding '['.
+                # Note that this assumes that attributes don't nest.
+                my @params = split(/,(?![^[]*\])/, $methodSignature);
                 foreach(@params) {
                     my $line = $_;
 
@@ -368,7 +371,9 @@ sub DetermineParseMode
         $mode = MODE_INTERFACE;
     } elsif ($_ =~ /exception/) {
         $mode = MODE_EXCEPTION;
-    } elsif ($_ =~ /alias/) {
+    } elsif ($_ =~ /(\A|\b)alias/) {
+        # The (\A|\b) above is needed so we don't match attributes
+        # whose names contain the substring "alias".
         $mode = MODE_ALIAS;
     }
 

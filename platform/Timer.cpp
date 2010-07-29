@@ -55,11 +55,6 @@ static Vector<TimerBase*>& timerHeap()
     return threadGlobalData().threadTimers().timerHeap();
 }
 
-static HashSet<const TimerBase*>& timersReadyToFire()
-{
-    return threadGlobalData().threadTimers().timersReadyToFire();
-}
-
 // Class to represent elements in the heap when calling the standard library heap algorithms.
 // Maintains the m_heapIndex value in the timers themselves, which allows us to do efficient
 // modification of the heap.
@@ -185,11 +180,7 @@ TimerBase::~TimerBase()
 
 void TimerBase::start(double nextFireInterval, double repeatInterval)
 {
-    // On iPhone WebKit, m_thread == 1 should always be the main thread,
-    // and m_thread == 2 should always be the Web Thread.  We currently
-    // don't care whether these are started on one thread and stopped
-    // on the other.
-    ASSERT(m_thread == currentThread() || (m_thread == 1 && currentThread() == 2) || (m_thread == 2 && currentThread() == 1));
+    ASSERT(m_thread == currentThread() || (isMainThread() || pthread_main_np()) && WebCoreWebThreadIsLockedOrDisabled());
 
     m_repeatInterval = repeatInterval;
     setNextFireTime(currentTime() + nextFireInterval);
@@ -197,11 +188,7 @@ void TimerBase::start(double nextFireInterval, double repeatInterval)
 
 void TimerBase::stop()
 {
-    // On iPhone WebKit, m_thread == 1 should always be the main thread,
-    // and m_thread == 2 should always be the Web Thread.  We currently
-    // don't care whether these are started on one thread and stopped
-    // on the other.
-    ASSERT(m_thread == currentThread() || (m_thread == 1 && currentThread() == 2) || (m_thread == 2 && currentThread() == 1));
+    ASSERT(m_thread == currentThread() || (isMainThread() || pthread_main_np()) && WebCoreWebThreadIsLockedOrDisabled());
 
     m_repeatInterval = 0;
     setNextFireTime(0);
@@ -209,17 +196,6 @@ void TimerBase::stop()
     ASSERT(m_nextFireTime == 0);
     ASSERT(m_repeatInterval == 0);
     ASSERT(!inHeap());
-}
-
-bool TimerBase::isActive() const
-{
-    // On iPhone WebKit, m_thread == 1 should always be the main thread,
-    // and m_thread == 2 should always be the Web Thread.  We currently
-    // don't care whether these are started on one thread and stopped
-    // on the other.
-    ASSERT(m_thread == currentThread() || (m_thread == 1 && currentThread() == 2) || (m_thread == 2 && currentThread() == 1));
-
-    return m_nextFireTime || timersReadyToFire().contains(this);
 }
 
 double TimerBase::nextFireInterval() const
@@ -307,16 +283,9 @@ void TimerBase::heapPopMin()
 
 void TimerBase::setNextFireTime(double newTime)
 {
-    // On iPhone WebKit, m_thread == 1 should always be the main thread,
-    // and m_thread == 2 should always be the Web Thread.  We currently
-    // don't care whether these are started on one thread and stopped
-    // on the other.
-    ASSERT(m_thread == currentThread() || (m_thread == 1 && currentThread() == 2) || (m_thread == 2 && currentThread() == 1));
+    ASSERT(m_thread == currentThread() || (isMainThread() || pthread_main_np()) && WebCoreWebThreadIsLockedOrDisabled());
 
     // Keep heap valid while changing the next-fire time.
-
-    timersReadyToFire().remove(this);
-
     double oldTime = m_nextFireTime;
     if (oldTime != newTime) {
         m_nextFireTime = newTime;

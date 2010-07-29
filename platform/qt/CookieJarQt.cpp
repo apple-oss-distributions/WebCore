@@ -28,25 +28,23 @@
 #include "config.h"
 #include "CookieJar.h"
 
+#include "Cookie.h"
 #include "Document.h"
 #include "KURL.h"
 #include "PlatformString.h"
 
-#if QT_VERSION >= 0x040400
 #include "qwebpage.h"
 #include "qwebframe.h"
 #include "FrameLoaderClientQt.h"
 #include <QNetworkAccessManager>
 #include <QNetworkCookie>
-#else
-#include <qcookiejar.h>
-#endif
 
 namespace WebCore {
 
-#if QT_VERSION >= 0x040400
 static QNetworkCookieJar *cookieJar(const Document *document)
 {
+    if (!document)
+        return 0;
     Frame *frame = document->frame();
     if (!frame)
         return 0;
@@ -59,13 +57,11 @@ static QNetworkCookieJar *cookieJar(const Document *document)
     QNetworkCookieJar* jar = manager->cookieJar();
     return jar;
 }
-#endif
 
 void setCookies(Document* document, const KURL& url, const String& value)
 {
     QUrl u(url);
     QUrl p(document->firstPartyForCookies());
-#if QT_VERSION >= 0x040400
     QNetworkCookieJar* jar = cookieJar(document);
     if (!jar)
         return;
@@ -81,15 +77,11 @@ void setCookies(Document* document, const KURL& url, const String& value)
     }
 #endif
     jar->setCookiesFromUrl(cookies, u);
-#else
-    QCookieJar::cookieJar()->setCookies(u, p, (QString)value);
-#endif
 }
 
 String cookies(const Document* document, const KURL& url)
 {
     QUrl u(url);
-#if QT_VERSION >= 0x040400
     QNetworkCookieJar* jar = cookieJar(document);
     if (!jar)
         return String();
@@ -109,23 +101,24 @@ String cookies(const Document* document, const KURL& url)
     }
 
     return resultCookies.join(QLatin1String("; "));
-#else
-    QString cookies = QCookieJar::cookieJar()->cookies(u);
-    int idx = cookies.indexOf(QLatin1Char(';'));
-    if (idx > 0)
-        cookies = cookies.left(idx);
-    return cookies;
-#endif
 }
 
 bool cookiesEnabled(const Document* document)
 {
-#if QT_VERSION >= 0x040400
     QNetworkCookieJar* jar = cookieJar(document);
     return (jar != 0);
-#else
-    return QCookieJar::cookieJar()->isEnabled();
-#endif
+}
+
+bool getRawCookies(const Document*, const KURL&, Vector<Cookie>& rawCookies)
+{
+    // FIXME: Not yet implemented
+    rawCookies.clear();
+    return false; // return true when implemented
+}
+
+void deleteCookie(const Document*, const KURL&, const String&)
+{
+    // FIXME: Not yet implemented
 }
 
 }

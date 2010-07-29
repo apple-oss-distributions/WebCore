@@ -47,6 +47,8 @@ typedef UInt32 ATSUFontID;
 
 namespace WebCore {
 
+class String;
+
 
 struct FontPlatformData {
     FontPlatformData(float size, bool syntheticBold, bool syntheticOblique)
@@ -110,6 +112,10 @@ struct FontPlatformData {
     bool roundsGlyphAdvances() const { return false; }
     bool allowsLigatures() const;
 
+
+#ifndef NDEBUG
+    String description() const;
+#endif
 
 private:
     static GSFontRef hashTableDeletedFontValue() { return reinterpret_cast<GSFontRef>(-1); }

@@ -59,7 +59,7 @@ public:
 
     bool hasSelfPaintingLayer() const;
     RenderLayer* layer() const { return m_layer; }
-    virtual bool requiresLayer() const { return isRoot() || isPositioned() || isRelPositioned() || isTransparent() || hasOverflowClip() || hasTransform() || hasMask() || hasReflection(); }
+    virtual bool requiresLayer() const { return isRoot() || isPositioned() || isRelPositioned() || isTransparent() || hasOverflowClip() || hasTransform() || hasMask() || hasReflection() || style()->specifiesColumns(); }
 
     // This will work on inlines to return the bounding box of all of the lines' border boxes.
     virtual IntRect borderBoundingBox() const = 0;
@@ -89,8 +89,8 @@ public:
 
     void paintBorder(GraphicsContext*, int tx, int ty, int w, int h, const RenderStyle*, bool begin = true, bool end = true);
     bool paintNinePieceImage(GraphicsContext*, int tx, int ty, int w, int h, const RenderStyle*, const NinePieceImage&, CompositeOperator = CompositeSourceOver);
-    void paintBoxShadow(GraphicsContext*, int tx, int ty, int w, int h, const RenderStyle*, bool begin = true, bool end = true);
-    void paintFillLayerExtended(const PaintInfo&, const Color&, const FillLayer*, int tx, int ty, int width, int height, InlineFlowBox* = 0, CompositeOperator = CompositeSourceOver);
+    void paintBoxShadow(GraphicsContext*, int tx, int ty, int w, int h, const RenderStyle*, ShadowStyle, bool begin = true, bool end = true);
+    void paintFillLayerExtended(const PaintInfo&, const Color&, const FillLayer*, int tx, int ty, int width, int height, InlineFlowBox* = 0, CompositeOperator = CompositeSourceOver, RenderObject* backgroundObject = 0);
 
     // The difference between this inline's baseline position and the line's baseline position.
     int verticalPosition(bool firstLine) const;
@@ -98,12 +98,16 @@ public:
     // Called by RenderObject::destroy() (and RenderWidget::destroy()) and is the only way layers should ever be destroyed
     void destroyLayer();
 
+    void highQualityRepaintTimerFired(Timer<RenderBoxModelObject>*);
+
 protected:
     void calculateBackgroundImageGeometry(const FillLayer*, int tx, int ty, int w, int h, IntRect& destRect, IntPoint& phase, IntSize& tileSize);
-    IntSize calculateBackgroundSize(const FillLayer*, int scaledWidth, int scaledHeight) const;
 
 private:
     virtual bool isBoxModelObject() const { return true; }
+
+    IntSize calculateFillTileSize(const FillLayer*, IntSize scaledSize) const;
+
     friend class RenderView;
 
     RenderLayer* m_layer;
@@ -114,16 +118,16 @@ private:
     static bool s_layerWasSelfPainting;
 };
 
-inline RenderBoxModelObject* toRenderBoxModelObject(RenderObject* o)
+inline RenderBoxModelObject* toRenderBoxModelObject(RenderObject* object)
 { 
-    ASSERT(!o || o->isBoxModelObject());
-    return static_cast<RenderBoxModelObject*>(o);
+    ASSERT(!object || object->isBoxModelObject());
+    return static_cast<RenderBoxModelObject*>(object);
 }
 
-inline const RenderBoxModelObject* toRenderBoxModelObject(const RenderObject* o)
+inline const RenderBoxModelObject* toRenderBoxModelObject(const RenderObject* object)
 { 
-    ASSERT(!o || o->isBoxModelObject());
-    return static_cast<const RenderBoxModelObject*>(o);
+    ASSERT(!object || object->isBoxModelObject());
+    return static_cast<const RenderBoxModelObject*>(object);
 }
 
 // This will catch anyone doing an unnecessary cast.

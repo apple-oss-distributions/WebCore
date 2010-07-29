@@ -21,6 +21,8 @@
 #define ScheduledAction_h
 
 #include "PlatformString.h"
+#include <JSDOMBinding.h>
+#include <runtime/JSCell.h>
 #include <runtime/Protect.h>
 #include <wtf/Vector.h>
 
@@ -38,16 +40,17 @@ namespace WebCore {
     * time interval, either once or repeatedly. Used for window.setTimeout()
     * and window.setInterval()
     */
-    class ScheduledAction {
+    class ScheduledAction : public Noncopyable {
     public:
-        static ScheduledAction* create(JSC::ExecState*, const JSC::ArgList&);
+        static ScheduledAction* create(JSC::ExecState*, const JSC::ArgList&, DOMWrapperWorld* isolatedWorld);
 
         void execute(ScriptExecutionContext*);
 
     private:
-        ScheduledAction(JSC::JSValue function, const JSC::ArgList&);
-        ScheduledAction(const String& code)
+        ScheduledAction(JSC::JSValue function, const JSC::ArgList&, DOMWrapperWorld* isolatedWorld);
+        ScheduledAction(const String& code, DOMWrapperWorld* isolatedWorld)
             : m_code(code)
+            , m_isolatedWorld(isolatedWorld)
         {
         }
 
@@ -60,6 +63,7 @@ namespace WebCore {
         JSC::ProtectedJSValue m_function;
         Vector<JSC::ProtectedJSValue> m_args;
         String m_code;
+        RefPtr<DOMWrapperWorld> m_isolatedWorld;
     };
 
 } // namespace WebCore

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2006 Apple Computer, Inc.  All rights reserved.
+ * Copyright (C) 2008-2009 Torch Mobile, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,6 +28,7 @@
 #define JPEGImageDecoder_h
 
 #include "ImageDecoder.h"
+#include <wtf/OwnPtr.h>
 
 namespace WebCore {
 
@@ -46,19 +48,19 @@ namespace WebCore {
         // Whether or not the size information has been decoded yet.
         virtual bool isSizeAvailable();
 
+        virtual bool setSize(unsigned width, unsigned height);
+
         virtual RGBA32Buffer* frameBufferAtIndex(size_t index);
         
         virtual bool supportsAlpha() const { return false; }
 
         void decode(bool sizeOnly = false);
 
-        JPEGImageReader* reader() { return m_reader; }
-
         bool outputScanlines();
         void jpegComplete();
 
     private:
-        JPEGImageReader* m_reader;
+        OwnPtr<JPEGImageReader> m_reader;
     };
 
 } // namespace WebCore

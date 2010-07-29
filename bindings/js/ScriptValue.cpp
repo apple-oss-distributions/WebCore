@@ -40,13 +40,13 @@ using namespace JSC;
 
 namespace WebCore {
 
-bool ScriptValue::getString(String& result) const
+bool ScriptValue::getString(ScriptState* scriptState, String& result) const
 {
     if (!m_value)
         return false;
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
     UString ustring;
-    if (!m_value.get().getString(ustring))
+    if (!m_value.get().getString(scriptState, ustring))
         return false;
     result = ustring;
     return true;
@@ -72,6 +72,13 @@ bool ScriptValue::isUndefined() const
     if (!m_value)
         return false;
     return m_value.get().isUndefined();
+}
+
+bool ScriptValue::isObject() const
+{
+    if (!m_value)
+        return false;
+    return m_value.get().isObject();
 }
 
 } // namespace WebCore

@@ -33,12 +33,10 @@
 #include "HTMLParamElement.h"
 #include "MIMETypeRegistry.h"
 #include "Page.h"
-#include "PluginData.h"
 #include "RenderView.h"
 #include "RenderWidgetProtector.h"
-#include "Text.h"
-
 #include "Settings.h"
+#include "Text.h"
 
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
 #include "HTMLVideoElement.h"
@@ -50,94 +48,87 @@ using namespace HTMLNames;
 
 RenderPartObject::RenderPartObject(Element* element)
     : RenderPart(element)
-    , m_didResizeFrameToContent(false)
 {
+}
+
+bool RenderPartObject::flattenFrame()
+{
+    if (!node() || !node()->hasTagName(iframeTag))
+        return false;
+
+    HTMLIFrameElement* element = static_cast<HTMLIFrameElement*>(node());
+    bool isScrollable = element->scrollingMode() != ScrollbarAlwaysOff;
+
+    if (!isScrollable && style()->width().isFixed()
+        && style()->height().isFixed())
+        return false;
+
+    Frame* frame = element->document()->frame();
+    bool enabled = frame && frame->settings()->frameFlatteningEnabled();
+
+    if (!enabled || !frame->page())
+        return false;
+
+    FrameView* view = frame->page()->mainFrame()->view();
+    if (!view)
+        return false;
+
+    // Do not flatten offscreen inner frames during frame flattening.
+    return absoluteBoundingBoxRect().intersects(IntRect(IntPoint(0, 0), view->contentsSize()));
+}
+
+void RenderPartObject::calcHeight()
+{
+    RenderPart::calcHeight();
+    if (!flattenFrame())
+         return;
+
+    HTMLIFrameElement* frame = static_cast<HTMLIFrameElement*>(node());
+    bool isScrollable = frame->scrollingMode() != ScrollbarAlwaysOff;
+
+    if (isScrollable || !style()->height().isFixed()) {
+        FrameView* view = static_cast<FrameView*>(widget());
+        if (!view)
+            return;
+        int border = borderTop() + borderBottom();
+        setHeight(max(height(), view->contentsHeight() + border));
+    }
 }
 
 void RenderPartObject::calcWidth()
 {
     RenderPart::calcWidth();
-    if (!suggestResizeFrameToContent())
+    if (!flattenFrame())
         return;
-    if (!style()->width().isFixed() || static_cast<HTMLIFrameElement*>(node())->scrollingMode() != ScrollbarAlwaysOff)
-        setWidth(max(width(), static_cast<FrameView*>(widget())->contentsWidth()));
-}
-    
-void RenderPartObject::calcHeight()
-{
-    RenderPart::calcHeight();
-    if (!suggestResizeFrameToContent())
-        return;
-    if (!style()->height().isFixed() || static_cast<HTMLIFrameElement*>(node())->scrollingMode() != ScrollbarAlwaysOff)
-        setHeight(max(height(), static_cast<FrameView*>(widget())->contentsHeight()));
-}
-  
-bool RenderPartObject::suggestResizeFrameToContent() const
-{
-    Document* document = node() ? node()->document() : 0;
-    return widget() && widget()->isFrameView() && document && node()->hasTagName(iframeTag) && document->frame() && 
-        document->frame()->settings() && document->frame()->settings()->flatFrameSetLayoutEnabled() &&
-        !style()->width().isZero() && !style()->height().isZero() &&
-        (static_cast<HTMLIFrameElement*>(node())->scrollingMode() != ScrollbarAlwaysOff || !style()->width().isFixed() || !style()->height().isFixed());
+
+    HTMLIFrameElement* frame = static_cast<HTMLIFrameElement*>(node());
+    bool isScrollable = frame->scrollingMode() != ScrollbarAlwaysOff;
+
+    if (isScrollable || !style()->width().isFixed()) {
+        FrameView* view = static_cast<FrameView*>(widget());
+        if (!view)
+            return;
+        int border = borderLeft() + borderRight();
+        setWidth(max(width(), view->contentsWidth() + border));
+    }
 }
 
 void RenderPartObject::layout()
 {
     ASSERT(needsLayout());
 
-    FrameView* childFrameView;
-    RenderView* childRoot;
-    bool shouldResize = suggestResizeFrameToContent();
-    
-    if (shouldResize) {
-        childFrameView = static_cast<FrameView*>(widget());
-        childRoot = childFrameView->frame()->contentRenderer();
-        if (childRoot && childRoot->prefWidthsDirty())
-            childRoot->calcPrefWidths();
-    }
-
     RenderPart::calcWidth();
     RenderPart::calcHeight();
-    adjustOverflowForBoxShadowAndReflect();
 
-    // Determine if the frame is off the screen; if so, then don't resize it.
-    // Positioned elements that are positioned from the root node will have valid dimensions at this point.
-    if (shouldResize && isPositioned() && containingBlock() == view() && ((x() + width() <= 0) || (y() + height() <= 0)))
-        shouldResize = false;
-
-    if (shouldResize) {
-        bool scrolling = static_cast<HTMLIFrameElement*>(node())->scrollingMode() != ScrollbarAlwaysOff;
-        if (childRoot && (scrolling || !style()->width().isFixed()))
-            setWidth(max(width(), childRoot->minPrefWidth()));
-
-        updateWidgetPosition();
-        do
-            childFrameView->layout();
-        while (childFrameView->layoutPending() || (childRoot && childRoot->needsLayout()));
-        
-        if (scrolling || !style()->height().isFixed())
-            setHeight(max(height(), childFrameView->contentsHeight()));
-        if (scrolling || !style()->width().isFixed())
-            setWidth(max(width(), childFrameView->contentsWidth()));
-        
-        updateWidgetPosition();
-        
-        m_didResizeFrameToContent = true;
-        
-        ASSERT(!childFrameView->layoutPending());
-        ASSERT(!childRoot || !childRoot->needsLayout());
-        ASSERT(!childRoot || !childRoot->firstChild() || !childRoot->firstChild()->firstChild() || !childRoot->firstChild()->firstChild()->needsLayout());
-    } else {
-        if (m_didResizeFrameToContent && widget()) {
-            //  Acid3 test 46: We have to trigger a relayout to update media queries if we were in resized mode earlier.
-            updateWidgetPosition();
-            static_cast<FrameView*>(widget())->layout();
-        }
-        
-        m_didResizeFrameToContent = false;
-        
-        RenderPart::layout();
+    if (flattenFrame()) {
+        layoutWithFlattening(style()->width().isFixed(), style()->height().isFixed());
+        return;
     }
+
+    RenderPart::layout();
+
+    m_overflow.clear();
+    addShadowOverflow();
 
     setNeedsLayout(false);
 }

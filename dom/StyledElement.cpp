@@ -101,11 +101,6 @@ void StyledElement::removeMappedAttributeDecl(MappedAttributeEntry entryType, co
     mappedAttributeDecls->remove(MappedAttributeKey(entryType, attrName.localName().impl(), attrValue.impl()));
 }
 
-void StyledElement::invalidateStyleAttribute()
-{
-    m_isStyleAttributeValid = false;
-}
-
 void StyledElement::updateStyleAttribute() const
 {
     ASSERT(!m_isStyleAttributeValid);
@@ -116,8 +111,8 @@ void StyledElement::updateStyleAttribute() const
     m_synchronizingStyleAttribute = false;
 }
 
-StyledElement::StyledElement(const QualifiedName& name, Document *doc)
-    : Element(name, doc)
+StyledElement::StyledElement(const QualifiedName& name, Document* document, ConstructionType type)
+    : Element(name, document, type)
 {
 }
 
@@ -194,8 +189,8 @@ void StyledElement::attributeChanged(Attribute* attr, bool preserveDecls)
     if (needToParse)
         parseMappedAttribute(mappedAttr);
 
-    if (entry == eNone && ownerDocument()->attached() && ownerDocument()->styleSelector()->hasSelectorForAttribute(attr->name().localName()))
-        setNeedsStyleRecalc();
+    if (entry == eNone)
+        recalcStyleIfNeededAfterAttributeChanged(attr);
 
     if (checkDecl && mappedAttr->decl()) {
         // Add the decl to the table in the appropriate spot.
@@ -206,7 +201,7 @@ void StyledElement::attributeChanged(Attribute* attr, bool preserveDecls)
         if (namedAttrMap)
             mappedAttributes()->declAdded();
     }
-    Element::attributeChanged(attr, preserveDecls);
+    updateAfterAttributeChanged(attr);
 }
 
 bool StyledElement::mapToEntry(const QualifiedName& attrName, MappedAttributeEntry& result) const
@@ -239,14 +234,14 @@ void StyledElement::classAttributeChanged(const AtomicString& newClassString)
 
 void StyledElement::parseMappedAttribute(MappedAttribute *attr)
 {
-    if (attr->name() == idAttr) {
+    if (attr->name() == idAttributeName()) {
         // unique id
         setHasID(!attr->isNull());
         if (namedAttrMap) {
             if (attr->isNull())
                 namedAttrMap->setID(nullAtom);
-            else if (document()->inCompatMode() && !attr->value().impl()->isLower())
-                namedAttrMap->setID(AtomicString(attr->value().string().lower()));
+            else if (document()->inCompatMode())
+                namedAttrMap->setID(attr->value().lower());
             else
                 namedAttrMap->setID(attr->value());
         }
@@ -280,13 +275,6 @@ CSSStyleDeclaration* StyledElement::style()
     return getInlineStyleDecl();
 }
 
-static inline int toHex(UChar c) {
-    return ((c >= '0' && c <= '9') ? (c - '0')
-        : ((c >= 'a' && c <= 'f') ? (c - 'a' + 10)
-        : (( c >= 'A' && c <= 'F') ? (c - 'A' + 10)
-        : -1)));
-}
-
 void StyledElement::addCSSProperty(MappedAttribute* attr, int id, const String &value)
 {
     if (!attr->decl()) createMappedDecl(attr);
@@ -297,12 +285,6 @@ void StyledElement::addCSSProperty(MappedAttribute* attr, int id, int value)
 {
     if (!attr->decl()) createMappedDecl(attr);
     attr->decl()->setProperty(id, value, false);
-}
-
-void StyledElement::addCSSStringProperty(MappedAttribute* attr, int id, const String &value, CSSPrimitiveValue::UnitTypes type)
-{
-    if (!attr->decl()) createMappedDecl(attr);
-    attr->decl()->setStringProperty(id, value, type, false);
 }
 
 void StyledElement::addCSSImageProperty(MappedAttribute* attr, int id, const String& url)
@@ -364,7 +346,7 @@ void StyledElement::addCSSColor(MappedAttribute* attr, int id, const String& c)
     // not something that fits the specs.
     
     // we're emulating IEs color parser here. It maps transparent to black, otherwise it tries to build a rgb value
-    // out of everyhting you put in. The algorithm is experimentally determined, but seems to work for all test cases I have.
+    // out of everything you put in. The algorithm is experimentally determined, but seems to work for all test cases I have.
     
     // the length of the color value is rounded up to the next
     // multiple of 3. each part of the rgb triple then gets one third
@@ -392,10 +374,9 @@ void StyledElement::addCSSColor(MappedAttribute* attr, int id, const String& c)
                 // search forward for digits in the string
                 int numDigits = 0;
                 while (pos < (int)color.length() && numDigits < basicLength) {
-                    int hex = toHex(color[pos]);
-                    colors[component] = (colors[component] << 4);
-                    if (hex > 0) {
-                        colors[component] += hex;
+                    colors[component] <<= 4;
+                    if (isASCIIHexDigit(color[pos])) {
+                        colors[component] += toASCIIHexValue(color[pos]);
                         maxDigit = min(maxDigit, numDigits);
                     }
                     numDigits++;
@@ -409,10 +390,9 @@ void StyledElement::addCSSColor(MappedAttribute* attr, int id, const String& c)
             
             // normalize to 00-ff. The highest filled digit counts, minimum is 2 digits
             maxDigit -= 2;
-            colors[0] >>= 4*maxDigit;
-            colors[1] >>= 4*maxDigit;
-            colors[2] >>= 4*maxDigit;
-            // ASSERT(colors[0] < 0x100 && colors[1] < 0x100 && colors[2] < 0x100);
+            colors[0] >>= 4 * maxDigit;
+            colors[1] >>= 4 * maxDigit;
+            colors[2] >>= 4 * maxDigit;
             
             color = String::format("#%02x%02x%02x", colors[0], colors[1], colors[2]);
             if (attr->decl()->setProperty(id, color, false))

@@ -28,6 +28,7 @@
 
 #include "IntPoint.h"
 #include "PlatformString.h"
+#include "SerializedScriptValue.h"
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
 
@@ -44,6 +45,10 @@ typedef struct objc_object* id;
 #include <QDataStream>
 #endif
 
+#if PLATFORM(ANDROID)
+#include "AndroidWebHistoryBridge.h"
+#endif
+
 namespace WebCore {
 
 class CachedPage;
@@ -52,11 +57,11 @@ class FormData;
 class HistoryItem;
 class Image;
 class KURL;
-struct ResourceRequest;
+class ResourceRequest;
 
 typedef Vector<RefPtr<HistoryItem> > HistoryItemVector;
 
-extern void (*notifyHistoryItemChanged)();
+extern void (*notifyHistoryItemChanged)(HistoryItem*);
 
 enum VisitCountBehavior {
     IncreaseVisitCount,
@@ -130,6 +135,12 @@ public:
     void setTitle(const String&);
     void setIsTargetItem(bool);
     
+    void setStateObject(PassRefPtr<SerializedScriptValue> object);
+    SerializedScriptValue* stateObject() const { return m_stateObject.get(); }
+
+    void setDocumentSequenceNumber(long long number) { m_documentSequenceNumber = number; }
+    long long documentSequenceNumber() const { return m_documentSequenceNumber; }
+    
     void setFormInfoFromRequest(const ResourceRequest&);
     void setFormData(PassRefPtr<FormData>);
     void setFormContentType(const String&);
@@ -175,6 +186,11 @@ public:
 
     bool restoreState(QDataStream& buffer, int version);
     QDataStream& saveState(QDataStream& out, int version) const;
+#endif
+
+#if PLATFORM(ANDROID)
+    void setBridge(AndroidWebHistoryBridge* bridge);
+    AndroidWebHistoryBridge* bridge() const;
 #endif
 
 #ifndef NDEBUG
@@ -234,6 +250,10 @@ private:
 
     OwnPtr<Vector<String> > m_redirectURLs;
 
+    // Support for HTML5 History
+    RefPtr<SerializedScriptValue> m_stateObject;
+    long long m_documentSequenceNumber;
+    
     // info used to repost form data
     RefPtr<FormData> m_formData;
     String m_formContentType;
@@ -255,6 +275,11 @@ private:
 #if PLATFORM(QT)
     QVariant m_userData;
 #endif
+
+#if PLATFORM(ANDROID)
+    RefPtr<AndroidWebHistoryBridge> m_bridge;
+#endif
+
 }; //class HistoryItem
 
 } //namespace WebCore

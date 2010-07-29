@@ -30,16 +30,16 @@
 
 #include "GraphicsLayer.h"
 #include "StringHash.h"
+#include "WebLayer.h"
+#include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/RetainPtr.h>
 
 @class CABasicAnimation;
 @class CAKeyframeAnimation;
-@class CALayer;
 @class CAMediaTimingFunction;
 @class CAPropertyAnimation;
 @class WebAnimationDelegate;
-@class WebLayer;
 
 namespace WebCore {
 
@@ -64,6 +64,7 @@ public:
     virtual void removeFromParent();
 
     virtual void setMaskLayer(GraphicsLayer*);
+    virtual void setReplicatedLayer(GraphicsLayer*);
 
     virtual void setPosition(const FloatPoint&);
     virtual void setAnchorPoint(const FloatPoint3D&);
@@ -89,6 +90,10 @@ public:
     virtual void setNeedsDisplay();
     virtual void setNeedsDisplayInRect(const FloatRect&);
 
+#if ENABLE(3D_CANVAS)
+    virtual void setGraphicsContext3DNeedsDisplay();
+#endif
+    
     virtual void setContentsRect(const IntRect&);
     
     virtual void suspendAnimations(double time);
@@ -102,6 +107,9 @@ public:
     virtual void setContentsToImage(Image*);
     virtual void setContentsToMedia(PlatformLayer*);
     virtual PlatformLayer* contentsLayerForMedia() const;
+#if ENABLE(3D_CANVAS)
+    virtual void setContentsToGraphicsContext3D(const GraphicsContext3D*);
+#endif
     
     virtual PlatformLayer* platformLayer() const;
 
@@ -112,8 +120,9 @@ public:
 
     virtual void setGeometryOrientation(CompositingCoordinatesOrientation);
 
+    virtual void didDisplay(PlatformLayer*);
+
     void recursiveCommitChanges();
-    void commitLayerChanges();
 
     virtual void syncCompositingState();
 
@@ -123,10 +132,17 @@ protected:
 private:
     void updateOpacityOnLayer();
 
-    WebLayer* primaryLayer() const { return m_transformLayer.get() ? m_transformLayer.get() : m_layer.get(); }
-    WebLayer* hostLayerForSublayers() const;
-    WebLayer* layerForSuperlayer() const;
+    CALayer* primaryLayer() const { return m_structuralLayer.get() ? m_structuralLayer.get() : m_layer.get(); }
+    CALayer* hostLayerForSublayers() const;
+    CALayer* layerForSuperlayer() const;
     CALayer* animatedLayer(AnimatedPropertyID property) const;
+
+    typedef String CloneID; // Identifier for a given clone, based on original/replica branching down the tree.
+    static bool isReplicatedRootClone(const CloneID& cloneID) { return cloneID[0U] & 1; }
+
+    typedef HashMap<CloneID, RetainPtr<CALayer> > LayerMap;
+    LayerMap* primaryLayerClones() const { return m_structuralLayer.get() ? m_structuralLayerClones.get() : m_layerClones.get(); }
+    LayerMap* animatedLayerClones(AnimatedPropertyID property) const;
 
     bool createAnimationFromKeyframes(const KeyframeValueList&, const Animation*, const String& keyframesName, double timeOffset);
     bool createTransformAnimationsFromKeyframes(const KeyframeValueList&, const Animation*, const String& keyframesName, double timeOffset, const IntSize& boxSize);
@@ -149,6 +165,9 @@ private:
         return m_runningKeyframeAnimations.find(keyframesName) != m_runningKeyframeAnimations.end();
     }
 
+    void commitLayerChangesBeforeSublayers();
+    void commitLayerChangesAfterSublayers();
+
     bool requiresTiledLayer(const FloatSize&) const;
     void swapFromOrToTiledLayer(bool useTiledLayer);
 
@@ -161,8 +180,75 @@ private:
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
     bool mediaLayerMustBeUpdatedOnMainThread() const;
 #endif
+
+    virtual void setReplicatedByLayer(GraphicsLayer*);
+
+    // Used to track the path down the tree for replica layers.
+    struct ReplicaState {
+        static const size_t maxReplicaDepth = 16;
+        enum ReplicaBranchType { ChildBranch = 0, ReplicaBranch = 1 };
+        ReplicaState(ReplicaBranchType firstBranch)
+            : m_replicaDepth(0)
+        {
+            push(firstBranch);
+        }
+        
+        // Called as we walk down the tree to build replicas.
+        void push(ReplicaBranchType branchType)
+        {
+            m_replicaBranches.append(branchType);
+            if (branchType == ReplicaBranch)
+                ++m_replicaDepth;
+        }
+        
+        void setBranchType(ReplicaBranchType branchType)
+        {
+            ASSERT(!m_replicaBranches.isEmpty());
+
+            if (m_replicaBranches.last() != branchType) {
+                if (branchType == ReplicaBranch)
+                    ++m_replicaDepth;
+                else
+                    --m_replicaDepth;
+            }
+
+            m_replicaBranches.last() = branchType;
+        }
+
+        void pop()
+        {
+            if (m_replicaBranches.last() == ReplicaBranch)
+                --m_replicaDepth;
+            m_replicaBranches.removeLast();
+        }
+        
+        size_t depth() const { return m_replicaBranches.size(); }
+        size_t replicaDepth() const { return m_replicaDepth; }
+
+        CloneID cloneID() const;        
+
+    private:
+        Vector<ReplicaBranchType> m_replicaBranches;
+        size_t m_replicaDepth;
+    };
+    CALayer *replicatedLayerRoot(ReplicaState&);
+
+    enum CloneLevel { RootCloneLevel, IntermediateCloneLevel };
+    CALayer *fetchCloneLayers(GraphicsLayer* replicaRoot, ReplicaState&, CloneLevel);
+    
+    CALayer *cloneLayer(CALayer *, CloneLevel);
+    CALayer *findOrMakeClone(CloneID, CALayer *, LayerMap*, CloneLevel);
+
+    void ensureCloneLayers(CloneID index, CALayer *& primaryLayer, CALayer *& structuralLayer, CALayer *& contentsLayer, CloneLevel);
+
+    bool hasCloneLayers() const { return m_layerClones; }
+    void removeCloneLayers();
+    FloatPoint positionForCloneRootLayer() const;
+    
+    void propagateLayerChangeToReplicas();
     
     // All these "update" methods will be called inside a BEGIN_BLOCK_OBJC_EXCEPTIONS/END_BLOCK_OBJC_EXCEPTIONS block.
+    void updateLayerNames();
     void updateSublayerList();
     void updateLayerPosition();
     void updateLayerSize();
@@ -172,23 +258,37 @@ private:
     void updateMasksToBounds();
     void updateContentsOpaque();
     void updateBackfaceVisibility();
-    void updateLayerPreserves3D();
+    void updateStructuralLayer();
     void updateLayerDrawsContent();
     void updateLayerBackgroundColor();
 
     void updateContentsImage();
     void updateContentsMediaLayer();
+#if ENABLE(3D_CANVAS)
+    void updateContentsGraphicsContext3D();
+#endif
     void updateContentsRect();
     void updateGeometryOrientation();
     void updateMaskLayer();
+    void updateReplicatedLayers();
 
     void updateLayerAnimations();
+    
+    enum StructuralLayerPurpose {
+        NoStructuralLayer = 0,
+        StructuralLayerForPreserves3D,
+        StructuralLayerForReplicaFlattening
+    };
+    void ensureStructuralLayer(StructuralLayerPurpose);
+    StructuralLayerPurpose structuralLayerPurpose() const;
 
     void setAnimationOnLayer(CAPropertyAnimation*, AnimatedPropertyID, const String& keyframesName, int index, double timeOffset);
     bool removeAnimationFromLayer(AnimatedPropertyID, const String& keyframesName, int index);
     void pauseAnimationOnLayer(AnimatedPropertyID, const String& keyframesName, int index, double timeOffset);
 
-    void moveAnimationsForProperty(AnimatedPropertyID property, CALayer* fromLayer, CALayer* toLayer);
+    enum MoveOrCopy { Move, Copy };
+    void moveOrCopyAnimationsForProperty(MoveOrCopy, AnimatedPropertyID property, CALayer * fromLayer, CALayer * toLayer);
+    static void moveOrCopyAllAnimationsForProperty(MoveOrCopy operation, AnimatedPropertyID property, const String& keyframesName, CALayer * fromLayer, CALayer * toLayer);
     
     enum LayerChange {
         NoChange = 0,
@@ -210,23 +310,36 @@ private:
         DirtyRectsChanged = 1 << 16,
         ContentsImageChanged = 1 << 17,
         ContentsMediaLayerChanged = 1 << 18,
-        ContentsRectChanged = 1 << 19,
-        GeometryOrientationChanged = 1 << 20,
-        MaskLayerChanged = 1 << 21
+#if ENABLE(3D_CANVAS)
+        ContentsGraphicsContext3DChanged = 1 << 19,
+#endif
+        ContentsRectChanged = 1 << 20,
+        GeometryOrientationChanged = 1 << 21,
+        MaskLayerChanged = 1 << 22,
+        ReplicatedLayerChanged = 1 << 23
     };
     typedef unsigned LayerChangeFlags;
     void noteLayerPropertyChanged(LayerChangeFlags flags);
+    void noteSublayersChanged();
 
     void repaintLayerDirtyRects();
 
-    RetainPtr<WebLayer> m_layer;
-    RetainPtr<WebLayer> m_transformLayer;
-    RetainPtr<CALayer> m_contentsLayer;
+    RetainPtr<WebLayer> m_layer; // The main layer
+    RetainPtr<CALayer> m_structuralLayer; // A layer used for structural reasons, like preserves-3d or replica-flattening. Is the parent of m_layer.
+    RetainPtr<CALayer> m_contentsLayer; // A layer used for inner content, like image and video
+
+    // References to clones of our layers, for replicated layers.
+    OwnPtr<LayerMap> m_layerClones;
+    OwnPtr<LayerMap> m_structuralLayerClones;
+    OwnPtr<LayerMap> m_contentsLayerClones;
     
     enum ContentsLayerPurpose {
         NoContentsLayer = 0,
         ContentsLayerForImage,
         ContentsLayerForMedia
+#if ENABLE(3D_CANVAS)
+        ,ContentsLayerForGraphicsLayer3D
+#endif
     };
     
     ContentsLayerPurpose m_contentsLayerPurpose;
@@ -280,6 +393,11 @@ private:
     Vector<FloatRect> m_dirtyRects;
     
     LayerChangeFlags m_uncommittedChanges;
+    
+#if ENABLE(3D_CANVAS)
+    PlatformGraphicsContext3D m_platformGraphicsContext3D;
+    Platform3DObject m_platformTexture;
+#endif
 };
 
 } // namespace WebCore

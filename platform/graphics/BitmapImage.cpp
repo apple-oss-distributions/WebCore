@@ -81,7 +81,7 @@ void BitmapImage::destroyDecodedData(bool destroyAll)
 {
     int deltaBytes = 0;
     const size_t clearBeforeFrame = destroyAll ? m_frames.size() : m_currentFrame;
-    for (size_t i = 1; i < clearBeforeFrame; ++i) {
+    for (size_t i = 0; i < clearBeforeFrame; ++i) {
         // The underlying frame isn't actually changing (we're just trying to
         // save the memory for the framebuffer data), so we don't need to clear
         // the metadata.
@@ -92,7 +92,7 @@ void BitmapImage::destroyDecodedData(bool destroyAll)
 
     destroyMetadataAndNotify(deltaBytes);
 
-    m_source.clear(destroyAll, clearBeforeFrame, m_data.get(), m_allDataReceived);
+    m_source.clear(destroyAll, clearBeforeFrame, data(), m_allDataReceived);
     return;
 }
 
@@ -208,7 +208,7 @@ bool BitmapImage::dataChanged(bool allDataReceived)
         m_progressiveLoadChunkCount++;
     }
     if (needsUpdate || allDataReceived)
-        m_source.setData(m_data.get(), allDataReceived);
+        m_source.setData(data(), allDataReceived);
     
     // Clear the frame count.
     m_haveFrameCount = false;

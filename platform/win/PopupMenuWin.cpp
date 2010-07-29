@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007-2009 Torch Mobile Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -29,6 +30,7 @@
 #include "FrameView.h"
 #include "GraphicsContext.h"
 #include "HTMLNames.h"
+#include "HostWindow.h"
 #include "Page.h"
 #include "PlatformMouseEvent.h"
 #include "PlatformScreen.h"
@@ -40,6 +42,10 @@
 #include <tchar.h>
 #include <windows.h>
 #include <windowsx.h>
+#if OS(WINCE)
+#include <ResDefCE.h>
+#define MAKEPOINTS(l) (*((POINTS FAR *)&(l)))
+#endif
 
 using std::min;
 
@@ -100,11 +106,16 @@ PopupMenu::~PopupMenu()
     if (m_bmp)
         ::DeleteObject(m_bmp);
     if (m_DC)
-        ::DeleteObject(m_DC);
+        ::DeleteDC(m_DC);
     if (m_popup)
         ::DestroyWindow(m_popup);
     if (m_scrollbar)
         m_scrollbar->setParent(0);
+}
+
+LPCTSTR PopupMenu::popupClassName()
+{
+    return kPopupWindowClassName;
 }
 
 void PopupMenu::show(const IntRect& r, FrameView* view, int index)
@@ -113,7 +124,7 @@ void PopupMenu::show(const IntRect& r, FrameView* view, int index)
     if (clientRect().isEmpty())
         return;
 
-    HWND hostWindow = view->hostWindow()->platformWindow();
+    HWND hostWindow = view->hostWindow()->platformPageClient();
 
     if (!m_scrollbar && visibleItems() < client()->listSize()) {
         // We need a scroll bar
@@ -141,6 +152,7 @@ void PopupMenu::show(const IntRect& r, FrameView* view, int index)
     // Determine whether we should animate our popups
     // Note: Must use 'BOOL' and 'FALSE' instead of 'bool' and 'false' to avoid stack corruption with SystemParametersInfo
     BOOL shouldAnimate = FALSE;
+#if !OS(WINCE)
     ::SystemParametersInfo(SPI_GETCOMBOBOXANIMATION, 0, &shouldAnimate, 0);
 
     if (shouldAnimate) {
@@ -155,6 +167,7 @@ void PopupMenu::show(const IntRect& r, FrameView* view, int index)
             ::AnimateWindow(m_popup, defaultAnimationDuration, AW_SLIDE | slideDirection);
         }
     } else
+#endif
         ::ShowWindow(m_popup, SW_SHOWNOACTIVATE);
 
     if (client()) {
@@ -267,7 +280,6 @@ void PopupMenu::hide()
     ::PostMessage(m_popup, WM_NULL, 0, 0);
 }
 
-const int endOfLinePadding = 2;
 void PopupMenu::calculatePositionAndSize(const IntRect& r, FrameView* v)
 {
     // r is in absolute document coordinates, but we want to be in screen coordinates
@@ -277,7 +289,7 @@ void PopupMenu::calculatePositionAndSize(const IntRect& r, FrameView* v)
 
     // Then, translate to screen coordinates
     POINT location(rScreenCoords.location());
-    if (!::ClientToScreen(v->hostWindow()->platformWindow(), &location))
+    if (!::ClientToScreen(v->hostWindow()->platformPageClient(), &location))
         return;
 
     rScreenCoords.setLocation(location);
@@ -313,9 +325,7 @@ void PopupMenu::calculatePositionAndSize(const IntRect& r, FrameView* v)
         popupWidth += ScrollbarTheme::nativeTheme()->scrollbarThickness(SmallScrollbar);
 
     // Add padding to align the popup text with the <select> text
-    // Note: We can't add paddingRight() because that value includes the width
-    // of the dropdown button, so we must use our own endOfLinePadding constant.
-    popupWidth += max(0, endOfLinePadding - client()->clientInsetRight()) + max(0, client()->clientPaddingLeft() - client()->clientInsetLeft());
+    popupWidth += max(0, client()->clientPaddingRight() - client()->clientInsetRight()) + max(0, client()->clientPaddingLeft() - client()->clientInsetLeft());
 
     // Leave room for the border
     popupWidth += 2 * popupWindowBorderWidth;
@@ -566,8 +576,11 @@ void PopupMenu::paint(const IntRect& damageRect, HDC hdc)
         }
     }
     if (!m_bmp) {
+#if OS(WINCE)
+        BitmapInfo bitmapInfo(true, clientRect().width(), clientRect().height());
+#else
         BitmapInfo bitmapInfo = BitmapInfo::createBottomUp(clientRect().size());
-
+#endif
         void* pixels = 0;
         m_bmp = ::CreateDIBSection(m_DC, &bitmapInfo, DIB_RGB_COLORS, &pixels, 0, 0);
         if (!m_bmp)
@@ -602,11 +615,11 @@ void PopupMenu::paint(const IntRect& damageRect, HDC hdc)
 
         // Draw the background for this menu item
         if (itemStyle.isVisible())
-            context.fillRect(itemRect, optionBackgroundColor);
+            context.fillRect(itemRect, optionBackgroundColor, DeviceColorSpace);
 
         if (client()->itemIsSeparator(index)) {
             IntRect separatorRect(itemRect.x() + separatorPadding, itemRect.y() + (itemRect.height() - separatorHeight) / 2, itemRect.width() - 2 * separatorPadding, separatorHeight);
-            context.fillRect(separatorRect, optionTextColor);
+            context.fillRect(separatorRect, optionTextColor, DeviceColorSpace);
             continue;
         }
 
@@ -616,7 +629,7 @@ void PopupMenu::paint(const IntRect& damageRect, HDC hdc)
         const UChar* string = itemText.characters();
         TextRun textRun(string, length, false, 0, 0, itemText.defaultWritingDirection() == WTF::Unicode::RightToLeft);
 
-        context.setFillColor(optionTextColor);
+        context.setFillColor(optionTextColor, DeviceColorSpace);
         
         Font itemFont = client()->menuStyle().font();
         if (client()->itemIsLabel(index)) {
@@ -639,10 +652,12 @@ void PopupMenu::paint(const IntRect& damageRect, HDC hdc)
     if (m_scrollbar)
         m_scrollbar->paint(&context, damageRect);
 
-    if (!hdc)
-        hdc = ::GetDC(m_popup);
+    HDC localDC = hdc ? hdc : ::GetDC(m_popup);
 
-    ::BitBlt(hdc, damageRect.x(), damageRect.y(), damageRect.width(), damageRect.height(), m_DC, damageRect.x(), damageRect.y(), SRCCOPY);
+    ::BitBlt(localDC, damageRect.x(), damageRect.y(), damageRect.width(), damageRect.height(), m_DC, damageRect.x(), damageRect.y(), SRCCOPY);
+
+    if (!hdc)
+        ::ReleaseDC(m_popup, localDC);
 }
 
 void PopupMenu::valueChanged(Scrollbar* scrollBar)
@@ -696,11 +711,15 @@ void PopupMenu::registerClass()
     if (haveRegisteredWindowClass)
         return;
 
+#if OS(WINCE)
+    WNDCLASS wcex;
+#else
     WNDCLASSEX wcex;
-
     wcex.cbSize = sizeof(WNDCLASSEX);
-
+    wcex.hIconSm        = 0;
     wcex.style          = CS_DROPSHADOW;
+#endif
+
     wcex.lpfnWndProc    = PopupMenuWndProc;
     wcex.cbClsExtra     = 0;
     wcex.cbWndExtra     = sizeof(PopupMenu*); // For the PopupMenu pointer
@@ -710,25 +729,37 @@ void PopupMenu::registerClass()
     wcex.hbrBackground  = 0;
     wcex.lpszMenuName   = 0;
     wcex.lpszClassName  = kPopupWindowClassName;
-    wcex.hIconSm        = 0;
 
     haveRegisteredWindowClass = true;
 
-    ::RegisterClassEx(&wcex);
+#if OS(WINCE)
+    RegisterClass(&wcex);
+#else
+    RegisterClassEx(&wcex);
+#endif
 }
 
 
 LRESULT CALLBACK PopupMenu::PopupMenuWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+#if OS(WINCE)
+    LONG longPtr = GetWindowLong(hWnd, 0);
+#else
     LONG_PTR longPtr = GetWindowLongPtr(hWnd, 0);
+#endif
+    
     if (PopupMenu* popup = reinterpret_cast<PopupMenu*>(longPtr))
         return popup->wndProc(hWnd, message, wParam, lParam);
-
+    
     if (message == WM_CREATE) {
         LPCREATESTRUCT createStruct = reinterpret_cast<LPCREATESTRUCT>(lParam);
 
         // Associate the PopupMenu with the window.
+#if OS(WINCE)
+        ::SetWindowLong(hWnd, 0, (LONG)createStruct->lpCreateParams);
+#else
         ::SetWindowLongPtr(hWnd, 0, (LONG_PTR)createStruct->lpCreateParams);
+#endif
         return 0;
     }
 
@@ -801,7 +832,7 @@ LRESULT PopupMenu::wndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
                     break;
                 }
                 case VK_TAB:
-                    ::SendMessage(client()->hostWindow()->platformWindow(), message, wParam, lParam);
+                    ::SendMessage(client()->hostWindow()->platformPageClient(), message, wParam, lParam);
                     hide();
                     break;
                 case VK_ESCAPE:
@@ -858,7 +889,9 @@ LRESULT PopupMenu::wndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
             }
 
             BOOL shouldHotTrack = FALSE;
+#if !OS(WINCE)
             ::SystemParametersInfo(SPI_GETHOTTRACKING, 0, &shouldHotTrack, 0);
+#endif
 
             RECT bounds;
             GetClientRect(popupHandle(), &bounds);
@@ -867,7 +900,7 @@ LRESULT PopupMenu::wndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
                 // repost the message to the web view.
 
                 // Translate the coordinate.
-                translatePoint(lParam, m_popup, client()->hostWindow()->platformWindow());
+                translatePoint(lParam, m_popup, client()->hostWindow()->platformPageClient());
 
                 ::PostMessage(m_popup, WM_HOST_WINDOW_MOUSEMOVE, wParam, lParam);
                 break;
@@ -953,9 +986,11 @@ LRESULT PopupMenu::wndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam
             lResult = 0;
             break;
         }
+#if !OS(WINCE)
         case WM_PRINTCLIENT:
             paint(clientRect(), (HDC)wParam);
             break;
+#endif
         default:
             lResult = DefWindowProc(hWnd, message, wParam, lParam);
     }

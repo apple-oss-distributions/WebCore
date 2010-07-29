@@ -56,14 +56,14 @@ void drawTextWithSpacing(GraphicsContext* graphicsContext, const SimpleFontData*
     wxGCDC* dc = static_cast<wxGCDC*>(graphicsContext->platformContext());
 
     wxFont* wxfont = font->getWxFont();
-    graphicsContext->setFillColor(graphicsContext->fillColor());
+    graphicsContext->setFillColor(graphicsContext->fillColor(), DeviceColorSpace);
 
     CGContextRef cgContext = static_cast<CGContextRef>(dc->GetGraphicsContext()->GetNativeContext());
 
     CGFontRef cgFont;
 
 #ifdef wxOSX_USE_CORE_TEXT && wxOSX_USE_CORE_TEXT
-    cgFont = CTFontCopyGraphicsFont((CTFontRef)font->OSXGetCTFont(), NULL);
+    cgFont = CTFontCopyGraphicsFont((CTFontRef)wxfont->OSXGetCTFont(), NULL);
 #else
     ATSFontRef fontRef;
     

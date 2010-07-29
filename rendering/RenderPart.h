@@ -35,11 +35,13 @@ class RenderPart : public RenderWidget {
 public:
     RenderPart(Element*);
     virtual ~RenderPart();
-    
+
     bool hasFallbackContent() const { return m_hasFallbackContent; }
 
     virtual void setWidget(PassRefPtr<Widget>);
     virtual void viewCleared();
+
+    void layoutWithFlattening(bool fixedWidth, bool fixedHeight);
 
 protected:
     bool m_hasFallbackContent;
@@ -49,11 +51,14 @@ private:
     virtual const char* renderName() const { return "RenderPart"; }
 };
 
-inline RenderPart* toRenderPart(RenderObject* o)
-{ 
-    ASSERT(!o || o->isRenderPart());
-    return static_cast<RenderPart*>(o);
+inline RenderPart* toRenderPart(RenderObject* object)
+{
+    ASSERT(!object || object->isRenderPart());
+    return static_cast<RenderPart*>(object);
 }
+
+// This will catch anyone doing an unnecessary cast.
+void toRenderPart(const RenderPart*);
 
 }
 

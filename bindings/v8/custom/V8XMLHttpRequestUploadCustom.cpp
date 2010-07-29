@@ -29,260 +29,58 @@
  */
 
 #include "config.h"
-#include "XMLHttpRequestUpload.h"
+#include "V8XMLHttpRequestUpload.h"
 
 #include "ExceptionCode.h"
 #include "V8Binding.h"
 #include "V8CustomBinding.h"
-#include "V8ObjectEventListener.h"
 #include "V8Proxy.h"
 #include "V8Utilities.h"
 #include "XMLHttpRequest.h"
+#include "XMLHttpRequestUpload.h"
 
 #include <wtf/Assertions.h>
 
 namespace WebCore {
 
-ACCESSOR_GETTER(XMLHttpRequestUploadOnabort)
-{
-    INC_STATS("DOM.XMLHttpRequestUpload.onabort._get");
-    XMLHttpRequestUpload* xmlHttpRequestUpload = V8DOMWrapper::convertToNativeObject<XMLHttpRequestUpload>(V8ClassIndex::XMLHTTPREQUESTUPLOAD, info.Holder());
-    if (xmlHttpRequestUpload->onabort()) {
-        V8ObjectEventListener* listener = static_cast<V8ObjectEventListener*>(xmlHttpRequestUpload->onabort());
-        v8::Local<v8::Object> v8Listener = listener->getListenerObject();
-        return v8Listener;
-    }
-    return v8::Null();
-}
-
-ACCESSOR_SETTER(XMLHttpRequestUploadOnabort)
-{
-    INC_STATS("DOM.XMLHttpRequestUpload.onabort._set");
-    XMLHttpRequestUpload* xmlHttpRequestUpload = V8DOMWrapper::convertToNativeObject<XMLHttpRequestUpload>(V8ClassIndex::XMLHTTPREQUESTUPLOAD, info.Holder());
-    if (value->IsNull()) {
-        if (xmlHttpRequestUpload->onabort()) {
-            V8ObjectEventListener* listener = static_cast<V8ObjectEventListener*>(xmlHttpRequestUpload->onabort());
-            v8::Local<v8::Object> v8Listener = listener->getListenerObject();
-            removeHiddenDependency(info.Holder(), v8Listener, V8Custom::kXMLHttpRequestCacheIndex);
-        }
-
-        // Clear the listener.
-        xmlHttpRequestUpload->setOnabort(0);
-    } else {
-        XMLHttpRequest* xmlHttpRequest = xmlHttpRequestUpload->associatedXMLHttpRequest();
-        V8Proxy* proxy = V8Proxy::retrieve(xmlHttpRequest->scriptExecutionContext());
-        if (!proxy)
-            return;
-
-        RefPtr<EventListener> listener = proxy->findOrCreateObjectEventListener(value, false);
-        if (listener) {
-            xmlHttpRequestUpload->setOnabort(listener);
-            createHiddenDependency(info.Holder(), value, V8Custom::kXMLHttpRequestCacheIndex);
-        }
-    }
-}
-
-ACCESSOR_GETTER(XMLHttpRequestUploadOnerror)
-{
-    INC_STATS("DOM.XMLHttpRequestUpload.onerror._get");
-    XMLHttpRequestUpload* xmlHttpRequestUpload = V8DOMWrapper::convertToNativeObject<XMLHttpRequestUpload>(V8ClassIndex::XMLHTTPREQUESTUPLOAD, info.Holder());
-    if (xmlHttpRequestUpload->onerror()) {
-        V8ObjectEventListener* listener = static_cast<V8ObjectEventListener*>(xmlHttpRequestUpload->onerror());
-        v8::Local<v8::Object> v8Listener = listener->getListenerObject();
-        return v8Listener;
-    }
-    return v8::Null();
-}
-
-ACCESSOR_SETTER(XMLHttpRequestUploadOnerror)
-{
-    INC_STATS("DOM.XMLHttpRequestUpload.onerror._set");
-    XMLHttpRequestUpload* xmlHttpRequestUpload = V8DOMWrapper::convertToNativeObject<XMLHttpRequestUpload>(V8ClassIndex::XMLHTTPREQUESTUPLOAD, info.Holder());
-    if (value->IsNull()) {
-        if (xmlHttpRequestUpload->onerror()) {
-            V8ObjectEventListener* listener = static_cast<V8ObjectEventListener*>(xmlHttpRequestUpload->onerror());
-            v8::Local<v8::Object> v8Listener = listener->getListenerObject();
-            removeHiddenDependency(info.Holder(), v8Listener, V8Custom::kXMLHttpRequestCacheIndex);
-        }
-
-        // Clear the listener.
-        xmlHttpRequestUpload->setOnerror(0);
-    } else {
-        XMLHttpRequest* xmlHttpRequest = xmlHttpRequestUpload->associatedXMLHttpRequest();
-        V8Proxy* proxy = V8Proxy::retrieve(xmlHttpRequest->scriptExecutionContext());
-        if (!proxy)
-            return;
-
-        RefPtr<EventListener> listener = proxy->findOrCreateObjectEventListener(value, false);
-        if (listener) {
-            xmlHttpRequestUpload->setOnerror(listener);
-            createHiddenDependency(info.Holder(), value, V8Custom::kXMLHttpRequestCacheIndex);
-        }
-    }
-}
-
-ACCESSOR_GETTER(XMLHttpRequestUploadOnload)
-{
-    INC_STATS("DOM.XMLHttpRequestUpload.onload._get");
-    XMLHttpRequestUpload* xmlHttpRequestUpload = V8DOMWrapper::convertToNativeObject<XMLHttpRequestUpload>(V8ClassIndex::XMLHTTPREQUESTUPLOAD, info.Holder());
-    if (xmlHttpRequestUpload->onload()) {
-        V8ObjectEventListener* listener = static_cast<V8ObjectEventListener*>(xmlHttpRequestUpload->onload());
-        v8::Local<v8::Object> v8Listener = listener->getListenerObject();
-        return v8Listener;
-    }
-    return v8::Null();
-}
-
-ACCESSOR_SETTER(XMLHttpRequestUploadOnload)
-{
-    INC_STATS("DOM.XMLHttpRequestUpload.onload._set");
-    XMLHttpRequestUpload* xmlHttpRequestUpload = V8DOMWrapper::convertToNativeObject<XMLHttpRequestUpload>(V8ClassIndex::XMLHTTPREQUESTUPLOAD, info.Holder());
-    if (value->IsNull()) {
-        if (xmlHttpRequestUpload->onload()) {
-            V8ObjectEventListener* listener = static_cast<V8ObjectEventListener*>(xmlHttpRequestUpload->onload());
-            v8::Local<v8::Object> v8Listener = listener->getListenerObject();
-            removeHiddenDependency(info.Holder(), v8Listener, V8Custom::kXMLHttpRequestCacheIndex);
-        }
-
-        // Clear the listener.
-        xmlHttpRequestUpload->setOnload(0);
-    } else {
-        XMLHttpRequest* xmlHttpRequest = xmlHttpRequestUpload->associatedXMLHttpRequest();
-        V8Proxy* proxy = V8Proxy::retrieve(xmlHttpRequest->scriptExecutionContext());
-        if (!proxy)
-            return;
-
-        RefPtr<EventListener> listener = proxy->findOrCreateObjectEventListener(value, false);
-        if (listener) {
-            xmlHttpRequestUpload->setOnload(listener);
-            createHiddenDependency(info.Holder(), value, V8Custom::kXMLHttpRequestCacheIndex);
-        }
-    }
-}
-
-ACCESSOR_GETTER(XMLHttpRequestUploadOnloadstart)
-{
-    INC_STATS("DOM.XMLHttpRequestUpload.onloadstart._get");
-    XMLHttpRequestUpload* xmlHttpRequestUpload = V8DOMWrapper::convertToNativeObject<XMLHttpRequestUpload>(V8ClassIndex::XMLHTTPREQUESTUPLOAD, info.Holder());
-    if (xmlHttpRequestUpload->onloadstart()) {
-        V8ObjectEventListener* listener = static_cast<V8ObjectEventListener*>(xmlHttpRequestUpload->onloadstart());
-        v8::Local<v8::Object> v8Listener = listener->getListenerObject();
-        return v8Listener;
-    }
-    return v8::Null();
-}
-
-ACCESSOR_SETTER(XMLHttpRequestUploadOnloadstart)
-{
-    INC_STATS("DOM.XMLHttpRequestUpload.onloadstart._set");
-    XMLHttpRequestUpload* xmlHttpRequestUpload = V8DOMWrapper::convertToNativeObject<XMLHttpRequestUpload>(V8ClassIndex::XMLHTTPREQUESTUPLOAD, info.Holder());
-    if (value->IsNull()) {
-        if (xmlHttpRequestUpload->onloadstart()) {
-            V8ObjectEventListener* listener = static_cast<V8ObjectEventListener*>(xmlHttpRequestUpload->onloadstart());
-            v8::Local<v8::Object> v8Listener = listener->getListenerObject();
-            removeHiddenDependency(info.Holder(), v8Listener, V8Custom::kXMLHttpRequestCacheIndex);
-        }
-
-        // Clear the listener.
-        xmlHttpRequestUpload->setOnloadstart(0);
-    } else {
-        XMLHttpRequest* xmlHttpRequest = xmlHttpRequestUpload->associatedXMLHttpRequest();
-        V8Proxy* proxy = V8Proxy::retrieve(xmlHttpRequest->scriptExecutionContext());
-        if (!proxy)
-            return;
-
-        RefPtr<EventListener> listener = proxy->findOrCreateObjectEventListener(value, false);
-        if (listener) {
-            xmlHttpRequestUpload->setOnloadstart(listener);
-            createHiddenDependency(info.Holder(), value, V8Custom::kXMLHttpRequestCacheIndex);
-        }
-    }
-}
-
-ACCESSOR_GETTER(XMLHttpRequestUploadOnprogress)
-{
-    INC_STATS("DOM.XMLHttpRequestUpload.onprogress._get");
-    XMLHttpRequestUpload* xmlHttpRequestUpload = V8DOMWrapper::convertToNativeObject<XMLHttpRequestUpload>(V8ClassIndex::XMLHTTPREQUESTUPLOAD, info.Holder());
-    if (xmlHttpRequestUpload->onprogress()) {
-        V8ObjectEventListener* listener = static_cast<V8ObjectEventListener*>(xmlHttpRequestUpload->onprogress());
-        v8::Local<v8::Object> v8Listener = listener->getListenerObject();
-        return v8Listener;
-    }
-    return v8::Null();
-}
-
-ACCESSOR_SETTER(XMLHttpRequestUploadOnprogress)
-{
-    INC_STATS("DOM.XMLHttpRequestUpload.onprogress._set");
-    XMLHttpRequestUpload* xmlHttpRequestUpload = V8DOMWrapper::convertToNativeObject<XMLHttpRequestUpload>(V8ClassIndex::XMLHTTPREQUESTUPLOAD, info.Holder());
-    if (value->IsNull()) {
-        if (xmlHttpRequestUpload->onprogress()) {
-            V8ObjectEventListener* listener = static_cast<V8ObjectEventListener*>(xmlHttpRequestUpload->onprogress());
-            v8::Local<v8::Object> v8Listener = listener->getListenerObject();
-            removeHiddenDependency(info.Holder(), v8Listener, V8Custom::kXMLHttpRequestCacheIndex);
-        }
-
-        // Clear the listener.
-        xmlHttpRequestUpload->setOnprogress(0);
-    } else {
-        XMLHttpRequest* xmlHttpRequest = xmlHttpRequestUpload->associatedXMLHttpRequest();
-        V8Proxy* proxy = V8Proxy::retrieve(xmlHttpRequest->scriptExecutionContext());
-        if (!proxy)
-            return;
-
-        RefPtr<EventListener> listener = proxy->findOrCreateObjectEventListener(value, false);
-        if (listener) {
-            xmlHttpRequestUpload->setOnprogress(listener);
-            createHiddenDependency(info.Holder(), value, V8Custom::kXMLHttpRequestCacheIndex);
-        }
-    }
-}
-
-CALLBACK_FUNC_DECL(XMLHttpRequestUploadAddEventListener)
+v8::Handle<v8::Value> V8XMLHttpRequestUpload::addEventListenerCallback(const v8::Arguments& args)
 {
     INC_STATS("DOM.XMLHttpRequestUpload.addEventListener()");
-    XMLHttpRequestUpload* xmlHttpRequestUpload = V8DOMWrapper::convertToNativeObject<XMLHttpRequestUpload>(V8ClassIndex::XMLHTTPREQUESTUPLOAD, args.Holder());
+    XMLHttpRequestUpload* xmlHttpRequestUpload = V8XMLHttpRequestUpload::toNative(args.Holder());
 
     XMLHttpRequest* xmlHttpRequest = xmlHttpRequestUpload->associatedXMLHttpRequest();
-    V8Proxy* proxy = V8Proxy::retrieve(xmlHttpRequest->scriptExecutionContext());
-    if (!proxy)
-        return v8::Undefined();
 
-    RefPtr<EventListener> listener = proxy->findOrCreateObjectEventListener(args[1], false);
+    RefPtr<EventListener> listener = V8DOMWrapper::getEventListener(xmlHttpRequest, args[1], false, ListenerFindOrCreate);
     if (listener) {
         String type = toWebCoreString(args[0]);
         bool useCapture = args[2]->BooleanValue();
         xmlHttpRequestUpload->addEventListener(type, listener, useCapture);
 
-        createHiddenDependency(args.Holder(), args[1], V8Custom::kXMLHttpRequestCacheIndex);
+        createHiddenDependency(args.Holder(), args[1], cacheIndex);
     }
     return v8::Undefined();
 }
 
-CALLBACK_FUNC_DECL(XMLHttpRequestUploadRemoveEventListener)
+v8::Handle<v8::Value> V8XMLHttpRequestUpload::removeEventListenerCallback(const v8::Arguments& args)
 {
     INC_STATS("DOM.XMLHttpRequestUpload.removeEventListener()");
-    XMLHttpRequestUpload* xmlHttpRequestUpload = V8DOMWrapper::convertToNativeObject<XMLHttpRequestUpload>(V8ClassIndex::XMLHTTPREQUESTUPLOAD, args.Holder());
+    XMLHttpRequestUpload* xmlHttpRequestUpload = V8XMLHttpRequestUpload::toNative(args.Holder());
 
     XMLHttpRequest* xmlHttpRequest = xmlHttpRequestUpload->associatedXMLHttpRequest();
-    V8Proxy* proxy = V8Proxy::retrieve(xmlHttpRequest->scriptExecutionContext());
-    if (!proxy)
-        return v8::Undefined(); // Probably leaked.
 
-    RefPtr<EventListener> listener = proxy->findObjectEventListener(args[1], false);
-
+    RefPtr<EventListener> listener = V8DOMWrapper::getEventListener(xmlHttpRequest, args[1], false, ListenerFindOnly);
     if (listener) {
         String type = toWebCoreString(args[0]);
         bool useCapture = args[2]->BooleanValue();
         xmlHttpRequestUpload->removeEventListener(type, listener.get(), useCapture);
 
-        removeHiddenDependency(args.Holder(), args[1], V8Custom::kXMLHttpRequestCacheIndex);
+        removeHiddenDependency(args.Holder(), args[1], cacheIndex);
     }
 
     return v8::Undefined();
 }
 
-CALLBACK_FUNC_DECL(XMLHttpRequestUploadDispatchEvent)
+v8::Handle<v8::Value> V8XMLHttpRequestUpload::dispatchEventCallback(const v8::Arguments& args)
 {
     INC_STATS("DOM.XMLHttpRequestUpload.dispatchEvent()");
     return throwError(NOT_SUPPORTED_ERR);

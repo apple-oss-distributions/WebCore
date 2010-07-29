@@ -42,6 +42,7 @@ public:
     virtual HTMLTagStatus endTagRequirement() const { return TagStatusOptional; }
     virtual int tagPriority() const { return 2; }
     virtual bool checkDTD(const Node* newChild);
+    virtual bool supportsFocus() const;
     virtual bool isFocusable() const;
     virtual bool rendererIsNeeded(RenderStyle*) { return false; }
     virtual void attach();
@@ -75,6 +76,7 @@ public:
 
     virtual String textIndentedToRespectGroupLabel() const;
 
+    bool ownElementDisabled() const { return HTMLFormControlElement::disabled(); }
     virtual bool disabled() const;
     
     virtual void insertedIntoTree(bool);

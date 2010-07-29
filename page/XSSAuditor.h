@@ -42,14 +42,14 @@ namespace WebCore {
     // a script is to be allowed or denied based on the content of any
     // user-submitted data, including:
     //
-    // * the query string of the URL.
+    // * the URL.
     // * the HTTP-POST data.
     //
     // If the source code of a script resembles any user-submitted data then it
     // is denied execution.
     //
-    // When you instantiate the XSSAuditor you must specify the {@link Frame}
-    // of the page that you wish to audit.
+    // When you instantiate the XSSAuditor you must specify the Frame of the
+    // page that you wish to audit.
     //
     // Bindings
     //
@@ -59,11 +59,14 @@ namespace WebCore {
     // JavaScript script is safe to execute before executing it. The following
     // methods call into XSSAuditor:
     //
-    // * ScriptController::evaluate - used to evaluate JavaScript scripts.
-    // * ScriptController::createInlineEventListener - used to create JavaScript event handlers.
-    // * HTMLTokenizer::scriptHandler - used to load external JavaScript scripts.
+    // * ScriptController::evaluateInWorld - used to evaluate JavaScript scripts.
+    // * ScriptController::executeIfJavaScriptURL - used to evaluate JavaScript URLs.
+    // * ScriptEventListener::createAttributeEventListener - used to create JavaScript event handlers.
+    // * HTMLBaseElement::process - used to set the document base URL.
+    // * HTMLTokenizer::parseTag - used to load external JavaScript scripts.
+    // * FrameLoader::requestObject - used to load <object>/<embed> elements.
     //
-    class XSSAuditor {
+    class XSSAuditor : public Noncopyable {
     public:
         XSSAuditor(Frame*);
         ~XSSAuditor();
@@ -72,7 +75,11 @@ namespace WebCore {
 
         // Determines whether the script should be allowed or denied execution
         // based on the content of any user-submitted data.
-        bool canEvaluate(const String& sourceCode) const;
+        bool canEvaluate(const String& code) const;
+
+        // Determines whether the JavaScript URL should be allowed or denied execution
+        // based on the content of any user-submitted data.
+        bool canEvaluateJavaScriptURL(const String& code) const;
 
         // Determines whether the event listener should be created based on the
         // content of any user-submitted data.
@@ -80,7 +87,7 @@ namespace WebCore {
 
         // Determines whether the external script should be loaded based on the
         // content of any user-submitted data.
-        bool canLoadExternalScriptFromSrc(const String& url) const;
+        bool canLoadExternalScriptFromSrc(const String& context, const String& url) const;
 
         // Determines whether object should be loaded based on the content of
         // any user-submitted data.
@@ -95,15 +102,53 @@ namespace WebCore {
         bool canSetBaseElementURL(const String& url) const;
 
     private:
-        static String decodeURL(const String& url, const TextEncoding& encoding = UTF8Encoding(), bool allowNullCharacters = false,
-                                bool allowNonNullControlCharacters = true);
+        class CachingURLCanonicalizer
+        {
+        public:
+            CachingURLCanonicalizer() : m_decodeEntities(false), m_decodeURLEscapeSequencesTwice(false) { }
+            String canonicalizeURL(const String& url, const TextEncoding& encoding, bool decodeEntities, 
+                                   bool decodeURLEscapeSequencesTwice);
 
-        bool findInRequest(const String&, bool matchNullCharacters = true, bool matchNonNullControlCharacters = true) const;
+        private:
+            // The parameters we were called with last.
+            String m_inputURL;
+            TextEncoding m_encoding;
+            bool m_decodeEntities;
+            bool m_decodeURLEscapeSequencesTwice;
 
-        bool findInRequest(Frame*, const String&, bool matchNullCharacters = true, bool matchNonNullControlCharacters = true) const;
+            // The cached result.
+            String m_cachedCanonicalizedURL;
+        };
+
+        struct FindTask {
+            FindTask()
+                : decodeEntities(true)
+                , allowRequestIfNoIllegalURICharacters(false)
+                , decodeURLEscapeSequencesTwice(false)
+            {
+            }
+
+            String context;
+            String string;
+            bool decodeEntities;
+            bool allowRequestIfNoIllegalURICharacters;
+            bool decodeURLEscapeSequencesTwice;
+        };
+
+        static String canonicalize(const String&);
+        static String decodeURL(const String& url, const TextEncoding& encoding, bool decodeEntities, 
+                                bool decodeURLEscapeSequencesTwice = false);
+        static String decodeHTMLEntities(const String&, bool leaveUndecodableEntitiesUntouched = true);
+
+        bool isSameOriginResource(const String& url) const;
+        bool findInRequest(const FindTask&) const;
+        bool findInRequest(Frame*, const FindTask&) const;
 
         // The frame to audit.
         Frame* m_frame;
+
+        // A state store to help us avoid canonicalizing the same URL repeated.
+        mutable CachingURLCanonicalizer m_cache;
     };
 
 } // namespace WebCore

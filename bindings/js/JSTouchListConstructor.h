@@ -25,16 +25,12 @@ namespace WebCore {
 class JSTouchListConstructor : public DOMConstructorObject {
 public:
     JSTouchListConstructor(JSC::ExecState*, JSDOMGlobalObject*);
-    Document* document() const;
 
     static const JSC::ClassInfo s_info;
 
-    virtual void mark();
 private:
     virtual JSC::ConstructType getConstructData(JSC::ConstructData&);
     virtual const JSC::ClassInfo* classInfo() const { return &s_info; }
-
-    JSDOMGlobalObject* m_globalObject;
 };
 
 }

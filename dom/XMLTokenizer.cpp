@@ -40,6 +40,7 @@
 #include "HTMLLinkElement.h"
 #include "HTMLNames.h"
 #include "HTMLStyleElement.h"
+#include "ImageLoader.h"
 #include "ProcessingInstruction.h"
 #include "ResourceError.h"
 #include "ResourceHandle.h"
@@ -67,6 +68,7 @@ namespace WebCore {
 using namespace HTMLNames;
 
 const int maxErrors = 25;
+const size_t maxNestingDepth = 4096;
 
 #if ENABLE(WML)
 bool XMLTokenizer::isWMLDocument() const
@@ -86,6 +88,8 @@ void XMLTokenizer::pushCurrentNode(Node* n)
         n->ref();
     m_currentNodeStack.append(m_currentNode);
     m_currentNode = n;
+    if (m_currentNodeStack.size() > maxNestingDepth)
+        handleError(fatal, "Excessive node nesting.", lineNumber(), columnNumber());
 }
 
 void XMLTokenizer::popCurrentNode()
@@ -132,6 +136,9 @@ void XMLTokenizer::write(const SegmentedString& s, bool /*appendData*/)
     }
     
     doWrite(s.toString());
+    
+    // After parsing, go ahead and dispatch image beforeload events.
+    ImageLoader::dispatchPendingBeforeLoadEvents();
 }
 
 void XMLTokenizer::handleError(ErrorType type, const char* m, int lineNumber, int columnNumber)
@@ -163,7 +170,7 @@ bool XMLTokenizer::enterText()
 #if !USE(QXMLSTREAM)
     ASSERT(m_bufferedText.size() == 0);
 #endif
-    RefPtr<Node> newNode = new Text(m_doc, "");
+    RefPtr<Node> newNode = Text::create(m_doc, "");
     if (!m_currentNode->addChild(newNode.get()))
         return false;
     pushCurrentNode(newNode.get());
@@ -320,7 +327,7 @@ void XMLTokenizer::notifyFinished(CachedResource* unusedResource)
     if (errorOccurred) 
         scriptElement->dispatchErrorEvent();
     else {
-        m_view->frame()->loader()->executeScript(sourceCode);
+        m_view->frame()->script()->executeScript(sourceCode);
         scriptElement->dispatchLoadEvent();
     }
 

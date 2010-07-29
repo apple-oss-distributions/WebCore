@@ -37,11 +37,6 @@ typedef struct CGSize CGSize;
 #endif
 
 
-#ifndef NSSize
-#define NSSize CGSize
-#endif
-
-
 namespace WebCore {
 
 class IntSize;

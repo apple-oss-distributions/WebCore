@@ -29,22 +29,23 @@
 #import "DOMInternal.h" // import first to make the private/public trick work
 #import "DOM.h"
 
+#import "DOMElementInternal.h"
+#import "DOMHTMLCanvasElement.h"
+#import "DOMNodeInternal.h"
 #import "DOMPrivate.h"
 #import "DOMRangeInternal.h"
-#import "DOMElementInternal.h"
-#import "DOMNodeInternal.h"
-#import "DOMHTMLCanvasElement.h"
 #import "Frame.h"
-#import "HTMLNames.h"
 #import "HTMLElement.h"
-#import "RenderImage.h"
+#import "HTMLNames.h"
 #import "NodeFilter.h"
+#import "RenderImage.h"
 #import "WebScriptObjectPrivate.h"
 #import <wtf/HashMap.h>
 
 #if ENABLE(SVG_DOM_OBJC_BINDINGS)
 #import "DOMSVG.h"
 #import "SVGElementInstance.h"
+#import "SVGNames.h"
 #endif
 
 #import "HTMLLinkElement.h"
@@ -168,9 +169,6 @@ static void createElementClassMap()
     addElementClass(SVGNames::circleTag, [DOMSVGCircleElement class]);
     addElementClass(SVGNames::clipPathTag, [DOMSVGClipPathElement class]);
     addElementClass(SVGNames::cursorTag, [DOMSVGCursorElement class]);
-#if ENABLE(SVG_FONTS)
-    addElementClass(SVGNames::definition_srcTag, [DOMSVGDefinitionSrcElement class]);
-#endif
     addElementClass(SVGNames::defsTag, [DOMSVGDefsElement class]);
     addElementClass(SVGNames::descTag, [DOMSVGDescElement class]);
     addElementClass(SVGNames::ellipseTag, [DOMSVGEllipseElement class]);
@@ -191,6 +189,7 @@ static void createElementClassMap()
     addElementClass(SVGNames::feImageTag, [DOMSVGFEImageElement class]);
     addElementClass(SVGNames::feMergeTag, [DOMSVGFEMergeElement class]);
     addElementClass(SVGNames::feMergeNodeTag, [DOMSVGFEMergeNodeElement class]);
+    addElementClass(SVGNames::feMorphologyTag, [DOMSVGFEMorphologyElement class]);
     addElementClass(SVGNames::feOffsetTag, [DOMSVGFEOffsetElement class]);
     addElementClass(SVGNames::fePointLightTag, [DOMSVGFEPointLightElement class]);
     addElementClass(SVGNames::feSpecularLightingTag, [DOMSVGFESpecularLightingElement class]);
@@ -500,7 +499,7 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
 {
     Element *link= [self _linkElement];
     if (link)
-        return link->document()->completeURL(parseURL(link->getAttribute("href")));
+        return link->document()->completeURL(deprecatedParseURL(link->getAttribute("href")));
     
     return nil;
 }
@@ -675,7 +674,7 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
     ASSERT(name);
     WebCore::Element* element = core(self);
     ASSERT(element);
-    return element->document()->completeURL(parseURL(element->getAttribute(name)));
+    return element->document()->completeURL(deprecatedParseURL(element->getAttribute(name)));
 }
 
 - (BOOL)isFocused
@@ -742,6 +741,15 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
 }
 
 @end
+
+//------------------------------------------------------------------------------------------
+// DOMRGBColor
+
+@implementation DOMRGBColor (WebPrivate)
+
+
+@end
+
 
 //------------------------------------------------------------------------------------------
 // DOMNodeFilter

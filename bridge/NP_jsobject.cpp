@@ -34,6 +34,7 @@
 #include "c_utility.h"
 #include "c_instance.h"
 #include "IdentifierRep.h"
+#include "JSDOMBinding.h"
 #include "npruntime_impl.h"
 #include "npruntime_priv.h"
 #include "runtime_root.h"
@@ -110,7 +111,7 @@ bool _NPN_InvokeDefault(NPP, NPObject* o, const NPVariant* args, uint32_t argCou
             return false;
         
         ExecState* exec = rootObject->globalObject()->globalExec();
-        JSLock lock(false);
+        JSLock lock(SilenceAssertionsOnly);
         
         // Call the function object.
         JSValue function = obj->imp;
@@ -123,7 +124,7 @@ bool _NPN_InvokeDefault(NPP, NPObject* o, const NPVariant* args, uint32_t argCou
         getListFromVariantArgs(exec, args, argCount, rootObject, argList);
         ProtectedPtr<JSGlobalObject> globalObject = rootObject->globalObject();
         globalObject->globalData()->timeoutChecker.start();
-        JSValue resultV = call(exec, function, callType, callData, function, argList);
+        JSValue resultV = JSC::call(exec, function, callType, callData, function, argList);
         globalObject->globalData()->timeoutChecker.stop();
 
         // Convert and return the result of the function call.
@@ -161,7 +162,7 @@ bool _NPN_Invoke(NPP npp, NPObject* o, NPIdentifier methodName, const NPVariant*
         if (!rootObject || !rootObject->isValid())
             return false;
         ExecState* exec = rootObject->globalObject()->globalExec();
-        JSLock lock(false);
+        JSLock lock(SilenceAssertionsOnly);
         JSValue function = obj->imp->get(exec, identifierFromNPIdentifier(i->string()));
         CallData callData;
         CallType callType = function.getCallData(callData);
@@ -173,7 +174,7 @@ bool _NPN_Invoke(NPP npp, NPObject* o, NPIdentifier methodName, const NPVariant*
         getListFromVariantArgs(exec, args, argCount, rootObject, argList);
         ProtectedPtr<JSGlobalObject> globalObject = rootObject->globalObject();
         globalObject->globalData()->timeoutChecker.start();
-        JSValue resultV = call(exec, function, callType, callData, obj->imp, argList);
+        JSValue resultV = JSC::call(exec, function, callType, callData, obj->imp, argList);
         globalObject->globalData()->timeoutChecker.stop();
 
         // Convert and return the result of the function call.
@@ -199,11 +200,11 @@ bool _NPN_Evaluate(NPP, NPObject* o, NPString* s, NPVariant* variant)
             return false;
 
         ExecState* exec = rootObject->globalObject()->globalExec();
-        JSLock lock(false);
+        JSLock lock(SilenceAssertionsOnly);
         String scriptString = convertNPStringToUTF16(s);
         ProtectedPtr<JSGlobalObject> globalObject = rootObject->globalObject();
         globalObject->globalData()->timeoutChecker.start();
-        Completion completion = JSC::evaluate(globalObject->globalExec(), globalObject->globalScopeChain(), makeSource(scriptString));
+        Completion completion = JSC::evaluate(globalObject->globalExec(), globalObject->globalScopeChain(), makeSource(scriptString), JSC::JSValue());
         globalObject->globalData()->timeoutChecker.stop();
         ComplType type = completion.complType();
         
@@ -236,7 +237,7 @@ bool _NPN_GetProperty(NPP, NPObject* o, NPIdentifier propertyName, NPVariant* va
         ExecState* exec = rootObject->globalObject()->globalExec();
         IdentifierRep* i = static_cast<IdentifierRep*>(propertyName);
         
-        JSLock lock(false);
+        JSLock lock(SilenceAssertionsOnly);
         JSValue result;
         if (i->isString())
             result = obj->imp->get(exec, identifierFromNPIdentifier(i->string()));
@@ -268,7 +269,7 @@ bool _NPN_SetProperty(NPP, NPObject* o, NPIdentifier propertyName, const NPVaria
             return false;
 
         ExecState* exec = rootObject->globalObject()->globalExec();
-        JSLock lock(false);
+        JSLock lock(SilenceAssertionsOnly);
         IdentifierRep* i = static_cast<IdentifierRep*>(propertyName);
 
         if (i->isString()) {
@@ -309,7 +310,7 @@ bool _NPN_RemoveProperty(NPP, NPObject* o, NPIdentifier propertyName)
             }
         }
 
-        JSLock lock(false);
+        JSLock lock(SilenceAssertionsOnly);
         if (i->isString())
             obj->imp->deleteProperty(exec, identifierFromNPIdentifier(i->string()));
         else
@@ -332,7 +333,7 @@ bool _NPN_HasProperty(NPP, NPObject* o, NPIdentifier propertyName)
 
         ExecState* exec = rootObject->globalObject()->globalExec();
         IdentifierRep* i = static_cast<IdentifierRep*>(propertyName);
-        JSLock lock(false);
+        JSLock lock(SilenceAssertionsOnly);
         if (i->isString()) {
             bool result = obj->imp->hasProperty(exec, identifierFromNPIdentifier(i->string()));
             exec->clearException();
@@ -364,7 +365,7 @@ bool _NPN_HasMethod(NPP, NPObject* o, NPIdentifier methodName)
             return false;
 
         ExecState* exec = rootObject->globalObject()->globalExec();
-        JSLock lock(false);
+        JSLock lock(SilenceAssertionsOnly);
         JSValue func = obj->imp->get(exec, identifierFromNPIdentifier(i->string()));
         exec->clearException();
         return !func.isUndefined();
@@ -378,7 +379,7 @@ bool _NPN_HasMethod(NPP, NPObject* o, NPIdentifier methodName)
 
 void _NPN_SetException(NPObject*, const NPUTF8* message)
 {
-    // Ignorning the NPObject param is consistent with the Mozilla implementation.
+    // Ignoring the NPObject param is consistent with the Mozilla implementation.
     UString exception(message);
     CInstance::setGlobalException(exception);
 }
@@ -393,7 +394,7 @@ bool _NPN_Enumerate(NPP, NPObject* o, NPIdentifier** identifier, uint32_t* count
             return false;
         
         ExecState* exec = rootObject->globalObject()->globalExec();
-        JSLock lock(false);
+        JSLock lock(SilenceAssertionsOnly);
         PropertyNameArray propertyNames(exec);
 
         obj->imp->getPropertyNames(exec, propertyNames);
@@ -430,7 +431,7 @@ bool _NPN_Construct(NPP, NPObject* o, const NPVariant* args, uint32_t argCount, 
             return false;
         
         ExecState* exec = rootObject->globalObject()->globalExec();
-        JSLock lock(false);
+        JSLock lock(SilenceAssertionsOnly);
         
         // Call the constructor object.
         JSValue constructor = obj->imp;
@@ -443,7 +444,7 @@ bool _NPN_Construct(NPP, NPObject* o, const NPVariant* args, uint32_t argCount, 
         getListFromVariantArgs(exec, args, argCount, rootObject, argList);
         ProtectedPtr<JSGlobalObject> globalObject = rootObject->globalObject();
         globalObject->globalData()->timeoutChecker.start();
-        JSValue resultV = construct(exec, constructor, constructType, constructData, argList);
+        JSValue resultV = JSC::construct(exec, constructor, constructType, constructData, argList);
         globalObject->globalData()->timeoutChecker.stop();
         
         // Convert and return the result.

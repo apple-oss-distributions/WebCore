@@ -27,6 +27,7 @@
 namespace WebCore {
 
 class CSSMutableStyleDeclaration;
+class ShadowData;
 
 enum EUpdateLayout { DoNotUpdateLayout = false, UpdateLayout = true };
 
@@ -55,10 +56,6 @@ public:
     PassRefPtr<CSSValue> getSVGPropertyCSSValue(int propertyID, EUpdateLayout) const;
 #endif
 
-    PassRefPtr<CSSMutableStyleDeclaration> copyInheritableProperties() const;
-
-    static void removeComputedInheritablePropertiesFrom(CSSMutableStyleDeclaration*);
-
 protected:
     virtual bool cssPropertyMatches(const CSSProperty*) const;
 
@@ -69,6 +66,8 @@ private:
 
     virtual String removeProperty(int propertyID, ExceptionCode&);
     virtual void setProperty(int propertyId, const String& value, bool important, ExceptionCode&);
+
+    PassRefPtr<CSSValue> valueForShadow(const ShadowData*, int) const;
 
     RefPtr<Node> m_node;
 };

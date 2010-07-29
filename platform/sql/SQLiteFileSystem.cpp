@@ -35,6 +35,7 @@
 #include "SQLiteDatabase.h"
 #include "SQLiteStatement.h"
 #include <sqlite3.h>
+#include <sqlite3_private.h>
 
 namespace WebCore {
 
@@ -114,6 +115,11 @@ bool SQLiteFileSystem::deleteDatabaseFile(const String& fileName)
     return deleteFile(fileName);
 }
 
+bool SQLiteFileSystem::truncateDatabaseFile(sqlite3* database)
+{
+    return sqlite3_file_control(database, 0, SQLITE_TRUNCATE_DATABASE, 0) == SQLITE_OK;
+}
+    
 long long SQLiteFileSystem::getDatabaseFileSize(const String& fileName)
 {        
     long long size;

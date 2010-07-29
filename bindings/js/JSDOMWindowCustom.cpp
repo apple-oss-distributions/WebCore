@@ -22,6 +22,7 @@
 
 #include "AtomicString.h"
 #include "Base64.h"
+#include "Chrome.h"
 #include "DOMWindow.h"
 #include "Document.h"
 #include "ExceptionCode.h"
@@ -38,28 +39,53 @@
 #include "JSDOMWindowShell.h"
 #include "JSEvent.h"
 #include "JSEventListener.h"
+#include "JSEventSourceConstructor.h"
 #include "JSHTMLCollection.h"
 #include "JSHistory.h"
 #include "JSImageConstructor.h"
 #include "JSLocation.h"
 #include "JSMessageChannelConstructor.h"
 #include "JSMessagePort.h"
+#include "JSMessagePortCustom.h"
 #include "JSOptionConstructor.h"
+
+#if ENABLE(SHARED_WORKERS)
+#include "JSSharedWorkerConstructor.h"
+#endif
+
+#if ENABLE(3D_CANVAS)
+#include "JSWebGLArrayBufferConstructor.h"
+#include "JSWebGLByteArrayConstructor.h"
+#include "JSWebGLUnsignedByteArrayConstructor.h"
+#include "JSWebGLIntArrayConstructor.h"
+#include "JSWebGLUnsignedIntArrayConstructor.h"
+#include "JSWebGLShortArrayConstructor.h"
+#include "JSWebGLUnsignedShortArrayConstructor.h"
+#include "JSWebGLFloatArrayConstructor.h"
+#endif
 #include "JSWebKitCSSMatrixConstructor.h"
 #include "JSWebKitPointConstructor.h"
+#if ENABLE(WEB_SOCKETS)
+#include "JSWebSocketConstructor.h"
+#endif
 #include "JSWorkerConstructor.h"
 #include "JSXMLHttpRequestConstructor.h"
 #include "JSXSLTProcessorConstructor.h"
 #include "Location.h"
 #include "MediaPlayer.h"
 #include "MessagePort.h"
+#include "NotificationCenter.h"
 #include "Page.h"
 #include "PlatformScreen.h"
 #include "RegisteredEventListener.h"
 #include "ScheduledAction.h"
 #include "ScriptController.h"
+#include "SerializedScriptValue.h"
 #include "Settings.h"
+#include "SharedWorkerRepository.h"
 #include "WindowFeatures.h"
+#include <runtime/Error.h>
+#include <runtime/JSFunction.h>
 #include <runtime/JSObject.h>
 #include <runtime/PrototypeFunction.h>
 
@@ -70,32 +96,33 @@ using namespace JSC;
 
 namespace WebCore {
 
-void JSDOMWindow::mark()
+void JSDOMWindow::markChildren(MarkStack& markStack)
 {
-    Base::mark();
+    Base::markChildren(markStack);
 
-    markEventListeners(impl()->eventListeners());
+    impl()->markJSEventListeners(markStack);
 
     JSGlobalData& globalData = *Heap::heap(this)->globalData();
 
-    markDOMObjectWrapper(globalData, impl()->optionalConsole());
-    markDOMObjectWrapper(globalData, impl()->optionalHistory());
-    markDOMObjectWrapper(globalData, impl()->optionalLocationbar());
-    markDOMObjectWrapper(globalData, impl()->optionalMenubar());
-    markDOMObjectWrapper(globalData, impl()->optionalNavigator());
-    markDOMObjectWrapper(globalData, impl()->optionalPersonalbar());
-    markDOMObjectWrapper(globalData, impl()->optionalScreen());
-    markDOMObjectWrapper(globalData, impl()->optionalScrollbars());
-    markDOMObjectWrapper(globalData, impl()->optionalSelection());
-    markDOMObjectWrapper(globalData, impl()->optionalStatusbar());
-    markDOMObjectWrapper(globalData, impl()->optionalToolbar());
-    markDOMObjectWrapper(globalData, impl()->optionalLocation());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalConsole());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalHistory());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalLocationbar());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalMenubar());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalNavigator());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalPersonalbar());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalScreen());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalScrollbars());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalSelection());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalStatusbar());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalToolbar());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalLocation());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalMedia());
 #if ENABLE(DOM_STORAGE)
-    markDOMObjectWrapper(globalData, impl()->optionalSessionStorage());
-    markDOMObjectWrapper(globalData, impl()->optionalLocalStorage());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalSessionStorage());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalLocalStorage());
 #endif
 #if ENABLE(OFFLINE_WEB_APPLICATIONS)
-    markDOMObjectWrapper(globalData, impl()->optionalApplicationCache());
+    markDOMObjectWrapper(markStack, globalData, impl()->optionalApplicationCache());
 #endif
 }
 
@@ -243,7 +270,7 @@ bool JSDOMWindow::getOwnPropertySlot(ExecState* exec, const Identifier& property
         }
     }
 
-    // FIXME: Search the whole frame hierachy somewhere around here.
+    // FIXME: Search the whole frame hierarchy somewhere around here.
     // We need to test the correct priority order.
 
     // allow window[1] or parent[1] etc. (#56983)
@@ -273,6 +300,78 @@ bool JSDOMWindow::getOwnPropertySlot(ExecState* exec, const Identifier& property
     return Base::getOwnPropertySlot(exec, propertyName, slot);
 }
 
+bool JSDOMWindow::getOwnPropertyDescriptor(ExecState* exec, const Identifier& propertyName, PropertyDescriptor& descriptor)
+{
+    // Never allow cross-domain getOwnPropertyDescriptor
+    if (!allowsAccessFrom(exec))
+        return false;
+
+    const HashEntry* entry;
+    
+    // We don't want any properties other than "close" and "closed" on a closed window.
+    if (!impl()->frame()) {
+        // The following code is safe for cross-domain and same domain use.
+        // It ignores any custom properties that might be set on the DOMWindow (including a custom prototype).
+        entry = s_info.propHashTable(exec)->entry(exec, propertyName);
+        if (entry && !(entry->attributes() & Function) && entry->propertyGetter() == jsDOMWindowClosed) {
+            descriptor.setDescriptor(jsBoolean(true), ReadOnly | DontDelete | DontEnum);
+            return true;
+        }
+        entry = JSDOMWindowPrototype::s_info.propHashTable(exec)->entry(exec, propertyName);
+        if (entry && (entry->attributes() & Function) && entry->function() == jsDOMWindowPrototypeFunctionClose) {
+            PropertySlot slot;
+            slot.setCustom(this, nonCachingStaticFunctionGetter<jsDOMWindowPrototypeFunctionClose, 0>);
+            descriptor.setDescriptor(slot.getValue(exec, propertyName), ReadOnly | DontDelete | DontEnum);
+            return true;
+        }
+        descriptor.setUndefined();
+        return true;
+    }
+
+    entry = JSDOMWindow::s_info.propHashTable(exec)->entry(exec, propertyName);
+    if (entry) {
+        PropertySlot slot;
+        slot.setCustom(this, entry->propertyGetter());
+        descriptor.setDescriptor(slot.getValue(exec, propertyName), entry->attributes());
+        return true;
+    }
+    
+    // Check for child frames by name before built-in properties to
+    // match Mozilla. This does not match IE, but some sites end up
+    // naming frames things that conflict with window properties that
+    // are in Moz but not IE. Since we have some of these, we have to do
+    // it the Moz way.
+    if (impl()->frame()->tree()->child(propertyName)) {
+        PropertySlot slot;
+        slot.setCustom(this, childFrameGetter);
+        descriptor.setDescriptor(slot.getValue(exec, propertyName), ReadOnly | DontDelete | DontEnum);
+        return true;
+    }
+    
+    bool ok;
+    unsigned i = propertyName.toArrayIndex(&ok);
+    if (ok && i < impl()->frame()->tree()->childCount()) {
+        PropertySlot slot;
+        slot.setCustomIndex(this, i, indexGetter);
+        descriptor.setDescriptor(slot.getValue(exec, propertyName), ReadOnly | DontDelete | DontEnum);
+        return true;
+    }
+
+    // Allow shortcuts like 'Image1' instead of document.images.Image1
+    Document* document = impl()->frame()->document();
+    if (document->isHTMLDocument()) {
+        AtomicStringImpl* atomicPropertyName = AtomicString::find(propertyName);
+        if (atomicPropertyName && (static_cast<HTMLDocument*>(document)->hasNamedItem(atomicPropertyName) || document->hasElementWithId(atomicPropertyName))) {
+            PropertySlot slot;
+            slot.setCustom(this, namedItemGetter);
+            descriptor.setDescriptor(slot.getValue(exec, propertyName), ReadOnly | DontDelete | DontEnum);
+            return true;
+        }
+    }
+    
+    return Base::getOwnPropertyDescriptor(exec, propertyName, descriptor);
+}
+
 void JSDOMWindow::put(ExecState* exec, const Identifier& propertyName, JSValue value, PutPropertySlot& slot)
 {
     if (!impl()->frame())
@@ -300,23 +399,23 @@ bool JSDOMWindow::deleteProperty(ExecState* exec, const Identifier& propertyName
     return Base::deleteProperty(exec, propertyName);
 }
 
-void JSDOMWindow::getPropertyNames(ExecState* exec, PropertyNameArray& propertyNames)
+void JSDOMWindow::getPropertyNames(ExecState* exec, PropertyNameArray& propertyNames, EnumerationMode mode)
 {
     // Only allow the window to enumerated by frames in the same origin.
     if (!allowsAccessFrom(exec))
         return;
-    Base::getPropertyNames(exec, propertyNames);
+    Base::getPropertyNames(exec, propertyNames, mode);
 }
 
-bool JSDOMWindow::getPropertyAttributes(ExecState* exec, const Identifier& propertyName, unsigned& attributes) const
+void JSDOMWindow::getOwnPropertyNames(ExecState* exec, PropertyNameArray& propertyNames, EnumerationMode mode)
 {
-    // Only allow getting property attributes properties by frames in the same origin.
+    // Only allow the window to enumerated by frames in the same origin.
     if (!allowsAccessFrom(exec))
-        return false;
-    return Base::getPropertyAttributes(exec, propertyName, attributes);
+        return;
+    Base::getOwnPropertyNames(exec, propertyNames, mode);
 }
 
-void JSDOMWindow::defineGetter(ExecState* exec, const Identifier& propertyName, JSObject* getterFunction)
+void JSDOMWindow::defineGetter(ExecState* exec, const Identifier& propertyName, JSObject* getterFunction, unsigned attributes)
 {
     // Only allow defining getters by frames in the same origin.
     if (!allowsAccessFrom(exec))
@@ -326,15 +425,23 @@ void JSDOMWindow::defineGetter(ExecState* exec, const Identifier& propertyName, 
     if (propertyName == "location")
         return;
 
-    Base::defineGetter(exec, propertyName, getterFunction);
+    Base::defineGetter(exec, propertyName, getterFunction, attributes);
 }
 
-void JSDOMWindow::defineSetter(ExecState* exec, const Identifier& propertyName, JSObject* setterFunction)
+void JSDOMWindow::defineSetter(ExecState* exec, const Identifier& propertyName, JSObject* setterFunction, unsigned attributes)
 {
     // Only allow defining setters by frames in the same origin.
     if (!allowsAccessFrom(exec))
         return;
-    Base::defineSetter(exec, propertyName, setterFunction);
+    Base::defineSetter(exec, propertyName, setterFunction, attributes);
+}
+
+bool JSDOMWindow::defineOwnProperty(JSC::ExecState* exec, const JSC::Identifier& propertyName, JSC::PropertyDescriptor& descriptor, bool shouldThrow)
+{
+    // Only allow defining properties in this way by frames in the same origin, as it allows setters to be introduced.
+    if (!allowsAccessFrom(exec))
+        return false;
+    return Base::defineOwnProperty(exec, propertyName, descriptor, shouldThrow);
 }
 
 JSValue JSDOMWindow::lookupGetter(ExecState* exec, const Identifier& propertyName)
@@ -358,22 +465,24 @@ JSValue JSDOMWindow::lookupSetter(ExecState* exec, const Identifier& propertyNam
 JSValue JSDOMWindow::history(ExecState* exec) const
 {
     History* history = impl()->history();
-    if (DOMObject* wrapper = getCachedDOMObjectWrapper(exec->globalData(), history))
+    if (DOMObject* wrapper = getCachedDOMObjectWrapper(exec, history))
         return wrapper;
 
-    JSHistory* jsHistory = new (exec) JSHistory(getDOMStructure<JSHistory>(exec, const_cast<JSDOMWindow*>(this)), history);
-    cacheDOMObjectWrapper(exec->globalData(), history, jsHistory);
+    JSDOMWindow* window = const_cast<JSDOMWindow*>(this);
+    JSHistory* jsHistory = new (exec) JSHistory(getDOMStructure<JSHistory>(exec, window), window, history);
+    cacheDOMObjectWrapper(exec, history, jsHistory);
     return jsHistory;
 }
 
 JSValue JSDOMWindow::location(ExecState* exec) const
 {
     Location* location = impl()->location();
-    if (DOMObject* wrapper = getCachedDOMObjectWrapper(exec->globalData(), location))
+    if (DOMObject* wrapper = getCachedDOMObjectWrapper(exec, location))
         return wrapper;
 
-    JSLocation* jsLocation = new (exec) JSLocation(getDOMStructure<JSLocation>(exec, const_cast<JSDOMWindow*>(this)), location);
-    cacheDOMObjectWrapper(exec->globalData(), location, jsLocation);
+    JSDOMWindow* window = const_cast<JSDOMWindow*>(this);
+    JSLocation* jsLocation = new (exec) JSLocation(getDOMStructure<JSLocation>(exec, window), window, location);
+    cacheDOMObjectWrapper(exec, location, jsLocation);
     return jsLocation;
 }
 
@@ -407,7 +516,7 @@ void JSDOMWindow::setLocation(ExecState* exec, JSValue value)
 
     if (!protocolIsJavaScript(url) || allowsAccessFrom(exec)) {
         // We want a new history item if this JS was called via a user gesture
-        frame->loader()->scheduleLocationChange(url, lexicalFrame->loader()->outgoingReferrer(), !lexicalFrame->script()->anyPageIsProcessingUserGesture(), false, processingUserGesture(exec));
+        frame->redirectScheduler()->scheduleLocationChange(url, lexicalFrame->loader()->outgoingReferrer(), !lexicalFrame->script()->anyPageIsProcessingUserGesture(), false, processingUserGesture(exec));
     }
 }
 
@@ -423,6 +532,13 @@ JSValue JSDOMWindow::event(ExecState* exec) const
         return jsUndefined();
     return toJS(exec, event);
 }
+
+#if ENABLE(EVENTSOURCE)
+JSValue JSDOMWindow::eventSource(ExecState* exec) const
+{
+    return getDOMConstructor<JSEventSourceConstructor>(exec, this);
+}
+#endif
 
 JSValue JSDOMWindow::image(ExecState* exec) const
 {
@@ -452,6 +568,48 @@ JSValue JSDOMWindow::webKitCSSMatrix(ExecState* exec) const
 {
     return getDOMConstructor<JSWebKitCSSMatrixConstructor>(exec, this);
 }
+ 
+#if ENABLE(3D_CANVAS)
+JSValue JSDOMWindow::webGLArrayBuffer(ExecState* exec) const
+{
+    return getDOMConstructor<JSWebGLArrayBufferConstructor>(exec, this);
+}
+ 
+JSValue JSDOMWindow::webGLByteArray(ExecState* exec) const
+{
+    return getDOMConstructor<JSWebGLByteArrayConstructor>(exec, this);
+}
+ 
+JSValue JSDOMWindow::webGLUnsignedByteArray(ExecState* exec) const
+{
+    return getDOMConstructor<JSWebGLUnsignedByteArrayConstructor>(exec, this);
+}
+ 
+JSValue JSDOMWindow::webGLIntArray(ExecState* exec) const
+{
+    return getDOMConstructor<JSWebGLIntArrayConstructor>(exec, this);
+}
+ 
+JSValue JSDOMWindow::webGLUnsignedIntArray(ExecState* exec) const
+{
+    return getDOMConstructor<JSWebGLUnsignedIntArrayConstructor>(exec, this);
+}
+ 
+JSValue JSDOMWindow::webGLShortArray(ExecState* exec) const
+{
+    return getDOMConstructor<JSWebGLShortArrayConstructor>(exec, this);
+}
+ 
+JSValue JSDOMWindow::webGLUnsignedShortArray(ExecState* exec) const
+{
+    return getDOMConstructor<JSWebGLUnsignedShortArrayConstructor>(exec, this);
+}
+ 
+JSValue JSDOMWindow::webGLFloatArray(ExecState* exec) const
+{
+    return getDOMConstructor<JSWebGLFloatArrayConstructor>(exec, this);
+}
+#endif
  
 JSValue JSDOMWindow::xmlHttpRequest(ExecState* exec) const
 {
@@ -489,6 +647,28 @@ JSValue JSDOMWindow::worker(ExecState* exec) const
 }
 #endif
 
+#if ENABLE(SHARED_WORKERS)
+JSValue JSDOMWindow::sharedWorker(ExecState* exec) const
+{
+    if (SharedWorkerRepository::isAvailable())
+        return getDOMConstructor<JSSharedWorkerConstructor>(exec, this);
+    return jsUndefined();
+}
+#endif
+
+#if ENABLE(WEB_SOCKETS)
+JSValue JSDOMWindow::webSocket(ExecState* exec) const
+{
+    Frame* frame = impl()->frame();
+    if (!frame)
+        return jsUndefined();
+    Settings* settings = frame->settings();
+    if (!settings)
+        return jsUndefined();
+    return getDOMConstructor<JSWebSocketConstructor>(exec, this);
+}
+#endif
+
 // Custom functions
 
 // Helper for window.open() and window.showModalDialog()
@@ -498,6 +678,10 @@ static Frame* createWindow(ExecState* exec, Frame* lexicalFrame, Frame* dynamicF
 {
     ASSERT(lexicalFrame);
     ASSERT(dynamicFrame);
+
+    // Sandboxed iframes cannot open new auxiliary browsing contexts.
+    if (lexicalFrame && lexicalFrame->loader()->isSandboxed(SandboxNavigation))
+        return 0;
 
     ResourceRequest request;
 
@@ -524,24 +708,33 @@ static Frame* createWindow(ExecState* exec, Frame* lexicalFrame, Frame* dynamicF
         return 0;
 
     newFrame->loader()->setOpener(openerFrame);
-    newFrame->loader()->setOpenedByDOM();
+    newFrame->page()->setOpenedByDOM();
 
-    JSDOMWindow* newWindow = toJSDOMWindow(newFrame);
+    // FIXME: If a window is created from an isolated world, what are the consequences of this? 'dialogArguments' only appears back in the normal world?
+    JSDOMWindow* newWindow = toJSDOMWindow(newFrame, normalWorld(exec->globalData()));
 
     if (dialogArgs)
         newWindow->putDirect(Identifier(exec, "dialogArguments"), dialogArgs);
 
     if (!protocolIsJavaScript(url) || newWindow->allowsAccessFrom(exec)) {
-        KURL completedURL = url.isEmpty() ? KURL("") : completeURL(exec, url);
+        KURL completedURL = url.isEmpty() ? KURL(ParsedURLString, "") : completeURL(exec, url);
         bool userGesture = processingUserGesture(exec);
 
         if (created)
             newFrame->loader()->changeLocation(completedURL, referrer, false, false, userGesture);
         else if (!url.isEmpty())
-            newFrame->loader()->scheduleLocationChange(completedURL.string(), referrer, !lexicalFrame->script()->anyPageIsProcessingUserGesture(), false, userGesture);
+            newFrame->redirectScheduler()->scheduleLocationChange(completedURL.string(), referrer, !lexicalFrame->script()->anyPageIsProcessingUserGesture(), false, userGesture);
     }
 
     return newFrame;
+}
+
+static bool domWindowAllowPopUp(Frame* activeFrame, ExecState* exec)
+{
+    ASSERT(activeFrame);
+    if (activeFrame->script()->processingUserGesture(currentWorld(exec)))
+        return true;
+    return DOMWindow::allowPopUp(activeFrame);
 }
 
 JSValue JSDOMWindow::open(ExecState* exec, const ArgList& args)
@@ -564,7 +757,7 @@ JSValue JSDOMWindow::open(ExecState* exec, const ArgList& args)
 
     // Because FrameTree::find() returns true for empty strings, we must check for empty framenames.
     // Otherwise, illegitimate window.open() calls with no name will pass right through the popup blocker.
-    if (!DOMWindow::allowPopUp(dynamicFrame) && (frameName.isEmpty() || !frame->tree()->find(frameName)))
+    if (!domWindowAllowPopUp(dynamicFrame, exec) && (frameName.isEmpty() || !frame->tree()->find(frameName)))
         return jsUndefined();
 
     // Get the target frame for the special cases of _top and _parent.  In those
@@ -586,7 +779,7 @@ JSValue JSDOMWindow::open(ExecState* exec, const ArgList& args)
         if (!shouldAllowNavigation(exec, frame))
             return jsUndefined();
 
-        const JSDOMWindow* targetedWindow = toJSDOMWindow(frame);
+        const JSDOMWindow* targetedWindow = toJSDOMWindow(frame, currentWorld(exec));
         if (!completedURL.isEmpty() && (!protocolIsJavaScript(completedURL) || (targetedWindow && targetedWindow->allowsAccessFrom(exec)))) {
             bool userGesture = processingUserGesture(exec);
 
@@ -595,7 +788,7 @@ JSValue JSDOMWindow::open(ExecState* exec, const ArgList& args)
             // here.
             String referrer = dynamicFrame->loader()->outgoingReferrer();
 
-            frame->loader()->scheduleLocationChange(completedURL, referrer, !lexicalFrame->script()->anyPageIsProcessingUserGesture(), false, userGesture);
+            frame->redirectScheduler()->scheduleLocationChange(completedURL, referrer, !lexicalFrame->script()->anyPageIsProcessingUserGesture(), false, userGesture);
         }
         return toJS(exec, frame->domWindow());
     }
@@ -635,7 +828,7 @@ JSValue JSDOMWindow::showModalDialog(ExecState* exec, const ArgList& args)
     if (!dynamicFrame)
         return jsUndefined();
 
-    if (!DOMWindow::canShowModalDialogNow(frame) || !DOMWindow::allowPopUp(dynamicFrame))
+    if (!DOMWindow::canShowModalDialogNow(frame) || !domWindowAllowPopUp(dynamicFrame, exec))
         return jsUndefined();
 
     HashMap<String, String> features;
@@ -688,7 +881,7 @@ JSValue JSDOMWindow::showModalDialog(ExecState* exec, const ArgList& args)
     if (!dialogFrame)
         return jsUndefined();
 
-    JSDOMWindow* dialogWindow = toJSDOMWindow(dialogFrame);
+    JSDOMWindow* dialogWindow = toJSDOMWindow(dialogFrame, currentWorld(exec));
     dialogFrame->page()->chrome()->runModal();
 
     Identifier returnValue(exec, "returnValue");
@@ -707,19 +900,23 @@ JSValue JSDOMWindow::postMessage(ExecState* exec, const ArgList& args)
     DOMWindow* window = impl();
 
     DOMWindow* source = asJSDOMWindow(exec->lexicalGlobalObject())->impl();
-    String message = args.at(0).toString(exec);
+    PassRefPtr<SerializedScriptValue> message = SerializedScriptValue::create(exec, args.at(0));
 
     if (exec->hadException())
         return jsUndefined();
 
-    MessagePort* messagePort = (args.size() == 2) ? 0 : toMessagePort(args.at(1));
+    MessagePortArray messagePorts;
+    if (args.size() > 2)
+        fillMessagePortArray(exec, args.at(1), messagePorts);
+    if (exec->hadException())
+        return jsUndefined();
 
     String targetOrigin = valueToStringWithUndefinedOrNullCheck(exec, args.at((args.size() == 2) ? 1 : 2));
     if (exec->hadException())
         return jsUndefined();
 
     ExceptionCode ec = 0;
-    window->postMessage(message, messagePort, targetOrigin, source, ec);
+    window->postMessage(message, &messagePorts, targetOrigin, source, ec);
     setDOMException(exec, ec);
 
     return jsUndefined();
@@ -727,20 +924,30 @@ JSValue JSDOMWindow::postMessage(ExecState* exec, const ArgList& args)
 
 JSValue JSDOMWindow::setTimeout(ExecState* exec, const ArgList& args)
 {
-    ScheduledAction* action = ScheduledAction::create(exec, args);
+    ScheduledAction* action = ScheduledAction::create(exec, args, currentWorld(exec));
     if (exec->hadException())
         return jsUndefined();
     int delay = args.at(1).toInt32(exec);
-    return jsNumber(exec, impl()->setTimeout(action, delay));
+
+    ExceptionCode ec = 0;
+    int result = impl()->setTimeout(action, delay, ec);
+    setDOMException(exec, ec);
+
+    return jsNumber(exec, result);
 }
 
 JSValue JSDOMWindow::setInterval(ExecState* exec, const ArgList& args)
 {
-    ScheduledAction* action = ScheduledAction::create(exec, args);
+    ScheduledAction* action = ScheduledAction::create(exec, args, currentWorld(exec));
     if (exec->hadException())
         return jsUndefined();
     int delay = args.at(1).toInt32(exec);
-    return jsNumber(exec, impl()->setInterval(action, delay));
+
+    ExceptionCode ec = 0;
+    int result = impl()->setInterval(action, delay, ec);
+    setDOMException(exec, ec);
+
+    return jsNumber(exec, result);
 }
 
 JSValue JSDOMWindow::atob(ExecState* exec, const ArgList& args)
@@ -800,9 +1007,11 @@ JSValue JSDOMWindow::addEventListener(ExecState* exec, const ArgList& args)
     if (!frame)
         return jsUndefined();
 
-    if (RefPtr<JSEventListener> listener = findOrCreateJSEventListener(args.at(1)))
-        impl()->addEventListener(AtomicString(args.at(0).toString(exec)), listener.release(), args.at(2).toBoolean(exec));
+    JSValue listener = args.at(1);
+    if (!listener.isObject())
+        return jsUndefined();
 
+    impl()->addEventListener(args.at(0).toString(exec), JSEventListener::create(asObject(listener), this, false, currentWorld(exec)), args.at(2).toBoolean(exec));
     return jsUndefined();
 }
 
@@ -812,9 +1021,11 @@ JSValue JSDOMWindow::removeEventListener(ExecState* exec, const ArgList& args)
     if (!frame)
         return jsUndefined();
 
-    if (JSEventListener* listener = findJSEventListener(args.at(1)))
-        impl()->removeEventListener(AtomicString(args.at(0).toString(exec)), listener, args.at(2).toBoolean(exec));
+    JSValue listener = args.at(1);
+    if (!listener.isObject())
+        return jsUndefined();
 
+    impl()->removeEventListener(args.at(0).toString(exec), JSEventListener::create(asObject(listener), this, false, currentWorld(exec)).get(), args.at(2).toBoolean(exec));
     return jsUndefined();
 }
 

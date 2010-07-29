@@ -1,9 +1,7 @@
 /*
- * This file is part of the render object implementation for KHTML.
- *
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006 Apple Computer, Inc.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,6 +23,7 @@
 #include "config.h"
 #include "RenderInline.h"
 
+#include "Chrome.h"
 #include "FloatQuad.h"
 #include "GraphicsContext.h"
 #include "HitTestResult.h"
@@ -50,10 +49,6 @@ RenderInline::RenderInline(Node* node)
     , m_verticalPosition(PositionUndefined)
 {
     setChildrenInline(true);
-}
-
-RenderInline::~RenderInline()
-{
 }
 
 void RenderInline::destroy()
@@ -139,18 +134,6 @@ void RenderInline::styleDidChange(StyleDifference diff, const RenderStyle* oldSt
         children()->updateBeforeAfterContent(this, BEFORE);
         children()->updateBeforeAfterContent(this, AFTER);
     }
-}
-
-static inline bool isAfterContent(RenderObject* child)
-{
-    if (!child)
-        return false;
-    if (child->style()->styleType() != AFTER)
-        return false;
-    // Text nodes don't have their own styles, so ignore the style on a text node.
-    if (child->isText() && !child->isBR())
-        return false;
-    return true;
 }
 
 void RenderInline::addChild(RenderObject* newChild, RenderObject* beforeChild)
@@ -262,7 +245,7 @@ void RenderInline::splitInlines(RenderBlock* fromBlock, RenderBlock* toBlock,
     // We have been reparented and are now under the fromBlock.  We need
     // to walk up our inline parent chain until we hit the containing block.
     // Once we hit the containing block we're done.
-    RenderBoxModelObject* curr = static_cast<RenderBoxModelObject*>(parent());
+    RenderBoxModelObject* curr = toRenderBoxModelObject(parent());
     RenderBoxModelObject* currChild = this;
     
     // FIXME: Because splitting is O(n^2) as tags nest pathologically, we cap the depth at which we're willing to clone.
@@ -291,7 +274,7 @@ void RenderInline::splitInlines(RenderBlock* fromBlock, RenderBlock* toBlock,
             // has to move into the inline continuation.  Call updateBeforeAfterContent to ensure that the inline's :after
             // content gets properly destroyed.
             if (document()->usesBeforeAfterRules())
-                inlineCurr->children()->updateBeforeAfterContent(this, AFTER);
+                inlineCurr->children()->updateBeforeAfterContent(inlineCurr, AFTER);
 
             // Now we need to take all of the children starting from the first child
             // *after* currChild and append them all to the clone.
@@ -306,7 +289,7 @@ void RenderInline::splitInlines(RenderBlock* fromBlock, RenderBlock* toBlock,
         
         // Keep walking up the chain.
         currChild = curr;
-        curr = static_cast<RenderBoxModelObject*>(curr->parent());
+        curr = toRenderBoxModelObject(curr->parent());
         splitDepth++;
     }
 
@@ -388,7 +371,7 @@ void RenderInline::addChildToContinuation(RenderObject* newChild, RenderObject* 
     ASSERT(!beforeChild || beforeChild->parent()->isRenderBlock() || beforeChild->parent()->isRenderInline());
     RenderBoxModelObject* beforeChildParent = 0;
     if (beforeChild)
-        beforeChildParent = static_cast<RenderBoxModelObject*>(beforeChild->parent());
+        beforeChildParent = toRenderBoxModelObject(beforeChild->parent());
     else {
         RenderBoxModelObject* cont = nextContinuation(flow);
         if (cont)
@@ -566,6 +549,23 @@ IntRect RenderInline::linesBoundingBox() const
     return result;
 }
 
+IntRect RenderInline::linesVisibleOverflowBoundingBox() const
+{
+    if (!firstLineBox() || !lastLineBox())
+        return IntRect();
+
+    // Return the width of the minimal left side and the maximal right side.
+    int leftSide = numeric_limits<int>::max();
+    int rightSide = numeric_limits<int>::min();
+    for (InlineFlowBox* curr = firstLineBox(); curr; curr = curr->nextFlowBox()) {
+        leftSide = min(leftSide, curr->leftVisibleOverflow());
+        rightSide = max(rightSide, curr->rightVisibleOverflow());
+    }
+
+    return IntRect(leftSide, firstLineBox()->topVisibleOverflow(), rightSide - leftSide,
+        lastLineBox()->bottomVisibleOverflow() - firstLineBox()->topVisibleOverflow());
+}
+
 IntRect RenderInline::clippedOverflowRectForRepaint(RenderBoxModelObject* repaintContainer)
 {
     // Only run-ins are allowed in here during layout.
@@ -575,7 +575,7 @@ IntRect RenderInline::clippedOverflowRectForRepaint(RenderBoxModelObject* repain
         return IntRect();
 
     // Find our leftmost position.
-    IntRect boundingBox(linesBoundingBox());
+    IntRect boundingBox(linesVisibleOverflowBoundingBox());
     int left = boundingBox.x();
     int top = boundingBox.y();
 
@@ -926,10 +926,16 @@ void RenderInline::imageChanged(WrappedImagePtr, const IntRect*)
     repaint();
 }
 
-void RenderInline::addFocusRingRects(GraphicsContext* graphicsContext, int tx, int ty)
+void RenderInline::addFocusRingRects(Vector<IntRect>& rects, int tx, int ty)
 {
-    for (InlineRunBox* curr = firstLineBox(); curr; curr = curr->nextLineBox())
-        graphicsContext->addFocusRingRect(IntRect(tx + curr->x(), ty + curr->y(), curr->width(), curr->height()));
+    for (InlineRunBox* curr = firstLineBox(); curr; curr = curr->nextLineBox()) {
+        RootInlineBox* root = curr->root();
+        int top = max(root->lineTop(), curr->y());
+        int bottom = min(root->lineBottom(), curr->y() + curr->height());
+        IntRect rect(tx + curr->x(), ty + top, curr->width(), bottom - top);
+        if (!rect.isEmpty())
+            rects.append(rect);
+    }
 
     for (RenderObject* curr = firstChild(); curr; curr = curr->nextSibling()) {
         if (!curr->isText() && !curr->isListMarker()) {
@@ -939,17 +945,17 @@ void RenderInline::addFocusRingRects(GraphicsContext* graphicsContext, int tx, i
                 pos = curr->localToAbsolute();
             else if (curr->isBox())
                 pos.move(toRenderBox(curr)->x(), toRenderBox(curr)->y());
-           curr->addFocusRingRects(graphicsContext, pos.x(), pos.y());
+           curr->addFocusRingRects(rects, pos.x(), pos.y());
         }
     }
 
     if (continuation()) {
         if (continuation()->isInline())
-            continuation()->addFocusRingRects(graphicsContext, 
+            continuation()->addFocusRingRects(rects, 
                                               tx - containingBlock()->x() + continuation()->containingBlock()->x(),
                                               ty - containingBlock()->y() + continuation()->containingBlock()->y());
         else
-            continuation()->addFocusRingRects(graphicsContext, 
+            continuation()->addFocusRingRects(rects, 
                                               tx - containingBlock()->x() + toRenderBox(continuation())->x(),
                                               ty - containingBlock()->y() + toRenderBox(continuation())->y());
     }
@@ -966,13 +972,12 @@ void RenderInline::paintOutline(GraphicsContext* graphicsContext, int tx, int ty
         if (!oc.isValid())
             oc = style()->color();
 
-        graphicsContext->initFocusRing(ow, style()->outlineOffset());
-        addFocusRingRects(graphicsContext, tx, ty);
+        Vector<IntRect> focusRingRects;
+        addFocusRingRects(focusRingRects, tx, ty);
         if (style()->outlineStyleIsAuto())
-            graphicsContext->drawFocusRing(oc);
+            graphicsContext->drawFocusRing(focusRingRects, ow, style()->outlineOffset(), oc);
         else
-            addPDFURLRect(graphicsContext, graphicsContext->focusRingBoundingRect());
-        graphicsContext->clearFocusRing();
+            addPDFURLRect(graphicsContext, unionRect(focusRingRects));
     }
 
     if (style()->outlineStyleIsAuto() || style()->outlineStyle() == BNONE)
@@ -981,9 +986,12 @@ void RenderInline::paintOutline(GraphicsContext* graphicsContext, int tx, int ty
     Vector<IntRect> rects;
 
     rects.append(IntRect());
-    for (InlineRunBox* curr = firstLineBox(); curr; curr = curr->nextLineBox())
-        rects.append(IntRect(curr->x(), curr->y(), curr->width(), curr->height()));
-
+    for (InlineRunBox* curr = firstLineBox(); curr; curr = curr->nextLineBox()) {
+        RootInlineBox* root = curr->root();
+        int top = max(root->lineTop(), curr->y());
+        int bottom = min(root->lineBottom(), curr->y() + curr->height());
+        rects.append(IntRect(curr->x(), top, curr->width(), bottom - top));
+    }
     rects.append(IntRect());
 
     for (unsigned i = 1; i < rects.size() - 1; i++)

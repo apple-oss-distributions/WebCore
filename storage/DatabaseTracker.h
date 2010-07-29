@@ -31,74 +31,107 @@
 
 #if ENABLE(DATABASE)
 
-#include "DatabaseDetails.h"
 #include "PlatformString.h"
+
+#if !PLATFORM(CHROMIUM)
+#include "DatabaseDetails.h"
 #include "SQLiteDatabase.h"
 #include "StringHash.h"
+#include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/OwnPtr.h>
+#endif // !PLATFORM(CHROMIUM)
 
 namespace WebCore {
 
 class Database;
-class DatabaseTrackerClient;
-class Document;
-class OriginQuotaManager;
+class ScriptExecutionContext;
 class SecurityOrigin;
+
+#if !PLATFORM(CHROMIUM)
+class DatabaseTrackerClient;
+class OriginQuotaManager;
 
 struct SecurityOriginHash;
 struct SecurityOriginTraits;
+#endif // !PLATFORM(CHROMIUM)
 
-class DatabaseTracker {
+class DatabaseTracker : public Noncopyable {
+public:
+    static DatabaseTracker& tracker();
+    // FIXME: Due to workers having multiple threads in a single process sharing
+    // a DatabaseTracker, this singleton will have to be synchronized or moved
+    // to TLS.
+
+    bool canEstablishDatabase(ScriptExecutionContext*, const String& name, const String& displayName, unsigned long estimatedSize);
+    void setDatabaseDetails(SecurityOrigin*, const String& name, const String& displayName, unsigned long estimatedSize);
+    String fullPathForDatabase(SecurityOrigin*, const String& name, bool createIfDoesNotExist = true);
+
+    void addOpenDatabase(Database*);
+    void removeOpenDatabase(Database*);
+
+    unsigned long long getMaxSizeForDatabase(const Database*);
+    
+    static void decrementTransactionInProgressCount();
+    static void incrementTransactionInProgressCount();
+
+private:
+    DatabaseTracker();
+
+#if !PLATFORM(CHROMIUM)
 public:
     void setDatabaseDirectoryPath(const String&);
     const String& databaseDirectoryPath() const;
-
-    bool canEstablishDatabase(Document*, const String& name, const String& displayName, unsigned long estimatedSize);
-    void setDatabaseDetails(SecurityOrigin*, const String& name, const String& displayName, unsigned long estimatedSize);
-    String fullPathForDatabase(SecurityOrigin*, const String& name, bool createIfDoesNotExist = true);
 
     void origins(Vector<RefPtr<SecurityOrigin> >& result);
     bool databaseNamesForOrigin(SecurityOrigin*, Vector<String>& result);
 
     DatabaseDetails detailsForNameAndOrigin(const String&, SecurityOrigin*);
 
-    void addOpenDatabase(Database*);
-    void removeOpenDatabase(Database*);
-
     unsigned long long usageForDatabase(const String&, SecurityOrigin*);
     unsigned long long usageForOrigin(SecurityOrigin*);
     unsigned long long quotaForOrigin(SecurityOrigin*);
     void setQuota(SecurityOrigin*, unsigned long long);
-    
-    void deleteAllDatabases();
-    void deleteOrigin(SecurityOrigin*);
-    void deleteDatabase(SecurityOrigin*, const String& name);
 
-    void setClient(DatabaseTrackerClient*);
+    void deleteAllDatabases();
+    bool deleteOrigin(SecurityOrigin*);
+    bool deleteDatabase(SecurityOrigin*, const String& name);
+
+    void originsDidChange();
+    void removeDeletedOpenedDatabases();
+    static bool deleteDatabaseFileIfEmpty(const String&);
+
+    // MobileSafari will grab this mutex on the main thread before dispatching the task to 
+    // clean up zero byte database files.  Any operations to open new database will have to
+    // wait for that task to finish by waiting on this mutex.
+    static Mutex& openDatabaseMutex();
     
+    static void emptyDatabaseFilesRemovalTaskWillBeScheduled();
+    static void emptyDatabaseFilesRemovalTaskDidFinish();
+    
+    void setDatabasesPaused(bool);
+    
+    void setClient(DatabaseTrackerClient*);
+
     // From a secondary thread, must be thread safe with its data
     void scheduleNotifyDatabaseChanged(SecurityOrigin*, const String& name);
-    
+
     OriginQuotaManager& originQuotaManager();
-    
-    static DatabaseTracker& tracker();
+
 
     bool hasEntryForOrigin(SecurityOrigin*);
 
 private:
-    DatabaseTracker();
-
     String trackerDatabasePath() const;
     void openTrackerDatabase(bool createIfDoesNotExist);
 
     String originPath(SecurityOrigin*) const;
-    
+
     bool hasEntryForDatabase(SecurityOrigin*, const String& databaseIdentifier);
-    
+
     bool addDatabase(SecurityOrigin*, const String& name, const String& path);
     void populateOrigins();
-    
+
     bool deleteDatabaseFile(SecurityOrigin*, const String& name);
 
     SQLiteDatabase m_database;
@@ -117,7 +150,7 @@ private:
     OwnPtr<OriginQuotaManager> m_quotaManager;
 
     String m_databaseDirectoryPath;
-    
+
     DatabaseTrackerClient* m_client;
 
     std::pair<SecurityOrigin*, DatabaseDetails>* m_proposedDatabase;
@@ -128,6 +161,7 @@ private:
 
     static void scheduleForNotification();
     static void notifyDatabasesChanged(void*);
+#endif // !PLATFORM(CHROMIUM)
 };
 
 } // namespace WebCore

@@ -44,6 +44,7 @@ auto_ptr<ResourceRequest> ResourceRequestBase::adopt(auto_ptr<CrossThreadResourc
     request->setTimeoutInterval(data->m_timeoutInterval);
     request->setFirstPartyForCookies(data->m_firstPartyForCookies);
     request->setHTTPMethod(data->m_httpMethod);
+    request->setPriority(data->m_priority);
 
     request->updateResourceRequest();
     request->m_httpHeaderFields.adopt(auto_ptr<CrossThreadHTTPHeaderMapData>(data->m_httpHeaders.release()));
@@ -62,7 +63,7 @@ auto_ptr<ResourceRequest> ResourceRequestBase::adopt(auto_ptr<CrossThreadResourc
         request->setResponseContentDispositionEncodingFallbackArray(encoding1, encoding2, encoding3);
     }
     request->setHTTPBody(data->m_httpBody);
-    request->setAllowHTTPCookies(data->m_allowHTTPCookies);
+    request->setAllowCookies(data->m_allowCookies);
     return request;
 }
 
@@ -73,17 +74,18 @@ auto_ptr<CrossThreadResourceRequestData> ResourceRequestBase::copyData() const
     data->m_cachePolicy = cachePolicy();
     data->m_timeoutInterval = timeoutInterval();
     data->m_firstPartyForCookies = firstPartyForCookies().copy();
-    data->m_httpMethod = httpMethod().copy();
+    data->m_httpMethod = httpMethod().crossThreadString();
     data->m_httpHeaders.adopt(httpHeaderFields().copyData());
+    data->m_priority = priority();
 
     data->m_responseContentDispositionEncodingFallbackArray.reserveInitialCapacity(m_responseContentDispositionEncodingFallbackArray.size());
     size_t encodingArraySize = m_responseContentDispositionEncodingFallbackArray.size();
     for (size_t index = 0; index < encodingArraySize; ++index) {
-        data->m_responseContentDispositionEncodingFallbackArray.append(m_responseContentDispositionEncodingFallbackArray[index].copy());
+        data->m_responseContentDispositionEncodingFallbackArray.append(m_responseContentDispositionEncodingFallbackArray[index].crossThreadString());
     }
     if (m_httpBody)
         data->m_httpBody = m_httpBody->deepCopy();
-    data->m_allowHTTPCookies = m_allowHTTPCookies;
+    data->m_allowCookies = m_allowCookies;
     return data;
 }
 
@@ -208,6 +210,13 @@ String ResourceRequestBase::httpHeaderField(const AtomicString& name) const
     return m_httpHeaderFields.get(name);
 }
 
+String ResourceRequestBase::httpHeaderField(const char* name) const
+{
+    updateResourceRequest(); 
+    
+    return m_httpHeaderFields.get(name);
+}
+
 void ResourceRequestBase::setHTTPHeaderField(const AtomicString& name, const String& value)
 {
     updateResourceRequest(); 
@@ -216,6 +225,11 @@ void ResourceRequestBase::setHTTPHeaderField(const AtomicString& name, const Str
     
     if (url().protocolInHTTPFamily())
         m_platformRequestUpdated = false;
+}
+
+void ResourceRequestBase::setHTTPHeaderField(const char* name, const String& value)
+{
+    setHTTPHeaderField(AtomicString(name), value);
 }
 
 void ResourceRequestBase::clearHTTPReferrer()
@@ -271,18 +285,18 @@ void ResourceRequestBase::setHTTPBody(PassRefPtr<FormData> httpBody)
         m_platformRequestUpdated = false;
 } 
 
-bool ResourceRequestBase::allowHTTPCookies() const 
+bool ResourceRequestBase::allowCookies() const
 {
     updateResourceRequest(); 
     
-    return m_allowHTTPCookies; 
+    return m_allowCookies;
 }
 
-void ResourceRequestBase::setAllowHTTPCookies(bool allowHTTPCookies)
+void ResourceRequestBase::setAllowCookies(bool allowCookies)
 {
     updateResourceRequest(); 
     
-    m_allowHTTPCookies = allowHTTPCookies; 
+    m_allowCookies = allowCookies;
     
     if (url().protocolInHTTPFamily())
         m_platformRequestUpdated = false;
@@ -294,6 +308,9 @@ void ResourceRequestBase::addHTTPHeaderField(const AtomicString& name, const Str
     pair<HTTPHeaderMap::iterator, bool> result = m_httpHeaderFields.add(name, value); 
     if (!result.second)
         result.first->second += "," + value;
+
+    if (url().protocolInHTTPFamily())
+        m_platformRequestUpdated = false;
 }
 
 void ResourceRequestBase::addHTTPHeaderFields(const HTTPHeaderMap& headerFields)
@@ -320,9 +337,11 @@ bool equalIgnoringHeaderFields(const ResourceRequestBase& a, const ResourceReque
     if (a.httpMethod() != b.httpMethod())
         return false;
     
-    if (a.allowHTTPCookies() != b.allowHTTPCookies())
+    if (a.allowCookies() != b.allowCookies())
         return false;
     
+    if (a.priority() != b.priority())
+        return false;
 
     FormData* formDataA = a.httpBody();
     FormData* formDataB = b.httpBody();
@@ -376,7 +395,7 @@ void ResourceRequestBase::updateResourceRequest() const
     m_resourceRequestUpdated = true;
 }
 
-#if !PLATFORM(MAC) && !USE(CFNETWORK)
+#if !PLATFORM(MAC) && !USE(CFNETWORK) && !USE(SOUP) && !PLATFORM(CHROMIUM) && !PLATFORM(ANDROID) && !PLATFORM(QT)
 unsigned initializeMaximumHTTPConnectionCountPerHost()
 {
     // This is used by the loader to control the number of issued parallel load requests. 

@@ -60,7 +60,7 @@ enum EFragmentType { EmptyFragment, SingleTextNodeFragment, TreeFragment };
 
 // --- ReplacementFragment helper class
 
-class ReplacementFragment : Noncopyable {
+class ReplacementFragment : public Noncopyable {
 public:
     ReplacementFragment(Document*, DocumentFragment*, bool matchStyle, const VisibleSelection&);
 
@@ -531,7 +531,7 @@ VisiblePosition ReplaceSelectionCommand::positionAtEndOfInsertedContent()
 VisiblePosition ReplaceSelectionCommand::positionAtStartOfInsertedContent()
 {
     // Return the inserted content's first VisiblePosition.
-    return VisiblePosition(nextCandidate(positionBeforeNode(m_firstNodeInserted.get())));
+    return VisiblePosition(nextCandidate(positionInParentBeforeNode(m_firstNodeInserted.get())));
 }
 
 // Remove style spans before insertion if they are unnecessary.  It's faster because we'll 
@@ -552,8 +552,9 @@ static bool handleStyleSpansBeforeInsertion(ReplacementFragment& fragment, const
     
     Node* sourceDocumentStyleSpan = topNode;
     RefPtr<Node> copiedRangeStyleSpan = sourceDocumentStyleSpan->firstChild();
-    
-    RefPtr<CSSMutableStyleDeclaration> styleAtInsertionPos = rangeCompliantEquivalent(insertionPos).computedStyle()->copyInheritableProperties();
+
+    RefPtr<CSSMutableStyleDeclaration> styleAtInsertionPos = editingStyleAtPosition(rangeCompliantEquivalent(insertionPos));
+
     String styleText = styleAtInsertionPos->cssText();
     
     if (styleText == static_cast<Element*>(sourceDocumentStyleSpan)->getAttribute(styleAttr)) {
@@ -609,8 +610,8 @@ void ReplaceSelectionCommand::handleStyleSpans()
     // styles from blockquoteNode are allowed to override those from the source document, see <rdar://problem/4930986> and <rdar://problem/5089327>.
     Node* blockquoteNode = isMailPasteAsQuotationNode(context) ? context : nearestMailBlockquote(context);
     if (blockquoteNode) {
-        RefPtr<CSSMutableStyleDeclaration> blockquoteStyle = computedStyle(blockquoteNode)->copyInheritableProperties();
-        RefPtr<CSSMutableStyleDeclaration> parentStyle = computedStyle(blockquoteNode->parentNode())->copyInheritableProperties();
+        RefPtr<CSSMutableStyleDeclaration> blockquoteStyle = editingStyleAtPosition(Position(blockquoteNode, 0));
+        RefPtr<CSSMutableStyleDeclaration> parentStyle = editingStyleAtPosition(Position(blockquoteNode->parentNode(), 0));
         parentStyle->diff(blockquoteStyle.get());
 
         CSSMutableStyleDeclaration::const_iterator end = blockquoteStyle->end();
@@ -621,10 +622,10 @@ void ReplaceSelectionCommand::handleStyleSpans()
 
         context = blockquoteNode->parentNode();
     }
-    
-    RefPtr<CSSMutableStyleDeclaration> contextStyle = computedStyle(context)->copyInheritableProperties();
-    contextStyle->diff(sourceDocumentStyle.get());
-    
+
+    // This operation requires that only editing styles to be removed from sourceDocumentStyle.
+    prepareEditingStyleToApplyAt(sourceDocumentStyle.get(), Position(context, 0));
+
     // Remove block properties in the span's style. This prevents properties that probably have no effect 
     // currently from affecting blocks later if the style is cloned for a new block element during a future 
     // editing operation.
@@ -658,9 +659,8 @@ void ReplaceSelectionCommand::handleStyleSpans()
     
     // Remove redundant styles.
     context = copiedRangeStyleSpan->parentNode();
-    contextStyle = computedStyle(context)->copyInheritableProperties();
-    contextStyle->diff(copiedRangeStyle.get());
-    
+    prepareEditingStyleToApplyAt(copiedRangeStyle.get(), Position(context, 0));
+
     // See the comments above about removing block properties.
     copiedRangeStyle->removeBlockProperties();
 
@@ -698,8 +698,17 @@ void ReplaceSelectionCommand::mergeEndIfNeeded()
     
     VisiblePosition destination = mergeForward ? endOfInsertedContent.next() : endOfInsertedContent;
     VisiblePosition startOfParagraphToMove = mergeForward ? startOfParagraph(endOfInsertedContent) : endOfInsertedContent.next();
+   
+    // Merging forward could result in deleting the destination anchor node.
+    // To avoid this, we add a placeholder node before the start of the paragraph.
+    if (endOfParagraph(startOfParagraphToMove) == destination) {
+        RefPtr<Node> placeholder = createBreakElement(document());
+        insertNodeBefore(placeholder, startOfParagraphToMove.deepEquivalent().node());
+        destination = VisiblePosition(Position(placeholder.get(), 0));
+    }
 
     moveParagraph(startOfParagraphToMove, endOfParagraph(startOfParagraphToMove), destination);
+    
     // Merging forward will remove m_lastLeafInserted from the document.
     // FIXME: Maintain positions for the start and end of inserted content instead of keeping nodes.  The nodes are
     // only ever used to create positions where inserted content starts/ends.  Also, we sometimes insert content
@@ -708,6 +717,10 @@ void ReplaceSelectionCommand::mergeEndIfNeeded()
         m_lastLeafInserted = destination.previous().deepEquivalent().node();
         if (!m_firstNodeInserted->inDocument())
             m_firstNodeInserted = endingSelection().visibleStart().deepEquivalent().node();
+        // If we merged text nodes, m_lastLeafInserted could be null. If this is the case,
+        // we use m_firstNodeInserted.
+        if (!m_lastLeafInserted)
+            m_lastLeafInserted = m_firstNodeInserted;
     }
 }
 
@@ -732,7 +745,7 @@ void ReplaceSelectionCommand::doApply()
         return;
     
     if (m_matchStyle)
-        m_insertionStyle = styleAtPosition(selection.start());
+        m_insertionStyle = editingStyleAtPosition(selection.start(), IncludeTypingStyle);
     
     VisiblePosition visibleStart = selection.visibleStart();
     VisiblePosition visibleEnd = selection.visibleEnd();
@@ -826,7 +839,7 @@ void ReplaceSelectionCommand::doApply()
         Node* br = endingSelection().start().node(); 
         ASSERT(br->hasTagName(brTag)); 
         // Insert content between the two blockquotes, but remove the br (since it was just a placeholder). 
-        insertionPos = positionBeforeNode(br); 
+        insertionPos = positionInParentBeforeNode(br);
         removeNode(br);
     }
     
@@ -850,10 +863,10 @@ void ReplaceSelectionCommand::doApply()
         ASSERT(startBlock != currentRoot);
         VisiblePosition visibleInsertionPos(insertionPos);
         if (isEndOfBlock(visibleInsertionPos) && !(isStartOfBlock(visibleInsertionPos) && fragment.hasInterchangeNewlineAtEnd()))
-            insertionPos = positionAfterNode(startBlock);
+            insertionPos = positionInParentAfterNode(startBlock);
         else if (isStartOfBlock(visibleInsertionPos)) {
             insertedBeforeStartBlock = true;
-            insertionPos = positionBeforeNode(startBlock);
+            insertionPos = positionInParentBeforeNode(startBlock);
         }
     }
 
@@ -899,6 +912,8 @@ void ReplaceSelectionCommand::doApply()
     if (!refNode->inDocument())
         return;
 
+    bool plainTextFragment = isPlainTextMarkup(refNode.get());
+
     while (node) {
         Node* next = node->nextSibling();
         fragment.removeNode(node);
@@ -909,6 +924,8 @@ void ReplaceSelectionCommand::doApply()
             return;
 
         refNode = node;
+        if (node && plainTextFragment)
+            plainTextFragment = isPlainTextMarkup(node.get());
         node = next;
     }
     
@@ -942,7 +959,7 @@ void ReplaceSelectionCommand::doApply()
     
     bool interchangeNewlineAtEnd = fragment.hasInterchangeNewlineAtEnd();
 
-    if (shouldRemoveEndBR(endBR, originalVisPosBeforeEndBR))
+    if (endBR && (plainTextFragment || shouldRemoveEndBR(endBR, originalVisPosBeforeEndBR)))
         removeNodeAndPruneAncestors(endBR);
     
     // Determine whether or not we should merge the end of inserted content with what's after it before we do
@@ -1049,6 +1066,11 @@ void ReplaceSelectionCommand::doApply()
         }
     }
     
+    // If we are dealing with a fragment created from plain text
+    // no style matching is necessary.
+    if (plainTextFragment)
+        m_matchStyle = false;
+        
     completeHTMLReplacement(lastPositionToSelect);
 }
 

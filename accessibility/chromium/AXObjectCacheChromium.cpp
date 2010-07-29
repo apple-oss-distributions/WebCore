@@ -43,11 +43,11 @@ void AXObjectCache::attachWrapper(AccessibilityObject*)
     // In Chromium, AccessibilityObjects are wrapped lazily.
 }
 
-void AXObjectCache::postPlatformNotification(AccessibilityObject*, const String&)
+void AXObjectCache::postPlatformNotification(AccessibilityObject*, AXNotification)
 {
 }
 
-void AXObjectCache::handleFocusedUIElementChanged()
+void AXObjectCache::handleFocusedUIElementChanged(RenderObject*, RenderObject*)
 {
 }
 

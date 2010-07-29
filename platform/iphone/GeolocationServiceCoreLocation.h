@@ -22,7 +22,7 @@ namespace WebCore {
 
 class GeolocationServiceCoreLocation : public GeolocationService {
 public:
-    GeolocationServiceCoreLocation(GeolocationServiceClient*);
+    static GeolocationService* create(GeolocationServiceClient*);
     virtual ~GeolocationServiceCoreLocation();
     
     virtual bool startUpdating(PositionOptions*);
@@ -41,6 +41,8 @@ public:
     void errorOccurred(PassRefPtr<PositionError>);
 
 private:
+    GeolocationServiceCoreLocation(GeolocationServiceClient*);
+
     RetainPtr<GeoLocationManager> m_locationManager;
     
     RefPtr<Geoposition> m_lastPosition;

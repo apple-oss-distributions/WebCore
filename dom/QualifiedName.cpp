@@ -51,7 +51,7 @@ struct QNameComponentsTranslator {
 
 static QNameSet* gNameCache;
 
-QualifiedName::QualifiedName(const AtomicString& p, const AtomicString& l, const AtomicString& n)
+void QualifiedName::init(const AtomicString& p, const AtomicString& l, const AtomicString& n)
 {
     if (!gNameCache)
         gNameCache = new QNameSet;
@@ -60,6 +60,16 @@ QualifiedName::QualifiedName(const AtomicString& p, const AtomicString& l, const
     m_impl = *addResult.first;    
     if (!addResult.second)
         m_impl->ref();
+}
+
+QualifiedName::QualifiedName(const AtomicString& p, const AtomicString& l, const AtomicString& n)
+{
+    init(p, l, n);
+}
+
+QualifiedName::QualifiedName(const AtomicString& p, const char* l, const AtomicString& n)
+{
+    init(p, AtomicString(l), n);
 }
 
 void QualifiedName::deref()
@@ -95,6 +105,13 @@ void QualifiedName::init()
         new ((void*)&anyName) QualifiedName(nullAtom, starAtom, starAtom);
         initialized = true;
     }
+}
+
+const AtomicString& QualifiedName::localNameUpper() const
+{
+    if (!m_impl->m_localNameUpper)
+        m_impl->m_localNameUpper = m_impl->m_localName.upper();
+    return m_impl->m_localNameUpper;
 }
 
 }

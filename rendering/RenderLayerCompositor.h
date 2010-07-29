@@ -66,8 +66,11 @@ public:
     // Returns true if the accelerated compositing is enabled
     bool hasAcceleratedCompositing() const { return m_hasAcceleratedCompositing; }
     
-    // Copy the acceleratedCompositingEnabledFlag from Settings
-    void cacheAcceleratedCompositingEnabledFlag();
+    bool showDebugBorders() const { return m_showDebugBorders; }
+    bool showRepaintCounter() const { return m_showRepaintCounter; }
+    
+    // Copy the accelerated compositing related flags from Settings
+    void cacheAcceleratedCompositingFlags();
 
     // Called when the layer hierarchy needs to be updated (compositing layers have been
     // created, destroyed or re-parented).
@@ -134,7 +137,7 @@ public:
     // to know if there is non-affine content, e.g. for drawing into an image.
     bool has3DContent() const;
 
-    void setDocumentScale(float, RenderLayer* = 0);
+    void updateContentsScale(float, RenderLayer* = 0);
 
 private:
     // Whether the given RL needs a compositing layer.
@@ -176,6 +179,7 @@ private:
     bool requiresCompositingForAnimation(RenderObject*) const;
     bool requiresCompositingForTransform(RenderObject*) const;
     bool requiresCompositingForVideo(RenderObject*) const;
+    bool requiresCompositingForCanvas(RenderObject*) const;
     bool requiresCompositingForPlugin(RenderObject*) const;
     bool requiresCompositingWhenDescendantsAreCompositing(RenderObject*) const;
 
@@ -183,6 +187,8 @@ private:
     RenderView* m_renderView;
     OwnPtr<GraphicsLayer> m_rootPlatformLayer;
     bool m_hasAcceleratedCompositing;
+    bool m_showDebugBorders;
+    bool m_showRepaintCounter;
     bool m_compositingConsultsOverlap;
     bool m_compositing;
     bool m_rootLayerAttached;

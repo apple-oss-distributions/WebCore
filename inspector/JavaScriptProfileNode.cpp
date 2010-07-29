@@ -84,7 +84,7 @@ static JSValueRef getLineNumber(JSContextRef ctx, JSObjectRef thisObject, JSStri
 
 static JSValueRef getTotalTime(JSContextRef ctx, JSObjectRef thisObject, JSStringRef, JSValueRef*)
 {
-    JSC::JSLock lock(false);
+    JSC::JSLock lock(SilenceAssertionsOnly);
 
     if (!JSValueIsObjectOfClass(ctx, thisObject, ProfileNodeClass()))
         return JSValueMakeUndefined(ctx);
@@ -95,7 +95,7 @@ static JSValueRef getTotalTime(JSContextRef ctx, JSObjectRef thisObject, JSStrin
 
 static JSValueRef getSelfTime(JSContextRef ctx, JSObjectRef thisObject, JSStringRef, JSValueRef*)
 {
-    JSC::JSLock lock(false);
+    JSC::JSLock lock(SilenceAssertionsOnly);
 
     if (!JSValueIsObjectOfClass(ctx, thisObject, ProfileNodeClass()))
         return JSValueMakeUndefined(ctx);
@@ -104,31 +104,9 @@ static JSValueRef getSelfTime(JSContextRef ctx, JSObjectRef thisObject, JSString
     return JSValueMakeNumber(ctx, profileNode->selfTime());
 }
 
-static JSValueRef getTotalPercent(JSContextRef ctx, JSObjectRef thisObject, JSStringRef, JSValueRef*)
-{
-    JSC::JSLock lock(false);
-
-    if (!JSValueIsObjectOfClass(ctx, thisObject, ProfileNodeClass()))
-        return JSValueMakeUndefined(ctx);
-
-    ProfileNode* profileNode = static_cast<ProfileNode*>(JSObjectGetPrivate(thisObject));
-    return JSValueMakeNumber(ctx, profileNode->totalPercent());
-}
-
-static JSValueRef getSelfPercent(JSContextRef ctx, JSObjectRef thisObject, JSStringRef, JSValueRef*)
-{
-    JSC::JSLock lock(false);
-
-    if (!JSValueIsObjectOfClass(ctx, thisObject, ProfileNodeClass()))
-        return JSValueMakeUndefined(ctx);
-
-    ProfileNode* profileNode = static_cast<ProfileNode*>(JSObjectGetPrivate(thisObject));
-    return JSValueMakeNumber(ctx, profileNode->selfPercent());
-}
-
 static JSValueRef getNumberOfCalls(JSContextRef ctx, JSObjectRef thisObject, JSStringRef, JSValueRef*)
 {
-    JSC::JSLock lock(false);
+    JSC::JSLock lock(SilenceAssertionsOnly);
 
     if (!JSValueIsObjectOfClass(ctx, thisObject, ProfileNodeClass()))
         return JSValueMakeUndefined(ctx);
@@ -139,7 +117,7 @@ static JSValueRef getNumberOfCalls(JSContextRef ctx, JSObjectRef thisObject, JSS
 
 static JSValueRef getChildren(JSContextRef ctx, JSObjectRef thisObject, JSStringRef, JSValueRef* exception)
 {
-    JSC::JSLock lock(false);
+    JSC::JSLock lock(SilenceAssertionsOnly);
 
     if (!JSValueIsObjectOfClass(ctx, thisObject, ProfileNodeClass()))
         return JSValueMakeUndefined(ctx);
@@ -184,33 +162,9 @@ static JSValueRef getChildren(JSContextRef ctx, JSObjectRef thisObject, JSString
     return result;
 }
 
-static JSValueRef getParent(JSContextRef ctx, JSObjectRef thisObject, JSStringRef, JSValueRef*)
-{
-    JSC::JSLock lock(false);
-
-    if (!JSValueIsObjectOfClass(ctx, thisObject, ProfileNodeClass()))
-        return JSValueMakeUndefined(ctx);
-
-    ProfileNode* profileNode = static_cast<ProfileNode*>(JSObjectGetPrivate(thisObject));
-    ExecState* exec = toJS(ctx);
-    return toRef(exec, toJS(exec, profileNode->parent()));
-}
-
-static JSValueRef getHead(JSContextRef ctx, JSObjectRef thisObject, JSStringRef, JSValueRef*)
-{
-    JSC::JSLock lock(false);
-
-    if (!JSValueIsObjectOfClass(ctx, thisObject, ProfileNodeClass()))
-        return JSValueMakeUndefined(ctx);
-
-    ProfileNode* profileNode = static_cast<ProfileNode*>(JSObjectGetPrivate(thisObject));
-    ExecState* exec = toJS(ctx);
-    return toRef(exec, toJS(exec, profileNode->head()));
-}
-
 static JSValueRef getVisible(JSContextRef ctx, JSObjectRef thisObject, JSStringRef, JSValueRef*)
 {
-    JSC::JSLock lock(false);
+    JSC::JSLock lock(SilenceAssertionsOnly);
 
     if (!JSValueIsObjectOfClass(ctx, thisObject, ProfileNodeClass()))
         return JSValueMakeUndefined(ctx);
@@ -221,7 +175,7 @@ static JSValueRef getVisible(JSContextRef ctx, JSObjectRef thisObject, JSStringR
 
 static JSValueRef getCallUID(JSContextRef ctx, JSObjectRef thisObject, JSStringRef, JSValueRef*)
 {
-    JSC::JSLock lock(false);
+    JSC::JSLock lock(SilenceAssertionsOnly);
 
     if (!JSValueIsObjectOfClass(ctx, thisObject, ProfileNodeClass()))
         return JSValueMakeUndefined(ctx);
@@ -245,12 +199,8 @@ JSClassRef ProfileNodeClass()
         { "lineNumber", getLineNumber, 0, kJSPropertyAttributeNone },
         { "totalTime", getTotalTime, 0, kJSPropertyAttributeNone },
         { "selfTime", getSelfTime, 0, kJSPropertyAttributeNone },
-        { "totalPercent", getTotalPercent, 0, kJSPropertyAttributeNone },
-        { "selfPercent", getSelfPercent, 0, kJSPropertyAttributeNone },
         { "numberOfCalls", getNumberOfCalls, 0, kJSPropertyAttributeNone },
         { "children", getChildren, 0, kJSPropertyAttributeNone },
-        { "parent", getParent, 0, kJSPropertyAttributeNone },
-        { "head", getHead, 0, kJSClassAttributeNone },
         { "visible", getVisible, 0, kJSPropertyAttributeNone },
         { "callUID", getCallUID, 0, kJSPropertyAttributeNone },
         { 0, 0, 0, 0 }

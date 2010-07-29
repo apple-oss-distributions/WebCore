@@ -71,8 +71,8 @@ public:
     unsigned textLength() const { return m_text->length(); } // non virtual implementation of length()
     void positionLineBox(InlineBox*);
 
-    virtual unsigned width(unsigned from, unsigned len, const Font&, int xPos, HashSet<const SimpleFontData*>* fallbackFonts = 0) const;
-    virtual unsigned width(unsigned from, unsigned len, int xPos, bool firstLine = false, HashSet<const SimpleFontData*>* fallbackFonts = 0) const;
+    virtual unsigned width(unsigned from, unsigned len, const Font&, int xPos, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
+    virtual unsigned width(unsigned from, unsigned len, int xPos, bool firstLine = false, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
 
     virtual int lineHeight(bool firstLine, bool isRootLineBox = false) const;
 
@@ -130,7 +130,8 @@ public:
     void checkConsistency() const;
 
     virtual void calcPrefWidths(int leadWidth);
-
+    bool isAllCollapsibleWhitespace();
+    
     float candidateComputedTextSize() const { return m_candidateComputedTextSize; }
     void setCandidateComputedTextSize(float s) { m_candidateComputedTextSize = s; }
 
@@ -144,7 +145,7 @@ protected:
     virtual InlineTextBox* createTextBox(); // Subclassed by SVG.
 
 private:
-    void calcPrefWidths(int leadWidth, HashSet<const SimpleFontData*>& fallbackFonts);
+    void calcPrefWidths(int leadWidth, HashSet<const SimpleFontData*>& fallbackFonts, GlyphOverflow&);
 
     // Make length() private so that callers that have a RenderText*
     // will use the more efficient textLength() instead, while
@@ -157,7 +158,7 @@ private:
 
     void deleteTextBoxes();
     bool containsOnlyWhitespace(unsigned from, unsigned len) const;
-    int widthFromCache(const Font&, int start, int len, int xPos, HashSet<const SimpleFontData*>* fallbackFonts) const;
+    int widthFromCache(const Font&, int start, int len, int xPos, HashSet<const SimpleFontData*>* fallbackFonts, GlyphOverflow*) const;
     bool isAllASCII() const { return m_isAllASCII; }
 
     int m_minWidth; // here to minimize padding in 64-bit.
@@ -182,7 +183,7 @@ private:
                            // or removed).
     bool m_containsReversedText : 1;
     bool m_isAllASCII : 1;
-    mutable bool m_knownNotToUseFallbackFonts : 1;
+    mutable bool m_knownToHaveNoOverflowAndNoFallbackFonts : 1;
     
     bool m_shouldSecureLastCharacter : 1;
     bool m_hasSecureLastCharacterTimer : 1;
@@ -190,16 +191,16 @@ private:
     float m_candidateComputedTextSize;
 };
 
-inline RenderText* toRenderText(RenderObject* o)
+inline RenderText* toRenderText(RenderObject* object)
 { 
-    ASSERT(!o || o->isText());
-    return static_cast<RenderText*>(o);
+    ASSERT(!object || object->isText());
+    return static_cast<RenderText*>(object);
 }
 
-inline const RenderText* toRenderText(const RenderObject* o)
+inline const RenderText* toRenderText(const RenderObject* object)
 { 
-    ASSERT(!o || o->isText());
-    return static_cast<const RenderText*>(o);
+    ASSERT(!object || object->isText());
+    return static_cast<const RenderText*>(object);
 }
 
 // This will catch anyone doing an unnecessary cast.

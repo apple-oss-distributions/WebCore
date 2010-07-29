@@ -31,6 +31,7 @@
 #include "config.h"
 #include "CookieJar.h"
 
+#include "Cookie.h"
 #include "ChromiumBridge.h"
 #include "Document.h"
 
@@ -46,10 +47,19 @@ String cookies(const Document* document, const KURL& url)
     return ChromiumBridge::cookies(url, document->firstPartyForCookies());
 }
 
-bool cookiesEnabled(const Document*)
+bool cookiesEnabled(const Document* document)
 {
-    // FIXME: For now just assume cookies are always on.
-    return true;
+    return ChromiumBridge::cookiesEnabled(document->cookieURL(), document->firstPartyForCookies());
+}
+
+bool getRawCookies(const Document* document, const KURL& url, Vector<Cookie>& rawCookies)
+{
+    return ChromiumBridge::rawCookies(url, document->firstPartyForCookies(), &rawCookies);
+}
+
+void deleteCookie(const Document*, const KURL& url, const String& cookieName)
+{
+    return ChromiumBridge::deleteCookie(url, cookieName);
 }
 
 } // namespace WebCore

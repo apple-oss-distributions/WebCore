@@ -26,10 +26,16 @@
 #ifndef NetworkStateNotifier_h
 #define NetworkStateNotifier_h
 
+#include <wtf/Noncopyable.h>
+
 
 namespace WebCore {
 
-class NetworkStateNotifier {
+#if (PLATFORM(QT) && ENABLE(QT_BEARER))
+class NetworkStateNotifierPrivate;
+#endif
+
+class NetworkStateNotifier : public Noncopyable {
 public:
     NetworkStateNotifier();
     void setNetworkStateChangedFunction(void (*)());
@@ -37,6 +43,10 @@ public:
     bool onLine() const { return m_isOnLine; }
     
     void setIsOnLine(bool isOnLine);
+
+#if (PLATFORM(QT) && ENABLE(QT_BEARER))
+    void setNetworkAccessAllowed(bool);
+#endif
 
 private:    
     bool m_isOnLine;

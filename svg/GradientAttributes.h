@@ -1,8 +1,6 @@
 /*
     Copyright (C) 2006 Nikolas Zimmermann <zimmermann@kde.org>
 
-    This file is part of the KDE project
-
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Library General Public
     License as published by the Free Software Foundation; either
@@ -24,8 +22,7 @@
 
 #if ENABLE(SVG)
 
-namespace WebCore
-{
+namespace WebCore {
     struct GradientAttributes {
         GradientAttributes()
             : m_spreadMethod(SpreadMethodPad)

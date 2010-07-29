@@ -51,7 +51,7 @@ namespace WebCore {
     class ProtectionSpace;
     class ResourceHandle;
     class ResourceError;
-    struct ResourceRequest;
+    class ResourceRequest;
     class ResourceResponse;
 
     enum CacheStoragePolicy {

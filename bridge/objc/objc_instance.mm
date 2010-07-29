@@ -28,9 +28,10 @@
 
 #import "FoundationExtras.h"
 #import "WebScriptObject.h"
-#include <runtime/Error.h>
-#include <runtime/JSLock.h>
-#include <wtf/Assertions.h>
+#import <objc/objc-auto.h>
+#import <runtime/Error.h>
+#import <runtime/JSLock.h>
+#import <wtf/Assertions.h>
 
 #import <Foundation/NSMapTable.h>
 
@@ -79,7 +80,7 @@ void ObjcInstance::moveGlobalExceptionToExecState(ExecState* exec)
     }
 
     if (!s_exceptionEnvironment || s_exceptionEnvironment == exec->dynamicGlobalObject()) {
-        JSLock lock(false);
+        JSLock lock(SilenceAssertionsOnly);
         throwError(exec, GeneralError, s_exception);
     }
 
@@ -125,10 +126,22 @@ ObjcInstance::~ObjcInstance()
     [pool drain];
 }
 
+static NSAutoreleasePool* allocateAutoReleasePool()
+{
+#if defined(OBJC_API_VERSION) && OBJC_API_VERSION >= 2
+    // If GC is enabled an autorelease pool is unnecessary, and the
+    // pool cannot be protected from GC so may be collected leading
+    // to a crash when we try to drain the release pool.
+    if (objc_collectingEnabled())
+        return nil;
+#endif
+    return [[NSAutoreleasePool alloc] init];
+}
+
 void ObjcInstance::virtualBegin()
 {
     if (!_pool)
-        _pool = [[NSAutoreleasePool alloc] init];
+        _pool = allocateAutoReleasePool();
     _beginCount++;
 }
 
@@ -160,7 +173,7 @@ JSValue ObjcInstance::invokeMethod(ExecState* exec, const MethodList &methodList
 {
     JSValue result = jsUndefined();
     
-    JSLock::DropAllLocks dropAllLocks(false); // Can't put this inside the @try scope because it unwinds incorrectly.
+    JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly); // Can't put this inside the @try scope because it unwinds incorrectly.
 
     setGlobalException(nil);
     
@@ -266,7 +279,7 @@ JSValue ObjcInstance::invokeMethod(ExecState* exec, const MethodList &methodList
 
     if (*type != 'v') {
         [invocation getReturnValue:buffer];
-        result = convertObjcValueToValue(exec, buffer, objcValueType, _rootObject.get());
+        result = convertObjcValueToValue(exec, buffer, objcValueType, m_rootObject.get());
     }
 } @catch(NSException* localException) {
 }
@@ -281,7 +294,7 @@ JSValue ObjcInstance::invokeDefaultMethod(ExecState* exec, const ArgList &args)
 {
     JSValue result = jsUndefined();
 
-    JSLock::DropAllLocks dropAllLocks(false); // Can't put this inside the @try scope because it unwinds incorrectly.
+    JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly); // Can't put this inside the @try scope because it unwinds incorrectly.
     setGlobalException(nil);
     
 @try {
@@ -318,7 +331,7 @@ JSValue ObjcInstance::invokeDefaultMethod(ExecState* exec, const ArgList &args)
     // OK with 32 here.
     char buffer[32];
     [invocation getReturnValue:buffer];
-    result = convertObjcValueToValue(exec, buffer, objcValueType, _rootObject.get());
+    result = convertObjcValueToValue(exec, buffer, objcValueType, m_rootObject.get());
 } @catch(NSException* localException) {
 }
     moveGlobalExceptionToExecState(exec);
@@ -334,10 +347,10 @@ bool ObjcInstance::setValueOfUndefinedField(ExecState* exec, const Identifier& p
     if (![targetObject respondsToSelector:@selector(setValue:forUndefinedKey:)])
         return false;
 
-    JSLock::DropAllLocks dropAllLocks(false); // Can't put this inside the @try scope because it unwinds incorrectly.
+    JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly); // Can't put this inside the @try scope because it unwinds incorrectly.
 
     // This check is not really necessary because NSObject implements
-    // setValue:forUndefinedKey:, and unfortnately the default implementation
+    // setValue:forUndefinedKey:, and unfortunately the default implementation
     // throws an exception.
     if ([targetObject respondsToSelector:@selector(setValue:forUndefinedKey:)]){
         setGlobalException(nil);
@@ -362,17 +375,17 @@ JSValue ObjcInstance::getValueOfUndefinedField(ExecState* exec, const Identifier
     
     id targetObject = getObject();
 
-    JSLock::DropAllLocks dropAllLocks(false); // Can't put this inside the @try scope because it unwinds incorrectly.
+    JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly); // Can't put this inside the @try scope because it unwinds incorrectly.
 
     // This check is not really necessary because NSObject implements
-    // valueForUndefinedKey:, and unfortnately the default implementation
+    // valueForUndefinedKey:, and unfortunately the default implementation
     // throws an exception.
     if ([targetObject respondsToSelector:@selector(valueForUndefinedKey:)]){
         setGlobalException(nil);
     
         @try {
             id objcValue = [targetObject valueForUndefinedKey:[NSString stringWithCString:property.ascii() encoding:NSASCIIStringEncoding]];
-            result = convertObjcValueToValue(exec, &objcValue, ObjcObjectType, _rootObject.get());
+            result = convertObjcValueToValue(exec, &objcValue, ObjcObjectType, m_rootObject.get());
         } @catch(NSException* localException) {
             // Do nothing.  Class did not override valueForUndefinedKey:.
         }

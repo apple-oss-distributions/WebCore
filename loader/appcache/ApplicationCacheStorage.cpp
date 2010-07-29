@@ -29,6 +29,7 @@
 #if ENABLE(OFFLINE_WEB_APPLICATIONS)
 
 #include "ApplicationCache.h"
+#include "ApplicationCacheHost.h"
 #include "ApplicationCacheGroup.h"
 #include "ApplicationCacheResource.h"
 #include "CString.h"
@@ -45,16 +46,17 @@ namespace WebCore {
     
 const unsigned maximumCacheDatabaseSize = 256 * 1024 * 1024;
 
-class ResourceStorageIDJournal {
+template <class T>
+class StorageIDJournal {
 public:  
-    ~ResourceStorageIDJournal()
+    ~StorageIDJournal()
     {
         size_t size = m_records.size();
         for (size_t i = 0; i < size; ++i)
             m_records[i].restore();
     }
 
-    void add(ApplicationCacheResource* resource, unsigned storageID)
+    void add(T* resource, unsigned storageID)
     {
         m_records.append(Record(resource, storageID));
     }
@@ -68,7 +70,7 @@ private:
     class Record {
     public:
         Record() : m_resource(0), m_storageID(0) { }
-        Record(ApplicationCacheResource* resource, unsigned storageID) : m_resource(resource), m_storageID(storageID) { }
+        Record(T* resource, unsigned storageID) : m_resource(resource), m_storageID(storageID) { }
 
         void restore()
         {
@@ -76,7 +78,7 @@ private:
         }
 
     private:
-        ApplicationCacheResource* m_resource;
+        T* m_resource;
         unsigned m_storageID;
     };
 
@@ -128,11 +130,12 @@ ApplicationCacheGroup* ApplicationCacheStorage::loadCacheGroup(const KURL& manif
 
 ApplicationCacheGroup* ApplicationCacheStorage::findOrCreateCacheGroup(const KURL& manifestURL)
 {
+    ASSERT(!manifestURL.hasFragmentIdentifier());
+
     std::pair<CacheGroupMap::iterator, bool> result = m_cachesInMemory.add(manifestURL, 0);
     
     if (!result.second) {
         ASSERT(result.first->second);
-        
         return result.first->second;
     }
 
@@ -177,6 +180,8 @@ void ApplicationCacheStorage::loadManifestHostHashes()
 
 ApplicationCacheGroup* ApplicationCacheStorage::cacheGroupForURL(const KURL& url)
 {
+    ASSERT(!url.hasFragmentIdentifier());
+    
     loadManifestHostHashes();
     
     // Hash the host name and see if there's a manifest with the same host.
@@ -213,7 +218,7 @@ ApplicationCacheGroup* ApplicationCacheStorage::cacheGroupForURL(const KURL& url
     
     int result;
     while ((result = statement.step()) == SQLResultRow) {
-        KURL manifestURL = KURL(statement.getColumnText(1));
+        KURL manifestURL = KURL(ParsedURLString, statement.getColumnText(1));
 
         if (m_cachesInMemory.contains(manifestURL))
             continue;
@@ -225,6 +230,8 @@ ApplicationCacheGroup* ApplicationCacheStorage::cacheGroupForURL(const KURL& url
         // a matching URL.
         unsigned newestCacheID = static_cast<unsigned>(statement.getColumnInt64(2));
         RefPtr<ApplicationCache> cache = loadCache(newestCacheID);
+        if (!cache)
+            continue;
 
         ApplicationCacheResource* resource = cache->resourceForURL(url);
         if (!resource)
@@ -250,6 +257,8 @@ ApplicationCacheGroup* ApplicationCacheStorage::cacheGroupForURL(const KURL& url
 
 ApplicationCacheGroup* ApplicationCacheStorage::fallbackCacheGroupForURL(const KURL& url)
 {
+    ASSERT(!url.hasFragmentIdentifier());
+
     // Check if an appropriate cache already exists in memory.
     CacheGroupMap::const_iterator end = m_cachesInMemory.end();
     for (CacheGroupMap::const_iterator it = m_cachesInMemory.begin(); it != end; ++it) {
@@ -277,7 +286,7 @@ ApplicationCacheGroup* ApplicationCacheStorage::fallbackCacheGroupForURL(const K
     
     int result;
     while ((result = statement.step()) == SQLResultRow) {
-        KURL manifestURL = KURL(statement.getColumnText(1));
+        KURL manifestURL = KURL(ParsedURLString, statement.getColumnText(1));
 
         if (m_cachesInMemory.contains(manifestURL))
             continue;
@@ -355,6 +364,58 @@ const String& ApplicationCacheStorage::cacheDirectory() const
     return m_cacheDirectory;
 }
 
+void ApplicationCacheStorage::setMaximumSize(int64_t size)
+{
+    m_maximumSize = size;
+}
+
+int64_t ApplicationCacheStorage::maximumSize() const
+{
+    return m_maximumSize;
+}
+
+bool ApplicationCacheStorage::isMaximumSizeReached() const
+{
+    return m_isMaximumSizeReached;
+}
+
+int64_t ApplicationCacheStorage::spaceNeeded(int64_t cacheToSave)
+{
+    int64_t spaceNeeded = 0;
+    long long fileSize = 0;
+    if (!getFileSize(m_cacheFile, fileSize))
+        return 0;
+
+    int64_t currentSize = fileSize;
+
+    // Determine the amount of free space we have available.
+    int64_t totalAvailableSize = 0;
+    if (m_maximumSize < currentSize) {
+        // The max size is smaller than the actual size of the app cache file.
+        // This can happen if the client previously imposed a larger max size
+        // value and the app cache file has already grown beyond the current
+        // max size value.
+        // The amount of free space is just the amount of free space inside
+        // the database file. Note that this is always 0 if SQLite is compiled
+        // with AUTO_VACUUM = 1.
+        totalAvailableSize = m_database.freeSpaceSize();
+    } else {
+        // The max size is the same or larger than the current size.
+        // The amount of free space available is the amount of free space
+        // inside the database file plus the amount we can grow until we hit
+        // the max size.
+        totalAvailableSize = (m_maximumSize - currentSize) + m_database.freeSpaceSize();
+    }
+
+    // The space needed to be freed in order to accommodate the failed cache is
+    // the size of the failed cache minus any already available free space.
+    spaceNeeded = cacheToSave - totalAvailableSize;
+    // The space needed value must be positive (or else the total already
+    // available free space would be larger than the size of the failed cache and
+    // saving of the cache should have never failed).
+    ASSERT(spaceNeeded);
+    return spaceNeeded;
+}
 
 bool ApplicationCacheStorage::executeSQLCommand(const String& sql)
 {
@@ -368,7 +429,6 @@ bool ApplicationCacheStorage::executeSQLCommand(const String& sql)
     return result;
 }
 
-// This version identifier should be incremented as necessary. It is not necessarily related to the non-PLATFORM(IPHONE) schema version.
 static const int schemaVersion = 4;
     
 void ApplicationCacheStorage::verifySchemaVersion()
@@ -403,22 +463,22 @@ void ApplicationCacheStorage::openDatabase(bool createIfDoesNotExist)
     // The cache directory should never be null, but if it for some weird reason is we bail out.
     if (m_cacheDirectory.isNull())
         return;
-    
-    String applicationCachePath = pathByAppendingComponent(m_cacheDirectory, "ApplicationCache.db");
-    bool exists = fileExists(applicationCachePath);
+
+    m_cacheFile = pathByAppendingComponent(m_cacheDirectory, "ApplicationCache.db");
+    bool exists = fileExists(m_cacheFile);
     if (!createIfDoesNotExist && !exists)
         return;
 
     if (exists) {
         // The cache has grown too large, wipe it out and start rebuilding. This is not ideal but it is simple and safe.
         long long fileSize = 0;
-        getFileSize(applicationCachePath, fileSize);
+        getFileSize(m_cacheFile, fileSize);
         if (fileSize > maximumCacheDatabaseSize)
-            deleteFile(applicationCachePath);
+            deleteFile(m_cacheFile);
     }
 
     makeAllDirectories(m_cacheDirectory);
-    m_database.open(applicationCachePath);
+    m_database.open(m_cacheFile);
     
     if (!m_database.isOpen())
         return;
@@ -428,7 +488,7 @@ void ApplicationCacheStorage::openDatabase(bool createIfDoesNotExist)
     // Create tables
     executeSQLCommand("CREATE TABLE IF NOT EXISTS CacheGroups (id INTEGER PRIMARY KEY AUTOINCREMENT, "
                       "manifestHostHash INTEGER NOT NULL ON CONFLICT FAIL, manifestURL TEXT UNIQUE ON CONFLICT FAIL, newestCache INTEGER)");
-    executeSQLCommand("CREATE TABLE IF NOT EXISTS Caches (id INTEGER PRIMARY KEY AUTOINCREMENT, cacheGroup INTEGER)");
+    executeSQLCommand("CREATE TABLE IF NOT EXISTS Caches (id INTEGER PRIMARY KEY AUTOINCREMENT, cacheGroup INTEGER, size INTEGER)");
     executeSQLCommand("CREATE TABLE IF NOT EXISTS CacheWhitelistURLs (url TEXT NOT NULL ON CONFLICT FAIL, cache INTEGER NOT NULL ON CONFLICT FAIL)");
     executeSQLCommand("CREATE TABLE IF NOT EXISTS CacheAllowsAllNetworkRequests (wildcard INTEGER NOT NULL ON CONFLICT FAIL, cache INTEGER NOT NULL ON CONFLICT FAIL)");
     executeSQLCommand("CREATE TABLE IF NOT EXISTS FallbackURLs (namespace TEXT NOT NULL ON CONFLICT FAIL, fallbackURL TEXT NOT NULL ON CONFLICT FAIL, "
@@ -470,9 +530,10 @@ bool ApplicationCacheStorage::executeStatement(SQLiteStatement& statement)
     return result;
 }    
 
-bool ApplicationCacheStorage::store(ApplicationCacheGroup* group)
+bool ApplicationCacheStorage::store(ApplicationCacheGroup* group, GroupStorageIDJournal* journal)
 {
     ASSERT(group->storageID() == 0);
+    ASSERT(journal);
 
     SQLiteStatement statement(m_database, "INSERT INTO CacheGroups (manifestHostHash, manifestURL) VALUES (?, ?)");
     if (statement.prepare() != SQLResultOk)
@@ -485,6 +546,7 @@ bool ApplicationCacheStorage::store(ApplicationCacheGroup* group)
         return false;
 
     group->setStorageID(static_cast<unsigned>(m_database.lastInsertRowID()));
+    journal->add(group, 0);
     return true;
 }    
 
@@ -494,11 +556,12 @@ bool ApplicationCacheStorage::store(ApplicationCache* cache, ResourceStorageIDJo
     ASSERT(cache->group()->storageID() != 0);
     ASSERT(storageIDJournal);
     
-    SQLiteStatement statement(m_database, "INSERT INTO Caches (cacheGroup) VALUES (?)");
+    SQLiteStatement statement(m_database, "INSERT INTO Caches (cacheGroup, size) VALUES (?, ?)");
     if (statement.prepare() != SQLResultOk)
         return false;
 
     statement.bindInt64(1, cache->group()->storageID());
+    statement.bindInt64(2, cache->estimatedSizeInStorage());
 
     if (!executeStatement(statement))
         return false;
@@ -607,6 +670,9 @@ bool ApplicationCacheStorage::store(ApplicationCacheResource* resource, unsigned
     if (resourceStatement.prepare() != SQLResultOk)
         return false;
     
+    // The same ApplicationCacheResource are used in ApplicationCacheResource::size()
+    // to calculate the approximate size of an ApplicationCacheResource object. If
+    // you change the code below, please also change ApplicationCacheResource::size().
     resourceStatement.bindText(1, resource->url());
     resourceStatement.bindInt64(2, resource->response().httpStatusCode());
     resourceStatement.bindText(3, resource->response().url());
@@ -652,33 +718,56 @@ bool ApplicationCacheStorage::storeUpdatedType(ApplicationCacheResource* resourc
     return executeStatement(entryStatement);
 }
 
-void ApplicationCacheStorage::store(ApplicationCacheResource* resource, ApplicationCache* cache)
+bool ApplicationCacheStorage::store(ApplicationCacheResource* resource, ApplicationCache* cache)
 {
     ASSERT(cache->storageID());
     
     openDatabase(true);
  
+    m_isMaximumSizeReached = false;
+    m_database.setMaximumSize(m_maximumSize);
+
     SQLiteTransaction storeResourceTransaction(m_database);
     storeResourceTransaction.begin();
     
-    if (!store(resource, cache->storageID()))
-        return;
+    if (!store(resource, cache->storageID())) {
+        checkForMaxSizeReached();
+        return false;
+    }
+
+    // A resource was added to the cache. Update the total data size for the cache.
+    SQLiteStatement sizeUpdateStatement(m_database, "UPDATE Caches SET size=size+? WHERE id=?");
+    if (sizeUpdateStatement.prepare() != SQLResultOk)
+        return false;
+
+    sizeUpdateStatement.bindInt64(1, resource->estimatedSizeInStorage());
+    sizeUpdateStatement.bindInt64(2, cache->storageID());
+
+    if (!executeStatement(sizeUpdateStatement))
+        return false;
     
     storeResourceTransaction.commit();
+    return true;
 }
 
 bool ApplicationCacheStorage::storeNewestCache(ApplicationCacheGroup* group)
 {
     openDatabase(true);
-    
+
+    m_isMaximumSizeReached = false;
+    m_database.setMaximumSize(m_maximumSize);
+
     SQLiteTransaction storeCacheTransaction(m_database);
     
     storeCacheTransaction.begin();
-    
+
+    GroupStorageIDJournal groupStorageIDJournal;
     if (!group->storageID()) {
         // Store the group
-        if (!store(group))
+        if (!store(group, &groupStorageIDJournal)) {
+            checkForMaxSizeReached();
             return false;
+        }
     }
     
     ASSERT(group->newestCache());
@@ -688,11 +777,13 @@ bool ApplicationCacheStorage::storeNewestCache(ApplicationCacheGroup* group)
     // Log the storageID changes to the in-memory resource objects. The journal
     // object will roll them back automatically in case a database operation
     // fails and this method returns early.
-    ResourceStorageIDJournal storageIDJournal;
+    ResourceStorageIDJournal resourceStorageIDJournal;
 
     // Store the newest cache
-    if (!store(group->newestCache(), &storageIDJournal))
+    if (!store(group->newestCache(), &resourceStorageIDJournal)) {
+        checkForMaxSizeReached();
         return false;
+    }
     
     // Update the newest cache in the group.
     
@@ -706,7 +797,8 @@ bool ApplicationCacheStorage::storeNewestCache(ApplicationCacheGroup* group)
     if (!executeStatement(statement))
         return false;
     
-    storageIDJournal.commit();
+    groupStorageIDJournal.commit();
+    resourceStorageIDJournal.commit();
     storeCacheTransaction.commit();
     return true;
 }
@@ -754,7 +846,7 @@ PassRefPtr<ApplicationCache> ApplicationCacheStorage::loadCache(unsigned storage
     
     int result;
     while ((result = cacheStatement.step()) == SQLResultRow) {
-        KURL url(cacheStatement.getColumnText(0));
+        KURL url(ParsedURLString, cacheStatement.getColumnText(0));
         
         unsigned type = static_cast<unsigned>(cacheStatement.getColumnInt64(1));
 
@@ -790,7 +882,7 @@ PassRefPtr<ApplicationCache> ApplicationCacheStorage::loadCache(unsigned storage
     
     Vector<KURL> whitelist;
     while ((result = whitelistStatement.step()) == SQLResultRow) 
-        whitelist.append(whitelistStatement.getColumnText(0));
+        whitelist.append(KURL(ParsedURLString, whitelistStatement.getColumnText(0)));
 
     if (result != SQLResultDone)
         LOG_ERROR("Could not load cache online whitelist, error \"%s\"", m_database.lastErrorMsg());
@@ -820,7 +912,7 @@ PassRefPtr<ApplicationCache> ApplicationCacheStorage::loadCache(unsigned storage
     
     FallbackURLVector fallbackURLs;
     while ((result = fallbackStatement.step()) == SQLResultRow) 
-        fallbackURLs.append(make_pair(fallbackStatement.getColumnText(0), fallbackStatement.getColumnText(1)));
+        fallbackURLs.append(make_pair(KURL(ParsedURLString, fallbackStatement.getColumnText(0)), KURL(ParsedURLString, fallbackStatement.getColumnText(1))));
 
     if (result != SQLResultDone)
         LOG_ERROR("Could not load fallback URLs, error \"%s\"", m_database.lastErrorMsg());
@@ -886,8 +978,12 @@ void ApplicationCacheStorage::empty()
         it->second->clearStorageID();
 }    
 
-bool ApplicationCacheStorage::storeCopyOfCache(const String& cacheDirectory, ApplicationCache* cache)
+bool ApplicationCacheStorage::storeCopyOfCache(const String& cacheDirectory, ApplicationCacheHost* cacheHost)
 {
+    ApplicationCache* cache = cacheHost->applicationCache();
+    if (!cache)
+        return true;
+
     // Create a new cache.
     RefPtr<ApplicationCache> cacheCopy = ApplicationCache::create();
 
@@ -917,7 +1013,120 @@ bool ApplicationCacheStorage::storeCopyOfCache(const String& cacheDirectory, App
     
     return copyStorage.storeNewestCache(groupCopy.get());
 }
-    
+
+bool ApplicationCacheStorage::manifestURLs(Vector<KURL>* urls)
+{
+    ASSERT(urls);
+    openDatabase(false);
+    if (!m_database.isOpen())
+        return false;
+
+    SQLiteStatement selectURLs(m_database, "SELECT manifestURL FROM CacheGroups");
+
+    if (selectURLs.prepare() != SQLResultOk)
+        return false;
+
+    while (selectURLs.step() == SQLResultRow)
+        urls->append(KURL(ParsedURLString, selectURLs.getColumnText(0)));
+
+    return true;
+}
+
+bool ApplicationCacheStorage::cacheGroupSize(const String& manifestURL, int64_t* size)
+{
+    ASSERT(size);
+    openDatabase(false);
+    if (!m_database.isOpen())
+        return false;
+
+    SQLiteStatement statement(m_database, "SELECT sum(Caches.size) FROM Caches INNER JOIN CacheGroups ON Caches.cacheGroup=CacheGroups.id WHERE CacheGroups.manifestURL=?");
+    if (statement.prepare() != SQLResultOk)
+        return false;
+
+    statement.bindText(1, manifestURL);
+
+    int result = statement.step();
+    if (result == SQLResultDone)
+        return false;
+
+    if (result != SQLResultRow) {
+        LOG_ERROR("Could not get the size of the cache group, error \"%s\"", m_database.lastErrorMsg());
+        return false;
+    }
+
+    *size = statement.getColumnInt64(0);
+    return true;
+}
+
+bool ApplicationCacheStorage::deleteCacheGroup(const String& manifestURL)
+{
+    SQLiteTransaction deleteTransaction(m_database);
+    // Check to see if the group is in memory.
+    ApplicationCacheGroup* group = m_cachesInMemory.get(manifestURL);
+    if (group)
+        cacheGroupMadeObsolete(group);
+    else {
+        // The cache group is not in memory, so remove it from the disk.
+        openDatabase(false);
+        if (!m_database.isOpen())
+            return false;
+
+        SQLiteStatement idStatement(m_database, "SELECT id FROM CacheGroups WHERE manifestURL=?");
+        if (idStatement.prepare() != SQLResultOk)
+            return false;
+
+        idStatement.bindText(1, manifestURL);
+
+        int result = idStatement.step();
+        if (result == SQLResultDone)
+            return false;
+
+        if (result != SQLResultRow) {
+            LOG_ERROR("Could not load cache group id, error \"%s\"", m_database.lastErrorMsg());
+            return false;
+        }
+
+        int64_t groupId = idStatement.getColumnInt64(0);
+
+        SQLiteStatement cacheStatement(m_database, "DELETE FROM Caches WHERE cacheGroup=?");
+        if (cacheStatement.prepare() != SQLResultOk)
+            return false;
+
+        SQLiteStatement groupStatement(m_database, "DELETE FROM CacheGroups WHERE id=?");
+        if (groupStatement.prepare() != SQLResultOk)
+            return false;
+
+        cacheStatement.bindInt64(1, groupId);
+        executeStatement(cacheStatement);
+        groupStatement.bindInt64(1, groupId);
+        executeStatement(groupStatement);
+    }
+
+    deleteTransaction.commit();
+    return true;
+}
+
+void ApplicationCacheStorage::vacuumDatabaseFile()
+{
+    openDatabase(false);
+    if (!m_database.isOpen())
+        return;
+
+    m_database.runVacuumCommand();
+}
+
+void ApplicationCacheStorage::checkForMaxSizeReached()
+{
+    if (m_database.lastError() == SQLResultFull)
+        m_isMaximumSizeReached = true;
+}
+
+ApplicationCacheStorage::ApplicationCacheStorage() 
+    : m_maximumSize(INT_MAX)
+    , m_isMaximumSizeReached(false)
+{
+}
+
 ApplicationCacheStorage& cacheStorage()
 {
     DEFINE_STATIC_LOCAL(ApplicationCacheStorage, storage, ());

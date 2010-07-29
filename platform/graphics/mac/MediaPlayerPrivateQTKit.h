@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -77,9 +77,12 @@ private:
     static MediaPlayer::SupportsType supportsType(const String& type, const String& codecs);
     static bool isAvailable();
 
+    PlatformMedia platformMedia() const;
+
     IntSize naturalSize() const;
     bool hasVideo() const;
     bool hasAudio() const;
+    bool supportsFullscreen() const;
     
     void load(const String& url);
     void cancelLoad();
@@ -98,22 +101,22 @@ private:
     void setVolume(float);
     void setPreservesPitch(bool);
 
-    void setEndTime(float time);
+    bool hasClosedCaptions() const;
+    void setClosedCaptionsVisible(bool);
 
-    int dataRate() const;
-    
     MediaPlayer::NetworkState networkState() const { return m_networkState; }
     MediaPlayer::ReadyState readyState() const { return m_readyState; }
     
     PassRefPtr<TimeRanges> buffered() const;
     float maxTimeSeekable() const;
     unsigned bytesLoaded() const;
-    bool totalBytesKnown() const;
     unsigned totalBytes() const;
     
     void setVisible(bool);
     void setSize(const IntSize&);
     
+    virtual bool hasAvailableVideoFrame() const;
+
     void paint(GraphicsContext*, const IntRect&);
     void paintCurrentFrameInContext(GraphicsContext*, const IntRect&);
 
@@ -170,18 +173,19 @@ private:
     Timer<MediaPlayerPrivate> m_seekTimer;
     MediaPlayer::NetworkState m_networkState;
     MediaPlayer::ReadyState m_readyState;
-    bool m_startedPlaying;
-    bool m_isStreaming;
-    bool m_visible;
     IntRect m_rect;
     FloatSize m_scaleFactor;
     unsigned m_enabledTrackCount;
     unsigned m_totalTrackCount;
-    bool m_hasUnsupportedTracks;
     float m_reportedDuration;
     float m_cachedDuration;
     float m_timeToRestore;
     RetainPtr<QTMovieLayer> m_qtVideoLayer;
+    bool m_startedPlaying;
+    bool m_isStreaming;
+    bool m_visible;
+    bool m_hasUnsupportedTracks;
+    bool m_videoFrameHasDrawn;
 #if DRAW_FRAME_RATE
     int  m_frameCountWhilePlaying;
     double m_timeStartedPlaying;

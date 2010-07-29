@@ -26,4 +26,36 @@
 #import "config.h"
 #import "ImageSourceCG.h"
 
-// FIXME: <rdar://problem/6564538>
+#import "PlatformString.h"
+#import "wtf/RetainPtr.h"
+
+#include "SoftLinking.h"
+#include <MobileCoreServices/MobileCoreServices.h>
+
+SOFT_LINK_FRAMEWORK(MobileCoreServices)
+
+SOFT_LINK(MobileCoreServices, UTTypeCopyPreferredTagWithClass, CFStringRef, (CFStringRef inUTI, CFStringRef inTagClass), (inUTI, inTagClass))
+
+SOFT_LINK_CONSTANT(MobileCoreServices, kUTTagClassFilenameExtension, CFStringRef)
+SOFT_LINK_CONSTANT(MobileCoreServices, kUTTagClassMIMEType, CFStringRef)
+
+#define kUTTagClassFilenameExtension getkUTTagClassFilenameExtension()
+#define kUTTagClassMIMEType getkUTTagClassMIMEType()
+
+namespace WebCore {
+
+String MIMETypeForImageSourceType(const String& uti)
+{
+    RetainPtr<CFStringRef> utiref(AdoptCF, uti.createCFString());
+    RetainPtr<CFStringRef> mime(AdoptCF, UTTypeCopyPreferredTagWithClass(utiref.get(), kUTTagClassMIMEType));
+    return mime.get();
+}
+
+String preferredExtensionForImageSourceType(const String& uti)
+{
+    RetainPtr<CFStringRef> type(AdoptCF, uti.createCFString());
+    RetainPtr<CFStringRef> extension(AdoptCF, UTTypeCopyPreferredTagWithClass(type.get(), kUTTagClassFilenameExtension));
+    return extension.get();
+}
+
+} // namespace WebCore

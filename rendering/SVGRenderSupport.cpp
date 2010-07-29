@@ -2,7 +2,8 @@
  * Copyright (C) 2007, 2008 Rob Buis <buis@kde.org>
  *           (C) 2007 Nikolas Zimmermann <zimmermann@kde.org>
  *           (C) 2007 Eric Seidel <eric@webkit.org>
- * Copyright (C) 2009 Google, Inc.  All rights reserved.
+ *           (C) 2009 Google, Inc.  All rights reserved.
+ *           (C) 2009 Dirk Schulze <krit@webkit.org>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -41,6 +42,10 @@
 
 namespace WebCore {
 
+SVGRenderBase::~SVGRenderBase()
+{
+}
+
 IntRect SVGRenderBase::clippedOverflowRectForRepaint(RenderObject* object, RenderBoxModelObject* repaintContainer)
 {
     // Return early for any cases where we don't actually paint
@@ -64,12 +69,12 @@ void SVGRenderBase::computeRectForRepaint(RenderObject* object, RenderBoxModelOb
 void SVGRenderBase::mapLocalToContainer(const RenderObject* object, RenderBoxModelObject* repaintContainer, bool fixed , bool useTransforms, TransformState& transformState)
 {
     ASSERT(!fixed); // We should have no fixed content in the SVG rendering tree.
-    ASSERT(useTransforms); // mapping a point through SVG w/o respecting trasnforms is useless.
+    ASSERT(useTransforms); // Mapping a point through SVG w/o respecting transforms is useless.
     transformState.applyTransform(object->localToParentTransform());
     object->parent()->mapLocalToContainer(repaintContainer, fixed, useTransforms, transformState);
 }
 
-void SVGRenderBase::prepareToRenderSVGContent(RenderObject* object, RenderObject::PaintInfo& paintInfo, const FloatRect& boundingBox, SVGResourceFilter*& filter, SVGResourceFilter* rootFilter)
+bool SVGRenderBase::prepareToRenderSVGContent(RenderObject* object, RenderObject::PaintInfo& paintInfo, const FloatRect& repaintRect, SVGResourceFilter*& filter, SVGResourceFilter* rootFilter)
 {
 #if !ENABLE(FILTERS)
     UNUSED_PARAM(filter);
@@ -90,8 +95,14 @@ void SVGRenderBase::prepareToRenderSVGContent(RenderObject* object, RenderObject
     // Setup transparency layers before setting up filters!
     float opacity = style->opacity(); 
     if (opacity < 1.0f) {
-        paintInfo.context->clip(enclosingIntRect(boundingBox));
+        paintInfo.context->clip(repaintRect);
         paintInfo.context->beginTransparencyLayer(opacity);
+    }
+
+    if (ShadowData* shadow = svgStyle->shadow()) {
+        paintInfo.context->clip(repaintRect);
+        paintInfo.context->setShadow(IntSize(shadow->x, shadow->y), shadow->blur, shadow->color, style->colorSpace());
+        paintInfo.context->beginTransparencyLayer(1.0f);
     }
 
 #if ENABLE(FILTERS)
@@ -104,7 +115,7 @@ void SVGRenderBase::prepareToRenderSVGContent(RenderObject* object, RenderObject
     Document* document = object->document();
 
 #if ENABLE(FILTERS)
-    SVGResourceFilter* newFilter = getFilterById(document, filterId);
+    SVGResourceFilter* newFilter = getFilterById(document, filterId, object);
     if (newFilter == rootFilter) {
         // Catch <text filter="url(#foo)">Test<tspan filter="url(#foo)">123</tspan></text>.
         // The filter is NOT meant to be applied twice in that case!
@@ -114,28 +125,32 @@ void SVGRenderBase::prepareToRenderSVGContent(RenderObject* object, RenderObject
         filter = newFilter;
 #endif
 
-    SVGResourceClipper* clipper = getClipperById(document, clipperId);
-    SVGResourceMasker* masker = getMaskerById(document, maskerId);
+    SVGResourceClipper* clipper = getClipperById(document, clipperId, object);
+    SVGResourceMasker* masker = getMaskerById(document, maskerId, object);
+
+    if (masker) {
+        masker->addClient(styledElement);
+        if (!masker->applyMask(paintInfo.context, object))
+            return false;
+    } else if (!maskerId.isEmpty())
+        svgElement->document()->accessSVGExtensions()->addPendingResource(maskerId, styledElement);
+
+    if (clipper) {
+        clipper->addClient(styledElement);
+        clipper->applyClip(paintInfo.context, object->objectBoundingBox());
+    } else if (!clipperId.isEmpty())
+        svgElement->document()->accessSVGExtensions()->addPendingResource(clipperId, styledElement);
 
 #if ENABLE(FILTERS)
     if (filter) {
         filter->addClient(styledElement);
-        filter->prepareFilter(paintInfo.context, object);
+        if (!filter->prepareFilter(paintInfo.context, object))
+            return false;
     } else if (!filterId.isEmpty())
         svgElement->document()->accessSVGExtensions()->addPendingResource(filterId, styledElement);
 #endif
 
-    if (clipper) {
-        clipper->addClient(styledElement);
-        clipper->applyClip(paintInfo.context, boundingBox);
-    } else if (!clipperId.isEmpty())
-        svgElement->document()->accessSVGExtensions()->addPendingResource(clipperId, styledElement);
-
-    if (masker) {
-        masker->addClient(styledElement);
-        masker->applyMask(paintInfo.context, boundingBox);
-    } else if (!maskerId.isEmpty())
-        svgElement->document()->accessSVGExtensions()->addPendingResource(maskerId, styledElement);
+    return true;
 }
 
 void SVGRenderBase::finishRenderSVGContent(RenderObject* object, RenderObject::PaintInfo& paintInfo, SVGResourceFilter*& filter, GraphicsContext* savedContext)
@@ -160,6 +175,11 @@ void SVGRenderBase::finishRenderSVGContent(RenderObject* object, RenderObject::P
     float opacity = style->opacity();    
     if (opacity < 1.0f)
         paintInfo.context->endTransparencyLayer();
+
+    // This needs to be done separately from opacity, because if both properties are set,
+    // then the transparency layers are nested. 
+    if (style->svgStyle()->shadow())
+        paintInfo.context->endTransparencyLayer();
 }
 
 void renderSubtreeToImage(ImageBuffer* image, RenderObject* item)
@@ -169,9 +189,11 @@ void renderSubtreeToImage(ImageBuffer* image, RenderObject* item)
     ASSERT(image->context());
     RenderObject::PaintInfo info(image->context(), IntRect(), PaintPhaseForeground, 0, 0, 0);
 
+    // FIXME: isSVGContainer returns true for RenderSVGViewportContainer, so if this is ever
+    // called with one of those, we will read from the wrong offset in an object due to a bad cast.
     RenderSVGContainer* svgContainer = 0;
     if (item && item->isSVGContainer())
-        svgContainer = static_cast<RenderSVGContainer*>(item);
+        svgContainer = toRenderSVGContainer(item);
 
     bool drawsContents = svgContainer ? svgContainer->drawsContents() : false;
     if (svgContainer && !drawsContents)
@@ -213,15 +235,67 @@ FloatRect SVGRenderBase::computeContainerBoundingBox(const RenderObject* contain
     return boundingBox;
 }
 
-FloatRect SVGRenderBase::filterBoundingBoxForRenderer(const RenderObject* object)
+void SVGRenderBase::layoutChildren(RenderObject* start, bool selfNeedsLayout)
+{
+    for (RenderObject* child = start->firstChild(); child; child = child->nextSibling()) {
+        // Only force our kids to layout if we're being asked to relayout as a result of a parent changing
+        // FIXME: We should be able to skip relayout of non-relative kids when only bounds size has changed
+        // that's a possible future optimization using LayoutState
+        // http://bugs.webkit.org/show_bug.cgi?id=15391
+        bool needsLayout = selfNeedsLayout;
+        if (!needsLayout) {
+            if (SVGElement* element = child->node()->isSVGElement() ? static_cast<SVGElement*>(child->node()) : 0) {
+                if (element->isStyled())
+                    needsLayout = static_cast<SVGStyledElement*>(element)->hasRelativeValues();
+            }
+        }
+
+        if (needsLayout)
+            child->setNeedsLayout(true, false);
+
+        child->layoutIfNeeded();
+        ASSERT(!child->needsLayout());
+    }
+}
+
+bool SVGRenderBase::isOverflowHidden(const RenderObject* object)
+{
+    if (object->style()->overflowX() == OHIDDEN) {
+        // SVG doesn't support independent x/y overflow
+        ASSERT(object->style()->overflowY() == OHIDDEN);
+        return true;
+    }
+
+    return false;
+}
+
+FloatRect SVGRenderBase::filterBoundingBoxForRenderer(const RenderObject* object) const
 {
 #if ENABLE(FILTERS)
-    SVGResourceFilter* filter = getFilterById(object->document(), object->style()->svgStyle()->filter());
+    SVGResourceFilter* filter = getFilterById(object->document(), object->style()->svgStyle()->filter(), object);
     if (filter)
-        return filter->filterBBoxForItemBBox(object->objectBoundingBox());
+        return filter->filterBoundingBox(object->objectBoundingBox());
 #else
     UNUSED_PARAM(object);
 #endif
+    return FloatRect();
+}
+
+FloatRect SVGRenderBase::clipperBoundingBoxForRenderer(const RenderObject* object) const
+{
+    SVGResourceClipper* clipper = getClipperById(object->document(), object->style()->svgStyle()->clipPath(), object);
+    if (clipper)
+        return clipper->clipperBoundingBox(object->objectBoundingBox());
+
+    return FloatRect();
+}
+
+FloatRect SVGRenderBase::maskerBoundingBoxForRenderer(const RenderObject* object) const
+{
+    SVGResourceMasker* masker = getMaskerById(object->document(), object->style()->svgStyle()->maskElement(), object);
+    if (masker)
+        return masker->maskerBoundingBox(object->objectBoundingBox());
+
     return FloatRect();
 }
 

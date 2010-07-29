@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -37,8 +37,25 @@
 #include <wtf/HashSet.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/PassOwnPtr.h>
+
+#ifdef __OBJC__
+@class QTMovie;
+#else
+class QTMovie;
+#endif
 
 namespace WebCore {
+
+// Structure that will hold every native
+// types supported by the current media player.
+// We have to do that has multiple media players
+// backend can live at runtime.
+typedef struct PlatformMedia {
+    QTMovie* qtMovie;
+} PlatformMedia;
+
+static const PlatformMedia NoPlatformMedia = { 0 };
 
 class ContentType;
 class FrameView;
@@ -97,9 +114,13 @@ public:
 #endif
 };
 
-class MediaPlayer : Noncopyable {
+class MediaPlayer : public Noncopyable {
 public:
-    MediaPlayer(MediaPlayerClient*);
+
+    static PassOwnPtr<MediaPlayer> create(MediaPlayerClient* client)
+    {
+        return new MediaPlayer(client);
+    }
     virtual ~MediaPlayer();
 
     // media engine support
@@ -110,6 +131,8 @@ public:
 
     bool supportsFullscreen() const;
     bool supportsSave() const;
+    PlatformMedia platformMedia() const;
+
     IntSize naturalSize();
     bool hasVideo() const;
     bool hasAudio() const;
@@ -140,8 +163,6 @@ public:
 
     float startTime() const;
     
-    void setEndTime(float time);
-    
     float rate() const;
     void setRate(float);
 
@@ -152,13 +173,12 @@ public:
     float maxTimeSeekable();
 
     unsigned bytesLoaded();
-    bool totalBytesKnown();
-    unsigned totalBytes();
     
     float volume() const;
     void setVolume(float);
-    
-    int dataRate() const;
+
+    bool hasClosedCaptions() const;
+    void setClosedCaptionsVisible(bool closedCaptionsVisible);
 
     bool autobuffer() const;    
     void setAutobuffer(bool);
@@ -187,6 +207,8 @@ public:
 
     MediaPlayerClient* mediaPlayerClient() const { return m_mediaPlayerClient; }
 
+    bool hasAvailableVideoFrame() const;
+
     bool canLoadPoster() const;
     void setPoster(const String&);
 
@@ -194,6 +216,8 @@ public:
     void deliverNotification(MediaPlayerProxyNotificationType notification);
     void setMediaPlayerProxy(WebMediaPlayerProxy* proxy);
     void setControls(bool);
+    void enterFullScreen();
+    void exitFullScreen();
 #endif
 
 #if USE(ACCELERATED_COMPOSITING)
@@ -206,6 +230,8 @@ public:
     bool hasSingleSecurityOrigin() const;
 
 private:
+    MediaPlayer(MediaPlayerClient*);
+
     static void initializeMediaEngines();
 
     MediaPlayerClient* m_mediaPlayerClient;

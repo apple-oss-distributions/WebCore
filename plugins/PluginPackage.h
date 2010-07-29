@@ -21,7 +21,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef PluginPackage_H
@@ -32,9 +32,16 @@
 #include "PluginQuirkSet.h"
 #include "StringHash.h"
 #include "Timer.h"
+#if ENABLE(NETSCAPE_PLUGIN_API)
 #include "npruntime_internal.h"
+#endif
 #include <wtf/HashMap.h>
 #include <wtf/RefCounted.h>
+
+#if OS(SYMBIAN)
+class QPluginLoader;
+class NPInterface;
+#endif
 
 namespace WebCore {
     typedef HashMap<String, String> MIMEToDescriptionsMap;
@@ -44,7 +51,7 @@ namespace WebCore {
     public:
         ~PluginPackage();
         static PassRefPtr<PluginPackage> createPackage(const String& path, const time_t& lastModified);
-        
+
         const String& name() const { return m_name; }
         const String& description() const { return m_description; }
         const String& path() const { return m_path; }
@@ -62,14 +69,27 @@ namespace WebCore {
         void unload();
         void unloadWithoutShutdown();
 
+        bool isEnabled() const { return m_isEnabled; }
+        void setEnabled(bool);
+
+#if ENABLE(NETSCAPE_PLUGIN_API)
         const NPPluginFuncs* pluginFuncs() const { return &m_pluginFuncs; }
+#endif
         int compareFileVersion(const PlatformModuleVersion&) const;
         int compare(const PluginPackage&) const;
         PluginQuirkSet quirks() const { return m_quirks; }
         const PlatformModuleVersion& version() const { return m_moduleVersion; }
+#if OS(SYMBIAN)
+        NPInterface* npInterface() const { return m_npInterface; }
+#endif // OS(SYMBIAN)
 
     private:
         PluginPackage(const String& path, const time_t& lastModified);
+
+#if OS(SYMBIAN)
+        NPInterface* m_npInterface;
+        QPluginLoader* m_pluginLoader;
+#endif // OS(SYMBIAN)
         bool fetchInfo();
         bool isPluginBlacklisted();
         void determineQuirks(const String& mimeType);
@@ -77,6 +97,7 @@ namespace WebCore {
         void determineModuleVersionFromDescription();
         void initializeBrowserFuncs();
 
+        bool m_isEnabled;
         bool m_isLoaded;
         int m_loadCount;
 
@@ -94,9 +115,11 @@ namespace WebCore {
         PlatformModule m_module;
         time_t m_lastModified;
 
+#if ENABLE(NETSCAPE_PLUGIN_API)
         NPP_ShutdownProcPtr m_NPP_Shutdown;
         NPPluginFuncs m_pluginFuncs;
         NPNetscapeFuncs m_browserFuncs;
+#endif
 
         void freeLibrarySoon();
         void freeLibraryTimerFired(Timer<PluginPackage>*);

@@ -64,10 +64,6 @@ RenderView::RenderView(Node* node, FrameView* view)
     setPrefWidthsDirty(true, false);
     
     setPositioned(true); // to 0,0 :)
-
-    // Create a new root layer for our layer hierarchy.
-    m_layer = new (node->document()->renderArena()) RenderLayer(this);
-    setHasLayer(true);
 }
 
 RenderView::~RenderView()
@@ -121,12 +117,10 @@ void RenderView::layout()
     if (needsLayout())
         RenderBlock::layout();
 
-    // Reset overflowWidth and overflowHeight, since they act as a lower bound for docWidth() and docHeight().
-    setOverflowWidth(width());
-    setOverflowHeight(height());
-    
-    setOverflowWidth(docWidth());
-    setOverflowHeight(docHeight());
+    // Reset overflow and then replace it with docWidth and docHeight.
+    m_overflow.clear();
+    addLayoutOverflow(IntRect(0, 0, docWidth(), docHeight()));
+
 
     ASSERT(layoutDelta() == IntSize());
     ASSERT(m_layoutStateDisableCount == 0);
@@ -200,7 +194,7 @@ void RenderView::paintBoxDecorations(PaintInfo& paintInfo, int, int)
         if (baseColor.alpha() > 0) {
             paintInfo.context->save();
             paintInfo.context->setCompositeOperation(CompositeCopy);
-            paintInfo.context->fillRect(paintInfo.rect, baseColor);
+            paintInfo.context->fillRect(paintInfo.rect, baseColor, style()->colorSpace());
             paintInfo.context->restore();
         } else
             paintInfo.context->clearRect(paintInfo.rect);
@@ -329,7 +323,13 @@ IntRect RenderView::selectionBounds(bool clipToVisibleContent) const
     SelectionMap::iterator end = selectedObjects.end();
     for (SelectionMap::iterator i = selectedObjects.begin(); i != end; ++i) {
         RenderSelectionInfo* info = i->second;
-        selRect.unite(info->rect());
+        // RenderSelectionInfo::rect() is in the coordinates of the repaintContainer, so map to page coordinates.
+        IntRect currRect = info->rect();
+        if (RenderBoxModelObject* repaintContainer = info->repaintContainer()) {
+            FloatQuad absQuad = repaintContainer->localToAbsoluteQuad(FloatRect(currRect));
+            currRect = absQuad.enclosingBoundingBox(); 
+        }
+        selRect.unite(currRect);
         delete info;
     }
     return selRect;
@@ -428,7 +428,7 @@ void RenderView::setSelection(RenderObject* start, int startPos, RenderObject* e
         o = o->nextInPreOrder();
     }
 
-    m_cachedSelectionBounds = IntRect();
+    m_layer->clearBlockSelectionGapsBounds();
 
     // Now that the selection state has been updated for the new objects, walk them again and
     // put them in the new objects list.
@@ -441,9 +441,7 @@ void RenderView::setSelection(RenderObject* start, int startPos, RenderObject* e
                 RenderBlockSelectionInfo* blockInfo = newSelectedBlocks.get(cb);
                 if (blockInfo)
                     break;
-                blockInfo = new RenderBlockSelectionInfo(cb);
-                newSelectedBlocks.set(cb, blockInfo);
-                m_cachedSelectionBounds.unite(blockInfo->rects());
+                newSelectedBlocks.set(cb, new RenderBlockSelectionInfo(cb));
                 cb = cb->containingBlock();
             }
         }
@@ -460,6 +458,8 @@ void RenderView::setSelection(RenderObject* start, int startPos, RenderObject* e
         deleteAllValues(newSelectedBlocks);
         return;
     }
+
+    m_frameView->beginDeferredRepaints();
 
     // Have any of the old selected objects changed compared to the new selection?
     for (SelectedObjectMap::iterator i = oldSelectedObjects.begin(); i != oldObjectsEnd; ++i) {
@@ -512,11 +512,13 @@ void RenderView::setSelection(RenderObject* start, int startPos, RenderObject* e
         newInfo->repaint();
         delete newInfo;
     }
+
+    m_frameView->endDeferredRepaints();
 }
 
 void RenderView::clearSelection()
 {
-    repaintViewRectangle(m_cachedSelectionBounds);
+    m_layer->repaintBlockSelectionGaps();
     setSelection(0, -1, 0, -1, RepaintNewMinusOld);
 }
 
@@ -645,6 +647,17 @@ void RenderView::pushLayoutState(RenderObject* root)
     ASSERT(m_layoutState == 0);
 
     m_layoutState = new (renderArena()) LayoutState(root);
+}
+
+bool RenderView::shouldDisableLayoutStateForSubtree(RenderObject* renderer) const
+{
+    RenderObject* o = renderer;
+    while (o) {
+        if (o->hasColumns() || o->hasTransform() || o->hasReflection())
+            return true;
+        o = o->container();
+    }
+    return false;
 }
 
 void RenderView::updateHitTestResult(HitTestResult& result, const IntPoint& point)

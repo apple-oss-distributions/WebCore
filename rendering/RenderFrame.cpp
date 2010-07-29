@@ -27,9 +27,6 @@
 
 #include "FrameView.h"
 #include "HTMLFrameElement.h"
-
-#include "Document.h"
-#include "Frame.h"
 #include "RenderView.h"
 
 namespace WebCore {
@@ -61,54 +58,6 @@ void RenderFrame::viewCleared()
         view->setMarginWidth(marginw);
     if (marginh != -1)
         view->setMarginHeight(marginh);
-}
-
-void RenderFrame::layoutWithFlattening(bool flexibleWidth, bool flexibleHeight)
-{
-    FrameView* childFrameView = static_cast<FrameView*>(widget());
-    RenderView* childRoot = childFrameView ? childFrameView->frame()->contentRenderer() : 0;
-    // don't expand frames set to have zero width or height
-    if (!width() || !height() || !childRoot) {
-        updateWidgetPosition();
-        if (childFrameView)
-            while (childFrameView->layoutPending())
-                childFrameView->layout();
-        setNeedsLayout(false);
-        return;
-    }
-
-    // expand the frame by setting frame height = content height
-    
-    // need to update to calculate min/max correctly
-    updateWidgetPosition();
-    if (childRoot->prefWidthsDirty())
-        childRoot->calcPrefWidths();
-    
-    bool scrolling = static_cast<HTMLFrameElement*>(node())->scrollingMode() != ScrollbarAlwaysOff;
-    
-    // if scrollbars are off assume it is ok for this frame to become really narrow
-    if (scrolling || flexibleWidth || childFrameView->frame()->document()->isFrameSet())
-         setWidth(max(width(), childRoot->minPrefWidth()));
- 
-    // update again to pass the width to the child frame
-    updateWidgetPosition();
-     
-    do
-        childFrameView->layout();
-    while (childFrameView->layoutPending() || childRoot->needsLayout());
-        
-    if (scrolling || flexibleHeight || childFrameView->frame()->document()->isFrameSet())
-        setHeight(max(height(), childFrameView->contentsHeight()));
-    if (scrolling || flexibleWidth || childFrameView->frame()->document()->isFrameSet())
-        setWidth(max(width(), childFrameView->contentsWidth()));
-    
-    updateWidgetPosition();
-
-    ASSERT(!childFrameView->layoutPending());
-    ASSERT(!childRoot->needsLayout());
-    ASSERT(!childRoot->firstChild() || !childRoot->firstChild()->firstChild() || !childRoot->firstChild()->firstChild()->needsLayout());
-    
-    setNeedsLayout(false);
 }
 
 } // namespace WebCore

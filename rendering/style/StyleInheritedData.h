@@ -44,7 +44,7 @@ public:
     ~StyleInheritedData();
 
     bool operator==(const StyleInheritedData& o) const;
-    bool operator!=( const StyleInheritedData& o) const
+    bool operator!=(const StyleInheritedData& o) const
     {
         return !(*this == o);
     }
@@ -69,7 +69,6 @@ public:
     // Paged media properties.
     short widows;
     short orphans;
-    unsigned page_break_inside : 2; // EPageBreak
     
 private:
     StyleInheritedData();

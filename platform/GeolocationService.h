@@ -38,9 +38,11 @@ class PositionOptions;
 class GeolocationServiceClient {
 public:
     virtual ~GeolocationServiceClient() { }
-    virtual void geolocationServicePositionChanged(GeolocationService*) { }
-    virtual void geolocationServiceErrorOccurred(GeolocationService*) { }
+    virtual void geolocationServicePositionChanged(GeolocationService*) = 0;
+    virtual void geolocationServiceErrorOccurred(GeolocationService*) = 0;
+#if ENABLE(GEOLOCATION_PERMISSION_CACHE)
     virtual void geolocationServiceCachePolicyChanged(GeolocationService*) { }
+#endif
 };
 
 class GeolocationService : public Noncopyable {
@@ -57,18 +59,27 @@ public:
     virtual Geoposition* lastPosition() const { return 0; }
     virtual PositionError* lastError() const { return 0; }
 
+#if ENABLE(GEOLOCATION_PERMISSION_CACHE)
     virtual void setShouldClearCache(bool) { }
     virtual bool shouldClearCache() const { return false; }
+#endif
 
     void positionChanged();
     void errorOccurred();
+#if ENABLE(GEOLOCATION_PERMISSION_CACHE)
     void cachePolicyChanged();
+#endif
+
+    static void useMock();
 
 protected:
     GeolocationService(GeolocationServiceClient*);
 
 private:
     GeolocationServiceClient* m_geolocationServiceClient;
+
+    typedef GeolocationService* (FactoryFunction)(GeolocationServiceClient*);
+    static FactoryFunction* s_factoryFunction;
 };
 
 } // namespace WebCore

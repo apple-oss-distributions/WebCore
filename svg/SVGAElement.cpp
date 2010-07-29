@@ -3,8 +3,6 @@
                   2004, 2005, 2007 Rob Buis <buis@kde.org>
                   2007 Eric Seidel <eric@webkit.org>
 
-    This file is part of the KDE project
-
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Library General Public
     License as published by the Free Software Foundation; either
@@ -33,6 +31,7 @@
 #include "EventNames.h"
 #include "Frame.h"
 #include "FrameLoader.h"
+#include "FrameLoaderTypes.h"
 #include "KeyboardEvent.h"
 #include "MappedAttribute.h"
 #include "MouseEvent.h"
@@ -52,7 +51,6 @@ SVGAElement::SVGAElement(const QualifiedName& tagName, Document *doc)
     , SVGTests()
     , SVGLangSpace()
     , SVGExternalResourcesRequired()
-    , m_target(this, SVGNames::targetAttr)
 {
 }
 
@@ -97,6 +95,25 @@ void SVGAElement::svgAttributeChanged(const QualifiedName& attrName)
     }
 }
 
+void SVGAElement::synchronizeProperty(const QualifiedName& attrName)
+{
+    SVGStyledTransformableElement::synchronizeProperty(attrName);
+
+    if (attrName == anyQName()) {
+        synchronizeTarget();
+        synchronizeHref();
+        synchronizeExternalResourcesRequired();
+        return;
+    }
+
+    if (attrName == SVGNames::targetAttr)
+        synchronizeTarget();
+    else if (SVGURIReference::isKnownAttribute(attrName))
+        synchronizeHref();
+    else if (SVGExternalResourcesRequired::isKnownAttribute(attrName))
+        synchronizeExternalResourcesRequired();
+}
+
 RenderObject* SVGAElement::createRenderer(RenderArena* arena, RenderStyle*)
 {
     if (static_cast<SVGElement*>(parent())->isTextContent())
@@ -138,7 +155,7 @@ void SVGAElement::defaultEventHandler(Event* evt)
             target = (getAttribute(XLinkNames::showAttr) == "new") ? "_blank" : "_self";
 
         if (!evt->defaultPrevented()) {
-            String url = parseURL(href());
+            String url = deprecatedParseURL(href());
 #if ENABLE(SVG_ANIMATION)
             if (url.startsWith("#")) {
                 Element* targetElement = document()->getElementById(url.substring(1));
@@ -152,7 +169,7 @@ void SVGAElement::defaultEventHandler(Event* evt)
             }
 #endif
             if (document()->frame())
-                document()->frame()->loader()->urlSelected(document()->completeURL(url), target, evt, false, false, true);
+                document()->frame()->loader()->urlSelected(document()->completeURL(url), target, evt, false, false, true, SendReferrer);
         }
 
         evt->setDefaultHandled();
@@ -165,20 +182,15 @@ bool SVGAElement::supportsFocus() const
 {
     if (isContentEditable())
         return SVGStyledTransformableElement::supportsFocus();
-    return isFocusable() || (document() && !document()->haveStylesheetsLoaded());
+    return true;
 }
 
 bool SVGAElement::isFocusable() const
 {
-    if (isContentEditable())
-        return SVGStyledTransformableElement::isFocusable();
-    
-    // FIXME: Even if we are not visible, we might have a child that is visible.
-    // Dave wants to fix that some day with a "has visible content" flag or the like.
-    if (!renderer() || !(renderer()->style()->visibility() == VISIBLE))
+    if (renderer() && renderer()->absoluteClippedOverflowRect().isEmpty())
         return false;
     
-    return !renderer()->absoluteClippedOverflowRect().isEmpty();
+    return SVGElement::isFocusable();
 }
 
 bool SVGAElement::isMouseFocusable() const

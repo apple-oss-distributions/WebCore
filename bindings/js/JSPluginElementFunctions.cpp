@@ -20,10 +20,10 @@
 #include "config.h"
 #include "JSPluginElementFunctions.h"
 
+#include "Bridge.h"
 #include "HTMLNames.h"
 #include "HTMLPlugInElement.h"
 #include "JSHTMLElement.h"
-#include "runtime.h"
 #include "runtime_object.h"
 
 using namespace JSC;
@@ -83,6 +83,22 @@ bool runtimeObjectCustomGetOwnPropertySlot(ExecState* exec, const Identifier& pr
     if (!runtimeObject->hasProperty(exec, propertyName))
         return false;
     slot.setCustom(element, runtimeObjectPropertyGetter);
+    return true;
+}
+
+bool runtimeObjectCustomGetOwnPropertyDescriptor(ExecState* exec, const Identifier& propertyName, PropertyDescriptor& descriptor, JSHTMLElement* element)
+{
+    RuntimeObjectImp* runtimeObject = getRuntimeObject(exec, element->impl());
+    if (!runtimeObject)
+        return false;
+    if (!runtimeObject->hasProperty(exec, propertyName))
+        return false;
+    PropertySlot slot;
+    slot.setCustom(element, runtimeObjectPropertyGetter);
+    // While we don't know what the plugin allows, we do know that we prevent
+    // enumeration or deletion of properties, so we mark plugin properties
+    // as DontEnum | DontDelete
+    descriptor.setDescriptor(slot.getValue(exec, propertyName), DontEnum | DontDelete);
     return true;
 }
 

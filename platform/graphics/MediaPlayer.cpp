@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -54,7 +54,7 @@ public:
     virtual void play() { }
     virtual void pause() { }    
 
-    virtual bool supportsFullscreen() const { return false; }
+    virtual PlatformMedia platformMedia() const { return NoPlatformMedia; }
 
     virtual IntSize naturalSize() const { return IntSize(0, 0); }
 
@@ -69,13 +69,14 @@ public:
     virtual void seek(float) { }
     virtual bool seeking() const { return false; }
 
-    virtual void setEndTime(float) { }
-
     virtual void setRate(float) { }
     virtual void setPreservesPitch(bool) { }
     virtual bool paused() const { return false; }
 
     virtual void setVolume(float) { }
+
+    virtual bool hasClosedCaptions() const { return false; }
+    virtual void setClosedCaptionsVisible(bool) { };
 
     virtual MediaPlayer::NetworkState networkState() const { return MediaPlayer::Empty; }
     virtual MediaPlayer::ReadyState readyState() const { return MediaPlayer::HaveNothing; }
@@ -83,9 +84,6 @@ public:
     virtual float maxTimeSeekable() const { return 0; }
     virtual PassRefPtr<TimeRanges> buffered() const { return TimeRanges::create(); }
 
-    virtual int dataRate() const { return 0; }
-
-    virtual bool totalBytesKnown() const { return false; }
     virtual unsigned totalBytes() const { return 0; }
     virtual unsigned bytesLoaded() const { return 0; }
 
@@ -113,7 +111,7 @@ static MediaPlayerPrivateInterface* createNullMediaPlayer(MediaPlayer* player)
 
 // engine support
 
-struct MediaPlayerFactory {
+struct MediaPlayerFactory : Noncopyable {
     MediaPlayerFactory(CreateMediaEnginePlayer constructor, MediaEngineSupportedTypes getSupportedTypes, MediaEngineSupportsType supportsTypeAndCodecs) 
         : constructor(constructor)
         , getSupportedTypes(getSupportedTypes)
@@ -225,7 +223,7 @@ void MediaPlayer::load(const String& url, const ContentType& contentType)
         engine = chooseBestEngineForTypeAndCodecs(type, codecs);
 
     // if we didn't find an engine that claims the MIME type, just use the first engine
-    if (!engine)
+    if (!engine && !installedMediaEngines().isEmpty())
         engine = installedMediaEngines()[0];
     
     // don't delete and recreate the player unless it comes from a different engine
@@ -236,7 +234,8 @@ void MediaPlayer::load(const String& url, const ContentType& contentType)
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
         m_private->setMediaPlayerProxy(m_playerProxy);
 #endif
-
+        m_private->setAutobuffer(autobuffer());
+        m_private->setPreservesPitch(preservesPitch());
     }
 
     if (m_private)
@@ -245,6 +244,11 @@ void MediaPlayer::load(const String& url, const ContentType& contentType)
         m_private.set(createNullMediaPlayer(this));
 }    
 
+bool MediaPlayer::hasAvailableVideoFrame() const
+{
+    return m_private->hasAvailableVideoFrame();
+}
+    
 bool MediaPlayer::canLoadPoster() const
 {
     return m_private->canLoadPoster();
@@ -338,6 +342,11 @@ bool MediaPlayer::inMediaDocument()
     return document && document->isMediaDocument();
 }
 
+PlatformMedia MediaPlayer::platformMedia() const
+{
+    return m_private->platformMedia();
+}
+
 MediaPlayer::NetworkState MediaPlayer::networkState()
 {
     return m_private->networkState();
@@ -357,6 +366,16 @@ void MediaPlayer::setVolume(float volume)
 {
     m_volume = volume;
     m_private->setVolume(volume);   
+}
+
+bool MediaPlayer::hasClosedCaptions() const
+{
+    return m_private->hasClosedCaptions();
+}
+
+void MediaPlayer::setClosedCaptionsVisible(bool closedCaptionsVisible)
+{
+    m_private->setClosedCaptionsVisible(closedCaptionsVisible);
 }
 
 float MediaPlayer::rate() const
@@ -381,16 +400,6 @@ void MediaPlayer::setPreservesPitch(bool preservesPitch)
     m_private->setPreservesPitch(preservesPitch);
 }
 
-int MediaPlayer::dataRate() const
-{
-    return m_private->dataRate();
-}
-
-void MediaPlayer::setEndTime(float time)
-{
-    m_private->setEndTime(time);
-}
-
 PassRefPtr<TimeRanges> MediaPlayer::buffered()
 {
     return m_private->buffered();
@@ -404,16 +413,6 @@ float MediaPlayer::maxTimeSeekable()
 unsigned MediaPlayer::bytesLoaded()
 {
     return m_private->bytesLoaded();
-}
-
-bool MediaPlayer::totalBytesKnown()
-{
-    return m_private->totalBytesKnown();
-}
-
-unsigned MediaPlayer::totalBytes()
-{
-    return m_private->totalBytes();
 }
 
 void MediaPlayer::setSize(const IntSize& size)
@@ -499,6 +498,16 @@ void MediaPlayer::setMediaPlayerProxy(WebMediaPlayerProxy* proxy)
 void MediaPlayer::setControls(bool controls)
 {
     m_private->setControls(controls);
+}    
+
+void MediaPlayer::enterFullScreen()
+{
+    m_private->enterFullScreen();
+}    
+
+void MediaPlayer::exitFullScreen()
+{
+    m_private->exitFullScreen();
 }    
 #endif
 

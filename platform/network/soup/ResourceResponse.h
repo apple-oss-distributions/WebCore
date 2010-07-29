@@ -28,6 +28,8 @@
 
 #include "ResourceResponseBase.h"
 
+#include <libsoup/soup.h>
+
 namespace WebCore {
 
 class ResourceResponse : public ResourceResponseBase {
@@ -41,6 +43,15 @@ public:
         : ResourceResponseBase(url, mimeType, expectedLength, textEncodingName, filename)
     {
     }
+
+    ResourceResponse(SoupMessage* soupMessage)
+        : ResourceResponseBase()
+    {
+        updateFromSoupMessage(soupMessage);
+    }
+
+    SoupMessage* toSoupMessage() const;
+    void updateFromSoupMessage(SoupMessage* soupMessage);
 
 private:
     friend class ResourceResponseBase;

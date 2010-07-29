@@ -37,6 +37,7 @@ public:
 #if USE(ACCELERATED_COMPOSITING)
     PlatformLayer* platformLayer() const;
     bool willProvidePluginLayer() const;
+    void attachPluginLayer();
 #endif
 
     

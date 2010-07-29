@@ -39,8 +39,6 @@
 #include "FontDescription.h"
 #include "GlyphBuffer.h"
 #include <cairo.h>
-#include <unicode/uchar.h>
-#include <unicode/unorm.h>
 #include <wtf/MathExtras.h>
 
 namespace WebCore {
@@ -50,9 +48,9 @@ void SimpleFontData::platformInit()
     cairo_font_extents_t font_extents;
     cairo_text_extents_t text_extents;
     cairo_scaled_font_extents(m_platformData.m_scaledFont, &font_extents);
-    m_ascent = static_cast<int>(font_extents.ascent);
-    m_descent = static_cast<int>(font_extents.descent);
-    m_lineSpacing = static_cast<int>(font_extents.height);
+    m_ascent = static_cast<int>(lroundf(font_extents.ascent));
+    m_descent = static_cast<int>(lroundf(font_extents.descent));
+    m_lineSpacing = static_cast<int>(lroundf(font_extents.height));
     // There seems to be some rounding error in cairo (or in how we
     // use cairo) with some fonts, like DejaVu Sans Mono, which makes
     // cairo report a height smaller than ascent + descent, which is
@@ -63,7 +61,7 @@ void SimpleFontData::platformInit()
     cairo_scaled_font_text_extents(m_platformData.m_scaledFont, "x", &text_extents);
     m_xHeight = text_extents.height;
     cairo_scaled_font_text_extents(m_platformData.m_scaledFont, " ", &text_extents);
-    m_spaceWidth =  static_cast<int>(text_extents.x_advance);
+    m_spaceWidth = static_cast<float>(text_extents.x_advance);
     m_lineGap = m_lineSpacing - m_ascent - m_descent;
     m_syntheticBoldOffset = m_platformData.syntheticBold() ? 1.0f : 0.f;
 }
@@ -99,7 +97,7 @@ bool SimpleFontData::containsCharacters(const UChar* characters, int length) con
     if (!face)
         return false;
 
-    for (unsigned i = 0; i < length; i++) {
+    for (int i = 0; i < length; i++) {
         if (FcFreeTypeCharIndex(face, characters[i]) == 0) {
             cairo_ft_scaled_font_unlock_face(m_platformData.m_scaledFont);
             return false;
@@ -128,12 +126,6 @@ float SimpleFontData::platformWidthForGlyph(Glyph glyph) const
     if (cairo_scaled_font_status(m_platformData.m_scaledFont) == CAIRO_STATUS_SUCCESS && extents.x_advance != 0)
         w = (float)extents.x_advance;
     return w;
-}
-
-void SimpleFontData::setFont(cairo_t* cr) const
-{
-    ASSERT(cr);
-    m_platformData.setFont(cr);
 }
 
 }

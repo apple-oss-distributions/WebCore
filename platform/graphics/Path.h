@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2003, 2006, 2009 Apple Inc. All rights reserved.
  *               2006 Rob Buis <buis@kde.org>
+ * Copyright (C) 2007-2008 Torch Mobile, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,14 +29,12 @@
 #define Path_h
 
 #include <algorithm>
+#include <wtf/FastAllocBase.h>
 
 #if PLATFORM(CG)
 typedef struct CGPath PlatformPath;
 #elif PLATFORM(QT)
-#include <qglobal.h>
-QT_BEGIN_NAMESPACE
-class QPainterPath;
-QT_END_NAMESPACE
+#include <qpainterpath.h>
 typedef QPainterPath PlatformPath;
 #elif PLATFORM(WX) && USE(WXGC)
 class wxGraphicsPath;
@@ -48,8 +47,22 @@ typedef WebCore::CairoPath PlatformPath;
 #elif PLATFORM(SKIA)
 class SkPath;
 typedef SkPath PlatformPath;
+#elif PLATFORM(HAIKU)
+class BRegion;
+typedef BRegion PlatformPath;
+#elif OS(WINCE)
+namespace WebCore {
+    class PlatformPath;
+}
 #else
 typedef void PlatformPath;
+#endif
+
+#if PLATFORM(QT)
+/* QPainterPath is valued based */
+typedef PlatformPath PlatformPathPtr;
+#else
+typedef PlatformPath* PlatformPathPtr;
 #endif
 
 namespace WebCore {
@@ -82,7 +95,7 @@ namespace WebCore {
 
     typedef void (*PathApplierFunction)(void* info, const PathElement*);
 
-    class Path {
+    class Path : public FastAllocBase {
     public:
         Path();
         ~Path();
@@ -103,6 +116,9 @@ namespace WebCore {
 
         void clear();
         bool isEmpty() const;
+        // Gets the current point of the current path, which is conceptually the final point reached by the path so far.
+        // Note the Path can be empty (isEmpty() == true) and still have a current point.
+        bool hasCurrentPoint() const;
 
         void moveTo(const FloatPoint&);
         void addLineTo(const FloatPoint&);
@@ -119,7 +135,7 @@ namespace WebCore {
 
         String debugString() const;
 
-        PlatformPath* platformPath() const { return m_path; }
+        PlatformPathPtr platformPath() const { return m_path; }
 
         static Path createRoundedRectangle(const FloatRect&, const FloatSize& roundingRadii);
         static Path createRoundedRectangle(const FloatRect&, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius);
@@ -132,7 +148,7 @@ namespace WebCore {
         void transform(const TransformationMatrix&);
 
     private:
-        PlatformPath* m_path;
+        PlatformPathPtr m_path;
     };
 
 }

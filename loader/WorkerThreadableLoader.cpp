@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 Google Inc. All rights reserved.
+ * Copyright (C) 2009, 2010 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -53,11 +53,10 @@ namespace WebCore {
 
 static const char loadResourceSynchronouslyMode[] = "loadResourceSynchronouslyMode";
 
-WorkerThreadableLoader::WorkerThreadableLoader(WorkerContext* workerContext, ThreadableLoaderClient* client, const String& taskMode, const ResourceRequest& request, LoadCallbacks callbacksSetting,
-                                               ContentSniff contentSniff, StoredCredentials storedCredentials, CrossOriginRedirectPolicy crossOriginRedirectPolicy)
+WorkerThreadableLoader::WorkerThreadableLoader(WorkerContext* workerContext, ThreadableLoaderClient* client, const String& taskMode, const ResourceRequest& request, const ThreadableLoaderOptions& options)
     : m_workerContext(workerContext)
     , m_workerClientWrapper(ThreadableLoaderClientWrapper::create(client))
-    , m_bridge(*(new MainThreadBridge(m_workerClientWrapper, m_workerContext->thread()->workerLoaderProxy(), taskMode, request, callbacksSetting, contentSniff, storedCredentials, crossOriginRedirectPolicy)))
+    , m_bridge(*(new MainThreadBridge(m_workerClientWrapper, m_workerContext->thread()->workerLoaderProxy(), taskMode, request, options)))
 {
 }
 
@@ -66,7 +65,7 @@ WorkerThreadableLoader::~WorkerThreadableLoader()
     m_bridge.destroy();
 }
 
-void WorkerThreadableLoader::loadResourceSynchronously(WorkerContext* workerContext, const ResourceRequest& request, ThreadableLoaderClient& client, StoredCredentials storedCredentials, CrossOriginRedirectPolicy crossOriginRedirectPolicy)
+void WorkerThreadableLoader::loadResourceSynchronously(WorkerContext* workerContext, const ResourceRequest& request, ThreadableLoaderClient& client, const ThreadableLoaderOptions& options)
 {
     WorkerRunLoop& runLoop = workerContext->thread()->runLoop();
 
@@ -74,9 +73,7 @@ void WorkerThreadableLoader::loadResourceSynchronously(WorkerContext* workerCont
     String mode = loadResourceSynchronouslyMode;
     mode.append(String::number(runLoop.createUniqueId()));
 
-    ContentSniff contentSniff = request.url().isLocalFile() ? SniffContent : DoNotSniffContent;
-    RefPtr<WorkerThreadableLoader> loader = WorkerThreadableLoader::create(workerContext, &client, mode, request, DoNotSendLoadCallbacks, contentSniff, storedCredentials, crossOriginRedirectPolicy);
-
+    RefPtr<WorkerThreadableLoader> loader = WorkerThreadableLoader::create(workerContext, &client, mode, request, options);
     MessageQueueWaitResult result = MessageQueueMessageReceived;
     while (!loader->done() && result != MessageQueueTerminated)
         result = runLoop.runInMode(workerContext, mode);
@@ -91,21 +88,20 @@ void WorkerThreadableLoader::cancel()
 }
 
 WorkerThreadableLoader::MainThreadBridge::MainThreadBridge(PassRefPtr<ThreadableLoaderClientWrapper> workerClientWrapper, WorkerLoaderProxy& loaderProxy, const String& taskMode,
-                                                           const ResourceRequest& request, LoadCallbacks callbacksSetting, ContentSniff contentSniff, StoredCredentials storedCredentials,
-                                                           CrossOriginRedirectPolicy crossOriginRedirectPolicy)
+                                                           const ResourceRequest& request, const ThreadableLoaderOptions& options)
     : m_workerClientWrapper(workerClientWrapper)
     , m_loaderProxy(loaderProxy)
-    , m_taskMode(taskMode.copy())
+    , m_taskMode(taskMode.crossThreadString())
 {
     ASSERT(m_workerClientWrapper.get());
-    m_loaderProxy.postTaskToLoader(createCallbackTask(&MainThreadBridge::mainThreadCreateLoader, this, request, callbacksSetting, contentSniff, storedCredentials, crossOriginRedirectPolicy));
+    m_loaderProxy.postTaskToLoader(createCallbackTask(&MainThreadBridge::mainThreadCreateLoader, this, request, options));
 }
 
 WorkerThreadableLoader::MainThreadBridge::~MainThreadBridge()
 {
 }
 
-void WorkerThreadableLoader::MainThreadBridge::mainThreadCreateLoader(ScriptExecutionContext* context, MainThreadBridge* thisPtr, auto_ptr<CrossThreadResourceRequestData> requestData, LoadCallbacks callbacksSetting, ContentSniff contentSniff, StoredCredentials storedCredentials, CrossOriginRedirectPolicy crossOriginRedirectPolicy)
+void WorkerThreadableLoader::MainThreadBridge::mainThreadCreateLoader(ScriptExecutionContext* context, MainThreadBridge* thisPtr, auto_ptr<CrossThreadResourceRequestData> requestData, ThreadableLoaderOptions options)
 {
     ASSERT(isMainThread());
     ASSERT(context->isDocument());
@@ -117,7 +113,7 @@ void WorkerThreadableLoader::MainThreadBridge::mainThreadCreateLoader(ScriptExec
     // FIXME: If the a site requests a local resource, then this will return a non-zero value but the sync path
     // will return a 0 value.  Either this should return 0 or the other code path should do a callback with
     // a failure.
-    thisPtr->m_mainThreadLoader = ThreadableLoader::create(context, thisPtr, *request, callbacksSetting, contentSniff, storedCredentials, crossOriginRedirectPolicy);
+    thisPtr->m_mainThreadLoader = ThreadableLoader::create(context, thisPtr, *request, options);
     ASSERT(thisPtr->m_mainThreadLoader);
 }
 
@@ -151,7 +147,7 @@ void WorkerThreadableLoader::MainThreadBridge::mainThreadCancel(ScriptExecutionC
 void WorkerThreadableLoader::MainThreadBridge::cancel()
 {
     m_loaderProxy.postTaskToLoader(createCallbackTask(&MainThreadBridge::mainThreadCancel, this));
-    ThreadableLoaderClientWrapper* clientWrapper = static_cast<ThreadableLoaderClientWrapper*>(m_workerClientWrapper.get());
+    ThreadableLoaderClientWrapper* clientWrapper = m_workerClientWrapper.get();
     if (!clientWrapper->done()) {
         // If the client hasn't reached a termination state, then transition it by sending a cancellation error.
         // Note: no more client callbacks will be done after this method -- the clearClientWrapper() call ensures that.
@@ -164,7 +160,7 @@ void WorkerThreadableLoader::MainThreadBridge::cancel()
 
 void WorkerThreadableLoader::MainThreadBridge::clearClientWrapper()
 {
-    static_cast<ThreadableLoaderClientWrapper*>(m_workerClientWrapper.get())->clearClient();
+    m_workerClientWrapper->clearClient();
 }
 
 static void workerContextDidSendData(ScriptExecutionContext* context, RefPtr<ThreadableLoaderClientWrapper> workerClientWrapper, unsigned long long bytesSent, unsigned long long totalBytesToBeSent)

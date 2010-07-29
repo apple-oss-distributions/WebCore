@@ -43,7 +43,7 @@
 #if PLATFORM(QT)
 #include <QDateTime>
 // On Windows, use the threadsafe *_r functions provided by pthread.
-#elif PLATFORM(WIN_OS) && (USE(PTHREADS) || HAVE(PTHREAD_H))
+#elif OS(WINDOWS) && (USE(PTHREADS) || HAVE(PTHREAD_H))
 #include <pthread.h>
 #endif
 
@@ -118,7 +118,7 @@ void FTPDirectoryTokenizer::appendEntry(const String& filename, const String& si
     rowElement->setAttribute("class", "ftpDirectoryEntryRow", ec);
    
     RefPtr<Element> element = m_doc->createElement(tdTag, false);
-    element->appendChild(new Text(m_doc, String(&noBreakSpace, 1)), ec);
+    element->appendChild(Text::create(m_doc, String(&noBreakSpace, 1)), ec);
     if (isDirectory)
         element->setAttribute("class", "ftpDirectoryIcon ftpDirectoryTypeDirectory", ec);
     else
@@ -130,12 +130,12 @@ void FTPDirectoryTokenizer::appendEntry(const String& filename, const String& si
     rowElement->appendChild(element, ec);
     
     element = m_doc->createElement(tdTag, false);
-    element->appendChild(new Text(m_doc, date), ec);
+    element->appendChild(Text::create(m_doc, date), ec);
     element->setAttribute("class", "ftpDirectoryFileDate", ec);
     rowElement->appendChild(element, ec);
     
     element = m_doc->createElement(tdTag, false);
-    element->appendChild(new Text(m_doc, size), ec);
+    element->appendChild(Text::create(m_doc, size), ec);
     element->setAttribute("class", "ftpDirectoryFileSize", ec);
     rowElement->appendChild(element, ec);
 }
@@ -152,7 +152,7 @@ PassRefPtr<Element> FTPDirectoryTokenizer::createTDForFilename(const String& fil
 
     RefPtr<Element> anchorElement = m_doc->createElement(aTag, false);
     anchorElement->setAttribute("href", fullURL, ec);
-    anchorElement->appendChild(new Text(m_doc, filename), ec);
+    anchorElement->appendChild(Text::create(m_doc, filename), ec);
     
     RefPtr<Element> tdElement = m_doc->createElement(tdTag, false);
     tdElement->appendChild(anchorElement, ec);
@@ -234,7 +234,7 @@ static struct tm *localTimeQt(const time_t *const timep, struct tm *result)
 }
 
 #define localtime_r(x, y) localTimeQt(x, y)
-#elif PLATFORM(WIN_OS) && !defined(localtime_r)
+#elif OS(WINDOWS) && !defined(localtime_r)
 #if defined(_MSC_VER) && (_MSC_VER >= 1400) 
 #define localtime_r(x, y) localtime_s((y), (x))
 #else /* !_MSC_VER */ 

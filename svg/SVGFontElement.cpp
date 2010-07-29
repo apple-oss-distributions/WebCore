@@ -39,13 +39,21 @@ namespace WebCore {
 using namespace SVGNames;
 
 SVGFontElement::SVGFontElement(const QualifiedName& tagName, Document* doc)
-    : SVGStyledElement(tagName, doc)
+    : SVGStyledElement(tagName, doc) 
     , m_isGlyphCacheValid(false)
 {
 }
 
 SVGFontElement::~SVGFontElement()
 {
+}
+
+void SVGFontElement::synchronizeProperty(const QualifiedName& attrName)
+{
+    SVGStyledElement::synchronizeProperty(attrName);
+
+    if (attrName == anyQName() || SVGExternalResourcesRequired::isKnownAttribute(attrName))
+        synchronizeExternalResourcesRequired();
 }
 
 void SVGFontElement::invalidateGlyphCache()

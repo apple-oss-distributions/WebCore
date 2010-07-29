@@ -29,6 +29,8 @@
 #import "config.h"
 #import "WebCoreNSStringExtras.h"
 
+#import <wtf/RetainPtr.h>
+
 BOOL stringIsCaseInsensitiveEqualToString(NSString *first, NSString *second)
 {
     return [first compare:second options:(NSCaseInsensitiveSearch|NSLiteralSearch)] == NSOrderedSame;

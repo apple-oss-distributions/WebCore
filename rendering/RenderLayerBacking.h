@@ -54,7 +54,7 @@ public:
     RenderLayer* owningLayer() const { return m_owningLayer; }
 
     enum UpdateDepth { CompositingChildren, AllDescendants };
-    void updateAfterLayout(UpdateDepth);
+    void updateAfterLayout(UpdateDepth, bool isUpdateRoot);
     
     // Returns true if layer configuration changed.
     bool updateGraphicsLayerConfiguration();
@@ -119,9 +119,12 @@ public:
 
     virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& clip);
 
+    virtual bool showDebugBorders() const;
+    virtual bool showRepaintCounter() const;
+
     IntRect contentsBox() const;
     
-    void setDocumentScale(float scale);
+    void updateContentsScale(float scale);
 
 private:
     void createGraphicsLayer();
@@ -162,7 +165,7 @@ private:
     bool hasNonCompositingContent() const;
     
     void paintIntoLayer(RenderLayer* rootLayer, GraphicsContext*, const IntRect& paintDirtyRect,
-                    PaintRestriction paintRestriction, GraphicsLayerPaintingPhase, RenderObject* paintingRoot);
+                    PaintBehavior paintBehavior, GraphicsLayerPaintingPhase, RenderObject* paintingRoot);
 
     static int graphicsLayerToCSSProperty(AnimatedPropertyID);
     static AnimatedPropertyID cssToGraphicsLayerProperty(int);

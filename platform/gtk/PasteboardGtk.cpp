@@ -35,13 +35,6 @@
 
 namespace WebCore {
 
-/* FIXME: we must get rid of this and use the enum in webkitwebview.h someway */
-typedef enum
-{
-    WEBKIT_WEB_VIEW_TARGET_INFO_HTML = - 1,
-    WEBKIT_WEB_VIEW_TARGET_INFO_TEXT = - 2
-} WebKitWebViewTargetInfo;
-
 class PasteboardSelectionData {
 public:
     PasteboardSelectionData(gchar* text, gchar* markup)
@@ -65,11 +58,11 @@ static void clipboard_get_contents_cb(GtkClipboard *clipboard, GtkSelectionData 
                                       guint info, gpointer data) {
     PasteboardSelectionData* clipboardData = reinterpret_cast<PasteboardSelectionData*>(data);
     ASSERT(clipboardData);
-    if ((gint)info == WEBKIT_WEB_VIEW_TARGET_INFO_HTML) {
+    if ((gint)info == Pasteboard::generalPasteboard()->m_helper->getWebViewTargetInfoHtml())
         gtk_selection_data_set(selection_data, selection_data->target, 8,
                                reinterpret_cast<const guchar*>(clipboardData->markup()),
                                g_utf8_strlen(clipboardData->markup(), -1));
-    } else
+    else
         gtk_selection_data_set_text(selection_data, clipboardData->text(), -1);
 }
 
@@ -109,10 +102,17 @@ void Pasteboard::writeSelection(Range* selectedRange, bool canSmartCopyOrDelete,
     PasteboardSelectionData* data = new PasteboardSelectionData(text, markup);
 
     gint n_targets;
-    GtkTargetEntry* targets = gtk_target_table_new_from_list(m_helper->getCopyTargetList(frame), &n_targets);
+    GtkTargetEntry* targets = gtk_target_table_new_from_list(m_helper->targetList(), &n_targets);
     gtk_clipboard_set_with_data(clipboard, targets, n_targets,
                                 clipboard_get_contents_cb, clipboard_clear_contents_cb, data);
     gtk_target_table_free(targets, n_targets);
+}
+
+void Pasteboard::writePlainText(const String& text)
+{
+    CString utf8 = text.utf8();
+    GtkClipboard* clipboard = gtk_clipboard_get_for_display(gdk_display_get_default(), GDK_SELECTION_CLIPBOARD);
+    gtk_clipboard_set_text(clipboard, utf8.data(), utf8.length());
 }
 
 void Pasteboard::writeURL(const KURL& url, const String&, Frame* frame)
@@ -122,8 +122,9 @@ void Pasteboard::writeURL(const KURL& url, const String&, Frame* frame)
 
     GtkClipboard* clipboard = m_helper->getClipboard(frame);
     GtkClipboard* primary = m_helper->getPrimary(frame);
-    gtk_clipboard_set_text(clipboard, url.string().utf8().data(), url.string().utf8().length());
-    gtk_clipboard_set_text(primary, url.string().utf8().data(), url.string().utf8().length());
+    CString utf8 = url.string().utf8();
+    gtk_clipboard_set_text(clipboard, utf8.data(), utf8.length());
+    gtk_clipboard_set_text(primary, utf8.data(), utf8.length());
 }
 
 void Pasteboard::writeImage(Node* node, const KURL&, const String&)
@@ -131,8 +132,8 @@ void Pasteboard::writeImage(Node* node, const KURL&, const String&)
     GtkClipboard* clipboard = gtk_clipboard_get_for_display(gdk_display_get_default(), GDK_SELECTION_CLIPBOARD);
 
     ASSERT(node && node->renderer() && node->renderer()->isImage());
-    RenderImage* renderer = static_cast<RenderImage*>(node->renderer());
-    CachedImage* cachedImage = static_cast<CachedImage*>(renderer->cachedImage());
+    RenderImage* renderer = toRenderImage(node->renderer());
+    CachedImage* cachedImage = renderer->cachedImage();
     ASSERT(cachedImage);
     Image* image = cachedImage->image();
     ASSERT(image);
@@ -170,7 +171,7 @@ PassRefPtr<DocumentFragment> Pasteboard::documentFragment(Frame* frame, PassRefP
         gtk_selection_data_free(data);
 
         if (!html.isEmpty()) {
-            RefPtr<DocumentFragment> fragment = createFragmentFromMarkup(frame->document(), html, "");
+            RefPtr<DocumentFragment> fragment = createFragmentFromMarkup(frame->document(), html, "", FragmentScriptingNotAllowed);
             if (fragment)
                 return fragment.release();
         }

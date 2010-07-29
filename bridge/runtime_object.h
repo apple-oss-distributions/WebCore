@@ -26,7 +26,7 @@
 #ifndef KJS_RUNTIME_OBJECT_H
 #define KJS_RUNTIME_OBJECT_H
 
-#include "runtime.h"
+#include "Bridge.h"
 #include <runtime/JSGlobalObject.h>
 
 namespace JSC {
@@ -37,13 +37,14 @@ public:
     virtual ~RuntimeObjectImp();
 
     virtual bool getOwnPropertySlot(ExecState*, const Identifier& propertyName, PropertySlot&);
+    virtual bool getOwnPropertyDescriptor(ExecState*, const Identifier& propertyName, PropertyDescriptor&);
     virtual void put(ExecState*, const Identifier& propertyName, JSValue, PutPropertySlot&);
     virtual bool deleteProperty(ExecState*, const Identifier& propertyName);
     virtual JSValue defaultValue(ExecState*, PreferredPrimitiveType) const;
     virtual CallType getCallData(CallData&);
     virtual ConstructType getConstructData(ConstructData&);
-    
-    virtual void getPropertyNames(ExecState*, PropertyNameArray&);
+
+    virtual void getOwnPropertyNames(ExecState*, PropertyNameArray&, EnumerationMode mode = ExcludeDontEnumProperties);
 
     void invalidate();
 
@@ -60,11 +61,12 @@ public:
 
     static PassRefPtr<Structure> createStructure(JSValue prototype)
     {
-        return Structure::create(prototype, TypeInfo(ObjectType));
+        return Structure::create(prototype, TypeInfo(ObjectType, StructureFlags), AnonymousSlotCount);
     }
 
 protected:
-    RuntimeObjectImp(ExecState*, PassRefPtr<Structure>, PassRefPtr<Bindings::Instance>);
+    static const unsigned StructureFlags = OverridesGetOwnPropertySlot | OverridesGetPropertyNames | JSObject::StructureFlags;
+    RuntimeObjectImp(ExecState*, NonNullPassRefPtr<Structure>, PassRefPtr<Bindings::Instance>);
 
 private:
     virtual const ClassInfo* classInfo() const { return &s_info; }

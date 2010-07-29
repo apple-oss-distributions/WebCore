@@ -5,7 +5,8 @@
  *  Copyright (C) 2009, Apple Inc.  All rights reserved.
  *
  */
- 
+
+#include "config.h"
 #include "SelectionRect.h"
 
 namespace WebCore {

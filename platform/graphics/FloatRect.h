@@ -36,11 +36,6 @@ typedef struct CGRect CGRect;
 #endif
 
 
-#ifndef NSRect
-#define NSRect CGRect
-#endif
-
-
 #if PLATFORM(QT)
 QT_BEGIN_NAMESPACE
 class QRectF;
@@ -51,11 +46,19 @@ QT_END_NAMESPACE
 class wxRect2DDouble;
 #endif
 
+#if PLATFORM(HAIKU)
+class BRect;
+#endif
+
 #if PLATFORM(SKIA)
 struct SkRect;
 #endif
 
 namespace WebCore {
+
+#if PLATFORM(OPENVG)
+class VGRect;
+#endif
 
 class IntRect;
 
@@ -118,7 +121,8 @@ public:
         m_size.setHeight(m_size.height() + dy + dy);
     }
     void inflate(float d) { inflateX(d); inflateY(d); }
-    void scale(float s);
+    void scale(float s) { scale(s, s); }
+    void scale(float sx, float sy);
 
 #if PLATFORM(CG)
     FloatRect(const CGRect&);
@@ -136,9 +140,18 @@ public:
     operator wxRect2DDouble() const;
 #endif
 
+#if PLATFORM(HAIKU)
+    FloatRect(const BRect&);
+    operator BRect() const;
+#endif
+
 #if PLATFORM(SKIA)
     FloatRect(const SkRect&);
     operator SkRect() const;
+#endif
+
+#if PLATFORM(OPENVG)
+    operator VGRect() const;
 #endif
 
 private:

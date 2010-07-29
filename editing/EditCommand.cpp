@@ -63,7 +63,7 @@ void EditCommand::apply()
  
     Frame* frame = m_document->frame();
     
-    if (!m_parent) {
+    if (isTopLevelCommand()) {
         if (!endingSelection().isContentRichlyEditable()) {
             switch (editingAction()) {
                 case EditActionTyping:
@@ -84,7 +84,7 @@ void EditCommand::apply()
     // require a layout, as in <rdar://problem/5658603>.  Low level operations, like 
     // RemoveNodeCommand, don't require a layout because the high level operations that 
     // use them perform one if one is necessary (like for the creation of VisiblePositions).
-    if (!m_parent)
+    if (isTopLevelCommand())
         updateLayout();
 
     DeleteButtonController* deleteButtonController = frame->editor()->deleteButtonController();
@@ -94,8 +94,7 @@ void EditCommand::apply()
     if (deleteButtonController)
     deleteButtonController->enable();
 
-    if (!m_parent) {
-        updateLayout();
+    if (isTopLevelCommand()) {
         // Only need to call appliedEditing for top-level commands, and TypingCommands do it on their
         // own (see TypingCommand::typingAddedToOpenCommand).
         if (!isTypingCommand())
@@ -114,7 +113,7 @@ void EditCommand::unapply()
     // require a layout, as in <rdar://problem/5658603>.  Low level operations, like 
     // RemoveNodeCommand, don't require a layout because the high level operations that 
     // use them perform one if one is necessary (like for the creation of VisiblePositions).
-    if (!m_parent) {
+    if (isTopLevelCommand()) {
         updateLayout();
         // FIXME: Where should iPhone code deal with the composition?
         // Since editing commands don't save/restore the composition, undoing without fixing
@@ -131,10 +130,8 @@ void EditCommand::unapply()
     if (deleteButtonController)
     deleteButtonController->enable();
 
-    if (!m_parent) {
-        updateLayout();
+    if (isTopLevelCommand())
         frame->editor()->unappliedEditing(this);
-    }
 }
 
 void EditCommand::reapply()
@@ -148,7 +145,7 @@ void EditCommand::reapply()
     // require a layout, as in <rdar://problem/5658603>.  Low level operations, like 
     // RemoveNodeCommand, don't require a layout because the high level operations that 
     // use them perform one if one is necessary (like for the creation of VisiblePositions).
-    if (!m_parent)
+    if (isTopLevelCommand())
         updateLayout();
 
     DeleteButtonController* deleteButtonController = frame->editor()->deleteButtonController();
@@ -158,10 +155,8 @@ void EditCommand::reapply()
     if (deleteButtonController)
     deleteButtonController->enable();
 
-    if (!m_parent) {
-        updateLayout();
+    if (isTopLevelCommand())
         frame->editor()->reappliedEditing(this);
-    }
 }
 
 void EditCommand::doReapply()
@@ -209,18 +204,6 @@ bool EditCommand::isTypingCommand() const
     return false;
 }
 
-PassRefPtr<CSSMutableStyleDeclaration> EditCommand::styleAtPosition(const Position &pos)
-{
-    RefPtr<CSSMutableStyleDeclaration> style = positionBeforeTabSpan(pos).computedStyle()->copyInheritableProperties();
- 
-    // FIXME: It seems misleading to also include the typing style when returning the style at some arbitrary
-    // position in the document.
-    CSSMutableStyleDeclaration* typingStyle = document()->frame()->typingStyle();
-    if (typingStyle)
-        style->merge(typingStyle);
-
-    return style.release();
-}
 
 void EditCommand::updateLayout() const
 {

@@ -24,6 +24,7 @@
 #define CachedResource_h
 
 #include "CachePolicy.h"
+#include "FrameLoaderTypes.h"
 #include "PlatformString.h"
 #include "ResourceResponse.h"
 #include "SharedBuffer.h"
@@ -46,7 +47,7 @@ class PurgeableBuffer;
 // A resource that is held in the cache. Classes who want to use this object should derive
 // from CachedResourceClient, to get the function calls in case the requested data has arrived.
 // This class also does the actual communication with the loader to obtain the resource from the network.
-class CachedResource {
+class CachedResource : public Noncopyable {
     friend class Cache;
     friend class InspectorResource;
     
@@ -75,8 +76,8 @@ public:
     CachedResource(const String& url, Type);
     virtual ~CachedResource();
     
-    virtual void load(DocLoader* docLoader)  { load(docLoader, false, false, true); }
-    void load(DocLoader*, bool incremental, bool skipCanLoadCheck, bool sendResourceLoadCallbacks);
+    virtual void load(DocLoader* docLoader)  { load(docLoader, false, DoSecurityCheck, true); }
+    void load(DocLoader*, bool incremental, SecurityCheckPolicy, bool sendResourceLoadCallbacks);
 
     virtual void setEncoding(const String&) { }
     virtual String encoding() const { return String(); }
@@ -129,7 +130,7 @@ public:
     // while still being referenced. This means the object should delete itself
     // if the number of clients observing it ever drops to 0.
     // The resource can be brought back to cache after successful revalidation.
-    void setInCache(bool b) { m_inCache = b; if (b) m_isBeingRevalidated = false; }
+    void setInCache(bool inCache) { m_inCache = inCache; }
     bool inCache() const { return m_inCache; }
     
     void setInLiveDecodedResourcesList(bool b) { m_inLiveDecodedResourcesList = b; }
@@ -142,13 +143,13 @@ public:
     void setResponse(const ResourceResponse&);
     const ResourceResponse& response() const { return m_response; }
 
-    bool canDelete() const { return !hasClients() && !m_request && !m_preloadCount && !m_handleCount && !m_resourceToRevalidate && !m_isBeingRevalidated; }
+    bool canDelete() const { return !hasClients() && !m_request && !m_preloadCount && !m_handleCount && !m_resourceToRevalidate && !m_proxyResource; }
 
     bool isExpired() const;
 
     virtual bool schedule() const { return false; }
 
-    // List of acceptable MIME types seperated by ",".
+    // List of acceptable MIME types separated by ",".
     // A MIME type may contain a wildcard, e.g. "text/*".
     String accept() const { return m_accept; }
     void setAccept(const String& accept) { m_accept = accept; }
@@ -253,7 +254,10 @@ private:
     // to to be clients of m_resourceToRevalidate and the resource is deleted. If not, the field is zeroed and this
     // resources becomes normal resource load.
     CachedResource* m_resourceToRevalidate;
-    bool m_isBeingRevalidated;
+
+    // If this field is non-null, the resource has a proxy for checking whether it is still up to date (see m_resourceToRevalidate).
+    CachedResource* m_proxyResource;
+
     // These handles will need to be updated to point to the m_resourceToRevalidate in case we get 304 response.
     HashSet<CachedResourceHandleBase*> m_handlesToRevalidate;
 };

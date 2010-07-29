@@ -4,7 +4,7 @@
  *           (C) 1998 Waldo Bastian (bastian@kde.org)
  *           (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -204,9 +204,9 @@ IntRect RenderTableCell::clippedOverflowRectForRepaint(RenderBoxModelObject* rep
             right = max(right, below->borderHalfRight(true));
         }
     }
-    left = max(left, -overflowLeft(false));
-    top = max(top, -overflowTop(false));
-    IntRect r(-left, - top, left + max(width() + right, overflowWidth(false)), top + max(height() + bottom, overflowHeight(false)));
+    left = max(left, -leftVisibleOverflow());
+    top = max(top, -topVisibleOverflow());
+    IntRect r(-left, - top, left + max(width() + right, rightVisibleOverflow()), top + max(height() + bottom, bottomVisibleOverflow()));
 
     if (RenderView* v = view()) {
         // FIXME: layoutDelta needs to be applied in parts before/after transforms and
@@ -223,7 +223,7 @@ void RenderTableCell::computeRectForRepaint(RenderBoxModelObject* repaintContain
         return;
     r.setY(r.y());
     RenderView* v = view();
-    if ((!v || !v->layoutStateEnabled()) && parent())
+    if ((!v || !v->layoutStateEnabled() || repaintContainer) && parent())
         r.move(-parentBox()->x(), -parentBox()->y()); // Rows are in the same coordinate space, so don't add their offset in.
     RenderBlock::computeRectForRepaint(repaintContainer, r, fixed);
 }
@@ -537,7 +537,7 @@ CollapsedBorderValue RenderTableCell::collapsedBottomBorder() const
     
     // Now check row groups.
     RenderTableSection* currSection = section();
-    if (row() + rowSpan() >= static_cast<RenderTableSection*>(currSection)->numRows()) {
+    if (row() + rowSpan() >= currSection->numRows()) {
         // (5) Our row group's bottom border.
         result = compareBorders(result, CollapsedBorderValue(&currSection->style()->borderBottom(), BROWGROUP));
         if (!result.exists())
@@ -818,7 +818,7 @@ void RenderTableCell::paintBackgroundsBehindCell(PaintInfo& paintInfo, int tx, i
             paintInfo.context->save();
             paintInfo.context->clip(clipRect);
         }
-        paintFillLayers(paintInfo, c, bgLayer, tx, ty, w, h);
+        paintFillLayers(paintInfo, c, bgLayer, tx, ty, w, h, CompositeSourceOver, backgroundObject);
         if (shouldClip)
             paintInfo.context->restore();
     }
@@ -834,10 +834,12 @@ void RenderTableCell::paintBoxDecorations(PaintInfo& paintInfo, int tx, int ty)
     int h = height();
    
     if (style()->boxShadow())
-        paintBoxShadow(paintInfo.context, tx, ty, w, h, style());
+        paintBoxShadow(paintInfo.context, tx, ty, w, h, style(), Normal);
     
     // Paint our cell background.
     paintBackgroundsBehindCell(paintInfo, tx, ty, this);
+    if (style()->boxShadow())
+        paintBoxShadow(paintInfo.context, tx, ty, w, h, style(), Inset);
 
     if (!style()->hasBorder() || tableElt->collapseBorders())
         return;

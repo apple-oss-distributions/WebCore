@@ -75,14 +75,14 @@ bool Image::setData(PassRefPtr<SharedBuffer> data, bool allDataReceived)
     return dataChanged(allDataReceived);
 }
 
-void Image::fillWithSolidColor(GraphicsContext* ctxt, const FloatRect& dstRect, const Color& color, CompositeOperator op)
+void Image::fillWithSolidColor(GraphicsContext* ctxt, const FloatRect& dstRect, const Color& color, ColorSpace styleColorSpace, CompositeOperator op)
 {
     if (color.alpha() <= 0)
         return;
     
     ctxt->save();
     ctxt->setCompositeOperation(!color.hasAlpha() && op == CompositeSourceOver ? CompositeCopy : op);
-    ctxt->fillRect(dstRect, color);
+    ctxt->fillRect(dstRect, color, styleColorSpace);
     ctxt->restore();
 }
 
@@ -104,10 +104,10 @@ static inline FloatSize calculatePatternScale(const FloatRect& dstRect, const Fl
 }
 
 
-void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& scaledTileSize, CompositeOperator op)
+void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& scaledTileSize, ColorSpace styleColorSpace, CompositeOperator op)
 {    
     if (mayFillWithSolidColor()) {
-        fillWithSolidColor(ctxt, destRect, solidColor(), op);
+        fillWithSolidColor(ctxt, destRect, solidColor(), styleColorSpace, op);
         return;
     }
 
@@ -119,7 +119,6 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
 
     FloatSize scale(scaledTileSize.width() / intrinsicTileSize.width(),
                     scaledTileSize.height() / intrinsicTileSize.height());
-    TransformationMatrix patternTransform = TransformationMatrix().scaleNonUniform(scale.width(), scale.height());
 
     FloatRect oneTileRect;
     oneTileRect.setX(destRect.x() + fmodf(fmodf(-srcPoint.x(), scaledTileSize.width()) - scaledTileSize.width(), scaledTileSize.width()));
@@ -133,7 +132,7 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
         visibleSrcRect.setY((destRect.y() - oneTileRect.y()) / scale.height());
         visibleSrcRect.setWidth(destRect.width() / scale.width());
         visibleSrcRect.setHeight(destRect.height() / scale.height());
-        draw(ctxt, destRect, visibleSrcRect, op);
+        draw(ctxt, destRect, visibleSrcRect, styleColorSpace, op);
         return;
     }
 
@@ -151,8 +150,8 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
             float toX = oneTileRect.x();
             while (toX < CGRectGetMaxX(destRect)) {
                 CGRect toRect = CGRectIntersection(destRect, CGRectMake(toX, toY, oneTileRect.width(), oneTileRect.height()));
-                CGRect fromRect = CGRectMake(fromX, fromY, toRect.size.width, toRect.size.height);
-                draw(ctxt, toRect, fromRect, op);
+                CGRect fromRect = CGRectMake(fromX, fromY, toRect.size.width / scale.width(), toRect.size.height / scale.height());
+                draw(ctxt, toRect, fromRect, styleColorSpace, op);
                 toX += oneTileRect.width();
                 fromX = 0;
             }
@@ -162,17 +161,18 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
         return;
     }
 
+    TransformationMatrix patternTransform = TransformationMatrix().scaleNonUniform(scale.width(), scale.height());
     FloatRect tileRect(FloatPoint(), intrinsicTileSize);    
-    drawPattern(ctxt, tileRect, patternTransform, oneTileRect.location(), op, destRect);
+    drawPattern(ctxt, tileRect, patternTransform, oneTileRect.location(), styleColorSpace, op, destRect);
     
     startAnimation(false);
 }
 
 // FIXME: Merge with the other drawTiled eventually, since we need a combination of both for some things.
-void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, TileRule hRule, TileRule vRule, CompositeOperator op)
+void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, TileRule hRule, TileRule vRule, ColorSpace styleColorSpace, CompositeOperator op)
 {    
     if (mayFillWithSolidColor()) {
-        fillWithSolidColor(ctxt, dstRect, solidColor(), op);
+        fillWithSolidColor(ctxt, dstRect, solidColor(), styleColorSpace, op);
         return;
     }
     
@@ -195,7 +195,7 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const Flo
         vPhase -= fmodf(dstRect.height(), scale.height() * srcRect.height()) / 2.0f;
     FloatPoint patternPhase(dstRect.x() - hPhase, dstRect.y() - vPhase);
     
-    drawPattern(ctxt, srcRect, patternTransform, patternPhase, op, dstRect);
+    drawPattern(ctxt, srcRect, patternTransform, patternPhase, styleColorSpace, op, dstRect);
 
     startAnimation(false);
 }

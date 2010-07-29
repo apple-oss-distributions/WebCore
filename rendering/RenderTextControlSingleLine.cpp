@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2010 Apple Inc. All rights reserved.
  *           (C) 2008 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/) 
  *
  * This library is free software; you can redistribute it and/or
@@ -48,9 +48,8 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-RenderTextControlSingleLine::RenderTextControlSingleLine(Node* node)
-    : RenderTextControl(node)
-    , m_placeholderVisible(false)
+RenderTextControlSingleLine::RenderTextControlSingleLine(Node* node, bool placeholderVisible)
+    : RenderTextControl(node, placeholderVisible)
     , m_searchPopupIsVisible(false)
     , m_shouldDrawCapsLockIndicator(false)
     , m_searchEventTimer(this, &RenderTextControlSingleLine::searchEventTimerFired)
@@ -69,25 +68,9 @@ RenderTextControlSingleLine::~RenderTextControlSingleLine()
         m_innerBlock->detach();
 }
 
-bool RenderTextControlSingleLine::placeholderShouldBeVisible() const
+RenderStyle* RenderTextControlSingleLine::textBaseStyle() const
 {
-    return inputElement()->placeholderShouldBeVisible();
-}
-
-void RenderTextControlSingleLine::updatePlaceholderVisibility()
-{
-    RenderStyle* parentStyle = m_innerBlock ? m_innerBlock->renderer()->style() : style();
-
-    RefPtr<RenderStyle> textBlockStyle = createInnerTextStyle(parentStyle);
-    HTMLElement* innerText = innerTextElement();
-    innerText->renderer()->setStyle(textBlockStyle);
-
-    for (Node* n = innerText->firstChild(); n; n = n->traverseNextNode(innerText)) {
-        if (RenderObject* renderer = n->renderer())
-            renderer->setStyle(textBlockStyle);
-    }
-
-    updateFromElement();
+    return m_innerBlock ? m_innerBlock->renderer()->style() : style();
 }
 
 void RenderTextControlSingleLine::addSearchResult()
@@ -167,11 +150,15 @@ void RenderTextControlSingleLine::hidePopup()
 
 void RenderTextControlSingleLine::subtreeHasChanged()
 {
-    bool wasEdited = isEdited();
+    bool wasChanged = wasChangedSinceLastChangeEvent();
     RenderTextControl::subtreeHasChanged();
 
     InputElement* input = inputElement();
-    input->setValueFromRenderer(input->constrainValue(text()));
+    // We don't need to call sanitizeUserInputValue() function here because
+    // InputElement::handleBeforeTextInsertedEvent() has already called
+    // sanitizeUserInputValue().
+    // sanitizeValue() is needed because IME input doesn't dispatch BeforeTextInsertedEvent.
+    input->setValueFromRenderer(input->sanitizeValue(text()));
 
     if (m_cancelButton)
         updateCancelButtonVisibility();
@@ -180,7 +167,7 @@ void RenderTextControlSingleLine::subtreeHasChanged()
     if (input->searchEventsShouldBeDispatched())
         startSearchEventTimer();
 
-    if (!wasEdited && node()->focused()) {
+    if (!wasChanged && node()->focused()) {
         if (Frame* frame = document()->frame())
             frame->textFieldDidBeginEditing(static_cast<Element*>(node()));
     }
@@ -197,6 +184,9 @@ void RenderTextControlSingleLine::paint(PaintInfo& paintInfo, int tx, int ty)
 
     if (paintInfo.phase == PaintPhaseBlockBackground && m_shouldDrawCapsLockIndicator) {
         IntRect contentsRect = contentBoxRect();
+
+        // Center vertically like the text.
+        contentsRect.setY((height() - contentsRect.height()) / 2);
 
         // Convert the rect into the coords used for painting the content
         contentsRect.move(tx + x(), ty + y());
@@ -371,6 +361,18 @@ void RenderTextControlSingleLine::capsLockStateMayHaveChanged()
     }
 }
 
+IntRect RenderTextControlSingleLine::controlClipRect(int tx, int ty) const
+{
+    // This should only get called for search inputs, which have an innerBlock.
+    ASSERT(hasControlClip());
+    ASSERT(m_innerBlock);
+
+    RenderBox* renderBox = m_innerBlock->renderBox();
+    IntRect clipRect = IntRect(renderBox->x(), renderBox->y(), contentWidth(), contentHeight());        
+    clipRect.move(tx, ty);
+    return clipRect;
+}
+
 int RenderTextControlSingleLine::textBlockWidth() const
 {
     int width = RenderTextControl::textBlockWidth();
@@ -387,6 +389,12 @@ int RenderTextControlSingleLine::textBlockWidth() const
 
     return width;
 }
+    
+float RenderTextControlSingleLine::getAvgCharWidth(AtomicString family)
+{
+
+    return RenderTextControl::getAvgCharWidth(family);
+}
 
 int RenderTextControlSingleLine::preferredContentWidth(float charWidth) const
 {
@@ -395,6 +403,13 @@ int RenderTextControlSingleLine::preferredContentWidth(float charWidth) const
         factor = 20;
 
     int result = static_cast<int>(ceilf(charWidth * factor));
+
+    float maxCharWidth = 0.f;
+
+
+    // For text inputs, IE adds some extra width.
+    if (maxCharWidth > 0.f)
+        result += maxCharWidth - charWidth;
 
     if (RenderBox* resultsRenderer = m_resultsButton ? m_resultsButton->renderBox() : 0)
         result += resultsRenderer->borderLeft() + resultsRenderer->borderRight() +
@@ -464,18 +479,19 @@ void RenderTextControlSingleLine::updateFromElement()
     createSubtreeIfNeeded();
     RenderTextControl::updateFromElement();
 
-    bool placeholderVisibilityShouldChange = m_placeholderVisible != placeholderShouldBeVisible();
-    m_placeholderVisible = placeholderShouldBeVisible();
-
     if (m_cancelButton)
         updateCancelButtonVisibility();
 
     if (m_placeholderVisible) {
         ExceptionCode ec = 0;
-        innerTextElement()->setInnerText(inputElement()->placeholder(), ec);
+        innerTextElement()->setInnerText(static_cast<Element*>(node())->getAttribute(placeholderAttr), ec);
         ASSERT(!ec);
-    } else if (!static_cast<Element*>(node())->formControlValueMatchesRenderer() || placeholderVisibilityShouldChange)
-        setInnerTextValue(inputElement()->value());
+    } else {
+        if (!inputElement()->suggestedValue().isNull())
+            setInnerTextValue(inputElement()->suggestedValue());
+        else
+            setInnerTextValue(inputElement()->value());
+    }
 
     if (m_searchPopupIsVisible)
         m_searchPopup->updateFromElement();
@@ -489,7 +505,7 @@ void RenderTextControlSingleLine::cacheSelection(int start, int end)
 PassRefPtr<RenderStyle> RenderTextControlSingleLine::createInnerTextStyle(const RenderStyle* startStyle) const
 {
     RefPtr<RenderStyle> textBlockStyle;
-    if (placeholderShouldBeVisible()) {
+    if (m_placeholderVisible) {
         if (RenderStyle* pseudoStyle = getCachedPseudoStyle(INPUT_PLACEHOLDER))
             textBlockStyle = RenderStyle::clone(pseudoStyle);
     } 
@@ -519,7 +535,7 @@ PassRefPtr<RenderStyle> RenderTextControlSingleLine::createInnerTextStyle(const 
     // After this, updateFromElement will immediately update the text displayed.
     // When the placeholder is no longer visible, updatePlaceholderVisiblity will reset the style, 
     // and the text security mode will be set back to the computed value correctly.
-    if (placeholderShouldBeVisible())
+    if (m_placeholderVisible)
         textBlockStyle->setTextSecurity(TSNONE);
 
     return textBlockStyle.release();

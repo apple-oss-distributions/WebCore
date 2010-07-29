@@ -38,15 +38,31 @@
 
 #include "V8Binding.h"
 #include "V8CustomBinding.h"
+#include "V8SVGMatrix.h"
 #include "V8SVGPODTypeWrapper.h"
 #include "V8Proxy.h"
 
 namespace WebCore {
 
-CALLBACK_FUNC_DECL(SVGMatrixInverse)
+v8::Handle<v8::Value> V8SVGMatrix::multiplyCallback(const v8::Arguments& args)
+{
+    INC_STATS("DOM.SVGMatrix.multiply()");
+    if (args.Length() < 1)
+        return throwError("Not enough arguments");
+
+    if (!V8SVGMatrix::HasInstance(args[0]))
+        return throwError("secondMatrix argument was not a SVGMatrix");
+
+    TransformationMatrix m1 = *V8SVGPODTypeWrapper<TransformationMatrix>::toNative(args.Holder());
+    TransformationMatrix m2 = *V8SVGPODTypeWrapper<TransformationMatrix>::toNative(v8::Handle<v8::Object>::Cast(args[0]));
+
+    return V8DOMWrapper::convertToV8Object(V8ClassIndex::SVGMATRIX, V8SVGStaticPODTypeWrapper<TransformationMatrix>::create(m1.multLeft(m2)));
+}
+
+v8::Handle<v8::Value> V8SVGMatrix::inverseCallback(const v8::Arguments& args)
 {
     INC_STATS("DOM.SVGMatrix.inverse()");
-    TransformationMatrix matrix = *V8DOMWrapper::convertToNativeObject<V8SVGPODTypeWrapper<TransformationMatrix> >(V8ClassIndex::SVGMATRIX, args.Holder());
+    TransformationMatrix matrix = *V8SVGPODTypeWrapper<TransformationMatrix>::toNative(args.Holder());
     ExceptionCode ec = 0;
     TransformationMatrix result = matrix.inverse();
 
@@ -58,13 +74,13 @@ CALLBACK_FUNC_DECL(SVGMatrixInverse)
         return v8::Handle<v8::Value>();
     }
 
-    return V8DOMWrapper::convertToV8Object(V8ClassIndex::SVGMATRIX, new V8SVGStaticPODTypeWrapper<TransformationMatrix>(result));
+    return V8DOMWrapper::convertToV8Object(V8ClassIndex::SVGMATRIX, V8SVGStaticPODTypeWrapper<TransformationMatrix>::create(result));
 }
 
-CALLBACK_FUNC_DECL(SVGMatrixRotateFromVector)
+v8::Handle<v8::Value> V8SVGMatrix::rotateFromVectorCallback(const v8::Arguments& args)
 {
     INC_STATS("DOM.SVGMatrix.rotateFromVector()");
-    TransformationMatrix matrix = *V8DOMWrapper::convertToNativeObject<V8SVGPODTypeWrapper<TransformationMatrix> >(V8ClassIndex::SVGMATRIX, args.Holder());
+    TransformationMatrix matrix = *V8SVGPODTypeWrapper<TransformationMatrix>::toNative(args.Holder());
     ExceptionCode ec = 0;
     float x = toFloat(args[0]);
     float y = toFloat(args[1]);
@@ -78,7 +94,7 @@ CALLBACK_FUNC_DECL(SVGMatrixRotateFromVector)
         return v8::Handle<v8::Value>();
     }
 
-    return V8DOMWrapper::convertToV8Object(V8ClassIndex::SVGMATRIX, new V8SVGStaticPODTypeWrapper<TransformationMatrix>(result));
+    return V8DOMWrapper::convertToV8Object(V8ClassIndex::SVGMATRIX, V8SVGStaticPODTypeWrapper<TransformationMatrix>::create(result));
 }
 
 } // namespace WebCore

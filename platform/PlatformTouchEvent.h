@@ -16,7 +16,7 @@
 #ifndef PlatformTouchEvent_h
 #define PlatformTouchEvent_h
 
-#include <JavaScriptCore/Platform.h>
+#include <wtf/Platform.h>
 
 
 #ifdef __OBJC__
@@ -29,34 +29,35 @@ class WebEvent;
 #include "IntPoint.h"
 
 namespace WebCore {
-    
-    enum TouchEventType { TouchEventBegin, TouchEventChange, TouchEventEnd, TouchEventCancel };
-    
-    class PlatformTouchEvent {
-    public:
-        PlatformTouchEvent(WebEvent *);
-        
-        TouchEventType eventType() const { return m_type; }
-        unsigned touchCount() const { return m_touchCount; }
-        IntPoint touchLocationAtIndex(unsigned i) const { return m_touchLocations[i]; }
-        IntPoint globalTouchLocationAtIndex(unsigned i) const { return m_touchGlobalLocations[i]; }
-        unsigned touchIdentifierAtIndex(unsigned i) const { return m_touchIdentifiers[i]; }
-        
-        bool gestureChanged() const { return m_gestureChanged; }
-        
-        float scale() const { return m_gestureScale; }
-        float rotation() const { return m_gestureRotation; }
 
-    private:
-        TouchEventType m_type;
-        unsigned m_touchCount;
-        Vector<IntPoint> m_touchLocations;
-        Vector<IntPoint> m_touchGlobalLocations;
-        Vector<unsigned> m_touchIdentifiers;
-        bool m_gestureChanged;
-        float m_gestureScale;
-        float m_gestureRotation;
-    };
+enum TouchEventType { TouchEventBegin, TouchEventChange, TouchEventEnd, TouchEventCancel };
+
+class PlatformTouchEvent {
+public:
+    PlatformTouchEvent(WebEvent *);
+    
+    TouchEventType eventType() const { return m_type; }
+    unsigned touchCount() const { return m_touchCount; }
+    IntPoint touchLocationAtIndex(unsigned i) const { return m_touchLocations[i]; }
+    IntPoint globalTouchLocationAtIndex(unsigned i) const { return m_touchGlobalLocations[i]; }
+    unsigned touchIdentifierAtIndex(unsigned i) const { return m_touchIdentifiers[i]; }
+    
+    bool gestureChanged() const { return m_gestureChanged; }
+    
+    float scale() const { return m_gestureScale; }
+    float rotation() const { return m_gestureRotation; }
+
+private:
+    TouchEventType m_type;
+    unsigned m_touchCount;
+    Vector<IntPoint> m_touchLocations;
+    Vector<IntPoint> m_touchGlobalLocations;
+    Vector<unsigned> m_touchIdentifiers;
+    bool m_gestureChanged;
+    float m_gestureScale;
+    float m_gestureRotation;
+};
+
 } // namespace WebCore
 
 

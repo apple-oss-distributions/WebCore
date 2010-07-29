@@ -38,9 +38,7 @@
 
 namespace WebCore {
 
-    class ApplicationCache;
-    class ApplicationCacheGroup;
-    class ApplicationCacheResource;
+    class ApplicationCacheHost;
     class Archive;
     class ArchiveResource;
     class ArchiveResourceCollection;
@@ -90,7 +88,7 @@ namespace WebCore {
         const KURL& responseURL() const;
         const String& responseMIMEType() const;
         
-        void replaceRequestURLForAnchorScroll(const KURL&);
+        void replaceRequestURLForSameDocumentNavigation(const KURL&);
         bool isStopping() const { return m_isStopping; }
         void stopLoading(DatabasePolicy = DatabasePolicyStop);
         void setCommitted(bool committed) { m_committed = committed; }
@@ -156,7 +154,7 @@ namespace WebCore {
         KURL urlForHistory() const;
         bool urlForHistoryReflectsFailure() const;
 
-        // These accessors accomodate WebCore's somewhat fickle custom of creating history
+        // These accessors accommodate WebCore's somewhat fickle custom of creating history
         // items for redirects, but only sometimes. For "source" and "destination",
         // these accessors return the URL that would have been used if a history
         // item were created. This allows WebKit to link history items reflecting
@@ -202,18 +200,7 @@ namespace WebCore {
         void takeMemoryCacheLoadsForClientNotification(Vector<String>& loads);
 
 #if ENABLE(OFFLINE_WEB_APPLICATIONS)
-        bool scheduleApplicationCacheLoad(ResourceLoader*, const ResourceRequest&, const KURL& originalURL);
-        bool scheduleLoadFallbackResourceFromApplicationCache(ResourceLoader*, const ResourceRequest&, ApplicationCache* = 0);
-        bool shouldLoadResourceFromApplicationCache(const ResourceRequest&, ApplicationCacheResource*&);
-        bool getApplicationCacheFallbackResource(const ResourceRequest&, ApplicationCacheResource*&, ApplicationCache* = 0);
-        
-        void setCandidateApplicationCacheGroup(ApplicationCacheGroup* group);
-        ApplicationCacheGroup* candidateApplicationCacheGroup() const { return m_candidateApplicationCacheGroup; }
-        
-        void setApplicationCache(PassRefPtr<ApplicationCache> applicationCache);
-        ApplicationCache* applicationCache() const { return m_applicationCache.get(); }
-
-        ApplicationCache* mainResourceApplicationCache() const;
+        ApplicationCacheHost* applicationCacheHost() const { return m_applicationCacheHost.get(); }
 #endif
 
     protected:
@@ -300,16 +287,9 @@ namespace WebCore {
         String m_clientRedirectSourceForHistory;
         bool m_didCreateGlobalHistoryEntry;
 
-#if ENABLE(OFFLINE_WEB_APPLICATIONS)  
-        // The application cache that the document loader is associated with (if any).
-        RefPtr<ApplicationCache> m_applicationCache;
-        
-        // Before an application cache has finished loading, this will be the candidate application
-        // group that the document loader is associated with.
-        ApplicationCacheGroup* m_candidateApplicationCacheGroup;
-        
-        // Once the main resource has finished loading, this is the application cache it was loaded from (if any).
-        RefPtr<ApplicationCache> m_mainResourceApplicationCache;
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+        friend class ApplicationCacheHost;  // for substitute resource delivery
+        OwnPtr<ApplicationCacheHost> m_applicationCacheHost;
 #endif
     };
 

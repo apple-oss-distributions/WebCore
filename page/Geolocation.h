@@ -27,15 +27,17 @@
 #define Geolocation_h
 
 #include "GeolocationService.h"
+#include "Geoposition.h"
 #include "PositionCallback.h"
+#include "PositionError.h"
 #include "PositionErrorCallback.h"
 #include "PositionOptions.h"
 #include "Timer.h"
-#include <wtf/Platform.h>
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/PassRefPtr.h>
+#include <wtf/Platform.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
 #include <wtf/Vector.h>
@@ -43,17 +45,25 @@
 namespace WebCore {
 
 class Frame;
-class Geoposition;
 
-class Geolocation : public RefCounted<Geolocation>, public GeolocationServiceClient {
+#if ENABLE(CLIENT_BASED_GEOLOCATION)
+class GeolocationPosition;
+class GeolocationError;
+#endif
+
+class Geolocation : public RefCounted<Geolocation>
+#if !ENABLE(CLIENT_BASED_GEOLOCATION)
+    , public GeolocationServiceClient
+#endif
+{
 public:
     static PassRefPtr<Geolocation> create(Frame* frame) { return adoptRef(new Geolocation(frame)); }
 
-    virtual ~Geolocation() {}
+    virtual ~Geolocation();
 
     void disconnectFrame();
     
-    Geoposition* lastPosition() const { return m_service->lastPosition(); }
+    Geoposition* lastPosition();
 
     void getCurrentPosition(PassRefPtr<PositionCallback>, PassRefPtr<PositionErrorCallback>, PassRefPtr<PositionOptions>);
     int watchPosition(PassRefPtr<PositionCallback>, PassRefPtr<PositionErrorCallback>, PassRefPtr<PositionOptions>);
@@ -61,63 +71,102 @@ public:
 
     void suspend();
     void resume();
-    
+
     void setIsAllowed(bool);
     bool isAllowed() const { return m_allowGeolocation == Yes; }
+    bool isDenied() const { return m_allowGeolocation == No; }
     
     void setShouldClearCache(bool shouldClearCache) { m_shouldClearCache = shouldClearCache; }
     bool shouldClearCache() const { return m_shouldClearCache; }
+
+#if ENABLE(CLIENT_BASED_GEOLOCATION)
+    void setPosition(GeolocationPosition*);
+    void setError(GeolocationError*);
+#endif
 
 private:
     Geolocation(Frame*);
 
     class GeoNotifier : public RefCounted<GeoNotifier> {
     public:
-        static PassRefPtr<GeoNotifier> create(PassRefPtr<PositionCallback> positionCallback, PassRefPtr<PositionErrorCallback> positionErrorCallback, PassRefPtr<PositionOptions> options) { return adoptRef(new GeoNotifier(positionCallback, positionErrorCallback, options)); }
+        static PassRefPtr<GeoNotifier> create(Geolocation* geolocation, PassRefPtr<PositionCallback> positionCallback, PassRefPtr<PositionErrorCallback> positionErrorCallback, PassRefPtr<PositionOptions> options) { return adoptRef(new GeoNotifier(geolocation, positionCallback, positionErrorCallback, options)); }
         
-        void startTimer();
+        void setFatalError(PassRefPtr<PositionError>);
+        bool hasZeroTimeout() const;
+        void startTimerIfNeeded();
         void timerFired(Timer<GeoNotifier>*);
         
+        Geolocation* m_geolocation;
         RefPtr<PositionCallback> m_successCallback;
         RefPtr<PositionErrorCallback> m_errorCallback;
         RefPtr<PositionOptions> m_options;
         Timer<GeoNotifier> m_timer;
+        RefPtr<PositionError> m_fatalError;
 
     private:
-        GeoNotifier(PassRefPtr<PositionCallback>, PassRefPtr<PositionErrorCallback>, PassRefPtr<PositionOptions>);
+        GeoNotifier(Geolocation*, PassRefPtr<PositionCallback>, PassRefPtr<PositionErrorCallback>, PassRefPtr<PositionOptions>);
+    };
+
+    class Watchers {
+    public:
+        void set(int id, PassRefPtr<GeoNotifier>);
+        void remove(int id);
+        void remove(GeoNotifier*);
+        void clear();
+        bool isEmpty() const;
+        void getNotifiersVector(Vector<RefPtr<GeoNotifier> >&) const;
+    private:
+        typedef HashMap<int, RefPtr<GeoNotifier> > IdToNotifierMap;
+        typedef HashMap<RefPtr<GeoNotifier>, int> NotifierToIdMap;
+        IdToNotifierMap m_idToNotifierMap;
+        NotifierToIdMap m_notifierToIdMap;
     };
 
     bool hasListeners() const { return !m_oneShots.isEmpty() || !m_watchers.isEmpty(); }
 
     void sendError(Vector<RefPtr<GeoNotifier> >&, PositionError*);
-    void sendErrorToOneShots(PositionError*);
-    void sendErrorToWatchers(PositionError*);
-    
     void sendPosition(Vector<RefPtr<GeoNotifier> >&, Geoposition*);
-    void sendPositionToOneShots(Geoposition*);
-    void sendPositionToWatchers(Geoposition*);
     
-    static void startTimer(Vector<RefPtr<GeoNotifier> >&);
-    void startTimersForOneShots();
-    void startTimersForWatchers();
-    void startTimers();
+    static void stopTimer(Vector<RefPtr<GeoNotifier> >&);
+    void stopTimersForOneShots();
+    void stopTimersForWatchers();
+    void stopTimers();
     
+    void positionChanged(PassRefPtr<Geoposition>);
+    void makeSuccessCallbacks();
     void handleError(PositionError*);
 
     void requestPermission();
 
+    bool startUpdating(GeoNotifier*);
+    void stopUpdating();
+
+#if !ENABLE(CLIENT_BASED_GEOLOCATION)
     // GeolocationServiceClient
     virtual void geolocationServicePositionChanged(GeolocationService*);
     virtual void geolocationServiceErrorOccurred(GeolocationService*);
+#endif
+#if ENABLE(GEOLOCATION_PERMISSION_CACHE)
     virtual void geolocationServiceCachePolicyChanged(GeolocationService*);
+#endif
+
+    PassRefPtr<GeoNotifier> startRequest(PassRefPtr<PositionCallback>, PassRefPtr<PositionErrorCallback>, PassRefPtr<PositionOptions>);
+
+    void fatalErrorOccurred(GeoNotifier*);
+    void requestTimedOut(GeoNotifier*);
 
     typedef HashSet<RefPtr<GeoNotifier> > GeoNotifierSet;
-    typedef HashMap<int, RefPtr<GeoNotifier> > GeoNotifierMap;
     
     GeoNotifierSet m_oneShots;
-    GeoNotifierMap m_watchers;
+    Watchers m_watchers;
     Frame* m_frame;
+#if !ENABLE(CLIENT_BASED_GEOLOCATION)
     OwnPtr<GeolocationService> m_service;
+#else
+    RefPtr<GeoNotifier> m_startRequestPermissionNotifier;
+#endif
+    RefPtr<Geoposition> m_lastPosition;
+    RefPtr<Geoposition> m_currentPosition;
 
     enum {
         Unknown,

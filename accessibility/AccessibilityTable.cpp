@@ -29,15 +29,15 @@
 #include "config.h"
 #include "AccessibilityTable.h"
 
+#include "AXObjectCache.h"
 #include "AccessibilityTableCell.h"
 #include "AccessibilityTableColumn.h"
 #include "AccessibilityTableHeaderContainer.h"
 #include "AccessibilityTableRow.h"
-#include "AXObjectCache.h"
 #include "HTMLNames.h"
-#include "HTMLTableElement.h"
 #include "HTMLTableCaptionElement.h"
 #include "HTMLTableCellElement.h"
+#include "HTMLTableElement.h"
 #include "RenderObject.h"
 #include "RenderTable.h"
 #include "RenderTableCell.h"
@@ -53,13 +53,8 @@ AccessibilityTable::AccessibilityTable(RenderObject* renderer)
     : AccessibilityRenderObject(renderer),
     m_headerContainer(0)
 {
-    // The iPhone code wants to *know* if it could be exposed as an accessibility table,
-    // but doesn't actually *want* it to be exposed as a table (because the children
-    // the table returns are different if it becomes an accessibility table).
-    m_canBeExposedAsAccessibilityTable = determineAccessibilityExposibility();
-    
 #if ACCESSIBILITY_TABLES
-    m_isAccessibilityTable = m_canBeExposedAsAccessibilityTable;
+    m_isAccessibilityTable = isTableExposableThroughAccessibility();
 #else
     m_isAccessibilityTable = false;
 #endif
@@ -74,7 +69,7 @@ PassRefPtr<AccessibilityTable> AccessibilityTable::create(RenderObject* renderer
     return adoptRef(new AccessibilityTable(renderer));
 }
 
-bool AccessibilityTable::determineAccessibilityExposibility()
+bool AccessibilityTable::isTableExposableThroughAccessibility()
 {
     // the following is a heuristic used to determine if a
     // <table> should be exposed as an AXTable. The goal
@@ -89,7 +84,7 @@ bool AccessibilityTable::determineAccessibilityExposibility()
     if (ariaRole != UnknownRole)
         return false;
     
-    RenderTable* table = static_cast<RenderTable*>(m_renderer);
+    RenderTable* table = toRenderTable(m_renderer);
     
     // this employs a heuristic to determine if this table should appear. 
     // Only "data" tables should be exposed as tables. 
@@ -154,8 +149,8 @@ bool AccessibilityTable::determineAccessibilityExposibility()
             HTMLTableCellElement* cellElement = static_cast<HTMLTableCellElement*>(cellNode);
             
             // in this case, the developer explicitly assigned a "data" table attribute
-            if (!cellElement->headers().isEmpty() || !cellElement->abbr().isEmpty() || 
-                !cellElement->axis().isEmpty() || !cellElement->scope().isEmpty())
+            if (!cellElement->headers().isEmpty() || !cellElement->abbr().isEmpty()
+                || !cellElement->axis().isEmpty() || !cellElement->scope().isEmpty())
                 return true;
             
             RenderStyle* renderStyle = cell->style();
@@ -163,15 +158,15 @@ bool AccessibilityTable::determineAccessibilityExposibility()
                 continue;
 
             // a cell needs to have matching bordered sides, before it can be considered a bordered cell.
-            if ((cell->borderTop() > 0 && cell->borderBottom() > 0) ||
-                (cell->borderLeft() > 0 && cell->borderRight() > 0))
+            if ((cell->borderTop() > 0 && cell->borderBottom() > 0)
+                || (cell->borderLeft() > 0 && cell->borderRight() > 0))
                 borderedCellCount++;
             
             // if the cell has a different color from the table and there is cell spacing,
             // then it is probably a data table cell (spacing and colors take the place of borders)
             Color cellColor = renderStyle->backgroundColor();
-            if (table->hBorderSpacing() > 0 && table->vBorderSpacing() > 0 && 
-                tableBGColor != cellColor && cellColor.alpha() != 1)
+            if (table->hBorderSpacing() > 0 && table->vBorderSpacing() > 0
+                && tableBGColor != cellColor && cellColor.alpha() != 1)
                 backgroundDifferenceCellCount++;
             
             // if we've found 10 "good" cells, we don't need to keep searching
@@ -217,7 +212,7 @@ void AccessibilityTable::addChildren()
     if (!m_renderer || !m_renderer->isTable())
         return;
     
-    RenderTable* table = static_cast<RenderTable*>(m_renderer);
+    RenderTable* table = toRenderTable(m_renderer);
     AXObjectCache* axCache = m_renderer->document()->axObjectCache();
 
     // go through all the available sections to pull out the rows
@@ -379,7 +374,7 @@ AccessibilityTableCell* AccessibilityTable::cellForColumnAndRow(unsigned column,
     if (!hasChildren())
         addChildren();
     
-    RenderTable* table = static_cast<RenderTable*>(m_renderer);
+    RenderTable* table = toRenderTable(m_renderer);
     RenderTableSection* tableSection = table->header();
     if (!tableSection)
         tableSection = table->firstBody();

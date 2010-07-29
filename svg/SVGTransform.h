@@ -2,8 +2,6 @@
     Copyright (C) 2004, 2005, 2008 Nikolas Zimmermann <zimmermann@kde.org>
                   2004, 2005 Rob Buis <buis@kde.org>
 
-    This file is part of the KDE project
-
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Library General Public
     License as published by the Free Software Foundation; either
@@ -56,7 +54,6 @@ namespace WebCore {
         float angle() const;
         FloatPoint rotationCenter() const;
 
-//        void setMatrix(const TransformationMatrix&);
         void setMatrix(TransformationMatrix);
 
         void setTranslate(float tx, float ty);
@@ -70,9 +67,6 @@ namespace WebCore {
         FloatSize scale() const;
         
         bool isValid();
-
-        // Throughout SVG 1.1 'SVGTransform' is only used for the 'transform' attribute
-        const QualifiedName& associatedAttributeName() const { return SVGNames::transformAttr; }
 
     private:
         SVGTransformType m_type;
@@ -95,5 +89,3 @@ namespace WebCore {
 
 #endif // ENABLE(SVG)
 #endif
-
-// vim:ts=4:noet

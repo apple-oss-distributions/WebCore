@@ -32,7 +32,7 @@
 #include "ThreadTimers.h"
 #include <wtf/UnusedParam.h>
 
-#if USE(ICU_UNICODE) || USE(GLIB_ICU_UNICODE_HYBRID)
+#if USE(ICU_UNICODE)
 #include "TextCodecICU.h"
 #endif
 
@@ -48,18 +48,12 @@ using namespace WTF;
 
 namespace WebCore {
 
-ThreadGlobalData& threadGlobalData()
-{
-    // FIXME: Workers are not necessarily the only feature that make per-thread global data necessary.
-    // We need to check for e.g. database objects manipulating strings on secondary threads.
-    static ThreadGlobalData* staticData;
-    if (!staticData) {
-        staticData = static_cast<ThreadGlobalData*>(fastMalloc(sizeof(ThreadGlobalData)));
-        // ThreadGlobalData constructor indirectly uses staticData, so we need to set up the memory before invoking it.
-        new (staticData) ThreadGlobalData;
-    }
-    return *staticData;
-}
+#if ENABLE(WORKERS)
+ThreadSpecific<ThreadGlobalData>* ThreadGlobalData::staticData;
+#error Need a separate ThreadGlobalData::staticData that is shared by the main thread and the Web Thread.
+#else
+ThreadGlobalData* ThreadGlobalData::staticData;
+#endif
 
 ThreadGlobalData::ThreadGlobalData()
     : m_emptyString(new StringImpl)
@@ -69,7 +63,7 @@ ThreadGlobalData::ThreadGlobalData()
 #ifndef NDEBUG
     , m_isMainThread(isMainThread())
 #endif
-#if USE(ICU_UNICODE) || USE(GLIB_ICU_UNICODE_HYBRID)
+#if USE(ICU_UNICODE)
     , m_cachedConverterICU(new ICUConverterWrapper)
 #endif
 {
@@ -77,10 +71,9 @@ ThreadGlobalData::ThreadGlobalData()
 
 ThreadGlobalData::~ThreadGlobalData()
 {
-#if USE(ICU_UNICODE) || USE(GLIB_ICU_UNICODE_HYBRID)
+#if USE(ICU_UNICODE)
     delete m_cachedConverterICU;
 #endif
-
     delete m_eventNames;
     delete m_atomicStringTable;
     delete m_threadTimers;

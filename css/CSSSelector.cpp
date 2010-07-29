@@ -77,9 +77,12 @@ void CSSSelector::extractPseudoType() const
     DEFINE_STATIC_LOCAL(AtomicString, before, ("before"));
     DEFINE_STATIC_LOCAL(AtomicString, checked, ("checked"));
     DEFINE_STATIC_LOCAL(AtomicString, fileUploadButton, ("-webkit-file-upload-button"));
+    DEFINE_STATIC_LOCAL(AtomicString, defaultString, ("default"));
     DEFINE_STATIC_LOCAL(AtomicString, disabled, ("disabled"));
     DEFINE_STATIC_LOCAL(AtomicString, readOnly, ("read-only"));
     DEFINE_STATIC_LOCAL(AtomicString, readWrite, ("read-write"));
+    DEFINE_STATIC_LOCAL(AtomicString, valid, ("valid"));
+    DEFINE_STATIC_LOCAL(AtomicString, invalid, ("invalid"));
     DEFINE_STATIC_LOCAL(AtomicString, drag, ("-webkit-drag"));
     DEFINE_STATIC_LOCAL(AtomicString, dragAlias, ("-khtml-drag")); // was documented with this name in Apple documentation, so keep an alia
     DEFINE_STATIC_LOCAL(AtomicString, empty, ("empty"));
@@ -96,6 +99,10 @@ void CSSSelector::extractPseudoType() const
     DEFINE_STATIC_LOCAL(AtomicString, focus, ("focus"));
     DEFINE_STATIC_LOCAL(AtomicString, hover, ("hover"));
     DEFINE_STATIC_LOCAL(AtomicString, indeterminate, ("indeterminate"));
+    DEFINE_STATIC_LOCAL(AtomicString, innerSpinButton, ("-webkit-inner-spin-button"));
+#if ENABLE(DATALIST)
+    DEFINE_STATIC_LOCAL(AtomicString, inputListButton, ("-webkit-input-list-button"));
+#endif
     DEFINE_STATIC_LOCAL(AtomicString, inputPlaceholder, ("-webkit-input-placeholder"));
     DEFINE_STATIC_LOCAL(AtomicString, lastChild, ("last-child"));
     DEFINE_STATIC_LOCAL(AtomicString, lastOfType, ("last-of-type"));
@@ -105,18 +112,24 @@ void CSSSelector::extractPseudoType() const
     DEFINE_STATIC_LOCAL(AtomicString, mediaControlsMuteButton, ("-webkit-media-controls-mute-button"));
     DEFINE_STATIC_LOCAL(AtomicString, mediaControlsPlayButton, ("-webkit-media-controls-play-button"));
     DEFINE_STATIC_LOCAL(AtomicString, mediaControlsTimeline, ("-webkit-media-controls-timeline"));
+    DEFINE_STATIC_LOCAL(AtomicString, mediaControlsVolumeSlider, ("-webkit-media-controls-volume-slider"));
     DEFINE_STATIC_LOCAL(AtomicString, mediaControlsSeekBackButton, ("-webkit-media-controls-seek-back-button"));
     DEFINE_STATIC_LOCAL(AtomicString, mediaControlsSeekForwardButton, ("-webkit-media-controls-seek-forward-button"));
     DEFINE_STATIC_LOCAL(AtomicString, mediaControlsRewindButton, ("-webkit-media-controls-rewind-button"));
     DEFINE_STATIC_LOCAL(AtomicString, mediaControlsReturnToRealtimeButton, ("-webkit-media-controls-return-to-realtime-button"));
+    DEFINE_STATIC_LOCAL(AtomicString, mediaControlsToggleClosedCaptionsButton, ("-webkit-media-controls-toggle-closed-captions-button"));
     DEFINE_STATIC_LOCAL(AtomicString, mediaControlsStatusDisplay, ("-webkit-media-controls-status-display"));
     DEFINE_STATIC_LOCAL(AtomicString, mediaControlsFullscreenButton, ("-webkit-media-controls-fullscreen-button"));
     DEFINE_STATIC_LOCAL(AtomicString, mediaControlsTimelineContainer, ("-webkit-media-controls-timeline-container"));
+    DEFINE_STATIC_LOCAL(AtomicString, mediaControlsVolumeSliderContainer, ("-webkit-media-controls-volume-slider-container"));
     DEFINE_STATIC_LOCAL(AtomicString, mediaControlsCurrentTimeDisplay, ("-webkit-media-controls-current-time-display"));
     DEFINE_STATIC_LOCAL(AtomicString, mediaControlsTimeRemainingDisplay, ("-webkit-media-controls-time-remaining-display"));
     DEFINE_STATIC_LOCAL(AtomicString, notStr, ("not("));
     DEFINE_STATIC_LOCAL(AtomicString, onlyChild, ("only-child"));
     DEFINE_STATIC_LOCAL(AtomicString, onlyOfType, ("only-of-type"));
+    DEFINE_STATIC_LOCAL(AtomicString, optional, ("optional"));
+    DEFINE_STATIC_LOCAL(AtomicString, outerSpinButton, ("-webkit-outer-spin-button"));
+    DEFINE_STATIC_LOCAL(AtomicString, required, ("required"));
     DEFINE_STATIC_LOCAL(AtomicString, resizer, ("-webkit-resizer"));
     DEFINE_STATIC_LOCAL(AtomicString, root, ("root"));
     DEFINE_STATIC_LOCAL(AtomicString, scrollbar, ("-webkit-scrollbar"));
@@ -168,12 +181,18 @@ void CSSSelector::extractPseudoType() const
     else if (m_value == fileUploadButton) {
         m_pseudoType = PseudoFileUploadButton;
         element = true;
-    } else if (m_value == disabled)
+    } else if (m_value == defaultString)
+        m_pseudoType = PseudoDefault;
+    else if (m_value == disabled)
         m_pseudoType = PseudoDisabled;
     else if (m_value == readOnly)
         m_pseudoType = PseudoReadOnly;
     else if (m_value == readWrite)
         m_pseudoType = PseudoReadWrite;
+    else if (m_value == valid)
+        m_pseudoType = PseudoValid;
+    else if (m_value == invalid)
+        m_pseudoType = PseudoInvalid;
     else if (m_value == drag || m_value == dragAlias)
         m_pseudoType = PseudoDrag;
     else if (m_value == enabled)
@@ -184,7 +203,14 @@ void CSSSelector::extractPseudoType() const
         m_pseudoType = PseudoFirstChild;
     else if (m_value == fullPageMedia)
         m_pseudoType = PseudoFullPageMedia;
-    else if (m_value == inputPlaceholder) {
+    else
+#if ENABLE(DATALIST)
+    if (m_value == inputListButton) {
+        m_pseudoType = PseudoInputListButton;
+        element = true;
+    } else
+#endif
+    if (m_value == inputPlaceholder) {
         m_pseudoType = PseudoInputPlaceholder;
         element = true;
     } else if (m_value == lastChild)
@@ -211,7 +237,10 @@ void CSSSelector::extractPseudoType() const
         m_pseudoType = PseudoHover;
     else if (m_value == indeterminate)
         m_pseudoType = PseudoIndeterminate;
-    else if (m_value == link)
+    else if (m_value == innerSpinButton) {
+        m_pseudoType = PseudoInnerSpinButton;
+        element = true;
+    } else if (m_value == link)
         m_pseudoType = PseudoLink;
     else if (m_value == lang)
         m_pseudoType = PseudoLang;
@@ -233,6 +262,9 @@ void CSSSelector::extractPseudoType() const
     } else if (m_value == mediaControlsTimeline) {
         m_pseudoType = PseudoMediaControlsTimeline;
         element = true;
+    } else if (m_value == mediaControlsVolumeSlider) {
+        m_pseudoType = PseudoMediaControlsVolumeSlider;
+        element = true;
     } else if (m_value == mediaControlsSeekBackButton) {
         m_pseudoType = PseudoMediaControlsSeekBackButton;
         element = true;
@@ -245,6 +277,9 @@ void CSSSelector::extractPseudoType() const
     } else if (m_value == mediaControlsReturnToRealtimeButton) {
         m_pseudoType = PseudoMediaControlsReturnToRealtimeButton;
         element = true;
+    } else if (m_value == mediaControlsToggleClosedCaptionsButton) {
+        m_pseudoType = PseudoMediaControlsToggleClosedCaptions;
+        element = true;
     } else if (m_value == mediaControlsStatusDisplay) {
         m_pseudoType = PseudoMediaControlsStatusDisplay;
         element = true;
@@ -253,6 +288,9 @@ void CSSSelector::extractPseudoType() const
         element = true;
     } else if (m_value == mediaControlsTimelineContainer) {
         m_pseudoType = PseudoMediaControlsTimelineContainer;
+        element = true;
+    } else if (m_value == mediaControlsVolumeSliderContainer) {
+        m_pseudoType = PseudoMediaControlsVolumeSliderContainer;
         element = true;
     } else if (m_value == notStr)
         m_pseudoType = PseudoNot;
@@ -264,7 +302,10 @@ void CSSSelector::extractPseudoType() const
         m_pseudoType = PseudoNthLastChild;
     else if (m_value == nthLastOfType)
         m_pseudoType = PseudoNthLastOfType;
-    else if (m_value == root)
+    else if (m_value == outerSpinButton) {
+        m_pseudoType = PseudoOuterSpinButton;
+        element = true;
+    } else if (m_value == root)
         m_pseudoType = PseudoRoot;
     else if (m_value == windowInactive)
         m_pseudoType = PseudoWindowInactive;
@@ -286,6 +327,10 @@ void CSSSelector::extractPseudoType() const
         m_pseudoType = PseudoSingleButton;
     else if (m_value == noButton)
         m_pseudoType = PseudoNoButton;
+    else if (m_value == optional)
+        m_pseudoType = PseudoOptional;
+    else if (m_value == required)
+        m_pseudoType = PseudoRequired;
     else if (m_value == scrollbarCorner) {
         element = true;
         m_pseudoType = PseudoScrollbarCorner;

@@ -94,10 +94,18 @@ using namespace WebCore;
     }
 }
 
+- (void)display
+{
+    [super display];
+    if (m_layerOwner)
+        m_layerOwner->didDisplay(self);
+}
+
 - (void)drawInContext:(CGContextRef)ctx
 {
-    // Unlock is automatic at the end of the run loop
-    WebThreadLock();
+    if (!WebThreadIsCurrent())
+        WebThreadLock();
+
     if (m_layerOwner)
         [WebLayer drawContents:m_layerOwner ofLayer:self intoContext:ctx];
 }

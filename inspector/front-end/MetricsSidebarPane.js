@@ -29,29 +29,43 @@
 WebInspector.MetricsSidebarPane = function()
 {
     WebInspector.SidebarPane.call(this, WebInspector.UIString("Metrics"));
+    this._inlineStyleId = null;
+    this._inlineStyleInjectedScriptId = null;
 }
 
 WebInspector.MetricsSidebarPane.prototype = {
     update: function(node)
     {
-        var body = this.bodyElement;
-
-        body.removeChildren();
-
         if (node)
             this.node = node;
         else
             node = this.node;
 
-        if (!node || !node.ownerDocument.defaultView)
+        if (!node || !node.ownerDocument.defaultView || node.nodeType !== Node.ELEMENT_NODE) {
+            this.bodyElement.removeChildren();
             return;
+        }
 
-        var style;
-        if (node.nodeType === Node.ELEMENT_NODE)
-            style = node.ownerDocument.defaultView.getComputedStyle(node);
-        if (!style)
-            return;
+        var self = this;
+        var callback = function(stylePayload) {
+            if (!stylePayload)
+                return;
+            var style = WebInspector.CSSStyleDeclaration.parseStyle(stylePayload);
+            self._update(style);
+        };
+        InjectedScriptAccess.get(node.injectedScriptId).getComputedStyle(node.id, callback);
 
+        var inlineStyleCallback = function(stylePayload) {
+            if (!stylePayload)
+                return;
+            self._inlineStyleId = stylePayload.id;
+            self._inlineStyleInjectedScriptId = stylePayload.injectedScriptId;
+        };
+        InjectedScriptAccess.get(node.injectedScriptId).getInlineStyle(node.id, inlineStyleCallback);
+    },
+
+    _update: function(style)
+    {
         var metricsElement = document.createElement("div");
         metricsElement.className = "metrics";
 
@@ -152,7 +166,8 @@ WebInspector.MetricsSidebarPane.prototype = {
         }
 
         metricsElement.appendChild(previousBox);
-        body.appendChild(metricsElement);
+        this.bodyElement.removeChildren();
+        this.bodyElement.appendChild(metricsElement);
     },
 
     startEditing: function(targetElement, box, styleProperty)
@@ -184,11 +199,14 @@ WebInspector.MetricsSidebarPane.prototype = {
         if (/^\d+$/.test(userInput))
             userInput += "px";
 
-        this.node.style.setProperty(context.styleProperty, userInput, "");
-
-        this.dispatchEventToListeners("metrics edited");
-
-        this.update();
+        var self = this;
+        var callback = function(success) {
+            if (!success)
+                return;
+            self.dispatchEventToListeners("metrics edited");
+            self.update();
+        };
+        InjectedScriptAccess.get(this._inlineStyleInjectedScriptId).setStyleProperty(this._inlineStyleId, context.styleProperty, userInput, callback);
     }
 }
 

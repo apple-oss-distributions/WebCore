@@ -29,18 +29,15 @@
 #define Frame_h
 
 #include "AnimationController.h"
-#include "Document.h"
 #include "DragImage.h"
-#include "EditAction.h"
 #include "Editor.h"
 #include "EventHandler.h"
 #include "FrameLoader.h"
 #include "FrameTree.h"
-#include "Range.h"
-#include "ScrollBehavior.h"
 #include "ScriptController.h"
+#include "ScrollBehavior.h"
 #include "SelectionController.h"
-#include "TextGranularity.h"
+#include "UserScriptTypes.h"
 
 #include "FloatSize.h"
 
@@ -70,435 +67,390 @@ typedef struct HBITMAP__* HBITMAP;
 
 namespace WebCore {
 
-class CSSMutableStyleDeclaration;
-class Editor;
-class EventHandler;
-class FrameLoader;
-class FrameLoaderClient;
-class FrameTree;
-class FrameView;
-class HTMLFrameOwnerElement;
-class HTMLTableCellElement;
-class RegularExpression;
-class RenderLayer;
-class RenderPart;
-class ScriptController;
-class SelectionController;
-class Settings;
-class VisibleSelection;
-class Widget;
+    class CSSMutableStyleDeclaration;
+    class HTMLTableCellElement;
+    class RegularExpression;
+    class RenderLayer;
 
-#if FRAME_LOADS_USER_STYLESHEET
-    class UserStyleSheetLoader;
-#endif
+    enum { 
+        OverflowScrollNone =  0x0,
+        OverflowScrollLeft =  0x1,
+        OverflowScrollRight = 0x2,
+        OverflowScrollUp    = 0x4,
+        OverflowScrollDown  = 0x8
+    };
 
-template <typename T> class Timer;
+    enum OverflowScrollAction { DoNotPerformOverflowScroll, PerformOverflowScroll };
+    typedef Node* (*NodeQualifier)(HitTestResult aHitTestResult, Node* terminationNode, IntRect* frame);
 
-enum { 
-    OverflowScrollNone =  0x0,
-    OverflowScrollLeft =  0x1,
-    OverflowScrollRight = 0x2,
-    OverflowScrollUp    = 0x4,
-    OverflowScrollDown  = 0x8
-};
+    class Frame : public RefCounted<Frame> {
+    public:
+        static PassRefPtr<Frame> create(Page* page, HTMLFrameOwnerElement* ownerElement, FrameLoaderClient* client)
+        {
+            return adoptRef(new Frame(page, ownerElement, client));
+        }
+        void setView(PassRefPtr<FrameView>);
+        ~Frame();
 
-enum OverflowScrollAction { DoNotPerformOverflowScroll, PerformOverflowScroll };
-typedef Node* (*NodeQualifier)(HitTestResult aHitTestResult, Node* terminationNode, IntRect* frame);
+        void init();
+        // Creates <html (contentEditable="true")><body style="..."></body></html> doing minimal amount of work
+        void initWithSimpleHTMLDocument(const String& style, bool editable, const KURL& url);
 
+        Page* page() const;
+        void detachFromPage();
+        HTMLFrameOwnerElement* ownerElement() const;
 
-class Frame : public RefCounted<Frame> {
-public:
-    static PassRefPtr<Frame> create(Page* page, HTMLFrameOwnerElement* ownerElement, FrameLoaderClient* client)
-    {
-        return adoptRef(new Frame(page, ownerElement, client));
-    }
-    void setView(PassRefPtr<FrameView>);
-    ~Frame();
-    
-    void init();
-    // Creates <html (contentEditable="true")><body style="..."></body></html> doing minimal amount of work
-    void initWithSimpleHTMLDocument(const String& style, bool editable, const KURL& url);
+        void pageDestroyed();
+        void disconnectOwnerElement();
 
-    Page* page() const;
-    void detachFromPage();
-    HTMLFrameOwnerElement* ownerElement() const;
+        Document* document() const;
+        FrameView* view() const;
 
-    void pageDestroyed();
-    void disconnectOwnerElement();
+        void setDOMWindow(DOMWindow*);
+        DOMWindow* domWindow() const;
+        void clearFormerDOMWindow(DOMWindow*);
 
-    Document* document() const;
-    FrameView* view() const;
+        Editor* editor() const;
+        EventHandler* eventHandler() const;
+        FrameLoader* loader() const;
+        RedirectScheduler* redirectScheduler() const;
+        SelectionController* selection() const;
+        FrameTree* tree() const;
+        AnimationController* animation() const;
+        ScriptController* script();
 
-    void setDOMWindow(DOMWindow*);
-    DOMWindow* domWindow() const;
-    void clearFormerDOMWindow(DOMWindow*);
+        RenderView* contentRenderer() const; // root renderer for the document contained in this frame
+        RenderPart* ownerRenderer() const; // renderer for the element that contains this frame
 
-    Editor* editor() const;
-    EventHandler* eventHandler() const;
-    FrameLoader* loader() const;
-    SelectionController* selection() const;
-    FrameTree* tree() const;
-    AnimationController* animation() const;
-    ScriptController* script();
+        bool isDisconnected() const;
+        void setIsDisconnected(bool);
+        bool excludeFromTextSearch() const;
+        void setExcludeFromTextSearch(bool);
 
-    RenderView* contentRenderer() const; // root renderer for the document contained in this frame
-    RenderPart* ownerRenderer() const; // renderer for the element that contains this frame
-    
-    bool isDisconnected() const;
-    void setIsDisconnected(bool);
-    bool excludeFromTextSearch() const;
-    void setExcludeFromTextSearch(bool);
+        void createView(const IntSize&, const Color&, bool, const IntSize &, bool,
+                        ScrollbarMode = ScrollbarAuto, ScrollbarMode = ScrollbarAuto);
 
-    void createView(const IntSize&, const Color&, bool, const IntSize &, bool,
-                    ScrollbarMode = ScrollbarAuto, ScrollbarMode = ScrollbarAuto);
+        float documentScale() const;
+        float contentsScale() const;    // Product of document scale and screen scale.
+        void documentScaleChanged();
 
+        void injectUserScripts(UserScriptInjectionTime);
 
-    float documentScale() const;
-    void setDocumentScale(float);
-    
-private:
-    Frame(Page*, HTMLFrameOwnerElement*, FrameLoaderClient*);
-    
-// === undecided, would like to consider moving to another class
+    private:
+        void injectUserScriptsForWorld(DOMWrapperWorld*, const UserScriptVector&, UserScriptInjectionTime);
 
-public:
-    static Frame* frameForWidget(const Widget*);
+    private:
+        Frame(Page*, HTMLFrameOwnerElement*, FrameLoaderClient*);
 
-    Settings* settings() const; // can be NULL
+    // === undecided, would like to consider moving to another class
 
-#if FRAME_LOADS_USER_STYLESHEET
-    void setUserStyleSheetLocation(const KURL&);
-    void setUserStyleSheet(const String&, bool saveStyleSheet = false);
-#endif
+    public:
+        static Frame* frameForWidget(const Widget*);
 
-    void setPrinting(bool printing, float minPageWidth, float maxPageWidth, bool adjustViewSize);
+        Settings* settings() const; // can be NULL
 
-    bool inViewSourceMode() const;
-    void setInViewSourceMode(bool = true);
+        void setPrinting(bool printing, float minPageWidth, float maxPageWidth, bool adjustViewSize);
 
-    void keepAlive(); // Used to keep the frame alive when running a script that might destroy it.
-#ifndef NDEBUG
-    static void cancelAllKeepAlive();
-#endif
+        bool inViewSourceMode() const;
+        void setInViewSourceMode(bool = true);
 
-    void didParse(double);
-    void didLayout(bool, double);
-    void didForcedLayout();
-    void getPPTStats(unsigned& parseCount, unsigned& layoutCount, unsigned& forcedLayoutCount, CFTimeInterval& parseDuration, CFTimeInterval& layoutDuration);
-    void clearPPTStats();
+        void keepAlive(); // Used to keep the frame alive when running a script that might destroy it.
+    #ifndef NDEBUG
+        static void cancelAllKeepAlive();
+    #endif
 
-    const ViewportArguments& viewportArguments() const;
-    void setViewportArguments(const ViewportArguments&);
-    NSDictionary* dictionaryForViewportArguments(const ViewportArguments& arguments) const;
-        
-    void betterApproximateNode(const IntPoint& testPoint, NodeQualifier aQualifer, Node*& best, Node* failedNode, IntPoint &bestPoint, IntRect &bestRect, const IntRect& testRect);
-    Node* qualifyingNodeAtViewportLocation(CGPoint* aViewportLocation, NodeQualifier aQualifer, bool shouldApproximate);
-    
-    Node* nodeRespondingToClickEvents(CGPoint* aViewportLocation);
-    Node* nodeRespondingToScrollWheelEvents(CGPoint* aViewportLocation);
+        void setDocument(PassRefPtr<Document>);
 
-    int indexCountOfWordPrecedingSelection(NSString *word);
-    NSArray *wordsInCurrentParagraph();    
-    CGRect renderRectForPoint(CGPoint point, bool *isReplaced, float *fontSize);
+        void didParse(double);
+        void didLayout(bool, double);
+        void didForcedLayout();
+        void getPPTStats(unsigned& parseCount, unsigned& layoutCount, unsigned& forcedLayoutCount, CFTimeInterval& parseDuration, CFTimeInterval& layoutDuration);
+        void clearPPTStats();
 
-    void setEmbeddedEditingMode(bool b = true);
-    bool embeddedEditingMode() const;
+        const ViewportArguments& viewportArguments() const;
+        void setViewportArguments(const ViewportArguments&);
+        NSDictionary* dictionaryForViewportArguments(const ViewportArguments& arguments) const;
 
-    void setDocument(PassRefPtr<Document>);
+        void betterApproximateNode(const IntPoint& testPoint, NodeQualifier aQualifer, Node*& best, Node* failedNode, IntPoint &bestPoint, IntRect &bestRect, const IntRect& testRect);
+        Node* qualifyingNodeAtViewportLocation(CGPoint* aViewportLocation, NodeQualifier aQualifer, bool shouldApproximate);
+
+        Node* nodeRespondingToClickEvents(CGPoint* aViewportLocation);
+        Node* nodeRespondingToScrollWheelEvents(CGPoint* aViewportLocation);
+
+        int indexCountOfWordPrecedingSelection(NSString *word);
+        NSArray *wordsInCurrentParagraph();    
+        CGRect renderRectForPoint(CGPoint point, bool *isReplaced, float *fontSize);
+
+        void setEmbeddedEditingMode(bool b = true);
+        bool embeddedEditingMode() const;
 
 #if ENABLE(ORIENTATION_EVENTS)
-    // Orientation is the interface orientation in degrees. Some examples are:
-    //  0 is straight up; -90 is when the device is rotated 90 clockwise;
-    //  90 is when rotated counter clockwise.
-    void sendOrientationChangeEvent(int orientation);
-    int orientation() const { return m_orientation; }
+        // Orientation is the interface orientation in degrees. Some examples are:
+        //  0 is straight up; -90 is when the device is rotated 90 clockwise;
+        //  90 is when rotated counter clockwise.
+        void sendOrientationChangeEvent(int orientation);
+        int orientation() const { return m_orientation; }
 #endif
 
-    void clearTimers();
-    static void clearTimers(FrameView*, Document*);
+        void clearTimers();
+        static void clearTimers(FrameView*, Document*);
 
-    void setNeedsReapplyStyles();
-    bool needsReapplyStyles() const;
-    void reapplyStyles();
+        void setNeedsReapplyStyles();
+        bool needsReapplyStyles() const;
+        void reapplyStyles();
 
-    String documentTypeString() const;
+        String documentTypeString() const;
 
-    // This method -- and the corresponding list of former DOM windows --
-    // should move onto ScriptController
-    void clearDOMWindow();
+        // This method -- and the corresponding list of former DOM windows --
+        // should move onto ScriptController
+        void clearDOMWindow();
 
-    String displayStringModifiedByEncoding(const String& str) const 
-    {
-        return document() ? document()->displayStringModifiedByEncoding(str) : str;
-    }
+        String displayStringModifiedByEncoding(const String& str) const
+        {
+            return document() ? document()->displayStringModifiedByEncoding(str) : str;
+        }
 
-private:
-    void lifeSupportTimerFired(Timer<Frame>*);
+    private:
+        void lifeSupportTimerFired(Timer<Frame>*);
 
-// === to be moved into FrameView
+    // === to be moved into FrameView
 
-public: 
-    void setZoomFactor(float scale, bool isTextOnly);
-    float zoomFactor() const;
-    bool isZoomFactorTextOnly() const;
-    bool shouldApplyTextZoom() const;
-    bool shouldApplyPageZoom() const;
-    float pageZoomFactor() const { return shouldApplyPageZoom() ? zoomFactor() : 1.0f; }
-    float textZoomFactor() const { return shouldApplyTextZoom() ? zoomFactor() : 1.0f; }
+    public:
+        void setZoomFactor(float scale, bool isTextOnly);
+        float zoomFactor() const;
+        bool isZoomFactorTextOnly() const;
+        bool shouldApplyTextZoom() const;
+        bool shouldApplyPageZoom() const;
+        float pageZoomFactor() const { return shouldApplyPageZoom() ? zoomFactor() : 1.0f; }
+        float textZoomFactor() const { return shouldApplyTextZoom() ? zoomFactor() : 1.0f; }
 
-// === to be moved into Chrome
+    // === to be moved into Chrome
 
-public:
-    void focusWindow();
-    void unfocusWindow();
-    bool shouldClose(RegisteredEventListenerVector* alternateEventListeners = 0);
-    void scheduleClose();
+    public:
+        void focusWindow();
+        void unfocusWindow();
+        bool shouldClose();
+        void scheduleClose();
 
-    void setJSStatusBarText(const String&);
-    void setJSDefaultStatusBarText(const String&);
-    String jsStatusBarText() const;
-    String jsDefaultStatusBarText() const;
+        void setJSStatusBarText(const String&);
+        void setJSDefaultStatusBarText(const String&);
+        String jsStatusBarText() const;
+        String jsDefaultStatusBarText() const;
 
-// === to be moved into Editor
+    // === to be moved into Editor
 
-public:
-    String selectedText() const;  
-    bool findString(const String&, bool forward, bool caseFlag, bool wrapFlag, bool startInSelection);
+    public:
+        String selectedText() const;
+        bool findString(const String&, bool forward, bool caseFlag, bool wrapFlag, bool startInSelection);
 
-    const VisibleSelection& mark() const; // Mark, to be used as emacs uses it.
-    void setMark(const VisibleSelection&);
+        const VisibleSelection& mark() const; // Mark, to be used as emacs uses it.
+        void setMark(const VisibleSelection&);
 
-    /**
-     * Clears the current selection.
-     */
-    void clearSelection();
+        void computeAndSetTypingStyle(CSSStyleDeclaration* , EditAction = EditActionUnspecified);
+        String selectionStartStylePropertyValue(int stylePropertyID) const;
+        void applyEditingStyleToBodyElement() const;
+        void removeEditingStyleFromBodyElement() const;
+        void applyEditingStyleToElement(Element*) const;
+        void removeEditingStyleFromElement(Element*) const;
 
-    void computeAndSetTypingStyle(CSSStyleDeclaration* , EditAction = EditActionUnspecified);
-    String selectionStartStylePropertyValue(int stylePropertyID) const;
-    void applyEditingStyleToBodyElement() const;
-    void removeEditingStyleFromBodyElement() const;
-    void applyEditingStyleToElement(Element*) const;
-    void removeEditingStyleFromElement(Element*) const;
+        IntRect firstRectForRange(Range*) const;
 
-    IntRect firstRectForRange(Range*) const;
-    
-    void respondToChangedSelection(const VisibleSelection& oldSelection, bool closeTyping);
-    bool shouldChangeSelection(const VisibleSelection& oldSelection, const VisibleSelection& newSelection, EAffinity, bool stillSelecting) const;
+        void respondToChangedSelection(const VisibleSelection& oldSelection, bool closeTyping);
+        bool shouldChangeSelection(const VisibleSelection& oldSelection, const VisibleSelection& newSelection, EAffinity, bool stillSelecting) const;
 
-    RenderStyle* styleForSelectionStart(Node*& nodeToRemove) const;
+        RenderStyle* styleForSelectionStart(Node*& nodeToRemove) const;
 
-    unsigned markAllMatchesForText(const String&, bool caseFlag, unsigned limit);
-    bool markedTextMatchesAreHighlighted() const;
-    void setMarkedTextMatchesAreHighlighted(bool flag);
+        unsigned markAllMatchesForText(const String&, bool caseFlag, unsigned limit);
+        bool markedTextMatchesAreHighlighted() const;
+        void setMarkedTextMatchesAreHighlighted(bool flag);
 
-    PassRefPtr<CSSComputedStyleDeclaration> selectionComputedStyle(Node*& nodeToRemove) const;
+        PassRefPtr<CSSComputedStyleDeclaration> selectionComputedStyle(Node*& nodeToRemove) const;
 
-    void textFieldDidBeginEditing(Element*);
-    void textFieldDidEndEditing(Element*);
-    void textDidChangeInTextField(Element*);
-    bool doTextFieldCommandFromEvent(Element*, KeyboardEvent*);
-    void textWillBeDeletedInTextField(Element* input);
-    void textDidChangeInTextArea(Element*);
+        void textFieldDidBeginEditing(Element*);
+        void textFieldDidEndEditing(Element*);
+        void textDidChangeInTextField(Element*);
+        bool doTextFieldCommandFromEvent(Element*, KeyboardEvent*);
+        void textWillBeDeletedInTextField(Element* input);
+        void textDidChangeInTextArea(Element*);
 
-    DragImageRef dragImageForSelection();
-    
-// === to be moved into SelectionController
+        DragImageRef dragImageForSelection();
 
-public:
-    TextGranularity selectionGranularity() const;
-    void setSelectionGranularity(TextGranularity);
+    // === to be moved into SelectionController
 
-    bool shouldChangeSelection(const VisibleSelection&) const;
-    bool shouldDeleteSelection(const VisibleSelection&) const;
-    void clearCaretRectIfNeeded();
-    void setFocusedNodeIfNeeded();
-    void selectionLayoutChanged();
-    void notifyRendererOfSelectionChange(bool userTriggered);
+    public:
+        TextGranularity selectionGranularity() const;
+        void setSelectionGranularity(TextGranularity);
 
-    void setSingleLineSelectionBehavior(bool b);
-    bool singleLineSelectionBehavior() const;
+        bool shouldChangeSelection(const VisibleSelection&) const;
+        bool shouldDeleteSelection(const VisibleSelection&) const;
+        void setFocusedNodeIfNeeded();
+        void notifyRendererOfSelectionChange(bool userTriggered);
 
-    void setCaretVisible(bool = true);
-    void paintCaret(GraphicsContext*, int tx, int ty, const IntRect& clipRect) const;  
-    void paintDragCaret(GraphicsContext*, int tx, int ty, const IntRect& clipRect) const;
+        void setSingleLineSelectionBehavior(bool b);
+        bool singleLineSelectionBehavior() const;
 
-    void setCaretColor(const Color &color);
+        void paintDragCaret(GraphicsContext*, int tx, int ty, const IntRect& clipRect) const;
 
-    /**
-     * Scroll the selection in an overflow layer on iPhone.
-     */
-    void scrollOverflowLayer(RenderLayer *, const IntRect &visibleRect, const IntRect &exposeRect);
-    
-    void invalidateOwnerRendererLayoutIfNeeded();
+        /**
+         * Scroll the selection in an overflow layer on iPhone.
+         */
+        void scrollOverflowLayer(RenderLayer *, const IntRect &visibleRect, const IntRect &exposeRect);
 
-    bool isContentEditable() const; // if true, everything in frame is editable
+        bool isContentEditable() const; // if true, everything in frame is editable
 
-    void updateSecureKeyboardEntryIfActive();
+        void updateSecureKeyboardEntryIfActive();
 
-    CSSMutableStyleDeclaration* typingStyle() const;
-    void setTypingStyle(CSSMutableStyleDeclaration*);
-    void clearTypingStyle();
+        CSSMutableStyleDeclaration* typingStyle() const;
+        void setTypingStyle(CSSMutableStyleDeclaration*);
+        void clearTypingStyle();
 
-    FloatRect selectionBounds(bool clipToVisibleContent = true) const;
-    void selectionTextRects(Vector<FloatRect>&, bool clipToVisibleContent = true) const;
+        FloatRect selectionBounds(bool clipToVisibleContent = true) const;
+        enum SelectionRectRespectTransforms { RespectTransforms = true, IgnoreTransforms = false };
+        void selectionTextRects(Vector<FloatRect>&, SelectionRectRespectTransforms respectTransforms, bool clipToVisibleContent = true) const;
 
-    HTMLFormElement* currentForm() const;
+        HTMLFormElement* currentForm() const;
 
-    void revealSelection(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded, bool revealExtent = false);
-    void setSelectionFromNone();
-    void setCaretBlinks(bool flag = true);
+        void revealSelection(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded, bool revealExtent = false);
+        void setSelectionFromNone();
 
-    void setUseSecureKeyboardEntry(bool);
+        void setUseSecureKeyboardEntry(bool);
 
-private:
-    void caretBlinkTimerFired(Timer<Frame>*);
+    private:
+        void overflowAutoScrollTimerFired(Timer<Frame>*);
+        void startOverflowAutoScroll(const IntPoint &);
+        void stopOverflowAutoScroll();
+        int checkOverflowScroll(OverflowScrollAction);
 
-    void overflowAutoScrollTimerFired(Timer<Frame>*);
-    void startOverflowAutoScroll(const IntPoint &);
-    void stopOverflowAutoScroll();
-    int checkOverflowScroll(OverflowScrollAction);
+    public:
 
-public:
-    SelectionController* dragCaretController() const;
+        SelectionController* dragCaretController() const;
 
-    String searchForLabelsAboveCell(RegularExpression*, HTMLTableCellElement*);
-    String searchForLabelsBeforeElement(const Vector<String>& labels, Element*);
-    String matchLabelsAgainstElement(const Vector<String>& labels, Element*);
-    
-    VisiblePosition visiblePositionForPoint(const IntPoint& framePoint);
-    Document* documentAtPoint(const IntPoint& windowPoint);
+        String searchForLabelsAboveCell(RegularExpression*, HTMLTableCellElement*, size_t* resultDistanceFromStartOfCell);
+        String searchForLabelsBeforeElement(const Vector<String>& labels, Element*, size_t* resultDistance, bool* resultIsInCellAbove);
+        String matchLabelsAgainstElement(const Vector<String>& labels, Element*);
 
-#if PLATFORM(MAC)
+        VisiblePosition visiblePositionForPoint(const IntPoint& framePoint);
+        Document* documentAtPoint(const IntPoint& windowPoint);
 
-// === undecided, would like to consider moving to another class
+    #if PLATFORM(MAC)
 
-public:
-    NSString* searchForNSLabelsAboveCell(RegularExpression*, HTMLTableCellElement*);
-    NSString* searchForLabelsBeforeElement(NSArray* labels, Element*);
-    NSString* matchLabelsAgainstElement(NSArray* labels, Element*);
+    // === undecided, would like to consider moving to another class
 
-#if ENABLE(DASHBOARD_SUPPORT)
-    NSMutableDictionary* dashboardRegionsDictionary();
-#endif
+    public:
+        NSString* searchForNSLabelsAboveCell(RegularExpression*, HTMLTableCellElement*, size_t* resultDistanceFromStartOfCell);
+        NSString* searchForLabelsBeforeElement(NSArray* labels, Element*, size_t* resultDistance, bool* resultIsInCellAbove);
+        NSString* matchLabelsAgainstElement(NSArray* labels, Element*);
 
-    CGImageRef selectionImage(bool forceBlackText = false) const;
+    #if ENABLE(DASHBOARD_SUPPORT)
+        NSMutableDictionary* dashboardRegionsDictionary();
+    #endif
 
-private:    
-    CGImageRef imageFromRect(NSRect) const;
+        CGImageRef selectionImage(bool forceBlackText = false) const;
 
-// === to be moved into Editor
+    private:
+        CGImageRef imageFromRect(NSRect) const;
 
-public:
-    NSDictionary* fontAttributesForSelectionStart() const;
-    NSWritingDirection baseWritingDirectionForSelectionStart() const;
+    // === to be moved into Editor
 
-#endif
+    public:
+        NSDictionary* fontAttributesForSelectionStart() const;
+        NSWritingDirection baseWritingDirectionForSelectionStart() const;
 
-public:
-    void setVisibleSize(const FloatSize& size);
-    const FloatSize& visibleSize() const;
+    #endif
 
-public:
-    int preferredHeight() const;
-    int innerLineHeight(DOMNode *node) const;
-    void updateLayout() const;
-    NSRect caretRect() const;
-    NSRect rectForScrollToVisible() const;
-    NSRect rectForSelection(VisibleSelection&) const;
-    void createDefaultFieldEditorDocumentStructure() const;
-    void moveSelectionToStartOrEndOfCurrentWord();
-    unsigned formElementsCharacterCount() const;
-    void setTimersPaused(bool);
-    bool timersPaused() const { return m_timersPausedCount; }
-    void setRangedSelectionBaseToCurrentSelection();
-    void setRangedSelectionBaseToCurrentSelectionStart();
-    void setRangedSelectionBaseToCurrentSelectionEnd();
-    void clearRangedSelectionInitialExtent();
-    void setRangedSelectionInitialExtentToCurrentSelectionStart();
-    void setRangedSelectionInitialExtentToCurrentSelectionEnd();
-    VisibleSelection rangedSelectionBase() const;
-    VisibleSelection rangedSelectionInitialExtent() const;
+    public:
+        void setVisibleSize(const FloatSize& size);
+        const FloatSize& visibleSize() const;
 
-#if PLATFORM(WIN)
+    public:
+        int preferredHeight() const;
+        int innerLineHeight(DOMNode *node) const;
+        void updateLayout() const;
+        NSRect caretRect() const;
+        NSRect rectForScrollToVisible() const;
+        NSRect rectForSelection(VisibleSelection&) const;
+        void createDefaultFieldEditorDocumentStructure() const;
+        unsigned formElementsCharacterCount() const;
+        void setTimersPaused(bool);
+        bool timersPaused() const { return m_timersPausedCount; }
+        void dispatchPageHideEventBeforePause();
+        void dispatchPageShowEventBeforeResume();
+        void setRangedSelectionBaseToCurrentSelection();
+        void setRangedSelectionBaseToCurrentSelectionStart();
+        void setRangedSelectionBaseToCurrentSelectionEnd();
+        void clearRangedSelectionInitialExtent();
+        void setRangedSelectionInitialExtentToCurrentSelectionStart();
+        void setRangedSelectionInitialExtentToCurrentSelectionEnd();
+        VisibleSelection rangedSelectionBase() const;
+        VisibleSelection rangedSelectionInitialExtent() const;
 
-public:
-    // FIXME - We should have a single version of nodeImage instead of using platform types.
-    HBITMAP nodeImage(Node*) const;
+    #if PLATFORM(WIN)
 
-#endif
+    public:
+        // FIXME - We should have a single version of nodeImage instead of using platform types.
+        HBITMAP nodeImage(Node*) const;
 
-private:
-    Page* m_page;
-    mutable FrameTree m_treeNode;
-    mutable FrameLoader m_loader;
+    #endif
 
-    mutable RefPtr<DOMWindow> m_domWindow;
-    HashSet<DOMWindow*> m_liveFormerWindows;
+    private:
+        Page* m_page;
+        mutable FrameTree m_treeNode;
+        mutable FrameLoader m_loader;
+        mutable RedirectScheduler m_redirectScheduler;
 
-    HTMLFrameOwnerElement* m_ownerElement;
-    RefPtr<FrameView> m_view;
-    RefPtr<Document> m_doc;
+        mutable RefPtr<DOMWindow> m_domWindow;
+        HashSet<DOMWindow*> m_liveFormerWindows;
 
-    ScriptController m_script;
+        HTMLFrameOwnerElement* m_ownerElement;
+        RefPtr<FrameView> m_view;
+        RefPtr<Document> m_doc;
 
-    String m_kjsStatusBarText;
-    String m_kjsDefaultStatusBarText;
+        ScriptController m_script;
 
-    float m_zoomFactor;
+        String m_kjsStatusBarText;
+        String m_kjsDefaultStatusBarText;
 
-    TextGranularity m_selectionGranularity;
+        float m_zoomFactor;
 
-    mutable SelectionController m_selectionController;
-    mutable VisibleSelection m_mark;
-    Timer<Frame> m_caretBlinkTimer;
-    mutable Editor m_editor;
-    mutable EventHandler m_eventHandler;
-    mutable AnimationController m_animationController;
+        TextGranularity m_selectionGranularity;
 
-    RefPtr<CSSMutableStyleDeclaration> m_typingStyle;
+        mutable SelectionController m_selectionController;
+        mutable VisibleSelection m_mark;
+        mutable Editor m_editor;
+        mutable EventHandler m_eventHandler;
+        mutable AnimationController m_animationController;
 
-    Color m_caretColor;
-    Timer<Frame> m_overflowAutoScrollTimer;
-    float m_overflowAutoScrollDelta;
-    IntPoint m_overflowAutoScrollPos;
-    ViewportArguments m_viewportArguments;
-    bool m_embeddedEditingMode;
-    VisibleSelection m_rangedSelectionBase;
-    VisibleSelection m_rangedSelectionInitialExtent;
-    FloatSize m_visibleSize;
-    unsigned m_parseCount;
-    unsigned m_layoutCount;
-    unsigned m_forcedLayoutCount;
-    CFTimeInterval m_parseDuration;
-    CFTimeInterval m_layoutDuration;
+        RefPtr<CSSMutableStyleDeclaration> m_typingStyle;
 
-    Timer<Frame> m_lifeSupportTimer;
+        Timer<Frame> m_overflowAutoScrollTimer;
+        float m_overflowAutoScrollDelta;
+        IntPoint m_overflowAutoScrollPos;
+        ViewportArguments m_viewportArguments;
+        bool m_embeddedEditingMode;
+        VisibleSelection m_rangedSelectionBase;
+        VisibleSelection m_rangedSelectionInitialExtent;
+        FloatSize m_visibleSize;
+        unsigned m_parseCount;
+        unsigned m_layoutCount;
+        unsigned m_forcedLayoutCount;
+        CFTimeInterval m_parseDuration;
+        CFTimeInterval m_layoutDuration;
+
+        Timer<Frame> m_lifeSupportTimer;
 
 #if ENABLE(ORIENTATION_EVENTS)
-    int m_orientation;
-#endif
-    
-    String m_userStyleSheet;
-
-    bool m_caretVisible;
-    bool m_caretBlinks;
-    bool m_caretPaint;
-    
-    bool m_highlightTextMatches;
-    bool m_inViewSourceMode;
-    bool m_needsReapplyStyles;
-    bool m_isDisconnected;
-    bool m_excludeFromTextSearch;
-
-    bool m_singleLineSelectionBehavior;
-    int m_timersPausedCount;
-    float m_documentScale;
-
-#if FRAME_LOADS_USER_STYLESHEET
-    UserStyleSheetLoader* m_userStyleSheetLoader;
+        int m_orientation;
 #endif
 
-};
+        bool m_highlightTextMatches;
+        bool m_inViewSourceMode;
+        bool m_needsReapplyStyles;
+        bool m_isDisconnected;
+        bool m_excludeFromTextSearch;
+
+        bool m_singleLineSelectionBehavior;
+        int m_timersPausedCount;
+    };
 
 } // namespace WebCore
 

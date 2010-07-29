@@ -1,6 +1,4 @@
 /*
- * This file is part of the CSS implementation for KDE.
- *
  * Copyright (C) 1999-2003 Lars Knoll (knoll@kde.org)
  *               1999 Waldo Bastian (bastian@kde.org)
  * Copyright (C) 2004, 2006, 2007, 2008 Apple Inc. All rights reserved.
@@ -31,7 +29,7 @@
 namespace WebCore {
 
     // this class represents a selector for a StyleRule
-    class CSSSelector : Noncopyable {
+    class CSSSelector : public Noncopyable {
     public:
         CSSSelector()
             : m_tag(anyQName())
@@ -126,10 +124,15 @@ namespace WebCore {
             PseudoChecked,
             PseudoEnabled,
             PseudoFullPageMedia,
+            PseudoDefault,
             PseudoDisabled,
             PseudoInputPlaceholder,
+            PseudoOptional,
+            PseudoRequired,
             PseudoReadOnly,
             PseudoReadWrite,
+            PseudoValid,
+            PseudoInvalid,
             PseudoIndeterminate,
             PseudoTarget,
             PseudoBefore,
@@ -168,15 +171,21 @@ namespace WebCore {
             PseudoMediaControlsMuteButton,
             PseudoMediaControlsPlayButton,
             PseudoMediaControlsTimelineContainer,
+            PseudoMediaControlsVolumeSliderContainer,
             PseudoMediaControlsCurrentTimeDisplay,
             PseudoMediaControlsTimeRemainingDisplay,
+            PseudoMediaControlsToggleClosedCaptions,
             PseudoMediaControlsTimeline,
+            PseudoMediaControlsVolumeSlider,
             PseudoMediaControlsSeekBackButton,
             PseudoMediaControlsSeekForwardButton,
             PseudoMediaControlsRewindButton,
             PseudoMediaControlsReturnToRealtimeButton,
             PseudoMediaControlsStatusDisplay,
-            PseudoMediaControlsFullscreenButton
+            PseudoMediaControlsFullscreenButton,
+            PseudoInputListButton,
+            PseudoInnerSpinButton,
+            PseudoOuterSpinButton,
         };
 
         PseudoType pseudoType() const
@@ -222,7 +231,7 @@ namespace WebCore {
 
         void extractPseudoType() const;
 
-        struct RareData {
+        struct RareData : Noncopyable {
             RareData(CSSSelector* tagHistory)
                 : m_tagHistory(tagHistory)
                 , m_simpleSelector(0)

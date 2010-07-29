@@ -35,6 +35,8 @@
 #include <wtf/Assertions.h>
 #include <wtf/Vector.h>
 
+#include <wtf/UnusedParam.h>
+
 namespace WebCore {
 
 #define STRING_BUFFER_SIZE 2048

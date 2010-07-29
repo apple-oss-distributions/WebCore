@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -35,11 +35,10 @@ namespace WebCore {
 
 class HTMLImageLoader;
 
-class HTMLVideoElement : public HTMLMediaElement
-{
+class HTMLVideoElement : public HTMLMediaElement {
 public:
     HTMLVideoElement(const QualifiedName&, Document*);
-    
+
     virtual int tagPriority() const { return 5; }
     virtual bool rendererIsNeeded(RenderStyle*);
 #if !ENABLE(PLUGIN_PROXY_FOR_VIDEO)
@@ -50,7 +49,7 @@ public:
     virtual void parseMappedAttribute(MappedAttribute* attr);
     virtual bool isVideo() const { return true; }
     virtual bool hasVideo() const { return player() && player()->hasVideo(); }
-    virtual bool supportsFullscreen() const { return player() && player()->supportsFullscreen(); }
+    virtual bool supportsFullscreen() const;
     virtual bool isURLAttribute(Attribute*) const;
     virtual const QualifiedName& imageSourceAttributeName() const;
 
@@ -62,18 +61,28 @@ public:
     unsigned videoWidth() const;
     unsigned videoHeight() const;
     
-    KURL poster() const;
+    virtual const KURL poster() const { return m_posterURL; }
     void setPoster(const String&);
 
+// fullscreen
+    void webkitEnterFullScreen(bool isUserGesture, ExceptionCode&);
+    void webkitExitFullScreen();
+    bool webkitSupportsFullscreen();
+    bool webkitDisplayingFullscreen();
+
     void updatePosterImage();
+    bool shouldDisplayPosterImage() const { return m_shouldDisplayPosterImage; }
 
     void paint(GraphicsContext*, const IntRect&);
     // Used by canvas to gain raw pixel access
     void paintCurrentFrameInContext(GraphicsContext*, const IntRect&);
 
 private:
+    virtual bool hasAvailableVideoFrame() const;
+
     OwnPtr<HTMLImageLoader> m_imageLoader;
-    bool m_shouldShowPosterImage;
+    KURL m_posterURL;
+    bool m_shouldDisplayPosterImage;
 };
 
 } //namespace

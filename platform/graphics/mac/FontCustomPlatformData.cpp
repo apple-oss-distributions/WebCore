@@ -23,6 +23,7 @@
 
 #include "SharedBuffer.h"
 #include "FontPlatformData.h"
+#include "OpenTypeSanitizer.h"
 
 #include <wtf/UnusedParam.h>
 

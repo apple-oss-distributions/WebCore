@@ -28,22 +28,50 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// This source file coalesces the HTML elements into a single object file to
+// This source file coalesces the V8 derived sources into a single object file to
 // reduce bloat and allow us to link release builds on 32-bit Windows.
+
+// Require explicit conversion to AtomicString. This helps catch cases where
+// the generated bindings cause an expensive implicit conversion.
+#define NO_IMPLICIT_ATOMICSTRING
 
 #include "bindings/V8Attr.cpp"
 #include "bindings/V8BarInfo.cpp"
+#include "bindings/V8BeforeLoadEvent.cpp"
+#include "bindings/V8Blob.cpp"
+#include "bindings/V8WebGLActiveInfo.cpp"
+#include "bindings/V8WebGLArray.cpp"
+#include "bindings/V8WebGLArrayBuffer.cpp"
+#include "bindings/V8WebGLBuffer.cpp"
+#include "bindings/V8WebGLByteArray.cpp"
+#include "bindings/V8WebGLContextAttributes.cpp"
+#include "bindings/V8WebGLFloatArray.cpp"
+#include "bindings/V8WebGLFramebuffer.cpp"
 #include "bindings/V8CanvasGradient.cpp"
+#include "bindings/V8WebGLIntArray.cpp"
 #include "bindings/V8CanvasPattern.cpp"
 #include "bindings/V8CanvasPixelArray.cpp"
+#include "bindings/V8WebGLProgram.cpp"
+#include "bindings/V8WebGLRenderbuffer.cpp"
+#include "bindings/V8CanvasRenderingContext.cpp"
 #include "bindings/V8CanvasRenderingContext2D.cpp"
+#include "bindings/V8WebGLRenderingContext.cpp"
+#include "bindings/V8WebGLShader.cpp"
+#include "bindings/V8WebGLShortArray.cpp"
+#include "bindings/V8WebGLTexture.cpp"
+#include "bindings/V8WebGLUniformLocation.cpp"
+#include "bindings/V8WebGLUnsignedByteArray.cpp"
+#include "bindings/V8WebGLUnsignedIntArray.cpp"
+#include "bindings/V8WebGLUnsignedShortArray.cpp"
 #include "bindings/V8CDATASection.cpp"
 #include "bindings/V8CharacterData.cpp"
 #include "bindings/V8ClientRect.cpp"
 #include "bindings/V8ClientRectList.cpp"
 #include "bindings/V8Clipboard.cpp"
 #include "bindings/V8Comment.cpp"
+#include "bindings/V8CompositionEvent.cpp"
 #include "bindings/V8Console.cpp"
+#include "bindings/V8Coordinates.cpp"
 #include "bindings/V8Counter.cpp"
 #include "bindings/V8CSSCharsetRule.cpp"
 #include "bindings/V8CSSFontFaceRule.cpp"
@@ -60,7 +88,6 @@
 #include "bindings/V8CSSValueList.cpp"
 #include "bindings/V8CSSVariablesDeclaration.cpp"
 #include "bindings/V8CSSVariablesRule.cpp"
-#include "bindings/V8Database.cpp"
 #include "bindings/V8DataGridColumn.cpp"
 #include "bindings/V8DataGridColumnList.cpp"
 #include "bindings/V8Document.cpp"
@@ -74,11 +101,15 @@
 #include "bindings/V8Element.cpp"
 #include "bindings/V8Entity.cpp"
 #include "bindings/V8EntityReference.cpp"
+#include "bindings/V8ErrorEvent.cpp"
 #include "bindings/V8Event.cpp"
 #include "bindings/V8EventException.cpp"
 #include "bindings/V8File.cpp"
 #include "bindings/V8FileList.cpp"
+#include "bindings/V8Geolocation.cpp"
+#include "bindings/V8Geoposition.cpp"
 #include "bindings/V8History.cpp"
+#include "bindings/V8HTMLAllCollection.cpp"
 #include "bindings/V8HTMLAnchorElement.cpp"
 #include "bindings/V8HTMLAppletElement.cpp"
 #include "bindings/V8HTMLAreaElement.cpp"
@@ -148,9 +179,9 @@
 #include "bindings/V8HTMLUListElement.cpp"
 #include "bindings/V8HTMLVideoElement.cpp"
 #include "bindings/V8ImageData.cpp"
-#include "bindings/V8InspectorController.cpp"
 #include "bindings/V8KeyboardEvent.cpp"
 #include "bindings/V8Location.cpp"
+#include "bindings/V8Media.cpp"
 #include "bindings/V8MediaError.cpp"
 #include "bindings/V8MediaList.cpp"
 #include "bindings/V8MessageChannel.cpp"
@@ -167,9 +198,14 @@
 #include "bindings/V8NodeIterator.cpp"
 #include "bindings/V8NodeList.cpp"
 #include "bindings/V8Notation.cpp"
+#include "bindings/V8Notification.cpp"
+#include "bindings/V8NotificationCenter.cpp"
 #include "bindings/V8OverflowEvent.cpp"
+#include "bindings/V8PageTransitionEvent.cpp"
 #include "bindings/V8Plugin.cpp"
 #include "bindings/V8PluginArray.cpp"
+#include "bindings/V8PopStateEvent.cpp"
+#include "bindings/V8PositionError.cpp"
 #include "bindings/V8ProcessingInstruction.cpp"
 #include "bindings/V8ProgressEvent.cpp"
 #include "bindings/V8Range.cpp"
@@ -177,12 +213,65 @@
 #include "bindings/V8Rect.cpp"
 #include "bindings/V8RGBColor.cpp"
 #include "bindings/V8Screen.cpp"
+#include "bindings/V8StyleSheet.cpp"
+#include "bindings/V8StyleSheetList.cpp"
+#include "bindings/V8Text.cpp"
+#include "bindings/V8TextEvent.cpp"
+#include "bindings/V8TextMetrics.cpp"
+#include "bindings/V8TimeRanges.cpp"
+#include "bindings/V8TreeWalker.cpp"
+#include "bindings/V8UIEvent.cpp"
+#include "bindings/V8ValidityState.cpp"
+#include "bindings/V8WebKitAnimationEvent.cpp"
+#include "bindings/V8WebKitCSSKeyframeRule.cpp"
+#include "bindings/V8WebKitCSSKeyframesRule.cpp"
+#include "bindings/V8WebKitCSSMatrix.cpp"
+#include "bindings/V8WebKitCSSTransformValue.cpp"
+#include "bindings/V8WebKitPoint.cpp"
+#include "bindings/V8WebKitTransitionEvent.cpp"
+#include "bindings/V8WheelEvent.cpp"
+#include "bindings/V8XMLHttpRequest.cpp"
+#include "bindings/V8XMLHttpRequestException.cpp"
+#include "bindings/V8XMLHttpRequestProgressEvent.cpp"
+#include "bindings/V8XMLHttpRequestUpload.cpp"
+#include "bindings/V8XMLSerializer.cpp"
+
+#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+#include "bindings/V8DOMApplicationCache.cpp"
+#endif
+
+#if ENABLE(DOM_STORAGE)
+#include "bindings/V8Storage.cpp"
+#include "bindings/V8StorageEvent.cpp"
+#endif
+
+#if ENABLE(WEB_SOCKETS)
+#include "bindings/V8WebSocket.cpp"
+#endif
+
+#if ENABLE(DATABASE)
+#include "bindings/V8Database.cpp"
 #include "bindings/V8SQLError.cpp"
 #include "bindings/V8SQLResultSet.cpp"
 #include "bindings/V8SQLResultSetRowList.cpp"
 #include "bindings/V8SQLTransaction.cpp"
-#include "bindings/V8StyleSheet.cpp"
-#include "bindings/V8StyleSheetList.cpp"
+#endif
+
+#if ENABLE(WORKERS)
+#include "bindings/V8AbstractWorker.cpp"
+#include "bindings/V8DedicatedWorkerContext.cpp"
+#include "bindings/V8Worker.cpp"
+#include "bindings/V8WorkerContext.cpp"
+#include "bindings/V8WorkerLocation.cpp"
+#include "bindings/V8WorkerNavigator.cpp"
+#endif
+
+#if ENABLE(SHARED_WORKERS)
+#include "bindings/V8SharedWorker.cpp"
+#include "bindings/V8SharedWorkerContext.cpp"
+#endif
+
+#if ENABLE(SVG)
 #include "bindings/V8SVGAElement.cpp"
 #include "bindings/V8SVGAltGlyphElement.cpp"
 #include "bindings/V8SVGAngle.cpp"
@@ -206,8 +295,8 @@
 #include "bindings/V8SVGCircleElement.cpp"
 #include "bindings/V8SVGClipPathElement.cpp"
 #include "bindings/V8SVGColor.cpp"
+#include "bindings/V8SVGComponentTransferFunctionElement.cpp"
 #include "bindings/V8SVGCursorElement.cpp"
-#include "bindings/V8SVGDefinitionSrcElement.cpp"
 #include "bindings/V8SVGDefsElement.cpp"
 #include "bindings/V8SVGDescElement.cpp"
 #include "bindings/V8SVGDocument.cpp"
@@ -216,6 +305,30 @@
 #include "bindings/V8SVGElementInstanceList.cpp"
 #include "bindings/V8SVGEllipseElement.cpp"
 #include "bindings/V8SVGException.cpp"
+#include "bindings/V8SVGFEBlendElement.cpp"
+#include "bindings/V8SVGFEColorMatrixElement.cpp"
+#include "bindings/V8SVGFEComponentTransferElement.cpp"
+#include "bindings/V8SVGFECompositeElement.cpp"
+#include "bindings/V8SVGFEDiffuseLightingElement.cpp"
+#include "bindings/V8SVGFEDisplacementMapElement.cpp"
+#include "bindings/V8SVGFEDistantLightElement.cpp"
+#include "bindings/V8SVGFEFloodElement.cpp"
+#include "bindings/V8SVGFEFuncAElement.cpp"
+#include "bindings/V8SVGFEFuncBElement.cpp"
+#include "bindings/V8SVGFEFuncGElement.cpp"
+#include "bindings/V8SVGFEFuncRElement.cpp"
+#include "bindings/V8SVGFEGaussianBlurElement.cpp"
+#include "bindings/V8SVGFEImageElement.cpp"
+#include "bindings/V8SVGFEMergeElement.cpp"
+#include "bindings/V8SVGFEMergeNodeElement.cpp"
+#include "bindings/V8SVGFEMorphologyElement.cpp"
+#include "bindings/V8SVGFEOffsetElement.cpp"
+#include "bindings/V8SVGFEPointLightElement.cpp"
+#include "bindings/V8SVGFESpecularLightingElement.cpp"
+#include "bindings/V8SVGFESpotLightElement.cpp"
+#include "bindings/V8SVGFETileElement.cpp"
+#include "bindings/V8SVGFETurbulenceElement.cpp"
+#include "bindings/V8SVGFilterElement.cpp"
 #include "bindings/V8SVGFontElement.cpp"
 #include "bindings/V8SVGFontFaceElement.cpp"
 #include "bindings/V8SVGFontFaceFormatElement.cpp"
@@ -289,37 +402,29 @@
 #include "bindings/V8SVGTRefElement.cpp"
 #include "bindings/V8SVGTSpanElement.cpp"
 #include "bindings/V8SVGUnitTypes.cpp"
-#include "bindings/V8SVGURIReference.cpp"
 #include "bindings/V8SVGUseElement.cpp"
 #include "bindings/V8SVGViewElement.cpp"
 #include "bindings/V8SVGZoomEvent.cpp"
-#include "bindings/V8Text.cpp"
-#include "bindings/V8TextEvent.cpp"
-#include "bindings/V8TextMetrics.cpp"
-#include "bindings/V8TimeRanges.cpp"
-#include "bindings/V8TreeWalker.cpp"
-#include "bindings/V8UIEvent.cpp"
-#include "bindings/V8UndetectableHTMLCollection.cpp"
-#include "bindings/V8WebKitAnimationEvent.cpp"
-#include "bindings/V8WebKitCSSKeyframeRule.cpp"
-#include "bindings/V8WebKitCSSKeyframesRule.cpp"
-#include "bindings/V8WebKitCSSMatrix.cpp"
-#include "bindings/V8WebKitCSSTransformValue.cpp"
-#include "bindings/V8WebKitPoint.cpp"
-#include "bindings/V8WebKitTransitionEvent.cpp"
-#include "bindings/V8WheelEvent.cpp"
-#include "bindings/V8Worker.cpp"
-#include "bindings/V8WorkerContext.cpp"
-#include "bindings/V8WorkerLocation.cpp"
-#include "bindings/V8WorkerNavigator.cpp"
-#include "bindings/V8XMLHttpRequest.cpp"
-#include "bindings/V8XMLHttpRequestException.cpp"
-#include "bindings/V8XMLHttpRequestProgressEvent.cpp"
-#include "bindings/V8XMLHttpRequestUpload.cpp"
-#include "bindings/V8XMLSerializer.cpp"
+#endif
+
+#if ENABLE(XPATH)
 #include "bindings/V8XPathEvaluator.cpp"
 #include "bindings/V8XPathException.cpp"
 #include "bindings/V8XPathExpression.cpp"
 #include "bindings/V8XPathNSResolver.cpp"
 #include "bindings/V8XPathResult.cpp"
+#endif
+
+#if ENABLE(XSLT)
 #include "bindings/V8XSLTProcessor.cpp"
+#endif
+
+#if ENABLE(INSPECTOR)
+#include "bindings/V8InjectedScriptHost.cpp"
+#include "bindings/V8InspectorBackend.cpp"
+#include "bindings/V8InspectorFrontendHost.cpp"
+#endif
+
+#if ENABLE(EVENTSOURCE)
+#include "bindings/V8EventSource.cpp"
+#endif

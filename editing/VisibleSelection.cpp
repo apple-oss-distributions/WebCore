@@ -237,7 +237,7 @@ void VisibleSelection::appendTrailingWhitespace()
 
     for (; charIt.length(); charIt.advance(1)) {
         UChar c = charIt.characters()[0];
-        if (!isSpaceOrNewline(c) && c != noBreakSpace)
+        if ((!isSpaceOrNewline(c) && c != noBreakSpace) || c == '\n')
             break;
         m_end = charIt.range()->endPosition();
     }
@@ -301,7 +301,7 @@ void VisibleSelection::setStartAndEndFromBaseAndExtentRespectingGranularity()
             VisiblePosition wordEnd(endOfWord(originalEnd, side));
             VisiblePosition end(wordEnd);
             
-            if (isEndOfParagraph(originalEnd)) {
+            if (isEndOfParagraph(originalEnd) && !isEmptyTableCell(m_start.node())) {
                 // Select the paragraph break (the space from the end of a paragraph to the start of 
                 // the next one) to match TextEdit.
                 end = wordEnd.next();
@@ -522,7 +522,7 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
             while (p.isNotNull() && !(lowestEditableAncestor(p.node()) == baseEditableAncestor && !isEditablePosition(p))) {
                 Node* root = editableRootForPosition(p);
                 shadowAncestor = root ? root->shadowAncestorNode() : 0;
-                p = isAtomicNode(p.node()) ? positionBeforeNode(p.node()) : previousVisuallyDistinctCandidate(p);
+                p = isAtomicNode(p.node()) ? positionInParentBeforeNode(p.node()) : previousVisuallyDistinctCandidate(p);
                 if (p.isNull() && (shadowAncestor != root))
                     p = lastDeepEditingPositionForNode(shadowAncestor);
             }
@@ -551,7 +551,7 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
             while (p.isNotNull() && !(lowestEditableAncestor(p.node()) == baseEditableAncestor && !isEditablePosition(p))) {
                 Node* root = editableRootForPosition(p);
                 shadowAncestor = root ? root->shadowAncestorNode() : 0;
-                p = isAtomicNode(p.node()) ? positionAfterNode(p.node()) : nextVisuallyDistinctCandidate(p);
+                p = isAtomicNode(p.node()) ? positionInParentAfterNode(p.node()) : nextVisuallyDistinctCandidate(p);
                 if (p.isNull() && (shadowAncestor != root))
                     p = Position(shadowAncestor, 0);
             }

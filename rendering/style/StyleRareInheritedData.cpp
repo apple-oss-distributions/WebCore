@@ -36,13 +36,14 @@ StyleRareInheritedData::StyleRareInheritedData()
     , wordWrap(RenderStyle::initialWordWrap())
     , nbspMode(NBNORMAL)
     , khtmlLineBreak(LBNORMAL)
-    , textSizeAdjust(RenderStyle::initialTextSizeAdjust())
     , resize(RenderStyle::initialResize())
     , userSelect(RenderStyle::initialUserSelect())
+    , colorSpace(DeviceColorSpace)
     , touchCalloutEnabled(RenderStyle::initialTouchCalloutEnabled())
     , tapHighlightColor(RenderStyle::initialTapHighlightColor())
     , compositionFillColor(RenderStyle::initialCompositionFillColor())
     , compositionFrameColor(RenderStyle::initialCompositionFrameColor())
+    , textSizeAdjust(RenderStyle::initialTextSizeAdjust())
 {
 }
 
@@ -59,13 +60,14 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , wordWrap(o.wordWrap)
     , nbspMode(o.nbspMode)
     , khtmlLineBreak(o.khtmlLineBreak)
-    , textSizeAdjust(o.textSizeAdjust)
     , resize(o.resize)
     , userSelect(o.userSelect)
+    , colorSpace(o.colorSpace)
     , touchCalloutEnabled(o.touchCalloutEnabled)
     , tapHighlightColor(o.tapHighlightColor)
     , compositionFillColor(o.compositionFillColor)
     , compositionFrameColor(o.compositionFrameColor)
+    , textSizeAdjust(o.textSizeAdjust)
 {
 }
 
@@ -90,6 +92,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && textSizeAdjust == o.textSizeAdjust
         && resize == o.resize
         && userSelect == o.userSelect
+        && colorSpace == o.colorSpace
         && tapHighlightColor == o.tapHighlightColor
         && touchCalloutEnabled == o.touchCalloutEnabled
         && compositionFillColor == o.compositionFillColor

@@ -68,7 +68,7 @@ void Font::drawComplexText(GraphicsContext* graphicsContext, const TextRun& run,
     notImplemented();
 }
 
-float Font::floatWidthForComplexText(const TextRun& run, HashSet<const SimpleFontData*>* /* fallbackFonts */) const
+float Font::floatWidthForComplexText(const TextRun& run, HashSet<const SimpleFontData*>* /* fallbackFonts */, GlyphOverflow*) const
 {
     notImplemented();
     return 0;

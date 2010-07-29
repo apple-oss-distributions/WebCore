@@ -3,6 +3,7 @@
  * Copyright (C) 2006 Michael Emmel mike.emmel@gmail.com
  * Copyright (C) 2008 Christian Dywan <christian@imendio.com>
  * Copyright (C) 2008 Collabora Ltd.
+ * Copyright (C) 2009 Holger Hans Peter Freyther
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,49 +44,65 @@
 
 namespace WebCore {
 
-int screenDepth(Widget* widget)
+static GdkVisual* getVisual(Widget* widget)
 {
-    GtkWidget* container = GTK_WIDGET(widget->root()->hostWindow()->platformWindow());
+    if (!widget)
+        return 0;
+
+    GtkWidget* container = GTK_WIDGET(widget->root()->hostWindow()->platformPageClient());
 
     if (!container)
-        return 24;
+        return 0;
 
     if (!GTK_WIDGET_REALIZED(container)) {
         GtkWidget* toplevel = gtk_widget_get_toplevel(container);
+#if GTK_CHECK_VERSION(2, 18, 0)
+        if (gtk_widget_is_toplevel(toplevel))
+#else
         if (GTK_WIDGET_TOPLEVEL(toplevel))
+#endif
             container = toplevel;
         else
-            return 24;
+            return 0;
     }
 
 
-    GdkVisual* visual = gdk_drawable_get_visual(GDK_DRAWABLE(container->window));
+    return gdk_drawable_get_visual(GDK_DRAWABLE(container->window));
+}
+
+int screenDepth(Widget* widget)
+{
+    GdkVisual* visual = getVisual(widget);
+    if (!visual)
+        return 24;
     return visual->depth;
 }
 
 int screenDepthPerComponent(Widget* widget)
 {
-    GtkWidget* container = GTK_WIDGET(widget->root()->hostWindow()->platformWindow());
-    if (!container)
+    GdkVisual* visual = getVisual(widget);
+    if (!visual)
         return 8;
 
-    GdkVisual* visual = gdk_drawable_get_visual(GDK_DRAWABLE(GTK_WIDGET(widget->root()->hostWindow()->platformWindow())->window));
     return visual->bits_per_rgb;
 }
 
 bool screenIsMonochrome(Widget* widget)
 {
-    GtkWidget* container = GTK_WIDGET(widget->root()->hostWindow()->platformWindow());
-    if (!container)
-        return false;
-
     return screenDepth(widget) < 2;
 }
 
 FloatRect screenRect(Widget* widget)
 {
-    GtkWidget* container = gtk_widget_get_toplevel(GTK_WIDGET(widget->root()->hostWindow()->platformWindow()));
+    if (!widget)
+        return FloatRect();
+
+    GtkWidget* container = gtk_widget_get_toplevel(GTK_WIDGET(widget->root()->hostWindow()->platformPageClient()));
+#if GTK_CHECK_VERSION(2, 18, 0)
+    if (!gtk_widget_is_toplevel(container))
+#else
     if (!GTK_WIDGET_TOPLEVEL(container))
+#endif
         return FloatRect();
 
     GdkScreen* screen = gtk_widget_has_screen(container) ? gtk_widget_get_screen(container) : gdk_screen_get_default();
@@ -101,8 +118,11 @@ FloatRect screenRect(Widget* widget)
 
 FloatRect screenAvailableRect(Widget* widget)
 {
+    if (!widget)
+        return FloatRect();
+
 #if PLATFORM(X11)
-    GtkWidget* container = GTK_WIDGET(widget->root()->hostWindow()->platformWindow());
+    GtkWidget* container = GTK_WIDGET(widget->root()->hostWindow()->platformPageClient());
     if (!container)
         return FloatRect();
 

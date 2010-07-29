@@ -24,6 +24,7 @@
 
 #include "AtomicString.h"
 #include "AtomicStringImpl.h"
+#include "FrameLoaderTypes.h"
 #include "PlatformString.h"
 #include "SubresourceLoaderClient.h"
 #include "Timer.h"
@@ -38,16 +39,16 @@ namespace WebCore {
     class KURL;
     class Request;
 
-    class Loader : Noncopyable {
+    class Loader : public Noncopyable {
     public:
         Loader();
         ~Loader();
 
-        void load(DocLoader*, CachedResource*, bool incremental = true, bool skipCanLoadCheck = false, bool sendResourceLoadCallbacks = true);
+        void load(DocLoader*, CachedResource*, bool incremental = true, SecurityCheckPolicy = DoSecurityCheck, bool sendResourceLoadCallbacks = true);
 
         void cancelRequests(DocLoader*);
         
-        enum Priority { Low, Medium, High };
+        enum Priority { Low = 0, Medium = 1, High = 2 };
         void servePendingRequests(Priority minimumPriority = Low);
 
         bool isSuspendingPendingRequests() { return m_isSuspendingPendingRequests; }
@@ -57,9 +58,10 @@ namespace WebCore {
         void nonCacheRequestInFlight(const KURL&);
         void nonCacheRequestComplete(const KURL&);
         
+    protected:
+        static Priority determinePriority(const CachedResource*);
 
     private:
-        Priority determinePriority(const CachedResource*) const;
         void scheduleServePendingRequests();
         
         void requestTimerFired(Timer<Loader>*);
@@ -112,6 +114,7 @@ namespace WebCore {
         bool m_isSuspendingPendingRequests;
     };
 
+    bool isHttpPipeliningEnabled();
 }
 
 #endif

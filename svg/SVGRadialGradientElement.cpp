@@ -42,11 +42,11 @@ namespace WebCore {
 
 SVGRadialGradientElement::SVGRadialGradientElement(const QualifiedName& tagName, Document* doc)
     : SVGGradientElement(tagName, doc)
-    , m_cx(this, SVGNames::cxAttr, LengthModeWidth, "50%")
-    , m_cy(this, SVGNames::cyAttr, LengthModeHeight, "50%")
-    , m_r(this, SVGNames::rAttr, LengthModeOther, "50%")
-    , m_fx(this, SVGNames::fxAttr, LengthModeWidth)
-    , m_fy(this, SVGNames::fyAttr, LengthModeHeight)
+    , m_cx(LengthModeWidth, "50%")
+    , m_cy(LengthModeHeight, "50%")
+    , m_r(LengthModeOther, "50%")
+    , m_fx(LengthModeWidth)
+    , m_fy(LengthModeHeight)
 {
     // Spec: If the cx/cy/r attribute is not specified, the effect is as if a value of "50%" were specified.
 }
@@ -86,35 +86,72 @@ void SVGRadialGradientElement::svgAttributeChanged(const QualifiedName& attrName
         m_resource->invalidate();
 }
 
+void SVGRadialGradientElement::synchronizeProperty(const QualifiedName& attrName)
+{
+    SVGGradientElement::synchronizeProperty(attrName);
+
+    if (attrName == anyQName()) {
+        synchronizeCx();
+        synchronizeCy();
+        synchronizeFx();
+        synchronizeFy();
+        synchronizeR();
+        return;
+    }
+
+    if (attrName == SVGNames::cxAttr)
+        synchronizeCx();
+    else if (attrName == SVGNames::cyAttr)
+        synchronizeCy();
+    else if (attrName == SVGNames::fxAttr)
+        synchronizeFx();
+    else if (attrName == SVGNames::fyAttr)
+        synchronizeFy();
+    else if (attrName == SVGNames::rAttr)
+        synchronizeR();
+}
+
 void SVGRadialGradientElement::buildGradient() const
 {
     RadialGradientAttributes attributes = collectGradientProperties();
 
     RefPtr<SVGPaintServerRadialGradient> radialGradient = WTF::static_pointer_cast<SVGPaintServerRadialGradient>(m_resource);
 
-    double adjustedFocusX = attributes.fx();
-    double adjustedFocusY = attributes.fy();
+    FloatPoint focalPoint;
+    FloatPoint centerPoint;
+    float radius;
+    if (attributes.boundingBoxMode()) {
+        focalPoint = FloatPoint(attributes.fx().valueAsPercentage(), attributes.fy().valueAsPercentage());
+        centerPoint = FloatPoint(attributes.cx().valueAsPercentage(), attributes.cy().valueAsPercentage());
+        radius = attributes.r().valueAsPercentage();
+    } else {
+        focalPoint = FloatPoint(attributes.fx().value(this), attributes.fy().value(this));
+        centerPoint = FloatPoint(attributes.cx().value(this), attributes.cy().value(this));
+        radius = attributes.r().value(this);
+    }
 
-    double fdx = attributes.fx() - attributes.cx();
-    double fdy = attributes.fy() - attributes.cy();
+    FloatPoint adjustedFocalPoint = focalPoint;
+    float dfx = focalPoint.x() - centerPoint.x();
+    float dfy = focalPoint.y() - centerPoint.y();
+    float rMax = 0.99f * radius;
 
     // Spec: If (fx, fy) lies outside the circle defined by (cx, cy) and
     // r, set (fx, fy) to the point of intersection of the line through
     // (fx, fy) and the circle.
-    if (sqrt(fdx * fdx + fdy * fdy) > attributes.r()) {
-        double angle = atan2(attributes.fy() * 100.0, attributes.fx() * 100.0);
-        adjustedFocusX = cos(angle) * attributes.r();
-        adjustedFocusY = sin(angle) * attributes.r();
+    // We scale the radius by 0.99 to match the behavior of FireFox.
+    if (sqrt(dfx * dfx + dfy * dfy) > rMax) {
+        float angle = atan2f(dfy, dfx);
+
+        dfx = cosf(angle) * rMax;
+        dfy = sinf(angle) * rMax;
+        adjustedFocalPoint = FloatPoint(dfx + centerPoint.x(), dfy + centerPoint.y());
     }
 
-    FloatPoint focalPoint = FloatPoint::narrowPrecision(attributes.fx(), attributes.fy());
-    FloatPoint centerPoint = FloatPoint::narrowPrecision(attributes.cx(), attributes.cy());
-
     RefPtr<Gradient> gradient = Gradient::create(
-        FloatPoint::narrowPrecision(adjustedFocusX, adjustedFocusY),
+        adjustedFocalPoint,
         0.f, // SVG does not support a "focus radius"
         centerPoint,
-        narrowPrecisionToFloat(attributes.r()));
+        radius);
     gradient->setSpreadMethod(attributes.spreadMethod());
 
     Vector<SVGGradientStop> stops = attributes.stops();
@@ -134,7 +171,7 @@ void SVGRadialGradientElement::buildGradient() const
     radialGradient->setGradientTransform(attributes.gradientTransform());
     radialGradient->setGradientCenter(centerPoint);
     radialGradient->setGradientFocal(focalPoint);
-    radialGradient->setGradientRadius(narrowPrecisionToFloat(attributes.r()));
+    radialGradient->setGradientRadius(radius);
     radialGradient->setGradientStops(attributes.stops());
 }
 
@@ -166,19 +203,19 @@ RadialGradientAttributes SVGRadialGradientElement::collectGradientProperties() c
             const SVGRadialGradientElement* radial = static_cast<const SVGRadialGradientElement*>(current);
 
             if (!attributes.hasCx() && current->hasAttribute(SVGNames::cxAttr))
-                attributes.setCx(radial->cx().valueAsPercentage());
+                attributes.setCx(radial->cx());
 
             if (!attributes.hasCy() && current->hasAttribute(SVGNames::cyAttr))
-                attributes.setCy(radial->cy().valueAsPercentage());
+                attributes.setCy(radial->cy());
 
             if (!attributes.hasR() && current->hasAttribute(SVGNames::rAttr))
-                attributes.setR(radial->r().valueAsPercentage());
+                attributes.setR(radial->r());
 
             if (!attributes.hasFx() && current->hasAttribute(SVGNames::fxAttr))
-                attributes.setFx(radial->fx().valueAsPercentage());
+                attributes.setFx(radial->fx());
 
             if (!attributes.hasFy() && current->hasAttribute(SVGNames::fyAttr))
-                attributes.setFy(radial->fy().valueAsPercentage());
+                attributes.setFy(radial->fy());
         }
 
         processedGradients.add(current);

@@ -26,6 +26,7 @@
 #ifndef WebCoreSystemInterface_h
 #define WebCoreSystemInterface_h
 
+#include <CFNetwork/CFNetwork.h>
 #include <objc/objc.h>
 
 
@@ -40,6 +41,7 @@
 @class NSFont;
 @class NSImage;
 @class NSMenu;
+@class NSMutableArray;
 @class NSMutableURLRequest;
 @class NSString;
 @class NSTextFieldCell;
@@ -59,6 +61,7 @@ typedef struct NSEvent NSEvent;
 typedef struct NSFont NSFont;
 typedef struct NSImage NSImage;
 typedef struct NSMenu NSMenu;
+typedef struct NSMutableArray NSMutableArray;
 typedef struct NSMutableURLRequest NSMutableURLRequest;
 typedef struct NSURLRequest NSURLRequest;
 typedef struct NSString NSString;
@@ -103,6 +106,10 @@ extern void (*wkSignalCFReadStreamEnd)(CFReadStreamRef stream);
 extern void (*wkSignalCFReadStreamError)(CFReadStreamRef stream, CFStreamError *error);
 extern void (*wkSignalCFReadStreamHasBytes)(CFReadStreamRef stream);
 extern unsigned (*wkInitializeMaximumHTTPConnectionCountPerHost)(unsigned preferredConnectionCount);
+extern void (*wkSetCONNECTProxyForStream)(CFReadStreamRef, CFStringRef proxyHost, CFNumberRef proxyPort);
+extern void (*wkSetCONNECTProxyAuthorizationForStream)(CFReadStreamRef, CFStringRef proxyAuthorizationString);
+extern CFHTTPMessageRef (*wkCopyCONNECTProxyResponse)(CFReadStreamRef, CFURLRef responseURL);
+extern void (*wkSupportsHttpPipelining)(NSMutableURLRequest *, int priority);
 extern BOOL (*wkIsLatchingWheelEvent)(NSEvent *);
 
 #ifndef BUILDING_ON_TIGER
@@ -126,8 +133,15 @@ extern BOOL (*wkSupportsMultipartXMixedReplace)(NSMutableURLRequest *);
 
 extern BOOL (*wkUseSharedMediaUI)();
 
+#if !defined(BUILDING_ON_TIGER) && !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD)
+extern NSMutableArray *(*wkNoteOpenPanelFiles)(NSArray *);
+#else
+extern void* wkNoteOpenPanelFiles;
+#endif
+
 extern CGSize (*wkGetViewportScreenSize)(void);
 extern void (*wkSetLayerContentsScale)(CALayer *);
+extern float (*wkGetScreenScaleFactor)(void);
     
 #ifdef __cplusplus
 }

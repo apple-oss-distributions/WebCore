@@ -105,8 +105,15 @@ public:
     void scrollbarModes(ScrollbarMode& horizontalMode, ScrollbarMode& verticalMode) const;
     ScrollbarMode horizontalScrollbarMode() const { ScrollbarMode horizontal, vertical; scrollbarModes(horizontal, vertical); return horizontal; }
     ScrollbarMode verticalScrollbarMode() const { ScrollbarMode horizontal, vertical; scrollbarModes(horizontal, vertical); return vertical; }
-    virtual void setCanHaveScrollbars(bool flag);
+    virtual void setCanHaveScrollbars(bool);
     bool canHaveScrollbars() const { return horizontalScrollbarMode() != ScrollbarAlwaysOff || verticalScrollbarMode() != ScrollbarAlwaysOff; }
+
+    virtual bool avoidScrollbarCreation() { return false; }
+
+    // By default you only receive paint events for the area that is visible. In the case of using a
+    // tiled backing store, this method can be set, so that the view paints the entire contents.
+    bool paintsEntireContents() const { return m_paintsEntireContents; }
+    void setPaintsEntireContents(bool);
 
     // Overridden by FrameView to create custom CSS scrollbars if applicable.
     virtual PassRefPtr<Scrollbar> createScrollbar(ScrollbarOrientation);
@@ -127,6 +134,7 @@ public:
     int visibleWidth() const { return visibleContentRect().width(); }
     int visibleHeight() const { return visibleContentRect().height(); }
     IntRect actualVisibleContentRect() const;
+    void setActualScrollPosition(const IntPoint&);
 
     // Methods for getting/setting the size webkit should use to layout the contents.  By default this is the same as the visible
     // content size.  Explicitly setting a layout size value will cause webkit to layout the contents using this size instead.
@@ -224,6 +232,7 @@ public:
 
     // Widget override.  Handles painting of the contents of the view as well as the scrollbars.
     virtual void paint(GraphicsContext*, const IntRect&);
+    void paintScrollbars(GraphicsContext*, const IntRect&);
 
     // Widget overrides to ensure that our children's visibility status is kept up to date when we get shown and hidden.
     virtual void show();
@@ -234,7 +243,9 @@ public:
     static const int noPanScrollRadius = 15;
     void addPanScrollIcon(const IntPoint&);
     void removePanScrollIcon();
+    void paintPanScrollIcon(GraphicsContext*);
 
+    virtual bool isPointInScrollbarCorner(const IntPoint&);
     virtual bool scrollbarCornerPresent() const;
 
     virtual IntRect convertFromScrollbarToContainingView(const Scrollbar*, const IntRect&) const;
@@ -250,7 +261,7 @@ protected:
     
     virtual void contentsResized() = 0;
     virtual void visibleContentsResized() = 0;
-    
+
     // These methods are used to create/destroy scrollbars.
     void setHasHorizontalScrollbar(bool);
     void setHasVerticalScrollbar(bool);
@@ -286,6 +297,8 @@ private:
     bool m_drawPanScrollIcon;
     bool m_useFixedLayout;
 
+    bool m_paintsEntireContents;
+
     void init();
     void destroy();
 
@@ -317,16 +330,6 @@ public:
 
 private:
     NSScrollView<WebCoreFrameScrollView>* scrollView() const;
-#endif
-
-#if PLATFORM(QT)
-public:
-    void adjustWidgetsPreventingBlittingCount(int delta);
-private:
-    bool rootPreventsBlitting() const { return root()->m_widgetsPreventingBlitting > 0; }
-    unsigned m_widgetsPreventingBlitting;
-#else
-    bool rootPreventsBlitting() const { return false; }
 #endif
 
 #if PLATFORM(GTK)

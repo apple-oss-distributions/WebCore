@@ -30,6 +30,7 @@
 #include "AXObjectCache.h"
 #include "ApplyStyleCommand.h"
 #include "CharacterNames.h"
+#include "CompositionEvent.h"
 #include "CreateLinkCommand.h"
 #include "CSSComputedStyleDeclaration.h"
 #include "CSSMutableStyleDeclaration.h"
@@ -140,9 +141,6 @@ EditorClient* Editor::client() const
 
 void Editor::handleKeyboardEvent(KeyboardEvent* event)
 {
-    if (event->type() != eventNames().keypressEvent)
-        return;
-        
     if (EditorClient* c = client())
         c->handleKeyboardEvent(event);
 }
@@ -174,24 +172,6 @@ bool Editor::canCut() const
     return canDelete();
 }
 
-static HTMLImageElement* imageElementFromImageDocument(Document* document)
-{
-    if (!document)
-        return 0;
-    if (!document->isImageDocument())
-        return 0;
-    
-    HTMLElement* body = document->body();
-    if (!body)
-        return 0;
-    
-    Node* node = body->firstChild();
-    if (!node)
-        return 0;    
-    if (!node->hasTagName(imgTag))
-        return 0;
-    return static_cast<HTMLImageElement*>(node);
-}
 
 bool Editor::canCopy() const
 {
@@ -367,16 +347,21 @@ void Editor::confirmMarkedText()
 
 void Editor::setTextAsChildOfElement(const String& text, Element* elem)
 {
-    // As a side effect this function sets a caret selection after the inserted content.  Much of what 
-    // follows is more expensive if there is a selection, so clear it since it's going to change anyway.
-    m_frame->selection()->clear();
-
     // Clear the composition
     clear();
     
     // Clear the Undo stack, since the operations that follow are not Undoable, and will corrupt the stack.  Some day
     // we could make them Undoable, and let callers clear the Undo stack explicitly if they wish.
     clearUndoRedoOperations();
+    
+    // If the element is empty already and we're not adding text, we can early return and avoid clearing/setting
+    // a selection at [0, 0] and the expense involved in creation VisiblePositions.
+    if (!elem->firstChild() && text.isEmpty())
+        return;
+    
+    // As a side effect this function sets a caret selection after the inserted content.  Much of what 
+    // follows is more expensive if there is a selection, so clear it since it's going to change anyway.
+    m_frame->selection()->clear();    
     
     // clear out all current children of element
     elem->removeChildren();
@@ -454,6 +439,9 @@ bool Editor::shouldShowDeleteInterface(HTMLElement* element) const
 
 void Editor::respondToChangedSelection(const VisibleSelection& oldSelection)
 {
+    // FIXME: Merge this to open source https://bugs.webkit.org/show_bug.cgi?id=38830
+    if (m_ignoreCompositionSelectionChange)
+        return;
     if (client())
         client()->respondToChangedSelection();
     if (m_deleteButtonController)
@@ -465,7 +453,7 @@ void Editor::respondToChangedContents(const VisibleSelection& endingSelection)
     if (AXObjectCache::accessibilityEnabled()) {
         Node* node = endingSelection.start().node();
         if (node)
-            m_frame->document()->axObjectCache()->postNotification(node->renderer(), "AXValueChanged", false);
+            m_frame->document()->axObjectCache()->postNotification(node->renderer(), AXObjectCache::AXValueChanged, false);
     }
     
     if (client())
@@ -829,66 +817,54 @@ bool Editor::clientIsEditable() const
     return client() && client()->isEditable();
 }
 
+// CSS properties that only has a visual difference when applied to text.
+static const int textOnlyProperties[] = {
+    CSSPropertyTextDecoration,
+    CSSPropertyWebkitTextDecorationsInEffect,
+    CSSPropertyFontStyle,
+    CSSPropertyFontWeight,
+    CSSPropertyColor,
+};
+
+static TriState triStateOfStyleInComputedStyle(CSSStyleDeclaration* desiredStyle, CSSComputedStyleDeclaration* computedStyle, bool ignoreTextOnlyProperties = false)
+{
+    RefPtr<CSSMutableStyleDeclaration> diff = getPropertiesNotInComputedStyle(desiredStyle, computedStyle);
+
+    if (ignoreTextOnlyProperties)
+        diff->removePropertiesInSet(textOnlyProperties, sizeof(textOnlyProperties)/sizeof(textOnlyProperties[0]));
+
+    if (!diff->length())
+        return TrueTriState;
+    else if (diff->length() == desiredStyle->length())
+        return FalseTriState;
+    return MixedTriState;
+}
+
 bool Editor::selectionStartHasStyle(CSSStyleDeclaration* style) const
 {
     Node* nodeToRemove;
     RefPtr<CSSComputedStyleDeclaration> selectionStyle = m_frame->selectionComputedStyle(nodeToRemove);
     if (!selectionStyle)
         return false;
-    
-    RefPtr<CSSMutableStyleDeclaration> mutableStyle = style->makeMutable();
-    
-    bool match = true;
-    CSSMutableStyleDeclaration::const_iterator end = mutableStyle->end();
-    for (CSSMutableStyleDeclaration::const_iterator it = mutableStyle->begin(); it != end; ++it) {
-        int propertyID = (*it).id();
-        if (!equalIgnoringCase(mutableStyle->getPropertyValue(propertyID), selectionStyle->getPropertyValue(propertyID))) {
-            match = false;
-            break;
-        }
-    }
-    
+    TriState state = triStateOfStyleInComputedStyle(style, selectionStyle.get());
     if (nodeToRemove) {
         ExceptionCode ec = 0;
         nodeToRemove->remove(ec);
         ASSERT(ec == 0);
     }
-    
-    return match;
-}
-
-static void updateState(CSSMutableStyleDeclaration* desiredStyle, CSSComputedStyleDeclaration* computedStyle, bool& atStart, TriState& state)
-{
-    CSSMutableStyleDeclaration::const_iterator end = desiredStyle->end();
-    for (CSSMutableStyleDeclaration::const_iterator it = desiredStyle->begin(); it != end; ++it) {
-        int propertyID = (*it).id();
-        String desiredProperty = desiredStyle->getPropertyValue(propertyID);
-        String computedProperty = computedStyle->getPropertyValue(propertyID);
-        TriState propertyState = equalIgnoringCase(desiredProperty, computedProperty)
-            ? TrueTriState : FalseTriState;
-        if (atStart) {
-            state = propertyState;
-            atStart = false;
-        } else if (state != propertyState) {
-            state = MixedTriState;
-            break;
-        }
-    }
+    return state == TrueTriState;
 }
 
 TriState Editor::selectionHasStyle(CSSStyleDeclaration* style) const
 {
-    bool atStart = true;
     TriState state = FalseTriState;
-
-    RefPtr<CSSMutableStyleDeclaration> mutableStyle = style->makeMutable();
 
     if (!m_frame->selection()->isRange()) {
         Node* nodeToRemove;
         RefPtr<CSSComputedStyleDeclaration> selectionStyle = m_frame->selectionComputedStyle(nodeToRemove);
         if (!selectionStyle)
             return FalseTriState;
-        updateState(mutableStyle.get(), selectionStyle.get(), atStart, state);
+        state = triStateOfStyleInComputedStyle(style, selectionStyle.get());
         if (nodeToRemove) {
             ExceptionCode ec = 0;
             nodeToRemove->remove(ec);
@@ -897,10 +873,15 @@ TriState Editor::selectionHasStyle(CSSStyleDeclaration* style) const
     } else {
         for (Node* node = m_frame->selection()->start().node(); node; node = node->traverseNextNode()) {
             RefPtr<CSSComputedStyleDeclaration> nodeStyle = computedStyle(node);
-            if (nodeStyle)
-                updateState(mutableStyle.get(), nodeStyle.get(), atStart, state);
-            if (state == MixedTriState)
-                break;
+            if (nodeStyle) {
+                TriState nodeState = triStateOfStyleInComputedStyle(style, nodeStyle.get(), !node->isTextNode());
+                if (node == m_frame->selection()->start().node())
+                    state = nodeState;
+                else if (state != nodeState && node->isTextNode()) {
+                    state = MixedTriState;
+                    break;
+                }
+            }
             if (node == m_frame->selection()->end().node())
                 break;
         }
@@ -931,6 +912,8 @@ static void dispatchEditableContentChangedEvents(const EditCommand& command)
 
 void Editor::appliedEditing(PassRefPtr<EditCommand> cmd)
 {
+    m_frame->document()->updateLayout();
+    
     dispatchEditableContentChangedEvents(*cmd);
     
     VisibleSelection newSelection(cmd->endingSelection());
@@ -955,6 +938,8 @@ void Editor::appliedEditing(PassRefPtr<EditCommand> cmd)
 
 void Editor::unappliedEditing(PassRefPtr<EditCommand> cmd)
 {
+    m_frame->document()->updateLayout();
+    
     dispatchEditableContentChangedEvents(*cmd);
     
     VisibleSelection newSelection(cmd->startingSelection());
@@ -968,6 +953,8 @@ void Editor::unappliedEditing(PassRefPtr<EditCommand> cmd)
 
 void Editor::reappliedEditing(PassRefPtr<EditCommand> cmd)
 {
+    m_frame->document()->updateLayout();
+    
     dispatchEditableContentChangedEvents(*cmd);
     
     VisibleSelection newSelection(cmd->endingSelection());
@@ -1068,6 +1055,7 @@ bool Editor::insertParagraphSeparator()
     return true;
 }
 
+
 void Editor::cut()
 {
     if (!canCut()) {
@@ -1086,13 +1074,8 @@ void Editor::copy()
         systemBeep();
         return;
     }
-    
-    Document* document = m_frame->document();
-    if (HTMLImageElement* imageElement = imageElementFromImageDocument(document))
-        Pasteboard::generalPasteboard()->writeImage(imageElement, document->url(), document->title());
-    else
-        Pasteboard::generalPasteboard()->writeSelection(selectedRange().get(), canSmartCopyOrDelete(), m_frame);
-    
+
+
     didWriteSelectionToPasteboard();
 }
 
@@ -1118,9 +1101,9 @@ void Editor::paste()
 
 void Editor::pasteAsPlainText()
 {
-   if (!canPaste())
+    if (!canPaste())
         return;
-   pasteAsPlainTextWithPasteboard(Pasteboard::generalPasteboard());
+    pasteAsPlainTextWithPasteboard(Pasteboard::generalPasteboard());
 }
 
 void Editor::performDelete()
@@ -1335,6 +1318,16 @@ void Editor::confirmComposition(const String& text, bool preserveSelection)
         return;
     }
     
+    // Dispatch a compositionend event to the focused node.
+    // We should send this event before sending a TextEvent as written in Section 6.2.2 and 6.2.3 of
+    // the DOM Event specification.
+    Node* target = m_frame->document()->focusedNode();
+    if (target) {
+        RefPtr<CompositionEvent> event = CompositionEvent::create(eventNames().compositionendEvent, m_frame->domWindow(), text);
+        ExceptionCode ec = 0;
+        target->dispatchEvent(event, ec);
+    }
+
     // If text is empty, then delete the old composition here.  If text is non-empty, InsertTextCommand::input
     // will delete the old composition with an optimized replace operation.
     if (text.isEmpty())
@@ -1345,8 +1338,11 @@ void Editor::confirmComposition(const String& text, bool preserveSelection)
 
     insertText(text, 0);
 
-    if (preserveSelection)
+    if (preserveSelection) {
         m_frame->selection()->setSelection(oldSelection, false, false);
+        // An open typing command that disagrees about current selection would cause issues with typing later on.
+        TypingCommand::closeTyping(m_lastEditCommand.get());
+    }
 
     setIgnoreCompositionSelectionChange(false);
 }
@@ -1361,9 +1357,40 @@ void Editor::setComposition(const String& text, const Vector<CompositionUnderlin
         setIgnoreCompositionSelectionChange(false);
         return;
     }
-    
+
     client()->startDelayingAndCoalescingContentChangeNotifications();
-    
+
+    Node* target = m_frame->document()->focusedNode();
+    if (target) {
+        // Dispatch an appropriate composition event to the focused node.
+        // We check the composition status and choose an appropriate composition event since this
+        // function is used for three purposes:
+        // 1. Starting a new composition.
+        //    Send a compositionstart event when this function creates a new composition node, i.e.
+        //    m_compositionNode == 0 && !text.isEmpty().
+        // 2. Updating the existing composition node.
+        //    Send a compositionupdate event when this function updates the existing composition
+        //    node, i.e. m_compositionNode != 0 && !text.isEmpty().
+        // 3. Canceling the ongoing composition.
+        //    Send a compositionend event when function deletes the existing composition node, i.e.
+        //    m_compositionNode != 0 && test.isEmpty().
+        RefPtr<CompositionEvent> event;
+        if (!m_compositionNode) {
+            // We should send a compositionstart event only when the given text is not empty because this
+            // function doesn't create a composition node when the text is empty.
+            if (!text.isEmpty())
+                event = CompositionEvent::create(eventNames().compositionstartEvent, m_frame->domWindow(), text);
+        } else {
+            if (!text.isEmpty())
+                event = CompositionEvent::create(eventNames().compositionupdateEvent, m_frame->domWindow(), text);
+            else
+              event = CompositionEvent::create(eventNames().compositionendEvent, m_frame->domWindow(), text);
+        }
+        ExceptionCode ec = 0;
+        if (event.get())
+            target->dispatchEvent(event, ec);
+    }
+
     // If text is empty, then delete the old composition here.  If text is non-empty, InsertTextCommand::input
     // will delete the old composition with an optimized replace operation.
     if (text.isEmpty())
@@ -1424,7 +1451,7 @@ void Editor::learnSpelling()
     if (!client())
         return;
         
-    // FIXME: We don't call this on the Mac, and it should remove misppelling markers around the 
+    // FIXME: We don't call this on the Mac, and it should remove misspelling markers around the 
     // learned word, see <rdar://problem/5396072>.
 
     String text = frame()->selectedText();
@@ -2014,7 +2041,6 @@ void Editor::markAllMisspellingsAndBadGrammarInRanges(bool markSpelling, Range* 
     }
 }
 
-
 void Editor::markMisspellingsAndBadGrammar(const VisibleSelection& spellingSelection, bool markGrammar, const VisibleSelection& grammarSelection)
 {
     if (!isContinuousSpellCheckingEnabled())
@@ -2052,7 +2078,10 @@ void Editor::setIgnoreCompositionSelectionChange(bool ignore)
         return;
 
     m_ignoreCompositionSelectionChange = ignore;
+    // FIXME: Merge this to open source https://bugs.webkit.org/show_bug.cgi?id=38830
     if (!ignore)
+        respondToChangedSelection(m_frame->selection()->selection());
+    if (!ignore) 
         revealSelectionAfterEditingOperation();
 }
 
@@ -2179,6 +2208,9 @@ bool Editor::insideVisibleArea(const IntPoint& point) const
         return true;
     
     RenderPart* renderer = frame->ownerRenderer();
+    if (!renderer)
+        return false;
+
     RenderBlock* container = renderer->containingBlock();
     if (!(container->style()->overflowX() == OHIDDEN || container->style()->overflowY() == OHIDDEN))
         return true;
@@ -2205,6 +2237,9 @@ bool Editor::insideVisibleArea(Range* range) const
         return true;
     
     RenderPart* renderer = frame->ownerRenderer();
+    if (!renderer)
+        return false;
+
     RenderBlock* container = renderer->containingBlock();
     if (!(container->style()->overflowX() == OHIDDEN || container->style()->overflowY() == OHIDDEN))
         return true;
@@ -2316,6 +2351,9 @@ void Editor::changeSelectionAfterCommand(const VisibleSelection& newSelection, b
     // change the caret's DOM position (["hello", 0]).  In these situations the above SelectionController::setSelection call
     // does not call EditorClient::respondToChangedSelection(), which, on the Mac, sends selection change notifications and 
     // starts a new kill ring sequence, but we want to do these things (matches AppKit).
+    // FIXME: Merge this to open source https://bugs.webkit.org/show_bug.cgi?id=38830
+    if (m_ignoreCompositionSelectionChange)
+        return;
     if (selectionDidNotChangeDOMPosition && cmd->isTypingCommand())
         client()->respondToChangedSelection();
 }

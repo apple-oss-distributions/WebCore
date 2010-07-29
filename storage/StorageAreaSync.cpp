@@ -20,7 +20,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
@@ -31,8 +31,10 @@
 #include "CString.h"
 #include "EventNames.h"
 #include "HTMLElement.h"
+#include "SecurityOrigin.h"
 #include "SQLiteStatement.h"
-#include "StorageArea.h"
+#include "StorageAreaImpl.h"
+#include "StorageSyncManager.h"
 #include "SuddenTermination.h"
 
 namespace WebCore {
@@ -41,21 +43,23 @@ namespace WebCore {
 // Instead, queue up a batch of items to sync and actually do the sync at the following interval.
 static const double StorageSyncInterval = 1.0;
 
-PassRefPtr<StorageAreaSync> StorageAreaSync::create(PassRefPtr<StorageSyncManager> storageSyncManager, PassRefPtr<StorageArea> storageArea)
+PassRefPtr<StorageAreaSync> StorageAreaSync::create(PassRefPtr<StorageSyncManager> storageSyncManager, PassRefPtr<StorageAreaImpl> storageArea, String databaseIdentifier)
 {
-    return adoptRef(new StorageAreaSync(storageSyncManager, storageArea));
+    return adoptRef(new StorageAreaSync(storageSyncManager, storageArea, databaseIdentifier));
 }
 
-StorageAreaSync::StorageAreaSync(PassRefPtr<StorageSyncManager> storageSyncManager, PassRefPtr<StorageArea> storageArea)
+StorageAreaSync::StorageAreaSync(PassRefPtr<StorageSyncManager> storageSyncManager, PassRefPtr<StorageAreaImpl> storageArea, String databaseIdentifier)
     : m_syncTimer(this, &StorageAreaSync::syncTimerFired)
     , m_itemsCleared(false)
     , m_finalSyncScheduled(false)
     , m_storageArea(storageArea)
     , m_syncManager(storageSyncManager)
+    , m_databaseIdentifier(databaseIdentifier.crossThreadString())
     , m_clearItemsWhileSyncing(false)
     , m_syncScheduled(false)
     , m_importComplete(false)
 {
+    ASSERT(isMainThread() || pthread_main_np());
     ASSERT(m_storageArea);
     ASSERT(m_syncManager);
 
@@ -65,19 +69,20 @@ StorageAreaSync::StorageAreaSync(PassRefPtr<StorageSyncManager> storageSyncManag
         m_importComplete = true;
 }
 
-#ifndef NDEBUG
 StorageAreaSync::~StorageAreaSync()
 {
+    ASSERT(isMainThread() || pthread_main_np());
     ASSERT(!m_syncTimer.isActive());
+    ASSERT(m_finalSyncScheduled);
 }
-#endif
 
 void StorageAreaSync::scheduleFinalSync()
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
     // FIXME: We do this to avoid races, but it'd be better to make things safe without blocking.
     blockUntilImportComplete();
-    
+    m_storageArea = 0;  // This is done in blockUntilImportComplete() but this is here as a form of documentation that we must be absolutely sure the ref count cycle is broken.
+
     if (m_syncTimer.isActive())
         m_syncTimer.stop();
     else {
@@ -93,7 +98,7 @@ void StorageAreaSync::scheduleFinalSync()
 
 void StorageAreaSync::scheduleItemForSync(const String& key, const String& value)
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
     ASSERT(!m_finalSyncScheduled);
 
     m_changedItems.set(key, value);
@@ -108,7 +113,7 @@ void StorageAreaSync::scheduleItemForSync(const String& key, const String& value
 
 void StorageAreaSync::scheduleClear()
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
     ASSERT(!m_finalSyncScheduled);
 
     m_changedItems.clear();
@@ -124,11 +129,11 @@ void StorageAreaSync::scheduleClear()
 
 void StorageAreaSync::syncTimerFired(Timer<StorageAreaSync>*)
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
 
     HashMap<String, String>::iterator it = m_changedItems.begin();
     HashMap<String, String>::iterator end = m_changedItems.end();
-    
+
     {
         MutexLocker locker(m_syncLock);
 
@@ -139,7 +144,7 @@ void StorageAreaSync::syncTimerFired(Timer<StorageAreaSync>*)
         }
 
         for (; it != end; ++it)
-            m_itemsPendingSync.set(it->first.copy(), it->second.copy());
+            m_itemsPendingSync.set(it->first.crossThreadString(), it->second.crossThreadString());
 
         if (!m_syncScheduled) {
             m_syncScheduled = true;
@@ -164,7 +169,7 @@ void StorageAreaSync::performImport()
     ASSERT(!isMainThread());
     ASSERT(!m_database.isOpen());
 
-    String databaseFilename = m_syncManager->fullDatabaseFilename(m_storageArea->securityOrigin());
+    String databaseFilename = m_syncManager->fullDatabaseFilename(m_databaseIdentifier);
 
     if (databaseFilename.isEmpty()) {
         LOG_ERROR("Filename for local storage database is empty - cannot open for persistent storage");
@@ -183,14 +188,14 @@ void StorageAreaSync::performImport()
         markImported();
         return;
     }
-    
+
     SQLiteStatement query(m_database, "SELECT key, value FROM ItemTable");
     if (query.prepare() != SQLResultOk) {
         LOG_ERROR("Unable to select items from ItemTable for local storage");
         markImported();
         return;
     }
-    
+
     HashMap<String, String> itemMap;
 
     int result = query.step();
@@ -205,27 +210,18 @@ void StorageAreaSync::performImport()
         return;
     }
 
-    MutexLocker locker(m_importLock);
-    
     HashMap<String, String>::iterator it = itemMap.begin();
     HashMap<String, String>::iterator end = itemMap.end();
-    
+
     for (; it != end; ++it)
         m_storageArea->importItem(it->first, it->second);
-    
-    // Break the (ref count) cycle.
-    m_storageArea = 0;
-    m_importComplete = true;
-    m_importCondition.signal();
+
+    markImported();
 }
 
 void StorageAreaSync::markImported()
 {
-    ASSERT(!isMainThread());
-
     MutexLocker locker(m_importLock);
-    // Break the (ref count) cycle.
-    m_storageArea = 0;
     m_importComplete = true;
     m_importCondition.signal();
 }
@@ -237,19 +233,18 @@ void StorageAreaSync::markImported()
 // item currently in the map. Get/remove can work whether or not it's in the map, but we'll need a list
 // of items the import should not overwrite. Clear can also work, but it'll need to kill the import
 // job first.
-void StorageAreaSync::blockUntilImportComplete() const
+void StorageAreaSync::blockUntilImportComplete()
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
 
-    // Fast path to avoid locking.
-    if (m_importComplete)
+    // Fast path.  We set m_storageArea to 0 only after m_importComplete being true.
+    if (!m_storageArea)
         return;
 
     MutexLocker locker(m_importLock);
     while (!m_importComplete)
         m_importCondition.wait(m_importLock);
-    ASSERT(m_importComplete);
-    ASSERT(!m_storageArea);
+    m_storageArea = 0;
 }
 
 void StorageAreaSync::sync(bool clearItems, const HashMap<String, String>& items)
@@ -266,7 +261,7 @@ void StorageAreaSync::sync(bool clearItems, const HashMap<String, String>& items
             LOG_ERROR("Failed to prepare clear statement - cannot write to local storage database");
             return;
         }
-        
+
         int result = clear.step();
         if (result != SQLResultDone) {
             LOG_ERROR("Failed to clear all items in the local storage database - %i", result);
@@ -290,11 +285,11 @@ void StorageAreaSync::sync(bool clearItems, const HashMap<String, String>& items
 
     for (HashMap<String, String>::const_iterator it = items.begin(); it != end; ++it) {
         // Based on the null-ness of the second argument, decide whether this is an insert or a delete.
-        SQLiteStatement& query = it->second.isNull() ? remove : insert;        
+        SQLiteStatement& query = it->second.isNull() ? remove : insert;
 
         query.bindText(1, it->first);
 
-        // If the second argument is non-null, we're doing an insert, so bind it as the value. 
+        // If the second argument is non-null, we're doing an insert, so bind it as the value.
         if (!it->second.isNull())
             query.bindText(2, it->second);
 
@@ -336,4 +331,3 @@ void StorageAreaSync::performSync()
 } // namespace WebCore
 
 #endif // ENABLE(DOM_STORAGE)
-

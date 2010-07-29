@@ -31,51 +31,45 @@ using namespace JSC;
 
 namespace WebCore {
 
-JSEventListener::JSEventListener(JSObject* function, JSDOMGlobalObject* globalObject, bool isAttribute)
-    : m_jsFunction(function)
-    , m_globalObject(globalObject)
+JSEventListener::JSEventListener(JSObject* function, JSObject* wrapper, bool isAttribute, DOMWrapperWorld* isolatedWorld)
+    : EventListener(JSEventListenerType)
+    , m_jsFunction(function)
+    , m_wrapper(wrapper)
     , m_isAttribute(isAttribute)
+    , m_isolatedWorld(isolatedWorld)
 {
-    if (!m_isAttribute && m_jsFunction)
-        globalObject->jsEventListeners().set(m_jsFunction, this);
 }
 
 JSEventListener::~JSEventListener()
 {
-    if (!m_isAttribute && m_jsFunction && m_globalObject)
-        m_globalObject->jsEventListeners().remove(m_jsFunction);
 }
 
-JSObject* JSEventListener::jsFunction() const
+JSObject* JSEventListener::initializeJSFunction(ScriptExecutionContext*) const
 {
-    return m_jsFunction;
+    ASSERT_NOT_REACHED();
+    return 0;
 }
 
-void JSEventListener::markJSFunction()
+void JSEventListener::markJSFunction(MarkStack& markStack)
 {
-    if (m_jsFunction && !m_jsFunction->marked())
-        m_jsFunction->mark();
-    if (m_globalObject && !m_globalObject->marked())
-        m_globalObject->mark();
+    if (m_jsFunction)
+        markStack.append(m_jsFunction);
 }
 
-void JSEventListener::handleEvent(Event* event, bool isWindowEvent)
+void JSEventListener::handleEvent(ScriptExecutionContext* scriptExecutionContext, Event* event)
 {
-    JSLock lock(false);
+    ASSERT(scriptExecutionContext);
+    if (!scriptExecutionContext)
+        return;
 
-    JSObject* jsFunction = this->jsFunction();
+    JSLock lock(SilenceAssertionsOnly);
+
+    JSObject* jsFunction = this->jsFunction(scriptExecutionContext);
     if (!jsFunction)
         return;
 
-    JSDOMGlobalObject* globalObject = m_globalObject;
-    // Null check as clearGlobalObject() can clear this and we still get called back by
-    // xmlhttprequest objects. See http://bugs.webkit.org/show_bug.cgi?id=13275
-    // FIXME: Is this check still necessary? Requests are supposed to be stopped before clearGlobalObject() is called.
+    JSDOMGlobalObject* globalObject = toJSDOMGlobalObject(scriptExecutionContext, m_isolatedWorld.get());
     if (!globalObject)
-        return;
-
-    ScriptExecutionContext* scriptExecutionContext = globalObject->scriptExecutionContext();
-    if (!scriptExecutionContext)
         return;
 
     if (scriptExecutionContext->isDocument()) {
@@ -89,13 +83,13 @@ void JSEventListener::handleEvent(Event* event, bool isWindowEvent)
             return;
         // FIXME: Is this check needed for other contexts?
         ScriptController* script = frame->script();
-        if (!script->isEnabled() || script->isPaused())
+        if (!script->canExecuteScripts() || script->isPaused())
             return;
     }
 
     ExecState* exec = globalObject->globalExec();
-
     JSValue handleEventFunction = jsFunction->get(exec, Identifier(exec, "handleEvent"));
+
     CallData callData;
     CallType callType = handleEventFunction.getCallData(callData);
     if (callType == CallTypeNone) {
@@ -107,31 +101,19 @@ void JSEventListener::handleEvent(Event* event, bool isWindowEvent)
         ref();
 
         MarkedArgumentBuffer args;
-        args.append(toJS(exec, event));
+        args.append(toJS(exec, globalObject, event));
 
         Event* savedEvent = globalObject->currentEvent();
         globalObject->setCurrentEvent(event);
 
-        // If this event handler is the first JavaScript to execute, then the
-        // dynamic global object should be set to the global object of the
-        // window in which the event occurred.
         JSGlobalData* globalData = globalObject->globalData();
         DynamicGlobalObjectScope globalObjectScope(exec, globalData->dynamicGlobalObject ? globalData->dynamicGlobalObject : globalObject);
 
-        JSValue retval;
-        if (handleEventFunction) {
-            globalObject->globalData()->timeoutChecker.start();
-            retval = call(exec, handleEventFunction, callType, callData, jsFunction, args);
-        } else {
-            JSValue thisValue;
-            if (isWindowEvent)
-                thisValue = globalObject->toThisObject(exec);
-            else
-                thisValue = toJS(exec, event->currentTarget());
-            globalObject->globalData()->timeoutChecker.start();
-            retval = call(exec, jsFunction, callType, callData, thisValue, args);
-        }
-        globalObject->globalData()->timeoutChecker.stop();
+        globalData->timeoutChecker.start();
+        JSValue retval = handleEventFunction
+            ? JSC::call(exec, handleEventFunction, callType, callData, jsFunction, args)
+            : JSC::call(exec, jsFunction, callType, callData, toJS(exec, globalObject, event->currentTarget()), args);
+        globalData->timeoutChecker.stop();
 
         globalObject->setCurrentEvent(savedEvent);
 
@@ -153,9 +135,57 @@ void JSEventListener::handleEvent(Event* event, bool isWindowEvent)
     }
 }
 
+bool JSEventListener::reportError(ScriptExecutionContext* context, const String& message, const String& url, int lineNumber)
+{
+    JSLock lock(SilenceAssertionsOnly);
+
+    JSObject* jsFunction = this->jsFunction(context);
+    if (!jsFunction)
+        return false;
+
+    JSDOMGlobalObject* globalObject = toJSDOMGlobalObject(context, m_isolatedWorld.get());
+    ExecState* exec = globalObject->globalExec();
+
+    CallData callData;
+    CallType callType = jsFunction->getCallData(callData);
+
+    if (callType == CallTypeNone)
+        return false;
+
+    MarkedArgumentBuffer args;
+    args.append(jsString(exec, message));
+    args.append(jsString(exec, url));
+    args.append(jsNumber(exec, lineNumber));
+
+    JSGlobalData* globalData = globalObject->globalData();
+    DynamicGlobalObjectScope globalObjectScope(exec, globalData->dynamicGlobalObject ? globalData->dynamicGlobalObject : globalObject);    
+
+    JSValue thisValue = globalObject->toThisObject(exec);
+
+    globalData->timeoutChecker.start();
+    JSValue returnValue = JSC::call(exec, jsFunction, callType, callData, thisValue, args);
+    globalData->timeoutChecker.stop();
+
+    // If an error occurs while handling the script error, it should be bubbled up.
+    if (exec->hadException()) {
+        exec->clearException();
+        return false;
+    }
+    
+    bool bubbleEvent;
+    return returnValue.getBoolean(bubbleEvent) && !bubbleEvent;
+}
+
 bool JSEventListener::virtualisAttribute() const
 {
     return m_isAttribute;
+}
+
+bool JSEventListener::operator==(const EventListener& listener)
+{
+    if (const JSEventListener* jsEventListener = JSEventListener::cast(&listener))
+        return m_jsFunction == jsEventListener->m_jsFunction && m_isAttribute == jsEventListener->m_isAttribute;
+    return false;
 }
 
 } // namespace WebCore

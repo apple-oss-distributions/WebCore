@@ -29,19 +29,20 @@
 #if ENABLE(MAC_JAVA_BRIDGE)
 
 #include "Frame.h"
-#include "WebCoreFrameView.h"
-#include "jni_runtime.h"
-#include "jni_utility.h"
+#include "JNIBridge.h"
+#include "JNIUtility.h"
+#include "JNIUtilityPrivate.h"
+#include "JSDOMBinding.h"
 #include "ScriptController.h"
+#include "StringSourceProvider.h"
+#include "WebCoreFrameView.h"
 #include "runtime_object.h"
 #include "runtime_root.h"
 #include <interpreter/CallFrame.h>
+#include <runtime/Completion.h>
 #include <runtime/JSGlobalObject.h>
 #include <runtime/JSLock.h>
-#include <runtime/Completion.h>
-#include <runtime/Completion.h>
 #include <wtf/Assertions.h>
-#include <parser/SourceProvider.h>
 
 using WebCore::Frame;
 
@@ -127,7 +128,7 @@ static void dispatchToJavaScriptThread(JSObjectCallContext *context)
     completionSource = CFRunLoopSourceCreate(NULL, 0, &sourceContext);
     CFRunLoopAddSource(currentRunLoop, completionSource, kCFRunLoopDefaultMode);
     
-    // Wakeup JavaScript access thread and make it do it's work.
+    // Wakeup JavaScript access thread and make it do its work.
     CFRunLoopSourceSignal(_performJavaScriptSource);
     if (CFRunLoopIsWaiting(_performJavaScriptRunLoop))
         CFRunLoopWakeUp(_performJavaScriptRunLoop);
@@ -290,7 +291,7 @@ jobject JavaJSObject::call(jstring methodName, jobjectArray args) const
     
     // Lookup the function object.
     ExecState* exec = rootObject->globalObject()->globalExec();
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
     
     Identifier identifier(exec, JavaString(methodName));
     JSValue function = _imp->get(exec, identifier);
@@ -315,14 +316,14 @@ jobject JavaJSObject::eval(jstring script) const
     
     JSValue result;
 
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
     
     RootObject* rootObject = this->rootObject();
     if (!rootObject)
         return 0;
 
     rootObject->globalObject()->globalData()->timeoutChecker.start();
-    Completion completion = JSC::evaluate(rootObject->globalObject()->globalExec(), rootObject->globalObject()->globalScopeChain(), makeSource(JavaString(script)));
+    Completion completion = JSC::evaluate(rootObject->globalObject()->globalExec(), rootObject->globalObject()->globalScopeChain(), makeSource(JavaString(script)), JSC::JSValue());
     rootObject->globalObject()->globalData()->timeoutChecker.stop();
     ComplType type = completion.complType();
     
@@ -346,7 +347,7 @@ jobject JavaJSObject::getMember(jstring memberName) const
 
     ExecState* exec = rootObject->globalObject()->globalExec();
     
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
     JSValue result = _imp->get(exec, Identifier(exec, JavaString(memberName)));
 
     return convertValueToJObject(result);
@@ -362,7 +363,7 @@ void JavaJSObject::setMember(jstring memberName, jobject value) const
 
     ExecState* exec = rootObject->globalObject()->globalExec();
 
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
     PutPropertySlot slot;
     _imp->put(exec, Identifier(exec, JavaString(memberName)), convertJObjectToValue(exec, value), slot);
 }
@@ -377,7 +378,7 @@ void JavaJSObject::removeMember(jstring memberName) const
         return;
 
     ExecState* exec = rootObject->globalObject()->globalExec();
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
     _imp->deleteProperty(exec, Identifier(exec, JavaString(memberName)));
 }
 
@@ -396,7 +397,7 @@ jobject JavaJSObject::getSlot(jint index) const
 
     ExecState* exec = rootObject->globalObject()->globalExec();
 
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
     JSValue result = _imp->get(exec, index);
 
     return convertValueToJObject(result);
@@ -416,7 +417,7 @@ void JavaJSObject::setSlot(jint index, jobject value) const
         return;
 
     ExecState* exec = rootObject->globalObject()->globalExec();
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
     _imp->put(exec, (unsigned)index, convertJObjectToValue(exec, value));
 }
 
@@ -429,7 +430,7 @@ jstring JavaJSObject::toString() const
     if (!rootObject)
         return 0;
 
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
     JSObject *thisObj = const_cast<JSObject*>(_imp);
     ExecState* exec = rootObject->globalObject()->globalExec();
     
@@ -487,7 +488,7 @@ jlong JavaJSObject::createNative(jlong nativeHandle)
 
 jobject JavaJSObject::convertValueToJObject(JSValue value) const
 {
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
     
     RootObject* rootObject = this->rootObject();
     if (!rootObject)
@@ -532,7 +533,7 @@ jobject JavaJSObject::convertValueToJObject(JSValue value) const
             // We either have a wrapper around a Java instance or a JavaScript
             // object.  If we have a wrapper around a Java instance, return that
             // instance, otherwise create a new Java JavaJSObject with the JSObject*
-            // as it's nativeHandle.
+            // as its nativeHandle.
             if (imp->classInfo() && strcmp(imp->classInfo()->className, "RuntimeObject") == 0) {
                 RuntimeObjectImp* runtimeImp = static_cast<RuntimeObjectImp*>(imp);
                 JavaInstance *runtimeInstance = static_cast<JavaInstance *>(runtimeImp->getInternalInstance());
@@ -551,7 +552,7 @@ jobject JavaJSObject::convertValueToJObject(JSValue value) const
             nativeHandle = UndefinedHandle;
         }
         
-        // Now create the Java JavaJSObject.  Look for the JavaJSObject in it's new (Tiger)
+        // Now create the Java JavaJSObject.  Look for the JavaJSObject in its new (Tiger)
         // location and in the original Java 1.4.2 location.
         jclass JSObjectClass;
         
@@ -579,30 +580,31 @@ JSValue JavaJSObject::convertJObjectToValue(ExecState* exec, jobject theObject) 
     // See section 22.7 of 'JavaScript:  The Definitive Guide, 4th Edition',
     // figure 22-4.
     jobject classOfInstance = callJNIMethod<jobject>(theObject, "getClass", "()Ljava/lang/Class;");
-    jstring className = (jstring)callJNIMethod<jobject>(classOfInstance, "getName", "()Ljava/lang/String;");
-    
+    if (!classOfInstance) {
+        JSLock lock(SilenceAssertionsOnly);
+        return JavaInstance::create(theObject, _rootObject)->createRuntimeObject(exec);
+    }
+
     // Only the sun.plugin.javascript.webkit.JSObject has a member called nativeJSObject. This class is
     // created above to wrap internal browser objects. The constructor of this class takes the native
     // pointer and stores it in this object, so that it can be retrieved below.
-    if (strcmp(JavaString(className).UTF8String(), "sun.plugin.javascript.webkit.JSObject") == 0) {
-        // Pull the nativeJSObject value from the Java instance.  This is a
-        // pointer to the JSObject.
-        JNIEnv *env = getJNIEnv();
-        jfieldID fieldID = env->GetFieldID((jclass)classOfInstance, "nativeJSObject", "J");
-        if (fieldID == NULL) {
-            return jsUndefined();
-        }
-        jlong nativeHandle = env->GetLongField(theObject, fieldID);
-        if (nativeHandle == UndefinedHandle) {
-            return jsUndefined();
-        }
-        JSObject *imp = static_cast<JSObject*>(jlong_to_impptr(nativeHandle));
-        return imp;
+    jstring className = (jstring)callJNIMethod<jobject>(classOfInstance, "getName", "()Ljava/lang/String;");
+    if (!className || (strcmp(JavaString(className).UTF8String(), "sun.plugin.javascript.webkit.JSObject") != 0)) {
+        JSLock lock(SilenceAssertionsOnly);
+        return JavaInstance::create(theObject, _rootObject)->createRuntimeObject(exec);
     }
 
-    JSLock lock(false);
-
-    return JavaInstance::create(theObject, _rootObject)->createRuntimeObject(exec);
+    // Pull the nativeJSObject value from the Java instance.  This is a
+    // pointer to the JSObject.
+    JNIEnv *env = getJNIEnv();
+    jfieldID fieldID = env->GetFieldID((jclass)classOfInstance, "nativeJSObject", "J");
+    if (fieldID == NULL)
+        return jsUndefined();
+    jlong nativeHandle = env->GetLongField(theObject, fieldID);
+    if (nativeHandle == UndefinedHandle)
+        return jsUndefined();
+    JSObject *imp = static_cast<JSObject*>(jlong_to_impptr(nativeHandle));
+    return imp;
 }
 
 void JavaJSObject::getListFromJArray(ExecState* exec, jobjectArray jArray, MarkedArgumentBuffer& list) const

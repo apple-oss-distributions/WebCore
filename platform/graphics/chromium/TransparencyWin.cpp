@@ -109,7 +109,7 @@ class TransparencyWin::OwnedBuffers {
 public:
     OwnedBuffers(const IntSize& size, bool needReferenceBuffer)
     {
-        m_destBitmap = ImageBuffer::create(size, false);
+        m_destBitmap = ImageBuffer::create(size);
 
         if (needReferenceBuffer) {
             m_referenceBitmap.setConfig(SkBitmap::kARGB_8888_Config, size.width(), size.height());
@@ -275,7 +275,7 @@ void TransparencyWin::setupLayerForWhiteLayer()
     if (!m_validLayer)
         return;
 
-    m_drawContext->fillRect(IntRect(IntPoint(0, 0), m_layerSize), Color::white);
+    m_drawContext->fillRect(IntRect(IntPoint(0, 0), m_layerSize), Color::white, DeviceColorSpace);
     // Layer rect represents the part of the original layer.
 }
 
@@ -371,8 +371,11 @@ void TransparencyWin::initializeNewContext()
             return;
 
         m_drawContext = m_layerBuffer->context();
-        if (needReferenceBitmap)
+        if (needReferenceBitmap) {
             m_referenceBitmap = m_ownedBuffers->referenceBitmap();
+            if (!m_referenceBitmap || !m_referenceBitmap->getPixels()) 
+                return;
+        }
         m_validLayer = true;
         return;
     }
@@ -478,6 +481,7 @@ void TransparencyWin::compositeTextComposite()
 
     // Now the layer has text with the proper color and opacity.
     SkCanvas* destCanvas = canvasForContext(*m_destContext);
+    destCanvas->save();
 
     // We want to use Untransformed space (see above)
     SkMatrix identity;
@@ -507,4 +511,3 @@ void TransparencyWin::makeLayerOpaque()
 }
 
 } // namespace WebCore
-

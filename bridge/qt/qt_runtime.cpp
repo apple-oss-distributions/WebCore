@@ -20,6 +20,7 @@
 #include "config.h"
 #include "qt_runtime.h"
 
+#include "BooleanObject.h"
 #include "DateInstance.h"
 #include "DateMath.h"
 #include "DatePrototype.h"
@@ -42,13 +43,13 @@
 #include "qobject.h"
 #include "qstringlist.h"
 #include "qt_instance.h"
+#include "qt_pixmapruntime.h"
 #include "qvarlengtharray.h"
 #include <JSFunction.h>
 #include <limits.h>
-#include <runtime.h>
+#include <runtime/Error.h>
 #include <runtime_array.h>
 #include <runtime_object.h>
-#include "BooleanObject.h"
 
 // QtScript has these
 Q_DECLARE_METATYPE(QObjectList);
@@ -167,7 +168,7 @@ QVariant convertValueToQVariant(ExecState* exec, JSValue value, QMetaType::Type 
         return QVariant();
     }
 
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
     JSRealType type = valueRealType(exec, value);
     if (hint == QMetaType::Void) {
         switch(type) {
@@ -304,7 +305,7 @@ QVariant convertValueToQVariant(ExecState* exec, JSValue value, QMetaType::Type 
                 return QString();
             } else {
                 UString ustring = value.toString(exec);
-                ret = QVariant(QString::fromUtf16((const ushort*)ustring.rep()->data(),ustring.size()));
+                ret = QVariant(QString((const QChar*)ustring.rep()->data(), ustring.size()));
                 if (type == String)
                     dist = 0;
                 else
@@ -328,7 +329,7 @@ QVariant convertValueToQVariant(ExecState* exec, JSValue value, QMetaType::Type 
                         QVariant v = convertValueToQVariant(exec, val, QMetaType::Void, &objdist, visitedObjects);
                         if (objdist >= 0) {
                             UString ustring = (*it).ustring();
-                            QString id = QString::fromUtf16((const ushort*)ustring.rep()->data(),ustring.size());
+                            QString id = QString((const QChar*)ustring.rep()->data(), ustring.size());
                             result.insert(id, v);
                         }
                     }
@@ -403,7 +404,7 @@ QVariant convertValueToQVariant(ExecState* exec, JSValue value, QMetaType::Type 
                 for (int i = 0; i < len; ++i) {
                     JSValue val = rtarray->getConcreteArray()->valueAt(exec, i);
                     UString ustring = val.toString(exec);
-                    QString qstring = QString::fromUtf16((const ushort*)ustring.rep()->data(),ustring.size());
+                    QString qstring = QString((const QChar*)ustring.rep()->data(), ustring.size());
 
                     result.append(qstring);
                 }
@@ -417,7 +418,7 @@ QVariant convertValueToQVariant(ExecState* exec, JSValue value, QMetaType::Type 
                 for (int i = 0; i < len; ++i) {
                     JSValue val = array->get(exec, i);
                     UString ustring = val.toString(exec);
-                    QString qstring = QString::fromUtf16((const ushort*)ustring.rep()->data(),ustring.size());
+                    QString qstring = QString((const QChar*)ustring.rep()->data(), ustring.size());
 
                     result.append(qstring);
                 }
@@ -426,7 +427,7 @@ QVariant convertValueToQVariant(ExecState* exec, JSValue value, QMetaType::Type 
             } else {
                 // Make a single length array
                 UString ustring = value.toString(exec);
-                QString qstring = QString::fromUtf16((const ushort*)ustring.rep()->data(),ustring.size());
+                QString qstring = QString((const QChar*)ustring.rep()->data(), ustring.size());
                 QStringList result;
                 result.append(qstring);
                 ret = QVariant(result);
@@ -442,7 +443,7 @@ QVariant convertValueToQVariant(ExecState* exec, JSValue value, QMetaType::Type 
                 dist = 0;
             } else {
                 UString ustring = value.toString(exec);
-                ret = QVariant(QString::fromUtf16((const ushort*)ustring.rep()->data(),ustring.size()).toLatin1());
+                ret = QVariant(QString((const QChar*)ustring.rep()->data(), ustring.size()).toLatin1());
                 if (type == String)
                     dist = 5;
                 else
@@ -456,8 +457,8 @@ QVariant convertValueToQVariant(ExecState* exec, JSValue value, QMetaType::Type 
         case QMetaType::QTime:
             if (type == Date) {
                 DateInstance* date = static_cast<DateInstance*>(object);
-                WTF::GregorianDateTime gdt;
-                date->getUTCTime(gdt);
+                GregorianDateTime gdt;
+                msToGregorianDateTime(exec, date->internalNumber(), true, gdt);
                 if (hint == QMetaType::QDateTime) {
                     ret = QDateTime(QDate(gdt.year + 1900, gdt.month + 1, gdt.monthDay), QTime(gdt.hour, gdt.minute, gdt.second), Qt::UTC);
                     dist = 0;
@@ -470,8 +471,8 @@ QVariant convertValueToQVariant(ExecState* exec, JSValue value, QMetaType::Type 
                 }
             } else if (type == Number) {
                 double b = value.toNumber(exec);
-                WTF::GregorianDateTime gdt;
-                msToGregorianDateTime(b, true, gdt);
+                GregorianDateTime gdt;
+                msToGregorianDateTime(exec, b, true, gdt);
                 if (hint == QMetaType::QDateTime) {
                     ret = QDateTime(QDate(gdt.year + 1900, gdt.month + 1, gdt.monthDay), QTime(gdt.hour, gdt.minute, gdt.second), Qt::UTC);
                     dist = 6;
@@ -484,7 +485,7 @@ QVariant convertValueToQVariant(ExecState* exec, JSValue value, QMetaType::Type 
                 }
             } else if (type == String) {
                 UString ustring = value.toString(exec);
-                QString qstring = QString::fromUtf16((const ushort*)ustring.rep()->data(),ustring.size());
+                QString qstring = QString((const QChar*)ustring.rep()->data(), ustring.size());
 
                 if (hint == QMetaType::QDateTime) {
                     QDateTime dt = QDateTime::fromString(qstring, Qt::ISODate);
@@ -533,7 +534,7 @@ QVariant convertValueToQVariant(ExecState* exec, JSValue value, QMetaType::Type 
 */
                 // Attempt to convert.. a bit risky
                 UString ustring = value.toString(exec);
-                QString qstring = QString::fromUtf16((const ushort*)ustring.rep()->data(),ustring.size());
+                QString qstring = QString((const QChar*)ustring.rep()->data(), ustring.size());
 
                 // this is of the form '/xxxxxx/i'
                 int firstSlash = qstring.indexOf(QLatin1Char('/'));
@@ -553,7 +554,7 @@ QVariant convertValueToQVariant(ExecState* exec, JSValue value, QMetaType::Type 
                 }
             } else if (type == String) {
                 UString ustring = value.toString(exec);
-                QString qstring = QString::fromUtf16((const ushort*)ustring.rep()->data(),ustring.size());
+                QString qstring = QString((const QChar*)ustring.rep()->data(), ustring.size());
 
                 QRegExp re(qstring);
                 if (re.isValid()) {
@@ -719,6 +720,8 @@ QVariant convertValueToQVariant(ExecState* exec, JSValue value, QMetaType::Type 
                     }
                 }
                 break;
+            } else if (QtPixmapInstance::canHandle(static_cast<QMetaType::Type>(hint))) {
+                ret = QtPixmapInstance::variantFromObject(object, static_cast<QMetaType::Type>(hint));
             } else if (hint == (QMetaType::Type) qMetaTypeId<QVariant>()) {
                 if (value.isUndefinedOrNull()) {
                     if (distance)
@@ -770,7 +773,7 @@ JSValue convertQVariantToValue(ExecState* exec, PassRefPtr<RootObject> root, con
         return jsNull();
     }
 
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
 
     if (type == QMetaType::Bool)
         return jsBoolean(variant.toBool());
@@ -823,7 +826,7 @@ JSValue convertQVariantToValue(ExecState* exec, PassRefPtr<RootObject> root, con
         }
 
         // Dates specified this way are in local time (we convert DateTimes above)
-        WTF::GregorianDateTime dt;
+        GregorianDateTime dt;
         dt.year = date.year() - 1900;
         dt.month = date.month() - 1;
         dt.monthDay = date.day();
@@ -831,11 +834,9 @@ JSValue convertQVariantToValue(ExecState* exec, PassRefPtr<RootObject> root, con
         dt.minute = time.minute();
         dt.second = time.second();
         dt.isDST = -1;
-        double ms = WTF::gregorianDateTimeToMS(dt, time.msec(), /*inputIsUTC*/ false);
+        double ms = gregorianDateTimeToMS(exec, dt, time.msec(), /*inputIsUTC*/ false);
 
-        DateInstance* instance = new (exec) DateInstance(exec->lexicalGlobalObject()->dateStructure());
-        instance->setInternalValue(jsNumber(exec, trunc(ms)));
-        return instance;
+        return new (exec) DateInstance(exec, trunc(ms));
     }
 
     if (type == QMetaType::QByteArray) {
@@ -849,6 +850,9 @@ JSValue convertQVariantToValue(ExecState* exec, PassRefPtr<RootObject> root, con
         QObject* obj = variant.value<QObject*>();
         return QtInstance::getQtInstance(obj, root, QScriptEngine::QtOwnership)->createRuntimeObject(exec);
     }
+
+    if (QtPixmapInstance::canHandle(static_cast<QMetaType::Type>(variant.type())))
+        return QtPixmapInstance::createRuntimeObject(exec, root, variant);
 
     if (type == QMetaType::QVariantMap) {
         // create a new object, and stuff properties into it
@@ -907,7 +911,7 @@ JSValue convertQVariantToValue(ExecState* exec, PassRefPtr<RootObject> root, con
 const ClassInfo QtRuntimeMethod::s_info = { "QtRuntimeMethod", 0, 0, 0 };
 
 QtRuntimeMethod::QtRuntimeMethod(QtRuntimeMethodData* dd, ExecState* exec, const Identifier& ident, PassRefPtr<QtInstance> inst)
-    : InternalFunction(&exec->globalData(), getDOMStructure<QtRuntimeMethod>(exec), ident)
+    : InternalFunction(&exec->globalData(), deprecatedGetDOMStructure<QtRuntimeMethod>(exec), ident)
     , d_ptr(dd)
 {
     QW_D(QtRuntimeMethod);
@@ -916,6 +920,8 @@ QtRuntimeMethod::QtRuntimeMethod(QtRuntimeMethodData* dd, ExecState* exec, const
 
 QtRuntimeMethod::~QtRuntimeMethod()
 {
+    QW_D(QtRuntimeMethod);
+    d->m_instance->removeCachedMethod(this);
     delete d_ptr;
 }
 
@@ -1160,7 +1166,7 @@ static int findMethodIndex(ExecState* exec,
         }
 
         // If the native method requires more arguments than what was passed from JavaScript
-        if (jsArgs.size() < (types.count() - 1)) {
+        if (jsArgs.size() + 1 < static_cast<unsigned>(types.count())) {
             qMatchDebug() << "Match:too few args for" << method.signature();
             tooFewArgs.append(index);
             continue;
@@ -1183,7 +1189,7 @@ static int findMethodIndex(ExecState* exec,
 
         bool converted = true;
         int matchDistance = 0;
-        for (int i = 0; converted && i < types.count() - 1; ++i) {
+        for (unsigned i = 0; converted && i + 1 < static_cast<unsigned>(types.count()); ++i) {
             JSValue arg = i < jsArgs.size() ? jsArgs.at(i) : jsUndefined();
 
             int argdistance = -1;
@@ -1200,7 +1206,7 @@ static int findMethodIndex(ExecState* exec,
         qMatchDebug() << "Match: " << method.signature() << (converted ? "converted":"failed to convert") << "distance " << matchDistance;
 
         if (converted) {
-            if ((jsArgs.size() == types.count() - 1)
+            if ((jsArgs.size() + 1 == static_cast<unsigned>(types.count()))
                 && (matchDistance == 0)) {
                 // perfect match, use this one
                 chosenIndex = index;
@@ -1326,17 +1332,17 @@ QtRuntimeMetaMethod::QtRuntimeMetaMethod(ExecState* exec, const Identifier& iden
     d->m_allowPrivate = allowPrivate;
 }
 
-void QtRuntimeMetaMethod::mark()
+void QtRuntimeMetaMethod::markChildren(MarkStack& markStack)
 {
-    QtRuntimeMethod::mark();
+    QtRuntimeMethod::markChildren(markStack);
     QW_D(QtRuntimeMetaMethod);
     if (d->m_connect)
-        d->m_connect->mark();
+        markStack.append(d->m_connect);
     if (d->m_disconnect)
-        d->m_disconnect->mark();
+        markStack.append(d->m_disconnect);
 }
 
-JSValue QtRuntimeMetaMethod::call(ExecState* exec, JSObject* functionObject, JSValue thisValue, const ArgList& args)
+JSValue QtRuntimeMetaMethod::call(ExecState* exec, JSObject* functionObject, JSValue, const ArgList& args)
 {
     QtRuntimeMetaMethodData* d = static_cast<QtRuntimeMetaMethod *>(functionObject)->d_func();
 
@@ -1345,7 +1351,7 @@ JSValue QtRuntimeMetaMethod::call(ExecState* exec, JSObject* functionObject, JSV
         return jsUndefined();
 
     // We have to pick a method that matches..
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
 
     QObject *obj = d->m_instance->getObject();
     if (obj) {
@@ -1394,6 +1400,43 @@ bool QtRuntimeMetaMethod::getOwnPropertySlot(ExecState* exec, const Identifier& 
     return QtRuntimeMethod::getOwnPropertySlot(exec, propertyName, slot);
 }
 
+bool QtRuntimeMetaMethod::getOwnPropertyDescriptor(ExecState* exec, const Identifier& propertyName, PropertyDescriptor& descriptor)
+{
+    if (propertyName == "connect") {
+        PropertySlot slot;
+        slot.setCustom(this, connectGetter);
+        descriptor.setDescriptor(slot.getValue(exec, propertyName), DontDelete | ReadOnly | DontEnum);
+        return true;
+    }
+
+    if (propertyName == "disconnect") {
+        PropertySlot slot;
+        slot.setCustom(this, disconnectGetter);
+        descriptor.setDescriptor(slot.getValue(exec, propertyName), DontDelete | ReadOnly | DontEnum);
+        return true;
+    }
+
+    if (propertyName == exec->propertyNames().length) {
+        PropertySlot slot;
+        slot.setCustom(this, lengthGetter);
+        descriptor.setDescriptor(slot.getValue(exec, propertyName), DontDelete | ReadOnly | DontEnum);
+        return true;
+    }
+
+    return QtRuntimeMethod::getOwnPropertyDescriptor(exec, propertyName, descriptor);
+}
+
+void QtRuntimeMetaMethod::getOwnPropertyNames(ExecState* exec, PropertyNameArray& propertyNames, EnumerationMode mode)
+{
+    if (mode == IncludeDontEnumProperties) {
+        propertyNames.add(Identifier(exec, "connect"));
+        propertyNames.add(Identifier(exec, "disconnect"));
+        propertyNames.add(exec->propertyNames().length);
+    }
+
+    QtRuntimeMethod::getOwnPropertyNames(exec, propertyNames, mode);
+}
+
 JSValue QtRuntimeMetaMethod::lengthGetter(ExecState* exec, const Identifier&, const PropertySlot&)
 {
     // QtScript always returns 0
@@ -1434,11 +1477,11 @@ QtRuntimeConnectionMethod::QtRuntimeConnectionMethod(ExecState* exec, const Iden
     d->m_isConnect = isConnect;
 }
 
-JSValue QtRuntimeConnectionMethod::call(ExecState* exec, JSObject* functionObject, JSValue thisValue, const ArgList& args)
+JSValue QtRuntimeConnectionMethod::call(ExecState* exec, JSObject* functionObject, JSValue, const ArgList& args)
 {
     QtRuntimeConnectionMethodData* d = static_cast<QtRuntimeConnectionMethod *>(functionObject)->d_func();
 
-    JSLock lock(false);
+    JSLock lock(SilenceAssertionsOnly);
 
     QObject* sender = d->m_instance->getObject();
 
@@ -1580,6 +1623,26 @@ bool QtRuntimeConnectionMethod::getOwnPropertySlot(ExecState* exec, const Identi
     return QtRuntimeMethod::getOwnPropertySlot(exec, propertyName, slot);
 }
 
+bool QtRuntimeConnectionMethod::getOwnPropertyDescriptor(ExecState* exec, const Identifier& propertyName, PropertyDescriptor& descriptor)
+{
+    if (propertyName == exec->propertyNames().length) {
+        PropertySlot slot;
+        slot.setCustom(this, lengthGetter);
+        descriptor.setDescriptor(slot.getValue(exec, propertyName), DontDelete | ReadOnly | DontEnum);
+        return true;
+    }
+
+    return QtRuntimeMethod::getOwnPropertyDescriptor(exec, propertyName, descriptor);
+}
+
+void QtRuntimeConnectionMethod::getOwnPropertyNames(ExecState* exec, PropertyNameArray& propertyNames, EnumerationMode mode)
+{
+    if (mode == IncludeDontEnumProperties)
+        propertyNames.add(exec->propertyNames().length);
+
+    QtRuntimeMethod::getOwnPropertyNames(exec, propertyNames, mode);
+}
+
 JSValue QtRuntimeConnectionMethod::lengthGetter(ExecState* exec, const Identifier&, const PropertySlot&)
 {
     // we have one formal argument, and one optional
@@ -1668,7 +1731,7 @@ void QtConnectionObject::execute(void **argv)
 
         int argc = parameterTypes.count();
 
-        JSLock lock(false);
+        JSLock lock(SilenceAssertionsOnly);
 
         // ### Should the Interpreter/ExecState come from somewhere else?
         RefPtr<RootObject> ro = m_instance->rootObject();
@@ -1743,7 +1806,7 @@ template <typename T> QtArray<T>::~QtArray ()
 
 template <typename T> RootObject* QtArray<T>::rootObject() const
 {
-    return _rootObject && _rootObject->isValid() ? _rootObject.get() : 0;
+    return m_rootObject && m_rootObject->isValid() ? m_rootObject.get() : 0;
 }
 
 template <typename T> void QtArray<T>::setValueAt(ExecState* exec, unsigned index, JSValue aValue) const

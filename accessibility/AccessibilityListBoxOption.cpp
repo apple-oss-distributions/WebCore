@@ -34,12 +34,12 @@
 #include "Element.h"
 #include "HTMLElement.h"
 #include "HTMLNames.h"
-#include "HTMLOptionElement.h"
 #include "HTMLOptGroupElement.h"
+#include "HTMLOptionElement.h"
 #include "HTMLSelectElement.h"
 #include "IntRect.h"
-#include "RenderObject.h"
 #include "RenderListBox.h"
+#include "RenderObject.h"
 
 using namespace std;
 
@@ -100,7 +100,7 @@ IntRect AccessibilityListBoxOption::elementRect() const
     IntRect parentRect = listBoxRenderer->document()->axObjectCache()->getOrCreate(listBoxRenderer)->boundingBoxRect();
     int index = listBoxOptionIndex();
     if (index != -1)
-        rect = static_cast<RenderListBox*>(listBoxRenderer)->itemBoundingBoxRect(parentRect.x(), parentRect.y(), index);
+        rect = toRenderListBox(listBoxRenderer)->itemBoundingBoxRect(parentRect.x(), parentRect.y(), index);
     
     return rect;
 }

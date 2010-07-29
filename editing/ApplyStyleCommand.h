@@ -62,6 +62,7 @@ private:
     CSSMutableStyleDeclaration* style() const { return m_style.get(); }
 
     // style-removal helpers
+    bool shouldRemoveTextDecorationTag(CSSStyleDeclaration* styleToApply, int textDecorationAddedByTag) const;
     bool implicitlyStyledElementShouldBeRemovedWhenApplyingStyle(HTMLElement*, CSSMutableStyleDeclaration*);
     void replaceWithSpanOrRemoveIfWithoutAttributes(HTMLElement*&);
     void removeHTMLFontStyle(CSSMutableStyleDeclaration*, HTMLElement*);
@@ -73,7 +74,7 @@ private:
     PassRefPtr<CSSMutableStyleDeclaration> extractTextDecorationStyle(Node*);
     PassRefPtr<CSSMutableStyleDeclaration> extractAndNegateTextDecorationStyle(Node*);
     void applyTextDecorationStyle(Node*, CSSMutableStyleDeclaration *style);
-    void pushDownTextDecorationStyleAroundNode(Node*, bool force);
+    void pushDownTextDecorationStyleAroundNode(Node*, bool forceNegate);
     void pushDownTextDecorationStyleAtBoundaries(const Position& start, const Position& end);
     
     // style-application helpers
@@ -114,6 +115,16 @@ private:
 
 bool isStyleSpan(const Node*);
 PassRefPtr<HTMLElement> createStyleSpanElement(Document*);
+RefPtr<CSSMutableStyleDeclaration> getPropertiesNotInComputedStyle(CSSStyleDeclaration* style, CSSComputedStyleDeclaration* computedStyle);
+
+enum ShouldIncludeTypingStyle {
+    IncludeTypingStyle,
+    IgnoreTypingStyle
+};
+
+PassRefPtr<CSSMutableStyleDeclaration> editingStyleAtPosition(Position, ShouldIncludeTypingStyle = IgnoreTypingStyle);
+void prepareEditingStyleToApplyAt(CSSMutableStyleDeclaration*, Position);
+void removeStylesAddedByNode(CSSMutableStyleDeclaration*, Node*);
 
 } // namespace WebCore
 

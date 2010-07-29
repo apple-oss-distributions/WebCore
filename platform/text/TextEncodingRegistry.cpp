@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2006, 2007 Apple Inc. All rights reserved.
+ * Copyright (C) 2007-2009 Torch Mobile, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -38,11 +39,17 @@
 #include <wtf/StringExtras.h>
 #include <wtf/Threading.h>
 
-#if USE(ICU_UNICODE) || USE(GLIB_ICU_UNICODE_HYBRID)
+#if USE(ICU_UNICODE)
 #include "TextCodecICU.h"
 #endif
 #if PLATFORM(QT)
 #include "qt/TextCodecQt.h"
+#endif
+#if USE(GLIB_UNICODE)
+#include "gtk/TextCodecGtk.h"
+#endif
+#if OS(WINCE) && !PLATFORM(QT)
+#include "TextCodecWince.h"
 #endif
 
 using namespace WTF;
@@ -212,15 +219,25 @@ static void buildBaseTextCodecMaps()
     TextCodecUserDefined::registerEncodingNames(addToTextEncodingNameMap);
     TextCodecUserDefined::registerCodecs(addToTextCodecMap);
 
-#if USE(ICU_UNICODE) || USE(GLIB_ICU_UNICODE_HYBRID)
+#if USE(ICU_UNICODE)
     TextCodecICU::registerBaseEncodingNames(addToTextEncodingNameMap);
     TextCodecICU::registerBaseCodecs(addToTextCodecMap);
+#endif
+
+#if USE(GLIB_UNICODE)
+    TextCodecGtk::registerBaseEncodingNames(addToTextEncodingNameMap);
+    TextCodecGtk::registerBaseCodecs(addToTextCodecMap);
+#endif
+
+#if OS(WINCE) && !PLATFORM(QT)
+    TextCodecWince::registerBaseEncodingNames(addToTextEncodingNameMap);
+    TextCodecWince::registerBaseCodecs(addToTextCodecMap);
 #endif
 }
 
 static void extendTextCodecMaps()
 {
-#if USE(ICU_UNICODE) || USE(GLIB_ICU_UNICODE_HYBRID)
+#if USE(ICU_UNICODE)
     TextCodecICU::registerExtendedEncodingNames(addToTextEncodingNameMap);
     TextCodecICU::registerExtendedCodecs(addToTextCodecMap);
 #endif
@@ -230,6 +247,16 @@ static void extendTextCodecMaps()
     TextCodecQt::registerCodecs(addToTextCodecMap);
 #endif
 
+
+#if USE(GLIB_UNICODE)
+    TextCodecGtk::registerExtendedEncodingNames(addToTextEncodingNameMap);
+    TextCodecGtk::registerExtendedCodecs(addToTextCodecMap);
+#endif
+
+#if OS(WINCE) && !PLATFORM(QT)
+    TextCodecWince::registerExtendedEncodingNames(addToTextEncodingNameMap);
+    TextCodecWince::registerExtendedCodecs(addToTextCodecMap);
+#endif
 
     pruneBlacklistedCodecs();
 }

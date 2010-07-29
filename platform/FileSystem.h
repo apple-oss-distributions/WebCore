@@ -39,9 +39,10 @@
 #if defined(Q_OS_WIN32)
 #include <windows.h>
 #endif
-#if defined(Q_WS_MAC)
-#include <CoreFoundation/CFBundle.h>
 #endif
+
+#if PLATFORM(CF) || (PLATFORM(QT) && defined(Q_WS_MAC))
+#include <CoreFoundation/CFBundle.h>
 #endif
 
 #include <time.h>
@@ -53,7 +54,7 @@
 
 typedef const struct __CFData* CFDataRef;
 
-#if PLATFORM(WIN_OS)
+#if OS(WINDOWS)
 // These are to avoid including <winbase.h> in a header for Chromium
 typedef void *HANDLE;
 // Assuming STRICT
@@ -65,71 +66,58 @@ namespace WebCore {
 
 class CString;
 
-#if PLATFORM(QT)
-
-typedef QFile* PlatformFileHandle;
-const PlatformFileHandle invalidPlatformFileHandle = 0;
+// PlatformModule
+#if OS(WINDOWS)
+typedef HMODULE PlatformModule;
+#elif PLATFORM(QT)
 #if defined(Q_WS_MAC)
 typedef CFBundleRef PlatformModule;
-typedef unsigned PlatformModuleVersion;
-#elif defined(Q_OS_WIN)
-typedef HMODULE PlatformModule;
-struct PlatformModuleVersion {
-    unsigned leastSig;
-    unsigned mostSig;
-
-    PlatformModuleVersion(unsigned)
-        : leastSig(0)
-        , mostSig(0)
-    {
-    }
-
-    PlatformModuleVersion(unsigned lsb, unsigned msb)
-        : leastSig(lsb)
-        , mostSig(msb)
-    {
-    }
-
-};
 #else
 typedef QLibrary* PlatformModule;
-typedef unsigned PlatformModuleVersion;
-#endif
-
-#elif PLATFORM(WIN_OS)
-typedef HANDLE PlatformFileHandle;
-typedef HMODULE PlatformModule;
-// FIXME: -1 is INVALID_HANDLE_VALUE, defined in <winbase.h>. Chromium tries to
-// avoid using Windows headers in headers.  We'd rather move this into the .cpp.
-const PlatformFileHandle invalidPlatformFileHandle = reinterpret_cast<HANDLE>(-1);
-
-struct PlatformModuleVersion {
-    unsigned leastSig;
-    unsigned mostSig;
-
-    PlatformModuleVersion(unsigned)
-        : leastSig(0)
-        , mostSig(0)
-    {
-    }
-
-    PlatformModuleVersion(unsigned lsb, unsigned msb)
-        : leastSig(lsb)
-        , mostSig(msb)
-    {
-    }
-
-};
-#else
-typedef int PlatformFileHandle;
-#if PLATFORM(GTK)
+#endif // defined(Q_WS_MAC)
+#elif PLATFORM(GTK)
 typedef GModule* PlatformModule;
+#elif PLATFORM(CF)
+typedef CFBundleRef PlatformModule;
 #else
 typedef void* PlatformModule;
 #endif
-const PlatformFileHandle invalidPlatformFileHandle = -1;
 
+// PlatformModuleVersion
+#if OS(WINDOWS)
+struct PlatformModuleVersion {
+    unsigned leastSig;
+    unsigned mostSig;
+
+    PlatformModuleVersion(unsigned)
+        : leastSig(0)
+        , mostSig(0)
+    {
+    }
+
+    PlatformModuleVersion(unsigned lsb, unsigned msb)
+        : leastSig(lsb)
+        , mostSig(msb)
+    {
+    }
+
+};
+#else
 typedef unsigned PlatformModuleVersion;
+#endif
+
+// PlatformFileHandle
+#if PLATFORM(QT)
+typedef QFile* PlatformFileHandle;
+const PlatformFileHandle invalidPlatformFileHandle = 0;
+#elif OS(WINDOWS)
+typedef HANDLE PlatformFileHandle;
+// FIXME: -1 is INVALID_HANDLE_VALUE, defined in <winbase.h>. Chromium tries to
+// avoid using Windows headers in headers.  We'd rather move this into the .cpp.
+const PlatformFileHandle invalidPlatformFileHandle = reinterpret_cast<HANDLE>(-1);
+#else
+typedef int PlatformFileHandle;
+const PlatformFileHandle invalidPlatformFileHandle = -1;
 #endif
 
 bool fileExists(const String&);
@@ -168,6 +156,10 @@ bool safeCreateFile(const String&, CFDataRef);
 String filenameToString(const char*);
 char* filenameFromString(const String&);
 String filenameForDisplay(const String&);
+#endif
+
+#if PLATFORM(CHROMIUM)
+String pathGetDisplayFileName(const String&);
 #endif
 
 } // namespace WebCore

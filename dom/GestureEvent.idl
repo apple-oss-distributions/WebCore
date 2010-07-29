@@ -9,8 +9,7 @@
 module events {
 
     interface [
-        AppleCopyright,
-        GenerateConstructor
+        AppleCopyright
     ] GestureEvent : UIEvent {
         void initGestureEvent(  in DOMString type, 
                                 in boolean canBubble, 

@@ -37,6 +37,7 @@
 #include "CachedImage.h"
 #include "CollapsedBorderValue.h"
 #include "Color.h"
+#include "ColorSpace.h"
 #include "ContentData.h"
 #include "CounterDirectives.h"
 #include "CursorList.h"
@@ -90,7 +91,11 @@
 #include "BindingURI.h"
 #endif
 
+#if COMPILER(WINSCW)
+#define compareEqual(t, u)      ((t) == (u))
+#else
 template<typename T, typename U> inline bool compareEqual(const T& t, const U& u) { return t == static_cast<T>(u); }
+#endif
 
 #define SET_VAR(group, variable, value) \
     if (!compareEqual(group->variable, value)) \
@@ -180,7 +185,7 @@ protected:
 
         unsigned _empty_cells : 1; // EEmptyCell
         unsigned _caption_side : 2; // ECaptionSide
-        unsigned _list_style_type : 5 ; // EListStyleType
+        unsigned _list_style_type : 6; // EListStyleType
         unsigned _list_style_position : 1; // EListStylePosition
         unsigned _visibility : 2; // EVisibility
         unsigned _text_align : 3; // ETextAlign
@@ -191,37 +196,38 @@ protected:
         bool _border_collapse : 1 ;
         unsigned _white_space : 3; // EWhiteSpace
         unsigned _box_direction : 1; // EBoxDirection (CSS3 box_direction property, flexible box layout module)
-        // 32 bits
+        // 33 bits
         
         // non CSS2 inherited
         bool _visuallyOrdered : 1;
         bool _htmlHacks : 1;
         bool _force_backgrounds_to_white : 1;
         unsigned _pointerEvents : 4; // EPointerEvents
-        // 39 bits
+        // 40 bits
     } inherited_flags;
 
 // don't inherit
     struct NonInheritedFlags {
         bool operator==(const NonInheritedFlags& other) const
         {
-            return (_effectiveDisplay == other._effectiveDisplay) &&
-            (_originalDisplay == other._originalDisplay) &&
-            (_overflowX == other._overflowX) &&
-            (_overflowY == other._overflowY) &&
-            (_vertical_align == other._vertical_align) &&
-            (_clear == other._clear) &&
-            (_position == other._position) &&
-            (_floating == other._floating) &&
-            (_table_layout == other._table_layout) &&
-            (_page_break_before == other._page_break_before) &&
-            (_page_break_after == other._page_break_after) &&
-            (_styleType == other._styleType) &&
-            (_affectedByHover == other._affectedByHover) &&
-            (_affectedByActive == other._affectedByActive) &&
-            (_affectedByDrag == other._affectedByDrag) &&
-            (_pseudoBits == other._pseudoBits) &&
-            (_unicodeBidi == other._unicodeBidi);
+            return _effectiveDisplay == other._effectiveDisplay
+                && _originalDisplay == other._originalDisplay
+                && _overflowX == other._overflowX
+                && _overflowY == other._overflowY
+                && _vertical_align == other._vertical_align
+                && _clear == other._clear
+                && _position == other._position
+                && _floating == other._floating
+                && _table_layout == other._table_layout
+                && _page_break_before == other._page_break_before
+                && _page_break_after == other._page_break_after
+                && _page_break_inside == other._page_break_inside
+                && _styleType == other._styleType
+                && _affectedByHover == other._affectedByHover
+                && _affectedByActive == other._affectedByActive
+                && _affectedByDrag == other._affectedByDrag
+                && _pseudoBits == other._pseudoBits
+                && _unicodeBidi == other._unicodeBidi;
         }
 
         bool operator!=(const NonInheritedFlags& other) const { return !(*this == other); }
@@ -238,6 +244,7 @@ protected:
 
         unsigned _page_break_before : 2; // EPageBreak
         unsigned _page_break_after : 2; // EPageBreak
+        unsigned _page_break_inside : 2; // EPageBreak
 
         unsigned _styleType : 5; // PseudoId
         bool _affectedByHover : 1;
@@ -245,7 +252,7 @@ protected:
         bool _affectedByDrag : 1;
         unsigned _pseudoBits : 7;
         unsigned _unicodeBidi : 2; // EUnicodeBidi
-        // 48 bits
+        // 50 bits
     } noninherited_flags;
 
 // !END SYNC!
@@ -281,6 +288,7 @@ protected:
         noninherited_flags._table_layout = initialTableLayout();
         noninherited_flags._page_break_before = initialPageBreak();
         noninherited_flags._page_break_after = initialPageBreak();
+        noninherited_flags._page_break_inside = initialPageBreak();
         noninherited_flags._styleType = NOPSEUDO;
         noninherited_flags._affectedByHover = false;
         noninherited_flags._affectedByActive = false;
@@ -525,26 +533,29 @@ public:
 
     const Color& backgroundColor() const { return background->m_color; }
     StyleImage* backgroundImage() const { return background->m_background.m_image.get(); }
-    EFillRepeat backgroundRepeat() const { return static_cast<EFillRepeat>(background->m_background.m_repeat); }
+    EFillRepeat backgroundRepeatX() const { return static_cast<EFillRepeat>(background->m_background.m_repeatX); }
+    EFillRepeat backgroundRepeatY() const { return static_cast<EFillRepeat>(background->m_background.m_repeatY); }
     CompositeOperator backgroundComposite() const { return static_cast<CompositeOperator>(background->m_background.m_composite); }
-    bool backgroundAttachment() const { return background->m_background.m_attachment; }
+    EFillAttachment backgroundAttachment() const { return static_cast<EFillAttachment>(background->m_background.m_attachment); }
     EFillBox backgroundClip() const { return static_cast<EFillBox>(background->m_background.m_clip); }
     EFillBox backgroundOrigin() const { return static_cast<EFillBox>(background->m_background.m_origin); }
     Length backgroundXPosition() const { return background->m_background.m_xPosition; }
     Length backgroundYPosition() const { return background->m_background.m_yPosition; }
-    LengthSize backgroundSize() const { return background->m_background.m_size; }
+    EFillSizeType backgroundSizeType() const { return static_cast<EFillSizeType>(background->m_background.m_sizeType); }
+    LengthSize backgroundSizeLength() const { return background->m_background.m_sizeLength; }
     FillLayer* accessBackgroundLayers() { return &(background.access()->m_background); }
     const FillLayer* backgroundLayers() const { return &(background->m_background); }
 
     StyleImage* maskImage() const { return rareNonInheritedData->m_mask.m_image.get(); }
-    EFillRepeat maskRepeat() const { return static_cast<EFillRepeat>(rareNonInheritedData->m_mask.m_repeat); }
+    EFillRepeat maskRepeatX() const { return static_cast<EFillRepeat>(rareNonInheritedData->m_mask.m_repeatX); }
+    EFillRepeat maskRepeatY() const { return static_cast<EFillRepeat>(rareNonInheritedData->m_mask.m_repeatY); }
     CompositeOperator maskComposite() const { return static_cast<CompositeOperator>(rareNonInheritedData->m_mask.m_composite); }
-    bool maskAttachment() const { return rareNonInheritedData->m_mask.m_attachment; }
+    EFillAttachment maskAttachment() const { return static_cast<EFillAttachment>(rareNonInheritedData->m_mask.m_attachment); }
     EFillBox maskClip() const { return static_cast<EFillBox>(rareNonInheritedData->m_mask.m_clip); }
     EFillBox maskOrigin() const { return static_cast<EFillBox>(rareNonInheritedData->m_mask.m_origin); }
     Length maskXPosition() const { return rareNonInheritedData->m_mask.m_xPosition; }
     Length maskYPosition() const { return rareNonInheritedData->m_mask.m_yPosition; }
-    LengthSize maskSize() const { return rareNonInheritedData->m_mask.m_size; }
+    LengthSize maskSize() const { return rareNonInheritedData->m_mask.m_sizeLength; }
     FillLayer* accessMaskLayers() { return &(rareNonInheritedData.access()->m_mask); }
     const FillLayer* maskLayers() const { return &(rareNonInheritedData->m_mask); }
     const NinePieceImage& maskBoxImage() const { return rareNonInheritedData->m_maskBoxImage; }
@@ -580,7 +591,7 @@ public:
 
     short widows() const { return inherited->widows; }
     short orphans() const { return inherited->orphans; }
-    EPageBreak pageBreakInside() const { return static_cast<EPageBreak>(inherited->page_break_inside); }
+    EPageBreak pageBreakInside() const { return static_cast<EPageBreak>(noninherited_flags._page_break_inside); }
     EPageBreak pageBreakBefore() const { return static_cast<EPageBreak>(noninherited_flags._page_break_before); }
     EPageBreak pageBreakAfter() const { return static_cast<EPageBreak>(noninherited_flags._page_break_after); }
 
@@ -600,6 +611,7 @@ public:
     const Color& textStrokeColor() const { return rareInheritedData->textStrokeColor; }
     float textStrokeWidth() const { return rareInheritedData->textStrokeWidth; }
     const Color& textFillColor() const { return rareInheritedData->textFillColor; }
+    ColorSpace colorSpace() const { return static_cast<ColorSpace>(rareInheritedData->colorSpace); }
     float opacity() const { return rareNonInheritedData->opacity; }
     ControlPart appearance() const { return static_cast<ControlPart>(rareNonInheritedData->m_appearance); }
     EImageLoadingBorder imageLoadingBorder() { return static_cast<EImageLoadingBorder>(rareNonInheritedData->m_imageLoadingBorder); }
@@ -611,7 +623,12 @@ public:
     unsigned int boxOrdinalGroup() const { return rareNonInheritedData->flexibleBox->ordinal_group; }
     EBoxOrient boxOrient() const { return static_cast<EBoxOrient>(rareNonInheritedData->flexibleBox->orient); }
     EBoxAlignment boxPack() const { return static_cast<EBoxAlignment>(rareNonInheritedData->flexibleBox->pack); }
+
     ShadowData* boxShadow() const { return rareNonInheritedData->m_boxShadow.get(); }
+    void getBoxShadowExtent(int &top, int &right, int &bottom, int &left) const;
+    void getBoxShadowHorizontalExtent(int &left, int &right) const;
+    void getBoxShadowVerticalExtent(int &top, int &bottom) const;
+
     StyleReflection* boxReflect() const { return rareNonInheritedData->m_boxReflect.get(); }
     EBoxSizing boxSizing() const { return static_cast<EBoxSizing>(box->boxSizing); }
     Length marqueeIncrement() const { return rareNonInheritedData->marquee->increment; }
@@ -637,6 +654,7 @@ public:
     bool hasAutoColumnWidth() const { return rareNonInheritedData->m_multiCol->m_autoWidth; }
     unsigned short columnCount() const { return rareNonInheritedData->m_multiCol->m_count; }
     bool hasAutoColumnCount() const { return rareNonInheritedData->m_multiCol->m_autoCount; }
+    bool specifiesColumns() const { return !hasAutoColumnCount() || !hasAutoColumnWidth(); }
     float columnGap() const { return rareNonInheritedData->m_multiCol->m_gap; }
     bool hasNormalColumnGap() const { return rareNonInheritedData->m_multiCol->m_normalGap; }
     const Color& columnRuleColor() const { return rareNonInheritedData->m_multiCol->m_rule.color; }
@@ -755,7 +773,8 @@ public:
 
     void setBackgroundXPosition(Length l) { SET_VAR(background, m_background.m_xPosition, l) }
     void setBackgroundYPosition(Length l) { SET_VAR(background, m_background.m_yPosition, l) }
-    void setBackgroundSize(LengthSize l) { SET_VAR(background, m_background.m_size, l) }
+    void setBackgroundSize(EFillSizeType b) { SET_VAR(background, m_background.m_sizeType, b) }
+    void setBackgroundSizeLength(LengthSize l) { SET_VAR(background, m_background.m_sizeLength, l) }
     
     void setBorderImage(const NinePieceImage& b) { SET_VAR(surround, border.image, b) }
 
@@ -800,7 +819,7 @@ public:
     void setOverflowY(EOverflow v) { noninherited_flags._overflowY = v; }
     void setVisibility(EVisibility v) { inherited_flags._visibility = v; }
     void setVerticalAlign(EVerticalAlign v) { noninherited_flags._vertical_align = v; }
-    void setVerticalAlignLength(Length l) { SET_VAR(box, vertical_align, l ) }
+    void setVerticalAlignLength(Length l) { SET_VAR(box, vertical_align, l) }
 
     void setHasClip(bool b = true) { SET_VAR(visual, hasClip, b) }
     void setClipLeft(Length v) { SET_VAR(visual, clip.m_left, v) }
@@ -809,7 +828,7 @@ public:
     void setClipBottom(Length v) { SET_VAR(visual, clip.m_bottom, v) }
     void setClip(Length top, Length right, Length bottom, Length left);
 
-    void setUnicodeBidi( EUnicodeBidi b ) { noninherited_flags._unicodeBidi = b; }
+    void setUnicodeBidi(EUnicodeBidi b) { noninherited_flags._unicodeBidi = b; }
 
     void setClear(EClear v) { noninherited_flags._clear = v; }
     void setTableLayout(ETableLayout v) { noninherited_flags._table_layout = v; }
@@ -869,7 +888,7 @@ public:
     void setMaskBoxImage(const NinePieceImage& b) { SET_VAR(rareNonInheritedData, m_maskBoxImage, b) }
     void setMaskXPosition(Length l) { SET_VAR(rareNonInheritedData, m_mask.m_xPosition, l) }
     void setMaskYPosition(Length l) { SET_VAR(rareNonInheritedData, m_mask.m_yPosition, l) }
-    void setMaskSize(LengthSize l) { SET_VAR(rareNonInheritedData, m_mask.m_size, l) }
+    void setMaskSize(LengthSize l) { SET_VAR(rareNonInheritedData, m_mask.m_sizeLength, l) }
 
     void setBorderCollapse(bool collapse) { inherited_flags._border_collapse = collapse; }
     void setHorizontalBorderSpacing(short v) { SET_VAR(inherited, horizontal_border_spacing, v) }
@@ -897,7 +916,7 @@ public:
     void setPaddingLeft(Length v) { SET_VAR(surround, padding.m_left, v) }
     void setPaddingRight(Length v) { SET_VAR(surround, padding.m_right, v) }
 
-    void setCursor( ECursor c ) { inherited_flags._cursor_style = c; }
+    void setCursor(ECursor c) { inherited_flags._cursor_style = c; }
     void addCursor(CachedImage*, const IntPoint& = IntPoint());
     void setCursorList(PassRefPtr<CursorList>);
     void clearCursorList();
@@ -915,7 +934,7 @@ public:
 
     void setWidows(short w) { SET_VAR(inherited, widows, w); }
     void setOrphans(short o) { SET_VAR(inherited, orphans, o); }
-    void setPageBreakInside(EPageBreak b) { SET_VAR(inherited, page_break_inside, b); }
+    void setPageBreakInside(EPageBreak b) { noninherited_flags._page_break_inside = b; }
     void setPageBreakBefore(EPageBreak b) { noninherited_flags._page_break_before = b; }
     void setPageBreakAfter(EPageBreak b) { noninherited_flags._page_break_after = b; }
 
@@ -931,6 +950,7 @@ public:
     void setTextStrokeColor(const Color& c) { SET_VAR(rareInheritedData, textStrokeColor, c) }
     void setTextStrokeWidth(float w) { SET_VAR(rareInheritedData, textStrokeWidth, w) }
     void setTextFillColor(const Color& c) { SET_VAR(rareInheritedData, textFillColor, c) }
+    void setColorSpace(ColorSpace space) { SET_VAR(rareInheritedData, colorSpace, space) }
     void setOpacity(float f) { SET_VAR(rareNonInheritedData, opacity, f); }
     void setAppearance(ControlPart a) { SET_VAR(rareNonInheritedData, m_appearance, a); }
     void setImageLoadingBorder(EImageLoadingBorder anImageLoadingBorder) { SET_VAR(rareNonInheritedData, m_imageLoadingBorder, anImageLoadingBorder); }
@@ -1111,7 +1131,7 @@ public:
     static EEmptyCell initialEmptyCells() { return SHOW; }
     static EFloat initialFloating() { return FNONE; }
     static EListStylePosition initialListStylePosition() { return OUTSIDE; }
-    static EListStyleType initialListStyleType() { return DISC; }
+    static EListStyleType initialListStyleType() { return Disc; }
     static EOverflow initialOverflowX() { return OVISIBLE; }
     static EOverflow initialOverflowY() { return OVISIBLE; }
     static EPageBreak initialPageBreak() { return PBAUTO; }
@@ -1189,6 +1209,7 @@ public:
     static float initialPerspective() { return 0; }
     static Length initialPerspectiveOriginX() { return Length(50.0, Percent); }
     static Length initialPerspectiveOriginY() { return Length(50.0, Percent); }
+    static Color initialBackgroundColor() { return Color::transparent; }
 
     // Keep these at the end.
     static LineClampValue initialLineClamp() { return LineClampValue(); }

@@ -33,7 +33,9 @@
 #include "MediaControlElements.h"
 #include "PlatformContextSkia.h"
 #include "RenderBox.h"
+#include "RenderMediaControlsChromium.h"
 #include "RenderObject.h"
+#include "RenderSlider.h"
 #include "ScrollbarTheme.h"
 #include "TimeRanges.h"
 #include "TransformationMatrix.h"
@@ -53,10 +55,6 @@ enum PaddingType {
 
 static const int styledMenuListInternalPadding[4] = { 1, 4, 1, 4 };
 
-// The background for the media player controls should be a 60% opaque black rectangle. This
-// matches the UI mockups for the default UI theme.
-static const float defaultMediaControlOpacity = 0.6f;
-
 // These values all match Safari/Win.
 static const float defaultControlFontPixelSize = 13;
 static const float defaultCancelButtonSize = 9;
@@ -75,19 +73,29 @@ static void setSizeIfAuto(RenderStyle* style, const IntSize& size)
         style->setHeight(Length(size.height(), Fixed));
 }
 
-#if ENABLE(VIDEO)
-// Attempt to retrieve a HTMLMediaElement from a Node. Returns NULL if one cannot be found.
-static HTMLMediaElement* mediaElementParent(Node* node)
+static void drawVertLine(SkCanvas* canvas, int x, int y1, int y2, const SkPaint& paint)
 {
-    if (!node)
-        return 0;
-    Node* mediaNode = node->shadowAncestorNode();
-    if (!mediaNode || (!mediaNode->hasTagName(HTMLNames::videoTag) && !mediaNode->hasTagName(HTMLNames::audioTag)))
-        return 0;
-
-    return static_cast<HTMLMediaElement*>(mediaNode);
+    SkIRect skrect;
+    skrect.set(x, y1, x + 1, y2 + 1);
+    canvas->drawIRect(skrect, paint);
 }
-#endif
+
+static void drawHorizLine(SkCanvas* canvas, int x1, int x2, int y, const SkPaint& paint)
+{
+    SkIRect skrect;
+    skrect.set(x1, y, x2 + 1, y + 1);
+    canvas->drawIRect(skrect, paint);
+}
+
+static void drawBox(SkCanvas* canvas, const IntRect& rect, const SkPaint& paint)
+{
+    const int right = rect.x() + rect.width() - 1;
+    const int bottom = rect.y() + rect.height() - 1;
+    drawHorizLine(canvas, rect.x(), right, rect.y(), paint);
+    drawVertLine(canvas, right, rect.y(), bottom, paint);
+    drawHorizLine(canvas, rect.x(), right, bottom, paint);
+    drawVertLine(canvas, rect.x(), rect.y(), bottom, paint);
+}
 
 // We aim to match IE here.
 // -IE uses a font based on the encoding as the default font for form controls.
@@ -209,13 +217,37 @@ int RenderThemeChromiumSkia::minimumMenuListSize(RenderStyle* style) const
     return 0;
 }
 
+// These are the default dimensions of radio buttons and checkboxes.
+static const int widgetStandardWidth = 13;
+static const int widgetStandardHeight = 13;
+
+// Return a rectangle that has the same center point as |original|, but with a
+// size capped at |width| by |height|.
+IntRect center(const IntRect& original, int width, int height)
+{
+    width = std::min(original.width(), width);
+    height = std::min(original.height(), height);
+    int x = original.x() + (original.width() - width) / 2;
+    int y = original.y() + (original.height() - height) / 2;
+
+    return IntRect(x, y, width, height);
+}
+
 bool RenderThemeChromiumSkia::paintCheckbox(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& rect)
 {
     static Image* const checkedImage = Image::loadPlatformResource("linuxCheckboxOn").releaseRef();
     static Image* const uncheckedImage = Image::loadPlatformResource("linuxCheckboxOff").releaseRef();
+    static Image* const disabledCheckedImage = Image::loadPlatformResource("linuxCheckboxDisabledOn").releaseRef();
+    static Image* const disabledUncheckedImage = Image::loadPlatformResource("linuxCheckboxDisabledOff").releaseRef();
 
-    Image* image = this->isChecked(o) ? checkedImage : uncheckedImage;
-    i.context->drawImage(image, rect);
+    Image* image;
+
+    if (this->isEnabled(o))
+        image = this->isChecked(o) ? checkedImage : uncheckedImage;
+    else
+        image = this->isChecked(o) ? disabledCheckedImage : disabledUncheckedImage;
+
+    i.context->drawImage(image, o->style()->colorSpace(), center(rect, widgetStandardHeight, widgetStandardWidth));
     return false;
 }
 
@@ -230,7 +262,7 @@ void RenderThemeChromiumSkia::setCheckboxSize(RenderStyle* style) const
     // querying the theme gives you a larger size that accounts for the higher
     // DPI.  Until our entire engine honors a DPI setting other than 96, we
     // can't rely on the theme's metrics.
-    const IntSize size(13, 13);
+    const IntSize size(widgetStandardHeight, widgetStandardWidth);
     setSizeIfAuto(style, size);
 }
 
@@ -238,9 +270,16 @@ bool RenderThemeChromiumSkia::paintRadio(RenderObject* o, const RenderObject::Pa
 {
     static Image* const checkedImage = Image::loadPlatformResource("linuxRadioOn").releaseRef();
     static Image* const uncheckedImage = Image::loadPlatformResource("linuxRadioOff").releaseRef();
+    static Image* const disabledCheckedImage = Image::loadPlatformResource("linuxRadioDisabledOn").releaseRef();
+    static Image* const disabledUncheckedImage = Image::loadPlatformResource("linuxRadioDisabledOff").releaseRef();
 
-    Image* image = this->isChecked(o) ? checkedImage : uncheckedImage;
-    i.context->drawImage(image, rect);
+    Image* image;
+    if (this->isEnabled(o))
+        image = this->isChecked(o) ? checkedImage : uncheckedImage;
+    else
+        image = this->isChecked(o) ? disabledCheckedImage : disabledUncheckedImage;
+
+    i.context->drawImage(image, o->style()->colorSpace(), center(rect, widgetStandardHeight, widgetStandardWidth));
     return false;
 }
 
@@ -292,7 +331,7 @@ static void paintButtonLike(RenderTheme* theme, RenderObject* o, const RenderObj
     canvas->drawLine(rect.x() + 1, bottom - 1, right - 1, bottom - 1, paint);
     canvas->drawLine(rect.x(), rect.y() + 1, rect.x(), bottom - 1, paint);
 
-    paint.setARGB(0xff, 0, 0, 0);
+    paint.setColor(SK_ColorBLACK);
     SkPoint p[2];
     const int lightEnd = theme->isPressed(o) ? 1 : 0;
     const int darkEnd = !lightEnd;
@@ -325,6 +364,15 @@ bool RenderThemeChromiumSkia::paintButton(RenderObject* o, const RenderObject::P
     return false;
 }
 
+void RenderThemeChromiumSkia::adjustButtonStyle(CSSStyleSelector*, RenderStyle* style, Element*) const
+{
+    if (style->appearance() == PushButtonPart) {
+        // Ignore line-height.
+        style->setLineHeight(RenderStyle::initialLineHeight());
+    }
+}
+
+
 bool RenderThemeChromiumSkia::paintTextField(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& rect)
 {
     return true;
@@ -333,6 +381,12 @@ bool RenderThemeChromiumSkia::paintTextField(RenderObject* o, const RenderObject
 bool RenderThemeChromiumSkia::paintTextArea(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r)
 {
     return paintTextField(o, i, r);
+}
+
+void RenderThemeChromiumSkia::adjustSearchFieldStyle(CSSStyleSelector*, RenderStyle* style, Element*) const
+{
+     // Ignore line-height.
+     style->setLineHeight(RenderStyle::initialLineHeight());
 }
 
 bool RenderThemeChromiumSkia::paintSearchField(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r)
@@ -370,7 +424,7 @@ bool RenderThemeChromiumSkia::paintSearchFieldCancelButton(RenderObject* o, cons
 
     static Image* cancelImage = Image::loadPlatformResource("searchCancel").releaseRef();
     static Image* cancelPressedImage = Image::loadPlatformResource("searchCancelPressed").releaseRef();
-    i.context->drawImage(isPressed(o) ? cancelPressedImage : cancelImage, bounds);
+    i.context->drawImage(isPressed(o) ? cancelPressedImage : cancelImage, o->style()->colorSpace(), bounds);
     return false;
 }
 
@@ -410,7 +464,7 @@ bool RenderThemeChromiumSkia::paintSearchFieldResultsDecoration(RenderObject* o,
     bounds.setY(parentBox.y() + (parentBox.height() - bounds.height() + 1) / 2);
 
     static Image* magnifierImage = Image::loadPlatformResource("searchMagnifier").releaseRef();
-    i.context->drawImage(magnifierImage, bounds);
+    i.context->drawImage(magnifierImage, o->style()->colorSpace(), bounds);
     return false;
 }
 
@@ -446,64 +500,99 @@ bool RenderThemeChromiumSkia::paintSearchFieldResultsButton(RenderObject* o, con
     bounds.setY(parentBox.y() + (parentBox.height() - bounds.height() + 1) / 2);
 
     static Image* magnifierImage = Image::loadPlatformResource("searchMagnifierResults").releaseRef();
-    i.context->drawImage(magnifierImage, bounds);
+    i.context->drawImage(magnifierImage, o->style()->colorSpace(), bounds);
     return false;
 }
 
-bool RenderThemeChromiumSkia::paintMediaButtonInternal(GraphicsContext* context, const IntRect& rect, Image* image)
-{
-    context->beginTransparencyLayer(defaultMediaControlOpacity);
-
-    // Draw background.
-    Color oldFill = context->fillColor();
-    Color oldStroke = context->strokeColor();
-
-    context->setFillColor(Color::black);
-    context->setStrokeColor(Color::black);
-    context->drawRect(rect);
-
-    context->setFillColor(oldFill);
-    context->setStrokeColor(oldStroke);
-
-    // Create a destination rectangle for the image that is centered in the drawing rectangle, rounded left, and down.
-    IntRect imageRect = image->rect();
-    imageRect.setY(rect.y() + (rect.height() - image->height() + 1) / 2);
-    imageRect.setX(rect.x() + (rect.width() - image->width() + 1) / 2);
-
-    context->drawImage(image, imageRect, CompositeSourceAtop);
-    context->endTransparencyLayer();
-
-    return false;
-}
-
-bool RenderThemeChromiumSkia::paintMediaPlayButton(RenderObject* o, const RenderObject::PaintInfo& paintInfo, const IntRect& rect)
+bool RenderThemeChromiumSkia::paintMediaControlsBackground(RenderObject* object, const RenderObject::PaintInfo& paintInfo, const IntRect& rect)
 {
 #if ENABLE(VIDEO)
-    HTMLMediaElement* mediaElement = mediaElementParent(o->node());
-    if (!mediaElement)
-        return false;
-
-    static Image* mediaPlay = Image::loadPlatformResource("mediaPlay").releaseRef();
-    static Image* mediaPause = Image::loadPlatformResource("mediaPause").releaseRef();
-
-    return paintMediaButtonInternal(paintInfo.context, rect, mediaElement->paused() ? mediaPlay : mediaPause);
+    return RenderMediaControlsChromium::paintMediaControlsPart(MediaTimelineContainer, object, paintInfo, rect);
 #else
+    UNUSED_PARAM(object);
+    UNUSED_PARAM(paintInfo);
+    UNUSED_PARAM(rect);
     return false;
 #endif
 }
 
-bool RenderThemeChromiumSkia::paintMediaMuteButton(RenderObject* o, const RenderObject::PaintInfo& paintInfo, const IntRect& rect)
+bool RenderThemeChromiumSkia::paintMediaSliderTrack(RenderObject* object, const RenderObject::PaintInfo& paintInfo, const IntRect& rect)
 {
 #if ENABLE(VIDEO)
-    HTMLMediaElement* mediaElement = mediaElementParent(o->node());
-    if (!mediaElement)
-        return false;
-
-    static Image* soundFull = Image::loadPlatformResource("mediaSoundFull").releaseRef();
-    static Image* soundNone = Image::loadPlatformResource("mediaSoundNone").releaseRef();
-
-    return paintMediaButtonInternal(paintInfo.context, rect, mediaElement->muted() ? soundNone: soundFull);
+    return RenderMediaControlsChromium::paintMediaControlsPart(MediaSlider, object, paintInfo, rect);
 #else
+    UNUSED_PARAM(object);
+    UNUSED_PARAM(paintInfo);
+    UNUSED_PARAM(rect);
+    return false;
+#endif
+}
+
+bool RenderThemeChromiumSkia::paintMediaVolumeSliderTrack(RenderObject* object, const RenderObject::PaintInfo& paintInfo, const IntRect& rect)
+{
+#if ENABLE(VIDEO)
+    return RenderMediaControlsChromium::paintMediaControlsPart(MediaVolumeSlider, object, paintInfo, rect);
+#else
+    UNUSED_PARAM(object);
+    UNUSED_PARAM(paintInfo);
+    UNUSED_PARAM(rect);
+    return false;
+#endif
+}
+
+void RenderThemeChromiumSkia::adjustSliderThumbSize(RenderObject* object) const
+{
+#if ENABLE(VIDEO)
+    RenderMediaControlsChromium::adjustMediaSliderThumbSize(object);
+#else
+    UNUSED_PARAM(object);
+#endif
+}
+
+bool RenderThemeChromiumSkia::paintMediaSliderThumb(RenderObject* object, const RenderObject::PaintInfo& paintInfo, const IntRect& rect)
+{
+#if ENABLE(VIDEO)
+    return RenderMediaControlsChromium::paintMediaControlsPart(MediaSliderThumb, object, paintInfo, rect);
+#else
+    UNUSED_PARAM(object);
+    UNUSED_PARAM(paintInfo);
+    UNUSED_PARAM(rect);
+    return false;
+#endif
+}
+
+bool RenderThemeChromiumSkia::paintMediaVolumeSliderThumb(RenderObject* object, const RenderObject::PaintInfo& paintInfo, const IntRect& rect)
+{
+#if ENABLE(VIDEO)
+    return RenderMediaControlsChromium::paintMediaControlsPart(MediaVolumeSliderThumb, object, paintInfo, rect);
+#else
+    UNUSED_PARAM(object);
+    UNUSED_PARAM(paintInfo);
+    UNUSED_PARAM(rect);
+    return false;
+#endif
+}
+
+bool RenderThemeChromiumSkia::paintMediaPlayButton(RenderObject* object, const RenderObject::PaintInfo& paintInfo, const IntRect& rect)
+{
+#if ENABLE(VIDEO)
+    return RenderMediaControlsChromium::paintMediaControlsPart(MediaPlayButton, object, paintInfo, rect);
+#else
+    UNUSED_PARAM(object);
+    UNUSED_PARAM(paintInfo);
+    UNUSED_PARAM(rect);
+    return false;
+#endif
+}
+
+bool RenderThemeChromiumSkia::paintMediaMuteButton(RenderObject* object, const RenderObject::PaintInfo& paintInfo, const IntRect& rect)
+{
+#if ENABLE(VIDEO)
+    return RenderMediaControlsChromium::paintMediaControlsPart(MediaMuteButton, object, paintInfo, rect);
+#else
+    UNUSED_PARAM(object);
+    UNUSED_PARAM(paintInfo);
+    UNUSED_PARAM(rect);
     return false;
 #endif
 }
@@ -523,12 +612,13 @@ bool RenderThemeChromiumSkia::paintMenuList(RenderObject* o, const RenderObject:
     paintButtonLike(this, o, i, rect);
 
     SkPaint paint;
-    paint.setARGB(0xff, 0, 0, 0);
+    paint.setColor(SK_ColorBLACK);
     paint.setAntiAlias(true);
     paint.setStyle(SkPaint::kFill_Style);
 
+    int arrowXPosition = (o->style()->direction() == RTL) ? rect.x() + 7 : right - 13;
     SkPath path;
-    path.moveTo(right - 13, middle - 3);
+    path.moveTo(arrowXPosition, middle - 3);
     path.rLineTo(6, 0);
     path.rLineTo(-3, 6);
     path.close();
@@ -546,6 +636,69 @@ void RenderThemeChromiumSkia::adjustMenuListButtonStyle(CSSStyleSelector* select
 bool RenderThemeChromiumSkia::paintMenuListButton(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& rect)
 {
     return paintMenuList(o, i, rect);
+}
+
+bool RenderThemeChromiumSkia::paintSliderTrack(RenderObject*, const RenderObject::PaintInfo& i, const IntRect& rect)
+{
+    // Just paint a grey box for now (matches the color of a scrollbar background.
+    SkCanvas* const canvas = i.context->platformContext()->canvas();
+    int verticalCenter = rect.y() + rect.height() / 2;
+    int top = std::max(rect.y(), verticalCenter - 2);
+    int bottom = std::min(rect.y() + rect.height(), verticalCenter + 2);
+
+    SkPaint paint;
+    const SkColor grey = SkColorSetARGB(0xff, 0xe3, 0xdd, 0xd8);
+    paint.setColor(grey);
+
+    SkRect skrect;
+    skrect.set(rect.x(), top, rect.x() + rect.width(), bottom);
+    canvas->drawRect(skrect, paint);
+
+    return false;
+}
+
+bool RenderThemeChromiumSkia::paintSliderThumb(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& rect)
+{
+    // Make a thumb similar to the scrollbar thumb.
+    const bool hovered = isHovered(o) || toRenderSlider(o->parent())->inDragMode();
+    const int midx = rect.x() + rect.width() / 2;
+    const int midy = rect.y() + rect.height() / 2;
+    const bool vertical = (o->style()->appearance() == SliderThumbVerticalPart);
+    SkCanvas* const canvas = i.context->platformContext()->canvas();
+
+    const SkColor thumbLightGrey = SkColorSetARGB(0xff, 0xf4, 0xf2, 0xef);
+    const SkColor thumbDarkGrey = SkColorSetARGB(0xff, 0xea, 0xe5, 0xe0);
+    SkPaint paint;
+    paint.setColor(hovered ? SK_ColorWHITE : thumbLightGrey);
+
+    SkIRect skrect;
+    if (vertical)
+        skrect.set(rect.x(), rect.y(), midx + 1, rect.bottom());
+    else
+        skrect.set(rect.x(), rect.y(), rect.right(), midy + 1);
+
+    canvas->drawIRect(skrect, paint);
+
+    paint.setColor(hovered ? thumbLightGrey : thumbDarkGrey);
+
+    if (vertical)
+        skrect.set(midx + 1, rect.y(), rect.right(), rect.bottom());
+    else
+        skrect.set(rect.x(), midy + 1, rect.right(), rect.bottom());
+
+    canvas->drawIRect(skrect, paint);
+
+    const SkColor borderDarkGrey = SkColorSetARGB(0xff, 0x9d, 0x96, 0x8e);
+    paint.setColor(borderDarkGrey);
+    drawBox(canvas, rect, paint);
+
+    if (rect.height() > 10 && rect.width() > 10) {
+        drawHorizLine(canvas, midx - 2, midx + 2, midy, paint);
+        drawHorizLine(canvas, midx - 2, midx + 2, midy - 3, paint);
+        drawHorizLine(canvas, midx - 2, midx + 2, midy + 3, paint);
+    }
+
+    return false;
 }
 
 int RenderThemeChromiumSkia::popupInternalPaddingLeft(RenderStyle* style) const
@@ -587,6 +740,13 @@ int RenderThemeChromiumSkia::buttonInternalPaddingBottom() const
 {
     return 1;
 }
+
+#if ENABLE(VIDEO)
+bool RenderThemeChromiumSkia::shouldRenderMediaControlPart(ControlPart part, Element* e)
+{
+    return RenderMediaControlsChromium::shouldRenderMediaControlPart(part, e);
+}
+#endif
 
 // static
 void RenderThemeChromiumSkia::setDefaultFontSize(int fontSize)

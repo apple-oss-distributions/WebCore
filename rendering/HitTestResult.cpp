@@ -123,17 +123,6 @@ Frame* HitTestResult::targetFrame() const
     return frame->tree()->find(m_innerURLElement->target());
 }
 
-IntRect HitTestResult::boundingBox() const
-{
-    if (m_innerNonSharedNode) {
-        RenderObject* renderer = m_innerNonSharedNode->renderer();
-        if (renderer)
-            return renderer->absoluteBoundingBoxRect();
-    }
-    
-    return IntRect();
-}
-
 bool HitTestResult::isSelected() const
 {
     if (!m_innerNonSharedNode)
@@ -146,17 +135,20 @@ bool HitTestResult::isSelected() const
     return frame->selection()->contains(m_point);
 }
 
-String HitTestResult::spellingToolTip() const
+String HitTestResult::spellingToolTip(TextDirection& dir) const
 {
+    dir = LTR;
     // Return the tool tip string associated with this point, if any. Only markers associated with bad grammar
     // currently supply strings, but maybe someday markers associated with misspelled words will also.
     if (!m_innerNonSharedNode)
         return String();
     
-     DocumentMarker* marker = m_innerNonSharedNode->document()->markerContainingPoint(m_point, DocumentMarker::Grammar);
+    DocumentMarker* marker = m_innerNonSharedNode->document()->markerContainingPoint(m_point, DocumentMarker::Grammar);
     if (!marker)
         return String();
 
+    if (RenderObject* renderer = m_innerNonSharedNode->renderer())
+        dir = renderer->style()->direction();
     return marker->description;
 }
 
@@ -174,15 +166,19 @@ String HitTestResult::replacedString() const
     return marker->description;
 }    
     
-String HitTestResult::title() const
+String HitTestResult::title(TextDirection& dir) const
 {
+    dir = LTR;
     // Find the title in the nearest enclosing DOM node.
     // For <area> tags in image maps, walk the tree for the <area>, not the <img> using it.
     for (Node* titleNode = m_innerNode.get(); titleNode; titleNode = titleNode->parentNode()) {
         if (titleNode->isElementNode()) {
             String title = static_cast<Element*>(titleNode)->title();
-            if (!title.isEmpty())
+            if (!title.isEmpty()) {
+                if (RenderObject* renderer = titleNode->renderer())
+                    dir = renderer->style()->direction();
                 return title;
+            }
         }
     }
     return String();
@@ -202,7 +198,7 @@ String HitTestResult::altDisplayString() const
     
     if (m_innerNonSharedNode->hasTagName(imgTag)) {
         HTMLImageElement* image = static_cast<HTMLImageElement*>(m_innerNonSharedNode.get());
-        return displayString(image->alt(), m_innerNonSharedNode.get());
+        return displayString(image->getAttribute(altAttr), m_innerNonSharedNode.get());
     }
     
     if (m_innerNonSharedNode->hasTagName(inputTag)) {
@@ -239,7 +235,7 @@ IntRect HitTestResult::imageRect() const
 {
     if (!image())
         return IntRect();
-    return m_innerNonSharedNode->renderBox()->absoluteContentBox();
+    return m_innerNonSharedNode->renderBox()->absoluteContentQuad().enclosingBoundingBox();
 }
 
 KURL HitTestResult::absoluteImageURL() const
@@ -267,11 +263,12 @@ KURL HitTestResult::absoluteImageURL() const
     } else
         return KURL();
 
-    return m_innerNonSharedNode->document()->completeURL(parseURL(urlString));
+    return m_innerNonSharedNode->document()->completeURL(deprecatedParseURL(urlString));
 }
 
 KURL HitTestResult::absoluteMediaURL() const
 {
+#if ENABLE(VIDEO)
     if (!(m_innerNonSharedNode && m_innerNonSharedNode->document()))
         return KURL();
 
@@ -285,7 +282,10 @@ KURL HitTestResult::absoluteMediaURL() const
     } else
         return KURL();
 
-    return m_innerNonSharedNode->document()->completeURL(parseURL(urlString));
+    return m_innerNonSharedNode->document()->completeURL(deprecatedParseURL(urlString));
+#else
+    return KURL();
+#endif
 }
 
 KURL HitTestResult::absoluteLinkURL() const
@@ -307,7 +307,7 @@ KURL HitTestResult::absoluteLinkURL() const
     else
         return KURL();
 
-    return m_innerURLElement->document()->completeURL(parseURL(urlString));
+    return m_innerURLElement->document()->completeURL(deprecatedParseURL(urlString));
 }
 
 bool HitTestResult::isLiveLink() const

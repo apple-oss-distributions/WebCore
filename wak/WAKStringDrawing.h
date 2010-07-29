@@ -8,10 +8,10 @@
 #ifndef WAKStringDrawing_h
 #define WAKStringDrawing_h
 
+
 #import <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
 #import <GraphicsServices/GraphicsServices.h>
-
 
 typedef enum {
     // The order of the enum items is important, and it is used for >= comparisions
@@ -30,10 +30,26 @@ typedef enum {
     WebTextAlignmentRight = 2,
 } WebTextAlignment;
 
+@protocol WebTextRenderingAttributes
+
+@property(nonatomic, readonly)          GSFontRef font;                             // font the text should be rendered with (defaults to nil)
+@property(nonatomic, readonly)          CGFloat lineSpacing;                        // set to specify the line spacing (defaults to 0.0 which indicates the default line spacing)
+
+@property(nonatomic, readonly)          WebEllipsisStyle ellipsisStyle;             // text will be wrapped and truncated according to the line break mode (defaults to UILineBreakModeWordWrap)
+@property(nonatomic, readonly)          CGFloat letterSpacing;                      // number of extra pixels to be added or subtracted between each pair of characters  (defalts to 0)
+@property(nonatomic, readonly)          WebTextAlignment alignment;                 // specifies the horizontal alignment that should be used when rendering the text (defaults to UITextAlignmentLeft)
+@property(nonatomic, readonly)          BOOL includeEmoji;                          // if yes, the text can include Emoji characters.
+@property(nonatomic, readwrite)         CGRect truncationRect;                      // the truncation rect argument, if non-nil, will be used instead of an ellipsis character for truncation sizing.  if no truncation occurs, the truncationRect will be changed to CGRectNull.  if truncation occurs, the rect will be updated with its placement.
+
+@end
+
 @interface NSString (WebStringDrawing)
 
 + (void)_web_setWordRoundingEnabled:(BOOL)flag;
 + (BOOL)_web_wordRoundingEnabled;
+
++ (void)_web_setAscentRoundingEnabled:(BOOL)flag;
++ (BOOL)_web_ascentRoundingEnabled;
 
 - (CGSize)_web_drawAtPoint:(CGPoint)point withFont:(GSFontRef)font;
 
@@ -61,6 +77,16 @@ typedef enum {
 
 // Clip or apply ellipsis according to style. Return the string which results.
 - (NSString *)_web_stringForWidth:(float)width withFont:(GSFontRef)font ellipsis:(WebEllipsisStyle)ellipsisStyle letterSpacing:(float)letterSpacing includeEmoji:(BOOL)includeEmoji;
+
+// These methods should eventually replace all string drawing/sizing methods above
+
+// Sizing/drawing a single line of text
+- (CGSize)_web_sizeForWidth:(CGFloat)width withAttributes:(id <WebTextRenderingAttributes>)attributes;
+- (CGSize)_web_drawAtPoint:(CGPoint)point forWidth:(CGFloat)width withAttributes:(id <WebTextRenderingAttributes>)attributes;
+
+// Sizing/drawing multiline text
+- (CGSize)_web_sizeInRect:(CGRect)rect withAttributes:(id <WebTextRenderingAttributes>)attributes;
+- (CGSize)_web_drawInRect:(CGRect)rect withAttributes:(id <WebTextRenderingAttributes>)attributes;
 
 @end
 

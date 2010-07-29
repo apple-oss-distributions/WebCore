@@ -72,6 +72,9 @@ class NSURLConnection;
 class NSObject;
 #endif
 
+#if PLATFORM(ANDROID)
+#include "ResourceLoaderAndroid.h"
+#endif
 
 // The allocations and releases in ResourceHandleInternal are
 // Cocoa-exception-free (either simple Foundation classes or
@@ -80,7 +83,7 @@ class NSObject;
 namespace WebCore {
     class ResourceHandleClient;
 
-    class ResourceHandleInternal : Noncopyable {
+    class ResourceHandleInternal : public Noncopyable {
     public:
         ResourceHandleInternal(ResourceHandle* loader, const ResourceRequest& request, ResourceHandleClient* c, bool defersLoading, bool shouldContentSniff, bool mightDownloadFromHandle)
             : m_client(c)
@@ -133,8 +136,6 @@ namespace WebCore {
             , m_startWhenScheduled(false)
             , m_needsSiteSpecificQuirks(false)
             , m_currentMacChallenge(nil)
-#elif USE(CFNETWORK)
-            , m_currentCFChallenge(0)
 #endif
             , m_failureTimer(loader, &ResourceHandle::fireFailure)
         {
@@ -154,6 +155,8 @@ namespace WebCore {
         // Suggested credentials for the current redirection step.
         String m_user;
         String m_pass;
+        
+        Credential m_initialCredential;
         
         int status;
 
@@ -207,20 +210,17 @@ namespace WebCore {
         Frame* m_frame;
 #endif
 #if PLATFORM(QT)
-#if QT_VERSION < 0x040400
-        QWebNetworkJob* m_job;
-#else
         QNetworkReplyHandler* m_job;
-#endif
         QWebFrame* m_frame;
 #endif
 
-        // FIXME: The platform challenge is almost identical to the one stored in m_currentWebChallenge, but it has a different sender. We only need to store a sender reference here.
 #if PLATFORM(MAC)
+        // We need to keep a reference to the original challenge to be able to cancel it.
+        // It is almost identical to m_currentWebChallenge.nsURLAuthenticationChallenge(), but has a different sender.
         NSURLAuthenticationChallenge *m_currentMacChallenge;
 #endif
-#if USE(CFNETWORK)
-        CFURLAuthChallengeRef m_currentCFChallenge;
+#if PLATFORM(ANDROID)
+        RefPtr<ResourceLoaderAndroid> m_loader;
 #endif
         AuthenticationChallenge m_currentWebChallenge;
 

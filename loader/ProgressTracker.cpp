@@ -47,7 +47,7 @@ static const double finalProgressValue = 0.9; // 1.0 - initialProgressValue
 
 static const int progressItemDefaultEstimatedLength = 1024 * 16;
 
-struct ProgressItem {
+struct ProgressItem : Noncopyable {
     ProgressItem(long long length) 
         : bytesReceived(0)
         , estimatedLength(length) { }
@@ -176,8 +176,10 @@ void ProgressTracker::incrementProgress(unsigned long identifier, const char*, i
     // FIXME: Can this ever happen?
     if (!item)
         return;
+
+    RefPtr<Frame> frame = m_originatingProgressFrame;
     
-    m_originatingProgressFrame->loader()->client()->willChangeEstimatedProgress();
+    frame->loader()->client()->willChangeEstimatedProgress();
     
     unsigned bytesReceived = length;
     double increment, percentOfRemainingBytes;
@@ -189,7 +191,7 @@ void ProgressTracker::incrementProgress(unsigned long identifier, const char*, i
         item->estimatedLength = item->bytesReceived * 2;
     }
     
-    int numPendingOrLoadingRequests = m_originatingProgressFrame->loader()->numPendingOrLoadingRequests(true);
+    int numPendingOrLoadingRequests = frame->loader()->numPendingOrLoadingRequests(true);
     estimatedBytesForPendingRequests = progressItemDefaultEstimatedLength * numPendingOrLoadingRequests;
     remainingBytes = ((m_totalPageAndResourceBytesToLoad + estimatedBytesForPendingRequests) - m_totalBytesReceived);
     if (remainingBytes > 0)  // Prevent divide by 0.
@@ -199,8 +201,8 @@ void ProgressTracker::incrementProgress(unsigned long identifier, const char*, i
     
     // For documents that use WebCore's layout system, treat first layout as the half-way point.
     // FIXME: The hasHTMLView function is a sort of roundabout way of asking "do you use WebCore's layout system".
-    bool useClampedMaxProgress = m_originatingProgressFrame->loader()->client()->hasHTMLView()
-        && !m_originatingProgressFrame->loader()->firstLayoutDone();
+    bool useClampedMaxProgress = frame->loader()->client()->hasHTMLView()
+        && !frame->loader()->firstLayoutDone();
     double maxProgressValue = useClampedMaxProgress ? 0.5 : finalProgressValue;
     increment = (maxProgressValue - m_progressValue) * percentOfRemainingBytes;
     m_progressValue += increment;
@@ -221,7 +223,7 @@ void ProgressTracker::incrementProgress(unsigned long identifier, const char*, i
             if (m_progressValue == 1)
                 m_finalProgressChangedSent = true;
             
-            m_originatingProgressFrame->loader()->client()->postProgressEstimateChangedNotification();
+            frame->loader()->client()->postProgressEstimateChangedNotification();
 
             m_lastNotifiedProgressValue = m_progressValue;
             m_lastNotifiedProgressTime = now;
@@ -231,8 +233,8 @@ void ProgressTracker::incrementProgress(unsigned long identifier, const char*, i
     // fix for <rdar://problem/5693032> SU?: Mail crashes when clicking up and down arrow
     // as a result of the progress notification above, the load could have been stopped/cancelled.
     // A.B: this fix is probably suitable for TOT
-    if (m_originatingProgressFrame && m_originatingProgressFrame->loader() && m_originatingProgressFrame->loader()->client())
-    m_originatingProgressFrame->loader()->client()->didChangeEstimatedProgress();
+    if (frame && frame->loader() && frame->loader()->client())
+    frame->loader()->client()->didChangeEstimatedProgress();
 }
 
 void ProgressTracker::completeProgress(unsigned long identifier)

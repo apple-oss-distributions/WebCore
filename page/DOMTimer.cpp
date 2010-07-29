@@ -27,6 +27,7 @@
 #include "config.h"
 #include "DOMTimer.h"
 
+#include "InspectorTimelineAgent.h"
 #include "ScheduledAction.h"
 #include "ScriptExecutionContext.h"
 #include <wtf/HashSet.h>
@@ -63,7 +64,7 @@ DOMTimer::DOMTimer(ScriptExecutionContext* context, ScheduledAction* action, int
     if (lastUsedTimeoutId <= 0)
         lastUsedTimeoutId = 1;
     m_timeoutId = lastUsedTimeoutId;
-    
+
     m_nestingLevel = timerNestingLevel + 1;
 
     scriptExecutionContext()->addTimeout(m_timeoutId, this);
@@ -83,11 +84,10 @@ DOMTimer::DOMTimer(ScriptExecutionContext* context, ScheduledAction* action, int
 
 DOMTimer::~DOMTimer()
 {
-    if (scriptExecutionContext()) {
+    if (scriptExecutionContext())
         scriptExecutionContext()->removeTimeout(m_timeoutId);
-    }
 }
-    
+
 int DOMTimer::install(ScriptExecutionContext* context, ScheduledAction* action, int timeout, bool singleShot)
 {
     // DOMTimer constructor links the new timer into a list of ActiveDOMObjects held by the 'context'.
@@ -110,6 +110,12 @@ int DOMTimer::install(ScriptExecutionContext* context, ScheduledAction* action, 
                 timer->suspend();
         }
     }
+
+#if ENABLE(INSPECTOR)
+    if (InspectorTimelineAgent* timelineAgent = InspectorTimelineAgent::retrieve(context))
+        timelineAgent->didInstallTimer(timer->m_timeoutId, timeout, singleShot);
+#endif    
+
     return timer->m_timeoutId;
 }
 
@@ -120,6 +126,12 @@ void DOMTimer::removeById(ScriptExecutionContext* context, int timeoutId)
     // respectively
     if (timeoutId <= 0)
         return;
+
+#if ENABLE(INSPECTOR)
+    if (InspectorTimelineAgent* timelineAgent = InspectorTimelineAgent::retrieve(context))
+        timelineAgent->didRemoveTimer(timeoutId);
+#endif
+
     delete context->findTimeout(timeoutId);
 }
 
@@ -131,6 +143,11 @@ void DOMTimer::fired()
     ASSERT(!document->frame()->timersPaused());
     timerNestingLevel = m_nestingLevel;
 
+#if ENABLE(INSPECTOR)
+    if (InspectorTimelineAgent* timelineAgent = InspectorTimelineAgent::retrieve(context))
+        timelineAgent->willFireTimer(m_timeoutId);
+#endif
+
     // Simple case for non-one-shot timers.
     if (isActive()) {
         if (repeatInterval() && repeatInterval() < s_minTimerInterval) {
@@ -138,9 +155,13 @@ void DOMTimer::fired()
             if (m_nestingLevel >= maxTimerNestingLevel)
                 augmentRepeatInterval(s_minTimerInterval - repeatInterval());
         }
-        
+
         // No access to member variables after this point, it can delete the timer.
         m_action->execute(context);
+#if ENABLE(INSPECTOR)
+        if (InspectorTimelineAgent* timelineAgent = InspectorTimelineAgent::retrieve(context))
+            timelineAgent->didFireTimer();
+#endif
         return;
     }
 
@@ -157,7 +178,9 @@ void DOMTimer::fired()
         WKBeginObservingContentChanges(false);
         WebThreadRemoveObservedContentModifier(this);
     }
+
     action->execute(context);
+
     if (shouldBeginObservingChanges) {
         WKStopObservingContentChanges();
 
@@ -165,6 +188,11 @@ void DOMTimer::fired()
             if (document && document->page())
                 document->page()->chrome()->client()->observedContentChange(document->frame());
     }
+
+#if ENABLE(INSPECTOR)
+    if (InspectorTimelineAgent* timelineAgent = InspectorTimelineAgent::retrieve(context))
+        timelineAgent->didFireTimer();
+#endif
     delete action;
     timerNestingLevel = 0;
 }
@@ -189,8 +217,8 @@ void DOMTimer::stop()
     m_action.clear();
 }
 
-void DOMTimer::suspend() 
-{ 
+void DOMTimer::suspend()
+{
 #if !ASSERT_DISABLED
     ASSERT(!m_suspended);
     m_suspended = true;
@@ -198,20 +226,20 @@ void DOMTimer::suspend()
     m_nextFireInterval = nextFireInterval();
     m_repeatInterval = repeatInterval();
     TimerBase::stop();
-} 
- 
-void DOMTimer::resume() 
-{ 
+}
+
+void DOMTimer::resume()
+{
 #if !ASSERT_DISABLED
     ASSERT(m_suspended);
     m_suspended = false;
 #endif
     start(m_nextFireInterval, m_repeatInterval);
-} 
- 
- 
-bool DOMTimer::canSuspend() const 
-{ 
+}
+
+
+bool DOMTimer::canSuspend() const
+{
     return true;
 }
 
