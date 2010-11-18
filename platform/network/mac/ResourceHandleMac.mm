@@ -491,6 +491,7 @@ void ResourceHandle::willSendRequest(ResourceRequest& request, const ResourceRes
     const KURL& url = request.url();
     d->m_user = url.user();
     d->m_pass = url.pass();
+    d->m_lastHTTPMethod = request.httpMethod();
     request.removeCredentials();
 
     client()->willSendRequest(this, request, redirectResponse);
@@ -674,32 +675,14 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
         LOG(Network, "Handle %p delegate connection:%p willSendRequest:%@ redirectResponse:non-HTTP", m_handle, connection, [newRequest description]); 
 #endif
 
-    if ([redirectResponse isKindOfClass:[NSHTTPURLResponse class]] && [(NSHTTPURLResponse *)redirectResponse statusCode] == 307) {
-        String originalMethod = m_handle->request().httpMethod();
-        if (!equalIgnoringCase(originalMethod, String([newRequest HTTPMethod]))) {
-            NSMutableURLRequest *mutableRequest = [newRequest mutableCopy];
-            [mutableRequest setHTTPMethod:originalMethod];
-    
-            FormData* body = m_handle->request().httpBody();
-            if (!equalIgnoringCase(originalMethod, "GET") && body && !body->isEmpty())
-                WebCore::setHTTPBody(mutableRequest, body);
-
-            String originalContentType = m_handle->request().httpContentType();
-            if (!originalContentType.isEmpty())
-                [mutableRequest setValue:originalContentType forHTTPHeaderField:@"Content-Type"];
-
-            newRequest = [mutableRequest autorelease];
-        }
-    }
-
     if (redirectResponse && [redirectResponse isKindOfClass:[NSHTTPURLResponse class]] && [(NSHTTPURLResponse *)redirectResponse statusCode] == 307) {
-        String originalMethod = m_handle->request().httpMethod();
-        if (!equalIgnoringCase(originalMethod, String([newRequest HTTPMethod]))) {
+        String lastHTTPMethod = m_handle->lastHTTPMethod();
+        if (!equalIgnoringCase(lastHTTPMethod, String([newRequest HTTPMethod]))) {
             NSMutableURLRequest *mutableRequest = [newRequest mutableCopy];
-            [mutableRequest setHTTPMethod:originalMethod];
+            [mutableRequest setHTTPMethod:lastHTTPMethod];
     
             FormData* body = m_handle->request().httpBody();
-            if (!equalIgnoringCase(originalMethod, "GET") && body && !body->isEmpty())
+            if (!equalIgnoringCase(lastHTTPMethod, "GET") && body && !body->isEmpty())
                 WebCore::setHTTPBody(mutableRequest, body);
 
             String originalContentType = m_handle->request().httpContentType();

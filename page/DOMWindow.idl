@@ -281,7 +281,9 @@ module window {
 
         // Webkit extensions
         attribute EventListener onreset;
+#if defined(ENABLE_ON_SEARCH) && ENABLE_ON_SEARCH
         attribute EventListener onsearch;
+#endif
         attribute EventListener onwebkitanimationend;
         attribute EventListener onwebkitanimationiteration;
         attribute EventListener onwebkitanimationstart;

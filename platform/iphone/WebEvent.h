@@ -25,6 +25,14 @@ typedef enum {
     WebEventTouchCancel
 } WebEventType;
 
+typedef enum {
+    WebEventTouchPhaseBegan,
+    WebEventTouchPhaseMoved,
+    WebEventTouchPhaseStationary,
+    WebEventTouchPhaseEnded,
+    WebEventTouchPhaseCancelled
+} WebEventTouchPhaseType;
+
 // These enum values are copied directly from GSEvent for compatibility.
 typedef enum
 {
@@ -67,15 +75,16 @@ typedef enum
     NSArray *_touchLocations;
     NSArray *_touchGlobalLocations;
     NSArray *_touchIdentifiers;
+    NSArray *_touchPhases;
     
-    BOOL _gestureChanged;
+    BOOL _isGesture;
     float _gestureScale;
     float _gestureRotation;
 }
 
 - (WebEvent *)initWithMouseEventType:(WebEventType)type withTimeStamp:(CFTimeInterval)timeStamp withLocation:(CGPoint)point;
 - (WebEvent *)initWithScrollWheelEventWithTimeStamp:(CFTimeInterval)timeStamp withLocation:(CGPoint)point withDeltaX:(float)deltaX withDeltaY:(float)deltaY;
-- (WebEvent *)initWithTouchEventType:(WebEventType)type withTimeStamp:(CFTimeInterval)timeStamp withLocation:(CGPoint)point withTouchCount:(unsigned)touchCount withTouchLocations:(NSArray *)touchLocations withTouchGlobalLocations:(NSArray *)touchGlobalLocations withTouchIdentifiers:(NSArray *)touchIdentifiers withGestureChanged:(BOOL)gestureChanged withGestureScale:(float)gestureScale withGestureRotation:(float)gestureRotation;
+- (WebEvent *)initWithTouchEventType:(WebEventType)type withTimeStamp:(CFTimeInterval)timeStamp withLocation:(CGPoint)point withTouchCount:(unsigned)touchCount withTouchLocations:(NSArray *)touchLocations withTouchGlobalLocations:(NSArray *)touchGlobalLocations withTouchIdentifiers:(NSArray *)touchIdentifiers withTouchPhases:(NSArray *)touchPhases isGesture:(BOOL)isGesture withGestureScale:(float)gestureScale withGestureRotation:(float)gestureRotation;
 - (WebEvent *)initWithKeyEventType:(WebEventType)type withTimeStamp:(CFTimeInterval)timeStamp withCharacters:(NSString *)characters withCharactersIgnoringModifiers:(NSString *)charactersIgnoringModifiers withModifiers:(WebEventFlags)modifiers isRepeating:(BOOL)repeating withKeyCode:(uint16_t)keyCode isTabKey:(BOOL)tabKey withCharacterSet:(WebEventCharacterSet)characterSet;
 
 @property(nonatomic,readonly) WebEventType type;
@@ -102,9 +111,10 @@ typedef enum
 @property(nonatomic,readonly,retain) NSArray *touchLocations;
 @property(nonatomic,readonly,retain) NSArray *touchGlobalLocations;
 @property(nonatomic,readonly,retain) NSArray *touchIdentifiers;
+@property(nonatomic,readonly,retain) NSArray *touchPhases;
 
 // Gesture
-@property(nonatomic,readonly) BOOL gestureChanged;
+@property(nonatomic,readonly) BOOL isGesture;
 @property(nonatomic,readonly) float gestureScale;
 @property(nonatomic,readonly) float gestureRotation;
 @end

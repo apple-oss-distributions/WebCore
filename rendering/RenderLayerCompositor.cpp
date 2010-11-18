@@ -1066,8 +1066,7 @@ bool RenderLayerCompositor::requiresCompositingForPlugin(RenderObject* renderer)
 bool RenderLayerCompositor::requiresCompositingForAnimation(RenderObject* renderer) const
 {
     if (AnimationController* animController = renderer->animation()) {
-        return (animController->isAnimatingPropertyOnRenderer(renderer, CSSPropertyOpacity)
-                )
+        return (animController->isAnimatingPropertyOnRenderer(renderer, CSSPropertyOpacity))
             || animController->isAnimatingPropertyOnRenderer(renderer, CSSPropertyWebkitTransform);
     }
     return false;

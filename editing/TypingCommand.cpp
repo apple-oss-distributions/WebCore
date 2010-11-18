@@ -296,7 +296,9 @@ void TypingCommand::markMisspellingsAfterTyping()
     if (previous.isNotNull()) {
         EWordSide startWordSide = LeftWordIfOnBoundary;
         UChar32 c = previous.characterAfter();
-        if (isSpaceOrNewline(c) || c == 0xA0) {
+        // FIXME: VisiblePosition::characterAfter() and characterBefore() do not emit newlines the same
+        // way as TextIterator, so we do an isEndOfParagraph check here.
+        if (isSpaceOrNewline(c) || c == 0xA0 || isEndOfParagraph(previous)) {
             startWordSide = RightWordIfOnBoundary;
         }
         VisiblePosition p1 = startOfWord(previous, startWordSide);

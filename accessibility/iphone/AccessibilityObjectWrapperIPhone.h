@@ -37,6 +37,9 @@
 - (WebCore::AccessibilityObject*)accessibilityObject;
 
 - (id)accessibilityHitTest:(CGPoint)point;
+- (AccessibilityObjectWrapper *)accessibilityPostProcessHitTest:(CGPoint)point;
+- (BOOL)accessibilityCanFuzzyHitTest;
+
 - (BOOL)isAccessibilityElement;
 - (NSString *)accessibilityLabel;
 - (CGRect)accessibilityFrame;

@@ -106,6 +106,7 @@ typedef enum {
 + (BOOL)hasLandscapeOrientation;
 + (void)setOrientationProvider:(id)provider;
 
+- (NSString *)recursiveDescription;
 @end
 
 #endif

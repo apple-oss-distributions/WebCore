@@ -292,6 +292,12 @@ CGImageRef ImageSource::createFrameAtIndex(size_t index, float scaleHint, float*
     int subsampling = (int)log2f(1.0f / std::max(0.1f, std::min(1.0f, scaleHint)));
     RetainPtr<CGImageRef> image(AdoptCF, CGImageSourceCreateImageAtIndex(m_decoder, index, imageSourceOptions(subsampling)));
 
+    /* <rdar://problem/7371198> - CoreGraphics changed the default caching
+     * behaviour in Apex to kCGImageCachingTransient which caused a perf
+     * regression for us since the images had to be resampled/recreated every
+     * time we called CGContextDrawImage. We now tell CG to cache the drawn
+     * images.
+     */
     CGImageSetCachingFlags(image.get(), kCGImageCachingTemporary);
 #if ENABLE(RESPECT_EXIF_ORIENTATION)
     *actualScaleOut = static_cast<float>(CGImageGetWidth(image.get())) / ((orientationAtIndex(index) & 0x01) ? size().width() : size().height());

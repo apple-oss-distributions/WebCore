@@ -181,9 +181,24 @@ public:
     RenderObject* firstLeafChild() const;
     RenderObject* lastLeafChild() const;
 
-    RenderObject *traverseNext(const RenderObject *stayWithin) const;     
-    typedef bool (*TraverseNextInclusionFunction)(const RenderObject *); 
+    // Minimal distance between the block with fixed height and overflowing content and the text block to apply text autosizing.
+    // The greater this constant is the more potential places we have where autosizing is turned off.
+    // So it should be as low as possible. There are sites that break at 2.
+    static const int TextAutoSizingFixedHeightDepth = 3;
+
+    enum BlockContentHeightType {
+        FixedHeight,
+        FlexibleHeight,
+        OverflowHeight
+    };
+
+    RenderObject *traverseNext(const RenderObject *stayWithin) const;
+    typedef bool (*TraverseNextInclusionFunction)(const RenderObject *);
+    typedef BlockContentHeightType (*HeightTypeTraverseNextInclusionFunction)(const RenderObject *);
+
     RenderObject *traverseNext(const RenderObject *stayWithin, TraverseNextInclusionFunction inclusionFunction) const;
+    RenderObject *traverseNext(const RenderObject *stayWithin, HeightTypeTraverseNextInclusionFunction inclusionFunction, int &currentDepth,  int &newFixedDepth) const;
+
     void adjustComputedFontSizesOnBlocks(float size, float visibleWidth);
     void resetTextAutosizing();
 
@@ -199,7 +214,8 @@ public:
 
     // Convenience function for getting to the nearest enclosing box of a RenderObject.
     RenderBox* enclosingBox() const;
-    
+    RenderBoxModelObject* enclosingBoxModelObject() const;
+
     virtual bool isEmpty() const { return firstChild() == 0; }
 
 #ifndef NDEBUG
@@ -325,6 +341,8 @@ public:
     bool cellWidthChanged() const { return m_cellWidthChanged; }
     void setCellWidthChanged(bool b = true) { m_cellWidthChanged = b; }
 
+    virtual bool requiresForcedStyleRecalcPropagation() const { return false; }
+
 #if ENABLE(MATHML)
     virtual bool isRenderMathMLBlock() const { return false; }
 #endif // ENABLE(MATHML)
@@ -413,7 +431,6 @@ public:
     void drawArcForBoxSide(GraphicsContext*, int x, int y, float thickness, IntSize radius, int angleStart,
                            int angleSpan, BoxSide, Color, const Color& textcolor, EBorderStyle, bool firstCorner);
 
-public:
     // The pseudo element style can be cached or uncached.  Use the cached method if the pseudo element doesn't respect
     // any pseudo classes (and therefore has no concept of changing state).
     RenderStyle* getCachedPseudoStyle(PseudoId, RenderStyle* parentStyle = 0) const;

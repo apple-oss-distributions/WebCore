@@ -73,6 +73,7 @@ public:
     virtual bool paused() const = 0;
 
     virtual void setVolume(float) = 0;
+    virtual float volume() const { return 1; }
 
     virtual bool hasClosedCaptions() const { return false; }    
     virtual void setClosedCaptionsVisible(bool) { }

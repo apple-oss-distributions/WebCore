@@ -84,7 +84,9 @@ module svg {
         attribute [DontEnum] EventListener onreset;
         attribute [DontEnum] EventListener onresize;
         attribute [DontEnum] EventListener onscroll;
+#if defined(ENABLE_ON_SEARCH) && ENABLE_ON_SEARCH
         attribute [DontEnum] EventListener onsearch;
+#endif
         attribute [DontEnum] EventListener onselect;
         attribute [DontEnum] EventListener onselectstart;
         attribute [DontEnum] EventListener onsubmit;

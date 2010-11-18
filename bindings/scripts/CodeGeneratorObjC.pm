@@ -1724,8 +1724,7 @@ sub GenerateImplementation
 
     # We don't know if we need to #import "WebCoreThreadMessage.h" until after generating the implementation.
     if ($needIPhoneWebCoreThreadMessageHeader) {
-        push(@implConditionalIncludes, "#import \"WebCoreThreadMessage.h\"\n");
-        push(@implConditionalIncludes, "\n");
+        push(@implConditionalIncludes, "#import \"WebCoreThreadMessage.h\"\n\n");
     }
 
     # - Generate dependencies.

@@ -57,6 +57,8 @@ private:
     virtual void paintObject(PaintInfo&, int tx, int ty);
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+    
+    virtual bool requiresForcedStyleRecalcPropagation() const { return true; }
 
     int maxFilenameWidth() const;
     PassRefPtr<RenderStyle> createButtonStyle(const RenderStyle* parentStyle) const;

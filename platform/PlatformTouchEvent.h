@@ -31,6 +31,7 @@ class WebEvent;
 namespace WebCore {
 
 enum TouchEventType { TouchEventBegin, TouchEventChange, TouchEventEnd, TouchEventCancel };
+enum TouchPhaseType { TouchPhaseBegan, TouchPhaseMoved, TouchPhaseStationary, TouchPhaseEnded, TouchPhaseCancelled };
 
 class PlatformTouchEvent {
 public:
@@ -41,8 +42,9 @@ public:
     IntPoint touchLocationAtIndex(unsigned i) const { return m_touchLocations[i]; }
     IntPoint globalTouchLocationAtIndex(unsigned i) const { return m_touchGlobalLocations[i]; }
     unsigned touchIdentifierAtIndex(unsigned i) const { return m_touchIdentifiers[i]; }
+    TouchPhaseType touchPhaseAtIndex(unsigned i) const { return m_touchPhases[i]; }
     
-    bool gestureChanged() const { return m_gestureChanged; }
+    bool isGesture() const { return m_isGesture; }
     
     float scale() const { return m_gestureScale; }
     float rotation() const { return m_gestureRotation; }
@@ -53,7 +55,8 @@ private:
     Vector<IntPoint> m_touchLocations;
     Vector<IntPoint> m_touchGlobalLocations;
     Vector<unsigned> m_touchIdentifiers;
-    bool m_gestureChanged;
+    Vector<TouchPhaseType> m_touchPhases;
+    bool m_isGesture;
     float m_gestureScale;
     float m_gestureRotation;
 };

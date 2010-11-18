@@ -160,6 +160,7 @@ public:
     void setCaretBlinks(bool caretBlinks = true);
     void setCaretColor(const Color&);
     static VisibleSelection wordSelectionContainingCaretSelection(const VisibleSelection&);
+    void setUpdateAppearanceEnabled(bool enabled) { m_updateAppearanceEnabled = enabled; }
 private:
     bool _selectionAtSentenceStart(const VisibleSelection& sel) const;
     PassRefPtr<Range> _rangeByAlteringCurrentSelection(EAlteration alteration, int amount) const;
@@ -212,6 +213,7 @@ private:
     bool m_focused;
     bool m_caretVisible;
     bool m_caretPaint;
+    bool m_updateAppearanceEnabled;
     bool m_caretBlinks;
     Color m_caretColor;
     int m_closeTypingSuppressions;

@@ -308,6 +308,7 @@ SimpleFontData* FontCache::getCachedFontData(const FontPlatformData* platformDat
     if (result == gFontDataCache->end()) {
         pair<SimpleFontData*, unsigned> newValue(new SimpleFontData(*platformData), 1);
         gFontDataCache->set(*platformData, newValue);
+        ASSERT_WITH_MESSAGE(newValue.first, "<rdar://problem/7963319>, a null font should never be added to the fontCache");
         return newValue.first;
     }
     if (!result.get()->second.second++) {
@@ -315,6 +316,7 @@ SimpleFontData* FontCache::getCachedFontData(const FontPlatformData* platformDat
         gInactiveFontData->remove(result.get()->second.first);
     }
 
+    ASSERT_WITH_MESSAGE(result.get()->second.first, "<rdar://problem/7963319>, there should never be a null font in the fontCache.");
     return result.get()->second.first;
 }
 

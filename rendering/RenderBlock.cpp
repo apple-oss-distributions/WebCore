@@ -1657,13 +1657,25 @@ void RenderBlock::paintChildren(PaintInfo& paintInfo, int tx, int ty)
     PaintInfo info(paintInfo);
     info.phase = newPhase;
     info.paintingRoot = paintingRootForChildren(paintInfo);
-    bool isPrinting = document()->printing();
+    bool checkPageBreaks = document()->printing();
+    bool checkColumnBreaks = !checkPageBreaks && !view()->printRect().isEmpty();
 
     for (RenderBox* child = firstChildBox(); child; child = child->nextSiblingBox()) {        
         // Check for page-break-before: always, and if it's set, break and bail.
-        if (isPrinting && !childrenInline() && child->style()->pageBreakBefore() == PBALWAYS &&
-            inRootBlockContext() && (ty + child->y()) > paintInfo.rect.y() && 
-            (ty + child->y()) < paintInfo.rect.bottom()) {
+        bool checkBeforeAlways = !childrenInline() && (checkPageBreaks && child->style()->pageBreakBefore() == PBALWAYS || checkColumnBreaks && child->style()->columnBreakBefore() == PBALWAYS);
+        if (checkBeforeAlways
+            && (ty + child->y()) > paintInfo.rect.y()
+            && (ty + child->y()) < paintInfo.rect.bottom()) {
+            view()->setBestTruncatedAt(ty + child->y(), this, true);
+            return;
+        }
+
+        // Check for page-break-inside: avoid, and it it's set, break and bail.
+        bool checkInsideAvoid = !childrenInline() && (checkPageBreaks && child->style()->pageBreakInside() == PBAVOID || checkColumnBreaks && child->style()->columnBreakInside() == PBAVOID);
+        if (checkInsideAvoid
+            && ty + child->y() > paintInfo.rect.y()
+            && ty + child->y() < paintInfo.rect.bottom()
+            && ty + child->y() + child->height() > paintInfo.rect.bottom()) {
             view()->setBestTruncatedAt(ty + child->y(), this, true);
             return;
         }
@@ -1672,9 +1684,10 @@ void RenderBlock::paintChildren(PaintInfo& paintInfo, int tx, int ty)
             child->paint(info, tx, ty);
 
         // Check for page-break-after: always, and if it's set, break and bail.
-        if (isPrinting && !childrenInline() && child->style()->pageBreakAfter() == PBALWAYS && 
-            inRootBlockContext() && (ty + child->y() + child->height()) > paintInfo.rect.y() && 
-            (ty + child->y() + child->height()) < paintInfo.rect.bottom()) {
+        bool checkAfterAlways = !childrenInline() && (checkPageBreaks && child->style()->pageBreakAfter() == PBALWAYS || checkColumnBreaks && child->style()->columnBreakAfter() == PBALWAYS);
+        if (checkAfterAlways
+            && (ty + child->y() + child->height()) > paintInfo.rect.y()
+            && (ty + child->y() + child->height()) < paintInfo.rect.bottom()) {
             view()->setBestTruncatedAt(ty + child->y() + child->height() + max(0, child->collapsedMarginBottom()), this, true);
             return;
         }
@@ -1755,10 +1768,21 @@ void RenderBlock::paintObject(PaintInfo& paintInfo, int tx, int ty)
 
     // 6. paint continuation outlines.
     if ((paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseChildOutlines)) {
-        if (inlineContinuation() && inlineContinuation()->hasOutline() && inlineContinuation()->style()->visibility() == VISIBLE) {
-            RenderInline* inlineRenderer = toRenderInline(inlineContinuation()->node()->renderer());
-            if (!inlineRenderer->hasSelfPaintingLayer())
-                containingBlock()->addContinuationWithOutline(inlineRenderer);
+        RenderInline* inlineCont = inlineContinuation();
+        if (inlineCont && inlineCont->hasOutline() && inlineCont->style()->visibility() == VISIBLE) {
+            RenderInline* inlineRenderer = toRenderInline(inlineCont->node()->renderer());
+            RenderBlock* cb = containingBlock();
+
+            bool inlineEnclosedInSelfPaintingLayer = false;
+            for (RenderBoxModelObject* box = inlineRenderer; box != cb; box = box->parent()->enclosingBoxModelObject()) {
+                if (box->hasSelfPaintingLayer()) {
+                    inlineEnclosedInSelfPaintingLayer = true;
+                    break;
+                }
+            }
+
+            if (!inlineEnclosedInSelfPaintingLayer)
+                cb->addContinuationWithOutline(inlineRenderer);
             else if (!inlineRenderer->firstLineBox())
                 inlineRenderer->paintOutline(paintInfo.context, tx - x() + inlineRenderer->containingBlock()->x(),
                                              ty - y() + inlineRenderer->containingBlock()->y());
@@ -2977,6 +3001,12 @@ void RenderBlock::clearFloats()
         } else
             m_floatingObjects->clear();
     }
+
+    // We should not process floats if the parent node is not a RenderBlock. Otherwise, we will add 
+    // floats in an invalid context. This will cause a crash arising from a bad cast on the parent.
+    // See <rdar://problem/8049753>, where float property is applied on a text node in a SVG.
+    if (!parent() || !parent()->isRenderBlock())
+        return;
 
     // Attempt to locate a previous sibling with overhanging floats.  We skip any elements that are
     // out of flow (like floating/positioned elements), and we also skip over any objects that may have shifted
@@ -4748,17 +4778,6 @@ void RenderBlock::updateFirstLetter()
     }
 }
 
-bool RenderBlock::inRootBlockContext() const
-{
-    if (isTableCell() || isFloatingOrPositioned() || hasOverflowClip())
-        return false;
-    
-    if (isRoot() || isRenderView())
-        return true;
-    
-    return containingBlock()->inRootBlockContext();
-}
-
 // Helper methods for obtaining the last line, computing line counts and heights for line counts
 // (crawling into blocks).
 static bool shouldCheckLines(RenderObject* obj)
@@ -5209,12 +5228,14 @@ inline static bool isVisibleRenderText(RenderObject *renderer)
 }
 
 inline static bool resizeTextPermitted(RenderObject *render) {
-    // We disallow resizing for text input fields to address <rdar://problem/5792987>
+    // We disallow resizing for text input fields and textarea to address <rdar://problem/5792987> and <rdar://problem/8021123>
     RenderObject* renderer = render->parent();
     while (renderer) {
         // Get the first non-shadow HTMLElement and see if it's an input.
-        if (renderer->node() && renderer->node()->isHTMLElement() && !renderer->node()->isShadowNode())
-            return !static_cast<HTMLElement*>(renderer->node())->hasTagName(inputTag);
+        if (renderer->node() && renderer->node()->isHTMLElement() && !renderer->node()->isShadowNode()) {
+            HTMLElement* element = static_cast<HTMLElement*>(renderer->node());
+			return !element->hasTagName(inputTag) && !element->hasTagName(textareaTag);
+        }
         renderer = renderer->parent();
     }
     

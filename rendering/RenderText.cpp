@@ -226,7 +226,7 @@ void RenderText::deleteTextBoxes()
 PassRefPtr<StringImpl> RenderText::originalText() const
 {
     Node* e = node();
-    return e ? static_cast<Text*>(e)->dataImpl() : 0;
+    return (e && e->isTextNode()) ? static_cast<Text*>(e)->dataImpl() : 0;
 }
 
 void RenderText::absoluteRects(Vector<IntRect>& rects, int tx, int ty)
@@ -1104,7 +1104,13 @@ void RenderText::setText(PassRefPtr<StringImpl> text, bool force)
 
 void RenderText::secureLastCharacter(Timer<RenderText>*)
 {
-    secureLastCharacter();
+    // Call setTextInternal directly to skip layout if the page is already in page cache.
+    // This is needed to avoid the crash in <rdar://problem/8140578>.
+    if (document()->inPageCache()) {
+        m_shouldSecureLastCharacter = true;
+        setTextInternal(m_text);
+    } else
+        secureLastCharacter();
 }
 
 static const float revealLastCharacterDurationInSeconds = 2.0f;

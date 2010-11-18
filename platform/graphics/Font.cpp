@@ -290,37 +290,13 @@ static bool shouldUseFontSmoothing = true;
 
 void Font::setShouldUseSmoothing(bool shouldUseSmoothing)
 {
-    ASSERT(isMainThread() || pthread_main_np());
+    ASSERT(isMainThread());
     shouldUseFontSmoothing = shouldUseSmoothing;
 }
 
 bool Font::shouldUseSmoothing()
 {
     return shouldUseFontSmoothing;
-}
-
-static CGFontSmoothingStyle fontSmoothingStyle = kCGFontSmoothingStyleMedium;
-
-void Font::setSmoothingStyle(CGFontSmoothingStyle newStyle)
-{
-    fontSmoothingStyle = newStyle;
-}
-
-CGFontSmoothingStyle Font::smoothingStyle()
-{
-    return fontSmoothingStyle;
-}
-
-static CGFontAntialiasingStyle fontAntialiasingStyle = kCGFontAntialiasingStyleUnfiltered;
-
-void Font::setAntialiasingStyle(CGFontAntialiasingStyle newStyle)
-{
-    fontAntialiasingStyle = newStyle;
-}
-
-CGFontAntialiasingStyle Font::antialiasingStyle()
-{
-    return fontAntialiasingStyle;
 }
 
 }

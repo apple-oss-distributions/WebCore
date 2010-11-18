@@ -80,7 +80,7 @@ void PluginTokenizer::createDocumentStructure()
     RefPtr<Element> body = m_doc->createElement(bodyTag, false);
     body->setAttribute(marginwidthAttr, "0");
     body->setAttribute(marginheightAttr, "0");
-    body->setAttribute(bgcolorAttr, "rgb(38,38,38)");
+    body->setAttribute(bgcolorAttr, "rgb(217,224,233)");
 
     rootElement->appendChild(body, ec);
         

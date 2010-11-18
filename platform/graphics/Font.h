@@ -135,7 +135,7 @@ public:
     float xHeight() const { return primaryFont()->xHeight(); }
     unsigned unitsPerEm() const { return primaryFont()->unitsPerEm(); }
     int spaceWidth() const { return (int)ceilf(primaryFont()->adjustedSpaceWidth() + m_letterSpacing); }
-    int tabWidth() const { return 8 * spaceWidth(); }
+    float tabWidth(const SimpleFontData& fontData) const { return 8 * ceilf(fontData.adjustedSpaceWidth() + letterSpacing()); }
 
     const SimpleFontData* primaryFont() const;
     const FontData* fontDataAt(unsigned) const;
@@ -153,12 +153,6 @@ public:
 #if USE(FONT_FAST_PATH)
     enum CodePath { Auto, Simple, Complex, SimpleWithGlyphOverflow };
 #endif
-
-    static void setSmoothingStyle(CGFontSmoothingStyle);
-    static CGFontSmoothingStyle smoothingStyle();
-
-    static void setAntialiasingStyle(CGFontAntialiasingStyle);
-    static CGFontAntialiasingStyle antialiasingStyle();
 
 private:
 #if ENABLE(SVG_FONTS)

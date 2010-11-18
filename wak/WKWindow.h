@@ -7,7 +7,6 @@
 #ifndef WKWindow_h
 #define WKWindow_h
 
-#import "WebCoreThread.h"
 #import "WKTypes.h"
 #import "WKUtilities.h"
 #import <CoreGraphics/CoreGraphics.h>

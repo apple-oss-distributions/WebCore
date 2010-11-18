@@ -41,8 +41,9 @@ class WKFontAntialiasingStateSaver
 {
 public:
 
-    WKFontAntialiasingStateSaver(bool useOrientationDependentFontAntialiasing)
-        : m_useOrientationDependentFontAntialiasing(useOrientationDependentFontAntialiasing)
+    WKFontAntialiasingStateSaver(CGContextRef context, bool useOrientationDependentFontAntialiasing)
+        : m_context(context)
+        , m_useOrientationDependentFontAntialiasing(useOrientationDependentFontAntialiasing)
     {
     }
 
@@ -51,8 +52,8 @@ public:
 
 private:
 
+    CGContextRef m_context;
     bool m_useOrientationDependentFontAntialiasing;
-    bool m_oldShouldUseFontSmoothing;
     CGFontAntialiasingStyle m_oldAntialiasingStyle;
 };
 #endif

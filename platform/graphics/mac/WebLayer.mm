@@ -65,7 +65,7 @@ using namespace WebCore;
     }
 
     if (layerContents->client()) {
-        WKFontAntialiasingStateSaver fontAntialiasingState(true);
+        WKFontAntialiasingStateSaver fontAntialiasingState(context, true);
         fontAntialiasingState.setup([WAKWindow hasLandscapeOrientation]);
 
         GraphicsContext graphicsContext(context);

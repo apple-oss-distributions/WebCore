@@ -72,6 +72,8 @@ private:
 
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
+    virtual bool requiresForcedStyleRecalcPropagation() const { return true; }
+
     // PopupMenuClient methods
     virtual String itemText(unsigned listIndex) const;
     virtual String itemToolTip(unsigned listIndex) const;

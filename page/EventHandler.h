@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2009, 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -72,6 +72,7 @@ class String;
 class SVGElementInstance;
 class TextEvent;
 class TouchEvent;
+class WheelEvent;
 class Widget;
 class Touch;
 class EventTarget;
@@ -154,6 +155,7 @@ public:
     bool handleMouseMoveEvent(const PlatformMouseEvent&, HitTestResult* hoveredNode = 0);
     bool handleMouseReleaseEvent(const PlatformMouseEvent&);
     bool handleWheelEvent(PlatformWheelEvent&);
+    void defaultWheelEventHandler(Node*, WheelEvent*);
 
     typedef HashSet< RefPtr<Touch> > TouchSet;
     typedef HashMap< EventTarget*, TouchSet* > EventTargetTouchMap;

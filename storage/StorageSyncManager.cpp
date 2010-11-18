@@ -51,14 +51,14 @@ StorageSyncManager::StorageSyncManager(const String& path)
     : m_thread(LocalStorageThread::create())
     , m_path(path.crossThreadString())
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
     ASSERT(!m_path.isEmpty());
     m_thread->start();
 }
 
 StorageSyncManager::~StorageSyncManager()
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
     ASSERT(!m_thread);
 }
 
@@ -75,7 +75,7 @@ String StorageSyncManager::fullDatabaseFilename(const String& databaseIdentifier
 
 void StorageSyncManager::close()
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
 
     if (m_thread) {
         m_thread->terminate();
@@ -85,7 +85,7 @@ void StorageSyncManager::close()
 
 bool StorageSyncManager::scheduleImport(PassRefPtr<StorageAreaSync> area)
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
     ASSERT(m_thread);
     if (m_thread)
         m_thread->scheduleTask(LocalStorageTask::createImport(area.get()));
@@ -94,7 +94,7 @@ bool StorageSyncManager::scheduleImport(PassRefPtr<StorageAreaSync> area)
 
 void StorageSyncManager::scheduleSync(PassRefPtr<StorageAreaSync> area)
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
     ASSERT(m_thread);
     if (m_thread)
         m_thread->scheduleTask(LocalStorageTask::createSync(area.get()));

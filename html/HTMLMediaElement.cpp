@@ -786,7 +786,16 @@ void HTMLMediaElement::setNetworkState(MediaPlayer::NetworkState state)
         return;
     }
 
+    bool shouldUpdatePlayState = false;
+
     if (state == MediaPlayer::Idle) {
+        if (m_networkState > NETWORK_IDLE && m_autoplaying && m_paused && autoplay()) {
+            m_paused = false;
+            m_autoplaying = false;
+            scheduleEvent(eventNames().playEvent);
+            scheduleEvent(eventNames().playingEvent);
+            shouldUpdatePlayState = true;
+        } else 
         if (m_networkState > NETWORK_IDLE) {
             stopPeriodicTimers();
             scheduleEvent(eventNames().suspendEvent);
@@ -821,6 +830,9 @@ void HTMLMediaElement::setNetworkState(MediaPlayer::NetworkState state)
             scheduleEvent(eventNames().loadEvent);
         }
     }
+
+    if (shouldUpdatePlayState)
+        updatePlayState();
 }
 
 void HTMLMediaElement::mediaPlayerReadyStateChanged(MediaPlayer*)
@@ -1278,11 +1290,6 @@ void HTMLMediaElement::setVolume(float vol, ExceptionCode& ec)
         return;
     }
     
-    if (m_volume != vol) {
-        m_volume = vol;
-        updateVolume();
-        scheduleEvent(eventNames().volumechangeEvent);
-    }
 }
 
 bool HTMLMediaElement::muted() const
@@ -1292,11 +1299,7 @@ bool HTMLMediaElement::muted() const
 
 void HTMLMediaElement::setMuted(bool muted)
 {
-    if (m_muted != muted) {
-        m_muted = muted;
-        updateVolume();
-        scheduleEvent(eventNames().volumechangeEvent);
-    }
+    UNUSED_PARAM(muted);
 }
 
 void HTMLMediaElement::togglePlayState()
@@ -1681,6 +1684,14 @@ float HTMLMediaElement::maxTimeSeekable() const
     
 void HTMLMediaElement::updateVolume()
 {
+    // Only the user can change audio volume so update the cached volume and post the changed event.
+    float volume = m_player->volume();
+    if (m_volume != volume) {
+        m_volume = volume;
+        scheduleEvent(eventNames().volumechangeEvent);
+    }
+    return;
+
     if (!m_player)
         return;
 

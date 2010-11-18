@@ -2059,7 +2059,7 @@ static void adjustFloatQuadsForScrollAndAbsoluteZoom(Vector<FloatQuad>& quads, D
     if (!view)
         return;
 
-    IntRect visibleContentRect = view->visibleContentRect();
+    IntRect visibleContentRect = view->actualVisibleContentRect();
     for (size_t i = 0; i < quads.size(); ++i) {
         quads[i].move(-visibleContentRect.x(), -visibleContentRect.y());
         adjustFloatQuadForAbsoluteZoom(quads[i], renderer);

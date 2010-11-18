@@ -262,11 +262,11 @@ void FrameView::detachCustomScrollbars()
         return;
 
     Scrollbar* horizontalBar = horizontalScrollbar();
-    if (horizontalBar && horizontalBar->isCustomScrollbar() && !toRenderScrollbar(horizontalBar)->owningRenderer()->isRenderPart())
+    if (horizontalBar && horizontalBar->isCustomScrollbar())
         setHasHorizontalScrollbar(false);
 
     Scrollbar* verticalBar = verticalScrollbar();
-    if (verticalBar && verticalBar->isCustomScrollbar() && !toRenderScrollbar(verticalBar)->owningRenderer()->isRenderPart())
+    if (verticalBar && verticalBar->isCustomScrollbar())
         setHasVerticalScrollbar(false);
 
     if (m_scrollCorner) {
@@ -737,7 +737,7 @@ void FrameView::layout(bool allowSubtree)
     root->layout();
     float minZoomFontSize = frame()->settings()->minimumZoomFontSize();
     float visWidth = frame()->page()->mainFrame()->visibleSize().width();
-    if (minZoomFontSize != 0 && visWidth != 0) {
+    if (minZoomFontSize && visWidth && !root->view()->printing()) {
         root->adjustComputedFontSizesOnBlocks(minZoomFontSize, visWidth);    
         bool needsLayout = root->needsLayout();
         if (needsLayout)
@@ -1045,7 +1045,7 @@ void FrameView::repaintContentRectangle(const IntRect& r, bool immediate)
     ASSERT(!m_frame->document()->ownerElement());
 
     double delay = adjustedDeferredRepaintDelay();
-    if (0 && (m_deferringRepaints || m_deferredRepaintTimer.isActive() || delay) && !immediate) {
+    if ((m_deferringRepaints || m_deferredRepaintTimer.isActive() || delay) && !immediate) {
         IntRect paintRect = r;
         if (!paintsEntireContents())
             paintRect.intersect(visibleContentRect());

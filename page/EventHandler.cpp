@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Alexey Proskuryakov (ap@webkit.org)
  *
  * Redistribution and use in source and binary forms, with or without
@@ -65,6 +65,7 @@
 #include "SelectionController.h"
 #include "Settings.h"
 #include "TextEvent.h"
+#include "WheelEvent.h"
 #include "UserGestureIndicator.h"
 #include "htmlediting.h" // for comparePositions()
 #include <wtf/StdLibExtras.h>
@@ -111,23 +112,29 @@ const double autoscrollInterval = 0.05;
 
 static Frame* subframeForHitTestResult(const MouseEventWithHitTestResults&);
 
-static inline void scrollAndAcceptEvent(float delta, ScrollDirection positiveDirection, ScrollDirection negativeDirection, PlatformWheelEvent& e, Node* node, Node** stopNode)
+static inline bool scrollNode(float delta, WheelEvent::Granularity granularity, ScrollDirection positiveDirection, ScrollDirection negativeDirection, Node* node, Node** stopNode)
 {
     if (!delta)
-        return;
-        
+        return false;
+    
+    if (!node->renderer())
+        return false;
+    
     // Find the nearest enclosing box.
     RenderBox* enclosingBox = node->renderer()->enclosingBox();
 
-    if (e.granularity() == ScrollByPageWheelEvent) {
-        if (enclosingBox->scroll(delta < 0 ? negativeDirection : positiveDirection, ScrollByPage, 1, stopNode))
-            e.accept();
-        return;
-    }
+    float absDelta = delta > 0 ? delta : -delta;
+    
+    if (granularity == WheelEvent::Page)
+        return enclosingBox->scroll(delta < 0 ? negativeDirection : positiveDirection, ScrollByPage, absDelta, stopNode);
 
-    float pixelsToScroll = delta > 0 ? delta : -delta;
-    if (enclosingBox->scroll(delta < 0 ? negativeDirection : positiveDirection, ScrollByPixel, pixelsToScroll, stopNode))
-        e.accept();
+    if (granularity == WheelEvent::Line)
+        return enclosingBox->scroll(delta < 0 ? negativeDirection : positiveDirection, ScrollByLine, absDelta, stopNode);
+
+    if (granularity == WheelEvent::Pixel)
+        return enclosingBox->scroll(delta < 0 ? negativeDirection : positiveDirection, ScrollByPixel, absDelta, stopNode);
+        
+    return false;
 }
 
 #if !PLATFORM(MAC) || ENABLE(EXPERIMENTAL_SINGLE_VIEW_MODE)
@@ -1668,21 +1675,6 @@ bool EventHandler::handleWheelEvent(PlatformWheelEvent& e)
         node->dispatchWheelEvent(e);
         if (e.isAccepted())
             return true;
-
-        // If we don't have a renderer, send the wheel event to the first node we find with a renderer.
-        // This is needed for <option> and <optgroup> elements so that <select>s get a wheel scroll.
-        while (node && !node->renderer())
-            node = node->parent();
-
-        if (node && node->renderer()) {
-            // Just break up into two scrolls if we need to.  Diagonal movement on 
-            // a MacBook pro is an example of a 2-dimensional mouse wheel event (where both deltaX and deltaY can be set).
-            Node* stopNode = m_previousWheelScrolledNode.get();
-            scrollAndAcceptEvent(e.deltaX(), ScrollLeft, ScrollRight, e, node, &stopNode);
-            scrollAndAcceptEvent(e.deltaY(), ScrollUp, ScrollDown, e, node, &stopNode);
-            if (!m_useLatchedWheelEventNode)
-                m_previousWheelScrolledNode = stopNode;
-        }
     }
 
     if (e.isAccepted())
@@ -1694,6 +1686,25 @@ bool EventHandler::handleWheelEvent(PlatformWheelEvent& e)
 
     view->wheelEvent(e);
     return e.isAccepted();
+}
+    
+void EventHandler::defaultWheelEventHandler(Node* startNode, WheelEvent* wheelEvent)
+{
+    if (!startNode || !wheelEvent)
+        return;
+    
+    Node* stopNode = m_previousWheelScrolledNode.get();
+    
+    // Break up into two scrolls if we need to.  Diagonal movement on 
+    // a MacBook pro is an example of a 2-dimensional mouse wheel event (where both deltaX and deltaY can be set).
+    if (scrollNode(wheelEvent->rawDeltaX(), wheelEvent->granularity(), ScrollLeft, ScrollRight, startNode, &stopNode))
+        wheelEvent->setDefaultHandled();
+    
+    if (scrollNode(wheelEvent->rawDeltaY(), wheelEvent->granularity(), ScrollUp, ScrollDown, startNode, &stopNode))
+        wheelEvent->setDefaultHandled();
+    
+    if (!m_useLatchedWheelEventNode)
+        m_previousWheelScrolledNode = stopNode;
 }
 
 #if ENABLE(CONTEXT_MENUS)
@@ -1885,7 +1896,9 @@ bool EventHandler::keyEvent(const PlatformKeyboardEvent& initialKeyEvent)
 
     if (initialKeyEvent.type() == PlatformKeyboardEvent::RawKeyDown) {
         node->dispatchEvent(keydown, ec);
-        return keydown->defaultHandled() || keydown->defaultPrevented();
+        // If frame changed as a result of keydown dispatch, then return true to avoid sending a subsequent keypress message to the new frame.
+        bool changedFocusedFrame = m_frame->page() && m_frame != m_frame->page()->focusController()->focusedOrMainFrame();
+        return keydown->defaultHandled() || keydown->defaultPrevented() || changedFocusedFrame;
     }
 
     // Run input method in advance of DOM event handling.  This may result in the IM
@@ -1905,7 +1918,9 @@ bool EventHandler::keyEvent(const PlatformKeyboardEvent& initialKeyEvent)
     }
 
     node->dispatchEvent(keydown, ec);
-    bool keydownResult = keydown->defaultHandled() || keydown->defaultPrevented();
+    // If frame changed as a result of keydown dispatch, then return early to avoid sending a subsequent keypress message to the new frame.
+    bool changedFocusedFrame = m_frame->page() && m_frame != m_frame->page()->focusController()->focusedOrMainFrame();
+    bool keydownResult = keydown->defaultHandled() || keydown->defaultPrevented() || changedFocusedFrame;
     if (handledByInputMethod || (keydownResult && !backwardCompatibilityMode))
         return keydownResult;
     

@@ -547,6 +547,8 @@ public:
     AccessibilityObjectPlatformInclusion accessibilityPlatformIncludesObject() const { return DefaultBehavior; }
 #endif
 
+    int accessibilityPasswordFieldLength();
+    
     // allows for an AccessibilityObject to update its render tree or perform
     // other operations update type operations
     virtual void updateBackingStore() { }

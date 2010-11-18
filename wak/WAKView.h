@@ -109,6 +109,8 @@ extern NSString *WAKViewDidScrollNotification;
 
 - (void)_setDrawsOwnDescendants:(BOOL)draw;
 
+- (void)_appendDescriptionToString:(NSMutableString *)info atLevel:(int)level;
+
 @end
 
 #endif // WAKView_h

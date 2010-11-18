@@ -79,6 +79,7 @@ SelectionController::SelectionController(Frame* frame, bool isDragCaretControlle
     , m_focused(frame && frame->page() && frame->page()->focusController()->focusedFrame() == frame)
     , m_caretVisible(isDragCaretController)
     , m_caretPaint(true)
+    , m_updateAppearanceEnabled(false)
     , m_caretBlinks(true)
     , m_closeTypingSuppressions(0)
 {
@@ -1309,6 +1310,70 @@ bool SelectionController::isFocusedAndActive() const
 
 void SelectionController::updateAppearance()
 {
+    if (!m_updateAppearanceEnabled)
+        return;
+
+    ASSERT(!m_isDragCaretController);
+
+#if ENABLE(TEXT_CARET)
+    bool caretRectChanged = recomputeCaretRect();
+
+    bool caretBrowsing = m_frame->settings() && m_frame->settings()->caretBrowsingEnabled();
+    bool shouldBlink = m_caretVisible
+        && isCaret() && (isContentEditable() || caretBrowsing);
+
+    // If the caret moved, stop the blink timer so we can restart with a
+    // black caret in the new location.
+    if (caretRectChanged || !shouldBlink)
+        m_caretBlinkTimer.stop();
+
+    // Start blinking with a black caret. Be sure not to restart if we're
+    // already blinking in the right location.
+    if (shouldBlink && !m_caretBlinkTimer.isActive()) {
+        if (double blinkInterval = m_frame->page()->theme()->caretBlinkInterval())
+            m_caretBlinkTimer.startRepeating(blinkInterval);
+
+        if (!m_caretPaint) {
+            m_caretPaint = true;
+            invalidateCaretRect();
+        }
+    }
+#endif
+
+    // We need to update style in case the node containing the selection is made display:none.
+    m_frame->document()->updateStyleIfNeeded();
+
+    RenderView* view = m_frame->contentRenderer();
+    if (!view)
+        return;
+
+    VisibleSelection selection = this->selection();
+
+    if (!selection.isRange()) {
+        view->clearSelection();
+        return;
+    }
+
+    // Use the rightmost candidate for the start of the selection, and the leftmost candidate for the end of the selection.
+    // Example: foo <a>bar</a>.  Imagine that a line wrap occurs after 'foo', and that 'bar' is selected.   If we pass [foo, 3]
+    // as the start of the selection, the selection painting code will think that content on the line containing 'foo' is selected
+    // and will fill the gap before 'bar'.
+    Position startPos = selection.start();
+    Position candidate = startPos.downstream();
+    if (candidate.isCandidate())
+        startPos = candidate;
+    Position endPos = selection.end();
+    candidate = endPos.upstream();
+    if (candidate.isCandidate())
+        endPos = candidate;
+
+    // We can get into a state where the selection endpoints map to the same VisiblePosition when a selection is deleted
+    // because we don't yet notify the SelectionController of text removal.
+    if (startPos.isNotNull() && endPos.isNotNull() && selection.visibleStart() != selection.visibleEnd()) {
+        RenderObject* startRenderer = startPos.node()->renderer();
+        RenderObject* endRenderer = endPos.node()->renderer();
+        view->setSelection(startRenderer, startPos.deprecatedEditingOffset(), endRenderer, endPos.deprecatedEditingOffset());
+    }
 }
 
 void SelectionController::setCaretVisible(bool flag)

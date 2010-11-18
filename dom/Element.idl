@@ -193,7 +193,9 @@ module core {
         attribute [DontEnum] EventListener onbeforepaste;
         attribute [DontEnum] EventListener onpaste;
         attribute [DontEnum] EventListener onreset;
+#if defined(ENABLE_ON_SEARCH) && ENABLE_ON_SEARCH
         attribute [DontEnum] EventListener onsearch;
+#endif
         attribute [DontEnum] EventListener onselectstart;
         attribute [DontEnum] EventListener ontouchstart;
         attribute [DontEnum] EventListener ontouchmove;

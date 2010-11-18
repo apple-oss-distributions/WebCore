@@ -1138,23 +1138,6 @@ FloatRect GraphicsContext::roundToDevicePixels(const FloatRect& rect)
     return FloatRect(roundedOrigin, roundedLowerRight - roundedOrigin);
 }
 
-static CGPoint roundPointToDevicePixels(CGContextRef context, CGPoint p, int offset)
-{
-    // Extract the x-scaling from the device space matrix. Since we always
-    // scale the page uniformly, this scale is sufficient to calculate
-    // the right values for adjusting the point to device space.
-    CGAffineTransform deviceMatrix = CGContextGetUserSpaceToDeviceSpaceTransform(context);
-    float s = deviceMatrix.a;
-    float x = roundf(p.x * s);
-    float y = ceilf((p.y * s) + (offset * s));
-    
-    // don't offset line from bottom of text if scale is less than OffsetUnderlineScale
-    static const float OffsetUnderlineScale = 0.4f;
-    float dy = s < OffsetUnderlineScale ? 0 : 1;
-    
-    return CGPointMake(x / s, (y + dy) / s);
-}
-
 void GraphicsContext::drawLineForText(const IntPoint& point, int width, bool printing)
 {
     if (paintingDisabled())
@@ -1163,31 +1146,46 @@ void GraphicsContext::drawLineForText(const IntPoint& point, int width, bool pri
     if (width <= 0)
         return;
 
-    UNUSED_PARAM(printing);
-
     CGContextRef context = platformContext();
-
     CGContextSaveGState(context);
 
-    CGContextSetLineWidth(context, 1);
-    CGContextSetShouldAntialias(context, false);
-
-    // This code always draws a one-pixel line, which tends to visually
-    // overwhelm text at small scales. To counter this effect, an alpha
-    // is applied to the underline color. 
-    CGAffineTransform t = CGContextGetCTM(context);
-    float scale = t.a;
     Color color(strokeColor());
-    if (scale < 1.0) {
-        static const float MinUnderlineAlpha = 0.4f;
-        float shade = scale > MinUnderlineAlpha ? scale : MinUnderlineAlpha;
-        int alpha = color.alpha() * shade;
-        color = Color(color.red(), color.green(), color.blue(), alpha);
-    }
-    setCGFillColor(context, color, strokeColorSpace());
+    CGPoint origin;
+    CGFloat thickness;
+    if (printing) {
+        // Offset the baseline by one like the Mac OS code does when calling into this
+        // function. On iOS, we do not apply this baseline adjustment when drawing at
+        // small screen scales, so it is not performed on the point passed into this
+        // function.
+        origin = CGPointMake(point.x(), point.y() + 1);
+        thickness = max(strokeThickness(), 0.5f);
+    } else {
+        CGContextSetShouldAntialias(context, false);
 
-    CGPoint origin = roundPointToDevicePixels(context, CGPointMake(point.x(), point.y()), 0);
-    CGRect rect = CGRectMake(origin.x, origin.y, width, 1); // always draw with 1 thickness
+        // This code always draws a one-pixel line, which tends to visually
+        // overwhelm text at small scales. To counter this effect, an alpha
+        // is applied to the underline color.
+        CGAffineTransform t = CGContextGetUserSpaceToDeviceSpaceTransform(context);
+        CGFloat scale = t.a;
+        if (scale < 1.0) {
+            static const float MinUnderlineAlpha = 0.4f;
+            float shade = scale > MinUnderlineAlpha ? scale : MinUnderlineAlpha;
+            int alpha = color.alpha() * shade;
+            color = Color(color.red(), color.green(), color.blue(), alpha);
+        }
+
+        // don't offset line from bottom of text if scale is less than OffsetUnderlineScale
+        static const CGFloat OffsetUnderlineScale = 0.4f;
+        CGFloat dy = scale < OffsetUnderlineScale ? 0 : 1;
+
+        CGPoint devicePoint = CGPointApplyAffineTransform(point, t);
+        CGPoint deviceOrigin = CGPointMake(roundf(devicePoint.x), ceilf(devicePoint.y) + dy);
+        origin = CGPointApplyAffineTransform(deviceOrigin, CGAffineTransformInvert(t));
+        thickness = MAX(1, roundf(scale)) / scale;
+    }
+
+    setCGFillColor(context, color, strokeColorSpace());
+    CGRect rect = CGRectMake(origin.x, origin.y, width, thickness);
     CGContextFillRect(context, rect);
 
     CGContextRestoreGState(context);

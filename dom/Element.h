@@ -276,6 +276,10 @@ public:
 
     virtual void dispatchFormControlChangeEvent() { }
 
+#if ENABLE(SVG)
+    virtual bool childShouldCreateRenderer(Node*) const; 
+#endif
+
 protected:
     Element(const QualifiedName&, Document*, ConstructionType);
 

@@ -129,7 +129,7 @@ void WidthIterator::advance(int offset, GlyphBuffer* glyphBuffer)
         // Now that we have a glyph and font data, get its width.
         float width;
         if (c == '\t' && m_run.allowTabs()) {
-            float tabWidth = m_font->tabWidth();
+            float tabWidth = m_font->tabWidth(*fontData);
             width = tabWidth - fmodf(m_run.xPos() + runWidthSoFar, tabWidth);
         } else {
             width = fontData->widthForGlyph(glyph);

@@ -133,6 +133,20 @@ void FontFallbackList::setPlatformFont(const FontPlatformData& platformData)
     m_familyIndex = cAllFamiliesScanned;
     ASSERT(fontCache()->generation() == m_generation);
     const FontData* fontData = fontCache()->getCachedFontData(&platformData);
+    ASSERT_WITH_MESSAGE(&platformData, "Please add this information to <rdar://problem/7963319>");
+    if (!&platformData) {
+        // If this is the case, then there is something wrong above us, sending
+        // a null platformData to setPlatformFont.
+        LOG_ERROR("Hit <rdar://problem/7963319> with a null platformData.");
+        return;
+    }
+    ASSERT_WITH_MESSAGE(fontData, "Please add this information to <rdar://problem/7963319>");
+    if (!fontData) {
+        // If this is the case, there there is something wrong below us, pulling
+        // a null font from the FontCache.
+        LOG_ERROR("Hit <rdar://problem/7963319> with a null fontData.");
+        return;
+    }
     m_fontList.append(pair<const FontData*, bool>(fontData, fontData->isCustomFont()));
 }
 

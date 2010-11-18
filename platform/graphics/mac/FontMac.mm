@@ -72,6 +72,10 @@ static PassRefPtr<Image> smileImage(int imageNumber)
 #if PLATFORM(IPHONE_SIMULATOR)
         imagePath = [bundle pathForResource:[NSString stringWithUTF8String:name] ofType:@"png"];
 #else
+        // <rdar://problem/7931463> Typing first emoji character slower by 340ms in Apex
+        // Calling [NSBundle pathForResource] is slow since we have a huge number
+        // of files (mostly emoji) in the WebCore framework. In order to speed
+        // things up, we hardcode the image path on devices.
         imagePath = [NSString stringWithFormat:@"/System/Library/PrivateFrameworks/WebCore.framework/%s.png", name];
 #endif
         namedImageData = [NSData dataWithContentsOfFile:imagePath];
@@ -171,24 +175,7 @@ void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, cons
         ASSERT_NOT_REACHED();
     }
 
-    bool originalShouldUseFontSmoothing = CGContextGetShouldSmoothFonts(cgContext);
-    if (originalShouldUseFontSmoothing != newShouldUseFontSmoothing)
-        CGContextSetShouldSmoothFonts(cgContext, newShouldUseFontSmoothing);
 
-#if !PLATFORM(IPHONE_SIMULATOR)
-    // Font smoothing style
-    CGFontSmoothingStyle originalFontSmoothingStyle = CGContextGetFontSmoothingStyle(cgContext);
-    CGFontSmoothingStyle fontSmoothingStyle = Font::smoothingStyle();
-    if (newShouldUseFontSmoothing && fontSmoothingStyle != originalFontSmoothingStyle)
-        CGContextSetFontSmoothingStyle(cgContext, fontSmoothingStyle);
-    
-    // Font antialiasing style
-    CGFontAntialiasingStyle originalFontAntialiasingStyle = CGContextGetFontAntialiasingStyle(cgContext);
-    CGFontAntialiasingStyle fontAntialiasingStyle = Font::antialiasingStyle();
-    if (fontAntialiasingStyle != originalFontAntialiasingStyle)
-        CGContextSetFontAntialiasingStyle(cgContext, fontAntialiasingStyle);
-#endif
-    
     const FontPlatformData& platformData = font->platformData();
     
     GSFontSetFont(cgContext, platformData.font());
@@ -235,16 +222,6 @@ void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, cons
     if (hasSimpleShadow)
         context->setShadow(shadowSize, shadowBlur, shadowColor, fillColorSpace);
 
-    if (originalShouldUseFontSmoothing != newShouldUseFontSmoothing)
-        CGContextSetShouldSmoothFonts(cgContext, originalShouldUseFontSmoothing);
-        
-#if !PLATFORM(IPHONE_SIMULATOR)
-    if (newShouldUseFontSmoothing && fontSmoothingStyle != originalFontSmoothingStyle)
-        CGContextSetFontSmoothingStyle(cgContext, originalFontSmoothingStyle);
-    
-    if (fontAntialiasingStyle != originalFontAntialiasingStyle)
-        CGContextSetFontAntialiasingStyle(cgContext, originalFontAntialiasingStyle);
-#endif
 }
 
 }

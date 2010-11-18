@@ -477,7 +477,7 @@ void ComplexTextController::adjustGlyphsAndAdvances()
             }
 
             if (ch == '\t' && m_run.allowTabs()) {
-                float tabWidth = m_font.tabWidth();
+                float tabWidth = m_font.tabWidth(*fontData);
                 advance.width = tabWidth - fmodf(m_run.xPos() + m_totalWidth, tabWidth);
             } else if (ch == zeroWidthSpace || Font::treatAsZeroWidthSpace(ch) && !treatAsSpace) {
                 advance.width = 0;

@@ -331,6 +331,7 @@ public:
             && m_matrix[3][3] == 1;
     }
 
+    // FIXME: This was temporarily added to fix <rdar://problem/7909020> N90: Apex8A258: Mobile Safari eating up large amounts of %CPU
     // This can be removed after Merging up to WebKit ToT r55266 since it will no longer be needed.
     bool isIdentityOrTranslationOrFlipped() const
     {

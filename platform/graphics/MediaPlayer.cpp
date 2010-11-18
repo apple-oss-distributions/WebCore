@@ -548,6 +548,7 @@ void MediaPlayer::readyStateChanged()
 
 void MediaPlayer::volumeChanged()
 {
+    m_volume = m_private->volume();
     if (m_mediaPlayerClient)
         m_mediaPlayerClient->mediaPlayerVolumeChanged(this);
 }

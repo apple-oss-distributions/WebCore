@@ -30,8 +30,6 @@
 #include "PlatformString.h"
 #include <wtf/Threading.h>
 
-#include "WebCoreThread.h"
-
 #if COMPILER(MSVC)
 #pragma warning(disable: 4800)
 #endif

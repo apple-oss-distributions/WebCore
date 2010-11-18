@@ -1884,7 +1884,9 @@ void Frame::respondToChangedSelection(const VisibleSelection& oldSelection, bool
             VisiblePosition newStart(selection()->selection().visibleStart());
             EWordSide startWordSide = LeftWordIfOnBoundary;
             UChar32 c = newStart.characterBefore();
-            if (isSpaceOrNewline(c) || c == 0xA0) {
+            // FIXME: VisiblePosition::characterAfter() and characterBefore() do not emit newlines the same
+            // way as TextIterator, so we do an isStartOfParagraph check here.
+            if (isSpaceOrNewline(c) || c == 0xA0 || isStartOfParagraph(newStart)) {
                 startWordSide = RightWordIfOnBoundary;
             }
             newAdjacentWords = VisibleSelection(startOfWord(newStart, startWordSide), endOfWord(newStart, RightWordIfOnBoundary));

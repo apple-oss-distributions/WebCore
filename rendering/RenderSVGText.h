@@ -70,6 +70,9 @@ private:
 
     virtual RootInlineBox* createRootInlineBox();
 
+    virtual RenderBlock* firstLineBlock() const;
+    virtual void updateFirstLetter();
+
     TransformationMatrix m_localTransform;
 };
 

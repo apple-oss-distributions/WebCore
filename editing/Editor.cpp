@@ -918,7 +918,7 @@ void Editor::appliedEditing(PassRefPtr<EditCommand> cmd)
     
     VisibleSelection newSelection(cmd->endingSelection());
     // Don't clear the typing style with this selection change.  We do those things elsewhere if necessary.
-    changeSelectionAfterCommand(newSelection, false, false, cmd.get());
+    changeSelectionAfterCommand(newSelection, false, false);
         
     if (!cmd->preservesTypingStyle())
         m_frame->setTypingStyle(0);
@@ -943,7 +943,7 @@ void Editor::unappliedEditing(PassRefPtr<EditCommand> cmd)
     dispatchEditableContentChangedEvents(*cmd);
     
     VisibleSelection newSelection(cmd->startingSelection());
-    changeSelectionAfterCommand(newSelection, true, true, cmd.get());
+    changeSelectionAfterCommand(newSelection, true, true);
     
     m_lastEditCommand = 0;
     if (client())
@@ -958,7 +958,7 @@ void Editor::reappliedEditing(PassRefPtr<EditCommand> cmd)
     dispatchEditableContentChangedEvents(*cmd);
     
     VisibleSelection newSelection(cmd->endingSelection());
-    changeSelectionAfterCommand(newSelection, true, true, cmd.get());
+    changeSelectionAfterCommand(newSelection, true, true);
     
     m_lastEditCommand = 0;
     if (client())
@@ -2041,6 +2041,7 @@ void Editor::markAllMisspellingsAndBadGrammarInRanges(bool markSpelling, Range* 
     }
 }
 
+
 void Editor::markMisspellingsAndBadGrammar(const VisibleSelection& spellingSelection, bool markGrammar, const VisibleSelection& grammarSelection)
 {
     if (!isContinuousSpellCheckingEnabled())
@@ -2334,7 +2335,7 @@ PassRefPtr<Range> Editor::nextVisibleRange(Range* currentRange, const String& ta
     return lastVisibleRange(target, caseFlag);
 }
 
-void Editor::changeSelectionAfterCommand(const VisibleSelection& newSelection, bool closeTyping, bool clearTypingStyle, EditCommand* cmd)
+void Editor::changeSelectionAfterCommand(const VisibleSelection& newSelection, bool closeTyping, bool clearTypingStyle)
 {
     // If there is no selection change, don't bother sending shouldChangeSelection, but still call setSelection,
     // because there is work that it must do in this situation.
@@ -2344,8 +2345,8 @@ void Editor::changeSelectionAfterCommand(const VisibleSelection& newSelection, b
     if (selectionDidNotChangeDOMPosition || m_frame->shouldChangeSelection(newSelection))
         m_frame->selection()->setSelection(newSelection, closeTyping, clearTypingStyle);
         
-    // Some kinds of deletes and line break insertions change the selection's position within the document without 
-    // changing its position within the DOM.  For example when you press return in the following (the caret is marked by ^): 
+    // Some editing operations change the selection visually without affecting its position within the DOM.
+    // For example when you press return in the following (the caret is marked by ^): 
     // <div contentEditable="true"><div>^Hello</div></div>
     // WebCore inserts <div><br></div> *before* the current block, which correctly moves the paragraph down but which doesn't
     // change the caret's DOM position (["hello", 0]).  In these situations the above SelectionController::setSelection call
@@ -2354,7 +2355,7 @@ void Editor::changeSelectionAfterCommand(const VisibleSelection& newSelection, b
     // FIXME: Merge this to open source https://bugs.webkit.org/show_bug.cgi?id=38830
     if (m_ignoreCompositionSelectionChange)
         return;
-    if (selectionDidNotChangeDOMPosition && cmd->isTypingCommand())
+    if (selectionDidNotChangeDOMPosition)
         client()->respondToChangedSelection();
 }
 

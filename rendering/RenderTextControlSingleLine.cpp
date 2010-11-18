@@ -238,7 +238,7 @@ void RenderTextControlSingleLine::layout()
     RenderBox* childBlock = innerBlockRenderer ? innerBlockRenderer : innerTextRenderer;
     currentHeight = childBlock->height();
     if (currentHeight < height())
-        childBlock->setLocation(childBlock->x(), (height() - currentHeight) / 2);
+        childBlock->setY((height() - currentHeight) / 2);
 }
 
 bool RenderTextControlSingleLine::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, int xPos, int yPos, int tx, int ty, HitTestAction hitTestAction)
@@ -363,12 +363,10 @@ void RenderTextControlSingleLine::capsLockStateMayHaveChanged()
 
 IntRect RenderTextControlSingleLine::controlClipRect(int tx, int ty) const
 {
-    // This should only get called for search inputs, which have an innerBlock.
+    // This should only get called for search inputs.
     ASSERT(hasControlClip());
-    ASSERT(m_innerBlock);
 
-    RenderBox* renderBox = m_innerBlock->renderBox();
-    IntRect clipRect = IntRect(renderBox->x(), renderBox->y(), contentWidth(), contentHeight());        
+    IntRect clipRect = IntRect(m_innerBlock->renderBox()->frameRect());
     clipRect.move(tx, ty);
     return clipRect;
 }

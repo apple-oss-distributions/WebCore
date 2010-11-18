@@ -5036,7 +5036,7 @@ bool TextAutoSizingValue::adjustNodeSizes()
     unsigned count = nodesForRemoval.size();
     for (unsigned i = 0; i < count; i++)
         m_autoSizedNodes.remove(nodesForRemoval[i]);
-    
+
     // If we only have one piece of text with the style on the page don't 
     // adjust it's size.
     if (m_autoSizedNodes.size() <= 1)
@@ -5075,8 +5075,18 @@ bool TextAutoSizingValue::adjustNodeSizes()
             style->font().update(autoSizingNode->document()->styleSelector()->fontSelector());
             text->setStyle(style.release());
 
-            // Resize the line height of the parent.
             RenderObject* parentRenderer = text->parent();
+
+            // If we have a list we should resize ListMarkers separately.
+            RenderObject* listMarkerRenderer = parentRenderer->firstChild();
+            if (listMarkerRenderer->isListMarker()) {
+                RefPtr<RenderStyle> style = cloneRenderStyleWithState(listMarkerRenderer->style());
+                style->setFontDescription(fontDescription);
+                style->font().update(autoSizingNode->document()->styleSelector()->fontSelector());
+                listMarkerRenderer->setStyle(style.release());
+            }
+
+            // Resize the line height of the parent.
             const RenderStyle* parentStyle = parentRenderer->style();
             Length lineHeightLength = parentStyle->specifiedLineHeight();
 
