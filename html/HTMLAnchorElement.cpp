@@ -24,7 +24,6 @@
 #include "config.h"
 #include "HTMLAnchorElement.h"
 
-#include "DNS.h"
 #include "EventNames.h"
 #include "Frame.h"
 #include "FrameLoaderTypes.h"
@@ -35,6 +34,7 @@
 #include "MouseEvent.h"
 #include "Page.h"
 #include "RenderImage.h"
+#include "ResourceHandle.h"
 #include "Settings.h"
 
 namespace WebCore {
@@ -42,7 +42,7 @@ namespace WebCore {
 using namespace HTMLNames;
 
 HTMLAnchorElement::HTMLAnchorElement(const QualifiedName& tagName, Document* document)
-    : HTMLElement(tagName, document, CreateElement)
+    : HTMLElement(tagName, document, CreateHTMLElement)
     , m_wasShiftKeyDownOnMouseDown(false)
     , m_linkRelations(0)
 {
@@ -102,24 +102,7 @@ bool HTMLAnchorElement::isKeyboardFocusable(KeyboardEvent* event) const
     if (!document()->frame()->eventHandler()->tabsToLinks(event))
         return false;
 
-    if (!renderer() || !renderer()->isBoxModelObject())
-        return false;
-    
-    // Before calling absoluteRects, check for the common case where the renderer
-    // is non-empty, since this is a faster check and almost always returns true.
-    RenderBoxModelObject* box = toRenderBoxModelObject(renderer());
-    if (!box->borderBoundingBox().isEmpty())
-        return true;
-
-    Vector<IntRect> rects;
-    FloatPoint absPos = renderer()->localToAbsolute();
-    renderer()->absoluteRects(rects, absPos.x(), absPos.y());
-    size_t n = rects.size();
-    for (size_t i = 0; i < n; ++i)
-        if (!rects[i].isEmpty())
-            return true;
-
-    return false;
+    return hasNonEmptyBoundingBox();
 }
 
 void HTMLAnchorElement::defaultEventHandler(Event* evt)
@@ -279,10 +262,10 @@ void HTMLAnchorElement::parseMappedAttribute(MappedAttribute *attr)
             String parsedURL = deprecatedParseURL(attr->value());
             if (document()->isDNSPrefetchEnabled()) {
                 if (protocolIs(parsedURL, "http") || protocolIs(parsedURL, "https") || parsedURL.startsWith("//"))
-                    prefetchDNS(document()->completeURL(parsedURL).host());
+                    ResourceHandle::prepareForURL(document()->completeURL(parsedURL));
             }
             if (document()->page() && !document()->page()->javaScriptURLsAreAllowed() && protocolIsJavaScript(parsedURL)) {
-                setIsLink(false);
+                clearIsLink();
                 attr->setValue(nullAtom);
             }
         }

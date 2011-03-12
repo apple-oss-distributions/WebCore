@@ -35,7 +35,7 @@
 #include "Path.h"
 #include "TextDirection.h"
 #include <wtf/Noncopyable.h>
-#include <wtf/Platform.h>
+#include <wtf/PassOwnPtr.h>
 
 #if PLATFORM(CG)
 typedef struct CGContext PlatformGraphicsContext;
@@ -111,6 +111,7 @@ namespace WebCore {
     const int cMisspellingLinePatternWidth = 4;
     const int cMisspellingLinePatternGapWidth = 1;
 
+    class AffineTransform;
     class Font;
     class Generator;
     class Gradient;
@@ -121,7 +122,6 @@ namespace WebCore {
     class Path;
     class Pattern;
     class TextRun;
-    class TransformationMatrix;
     class BidiStatus;
 
     // These bits can be ORed together for a total of 8 possible text drawing modes.
@@ -330,8 +330,8 @@ namespace WebCore {
 
         void setURLForRect(const KURL&, const IntRect&);
 
-        void concatCTM(const TransformationMatrix&);
-        TransformationMatrix getCTM() const;
+        void concatCTM(const AffineTransform&);
+        AffineTransform getCTM() const;
 
 #if OS(WINCE) && !PLATFORM(QT)
         void setBitmap(PassRefPtr<SharedBitmap>);
@@ -344,7 +344,7 @@ namespace WebCore {
         void drawFocusRect(const IntRect& rect);
         void paintTextField(const IntRect& rect, unsigned state);
         void drawBitmap(SharedBitmap*, const IntRect& dstRect, const IntRect& srcRect, CompositeOperator compositeOp);
-        void drawBitmapPattern(SharedBitmap*, const FloatRect& tileRectIn, const TransformationMatrix& patternTransform, const FloatPoint& phase, CompositeOperator op, const FloatRect& destRect, const IntSize& origSourceSize);
+        void drawBitmapPattern(SharedBitmap*, const FloatRect& tileRectIn, const AffineTransform& patternTransform, const FloatPoint& phase, CompositeOperator op, const FloatRect& destRect, const IntSize& origSourceSize);
         void drawIcon(HICON icon, const IntRect& dstRect, UINT flags);
         HDC getWindowsContext(const IntRect&, bool supportAlphaBlend = false, bool mayCreateBitmap = true); // The passed in rect is used to create a bitmap for compositing inside transparency layers.
         void releaseWindowsContext(HDC, const IntRect&, bool supportAlphaBlend = false, bool mayCreateBitmap = true);    // The passed in HDC should be the one handed back by getWindowsContext.

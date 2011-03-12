@@ -31,6 +31,7 @@
 #include "HTMLNames.h"
 #include "RenderBlock.h"
 #include "RenderLayer.h"
+#include "RenderObject.h"
 #include "TextBoundaries.h"
 #include "TextBreakIterator.h"
 #include "TextIterator.h"
@@ -206,7 +207,7 @@ static VisiblePosition nextBoundary(const VisiblePosition& c, BoundarySearchFunc
 
     searchRange->selectNodeContents(boundary, ec);
     searchRange->setStart(start.node(), start.deprecatedEditingOffset(), ec);
-    TextIterator it(searchRange.get(), true);
+    TextIterator it(searchRange.get(), TextIteratorEmitsCharactersBetweenAllVisiblePositions);
     unsigned next = 0;
     bool inTextSecurityMode = start.node() && start.node()->renderer() && start.node()->renderer()->style()->textSecurity() != TSNONE;
     bool needMoreContext = false;
@@ -237,20 +238,29 @@ static VisiblePosition nextBoundary(const VisiblePosition& c, BoundarySearchFunc
         pos = it.range()->startPosition();
     } else if (next != prefixLength) {
         // Use the character iterator to translate the next value into a DOM position.
-        CharacterIterator charIt(searchRange.get(), true);
+        CharacterIterator charIt(searchRange.get(), TextIteratorEmitsCharactersBetweenAllVisiblePositions);
         charIt.advance(next - prefixLength - 1);
-        pos = charIt.range()->endPosition();
+        RefPtr<Range> characterRange = charIt.range();
+        pos = characterRange->endPosition();
         
         if (*charIt.characters() == '\n') {
             // FIXME: workaround for collapsed range (where only start position is correct) emitted for some emitted newlines (see rdar://5192593)
             VisiblePosition visPos = VisiblePosition(pos);
-            if (visPos == VisiblePosition(charIt.range()->startPosition()))
-                pos = visPos.next(true).deepEquivalent();
+            if (visPos == VisiblePosition(characterRange->startPosition())) {
+                charIt.advance(1);
+                pos = charIt.range()->startPosition();
+            }
         }
     }
 
     // generate VisiblePosition, use UPSTREAM affinity if possible
     return VisiblePosition(pos, VP_UPSTREAM_IF_POSSIBLE);
+}
+
+static bool canHaveCursor(RenderObject* o)
+{
+    return (o->isText() && toRenderText(o)->linesBoundingBox().height())
+        || (o->isBox() && toRenderBox(o)->borderBoundingBox().height());
 }
 
 // ---------
@@ -569,8 +579,12 @@ VisiblePosition previousLinePosition(const VisiblePosition &visiblePosition, int
     visiblePosition.getInlineBoxAndOffset(box, ignoredCaretOffset);
     if (box) {
         root = box->root()->prevRootBox();
-        if (root)
+        // We want to skip zero height boxes.
+        // This could happen in case it is a TrailingFloatsRootInlineBox.
+        if (root && root->height())
             containingBlock = renderer->containingBlock();
+        else
+            root = 0;
     }
 
     if (!root) {
@@ -586,17 +600,20 @@ VisiblePosition previousLinePosition(const VisiblePosition &visiblePosition, int
                 break;
             Position pos(n, caretMinOffset(n));
             if (pos.isCandidate()) {
-                ASSERT(n->renderer());
-                Position maxPos(n, caretMaxOffset(n));
-                maxPos.getInlineBoxAndOffset(DOWNSTREAM, box, ignoredCaretOffset);
-                if (box) {
-                    // previous root line box found
-                    root = box->root();
-                    containingBlock = n->renderer()->containingBlock();
-                    break;
-                }
+                RenderObject* o = n->renderer();
+                ASSERT(o);
+                if (canHaveCursor(o)) {
+                    Position maxPos(n, caretMaxOffset(n));
+                    maxPos.getInlineBoxAndOffset(DOWNSTREAM, box, ignoredCaretOffset);
+                    if (box) {
+                        // previous root line box found
+                        root = box->root();
+                        containingBlock = n->renderer()->containingBlock();
+                        break;
+                    }
 
-                return VisiblePosition(pos, DOWNSTREAM);
+                    return VisiblePosition(pos, DOWNSTREAM);
+                }
             }
             n = previousLeafWithSameEditability(n);
         }
@@ -671,8 +688,12 @@ VisiblePosition nextLinePosition(const VisiblePosition &visiblePosition, int x)
     visiblePosition.getInlineBoxAndOffset(box, ignoredCaretOffset);
     if (box) {
         root = box->root()->nextRootBox();
-        if (root)
+        // We want to skip zero height boxes.
+        // This could happen in case it is a TrailingFloatsRootInlineBox.
+        if (root && root->height())
             containingBlock = renderer->containingBlock();
+        else
+            root = 0;
     }
 
     if (!root) {

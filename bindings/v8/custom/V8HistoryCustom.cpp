@@ -36,14 +36,17 @@
 #include "SerializedScriptValue.h"
 #include "V8Binding.h"
 #include "V8BindingState.h"
-#include "V8CustomBinding.h"
+#include "V8DOMWindow.h"
 #include "V8Proxy.h"
 
 namespace WebCore {
 
 v8::Handle<v8::Value> V8History::pushStateCallback(const v8::Arguments& args)
 {
-    RefPtr<SerializedScriptValue> historyState = SerializedScriptValue::create(args[0]);
+    bool didThrow = false;
+    RefPtr<SerializedScriptValue> historyState = SerializedScriptValue::create(args[0], didThrow);
+    if (didThrow)
+        return v8::Undefined();
 
     v8::TryCatch tryCatch;
     String title = toWebCoreStringWithNullOrUndefinedCheck(args[1]);
@@ -64,7 +67,10 @@ v8::Handle<v8::Value> V8History::pushStateCallback(const v8::Arguments& args)
 
 v8::Handle<v8::Value> V8History::replaceStateCallback(const v8::Arguments& args)
 {
-    RefPtr<SerializedScriptValue> historyState = SerializedScriptValue::create(args[0]);
+    bool didThrow = false;
+    RefPtr<SerializedScriptValue> historyState = SerializedScriptValue::create(args[0], didThrow);
+    if (didThrow)
+        return v8::Undefined();
 
     v8::TryCatch tryCatch;
     String title = toWebCoreStringWithNullOrUndefinedCheck(args[1]);
@@ -83,17 +89,15 @@ v8::Handle<v8::Value> V8History::replaceStateCallback(const v8::Arguments& args)
     return throwError(ec);
 }
 
-bool V8History::indexedSecurityCheck(v8::Local<v8::Object> host, uint32_t index, v8::AccessType type, v8::Local<v8::Value> data)
+bool V8History::indexedSecurityCheck(v8::Local<v8::Object> host, uint32_t index, v8::AccessType type, v8::Local<v8::Value>)
 {
-    ASSERT(V8ClassIndex::FromInt(data->Int32Value()) == V8ClassIndex::HISTORY);
     // Only allow same origin access.
     History* history = V8History::toNative(host);
     return V8BindingSecurity::canAccessFrame(V8BindingState::Only(), history->frame(), false);
 }
 
-bool V8History::namedSecurityCheck(v8::Local<v8::Object> host, v8::Local<v8::Value> key, v8::AccessType type, v8::Local<v8::Value> data)
+bool V8History::namedSecurityCheck(v8::Local<v8::Object> host, v8::Local<v8::Value> key, v8::AccessType type, v8::Local<v8::Value>)
 {
-    ASSERT(V8ClassIndex::FromInt(data->Int32Value()) == V8ClassIndex::HISTORY);
     // Only allow same origin access.
     History* history = V8History::toNative(host);
     return V8BindingSecurity::canAccessFrame(V8BindingState::Only(), history->frame(), false);

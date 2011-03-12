@@ -66,6 +66,7 @@ enum StyleDifferenceContextSensitiveProperty {
 
 // Static pseudo styles. Dynamic ones are produced on the fly.
 enum PseudoId {
+    // The order must be NOP ID, public IDs, and then internal IDs.
     NOPSEUDO, FIRST_LINE, FIRST_LETTER, BEFORE, AFTER, SELECTION, FIRST_LINE_INHERITED, SCROLLBAR, FILE_UPLOAD_BUTTON, INPUT_PLACEHOLDER,
     SLIDER_THUMB, SEARCH_CANCEL_BUTTON, SEARCH_DECORATION, SEARCH_RESULTS_DECORATION, SEARCH_RESULTS_BUTTON, MEDIA_CONTROLS_PANEL,
     MEDIA_CONTROLS_PLAY_BUTTON, MEDIA_CONTROLS_MUTE_BUTTON, MEDIA_CONTROLS_TIMELINE, MEDIA_CONTROLS_TIMELINE_CONTAINER,
@@ -73,9 +74,12 @@ enum PseudoId {
     MEDIA_CONTROLS_SEEK_BACK_BUTTON, MEDIA_CONTROLS_SEEK_FORWARD_BUTTON, MEDIA_CONTROLS_FULLSCREEN_BUTTON, MEDIA_CONTROLS_REWIND_BUTTON, 
     MEDIA_CONTROLS_RETURN_TO_REALTIME_BUTTON, MEDIA_CONTROLS_TOGGLE_CLOSED_CAPTIONS_BUTTON,
     MEDIA_CONTROLS_STATUS_DISPLAY, SCROLLBAR_THUMB, SCROLLBAR_BUTTON, SCROLLBAR_TRACK, SCROLLBAR_TRACK_PIECE, SCROLLBAR_CORNER, RESIZER,
-    INPUT_LIST_BUTTON, INNER_SPIN_BUTTON, OUTER_SPIN_BUTTON,
+    INPUT_LIST_BUTTON, INNER_SPIN_BUTTON, OUTER_SPIN_BUTTON, VISITED_LINK, PROGRESS_BAR_VALUE,
 
-    FIRST_INTERNAL_PSEUDOID = FILE_UPLOAD_BUTTON
+    AFTER_LAST_INTERNAL_PSEUDOID,
+    FIRST_PUBLIC_PSEUDOID = FIRST_LINE,
+    FIRST_INTERNAL_PSEUDOID = FILE_UPLOAD_BUTTON,
+    PUBLIC_PSEUDOID_MASK = ((1 << FIRST_INTERNAL_PSEUDOID) - 1) & ~((1 << FIRST_PUBLIC_PSEUDOID) - 1)
 };
 
 // These have been defined in the order of their precedence for border-collapsing. Do
@@ -84,8 +88,6 @@ enum EBorderStyle { BNONE, BHIDDEN, INSET, GROOVE, RIDGE, OUTSET, DOTTED, DASHED
 
 enum EBorderPrecedence { BOFF, BTABLE, BCOLGROUP, BCOL, BROWGROUP, BROW, BCELL };
 
-enum PseudoState { PseudoUnknown, PseudoNone, PseudoAnyLink, PseudoLink, PseudoVisited};
-
 enum EPosition {
     StaticPosition, RelativePosition, AbsolutePosition, FixedPosition
 };
@@ -93,7 +95,6 @@ enum EPosition {
 enum EFloat {
     FNONE = 0, FLEFT, FRIGHT
 };
-
 
 enum EMarginCollapse { MCOLLAPSE, MSEPARATE, MDISCARD };
 
@@ -205,61 +206,83 @@ enum EResize {
 
 // The order of this enum must match the order of the list style types in CSSValueKeywords.in. 
 enum EListStyleType {
-     Disc,
-     Circle,
-     Square,
-     DecimalListStyle,
-     DecimalLeadingZero,
-     LowerRoman,
-     UpperRoman,
-     LowerGreek,
-     LowerAlpha,
-     LowerLatin,
-     UpperAlpha,
-     UpperLatin,
-     Afar,
-     EthiopicHalehameAaEt,
-     EthiopicHalehameAaEr,
-     Amharic,
-     EthiopicHalehameAmEt,
-     AmharicAbegede,
-     EthiopicAbegedeAmEt,
-     CjkEarthlyBranch,
-     CjkHeavenlyStem,
-     Ethiopic,
-     EthiopicHalehameGez,
-     EthiopicAbegede,
-     EthiopicAbegedeGez,
-     HangulConsonant,
-     Hangul,
-     LowerNorwegian,
-     Oromo,
-     EthiopicHalehameOmEt,
-     Sidama,
-     EthiopicHalehameSidEt,
-     Somali,
-     EthiopicHalehameSoEt,
-     Tigre,
-     EthiopicHalehameTig,
-     TigrinyaEr,
-     EthiopicHalehameTiEr,
-     TigrinyaErAbegede,
-     EthiopicAbegedeTiEr,
-     TigrinyaEt,
-     EthiopicHalehameTiEt,
-     TigrinyaEtAbegede,
-     EthiopicAbegedeTiEt,
-     UpperGreek,
-     UpperNorwegian,
-     Hebrew,
-     Armenian,
-     Georgian,
-     CJKIdeographic,
-     Hiragana,
-     Katakana,
-     HiraganaIroha,
-     KatakanaIroha,
-     NoneListStyle
+    Disc,
+    Circle,
+    Square,
+    DecimalListStyle,
+    DecimalLeadingZero,
+    ArabicIndic,
+    BinaryListStyle,
+    Bengali,
+    Cambodian,
+    Khmer,
+    Devanagari,
+    Gujarati,
+    Gurmukhi,
+    Kannada,
+    LowerHexadecimal,
+    Lao,
+    Malayalam,
+    Mongolian,
+    Myanmar,
+    Octal,
+    Oriya,
+    Persian,
+    Urdu,
+    Telugu,
+    Tibetan,
+    Thai,
+    UpperHexadecimal,
+    LowerRoman,
+    UpperRoman,
+    LowerGreek,
+    LowerAlpha,
+    LowerLatin,
+    UpperAlpha,
+    UpperLatin,
+    Afar,
+    EthiopicHalehameAaEt,
+    EthiopicHalehameAaEr,
+    Amharic,
+    EthiopicHalehameAmEt,
+    AmharicAbegede,
+    EthiopicAbegedeAmEt,
+    CjkEarthlyBranch,
+    CjkHeavenlyStem,
+    Ethiopic,
+    EthiopicHalehameGez,
+    EthiopicAbegede,
+    EthiopicAbegedeGez,
+    HangulConsonant,
+    Hangul,
+    LowerNorwegian,
+    Oromo,
+    EthiopicHalehameOmEt,
+    Sidama,
+    EthiopicHalehameSidEt,
+    Somali,
+    EthiopicHalehameSoEt,
+    Tigre,
+    EthiopicHalehameTig,
+    TigrinyaEr,
+    EthiopicHalehameTiEr,
+    TigrinyaErAbegede,
+    EthiopicAbegedeTiEr,
+    TigrinyaEt,
+    EthiopicHalehameTiEt,
+    TigrinyaEtAbegede,
+    EthiopicAbegedeTiEt,
+    UpperGreek,
+    UpperNorwegian,
+    Hebrew,
+    Armenian,
+    Georgian,
+    CJKIdeographic,
+    Hiragana,
+    Katakana,
+    HiraganaIroha,
+    KatakanaIroha,
+    NoneListStyle
 };
 
 enum StyleContentType {
@@ -363,6 +386,10 @@ enum EDisplay {
     NONE
 };
 
+enum EInsideLink {
+    NotInsideLink, InsideUnvisitedLink, InsideVisitedLink
+};
+    
 enum EPointerEvents {
     PE_NONE, PE_AUTO, PE_STROKE, PE_FILL, PE_PAINTED, PE_VISIBLE,
     PE_VISIBLE_STROKE, PE_VISIBLE_FILL, PE_VISIBLE_PAINTED, PE_ALL
@@ -381,6 +408,8 @@ enum ELineClampType { LineClampLineCount, LineClampPercentage };
 enum EImageLoadingBorder {
     IMAGE_LOADING_BORDER_OUTLINE, IMAGE_LOADING_BORDER_NONE
 };
+
+enum Hyphens { HyphensNone, HyphensManual, HyphensAuto };
 
 } // namespace WebCore
 

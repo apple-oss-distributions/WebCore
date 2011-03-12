@@ -485,6 +485,9 @@ void RenderTable::paintObject(PaintInfo& paintInfo, int tx, int ty)
 
 void RenderTable::paintBoxDecorations(PaintInfo& paintInfo, int tx, int ty)
 {
+    if (!shouldPaintWithinRoot(paintInfo))
+        return;
+
     int w = width();
     int h = height();
 
@@ -498,7 +501,7 @@ void RenderTable::paintBoxDecorations(PaintInfo& paintInfo, int tx, int ty)
 
     paintBoxShadow(paintInfo.context, tx, ty, w, h, style(), Normal);
     
-    paintFillLayers(paintInfo, style()->backgroundColor(), style()->backgroundLayers(), tx, ty, w, h);
+    paintFillLayers(paintInfo, style()->visitedDependentColor(CSSPropertyBackgroundColor), style()->backgroundLayers(), tx, ty, w, h);
     paintBoxShadow(paintInfo.context, tx, ty, w, h, style(), Inset);
 
     if (style()->hasBorder() && !collapseBorders())
@@ -578,6 +581,25 @@ void RenderTable::appendColumn(int span)
     setNeedsLayoutAndPrefWidthsRecalc();
 }
 
+RenderTableCol* RenderTable::nextColElement(RenderTableCol* current) const
+{
+    RenderObject* next = current->firstChild();
+    if (!next)
+        next = current->nextSibling();
+    if (!next && current->parent()->isTableCol())
+        next = current->parent()->nextSibling();
+
+    while (next) {
+        if (next->isTableCol())
+            return toRenderTableCol(next);
+        if (next != m_caption)
+            return 0;
+        next = next->nextSibling();
+    }
+    
+    return 0;
+}
+
 RenderTableCol* RenderTable::colElement(int col, bool* startEdge, bool* endEdge) const
 {
     if (!m_hasColElements)
@@ -586,32 +608,31 @@ RenderTableCol* RenderTable::colElement(int col, bool* startEdge, bool* endEdge)
     int cCol = 0;
 
     while (child) {
-        if (child->isTableCol()) {
-            RenderTableCol* colElem = toRenderTableCol(child);
-            int span = colElem->span();
-            if (!colElem->firstChild()) {
-                int startCol = cCol;
-                int endCol = cCol + span - 1;
-                cCol += span;
-                if (cCol > col) {
-                    if (startEdge)
-                        *startEdge = startCol == col;
-                    if (endEdge)
-                        *endEdge = endCol == col;
-                    return colElem;
-                }
-            }
-
-            RenderObject* next = child->firstChild();
-            if (!next)
-                next = child->nextSibling();
-            if (!next && child->parent()->isTableCol())
-                next = child->parent()->nextSibling();
-            child = next;
-        } else if (child == m_caption)
-            child = child->nextSibling();
-        else
+        if (child->isTableCol())
             break;
+        if (child != m_caption)
+            return 0;
+        child = child->nextSibling();
+    }
+    if (!child)
+        return 0;
+
+    RenderTableCol* colElem = toRenderTableCol(child);
+    while (colElem) {
+        int span = colElem->span();
+        if (!colElem->firstChild()) {
+            int startCol = cCol;
+            int endCol = cCol + span - 1;
+            cCol += span;
+            if (cCol > col) {
+                if (startEdge)
+                    *startEdge = startCol == col;
+                if (endEdge)
+                    *endEdge = endCol == col;
+                return colElem;
+            }
+        }
+        colElem = nextColElement(colElem);
     }
 
     return 0;
@@ -703,7 +724,7 @@ int RenderTable::calcBorderLeft() const
         if (tb.style() == BHIDDEN)
             return 0;
         if (tb.style() > BHIDDEN)
-            borderWidth = tb.width;
+            borderWidth = tb.width();
 
         int leftmostColumn = style()->direction() == RTL ? numEffCols() - 1 : 0;
         RenderTableCol* colGroup = colElement(leftmostColumn);
@@ -712,7 +733,7 @@ int RenderTable::calcBorderLeft() const
             if (gb.style() == BHIDDEN)
                 return 0;
             if (gb.style() > BHIDDEN)
-                borderWidth = max(borderWidth, static_cast<unsigned>(gb.width));
+                borderWidth = max(borderWidth, static_cast<unsigned>(gb.width()));
         }
         
         RenderTableSection* firstNonEmptySection = m_head ? m_head : (m_firstBody ? m_firstBody : m_foot);
@@ -725,7 +746,7 @@ int RenderTable::calcBorderLeft() const
                 return 0;
 
             if (sb.style() > BHIDDEN)
-                borderWidth = max(borderWidth, static_cast<unsigned>(sb.width));
+                borderWidth = max(borderWidth, static_cast<unsigned>(sb.width()));
 
             const RenderTableSection::CellStruct& cs = firstNonEmptySection->cellAt(0, leftmostColumn);
             
@@ -739,9 +760,9 @@ int RenderTable::calcBorderLeft() const
                     return 0;
 
                 if (cb.style() > BHIDDEN)
-                    borderWidth = max(borderWidth, static_cast<unsigned>(cb.width));
+                    borderWidth = max(borderWidth, static_cast<unsigned>(cb.width()));
                 if (rb.style() > BHIDDEN)
-                    borderWidth = max(borderWidth, static_cast<unsigned>(rb.width));
+                    borderWidth = max(borderWidth, static_cast<unsigned>(rb.width()));
             }
         }
         return borderWidth / 2;
@@ -762,7 +783,7 @@ int RenderTable::calcBorderRight() const
         if (tb.style() == BHIDDEN)
             return 0;
         if (tb.style() > BHIDDEN)
-            borderWidth = tb.width;
+            borderWidth = tb.width();
 
         int rightmostColumn = style()->direction() == RTL ? 0 : numEffCols() - 1;
         RenderTableCol* colGroup = colElement(rightmostColumn);
@@ -771,7 +792,7 @@ int RenderTable::calcBorderRight() const
             if (gb.style() == BHIDDEN)
                 return 0;
             if (gb.style() > BHIDDEN)
-                borderWidth = max(borderWidth, static_cast<unsigned>(gb.width));
+                borderWidth = max(borderWidth, static_cast<unsigned>(gb.width()));
         }
         
         RenderTableSection* firstNonEmptySection = m_head ? m_head : (m_firstBody ? m_firstBody : m_foot);
@@ -784,7 +805,7 @@ int RenderTable::calcBorderRight() const
                 return 0;
 
             if (sb.style() > BHIDDEN)
-                borderWidth = max(borderWidth, static_cast<unsigned>(sb.width));
+                borderWidth = max(borderWidth, static_cast<unsigned>(sb.width()));
 
             const RenderTableSection::CellStruct& cs = firstNonEmptySection->cellAt(0, rightmostColumn);
             
@@ -798,9 +819,9 @@ int RenderTable::calcBorderRight() const
                     return 0;
 
                 if (cb.style() > BHIDDEN)
-                    borderWidth = max(borderWidth, static_cast<unsigned>(cb.width));
+                    borderWidth = max(borderWidth, static_cast<unsigned>(cb.width()));
                 if (rb.style() > BHIDDEN)
-                    borderWidth = max(borderWidth, static_cast<unsigned>(rb.width));
+                    borderWidth = max(borderWidth, static_cast<unsigned>(rb.width()));
             }
         }
         return (borderWidth + 1) / 2;
@@ -851,7 +872,7 @@ int RenderTable::outerBorderTop() const
     if (tb.style() == BHIDDEN)
         return 0;
     if (tb.style() > BHIDDEN)
-        borderWidth = max(borderWidth, static_cast<int>(tb.width / 2));
+        borderWidth = max(borderWidth, static_cast<int>(tb.width() / 2));
     return borderWidth;
 }
 
@@ -877,7 +898,7 @@ int RenderTable::outerBorderBottom() const
     if (tb.style() == BHIDDEN)
         return 0;
     if (tb.style() > BHIDDEN)
-        borderWidth = max(borderWidth, static_cast<int>((tb.width + 1) / 2));
+        borderWidth = max(borderWidth, static_cast<int>((tb.width() + 1) / 2));
     return borderWidth;
 }
 
@@ -892,7 +913,7 @@ int RenderTable::outerBorderLeft() const
     if (tb.style() == BHIDDEN)
         return 0;
     if (tb.style() > BHIDDEN)
-        borderWidth = tb.width / 2;
+        borderWidth = tb.width() / 2;
 
     bool allHidden = true;
     for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
@@ -922,7 +943,7 @@ int RenderTable::outerBorderRight() const
     if (tb.style() == BHIDDEN)
         return 0;
     if (tb.style() > BHIDDEN)
-        borderWidth = (tb.width + 1) / 2;
+        borderWidth = (tb.width() + 1) / 2;
 
     bool allHidden = true;
     for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {

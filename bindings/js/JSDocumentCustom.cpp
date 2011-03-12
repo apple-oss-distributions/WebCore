@@ -60,6 +60,7 @@ void JSDocument::markChildren(MarkStack& markStack)
     markActiveObjectsForContext(markStack, globalData, document);
     markDOMObjectWrapper(markStack, globalData, document->implementation());
     markDOMObjectWrapper(markStack, globalData, document->styleSheets());
+    document->markCachedNodeLists(markStack, globalData);
 }
 
 JSValue JSDocument::location(ExecState* exec) const
@@ -83,7 +84,7 @@ void JSDocument::setLocation(ExecState* exec, JSValue value)
     if (!frame)
         return;
 
-    String str = value.toString(exec);
+    String str = ustringToString(value.toString(exec));
 
     // IE and Mozilla both resolve the URL relative to the source frame,
     // not the target frame.

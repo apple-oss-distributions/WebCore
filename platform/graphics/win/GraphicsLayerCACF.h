@@ -82,7 +82,7 @@ public:
     virtual void setContentsRect(const IntRect&);
 
     virtual void setContentsToImage(Image*);
-    virtual void setContentsToVideo(PlatformLayer*);
+    virtual void setContentsToMedia(PlatformLayer*);
     
     virtual PlatformLayer* platformLayer() const;
 
@@ -91,14 +91,15 @@ public:
 
     virtual void setGeometryOrientation(CompositingCoordinatesOrientation);
 
-    void notifySyncRequired() { if (m_client) m_client->notifySyncRequired(this); }
-
 private:
     void updateOpacityOnLayer();
 
     WKCACFLayer* primaryLayer() const  { return m_transformLayer.get() ? m_transformLayer.get() : m_layer.get(); }
     WKCACFLayer* hostLayerForSublayers() const;
     WKCACFLayer* layerForSuperlayer() const;
+
+    bool requiresTiledLayer(const FloatSize&) const;
+    void swapFromOrToTiledLayer(bool useTiledLayer);
 
     CompositingCoordinatesOrientation defaultContentsOrientation() const;
     void updateSublayerList();
@@ -115,7 +116,7 @@ private:
     void updateLayerBackgroundColor();
 
     void updateContentsImage();
-    void updateContentsVideo();
+    void updateContentsMedia();
     void updateContentsRect();
     void updateGeometryOrientation();
     
@@ -129,7 +130,7 @@ private:
     enum ContentsLayerPurpose {
         NoContentsLayer = 0,
         ContentsLayerForImage,
-        ContentsLayerForVideo
+        ContentsLayerForMedia
     };
     
     ContentsLayerPurpose m_contentsLayerPurpose;

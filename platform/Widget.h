@@ -21,13 +21,11 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef Widget_h
 #define Widget_h
-
-#include <wtf/Platform.h>
 
 #ifndef NSView
 #define NSView WAKView
@@ -78,6 +76,12 @@ typedef BView* PlatformWidget;
 #include "PlatformWidget.h"
 #endif
 
+#if PLATFORM(EFL)
+#include <Ecore_Evas.h>
+#include <Evas.h>
+typedef Evas_Object* PlatformWidget;
+#endif
+
 #if PLATFORM(QT)
 class QWebPageClient;
 typedef QWebPageClient* PlatformPageClient;
@@ -100,6 +104,9 @@ class GraphicsContext;
 class PlatformMouseEvent;
 class ScrollView;
 class WidgetPrivate;
+#if PLATFORM(EFL)
+class String;
+#endif
 
 // The Widget class serves as a base class for three kinds of objects:
 // (1) Scrollable areas (ScrollView)
@@ -123,13 +130,20 @@ public:
 
     PlatformWidget platformWidget() const { return m_widget; }
     void setPlatformWidget(PlatformWidget widget)
-    { 
+    {
         if (widget != m_widget) {
             releasePlatformWidget();
             m_widget = widget;
             retainPlatformWidget();
         }
     }
+#if PLATFORM(HAIKU)
+    PlatformWidget topLevelPlatformWidget() const { return m_topLevelPlatformWidget; }
+    void setTopLevelPlatformWidget(PlatformWidget widget)
+    {
+        m_topLevelPlatformWidget = widget;
+    }
+#endif
 
     int x() const { return frameRect().x(); }
     int y() const { return frameRect().y(); }
@@ -151,7 +165,7 @@ public:
     void invalidate() { invalidateRect(boundsRect()); }
     virtual void invalidateRect(const IntRect&) = 0;
 
-    virtual void setFocus();
+    virtual void setFocus(bool);
 
     void setCursor(const Cursor&);
 
@@ -167,7 +181,7 @@ public:
 
     virtual bool isFrameView() const { return false; }
     virtual bool isPluginView() const { return false; }
-    // FIXME: The Mac plug-in code should inherit from PluginView. When this happens PluginWidget and PluginView can become one class. 
+    // FIXME: The Mac plug-in code should inherit from PluginView. When this happens PluginWidget and PluginView can become one class.
     virtual bool isPluginWidget() const { return false; }
     virtual bool isScrollbar() const { return false; }
 
@@ -184,19 +198,36 @@ public:
     // when converting window rects.
     IntRect convertToContainingWindow(const IntRect&) const;
     IntRect convertFromContainingWindow(const IntRect&) const;
-    
+
     IntPoint convertToContainingWindow(const IntPoint&) const;
     IntPoint convertFromContainingWindow(const IntPoint&) const;
 
-    virtual void frameRectsChanged() {}
+    virtual void frameRectsChanged();
+
+    // Notifies this widget that other widgets on the page have been repositioned.
+    virtual void widgetPositionsUpdated() {}
 
     NSView* getOuterView() const;
-    
+
     static void beforeMouseDown(NSView*, Widget*);
     static void afterMouseDown(NSView*, Widget*);
 
     void removeFromSuperview();
     void addToSuperview(NSView* superview);
+
+#if PLATFORM(EFL)
+    // FIXME: These should really go to PlatformWidget. They're here currently since
+    // the EFL port considers that Evas_Object (a C object) is a PlatformWidget, but
+    // encapsulating that into a C++ class will make this header clean as it should be.
+    Evas* evas() const;
+
+    void setEvasObject(Evas_Object*);
+    Evas_Object* evasObject() const;
+
+    const String edjeTheme() const;
+    void setEdjeTheme(const String &);
+    const String edjeThemeRecursive() const;
+#endif
 
     // Virtual methods to convert points to/from the containing ScrollView
     virtual IntRect convertToContainingView(const IntRect&) const;
@@ -209,12 +240,12 @@ private:
 
     void releasePlatformWidget();
     void retainPlatformWidget();
-    
+
     // These methods are used to convert from the root widget to the containing window,
     // which has behavior that may differ between platforms (e.g. Mac uses flipped window coordinates).
     static IntRect convertFromRootToContainingWindow(const Widget* rootWidget, const IntRect&);
     static IntRect convertFromContainingWindowToRoot(const Widget* rootWidget, const IntRect&);
-    
+
     static IntPoint convertFromRootToContainingWindow(const Widget* rootWidget, const IntPoint&);
     static IntPoint convertFromContainingWindowToRoot(const Widget* rootWidget, const IntPoint&);
 
@@ -223,11 +254,23 @@ private:
     PlatformWidget m_widget;
     bool m_selfVisible;
     bool m_parentVisible;
-    
+
     IntRect m_frame; // Not used when a native widget exists.
 
-#if PLATFORM(MAC)
+#if PLATFORM(EFL)
+    // FIXME: Please see the previous #if PLATFORM(EFL) block.
+    Ecore_Evas* ecoreEvas() const;
+
+    void applyFallbackCursor();
+    void applyCursor();
+#endif
+
+#if PLATFORM(MAC) || PLATFORM(EFL)
     WidgetPrivate* m_data;
+#endif
+
+#if PLATFORM(HAIKU)
+    PlatformWidget m_topLevelPlatformWidget;
 #endif
 };
 

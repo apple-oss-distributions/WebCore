@@ -42,15 +42,15 @@
 #include "MainResourceLoader.h"
 #include "ManifestParser.h"
 #include "Page.h"
+#include "SecurityOrigin.h"
 #include "Settings.h"
 #include <wtf/HashMap.h>
 
 namespace WebCore {
 
-const unsigned maximumCacheSize = 5 * 1024 * 1024;
-
 ApplicationCacheGroup::ApplicationCacheGroup(const KURL& manifestURL, bool isCopy)
     : m_manifestURL(manifestURL)
+    , m_origin(SecurityOrigin::create(manifestURL))
     , m_updateStatus(Idle)
     , m_downloadingPendingMasterResourceLoadersCount(0)
     , m_frame(0)
@@ -60,6 +60,8 @@ ApplicationCacheGroup::ApplicationCacheGroup(const KURL& manifestURL, bool isCop
     , m_isCopy(isCopy)
     , m_calledReachedMaxAppCacheSize(false)
     , m_loadedSize(0)
+    , m_availableSpaceInQuota(ApplicationCacheStorage::unknownQuota())
+    , m_originQuotaReached(false)
 {
 }
 
@@ -446,7 +448,7 @@ PassRefPtr<ResourceHandle> ApplicationCacheGroup::createResourceHandle(const KUR
         }
     }
     
-    return ResourceHandle::create(request, this, m_frame, false, true, false);
+    return ResourceHandle::create(request, this, m_frame, false, true);
 }
 
 void ApplicationCacheGroup::didReceiveResponse(ResourceHandle* handle, const ResourceResponse& response)
@@ -536,9 +538,20 @@ void ApplicationCacheGroup::didFinishLoading(ResourceHandle* handle)
         didFinishLoadingManifest();
         return;
     }
-    
-    if (m_loadedSize > maximumCacheSize) {
-        cacheUpdateFailed();
+
+    // After finishing the loading of any resource, we check if it will
+    // fit in our last known quota limit.
+    if (m_availableSpaceInQuota == ApplicationCacheStorage::unknownQuota()) {
+        // Failed to determine what is left in the quota. Fallback to allowing anything.
+        if (!cacheStorage().remainingSizeForOriginExcludingCache(m_origin.get(), m_newestCache.get(), m_availableSpaceInQuota))
+            m_availableSpaceInQuota = ApplicationCacheStorage::noQuota();
+    }
+
+    // Check each resource, as it loads, to see if it would fit in our
+    // idea of the available quota space.
+    if (m_availableSpaceInQuota < m_loadedSize) {
+        m_currentResource = 0;
+        cacheUpdateFailedDueToOriginQuota();
         return;
     }
  
@@ -697,6 +710,13 @@ void ApplicationCacheGroup::didReachMaxAppCacheSize()
     checkIfLoadIsComplete();
 }
 
+void ApplicationCacheGroup::didReachOriginQuota(PassRefPtr<Frame> frame)
+{
+    // Inform the client the origin quota has been reached,
+    // they may decide to increase the quota.
+    frame->page()->chrome()->client()->reachedApplicationCacheOriginQuota(m_origin.get());
+}
+
 void ApplicationCacheGroup::cacheUpdateFailed()
 {
     stopLoading();
@@ -705,6 +725,16 @@ void ApplicationCacheGroup::cacheUpdateFailed()
     // Wait for master resource loads to finish.
     m_completionType = Failure;
     deliverDelayedMainResources();
+}
+
+void ApplicationCacheGroup::cacheUpdateFailedDueToOriginQuota()
+{
+    if (!m_originQuotaReached) {
+        m_originQuotaReached = true;
+        scheduleReachedOriginQuotaCallback();
+    }
+
+    cacheUpdateFailed();
 }
     
 void ApplicationCacheGroup::manifestNotFound()
@@ -785,17 +815,28 @@ void ApplicationCacheGroup::checkIfLoadIsComplete()
             ASSERT(cacheStorage().isMaximumSizeReached() && m_calledReachedMaxAppCacheSize);
         }
 
+        ApplicationCacheStorage::FailureReason failureReason;
         RefPtr<ApplicationCache> oldNewestCache = (m_newestCache == m_cacheBeingUpdated) ? 0 : m_newestCache;
 
         setNewestCache(m_cacheBeingUpdated.release());
-        if (cacheStorage().storeNewestCache(this)) {
+        if (cacheStorage().storeNewestCache(this, oldNewestCache.get(), failureReason)) {
             // New cache stored, now remove the old cache.
             if (oldNewestCache)
                 cacheStorage().remove(oldNewestCache.get());
             // Fire the success events.
             postListenerTask(isUpgradeAttempt ? ApplicationCacheHost::UPDATEREADY_EVENT : ApplicationCacheHost::CACHED_EVENT, m_associatedDocumentLoaders);
+            // It is clear that the origin quota was not reached, so clear the flag if it was set.
+            m_originQuotaReached = false;
         } else {
-            if (cacheStorage().isMaximumSizeReached() && !m_calledReachedMaxAppCacheSize) {
+            if (failureReason == ApplicationCacheStorage::OriginQuotaReached) {
+                // We ran out of space for this origin. Roll back to previous state.
+                if (oldNewestCache)
+                    setNewestCache(oldNewestCache.release());
+                cacheUpdateFailedDueToOriginQuota();
+                return;
+            }
+
+            if (failureReason == ApplicationCacheStorage::TotalQuotaReached && !m_calledReachedMaxAppCacheSize) {
                 // We ran out of space. All the changes in the cache storage have
                 // been rolled back. We roll back to the previous state in here,
                 // as well, call the chrome client asynchronously and retry to
@@ -809,30 +850,30 @@ void ApplicationCacheGroup::checkIfLoadIsComplete()
                 }
                 scheduleReachedMaxAppCacheSizeCallback();
                 return;
+            }
+
+            // Run the "cache failure steps"
+            // Fire the error events to all pending master entries, as well any other cache hosts
+            // currently associated with a cache in this group.
+            postListenerTask(ApplicationCacheHost::ERROR_EVENT, m_associatedDocumentLoaders);
+            // Disassociate the pending master entries from the failed new cache. Note that
+            // all other loaders in the m_associatedDocumentLoaders are still associated with
+            // some other cache in this group. They are not associated with the failed new cache.
+
+            // Need to copy loaders, because the cache group may be destroyed at the end of iteration.
+            Vector<DocumentLoader*> loaders;
+            copyToVector(m_pendingMasterResourceLoaders, loaders);
+            size_t count = loaders.size();
+            for (size_t i = 0; i != count; ++i)
+                disassociateDocumentLoader(loaders[i]); // This can delete this group.
+
+            // Reinstate the oldNewestCache, if there was one.
+            if (oldNewestCache) {
+                // This will discard the failed new cache.
+                setNewestCache(oldNewestCache.release());
             } else {
-                // Run the "cache failure steps"
-                // Fire the error events to all pending master entries, as well any other cache hosts
-                // currently associated with a cache in this group.
-                postListenerTask(ApplicationCacheHost::ERROR_EVENT, m_associatedDocumentLoaders);
-                // Disassociate the pending master entries from the failed new cache. Note that
-                // all other loaders in the m_associatedDocumentLoaders are still associated with
-                // some other cache in this group. They are not associated with the failed new cache.
-
-                // Need to copy loaders, because the cache group may be destroyed at the end of iteration.
-                Vector<DocumentLoader*> loaders;
-                copyToVector(m_pendingMasterResourceLoaders, loaders);
-                size_t count = loaders.size();
-                for (size_t i = 0; i != count; ++i)
-                    disassociateDocumentLoader(loaders[i]); // This can delete this group.
-
-                // Reinstate the oldNewestCache, if there was one.
-                if (oldNewestCache) {
-                    // This will discard the failed new cache.
-                    setNewestCache(oldNewestCache.release());
-                } else {
-                    // We must have been deleted by the last call to disassociateDocumentLoader().
-                    return;
-                }
+                // We must have been deleted by the last call to disassociateDocumentLoader().
+                return;
             }
         }
         break;
@@ -845,6 +886,7 @@ void ApplicationCacheGroup::checkIfLoadIsComplete()
     m_updateStatus = Idle;
     m_frame = 0;
     m_loadedSize = 0;
+    m_availableSpaceInQuota = ApplicationCacheStorage::unknownQuota();
     m_calledReachedMaxAppCacheSize = false;
 }
 
@@ -955,6 +997,12 @@ void ApplicationCacheGroup::scheduleReachedMaxAppCacheSizeCallback()
     ChromeClientCallbackTimer* timer = new ChromeClientCallbackTimer(this);
     timer->startOneShot(0);
     // The timer will delete itself once it fires.
+}
+
+void ApplicationCacheGroup::scheduleReachedOriginQuotaCallback()
+{
+    // FIXME: it might be nice to run this asynchronously, because there is no return value to wait for.
+    didReachOriginQuota(m_frame);
 }
 
 class CallCacheListenerTask : public ScriptExecutionContext::Task {

@@ -199,6 +199,8 @@ Font::CodePath Font::codePath(const TextRun& run) const
     if (s_codePath != Auto)
         return s_codePath;
 
+    CodePath result = Simple;
+
     // Start from 0 since drawing and highlighting also measure the characters before run->from
     for (int i = 0; i < run.length(); i++) {
         const UChar c = run[i];
@@ -234,8 +236,10 @@ Font::CodePath Font::codePath(const TextRun& run) const
 
         if (c < 0x1E00)     // U+1E00 through U+2000 characters with diacritics and stacked diacritics
             continue;
-        if (c <= 0x2000)
-            return SimpleWithGlyphOverflow;
+        if (c <= 0x2000) {
+            result = SimpleWithGlyphOverflow;
+            continue;
+        }
 
         if (c < 0x20D0)     // U+20D0 through U+20FF Combining marks for symbols
             continue;
@@ -251,7 +255,7 @@ Font::CodePath Font::codePath(const TextRun& run) const
     if (typesettingFeatures())
         return Complex;
 
-    return Simple;
+    return result;
 }
 
 float Font::drawSimpleText(GraphicsContext* context, const TextRun& run, const FloatPoint& point, int from, int to) const
@@ -288,7 +292,7 @@ float Font::drawSimpleText(GraphicsContext* context, const TextRun& run, const F
     FloatPoint startPoint(startX, point.y());
     drawGlyphBuffer(context, glyphBuffer, run, startPoint);
 
-    return startPoint.x() - startX;
+    return it.m_runWidthSoFar;
 }
 
 void Font::drawGlyphBuffer(GraphicsContext* context, const GlyphBuffer& glyphBuffer, const TextRun&, FloatPoint& point) const

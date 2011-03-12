@@ -19,13 +19,13 @@
 #ifndef DataObjectGtk_h
 #define DataObjectGtk_h
 
-#include "CString.h"
 #include "FileList.h"
+#include <GRefPtr.h>
 #include "KURL.h"
 #include "Range.h"
 #include "StringHash.h"
 #include <wtf/RefCounted.h>
-#include <wtf/gtk/GRefPtr.h>
+#include <wtf/text/CString.h>
 
 typedef struct _GdkPixbuf GdkPixbuf;
 typedef struct _GdkDragContext GdkDragContext;
@@ -50,6 +50,8 @@ public:
     bool hasMarkup() { return m_range || !m_markup.isEmpty(); }
     bool hasURIList() { return !m_uriList.isEmpty(); }
     bool hasImage() { return m_image; }
+    void clearURIList() { m_uriList.clear(); }
+    void clearImage() { m_image = 0; }
     GdkDragContext* dragContext() { return m_dragContext.get(); }
 
     String text();
@@ -61,6 +63,8 @@ public:
     String url();
     String urlLabel();
     void clear();
+    void clearText();
+    void clearMarkup();
 
     static DataObjectGtk* forClipboard(GtkClipboard*);
 

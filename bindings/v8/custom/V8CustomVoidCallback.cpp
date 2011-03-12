@@ -29,10 +29,10 @@
  */
 
 #include "config.h"
-#include "V8Binding.h"
 #include "V8CustomVoidCallback.h"
 
 #include "Frame.h"
+#include "V8Binding.h"
 
 namespace WebCore {
 
@@ -73,9 +73,8 @@ bool invokeCallback(v8::Persistent<v8::Object> callback, int argc, v8::Handle<v8
         callbackFunction = v8::Local<v8::Function>::New(v8::Persistent<v8::Function>::Cast(callback));
     } else if (callback->IsObject()) {
         v8::Local<v8::Value> handleEventFunction = callback->Get(v8::String::NewSymbol("handleEvent"));
-        if (handleEventFunction->IsFunction()) {
+        if (handleEventFunction->IsFunction())
             callbackFunction = v8::Local<v8::Function>::Cast(handleEventFunction);
-        }
     } else
         return false;
 
@@ -88,8 +87,7 @@ bool invokeCallback(v8::Persistent<v8::Object> callback, int argc, v8::Handle<v8
     ASSERT(proxy);
 
     v8::Handle<v8::Value> result = proxy->callFunction(callbackFunction, thisObject, argc, argv);
-
-    callbackReturnValue = !result.IsEmpty() && result->IsBoolean() && result->BooleanValue();
+    callbackReturnValue = !result.IsEmpty() && result->BooleanValue();
 
     if (exceptionCatcher.HasCaught()) {
         v8::Local<v8::Message> message = exceptionCatcher.Message();

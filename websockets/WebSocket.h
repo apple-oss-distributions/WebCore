@@ -50,10 +50,8 @@ namespace WebCore {
 
     class WebSocket : public RefCounted<WebSocket>, public EventTarget, public ActiveDOMObject, public WebSocketChannelClient {
     public:
-#if USE(V8)
         static void setIsAvailable(bool);
         static bool isAvailable();
-#endif
         static PassRefPtr<WebSocket> create(ScriptExecutionContext* context) { return adoptRef(new WebSocket(context)); }
         virtual ~WebSocket();
 
@@ -76,12 +74,18 @@ namespace WebCore {
 
         DEFINE_ATTRIBUTE_EVENT_LISTENER(open);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(message);
+        DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(close);
 
         // EventTarget
         virtual WebSocket* toWebSocket() { return this; }
 
         virtual ScriptExecutionContext* scriptExecutionContext() const;
+        virtual void contextDestroyed();
+        virtual bool canSuspend() const;
+        virtual void suspend();
+        virtual void resume();
+        virtual void stop();
 
         using RefCounted<WebSocket>::ref;
         using RefCounted<WebSocket>::deref;
@@ -89,7 +93,8 @@ namespace WebCore {
         // WebSocketChannelClient
         virtual void didConnect();
         virtual void didReceiveMessage(const String& message);
-        virtual void didClose();
+        virtual void didReceiveMessageError();
+        virtual void didClose(unsigned long unhandledBufferedAmount);
 
     private:
         WebSocket(ScriptExecutionContext*);
@@ -99,16 +104,13 @@ namespace WebCore {
         virtual EventTargetData* eventTargetData();
         virtual EventTargetData* ensureEventTargetData();
 
-        void dispatchOpenEvent(Event*);
-        void dispatchMessageEvent(Event*);
-        void dispatchCloseEvent(Event*);
-
         RefPtr<ThreadableWebSocketChannel> m_channel;
 
         State m_state;
         KURL m_url;
         String m_protocol;
         EventTargetData m_eventTargetData;
+        unsigned long m_bufferedAmountAfterClose;
     };
 
 } // namespace WebCore

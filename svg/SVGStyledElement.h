@@ -24,11 +24,10 @@
 #if ENABLE(SVG)
 #include "HTMLNames.h"
 #include "SVGElement.h"
+#include "SVGLocatable.h"
 #include "SVGStylable.h"
 
 namespace WebCore {
-
-    class SVGResource;
 
     void mapAttributeToCSSProperty(HashMap<AtomicStringImpl*, int>* propertyNameToIdMap, const QualifiedName& attrName);
 
@@ -37,6 +36,8 @@ namespace WebCore {
     public:
         SVGStyledElement(const QualifiedName&, Document*);
         virtual ~SVGStyledElement();
+
+        virtual String title() const;
 
         virtual bool hasRelativeValues() const { return false; }
         virtual bool isStyled() const { return true; }
@@ -48,7 +49,6 @@ namespace WebCore {
         bool isKnownAttribute(const QualifiedName&);
 
         virtual bool rendererIsNeeded(RenderStyle*);
-        virtual SVGResource* canvasResource(const RenderObject*) { return 0; }
 
         virtual bool mapToEntry(const QualifiedName&, MappedAttributeEntry&) const;
         virtual void parseMappedAttribute(MappedAttribute*);
@@ -60,13 +60,13 @@ namespace WebCore {
         // Centralized place to force a manual style resolution. Hacky but needed for now.
         PassRefPtr<RenderStyle> resolveStyle(RenderStyle* parentStyle);
 
+        void invalidateResourceClients();
         void invalidateResourcesInAncestorChain() const;
-        void invalidateResources();
-
-        virtual void detach();
 
         bool instanceUpdatesBlocked() const;
         void setInstanceUpdatesBlocked(bool);
+
+        virtual AffineTransform localCoordinateSpaceTransform(SVGLocatable::CTMScope) const;
 
     protected: 
         static int cssPropertyIdForSVGAttributeName(const QualifiedName&);

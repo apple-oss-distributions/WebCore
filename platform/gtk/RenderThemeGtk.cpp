@@ -24,17 +24,19 @@
 #include "config.h"
 #include "RenderThemeGtk.h"
 
-#include "CString.h"
+#include "AffineTransform.h"
 #include "GOwnPtr.h"
+#include "Gradient.h"
 #include "GraphicsContext.h"
 #include "HTMLMediaElement.h"
 #include "HTMLNames.h"
+#include "MediaControlElements.h"
 #include "NotImplemented.h"
 #include "RenderBox.h"
 #include "RenderObject.h"
-#include "TransformationMatrix.h"
 #include "UserAgentStyleSheets.h"
 #include "gtkdrawing.h"
+#include <wtf/text/CString.h>
 
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
@@ -90,8 +92,11 @@ void RenderThemeGtk::initMediaStyling(GtkStyle* style, bool force)
         m_seekForwardButton.clear();
 
         m_fullscreenButton = Image::loadPlatformThemeIcon("gtk-fullscreen", m_mediaIconSize);
-        m_muteButton = Image::loadPlatformThemeIcon("audio-volume-muted", m_mediaIconSize);
-        m_unmuteButton = Image::loadPlatformThemeIcon("audio-volume-high", m_mediaIconSize);
+        // Note that the muteButton and unmuteButton take icons reflecting
+        // the *current* state. Hence, the unmuteButton represents the *muted*
+        // status, the muteButton represents the then current *unmuted* status.
+        m_muteButton = Image::loadPlatformThemeIcon("audio-volume-high", m_mediaIconSize);
+        m_unmuteButton = Image::loadPlatformThemeIcon("audio-volume-muted", m_mediaIconSize);
         m_playButton = Image::loadPlatformThemeIcon(reinterpret_cast<const char*>(playButtonIconName), m_mediaIconSize);
         m_pauseButton = Image::loadPlatformThemeIcon("gtk-media-pause", m_mediaIconSize).releaseRef();
         m_seekBackButton = Image::loadPlatformThemeIcon(reinterpret_cast<const char*>(seekBackButtonIconName), m_mediaIconSize);
@@ -307,7 +312,7 @@ static bool paintMozillaGtkWidget(const RenderThemeGtk* theme, GtkThemeWidgetTyp
         break;
     }
 
-    TransformationMatrix ctm = i.context->getCTM();
+    AffineTransform ctm = i.context->getCTM();
 
     IntPoint pos = ctm.mapPoint(rect.location());
     GdkRectangle gdkRect = IntRect(pos.x(), pos.y(), rect.width(), rect.height());
@@ -686,9 +691,46 @@ bool RenderThemeGtk::paintMediaSeekForwardButton(RenderObject* o, const RenderOb
 
 bool RenderThemeGtk::paintMediaSliderTrack(RenderObject* o, const RenderObject::PaintInfo& paintInfo, const IntRect& r)
 {
-    paintInfo.context->fillRect(FloatRect(r), m_panelColor, DeviceColorSpace);
-    paintInfo.context->fillRect(FloatRect(IntRect(r.x(), r.y() + (r.height() - m_mediaSliderHeight) / 2,
-                                                  r.width(), m_mediaSliderHeight)), m_sliderColor, DeviceColorSpace);
+    GraphicsContext* context = paintInfo.context;
+
+    context->fillRect(FloatRect(r), m_panelColor, DeviceColorSpace);
+    context->fillRect(FloatRect(IntRect(r.x(), r.y() + (r.height() - m_mediaSliderHeight) / 2,
+                                        r.width(), m_mediaSliderHeight)), m_sliderColor, DeviceColorSpace);
+
+    RenderStyle* style = o->style();
+    HTMLMediaElement* mediaElement = toParentMediaElement(o);
+
+    if (!mediaElement)
+        return false;
+
+    // Draw the buffered ranges. This code is highly inspired from
+    // Chrome.
+    // FIXME: Draw multiple ranges if there are multiple buffered
+    // ranges. The current implementation of the player is always
+    // buffering a single range anyway.
+    IntRect bufferedRect = r;
+    bufferedRect.inflate(-style->borderLeftWidth());
+    bufferedRect.setWidth((bufferedRect.width() * mediaElement->percentLoaded()));
+
+    // Don't bother drawing an empty area.
+    if (bufferedRect.isEmpty())
+        return false;
+
+    IntPoint sliderTopLeft = bufferedRect.location();
+    IntPoint sliderTopRight = sliderTopLeft;
+    sliderTopRight.move(0, bufferedRect.height());
+
+    RefPtr<Gradient> gradient = Gradient::create(sliderTopLeft, sliderTopRight);
+    Color startColor = m_panelColor;
+    gradient->addColorStop(0.0, startColor);
+    gradient->addColorStop(1.0, Color(startColor.red() / 2, startColor.green() / 2, startColor.blue() / 2, startColor.alpha()));
+
+    context->save();
+    context->setStrokeStyle(NoStroke);
+    context->setFillGradient(gradient);
+    context->fillRect(bufferedRect);
+    context->restore();
+
     return false;
 }
 

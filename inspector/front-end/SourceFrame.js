@@ -28,21 +28,24 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-WebInspector.SourceFrame = function(parentElement, addBreakpointDelegate)
+WebInspector.SourceFrame = function(parentElement, addBreakpointDelegate, removeBreakpointDelegate, editDelegate)
 {
     this._parentElement = parentElement;
 
     this._textModel = new WebInspector.TextEditorModel();
+    this._textModel.replaceTabsWithSpaces = true;
 
     this._messages = [];
     this._rowMessages = {};
     this._messageBubbles = {};
     this.breakpoints = [];
-    this._shortcuts = {};
 
     this._loaded = false;
 
     this._addBreakpointDelegate = addBreakpointDelegate;
+    this._removeBreakpointDelegate = removeBreakpointDelegate;
+    this._editDelegate = editDelegate;
+    this._popoverObjectGroup = "popover";
 }
 
 WebInspector.SourceFrame.prototype = {
@@ -50,7 +53,13 @@ WebInspector.SourceFrame.prototype = {
     set visible(visible)
     {
         this._visible = visible;
-        this._createEditorIfNeeded();
+        this._createViewerIfNeeded();
+        
+        if (!visible) {
+            this._hidePopup();
+            if (this._textViewer)
+                this._textViewer.freeCachedElements();
+        }
     },
 
     get executionLine()
@@ -62,15 +71,18 @@ WebInspector.SourceFrame.prototype = {
     {
         if (this._executionLine === x)
             return;
+
+        var previousLine = this._executionLine;
         this._executionLine = x;
-        if (this._editor)
-            this._editor.repaintAll();
+
+        if (this._textViewer)
+            this._updateExecutionLine(previousLine);
     },
 
     revealLine: function(lineNumber)
     {
-        if (this._editor)
-            this._editor.reveal(lineNumber - 1, 0);
+        if (this._textViewer)
+            this._textViewer.revealLine(lineNumber - 1, 0);
         else
             this._lineNumberToReveal = lineNumber;
     },
@@ -81,7 +93,8 @@ WebInspector.SourceFrame.prototype = {
         breakpoint.addEventListener("enabled", this._breakpointChanged, this);
         breakpoint.addEventListener("disabled", this._breakpointChanged, this);
         breakpoint.addEventListener("condition-changed", this._breakpointChanged, this);
-        this._addBreakpointToSource(breakpoint);
+        if (this._textViewer)
+            this._addBreakpointToSource(breakpoint);
     },
 
     removeBreakpoint: function(breakpoint)
@@ -90,7 +103,8 @@ WebInspector.SourceFrame.prototype = {
         breakpoint.removeEventListener("enabled", null, this);
         breakpoint.removeEventListener("disabled", null, this);
         breakpoint.removeEventListener("condition-changed", null, this);
-        this._removeBreakpointFromSource(breakpoint);
+        if (this._textViewer)
+            this._removeBreakpointFromSource(breakpoint);
     },
 
     addMessage: function(msg)
@@ -99,7 +113,7 @@ WebInspector.SourceFrame.prototype = {
         if (!msg.message || msg.line <= 0 || !msg.isErrorOrWarning())
             return;
         this._messages.push(msg)
-        if (this._editor)
+        if (this._textViewer)
             this._addMessageToSource(msg);
     },
 
@@ -113,60 +127,85 @@ WebInspector.SourceFrame.prototype = {
         this._messages = [];
         this._rowMessages = {};
         this._messageBubbles = {};
-        if (this._editor)
-            this._editor.packAndRepaintAll();
+        if (this._textViewer)
+            this._textViewer.resize();
     },
 
     sizeToFitContentHeight: function()
     {
-        if (this._editor)
-            this._editor.packAndRepaintAll();
+        if (this._textViewer)
+            this._textViewer.revalidateDecorationsAndPaint();
     },
 
-    setContent: function(mimeType, content)
+    setContent: function(mimeType, content, url)
     {
         this._loaded = true;
         this._textModel.setText(null, content);
         this._mimeType = mimeType;
-        this._createEditorIfNeeded();
+        this._url = url;
+        this._createViewerIfNeeded();
     },
 
-    _createEditorIfNeeded: function()
+    updateContent: function(content)
     {
-        if (!this._visible || !this._loaded || this._editor)
+        this._textModel.setText(null, content);
+    },
+
+    get textModel()
+    {
+        return this._textModel;
+    },
+
+    highlightLine: function(line)
+    {
+        if (this._textViewer)
+            this._textViewer.highlightLine(line - 1);
+        else
+            this._lineToHighlight = line;
+    },
+
+    _createViewerIfNeeded: function()
+    {
+        if (!this._visible || !this._loaded || this._textViewer)
             return;
 
-        this._editor = new WebInspector.TextEditor(this._textModel, WebInspector.platform);
-        this._editor.lineNumberDecorator = new WebInspector.BreakpointLineNumberDecorator(this, this._editor.textModel);
-        this._editor.lineDecorator = new WebInspector.ExecutionLineDecorator(this);
-        this._editor.readOnly = true;
-        this._element = this._editor.element;
-        this._element.addEventListener("keydown", this._keyDown.bind(this), true);
-        this._parentElement.appendChild(this._element);
+        this._textViewer = new WebInspector.TextViewer(this._textModel, WebInspector.platform, this._url);
+        var element = this._textViewer.element;
+        element.addEventListener("contextmenu", this._contextMenu.bind(this), true);
+        element.addEventListener("mousedown", this._mouseDown.bind(this), true);
+        element.addEventListener("mousemove", this._mouseMove.bind(this), true);
+        element.addEventListener("scroll", this._scroll.bind(this), true);
+        this._parentElement.appendChild(element);
 
-        this._editor.mimeType = this._mimeType;
+        this._needsProgramCounterImage = true;
+        this._needsBreakpointImages = true;
 
+        this._textViewer.beginUpdates();
+
+        this._textViewer.mimeType = this._mimeType;
         this._addExistingMessagesToSource();
         this._addExistingBreakpointsToSource();
-
-        this._editor.setCoalescingUpdate(true);
-        this._editor.updateCanvasSize();
-        this._editor.packAndRepaintAll();
-
-        if (this._executionLine)
-            this.revealLine(this._executionLine);
+        this._updateExecutionLine();
+        this._textViewer.resize();
 
         if (this._lineNumberToReveal) {
             this.revealLine(this._lineNumberToReveal);
             delete this._lineNumberToReveal;
         }
 
-        if (this._pendingSelectionRange) {
-            var range = this._pendingSelectionRange;
-            this._editor.setSelection(range.startLine, range.startColumn, range.endLine, range.endColumn);
-            delete this._pendingSelectionRange;
+        if (this._pendingMarkRange) {
+            var range = this._pendingMarkRange;
+            this.markAndRevealRange(range);
+            delete this._pendingMarkRange;
         }
-        this._editor.setCoalescingUpdate(false);
+
+        if (this._lineToHighlight) {
+            this.highlightLine(this._lineToHighlight);
+            delete this._lineToHighlight;
+        }
+        this._textViewer.endUpdates();
+        if (this._editDelegate)
+            this._textViewer.editCallback = this._editDelegate;
     },
 
     findSearchMatches: function(query)
@@ -174,14 +213,7 @@ WebInspector.SourceFrame.prototype = {
         var ranges = [];
 
         // First do case-insensitive search.
-        var regex = "";
-        for (var i = 0; i < query.length; ++i) {
-            var char = query.charAt(i);
-            if (char === "]")
-                char = "\\]";
-            regex += "[" + char + "]";
-        }
-        var regexObject = new RegExp(regex, "i");
+        var regexObject = createSearchRegex(query);
         this._collectRegexMatches(regexObject, ranges);
 
         // Then try regex search if user knows the / / hint.
@@ -211,21 +243,20 @@ WebInspector.SourceFrame.prototype = {
         return ranges;
     },
 
-    setSelection: function(range)
+    markAndRevealRange: function(range)
     {
-        if (this._editor)
-            this._editor.setSelection(range.startLine, range.startColumn, range.endLine, range.endColumn);
+        if (this._textViewer)
+            this._textViewer.markAndRevealRange(range);
         else
-            this._pendingSelectionRange = range;
+            this._pendingMarkRange = range;
     },
 
-    clearSelection: function()
+    clearMarkedRange: function()
     {
-        if (this._editor) {
-            var range = this._editor.selection;
-            this._editor.setSelection(range.endLine, range.endColumn, range.endLine, range.endColumn);
+        if (this._textViewer) {
+            this._textViewer.markAndRevealRange(null);
         } else
-            delete this._pendingSelectionRange;
+            delete this._pendingMarkRange;
     },
 
     _incrementMessageRepeatCount: function(msg, repeatDelta)
@@ -241,6 +272,38 @@ WebInspector.SourceFrame.prototype = {
 
         msg.repeatCount += repeatDelta;
         msg._resourceMessageRepeatCountElement.textContent = WebInspector.UIString(" (repeated %d times)", msg.repeatCount);
+    },
+
+    _breakpointChanged: function(event)
+    {
+        var breakpoint = event.target;
+        var lineNumber = breakpoint.line - 1;
+        if (lineNumber >= this._textModel.linesCount)
+            return;
+
+        if (breakpoint.enabled)
+            this._textViewer.removeDecoration(lineNumber, "webkit-breakpoint-disabled");
+        else
+            this._textViewer.addDecoration(lineNumber, "webkit-breakpoint-disabled");
+
+        if (breakpoint.condition)
+            this._textViewer.addDecoration(lineNumber, "webkit-breakpoint-conditional");
+        else
+            this._textViewer.removeDecoration(lineNumber, "webkit-breakpoint-conditional");
+    },
+
+    _updateExecutionLine: function(previousLine)
+    {
+        if (previousLine) {
+            if (previousLine - 1 < this._textModel.linesCount)
+                this._textViewer.removeDecoration(previousLine - 1, "webkit-execution-line");
+        }
+
+        if (!this._executionLine)
+            return;
+
+        if (this._executionLine < this._textModel.linesCount)
+            this._textViewer.addDecoration(this._executionLine - 1, "webkit-execution-line");
     },
 
     _addExistingMessagesToSource: function()
@@ -260,7 +323,7 @@ WebInspector.SourceFrame.prototype = {
             messageBubbleElement = document.createElement("div");
             messageBubbleElement.className = "webkit-html-message-bubble";
             this._messageBubbles[msg.line] = messageBubbleElement;
-            this._editor.setDivDecoration(msg.line - 1, messageBubbleElement);
+            this._textViewer.addDecoration(msg.line - 1, messageBubbleElement);
         }
 
         var rowMessages = this._rowMessages[msg.line];
@@ -272,7 +335,6 @@ WebInspector.SourceFrame.prototype = {
         for (var i = 0; i < rowMessages.length; ++i) {
             if (rowMessages[i].isEqual(msg, true)) {
                 this._incrementMessageRepeatCount(rowMessages[i], msg.repeatDelta);
-                this._editor.packAndRepaintAll();
                 return;
             }
         }
@@ -303,34 +365,51 @@ WebInspector.SourceFrame.prototype = {
         messageLineElement.appendChild(document.createTextNode(msg.message));
 
         msg._resourceMessageLineElement = messageLineElement;
-
-        this._editor.packAndRepaintAll();
     },
 
     _addExistingBreakpointsToSource: function()
     {
-        var length = this.breakpoints.length;
-        for (var i = 0; i < length; ++i)
+        for (var i = 0; i < this.breakpoints.length; ++i)
             this._addBreakpointToSource(this.breakpoints[i]);
     },
 
     _addBreakpointToSource: function(breakpoint)
     {
-        this._textModel.setAttribute(breakpoint.line - 1, "breakpoint", breakpoint);
-        this._editor.paintLineNumbers();
+        var lineNumber = breakpoint.line - 1;
+        if (lineNumber >= this._textModel.linesCount)
+            return;
+
+        this._textModel.setAttribute(lineNumber, "breakpoint", breakpoint);
+        breakpoint.sourceText = this._textModel.line(breakpoint.line - 1);
+
+        this._textViewer.beginUpdates();
+        this._textViewer.addDecoration(lineNumber, "webkit-breakpoint");
+        if (!breakpoint.enabled)
+            this._textViewer.addDecoration(lineNumber, "webkit-breakpoint-disabled");
+        if (breakpoint.condition)
+            this._textViewer.addDecoration(lineNumber, "webkit-breakpoint-conditional");
+        this._textViewer.endUpdates();
     },
 
     _removeBreakpointFromSource: function(breakpoint)
     {
-        this._textModel.removeAttribute(breakpoint.line - 1, "breakpoint");
-        this._editor.paintLineNumbers();
+        var lineNumber = breakpoint.line - 1;
+        this._textViewer.beginUpdates();
+        this._textModel.removeAttribute(lineNumber, "breakpoint");
+        this._textViewer.removeDecoration(lineNumber, "webkit-breakpoint");
+        this._textViewer.removeDecoration(lineNumber, "webkit-breakpoint-disabled");
+        this._textViewer.removeDecoration(lineNumber, "webkit-breakpoint-conditional");
+        this._textViewer.endUpdates();
     },
 
-    _contextMenu: function(lineNumber, event)
+    _contextMenu: function(event)
     {
-        if (!this._addBreakpointDelegate)
+        var target = event.target.enclosingNodeOrSelfWithClass("webkit-line-number");
+        if (!target)
             return;
+        var row = target.parentElement;
 
+        var lineNumber = row.lineNumber;
         var contextMenu = new WebInspector.ContextMenu();
 
         var breakpoint = this._textModel.getAttribute(lineNumber, "breakpoint");
@@ -359,16 +438,188 @@ WebInspector.SourceFrame.prototype = {
         contextMenu.show(event);
     },
 
-    _toggleBreakpoint: function(lineNumber, event)
+    _scroll: function(event)
     {
-        if (event.button != 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)
+        this._hidePopup();
+    },
+
+    _mouseDown: function(event)
+    {
+        this._resetHoverTimer();
+        this._hidePopup();
+        if (event.button != 0 || event.altKey || event.ctrlKey || event.metaKey)
             return;
+        var target = event.target.enclosingNodeOrSelfWithClass("webkit-line-number");
+        if (!target)
+            return;
+        var row = target.parentElement;
+
+        var lineNumber = row.lineNumber;
+
         var breakpoint = this._textModel.getAttribute(lineNumber, "breakpoint");
-        if (breakpoint)
-            WebInspector.panels.scripts.removeBreakpoint(breakpoint);
-        else if (this._addBreakpointDelegate)
+        if (breakpoint) {
+            if (event.shiftKey)
+                breakpoint.enabled = !breakpoint.enabled;
+            else
+                this._removeBreakpointDelegate(breakpoint);
+        } else
             this._addBreakpointDelegate(lineNumber + 1);
         event.preventDefault();
+    },
+
+    _mouseMove: function(event)
+    {
+        // Pretend that nothing has happened.
+        if (this._hoverElement === event.target || event.target.hasStyleClass("source-frame-eval-expression"))
+            return;
+
+        this._resetHoverTimer();
+        // User has 500ms to reach the popup.
+        if (this._popup) {
+            var self = this;
+            function doHide()
+            {
+                self._hidePopup();
+                delete self._hidePopupTimer;
+            }
+            this._hidePopupTimer = setTimeout(doHide, 500);
+        }
+
+        this._hoverElement = event.target;
+
+        // Now that cleanup routines are set up above, leave this in case we are not on a break.
+        if (!WebInspector.panels.scripts || !WebInspector.panels.scripts.paused)
+            return;
+
+        // We are interested in identifiers and "this" keyword.
+        if (this._hoverElement.hasStyleClass("webkit-javascript-keyword")) {
+            if (this._hoverElement.textContent !== "this")
+                return;
+        } else if (!this._hoverElement.hasStyleClass("webkit-javascript-ident"))
+            return;
+
+        const toolTipDelay = this._popup ? 600 : 1000;
+        this._hoverTimer = setTimeout(this._mouseHover.bind(this, this._hoverElement), toolTipDelay);
+    },
+
+    _resetHoverTimer: function()
+    {
+        if (this._hoverTimer) {
+            clearTimeout(this._hoverTimer);
+            delete this._hoverTimer;
+        }
+    },
+
+    _hidePopup: function()
+    {
+        if (!this._popup)
+            return;
+
+        // Replace higlight element with its contents inplace.
+        var parentElement = this._popup.highlightElement.parentElement;
+        var child = this._popup.highlightElement.firstChild;
+        while (child) {
+            var nextSibling = child.nextSibling;
+            parentElement.insertBefore(child, this._popup.highlightElement);
+            child = nextSibling;
+        }
+        parentElement.removeChild(this._popup.highlightElement);
+
+        this._popup.hide();
+        delete this._popup;
+        InspectorBackend.releaseWrapperObjectGroup(0, this._popoverObjectGroup);
+    },
+
+    _mouseHover: function(element)
+    {
+        delete this._hoverTimer;
+
+        if (!WebInspector.panels.scripts || !WebInspector.panels.scripts.paused)
+            return;
+
+        var lineRow = element.enclosingNodeOrSelfWithNodeName("tr");
+        if (!lineRow)
+            return;
+
+        // Collect tokens belonging to evaluated exression.
+        var tokens = [ element ];
+        var token = element.previousSibling;
+        while (token && (token.className === "webkit-javascript-ident" || token.className === "webkit-javascript-keyword" || token.textContent.trim() === ".")) {
+            tokens.push(token);
+            token = token.previousSibling;
+        }
+        tokens.reverse();
+
+        // Wrap them with highlight element.
+        var parentElement = element.parentElement;
+        var nextElement = element.nextSibling;
+        var container = document.createElement("span");
+        for (var i = 0; i < tokens.length; ++i)
+            container.appendChild(tokens[i]);
+        parentElement.insertBefore(container, nextElement);
+        this._showPopup(container);
+    },
+
+    _showPopup: function(element)
+    {
+        function killHidePopupTimer()
+        {
+            if (this._hidePopupTimer) {
+                clearTimeout(this._hidePopupTimer);
+                delete this._hidePopupTimer;
+
+                // We know that we reached the popup, but we might have moved over other elements.
+                // Discard pending command.
+                this._resetHoverTimer();
+            }
+        }
+
+        function showObjectPopup(result)
+        {
+            if (!WebInspector.panels.scripts.paused)
+                return;
+
+            var popupContentElement = null;
+            if (result.type !== "object" && result.type !== "node" && result.type !== "array") {
+                popupContentElement = document.createElement("span");
+                popupContentElement.className = "monospace";
+                popupContentElement.style.whiteSpace = "pre";
+                popupContentElement.textContent = result.description;
+                this._popup = new WebInspector.Popover(popupContentElement);
+                this._popup.show(element);
+            } else {
+                var popupContentElement = document.createElement("div");
+
+                var titleElement = document.createElement("div");
+                titleElement.className = "source-frame-popover-title monospace";
+                titleElement.textContent = result.description;
+                popupContentElement.appendChild(titleElement);
+
+                var section = new WebInspector.ObjectPropertiesSection(result, "", null, false);
+                section.expanded = true;
+                section.element.addStyleClass("source-frame-popover-tree");
+                section.headerElement.addStyleClass("hidden");
+                popupContentElement.appendChild(section.element);
+
+                this._popup = new WebInspector.Popover(popupContentElement);
+                const popupWidth = 300;
+                const popupHeight = 250;
+                this._popup.show(element, popupWidth, popupHeight);
+            }
+            this._popup.highlightElement = element;
+            this._popup.highlightElement.addStyleClass("source-frame-eval-expression");
+            popupContentElement.addEventListener("mousemove", killHidePopupTimer.bind(this), true);
+        }
+
+        function evaluateCallback(result, exception)
+        {
+            if (exception)
+                return;
+            if (!WebInspector.panels.scripts.paused)
+                return;
+            showObjectPopup.call(this, result);
+        }
+        WebInspector.panels.scripts.evaluateInSelectedCallFrame(element.textContent, false, this._popoverObjectGroup, evaluateCallback.bind(this));
     },
 
     _editBreakpointCondition: function(breakpoint)
@@ -378,14 +629,15 @@ WebInspector.SourceFrame.prototype = {
         function committed(element, newText)
         {
             breakpoint.condition = newText;
-            this._editor.paintLineNumbers();
             dismissed.call(this);
         }
 
         function dismissed()
         {
-            this._editor.setDivDecoration(breakpoint.line - 1, null);
+            if (this._conditionElement)
+                this._textViewer.removeDecoration(breakpoint.line - 1, this._conditionElement);
             delete this._conditionEditorElement;
+            delete this._conditionElement;
         }
 
         var dismissedHandler = dismissed.bind(this);
@@ -398,41 +650,29 @@ WebInspector.SourceFrame.prototype = {
 
     _showBreakpointConditionPopup: function(lineNumber)
     {
-        var conditionElement = this._createConditionElement(lineNumber);
-        this._editor.setDivDecoration(lineNumber - 1, conditionElement);
+        this._conditionElement = this._createConditionElement(lineNumber);
+        this._textViewer.addDecoration(lineNumber - 1, this._conditionElement);
     },
 
     _createConditionElement: function(lineNumber)
     {
         var conditionElement = document.createElement("div");
-        conditionElement.className = "source-breakpoint-condition";
+        conditionElement.className = "source-frame-breakpoint-condition";
 
         var labelElement = document.createElement("label");
-        labelElement.className = "source-breakpoint-message";
-        labelElement.htmlFor = "source-breakpoint-condition";
+        labelElement.className = "source-frame-breakpoint-message";
+        labelElement.htmlFor = "source-frame-breakpoint-condition";
         labelElement.appendChild(document.createTextNode(WebInspector.UIString("The breakpoint on line %d will stop only if this expression is true:", lineNumber)));
         conditionElement.appendChild(labelElement);
 
         var editorElement = document.createElement("input");
-        editorElement.id = "source-breakpoint-condition";
+        editorElement.id = "source-frame-breakpoint-condition";
         editorElement.className = "monospace";
         editorElement.type = "text"
         conditionElement.appendChild(editorElement);
         this._conditionEditorElement = editorElement;
 
         return conditionElement;
-    },
-
-    _keyDown: function(event)
-    {
-        var shortcut = WebInspector.KeyboardShortcut.makeKeyFromEvent(event);
-        var handler = this._shortcuts[shortcut];
-        if (handler) {
-            handler(event);
-            event.preventDefault();
-        } else {
-            WebInspector.documentKeyDown(event);
-        }
     },
 
     _evalSelectionInCallFrame: function(event)
@@ -444,7 +684,7 @@ WebInspector.SourceFrame.prototype = {
         if (!selection.rangeCount)
             return;
 
-        var expression = selection.getRangeAt(0).toString().trimWhitespace();
+        var expression = selection.getRangeAt(0).toString().trim();
         WebInspector.panels.scripts.evaluateInSelectedCallFrame(expression, false, "console", function(result, exception) {
             WebInspector.showConsole();
             var commandMessage = new WebInspector.ConsoleCommand(expression);
@@ -453,146 +693,12 @@ WebInspector.SourceFrame.prototype = {
         });
     },
 
-    _breakpointChanged: function(event)
-    {
-        this._editor.paintLineNumbers();
-    },
-
     resize: function()
     {
-        if (this._editor)
-            this._editor.updateCanvasSize();
+        if (this._textViewer)
+            this._textViewer.resize();
     }
 }
+
 
 WebInspector.SourceFrame.prototype.__proto__ = WebInspector.Object.prototype;
-
-WebInspector.BreakpointLineNumberDecorator = function(sourceFrame, textModel)
-{
-    this._sourceFrame = sourceFrame;
-    this._textModel = textModel;
-}
-
-WebInspector.BreakpointLineNumberDecorator.prototype = {
-    decorate: function(lineNumber, ctx, x, y, width, height, lineHeight)
-    {
-        var breakpoint = this._textModel.getAttribute(lineNumber, "breakpoint");
-        var isExecutionLine = lineNumber + 1 === this._sourceFrame._executionLine;
-        if (breakpoint || isExecutionLine) {
-            ctx.save();
-            ctx.translate(x + 4, y + 2);
-            var breakpointWidth = width - 6;
-            var breakpointHeight = lineHeight - 4;
-    
-            if (breakpoint)
-                this._paintBreakpoint(ctx, breakpointWidth, breakpointHeight, breakpoint);
-    
-            if (isExecutionLine)
-                this._paintProgramCounter(ctx, breakpointWidth, breakpointHeight, false);
-
-            ctx.restore();
-        }
-
-        if (isExecutionLine) {
-            // Override default behavior.
-            return true;
-        }
-
-        ctx.fillStyle = breakpoint ? "rgb(255,255,255)" : "rgb(155,155,155)";
-        return false;
-    },
-
-    _paintBreakpoint: function(ctx, width, height, breakpoint)
-    {
-        ctx.beginPath();
-        ctx.moveTo(0, 2);
-        ctx.lineTo(2, 0);
-        ctx.lineTo(width - 5, 0);
-        ctx.lineTo(width, height / 2);
-        ctx.lineTo(width - 5, height);
-        ctx.lineTo(2, height);
-        ctx.lineTo(0, height - 2);
-        ctx.closePath();
-        ctx.fillStyle = breakpoint.condition ? "rgb(217, 142, 1)" : "rgb(1, 142, 217)";
-        ctx.strokeStyle = breakpoint.condition ? "rgb(205, 103, 0)" : "rgb(0, 103, 205)";
-        ctx.lineWidth = 3;
-        ctx.fill();
-
-        ctx.save();
-        ctx.clip();
-        ctx.stroke();
-        ctx.restore();
-
-        if (!breakpoint.enabled) {
-            ctx.save();
-            ctx.globalCompositeOperation = "destination-out";
-            ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-            ctx.fillRect(0, 0, width, height);
-            ctx.restore();
-        }
-    },
-
-    _paintProgramCounter: function(ctx, width, height)
-    {
-        ctx.save();
-
-        ctx.beginPath();
-        ctx.moveTo(width - 9, 2);
-        ctx.lineTo(width - 7, 2);
-        ctx.lineTo(width - 7, 0);
-        ctx.lineTo(width - 5, 0);
-        ctx.lineTo(width, height / 2);
-        ctx.lineTo(width - 5, height);
-        ctx.lineTo(width - 7, height);
-        ctx.lineTo(width - 7, height - 2);
-        ctx.lineTo(width - 9, height - 2);
-        ctx.closePath();
-        ctx.fillStyle = "rgb(142, 5, 4)";
-
-        ctx.shadowBlur = 4;
-        ctx.shadowColor = "rgb(255, 255, 255)";
-        ctx.shadowOffsetX = -1;
-        ctx.shadowOffsetY = 0;
-
-        ctx.fill();
-        ctx.fill(); // Fill twice to get a good shadow and darker anti-aliased pixels.
-
-        ctx.restore();
-    },
-
-    mouseDown: function(lineNumber, e)
-    {
-        this._sourceFrame._toggleBreakpoint(lineNumber, e);
-        return true;
-    },
-
-    contextMenu: function(lineNumber, e)
-    {
-        this._sourceFrame._contextMenu(lineNumber, e);
-        return true;
-    }
-}
-
-WebInspector.ExecutionLineDecorator = function(sourceFrame)
-{
-    this._sourceFrame = sourceFrame;
-}
-
-WebInspector.ExecutionLineDecorator.prototype = {
-    decorate: function(lineNumber, ctx, x, y, width, height, lineHeight)
-    {
-        if (this._sourceFrame._executionLine !== lineNumber + 1)
-            return;
-        ctx.save();
-        ctx.fillStyle = "rgb(171, 191, 254)";
-        ctx.fillRect(x, y, width, height);
-        
-        ctx.beginPath();
-        ctx.rect(x - 1, y, width + 2, height);
-        ctx.clip();
-        ctx.strokeStyle = "rgb(64, 115, 244)";
-        ctx.stroke();
-
-        ctx.restore();
-    }
-}

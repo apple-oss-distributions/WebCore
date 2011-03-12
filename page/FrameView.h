@@ -91,6 +91,7 @@ public:
     void scheduleRelayoutOfSubtree(RenderObject*);
     void unscheduleRelayout();
     bool layoutPending() const;
+    bool isInLayout() const { return m_inLayout; }
 
     RenderObject* layoutRoot(bool onlyDuringLayout = false) const;
     int layoutCount() const { return m_layoutCount; }
@@ -108,11 +109,21 @@ public:
     // Called when changes to the GraphicsLayer hierarchy have to be synchronized with
     // content rendered via the normal painting path.
     void setNeedsOneShotDrawingSynchronization();
+
     GraphicsLayer* graphicsLayerForPlatformWidget(PlatformWidget);
 #endif
+
+    bool hasCompositedContent() const;
+    void enterCompositingMode();
+    bool isEnclosedInCompositingLayer() const;
+
     // Only used with accelerated compositing, but outside the #ifdef to make linkage easier.
     // Returns true if the sync was completed.
     bool syncCompositingStateRecursive();
+
+    // Returns true when a paint with the PaintBehaviorFlattenCompositingLayers flag set gives
+    // a faithful representation of the content.
+    bool isSoftwareRenderable() const;
 
     void didMoveOnscreen();
     void willMoveOffscreen();
@@ -139,19 +150,23 @@ public:
 
     virtual IntRect windowResizerRect() const;
 
-    virtual void scrollRectIntoViewRecursively(const IntRect&);
-    virtual void setScrollPosition(const IntPoint&);
-    void scrollPositionChanged();
+    void setScrollPosition(const IntPoint&);
+    virtual void scrollPositionChanged();
 
     String mediaType() const;
     void setMediaType(const String&);
+    void adjustMediaTypeForPrinting(bool printing);
 
     void setUseSlowRepaints();
     void setIsOverlapped(bool);
+    bool isOverlapped() const { return m_isOverlapped; }
     void setContentIsOpaque(bool);
 
     void addSlowRepaintObject();
     void removeSlowRepaintObject();
+
+    void addFixedObject();
+    void removeFixedObject();
 
     void beginDeferredRepaints();
     void endDeferredRepaints();
@@ -178,7 +193,7 @@ public:
 
     virtual void paintContents(GraphicsContext*, const IntRect& damageRect);
     void setPaintBehavior(PaintBehavior);
-    PaintBehavior paintBehavior() const { return m_paintBehavior; }
+    PaintBehavior paintBehavior() const;
     bool isPainting() const;
     void setNodeToDraw(Node*);
 
@@ -190,7 +205,8 @@ public:
     void setIsVisuallyNonEmpty() { m_isVisuallyNonEmpty = true; }
 
     void forceLayout(bool allowSubtree = false);
-    void forceLayoutWithPageWidthRange(float minPageWidth, float maxPageWidth, bool adjustViewSize);
+    void forceLayoutForPagination(const FloatSize& pageSize, float maximumShrinkFactor, Frame::AdjustViewSizeOrNot);
+    int pageHeight() const { return m_pageHeight; }
 
     void adjustPageHeight(float* newBottom, float oldTop, float oldBottom, float bottomLimit);
 
@@ -218,6 +234,8 @@ private:
     friend class RenderWidget;
     bool useSlowRepaints() const;
     bool useSlowRepaintsIfNotOverlapped() const;
+
+    bool hasFixedObjects() const { return m_fixedObjectCount > 0; }
 
     void applyOverflowToViewport(RenderObject*, ScrollbarMode& hMode, ScrollbarMode& vMode);
 
@@ -276,6 +294,7 @@ private:
     bool m_isOverlapped;
     bool m_contentIsOpaque;
     unsigned m_slowRepaintObjectCount;
+    unsigned m_fixedObjectCount;
 
     int m_borderX, m_borderY;
 
@@ -284,7 +303,7 @@ private:
     RenderObject* m_layoutRoot;
     
     bool m_layoutSchedulingEnabled;
-    bool m_midLayout;
+    bool m_inLayout;
     int m_layoutCount;
     unsigned m_nestedLayoutCount;
     Timer<FrameView> m_postLayoutTasksTimer;
@@ -297,7 +316,10 @@ private:
     float m_lastZoomFactor;
 
     String m_mediaType;
+    String m_mediaTypeWhenNotPrinting;
     
+    int m_pageHeight;
+
     unsigned m_enqueueEvents;
     Vector<ScheduledEvent*> m_scheduledEvents;
     

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007, 2008, 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -36,7 +36,9 @@
 #include "SimpleFontData.h"
 
 #if ENABLE(SVG_FONTS)
+#if !PLATFORM(WX)
 #include "FontCustomPlatformData.h"
+#endif
 #include "HTMLNames.h"
 #include "SVGFontData.h"
 #include "SVGFontElement.h"
@@ -109,8 +111,7 @@ SimpleFontData* CSSFontFaceSource::getFontData(const FontDescription& fontDescri
 #else
     if (!m_font) {
 #endif
-        FontPlatformData* data = fontCache()->getCachedFontPlatformData(fontDescription, m_string);
-        SimpleFontData* fontData = fontCache()->getCachedFontData(data);
+        SimpleFontData* fontData = fontCache()->getCachedFontData(fontDescription, m_string);
 
         // We're local. Just return a SimpleFontData from the normal cache.
         return fontData;
@@ -155,8 +156,7 @@ SimpleFontData* CSSFontFaceSource::getFontData(const FontDescription& fontDescri
                         m_svgFontFaceElement = fontFaceElement;
                     }
 
-                    SVGFontData* svgFontData = new SVGFontData(fontFaceElement);
-                    fontData.set(new SimpleFontData(m_font->platformDataFromCustomData(fontDescription.computedPixelSize(), syntheticBold, syntheticItalic, fontDescription.renderingMode()), true, false, svgFontData));
+                    fontData.set(new SimpleFontData(new SVGFontData(fontFaceElement), fontDescription.computedPixelSize(), syntheticBold, syntheticItalic));
                 }
             } else
 #endif
@@ -170,10 +170,8 @@ SimpleFontData* CSSFontFaceSource::getFontData(const FontDescription& fontDescri
         } else {
 #if ENABLE(SVG_FONTS)
             // In-Document SVG Fonts
-            if (m_svgFontFaceElement) {
-                SVGFontData* svgFontData = new SVGFontData(m_svgFontFaceElement);
-                fontData.set(new SimpleFontData(FontPlatformData(fontDescription.computedPixelSize(), syntheticBold, syntheticItalic), true, false, svgFontData));
-            }
+            if (m_svgFontFaceElement)
+                fontData.set(new SimpleFontData(new SVGFontData(m_svgFontFaceElement), fontDescription.computedPixelSize(), syntheticBold, syntheticItalic));
 #endif
         }
     } else {
@@ -181,10 +179,11 @@ SimpleFontData* CSSFontFaceSource::getFontData(const FontDescription& fontDescri
         if (DocLoader* docLoader = fontSelector->docLoader())
             m_font->beginLoadIfNeeded(docLoader);
         // FIXME: m_string is a URL so it makes no sense to pass it as a family name.
-        FontPlatformData* tempData = fontCache()->getCachedFontPlatformData(fontDescription, m_string);
+        SimpleFontData* tempData = fontCache()->getCachedFontData(fontDescription, m_string);
         if (!tempData)
             tempData = fontCache()->getLastResortFallbackFont(fontDescription);
-        fontData.set(new SimpleFontData(*tempData, true, true));
+
+        fontData.set(new SimpleFontData(tempData->platformData(), true, true));
     }
 
     m_fontDataTable.set(hashKey, fontData.get());

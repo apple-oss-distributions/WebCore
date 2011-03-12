@@ -97,6 +97,11 @@ WebInspector.TextEditorModel.prototype = {
         return newRange;
     },
 
+    set replaceTabsWithSpaces(replaceTabsWithSpaces)
+    {
+        this._replaceTabsWithSpaces = replaceTabsWithSpaces;
+    },
+
     _innerSetText: function(range, text)
     {
         this._eraseRange(range);
@@ -104,6 +109,8 @@ WebInspector.TextEditorModel.prototype = {
             return new WebInspector.TextRange(range.startLine, range.startColumn, range.startLine, range.startColumn);
 
         var newLines = text.split("\n");
+        this._replaceTabsIfNeeded(newLines);
+
         var prefix = this._lines[range.startLine].substring(0, range.startColumn);
         var prefixArguments = this._arguments
         var suffix = this._lines[range.startLine].substring(range.startColumn);
@@ -122,6 +129,22 @@ WebInspector.TextEditorModel.prototype = {
         }
         return new WebInspector.TextRange(range.startLine, range.startColumn,
                                           range.startLine + newLines.length - 1, postCaret);
+    },
+
+    _replaceTabsIfNeeded: function(lines)
+    {
+        if (!this._replaceTabsWithSpaces)
+            return;
+        var spaces = [ "    ", "   ", "  ", " "];
+        for (var i = 0; i < lines.length; ++i) {
+            var line = lines[i];
+            var index = line.indexOf("\t");
+            while (index !== -1) {
+                line = line.substring(0, index) + spaces[index % 4] + line.substring(index + 1);
+                index = line.indexOf("\t", index + 1);
+            }
+            lines[i] = line;
+        }
     },
 
     _eraseRange: function(range)
@@ -177,6 +200,9 @@ WebInspector.TextEditorModel.prototype = {
 
     copyRange: function(range)
     {
+        if (!range)
+            range = new WebInspector.TextRange(0, 0, this._lines.length - 1, this._lines[this._lines.length - 1].length);
+
         var clip = [];
         if (range.startLine === range.endLine) {
             clip.push(this._lines[range.startLine].substring(range.startColumn, range.endColumn));

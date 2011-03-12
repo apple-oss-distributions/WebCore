@@ -33,10 +33,10 @@ if build_port == "wx":
     if building_on_win32:
         webcore_dirs.extend(['platform/wx/wxcode/win', 'plugins/win'])
         webcore_sources['wx-win'] = [
+               'platform/graphics/win/TransformationMatrixWin.cpp',
                # wxTimer on Windows has a bug that causes it to eat crashes in callbacks
                # so we need to use the Win port's implementation until the wx bug fix is
                # widely available (it was fixed in 2.8.10).
-               'platform/graphics/win/TransformationMatrixWin.cpp',
                'platform/win/SharedTimerWin.cpp',
                # Use the Windows plugin architecture
                'page/win/PageWin.cpp',
@@ -50,9 +50,21 @@ if build_port == "wx":
         webcore_dirs.append('plugins/mac')
         webcore_dirs.append('platform/wx/wxcode/mac/carbon')
         webcore_dirs.append('platform/mac')
+        webcore_dirs.append('platform/text/mac')
         webcore_sources['wx-mac'] = [
-               'platform/mac/WebCoreNSStringExtras.mm',
                'platform/mac/PurgeableBufferMac.cpp',
+               'platform/mac/WebCoreNSStringExtras.mm',
+               'platform/mac/WebCoreSystemInterface.mm',
+               'platform/graphics/cg/FloatSizeCG.cpp',
+               'platform/graphics/mac/ComplexTextController.cpp',
+               'platform/graphics/mac/ComplexTextControllerCoreText.cpp',
+               'platform/graphics/mac/ComplexTextControllerATSUI.cpp',
+               'platform/graphics/mac/GlyphPageTreeNodeMac.cpp',
+               'platform/graphics/mac/SimpleFontDataATSUI.mm',
+               'platform/graphics/mac/SimpleFontDataCoreText.cpp',
+               'platform/graphics/wx/FontPlatformDataWxMac.mm',
+               'platform/text/mac/ShapeArabic.c',
+               'platform/wx/wxcode/mac/carbon/fontprops.mm',
                'plugins/wx/PluginDataWx.cpp',
                'plugins/mac/PluginPackageMac.cpp',
                'plugins/mac/PluginViewMac.cpp'
@@ -90,11 +102,22 @@ def set_options(opt):
 def configure(conf):
     common_configure(conf)
     generate_webcore_derived_sources()
+    if sys.platform.startswith('win'):
+        graphics_dir = os.path.join(wk_root, 'WebCore', 'platform', 'graphics')
+        # HACK ALERT: MSVC automatically adds the source file's directory as the first entry in the
+        # path. Unfortunately, that means when compiling these files we will end up including
+        # win/FontPlatformData.h, which breaks wx compilation. So we copy the files to the wx dir.
+        for afile in ['UniscribeController.h', 'UniscribeController.cpp', 'GlyphPageTreeNodeCairoWin.cpp']:
+            shutil.copy(os.path.join(graphics_dir, 'win', afile), os.path.join(graphics_dir, 'wx'))
 
 def build(bld):
     import Options
+    
+    import TaskGen
+
     if sys.platform.startswith('darwin'):
         TaskGen.task_gen.mappings['.mm'] = TaskGen.task_gen.mappings['.cxx']
+        TaskGen.task_gen.mappings['.m'] = TaskGen.task_gen.mappings['.cxx']
     
     wk_includes = ['.', '..', 'DerivedSources',
                 wk_root, 
@@ -106,12 +129,17 @@ def build(bld):
         ]
 
     features = [build_port]
-    exclude_patterns = ['*None.cpp', '*CFNet.cpp', '*Qt.cpp', '*Win.cpp', '*Wince.cpp', '*Gtk.cpp', '*Mac.cpp', '*Safari.cpp', '*Chromium*.cpp','*SVG*.cpp', '*AllInOne.cpp', 'test*bindings.*']
+    exclude_patterns = ['*AllInOne.cpp', '*Brew.cpp', '*CFNet.cpp', '*Chromium*.cpp', 
+            '*Gtk.cpp', '*Mac.cpp', '*None.cpp', '*Qt.cpp', '*Safari.cpp',
+            'test*bindings.*', '*Wince.cpp']
     if build_port == 'wx':
         features.append('curl')
+        if not building_on_win32:
+            exclude_patterns.append('*Win.cpp')
         
     if sys.platform.startswith('darwin'):
         features.append('cf')
+        bld.install_files(os.path.join(output_dir, 'WebCore'), 'platform/mac/WebCoreSystemInterface.h')
     else:
         exclude_patterns.append('*CF.cpp')
 
@@ -126,6 +154,8 @@ def build(bld):
     wk_includes.append(os.path.join(jscore_dir, 'wtf', 'unicode'))
     wk_includes.append(os.path.join(jscore_dir, 'wtf', 'unicode', 'icu'))
     wk_includes += common_includes + full_dirs
+    if sys.platform.startswith('darwin'):
+        wk_includes.append(os.path.join(webcore_dir, 'icu'))
 
     cxxflags = []
     if building_on_win32:
@@ -166,10 +196,34 @@ def build(bld):
         excludes.append('JSPositionCallback.cpp')
         excludes.append('JSDOMStringList.cpp')
         excludes.append('JSInspectorController.cpp')
+        
+        # The bindings generator seems to think these are ref-counted, while they aren't in trunk.
+        excludes.append('JSElementTimeControl.cpp')
+        excludes.append('JSSVGAnimatedPathData.cpp')
+        excludes.append('JSSVGAnimatedPoints.cpp')
+        excludes.append('JSSVGExternalResourcesRequired.cpp')
+        excludes.append('JSSVGFilterPrimitiveStandardAttributes.cpp')
+        excludes.append('JSSVGLocatable.cpp')
+        excludes.append('JSSVGStyleTable.cpp')
+        excludes.append('JSSVGTests.cpp')
+        excludes.append('JSSVGStylable.cpp')
+        excludes.append('JSSVGZoomAndPan.cpp')
+        
+        # These are files that expect methods not in the base C++ class, usually XYZAnimated methods.
+        excludes.append('JSSVGFitToViewBox.cpp')
+        excludes.append('JSSVGLangSpace.cpp')
+        excludes.append('JSSVGTransformable.cpp')
+        excludes.append('JSSVGURIReference.cpp')
+        
         if building_on_win32:
             excludes.append('SharedTimerWx.cpp')
+            excludes.append('RenderThemeWin.cpp')
+            excludes.append('KeyEventWin.cpp')
             
+        if building_on_win32 or sys.platform.startswith('darwin'):
+            excludes.append('GlyphMapWx.cpp')
         excludes.append('AuthenticationCF.cpp')
         excludes.append('LoaderRunLoopCF.cpp')
+        excludes.append('ResourceErrorCF.cpp')
         
     webcore.find_sources_in_dirs(full_dirs, excludes = excludes, exts=['.c', '.cpp'])

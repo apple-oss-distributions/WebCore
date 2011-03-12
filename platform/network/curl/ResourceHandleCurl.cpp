@@ -32,8 +32,10 @@
 #include "NotImplemented.h"
 #include "ResourceHandleInternal.h"
 #include "ResourceHandleManager.h"
+#include "SharedBuffer.h"
 
 #if PLATFORM(WIN) && PLATFORM(CF)
+#include <wtf/PassRefPtr.h>
 #include <wtf/RetainPtr.h>
 #endif
 
@@ -91,7 +93,7 @@ static HashSet<String>& allowsAnyHTTPSCertificateHosts()
 
 ResourceHandleInternal::~ResourceHandleInternal()
 {
-    free(m_url);
+    fastFree(m_url);
     if (m_customHeaders)
         curl_slist_free_all(m_customHeaders);
 }
@@ -198,7 +200,7 @@ bool ResourceHandle::loadsBlocked()
 void ResourceHandle::loadResourceSynchronously(const ResourceRequest& request, StoredCredentials storedCredentials, ResourceError& error, ResourceResponse& response, Vector<char>& data, Frame*)
 {
     WebCoreSynchronousLoader syncLoader;
-    ResourceHandle handle(request, &syncLoader, true, false, true);
+    ResourceHandle handle(request, &syncLoader, true, false);
 
     ResourceHandleManager* manager = ResourceHandleManager::sharedInstance();
 

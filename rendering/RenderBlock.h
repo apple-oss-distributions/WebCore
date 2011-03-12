@@ -79,6 +79,9 @@ public:
     void removePositionedObject(RenderBox*);
     void removePositionedObjects(RenderBlock*);
 
+    typedef ListHashSet<RenderBox*, 4> PositionedObjectsListHashSet;
+    PositionedObjectsListHashSet* positionedObjects() const { return m_positionedObjects; }
+
     void addPercentHeightDescendant(RenderBox*);
     static void removePercentHeightDescendant(RenderBox*);
     HashSet<RenderBox*>* percentHeightDescendants() const;
@@ -92,8 +95,6 @@ public:
 
     bool containsFloats() { return m_floatingObjects && !m_floatingObjects->isEmpty(); }
     bool containsFloat(RenderObject*);
-
-    IntRect floatRect() const;
 
     int lineWidth(int y, bool firstLine) const;
     
@@ -142,6 +143,9 @@ public:
     // This function is a convenience helper for creating an anonymous block that inherits its
     // style from this RenderBlock.
     RenderBlock* createAnonymousBlock(bool isFlexibleBox = false) const;
+
+    static void appendRunsForObject(int start, int end, RenderObject*, InlineBidiResolver&);    
+    static bool requiresLineBox(const InlineIterator&, bool isLineEmpty = true, bool previousLineBrokeCleanly = true);
 
     int immediateLineCount();
     void adjustComputedFontSizes(float size, float visibleWidth);
@@ -270,7 +274,7 @@ private:
     void skipTrailingWhitespace(InlineIterator&, bool isLineEmpty, bool previousLineBrokeCleanly);
     int skipLeadingWhitespace(InlineBidiResolver&, bool firstLine, bool isLineEmpty, bool previousLineBrokeCleanly);
     void fitBelowFloats(int widthToFit, bool firstLine, int& availableWidth);
-    InlineIterator findNextLineBreak(InlineBidiResolver&, bool firstLine, bool& isLineEmpty, bool& previousLineBrokeCleanly, EClear* clear = 0);
+    InlineIterator findNextLineBreak(InlineBidiResolver&, bool firstLine, bool& isLineEmpty, bool& previousLineBrokeCleanly, bool& hyphenated, EClear* = 0);
     RootInlineBox* constructLine(unsigned runCount, BidiRun* firstRun, BidiRun* lastRun, bool firstLine, bool lastLine, RenderObject* endObject);
     InlineFlowBox* createLineBoxes(RenderObject*, bool firstLine);
     void computeHorizontalPositionsForLine(RootInlineBox*, bool firstLine, BidiRun* firstRun, BidiRun* trailingSpaceRun, bool reachedEnd);
@@ -316,6 +320,7 @@ private:
     int leftOffset() const;
     virtual bool hitTestColumns(const HitTestRequest&, HitTestResult&, int x, int y, int tx, int ty, HitTestAction);
     virtual bool hitTestContents(const HitTestRequest&, HitTestResult&, int x, int y, int tx, int ty, HitTestAction);
+    bool hitTestFloats(const HitTestRequest&, HitTestResult&, int x, int y, int tx, int ty);
 
     virtual bool isPointInOverflowControl(HitTestResult&, int x, int y, int tx, int ty);
 
@@ -494,9 +499,10 @@ private:
     void setCollapsedBottomMargin(const MarginInfo&);
     // End helper functions and structs used by layoutBlockChildren.
 
-    typedef ListHashSet<RenderBox*>::const_iterator Iterator;
+    typedef PositionedObjectsListHashSet::const_iterator Iterator;
     DeprecatedPtrList<FloatingObject>* m_floatingObjects;
-    ListHashSet<RenderBox*>* m_positionedObjects;
+    
+    PositionedObjectsListHashSet* m_positionedObjects;
 
     // An inline can be split with blocks occurring in between the inline content.
     // When this occurs we need a pointer to our next object.  We can basically be

@@ -27,6 +27,7 @@
 #include "Settings.h"
 
 #include "BackForwardList.h"
+#include "Database.h"
 #include "Frame.h"
 #include "FrameTree.h"
 #include "FrameView.h"
@@ -71,22 +72,26 @@ Settings::Settings(Page* page)
     , m_layoutInterval(cLayoutScheduleThreshold)
     , m_maxParseDuration(defaultTokenizerTimeDelay)
     , m_alwaysUseBaselineOfPrimaryFont(false)
-#if ENABLE(DOM_STORAGE)
+    , m_allowMultiElementImplicitFormSubmission(false)
+#if ENABLE(DOM_STORAGE)            
     , m_localStorageQuota(5 * 1024 * 1024)  // Suggested by the HTML5 spec.
     , m_sessionStorageQuota(StorageMap::noQuota)
 #endif
     , m_pluginAllowedRunTime(numeric_limits<unsigned>::max())
+    , m_zoomMode(ZoomPage)
+    , m_isSpatialNavigationEnabled(false)
     , m_isJavaEnabled(false)
     , m_loadsImagesAutomatically(false)
     , m_privateBrowsingEnabled(false)
     , m_caretBrowsingEnabled(false)
     , m_areImagesEnabled(true)
+    , m_isMediaEnabled(true)
     , m_arePluginsEnabled(false)
-    , m_databasesEnabled(false)
     , m_localStorageEnabled(false)
     , m_isJavaScriptEnabled(false)
     , m_isWebSecurityEnabled(true)
     , m_allowUniversalAccessFromFileURLs(true)
+    , m_allowFileAccessFromFileURLs(true)
     , m_javaScriptCanOpenWindowsAutomatically(false)
     , m_javaScriptCanAccessClipboard(false)
     , m_shouldPrintBackgrounds(false)
@@ -114,12 +119,12 @@ Settings::Settings(Page* page)
     , m_foundationCachingEnabled(false)
     , m_mediaPlaybackAllowsInline(false)
     , m_mediaPlaybackRequiresUserAction(true)
+    , m_mediaDataLoadsAutomatically(false)
     , m_webArchiveDebugModeEnabled(false)
     , m_localFileContentSniffingEnabled(false)
     , m_inApplicationChromeMode(false)
     , m_offlineWebApplicationCacheEnabled(false)
     , m_shouldPaintCustomScrollbars(false)
-    , m_zoomsTextOnly(false)
     , m_enforceCSSMIMETypeInStrictMode(true)
     , m_usesEncodingDetector(false)
     , m_allowScriptsToCloseWindows(false)
@@ -140,8 +145,10 @@ Settings::Settings(Page* page)
     , m_showRepaintCounter(false)
     , m_experimentalNotificationsEnabled(false)
     , m_webGLEnabled(false)
-    , m_geolocationEnabled(true)
     , m_loadDeferringEnabled(true)
+    , m_tiledBackingStoreEnabled(false)
+    , m_dnsPrefetchingEnabled(true)
+    , m_interactiveFormValidation(false)
 {
     // This limit is also calculated in WebKit's WebPreferences.
     // If we have more than 256MB of physical memory, allow 5.0MP images, otherwise allow 3.0MP images
@@ -272,6 +279,16 @@ void Settings::setAllowUniversalAccessFromFileURLs(bool allowUniversalAccessFrom
     m_allowUniversalAccessFromFileURLs = allowUniversalAccessFromFileURLs;
 }
 
+void Settings::setAllowFileAccessFromFileURLs(bool allowFileAccessFromFileURLs)
+{
+    m_allowFileAccessFromFileURLs = allowFileAccessFromFileURLs;
+}
+
+void Settings::setSpatialNavigationEnabled(bool isSpatialNavigationEnabled)
+{
+    m_isSpatialNavigationEnabled = isSpatialNavigationEnabled;
+}
+
 void Settings::setJavaEnabled(bool isJavaEnabled)
 {
     m_isJavaEnabled = isJavaEnabled;
@@ -282,14 +299,14 @@ void Settings::setImagesEnabled(bool areImagesEnabled)
     m_areImagesEnabled = areImagesEnabled;
 }
 
+void Settings::setMediaEnabled(bool isMediaEnabled)
+{
+    m_isMediaEnabled = isMediaEnabled;
+}
+
 void Settings::setPluginsEnabled(bool arePluginsEnabled)
 {
     m_arePluginsEnabled = arePluginsEnabled;
-}
-
-void Settings::setDatabasesEnabled(bool databasesEnabled)
-{
-    m_databasesEnabled = databasesEnabled;
 }
 
 void Settings::setLocalStorageEnabled(bool localStorageEnabled)
@@ -297,7 +314,7 @@ void Settings::setLocalStorageEnabled(bool localStorageEnabled)
     m_localStorageEnabled = localStorageEnabled;
 }
 
-#if ENABLE(DOM_STORAGE)
+#if ENABLE(DOM_STORAGE)        
 void Settings::setLocalStorageQuota(unsigned localStorageQuota)
 {
     m_localStorageQuota = localStorageQuota;
@@ -311,7 +328,11 @@ void Settings::setSessionStorageQuota(unsigned sessionStorageQuota)
 
 void Settings::setPrivateBrowsingEnabled(bool privateBrowsingEnabled)
 {
+    if (m_privateBrowsingEnabled == privateBrowsingEnabled)
+        return;
+
     m_privateBrowsingEnabled = privateBrowsingEnabled;
+    m_page->privateBrowsingStateChanged();
 }
 
 void Settings::setJavaScriptCanOpenWindowsAutomatically(bool javaScriptCanOpenWindowsAutomatically)
@@ -522,12 +543,12 @@ void Settings::setShouldPaintCustomScrollbars(bool shouldPaintCustomScrollbars)
     m_shouldPaintCustomScrollbars = shouldPaintCustomScrollbars;
 }
 
-void Settings::setZoomsTextOnly(bool zoomsTextOnly)
+void Settings::setZoomMode(ZoomMode mode)
 {
-    if (zoomsTextOnly == m_zoomsTextOnly)
+    if (mode == m_zoomMode)
         return;
     
-    m_zoomsTextOnly = zoomsTextOnly;
+    m_zoomMode = mode;
     setNeedsReapplyStylesInAllFrames(m_page);
 }
 
@@ -546,6 +567,11 @@ void Settings::setShouldPaintNativeControls(bool shouldPaintNativeControls)
 void Settings::setUsesEncodingDetector(bool usesEncodingDetector)
 {
     m_usesEncodingDetector = usesEncodingDetector;
+}
+
+void Settings::setDNSPrefetchingEnabled(bool dnsPrefetchingEnabled)
+{
+    m_dnsPrefetchingEnabled = dnsPrefetchingEnabled;
 }
 
 void Settings::setAllowScriptsToCloseWindows(bool allowScriptsToCloseWindows)
@@ -618,14 +644,18 @@ void Settings::setWebGLEnabled(bool enabled)
     m_webGLEnabled = enabled;
 }
 
-void Settings::setGeolocationEnabled(bool enabled)
-{
-    m_geolocationEnabled = enabled;
-}
-
 void Settings::setLoadDeferringEnabled(bool enabled)
 {
     m_loadDeferringEnabled = enabled;
+}
+
+void Settings::setTiledBackingStoreEnabled(bool enabled)
+{
+    m_tiledBackingStoreEnabled = enabled;
+#if ENABLE(TILED_BACKING_STORE)
+    if (m_page->mainFrame())
+        m_page->mainFrame()->setTiledBackingStoreEnabled(enabled);
+#endif
 }
 
 } // namespace WebCore

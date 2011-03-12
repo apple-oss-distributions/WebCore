@@ -145,6 +145,30 @@ Node.prototype.rangeOfWord = function(offset, stopCharacters, stayWithinNode, di
     return result;
 }
 
+Node.prototype.traverseNextTextNode = function(stayWithin)
+{
+    var node = this.traverseNextNode(stayWithin);
+    if (!node)
+        return;
+
+    while (node && node.nodeType !== Node.TEXT_NODE)
+        node = node.traverseNextNode(stayWithin);
+
+    return node;
+}
+
+Node.prototype.rangeBoundaryForOffset = function(offset)
+{
+    var node = this.traverseNextTextNode(this);
+    while (node && offset > node.nodeValue.length) {
+        offset -= node.nodeValue.length;
+        node = node.traverseNextTextNode(this);
+    }
+    if (!node)
+        return { container: this, offset: 0 };
+    return { container: node, offset: offset };
+}
+
 Element.prototype.removeStyleClass = function(className) 
 {
     // Test for the simple case first.
@@ -193,6 +217,17 @@ Element.prototype.positionAt = function(x, y)
 {
     this.style.left = x + "px";
     this.style.top = y + "px";
+}
+
+Element.prototype.pruneEmptyTextNodes = function()
+{
+    var sibling = this.firstChild;
+    while (sibling) {
+        var nextSibling = sibling.nextSibling;
+        if (sibling.nodeType === this.TEXT_NODE && sibling.nodeValue === "")
+            this.removeChild(sibling);
+        sibling = nextSibling;
+    }
 }
 
 Node.prototype.enclosingNodeOrSelfWithNodeNameInArray = function(nameArray)
@@ -247,7 +282,7 @@ Element.prototype.__defineGetter__("totalOffsetLeft", function()
 {
     var total = 0;
     for (var element = this; element; element = element.offsetParent)
-        total += element.offsetLeft;
+        total += element.offsetLeft + (this !== element ? element.clientLeft : 0);
     return total;
 });
 
@@ -255,7 +290,7 @@ Element.prototype.__defineGetter__("totalOffsetTop", function()
 {
     var total = 0;
     for (var element = this; element; element = element.offsetParent)
-        total += element.offsetTop;
+        total += element.offsetTop + (this !== element ? element.clientTop : 0);
     return total;
 });
 
@@ -335,7 +370,7 @@ String.prototype.collapseWhitespace = function()
 
 String.prototype.trimURL = function(baseURLDomain)
 {
-    var result = this.replace(/^https?:\/\//i, "");
+    var result = this.replace(/^(https|http|file):\/\//i, "");
     if (baseURLDomain)
         result = result.replace(new RegExp("^" + baseURLDomain.escapeForRegExp(), "i"), "");
     return result;
@@ -825,4 +860,61 @@ String.format = function(format, substitutions, formatters, initialValue, append
 function isEnterKey(event) {
     // Check if in IME.
     return event.keyCode !== 229 && event.keyIdentifier === "Enter";
+}
+
+
+function highlightSearchResult(element, offset, length)
+{
+    var lineText = element.textContent;
+    var endOffset = offset + length;
+    var highlightNode = document.createElement("span");
+    highlightNode.className = "webkit-search-result";
+    highlightNode.textContent = lineText.substring(offset, endOffset);
+
+    var boundary = element.rangeBoundaryForOffset(offset);
+    var textNode = boundary.container;
+    var text = textNode.textContent;
+
+    if (boundary.offset + length < text.length) {
+        // Selection belong to a single split mode.
+        textNode.textContent = text.substring(boundary.offset + length);
+        textNode.parentElement.insertBefore(highlightNode, textNode);
+        var prefixNode = document.createTextNode(text.substring(0, boundary.offset));
+        textNode.parentElement.insertBefore(prefixNode, highlightNode);
+        return highlightNode;
+    }
+
+    var parentElement = textNode.parentElement;
+    var anchorElement = textNode.nextSibling;
+
+    length -= text.length - boundary.offset;
+    textNode.textContent = text.substring(0, boundary.offset);
+    textNode = textNode.traverseNextTextNode(element);
+
+    while (textNode) {
+        var text = textNode.textContent;
+        if (length < text.length) {
+            textNode.textContent = text.substring(length);
+            break;
+        }
+
+        length -= text.length;
+        textNode.textContent = "";
+        textNode = textNode.traverseNextTextNode(element);
+    }
+
+    parentElement.insertBefore(highlightNode, anchorElement);
+    return highlightNode;
+}
+
+function createSearchRegex(query)
+{
+    var regex = "";
+    for (var i = 0; i < query.length; ++i) {
+        var char = query.charAt(i);
+        if (char === "]")
+            char = "\\]";
+        regex += "[" + char + "]";
+    }
+    return new RegExp(regex, "i");
 }

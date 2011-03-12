@@ -53,7 +53,8 @@ public:
 
     virtual void destroy();
 
-    StringImpl* text() const { return m_text.get(); }
+    StringImpl* text() const { return m_text.impl(); }
+    String textWithoutTranscoding() const;
 
     InlineTextBox* createInlineTextBox();
     void dirtyLineBoxes(bool fullLayout);
@@ -67,8 +68,8 @@ public:
 
     virtual VisiblePosition positionForPoint(const IntPoint&);
 
-    const UChar* characters() const { return m_text->characters(); }
-    unsigned textLength() const { return m_text->length(); } // non virtual implementation of length()
+    const UChar* characters() const { return m_text.characters(); }
+    unsigned textLength() const { return m_text.length(); } // non virtual implementation of length()
     void positionLineBox(InlineBox*);
 
     virtual unsigned width(unsigned from, unsigned len, const Font&, int xPos, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
@@ -140,7 +141,7 @@ protected:
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
     virtual void setTextInternal(PassRefPtr<StringImpl>);
-    virtual UChar previousCharacter();
+    virtual UChar previousCharacter() const;
     
     virtual InlineTextBox* createTextBox(); // Subclassed by SVG.
 
@@ -160,10 +161,13 @@ private:
     bool containsOnlyWhitespace(unsigned from, unsigned len) const;
     int widthFromCache(const Font&, int start, int len, int xPos, HashSet<const SimpleFontData*>* fallbackFonts, GlyphOverflow*) const;
     bool isAllASCII() const { return m_isAllASCII; }
+    void updateNeedsTranscoding();
+
+    inline void transformText(String&) const;
 
     int m_minWidth; // here to minimize padding in 64-bit.
 
-    RefPtr<StringImpl> m_text;
+    String m_text;
 
     InlineTextBox* m_firstTextBox;
     InlineTextBox* m_lastTextBox;
@@ -184,6 +188,7 @@ private:
     bool m_containsReversedText : 1;
     bool m_isAllASCII : 1;
     mutable bool m_knownToHaveNoOverflowAndNoFallbackFonts : 1;
+    bool m_needsTranscoding : 1;
     
     bool m_shouldSecureLastCharacter : 1;
     bool m_hasSecureLastCharacterTimer : 1;

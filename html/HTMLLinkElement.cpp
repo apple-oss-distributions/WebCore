@@ -2,7 +2,7 @@
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2003, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  * Copyright (C) 2009 Rob Buis (rwlbuis@gmail.com)
  *
  * This library is free software; you can redistribute it and/or
@@ -26,7 +26,6 @@
 
 #include "CSSHelper.h"
 #include "CachedCSSStyleSheet.h"
-#include "DNS.h"
 #include "DocLoader.h"
 #include "Document.h"
 #include "Frame.h"
@@ -38,6 +37,7 @@
 #include "MediaList.h"
 #include "MediaQueryEvaluator.h"
 #include "Page.h"
+#include "ResourceHandle.h"
 #include "ScriptEventListener.h"
 #include "Settings.h"
 #include <wtf/StdLibExtras.h>
@@ -56,6 +56,7 @@ HTMLLinkElement::HTMLLinkElement(const QualifiedName& qName, Document *doc, bool
     , m_isIcon(false)
     , m_isDNSPrefetch(false)
     , m_createdByParser(createdByParser)
+    , m_shouldProcessAfterAttach(false)
 {
     ASSERT(hasTagName(linkTag));
 }
@@ -182,8 +183,8 @@ void HTMLLinkElement::process()
     if (m_isIcon && m_url.isValid() && !m_url.isEmpty())
         document()->setIconURL(m_url.string(), type);
 
-    if (m_isDNSPrefetch && m_url.isValid() && !m_url.isEmpty())
-        prefetchDNS(m_url.host());
+    if (m_isDNSPrefetch && document()->isDNSPrefetchEnabled() && m_url.isValid() && !m_url.isEmpty())
+        ResourceHandle::prepareForURL(m_url);
 
     bool acceptIfTypeContainsTextCSS = document()->page() && document()->page()->settings() && document()->page()->settings()->treatsAnyTextCSSLinkAsStylesheet();
 
@@ -194,7 +195,7 @@ void HTMLLinkElement::process()
         
         String charset = getAttribute(charsetAttr);
         if (charset.isEmpty() && document()->frame())
-            charset = document()->frame()->loader()->encoding();
+            charset = document()->frame()->loader()->writer()->encoding();
 
         if (m_cachedSheet) {
             if (m_loading)
@@ -229,11 +230,28 @@ void HTMLLinkElement::process()
         document()->updateStyleSelector();
     }
 }
+    
+void HTMLLinkElement::processCallback(Node* node)
+{
+    ASSERT_ARG(node, node && node->hasTagName(linkTag));
+    static_cast<HTMLLinkElement*>(node)->process();
+}
 
 void HTMLLinkElement::insertedIntoDocument()
 {
     HTMLElement::insertedIntoDocument();
     document()->addStyleSheetCandidateNode(this, m_createdByParser);
+
+    // Since processing a stylesheet link causes a beforeload event
+    // to fire, it is possible for JavaScript to remove the element in the midst
+    // of it being inserted into the DOM, which can lead to assertion failures
+    // and crashes. Avoid this by postponing the beforeload/load until after
+    // attach if there are beforeload listeners.
+    if (document()->hasListenerType(Document::BEFORELOAD_LISTENER)) {
+        m_shouldProcessAfterAttach = true;
+        return;
+    }
+
     process();
 }
 
@@ -246,8 +264,20 @@ void HTMLLinkElement::removedFromDocument()
     // FIXME: It's terrible to do a synchronous update of the style selector just because a <style> or <link> element got removed.
     if (document()->renderer())
         document()->updateStyleSelector();
+    
+    m_shouldProcessAfterAttach = false;
 }
 
+void HTMLLinkElement::attach()
+{
+    if (m_shouldProcessAfterAttach) {
+        m_shouldProcessAfterAttach = false;
+        queuePostAttachCallback(&HTMLLinkElement::processCallback, this);
+    }
+
+    HTMLElement::attach();
+}
+    
 void HTMLLinkElement::finishParsingChildren()
 {
     m_createdByParser = false;
@@ -262,7 +292,10 @@ void HTMLLinkElement::setCSSStyleSheet(const String& href, const KURL& baseURL, 
     bool enforceMIMEType = strictParsing;
     bool crossOriginCSS = false;
     bool validMIMEType = false;
-    bool needsSiteSpecificQuirks = document()->page() && document()->page()->settings()->needsSiteSpecificQuirks();
+    // Force the site specific quirk below to work on iOS. Investigating other site specific quirks
+    // to see if we can enable the preference all together is to be handled by:
+    // <rdar://problem/8493309> Investigate Enabling Site Specific Quirks in MobileSafari and UIWebView
+    bool needsSiteSpecificQuirks = true;
 
     // Check to see if we should enforce the MIME type of the CSS resource in strict mode.
     // Running in iWeb 2 is one example of where we don't want to - <rdar://problem/6099748>

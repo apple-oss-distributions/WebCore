@@ -65,7 +65,7 @@ using namespace WebCore;
     }
 
     if (layerContents->client()) {
-        WKFontAntialiasingStateSaver fontAntialiasingState(context, true);
+        WKFontAntialiasingStateSaver fontAntialiasingState(context, [layer isOpaque]);
         fontAntialiasingState.setup([WAKWindow hasLandscapeOrientation]);
 
         GraphicsContext graphicsContext(context);
@@ -166,12 +166,20 @@ using namespace WebCore;
 - (void)display
 {
     [super display];
+    if (!m_layerOwner)
+        return;
+    if (pthread_main_np())
+        WebThreadLock();
     if (m_layerOwner)
         m_layerOwner->didDisplay(self);
 }
 
 - (void)drawInContext:(CGContextRef)context
 {
+    if (!m_layerOwner)
+        return;
+    if (pthread_main_np())
+        WebThreadLock();
     [WebLayer drawContents:m_layerOwner ofLayer:self intoContext:context];
 }
 

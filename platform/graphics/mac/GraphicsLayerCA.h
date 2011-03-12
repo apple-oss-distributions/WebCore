@@ -89,10 +89,7 @@ public:
 
     virtual void setNeedsDisplay();
     virtual void setNeedsDisplayInRect(const FloatRect&);
-
-#if ENABLE(3D_CANVAS)
-    virtual void setGraphicsContext3DNeedsDisplay();
-#endif
+    virtual void setContentsNeedsDisplay();
     
     virtual void setContentsRect(const IntRect&);
     
@@ -108,11 +105,12 @@ public:
     virtual void setContentsToMedia(PlatformLayer*);
     virtual PlatformLayer* contentsLayerForMedia() const;
 #if ENABLE(3D_CANVAS)
-    virtual void setContentsToGraphicsContext3D(const GraphicsContext3D*);
+    virtual void setContentsToWebGL(PlatformLayer*);
 #endif
     
     virtual PlatformLayer* platformLayer() const;
 
+    virtual float contentsScale() const { return m_contentsScale; }
     virtual void setContentsScale(float);
 
     virtual void setDebugBackgroundColor(const Color&);
@@ -130,6 +128,7 @@ protected:
     virtual void setOpacityInternal(float);
 
 private:
+    float clampedContentsScaleForScale(float scale) const;
     void updateOpacityOnLayer();
 
     CALayer* primaryLayer() const { return m_structuralLayer.get() ? m_structuralLayer.get() : m_layer.get(); }
@@ -167,6 +166,8 @@ private:
 
     void commitLayerChangesBeforeSublayers();
     void commitLayerChangesAfterSublayers();
+
+    FloatSize constrainedSize() const;
 
     bool requiresTiledLayer(const FloatSize&) const;
     void swapFromOrToTiledLayer(bool useTiledLayer);
@@ -265,7 +266,7 @@ private:
     void updateContentsImage();
     void updateContentsMediaLayer();
 #if ENABLE(3D_CANVAS)
-    void updateContentsGraphicsContext3D();
+    void updateContentsWebGLLayer();
 #endif
     void updateContentsRect();
     void updateGeometryOrientation();
@@ -273,6 +274,7 @@ private:
     void updateReplicatedLayers();
 
     void updateLayerAnimations();
+    void updateContentsNeedsDisplay();
     
     enum StructuralLayerPurpose {
         NoStructuralLayer = 0,
@@ -311,12 +313,13 @@ private:
         ContentsImageChanged = 1 << 17,
         ContentsMediaLayerChanged = 1 << 18,
 #if ENABLE(3D_CANVAS)
-        ContentsGraphicsContext3DChanged = 1 << 19,
+        ContentsWebGLLayerChanged = 1 << 19,
 #endif
         ContentsRectChanged = 1 << 20,
         GeometryOrientationChanged = 1 << 21,
         MaskLayerChanged = 1 << 22,
-        ReplicatedLayerChanged = 1 << 23
+        ReplicatedLayerChanged = 1 << 23,
+        ContentsNeedsDisplay = 1 << 24
     };
     typedef unsigned LayerChangeFlags;
     void noteLayerPropertyChanged(LayerChangeFlags flags);
@@ -338,7 +341,7 @@ private:
         ContentsLayerForImage,
         ContentsLayerForMedia
 #if ENABLE(3D_CANVAS)
-        ,ContentsLayerForGraphicsLayer3D
+        , ContentsLayerForWebGL
 #endif
     };
     
@@ -347,6 +350,7 @@ private:
 
     RetainPtr<WebAnimationDelegate> m_animationDelegate;
 
+    RetainPtr<CGImageRef> m_uncorrectedContentsImage;
     RetainPtr<CGImageRef> m_pendingContentsImage;
     
     struct LayerAnimation {
@@ -393,11 +397,7 @@ private:
     Vector<FloatRect> m_dirtyRects;
     
     LayerChangeFlags m_uncommittedChanges;
-    
-#if ENABLE(3D_CANVAS)
-    PlatformGraphicsContext3D m_platformGraphicsContext3D;
-    Platform3DObject m_platformTexture;
-#endif
+    float m_contentsScale;
 };
 
 } // namespace WebCore

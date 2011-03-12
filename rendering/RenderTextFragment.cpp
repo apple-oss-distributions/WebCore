@@ -48,9 +48,9 @@ PassRefPtr<StringImpl> RenderTextFragment::originalText() const
 {
     Node* e = node();
     RefPtr<StringImpl> result = ((e && e->isTextNode()) ? static_cast<Text*>(e)->dataImpl() : contentString());
-    if (result && (start() > 0 || start() < result->length()))
-        result = result->substring(start(), end());
-    return result.release();
+    if (!result)
+        return 0;
+    return result->substring(start(), end());
 }
 
 void RenderTextFragment::destroy()
@@ -76,12 +76,12 @@ void RenderTextFragment::setTextInternal(PassRefPtr<StringImpl> text)
     }
 }
 
-UChar RenderTextFragment::previousCharacter()
+UChar RenderTextFragment::previousCharacter() const
 {
     if (start()) {
         Node* e = node();
         StringImpl*  original = ((e && e->isTextNode()) ? static_cast<Text*>(e)->dataImpl() : contentString());
-        if (original)
+        if (original && start() <= original->length())
             return (*original)[start() - 1];
     }
 

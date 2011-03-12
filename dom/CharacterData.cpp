@@ -22,20 +22,12 @@
 #include "config.h"
 #include "CharacterData.h"
 
-#include "CString.h"
 #include "EventNames.h"
 #include "ExceptionCode.h"
 #include "MutationEvent.h"
 #include "RenderText.h"
 
 namespace WebCore {
-
-CharacterData::CharacterData(Document* document, const String& text, ConstructionType type)
-    : Node(document, type)
-    , m_data(text.impl() ? text.impl() : StringImpl::empty())
-{
-    ASSERT(type == CreateOther || type == CreateText);
-}
 
 void CharacterData::setData(const String& data, ExceptionCode&)
 {

@@ -86,7 +86,7 @@ private:
             return transformMode == KeepTransform ? NoLayer : OpaqueCompositeLayer;
     }
 
-    static TransformMode getTransformMode(const TransformationMatrix& matrix)
+    static TransformMode getTransformMode(const AffineTransform& matrix)
     {
         if (matrix.b() != 0 || matrix.c() != 0)  // Skew.
             return Untransform;
@@ -614,8 +614,8 @@ bool RenderThemeChromiumWin::paintTextFieldInternal(RenderObject* o,
     // Fallback to white if the specified color object is invalid.
     // (Note ChromiumBridge::paintTextField duplicates this check).
     Color backgroundColor(Color::white);
-    if (o->style()->backgroundColor().isValid())
-        backgroundColor = o->style()->backgroundColor();
+    if (o->style()->visitedDependentColor(CSSPropertyBackgroundColor).isValid())
+        backgroundColor = o->style()->visitedDependentColor(CSSPropertyBackgroundColor);
 
     // If we have background-image, don't fill the content area to expose the
     // parent's background. Also, we shouldn't fill the content area if the

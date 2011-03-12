@@ -50,7 +50,7 @@ using namespace HTMLNames;
 RenderVideo::RenderVideo(HTMLVideoElement* video)
     : RenderMedia(video)
 {
-    if (video->player())
+    if (video->player() && video->readyState() >= HTMLVideoElement::HAVE_METADATA)
         setIntrinsicSize(video->player()->naturalSize());
     else {
         // Video in standalone media documents should not use the default 300x150
@@ -84,7 +84,7 @@ IntSize RenderVideo::defaultSize()
 void RenderVideo::intrinsicSizeChanged()
 {
     if (videoElement()->shouldDisplayPosterImage())
-        RenderVideo::intrinsicSizeChanged();
+        RenderMedia::intrinsicSizeChanged();
     videoSizeChanged(); 
 }
 
@@ -94,7 +94,13 @@ void RenderVideo::videoSizeChanged()
     if (!player())
         return;
     IntSize size = player()->naturalSize();
-    if (!size.isEmpty() && size != intrinsicSize()) {
+    if (style())
+        size.scale(style()->effectiveZoom());
+    if (size.isEmpty()) {
+        if (node()->ownerDocument() && node()->ownerDocument()->isMediaDocument())
+            return;
+    }
+    if (size != intrinsicSize()) {
         setIntrinsicSize(size);
         setPrefWidthsDirty(true);
         setNeedsLayout(true);
@@ -103,7 +109,7 @@ void RenderVideo::videoSizeChanged()
 
 void RenderVideo::imageChanged(WrappedImagePtr newImage, const IntRect* rect)
 {
-    RenderImage::imageChanged(newImage, rect);
+    RenderMedia::imageChanged(newImage, rect);
 
     // Cache the image intrinsic size so we can continue to use it to draw the image correctly
     // even after we know the video intrisic size but aren't able to draw video frames yet
@@ -209,53 +215,17 @@ void RenderVideo::updatePlayer()
 
 int RenderVideo::calcReplacedWidth(bool includeMaxWidth) const
 {
-    int width;
-    if (isWidthSpecified())
-        width = calcReplacedWidthUsing(style()->width());
-    else
-        width = calcAspectRatioWidth() * style()->effectiveZoom();
-
-    int minW = calcReplacedWidthUsing(style()->minWidth());
-    int maxW = !includeMaxWidth || style()->maxWidth().isUndefined() ? width : calcReplacedWidthUsing(style()->maxWidth());
-
-    return max(minW, min(width, maxW));
+    return RenderReplaced::calcReplacedWidth(includeMaxWidth);
 }
 
 int RenderVideo::calcReplacedHeight() const
 {
-    int height;
-    if (isHeightSpecified())
-        height = calcReplacedHeightUsing(style()->height());
-    else
-        height = calcAspectRatioHeight() * style()->effectiveZoom();
-
-    int minH = calcReplacedHeightUsing(style()->minHeight());
-    int maxH = style()->maxHeight().isUndefined() ? height : calcReplacedHeightUsing(style()->maxHeight());
-
-    return max(minH, min(height, maxH));
-}
-
-int RenderVideo::calcAspectRatioWidth() const
-{
-    int intrinsicWidth = intrinsicSize().width();
-    int intrinsicHeight = intrinsicSize().height();
-    if (!intrinsicHeight)
-        return 0;
-    return RenderBox::calcReplacedHeight() * intrinsicWidth / intrinsicHeight;
-}
-
-int RenderVideo::calcAspectRatioHeight() const
-{
-    int intrinsicWidth = intrinsicSize().width();
-    int intrinsicHeight = intrinsicSize().height();
-    if (!intrinsicWidth)
-        return 0;
-    return RenderBox::calcReplacedWidth() * intrinsicHeight / intrinsicWidth;
+    return RenderReplaced::calcReplacedHeight();
 }
 
 int RenderVideo::minimumReplacedHeight() const 
 {
-    return 0; 
+    return RenderReplaced::minimumReplacedHeight(); 
 }
 
 #if USE(ACCELERATED_COMPOSITING)
@@ -273,14 +243,6 @@ void RenderVideo::acceleratedRenderingStateChanged()
     MediaPlayer* p = player();
     if (p)
         p->acceleratedRenderingStateChanged();
-}
-
-GraphicsLayer* RenderVideo::videoGraphicsLayer() const
-{
-    if (hasLayer() && layer()->isComposited())
-        return layer()->backing()->graphicsLayer();
-
-    return 0;
 }
 #endif  // USE(ACCELERATED_COMPOSITING)
 

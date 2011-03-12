@@ -438,7 +438,7 @@ void RenderImage::paintReplaced(PaintInfo& paintInfo, int tx, int ty)
 
             if (!m_altText.isEmpty()) {
                 String text = document()->displayStringModifiedByEncoding(m_altText);
-                context->setFillColor(style()->color(), style()->colorSpace());
+                context->setFillColor(style()->visitedDependentColor(CSSPropertyColor), style()->colorSpace());
                 int ax = tx + leftBorder + leftPad;
                 int ay = ty + topBorder + topPad;
                 const Font& font = style()->font();
@@ -508,7 +508,7 @@ int RenderImage::minimumReplacedHeight() const
 HTMLMapElement* RenderImage::imageMap() const
 {
     HTMLImageElement* i = node() && node()->hasTagName(imgTag) ? static_cast<HTMLImageElement*>(node()) : 0;
-    return i ? i->document()->getImageMap(i->getAttribute(usemapAttr)) : 0;
+    return i ? i->document()->getImageMap(i->fastGetAttribute(usemapAttr)) : 0;
 }
 
 bool RenderImage::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, int x, int y, int tx, int ty, HitTestAction hitTestAction)
@@ -630,7 +630,7 @@ int RenderImage::calcAspectRatioWidth() const
         return 0;
     if (!hasImage() || errorOccurred())
         return size.width(); // Don't bother scaling.
-    return RenderReplaced::calcReplacedHeight() * size.width() / size.height();
+    return RenderBox::calcReplacedHeight() * size.width() / size.height();
 }
 
 int RenderImage::calcAspectRatioHeight() const
@@ -640,27 +640,7 @@ int RenderImage::calcAspectRatioHeight() const
         return 0;
     if (!hasImage() || errorOccurred())
         return size.height(); // Don't bother scaling.
-    return RenderReplaced::calcReplacedWidth() * size.height() / size.width();
-}
-
-void RenderImage::calcPrefWidths()
-{
-    ASSERT(prefWidthsDirty());
-
-    int paddingAndBorders = paddingLeft() + paddingRight() + borderLeft() + borderRight();
-    m_maxPrefWidth = calcReplacedWidth(false) + paddingAndBorders;
-
-    if (style()->maxWidth().isFixed() && style()->maxWidth().value() != undefinedLength)
-        m_maxPrefWidth = min(m_maxPrefWidth, style()->maxWidth().value() + (style()->boxSizing() == CONTENT_BOX ? paddingAndBorders : 0));
-
-    if (style()->width().isPercent() || style()->height().isPercent() || 
-        style()->maxWidth().isPercent() || style()->maxHeight().isPercent() ||
-        style()->minWidth().isPercent() || style()->minHeight().isPercent())
-        m_minPrefWidth = 0;
-    else
-        m_minPrefWidth = m_maxPrefWidth;
-
-    setPrefWidthsDirty(false);
+    return RenderBox::calcReplacedWidth() * size.height() / size.width();
 }
 
 Image* RenderImage::nullImage()

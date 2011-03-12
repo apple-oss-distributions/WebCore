@@ -184,7 +184,7 @@ void Pasteboard::writeSelection(NSPasteboard* pasteboard, Range* selectedRange, 
     if ([types containsObject:NSStringPboardType]) {
         // Map &nbsp; to a plain old space because this is better for source code, other browsers do it,
         // and because HTML forces you to do this any time you want two spaces in a row.
-        String text = frame->displayStringModifiedByEncoding(selectedRange->text());
+        String text = selectedRange->text();
         NSMutableString *s = [[[(NSString*)text copy] autorelease] mutableCopy];
         
         NSString *NonBreakingSpaceString = [NSString stringWithCharacters:&noBreakSpace length:1];
@@ -196,6 +196,14 @@ void Pasteboard::writeSelection(NSPasteboard* pasteboard, Range* selectedRange, 
     if ([types containsObject:WebSmartPastePboardType]) {
         [pasteboard setData:nil forType:WebSmartPastePboardType];
     }
+}
+
+void Pasteboard::writePlainText(NSPasteboard* pasteboard, const String& text)
+{
+    NSArray *types = [NSArray arrayWithObject:NSStringPboardType];
+    [pasteboard declareTypes:types owner:nil];
+    
+    [pasteboard setString:text forType:NSStringPboardType];
 }
     
 void Pasteboard::writeSelection(Range* selectedRange, bool canSmartCopyOrDelete, Frame* frame)
@@ -292,9 +300,7 @@ void Pasteboard::writeImage(Node* node, const KURL& url, const String& title)
     ASSERT(node->renderer() && node->renderer()->isImage());
     RenderImage* renderer = toRenderImage(node->renderer());
     CachedImage* cachedImage = renderer->cachedImage();
-    ASSERT(cachedImage);
-    
-    if (cachedImage->errorOccurred())
+    if (!cachedImage || cachedImage->errorOccurred())
         return;
 
     NSArray* types = writableTypesForImage();

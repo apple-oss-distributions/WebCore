@@ -38,7 +38,10 @@ var Preferences = {
     styleRulesExpandedState: {},
     showMissingLocalizedStrings: false,
     samplingCPUProfiler: false,
-    showColorNicknames: true
+    showColorNicknames: true,
+    debuggerAlwaysEnabled: false,
+    profilerAlwaysEnabled: false,
+    auditsPanelEnabled: false
 }
 
 WebInspector.populateFrontendSettings = function(settingsString)
@@ -67,7 +70,8 @@ WebInspector.Settings.prototype = {
         this._installSetting("lastViewedScriptFile", "last-viewed-script-file");
         this._installSetting("showInheritedComputedStyleProperties", "show-inherited-computed-style-properties", false);
         this._installSetting("showUserAgentStyles", "show-user-agent-styles", true);
-        this._installSetting("resourceViewTab", "resource-view-tab", "headers");
+        this._installSetting("resourceViewTab", "resource-view-tab", "content");
+        this._installSetting("consoleHistory", "console-history", []);
         this.dispatchEventToListeners("loaded");
     },
 

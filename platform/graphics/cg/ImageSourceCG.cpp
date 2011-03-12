@@ -69,6 +69,15 @@ void sharedBufferRelease(void* info)
 }
 #endif
 
+#if ENABLE(RESPECT_EXIF_ORIENTATION)
+// If the image is rotated in either direction, we need to swap w and h
+// All numbers less than 4 we don't need to swap.
+bool orientationRequiresWidthAndHeightSwapped(int orientation)
+{
+    return orientation > 4;
+}
+#endif
+
 ImageSource::ImageSource()
     : m_decoder(0)
     , m_baseSubsampling(0)
@@ -83,7 +92,7 @@ ImageSource::~ImageSource()
 
 void ImageSource::clear(bool destroyAllFrames, size_t, SharedBuffer* data, bool allDataReceived)
 {
-#if PLATFORM(MAC) && !defined(BUILDING_ON_TIGER) && !defined(BUILDING_ON_LEOPARD)
+#if !defined(BUILDING_ON_TIGER) && !defined(BUILDING_ON_LEOPARD)
     // Recent versions of ImageIO discard previously decoded image frames if the client
     // application no longer holds references to them, so there's no need to throw away
     // the decoder unless we're explicitly asked to destroy all of the frames.
@@ -110,7 +119,7 @@ void ImageSource::clear(bool destroyAllFrames, size_t, SharedBuffer* data, bool 
 CFDictionaryRef ImageSource::imageSourceOptions(int requestedSubsampling) const
 {
     static CFDictionaryRef options[4] = {NULL, NULL, NULL, NULL};
-    int subsampling = std::min(3, m_isProgressive ? 0 : (requestedSubsampling + m_baseSubsampling));
+    int subsampling = std::min(3, m_isProgressive || requestedSubsampling < 0 ? 0 : (requestedSubsampling + m_baseSubsampling));
     
     if (!options[subsampling]) {
         int subsampleInt = 1 << subsampling;  // [0..3] => [1, 2, 4, 8]
@@ -132,14 +141,24 @@ bool ImageSource::initialized() const
 
 void ImageSource::setData(SharedBuffer* data, bool allDataReceived)
 {
-    if (!m_decoder)
-        m_decoder = CGImageSourceCreateIncremental(NULL);
 #if PLATFORM(MAC)
+    if (!m_decoder)
+        m_decoder = CGImageSourceCreateIncremental(0);
     // On Mac the NSData inside the SharedBuffer can be secretly appended to without the SharedBuffer's knowledge.  We use SharedBuffer's ability
     // to wrap itself inside CFData to get around this, ensuring that ImageIO is really looking at the SharedBuffer.
     RetainPtr<CFDataRef> cfData(AdoptCF, data->createCFData());
     CGImageSourceUpdateData(m_decoder, cfData.get(), allDataReceived);
 #else
+    if (!m_decoder) {
+        m_decoder = CGImageSourceCreateIncremental(0);
+    } else if (allDataReceived) {
+#if !PLATFORM(WIN)
+        // 10.6 bug workaround: image sources with final=false fail to draw into PDF contexts, so re-create image source
+        // when data is complete. <rdar://problem/7874035> (<http://openradar.appspot.com/7874035>)
+        CFRelease(m_decoder);
+        m_decoder = CGImageSourceCreateIncremental(0);
+#endif
+    }
     // Create a CGDataProvider to wrap the SharedBuffer.
     data->ref();
     // We use the GetBytesAtPosition callback rather than the GetBytePointer one because SharedBuffer
@@ -190,9 +209,7 @@ IntSize ImageSource::frameSizeAtIndex(size_t index) const
         if (num)
             CFNumberGetValue(num, kCFNumberIntType, &h);
 #if ENABLE(RESPECT_EXIF_ORIENTATION)
-        // If the image is rotated in either direction, we need to swap w and h
-        // Even numbers (2,4,6 & 8) mean the image is rotated.
-        if (orientationAtIndex(index) & 0x01)
+        if (!orientationRequiresWidthAndHeightSwapped(orientationAtIndex(index)))
             result = IntSize(w, h);
         else
             result = IntSize(h, w);
@@ -288,19 +305,20 @@ CGImageRef ImageSource::createFrameAtIndex(size_t index, float scaleHint, float*
     if (!initialized())
         return 0;
 
-    // subsampling can be 0, 1, 2 or 3, which means full-, quarter-, sixteenth- and sixty-fourth-size, respectively.
-    int subsampling = (int)log2f(1.0f / std::max(0.1f, std::min(1.0f, scaleHint)));
+    // Subsampling can be 0, 1, 2 or 3, which means full-, quarter-, sixteenth- and sixty-fourth-size, respectively.
+    // A negative value means no subsampling.
+    int subsampling = scaleHint < std::numeric_limits<float>::infinity() ? (int)log2f(1.0f / std::max(0.1f, std::min(1.0f, scaleHint))) : -1;
     RetainPtr<CGImageRef> image(AdoptCF, CGImageSourceCreateImageAtIndex(m_decoder, index, imageSourceOptions(subsampling)));
 
     /* <rdar://problem/7371198> - CoreGraphics changed the default caching
-     * behaviour in Apex to kCGImageCachingTransient which caused a perf
+     * behaviour in iOS 4.0 to kCGImageCachingTransient which caused a perf
      * regression for us since the images had to be resampled/recreated every
      * time we called CGContextDrawImage. We now tell CG to cache the drawn
      * images.
      */
     CGImageSetCachingFlags(image.get(), kCGImageCachingTemporary);
 #if ENABLE(RESPECT_EXIF_ORIENTATION)
-    *actualScaleOut = static_cast<float>(CGImageGetWidth(image.get())) / ((orientationAtIndex(index) & 0x01) ? size().width() : size().height());
+    *actualScaleOut = static_cast<float>(CGImageGetWidth(image.get())) / (!orientationRequiresWidthAndHeightSwapped(orientationAtIndex(index)) ? size().width() : size().height());
 #else
     *actualScaleOut = static_cast<float>(CGImageGetWidth(image.get())) / static_cast<float>(size().width()); // height could be anything while downloading
 #endif
@@ -321,7 +339,22 @@ CGImageRef ImageSource::createFrameAtIndex(size_t index, float scaleHint, float*
 
 bool ImageSource::frameIsCompleteAtIndex(size_t index)
 {
-    return CGImageSourceGetStatusAtIndex(m_decoder, index) == kCGImageStatusComplete;
+    ASSERT(frameCount());
+
+    // CGImageSourceGetStatusAtIndex claims that all frames of a multi-frame image are incomplete
+    // when we've not yet received the complete data for an image that is using an incremental data
+    // source (<rdar://problem/7679174>). We work around this by special-casing all frames except the
+    // last in an image and treating them as complete if they are present and reported as being
+    // incomplete. We do this on the assumption that loading new data can only modify the existing last
+    // frame or append new frames. The last frame is only treated as being complete if the image source
+    // reports it as such. This ensures that it is truly the last frame of the image rather than just
+    // the last that we currently have data for.
+
+    CGImageSourceStatus frameStatus = CGImageSourceGetStatusAtIndex(m_decoder, index);
+    if (index < frameCount() - 1)
+        return frameStatus >= kCGImageStatusIncomplete;
+
+    return frameStatus == kCGImageStatusComplete;
 }
 
 float ImageSource::frameDurationAtIndex(size_t index)

@@ -48,6 +48,7 @@ typedef enum {
     CALayer* _hostLayer;
     TileCache* _tileCache;
     CGRect _cachedVisibleRect;
+    CALayer *_rootLayer;
 }
 // Create layer hosted window
 - (id)initWithLayer:(CALayer *)hostLayer;
@@ -76,12 +77,15 @@ typedef enum {
 - (CGSize)availableScreenSize;
 - (void)setScreenScale:(CGFloat)scale;
 - (CGFloat)screenScale;
+- (void)setRootLayer:(CALayer *)layer;
+- (CALayer *)rootLayer;
 - (void)sendEvent:(WebEvent *)anEvent;
 - (void)sendEvent:(WebEvent *)anEvent contentChange:(WKContentChange *)aContentChange;
 
 // Tiling support
 - (void)layoutTiles;
 - (void)layoutTilesNow;
+- (void)layoutTilesNowForRect:(CGRect)rect;
 - (void)setNeedsDisplay;
 - (void)setNeedsDisplayInRect:(CGRect)rect;
 - (BOOL)tilesOpaque;

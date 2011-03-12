@@ -27,11 +27,11 @@
 #include "config.h"
 #include "PluginPackage.h"
 
-#include "CString.h"
 #include "MIMETypeRegistry.h"
 #include "npruntime_impl.h"
 #include "PluginDatabase.h"
 #include "PluginDebug.h"
+#include <wtf/text/CString.h>
 
 namespace WebCore {
 
@@ -83,7 +83,7 @@ bool PluginPackage::fetchInfo()
 static NPError staticPluginQuirkRequiresGtkToolKit_NPN_GetValue(NPP instance, NPNVariable variable, void* value)
 {
     if (variable == NPNVToolkit) {
-        *static_cast<uint32*>(value) = 2;
+        *static_cast<uint32_t*>(value) = 2;
         return NPERR_NO_ERROR;
     }
 
@@ -143,4 +143,8 @@ abort:
     return false;
 }
 
+uint16_t PluginPackage::NPVersion() const
+{
+    return NP_VERSION_MINOR;
+}
 }

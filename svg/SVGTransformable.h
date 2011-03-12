@@ -28,32 +28,30 @@
 
 namespace WebCore {
     
-    class TransformationMatrix;
-    class AtomicString;
-    class SVGTransform;
-    class QualifiedName;
+class AffineTransform;
+class AtomicString;
+class SVGTransform;
+class QualifiedName;
 
-    class SVGTransformable : virtual public SVGLocatable {
-    public:
-        SVGTransformable();
-        virtual ~SVGTransformable();
+class SVGTransformable : virtual public SVGLocatable {
+public:
+    SVGTransformable();
+    virtual ~SVGTransformable();
 
-        enum TransformParsingMode {
-            ClearList,
-            DoNotClearList
-        };
-
-        static bool parseTransformAttribute(SVGTransformList*, const AtomicString& transform);
-        static bool parseTransformAttribute(SVGTransformList*, const UChar*& ptr, const UChar* end, TransformParsingMode mode = ClearList);
-        static bool parseTransformValue(unsigned type, const UChar*& ptr, const UChar* end, SVGTransform&);
-        
-        TransformationMatrix getCTM(const SVGElement*) const;
-        TransformationMatrix getScreenCTM(const SVGElement*) const;
-        
-        virtual TransformationMatrix animatedLocalTransform() const = 0;
-
-        bool isKnownAttribute(const QualifiedName&);
+    enum TransformParsingMode {
+        ClearList,
+        DoNotClearList
     };
+
+    static bool parseTransformAttribute(SVGTransformList*, const AtomicString& transform);
+    static bool parseTransformAttribute(SVGTransformList*, const UChar*& ptr, const UChar* end, TransformParsingMode mode = ClearList);
+    static bool parseTransformValue(unsigned type, const UChar*& ptr, const UChar* end, SVGTransform&);
+
+    virtual AffineTransform localCoordinateSpaceTransform(SVGLocatable::CTMScope) const { return animatedLocalTransform(); }
+    virtual AffineTransform animatedLocalTransform() const = 0;
+
+    bool isKnownAttribute(const QualifiedName&);
+};
 
 } // namespace WebCore
 

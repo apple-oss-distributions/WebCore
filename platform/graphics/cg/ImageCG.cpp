@@ -28,12 +28,15 @@
 
 #if PLATFORM(CG)
 
-#include "TransformationMatrix.h"
+#include "AffineTransform.h"
 #include "FloatConversion.h"
 #include "FloatRect.h"
 #include "GraphicsContext.h"
 #include "GraphicsContextPlatformPrivateCG.h"
 #include "ImageObserver.h"
+#if ENABLE(RESPECT_EXIF_ORIENTATION)
+#include "ImageSourceCG.h"
+#endif
 #include "PDFDocumentImage.h"
 #include "PlatformString.h"
 #include <CoreGraphics/CoreGraphics.h>
@@ -171,7 +174,12 @@ void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& destRect, const F
     startAnimation(false);
     
     CGRect transformedDstRect = CGRectApplyAffineTransform(destRect, CGContextGetCTM(ctxt->platformContext()));
-    RetainPtr<CGImageRef> image = frameAtIndex(m_currentFrame, std::min(1.0f, std::max(transformedDstRect.size.width  / srcRect.width(),
+    RetainPtr<CGImageRef> image;
+    // Never use subsampled images for drawing into PDF contexts.
+    if (CGContextGetType(ctxt->platformContext()) == kCGContextTypePDF)
+        image.adoptCF(copyUnscaledFrameAtIndex(m_currentFrame));
+    else
+        image = frameAtIndex(m_currentFrame, std::min(1.0f, std::max(transformedDstRect.size.width  / srcRect.width(),
                                                                             transformedDstRect.size.height / srcRect.height())));
     if (!image) // If it's too early we won't have an image yet.
         return;
@@ -183,8 +191,7 @@ void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& destRect, const F
 
     float currHeight = CGImageGetHeight(image.get());
 #if ENABLE(RESPECT_EXIF_ORIENTATION)
-    int exifOrientation = frameOrientationAtIndex(m_currentFrame);
-    if (exifOrientation && !(exifOrientation & 0x01))
+    if (orientationRequiresWidthAndHeightSwapped(frameOrientationAtIndex(m_currentFrame)))
         currHeight = CGImageGetWidth(image.get());
 #endif
     // Unapply the scaling since we are getting this from a scaled bitmap.
@@ -252,7 +259,7 @@ void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& destRect, const F
     float w = adjustedDestRect.width();
     float h = adjustedDestRect.height();
     CGAffineTransform transform;
-    switch (exifOrientation) {
+    switch (frameOrientationAtIndex(m_currentFrame)) {
         case BitmapImage::ImageEXIFOrientationBottomRight:
             transform = CGAffineTransformMake(-1,  0,  0, -1,  w, h); 
             break;
@@ -286,13 +293,11 @@ void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& destRect, const F
     // Flip the coords.
     CGContextScaleCTM(context, 1, -1);
 #if ENABLE(RESPECT_EXIF_ORIENTATION)
-    if (exifOrientation > BitmapImage::ImageEXIFOrientationTopLeft) {
-        CGContextConcatCTM(context, transform);
-        if (!(exifOrientation & 0x01)) {
-            // The destination rect will have it's width and height already reversed for the orientation of
-            // the image, as it was needed for page layout, so we need to reverse it back here.
-            adjustedDestRect = FloatRect(adjustedDestRect.x(), adjustedDestRect.y(), adjustedDestRect.height(), adjustedDestRect.width());
-        }
+    CGContextConcatCTM(context, transform);
+    if (orientationRequiresWidthAndHeightSwapped(frameOrientationAtIndex(m_currentFrame))) {
+        // The destination rect will have it's width and height already reversed for the orientation of
+        // the image, as it was needed for page layout, so we need to reverse it back here.
+        adjustedDestRect = FloatRect(adjustedDestRect.x(), adjustedDestRect.y(), adjustedDestRect.height(), adjustedDestRect.width());
     }
     adjustedDestRect.setLocation(FloatPoint());
 #else    
@@ -320,7 +325,7 @@ static void drawPatternCallback(void* info, CGContextRef context)
     CGContextDrawImage(context, GraphicsContext(context).roundToDevicePixels(FloatRect(0, 0, CGImageGetWidth(image), h)), image);
 }
 
-void Image::drawPattern(GraphicsContext* ctxt, const FloatRect& tileRect, const TransformationMatrix& patternTransform,
+void Image::drawPattern(GraphicsContext* ctxt, const FloatRect& tileRect, const AffineTransform& patternTransform,
                         const FloatPoint& phase, ColorSpace styleColorSpace, CompositeOperator op, const FloatRect& destRect)
 {
     if (!nativeImageForCurrentFrame())
@@ -421,6 +426,21 @@ void Image::drawPattern(GraphicsContext* ctxt, const FloatRect& tileRect, const 
         imageObserver()->didDraw(this);
 }
 
+NativeImagePtr BitmapImage::copyUnscaledFrameAtIndex(size_t index)
+{
+    if (index >= frameCount())
+        return 0;
+
+    if (index >= m_frames.size() || !m_frames[index].m_frame)
+        cacheFrame(index, 1);
+
+    if (m_frames[index].m_scale == 1 && !m_source.isSubsampled())
+        return CGImageRetain(m_frames[index].m_frame);
+
+    float ignoredScale;
+    ssize_t ignoredBytes;
+    return m_source.createFrameAtIndex(index, std::numeric_limits<float>::infinity(), &ignoredScale, &ignoredBytes);
+}
 
 }
 

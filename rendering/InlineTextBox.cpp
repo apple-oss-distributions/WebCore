@@ -1,7 +1,7 @@
 /*
  * (C) 1999 Lars Knoll (knoll@kde.org)
  * (C) 2000 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -103,20 +103,41 @@ RenderObject::SelectionState InlineTextBox::selectionState()
     return state;
 }
 
+typedef Vector<UChar, 256> BufferForAppendingHyphen;
+
+static void adjustCharactersAndLengthForHyphen(BufferForAppendingHyphen& charactersWithHyphen, RenderStyle* style, const UChar*& characters, int& length)
+{
+    const AtomicString& hyphenString = style->hyphenString();
+    charactersWithHyphen.reserveCapacity(length + hyphenString.length());
+    charactersWithHyphen.append(characters, length);
+    charactersWithHyphen.append(hyphenString.characters(), hyphenString.length());
+    characters = charactersWithHyphen.data();
+    length += hyphenString.length();
+}
+
 IntRect InlineTextBox::selectionRect(int tx, int ty, int startPos, int endPos)
 {
     int sPos = max(startPos - m_start, 0);
     int ePos = min(endPos - m_start, (int)m_len);
     
-    if (sPos >= ePos)
+    if (sPos > ePos)
         return IntRect();
 
     RenderText* textObj = textRenderer();
     int selTop = selectionTop();
     int selHeight = selectionHeight();
-    const Font& f = textObj->style(m_firstLine)->font();
+    RenderStyle* styleToUse = textObj->style(m_firstLine);
+    const Font& f = styleToUse->font();
 
-    IntRect r = enclosingIntRect(f.selectionRectForText(TextRun(textObj->text()->characters() + m_start, m_len, textObj->allowTabs(), textPos(), m_toAdd, direction() == RTL, m_dirOverride),
+    const UChar* characters = textObj->text()->characters() + m_start;
+    int len = m_len;
+    BufferForAppendingHyphen charactersWithHyphen;
+    if (ePos == len && hasHyphen()) {
+        adjustCharactersAndLengthForHyphen(charactersWithHyphen, styleToUse, characters, len);
+        ePos = len;
+    }
+
+    IntRect r = enclosingIntRect(f.selectionRectForText(TextRun(characters, len, textObj->allowTabs(), textPos(), m_toAdd, direction() == RTL, m_dirOverride),
                                                         IntPoint(tx + m_x, ty + selTop), selHeight, sPos, ePos));
     if (r.x() > tx + m_x + m_width)
         r.setWidth(0);
@@ -273,7 +294,7 @@ bool InlineTextBox::nodeAtPoint(const HitTestRequest&, HitTestResult& result, in
     return false;
 }
 
-static void paintTextWithShadows(GraphicsContext* context, const Font& font, const TextRun& textRun, int startOffset, int endOffset, int truncationPoint, const IntPoint& textOrigin, int x, int y, int w, int h, ShadowData* shadow, bool stroked)
+static void paintTextWithShadows(GraphicsContext* context, const Font& font, const TextRun& textRun, int startOffset, int endOffset, int truncationPoint, const IntPoint& textOrigin, int x, int y, int w, int h, const ShadowData* shadow, bool stroked)
 {
     Color fillColor = context->fillColor();
     ColorSpace fillColorSpace = context->fillColorSpace();
@@ -285,11 +306,11 @@ static void paintTextWithShadows(GraphicsContext* context, const Font& font, con
         IntSize extraOffset;
 
         if (shadow) {
-            IntSize shadowOffset(shadow->x, shadow->y);
-            int shadowBlur = shadow->blur;
-            const Color& shadowColor = shadow->color;
+            IntSize shadowOffset(shadow->x(), shadow->y());
+            int shadowBlur = shadow->blur();
+            const Color& shadowColor = shadow->color();
 
-            if (shadow->next || stroked || !opaque) {
+            if (shadow->next() || stroked || !opaque) {
                 IntRect shadowRect(x, y, w, h);
                 shadowRect.inflate(shadowBlur);
                 shadowRect.move(shadowOffset);
@@ -315,12 +336,12 @@ static void paintTextWithShadows(GraphicsContext* context, const Font& font, con
         if (!shadow)
             break;
 
-        if (shadow->next || stroked || !opaque)
+        if (shadow->next() || stroked || !opaque)
             context->restore();
         else
             context->clearShadow();
 
-        shadow = shadow->next;
+        shadow = shadow->next();
     } while (shadow || stroked || !opaque);
 }
 
@@ -405,24 +426,20 @@ void InlineTextBox::paint(RenderObject::PaintInfo& paintInfo, int tx, int ty)
     Color textFillColor;
     Color textStrokeColor;
     float textStrokeWidth = styleToUse->textStrokeWidth();
-    ShadowData* textShadow = paintInfo.forceBlackText ? 0 : styleToUse->textShadow();
+    const ShadowData* textShadow = paintInfo.forceBlackText ? 0 : styleToUse->textShadow();
 
     if (paintInfo.forceBlackText) {
         textFillColor = Color::black;
         textStrokeColor = Color::black;
     } else {
-        textFillColor = styleToUse->textFillColor();
-        if (!textFillColor.isValid())
-            textFillColor = styleToUse->color();
-
+        textFillColor = styleToUse->visitedDependentColor(CSSPropertyWebkitTextFillColor);
+        
         // Make the text fill color legible against a white background
         if (styleToUse->forceBackgroundsToWhite())
             textFillColor = correctedTextColor(textFillColor, Color::white);
 
-        textStrokeColor = styleToUse->textStrokeColor();
-        if (!textStrokeColor.isValid())
-            textStrokeColor = styleToUse->color();
-
+        textStrokeColor = styleToUse->visitedDependentColor(CSSPropertyWebkitTextStrokeColor);
+        
         // Make the text stroke color legible against a white background
         if (styleToUse->forceBackgroundsToWhite())
             textStrokeColor = correctedTextColor(textStrokeColor, Color::white);
@@ -434,20 +451,25 @@ void InlineTextBox::paint(RenderObject::PaintInfo& paintInfo, int tx, int ty)
     Color selectionFillColor = textFillColor;
     Color selectionStrokeColor = textStrokeColor;
     float selectionStrokeWidth = textStrokeWidth;
-    ShadowData* selectionShadow = textShadow;
+    const ShadowData* selectionShadow = textShadow;
 
     // On iPhone, don't modify the rendering style due to selection.
 
+    const UChar* characters = textRenderer()->text()->characters() + m_start;
+    int length = m_len;
+    BufferForAppendingHyphen charactersWithHyphen;
+    if (hasHyphen())
+        adjustCharactersAndLengthForHyphen(charactersWithHyphen, styleToUse, characters, length);
+
     int baseline = renderer()->style(m_firstLine)->font().ascent();
     IntPoint textOrigin(m_x + tx, m_y + ty + baseline);
-    TextRun textRun(textRenderer()->text()->characters() + m_start, m_len, textRenderer()->allowTabs(), textPos(), m_toAdd, direction() == RTL, m_dirOverride || styleToUse->visuallyOrdered());
+    TextRun textRun(characters, length, textRenderer()->allowTabs(), textPos(), m_toAdd, direction() == RTL, m_dirOverride || styleToUse->visuallyOrdered());
 
     int sPos = 0;
     int ePos = 0;
     if (paintSelectedTextOnly || paintSelectedTextSeparately)
         selectionStartEnd(sPos, ePos);
 
-    int length = m_len;
     if (m_truncation != cNoTruncation) {
         sPos = min<int>(sPos, m_truncation);
         ePos = min<int>(ePos, m_truncation);
@@ -485,7 +507,7 @@ void InlineTextBox::paint(RenderObject::PaintInfo& paintInfo, int tx, int ty)
 
     // Paint decorations
     if (d != TDNONE && paintInfo.phase != PaintPhaseSelection && styleToUse->htmlHacks()) {
-        context->setStrokeColor(styleToUse->color(), styleToUse->colorSpace());
+        context->setStrokeColor(styleToUse->visitedDependentColor(CSSPropertyColor), styleToUse->colorSpace());
         paintDecoration(context, tx, ty, d, textShadow);
     }
 
@@ -595,7 +617,7 @@ void InlineTextBox::paintCustomHighlight(int tx, int ty, const AtomicString& typ
 
 #endif
 
-void InlineTextBox::paintDecoration(GraphicsContext* context, int tx, int ty, int deco, ShadowData* shadow)
+void InlineTextBox::paintDecoration(GraphicsContext* context, int tx, int ty, int deco, const ShadowData* shadow)
 {
     tx += m_x;
     ty += m_y;
@@ -624,15 +646,15 @@ void InlineTextBox::paintDecoration(GraphicsContext* context, int tx, int ty, in
 
     bool setClip = false;
     int extraOffset = 0;
-    if (!linesAreOpaque && shadow && shadow->next) {
+    if (!linesAreOpaque && shadow && shadow->next()) {
         context->save();
         IntRect clipRect(tx, ty, width, baseline + 2);
-        for (ShadowData* s = shadow; s; s = s->next) {
+        for (const ShadowData* s = shadow; s; s = s->next()) {
             IntRect shadowRect(tx, ty, width, baseline + 2);
-            shadowRect.inflate(s->blur);
-            shadowRect.move(s->x, s->y);
+            shadowRect.inflate(s->blur());
+            shadowRect.move(s->x(), s->y());
             clipRect.unite(shadowRect);
-            extraOffset = max(extraOffset, max(0, s->y) + s->blur);
+            extraOffset = max(extraOffset, max(0, s->y()) + s->blur());
         }
         context->save();
         context->clip(clipRect);
@@ -646,14 +668,14 @@ void InlineTextBox::paintDecoration(GraphicsContext* context, int tx, int ty, in
     
     do {
         if (shadow) {
-            if (!shadow->next) {
+            if (!shadow->next()) {
                 // The last set of lines paints normally inside the clip.
                 ty -= extraOffset;
                 extraOffset = 0;
             }
-            context->setShadow(IntSize(shadow->x, shadow->y - extraOffset), shadow->blur, shadow->color, colorSpace);
+            context->setShadow(IntSize(shadow->x(), shadow->y() - extraOffset), shadow->blur(), shadow->color(), colorSpace);
             setShadow = true;
-            shadow = shadow->next;
+            shadow = shadow->next();
         }
 
         if (deco & UNDERLINE) {

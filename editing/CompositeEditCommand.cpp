@@ -930,14 +930,17 @@ void CompositeEditCommand::moveParagraphs(const VisiblePosition& startOfParagrap
 
     // FIXME: This is an inefficient way to preserve style on nodes in the paragraph to move. It
     // shouldn't matter though, since moved paragraphs will usually be quite small.
-    RefPtr<DocumentFragment> fragment = startOfParagraphToMove != endOfParagraphToMove ? createFragmentFromMarkup(document(), createMarkup(range.get(), 0, DoNotAnnotateForInterchange, true), "") : 0;
-    
+    RefPtr<DocumentFragment> fragment;
+    // This used to use a ternary for initialization, but that confused some versions of GCC, see bug 37912
+    if (startOfParagraphToMove != endOfParagraphToMove)
+        fragment = createFragmentFromMarkup(document(), createMarkup(range.get(), 0, DoNotAnnotateForInterchange, true), "");
+
     // A non-empty paragraph's style is moved when we copy and move it.  We don't move 
     // anything if we're given an empty paragraph, but an empty paragraph can have style
     // too, <div><b><br></b></div> for example.  Save it so that we can preserve it later.
     RefPtr<CSSMutableStyleDeclaration> styleInEmptyParagraph;
     if (startOfParagraphToMove == endOfParagraphToMove && preserveStyle && isRichlyEditablePosition(destination.deepEquivalent())) {
-        styleInEmptyParagraph = editingStyleAtPosition(startOfParagraphToMove.deepEquivalent(), IncludeTypingStyle);
+        styleInEmptyParagraph = ApplyStyleCommand::editingStyleAtPosition(startOfParagraphToMove.deepEquivalent(), IncludeTypingStyle);
         // The moved paragraph should assume the block style of the destination.
         styleInEmptyParagraph->removeBlockProperties();
     }
@@ -950,6 +953,7 @@ void CompositeEditCommand::moveParagraphs(const VisiblePosition& startOfParagrap
     ASSERT(destination.deepEquivalent().node()->inDocument());
 
     cleanupAfterDeletion();
+    ASSERT(destination.deepEquivalent().node()->inDocument());
 
     // Add a br if pruning an empty block level element caused a collapse. For example:
     // foo^
@@ -971,6 +975,7 @@ void CompositeEditCommand::moveParagraphs(const VisiblePosition& startOfParagrap
     destinationIndex = TextIterator::rangeLength(startToDestinationRange.get(), true);
     
     setEndingSelection(destination);
+    ASSERT(endingSelection().isCaretOrRange());
     applyCommandToComposite(ReplaceSelectionCommand::create(document(), fragment, true, false, !preserveStyle, false, true));
     
     // If the selection is in an empty paragraph, restore styles from the old empty paragraph to the new empty paragraph.
@@ -998,7 +1003,7 @@ bool CompositeEditCommand::breakOutOfEmptyListItem()
     if (!emptyListItem)
         return false;
 
-    RefPtr<CSSMutableStyleDeclaration> style = editingStyleAtPosition(endingSelection().start(), IncludeTypingStyle);
+    RefPtr<CSSMutableStyleDeclaration> style = ApplyStyleCommand::editingStyleAtPosition(endingSelection().start(), IncludeTypingStyle);
 
     Node* listNode = emptyListItem->parentNode();
     // FIXME: Can't we do something better when the immediate parent wasn't a list node?

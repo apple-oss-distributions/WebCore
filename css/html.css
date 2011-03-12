@@ -72,7 +72,7 @@ layer {
     display: block
 }
 
-article, aside, footer, header, nav, section {
+article, aside, footer, header, hgroup, nav, section {
     display: block
 }
 
@@ -387,12 +387,14 @@ input::-webkit-input-list-button {
 input::-webkit-inner-spin-button {
     -webkit-appearance: inner-spin-button;
     display: inline-block;
+    -webkit-user-select: none;
 }
 
 input::-webkit-outer-spin-button {
     -webkit-appearance: outer-spin-button;
     display: inline-block;
     margin-left: 2px;
+    -webkit-user-select: none;
 }
 
 textarea {
@@ -470,10 +472,7 @@ input[type="button"], input[type="submit"], input[type="reset"], input[type="fil
     border: 2px outset ButtonFace;
     background-color: ButtonFace;
 #else
-    padding-top: 0px;
-    padding-bottom: 0px;
-    padding-left: 1.0em !important;
-    padding-right: 1.0em !important;
+    padding: 0 1.0em;
     border: 1px solid #4c4c4c;
     /* We want to be as close to background-color:transparent as possible without actually being transparent */
     background-color: rgba(255, 255, 255, 0.01);
@@ -630,6 +629,20 @@ option {
     font-weight: normal;
 }
 
+/* progress */
+
+progress {
+    -webkit-appearance: progress-bar;
+    display: inline-block;
+    height: 1em;
+    width: 10em;
+    vertical-align: -0.2em;
+}
+
+progress::-webkit-progress-bar {
+    -webkit-appearance: progress-bar;
+}
+
 /* datagrid */
 
 datagrid {
@@ -736,7 +749,8 @@ a:-webkit-any-link:active {
 /* HTML5 ruby elements */
 
 ruby, rt {
-    text-indent: 0; /* blocks used for ruby rendering should not trigger this */ 
+    text-indent: 0; /* blocks used for ruby rendering should not trigger this */
+    line-height: normal;
 }
 
 ruby > rt {

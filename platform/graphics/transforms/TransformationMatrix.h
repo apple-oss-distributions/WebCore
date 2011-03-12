@@ -26,6 +26,7 @@
 #ifndef TransformationMatrix_h
 #define TransformationMatrix_h
 
+#include "AffineTransform.h"
 #include "FloatPoint.h"
 #include "IntPoint.h"
 #include <string.h> //for memcpy
@@ -46,7 +47,7 @@
 #endif
 
 #if PLATFORM(WIN) || (PLATFORM(QT) && OS(WINDOWS)) || (PLATFORM(WX) && OS(WINDOWS))
-#if COMPILER(MINGW)
+#if COMPILER(MINGW) && !COMPILER(MINGW64)
 typedef struct _XFORM XFORM;
 #else
 typedef struct tagXFORM XFORM;
@@ -55,6 +56,7 @@ typedef struct tagXFORM XFORM;
 
 namespace WebCore {
 
+class AffineTransform;
 class IntRect;
 class FloatPoint3D;
 class FloatRect;
@@ -268,6 +270,8 @@ public:
     // Throw away the non-affine parts of the matrix (lossy!)
     void makeAffine();
 
+    AffineTransform toAffineTransform() const;
+
     bool operator==(const TransformationMatrix& m2) const
     {
         return (m_matrix[0][0] == m2.m_matrix[0][0] &&
@@ -329,16 +333,6 @@ public:
             && m_matrix[1][0] == 0 && m_matrix[1][1] == 1 && m_matrix[1][2] == 0 && m_matrix[1][3] == 0
             && m_matrix[2][0] == 0 && m_matrix[2][1] == 0 && m_matrix[2][2] == 1 && m_matrix[2][3] == 0
             && m_matrix[3][3] == 1;
-    }
-
-    // FIXME: This was temporarily added to fix <rdar://problem/7909020> N90: Apex8A258: Mobile Safari eating up large amounts of %CPU
-    // This can be removed after Merging up to WebKit ToT r55266 since it will no longer be needed.
-    bool isIdentityOrTranslationOrFlipped() const
-    {
-        return m_matrix[0][0] == 1 && m_matrix[0][1] == 0 && m_matrix[0][2] == 0 && m_matrix[0][3] == 0
-            && m_matrix[1][0] == 0 && m_matrix[1][1] == 1 && m_matrix[1][2] == 0 && m_matrix[1][3] == 0
-            && m_matrix[2][0] == 0 && m_matrix[2][1] == 0 && m_matrix[2][2] == 1 && m_matrix[2][3] == 0
-            && (m_matrix[3][3] == 1 || m_matrix[3][3] == -1);
     }
 
 private:

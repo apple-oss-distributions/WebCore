@@ -1,6 +1,7 @@
 /*
  * This file is part of the select element renderer in WebCore.
  *
+ * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
  * Copyright (C) 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  *               2009 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
  *
@@ -272,7 +273,7 @@ void RenderMenuList::calcPrefWidths()
         m_minPrefWidth = min(m_minPrefWidth, calcContentBoxWidth(style()->maxWidth().value()));
     }
 
-    int toAdd = paddingLeft() + paddingRight() + borderLeft() + borderRight();
+    int toAdd = borderAndPaddingWidth();
     m_minPrefWidth += toAdd;
     m_maxPrefWidth += toAdd;
 
@@ -295,6 +296,20 @@ void RenderMenuList::valueChanged(unsigned listIndex, bool fireOnChange)
     SelectElement* select = toSelectElement(static_cast<Element*>(node()));
     select->setSelectedIndexByUser(select->listToOptionIndex(listIndex), true, fireOnChange);
 }
+
+#if ENABLE(NO_LISTBOX_RENDERING)
+void RenderMenuList::listBoxSelectItem(int listIndex, bool allowMultiplySelections, bool shift, bool fireOnChangeNow)
+{
+    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
+    select->listBoxSelectItem(select->listToOptionIndex(listIndex), allowMultiplySelections, shift, fireOnChangeNow);
+}
+
+bool RenderMenuList::multiple()
+{
+    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
+    return select->multiple();
+}
+#endif
 
 void RenderMenuList::didSetSelectedIndex()
 {
@@ -322,6 +337,17 @@ String RenderMenuList::itemText(unsigned listIndex) const
     return String();
 }
 
+String RenderMenuList::itemAccessibilityText(unsigned listIndex) const
+{
+    // Allow the accessible name be changed if necessary.
+    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
+    const Vector<Element*>& listItems = select->listItems();
+    if (listIndex >= listItems.size())
+        return String();
+
+    return listItems[listIndex]->getAttribute(aria_labelAttr);
+}
+    
 String RenderMenuList::itemToolTip(unsigned listIndex) const
 {
     SelectElement* select = toSelectElement(static_cast<Element*>(node()));
@@ -370,7 +396,7 @@ PopupMenuStyle RenderMenuList::itemStyle(unsigned listIndex) const
     Element* element = listItems[listIndex];
     
     RenderStyle* style = element->renderStyle() ? element->renderStyle() : element->computedStyle();
-    return style ? PopupMenuStyle(style->color(), itemBackgroundColor(listIndex), style->font(), style->visibility() == VISIBLE, style->textIndent(), style->direction()) : menuStyle();
+    return style ? PopupMenuStyle(style->visitedDependentColor(CSSPropertyColor), itemBackgroundColor(listIndex), style->font(), style->visibility() == VISIBLE, style->textIndent(), style->direction()) : menuStyle();
 }
 
 Color RenderMenuList::itemBackgroundColor(unsigned listIndex) const
@@ -378,18 +404,18 @@ Color RenderMenuList::itemBackgroundColor(unsigned listIndex) const
     SelectElement* select = toSelectElement(static_cast<Element*>(node()));
     const Vector<Element*>& listItems = select->listItems();
     if (listIndex >= listItems.size())
-        return style()->backgroundColor();
+        return style()->visitedDependentColor(CSSPropertyBackgroundColor);
     Element* element = listItems[listIndex];
 
     Color backgroundColor;
     if (element->renderStyle())
-        backgroundColor = element->renderStyle()->backgroundColor();
+        backgroundColor = element->renderStyle()->visitedDependentColor(CSSPropertyBackgroundColor);
     // If the item has an opaque background color, return that.
     if (!backgroundColor.hasAlpha())
         return backgroundColor;
 
     // Otherwise, the item's background is overlayed on top of the menu background.
-    backgroundColor = style()->backgroundColor().blend(backgroundColor);
+    backgroundColor = style()->visitedDependentColor(CSSPropertyBackgroundColor).blend(backgroundColor);
     if (!backgroundColor.hasAlpha())
         return backgroundColor;
 
@@ -400,7 +426,7 @@ Color RenderMenuList::itemBackgroundColor(unsigned listIndex) const
 PopupMenuStyle RenderMenuList::menuStyle() const
 {
     RenderStyle* s = m_innerBlock ? m_innerBlock->style() : style();
-    return PopupMenuStyle(s->color(), s->backgroundColor(), s->font(), s->visibility() == VISIBLE, s->textIndent(), s->direction());
+    return PopupMenuStyle(s->visitedDependentColor(CSSPropertyColor), s->visitedDependentColor(CSSPropertyBackgroundColor), s->font(), s->visibility() == VISIBLE, s->textIndent(), s->direction());
 }
 
 HostWindow* RenderMenuList::hostWindow() const

@@ -33,9 +33,7 @@
 #include "V8NPObject.h"
 
 #include "HTMLPlugInElement.h"
-#include "IdentifierRep.h"
 #include "NPV8Object.h"
-#include "V8CustomBinding.h"
 #include "V8DOMMap.h"
 #include "V8HTMLAppletElement.h"
 #include "V8HTMLEmbedElement.h"
@@ -53,6 +51,17 @@ enum InvokeFunctionType {
     InvokeMethod = 1,
     InvokeConstruct = 2,
     InvokeDefault = 3
+};
+
+struct IdentifierRep {
+    int number() const { return m_isString ? 0 : m_value.m_number; }
+    const char* string() const { return m_isString ? m_value.m_string : 0; }
+
+    union {
+        const char* m_string;
+        int m_number;
+    } m_value;
+    bool m_isString;
 };
 
 // FIXME: need comments.
@@ -376,7 +385,7 @@ v8::Local<v8::Object> createV8ObjectForNPObject(NPObject* object, NPObject* root
     if (value.IsEmpty())
         return value;
 
-    wrapNPObject(value, object);
+    V8DOMWrapper::setDOMWrapper(value, npObjectTypeInfo(), object);
 
     // KJS retains the object as part of its wrapper (see Bindings::CInstance).
     _NPN_RetainObject(object);
@@ -395,7 +404,7 @@ void forgetV8ObjectForNPObject(NPObject* object)
     if (staticNPObjectMap.contains(object)) {
         v8::HandleScope scope;
         v8::Persistent<v8::Object> handle(staticNPObjectMap.get(object));
-        V8DOMWrapper::setDOMWrapper(handle, WebCore::V8ClassIndex::NPOBJECT, 0);
+        V8DOMWrapper::setDOMWrapper(handle, npObjectTypeInfo(), 0);
         staticNPObjectMap.forget(object);
         _NPN_ReleaseObject(object);
     }

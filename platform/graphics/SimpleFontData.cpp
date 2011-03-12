@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2008 Apple Computer, Inc.  All rights reserved.
+ * Copyright (C) 2005, 2008, 2010 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Alexey Proskuryakov
  *
  * Redistribution and use in source and binary forms, with or without
@@ -47,85 +47,66 @@ using namespace std;
 
 namespace WebCore {
 
-SimpleFontData::SimpleFontData(const FontPlatformData& f, bool customFont, bool loading, SVGFontData* svgFontData)
+SimpleFontData::SimpleFontData(const FontPlatformData& platformData, bool isCustomFont, bool isLoading)
     : m_maxCharWidth(-1)
     , m_avgCharWidth(-1)
     , m_unitsPerEm(defaultUnitsPerEm)
-    , m_platformData(f)
+    , m_platformData(platformData)
     , m_treatAsFixedPitch(false)
-#if ENABLE(SVG_FONTS)
-    , m_svgFontData(svgFontData)
-#endif
-    , m_isCustomFont(customFont)
-    , m_isLoading(loading)
+    , m_isCustomFont(isCustomFont)
+    , m_isLoading(isLoading)
     , m_smallCapsFontData(0)
 {
-#if !ENABLE(SVG_FONTS)
-    UNUSED_PARAM(svgFontData);
-#else
-    if (SVGFontFaceElement* svgFontFaceElement = svgFontData ? svgFontData->svgFontFaceElement() : 0) {
-        m_unitsPerEm = svgFontFaceElement->unitsPerEm();
-
-        double scale = f.size();
-        if (m_unitsPerEm)
-            scale /= m_unitsPerEm;
-
-        m_ascent = static_cast<int>(svgFontFaceElement->ascent() * scale);
-        m_descent = static_cast<int>(svgFontFaceElement->descent() * scale);
-        m_xHeight = static_cast<int>(svgFontFaceElement->xHeight() * scale);
-        m_lineGap = 0.1f * f.size();
-        m_lineSpacing = m_ascent + m_descent + m_lineGap;
-
-        SVGFontElement* associatedFontElement = svgFontFaceElement->associatedFontElement();
-
-        Vector<SVGGlyphIdentifier> spaceGlyphs;
-        associatedFontElement->getGlyphIdentifiersForString(String(" ", 1), spaceGlyphs);
-        m_spaceWidth = spaceGlyphs.isEmpty() ? m_xHeight : static_cast<float>(spaceGlyphs.first().horizontalAdvanceX * scale);
-
-        Vector<SVGGlyphIdentifier> numeralZeroGlyphs;
-        associatedFontElement->getGlyphIdentifiersForString(String("0", 1), numeralZeroGlyphs);
-        m_avgCharWidth = numeralZeroGlyphs.isEmpty() ? m_spaceWidth : static_cast<float>(numeralZeroGlyphs.first().horizontalAdvanceX * scale);
-
-        Vector<SVGGlyphIdentifier> letterWGlyphs;
-        associatedFontElement->getGlyphIdentifiersForString(String("W", 1), letterWGlyphs);
-        m_maxCharWidth = letterWGlyphs.isEmpty() ? m_ascent : static_cast<float>(letterWGlyphs.first().horizontalAdvanceX * scale);
-
-        // FIXME: is there a way we can get the space glyph from the SVGGlyphIdentifier above?
-        m_spaceGlyph = 0;
-        m_zeroWidthSpaceGlyph = 0;
-        determinePitch();
-        m_adjustedSpaceWidth = roundf(m_spaceWidth);
-        m_missingGlyphData.fontData = this;
-        m_missingGlyphData.glyph = 0;
-        return;
-    }
-#endif
-
-    if (f.m_isImageFont) {
-        m_unitsPerEm = 1;
-        
-        double scale = f.size();
-        if (m_unitsPerEm)
-            scale /= m_unitsPerEm;
-        
-        m_ascent = static_cast<int>(scale / 3);  // should not be used for image glyphs
-        m_descent = static_cast<int>(scale / 3); // should not be used for image glyphs
-        m_xHeight = static_cast<int>(scale / 3); // should not be used for image glyphs
-        m_lineGap = static_cast<int>(scale / 3); // should not be used for image glyphs
-        m_lineSpacing = 0; // should not be used for image glyphs
-        
-        m_spaceGlyph = 0;
-        m_spaceWidth = 0;
-        m_adjustedSpaceWidth = 0;
-        m_missingGlyphData.fontData = this;
-        m_missingGlyphData.glyph = 0;
-        return;
-    }
-
     platformInit();
     platformGlyphInit();
     platformCharWidthInit();
 }
+
+#if ENABLE(SVG_FONTS)
+SimpleFontData::SimpleFontData(PassOwnPtr<SVGFontData> svgFontData, int size, bool syntheticBold, bool syntheticItalic)
+    : m_platformData(FontPlatformData(size, syntheticBold, syntheticItalic))
+    , m_treatAsFixedPitch(false)
+    , m_svgFontData(svgFontData)
+    , m_isCustomFont(true)
+    , m_isLoading(false)
+    , m_smallCapsFontData(0)
+{
+    SVGFontFaceElement* svgFontFaceElement = m_svgFontData->svgFontFaceElement();
+    m_unitsPerEm = svgFontFaceElement->unitsPerEm();
+
+    double scale = size;
+    if (m_unitsPerEm)
+        scale /= m_unitsPerEm;
+
+    m_ascent = static_cast<int>(svgFontFaceElement->ascent() * scale);
+    m_descent = static_cast<int>(svgFontFaceElement->descent() * scale);
+    m_xHeight = static_cast<int>(svgFontFaceElement->xHeight() * scale);
+    m_lineGap = 0.1f * size;
+    m_lineSpacing = m_ascent + m_descent + m_lineGap;
+
+    SVGFontElement* associatedFontElement = svgFontFaceElement->associatedFontElement();
+
+    Vector<SVGGlyphIdentifier> spaceGlyphs;
+    associatedFontElement->getGlyphIdentifiersForString(String(" ", 1), spaceGlyphs);
+    m_spaceWidth = spaceGlyphs.isEmpty() ? m_xHeight : static_cast<float>(spaceGlyphs.first().horizontalAdvanceX * scale);
+
+    Vector<SVGGlyphIdentifier> numeralZeroGlyphs;
+    associatedFontElement->getGlyphIdentifiersForString(String("0", 1), numeralZeroGlyphs);
+    m_avgCharWidth = numeralZeroGlyphs.isEmpty() ? m_spaceWidth : static_cast<float>(numeralZeroGlyphs.first().horizontalAdvanceX * scale);
+
+    Vector<SVGGlyphIdentifier> letterWGlyphs;
+    associatedFontElement->getGlyphIdentifiersForString(String("W", 1), letterWGlyphs);
+    m_maxCharWidth = letterWGlyphs.isEmpty() ? m_ascent : static_cast<float>(letterWGlyphs.first().horizontalAdvanceX * scale);
+
+    // FIXME: is there a way we can get the space glyph from the SVGGlyphIdentifier above?
+    m_spaceGlyph = 0;
+    m_zeroWidthSpaceGlyph = 0;
+    determinePitch();
+    m_adjustedSpaceWidth = roundf(m_spaceWidth);
+    m_missingGlyphData.fontData = this;
+    m_missingGlyphData.glyph = 0;
+}
+#endif
 
 // Estimates of avgCharWidth and maxCharWidth for platforms that don't support accessing these values from the font.
 void SimpleFontData::initCharWidths()

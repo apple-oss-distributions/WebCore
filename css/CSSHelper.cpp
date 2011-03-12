@@ -31,10 +31,12 @@ String deprecatedParseURL(const String& url)
 {
     StringImpl* i = url.impl();
     if (!i)
-        return String();
+        return url;
+
+    int length = i->length();
 
     int o = 0;
-    int l = i->length();
+    int l = length;
 
     while (0 < l && (*i)[o] <= ' ') {
         ++o;
@@ -72,11 +74,26 @@ String deprecatedParseURL(const String& url)
     while (l > 0 && (*i)[o + l - 1] <= ' ')
         --l;
 
+    const UChar* characters = i->characters();
+
+    // Optimize for the likely case there there is nothing to strip.
+    if (l == length) {
+        int k;
+        // If the URL has any control characters in it, we have to strip them.
+        // '\r' (ascii value 13) is the largest control character.
+        for (k = 0; k < length; k++) {
+            if (characters[k] <= '\r')
+                break;
+        }
+        if (k == length)
+            return url;
+    }
+
     Vector<UChar, 2048> buffer(l);
 
     int nl = 0;
     for (int k = o; k < o + l; k++) {
-        UChar c = (*i)[k];
+        UChar c = characters[k];
         if (c > '\r')
             buffer[nl++] = c;
     }

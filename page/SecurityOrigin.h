@@ -114,12 +114,16 @@ public:
     // WARNING: This is an extremely powerful ability. Use with caution!
     void grantUniversalAccess();
 
-    void setSandboxFlags(SandboxFlags);
     bool isSandboxed(SandboxFlags mask) const { return m_sandboxFlags & mask; }
 
     bool canAccessDatabase() const { return !isUnique(); }
-    bool canAccessStorage() const { return !isUnique(); }
+    bool canAccessLocalStorage() const { return !isUnique(); }
     bool canAccessCookies() const { return !isUnique(); }
+
+    // Technically, we should always allow access to sessionStorage, but we
+    // currently don't handle creating a sessionStorage area for unique
+    // origins.
+    bool canAccessSessionStorage() const { return !isUnique(); }
 
     bool isSecureTransitionTo(const KURL&) const;
 
@@ -138,6 +142,9 @@ public:
     // has the SandboxOrigin flag set. The latter implies the former, and, in
     // addition, the SandboxOrigin flag is inherited by iframes.
     bool isUnique() const { return m_isUnique; }
+
+    // Marks a file:// origin as being in a domain defined by its path.
+    void enforceFilePathSeparation();
 
     // Convert this SecurityOrigin into a string. The string
     // representation of a SecurityOrigin is similar to a URL, except it
@@ -172,6 +179,12 @@ public:
     static bool shouldTreatURLAsLocal(const String&);
     static bool shouldTreatURLSchemeAsLocal(const String&);
 
+    // Secure schemes do not trigger mixed content warnings. For example,
+    // https and data are secure schemes because they cannot be corrupted by
+    // active network attackers.
+    static void registerURLSchemeAsSecure(const String&);
+    static bool shouldTreatURLSchemeAsSecure(const String&);
+
     static bool shouldHideReferrer(const KURL&, const String& referrer);
 
     enum LocalLoadPolicy {
@@ -186,23 +199,30 @@ public:
     static void registerURLSchemeAsNoAccess(const String&);
     static bool shouldTreatURLSchemeAsNoAccess(const String&);
 
-    static void whiteListAccessFromOrigin(const SecurityOrigin& sourceOrigin, const String& destinationProtocol, const String& destinationDomains, bool allowDestinationSubdomains);
-    static void resetOriginAccessWhiteLists();
+    static void addOriginAccessWhitelistEntry(const SecurityOrigin& sourceOrigin, const String& destinationProtocol, const String& destinationDomains, bool allowDestinationSubdomains);
+    static void removeOriginAccessWhitelistEntry(const SecurityOrigin& sourceOrigin, const String& destinationProtocol, const String& destinationDomains, bool allowDestinationSubdomains);
+    static void resetOriginAccessWhitelists();
 
 private:
     SecurityOrigin(const KURL&, SandboxFlags);
     explicit SecurityOrigin(const SecurityOrigin*);
+
+    bool passesFileCheck(const SecurityOrigin* other) const;
+
+    bool isAccessWhiteListed(const SecurityOrigin* targetOrigin) const;
 
     SandboxFlags m_sandboxFlags;
     String m_protocol;
     String m_host;
     mutable String m_encodedHost;
     String m_domain;
+    String m_filePath;
     unsigned short m_port;
     bool m_isUnique;
     bool m_universalAccess;
     bool m_domainWasSetInDOM;
     bool m_canLoadLocalResources;
+    bool m_enforceFilePathSeparation;
 };
 
 } // namespace WebCore

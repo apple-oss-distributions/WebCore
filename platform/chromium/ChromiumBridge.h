@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2009, Google Inc. All rights reserved.
+ * Copyright (c) 2010, Google Inc. All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -53,8 +53,11 @@ namespace WebCore {
     class Cursor;
     class Document;
     class Frame;
+    class GeolocationServiceBridge;
+    class GeolocationServiceChromium;
     class GraphicsContext;
     class Image;
+    class IndexedDatabase;
     class IntRect;
     class KURL;
     class String;
@@ -62,6 +65,7 @@ namespace WebCore {
 
     struct Cookie;
     struct PluginInfo;
+    struct FontRenderStyle;
 
     // An interface to the embedding layer, which has the ability to answer
     // questions about the system and so on...
@@ -83,11 +87,12 @@ namespace WebCore {
         static void clipboardWriteImage(NativeImagePtr, const KURL&, const String&);
 
         // Cookies ------------------------------------------------------------
-        static void setCookies(const KURL& url, const KURL& firstPartyForCookies, const String& value);
-        static String cookies(const KURL& url, const KURL& firstPartyForCookies);
-        static bool rawCookies(const KURL& url, const KURL& firstPartyForCookies, Vector<Cookie>*);
-        static void deleteCookie(const KURL& url, const String& cookieName);
-        static bool cookiesEnabled(const KURL& url, const KURL& firstPartyForCookies);
+        static void setCookies(const Document*, const KURL&, const String& value);
+        static String cookies(const Document*, const KURL&);
+        static String cookieRequestHeaderFieldValue(const Document*, const KURL&);
+        static bool rawCookies(const Document*, const KURL& url, Vector<Cookie>&);
+        static void deleteCookie(const Document*, const KURL& url, const String& cookieName);
+        static bool cookiesEnabled(const Document*);
 
         // DNS ----------------------------------------------------------------
         static void prefetchDNS(const String& hostname);
@@ -104,17 +109,27 @@ namespace WebCore {
         static String getAbsolutePath(const String&);
         static bool isDirectory(const String&);
         static KURL filePathToURL(const String&);
+        static PlatformFileHandle openFile(const String& path, FileOpenMode);
+        static void closeFile(PlatformFileHandle&);
+        static long long seekFile(PlatformFileHandle, long long offset, FileSeekOrigin);
+        static bool truncateFile(PlatformFileHandle, long long offset);
+        static int readFromFile(PlatformFileHandle, char* data, int length);
+        static int writeToFile(PlatformFileHandle, const char* data, int length);
 
         // Font ---------------------------------------------------------------
 #if OS(WINDOWS)
         static bool ensureFontLoaded(HFONT font);
 #endif
 #if OS(LINUX)
+        static void getRenderStyleForStrike(const char* family, int sizeAndStyle, FontRenderStyle* result);
         static String getFontFamilyForCharacters(const UChar*, size_t numCharacters);
 #endif
 
         // Forms --------------------------------------------------------------
         static void notifyFormStateChanged(const Document*);
+
+        // Geolocation --------------------------------------------------------
+        static GeolocationServiceBridge* createGeolocationServiceBridge(GeolocationServiceChromium*);
 
         // HTML5 DB -----------------------------------------------------------
 #if ENABLE(DATABASE)
@@ -127,6 +142,9 @@ namespace WebCore {
         // Returns the size of the DB file
         static long long databaseGetFileSize(const String& vfsFileName);
 #endif
+
+        // IndexedDB ----------------------------------------------------------
+        static PassRefPtr<IndexedDatabase> indexedDatabase();
 
         // JavaScript ---------------------------------------------------------
         static void notifyJSOutOfMemory(Frame*);

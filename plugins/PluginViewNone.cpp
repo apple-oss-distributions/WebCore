@@ -30,7 +30,7 @@ using namespace WTF;
 
 namespace WebCore {
 
-void PluginView::setFocus()
+void PluginView::setFocus(bool)
 {
 }
 
@@ -62,34 +62,36 @@ void PluginView::setNPWindowRect(const IntRect&)
 {
 }
 
-NPError PluginView::handlePostReadFile(Vector<char>&, uint32, const char*)
-{
-    return 0;
-}
-
-NPError PluginView::getValue(NPNVariable, void*)
-{
-    return 0;
-}
-
 #if ENABLE(NETSCAPE_PLUGIN_API)
-NPError PluginView::getValueStatic(NPNVariable variable, void* value)
+NPError PluginView::handlePostReadFile(Vector<char>&, uint32_t, const char*)
 {
     return 0;
 }
-#endif
+
+bool PluginView::platformGetValue(NPNVariable, void*, NPError*)
+{
+    return false;
+}
+
+bool PluginView::platformGetValueStatic(NPNVariable, void*, NPError*)
+{
+    return false;
+}
 
 void PluginView::invalidateRect(NPRect*)
 {
 }
+#endif
 
 void PluginView::invalidateRect(const IntRect&)
 {
 }
 
+#if ENABLE(NETSCAPE_PLUGIN_API)
 void PluginView::invalidateRegion(NPRegion)
 {
 }
+#endif
 
 void PluginView::forceRedraw()
 {
@@ -119,5 +121,29 @@ void PluginView::halt()
 void PluginView::restart()
 {
 }
+
+#if ENABLE(NETSCAPE_PLUGIN_API)
+void PluginView::keepAlive(NPP)
+{
+}
+#endif
+
+void PluginView::privateBrowsingStateChanged(bool)
+{
+}
+
+void PluginView::setJavaScriptPaused(bool)
+{
+}
+
+#if defined(XP_UNIX) && ENABLE(NETSCAPE_PLUGIN_API)
+void PluginView::handleFocusInEvent()
+{
+}
+
+void PluginView::handleFocusOutEvent()
+{
+}
+#endif
 
 } // namespace WebCore

@@ -29,6 +29,7 @@
 #include "Document.h"
 #include "HTMLNames.h"
 #include "MappedAttributeEntry.h"
+#include "NamedNodeMap.h"
 #include "QualifiedName.h"
 #include "ScrollTypes.h"
 
@@ -103,11 +104,18 @@ public:
 
     virtual PassRefPtr<DocumentFragment> createContextualFragment(const String&, FragmentScriptingPermission = FragmentScriptingAllowed);
 
-    const AtomicString& getIDAttribute() const;
     bool hasAttribute(const QualifiedName&) const;
     const AtomicString& getAttribute(const QualifiedName&) const;
     void setAttribute(const QualifiedName&, const AtomicString& value, ExceptionCode&);
     void removeAttribute(const QualifiedName&, ExceptionCode&);
+
+    // Call this to get the value of an attribute that is known not to be the style
+    // attribute or one of the SVG animatable attributes.
+    bool fastHasAttribute(const QualifiedName&) const;
+    const AtomicString& fastGetAttribute(const QualifiedName&) const;
+
+    // Call this to get the value of the id attribute. Faster than calling fastGetAttribute.
+    const AtomicString& getIDAttribute() const;
 
     bool hasAttributes() const;
 
@@ -204,7 +212,7 @@ public:
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
     virtual void recalcStyle(StyleChange = NoChange);
 
-    virtual RenderStyle* computedStyle();
+    RenderStyle* computedStyle(PseudoId = NOPSEUDO);
 
     void dispatchAttrRemovalEvent(Attribute*);
     void dispatchAttrAdditionEvent(Attribute*);
@@ -241,9 +249,9 @@ public:
     // Use Document::registerForMediaVolumeCallbacks() to subscribe to this
     virtual void mediaVolumeDidChange() { }
 
-    bool isFinishedParsingChildren() const { return m_parsingChildrenFinished; }
+    bool isFinishedParsingChildren() const { return isParsingChildrenFinished(); }
     virtual void finishParsingChildren();
-    virtual void beginParsingChildren() { m_parsingChildrenFinished = false; }
+    virtual void beginParsingChildren() { clearIsParsingChildrenFinished(); }
 
     // ElementTraversal API
     Element* firstElementChild() const;
@@ -257,6 +265,7 @@ public:
     virtual bool isFormControlElement() const { return false; }
     virtual bool isEnabledFormControl() const { return true; }
     virtual bool isReadOnlyFormControl() const { return false; }
+    virtual bool isSpinButtonElement() const { return false; }
     virtual bool isTextFormControl() const { return false; }
     virtual bool isOptionalFormControl() const { return false; }
     virtual bool isRequiredFormControl() const { return false; }
@@ -281,7 +290,11 @@ public:
 #endif
 
 protected:
-    Element(const QualifiedName&, Document*, ConstructionType);
+    Element(const QualifiedName& tagName, Document* document, ConstructionType type)
+        : ContainerNode(document, type)
+        , m_tagName(tagName)
+    {
+    }
 
     virtual void insertedIntoDocument();
     virtual void removedFromDocument();
@@ -308,7 +321,7 @@ private:
 
     bool pseudoStyleCacheIsInvalid(const RenderStyle* currentStyle, RenderStyle* newStyle);
 
-    virtual void createAttributeMap() const;
+    void createAttributeMap() const;
 
     virtual void updateStyleAttribute() const { }
 
@@ -316,12 +329,12 @@ private:
     virtual void updateAnimatedSVGAttribute(const QualifiedName&) const { }
 #endif
 
-    void updateFocusAppearanceSoonAfterAttach();
     void cancelFocusAppearanceUpdate();
 
     virtual const AtomicString& virtualPrefix() const { return prefix(); }
     virtual const AtomicString& virtualLocalName() const { return localName(); }
     virtual const AtomicString& virtualNamespaceURI() const { return namespaceURI(); }
+    virtual RenderStyle* virtualComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) { return computedStyle(pseudoElementSpecifier); }
     
     // cloneNode is private so that non-virtual cloneElementWithChildren and cloneElementWithoutChildren
     // are used instead.
@@ -365,11 +378,11 @@ inline const QualifiedName& Element::idAttributeName() const
 
 inline NamedNodeMap* Element::attributes(bool readonly) const
 {
-    if (!m_isStyleAttributeValid)
+    if (!isStyleAttributeValid())
         updateStyleAttribute();
 
 #if ENABLE(SVG)
-    if (!m_areSVGAttributesValid)
+    if (!areSVGAttributesValid())
         updateAnimatedSVGAttribute(anyQName());
 #endif
 
@@ -391,6 +404,20 @@ inline void Element::updateId(const AtomicString& oldId, const AtomicString& new
         doc->removeElementById(oldId, this);
     if (!newId.isEmpty())
         doc->addElementById(newId, this);
+}
+
+inline bool Element::fastHasAttribute(const QualifiedName& name) const
+{
+    return namedAttrMap && namedAttrMap->getAttributeItem(name);
+}
+
+inline const AtomicString& Element::fastGetAttribute(const QualifiedName& name) const
+{
+    if (namedAttrMap) {
+        if (Attribute* attribute = namedAttrMap->getAttributeItem(name))
+            return attribute->value();
+    }
+    return nullAtom;
 }
 
 } //namespace

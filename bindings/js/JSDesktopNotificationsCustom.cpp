@@ -55,32 +55,11 @@ JSValue JSNotificationCenter::requestPermission(ExecState* exec, const ArgList& 
     if (!args.at(0).isObject())
         return throwError(exec, TypeError);
 
-    PassRefPtr<JSCustomVoidCallback> callback = JSCustomVoidCallback::create(args.at(0).getObject(), static_cast<Document*>(context)->frame());
+    PassRefPtr<JSCustomVoidCallback> callback = JSCustomVoidCallback::create(args.at(0).getObject(), toJSDOMGlobalObject(static_cast<Document*>(context), exec));
 
     impl()->requestPermission(callback);
     return jsUndefined();
 }
-
-JSValue JSNotification::addEventListener(ExecState* exec, const ArgList& args)
-{
-    JSValue listener = args.at(1);
-    if (!listener.isObject())
-        return jsUndefined();
-
-    impl()->addEventListener(args.at(0).toString(exec), JSEventListener::create(asObject(listener)), false, currentWorld(exec)), args.at(2).toBoolean(exec));
-    return jsUndefined();
-}
-
-JSValue JSNotification::removeEventListener(ExecState* exec, const ArgList& args)
-{
-    JSValue listener = args.at(1);
-    if (!listener.isObject())
-        return jsUndefined();
-
-    impl()->removeEventListener(args.at(0).toString(exec), JSEventListener::create(asObject(listener), false, currentWorld(exec)).get(), args.at(2).toBoolean(exec));
-    return jsUndefined();
-}
-
 
 } // namespace
 

@@ -90,10 +90,11 @@ bool isTableCell(const Node*);
 bool isEmptyTableCell(const Node*);
 bool isTableStructureNode(const Node*);
 bool isListElement(Node*);
+bool isListItem(Node*);
 bool isNodeRendered(const Node*);
 bool isNodeVisiblyContainedWithin(Node*, const Range*);
 bool isRenderedAsNonInlineTableImageOrHR(const Node*);
-    
+bool isNodeInTextFormControl(Node* node);
     
 // -------------------------------------------------------------------------
 // Position
@@ -194,7 +195,7 @@ PassRefPtr<HTMLElement> createHTMLElement(Document*, const QualifiedName&);
 PassRefPtr<HTMLElement> createHTMLElement(Document*, const AtomicString&);
 
 HTMLElement* enclosingList(Node*);
-HTMLElement* outermostEnclosingList(Node*);
+HTMLElement* outermostEnclosingList(Node*, Node* rootList = 0);
 HTMLElement* enclosingListChild(Node*);
 
 // -------------------------------------------------------------------------

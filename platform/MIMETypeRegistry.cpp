@@ -215,9 +215,6 @@ static void initializeSupportedNonImageMimeTypes()
         "text/",
         "application/xml",
         "application/xhtml+xml",
-#if ENABLE(XHTMLMP)
-        "application/vnd.wap.xhtml+xml",
-#endif
         "application/json",
 #if ENABLE(SVG)
         "image/svg+xml",
@@ -388,6 +385,8 @@ bool MIMETypeRegistry::isSupportedImageResourceMIMEType(const String& mimeType)
 
 bool MIMETypeRegistry::isSupportedImageMIMETypeForEncoding(const String& mimeType)
 {
+    ASSERT(isMainThread());
+
     if (mimeType.isEmpty())
         return false;
     if (!supportedImageMIMETypesForEncoding)

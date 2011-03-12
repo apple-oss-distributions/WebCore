@@ -108,8 +108,20 @@ String RenderFileUploadControl::acceptTypes()
     return static_cast<HTMLInputElement*>(node())->accept();
 }
 
+
 void RenderFileUploadControl::click()
 {
+}
+
+Chrome* RenderFileUploadControl::chrome() const
+{
+    Frame* frame = node()->document()->frame();
+    if (!frame)
+        return 0;
+    Page* page = frame->page();
+    if (!page)
+        return 0;
+    return page->chrome();
 }
 
 void RenderFileUploadControl::updateFromElement()
@@ -127,7 +139,7 @@ void RenderFileUploadControl::updateFromElement()
         renderer->setStyle(buttonStyle.release());
         renderer->updateFromElement();
         m_button->setAttached();
-        m_button->setInDocument(true);
+        m_button->setInDocument();
 
         addChild(renderer);
     }
@@ -161,7 +173,6 @@ void RenderFileUploadControl::paintObject(PaintInfo& paintInfo, int tx, int ty)
 {
     if (style()->visibility() != VISIBLE)
         return;
-    
 
     // Paint the children.
     RenderBlock::paintObject(paintInfo, tx, ty);
@@ -198,7 +209,7 @@ void RenderFileUploadControl::calcPrefWidths()
         m_minPrefWidth = min(m_minPrefWidth, calcContentBoxWidth(style()->maxWidth().value()));
     }
 
-    int toAdd = paddingLeft() + paddingRight() + borderLeft() + borderRight();
+    int toAdd = borderAndPaddingWidth();
     m_minPrefWidth += toAdd;
     m_maxPrefWidth += toAdd;
 

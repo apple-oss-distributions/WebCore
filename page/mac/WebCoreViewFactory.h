@@ -106,6 +106,9 @@
 - (NSString *)imageTitleForFilename:(NSString *)filename width:(int)width height:(int)height;
 
 
+- (NSString *)missingPluginText;
+- (NSString *)crashedPluginText;
+
 - (NSString *)multipleFileUploadTextForNumberOfFiles:(unsigned)numberOfFiles;
 // FTP Directory Related
 - (NSString *)unknownFileSizeText;

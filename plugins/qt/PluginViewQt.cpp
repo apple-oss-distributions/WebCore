@@ -134,12 +134,14 @@ void PluginView::updatePluginWidget()
     invalidate();
 }
 
-void PluginView::setFocus()
+void PluginView::setFocus(bool focused)
 {
-    if (platformPluginWidget())
-        platformPluginWidget()->setFocus(Qt::OtherFocusReason);
-    else
-        Widget::setFocus();
+    if (platformPluginWidget()) {
+        if (focused)
+            platformPluginWidget()->setFocus(Qt::OtherFocusReason);
+    } else {
+        Widget::setFocus(focused);
+    }
 }
 
 void PluginView::show()
@@ -527,7 +529,7 @@ void PluginView::setParentVisible(bool visible)
         platformPluginWidget()->setVisible(visible);
 }
 
-NPError PluginView::handlePostReadFile(Vector<char>& buffer, uint32 len, const char* buf)
+NPError PluginView::handlePostReadFile(Vector<char>& buffer, uint32_t len, const char* buf)
 {
     String filename(buf, len);
 
@@ -553,96 +555,64 @@ NPError PluginView::handlePostReadFile(Vector<char>& buffer, uint32 len, const c
     return NPERR_NO_ERROR;
 }
 
-NPError PluginView::getValueStatic(NPNVariable variable, void* value)
+bool PluginView::platformGetValueStatic(NPNVariable variable, void* value, NPError* result)
 {
-    LOG(Plugins, "PluginView::getValueStatic(%s)", prettyNameForNPNVariable(variable).data());
-
     switch (variable) {
     case NPNVToolkit:
-        *static_cast<uint32*>(value) = 0;
-        return NPERR_NO_ERROR;
+        *static_cast<uint32_t*>(value) = 0;
+        *result = NPERR_NO_ERROR;
+        return true;
 
     case NPNVSupportsXEmbedBool:
         *static_cast<NPBool*>(value) = true;
-        return NPERR_NO_ERROR;
+        *result = NPERR_NO_ERROR;
+        return true;
 
     case NPNVjavascriptEnabledBool:
         *static_cast<NPBool*>(value) = true;
-        return NPERR_NO_ERROR;
+        *result = NPERR_NO_ERROR;
+        return true;
 
     case NPNVSupportsWindowless:
         *static_cast<NPBool*>(value) = true;
-        return NPERR_NO_ERROR;
+        *result = NPERR_NO_ERROR;
+        return true;
 
     default:
-        return NPERR_GENERIC_ERROR;
+        return false;
     }
 }
 
-NPError PluginView::getValue(NPNVariable variable, void* value)
+bool PluginView::platformGetValue(NPNVariable variable, void* value, NPError* result)
 {
-    LOG(Plugins, "PluginView::getValue(%s)", prettyNameForNPNVariable(variable).data());
-
     switch (variable) {
     case NPNVxDisplay:
         *(void **)value = QX11Info::display();
-        return NPERR_NO_ERROR;
+        *result = NPERR_NO_ERROR;
+        return true;
 
     case NPNVxtAppContext:
-        return NPERR_GENERIC_ERROR;
-
-#if ENABLE(NETSCAPE_PLUGIN_API)
-    case NPNVWindowNPObject: {
-        if (m_isJavaScriptPaused)
-            return NPERR_GENERIC_ERROR;
-
-        NPObject* windowScriptObject = m_parentFrame->script()->windowScriptNPObject();
-
-        // Return value is expected to be retained, as described here: <http://www.mozilla.org/projects/plugin/npruntime.html>
-        if (windowScriptObject)
-            _NPN_RetainObject(windowScriptObject);
-
-        void** v = (void**)value;
-        *v = windowScriptObject;
-
-        return NPERR_NO_ERROR;
-    }
-
-    case NPNVPluginElementNPObject: {
-        if (m_isJavaScriptPaused)
-            return NPERR_GENERIC_ERROR;
-
-        NPObject* pluginScriptObject = 0;
-
-        if (m_element->hasTagName(appletTag) || m_element->hasTagName(embedTag) || m_element->hasTagName(objectTag))
-            pluginScriptObject = static_cast<HTMLPlugInElement*>(m_element)->getNPObject();
-
-        // Return value is expected to be retained, as described here: <http://www.mozilla.org/projects/plugin/npruntime.html>
-        if (pluginScriptObject)
-            _NPN_RetainObject(pluginScriptObject);
-
-        void** v = (void**)value;
-        *v = pluginScriptObject;
-
-        return NPERR_NO_ERROR;
-    }
-#endif
+        *result = NPERR_GENERIC_ERROR;
+        return true;
 
     case NPNVnetscapeWindow: {
         void* w = reinterpret_cast<void*>(value);
         QWebPageClient* client = m_parentFrame->view()->hostWindow()->platformPageClient();
         *((XID *)w) = client ? client->ownerWidget()->window()->winId() : 0;
-        return NPERR_NO_ERROR;
+        *result = NPERR_NO_ERROR;
+        return true;
     }
 
     case NPNVToolkit:
         if (m_plugin->quirks().contains(PluginQuirkRequiresGtkToolKit)) {
-            *((uint32 *)value) = 2;
-            return NPERR_NO_ERROR;
+            *((uint32_t *)value) = 2;
+            *result = NPERR_NO_ERROR;
+            return true;
         }
-        // fall through
+        return false;
+
     default:
-        return getValueStatic(variable, value);
+        return false;
     }
 }
 

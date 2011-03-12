@@ -90,7 +90,7 @@ bool HTMLFrameElementBase::isURLAllowed() const
     return true;
 }
 
-void HTMLFrameElementBase::openURL()
+void HTMLFrameElementBase::openURL(bool lockHistory, bool lockBackForwardList)
 {
     ASSERT(!m_frameName.isEmpty());
 
@@ -104,7 +104,7 @@ void HTMLFrameElementBase::openURL()
     if (!parentFrame)
         return;
 
-    parentFrame->loader()->requestFrame(this, m_URL, m_frameName);
+    parentFrame->loader()->requestFrame(this, m_URL, m_frameName, lockHistory, lockBackForwardList);
     if (contentFrame())
         contentFrame()->setInViewSourceMode(viewSourceMode());
 }
@@ -150,7 +150,7 @@ void HTMLFrameElementBase::parseMappedAttribute(MappedAttribute *attr)
         HTMLFrameOwnerElement::parseMappedAttribute(attr);
 }
 
-void HTMLFrameElementBase::setNameAndOpenURL()
+void HTMLFrameElementBase::setName()
 {
     m_frameName = getAttribute(nameAttr);
     if (m_frameName.isNull())
@@ -158,13 +158,25 @@ void HTMLFrameElementBase::setNameAndOpenURL()
     
     if (Frame* parentFrame = document()->frame())
         m_frameName = parentFrame->tree()->uniqueChildName(m_frameName);
-    
+}
+
+void HTMLFrameElementBase::setNameAndOpenURL()
+{
+    setName();
     openURL();
 }
 
 void HTMLFrameElementBase::setNameAndOpenURLCallback(Node* n)
 {
     static_cast<HTMLFrameElementBase*>(n)->setNameAndOpenURL();
+}
+
+void HTMLFrameElementBase::updateOnReparenting()
+{
+    ASSERT(m_remainsAliveOnRemovalFromTree);
+
+    if (Frame* frame = contentFrame())
+        frame->transferChildFrameToNewDocument();
 }
 
 void HTMLFrameElementBase::insertedIntoDocument()
@@ -175,6 +187,9 @@ void HTMLFrameElementBase::insertedIntoDocument()
     // Othewise, a synchronous load that executed JavaScript would see incorrect 
     // (0) values for the frame's renderer-dependent properties, like width.
     m_shouldOpenURLAfterAttach = true;
+
+    if (m_remainsAliveOnRemovalFromTree)
+        updateOnReparenting();
 }
 
 void HTMLFrameElementBase::removedFromDocument()
@@ -216,7 +231,7 @@ void HTMLFrameElementBase::setLocation(const String& str)
     m_URL = AtomicString(str);
 
     if (inDocument())
-        openURL();
+        openURL(false, false);
 }
 
 bool HTMLFrameElementBase::supportsFocus() const
@@ -227,8 +242,12 @@ bool HTMLFrameElementBase::supportsFocus() const
 void HTMLFrameElementBase::setFocus(bool received)
 {
     HTMLFrameOwnerElement::setFocus(received);
-    if (Page* page = document()->page())
-        page->focusController()->setFocusedFrame(received ? contentFrame() : 0);
+    if (Page* page = document()->page()) {
+        if (received)
+            page->focusController()->setFocusedFrame(contentFrame());
+        else if (page->focusController()->focusedFrame() == contentFrame()) // Focus may have already been given to another frame, don't take it away.
+            page->focusController()->setFocusedFrame(0);
+    }
 }
 
 bool HTMLFrameElementBase::isURLAttribute(Attribute *attr) const

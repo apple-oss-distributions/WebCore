@@ -59,6 +59,7 @@ namespace WebCore {
         
         void layoutTiles();
         void layoutTilesNow();
+        void layoutTilesNowForRect(const IntRect&);
         void removeAllNonVisibleTiles();
         void removeAllTiles();
         

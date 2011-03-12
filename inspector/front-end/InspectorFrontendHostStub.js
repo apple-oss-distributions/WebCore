@@ -35,15 +35,22 @@ WebInspector.InspectorFrontendHostStub = function()
     this._attachedWindowHeight = 0;
 }
 
+WebInspector._platformFlavor = WebInspector.PlatformFlavor.MacLeopard;
+
 WebInspector.InspectorFrontendHostStub.prototype = {
     platform: function()
     {
-        return "mac-leopard";
+        return "mac";
     },
 
     port: function()
     {
         return "unknown";
+    },
+
+    bringToFront: function()
+    {
+        this._windowVisible = true;
     },
 
     closeWindow: function()
@@ -85,12 +92,17 @@ WebInspector.InspectorFrontendHostStub.prototype = {
         return "";
     },
 
-    windowUnloading: function()
+    inspectedURLChanged: function(url)
     {
     },
 
     copyText: function()
     {
+    },
+
+    canAttachWindow: function()
+    {
+        return false;
     }
 }
 

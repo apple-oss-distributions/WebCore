@@ -65,7 +65,10 @@ void CSSImportRule::setCSSStyleSheet(const String& href, const KURL& baseURL, co
     CSSStyleSheet* parent = parentStyleSheet();
     bool strict = !parent || parent->useStrictParsing();
     bool enforceMIMEType = strict;
-    bool needsSiteSpecificQuirks = parent && parent->doc() && parent->doc()->settings() && parent->doc()->settings()->needsSiteSpecificQuirks();
+    // Force the site specific quirk below to work on iOS. Investigating other site specific quirks
+    // to see if we can enable the preference all together is to be handled by:
+    // <rdar://problem/8493309> Investigate Enabling Site Specific Quirks in MobileSafari and UIWebView
+    bool needsSiteSpecificQuirks = true;
 
 #if defined(BUILDING_ON_TIGER) || defined(BUILDING_ON_LEOPARD)
     if (enforceMIMEType && needsSiteSpecificQuirks) {
@@ -88,7 +91,10 @@ void CSSImportRule::setCSSStyleSheet(const String& href, const KURL& baseURL, co
         // Work around <https://bugs.webkit.org/show_bug.cgi?id=28350>.
         DEFINE_STATIC_LOCAL(const String, slashKHTMLFixesDotCss, ("/KHTMLFixes.css"));
         DEFINE_STATIC_LOCAL(const String, mediaWikiKHTMLFixesStyleSheet, ("/* KHTML fix stylesheet */\n/* work around the horizontal scrollbars */\n#column-content { margin-left: 0; }\n\n"));
-        if (baseURL.string().endsWith(slashKHTMLFixesDotCss) && sheetText == mediaWikiKHTMLFixesStyleSheet) {
+        // There are two variants of KHTMLFixes.css. One is equal to mediaWikiKHTMLFixesStyleSheet,
+        // while the other lacks the second trailing newline.
+        if (baseURL.string().endsWith(slashKHTMLFixesDotCss) && !sheetText.isNull() && mediaWikiKHTMLFixesStyleSheet.startsWith(sheetText)
+                && sheetText.length() >= mediaWikiKHTMLFixesStyleSheet.length() - 1) {
             ASSERT(m_styleSheet->length() == 1);
             ExceptionCode ec;
             m_styleSheet->deleteRule(0, ec);
@@ -117,16 +123,16 @@ void CSSImportRule::insertedIntoParent()
         return;
 
     String absHref = m_strHref;
-    if (!parentSheet->putativeBaseURL().isNull())
+    if (!parentSheet->finalURL().isNull())
         // use parent styleheet's URL as the base URL
-        absHref = KURL(parentSheet->putativeBaseURL(), m_strHref).string();
+        absHref = KURL(parentSheet->finalURL(), m_strHref).string();
 
     // Check for a cycle in our import chain.  If we encounter a stylesheet
     // in our parent chain with the same URL, then just bail.
     StyleBase* root = this;
     for (StyleBase* curr = parent(); curr; curr = curr->parent()) {
-        // FIXME: This is wrong if the putativeBaseURL was updated via document::updateBaseURL. 
-        if (curr->isCSSStyleSheet() && absHref == static_cast<CSSStyleSheet*>(curr)->putativeBaseURL().string())
+        // FIXME: This is wrong if the finalURL was updated via document::updateBaseURL. 
+        if (curr->isCSSStyleSheet() && absHref == static_cast<CSSStyleSheet*>(curr)->finalURL().string())
             return;
         root = curr;
     }

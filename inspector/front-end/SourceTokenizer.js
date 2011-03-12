@@ -40,28 +40,27 @@ WebInspector.SourceTokenizer.prototype = {
 
     set condition(condition)
     {
-        this._lexCondition = condition.lexCondition;
-        this._parseCondition = condition.parseCondition;
+        this._condition = condition;
     },
 
     get condition()
     {
-        return { lexCondition: this._lexCondition, parseCondition: this._parseCondition };
+        return this._condition;
     },
 
-    hasCondition: function(condition)
+    get subTokenizer()
     {
-        return this._lexCondition === condition.lexCondition && this._parseCondition === condition.parseCondition;
+        return this._condition.subTokenizer;
     },
 
     getLexCondition: function()
     {
-        return this._lexCondition;
+        return this.condition.lexCondition;
     },
 
     setLexCondition: function(lexCondition)
     {
-        this._lexCondition = lexCondition;
+        this.condition.lexCondition = lexCondition;
     },
 
     _charAt: function(cursor)
@@ -74,10 +73,9 @@ WebInspector.SourceTokenizer.prototype = {
 WebInspector.SourceTokenizer.Registry = function() {
     this._tokenizers = {};
     this._tokenizerConstructors = {
-        "text/css": WebInspector.SourceCSSTokenizer,
-        "text/html": WebInspector.SourceHTMLTokenizer,
-        "text/javascript": WebInspector.SourceJavaScriptTokenizer,
-        "application/x-javascript": WebInspector.SourceJavaScriptTokenizer
+        "text/css": "SourceCSSTokenizer",
+        "text/html": "SourceHTMLTokenizer",
+        "text/javascript": "SourceJavaScriptTokenizer"
     };
 }
 
@@ -93,9 +91,10 @@ WebInspector.SourceTokenizer.Registry.prototype = {
     {
         if (!this._tokenizerConstructors[mimeType])
             return null;
-        var tokenizer = this._tokenizers[mimeType];
+        var tokenizerClass = this._tokenizerConstructors[mimeType];
+        var tokenizer = this._tokenizers[tokenizerClass];
         if (!tokenizer) {
-            tokenizer = new this._tokenizerConstructors[mimeType]();
+            tokenizer = new WebInspector[tokenizerClass]();
             this._tokenizers[mimeType] = tokenizer;
         }
         return tokenizer;

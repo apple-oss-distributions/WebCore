@@ -21,6 +21,7 @@
 module core {
 
     interface [
+        CustomHeader,
         CustomMarkFunction,
         CustomPushEventHandlerScope,
         CustomToJS,
@@ -132,14 +133,16 @@ module core {
 #endif /* defined(LANGUAGE_OBJECTIVE_C) */
 
 #if !defined(LANGUAGE_OBJECTIVE_C) || !LANGUAGE_OBJECTIVE_C
-        [Custom] void addEventListener(in DOMString type, 
-                                       in EventListener listener, 
-                                       in boolean useCapture);
-        [Custom] void removeEventListener(in DOMString type, 
-                                          in EventListener listener, 
-                                          in boolean useCapture);
+#if !defined(LANGUAGE_GOBJECT) || !LANGUAGE_GOBJECT
+        void addEventListener(in DOMString type, 
+                              in EventListener listener, 
+                              in boolean useCapture);
+        void removeEventListener(in DOMString type, 
+                                 in EventListener listener, 
+                                 in boolean useCapture);
         boolean dispatchEvent(in Event event)
             raises(EventException);
+#endif
 #endif
     };
 

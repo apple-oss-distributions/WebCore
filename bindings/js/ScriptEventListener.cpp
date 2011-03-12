@@ -63,7 +63,7 @@ PassRefPtr<JSLazyEventListener> createAttributeEventListener(Node* node, Attribu
     // FIXME: We should be able to provide accurate source information for frameless documents, too (e.g. for importing nodes from XMLHttpRequest.responseXML).
     if (Frame* frame = node->document()->frame()) {
         ScriptController* scriptController = frame->script();
-        if (!scriptController->canExecuteScripts())
+        if (!scriptController->canExecuteScripts(AboutToExecuteScript))
             return 0;
 
         if (!scriptController->xssAuditor()->canCreateInlineEventListener(attr->localName().string(), attr->value())) {
@@ -91,7 +91,7 @@ PassRefPtr<JSLazyEventListener> createAttributeEventListener(Frame* frame, Attri
     String sourceURL;
     
     ScriptController* scriptController = frame->script();
-    if (!scriptController->canExecuteScripts())
+    if (!scriptController->canExecuteScripts(AboutToExecuteScript))
         return 0;
 
     if (!scriptController->xssAuditor()->canCreateInlineEventListener(attr->localName().string(), attr->value())) {
@@ -105,7 +105,7 @@ PassRefPtr<JSLazyEventListener> createAttributeEventListener(Frame* frame, Attri
     return JSLazyEventListener::create(attr->localName().string(), eventParameterName(frame->document()->isSVGDocument()), attr->value(), 0, sourceURL, lineNumber, wrapper, mainThreadNormalWorld());
 }
 
-String getEventListenerHandlerBody(ScriptExecutionContext* context, ScriptState* scriptState, EventListener* eventListener)
+String eventListenerHandlerBody(ScriptExecutionContext* context, ScriptState* scriptState, EventListener* eventListener)
 {
     const JSEventListener* jsListener = JSEventListener::cast(eventListener);
     if (!jsListener)
@@ -113,7 +113,13 @@ String getEventListenerHandlerBody(ScriptExecutionContext* context, ScriptState*
     JSC::JSObject* jsFunction = jsListener->jsFunction(context);
     if (!jsFunction)
         return "";
-    return jsFunction->toString(scriptState);
+    return ustringToString(jsFunction->toString(scriptState));
+}
+
+bool eventListenerHandlerLocation(ScriptExecutionContext*, ScriptState*, EventListener*, String&, int&)
+{
+    // FIXME: Add support for getting function location.
+    return false;
 }
 
 } // namespace WebCore

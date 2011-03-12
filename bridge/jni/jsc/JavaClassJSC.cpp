@@ -26,7 +26,7 @@
 #include "config.h"
 #include "JavaClassJSC.h"
 
-#if ENABLE(MAC_JAVA_BRIDGE)
+#if ENABLE(JAVA_BRIDGE)
 
 #include "JNIUtility.h"
 #include "JSDOMWindow.h"
@@ -40,17 +40,17 @@ JavaClass::JavaClass(jobject anInstance)
     jobject aClass = callJNIMethod<jobject>(anInstance, "getClass", "()Ljava/lang/Class;");
 
     if (!aClass) {
-        fprintf(stderr, "%s:  unable to call getClass on instance %p\n", __PRETTY_FUNCTION__, anInstance);
-        m_name = strdup("<Unknown>");
+        LOG_ERROR("Unable to call getClass on instance %p", anInstance);
+        m_name = fastStrDup("<Unknown>");
         return;
     }
 
     if (jstring className = (jstring)callJNIMethod<jobject>(aClass, "getName", "()Ljava/lang/String;")) {
         const char* classNameC = getCharactersFromJString(className);
-        m_name = strdup(classNameC);
+        m_name = fastStrDup(classNameC);
         releaseCharactersForJString(className, classNameC);
     } else
-        m_name = strdup("<Unknown>");
+        m_name = fastStrDup("<Unknown>");
 
     int i;
     JNIEnv* env = getJNIEnv();
@@ -97,7 +97,7 @@ JavaClass::JavaClass(jobject anInstance)
 
 JavaClass::~JavaClass()
 {
-    free(const_cast<char*>(m_name));
+    fastFree(const_cast<char*>(m_name));
 
     JSLock lock(SilenceAssertionsOnly);
 
@@ -147,4 +147,4 @@ bool JavaClass::isStringClass() const
     return !strcmp(m_name, "java.lang.String");
 }
 
-#endif // ENABLE(MAC_JAVA_BRIDGE)
+#endif // ENABLE(JAVA_BRIDGE)

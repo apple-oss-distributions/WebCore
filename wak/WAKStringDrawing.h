@@ -41,6 +41,8 @@ typedef enum {
 @property(nonatomic, readonly)          BOOL includeEmoji;                          // if yes, the text can include Emoji characters.
 @property(nonatomic, readwrite)         CGRect truncationRect;                      // the truncation rect argument, if non-nil, will be used instead of an ellipsis character for truncation sizing.  if no truncation occurs, the truncationRect will be changed to CGRectNull.  if truncation occurs, the rect will be updated with its placement.
 
+@property(nonatomic, readonly)         NSString **renderString;                    // An out-parameter for the actual rendered string.  Defaults to nil.
+
 @end
 
 @interface NSString (WebStringDrawing)

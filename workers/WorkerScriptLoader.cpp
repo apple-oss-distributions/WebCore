@@ -43,10 +43,11 @@
 
 namespace WebCore {
 
-WorkerScriptLoader::WorkerScriptLoader()
+WorkerScriptLoader::WorkerScriptLoader(ResourceRequestBase::TargetType targetType)
     : m_client(0)
     , m_failed(false)
     , m_identifier(0)
+    , m_targetType(targetType)
 {
 }
 
@@ -63,6 +64,7 @@ void WorkerScriptLoader::loadSynchronously(ScriptExecutionContext* scriptExecuti
     ThreadableLoaderOptions options;
     options.allowCredentials = true;
     options.crossOriginRequestPolicy = crossOriginRequestPolicy;
+    options.sendLoadCallbacks = true;
 
     WorkerThreadableLoader::loadResourceSynchronously(static_cast<WorkerContext*>(scriptExecutionContext), *request, *this, options);
 }
@@ -80,6 +82,7 @@ void WorkerScriptLoader::loadAsynchronously(ScriptExecutionContext* scriptExecut
     ThreadableLoaderOptions options;
     options.allowCredentials = true;
     options.crossOriginRequestPolicy = crossOriginRequestPolicy;
+    options.sendLoadCallbacks = true;
 
     m_threadableLoader = ThreadableLoader::create(scriptExecutionContext, this, *request, options);
 }
@@ -88,7 +91,7 @@ PassOwnPtr<ResourceRequest> WorkerScriptLoader::createResourceRequest()
 {
     OwnPtr<ResourceRequest> request(new ResourceRequest(m_url));
     request->setHTTPMethod("GET");
-
+    request->setTargetType(m_targetType);
     return request.release();
 }
     

@@ -27,7 +27,9 @@
 
 #if ENABLE(SVG)
 #include "RootInlineBox.h"
+#include "SVGCharacterData.h"
 #include "SVGCharacterLayoutInfo.h"
+#include "SVGTextChunkLayoutInfo.h"
 #include "SVGRenderSupport.h"
 
 namespace WebCore {
@@ -44,14 +46,13 @@ struct LastGlyphInfo {
     bool isValid;
 };
 
-class SVGRootInlineBox : public RootInlineBox, SVGRenderBase {
+class SVGRootInlineBox : public RootInlineBox, protected SVGRenderBase {
 public:
     SVGRootInlineBox(RenderObject* obj)
         : RootInlineBox(obj)
         , m_height(0)
     {
     }
-    virtual const SVGRenderBase* toSVGRenderBase() const { return this; }
 
     virtual bool isSVGRootInlineBox() { return true; }
 

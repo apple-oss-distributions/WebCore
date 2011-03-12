@@ -27,20 +27,11 @@
 #include "config.h"
 #include "JNIBridge.h"
 
-#if ENABLE(MAC_JAVA_BRIDGE)
+#if ENABLE(JAVA_BRIDGE)
 
-#include "CString.h"
 #include "StringBuilder.h"
+#include <wtf/text/CString.h>
 
-
-#ifdef NDEBUG
-#define JS_LOG(formatAndArgs...) ((void)0)
-#else
-#define JS_LOG(formatAndArgs...) { \
-    fprintf(stderr, "%s:%d -- %s:  ", __FILE__, __LINE__, __FUNCTION__); \
-    fprintf(stderr, formatAndArgs); \
-}
-#endif
 
 using namespace JSC;
 using namespace JSC::Bindings;
@@ -107,7 +98,7 @@ JavaMethod::JavaMethod(JNIEnv* env, jobject aMethod)
 JavaMethod::~JavaMethod()
 {
     if (m_signature)
-        free(m_signature);
+        fastFree(m_signature);
     delete[] m_parameters;
 };
 
@@ -119,7 +110,7 @@ static void appendClassName(StringBuilder& builder, const char* className)
     ASSERT(JSLock::lockCount() > 0);
 #endif
 
-    char* c = strdup(className);
+    char* c = fastStrDup(className);
 
     char* result = c;
     while (*c) {
@@ -130,7 +121,7 @@ static void appendClassName(StringBuilder& builder, const char* className)
 
     builder.append(result);
 
-    free(result);
+    fastFree(result);
 }
 
 const char* JavaMethod::signature() const
@@ -169,7 +160,7 @@ const char* JavaMethod::signature() const
         }
 
         String signatureString = signatureBuilder.toString();
-        m_signature = strdup(signatureString.utf8().data());
+        m_signature = fastStrDup(signatureString.utf8().data());
     }
 
     return m_signature;
@@ -187,4 +178,4 @@ jmethodID JavaMethod::methodID(jobject obj) const
     return m_methodID;
 }
 
-#endif // ENABLE(MAC_JAVA_BRIDGE)
+#endif // ENABLE(JAVA_BRIDGE)

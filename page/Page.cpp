@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All Rights Reserved.
+ * Copyright (C) 2006, 2007, 2008, 2009, 2010 Apple Inc. All Rights Reserved.
  * Copyright (C) 2008 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
  *
  * This library is free software; you can redistribute it and/or
@@ -29,11 +29,12 @@
 #include "ContextMenuClient.h"
 #include "ContextMenuController.h"
 #include "DOMWindow.h"
+#include "DeviceOrientationController.h"
 #include "DragController.h"
-#include "ExceptionCode.h"
 #include "EditorClient.h"
-#include "EventNames.h"
 #include "Event.h"
+#include "EventNames.h"
+#include "ExceptionCode.h"
 #include "FileSystem.h"
 #include "FocusController.h"
 #include "Frame.h"
@@ -46,17 +47,21 @@
 #include "InspectorController.h"
 #include "InspectorTimelineAgent.h"
 #include "Logging.h"
+#include "MediaCanStartListener.h"
 #include "Navigator.h"
 #include "NetworkStateNotifier.h"
 #include "PageGroup.h"
 #include "PluginData.h"
 #include "PluginHalter.h"
+#include "PluginView.h"
 #include "ProgressTracker.h"
-#include "RenderWidget.h"
 #include "RenderTheme.h"
+#include "RenderWidget.h"
+#include "RuntimeEnabledFeatures.h"
 #include "ScriptController.h"
 #include "SelectionController.h"
 #include "Settings.h"
+#include "SharedBuffer.h"
 #include "StringHash.h"
 #include "TextResourceDecoder.h"
 #include "Widget.h"
@@ -70,7 +75,7 @@
 #endif
 
 #if ENABLE(JAVASCRIPT_DEBUGGER)
-#include "JavaScriptDebugServer.h"
+#include "ScriptDebugServer.h"
 #endif
 
 #if ENABLE(WML)
@@ -105,27 +110,29 @@ static void networkStateChanged()
         frames[i]->document()->dispatchWindowEvent(Event::create(eventName, false, false));
 }
 
-Page::Page(ChromeClient* chromeClient, ContextMenuClient* contextMenuClient, EditorClient* editorClient, DragClient* dragClient, InspectorClient* inspectorClient, PluginHalterClient* pluginHalterClient, GeolocationControllerClient* geolocationControllerClient)
-    : m_chrome(new Chrome(this, chromeClient))
+Page::Page(const PageClients& pageClients)
+    : m_chrome(new Chrome(this, pageClients.chromeClient))
     , m_dragCaretController(new SelectionController(0, true))
 #if ENABLE(DRAG_SUPPORT)
-    , m_dragController(new DragController(this, dragClient))
+    , m_dragController(new DragController(this, pageClients.dragClient))
 #endif
     , m_focusController(new FocusController(this))
 #if ENABLE(CONTEXT_MENUS)
-    , m_contextMenuController(new ContextMenuController(this, contextMenuClient))
+    , m_contextMenuController(new ContextMenuController(this, pageClients.contextMenuClient))
 #endif
 #if ENABLE(INSPECTOR)
-    , m_inspectorController(new InspectorController(this, inspectorClient))
+    , m_inspectorController(new InspectorController(this, pageClients.inspectorClient))
 #endif
 #if ENABLE(CLIENT_BASED_GEOLOCATION)
-    , m_geolocationController(new GeolocationController(this, geolocationControllerClient))
+    , m_geolocationController(new GeolocationController(this, pageClients.geolocationControllerClient))
+#endif
+#if ENABLE(DEVICE_ORIENTATION)
 #endif
     , m_settings(new Settings(this))
     , m_progress(new ProgressTracker)
     , m_backForwardList(BackForwardList::create(this))
     , m_theme(RenderTheme::themeForPage(this))
-    , m_editorClient(editorClient)
+    , m_editorClient(pageClients.editorClient)
     , m_frameCount(0)
     , m_openedByDOM(false)
     , m_tabKeyCyclesThroughElements(true)
@@ -135,30 +142,14 @@ Page::Page(ChromeClient* chromeClient, ContextMenuClient* contextMenuClient, Edi
     , m_areMemoryCacheClientCallsEnabled(true)
     , m_mediaVolume(1)
     , m_javaScriptURLsAreAllowed(true)
-#if ENABLE(INSPECTOR)
-    , m_parentInspectorController(0)
-#endif
     , m_didLoadUserStyleSheet(false)
     , m_userStyleSheetModificationTime(0)
     , m_group(0)
     , m_debugger(0)
     , m_customHTMLTokenizerTimeDelay(-1)
     , m_customHTMLTokenizerChunkSize(-1)
-    , m_canStartPlugins(true)
+    , m_canStartMedia(true)
 {
-#if !ENABLE(CONTEXT_MENUS)
-    UNUSED_PARAM(contextMenuClient);
-#endif
-#if !ENABLE(DRAG_SUPPORT)
-    UNUSED_PARAM(dragClient);
-#endif
-#if !ENABLE(INSPECTOR)
-    UNUSED_PARAM(inspectorClient);
-#endif
-#if !ENABLE(CLIENT_BASED_GEOLOCATION)
-    UNUSED_PARAM(geolocationControllerClient);
-#endif
-
     if (!allPages) {
         allPages = new HashSet<Page*>;
         
@@ -168,13 +159,13 @@ Page::Page(ChromeClient* chromeClient, ContextMenuClient* contextMenuClient, Edi
     ASSERT(!allPages->contains(this));
     allPages->add(this);
 
-    if (pluginHalterClient) {
-        m_pluginHalter.set(new PluginHalter(pluginHalterClient));
+    if (pageClients.pluginHalterClient) {
+        m_pluginHalter.set(new PluginHalter(pageClients.pluginHalterClient));
         m_pluginHalter->setPluginAllowedRunTime(m_settings->pluginAllowedRunTime());
     }
 
 #if ENABLE(JAVASCRIPT_DEBUGGER)
-    JavaScriptDebugServer::shared().pageCreated(this);
+    ScriptDebugServer::shared().pageCreated(this);
 #endif
 
 #ifndef NDEBUG
@@ -192,9 +183,10 @@ Page::~Page()
         frame->pageDestroyed();
 
     m_editorClient->pageDestroyed();
+    if (m_pluginData)
+        m_pluginData->disconnectPage();
+    
 #if ENABLE(INSPECTOR)
-    if (m_parentInspectorController)
-        m_parentInspectorController->pageDestroyed();
     m_inspectorController->inspectedPageDestroyed();
 #endif
 
@@ -291,7 +283,7 @@ void Page::goToItem(HistoryItem* item, FrameLoadType type)
 {
     // Abort any current load unless we're navigating the current document to a new state object
     HistoryItem* currentItem = m_mainFrame->loader()->history()->currentItem();
-    if (!item->stateObject() || !currentItem || item->documentSequenceNumber() != currentItem->documentSequenceNumber()) {
+    if (!item->stateObject() || !currentItem || item->documentSequenceNumber() != currentItem->documentSequenceNumber() || item == currentItem) {
         // Define what to do with any open database connections. By default we stop them and terminate the database thread.
         DatabasePolicy databasePolicy = DatabasePolicyStop;
 
@@ -372,13 +364,20 @@ void Page::refreshPlugins(bool reload)
 
     HashSet<Page*>::iterator end = allPages->end();
     for (HashSet<Page*>::iterator it = allPages->begin(); it != end; ++it) {
-        (*it)->m_pluginData = 0;
+        Page* page = *it;
+        
+        // Clear out the page's plug-in data.
+        if (page->m_pluginData) {
+            page->m_pluginData->disconnectPage();
+            page->m_pluginData = 0;
+        }
 
-        if (reload) {
-            for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
-                if (frame->loader()->containsPlugins())
-                    framesNeedingReload.append(frame);
-            }
+        if (!reload)
+            continue;
+        
+        for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
+            if (frame->loader()->containsPlugins())
+                framesNeedingReload.append(frame);
         }
     }
 
@@ -388,24 +387,35 @@ void Page::refreshPlugins(bool reload)
 
 PluginData* Page::pluginData() const
 {
-    if (!settings()->arePluginsEnabled())
+    if (!mainFrame()->loader()->allowPlugins(NotAboutToInstantiatePlugin))
         return 0;
     if (!m_pluginData)
         m_pluginData = PluginData::create(this);
     return m_pluginData.get();
 }
 
-void Page::addUnstartedPlugin(PluginView* view)
+inline MediaCanStartListener* Page::takeAnyMediaCanStartListener()
 {
-    ASSERT(!m_canStartPlugins);
-    m_unstartedPlugins.add(view);
+    for (Frame* frame = mainFrame(); frame; frame = frame->tree()->traverseNext()) {
+        if (MediaCanStartListener* listener = frame->document()->takeAnyMediaCanStartListener())
+            return listener;
+    }
+    return 0;
 }
 
-void Page::removeUnstartedPlugin(PluginView* view)
+void Page::setCanStartMedia(bool canStartMedia)
 {
-    ASSERT(!m_canStartPlugins);
-    ASSERT(m_unstartedPlugins.contains(view));
-    m_unstartedPlugins.remove(view);
+    if (m_canStartMedia == canStartMedia)
+        return;
+
+    m_canStartMedia = canStartMedia;
+
+    while (m_canStartMedia) {
+        MediaCanStartListener* listener = takeAnyMediaCanStartListener();
+        if (!listener)
+            break;
+        listener->mediaCanStart();
+    }
 }
 
 static Frame* incrementFrame(Frame* curr, bool forward, bool wrapFlag)
@@ -453,7 +463,7 @@ unsigned int Page::markAllMatchesForText(const String& target, TextCaseSensitivi
     Frame* frame = mainFrame();
     do {
         frame->setMarkedTextMatchesAreHighlighted(shouldHighlight);
-        matches += frame->markAllMatchesForText(target, caseSensitivity == TextCaseSensitive, (limit == 0) ? 0 : (limit - matches));
+        matches += frame->countMatchesForText(target, caseSensitivity == TextCaseSensitive, (limit == 0) ? 0 : (limit - matches), true);
         frame = incrementFrame(frame, true, false);
     } while (frame);
 
@@ -753,6 +763,35 @@ InspectorTimelineAgent* Page::inspectorTimelineAgent() const
     return m_inspectorController->timelineAgent();
 }
 #endif
+
+void Page::privateBrowsingStateChanged()
+{
+    bool privateBrowsingEnabled = m_settings->privateBrowsingEnabled();
+
+    // Collect the PluginViews in to a vector to ensure that action the plug-in takes
+    // from below privateBrowsingStateChanged does not affect their lifetime.
+
+    Vector<RefPtr<PluginView>, 32> pluginViews;
+    for (Frame* frame = mainFrame(); frame; frame = frame->tree()->traverseNext()) {
+        FrameView* view = frame->view();
+        if (!view)
+            return;
+
+        const HashSet<RefPtr<Widget> >* children = view->children();
+        ASSERT(children);
+
+        HashSet<RefPtr<Widget> >::const_iterator end = children->end();
+        for (HashSet<RefPtr<Widget> >::const_iterator it = children->begin(); it != end; ++it) {
+            Widget* widget = (*it).get();
+            if (!widget->isPluginView())
+                continue;
+            pluginViews.append(static_cast<PluginView*>(widget));
+        }
+    }
+
+    for (size_t i = 0; i < pluginViews.size(); i++)
+        pluginViews[i]->privateBrowsingStateChanged(privateBrowsingEnabled);
+}
 
 void Page::pluginAllowedRunTimeChanged()
 {

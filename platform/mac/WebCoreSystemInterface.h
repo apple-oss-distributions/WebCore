@@ -1,5 +1,5 @@
 /*
- * Copyright 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright 2006, 2007, 2008, 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -72,7 +72,7 @@ typedef struct NSView NSView;
 typedef struct objc_object *id;
 typedef struct QTMovie QTMovie;
 typedef struct QTMovieView QTMovieView;
-typedef struct CALayer CALayer;
+typedef void* CALayer;
 #endif
 
 #ifdef __cplusplus
@@ -92,6 +92,7 @@ extern CFReadStreamRef (*wkCreateCustomCFReadStream)(void *(*formCreate)(CFReadS
     void (*formSchedule)(CFReadStreamRef, CFRunLoopRef, CFStringRef, void *), 
     void (*formUnschedule)(CFReadStreamRef, CFRunLoopRef, CFStringRef, void *),
     void *context);
+extern NSString* (*wkCopyNSURLResponseStatusLine)(NSURLResponse*);
 extern id (*wkCreateNSURLConnectionDelegateProxy)(void);
 extern BOOL (*wkGetGlyphTransformedAdvances)(GSFontRef font, CGAffineTransform *m, CGGlyph *glyph, CGSize *advance);
 extern NSString* (*wkGetMIMETypeForExtension)(NSString*);

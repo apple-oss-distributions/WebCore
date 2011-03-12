@@ -55,7 +55,7 @@ namespace WebCore {
 
     class Notification : public RefCounted<Notification>, public ActiveDOMObject, public EventTarget { 
     public:
-        static Notification* create(const String& url, ScriptExecutionContext* context, ExceptionCode& ec, NotificationPresenter* provider) { return new Notification(url, context, ec, provider); }
+        static Notification* create(const KURL& url, ScriptExecutionContext* context, ExceptionCode& ec, NotificationPresenter* provider) { return new Notification(url, context, ec, provider); }
         static Notification* create(const NotificationContents& contents, ScriptExecutionContext* context, ExceptionCode& ec, NotificationPresenter* provider) { return new Notification(contents, context, ec, provider); }
         
         virtual ~Notification();
@@ -65,7 +65,13 @@ namespace WebCore {
     
         bool isHTML() { return m_isHTML; }
         KURL url() { return m_notificationURL; }
+        KURL iconURL() { return m_contents.icon(); }
         NotificationContents& contents() { return m_contents; }
+
+        String dir() const { return m_direction; }
+        void setDir(const String& dir) { m_direction = dir; }
+        String replaceId() const { return m_replaceId; }
+        void setReplaceId(const String& replaceId) { m_replaceId = replaceId; }
 
         DEFINE_ATTRIBUTE_EVENT_LISTENER(display);
         DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
@@ -79,8 +85,8 @@ namespace WebCore {
         virtual Notification* toNotification() { return this; }
 
     private:
-        Notification(const String& url, ScriptExecutionContext* context, ExceptionCode& ec, NotificationPresenter* provider);
-        Notification(const NotificationContents& fields, ScriptExecutionContext* context, ExceptionCode& ec, NotificationPresenter* provider);
+        Notification(const KURL&, ScriptExecutionContext*, ExceptionCode&, NotificationPresenter*);
+        Notification(const NotificationContents&, ScriptExecutionContext*, ExceptionCode&, NotificationPresenter*);
 
         // EventTarget interface
         virtual void refEventTarget() { ref(); }
@@ -92,6 +98,9 @@ namespace WebCore {
         KURL m_notificationURL;
         NotificationContents m_contents;
 
+        String m_direction;
+        String m_replaceId;
+      
         bool m_isShowing;
 
         NotificationPresenter* m_presenter;

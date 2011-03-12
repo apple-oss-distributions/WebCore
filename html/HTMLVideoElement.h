@@ -29,7 +29,6 @@
 #if ENABLE(VIDEO)
 
 #include "HTMLMediaElement.h"
-#include <wtf/OwnPtr.h>
 
 namespace WebCore {
 
@@ -38,20 +37,6 @@ class HTMLImageLoader;
 class HTMLVideoElement : public HTMLMediaElement {
 public:
     HTMLVideoElement(const QualifiedName&, Document*);
-
-    virtual int tagPriority() const { return 5; }
-    virtual bool rendererIsNeeded(RenderStyle*);
-#if !ENABLE(PLUGIN_PROXY_FOR_VIDEO)
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
-#endif
-    virtual void attach();
-    virtual void detach();
-    virtual void parseMappedAttribute(MappedAttribute* attr);
-    virtual bool isVideo() const { return true; }
-    virtual bool hasVideo() const { return player() && player()->hasVideo(); }
-    virtual bool supportsFullscreen() const;
-    virtual bool isURLAttribute(Attribute*) const;
-    virtual const QualifiedName& imageSourceAttributeName() const;
 
     unsigned width() const;
     void setWidth(unsigned);
@@ -64,21 +49,40 @@ public:
     virtual const KURL poster() const { return m_posterURL; }
     void setPoster(const String&);
 
-// fullscreen
-    void webkitEnterFullScreen(bool isUserGesture, ExceptionCode&);
-    void webkitExitFullScreen();
+    // Fullscreen
+    void webkitEnterFullscreen(bool isUserGesture, ExceptionCode&);
+    void webkitExitFullscreen();
     bool webkitSupportsFullscreen();
     bool webkitDisplayingFullscreen();
 
-    void updatePosterImage();
+    // FIXME: Maintain "FullScreen" capitalization scheme for backwards compatibility.
+    // https://bugs.webkit.org/show_bug.cgi?id=36081
+    void webkitEnterFullScreen(bool isUserGesture, ExceptionCode& ec) { webkitEnterFullscreen(isUserGesture, ec); }
+    void webkitExitFullScreen() { webkitExitFullscreen(); }
+
     bool shouldDisplayPosterImage() const { return m_shouldDisplayPosterImage; }
 
-    void paint(GraphicsContext*, const IntRect&);
     // Used by canvas to gain raw pixel access
     void paintCurrentFrameInContext(GraphicsContext*, const IntRect&);
 
 private:
+    virtual int tagPriority() const { return 5; }
+    virtual bool rendererIsNeeded(RenderStyle*);
+#if !ENABLE(PLUGIN_PROXY_FOR_VIDEO)
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+#endif
+    virtual void attach();
+    virtual void detach();
+    virtual void parseMappedAttribute(MappedAttribute*);
+    virtual bool isVideo() const { return true; }
+    virtual bool hasVideo() const { return player() && player()->hasVideo(); }
+    virtual bool supportsFullscreen() const;
+    virtual bool isURLAttribute(Attribute*) const;
+    virtual const QualifiedName& imageSourceAttributeName() const;
+
     virtual bool hasAvailableVideoFrame() const;
+    virtual void updatePosterImage();
+    virtual void willMoveToNewOwnerDocument();
 
     OwnPtr<HTMLImageLoader> m_imageLoader;
     KURL m_posterURL;

@@ -43,8 +43,9 @@ namespace WebCore {
         // Is this operation a drag-drop or a copy-paste?
         bool isForDragging() const { return m_forDragging; }
 
-        String dropEffect() const { return m_dropEffect; }
+        String dropEffect() const { return dropEffectIsUninitialized() ? "none" : m_dropEffect; }
         void setDropEffect(const String&);
+        bool dropEffectIsUninitialized() const { return m_dropEffect == "uninitialized"; }
         String effectAllowed() const { return m_effectAllowed; }
         void setEffectAllowed(const String&);
     
@@ -69,6 +70,7 @@ namespace WebCore {
 #endif
         virtual void writeURL(const KURL&, const String&, Frame*) = 0;
         virtual void writeRange(Range*, Frame*) = 0;
+        virtual void writePlainText(const String&) = 0;
 
         virtual bool hasData() = 0;
         

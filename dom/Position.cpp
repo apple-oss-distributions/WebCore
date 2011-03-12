@@ -27,7 +27,6 @@
 #include "Position.h"
 
 #include "CSSComputedStyleDeclaration.h"
-#include "CString.h"
 #include "CharacterNames.h"
 #include "Logging.h"
 #include "PositionIterator.h"
@@ -38,6 +37,7 @@
 #include "htmlediting.h"
 #include "visible_units.h"
 #include <stdio.h>
+#include <wtf/text/CString.h>
   
 namespace WebCore {
 
@@ -946,14 +946,7 @@ Position Position::trailingWhitespacePosition(EAffinity, bool considerNonCollaps
 
 void Position::getInlineBoxAndOffset(EAffinity affinity, InlineBox*& inlineBox, int& caretOffset) const
 {
-    TextDirection primaryDirection = LTR;
-    for (RenderObject* r = node()->renderer(); r; r = r->parent()) {
-        if (r->isBlockFlow()) {
-            primaryDirection = r->style()->direction();
-            break;
-        }
-    }
-    getInlineBoxAndOffset(affinity, primaryDirection, inlineBox, caretOffset);
+    getInlineBoxAndOffset(affinity, primaryDirection(), inlineBox, caretOffset);
 }
 
 static bool isNonTextLeafChild(RenderObject* object)
@@ -993,35 +986,51 @@ static InlineTextBox* searchAheadForBetterMatch(RenderObject* renderer)
     return 0;
 }
 
+static Position downstreamIgnoringEditingBoundaries(Position position)
+{
+    Position lastPosition;
+    while (position != lastPosition) {
+        lastPosition = position;
+        position = position.downstream(Position::CanCrossEditingBoundary);
+    }
+    return position;
+}
+
+static Position upstreamIgnoringEditingBoundaries(Position position)
+{
+    Position lastPosition;
+    while (position != lastPosition) {
+        lastPosition = position;
+        position = position.upstream(Position::CanCrossEditingBoundary);
+    }
+    return position;
+}
+
 void Position::getInlineBoxAndOffset(EAffinity affinity, TextDirection primaryDirection, InlineBox*& inlineBox, int& caretOffset) const
 {
     caretOffset = m_offset;
     RenderObject* renderer = node()->renderer();
-          
+
     if (!renderer->isText()) {
-        if (!renderer->isRenderButton() && renderer->isBlockFlow() && hasRenderedNonAnonymousDescendantsWithHeight(renderer)) {
-            bool lastPosition = caretOffset == lastOffsetInNode(node());
-            Node* startNode = lastPosition ? node()->childNode(caretOffset - 1) : node()->childNode(caretOffset);
-            while (startNode && (!startNode->renderer() || (startNode->isTextNode() && toRenderText(startNode->renderer())->isAllCollapsibleWhitespace())))
-                startNode = (lastPosition)? startNode->previousSibling(): startNode->nextSibling();
-            if (startNode) {
-                Position pos(startNode, 0);
-                pos = pos.downstream(CanCrossEditingBoundary);
-                pos.getInlineBoxAndOffset(UPSTREAM, primaryDirection, inlineBox, caretOffset);
-                if (lastPosition && inlineBox)
-                    caretOffset = inlineBox->caretMaxOffset();
-                return;
-            }
-        }
         inlineBox = 0;
+        if (canHaveChildrenForEditing(node()) && renderer->isBlockFlow() && hasRenderedNonAnonymousDescendantsWithHeight(renderer)) {
+            // Try a visually equivalent position with possibly opposite editability. This helps in case |this| is in
+            // an editable block but surrounded by non-editable positions. It acts to negate the logic at the beginning
+            // of RenderObject::createVisiblePosition().
+            Position equivalent = downstreamIgnoringEditingBoundaries(*this);
+            if (equivalent == *this) {
+                equivalent = upstreamIgnoringEditingBoundaries(*this);
+                if (equivalent == *this || downstreamIgnoringEditingBoundaries(equivalent) == *this)
+                    return;
+            }
+
+            equivalent.getInlineBoxAndOffset(UPSTREAM, primaryDirection, inlineBox, caretOffset);
+            return;
+        }
         if (renderer->isBox()) {
             inlineBox = toRenderBox(renderer)->inlineBoxWrapper();
             if (!inlineBox || (caretOffset > inlineBox->caretMinOffset() && caretOffset < inlineBox->caretMaxOffset()))
                 return;
-        } else if (!node()->isLink() && node()->isContentEditable()) {
-            Position pos = positionInParentBeforeNode(node()).upstream();
-            pos.getInlineBoxAndOffset(DOWNSTREAM, primaryDirection, inlineBox, caretOffset);
-            return;
         }
     } else {
         RenderText* textRenderer = toRenderText(renderer);
@@ -1041,12 +1050,13 @@ void Position::getInlineBoxAndOffset(EAffinity affinity, TextDirection primaryDi
                 return;
             }
 
-            if ((caretOffset == caretMinOffset) ^ (affinity == UPSTREAM))
+            if (((caretOffset == caretMaxOffset) ^ (affinity == DOWNSTREAM))
+                || ((caretOffset == caretMinOffset) ^ (affinity == UPSTREAM)))
                 break;
 
             candidate = box;
         }
-        if (candidate && !box && affinity == DOWNSTREAM) {
+        if (candidate && candidate == textRenderer->lastTextBox() && affinity == DOWNSTREAM) {
             box = searchAheadForBetterMatch(textRenderer);
             if (box)
                 caretOffset = box->caretMinOffset();
@@ -1145,6 +1155,20 @@ void Position::getInlineBoxAndOffset(EAffinity affinity, TextDirection primaryDi
         }
     }
 }
+
+TextDirection Position::primaryDirection() const
+{
+    TextDirection primaryDirection = LTR;
+    for (const RenderObject* r = m_anchorNode->renderer(); r; r = r->parent()) {
+        if (r->isBlockFlow()) {
+            primaryDirection = r->style()->direction();
+            break;
+        }
+    }
+
+    return primaryDirection;
+}
+
 
 void Position::debugPosition(const char* msg) const
 {

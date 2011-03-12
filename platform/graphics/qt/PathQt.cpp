@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2006 Zack Rusin   <zack@kde.org>
  *               2006 Rob Buis     <buis@kde.org>
- *               2009 Dirk Schulze <krit@webkit.org>
+ *               2009, 2010 Dirk Schulze <krit@webkit.org>
  *
  * All rights reserved.
  *
@@ -30,7 +30,7 @@
 #include "config.h"
 #include "Path.h"
 
-#include "TransformationMatrix.h"
+#include "AffineTransform.h"
 #include "FloatRect.h"
 #include "GraphicsContext.h"
 #include "ImageBuffer.h"
@@ -69,12 +69,41 @@ Path& Path::operator=(const Path& other)
     return *this;
 }
 
+// Check whether a point is on the border
+bool isPointOnPathBorder(const QPolygonF& border, const QPointF& p)
+{
+    QPointF p1 = border.at(0);
+    QPointF p2;
+
+    for (int i = 1; i < border.size(); ++i) {
+        p2 = border.at(i);
+        //  (x1<=x<=x2||x1=>x>=x2) && (y1<=y<=y2||y1=>y>=y2)  && (y2-y1)(x-x1) == (y-y1)(x2-x1)
+        //  In which, (y2-y1)(x-x1) == (y-y1)(x2-x1) is from (y2-y1)/(x2-x1) == (y-y1)/(x-x1)
+        //  it want to check the slope between p1 and p2 is same with slope between p and p1,
+        //  if so then the three points lie on the same line.
+        //  In which, (x1<=x<=x2||x1=>x>=x2) && (y1<=y<=y2||y1=>y>=y2) want to make sure p is
+        //  between p1 and p2, not outside.
+        if (((p.x() <= p1.x() && p.x() >= p2.x()) || (p.x() >= p1.x() && p.x() <= p2.x()))
+            && ((p.y() <= p1.y() && p.y() >= p2.y()) || (p.y() >= p1.y() && p.y() <= p2.y()))
+            && (p2.y() - p1.y()) * (p.x() - p1.x()) == (p.y() - p1.y()) * (p2.x() - p1.x())) {
+            return true;
+        }
+        p1 = p2;
+    }
+    return false;
+}
+
 bool Path::contains(const FloatPoint& point, WindRule rule) const
 {
     Qt::FillRule savedRule = m_path.fillRule();
     const_cast<QPainterPath*>(&m_path)->setFillRule(rule == RULE_EVENODD ? Qt::OddEvenFill : Qt::WindingFill);
 
     bool contains = m_path.contains(point);
+    
+    if (!contains) {
+        // check whether the point is on the border
+        contains = isPointOnPathBorder(m_path.toFillPolygon(), point);
+    }
 
     const_cast<QPainterPath*>(&m_path)->setFillRule(savedRule);
     return contains;
@@ -269,10 +298,12 @@ void Path::addArc(const FloatPoint& p, float r, float sar, float ear, bool antic
         span += ea - sa;
     }
 
-    m_path.moveTo(QPointF(xc + radius  * cos(sar),
+    // connect to the previous point by a straight line
+    m_path.lineTo(QPointF(xc + radius  * cos(sar),
                           yc - radius  * sin(sar)));
 
     m_path.arcTo(xs, ys, width, height, sa, span);
+
 }
 
 void Path::addRect(const FloatRect& r)
@@ -379,7 +410,7 @@ void Path::apply(void* info, PathApplierFunction function) const
     }
 }
 
-void Path::transform(const TransformationMatrix& transform)
+void Path::transform(const AffineTransform& transform)
 {
     m_path = QTransform(transform).map(m_path);
 }

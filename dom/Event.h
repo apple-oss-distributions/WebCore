@@ -75,6 +75,9 @@ namespace WebCore {
         void initEvent(const AtomicString& type, bool canBubble, bool cancelable);
 
         const AtomicString& type() const { return m_type; }
+        
+        const AtomicString& aliasedType() const;
+        bool hasAliasedType() const;
 
         EventTarget* target() const { return m_target.get(); }
         void setTarget(PassRefPtr<EventTarget>);
@@ -88,8 +91,10 @@ namespace WebCore {
         bool bubbles() const { return m_canBubble; }
         bool cancelable() const { return m_cancelable; }
         DOMTimeStamp timeStamp() const { return m_createTime; }
-        void stopPropagation() { m_propagationStopped = true; }
 
+        void stopPropagation() { m_propagationStopped = true; }
+        void stopImmediatePropagation() { m_immediatePropagationStopped = true; }
+        
         // IE Extensions
         EventTarget* srcElement() const { return target(); } // MSIE extension - "the object that fired the event"
 
@@ -98,6 +103,7 @@ namespace WebCore {
 
         Clipboard* clipboardData() const { return isClipboardEvent() ? clipboard() : 0; }
 
+        virtual bool isCustomEvent() const;
         virtual bool isUIEvent() const;
         virtual bool isMouseEvent() const;
         virtual bool isMutationEvent() const;
@@ -128,9 +134,14 @@ namespace WebCore {
 #endif
         virtual bool isTouchEvent() const;
         virtual bool isGestureEvent() const;
+#if ENABLE(DEVICE_ORIENTATION)
+        virtual bool isDeviceMotionEvent() const;
+        virtual bool isDeviceOrientationEvent() const;
+#endif
         bool fromUserGesture();
         
-        bool propagationStopped() const { return m_propagationStopped; }
+        bool propagationStopped() const { return m_propagationStopped || m_immediatePropagationStopped; }
+        bool immediatePropagationStopped() const { return m_immediatePropagationStopped; }
 
         bool defaultPrevented() const { return m_defaultPrevented; }
         void preventDefault() { if (m_cancelable) m_defaultPrevented = true; }
@@ -163,6 +174,7 @@ namespace WebCore {
         bool m_cancelable;
 
         bool m_propagationStopped;
+        bool m_immediatePropagationStopped;
         bool m_defaultPrevented;
         bool m_defaultHandled;
         bool m_cancelBubble;

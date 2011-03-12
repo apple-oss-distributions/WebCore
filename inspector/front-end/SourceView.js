@@ -32,16 +32,24 @@ WebInspector.SourceView = function(resource)
 
     this.element.addStyleClass("source");
 
-    this.sourceFrame = new WebInspector.SourceFrame(this.contentElement, this._addBreakpoint.bind(this));
+    var canEditScripts = WebInspector.panels.scripts.canEditScripts() && resource.type === WebInspector.Resource.Type.Script;
+    this.sourceFrame = new WebInspector.SourceFrame(this.contentElement, this._addBreakpoint.bind(this), this._removeBreakpoint.bind(this), canEditScripts ? this._editLine.bind(this) : null);
     resource.addEventListener("finished", this._resourceLoadingFinished, this);
     this._frameNeedsSetup = true;
+}
+
+// This is a map from resource.type to mime types
+// found in WebInspector.SourceTokenizer.Registry.
+WebInspector.SourceView.DefaultMIMETypeForResourceType = {
+    0: "text/html",
+    1: "text/css",
+    4: "text/javascript"
 }
 
 WebInspector.SourceView.prototype = {
     show: function(parentElement)
     {
         WebInspector.ResourceView.prototype.show.call(this, parentElement);
-        this.setupSourceFrameIfNeeded();
         this.sourceFrame.visible = true;
         this.resize();
     },
@@ -59,16 +67,6 @@ WebInspector.SourceView.prototype = {
             this.sourceFrame.resize();
     },
 
-    detach: function()
-    {
-        WebInspector.ResourceView.prototype.detach.call(this);
-
-        // FIXME: We need to mark the frame for setup on detach because the frame DOM is cleared
-        // when it is removed from the document. Is this a bug?
-        this._frameNeedsSetup = true;
-        this._sourceFrameSetup = false;
-    },
-
     setupSourceFrameIfNeeded: function()
     {
         if (!this._frameNeedsSetup)
@@ -79,11 +77,27 @@ WebInspector.SourceView.prototype = {
         delete this._frameNeedsSetup;
         WebInspector.getResourceContent(this.resource.identifier, this._contentLoaded.bind(this));
     },
-    
+
+    hasContentTab: function()
+    {
+        return true;
+    },
+
+    contentTabSelected: function()
+    {
+        this.setupSourceFrameIfNeeded();
+    },
+
     _contentLoaded: function(content)
     {
-        this.sourceFrame.setContent(this.resource.mimeType, content);
+        var mimeType = this._canonicalMimeType(this.resource);
+        this.sourceFrame.setContent(mimeType, content, this.resource.url);
         this._sourceFrameSetupFinished();
+    },
+
+    _canonicalMimeType: function(resource)
+    {
+        return WebInspector.SourceView.DefaultMIMETypeForResourceType[resource.type] || resource.mimeType;
     },
 
     _resourceLoadingFinished: function(event)
@@ -97,6 +111,41 @@ WebInspector.SourceView.prototype = {
 
     _addBreakpoint: function(line)
     {
+        var sourceID = this._sourceIDForLine(line);
+        if (WebInspector.panels.scripts) {
+            var breakpoint = new WebInspector.Breakpoint(this.resource.url, line, sourceID);
+            WebInspector.panels.scripts.addBreakpoint(breakpoint);
+        }
+    },
+
+    _removeBreakpoint: function(breakpoint)
+    {
+        if (WebInspector.panels.scripts)
+            WebInspector.panels.scripts.removeBreakpoint(breakpoint);
+    },
+
+    _editLine: function(line, newContent)
+    {
+        var lines = [];
+        var textModel = this.sourceFrame.textModel;
+        for (var i = 0; i < textModel.linesCount; ++i) {
+            if (i === line)
+                lines.push(newContent);
+            else
+                lines.push(textModel.line(i));
+        }
+
+        var linesCountToShift = newContent.split("\n").length - 1;
+        WebInspector.panels.scripts.editScriptSource(this._sourceIDForLine(line), lines.join("\n"), line, linesCountToShift, this._editLineComplete.bind(this));
+    },
+
+    _editLineComplete: function(newBody)
+    {
+        this.sourceFrame.updateContent(newBody);
+    },
+
+    _sourceIDForLine: function(line)
+    {
         var sourceID = null;
         var closestStartingLine = 0;
         var scripts = this.resource.scripts;
@@ -107,11 +156,7 @@ WebInspector.SourceView.prototype = {
                 sourceID = script.sourceID;
             }
         }
-
-        if (WebInspector.panels.scripts) {
-            var breakpoint = new WebInspector.Breakpoint(this.resource.url, line, sourceID);
-            WebInspector.panels.scripts.addBreakpoint(breakpoint);
-        }
+        return sourceID;
     },
 
     // The rest of the methods in this prototype need to be generic enough to work with a ScriptView.
@@ -121,7 +166,7 @@ WebInspector.SourceView.prototype = {
     {
         this._currentSearchResultIndex = -1;
         this._searchResults = [];
-        this.sourceFrame.clearSelection();
+        this.sourceFrame.clearMarkedRange();
         delete this._delayedFindSearchMatches;
     },
 
@@ -221,7 +266,7 @@ WebInspector.SourceView.prototype = {
         if (!foundRange)
             return;
 
-        this.sourceFrame.setSelection(foundRange);
+        this.sourceFrame.markAndRevealRange(foundRange);
     },
 
     _sourceFrameSetupFinished: function()

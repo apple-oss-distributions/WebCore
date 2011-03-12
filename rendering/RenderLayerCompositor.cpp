@@ -37,12 +37,15 @@
 #include "GraphicsLayer.h"
 #include "HitTestResult.h"
 #include "HTMLCanvasElement.h"
+#include "HTMLIFrameElement.h"
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
 #include "HTMLMediaElement.h"
 #include "HTMLNames.h"
 #endif
+#include "NodeList.h"
 #include "Page.h"
 #include "RenderEmbeddedObject.h"
+#include "RenderIFrame.h"
 #include "RenderLayerBacking.h"
 #include "RenderReplica.h"
 #include "RenderVideo.h"
@@ -54,7 +57,6 @@
 #endif
 
 #ifndef NDEBUG
-#include "CString.h"
 #include "RenderTreeAsText.h"
 #endif
 
@@ -91,9 +93,10 @@ RenderLayerCompositor::RenderLayerCompositor(RenderView* renderView)
     , m_showDebugBorders(false)
     , m_showRepaintCounter(false)
     , m_compositingConsultsOverlap(true)
+    , m_compositingDependsOnGeometry(false)
     , m_compositing(false)
-    , m_rootLayerAttached(false)
     , m_compositingLayersNeedRebuild(false)
+    , m_rootLayerAttachment(RootLayerUnattached)
 #if PROFILE_LAYER_REBUILD
     , m_rootLayerUpdateCount(0)
 #endif // PROFILE_LAYER_REBUILD
@@ -102,7 +105,7 @@ RenderLayerCompositor::RenderLayerCompositor(RenderView* renderView)
 
 RenderLayerCompositor::~RenderLayerCompositor()
 {
-    ASSERT(!m_rootLayerAttached);
+    ASSERT(m_rootLayerAttachment == RootLayerUnattached);
 }
 
 void RenderLayerCompositor::enableCompositingMode(bool enable /* = true */)
@@ -110,12 +113,10 @@ void RenderLayerCompositor::enableCompositingMode(bool enable /* = true */)
     if (enable != m_compositing) {
         m_compositing = enable;
         
-        // We never go out of compositing mode for a given page,
-        // but if all the layers disappear, we'll just be left with
-        // the empty root layer, which has minimal overhead.
-        if (m_compositing)
+        if (m_compositing) {
             ensureRootPlatformLayer();
-        else
+            notifyIFramesOfCompositingChange();
+        } else
             destroyRootPlatformLayer();
     }
 }
@@ -130,6 +131,15 @@ void RenderLayerCompositor::cacheAcceleratedCompositingFlags()
         hasAcceleratedCompositing = settings->acceleratedCompositingEnabled();
         showDebugBorders = settings->showDebugBorders();
         showRepaintCounter = settings->showRepaintCounter();
+    }
+
+    // We allow the chrome to override the settings, in case the page is rendered
+    // on a chrome that doesn't allow accelerated compositing.
+    if (hasAcceleratedCompositing) {
+        Frame* frame = m_renderView->frameView()->frame();
+        Page* page = frame ? frame->page() : 0;
+        if (page)
+            hasAcceleratedCompositing = page->chrome()->client()->allowsAcceleratedCompositing();
     }
 
     if (hasAcceleratedCompositing != m_hasAcceleratedCompositing || showDebugBorders != m_showDebugBorders || showRepaintCounter != m_showRepaintCounter)
@@ -158,7 +168,10 @@ void RenderLayerCompositor::scheduleSync()
 
 void RenderLayerCompositor::updateCompositingLayers(CompositingUpdateType updateType, RenderLayer* updateRoot)
 {
-    bool checkForHierarchyUpdate = false;
+    if (!m_compositingDependsOnGeometry && !m_compositing)
+        return;
+
+    bool checkForHierarchyUpdate = m_compositingDependsOnGeometry;
     bool needGeometryUpdate = false;
     
     switch (updateType) {
@@ -176,8 +189,6 @@ void RenderLayerCompositor::updateCompositingLayers(CompositingUpdateType update
 
     if (!checkForHierarchyUpdate && !needGeometryUpdate)
         return;
-
-    ASSERT(inCompositingMode());
 
     bool needHierarchyUpdate = m_compositingLayersNeedRebuild;
     if (!updateRoot) {
@@ -213,8 +224,12 @@ void RenderLayerCompositor::updateCompositingLayers(CompositingUpdateType update
         rebuildCompositingLayerTree(updateRoot, compState, childList);
 
         // Host the document layer in the RenderView's root layer.
-        if (updateRoot == rootRenderLayer() && !childList.isEmpty())
-            m_rootPlatformLayer->setChildren(childList);
+        if (updateRoot == rootRenderLayer()) {
+            if (childList.isEmpty())
+                destroyRootPlatformLayer();
+            else
+                m_rootPlatformLayer->setChildren(childList);
+        }
     } else if (needGeometryUpdate) {
         // We just need to do a geometry update. This is only used for position:fixed scrolling;
         // most of the time, geometry is updated via RenderLayer::styleChanged().
@@ -286,6 +301,13 @@ bool RenderLayerCompositor::updateBacking(RenderLayer* layer, CompositingChangeR
         video->acceleratedRenderingStateChanged();
     }
 #endif
+
+    if (layerChanged && layer->renderer()->isRenderIFrame()) {
+        RenderLayerCompositor* innerCompositor = iframeContentsCompositor(toRenderIFrame(layer->renderer()));
+        if (innerCompositor && innerCompositor->inCompositingMode())
+            innerCompositor->updateRootLayerAttachment();
+    }
+
     return layerChanged;
 }
 
@@ -304,7 +326,7 @@ bool RenderLayerCompositor::updateLayerCompositingState(RenderLayer* layer, Comp
 void RenderLayerCompositor::repaintOnCompositingChange(RenderLayer* layer)
 {
     // If the renderer is not attached yet, no need to repaint.
-    if (!layer->renderer()->parent())
+    if (layer->renderer() != m_renderView && !layer->renderer()->parent())
         return;
 
     RenderBoxModelObject* repaintContainer = layer->renderer()->containerForRepaint();
@@ -324,11 +346,24 @@ void RenderLayerCompositor::repaintOnCompositingChange(RenderLayer* layer)
 // RenderLayers that are rendered by the composited RenderLayer.
 IntRect RenderLayerCompositor::calculateCompositedBounds(const RenderLayer* layer, const RenderLayer* ancestorLayer)
 {
-    if (!layer->isSelfPaintingLayer())
+    if (!canBeComposited(layer))
         return IntRect();
 
-    IntRect boundingBoxRect, unionBounds;
-    boundingBoxRect = unionBounds = layer->localBoundingBox();
+    IntRect boundingBoxRect = layer->localBoundingBox();
+    if (layer->renderer()->isRoot()) {
+        // If the root layer becomes composited (e.g. because some descendant with negative z-index is composited),
+        // then it has to be big enough to cover the viewport in order to display the background. This is akin
+        // to the code in RenderBox::paintRootBoxDecorations().
+        if (m_renderView->frameView()) {
+            int rw = m_renderView->frameView()->contentsWidth();
+            int rh = m_renderView->frameView()->contentsHeight();
+            
+            boundingBoxRect.setWidth(max(boundingBoxRect.width(), rw - boundingBoxRect.x()));
+            boundingBoxRect.setHeight(max(boundingBoxRect.height(), rh - boundingBoxRect.y()));
+        }
+    }
+    
+    IntRect unionBounds = boundingBoxRect;
     
     if (layer->renderer()->hasOverflowClip() || layer->renderer()->hasMask()) {
         int ancestorRelX = 0, ancestorRelY = 0;
@@ -442,6 +477,9 @@ void RenderLayerCompositor::addToOverlapMap(OverlapMap& overlapMap, RenderLayer*
 
     if (!boundsComputed) {
         layerBounds = layer->renderer()->localToAbsoluteQuad(FloatRect(layer->localBoundingBox())).enclosingBoundingBox();
+        // Empty rects never intersect, but we need them to for the purposes of overlap testing.
+        if (layerBounds.isEmpty())
+            layerBounds.setSize(IntSize(1, 1));
         boundsComputed = true;
     }
 
@@ -485,6 +523,9 @@ void RenderLayerCompositor::computeCompositingRequirements(RenderLayer* layer, O
     if (overlapMap && !overlapMap->isEmpty()) {
         // If we're testing for overlap, we only need to composite if we overlap something that is already composited.
         absBounds = layer->renderer()->localToAbsoluteQuad(FloatRect(layer->localBoundingBox())).enclosingBoundingBox();
+        // Empty rects never intersect, but we need them to for the purposes of overlap testing.
+        if (absBounds.isEmpty())
+            absBounds.setSize(IntSize(1, 1));
         haveComputedBounds = true;
         mustOverlapCompositedLayers = overlapsCompositedLayers(*overlapMap, absBounds);
     }
@@ -499,7 +540,7 @@ void RenderLayerCompositor::computeCompositingRequirements(RenderLayer* layer, O
     ++childState.m_depth;
 #endif
 
-    const bool willBeComposited = needsToBeComposited(layer);
+    bool willBeComposited = needsToBeComposited(layer);
     if (willBeComposited) {
         // Tell the parent it has compositing descendants.
         compositingState.m_subtreeIsCompositing = true;
@@ -533,6 +574,7 @@ void RenderLayerCompositor::computeCompositingRequirements(RenderLayer* layer, O
                     childState.m_compositingAncestor = layer;
                     if (overlapMap)
                         addToOverlapMap(*overlapMap, layer, absBounds, haveComputedBounds);
+                    willBeComposited = true;
                 }
             }
         }
@@ -556,31 +598,51 @@ void RenderLayerCompositor::computeCompositingRequirements(RenderLayer* layer, O
             }
         }
     }
+    
+    // If we just entered compositing mode, the root will have become composited.
+    if (layer->isRootLayer() && inCompositingMode())
+        willBeComposited = true;
+    
+    ASSERT(willBeComposited == needsToBeComposited(layer));
 
     // If we have a software transform, and we have layers under us, we need to also
     // be composited. Also, if we have opacity < 1, then we need to be a layer so that
     // the child layers are opaque, then rendered with opacity on this layer.
-    if (!willBeComposited && childState.m_subtreeIsCompositing && requiresCompositingWhenDescendantsAreCompositing(layer->renderer())) {
+    if (!willBeComposited && canBeComposited(layer) && childState.m_subtreeIsCompositing && requiresCompositingWhenDescendantsAreCompositing(layer->renderer())) {
         layer->setMustOverlapCompositedLayers(true);
         if (overlapMap)
             addToOverlapMap(*overlapMap, layer, absBounds, haveComputedBounds);
+        willBeComposited = true;
     }
 
+    ASSERT(willBeComposited == needsToBeComposited(layer));
     if (layer->reflectionLayer())
-        layer->reflectionLayer()->setMustOverlapCompositedLayers(needsToBeComposited(layer));
+        layer->reflectionLayer()->setMustOverlapCompositedLayers(willBeComposited);
 
     // Subsequent layers in the parent stacking context also need to composite.
     if (childState.m_subtreeIsCompositing)
         compositingState.m_subtreeIsCompositing = true;
 
-    // If the layer is going into compositing mode, repaint its old location.
-    if (!layer->isComposited() && needsToBeComposited(layer))
-        repaintOnCompositingChange(layer);
-
     // Set the flag to say that this SC has compositing children.
-    // this can affect the answer to needsToBeComposited() when clipping,
-    // but that's ok here.
     layer->setHasCompositingDescendant(childState.m_subtreeIsCompositing);
+
+    // setHasCompositingDescendant() may have changed the answer to needsToBeComposited() when clipping,
+    // so test that again.
+    if (!willBeComposited && canBeComposited(layer) && clipsCompositingDescendants(layer)) {
+        if (overlapMap)
+            addToOverlapMap(*overlapMap, layer, absBounds, haveComputedBounds);
+        willBeComposited = true;
+    }
+
+    // If we're back at the root, and no other layers need to be composited, and the root layer itself doesn't need
+    // to be composited, then we can drop out of compositing mode altogether.
+    if (layer->isRootLayer() && !childState.m_subtreeIsCompositing && !requiresCompositingLayer(layer)) {
+    }
+    
+    // If the layer is going into compositing mode, repaint its old location.
+    ASSERT(willBeComposited == needsToBeComposited(layer));
+    if (!layer->isComposited() && willBeComposited)
+        repaintOnCompositingChange(layer);
 
     // Update backing now, so that we can use isComposited() reliably during tree traversal in rebuildCompositingLayerTree().
     if (updateBacking(layer, CompositingChangeRepaintNow))
@@ -616,19 +678,6 @@ void RenderLayerCompositor::removeCompositedChildren(RenderLayer* layer)
 
     GraphicsLayer* hostingLayer = layer->backing()->parentForSublayers();
     hostingLayer->removeAllChildren();
-}
-
-void RenderLayerCompositor::parentInRootLayer(RenderLayer* layer)
-{
-    ASSERT(layer->isComposited());
-
-    GraphicsLayer* layerAnchor = layer->backing()->childForSuperlayers();
-
-    if (layerAnchor->parent() != m_rootPlatformLayer) {
-        layerAnchor->removeFromParent();
-        if (m_rootPlatformLayer)
-            m_rootPlatformLayer->addChild(layerAnchor);
-    }
 }
 
 #if ENABLE(VIDEO)
@@ -718,9 +767,63 @@ void RenderLayerCompositor::rebuildCompositingLayerTree(RenderLayer* layer, cons
     }
     
     if (layerBacking) {
-        layerBacking->parentForSublayers()->setChildren(layerChildren);
+        bool parented = false;
+        if (layer->renderer()->isRenderIFrame())
+            parented = parentIFrameContentLayers(toRenderIFrame(layer->renderer()));
+        
+        if (!parented)
+            layerBacking->parentForSublayers()->setChildren(layerChildren);
+
         childLayersOfEnclosingLayer.append(layerBacking->childForSuperlayers());
     }
+}
+
+void RenderLayerCompositor::updateContentLayerOffset(const IntPoint& contentsOffset)
+{
+    if (m_clipLayer) {
+        FrameView* frameView = m_renderView->frameView();
+        m_clipLayer->setPosition(contentsOffset);
+        m_clipLayer->setSize(FloatSize(frameView->layoutWidth(), frameView->layoutHeight()));
+
+        IntPoint scrollPosition = frameView->scrollPosition();
+        m_scrollLayer->setPosition(FloatPoint(-scrollPosition.x(), -scrollPosition.y()));
+    }
+}
+
+void RenderLayerCompositor::updateContentLayerScrollPosition(const IntPoint& scrollPosition)
+{
+    if (m_scrollLayer)
+        m_scrollLayer->setPosition(FloatPoint(-scrollPosition.x(), -scrollPosition.y()));
+}
+
+RenderLayerCompositor* RenderLayerCompositor::iframeContentsCompositor(RenderIFrame* renderer)
+{
+    HTMLIFrameElement* element = static_cast<HTMLIFrameElement*>(renderer->node());
+    if (Document* contentDocument = element->contentDocument()) {
+        if (RenderView* view = contentDocument->renderView())
+            return view->compositor();
+    }
+    return 0;
+}
+
+bool RenderLayerCompositor::parentIFrameContentLayers(RenderIFrame* renderer)
+{
+    RenderLayerCompositor* innerCompositor = iframeContentsCompositor(renderer);
+    if (!innerCompositor || !innerCompositor->inCompositingMode() || innerCompositor->rootLayerAttachment() != RootLayerAttachedViaEnclosingIframe)
+        return false;
+    
+    RenderLayer* layer = renderer->layer();
+    if (!layer->isComposited())
+        return false;
+
+    RenderLayerBacking* backing = layer->backing();
+    GraphicsLayer* hostingLayer = backing->parentForSublayers();
+    GraphicsLayer* rootLayer = innerCompositor->rootPlatformLayer();
+    if (hostingLayer->children().size() != 1 || hostingLayer->children()[0] != rootLayer) {
+        hostingLayer->removeAllChildren();
+        hostingLayer->addChild(rootLayer);
+    }
+    return true;
 }
 
 // This just updates layer geometry without changing the hierarchy.
@@ -876,49 +979,32 @@ RenderLayer* RenderLayerCompositor::rootRenderLayer() const
 
 GraphicsLayer* RenderLayerCompositor::rootPlatformLayer() const
 {
-    return m_rootPlatformLayer.get();
+    return m_clipLayer ? m_clipLayer.get() : m_rootPlatformLayer.get();
 }
 
 void RenderLayerCompositor::didMoveOnscreen()
 {
-    if (!m_rootPlatformLayer)
+    if (!inCompositingMode() || m_rootLayerAttachment != RootLayerUnattached)
         return;
 
-    Frame* frame = m_renderView->frameView()->frame();
-    Page* page = frame ? frame->page() : 0;
-    if (!page)
-        return;
-
-    page->chrome()->client()->attachRootGraphicsLayer(frame, m_rootPlatformLayer.get());
-    m_rootLayerAttached = true;
+    RootLayerAttachment attachment = shouldPropagateCompositingToEnclosingIFrame() ? RootLayerAttachedViaEnclosingIframe : RootLayerAttachedViaChromeClient;
+    attachRootPlatformLayer(attachment);
 }
 
 void RenderLayerCompositor::willMoveOffscreen()
 {
-    if (!m_rootPlatformLayer || !m_rootLayerAttached)
+    if (!inCompositingMode() || m_rootLayerAttachment == RootLayerUnattached)
         return;
 
-    Frame* frame = m_renderView->frameView()->frame();
-    Page* page = frame ? frame->page() : 0;
-    if (!page)
-        return;
-
-    page->chrome()->client()->attachRootGraphicsLayer(frame, 0);
-    m_rootLayerAttached = false;
+    detachRootPlatformLayer();
 }
 
 void RenderLayerCompositor::updateRootLayerPosition()
 {
+    // Eventually we will need to account for scrolling here.
+    // https://bugs.webkit.org/show_bug.cgi?id=38518
     if (m_rootPlatformLayer) {
         FloatSize layerSize(m_renderView->rightLayoutOverflow(), m_renderView->bottomLayoutOverflow());
-        // FIXME: this is a hack to get the root layer in the right place in framesets (<rdar://problem/5906146>),
-        // and to ensure that frame/iframe contents cannot spill outside of their frame (<rdar://problem/5904817>).
-        IntSize windowOffset = m_renderView->frameView()->offsetInWindow();
-        m_rootPlatformLayer->setPosition(FloatPoint(windowOffset.width(), windowOffset.height()));
-        if (m_renderView->document()->ownerElement()) {
-            // For frames and iframes, size the root layer (which is masking) to the frameview size.
-            layerSize = FloatSize(m_renderView->frameView()->width(), m_renderView->frameView()->height());
-        }
         m_rootPlatformLayer->setSize(layerSize);
     }
 }
@@ -936,12 +1022,34 @@ bool RenderLayerCompositor::has3DContent() const
     return layerHas3DContent(rootRenderLayer());
 }
 
-bool RenderLayerCompositor::needsToBeComposited(const RenderLayer* layer) const
+bool RenderLayerCompositor::shouldPropagateCompositingToEnclosingIFrame() const
 {
-    if (!m_hasAcceleratedCompositing || !layer->isSelfPaintingLayer())
+    // Parent document content needs to be able to render on top of a composited iframe, so correct behavior
+    // is to have the parent document become composited too. However, this can cause problems on platforms that
+    // use native views for frames (like Mac), so disable that behavior on those platforms for now.
+    Element* ownerElement = enclosingIFrameElement();
+    RenderObject* renderer = ownerElement ? ownerElement->renderer() : 0;
+    if (!renderer || !renderer->isRenderIFrame())
         return false;
 
-    return requiresCompositingLayer(layer) || layer->mustOverlapCompositedLayers();
+    // On non-Mac platforms, let compositing propagate for all iframes.
+    return true;
+}
+
+Element* RenderLayerCompositor::enclosingIFrameElement() const
+{
+    if (Element* ownerElement = m_renderView->document()->ownerElement())
+        return ownerElement->hasTagName(iframeTag) ? ownerElement : 0;
+
+    return 0;
+}
+
+bool RenderLayerCompositor::needsToBeComposited(const RenderLayer* layer) const
+{
+    if (!canBeComposited(layer))
+        return false;
+
+    return requiresCompositingLayer(layer) || layer->mustOverlapCompositedLayers() || (inCompositingMode() && layer->isRootLayer());
 }
 
 // Note: this specifies whether the RL needs a compositing layer for intrinsic reasons.
@@ -956,14 +1064,19 @@ bool RenderLayerCompositor::requiresCompositingLayer(const RenderLayer* layer) c
         layer = toRenderBoxModelObject(renderer)->layer();
     }
     // The root layer always has a compositing layer, but it may not have backing.
-    return (inCompositingMode() && layer->isRootLayer()) ||
-             requiresCompositingForTransform(renderer) ||
-             requiresCompositingForVideo(renderer) ||
-             requiresCompositingForCanvas(renderer) ||
-             requiresCompositingForPlugin(renderer) ||
-             renderer->style()->backfaceVisibility() == BackfaceVisibilityHidden ||
-             clipsCompositingDescendants(layer) ||
-             requiresCompositingForAnimation(renderer);
+    return requiresCompositingForTransform(renderer)
+             || requiresCompositingForVideo(renderer)
+             || requiresCompositingForCanvas(renderer)
+             || requiresCompositingForPlugin(renderer)
+             || requiresCompositingForIFrame(renderer)
+             || renderer->style()->backfaceVisibility() == BackfaceVisibilityHidden
+             || clipsCompositingDescendants(layer)
+             || requiresCompositingForAnimation(renderer);
+}
+
+bool RenderLayerCompositor::canBeComposited(const RenderLayer* layer) const
+{
+    return m_hasAcceleratedCompositing && layer->isSelfPaintingLayer();
 }
 
 // Return true if the given layer has some ancestor in the RenderLayer hierarchy that clips,
@@ -1060,13 +1173,54 @@ bool RenderLayerCompositor::requiresCompositingForCanvas(RenderObject* renderer)
 
 bool RenderLayerCompositor::requiresCompositingForPlugin(RenderObject* renderer) const
 {
-    return renderer->isEmbeddedObject() && toRenderEmbeddedObject(renderer)->allowsAcceleratedCompositing();
+    if (!renderer->isEmbeddedObject())
+        return false;
+    
+    RenderEmbeddedObject* embedRenderer = toRenderEmbeddedObject(renderer);
+    if (!embedRenderer->allowsAcceleratedCompositing())
+        return false;
+
+    m_compositingDependsOnGeometry = true;
+
+    // If we can't reliably know the size of the plugin yet, don't change compositing state.
+    if (renderer->needsLayout())
+        return embedRenderer->hasLayer() && embedRenderer->layer()->isComposited();
+
+    // Don't go into compositing mode if height or width are zero, or size is 1x1.
+    IntRect contentBox = embedRenderer->contentBoxRect();
+    return contentBox.height() * contentBox.width() > 1;
+}
+
+bool RenderLayerCompositor::requiresCompositingForIFrame(RenderObject* renderer) const
+{
+    if (!renderer->isRenderIFrame())
+        return false;
+    
+    RenderIFrame* iframeRenderer = toRenderIFrame(renderer);
+
+    if (!iframeRenderer->requiresAcceleratedCompositing())
+        return false;
+
+    m_compositingDependsOnGeometry = true;
+
+    RenderLayerCompositor* innerCompositor = iframeContentsCompositor(iframeRenderer);
+    if (!innerCompositor->shouldPropagateCompositingToEnclosingIFrame())
+        return false;
+
+    // If we can't reliably know the size of the iframe yet, don't change compositing state.
+    if (renderer->needsLayout())
+        return iframeRenderer->hasLayer() && iframeRenderer->layer()->isComposited();
+    
+    // Don't go into compositing mode if height or width are zero.
+    IntRect contentBox = iframeRenderer->contentBoxRect();
+    return contentBox.height() * contentBox.width() > 0;
 }
 
 bool RenderLayerCompositor::requiresCompositingForAnimation(RenderObject* renderer) const
 {
     if (AnimationController* animController = renderer->animation()) {
-        return (animController->isAnimatingPropertyOnRenderer(renderer, CSSPropertyOpacity))
+        return (animController->isAnimatingPropertyOnRenderer(renderer, CSSPropertyOpacity)
+                )
             || animController->isAnimatingPropertyOnRenderer(renderer, CSSPropertyWebkitTransform);
     }
     return false;
@@ -1087,19 +1241,59 @@ bool RenderLayerCompositor::needsContentsCompositingLayer(const RenderLayer* lay
 
 void RenderLayerCompositor::ensureRootPlatformLayer()
 {
-    if (m_rootPlatformLayer)
-        return;
+    RootLayerAttachment expectedAttachment = shouldPropagateCompositingToEnclosingIFrame() ? RootLayerAttachedViaEnclosingIframe : RootLayerAttachedViaChromeClient;
+    if (expectedAttachment == m_rootLayerAttachment)
+         return;
 
-    m_rootPlatformLayer = GraphicsLayer::create(0);
-    m_rootPlatformLayer->setSize(FloatSize(m_renderView->rightLayoutOverflow(), m_renderView->bottomLayoutOverflow()));
-    m_rootPlatformLayer->setPosition(FloatPoint(0, 0));
+    if (!m_rootPlatformLayer) {
+        m_rootPlatformLayer = GraphicsLayer::create(0);
+#ifndef NDEBUG
+        m_rootPlatformLayer->setName("Root platform");
+#endif
+        m_rootPlatformLayer->setSize(FloatSize(m_renderView->rightLayoutOverflow(), m_renderView->bottomLayoutOverflow()));
+        m_rootPlatformLayer->setPosition(FloatPoint());
+
+        // Need to clip to prevent transformed content showing outside this frame
+        m_rootPlatformLayer->setMasksToBounds(true);
+    }
+
     // The root layer does flipping if we need it on this platform.
-    m_rootPlatformLayer->setGeometryOrientation(GraphicsLayer::compositingCoordinatesOrientation());
-
-    // Need to clip to prevent transformed content showing outside this frame
-    m_rootPlatformLayer->setMasksToBounds(true);
+    m_rootPlatformLayer->setGeometryOrientation(expectedAttachment == RootLayerAttachedViaEnclosingIframe ? GraphicsLayer::CompositingCoordinatesTopDown : GraphicsLayer::compositingCoordinatesOrientation());
     
-    didMoveOnscreen();
+    if (expectedAttachment == RootLayerAttachedViaEnclosingIframe) {
+        if (!m_clipLayer) {
+            ASSERT(!m_scrollLayer);
+            // Create a clipping layer if this is an iframe
+            m_clipLayer = GraphicsLayer::create(0);
+#ifndef NDEBUG
+            m_clipLayer->setName("iframe Clipping");
+#endif
+            m_clipLayer->setMasksToBounds(true);
+            
+            m_scrollLayer = GraphicsLayer::create(0);
+#ifndef NDEBUG
+            m_scrollLayer->setName("iframe scrolling");
+#endif
+            // Hook them up
+            m_clipLayer->addChild(m_scrollLayer.get());
+            m_scrollLayer->addChild(m_rootPlatformLayer.get());
+            
+            updateContentLayerScrollPosition(m_renderView->frameView()->scrollPosition());
+        }
+    } else if (m_clipLayer) {
+        m_clipLayer->removeAllChildren();
+        m_clipLayer->removeFromParent();
+        m_clipLayer = 0;
+        
+        m_scrollLayer->removeAllChildren();
+        m_scrollLayer = 0;
+    }
+
+    // Check to see if we have to change the attachment
+    if (m_rootLayerAttachment != RootLayerUnattached)
+        detachRootPlatformLayer();
+
+    attachRootPlatformLayer(expectedAttachment);
 }
 
 void RenderLayerCompositor::destroyRootPlatformLayer()
@@ -1107,8 +1301,123 @@ void RenderLayerCompositor::destroyRootPlatformLayer()
     if (!m_rootPlatformLayer)
         return;
 
-    willMoveOffscreen();
+    detachRootPlatformLayer();
+    if (m_clipLayer) {
+        m_clipLayer->removeAllChildren();
+        m_clipLayer = 0;
+        
+        m_scrollLayer->removeAllChildren();
+        m_scrollLayer = 0;
+    }
+    ASSERT(!m_scrollLayer);
     m_rootPlatformLayer = 0;
+}
+
+void RenderLayerCompositor::attachRootPlatformLayer(RootLayerAttachment attachment)
+{
+    if (!m_rootPlatformLayer)
+        return;
+
+    switch (attachment) {
+        case RootLayerUnattached:
+            ASSERT_NOT_REACHED();
+            break;
+        case RootLayerAttachedViaChromeClient: {
+            Frame* frame = m_renderView->frameView()->frame();
+            Page* page = frame ? frame->page() : 0;
+            if (!page)
+                return;
+
+            page->chrome()->client()->attachRootGraphicsLayer(frame, m_rootPlatformLayer.get());
+            break;
+        }
+        case RootLayerAttachedViaEnclosingIframe: {
+            // The layer will get hooked up via RenderLayerBacking::updateGraphicsLayerConfiguration()
+            // for the iframe's renderer in the parent document.
+            scheduleNeedsStyleRecalc(m_renderView->document()->ownerElement());
+            break;
+        }
+    }
+    
+    m_rootLayerAttachment = attachment;
+    rootLayerAttachmentChanged();
+}
+
+void RenderLayerCompositor::detachRootPlatformLayer()
+{
+    if (!m_rootPlatformLayer || m_rootLayerAttachment == RootLayerUnattached)
+        return;
+
+    switch (m_rootLayerAttachment) {
+        case RootLayerAttachedViaEnclosingIframe: {
+            // The layer will get unhooked up via RenderLayerBacking::updateGraphicsLayerConfiguration()
+            // for the iframe's renderer in the parent document.
+            if (m_clipLayer)
+                m_clipLayer->removeFromParent();
+            else
+                m_rootPlatformLayer->removeFromParent();
+
+            if (Element* ownerElement = m_renderView->document()->ownerElement())
+                scheduleNeedsStyleRecalc(ownerElement);
+            break;
+        }
+        case RootLayerAttachedViaChromeClient: {
+            Frame* frame = m_renderView->frameView()->frame();
+            Page* page = frame ? frame->page() : 0;
+            if (!page)
+                return;
+
+            page->chrome()->client()->attachRootGraphicsLayer(frame, 0);
+        }
+        break;
+        case RootLayerUnattached:
+            break;
+    }
+
+    m_rootLayerAttachment = RootLayerUnattached;
+    rootLayerAttachmentChanged();
+}
+
+void RenderLayerCompositor::updateRootLayerAttachment()
+{
+    ensureRootPlatformLayer();
+}
+
+void RenderLayerCompositor::rootLayerAttachmentChanged()
+{
+    // The attachment can affect whether the RenderView layer's paintingGoesToWindow() behavior,
+    // so call updateGraphicsLayerGeometry() to udpate that.
+    RenderLayer* layer = m_renderView->layer();
+    if (RenderLayerBacking* backing = layer ? layer->backing() : 0)
+        backing->updateDrawsContent();
+}
+
+static void needsStyleRecalcCallback(Node* node)
+{
+    node->setNeedsStyleRecalc(SyntheticStyleChange);
+}
+
+void RenderLayerCompositor::scheduleNeedsStyleRecalc(Element* element)
+{
+    if (ContainerNode::postAttachCallbacksAreSuspended())
+        ContainerNode::queuePostAttachCallback(needsStyleRecalcCallback, element);
+    else
+        element->setNeedsStyleRecalc(SyntheticStyleChange);
+}
+
+// IFrames are special, because we hook compositing layers together across iframe boundaries
+// when both parent and iframe content are composited. So when this frame becomes composited, we have
+// to use a synthetic style change to get the iframes into RenderLayers in order to allow them to composite.
+void RenderLayerCompositor::notifyIFramesOfCompositingChange()
+{
+    Frame* frame = m_renderView->frameView() ? m_renderView->frameView()->frame() : 0;
+    if (!frame)
+        return;
+
+    for (Frame* child = frame->tree()->firstChild(); child; child = child->tree()->nextSibling()) {
+        if (child->document() && child->document()->ownerElement())
+            scheduleNeedsStyleRecalc(child->document()->ownerElement());
+    }
 }
 
 bool RenderLayerCompositor::layerHas3DContent(const RenderLayer* layer) const

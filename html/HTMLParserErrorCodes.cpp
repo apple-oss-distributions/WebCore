@@ -67,25 +67,4 @@ bool isWarning(HTMLParserErrorCode code)
     return code >= IncorrectXMLCloseScriptWarning;
 }
 
-const char* viewportErrorMessageTemplate(ViewportErrorCode anErrorCode)
-{
-    static const char* const errors[] = { 
-        "Viewport width or height set to physical device width, try using \"device-width\" constant instead for future compatibility.",
-        "Viewport height or height set to physical device height, try using \"device-height\" constant instead for future compatibility.",
-        "Viewport argument \"%replacement\" not recognized. Content ignored.",
-        "Viewport maximum-scale cannot be larger than 10.0.  The maximum-scale will be set to 10.0."
-    };
-    
-    return errors[anErrorCode];
-}
-
-MessageLevel viewportErrorMessageLevel(ViewportErrorCode anErrorCode)
-{
-    if (anErrorCode == UnrecognizedViewportArgumentError ||
-        anErrorCode == MaximumScaleTooLargeError)
-        return ErrorMessageLevel;
-        
-    return TipMessageLevel;
-}
-
 }

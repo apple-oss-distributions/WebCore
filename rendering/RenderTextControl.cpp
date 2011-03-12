@@ -134,7 +134,7 @@ void RenderTextControl::adjustInnerTextStyle(const RenderStyle* startStyle, Rend
 
     bool disabled = updateUserModifyProperty(node(), textBlockStyle);
     if (disabled)
-        textBlockStyle->setColor(disabledTextColor(textBlockStyle->color(), startStyle->backgroundColor()));
+        textBlockStyle->setColor(disabledTextColor(textBlockStyle->visitedDependentColor(CSSPropertyColor), startStyle->visitedDependentColor(CSSPropertyBackgroundColor)));
 }
 
 void RenderTextControl::createSubtreeIfNeeded(TextControlInnerElement* innerBlock)
@@ -151,13 +151,12 @@ void RenderTextControl::createSubtreeIfNeeded(TextControlInnerElement* innerBloc
 
 int RenderTextControl::textBlockHeight() const
 {
-    return height() - paddingTop() - paddingBottom() - borderTop() - borderBottom();
+    return height() - borderAndPaddingHeight();
 }
 
 int RenderTextControl::textBlockWidth() const
 {
-    return width() - paddingLeft() - paddingRight() - borderLeft() - borderRight()
-           - m_innerText->renderBox()->paddingLeft() - m_innerText->renderBox()->paddingRight();
+    return width() - borderAndPaddingWidth() - m_innerText->renderBox()->paddingLeft() - m_innerText->renderBox()->paddingRight();
 }
 
 void RenderTextControl::updateFromElement()
@@ -167,15 +166,7 @@ void RenderTextControl::updateFromElement()
 
 void RenderTextControl::setInnerTextValue(const String& innerTextValue)
 {
-    String value;
-
-    if (innerTextValue.isNull())
-        value = "";
-    else {
-        value = innerTextValue; 
-        value = document()->displayStringModifiedByEncoding(value);
-    }
-
+    String value = innerTextValue;
     if (value != text() || !m_innerText->hasChildNodes()) {
         if (value != text()) {
             if (Frame* frame = document()->frame()) {
@@ -262,11 +253,6 @@ void RenderTextControl::setSelectionRange(int start, int end)
 
     if (Frame* frame = document()->frame())
         frame->selection()->setSelection(newSelection);
-
-    // FIXME: Granularity is stored separately on the frame, but also in the selection controller.
-    // The granularity in the selection controller should be used, and then this line of code would not be needed.
-    if (Frame* frame = document()->frame())
-        frame->setSelectionGranularity(CharacterGranularity);
 }
 
 VisibleSelection RenderTextControl::selection(int start, int end) const
@@ -319,9 +305,6 @@ String RenderTextControl::finishText(Vector<UChar>& result) const
     if (size && result[size - 1] == '\n')
         result.shrink(--size);
 
-    // Convert backslash to currency symbol.
-    document()->displayBufferModifiedByEncoding(result.data(), result.size());
-    
     return String::adopt(result);
 }
 
@@ -368,8 +351,6 @@ String RenderTextControl::textWithHardLineBreaks()
     Node* firstChild = m_innerText->firstChild();
     if (!firstChild)
         return "";
-
-    document()->updateLayout();
 
     RenderObject* renderer = firstChild->renderer();
     if (!renderer)
@@ -424,7 +405,7 @@ void RenderTextControl::calcHeight()
               m_innerText->renderBox()->marginTop() + m_innerText->renderBox()->marginBottom());
 
     adjustControlHeightBasedOnLineHeight(m_innerText->renderer()->lineHeight(true, true));
-    setHeight(height() + paddingTop() + paddingBottom() + borderTop() + borderBottom());
+    setHeight(height() + borderAndPaddingHeight());
 
     // We are able to have a horizontal scrollbar if the overflow style is scroll, or if its auto and there's no word wrap.
     if (style()->overflowX() == OSCROLL ||  (style()->overflowX() == OAUTO && m_innerText->renderer()->style()->wordWrap() == NormalWordWrap))
@@ -548,7 +529,7 @@ void RenderTextControl::calcPrefWidths()
         m_minPrefWidth = min(m_minPrefWidth, calcContentBoxWidth(style()->maxWidth().value()));
     }
 
-    int toAdd = paddingLeft() + paddingRight() + borderLeft() + borderRight();
+    int toAdd = borderAndPaddingWidth();
 
     m_minPrefWidth += toAdd;
     m_maxPrefWidth += toAdd;

@@ -599,6 +599,11 @@ void ContainerNode::queuePostAttachCallback(NodeCallback callback, Node* node)
     s_postAttachCallbackQueue->append(std::pair<NodeCallback, RefPtr<Node> >(callback, node));
 }
 
+bool ContainerNode::postAttachCallbacksAreSuspended()
+{
+    return s_attachDepth;
+}
+
 void ContainerNode::dispatchPostAttachCallbacks()
 {
     // We recalculate size() each time through the loop because a callback
@@ -624,7 +629,7 @@ void ContainerNode::detach()
 {
     for (Node* child = m_firstChild; child; child = child->nextSibling())
         child->detach();
-    setChildNeedsStyleRecalc(false);
+    clearChildNeedsStyleRecalc();
     Node::detach();
 }
 
@@ -641,7 +646,7 @@ void ContainerNode::removedFromDocument()
     Node::removedFromDocument();
     if (document()->cssTarget() == this) 
         document()->setCSSTarget(0); 
-    setInDocument(false);
+    clearInDocument();
     removedFromTree(false);
     for (Node* child = m_firstChild; child; child = child->nextSibling())
         child->removedFromDocument();
@@ -675,12 +680,14 @@ void ContainerNode::childrenChanged(bool changedByParser, Node* beforeChange, No
 void ContainerNode::cloneChildNodes(ContainerNode *clone)
 {
     // disable the delete button so it's elements are not serialized into the markup
-    if (document()->frame() && document()->frame()->editor()->deleteButtonController())
+    bool isEditorEnabled = document()->frame() && document()->frame()->editor()->canEdit();
+    
+    if (isEditorEnabled && document()->frame()->editor()->deleteButtonController())
         document()->frame()->editor()->deleteButtonController()->disable();
     ExceptionCode ec = 0;
     for (Node* n = firstChild(); n && !ec; n = n->nextSibling())
         clone->appendChild(n->cloneNode(true), ec);
-    if (document()->frame() && document()->frame()->editor()->deleteButtonController())
+    if (isEditorEnabled && document()->frame() && document()->frame()->editor()->deleteButtonController())
         document()->frame()->editor()->deleteButtonController()->enable();
 }
 

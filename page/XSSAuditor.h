@@ -27,16 +27,19 @@
 #ifndef XSSAuditor_h
 #define XSSAuditor_h
 
+#include "HTTPParsers.h"
 #include "PlatformString.h"
+#include "SuffixTree.h"
 #include "TextEncoding.h"
 
 namespace WebCore {
 
+    class FormData;
     class Frame;
     class ScriptSourceCode;
 
     // The XSSAuditor class is used to prevent type 1 cross-site scripting
-    // vulnerabilites (also known as reflected vulnerabilities).
+    // vulnerabilities (also known as reflected vulnerabilities).
     //
     // More specifically, the XSSAuditor class decides whether the execution of
     // a script is to be allowed or denied based on the content of any
@@ -53,7 +56,7 @@ namespace WebCore {
     //
     // Bindings
     //
-    // An XSSAuditor is instantiated within the contructor of a
+    // An XSSAuditor is instantiated within the constructor of a
     // ScriptController object and passed the Frame the script originated. The
     // ScriptController calls back to the XSSAuditor to determine whether a
     // JavaScript script is safe to execute before executing it. The following
@@ -105,9 +108,15 @@ namespace WebCore {
         class CachingURLCanonicalizer
         {
         public:
-            CachingURLCanonicalizer() : m_decodeEntities(false), m_decodeURLEscapeSequencesTwice(false) { }
+            CachingURLCanonicalizer() : m_decodeEntities(false), m_decodeURLEscapeSequencesTwice(false), m_generation(0) { }
+            String canonicalizeURL(FormData*, const TextEncoding& encoding, bool decodeEntities, 
+                                   bool decodeURLEscapeSequencesTwice);
             String canonicalizeURL(const String& url, const TextEncoding& encoding, bool decodeEntities, 
                                    bool decodeURLEscapeSequencesTwice);
+
+            void clear();
+
+            int generation() const { return m_generation; }
 
         private:
             // The parameters we were called with last.
@@ -115,6 +124,10 @@ namespace WebCore {
             TextEncoding m_encoding;
             bool m_decodeEntities;
             bool m_decodeURLEscapeSequencesTwice;
+            RefPtr<FormData> m_formData;
+
+            // Incremented every time we see a new URL.
+            int m_generation;
 
             // The cached result.
             String m_cachedCanonicalizedURL;
@@ -144,11 +157,22 @@ namespace WebCore {
         bool findInRequest(const FindTask&) const;
         bool findInRequest(Frame*, const FindTask&) const;
 
+        XSSProtectionDisposition xssProtection() const;
+
         // The frame to audit.
         Frame* m_frame;
 
         // A state store to help us avoid canonicalizing the same URL repeated.
-        mutable CachingURLCanonicalizer m_cache;
+        // When a page has form data, we need two caches: one to store the
+        // canonicalized URL and another to store the cannonicalized form
+        // data. If we only had one cache, we'd always generate a cache miss
+        // and load some pages extremely slowly.
+        // https://bugs.webkit.org/show_bug.cgi?id=35373
+        mutable CachingURLCanonicalizer m_pageURLCache;
+        mutable CachingURLCanonicalizer m_formDataCache;
+
+        mutable OwnPtr<SuffixTree<ASCIICodebook> > m_formDataSuffixTree;
+        mutable int m_generationOfSuffixTree;
     };
 
 } // namespace WebCore

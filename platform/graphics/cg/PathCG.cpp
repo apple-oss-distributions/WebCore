@@ -29,15 +29,15 @@
 
 #if PLATFORM(CG)
 
-#include "TransformationMatrix.h"
-#include <CoreGraphics/CoreGraphics.h>
+#include "AffineTransform.h"
 #include "FloatRect.h"
 #include "GraphicsContext.h"
 #include "IntRect.h"
 #include "PlatformString.h"
 #include "StrokeStyleApplier.h"
-
+#include <CoreGraphics/CoreGraphics.h>
 #include <wtf/MathExtras.h>
+#include <wtf/RetainPtr.h>
 
 namespace WebCore {
 
@@ -346,7 +346,7 @@ void Path::apply(void* info, PathApplierFunction function) const
     CGPathApply(m_path, &pinfo, CGPathApplierToPathApplier);
 }
 
-void Path::transform(const TransformationMatrix& transform)
+void Path::transform(const AffineTransform& transform)
 {
     CGMutablePathRef path = CGPathCreateMutable();
     CGAffineTransform transformCG = transform;

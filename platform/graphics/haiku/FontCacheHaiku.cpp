@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2006 Dirk Mueller <mueller@kde.org>
  * Copyright (C) 2007 Ryan Leavengood <leavengood@gmail.com>
+ * Copyright (C) 2010 Stephan Aßmus <superstippi@gmx.de>
  *
  * All rights reserved.
  *
@@ -37,7 +38,7 @@
 #include "FontPlatformData.h"
 #include "NotImplemented.h"
 #include <String.h>
-
+#include <interface/Font.h>
 
 namespace WebCore {
 
@@ -51,18 +52,19 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
     return getCachedFontData(&data);
 }
 
-FontPlatformData* FontCache::getSimilarFontPlatformData(const Font& font)
+SimpleFontData* FontCache::getSimilarFontPlatformData(const Font& font)
 {
     notImplemented();
     return 0;
 }
 
-FontPlatformData* FontCache::getLastResortFallbackFont(const FontDescription& fontDescription)
+SimpleFontData* FontCache::getLastResortFallbackFont(const FontDescription& fontDescription)
 {
-    // FIXME: Would be even better to somehow get the user's default font here.
-    // For now we'll pick the default that the user would get without changing any prefs.
-    static AtomicString defaultString("DejaVu Serif");
-    return getCachedFontPlatformData(fontDescription, defaultString);
+    font_family family;
+    font_style style;
+    be_plain_font->GetFamilyAndStyle(&family, &style);
+    AtomicString plainFontFamily(family);
+    return getCachedFontData(fontDescription, plainFontFamily);
 }
 
 FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontDescription, const AtomicString& family)

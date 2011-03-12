@@ -49,7 +49,7 @@ js_binding_scripts := $(addprefix $(LOCAL_PATH)/,\
 			bindings/scripts/generate-bindings.pl \
 		)
 
-FEATURE_DEFINES := ANDROID_ORIENTATION_SUPPORT ENABLE_TOUCH_EVENTS=1 ENABLE_DATABASE=1 ENABLE_OFFLINE_WEB_APPLICATIONS=1 ENABLE_DOM_STORAGE=1 ENABLE_VIDEO=1 ENABLE_WORKERS=1 ENABLE_GEOLOCATION=1 ENABLE_CHANNEL_MESSAGING=1
+FEATURE_DEFINES := ANDROID_ORIENTATION_SUPPORT ENABLE_TOUCH_EVENTS=1 ENABLE_DATABASE=1 ENABLE_OFFLINE_WEB_APPLICATIONS=1 ENABLE_DOM_STORAGE=1 ENABLE_VIDEO=1 ENABLE_WORKERS=1 ENABLE_GEOLOCATION=1 ENABLE_CHANNEL_MESSAGING=1 ENABLE_DEVICE_ORIENTATION=1
 
 # CSS
 GEN := \
@@ -70,10 +70,10 @@ GEN := \
     $(intermediates)/css/JSCSSVariablesDeclaration.h \
     $(intermediates)/css/JSCSSVariablesRule.h \
     $(intermediates)/css/JSCounter.h \
-    $(intermediates)/css/JSMedia.h \
     $(intermediates)/css/JSMediaList.h \
     $(intermediates)/css/JSRGBColor.h \
     $(intermediates)/css/JSRect.h \
+    $(intermediates)/css/JSStyleMedia.h \
     $(intermediates)/css/JSStyleSheet.h \
     $(intermediates)/css/JSStyleSheetList.h \
     $(intermediates)/css/JSWebKitCSSKeyframeRule.h \
@@ -103,6 +103,8 @@ GEN := \
     $(intermediates)/dom/JSComment.h \
     $(intermediates)/dom/JSDOMCoreException.h \
     $(intermediates)/dom/JSDOMImplementation.h \
+    $(intermediates)/dom/JSDeviceMotionEvent.h \
+    $(intermediates)/dom/JSDeviceOrientationEvent.h \
     $(intermediates)/dom/JSDocument.h \
     $(intermediates)/dom/JSDocumentFragment.h \
     $(intermediates)/dom/JSDocumentType.h \
@@ -132,6 +134,9 @@ GEN := \
     $(intermediates)/dom/JSRangeException.h \
     $(intermediates)/dom/JSText.h \
     $(intermediates)/dom/JSTextEvent.h \
+    $(intermediates)/dom/JSTouch.h \
+    $(intermediates)/dom/JSTouchEvent.h \
+    $(intermediates)/dom/JSTouchList.h \
     $(intermediates)/dom/JSTreeWalker.h \
     $(intermediates)/dom/JSUIEvent.h \
     $(intermediates)/dom/JSWebKitAnimationEvent.h \
@@ -150,9 +155,11 @@ $(patsubst %.h,%.cpp,$(GEN)): $(intermediates)/dom/%.cpp : $(intermediates)/dom/
 # HTML
 GEN := \
     $(intermediates)/html/JSBlob.h \
+    $(intermediates)/html/JSDOMFormData.h \
     $(intermediates)/html/JSDataGridColumn.h \
     $(intermediates)/html/JSDataGridColumnList.h \
     $(intermediates)/html/JSFile.h \
+    $(intermediates)/html/JSFileError.h \
     $(intermediates)/html/JSFileList.h \
     $(intermediates)/html/JSHTMLAllCollection.h \
     $(intermediates)/html/JSHTMLAnchorElement.h \

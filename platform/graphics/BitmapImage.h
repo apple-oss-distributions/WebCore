@@ -187,7 +187,7 @@ protected:
 #endif
     virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator);
 
-#if PLATFORM(WX) || (OS(WINCE) && !PLATFORM(QT))
+#if (OS(WINCE) && !PLATFORM(QT))
     virtual void drawPattern(GraphicsContext*, const FloatRect& srcRect, const TransformationMatrix& patternTransform,
                              const FloatPoint& phase, ColorSpace styleColorSpace, CompositeOperator, const FloatRect& destRect);
 #endif
@@ -198,7 +198,8 @@ protected:
 
     size_t currentFrame() const { return m_currentFrame; }
     size_t frameCount();
-    NativeImagePtr frameAtIndex(size_t index, float scaleHint);
+    NativeImagePtr frameAtIndex(size_t, float scaleHint);
+    NativeImagePtr copyUnscaledFrameAtIndex(size_t);
     NativeImagePtr frameAtIndex(size_t);
     bool frameIsCompleteAtIndex(size_t);
     float frameDurationAtIndex(size_t);

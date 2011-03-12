@@ -27,7 +27,6 @@
 #include "XMLTokenizer.h"
 
 #include "CDATASection.h"
-#include "CString.h"
 #include "CachedScript.h"
 #include "Comment.h"
 #include "DocLoader.h"
@@ -51,7 +50,8 @@
 #include "ScriptSourceCode.h"
 #include "ScriptValue.h"
 #include "TextResourceDecoder.h"
-#include <wtf/Platform.h>
+#include "TreeDepthLimit.h"
+#include <wtf/text/CString.h>
 #include <wtf/StringExtras.h>
 #include <wtf/Threading.h>
 #include <wtf/Vector.h>
@@ -68,7 +68,6 @@ namespace WebCore {
 using namespace HTMLNames;
 
 const int maxErrors = 25;
-const size_t maxNestingDepth = 4096;
 
 #if ENABLE(WML)
 bool XMLTokenizer::isWMLDocument() const
@@ -88,7 +87,7 @@ void XMLTokenizer::pushCurrentNode(Node* n)
         n->ref();
     m_currentNodeStack.append(m_currentNode);
     m_currentNode = n;
-    if (m_currentNodeStack.size() > maxNestingDepth)
+    if (m_currentNodeStack.size() > maxDOMTreeDepth)
         handleError(fatal, "Excessive node nesting.", lineNumber(), columnNumber());
 }
 
@@ -209,7 +208,11 @@ void XMLTokenizer::exitText()
 void XMLTokenizer::end()
 {
     doEnd();
-    
+
+    // doEnd() could process a script tag, thus pausing parsing.
+    if (m_parserPaused)
+        return;
+
     if (m_sawError)
         insertErrorMessageBlock();
     else {

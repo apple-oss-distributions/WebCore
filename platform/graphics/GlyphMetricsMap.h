@@ -29,7 +29,6 @@
 #ifndef GlyphMetricsMap_h
 #define GlyphMetricsMap_h
 
-#include "FloatRect.h"
 #include <wtf/HashMap.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/unicode/Unicode.h>

@@ -9,7 +9,7 @@
 module events {
 
     interface [
-        AppleCopyright
+        AppleCopyright,
     ] TouchEvent : UIEvent {
         
         void initTouchEvent(in DOMString type, 

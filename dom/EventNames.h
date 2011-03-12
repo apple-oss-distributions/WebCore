@@ -49,6 +49,8 @@ namespace WebCore {
     macro(copy) \
     macro(cut) \
     macro(dblclick) \
+    macro(devicemotion) \
+    macro(deviceorientation) \
     macro(display) \
     macro(downloading) \
     macro(drag) \
@@ -60,6 +62,8 @@ namespace WebCore {
     macro(drop) \
     macro(error) \
     macro(focus) \
+    macro(focusin) \
+    macro(focusout) \
     macro(hashchange) \
     macro(input) \
     macro(invalid) \
@@ -100,10 +104,10 @@ namespace WebCore {
     macro(zoom) \
     \
     macro(DOMActivate) \
-    macro(DOMAttrModified) \
-    macro(DOMCharacterDataModified) \
     macro(DOMFocusIn) \
     macro(DOMFocusOut) \
+    macro(DOMAttrModified) \
+    macro(DOMCharacterDataModified) \
     macro(DOMNodeInserted) \
     macro(DOMNodeInsertedIntoDocument) \
     macro(DOMNodeRemoved) \
@@ -154,6 +158,10 @@ namespace WebCore {
     macro(gesturestart) \
     macro(gesturechange) \
     macro(gestureend) \
+    \
+    macro(success) \
+    \
+    macro(loadend) \
     \
 // end of DOM_EVENT_NAMES_FOR_EACH
 

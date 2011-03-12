@@ -38,10 +38,6 @@ namespace WebCore {
         virtual ~WebGLTexture() { deleteObject(); }
         
         static PassRefPtr<WebGLTexture> create(WebGLRenderingContext*);
-    
-        // For querying previously created objects via e.g. getFramebufferAttachmentParameter
-        // FIXME: should consider canonicalizing these objects
-        static PassRefPtr<WebGLTexture> create(WebGLRenderingContext*, Platform3DObject);
 
         bool isCubeMapRWrapModeInitialized() {
             return cubeMapRWrapModeInitialized;
@@ -51,14 +47,46 @@ namespace WebCore {
             cubeMapRWrapModeInitialized = initialized;
         }
 
+        void setTarget(unsigned long);
+        void setParameteri(unsigned long pname, int param);
+        void setParameterf(unsigned long pname, float param);
+        void setSize(unsigned long target, unsigned width, unsigned height);
+
+        void setInternalFormat(unsigned long internalformat) { m_internalFormat = internalformat; }
+        unsigned long getInternalFormat() const { return m_internalFormat; }
+
+        static bool isNPOT(unsigned, unsigned);
+
+        bool isNPOT() const { return m_isNPOT; }
+        // Determine if texture sampling should always return [0, 0, 0, 1] (OpenGL ES 2.0 Sec 3.8.2).
+        bool needToUseBlackTexture() const { return m_needToUseBlackTexture; }
+
     protected:
         WebGLTexture(WebGLRenderingContext*);
-        WebGLTexture(WebGLRenderingContext*, Platform3DObject);
 
         virtual void _deleteObject(Platform3DObject);
 
     private:
+        virtual bool isTexture() const { return true; }
+
+        void updateNPOTStates();
+
         bool cubeMapRWrapModeInitialized;
+
+        unsigned long m_target;
+
+        int m_minFilter;
+        int m_magFilter;
+        int m_wrapS;
+        int m_wrapT;
+
+        unsigned long m_internalFormat;
+
+        unsigned m_width[6];
+        unsigned m_height[6];
+
+        bool m_isNPOT;
+        bool m_needToUseBlackTexture;
     };
     
 } // namespace WebCore

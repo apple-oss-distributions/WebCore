@@ -26,11 +26,11 @@
 #include "config.h"
 #include "CredentialStorage.h"
 
-#include "CString.h"
 #include "Credential.h"
 #include "KURL.h"
 #include "ProtectionSpaceHash.h"
 #include "StringHash.h"
+#include <wtf/text/CString.h>
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/StdLibExtras.h>
@@ -79,7 +79,6 @@ static String protectionSpaceMapKeyFromURL(const KURL& url)
         ASSERT(index > 0);
         directoryURL = directoryURL.substring(0, (static_cast<unsigned>(index) != directoryURLPathStart) ? index : directoryURLPathStart + 1);
     }
-    ASSERT(directoryURL.length() == directoryURLPathStart + 1 || directoryURL[directoryURL.length() - 1] != '/');
 
     return directoryURL;
 }
@@ -107,6 +106,11 @@ void CredentialStorage::set(const Credential& credential, const ProtectionSpace&
 Credential CredentialStorage::get(const ProtectionSpace& protectionSpace)
 {
     return protectionSpaceToCredentialMap().get(protectionSpace);
+}
+
+void CredentialStorage::remove(const ProtectionSpace& protectionSpace)
+{
+    protectionSpaceToCredentialMap().remove(protectionSpace);
 }
 
 static PathToDefaultProtectionSpaceMap::iterator findDefaultProtectionSpaceForURL(const KURL& url)
@@ -158,4 +162,10 @@ Credential CredentialStorage::get(const KURL& url)
     return protectionSpaceToCredentialMap().get(iter->second);
 }
 
+void CredentialStorage::clearCredentials()
+{
+    pathToDefaultProtectionSpaceMap().clear();
+    originsWithCredentials().clear();
+    protectionSpaceToCredentialMap().clear();
+}
 } // namespace WebCore

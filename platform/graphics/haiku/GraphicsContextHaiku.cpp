@@ -28,14 +28,14 @@
 #include "config.h"
 #include "GraphicsContext.h"
 
-#include "CString.h"
+#include "AffineTransform.h"
 #include "Color.h"
 #include "Font.h"
 #include "FontData.h"
 #include "NotImplemented.h"
 #include "Path.h"
 #include "Pen.h"
-#include "TransformationMatrix.h"
+#include <wtf/text/CString.h>
 #include <GraphicsDefs.h>
 #include <Region.h>
 #include <View.h>
@@ -391,10 +391,10 @@ void GraphicsContext::clipToImageBuffer(const FloatRect&, const ImageBuffer*)
     notImplemented();
 }
 
-TransformationMatrix GraphicsContext::getCTM() const
+AffineTransform GraphicsContext::getCTM() const
 {
     notImplemented();
-    return TransformationMatrix();
+    return AffineTransform();
 }
 
 void GraphicsContext::translate(float x, float y)
@@ -451,7 +451,7 @@ void GraphicsContext::addInnerRoundedRectClip(const IntRect& rect, int thickness
     notImplemented();
 }
 
-void GraphicsContext::concatCTM(const TransformationMatrix& transform)
+void GraphicsContext::concatCTM(const AffineTransform& transform)
 {
     if (paintingDisabled())
         return;

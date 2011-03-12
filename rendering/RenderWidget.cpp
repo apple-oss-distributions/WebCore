@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  * Copyright (C) 2000 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006, 2009, 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -30,6 +30,10 @@
 #include "RenderCounter.h"
 #include "RenderView.h"
 #include "RenderWidgetProtector.h"
+
+#if USE(ACCELERATED_COMPOSITING)
+#include "RenderLayerBacking.h"
+#endif
 
 using namespace std;
 
@@ -155,13 +159,28 @@ RenderWidget::~RenderWidget()
 bool RenderWidget::setWidgetGeometry(const IntRect& frame)
 {
     ASSERT(!widgetHierarchyUpdateSuspendCount);
-    if (!node() || m_widget->frameRect() == frame)
+    if (!node())
         return false;
+
+    IntRect clipRect = enclosingLayer()->childrenClipRect();
+    bool clipChanged = m_clipRect != clipRect;
+    bool boundsChanged = m_widget->frameRect() != frame;
+
+    if (!boundsChanged && !clipChanged)
+        return false;
+
+    m_clipRect = clipRect;
 
     RenderWidgetProtector protector(this);
     RefPtr<Node> protectedNode(node());
     m_widget->setFrameRect(frame);
-    return true;
+    
+#if USE(ACCELERATED_COMPOSITING)
+    if (hasLayer() && layer()->isComposited())
+        layer()->backing()->updateAfterWidgetResize();
+#endif
+    
+    return boundsChanged;
 }
 
 void RenderWidget::setWidget(PassRefPtr<Widget> widget)
@@ -277,10 +296,15 @@ void RenderWidget::paint(PaintInfo& paintInfo, int tx, int ty)
             if (!paintOffset.isZero())
                 paintInfo.context->translate(-paintOffset);
         }
-        if (m_widget->isFrameView() && paintInfo.overlapTestRequests && !static_cast<FrameView*>(m_widget.get())->useSlowRepaintsIfNotOverlapped()) {
-            ASSERT(!paintInfo.overlapTestRequests->contains(this));
-            paintInfo.overlapTestRequests->set(this, m_widget->frameRect());
-        }
+
+        if (m_widget->isFrameView()) {
+            FrameView* frameView = static_cast<FrameView*>(m_widget.get());
+            bool runOverlapTests = !frameView->useSlowRepaintsIfNotOverlapped() || frameView->hasCompositedContent();
+            if (paintInfo.overlapTestRequests && runOverlapTests) {
+                ASSERT(!paintInfo.overlapTestRequests->contains(this));
+                paintInfo.overlapTestRequests->set(this, m_widget->frameRect());
+            }
+         }
     }
 
     if (style()->hasBorderRadius())
@@ -308,25 +332,40 @@ void RenderWidget::deref(RenderArena *arena)
 
 void RenderWidget::updateWidgetPosition()
 {
-    if (!m_widget)
+    if (!m_widget || !node()) // Check the node in case destroy() has been called.
         return;
 
     // FIXME: This doesn't work correctly with transforms.
     FloatPoint absPos = localToAbsolute();
     absPos.move(borderLeft() + paddingLeft(), borderTop() + paddingTop());
 
-    int w = width() - borderLeft() - borderRight() - paddingLeft() - paddingRight();
-    int h = height() - borderTop() - borderBottom() - paddingTop() - paddingBottom();
+    int w = width() - borderAndPaddingWidth();
+    int h = height() - borderAndPaddingHeight();
 
     bool boundsChanged = setWidgetGeometry(IntRect(absPos.x(), absPos.y(), w, h));
 
     // if the frame bounds got changed, or if view needs layout (possibly indicating
     // content size is wrong) we have to do a layout to set the right widget size
-    if (m_widget->isFrameView()) {
+    if (m_widget && m_widget->isFrameView()) {
         FrameView* frameView = static_cast<FrameView*>(m_widget.get());
         if (boundsChanged || frameView->needsLayout())
             frameView->layout();
     }
+}
+
+void RenderWidget::widgetPositionsUpdated()
+{
+    if (!m_widget)
+        return;
+    m_widget->widgetPositionsUpdated();
+}
+
+IntRect RenderWidget::windowClipRect() const
+{
+    if (!m_frameView)
+        return IntRect();
+
+    return intersection(m_frameView->contentsToWindow(m_clipRect), m_frameView->windowClipRect());
 }
 
 void RenderWidget::setSelectionState(SelectionState state)

@@ -33,6 +33,7 @@ Event::Event()
     : m_canBubble(false)
     , m_cancelable(false)
     , m_propagationStopped(false)
+    , m_immediatePropagationStopped(false)
     , m_defaultPrevented(false)
     , m_defaultHandled(false)
     , m_cancelBubble(false)
@@ -47,6 +48,7 @@ Event::Event(const AtomicString& eventType, bool canBubbleArg, bool cancelableAr
     , m_canBubble(canBubbleArg)
     , m_cancelable(cancelableArg)
     , m_propagationStopped(false)
+    , m_immediatePropagationStopped(false)
     , m_defaultPrevented(false)
     , m_defaultHandled(false)
     , m_cancelBubble(false)
@@ -68,6 +70,11 @@ void Event::initEvent(const AtomicString& eventTypeArg, bool canBubbleArg, bool 
     m_type = eventTypeArg;
     m_canBubble = canBubbleArg;
     m_cancelable = cancelableArg;
+}
+
+bool Event::isCustomEvent() const
+{
+    return false;
 }
 
 bool Event::isUIEvent() const
@@ -196,6 +203,18 @@ bool Event::isGestureEvent() const
     return false;
 }
 
+#if ENABLE(DEVICE_ORIENTATION)
+bool Event::isDeviceMotionEvent() const
+{
+    return false;
+}
+
+bool Event::isDeviceOrientationEvent() const
+{
+    return false;
+}
+#endif
+
 bool Event::fromUserGesture()
 {
     if (!UserGestureIndicator::processingUserGesture())
@@ -247,6 +266,27 @@ void Event::setUnderlyingEvent(PassRefPtr<Event> ue)
         if (e == this)
             return;
     m_underlyingEvent = ue;
+}
+
+const AtomicString& Event::aliasedType() const
+{
+    if (type() == eventNames().focusinEvent)
+        return eventNames().DOMFocusInEvent;
+    if (type() == eventNames().focusoutEvent)
+        return eventNames().DOMFocusOutEvent;
+    if (type() == eventNames().DOMFocusInEvent)
+        return eventNames().focusinEvent;
+    if (type() == eventNames().DOMFocusOutEvent)
+        return eventNames().focusoutEvent;
+    
+    ASSERT_NOT_REACHED();
+    return type();
+}
+
+bool Event::hasAliasedType() const
+{
+    return type() == eventNames().focusinEvent || type() == eventNames().focusoutEvent ||
+           type() == eventNames().DOMFocusInEvent || type() == eventNames().DOMFocusOutEvent;
 }
 
 } // namespace WebCore

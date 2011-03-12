@@ -34,14 +34,15 @@
 #include "Cache.h"
 #include "CachedResourceClient.h"
 #include "CachedResourceClientWalker.h"
-#include "DOMImplementation.h"
 #include "FontPlatformData.h"
-#ifdef STORE_FONT_CUSTOM_PLATFORM_DATA
-#include "FontCustomPlatformData.h"
-#endif
+#include "SharedBuffer.h"
 #include "TextResourceDecoder.h"
 #include "loader.h"
 #include <wtf/Vector.h>
+
+#ifdef STORE_FONT_CUSTOM_PLATFORM_DATA
+#include "FontCustomPlatformData.h"
+#endif
 
 #if ENABLE(SVG_FONTS)
 #include "HTMLNames.h"
@@ -73,12 +74,12 @@ CachedFont::~CachedFont()
 void CachedFont::load(DocLoader*)
 {
     // Don't load the file yet.  Wait for an access before triggering the load.
-    m_loading = true;
+    setLoading(true);
 }
 
 void CachedFont::didAddClient(CachedResourceClient* c)
 {
-    if (!m_loading)
+    if (!isLoading())
         c->fontLoaded(this);
 }
 
@@ -89,7 +90,7 @@ void CachedFont::data(PassRefPtr<SharedBuffer> data, bool allDataReceived)
 
     m_data = data;     
     setEncodedSize(m_data.get() ? m_data->size() : 0);
-    m_loading = false;
+    setLoading(false);
     checkNotify();
 }
 
@@ -107,10 +108,10 @@ bool CachedFont::ensureCustomFontData()
 #if ENABLE(SVG_FONTS)
     ASSERT(!m_isSVGFont);
 #endif
-    if (!m_fontData && !m_errorOccurred && !m_loading && m_data) {
+    if (!m_fontData && !errorOccurred() && !isLoading() && m_data) {
         m_fontData = createFontCustomPlatformData(m_data.get());
         if (!m_fontData)
-            m_errorOccurred = true;
+            setErrorOccurred(true);
     }
 #endif
     return m_fontData;
@@ -134,7 +135,7 @@ FontPlatformData CachedFont::platformDataFromCustomData(float size, bool bold, b
 bool CachedFont::ensureSVGFontData()
 {
     ASSERT(m_isSVGFont);
-    if (!m_externalSVGDocument && !m_errorOccurred && !m_loading && m_data) {
+    if (!m_externalSVGDocument && !errorOccurred() && !isLoading() && m_data) {
         m_externalSVGDocument = SVGDocument::create(0);
         m_externalSVGDocument->open();
 
@@ -156,7 +157,7 @@ bool CachedFont::ensureSVGFontData()
 SVGFontElement* CachedFont::getSVGFontById(const String& fontName) const
 {
     ASSERT(m_isSVGFont);
-    RefPtr<NodeList> list = m_externalSVGDocument->getElementsByTagName(SVGNames::fontTag.localName());
+    RefPtr<NodeList> list = m_externalSVGDocument->getElementsByTagNameNS(SVGNames::fontTag.namespaceURI(), SVGNames::fontTag.localName());
     if (!list)
         return 0;
 
@@ -188,7 +189,7 @@ void CachedFont::allClientsRemoved()
 
 void CachedFont::checkNotify()
 {
-    if (m_loading)
+    if (isLoading())
         return;
     
     CachedResourceClientWalker w(m_clients);
@@ -199,8 +200,8 @@ void CachedFont::checkNotify()
 
 void CachedFont::error()
 {
-    m_loading = false;
-    m_errorOccurred = true;
+    setLoading(false);
+    setErrorOccurred(true);
     checkNotify();
 }
 

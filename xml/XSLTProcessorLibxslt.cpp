@@ -27,7 +27,6 @@
 #include "XSLTProcessor.h"
 
 #include "Console.h"
-#include "CString.h"
 #include "DOMWindow.h"
 #include "DocLoader.h"
 #include "Frame.h"
@@ -46,7 +45,7 @@
 #include <libxslt/variables.h>
 #include <libxslt/xsltutils.h>
 #include <wtf/Assertions.h>
-#include <wtf/Platform.h>
+#include <wtf/text/CString.h>
 #include <wtf/Vector.h>
 
 #if PLATFORM(MAC)
@@ -201,8 +200,8 @@ static const char** xsltParamArrayFromParameterMap(XSLTProcessor::ParameterMap& 
     XSLTProcessor::ParameterMap::iterator end = parameters.end();
     unsigned index = 0;
     for (XSLTProcessor::ParameterMap::iterator it = parameters.begin(); it != end; ++it) {
-        parameterArray[index++] = strdup(it->first.utf8().data());
-        parameterArray[index++] = strdup(it->second.utf8().data());
+        parameterArray[index++] = fastStrDup(it->first.utf8().data());
+        parameterArray[index++] = fastStrDup(it->second.utf8().data());
     }
     parameterArray[index] = 0;
 
@@ -216,8 +215,8 @@ static void freeXsltParamArray(const char** params)
         return;
 
     while (*temp) {
-        free((void*)*(temp++)); // strdup returns malloc'd blocks, so we have to use free() here
-        free((void*)*(temp++));
+        fastFree((void*)*(temp++));
+        fastFree((void*)*(temp++));
     }
     fastFree(params);
 }
@@ -316,7 +315,7 @@ bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String
         if (shouldFreeSourceDoc)
             xmlFreeDoc(sourceDoc);
 
-        if (success = saveResultToString(resultDoc, sheet, resultString)) {
+        if ((success = saveResultToString(resultDoc, sheet, resultString))) {
             mimeType = resultMIMEType(resultDoc, sheet);
             resultEncoding = (char*)resultDoc->encoding;
         }

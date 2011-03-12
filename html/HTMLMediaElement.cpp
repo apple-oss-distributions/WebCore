@@ -59,6 +59,7 @@
 #include "RenderVideo.h"
 #include "RenderView.h"
 #include "ScriptEventListener.h"
+#include "Settings.h"
 #include "TimeRanges.h"
 #include <limits>
 #include <wtf/CurrentTime.h>
@@ -73,6 +74,8 @@
 #include "RenderEmbeddedObject.h"
 #include "Widget.h"
 #endif
+
+#include "RuntimeApplicationChecksIPhone.h"
 
 using namespace std;
 
@@ -106,8 +109,10 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tagName, Document* doc)
     , m_proxyWidget(0)
 #endif
     , m_restrictions(NoRestrictions)
+    , m_preload(MediaPlayer::Auto)
     , m_playing(false)
     , m_processingMediaPlayerCallback(0)
+    , m_isWaitingUntilMediaCanStart(false)
     , m_processingLoad(false)
     , m_delayingTheLoadEvent(false)
     , m_haveFiredLoadedData(false)
@@ -125,6 +130,8 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tagName, Document* doc)
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
     , m_needWidgetUpdate(false)
 #endif
+    , m_dispatchingCanPlayEvent(false)
+    , m_loadInitiatedByUserGesture(false)
     , m_requestingPlay(false)
     , m_userStartedPlayback(false)
 {
@@ -137,12 +144,16 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tagName, Document* doc)
 
 HTMLMediaElement::~HTMLMediaElement()
 {
+    if (m_isWaitingUntilMediaCanStart)
+        document()->removeMediaCanStartListener(this);
     document()->unregisterForDocumentActivationCallbacks(this);
     document()->unregisterForMediaVolumeCallbacks(this);
 }
 
 void HTMLMediaElement::willMoveToNewOwnerDocument()
 {
+    if (m_isWaitingUntilMediaCanStart)
+        document()->removeMediaCanStartListener(this);
     document()->unregisterForDocumentActivationCallbacks(this);
     document()->unregisterForMediaVolumeCallbacks(this);
     HTMLElement::willMoveToNewOwnerDocument();
@@ -150,6 +161,8 @@ void HTMLMediaElement::willMoveToNewOwnerDocument()
 
 void HTMLMediaElement::didMoveToNewOwnerDocument()
 {
+    if (m_isWaitingUntilMediaCanStart)
+        document()->addMediaCanStartListener(this);
     document()->registerForDocumentActivationCallbacks(this);
     document()->registerForMediaVolumeCallbacks(this);
     HTMLElement::didMoveToNewOwnerDocument();
@@ -169,9 +182,9 @@ void HTMLMediaElement::attributeChanged(Attribute* attr, bool preserveDecls)
     if (attrName == srcAttr) {
         // NOTE: Unless the restriction on requiring user action has been removed,
         // do not begin downloading data on iPhone
-        if (!requireUserGestureForLoad() && inDocument() && m_loadState == WaitingForSource)
+        if (!requireUserGestureForLoad() && !getAttribute(srcAttr).isEmpty())
             scheduleLoad();
-    } 
+    }
     else if (attrName == controlsAttr) {
 #if !ENABLE(PLUGIN_PROXY_FOR_VIDEO)
         if (!isVideo() && attached() && (controls() != (renderer() != 0))) {
@@ -191,9 +204,23 @@ void HTMLMediaElement::parseMappedAttribute(MappedAttribute* attr)
 {
     const QualifiedName& attrName = attr->name();
 
-    if (attrName == autobufferAttr) {
-        if (m_player)
-            m_player->setAutobuffer(!attr->isNull());
+    if (attrName == preloadAttr) {
+        String value = attr->value();
+
+        if (equalIgnoringCase(value, "none"))
+            m_preload = MediaPlayer::None;
+        else if (equalIgnoringCase(value, "metadata"))
+            m_preload = MediaPlayer::MetaData;
+        else {
+            // The spec does not define an "invalid value default" but "auto" is suggested as the
+            // "missing value default", so use it for everything except "none" and "metadata"
+            m_preload = MediaPlayer::Auto;
+        }
+
+        // The attribute must be ignored if the autoplay attribute is present
+        if (!autoplay() && m_player)
+            m_player->setPreload(m_preload);
+
     } else if (attrName == onabortAttr)
         setAttributeEventListener(eventNames().abortEvent, createAttributeEventListener(this, attr));
     else if (attrName == onbeforeloadAttr)
@@ -361,8 +388,14 @@ void HTMLMediaElement::asyncEventTimerFired(Timer<HTMLMediaElement>*)
 
     m_pendingEvents.swap(pendingEvents);
     unsigned count = pendingEvents.size();
-    for (unsigned ndx = 0; ndx < count; ++ndx) 
-        dispatchEvent(pendingEvents[ndx].release(), ec);
+    for (unsigned ndx = 0; ndx < count; ++ndx) {
+        if (pendingEvents[ndx]->type() == eventNames().canplayEvent) {
+            m_dispatchingCanPlayEvent = true;
+            dispatchEvent(pendingEvents[ndx].release(), ec);
+            m_dispatchingCanPlayEvent = false;
+        } else
+            dispatchEvent(pendingEvents[ndx].release(), ec);
+    }
 }
 
 void HTMLMediaElement::loadTimerFired(Timer<HTMLMediaElement>*)
@@ -461,10 +494,16 @@ void HTMLMediaElement::load(bool isUserGesture, ExceptionCode& ec)
     if (requireUserGestureForLoad() && !isUserGesture)
         ec = INVALID_STATE_ERR;
     else {
-
-        userRequestsMediaLoading();
+        m_loadInitiatedByUserGesture = isUserGesture;
+        if (isUserGesture)
+            userRequestsMediaLoading();
         prepareForLoad();
         loadInternal();
+
+        // If this method was called directly by the user, tell the media engine to start loading data as 
+        // soon as the movie validates.
+        if (isUserGesture)
+            m_player->prepareToPlay();
     }
 }
 
@@ -476,40 +515,35 @@ void HTMLMediaElement::prepareForLoad()
     m_sentStalledEvent = false;
     m_haveFiredLoadedData = false;
 
-    // 2 - Abort any already-running instance of the resource selection algorithm for this element.
+    // 1 - Abort any already-running instance of the resource selection algorithm for this element.
+    m_loadState = WaitingForSource;
     m_currentSourceNode = 0;
 
-    // 3 - If there are any tasks from the media element's media element event task source in 
+    // 2 - If there are any tasks from the media element's media element event task source in 
     // one of the task queues, then remove those tasks.
     cancelPendingEventsAndCallbacks();
-}
-
-void HTMLMediaElement::loadInternal()
-{
-    // If the load() method for this element is already being invoked, then abort these steps.
-    if (m_processingLoad)
-        return;
-    m_processingLoad = true;
-    
-    // Steps 1 and 2 were done in prepareForLoad()
 
     // 3 - If the media element's networkState is set to NETWORK_LOADING or NETWORK_IDLE, queue
     // a task to fire a simple event named abort at the media element.
     if (m_networkState == NETWORK_LOADING || m_networkState == NETWORK_IDLE)
         scheduleEvent(eventNames().abortEvent);
 
-    // 4
+#if !ENABLE(PLUGIN_PROXY_FOR_VIDEO)
+    m_player = MediaPlayer::create(this);
+#else
+    if (m_player)
+        m_player->cancelLoad();
+    else
+        createMediaPlayerProxy();
+#endif
+
+    // 4 - If the media element's networkState is not set to NETWORK_EMPTY, then run these substeps
     if (m_networkState != NETWORK_EMPTY) {
         m_networkState = NETWORK_EMPTY;
         m_readyState = HAVE_NOTHING;
         m_readyStateMaximum = HAVE_NOTHING;
         m_paused = true;
         m_seeking = false;
-        if (m_player) {
-            m_player->pause();
-            m_playing = false;
-            m_player->seek(0);
-        }
         scheduleEvent(eventNames().emptiedEvent);
     }
 
@@ -523,6 +557,24 @@ void HTMLMediaElement::loadInternal()
     m_playedTimeRanges = TimeRanges::create();
     m_lastSeekTime = 0;
     m_closedCaptionsVisible = false;
+
+    if (m_preload != MediaPlayer::None && document()->settings() && document()->settings()->mediaDataLoadsAutomatically())
+        m_player->prepareToPlay();
+}
+
+void HTMLMediaElement::loadInternal()
+{
+    // If we can't start a load right away, start it later.
+    Page* page = document()->page();
+    if (page && !page->canStartMedia()) {
+        if (m_isWaitingUntilMediaCanStart)
+            return;
+        document()->addMediaCanStartListener(this);
+        m_isWaitingUntilMediaCanStart = true;
+        return;
+    }
+
+    // Steps 1 - 6 were done in prepareForLoad
 
     // 7 - Invoke the media element's resource selection algorithm.
     selectMediaResource();
@@ -590,6 +642,11 @@ void HTMLMediaElement::loadNextSourceChild()
         return;
     }
 
+#if !ENABLE(PLUGIN_PROXY_FOR_VIDEO)
+    // Recreate the media player for the new url
+    m_player = MediaPlayer::create(this);
+#endif
+
     m_loadState = LoadingFromSourceElement;
     loadResource(mediaURL, contentType);
 }
@@ -617,13 +674,8 @@ void HTMLMediaElement::loadResource(const KURL& initialURL, ContentType& content
     if (m_sendProgressEvents) 
         startProgressEventTimer();
 
-#if !ENABLE(PLUGIN_PROXY_FOR_VIDEO)
-    m_player = MediaPlayer::create(this);
-#else
-    createMediaPlayerProxy();
-#endif
-
-    m_player->setAutobuffer(autobuffer());
+    if (!autoplay())
+        m_player->setPreload(m_preload);
     m_player->setPreservesPitch(m_webkitPreservesPitch);
     updateVolume();
 
@@ -631,7 +683,7 @@ void HTMLMediaElement::loadResource(const KURL& initialURL, ContentType& content
 
     if (isVideo() && m_player->canLoadPoster()) {
         KURL posterUrl = poster();
-        if (!posterUrl.isEmpty())
+        if (!posterUrl.isEmpty() && loader->willLoadMediaElementURL(posterUrl))
             m_player->setPoster(posterUrl);
     }
 
@@ -701,8 +753,8 @@ void HTMLMediaElement::noneSupported()
 
     // 9 -Abort these steps. Until the load() method is invoked, the element won't attempt to load another resource.
 
-    if (isVideo())
-        static_cast<HTMLVideoElement*>(this)->updatePosterImage();
+    updatePosterImage();
+
     if (renderer())
         renderer()->updateFromElement();
 }
@@ -743,6 +795,16 @@ void HTMLMediaElement::cancelPendingEventsAndCallbacks()
     }
 }
 
+Document* HTMLMediaElement::mediaPlayerOwningDocument()
+{
+    Document* d = document();
+    
+    if (!d)
+        d = ownerDocument();
+    
+    return d;
+}
+
 void HTMLMediaElement::mediaPlayerNetworkStateChanged(MediaPlayer*)
 {
     beginProcessingMediaPlayerCallback();
@@ -764,6 +826,10 @@ void HTMLMediaElement::setNetworkState(MediaPlayer::NetworkState state)
         // If we failed while trying to load a <source> element, the movie was never parsed, and there are more
         // <source> children, schedule the next one
         if (m_readyState < HAVE_METADATA && m_loadState == LoadingFromSourceElement) {
+            ASSERT(m_currentSourceNode);
+            if (!m_currentSourceNode)
+                return;
+
             m_currentSourceNode->scheduleErrorEvent();
             if (havePotentialSourceChild())
                 scheduleNextSourceChild();
@@ -780,16 +846,15 @@ void HTMLMediaElement::setNetworkState(MediaPlayer::NetworkState state)
         else if (state == MediaPlayer::FormatError && m_loadState == LoadingFromSrcAttr)
             noneSupported();
 
-        if (isVideo())
-            static_cast<HTMLVideoElement*>(this)->updatePosterImage();
-
+        updatePosterImage();
         return;
     }
 
     bool shouldUpdatePlayState = false;
 
     if (state == MediaPlayer::Idle) {
-        if (m_networkState > NETWORK_IDLE && m_autoplaying && m_paused && autoplay()) {
+        bool shouldBePlaying = m_playing || (m_autoplaying && m_paused && autoplay());
+        if (m_networkState > NETWORK_IDLE && shouldBePlaying) {
             m_paused = false;
             m_autoplaying = false;
             scheduleEvent(eventNames().playEvent);
@@ -797,7 +862,7 @@ void HTMLMediaElement::setNetworkState(MediaPlayer::NetworkState state)
             shouldUpdatePlayState = true;
         } else 
         if (m_networkState > NETWORK_IDLE) {
-            stopPeriodicTimers();
+            m_progressEventTimer.stop();
             scheduleEvent(eventNames().suspendEvent);
         }
         m_networkState = NETWORK_IDLE;
@@ -935,8 +1000,8 @@ void HTMLMediaElement::setReadyState(MediaPlayer::ReadyState state)
         shouldUpdatePosterImage = true;
     }
 
-    if (shouldUpdatePosterImage && isVideo())
-        static_cast<HTMLVideoElement*>(this)->updatePosterImage();
+    if (shouldUpdatePosterImage)
+        updatePosterImage();
 
     updatePlayState();
 }
@@ -1090,7 +1155,7 @@ float HTMLMediaElement::startTime() const
 
 float HTMLMediaElement::duration() const
 {
-    if (m_readyState >= HAVE_METADATA)
+    if (m_player && m_readyState >= HAVE_METADATA)
         return m_player->duration();
 
     return numeric_limits<float>::quiet_NaN();
@@ -1170,14 +1235,27 @@ void HTMLMediaElement::setAutoplay(bool b)
     setBooleanAttribute(autoplayAttr, b);
 }
 
-bool HTMLMediaElement::autobuffer() const
+String HTMLMediaElement::preload() const
 {
-    return hasAttribute(autobufferAttr);
+    switch (m_preload) {
+    case MediaPlayer::None:
+        return "none";
+        break;
+    case MediaPlayer::MetaData:
+        return "metadata";
+        break;
+    case MediaPlayer::Auto:
+        return "auto";
+        break;
+    }
+
+    ASSERT_NOT_REACHED();
+    return String();
 }
 
-void HTMLMediaElement::setAutobuffer(bool b)
+void HTMLMediaElement::setPreload(const String& preload)
 {
-    setBooleanAttribute(autobufferAttr, b);
+    setAttribute(preloadAttr, preload);
 }
 
 void HTMLMediaElement::play(bool isUserGesture)
@@ -1187,6 +1265,17 @@ void HTMLMediaElement::play(bool isUserGesture)
 
     userRequestsMediaLoading();
 
+    Document* doc = document();
+    Settings* settings = doc->settings();
+    if (settings && settings->needsSiteSpecificQuirks() && m_dispatchingCanPlayEvent && !m_loadInitiatedByUserGesture) {
+        // It should be impossible to be processing the canplay event while handling a user gesture
+        // since it is dispatched asynchronously.
+        ASSERT(!isUserGesture);
+        String host = doc->baseURL().host();
+        if (host.endsWith(".npr.org", false) || equalIgnoringCase(host, "npr.org"))
+            return;
+    }
+    
     playInternal();
 }
 
@@ -1267,7 +1356,7 @@ bool HTMLMediaElement::controls() const
     Frame* frame = document()->frame();
 
     // always show controls when scripting is disabled
-    if (frame && !frame->script()->canExecuteScripts())
+    if (frame && !frame->script()->canExecuteScripts(NotAboutToExecuteScript))
         return true;
 
     return hasAttribute(controlsAttr);
@@ -1510,7 +1599,17 @@ void HTMLMediaElement::mediaPlayerTimeChanged(MediaPlayer*)
 void HTMLMediaElement::mediaPlayerVolumeChanged(MediaPlayer*)
 {
     beginProcessingMediaPlayerCallback();
+    if (m_player)
+        m_volume = m_player->volume();
     updateVolume();
+    endProcessingMediaPlayerCallback();
+}
+
+void HTMLMediaElement::mediaPlayerMuteChanged(MediaPlayer*)
+{
+    beginProcessingMediaPlayerCallback();
+    if (m_player)
+        setMuted(m_player->muted());
     endProcessingMediaPlayerCallback();
 }
 
@@ -1554,6 +1653,8 @@ void HTMLMediaElement::mediaPlayerRepaint(MediaPlayer*)
     beginProcessingMediaPlayerCallback();
     if (renderer())
         renderer()->repaint();
+
+    updatePosterImage();
     endProcessingMediaPlayerCallback();
 }
 
@@ -1577,11 +1678,10 @@ bool HTMLMediaElement::mediaPlayerRenderingCanBeAccelerated(MediaPlayer*)
     return false;
 }
 
-GraphicsLayer* HTMLMediaElement::mediaPlayerGraphicsLayer(MediaPlayer*)
+void HTMLMediaElement::mediaPlayerRenderingModeChanged(MediaPlayer*)
 {
-    if (renderer() && renderer()->isVideo())
-        return toRenderVideo(renderer())->videoGraphicsLayer();
-    return 0;
+    // Kick off a fake recalcStyle that will update the compositing tree.
+    setNeedsStyleRecalc(SyntheticStyleChange);
 }
 #endif
 
@@ -1700,7 +1800,8 @@ void HTMLMediaElement::updateVolume()
         Page* page = document()->page();
         float volumeMultiplier = page ? page->mediaVolume() : 1;
     
-        m_player->setVolume(m_muted ? 0 : m_volume * volumeMultiplier);
+        m_player->setMuted(m_muted);
+        m_player->setVolume(m_volume * volumeMultiplier);
     }
     
     if (renderer())
@@ -1721,6 +1822,7 @@ void HTMLMediaElement::updatePlayState()
     
     bool shouldBePlaying = potentiallyPlaying();
     bool playerPaused = m_player->paused();
+
     if (shouldBePlaying && playerPaused) {
         // Set rate before calling play in case the rate was set before the media engine wasn't setup.
         // The media engine should just stash the rate since it isn't already playing.
@@ -1768,6 +1870,7 @@ void HTMLMediaElement::userCancelledLoad()
     m_player.clear();
 #endif
     stopPeriodicTimers();
+    m_loadState = WaitingForSource;
 
     // 2 - Set the error attribute to a new MediaError object whose code attribute is set to MEDIA_ERR_ABORTED.
     m_error = MediaError::create(MediaError::MEDIA_ERR_ABORTED);
@@ -1792,6 +1895,9 @@ void HTMLMediaElement::userCancelledLoad()
 
     // 7 - Abort the overall resource selection algorithm.
     m_currentSourceNode = 0;
+
+    // Reset m_readyState since m_player is gone.
+    m_readyState = HAVE_NOTHING;
 }
 
 void HTMLMediaElement::documentWillBecomeInactive()
@@ -1835,12 +1941,11 @@ void HTMLMediaElement::mediaVolumeDidChange()
     updateVolume();
 }
 
-const IntRect HTMLMediaElement::screenRect()
+IntRect HTMLMediaElement::screenRect()
 {
-    IntRect elementRect;
-    if (renderer())
-        elementRect = renderer()->view()->frameView()->contentsToScreen(renderer()->absoluteBoundingBoxRect());
-    return elementRect;
+    if (!renderer())
+        return IntRect();
+    return renderer()->view()->frameView()->contentsToScreen(renderer()->absoluteBoundingBoxRect());
 }
     
 void HTMLMediaElement::defaultEventHandler(Event* event)
@@ -1900,10 +2005,10 @@ void HTMLMediaElement::deliverNotification(MediaPlayerProxyNotificationType noti
         // immediately with ReadyForInspection and/or MediaValidated. The spec doesn't deal with a "fatal" error followed
         // by ressurection, so if we have set an error clear it now.
         m_error = 0;
-    } else if (notification == MediaPlayerNotificationEnteredFullScreen) {
+    } else if (notification == MediaPlayerNotificationEnteredFullscreen) {
         scheduleEvent(eventNames().webkitbeginfullscreenEvent);
         m_isFullscreen = true;
-    } else if (notification == MediaPlayerNotificationExitedFullScreen) {
+    } else if (notification == MediaPlayerNotificationExitedFullscreen) {
         scheduleEvent(eventNames().webkitendfullscreenEvent);
         m_isFullscreen = false;
     }
@@ -1943,13 +2048,14 @@ void HTMLMediaElement::getPluginProxyParams(KURL& url, Vector<String>& names, Ve
     if (!url.isValid() || !isSafeToLoadURL(url, Complain))
         url = selectNextSourceChild(0, DoNothing);
 
-    m_currentSrc = url.string();
     if (url.isValid() && loader && loader->willLoadMediaElementURL(url)) {
         names.append("_media_element_src_");
+        m_currentSrc = url.string();
         values.append(m_currentSrc);
     }
     
-    if (document()->settings() && document()->settings()->mediaPlaybackAllowsInline() && hasAttribute(webkit_playsinlineAttr)) {
+    if (document()->settings() && document()->settings()->mediaPlaybackAllowsInline() 
+        && (applicationIsDumpRenderTree() || hasAttribute(webkit_playsinlineAttr))) {
         names.append("_media_element_allow_inline_");
         values.append("true");
     }
@@ -1991,6 +2097,7 @@ void HTMLMediaElement::createMediaPlayerProxy()
 void HTMLMediaElement::enterFullscreen()
 {
     ASSERT(!m_isFullscreen);
+    m_isFullscreen = true;
     if (document() && document()->page()) {
         if (m_player)
             m_player->enterFullScreen();
@@ -2000,17 +2107,24 @@ void HTMLMediaElement::enterFullscreen()
 void HTMLMediaElement::exitFullscreen()
 {
     ASSERT(m_isFullscreen);
+    m_isFullscreen = false;
     if (document() && document()->page()) {
         if (m_player)
             m_player->exitFullScreen();
     }
-    m_isFullscreen = false;
 }
 
 PlatformMedia HTMLMediaElement::platformMedia() const
 {
     return m_player ? m_player->platformMedia() : NoPlatformMedia;
 }
+
+#if USE(ACCELERATED_COMPOSITING)
+PlatformLayer* HTMLMediaElement::platformLayer() const
+{
+    return m_player ? m_player->platformLayer() : 0;
+}
+#endif
 
 bool HTMLMediaElement::hasClosedCaptions() const
 {
@@ -2047,6 +2161,13 @@ bool HTMLMediaElement::webkitClosedCaptionsVisible() const
 bool HTMLMediaElement::webkitHasClosedCaptions() const
 {
     return hasClosedCaptions();
+}
+
+void HTMLMediaElement::mediaCanStart()
+{
+    ASSERT(m_isWaitingUntilMediaCanStart);
+    m_isWaitingUntilMediaCanStart = false;
+    loadInternal();
 }
 
 void HTMLMediaElement::userRequestsMediaLoading()

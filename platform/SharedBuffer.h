@@ -114,6 +114,9 @@ public:
     //      }
     unsigned getSomeData(const char*& data, unsigned position = 0) const;
 
+    void createPurgeableBuffer() const;
+    void shouldUsePurgeableMemory(bool use) { m_shouldUsePurgeableMemory = use; }
+
 private:
     SharedBuffer();
     SharedBuffer(const char*, int);
@@ -126,7 +129,8 @@ private:
     unsigned m_size;
     mutable Vector<char> m_buffer;
     mutable Vector<char*> m_segments;
-    OwnPtr<PurgeableBuffer> m_purgeableBuffer;
+    bool m_shouldUsePurgeableMemory;
+    mutable OwnPtr<PurgeableBuffer> m_purgeableBuffer;
 #if PLATFORM(CF)
     SharedBuffer(CFDataRef);
     RetainPtr<CFDataRef> m_cfData;

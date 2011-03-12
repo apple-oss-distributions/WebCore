@@ -23,22 +23,25 @@
 
 #include "CSSStyleDeclaration.h"
 #include "Node.h"
+#include "RenderStyleConstants.h"
 
 namespace WebCore {
 
+class Color;
 class CSSMutableStyleDeclaration;
+class CSSPrimitiveValue;
 class ShadowData;
 
 enum EUpdateLayout { DoNotUpdateLayout = false, UpdateLayout = true };
 
 class CSSComputedStyleDeclaration : public CSSStyleDeclaration {
 public:
-    friend PassRefPtr<CSSComputedStyleDeclaration> computedStyle(PassRefPtr<Node>);
+    friend PassRefPtr<CSSComputedStyleDeclaration> computedStyle(PassRefPtr<Node>, bool allowVisitedStyle, const String& pseudoElementName);
     virtual ~CSSComputedStyleDeclaration();
 
     virtual String cssText() const;
 
-    virtual unsigned length() const;
+    virtual unsigned virtualLength() const;
     virtual String item(unsigned index) const;
 
     virtual PassRefPtr<CSSValue> getPropertyCSSValue(int propertyID) const;
@@ -60,7 +63,7 @@ protected:
     virtual bool cssPropertyMatches(const CSSProperty*) const;
 
 private:
-    CSSComputedStyleDeclaration(PassRefPtr<Node>);
+    CSSComputedStyleDeclaration(PassRefPtr<Node>, bool allowVisitedStyle, const String&);
 
     virtual void setCssText(const String&, ExceptionCode&);
 
@@ -68,13 +71,16 @@ private:
     virtual void setProperty(int propertyId, const String& value, bool important, ExceptionCode&);
 
     PassRefPtr<CSSValue> valueForShadow(const ShadowData*, int) const;
-
+    PassRefPtr<CSSPrimitiveValue> currentColorOrValidColor(RenderStyle*, const Color&) const;
+    
     RefPtr<Node> m_node;
+    PseudoId m_pseudoElementSpecifier;
+    bool m_allowVisitedStyle;
 };
 
-inline PassRefPtr<CSSComputedStyleDeclaration> computedStyle(PassRefPtr<Node> node)
+inline PassRefPtr<CSSComputedStyleDeclaration> computedStyle(PassRefPtr<Node> node,  bool allowVisitedStyle = false, const String& pseudoElementName = String())
 {
-    return adoptRef(new CSSComputedStyleDeclaration(node));
+    return adoptRef(new CSSComputedStyleDeclaration(node, allowVisitedStyle, pseudoElementName));
 }
 
 } // namespace WebCore

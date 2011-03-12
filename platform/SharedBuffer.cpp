@@ -58,17 +58,20 @@ static inline void freeSegment(char* p)
 
 SharedBuffer::SharedBuffer()
     : m_size(0)
+    , m_shouldUsePurgeableMemory(false)
 {
 }
 
 SharedBuffer::SharedBuffer(const char* data, int size)
     : m_size(0)
+    , m_shouldUsePurgeableMemory(false)
 {
     append(data, size);
 }
 
 SharedBuffer::SharedBuffer(const unsigned char* data, int size)
     : m_size(0)
+    , m_shouldUsePurgeableMemory(false)
 {
     append(reinterpret_cast<const char*>(data), size);
 }
@@ -105,11 +108,55 @@ unsigned SharedBuffer::size() const
     return m_size;
 }
 
+/*
+ * Try to create a PurgeableBuffer. We can fail to create any of the following
+ * reasons
+ *   - shouldUsePurgeableMemory is set to false.
+ *   - the size of the buffer is less than the minimum size required by
+ *     PurgeableBuffer (currently 16k).
+ *   - vm_allocate() call fails.
+ */
+void SharedBuffer::createPurgeableBuffer() const
+{
+    // If we have already created one, just return.
+    if (m_purgeableBuffer)
+        return;
+
+    if (!m_shouldUsePurgeableMemory)
+        return;
+
+    m_purgeableBuffer.set(PurgeableBuffer::create(m_size));
+    if (!m_purgeableBuffer)
+        return;
+
+    // Copy any data from m_buffer vector and segments into the
+    // PurgeableBuffer.
+    unsigned bufferSize = m_buffer.size();
+    char* destination = m_purgeableBuffer->data();
+    if (bufferSize) {
+        memcpy(destination, m_buffer.data(), bufferSize);
+        destination += bufferSize;
+        m_buffer.clear();
+    }
+
+    unsigned bytesLeft = m_size - bufferSize;
+    for (unsigned i = 0; i < m_segments.size(); ++i) {
+        unsigned bytesToCopy = min(bytesLeft, segmentSize);
+        memcpy(destination, m_segments[i], bytesToCopy);
+        destination += bytesToCopy;
+        bytesLeft -= bytesToCopy;
+        freeSegment(m_segments[i]);
+    }
+    m_segments.clear();
+}
+
 const char* SharedBuffer::data() const
 {
     if (hasPlatformData())
         return platformData();
     
+    createPurgeableBuffer();
+
     if (m_purgeableBuffer)
         return m_purgeableBuffer->data();
     

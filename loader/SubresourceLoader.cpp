@@ -67,7 +67,7 @@ PassRefPtr<SubresourceLoader> SubresourceLoader::create(Frame* frame, Subresourc
         return 0;
 
     FrameLoader* fl = frame->loader();
-    if (securityCheck == DoSecurityCheck && (fl->state() == FrameStateProvisional || fl->activeDocumentLoader()->isStopping()))
+    if (securityCheck == DoSecurityCheck && (fl->state() == FrameStateProvisional || !fl->activeDocumentLoader() || fl->activeDocumentLoader()->isStopping()))
         return 0;
 
     ResourceRequest newRequest = request;
@@ -84,17 +84,6 @@ PassRefPtr<SubresourceLoader> SubresourceLoader::create(Frame* frame, Subresourc
     else if (!request.httpReferrer())
         newRequest.setHTTPReferrer(fl->outgoingReferrer());
     FrameLoader::addHTTPOriginIfNeeded(newRequest, fl->outgoingOrigin());
-
-    // Use the original request's cache policy for two reasons:
-    // 1. For POST requests, we mutate the cache policy for the main resource,
-    //    but we do not want this to apply to subresources
-    // 2. Delegates that modify the cache policy using willSendRequest: should
-    //    not affect any other resources. Such changes need to be done
-    //    per request.
-    if (newRequest.isConditional())
-        newRequest.setCachePolicy(ReloadIgnoringCacheData);
-    else
-        newRequest.setCachePolicy(fl->originalRequest().cachePolicy());
 
     fl->addExtraFieldsToSubresourceRequest(newRequest);
 
@@ -179,6 +168,9 @@ void SubresourceLoader::didFinishLoading()
 
     // Calling removeSubresourceLoader will likely result in a call to deref, so we must protect ourselves.
     RefPtr<SubresourceLoader> protect(this);
+
+    if (resourceData())
+        resourceData()->shouldUsePurgeableMemory(true);
 
     if (m_client)
         m_client->didFinishLoading(this);

@@ -30,6 +30,8 @@ namespace WebCore {
 
 bool applicationIsMobileMail();
 bool applicationIsMobileSafari();
+bool applicationIsDumpRenderTree();
+bool applicationIsMobileStore();
 
 } // namespace WebCore
 

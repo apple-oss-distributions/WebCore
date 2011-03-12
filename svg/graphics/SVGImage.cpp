@@ -70,7 +70,7 @@ private:
         m_image = 0;
     }
 
-    virtual void repaint(const IntRect& r, bool, bool, bool)
+    virtual void invalidateContentsAndWindow(const IntRect& r, bool)
     {
         if (m_image && m_image->imageObserver())
             m_image->imageObserver()->changedInRect(m_image, r);
@@ -224,7 +224,7 @@ NativeImagePtr SVGImage::nativeImageForCurrentFrame()
         m_frameCache = ImageBuffer::create(size());
         if (!m_frameCache) // failed to allocate image
             return 0;
-        renderSubtreeToImage(m_frameCache.get(), m_page->mainFrame()->contentRenderer());
+        draw(m_frameCache->context(), rect(), rect(), DeviceColorSpace, CompositeSourceOver);
     }
     return m_frameCache->image()->nativeImageForCurrentFrame();
 }
@@ -237,25 +237,28 @@ bool SVGImage::dataChanged(bool allDataReceived)
 
     if (allDataReceived) {
         static FrameLoaderClient* dummyFrameLoaderClient =  new EmptyFrameLoaderClient;
-        static EditorClient* dummyEditorClient = new EmptyEditorClient;
+
+        Page::PageClients pageClients;
+        m_chromeClient.set(new SVGImageChromeClient(this));
+        pageClients.chromeClient = m_chromeClient.get();
 #if ENABLE(CONTEXT_MENUS)
         static ContextMenuClient* dummyContextMenuClient = new EmptyContextMenuClient;
-#else
-        static ContextMenuClient* dummyContextMenuClient = 0;
+        pageClients.contextMenuClient = dummyContextMenuClient;
 #endif
+        static EditorClient* dummyEditorClient = new EmptyEditorClient;
+        pageClients.editorClient = dummyEditorClient;
 #if ENABLE(DRAG_SUPPORT)
         static DragClient* dummyDragClient = new EmptyDragClient;
-#else
-        static DragClient* dummyDragClient = 0;
+        pageClients.dragClient = dummyDragClient;
 #endif
-        static InspectorClient* dummyInspectorClient = NULL;
-
-        m_chromeClient.set(new SVGImageChromeClient(this));
+        static InspectorClient* dummyInspectorClient = new EmptyInspectorClient;
+        pageClients.inspectorClient = dummyInspectorClient;
         
         // FIXME: If this SVG ends up loading itself, we might leak the world.
         // The comment said that the Cache code does not know about CachedImages
         // holding Frames and won't know to break the cycle. But 
-        m_page.set(new Page(m_chromeClient.get(), dummyContextMenuClient, dummyEditorClient, dummyDragClient, dummyInspectorClient, 0, 0));
+        m_page.set(new Page(pageClients));
+        m_page->settings()->setMediaEnabled(false);
         m_page->settings()->setJavaScriptEnabled(false);
         m_page->settings()->setPluginsEnabled(false);
 
@@ -264,13 +267,14 @@ bool SVGImage::dataChanged(bool allDataReceived)
         frame->init();
         ResourceRequest fakeRequest(KURL(ParsedURLString, ""));
         FrameLoader* loader = frame->loader();
+        loader->setForcedSandboxFlags(SandboxAll);
         loader->load(fakeRequest, false); // Make sure the DocumentLoader is created
         loader->policyChecker()->cancelCheck(); // cancel any policy checks
         loader->commitProvisionalLoad(0);
-        loader->setResponseMIMEType("image/svg+xml");
-        loader->begin(KURL()); // create the empty document
-        loader->write(data()->data(), data()->size());
-        loader->end();
+        loader->writer()->setMIMEType("image/svg+xml");
+        loader->writer()->begin(KURL()); // create the empty document
+        loader->writer()->addData(data()->data(), data()->size());
+        loader->writer()->end();
         frame->view()->setTransparent(true); // SVG Images are transparent.
     }
 

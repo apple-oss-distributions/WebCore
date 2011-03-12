@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2007 Ryan Leavengood <leavengood@gmail.com>
+ * Copyright (C) 2010 Stephan Aßmus <superstippi@gmx.de>
  *
  * All rights reserved.
  *
@@ -29,16 +30,38 @@
 #include "Widget.h"
 
 #include "Cursor.h"
-#include "GraphicsContext.h"
 #include "IntRect.h"
 #include "NotImplemented.h"
-#include <Control.h>
 #include <View.h>
-
 
 namespace WebCore {
 
+class AutoPlatformWidgetLocker {
+public:
+    AutoPlatformWidgetLocker(PlatformWidget widget)
+        : m_widget(widget)
+    {
+        if (!m_widget || m_widget->LockLooperWithTimeout(5000) != B_OK)
+            m_widget = 0;
+    }
+
+    ~AutoPlatformWidgetLocker()
+    {
+        if (m_widget)
+            m_widget->UnlockLooper();
+    }
+
+    bool isLocked() const
+    {
+        return m_widget;
+    }
+
+private:
+    PlatformWidget m_widget;
+};
+
 Widget::Widget(PlatformWidget widget)
+    : m_topLevelPlatformWidget(0)
 {
     init(widget);
 }
@@ -57,31 +80,45 @@ void Widget::setFrameRect(const IntRect& rect)
     m_frame = rect;
 }
 
-void Widget::setFocus()
+void Widget::setFocus(bool focused)
 {
-    if (platformWidget())
-        platformWidget()->MakeFocus();
+    if (focused) {
+        AutoPlatformWidgetLocker locker(topLevelPlatformWidget());
+        if (locker.isLocked())
+            topLevelPlatformWidget()->MakeFocus();
+    }
 }
 
 void Widget::setCursor(const Cursor& cursor)
 {
-    if (platformWidget())
-        platformWidget()->SetViewCursor(cursor.impl());
+    AutoPlatformWidgetLocker locker(topLevelPlatformWidget());
+    if (locker.isLocked())
+        topLevelPlatformWidget()->SetViewCursor(cursor.impl());
 }
 
 void Widget::show()
 {
-    if (platformWidget())
+    setSelfVisible(true);
+    if (!isParentVisible())
+        return;
+
+    AutoPlatformWidgetLocker locker(platformWidget());
+    if (locker.isLocked() && platformWidget()->IsHidden())
         platformWidget()->Show();
 }
 
 void Widget::hide()
 {
-    if (platformWidget())
+    setSelfVisible(false);
+    if (!isParentVisible())
+        return;
+
+    AutoPlatformWidgetLocker locker(platformWidget());
+    if (locker.isLocked() && !platformWidget()->IsHidden())
         platformWidget()->Hide();
 }
 
-void Widget::paint(GraphicsContext* p, IntRect const& r)
+void Widget::paint(GraphicsContext*, IntRect const&)
 {
     notImplemented();
 }

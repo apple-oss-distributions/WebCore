@@ -21,7 +21,9 @@
 #include "config.h"
 #include "GraphicsContext.h"
 
+#include "AffineTransform.h"
 #include "CharacterNames.h"
+#include "Font.h"
 #include "GlyphBuffer.h"
 #include "Gradient.h"
 #include "GraphicsContextPrivate.h"
@@ -30,7 +32,6 @@
 #include "PlatformPathWince.h"
 #include "SharedBitmap.h"
 #include "SimpleFontData.h"
-#include "TransformationMatrix.h"
 #include <wtf/OwnPtr.h>
 
 #include <windows.h>
@@ -168,7 +169,7 @@ public:
     {
     }
 
-    TransformationMatrix m_transform;
+    AffineTransform m_transform;
     float m_opacity;
     Vector<Path> m_paths;
 };
@@ -211,7 +212,7 @@ public:
         m_transform.rotate(rad2deg(radians));
     }
 
-    void  concatCTM(const TransformationMatrix& transform)
+    void  concatCTM(const AffineTransform& transform)
     {
         m_transform = transform * m_transform;
     }
@@ -1143,7 +1144,7 @@ void GraphicsContext::endTransparencyLayer()
     m_data->restore();
 }
 
-void GraphicsContext::concatCTM(const TransformationMatrix& transform)
+void GraphicsContext::concatCTM(const AffineTransform& transform)
 {
     m_data->concatCTM(transform);
 }
@@ -1380,7 +1381,7 @@ void GraphicsContext::fillPath()
             if (!dc)
                 continue;
 
-            TransformationMatrix tr = m_data->m_transform;
+            AffineTransform tr = m_data->m_transform;
             tr.translate(transparentDC.toShift().width(), transparentDC.toShift().height());
 
             SelectObject(dc, GetStockObject(NULL_PEN));
@@ -1420,7 +1421,7 @@ void GraphicsContext::strokePath()
             if (!dc)
                 continue;
 
-            TransformationMatrix tr = m_data->m_transform;
+            AffineTransform tr = m_data->m_transform;
             tr.translate(transparentDC.toShift().width(), transparentDC.toShift().height());
 
             SelectObject(dc, GetStockObject(NULL_BRUSH));
@@ -1531,7 +1532,7 @@ void GraphicsContext::fillRect(const FloatRect& r, const Gradient* gradient)
     GradientFill(dc, tv.data(), tv.size(), mesh.data(), mesh.size(), vertical ? GRADIENT_FILL_RECT_V : GRADIENT_FILL_RECT_H);
 }
 
-TransformationMatrix GraphicsContext::getCTM() const
+AffineTransform GraphicsContext::getCTM() const
 {
     return m_data->m_transform;
 }
@@ -1874,7 +1875,7 @@ void GraphicsContext::drawBitmap(SharedBitmap* bmp, const IntRect& dstRectIn, co
         transparentDC.fillAlphaChannel();
 }
 
-void GraphicsContext::drawBitmapPattern(SharedBitmap* bmp, const FloatRect& tileRectIn, const TransformationMatrix& patternTransform,
+void GraphicsContext::drawBitmapPattern(SharedBitmap* bmp, const FloatRect& tileRectIn, const AffineTransform& patternTransform,
                 const FloatPoint& phase, CompositeOperator op, const FloatRect& destRectIn, const IntSize& origSourceSize)
 {
     if (!m_data->m_opacity)
@@ -1893,7 +1894,7 @@ void GraphicsContext::drawBitmapPattern(SharedBitmap* bmp, const FloatRect& tile
     trRect.move(transparentDC.toShift());
     FloatRect movedDstRect = m_data->m_transform.inverse().mapRect(FloatRect(trRect));
     FloatSize moved(movedDstRect.location() - destRectIn.location());
-    TransformationMatrix transform = m_data->m_transform;
+    AffineTransform transform = m_data->m_transform;
     transform.translate(moved.width(), moved.height());
 
     bmp->drawPattern(dc, transform, tileRectIn, patternTransform, phase, op, destRectIn, origSourceSize);

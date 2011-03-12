@@ -28,20 +28,18 @@
 #define EmptyClients_h
 
 #include "ChromeClient.h"
-#include "ContextMenuClient.h"
 #include "Console.h"
+#include "ContextMenuClient.h"
 #include "DocumentLoader.h"
 #include "DragClient.h"
 #include "EditCommand.h"
 #include "EditorClient.h"
 #include "FloatRect.h"
 #include "FocusDirection.h"
-#include "FormState.h"
 #include "FrameLoaderClient.h"
 #include "InspectorClient.h"
 #include "PluginHalterClient.h"
 #include "ResourceError.h"
-#include "SharedBuffer.h"
 
 /*
  This file holds empty Client stubs for use by WebCore.
@@ -115,12 +113,12 @@ public:
     virtual bool tabsToLinks() const { return false; }
 
     virtual IntRect windowResizerRect() const { return IntRect(); }
-    virtual void addToDirtyRegion(const IntRect&) { }
-    virtual void scrollBackingStore(int, int, const IntRect&, const IntRect&) { }
-    virtual void updateBackingStore() { }
 
-    virtual void repaint(const IntRect&, bool, bool, bool) { }
+    virtual void invalidateWindow(const IntRect&, bool) { }
+    virtual void invalidateContentsAndWindow(const IntRect&, bool) { }
+    virtual void invalidateContentsForSlowScroll(const IntRect&, bool) {};
     virtual void scroll(const IntSize&, const IntRect&, const IntRect&) { }
+
     virtual IntPoint screenToWindow(const IntPoint& p) const { return p; }
     virtual IntRect windowToScreen(const IntRect& r) const { return r; }
     virtual PlatformPageClient platformPageClient() const { return 0; }
@@ -139,6 +137,7 @@ public:
 
 #if ENABLE(OFFLINE_WEB_APPLICATIONS)
     virtual void reachedMaxAppCacheSize(int64_t) { }
+    virtual void reachedApplicationCacheOriginQuota(SecurityOrigin*) { }
 #endif
 
 #if ENABLE(NOTIFICATIONS)
@@ -146,6 +145,7 @@ public:
 #endif
 
     virtual void runOpenPanel(Frame*, PassRefPtr<FileChooser>) { }
+    virtual void chooseIconForFiles(const Vector<String>&, FileChooser*) { }
 
     virtual void formStateDidChange(const Node*) { }
 
@@ -158,6 +158,7 @@ public:
     virtual void scrollRectIntoView(const IntRect&, const ScrollView*) const {}
 
     virtual void requestGeolocationPermissionForFrame(Frame*, Geolocation*) {}
+    virtual void cancelGeolocationPermissionRequestForFrame(Frame*, Geolocation*) {}
 
 #if USE(ACCELERATED_COMPOSITING)
     virtual void attachRootGraphicsLayer(Frame*, GraphicsLayer*) {};
@@ -203,8 +204,10 @@ public:
     virtual void dispatchWillSendRequest(DocumentLoader*, unsigned long, ResourceRequest&, const ResourceResponse&) { }
     virtual void dispatchDidReceiveAuthenticationChallenge(DocumentLoader*, unsigned long, const AuthenticationChallenge&) { }
     virtual void dispatchDidCancelAuthenticationChallenge(DocumentLoader*, unsigned long, const AuthenticationChallenge&) { }
-
+#if USE(PROTECTION_SPACE_AUTH_CALLBACK)
     virtual bool canAuthenticateAgainstProtectionSpace(DocumentLoader*, unsigned long, const ProtectionSpace&) { return false; }
+#endif
+
     virtual CFDictionaryRef connectionProperties(DocumentLoader*, unsigned long) { return 0; }
 
     virtual void dispatchDidReceiveResponse(DocumentLoader*, unsigned long, const ResourceResponse&) { }
@@ -212,7 +215,6 @@ public:
     virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long) { }
     virtual void dispatchDidFailLoading(DocumentLoader*, unsigned long, const ResourceError&) { }
     virtual bool dispatchDidLoadResourceFromMemoryCache(DocumentLoader*, const ResourceRequest&, const ResourceResponse&, int) { return false; }
-    virtual void dispatchDidLoadResourceByXMLHttpRequest(unsigned long, const ScriptString&) { }
 
     virtual void dispatchDidHandleOnloadEvents() { }
     virtual void dispatchDidReceiveServerRedirectForProvisionalLoad() { }
@@ -226,6 +228,7 @@ public:
     virtual void dispatchDidReceiveIcon() { }
     virtual void dispatchDidStartProvisionalLoad() { }
     virtual void dispatchDidReceiveTitle(const String&) { }
+    virtual void dispatchDidChangeIcons() { }
     virtual void dispatchDidCommitLoad() { }
     virtual void dispatchDidFailProvisionalLoad(const ResourceError&) { }
     virtual void dispatchDidFailLoad(const ResourceError&) { }
@@ -244,6 +247,7 @@ public:
 
     virtual void dispatchUnableToImplementPolicy(const ResourceError&) { }
 
+    virtual void dispatchWillSendSubmitEvent(HTMLFormElement*) { }
     virtual void dispatchWillSubmitForm(FramePolicyFunction, PassRefPtr<FormState>) { }
 
     virtual void dispatchDidLoadMainResource(DocumentLoader*) { }
@@ -309,6 +313,7 @@ public:
     virtual void didDisplayInsecureContent() { }
     virtual void didRunInsecureContent(SecurityOrigin*) { }
     virtual PassRefPtr<Frame> createFrame(const KURL&, const String&, HTMLFrameOwnerElement*, const String&, bool, int, int) { return 0; }
+    virtual void didTransferChildFrameToNewDocument() { }
     virtual PassRefPtr<Widget> createPlugin(const IntSize&, HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool) { return 0; }
     virtual PassRefPtr<Widget> createJavaAppletWidget(const IntSize&, HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&) { return 0; }
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
@@ -487,37 +492,22 @@ public:
 };
 #endif // ENABLE(DRAG_SUPPORT)
 
-#if ENABLE(INSPECTOR)
 class EmptyInspectorClient : public InspectorClient, public Noncopyable {
 public:
     virtual ~EmptyInspectorClient() { }
 
     virtual void inspectorDestroyed() { }
+    
+    virtual void openInspectorFrontend(InspectorController*) { }
 
-    virtual Page* createPage() { return 0; };
-
-    virtual String localizedStringsURL() { return String(); }
-
-    virtual String hiddenPanels() { return String(); }
-
-    virtual void showWindow() { }
-    virtual void closeWindow() { }
-
-    virtual void attachWindow() { }
-    virtual void detachWindow() { }
-
-    virtual void setAttachedWindowHeight(unsigned) { }
+    virtual Page* inspectorPage() { return 0; }
 
     virtual void highlight(Node*) { }
     virtual void hideHighlight() { }
-    virtual void inspectedURLChanged(const String&) { }
 
     virtual void populateSetting(const String&, String*) { }
     virtual void storeSetting(const String&, const String&) { }
-
-    virtual void inspectorWindowObjectCleared() { }
 };
-#endif // ENABLE(INSPECTOR)
 
 }
 

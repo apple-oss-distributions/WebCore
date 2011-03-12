@@ -30,7 +30,6 @@ void WebThreadUnlock(void);
     
 // Please don't use anything below this line unless you know what you are doing. If unsure, ask.
 // ---------------------------------------------------------------------------------------------
-bool WebTryThreadLock(void);
 bool WebThreadIsLocked(void);
 bool WebThreadIsLockedOrDisabled(void);
     
@@ -47,6 +46,10 @@ bool WebThreadNotCurrent(void);
 void WebThreadLockFromAnyThread();
 void WebThreadLockFromAnyThreadNoLog();
 void WebThreadUnlockFromAnyThread();
+
+// This is for <rdar://problem/8005192> Mail entered a state where message subject and content isn't displayed.
+// It should only be used for MobileMail to work around <rdar://problem/8005192>.
+void WebThreadUnlockGuardForMail();
 
 static inline bool WebThreadShouldYield(void) { return webThreadShouldYield; }
 static inline void WebThreadSetShouldYield() { webThreadShouldYield = true; }

@@ -33,7 +33,6 @@
 #include "HTTPHeaderMap.h"
 #include "loader.h" // for Loader::Priority
 
-#include <memory>
 #include <wtf/OwnPtr.h>
 
 namespace WebCore {
@@ -63,13 +62,15 @@ namespace WebCore {
             TargetIsFontResource,
             TargetIsImage,
             TargetIsObject,
-            TargetIsMedia
+            TargetIsMedia,
+            TargetIsWorker,
+            TargetIsSharedWorker
         };
 
-        static std::auto_ptr<ResourceRequest> adopt(std::auto_ptr<CrossThreadResourceRequestData>);
+        static PassOwnPtr<ResourceRequest> adopt(PassOwnPtr<CrossThreadResourceRequestData>);
 
         // Gets a copy of the data suitable for passing to another thread.
-        std::auto_ptr<CrossThreadResourceRequestData> copyData() const;
+        PassOwnPtr<CrossThreadResourceRequestData> copyData() const;
 
         bool isNull() const;
         bool isEmpty() const;
@@ -203,6 +204,7 @@ namespace WebCore {
         Vector<String> m_responseContentDispositionEncodingFallbackArray;
         RefPtr<FormData> m_httpBody;
         bool m_allowCookies;
+        ResourceRequestBase::TargetType m_targetType;
         Loader::Priority m_priority;
     };
     

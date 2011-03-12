@@ -25,7 +25,6 @@
 #include "SVGUseElement.h"
 
 #include "CSSStyleSelector.h"
-#include "CString.h"
 #include "Document.h"
 #include "Event.h"
 #include "EventListener.h"
@@ -166,12 +165,16 @@ void SVGUseElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
+    if (SVGStyledTransformableElement::isKnownAttribute(attrName)) {
+        renderer()->setNeedsTransformUpdate();
+        renderer()->setNeedsLayout(true);
+        return;
+    }
+
     if (SVGTests::isKnownAttribute(attrName)
         || SVGLangSpace::isKnownAttribute(attrName)
-        || SVGExternalResourcesRequired::isKnownAttribute(attrName)
-        || SVGStyledTransformableElement::isKnownAttribute(attrName)) {
+        || SVGExternalResourcesRequired::isKnownAttribute(attrName))
         invalidateShadowTree();
-    }
 }
 
 void SVGUseElement::synchronizeProperty(const QualifiedName& attrName)
@@ -597,11 +600,27 @@ Path SVGUseElement::toClipPath() const
         if (!isDirectReference(n))
             // Spec: Indirect references are an error (14.3.5)
             document()->accessSVGExtensions()->reportError("Not allowed to use indirect reference in <clip-path>");
-        else
-            return static_cast<SVGStyledTransformableElement*>(n)->toClipPath();
+        else {
+            Path clipPath = static_cast<SVGStyledTransformableElement*>(n)->toClipPath();
+            clipPath.translate(FloatSize(x().value(this), y().value(this)));
+            clipPath.transform(animatedLocalTransform());
+            return clipPath;
+        }
     }
 
     return Path();
+}
+
+RenderObject* SVGUseElement::rendererClipChild() const
+{
+    Node* n = m_targetElementInstance ? m_targetElementInstance->shadowTreeElement() : 0;
+    if (!n)
+        return 0;
+
+    if (n->isSVGElement() && isDirectReference(n))
+        return static_cast<SVGElement*>(n)->renderer();
+
+    return 0;
 }
 
 void SVGUseElement::buildInstanceTree(SVGElement* target, SVGElementInstance* targetInstance, bool& foundProblem)

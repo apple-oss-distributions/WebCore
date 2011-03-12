@@ -37,7 +37,6 @@
 #include "ExceptionCode.h"
 #include "Frame.h"
 #include "V8Binding.h"
-#include "V8CustomBinding.h"
 #include "V8Proxy.h"
 #include "V8Utilities.h"
 #include "WorkerContext.h"
@@ -81,7 +80,7 @@ v8::Handle<v8::Value> V8SharedWorker::constructorCallback(const v8::Arguments& a
 
     // Setup the standard wrapper object internal fields.
     v8::Handle<v8::Object> wrapperObject = args.Holder();
-    V8DOMWrapper::setDOMWrapper(wrapperObject, V8ClassIndex::SHAREDWORKER, obj.get());
+    V8DOMWrapper::setDOMWrapper(wrapperObject, &info, obj.get());
 
     obj->ref();
     V8DOMWrapper::setJSWrapperForActiveDOMObject(obj.get(), v8::Persistent<v8::Object>::New(wrapperObject));

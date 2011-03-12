@@ -4,6 +4,10 @@ CONFIG(standalone_package) {
     isEmpty(WC_GENERATED_SOURCES_DIR):WC_GENERATED_SOURCES_DIR = generated
 }
 
+CONFIG(minimal) {
+  DEFINES += ENABLE_NETSCAPE_PLUGIN_API=0
+}
+
 ## Define default features macros for optional components
 ## (look for defs in config.h and included files!)
 # Try to locate sqlite3 source
@@ -52,6 +56,15 @@ contains(DEFINES, ENABLE_SINGLE_THREADED=1) {
 !contains(DEFINES, ENABLE_XHTMLMP=.): DEFINES += ENABLE_XHTMLMP=0
 !contains(DEFINES, ENABLE_DATAGRID=.): DEFINES += ENABLE_DATAGRID=0
 !contains(DEFINES, ENABLE_VIDEO=.): DEFINES += ENABLE_VIDEO=1
+!contains(DEFINES, ENABLE_RUBY=.): DEFINES += ENABLE_RUBY=1
+!contains(DEFINES, ENABLE_SANDBOX=.): DEFINES += ENABLE_SANDBOX=1
+!contains(DEFINES, ENABLE_PROGRESS_TAG=.): DEFINES += ENABLE_PROGRESS_TAG=1
+!contains(DEFINES, ENABLE_BLOB_SLICE=.): DEFINES += ENABLE_BLOB_SLICE=0
+!contains(DEFINES, ENABLE_NOTIFICATIONS=.): DEFINES += ENABLE_NOTIFICATIONS=1
+
+greaterThan(QT_MINOR_VERSION, 5) {
+    !contains(DEFINES, ENABLE_3D_RENDERING=.): DEFINES += ENABLE_3D_RENDERING=1
+}
 
 # SVG support
 !contains(DEFINES, ENABLE_SVG=0) {
@@ -71,6 +84,11 @@ contains(DEFINES, ENABLE_SINGLE_THREADED=1) {
 # HTML5 datalist support
 !contains(DEFINES, ENABLE_DATALIST=.): DEFINES += ENABLE_DATALIST=1
 
+# Tiled Backing Store support
+greaterThan(QT_MINOR_VERSION, 5) {
+    !contains(DEFINES, ENABLE_TILED_BACKING_STORE=.): DEFINES += ENABLE_TILED_BACKING_STORE=1
+}
+
 # Nescape plugins support (NPAPI)
 !contains(DEFINES, ENABLE_NETSCAPE_PLUGIN_API=.) {
     unix|win32-*:!embedded:!wince*: {
@@ -85,7 +103,7 @@ contains(DEFINES, ENABLE_SINGLE_THREADED=1) {
 
 # XSLT support with QtXmlPatterns
 !contains(DEFINES, ENABLE_XSLT=.) {
-    contains(QT_CONFIG, xmlpatterns):!lessThan(QT_MINOR_VERSION, 5):DEFINES += ENABLE_XSLT=1
+    contains(QT_CONFIG, xmlpatterns):DEFINES += ENABLE_XSLT=1
     else:DEFINES += ENABLE_XSLT=0
 }
 
@@ -98,7 +116,8 @@ contains(DEFINES, ENABLE_SINGLE_THREADED=1) {
     }
 }
 
-DEFINES += WTF_CHANGES=1
+# Bearer management is part of Qt 4.7
+!lessThan(QT_MINOR_VERSION, 7):!contains(DEFINES, ENABLE_QT_BEARER=.):DEFINES += ENABLE_QT_BEARER=1
 
 # Enable touch event support with Qt 4.6
 !lessThan(QT_MINOR_VERSION, 6): DEFINES += ENABLE_TOUCH_EVENTS=1
@@ -124,6 +143,7 @@ contains(DEFINES, ENABLE_DASHBOARD_SUPPORT=0): DASHBOARDSUPPORTCSSPROPERTIES -= 
 contains(DEFINES, ENABLE_DATAGRID=1): FEATURE_DEFINES_JAVASCRIPT += ENABLE_DATAGRID=1
 contains(DEFINES, ENABLE_EVENTSOURCE=1): FEATURE_DEFINES_JAVASCRIPT += ENABLE_EVENTSOURCE=1
 contains(DEFINES, ENABLE_DATABASE=1): FEATURE_DEFINES_JAVASCRIPT += ENABLE_DATABASE=1
+contains(DEFINES, ENABLE_DATALIST=1): FEATURE_DEFINES_JAVASCRIPT += ENABLE_DATALIST=1
 contains(DEFINES, ENABLE_DOM_STORAGE=1): FEATURE_DEFINES_JAVASCRIPT += ENABLE_DOM_STORAGE=1
 contains(DEFINES, ENABLE_SHARED_SCRIPT=1): FEATURE_DEFINES_JAVASCRIPT += ENABLE_SHARED_SCRIPT=1
 contains(DEFINES, ENABLE_WORKERS=1): FEATURE_DEFINES_JAVASCRIPT += ENABLE_WORKERS=1
@@ -141,9 +161,14 @@ contains(DEFINES, ENABLE_JAVASCRIPT_DEBUGGER=1): FEATURE_DEFINES_JAVASCRIPT += E
 contains(DEFINES, ENABLE_OFFLINE_WEB_APPLICATIONS=1): FEATURE_DEFINES_JAVASCRIPT += ENABLE_OFFLINE_WEB_APPLICATIONS=1
 contains(DEFINES, ENABLE_WEB_SOCKETS=1): FEATURE_DEFINES_JAVASCRIPT += ENABLE_WEB_SOCKETS=1
 contains(DEFINES, ENABLE_TOUCH_EVENTS=1): FEATURE_DEFINES_JAVASCRIPT += ENABLE_TOUCH_EVENTS=1
+contains(DEFINES, ENABLE_TILED_BACKING_STORE=1): FEATURE_DEFINES_JAVASCRIPT += ENABLE_TILED_BACKING_STORE=1
+contains(DEFINES, ENABLE_NOTIFICATIONS=1): FEATURE_DEFINES_JAVASCRIPT += ENABLE_NOTIFICATIONS=1
+contains(DEFINES, ENABLE_PROGRESS_TAG=1): FEATURE_DEFINES_JAVASCRIPT += ENABLE_PROGRESS_TAG=1
 
 
 ## Derived source generators
+MATHML_NAMES = $$PWD/mathml/mathtags.in
+
 WML_NAMES = $$PWD/wml/WMLTagNames.in
 
 SVG_NAMES = $$PWD/svg/svgtags.in
@@ -187,11 +212,14 @@ contains(DEFINES, ENABLE_WCSS=1) {
 STYLESHEETS_EMBED = \
     $$PWD/css/html.css \
     $$PWD/css/quirks.css \
+    $$PWD/css/mathml.css \
     $$PWD/css/svg.css \
     $$PWD/css/view-source.css \
     $$PWD/css/wml.css \
     $$PWD/css/mediaControls.css \
-    $$PWD/css/mediaControlsQt.css
+    $$PWD/css/mediaControlsQt.css \
+    $$PWD/css/themeQtNoListboxes.css \
+    $$PWD/css/themeQtMaemo5.css
 
 IDL_BINDINGS += \
     css/Counter.idl \
@@ -210,10 +238,10 @@ IDL_BINDINGS += \
     css/CSSValueList.idl \
     css/CSSVariablesDeclaration.idl \
     css/CSSVariablesRule.idl \
-    css/Media.idl \
     css/MediaList.idl \
-    css/RGBColor.idl \
     css/Rect.idl \
+    css/RGBColor.idl \
+    css/StyleMedia.idl \
     css/StyleSheet.idl \
     css/StyleSheetList.idl \
     css/WebKitCSSKeyframeRule.idl \
@@ -229,6 +257,9 @@ IDL_BINDINGS += \
     dom/CDATASection.idl \
     dom/Comment.idl \
     dom/CompositionEvent.idl \
+    dom/CustomEvent.idl \
+    dom/DeviceMotionEvent.idl \
+    dom/DeviceOrientationEvent.idl \
     dom/DocumentFragment.idl \
     dom/Document.idl \
     dom/DocumentType.idl \
@@ -272,23 +303,34 @@ IDL_BINDINGS += \
     dom/WebKitTransitionEvent.idl \
     dom/WheelEvent.idl \
     html/Blob.idl \
-    html/canvas/WebGLArray.idl \
-    html/canvas/WebGLArrayBuffer.idl \
-    html/canvas/WebGLByteArray.idl \
-    html/canvas/WebGLFloatArray.idl \
+    html/canvas/ArrayBufferView.idl \
+    html/canvas/ArrayBuffer.idl \
+    html/canvas/Int8Array.idl \
+    html/canvas/Float32Array.idl \
     html/canvas/CanvasGradient.idl \
-    html/canvas/WebGLIntArray.idl \
+    html/canvas/Int32Array.idl \
     html/canvas/CanvasPattern.idl \
     html/canvas/CanvasRenderingContext.idl \
     html/canvas/CanvasRenderingContext2D.idl \
+    html/canvas/WebGLActiveInfo.idl \
+    html/canvas/WebGLBuffer.idl \
+    html/canvas/WebGLContextAttributes.idl \
+    html/canvas/WebGLFramebuffer.idl \
+    html/canvas/WebGLProgram.idl \
+    html/canvas/WebGLRenderbuffer.idl \
     html/canvas/WebGLRenderingContext.idl \
-    html/canvas/WebGLShortArray.idl \
-    html/canvas/WebGLUnsignedByteArray.idl \
-    html/canvas/WebGLUnsignedIntArray.idl \
-    html/canvas/WebGLUnsignedShortArray.idl \
+    html/canvas/WebGLShader.idl \
+    html/canvas/Int16Array.idl \
+    html/canvas/WebGLTexture.idl \
+    html/canvas/WebGLUniformLocation.idl \
+    html/canvas/Uint8Array.idl \
+    html/canvas/Uint32Array.idl \
+    html/canvas/Uint16Array.idl \
     html/DataGridColumn.idl \
     html/DataGridColumnList.idl \
+    html/DOMFormData.idl \
     html/File.idl \
+    html/FileError.idl \
     html/FileList.idl \
     html/HTMLAllCollection.idl \
     html/HTMLAudioElement.idl \
@@ -345,6 +387,7 @@ IDL_BINDINGS += \
     html/HTMLParagraphElement.idl \
     html/HTMLParamElement.idl \
     html/HTMLPreElement.idl \
+    html/HTMLProgressElement.idl \
     html/HTMLQuoteElement.idl \
     html/HTMLScriptElement.idl \
     html/HTMLSelectElement.idl \
@@ -370,7 +413,11 @@ IDL_BINDINGS += \
     inspector/InspectorBackend.idl \
     inspector/InspectorFrontendHost.idl \
     inspector/JavaScriptCallFrame.idl \
+    inspector/ScriptProfile.idl \
+    inspector/ScriptProfileNode.idl \
     loader/appcache/DOMApplicationCache.idl \
+    notifications/Notification.idl \
+    notifications/NotificationCenter.idl \
     page/BarInfo.idl \
     page/Console.idl \
     page/Coordinates.idl \
@@ -391,12 +438,17 @@ IDL_BINDINGS += \
     plugins/PluginArray.idl \
     plugins/MimeTypeArray.idl \
     storage/Database.idl \
+    storage/DatabaseCallback.idl \
     storage/Storage.idl \
     storage/StorageEvent.idl \
     storage/SQLError.idl \
     storage/SQLResultSet.idl \
     storage/SQLResultSetRowList.idl \
+    storage/SQLStatementCallback.idl \
+    storage/SQLStatementErrorCallback.idl \
     storage/SQLTransaction.idl \
+    storage/SQLTransactionCallback.idl \
+    storage/SQLTransactionErrorCallback.idl \
     svg/SVGZoomEvent.idl \
     svg/SVGAElement.idl \
     svg/SVGAltGlyphElement.idl \
@@ -551,6 +603,15 @@ IDL_BINDINGS += \
     xml/XPathEvaluator.idl \
     xml/XSLTProcessor.idl
 
+contains(DEFINES, ENABLE_MATHML=1) {
+    mathmlnames.output = $${WC_GENERATED_SOURCES_DIR}/MathMLNames.cpp
+    mathmlnames.input = MATHML_NAMES
+    mathmlnames.wkScript = $$PWD/dom/make_names.pl
+    mathmlnames.commands = perl -I$$PWD/bindings/scripts $$mathmlnames.wkScript --tags $$PWD/mathml/mathtags.in --attrs $$PWD/mathml/mathattrs.in --extraDefines \"$${DEFINES}\" --preprocessor \"$${QMAKE_MOC} -E\" --factory --wrapperFactory --outputDir $$WC_GENERATED_SOURCES_DIR
+    mathmlnames.wkExtraSources = $${WC_GENERATED_SOURCES_DIR}/MathMLElementFactory.cpp 
+    addExtraCompiler(mathmlnames)
+}
+
 contains(DEFINES, ENABLE_WML=1) {
     wmlnames.output = $${WC_GENERATED_SOURCES_DIR}/WMLNames.cpp
     wmlnames.input = WML_NAMES
@@ -668,7 +729,7 @@ addExtraCompiler(colordata)
 stylesheets.wkScript = $$PWD/css/make-css-file-arrays.pl
 stylesheets.output = $${WC_GENERATED_SOURCES_DIR}/UserAgentStyleSheetsData.cpp
 stylesheets.input = stylesheets.wkScript
-stylesheets.commands = perl $$stylesheets.wkScript --preprocessor \"$${QMAKE_MOC} -E\" $${WC_GENERATED_SOURCES_DIR}/UserAgentStyleSheets.h ${QMAKE_FILE_OUT} $$STYLESHEETS_EMBED
+stylesheets.commands = perl $$stylesheets.wkScript $${WC_GENERATED_SOURCES_DIR}/UserAgentStyleSheets.h ${QMAKE_FILE_OUT} $$STYLESHEETS_EMBED
 stylesheets.depends = $$STYLESHEETS_EMBED
 stylesheets.clean = ${QMAKE_FILE_OUT} ${QMAKE_VAR_WC_GENERATED_SOURCES_DIR}/UserAgentStyleSheets.h
 addExtraCompiler(stylesheets, $${WC_GENERATED_SOURCES_DIR}/UserAgentStyleSheets.h)

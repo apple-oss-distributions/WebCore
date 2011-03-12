@@ -24,18 +24,29 @@
 #include "config.h"
 #include "RenderEmbeddedObject.h"
 
+#include "Chrome.h"
+#include "ChromeClient.h"
+#include "CSSValueKeywords.h"
+#include "Font.h"
+#include "FontSelector.h"
 #include "Frame.h"
 #include "FrameLoaderClient.h"
+#include "GraphicsContext.h"
 #include "HTMLEmbedElement.h"
 #include "HTMLIFrameElement.h"
 #include "HTMLNames.h"
 #include "HTMLObjectElement.h"
 #include "HTMLParamElement.h"
+#include "LocalizedStrings.h"
 #include "MIMETypeRegistry.h"
+#include "MouseEvent.h"
 #include "Page.h"
+#include "Path.h"
 #include "PluginWidget.h"
+#include "RenderTheme.h"
 #include "RenderView.h"
 #include "RenderWidgetProtector.h"
+#include "Settings.h"
 #include "Text.h"
 
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
@@ -49,12 +60,29 @@
 namespace WebCore {
 
 using namespace HTMLNames;
+    
+static const float replacementTextRoundedRectHeight = 18;
+static const float replacementTextRoundedRectLeftRightTextMargin = 6;
+static const float replacementTextRoundedRectOpacity = 0.20f;
+static const float replacementTextPressedRoundedRectOpacity = 0.65f;
+static const float replacementTextRoundedRectRadius = 5;
+static const float replacementTextTextOpacity = 0.55f;
+static const float replacementTextPressedTextOpacity = 0.65f;
 
+    
 RenderEmbeddedObject::RenderEmbeddedObject(Element* element)
-    : RenderPartObject(element)
+    : RenderPart(element)
+    , m_hasFallbackContent(false)
+    , m_showsMissingPluginIndicator(false)
+    , m_missingPluginIndicatorIsPressed(false)
+    , m_mouseDownWasInMissingPluginIndicator(false)
     , m_updatingWidget(false)
 {
     view()->frameView()->setIsVisuallyNonEmpty();
+#if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
+    if (element->hasTagName(videoTag) || element->hasTagName(audioTag))
+        setHasIntrinsicSize();
+#endif
 }
 
 RenderEmbeddedObject::~RenderEmbeddedObject()
@@ -66,7 +94,7 @@ RenderEmbeddedObject::~RenderEmbeddedObject()
 #if USE(ACCELERATED_COMPOSITING)
 bool RenderEmbeddedObject::requiresLayer() const
 {
-    if (RenderPartObject::requiresLayer())
+    if (RenderPart::requiresLayer())
         return true;
     
     return allowsAcceleratedCompositing();
@@ -174,6 +202,9 @@ void RenderEmbeddedObject::updateWidget(bool onlyCreateNonNetscapePlugins)
         return;
 
     UpdateWidgetReentryHelper reentryHelper(this);
+
+    if (!m_replacementText.isNull() || !node()) // Check the node in case destroy() has been called.
+        return;
 
     String url;
     String serviceType;
@@ -300,7 +331,16 @@ void RenderEmbeddedObject::updateWidget(bool onlyCreateNonNetscapePlugins)
                 return;
         }
 
-        bool success = objectElement->dispatchBeforeLoadEvent(url) && frame->loader()->requestObject(this, url, objectElement->getAttribute(nameAttr), serviceType, paramNames, paramValues);
+        bool beforeLoadAllowedLoad = objectElement->dispatchBeforeLoadEvent(url);
+        
+        // beforeload events can modify the DOM, potentially causing
+        // RenderWidget::destroy() to be called.  Ensure we haven't been
+        // destroyed before continuing.
+        if (!node())
+            return;
+        
+        bool success = beforeLoadAllowedLoad && frame->loader()->requestObject(this, url, objectElement->getAttribute(nameAttr), serviceType, paramNames, paramValues);
+    
         if (!success && m_hasFallbackContent) {
             reentryHelper.setIsRenderEmbeddedObjectDestroyedBeforeExitingUpdateWidget(true);
             objectElement->renderFallbackContent();
@@ -351,6 +391,71 @@ void RenderEmbeddedObject::updateWidget(bool onlyCreateNonNetscapePlugins)
 #endif
 }
 
+void RenderEmbeddedObject::setShowsMissingPluginIndicator()
+{
+}
+
+void RenderEmbeddedObject::setShowsCrashedPluginIndicator()
+{
+}
+
+void RenderEmbeddedObject::setMissingPluginIndicatorIsPressed(bool pressed)
+{
+    if (m_missingPluginIndicatorIsPressed == pressed)
+        return;
+    
+    m_missingPluginIndicatorIsPressed = pressed;
+    repaint();
+}
+
+void RenderEmbeddedObject::paint(PaintInfo& paintInfo, int tx, int ty)
+{
+    if (!m_replacementText.isNull()) {
+        RenderReplaced::paint(paintInfo, tx, ty);
+        return;
+    }
+    
+    RenderPart::paint(paintInfo, tx, ty);
+}
+
+void RenderEmbeddedObject::paintReplaced(PaintInfo& paintInfo, int tx, int ty)
+{
+    UNUSED_PARAM(paintInfo);
+    UNUSED_PARAM(tx);
+    UNUSED_PARAM(ty);
+    return;
+}
+
+bool RenderEmbeddedObject::getReplacementTextGeometry(int tx, int ty, FloatRect& contentRect, Path& path, FloatRect& replacementTextRect, Font& font, TextRun& run, float& textWidth)
+{
+    contentRect = contentBoxRect();
+    contentRect.move(tx, ty);
+    
+    FontDescription fontDescription;
+    fontDescription.setWeight(FontWeightBold);
+    Settings* settings = document()->settings();
+    ASSERT(settings);
+    if (!settings)
+        return false;
+    fontDescription.setRenderingMode(settings->fontRenderingMode());
+    fontDescription.setComputedSize(fontDescription.specifiedSize());
+    font = Font(fontDescription, 0, 0);
+    font.update(0);
+    
+    run = TextRun(m_replacementText.characters(), m_replacementText.length());
+    run.disableRoundingHacks();
+    textWidth = font.floatWidth(run);
+    
+    replacementTextRect.setSize(FloatSize(textWidth + replacementTextRoundedRectLeftRightTextMargin * 2, replacementTextRoundedRectHeight));
+    float x = (contentRect.size().width() / 2 - replacementTextRect.size().width() / 2) + contentRect.location().x();
+    float y = (contentRect.size().height() / 2 - replacementTextRect.size().height() / 2) + contentRect.location().y();
+    replacementTextRect.setLocation(FloatPoint(x, y));
+    
+    path = Path::createRoundedRectangle(replacementTextRect, FloatSize(replacementTextRoundedRectRadius, replacementTextRoundedRectRadius));
+
+    return true;
+}
+
 void RenderEmbeddedObject::layout()
 {
     ASSERT(needsLayout());
@@ -367,6 +472,83 @@ void RenderEmbeddedObject::layout()
         frameView()->addWidgetToUpdate(this);
 
     setNeedsLayout(false);
+}
+
+void RenderEmbeddedObject::viewCleared()
+{
+    // This is required for <object> elements whose contents are rendered by WebCore (e.g. src="foo.html").
+    if (node() && widget() && widget()->isFrameView()) {
+        FrameView* view = static_cast<FrameView*>(widget());
+        int marginw = -1;
+        int marginh = -1;
+        if (node()->hasTagName(iframeTag)) {
+            HTMLIFrameElement* frame = static_cast<HTMLIFrameElement*>(node());
+            marginw = frame->getMarginWidth();
+            marginh = frame->getMarginHeight();
+        }
+        if (marginw != -1)
+            view->setMarginWidth(marginw);
+        if (marginh != -1)
+            view->setMarginHeight(marginh);
+    }
+}
+ 
+bool RenderEmbeddedObject::isInMissingPluginIndicator(MouseEvent* event)
+{
+    FloatRect contentRect;
+    Path path;
+    FloatRect replacementTextRect;
+    Font font;
+    TextRun run("");
+    float textWidth;
+    if (!getReplacementTextGeometry(0, 0, contentRect, path, replacementTextRect, font, run, textWidth))
+        return false;
+    
+    return path.contains(absoluteToLocal(event->absoluteLocation(), false, true));
+}
+
+void RenderEmbeddedObject::handleMissingPluginIndicatorEvent(Event* event)
+{
+    if (Page* page = document()->page()) {
+        if (!page->chrome()->client()->shouldMissingPluginMessageBeButton())
+            return;
+    }
+    
+    if (!event->isMouseEvent())
+        return;
+    
+    MouseEvent* mouseEvent = static_cast<MouseEvent*>(event);
+    HTMLPlugInElement* element = static_cast<HTMLPlugInElement*>(node());
+    if (event->type() == eventNames().mousedownEvent && static_cast<MouseEvent*>(event)->button() == LeftButton) {
+        m_mouseDownWasInMissingPluginIndicator = isInMissingPluginIndicator(mouseEvent);
+        if (m_mouseDownWasInMissingPluginIndicator) {
+            if (Frame* frame = document()->frame()) {
+                frame->eventHandler()->setCapturingMouseEventsNode(element);
+                element->setIsCapturingMouseEvents(true);
+            }
+            setMissingPluginIndicatorIsPressed(true);
+        }
+        event->setDefaultHandled();
+    }        
+    if (event->type() == eventNames().mouseupEvent && static_cast<MouseEvent*>(event)->button() == LeftButton) {
+        if (m_missingPluginIndicatorIsPressed) {
+            if (Frame* frame = document()->frame()) {
+                frame->eventHandler()->setCapturingMouseEventsNode(0);
+                element->setIsCapturingMouseEvents(false);
+            }
+            setMissingPluginIndicatorIsPressed(false);
+        }
+        if (m_mouseDownWasInMissingPluginIndicator && isInMissingPluginIndicator(mouseEvent)) {
+            if (Page* page = document()->page())
+                page->chrome()->client()->missingPluginButtonClicked(element);            
+        }
+        m_mouseDownWasInMissingPluginIndicator = false;
+        event->setDefaultHandled();
+    }
+    if (event->type() == eventNames().mousemoveEvent) {
+        setMissingPluginIndicatorIsPressed(m_mouseDownWasInMissingPluginIndicator && isInMissingPluginIndicator(mouseEvent));
+        event->setDefaultHandled();
+    }
 }
 
 }

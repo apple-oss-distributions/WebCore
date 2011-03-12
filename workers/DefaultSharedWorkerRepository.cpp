@@ -37,6 +37,7 @@
 #include "ActiveDOMObject.h"
 #include "Document.h"
 #include "GenericWorkerTask.h"
+#include "InspectorController.h"
 #include "MessageEvent.h"
 #include "MessagePort.h"
 #include "NotImplemented.h"
@@ -78,7 +79,7 @@ public:
 
     // WorkerReportingProxy
     virtual void postExceptionToWorkerObject(const String& errorMessage, int lineNumber, const String& sourceURL);
-    virtual void postConsoleMessageToWorkerObject(MessageDestination, MessageSource, MessageType, MessageLevel, const String& message, int lineNumber, const String& sourceURL);
+    virtual void postConsoleMessageToWorkerObject(MessageSource, MessageType, MessageLevel, const String& message, int lineNumber, const String& sourceURL);
     virtual void workerContextClosed();
     virtual void workerContextDestroyed();
 
@@ -164,16 +165,16 @@ void SharedWorkerProxy::postExceptionToWorkerObject(const String& errorMessage, 
         (*iter)->postTask(createCallbackTask(&postExceptionTask, errorMessage, lineNumber, sourceURL));
 }
 
-static void postConsoleMessageTask(ScriptExecutionContext* document, MessageDestination destination, MessageSource source, MessageType type, MessageLevel level, const String& message, unsigned lineNumber, const String& sourceURL)
+static void postConsoleMessageTask(ScriptExecutionContext* document, MessageSource source, MessageType type, MessageLevel level, const String& message, unsigned lineNumber, const String& sourceURL)
 {
-    document->addMessage(destination, source, type, level, message, lineNumber, sourceURL);
+    document->addMessage(source, type, level, message, lineNumber, sourceURL);
 }
 
-void SharedWorkerProxy::postConsoleMessageToWorkerObject(MessageDestination destination, MessageSource source, MessageType type, MessageLevel level, const String& message, int lineNumber, const String& sourceURL)
+void SharedWorkerProxy::postConsoleMessageToWorkerObject(MessageSource source, MessageType type, MessageLevel level, const String& message, int lineNumber, const String& sourceURL)
 {
     MutexLocker lock(m_workerDocumentsLock);
     for (HashSet<Document*>::iterator iter = m_workerDocuments.begin(); iter != m_workerDocuments.end(); ++iter)
-        (*iter)->postTask(createCallbackTask(&postConsoleMessageTask, destination, source, type, level, message, lineNumber, sourceURL));
+        (*iter)->postTask(createCallbackTask(&postConsoleMessageTask, source, type, level, message, lineNumber, sourceURL));
 }
 
 void SharedWorkerProxy::workerContextClosed()
@@ -248,7 +249,7 @@ private:
 };
 
 // Loads the script on behalf of a worker.
-class SharedWorkerScriptLoader : public RefCounted<SharedWorkerScriptLoader>, public ActiveDOMObject, private WorkerScriptLoaderClient {
+class SharedWorkerScriptLoader : public RefCounted<SharedWorkerScriptLoader>, private WorkerScriptLoaderClient {
 public:
     SharedWorkerScriptLoader(PassRefPtr<SharedWorker>, PassOwnPtr<MessagePortChannel>, PassRefPtr<SharedWorkerProxy>);
     void load(const KURL&);
@@ -264,8 +265,7 @@ private:
 };
 
 SharedWorkerScriptLoader::SharedWorkerScriptLoader(PassRefPtr<SharedWorker> worker, PassOwnPtr<MessagePortChannel> port, PassRefPtr<SharedWorkerProxy> proxy)
-    : ActiveDOMObject(worker->scriptExecutionContext(), this)
-    , m_worker(worker)
+    : m_worker(worker)
     , m_port(port)
     , m_proxy(proxy)
 {
@@ -274,25 +274,31 @@ SharedWorkerScriptLoader::SharedWorkerScriptLoader(PassRefPtr<SharedWorker> work
 void SharedWorkerScriptLoader::load(const KURL& url)
 {
     // Mark this object as active for the duration of the load.
-    ASSERT(!hasPendingActivity());
-    m_scriptLoader = new WorkerScriptLoader();
-    m_scriptLoader->loadAsynchronously(scriptExecutionContext(), url, DenyCrossOriginRequests, this);
+    m_scriptLoader = new WorkerScriptLoader(ResourceRequestBase::TargetIsSharedWorker);
+    m_scriptLoader->loadAsynchronously(m_worker->scriptExecutionContext(), url, DenyCrossOriginRequests, this);
 
-    // Stay alive until the load finishes.
-    setPendingActivity(this);
+    // Stay alive (and keep the SharedWorker and JS wrapper alive) until the load finishes.
+    this->ref();
     m_worker->setPendingActivity(m_worker.get());
 }
 
 void SharedWorkerScriptLoader::notifyFinished()
 {
+    // FIXME: This method is not guaranteed to be invoked if we are loading from WorkerContext (see comment for WorkerScriptLoaderClient::notifyFinished()).
+    // We need to address this before supporting nested workers.
+
     // Hand off the just-loaded code to the repository to start up the worker thread.
     if (m_scriptLoader->failed())
         m_worker->dispatchEvent(Event::create(eventNames().errorEvent, false, true));
-    else
-        DefaultSharedWorkerRepository::instance().workerScriptLoaded(*m_proxy, scriptExecutionContext()->userAgent(m_scriptLoader->url()), m_scriptLoader->script(), m_port.release());
-
+    else {
+#if ENABLE(INSPECTOR)
+        if (InspectorController* inspector = m_worker->scriptExecutionContext()->inspectorController())
+            inspector->scriptImported(m_scriptLoader->identifier(), m_scriptLoader->script());
+#endif
+        DefaultSharedWorkerRepository::instance().workerScriptLoaded(*m_proxy, m_worker->scriptExecutionContext()->userAgent(m_scriptLoader->url()), m_scriptLoader->script(), m_port.release());
+    }
     m_worker->unsetPendingActivity(m_worker.get());
-    unsetPendingActivity(this); // This frees this object - must be the last action in this function.
+    this->deref(); // This frees this object - must be the last action in this function.
 }
 
 DefaultSharedWorkerRepository& DefaultSharedWorkerRepository::instance()

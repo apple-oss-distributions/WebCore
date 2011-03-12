@@ -39,6 +39,10 @@ typedef struct _GdkEventButton GdkEventButton;
 typedef struct _GdkEventMotion GdkEventMotion;
 #endif
 
+#if PLATFORM(EFL)
+#include <Evas.h>
+#endif
+
 #if PLATFORM(QT)
 QT_BEGIN_NAMESPACE
 class QInputEvent;
@@ -59,6 +63,12 @@ class wxMouseEvent;
 
 #if PLATFORM(HAIKU)
 class BMessage;
+#endif
+
+#if PLATFORM(BREWMP)
+typedef unsigned short    uint16;
+typedef unsigned long int uint32;
+#define AEEEvent uint16
 #endif
 
 namespace WebCore {
@@ -120,6 +130,13 @@ namespace WebCore {
         PlatformMouseEvent(GdkEventMotion*);
 #endif
 
+#if PLATFORM(EFL)
+        void setClickCount(Evas_Button_Flags);
+        PlatformMouseEvent(const Evas_Event_Mouse_Down*, IntPoint);
+        PlatformMouseEvent(const Evas_Event_Mouse_Up*, IntPoint);
+        PlatformMouseEvent(const Evas_Event_Mouse_Move*, IntPoint);
+#endif
+
 #if PLATFORM(MAC)
 #if defined(__OBJC__)
         PlatformMouseEvent(WebEvent *, id windowView);
@@ -143,6 +160,10 @@ namespace WebCore {
 
 #if PLATFORM(HAIKU)
         PlatformMouseEvent(const BMessage*);
+#endif
+
+#if PLATFORM(BREWMP)
+        PlatformMouseEvent(AEEEvent, uint16 wParam, uint32 dwParam);
 #endif
 
     protected:

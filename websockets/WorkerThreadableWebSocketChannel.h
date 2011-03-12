@@ -64,6 +64,8 @@ public:
     virtual unsigned long bufferedAmount() const;
     virtual void close();
     virtual void disconnect(); // Will suppress didClose().
+    virtual void suspend();
+    virtual void resume();
 
     using RefCounted<WorkerThreadableWebSocketChannel>::ref;
     using RefCounted<WorkerThreadableWebSocketChannel>::deref;
@@ -88,10 +90,12 @@ private:
         void bufferedAmount();
         void close();
         void disconnect();
+        void suspend();
+        void resume();
 
         virtual void didConnect();
         virtual void didReceiveMessage(const String& message);
-        virtual void didClose();
+        virtual void didClose(unsigned long unhandledBufferedAmount);
 
     private:
         Peer(RefPtr<ThreadableWebSocketChannelClientWrapper>, WorkerLoaderProxy&, ScriptExecutionContext*, const String& taskMode, const KURL&, const String& protocol);
@@ -105,18 +109,25 @@ private:
     // Bridge for Peer.  Running on the worker thread.
     class Bridge : public RefCounted<Bridge> {
     public:
-        Bridge(PassRefPtr<ThreadableWebSocketChannelClientWrapper>, PassRefPtr<WorkerContext>, const String& taskMode, const KURL&, const String& protocol);
+        static PassRefPtr<Bridge> create(PassRefPtr<ThreadableWebSocketChannelClientWrapper> workerClientWrapper, PassRefPtr<WorkerContext> workerContext, const String& taskMode, const KURL& url, const String& protocol)
+        {
+            return adoptRef(new Bridge(workerClientWrapper, workerContext, taskMode, url, protocol));
+        }
         ~Bridge();
         void connect();
         bool send(const String& message);
         unsigned long bufferedAmount();
         void close();
         void disconnect();
+        void suspend();
+        void resume();
 
         using RefCounted<Bridge>::ref;
         using RefCounted<Bridge>::deref;
 
     private:
+        Bridge(PassRefPtr<ThreadableWebSocketChannelClientWrapper>, PassRefPtr<WorkerContext>, const String& taskMode, const KURL&, const String& protocol);
+
         static void setWebSocketChannel(ScriptExecutionContext*, Bridge* thisPtr, Peer*, RefPtr<ThreadableWebSocketChannelClientWrapper>);
 
         // Executed on the main thread to create a Peer for this bridge.
@@ -142,6 +153,8 @@ private:
     static void mainThreadBufferedAmount(ScriptExecutionContext*, Peer*);
     static void mainThreadClose(ScriptExecutionContext*, Peer*);
     static void mainThreadDestroy(ScriptExecutionContext*, Peer*);
+    static void mainThreadSuspend(ScriptExecutionContext*, Peer*);
+    static void mainThreadResume(ScriptExecutionContext*, Peer*);
 
     RefPtr<WorkerContext> m_workerContext;
     RefPtr<ThreadableWebSocketChannelClientWrapper> m_workerClientWrapper;

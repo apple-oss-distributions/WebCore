@@ -38,11 +38,14 @@
 #include "GraphicsLayer.h"
 #include "HTMLCanvasElement.h"
 #include "HTMLElement.h"
+#include "HTMLIFrameElement.h"
+#include "HTMLMediaElement.h"
 #include "HTMLNames.h"
 #include "InspectorTimelineAgent.h"
 #include "KeyframeList.h"
 #include "PluginWidget.h"
 #include "RenderBox.h"
+#include "RenderIFrame.h"
 #include "RenderImage.h"
 #include "RenderLayerCompositor.h"
 #include "RenderEmbeddedObject.h"
@@ -59,7 +62,7 @@ namespace WebCore {
 using namespace HTMLNames;
 
 static bool hasBorderOutlineOrShadow(const RenderStyle*);
-static bool hasBoxDecorationsOrBackground(const RenderStyle*);
+static bool hasBoxDecorationsOrBackground(const RenderObject*);
 static bool hasBoxDecorationsOrBackgroundImage(const RenderStyle*);
 
 static inline bool is3DCanvas(RenderObject* renderer)
@@ -151,10 +154,41 @@ static bool hasNonZeroTransformOrigin(const RenderObject* renderer)
         || (style->transformOriginY().type() == Fixed && style->transformOriginY().value());
 }
 
+static bool layerOrAncestorIsTransformed(RenderLayer* layer)
+{
+    for (RenderLayer* curr = layer; curr; curr = curr->parent()) {
+        if (curr->hasTransform())
+            return true;
+    }
+    
+    return false;
+}
+
 void RenderLayerBacking::updateCompositedBounds()
 {
     IntRect layerBounds = compositor()->calculateCompositedBounds(m_owningLayer, m_owningLayer);
 
+    // Clip to the size of the document or enclosing overflow-scroll layer.
+    // If this or an ancestor is transformed, we can't currently compute the correct rect to intersect with.
+    // We'd need RenderObject::convertContainerToLocalQuad(), which doesn't yet exist.
+    if (compositor()->compositingConsultsOverlap() && !layerOrAncestorIsTransformed(m_owningLayer)) {
+        RenderView* view = m_owningLayer->renderer()->view();
+        RenderLayer* rootLayer = view->layer();
+
+        // Start by clipping to the view's bounds.
+        IntRect clippingBounds = view->layoutOverflowRect();
+
+        if (m_owningLayer != rootLayer)
+            clippingBounds.intersect(m_owningLayer->backgroundClipRect(rootLayer, true));
+
+        int deltaX = 0;
+        int deltaY = 0;
+        m_owningLayer->convertToLayerCoords(rootLayer, deltaX, deltaY);
+        clippingBounds.move(-deltaX, -deltaY);
+
+        layerBounds.intersect(clippingBounds);
+    }
+    
     // If the element has a transform-origin that has fixed lengths, and the renderer has zero size,
     // then we need to ensure that the compositing layer has non-zero size so that we can apply
     // the transform-origin via the GraphicsLayer anchorPoint (which is expressed as a fractional value).
@@ -166,6 +200,14 @@ void RenderLayerBacking::updateCompositedBounds()
         m_artificiallyInflatedBounds = false;
 
     setCompositedBounds(layerBounds);
+}
+
+void RenderLayerBacking::updateAfterWidgetResize()
+{
+    if (renderer()->isRenderIFrame()) {
+        if (RenderLayerCompositor* innerCompositor = RenderLayerCompositor::iframeContentsCompositor(toRenderIFrame(renderer())))
+            innerCompositor->updateContentLayerOffset(contentsBox().location());
+    }
 }
 
 void RenderLayerBacking::updateAfterLayout(UpdateDepth updateDepth, bool isUpdateRoot)
@@ -219,15 +261,23 @@ bool RenderLayerBacking::updateGraphicsLayerConfiguration()
         if (pluginWidget && !m_graphicsLayer->contentsLayerForMedia())
             pluginWidget->attachPluginLayer();
     }
-
-#if ENABLE(3D_CANVAS)    
-    if (is3DCanvas(renderer())) {
-        HTMLCanvasElement* canvas = static_cast<HTMLCanvasElement*>(renderer()->node());
-        WebGLRenderingContext* context = static_cast<WebGLRenderingContext*>(canvas->renderingContext());
-        if (context->graphicsContext3D()->platformGraphicsContext3D())
-            m_graphicsLayer->setContentsToGraphicsContext3D(context->graphicsContext3D());
+#if ENABLE(VIDEO)
+    else if (renderer()->isVideo()) {
+        HTMLMediaElement* mediaElement = static_cast<HTMLMediaElement*>(renderer()->node());
+        m_graphicsLayer->setContentsToMedia(mediaElement->platformLayer());
     }
 #endif
+#if ENABLE(3D_CANVAS)    
+    else if (is3DCanvas(renderer())) {
+        HTMLCanvasElement* canvas = static_cast<HTMLCanvasElement*>(renderer()->node());
+        WebGLRenderingContext* context = static_cast<WebGLRenderingContext*>(canvas->renderingContext());
+        if (context->graphicsContext3D()->platformLayer())
+            m_graphicsLayer->setContentsToWebGL(context->graphicsContext3D()->platformLayer());
+    }
+#endif
+
+    if (renderer()->isRenderIFrame())
+        layerConfigChanged = RenderLayerCompositor::parentIFrameContentLayers(toRenderIFrame(renderer()));
 
     return layerConfigChanged;
 }
@@ -292,7 +342,12 @@ void RenderLayerBacking::updateGraphicsLayerGeometry()
     }
 
     m_graphicsLayer->setPosition(FloatPoint() + (relativeCompositingBounds.location() - graphicsLayerParentLocation));
+    
+    IntSize oldOffsetFromRenderer = m_graphicsLayer->offsetFromRenderer();
     m_graphicsLayer->setOffsetFromRenderer(localCompositingBounds.location() - IntPoint());
+    // If the compositing layer offset changes, we need to repaint.
+    if (oldOffsetFromRenderer != m_graphicsLayer->offsetFromRenderer())
+        m_graphicsLayer->setNeedsDisplay();
     
     FloatSize oldSize = m_graphicsLayer->size();
     FloatSize newSize = relativeCompositingBounds.size();
@@ -381,7 +436,8 @@ void RenderLayerBacking::updateGraphicsLayerGeometry()
     }
 
     m_graphicsLayer->setContentsRect(contentsBox());
-    m_graphicsLayer->setDrawsContent(containsPaintedContent());
+    updateDrawsContent();
+    updateAfterWidgetResize();
 }
 
 void RenderLayerBacking::updateInternalHierarchy()
@@ -398,6 +454,11 @@ void RenderLayerBacking::updateInternalHierarchy()
         m_clippingLayer->removeFromParent();
         m_graphicsLayer->addChild(m_clippingLayer.get());
     }
+}
+
+void RenderLayerBacking::updateDrawsContent()
+{
+    m_graphicsLayer->setDrawsContent(containsPaintedContent());
 }
 
 // Return true if the layers changed.
@@ -422,7 +483,7 @@ bool RenderLayerBacking::updateClippingLayers(bool needsAncestorClip, bool needs
     
     if (needsDescendantClip) {
         if (!m_clippingLayer) {
-            m_clippingLayer = GraphicsLayer::create(0);
+            m_clippingLayer = GraphicsLayer::create(this);
 #ifndef NDEBUG
             m_clippingLayer->setName("Child clipping Layer");
 #endif
@@ -531,9 +592,9 @@ static bool hasBorderOutlineOrShadow(const RenderStyle* style)
     return style->hasBorder() || style->hasBorderRadius() || style->hasOutline() || style->hasAppearance() || style->boxShadow();
 }
 
-static bool hasBoxDecorationsOrBackground(const RenderStyle* style)
+static bool hasBoxDecorationsOrBackground(const RenderObject* renderer)
 {
-    return hasBorderOutlineOrShadow(style) || style->hasBackground();
+    return hasBorderOutlineOrShadow(renderer->style()) || renderer->hasBackground();
 }
 
 static bool hasBoxDecorationsOrBackgroundImage(const RenderStyle* style)
@@ -549,36 +610,32 @@ bool RenderLayerBacking::rendererHasBackground() const
         if (!htmlObject)
             return false;
         
-        RenderStyle* style = htmlObject->style();
-        if (style->hasBackground())
+        if (htmlObject->hasBackground())
             return true;
         
         RenderObject* bodyObject = htmlObject->firstChild();
         if (!bodyObject)
             return false;
         
-        style = bodyObject->style();
-        return style->hasBackground();
+        return bodyObject->hasBackground();
     }
     
-    return renderer()->style()->hasBackground();
+    return renderer()->hasBackground();
 }
 
-const Color& RenderLayerBacking::rendererBackgroundColor() const
+const Color RenderLayerBacking::rendererBackgroundColor() const
 {
     // FIXME: share more code here
     if (renderer()->node() && renderer()->node()->isDocumentNode()) {
         RenderObject* htmlObject = renderer()->firstChild();
-        RenderStyle* style = htmlObject->style();
-        if (style->hasBackground())
-            return style->backgroundColor();
+        if (htmlObject->hasBackground())
+            return htmlObject->style()->visitedDependentColor(CSSPropertyBackgroundColor);
 
         RenderObject* bodyObject = htmlObject->firstChild();
-        style = bodyObject->style();
-        return style->backgroundColor();
+        return bodyObject->style()->visitedDependentColor(CSSPropertyBackgroundColor);
     }
 
-    return renderer()->style()->backgroundColor();
+    return renderer()->style()->visitedDependentColor(CSSPropertyBackgroundColor);
 }
 
 // A "simple container layer" is a RenderLayer which has no visible content to render.
@@ -596,7 +653,7 @@ bool RenderLayerBacking::isSimpleContainerCompositingLayer() const
     // Reject anything that has a border, a border-radius or outline,
     // or any background (color or image).
     // FIXME: we could optimize layers for simple backgrounds.
-    if (hasBoxDecorationsOrBackground(style))
+    if (hasBoxDecorationsOrBackground(renderObject))
         return false;
 
     // If we have got this far and the renderer has no children, then we're ok.
@@ -706,7 +763,7 @@ bool RenderLayerBacking::containsPaintedContent() const
     // FIXME: we could optimize cases where the image, video or canvas is known to fill the border box entirely,
     // and set background color on the layer in that case, instead of allocating backing store and painting.
     if (renderer()->isVideo() || is3DCanvas(renderer()))
-        return hasBoxDecorationsOrBackground(renderer()->style());
+        return hasBoxDecorationsOrBackground(renderer());
 
     return true;
 }
@@ -716,7 +773,7 @@ bool RenderLayerBacking::containsPaintedContent() const
 bool RenderLayerBacking::isDirectlyCompositedImage() const
 {
     RenderObject* renderObject = renderer();
-    return renderObject->isImage() && !hasBoxDecorationsOrBackground(renderObject->style());
+    return renderObject->isImage() && !hasBoxDecorationsOrBackground(renderObject) && !renderObject->hasClip();
 }
 
 void RenderLayerBacking::rendererContentChanged()
@@ -728,7 +785,7 @@ void RenderLayerBacking::rendererContentChanged()
 
 #if ENABLE(3D_CANVAS)    
     if (is3DCanvas(renderer())) {
-        m_graphicsLayer->setGraphicsContext3DNeedsDisplay();
+        m_graphicsLayer->setContentsNeedsDisplay();
         return;
     }
 #endif
@@ -837,7 +894,10 @@ FloatPoint RenderLayerBacking::contentsToGraphicsLayerCoordinates(const Graphics
 
 bool RenderLayerBacking::paintingGoesToWindow() const
 {
-    return m_owningLayer->isRootLayer();
+    if (m_owningLayer->isRootLayer())
+        return compositor()->rootLayerAttachment() == RenderLayerCompositor::RootLayerAttachedViaChromeClient;
+    
+    return false;
 }
 
 void RenderLayerBacking::setContentsNeedDisplay()

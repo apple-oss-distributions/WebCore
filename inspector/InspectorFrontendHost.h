@@ -42,100 +42,52 @@ namespace WebCore {
 
 class ContextMenuItem;
 class Event;
+class FrontendMenuProvider;
 class InspectorClient;
+class InspectorFrontendClient;
 class Node;
 
 class InspectorFrontendHost : public RefCounted<InspectorFrontendHost>
 {
 public:
-    static PassRefPtr<InspectorFrontendHost> create(InspectorController* inspectorController, InspectorClient* client)
+    static PassRefPtr<InspectorFrontendHost> create(InspectorFrontendClient* client, Page* frontendPage)
     {
-        return adoptRef(new InspectorFrontendHost(inspectorController, client));
+        return adoptRef(new InspectorFrontendHost(client, frontendPage));
     }
 
     ~InspectorFrontendHost();
-
-    InspectorController* inspectorController() { return m_inspectorController; }
-
-    void disconnectController() { m_inspectorController = 0; }
+    void disconnectClient();
 
     void loaded();
-    void attach();
-    void detach();
+    void requestAttachWindow();
+    void requestDetachWindow();
     void closeWindow();
-    void windowUnloading();
+    void bringToFront();
+    void inspectedURLChanged(const String&);
 
     void setAttachedWindowHeight(unsigned height);
     void moveWindowBy(float x, float y) const;
 
     String localizedStringsURL();
     String hiddenPanels();
-    const String& platform() const;
-    const String& port() const;
 
     void copyText(const String& text);
 
 #if ENABLE(CONTEXT_MENUS)
     // Called from [Custom] implementations.
     void showContextMenu(Event*, const Vector<ContextMenuItem*>& items);
+#endif
 
 private:
-    class MenuProvider : public ContextMenuProvider {
-    public:
-        static PassRefPtr<MenuProvider> create(InspectorFrontendHost* frontendHost, const Vector<ContextMenuItem*>& items)
-        {
-            return adoptRef(new MenuProvider(frontendHost, items));
-        }
-
-        virtual ~MenuProvider()
-        {
-            contextMenuCleared();
-        }
-
-        void disconnect()
-        {
-            m_frontendHost = 0;
-        }
-
-        virtual void populateContextMenu(ContextMenu* menu)
-        {
-            for (size_t i = 0; i < m_items.size(); ++i)
-                menu->appendItem(*m_items[i]);
-        }
-
-        virtual void contextMenuItemSelected(ContextMenuItem* item)
-        {
-            if (m_frontendHost)
-                m_frontendHost->contextMenuItemSelected(item);
-        }
-
-        virtual void contextMenuCleared()
-        {
-            if (m_frontendHost)
-                m_frontendHost->contextMenuCleared();
-            deleteAllValues(m_items);
-            m_items.clear();
-        }
-
-    private:
-        MenuProvider(InspectorFrontendHost* frontendHost,  const Vector<ContextMenuItem*>& items)
-            : m_frontendHost(frontendHost)
-            , m_items(items) { }
-        InspectorFrontendHost* m_frontendHost;
-        Vector<ContextMenuItem*> m_items;
-    };
-#endif // CONTEXT_MENUS
-
-    InspectorFrontendHost(InspectorController* inspectorController, InspectorClient* client);
-
-    void contextMenuItemSelected(ContextMenuItem*);
-    void contextMenuCleared();
-
-    InspectorController* m_inspectorController;
-    InspectorClient* m_client;
-
 #if ENABLE(CONTEXT_MENUS)
-    RefPtr<MenuProvider> m_menuProvider;
+    friend class FrontendMenuProvider;
+#endif
+    InspectorFrontendHost(InspectorFrontendClient* client, Page* frontendPage);
+
+    InspectorFrontendClient* m_client;
+    Page* m_frontendPage;
+#if ENABLE(CONTEXT_MENUS)
+    FrontendMenuProvider* m_menuProvider;
 #endif
 };
 

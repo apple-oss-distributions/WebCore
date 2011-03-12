@@ -22,6 +22,7 @@
 #include "CSSPrimitiveValue.h"
 
 #include "CSSHelper.h"
+#include "CSSParser.h"
 #include "CSSPropertyNames.h"
 #include "CSSStyleSheet.h"
 #include "CSSValueKeywords.h"
@@ -140,78 +141,6 @@ static const AtomicString& valueOrPropertyName(int valueOrPropertyID)
     }
 
     return nullAtom;
-}
-
-// "ident" from the CSS tokenizer, minus backslash-escape sequences
-static bool isCSSTokenizerIdentifier(const String& string)
-{
-    const UChar* p = string.characters();
-    const UChar* end = p + string.length();
-
-    // -?
-    if (p != end && p[0] == '-')
-        ++p;
-
-    // {nmstart}
-    if (p == end || !(p[0] == '_' || p[0] >= 128 || isASCIIAlpha(p[0])))
-        return false;
-    ++p;
-
-    // {nmchar}*
-    for (; p != end; ++p) {
-        if (!(p[0] == '_' || p[0] == '-' || p[0] >= 128 || isASCIIAlphanumeric(p[0])))
-            return false;
-    }
-
-    return true;
-}
-
-// "url" from the CSS tokenizer, minus backslash-escape sequences
-static bool isCSSTokenizerURL(const String& string)
-{
-    const UChar* p = string.characters();
-    const UChar* end = p + string.length();
-
-    for (; p != end; ++p) {
-        UChar c = p[0];
-        switch (c) {
-            case '!':
-            case '#':
-            case '$':
-            case '%':
-            case '&':
-                break;
-            default:
-                if (c < '*')
-                    return false;
-                if (c <= '~')
-                    break;
-                if (c < 128)
-                    return false;
-        }
-    }
-
-    return true;
-}
-
-// We use single quotes for now because markup.cpp uses double quotes.
-static String quoteString(const String& string)
-{
-    // FIXME: Also need to escape characters like '\n'.
-    String s = string;
-    s.replace('\\', "\\\\");
-    s.replace('\'', "\\'");
-    return "'" + s + "'";
-}
-
-static String quoteStringIfNeeded(const String& string)
-{
-    return isCSSTokenizerIdentifier(string) ? string : quoteString(string);
-}
-
-static String quoteURLIfNeeded(const String& string)
-{
-    return isCSSTokenizerURL(string) ? string : quoteString(string);
 }
 
 CSSPrimitiveValue::CSSPrimitiveValue()
@@ -336,6 +265,7 @@ void CSSPrimitiveValue::cleanup()
     }
 
     m_type = 0;
+    m_cachedCSSText = String();
 }
 
 int CSSPrimitiveValue::computeLengthInt(RenderStyle* style, RenderStyle* rootStyle)
@@ -703,6 +633,9 @@ String CSSPrimitiveValue::cssText() const
 {
     // FIXME: return the original value instead of a generated one (e.g. color
     // name if it was specified) - check what spec says about this
+    if (!m_cachedCSSText.isNull())
+        return m_cachedCSSText;
+
     String text;
     switch (m_type) {
         case CSS_UNKNOWN:
@@ -770,10 +703,10 @@ String CSSPrimitiveValue::cssText() const
             // FIXME
             break;
         case CSS_STRING:
-            text = quoteStringIfNeeded(m_value.string);
+            text = quoteCSSStringIfNeeded(m_value.string);
             break;
         case CSS_URI:
-            text = "url(" + quoteURLIfNeeded(m_value.string) + ")";
+            text = "url(" + quoteCSSURLIfNeeded(m_value.string) + ")";
             break;
         case CSS_IDENT:
             text = valueOrPropertyName(m_value.ident);
@@ -788,7 +721,8 @@ String CSSPrimitiveValue::cssText() const
             append(result, m_value.string);
             result.uncheckedAppend(')');
 
-            return String::adopt(result);
+            text = String::adopt(result);
+            break;
         }
         case CSS_COUNTER:
             text = "counter(";
@@ -816,7 +750,8 @@ String CSSPrimitiveValue::cssText() const
             append(result, rectVal->left()->cssText());
             result.append(')');
 
-            return String::adopt(result);
+            text = String::adopt(result);
+            break;
         }
         case CSS_RGBCOLOR:
         case CSS_PARSER_HEXCOLOR: {
@@ -845,11 +780,12 @@ String CSSPrimitiveValue::cssText() const
             appendNumber(result, static_cast<unsigned char>(color.blue()));
             if (color.hasAlpha()) {
                 append(result, commaSpace);
-                append(result, String::number(static_cast<float>(color.alpha()) / 256.0f));
+                append(result, String::number(color.alpha() / 256.0f));
             }
 
             result.append(')');
-            return String::adopt(result);
+            text = String::adopt(result);
+            break;
         }
         case CSS_PAIR:
             text = m_value.pair->first()->cssText();
@@ -898,9 +834,10 @@ String CSSPrimitiveValue::cssText() const
             break;
         }
         case CSS_PARSER_IDENTIFIER:
-            text = quoteStringIfNeeded(m_value.string);
+            text = quoteCSSStringIfNeeded(m_value.string);
             break;
     }
+    m_cachedCSSText = text;
     return text;
 }
 

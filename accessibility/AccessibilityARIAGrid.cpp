@@ -118,11 +118,12 @@ void AccessibilityARIAGrid::addChildren()
         column->setColumnIndex((int)i);
         column->setParentTable(this);
         m_columns.append(column);
-        m_children.append(column);
+        if (!column->accessibilityIsIgnored())
+            m_children.append(column);
     }
     
     AccessibilityObject* headerContainerObject = headerContainer();
-    if (headerContainerObject)
+    if (headerContainerObject && !headerContainerObject->accessibilityIsIgnored())
         m_children.append(headerContainerObject);
 }
     
@@ -131,8 +132,7 @@ AccessibilityTableCell* AccessibilityARIAGrid::cellForColumnAndRow(unsigned colu
     if (!m_renderer)
         return 0;
     
-    if (!hasChildren())
-        addChildren();
+    updateChildrenIfNecessary();
     
     if (column >= columnCount() || row >= rowCount())
         return 0;

@@ -28,7 +28,6 @@
 #include "config.h"
 #include "PluginPackage.h"
 
-#include "CString.h"
 #include "MIMETypeRegistry.h"
 #include "PluginDatabase.h"
 #include "PluginDebug.h"
@@ -36,6 +35,7 @@
 #include "npruntime_impl.h"
 #include <string.h>
 #include <wtf/OwnArrayPtr.h>
+#include <wtf/text/CString.h>
 
 namespace WebCore {
 
@@ -253,7 +253,7 @@ void PluginPackage::initializeBrowserFuncs()
 {
     memset(&m_browserFuncs, 0, sizeof(m_browserFuncs));
     m_browserFuncs.size = sizeof(m_browserFuncs);
-    m_browserFuncs.version = NP_VERSION_MINOR;
+    m_browserFuncs.version = NPVersion();
 
     m_browserFuncs.geturl = NPN_GetURL;
     m_browserFuncs.posturl = NPN_PostURL;

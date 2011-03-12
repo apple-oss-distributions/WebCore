@@ -20,6 +20,7 @@
 #import "config.h"
 #import "PopupMenu.h"
 
+#import "AXObjectCache.h"
 #import "Chrome.h"
 #import "ChromeClient.h"
 #import "EventHandler.h"
@@ -100,13 +101,18 @@ void PopupMenu::populate()
             [menuItem setEnabled:client()->itemIsEnabled(i)];
             [menuItem setToolTip:client()->itemToolTip(i)];
             [string release];
+            
+            // Allow the accessible text of the item to be overriden if necessary.
+            if (AXObjectCache::accessibilityEnabled()) {
+                NSString *accessibilityOverride = client()->itemAccessibilityText(i);
+                if ([accessibilityOverride length])
+                    [menuItem accessibilitySetOverrideValue:accessibilityOverride forAttribute:NSAccessibilityDescriptionAttribute];
+            }
         }
     }
 
     [[m_popup.get() menu] setMenuChangedMessagesEnabled:messagesEnabled];
 }
-
-#if !ENABLE(EXPERIMENTAL_SINGLE_VIEW_MODE)
 
 void PopupMenu::show(const IntRect& r, FrameView* v, int index)
 {
@@ -187,14 +193,6 @@ void PopupMenu::show(const IntRect& r, FrameView* v, int index)
 
     [event release];
 }
-
-#else
-
-void PopupMenu::show(const IntRect&, FrameView*, int)
-{
-}
-
-#endif
 
 void PopupMenu::hide()
 {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,7 +32,6 @@
 #include "FrameLoaderTypes.h"
 #include "ScrollTypes.h"
 #include <wtf/Forward.h>
-#include <wtf/Platform.h>
 #include <wtf/Vector.h>
 
 typedef class _jobject* jobject;
@@ -55,6 +54,7 @@ namespace WebCore {
     class FrameLoader;
     class HistoryItem;
     class HTMLAppletElement;
+    class HTMLFormElement;
     class HTMLFrameOwnerElement;
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
     class HTMLMediaElement;
@@ -63,6 +63,7 @@ namespace WebCore {
     class IntSize;
     class KURL;
     class NavigationAction;
+    class ProtectionSpace;
     class PluginView;
     class PolicyChecker;
     class ProtectionSpace;
@@ -110,8 +111,10 @@ namespace WebCore {
         virtual bool shouldUseCredentialStorage(DocumentLoader*, unsigned long identifier) = 0;
         virtual void dispatchDidReceiveAuthenticationChallenge(DocumentLoader*, unsigned long identifier, const AuthenticationChallenge&) = 0;
         virtual void dispatchDidCancelAuthenticationChallenge(DocumentLoader*, unsigned long identifier, const AuthenticationChallenge&) = 0;        
-
+#if USE(PROTECTION_SPACE_AUTH_CALLBACK)
         virtual bool canAuthenticateAgainstProtectionSpace(DocumentLoader*, unsigned long identifier, const ProtectionSpace&) = 0;
+#endif
+
         virtual CFDictionaryRef connectionProperties(DocumentLoader*, unsigned long identifier) = 0;
 
         virtual void dispatchDidReceiveResponse(DocumentLoader*, unsigned long identifier, const ResourceResponse&) = 0;
@@ -119,12 +122,12 @@ namespace WebCore {
         virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long identifier) = 0;
         virtual void dispatchDidFailLoading(DocumentLoader*, unsigned long identifier, const ResourceError&) = 0;
         virtual bool dispatchDidLoadResourceFromMemoryCache(DocumentLoader*, const ResourceRequest&, const ResourceResponse&, int length) = 0;
-        virtual void dispatchDidLoadResourceByXMLHttpRequest(unsigned long identifier, const ScriptString&) = 0;
 
         virtual void dispatchDidHandleOnloadEvents() = 0;
         virtual void dispatchDidReceiveServerRedirectForProvisionalLoad() = 0;
         virtual void dispatchDidCancelClientRedirect() = 0;
         virtual void dispatchWillPerformClientRedirect(const KURL&, double interval, double fireDate) = 0;
+        virtual void dispatchDidNavigateWithinPage() { }
         virtual void dispatchDidChangeLocationWithinPage() = 0;
         virtual void dispatchDidPushStateWithinPage() = 0;
         virtual void dispatchDidReplaceStateWithinPage() = 0;
@@ -133,6 +136,7 @@ namespace WebCore {
         virtual void dispatchDidReceiveIcon() = 0;
         virtual void dispatchDidStartProvisionalLoad() = 0;
         virtual void dispatchDidReceiveTitle(const String& title) = 0;
+        virtual void dispatchDidChangeIcons() = 0;
         virtual void dispatchDidCommitLoad() = 0;
         virtual void dispatchDidFailProvisionalLoad(const ResourceError&) = 0;
         virtual void dispatchDidFailLoad(const ResourceError&) = 0;
@@ -151,6 +155,7 @@ namespace WebCore {
 
         virtual void dispatchUnableToImplementPolicy(const ResourceError&) = 0;
 
+        virtual void dispatchWillSendSubmitEvent(HTMLFormElement*) = 0;
         virtual void dispatchWillSubmitForm(FramePolicyFunction, PassRefPtr<FormState>) = 0;
 
         virtual void dispatchDidLoadMainResource(DocumentLoader*) = 0;
@@ -228,6 +233,7 @@ namespace WebCore {
 
         virtual PassRefPtr<Frame> createFrame(const KURL& url, const String& name, HTMLFrameOwnerElement* ownerElement,
                                    const String& referrer, bool allowsScrolling, int marginWidth, int marginHeight) = 0;
+        virtual void didTransferChildFrameToNewDocument() = 0;
         virtual PassRefPtr<Widget> createPlugin(const IntSize&, HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool loadManually) = 0;
         virtual void redirectDataToPlugin(Widget* pluginWidget) = 0;
 
@@ -255,7 +261,7 @@ namespace WebCore {
 
         virtual void registerForIconNotification(bool listen = true) = 0;
         
-#if ENABLE(MAC_JAVA_BRIDGE)
+#if ENABLE(JAVA_BRIDGE)
         virtual jobject javaApplet(NSView*) { return 0; }
 #endif
         virtual NSCachedURLResponse* willCacheResponse(DocumentLoader*, unsigned long identifier, NSCachedURLResponse*) const = 0;
@@ -271,6 +277,15 @@ namespace WebCore {
         virtual bool allowJavaScript(bool enabledPerSettings) { return enabledPerSettings; }
         virtual bool allowPlugins(bool enabledPerSettings) { return enabledPerSettings; }
         virtual bool allowImages(bool enabledPerSettings) { return enabledPerSettings; }
+
+        // This callback notifies the client that the frame was about to run
+        // JavaScript but did not because allowJavaScript returned false. We
+        // have a separate callback here because there are a number of places
+        // that need to know if JavaScript is enabled but are not necessarily
+        // preparing to execute script.
+        virtual void didNotAllowScript() { }
+        // This callback is similar, but for plugins.
+        virtual void didNotAllowPlugins() { }
     };
 
 } // namespace WebCore

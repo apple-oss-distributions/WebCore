@@ -225,6 +225,28 @@ circle
 square
 decimal
 decimal-leading-zero
+arabic-indic
+binary
+bengali
+cambodian
+khmer
+devanagari
+gujarati
+gurmukhi
+kannada
+lower-hexadecimal
+lao
+malayalam
+mongolian
+myanmar
+octal
+oriya
+persian
+urdu
+telugu
+tibetan
+thai
+upper-hexadecimal
 lower-roman
 upper-roman
 lower-greek
@@ -358,10 +380,15 @@ collapse
 #
 # Unordered rest
 #
+a3
+a4
+a5
 above
 absolute
 always
 avoid
+b4
+b5
 below
 bidi-override
 blink
@@ -376,6 +403,9 @@ hide
 higher
 invert
 landscape
+ledger
+legal
+letter
 level
 line-through
 local
@@ -560,6 +590,8 @@ menulist-button
 menulist-text
 menulist-textfield
 outer-spin-button
+progress-bar
+progress-bar-value
 slider-horizontal
 slider-vertical
 sliderthumb-horizontal
@@ -691,3 +723,15 @@ geometricPrecision
 # -webkit-color-correction
 #default
 sRGB
+
+# (-webkit-view-mode:) media feature:
+floating
+fullscreen
+maximized
+minimized
+windowed
+
+# -webkit-hyphens
+# none
+manual
+# auto

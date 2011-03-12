@@ -31,10 +31,6 @@
 
 #import "Animation.h"
 #import "BlockExceptions.h"
-#if ENABLE(3D_CANVAS)
-#import "Canvas3DLayer.h"
-#endif
-#import "CString.h"
 #import "FloatConversion.h"
 #import "FloatRect.h"
 #import "Image.h"
@@ -55,6 +51,7 @@
 
 #import "WAKAppKitStubs.h"
 #import "WebCoreThread.h"
+#import "SystemMemory.h"
 #import <QuartzCore/QuartzCorePrivate.h>
 
 using namespace std;
@@ -395,10 +392,7 @@ GraphicsLayerCA::GraphicsLayerCA(GraphicsLayerClient* client)
     , m_contentsLayerPurpose(NoContentsLayer)
     , m_contentsLayerHasBackgroundColor(false)
     , m_uncommittedChanges(NoChange)
-#if ENABLE(3D_CANVAS)
-    , m_platformGraphicsContext3D(NullPlatformGraphicsContext3D)
-    , m_platformTexture(NullPlatform3DObject)
-#endif
+    , m_contentsScale(1.0f)
 {
     BEGIN_BLOCK_OBJC_EXCEPTIONS
     m_layer.adoptNS([[WebLayer alloc] init]);
@@ -723,6 +717,11 @@ void GraphicsLayerCA::setNeedsDisplayInRect(const FloatRect& rect)
     noteLayerPropertyChanged(DirtyRectsChanged);
 }
 
+void GraphicsLayerCA::setContentsNeedsDisplay()
+{
+    noteLayerPropertyChanged(ContentsNeedsDisplay);
+}
+
 void GraphicsLayerCA::setContentsRect(const IntRect& rect)
 {
     if (rect == m_contentsRect)
@@ -794,11 +793,22 @@ void GraphicsLayerCA::pauseAnimation(const String& keyframesName, double timeOff
 void GraphicsLayerCA::setContentsToImage(Image* image)
 {
     if (image) {
-        m_pendingContentsImage = image->nativeImageForCurrentFrame();
+        CGImageRef newImage = image->nativeImageForCurrentFrame();
+        if (!newImage)
+            return;
+
+        // Check to see if the image changed; we have to do this because the call to
+        // CGImageCreateCopyWithColorSpace() below can create a new image every time.
+        if (m_uncorrectedContentsImage && m_uncorrectedContentsImage.get() == newImage)
+            return;
+        
+        m_uncorrectedContentsImage = newImage;
+        m_pendingContentsImage = newImage;
         m_contentsLayerPurpose = ContentsLayerForImage;
         if (!m_contentsLayer)
             noteSublayersChanged();
     } else {
+        m_uncorrectedContentsImage = 0;
         m_pendingContentsImage = 0;
         m_contentsLayerPurpose = NoContentsLayer;
         if (m_contentsLayer)
@@ -925,8 +935,8 @@ void GraphicsLayerCA::commitLayerChangesBeforeSublayers()
         updateContentsMediaLayer();
     
 #if ENABLE(3D_CANVAS)
-    if (m_uncommittedChanges & ContentsGraphicsContext3DChanged) // Needs to happen before ChildrenChanged
-        updateContentsGraphicsContext3D();
+    if (m_uncommittedChanges & ContentsWebGLLayerChanged) // Needs to happen before ChildrenChanged
+        updateContentsWebGLLayer();
 #endif
     
     if (m_uncommittedChanges & BackgroundColorChanged)  // Needs to happen before ChildrenChanged, and after updating image or video
@@ -979,6 +989,9 @@ void GraphicsLayerCA::commitLayerChangesBeforeSublayers()
 
     if (m_uncommittedChanges & MaskLayerChanged)
         updateMaskLayer();
+
+    if (m_uncommittedChanges & ContentsNeedsDisplay)
+        updateContentsNeedsDisplay();
 
     END_BLOCK_OBJC_EXCEPTIONS
 }
@@ -1061,10 +1074,12 @@ void GraphicsLayerCA::updateSublayerList()
 
 void GraphicsLayerCA::updateLayerPosition()
 {
-    // Position is offset on the layer by the layer anchor point.
-    CGPoint posPoint = CGPointMake(m_position.x() + m_anchorPoint.x() * m_size.width(),
-                                   m_position.y() + m_anchorPoint.y() * m_size.height());
+    FloatSize usedSize = m_usingTiledLayer ? constrainedSize() : m_size;
 
+    // Position is offset on the layer by the layer anchor point.
+    CGPoint posPoint = CGPointMake(m_position.x() + m_anchorPoint.x() * usedSize.width(),
+                                   m_position.y() + m_anchorPoint.y() * usedSize.height());
+    
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
     if (mediaLayerMustBeUpdatedOnMainThread() && WebThreadIsCurrent())
         [primaryLayer() performSelectorOnMainThread:@selector(setPositionWithValue:) withObject:[NSValue valueWithPoint:NSPointFromCGPoint(posPoint)] waitUntilDone:NO];
@@ -1113,7 +1128,12 @@ void GraphicsLayerCA::updateLayerSize()
     bool needTiledLayer = requiresTiledLayer(m_size);
     if (needTiledLayer != m_usingTiledLayer)
         swapFromOrToTiledLayer(needTiledLayer);
-
+    
+    if (m_usingTiledLayer) {
+        FloatSize sizeToUse = constrainedSize();
+        rect = CGRectMake(0, 0, sizeToUse.width(), sizeToUse.height());
+    }
+    
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
     if (mediaLayerMustBeUpdatedOnMainThread() && WebThreadIsCurrent())
         [m_layer.get() performSelectorOnMainThread:@selector(setBoundsWithValue:) withObject:[NSValue valueWithRect:NSRectFromCGRect(rect)] waitUntilDone:NO];
@@ -1222,6 +1242,18 @@ void GraphicsLayerCA::updateContentsOpaque()
 
 void GraphicsLayerCA::updateBackfaceVisibility()
 {
+    if (m_structuralLayer && structuralLayerPurpose() == StructuralLayerForReplicaFlattening) {
+        [m_structuralLayer.get() setDoubleSided:m_backfaceVisibility];
+
+        if (LayerMap* layerCloneMap = m_structuralLayerClones.get()) {
+            LayerMap::const_iterator end = layerCloneMap->end();
+            for (LayerMap::const_iterator it = layerCloneMap->begin(); it != end; ++it) {
+                CALayer *currLayer = it->second.get();
+                [currLayer setDoubleSided:m_backfaceVisibility];
+            }
+        }
+    }
+
     [m_layer.get() setDoubleSided:m_backfaceVisibility];
 
     if (LayerMap* layerCloneMap = m_layerClones.get()) {
@@ -1252,7 +1284,7 @@ void GraphicsLayerCA::ensureStructuralLayer(StructuralLayerPurpose purpose)
             // Release the structural layer.
             m_structuralLayer = 0;
 
-            // Update the properties of m_layer now that we no loner have a structural layer.
+            // Update the properties of m_layer now that we no longer have a structural layer.
             updateLayerPosition();
             updateLayerSize();
             updateAnchorPoint();
@@ -1303,6 +1335,7 @@ void GraphicsLayerCA::ensureStructuralLayer(StructuralLayerPurpose purpose)
     updateAnchorPoint();
     updateTransform();
     updateChildrenTransform();
+    updateBackfaceVisibility();
     
     // Set properties of m_layer to their default values, since these are expressed on on the structural layer.
     CGPoint point = CGPointMake(m_size.width() / 2.0f, m_size.height() / 2.0f);
@@ -1402,9 +1435,9 @@ void GraphicsLayerCA::updateContentsMediaLayer()
 }
 
 #if ENABLE(3D_CANVAS)
-void GraphicsLayerCA::updateContentsGraphicsContext3D()
+void GraphicsLayerCA::updateContentsWebGLLayer()
 {
-    // Canvas3D layer was set as m_contentsLayer, and will get parented in updateSublayerList().
+    // WebGLLayer was set as m_contentsLayer, and will get parented in updateSublayerList().
     if (m_contentsLayer) {
         setupContentsLayer(m_contentsLayer.get());
         [m_contentsLayer.get() setNeedsDisplay];
@@ -1738,38 +1771,19 @@ void GraphicsLayerCA::pauseAnimationOnLayer(AnimatedPropertyID property, const S
 }
 
 #if ENABLE(3D_CANVAS)
-void GraphicsLayerCA::setContentsToGraphicsContext3D(const GraphicsContext3D* graphicsContext3D)
+void GraphicsLayerCA::setContentsToWebGL(PlatformLayer* webglLayer)
 {
-    PlatformGraphicsContext3D context = graphicsContext3D->platformGraphicsContext3D();
-    Platform3DObject texture = graphicsContext3D->platformTexture();
-    
-    if (context == m_platformGraphicsContext3D && texture == m_platformTexture)
+    if (webglLayer == m_contentsLayer)
         return;
         
-    m_platformGraphicsContext3D = context;
-    m_platformTexture = texture;
+    m_contentsLayer = webglLayer;
+    if (m_contentsLayer && [m_contentsLayer.get() respondsToSelector:@selector(setLayerOwner:)])
+        [(id)m_contentsLayer.get() setLayerOwner:this];
     
-    noteSublayersChanged();
-    
-    BEGIN_BLOCK_OBJC_EXCEPTIONS
+    m_contentsLayerPurpose = webglLayer ? ContentsLayerForWebGL : NoContentsLayer;
 
-    if (m_platformGraphicsContext3D != NullPlatformGraphicsContext3D && m_platformTexture != NullPlatform3DObject) {
-        // create the inner 3d layer
-        m_contentsLayer.adoptNS([[Canvas3DLayer alloc] initWithContext:static_cast<CGLContextObj>(m_platformGraphicsContext3D) texture:static_cast<GLuint>(m_platformTexture)]);
-#ifndef NDEBUG
-        [m_contentsLayer.get() setName:@"3D Layer"];
-#endif
-        [m_contentsLayer.get() setLayerOwner:this];
-    } else {
-        // remove the inner layer
-        [m_contentsLayer.get() setLayerOwner:0];
-        m_contentsLayer = 0;
-    }
-    
-    END_BLOCK_OBJC_EXCEPTIONS
-    
-    noteLayerPropertyChanged(ContentsGraphicsContext3DChanged);
-    m_contentsLayerPurpose = m_contentsLayer ? ContentsLayerForGraphicsLayer3D : NoContentsLayer;
+    noteSublayersChanged();
+    noteLayerPropertyChanged(ContentsWebGLLayerChanged);
 }
 #endif
     
@@ -1782,6 +1796,12 @@ void GraphicsLayerCA::repaintLayerDirtyRects()
         [m_layer.get() setNeedsDisplayInRect:m_dirtyRects[i]];
     
     m_dirtyRects.clear();
+}
+
+void GraphicsLayerCA::updateContentsNeedsDisplay()
+{
+    if (m_contentsLayer)
+        [m_contentsLayer.get() setNeedsDisplay];
 }
 
 bool GraphicsLayerCA::createAnimationFromKeyframes(const KeyframeValueList& valueList, const Animation* animation, const String& keyframesName, double timeOffset)
@@ -2146,12 +2166,11 @@ PlatformLayer* GraphicsLayerCA::platformLayer() const
 
 void GraphicsLayerCA::setContentsScale(float scale)
 {
-    float oldScale = m_contentsScale;
-
-    GraphicsLayer::setContentsScale(scale);
-    
-    if (m_contentsScale == oldScale)
+    float newScale = clampedContentsScaleForScale(scale);
+    if (newScale == m_contentsScale)
         return;
+
+    m_contentsScale = newScale;
 
     BEGIN_BLOCK_OBJC_EXCEPTIONS
 
@@ -2192,6 +2211,29 @@ void GraphicsLayerCA::setDebugBorder(const Color& color, float borderWidth)
     }
     
     END_BLOCK_OBJC_EXCEPTIONS
+}
+
+FloatSize GraphicsLayerCA::constrainedSize() const
+{
+    float tileColumns = ceilf(m_size.width() / cTiledLayerTileSize);
+    float tileRows = ceilf(m_size.height() / cTiledLayerTileSize);
+    double numTiles = tileColumns * tileRows;
+    
+    FloatSize constrainedSize = m_size;
+    const unsigned cMaxTileCount = 512;
+    while (numTiles > cMaxTileCount) {
+        // Constrain the wider dimension.
+        if (constrainedSize.width() >= constrainedSize.height()) {
+            tileColumns = max(floorf(cMaxTileCount / tileRows), 1.0f);
+            constrainedSize.setWidth(tileColumns * cTiledLayerTileSize);
+        } else {
+            tileRows = max(floorf(cMaxTileCount / tileColumns), 1.0f);
+            constrainedSize.setHeight(tileRows * cTiledLayerTileSize);
+        }
+        numTiles = tileColumns * tileRows;
+    }
+    
+    return constrainedSize;
 }
 
 bool GraphicsLayerCA::requiresTiledLayer(const FloatSize& size) const
@@ -2593,14 +2635,46 @@ void GraphicsLayerCA::noteLayerPropertyChanged(LayerChangeFlags flags)
     m_uncommittedChanges |= flags;
 }
 
-#if ENABLE(3D_CANVAS)
-void GraphicsLayerCA::setGraphicsContext3DNeedsDisplay()
+float GraphicsLayerCA::clampedContentsScaleForScale(float scale) const
 {
-    if (m_contentsLayerPurpose == ContentsLayerForGraphicsLayer3D)
-        [m_contentsLayer.get() setNeedsDisplay];
+    const float kMaxScale = 5.0f;
+    const float kMinScale = 0.01f;
+    const float kMaxScaledDimension = 1024.0f;
+
+    // clamp
+    float result = max(kMinScale, std::min(scale, kMaxScale));
+
+    // We need to clamp the scaled size to (1024x1024), otherwise it is likely to get jettisoned.
+    // FIXME: when <rdar://problem/7398907> is fixed, we should consider converting it to tiled layer
+    // if scaled size is too big.
+    if (!m_size.isEmpty() && result > 1.0f) {
+        FloatSize scaledSize(m_size.width() * result, m_size.height() * result);
+        if (scaledSize.width() * scaledSize.height() >= kMaxScaledDimension * kMaxScaledDimension) {
+            result = min(kMaxScaledDimension / m_size.width(), kMaxScaledDimension / m_size.height());
+            scaledSize = FloatSize(m_size.width() * result, m_size.height() * result);
+        }
+
+        // If layer is bigger than (512x512) and free memory level is low, we need to clamp contentsScale again.
+        if (scaledSize.width() * scaledSize.height() >= kMaxScaledDimension * kMaxScaledDimension / 4) {
+            int freeMemoryLevel = systemMemoryLevel();
+            if (freeMemoryLevel <= 30) {
+                result = min(1.0f, result);
+                NSLog(@"Free memory level is 30, clamp contentScale for layer %@ to %f from %f", m_layer.get(), result, scale);
+            }
+            else if (freeMemoryLevel <= 45) {
+                result = min(2.0f, result);
+                NSLog(@"Free memory level is 45, clamp contentScale for layer %@ to %f from %f", m_layer.get(), result, scale);
+            }
+        }
+    }
+
+    // if it hasn't changed much, don't do any work
+    if ((fabs(result - m_contentsScale) / m_contentsScale) < 0.25)
+        return m_contentsScale;
+
+    return result;
 }
-#endif
-    
+
 } // namespace WebCore
 
 #endif // USE(ACCELERATED_COMPOSITING)

@@ -189,8 +189,8 @@ void HTMLFormControlElement::removedFromTree(bool deep)
 
 const AtomicString& HTMLFormControlElement::formControlName() const
 {
-    const AtomicString& n = getAttribute(nameAttr);
-    return n.isNull() ? emptyAtom : n;
+    const AtomicString& name = fastGetAttribute(nameAttr);
+    return name.isNull() ? emptyAtom : name;
 }
 
 void HTMLFormControlElement::setName(const AtomicString &value)
@@ -329,14 +329,17 @@ String HTMLFormControlElement::validationMessage()
     return validity()->validationMessage();
 }
 
-bool HTMLFormControlElement::checkValidity()
+bool HTMLFormControlElement::checkValidity(Vector<RefPtr<HTMLFormControlElement> >* unhandledInvalidControls)
 {
-    if (willValidate() && !isValidFormControlElement()) {
-        dispatchEvent(Event::create(eventNames().invalidEvent, false, true));
-        return false;
-    }
-
-    return true;
+    if (!willValidate() || isValidFormControlElement())
+        return true;
+    // An event handler can deref this object.
+    RefPtr<HTMLFormControlElement> protector(this);
+    RefPtr<Document> originalDocument(document());
+    bool needsDefaultAction = dispatchEvent(Event::create(eventNames().invalidEvent, false, true));
+    if (needsDefaultAction && unhandledInvalidControls && inDocument() && originalDocument == document())
+        unhandledInvalidControls->append(this);
+    return false;
 }
 
 bool HTMLFormControlElement::isValidFormControlElement()
@@ -373,8 +376,8 @@ void HTMLFormControlElement::dispatchFocusEvent()
 
 void HTMLFormControlElement::dispatchBlurEvent()
 {
-   if (document()->page())
-       document()->page()->chrome()->client()->formDidBlur(this);
+    if (document()->page())
+        document()->page()->chrome()->client()->formDidBlur(this);
 
     HTMLElement::dispatchBlurEvent();
 }
@@ -449,6 +452,16 @@ void HTMLFormControlElementWithState::finishParsingChildren()
         if (doc->takeStateForFormElement(name().impl(), type().impl(), state))
             restoreFormControlState(state);
     }
+}
+
+void HTMLFormControlElementWithState::defaultEventHandler(Event* event)
+{
+    if (event->type() == eventNames().webkitEditableContentChangedEvent && renderer() && renderer()->isTextControl()) {
+        toRenderTextControl(renderer())->subtreeHasChanged();
+        return;
+    }
+
+    HTMLFormControlElement::defaultEventHandler(event);
 }
 
 bool HTMLFormControlElement::autocorrect() const
@@ -591,10 +604,6 @@ void HTMLTextFormControlElement::parseMappedAttribute(MappedAttribute* attr)
 {
     if (attr->name() == placeholderAttr)
         updatePlaceholderVisibility(true);
-    else if (attr->name() == onfocusAttr)
-        setAttributeEventListener(eventNames().focusEvent, createAttributeEventListener(this, attr));
-    else if (attr->name() == onblurAttr)
-        setAttributeEventListener(eventNames().blurEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == onselectAttr)
         setAttributeEventListener(eventNames().selectEvent, createAttributeEventListener(this, attr));
     else if (attr->name() == onchangeAttr)

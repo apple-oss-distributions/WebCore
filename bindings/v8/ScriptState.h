@@ -37,59 +37,77 @@
 #include <wtf/RefCounted.h>
 
 namespace WebCore {
-    class DOMWrapperWorld;
-    class Node;
-    class Page;
-    class Frame;
+class DOMWrapperWorld;
+class Frame;
+class Node;
+class Page;
 
-    class ScriptState : public Noncopyable {
-    public:
-        // FIXME: This destructor will become private shortly.
-        ~ScriptState();
-        // FIXME: This constructor will go away shortly.
-        ScriptState(Frame*, v8::Handle<v8::Context>);
+class ScriptState : public Noncopyable {
+public:
+    bool hadException() { return !m_exception.IsEmpty(); }
+    void setException(v8::Local<v8::Value> exception)
+    {
+        m_exception = exception;
+    }
+    v8::Local<v8::Value> exception() { return m_exception; }
 
-        bool hadException() { return !m_exception.IsEmpty(); }
-        void setException(v8::Local<v8::Value> exception)
-        {
-            m_exception = exception;
+    v8::Local<v8::Context> context() const
+    {
+        return v8::Local<v8::Context>::New(m_context);
+    }
+
+    static ScriptState* forContext(v8::Local<v8::Context>);
+    static ScriptState* current();
+
+protected:
+    ScriptState() { }
+    ~ScriptState();
+
+private:
+    friend ScriptState* mainWorldScriptState(Frame*);
+    explicit ScriptState(v8::Handle<v8::Context>);
+
+    static void weakReferenceCallback(v8::Persistent<v8::Value> object, void* parameter);
+
+    v8::Local<v8::Value> m_exception;
+    v8::Persistent<v8::Context> m_context;
+};
+
+class EmptyScriptState : public ScriptState {
+public:
+    EmptyScriptState() : ScriptState() { }
+    ~EmptyScriptState() { }
+};
+
+class ScriptStateProtectedPtr : public Noncopyable {
+public:
+    ScriptStateProtectedPtr() : m_scriptState(0) { }
+    ScriptStateProtectedPtr(ScriptState* scriptState) : m_scriptState(scriptState)
+    {
+        v8::HandleScope handleScope;
+        // Keep the context from being GC'ed. ScriptState is guaranteed to be live while the context is live.
+        m_context = v8::Persistent<v8::Context>::New(scriptState->context());
+    }
+    ~ScriptStateProtectedPtr()
+    {
+        if (!m_context.IsEmpty()) {
+            m_context.Dispose();
+            m_context.Clear();
         }
-        v8::Local<v8::Value> exception() { return m_exception; }
+    }
+    ScriptState* get() { return m_scriptState; }
+private:
+    ScriptState* m_scriptState;
+    v8::Persistent<v8::Context> m_context;
+};
 
-        v8::Local<v8::Context> context() const
-        {
-            return v8::Local<v8::Context>::New(m_context);
-        }
+ScriptState* mainWorldScriptState(Frame*);
 
-        static ScriptState* forContext(v8::Local<v8::Context>);
-        static ScriptState* current();
+ScriptState* scriptStateFromNode(DOMWrapperWorld*, Node*);
+ScriptState* scriptStateFromPage(DOMWrapperWorld*, Page*);
 
-    protected:
-        ScriptState() { }
-
-    private:
-        friend ScriptState* mainWorldScriptState(Frame*);
-        explicit ScriptState(v8::Handle<v8::Context>);
-
-        static void weakReferenceCallback(v8::Persistent<v8::Value> object, void* parameter);
-
-        v8::Local<v8::Value> m_exception;
-        v8::Persistent<v8::Context> m_context;
-    };
-
-    class EmptyScriptState : public ScriptState {
-    public:
-        EmptyScriptState() : ScriptState() { }
-        ~EmptyScriptState() { }
-    };
-
-    ScriptState* mainWorldScriptState(Frame*);
-
-    ScriptState* scriptStateFromNode(DOMWrapperWorld*, Node*);
-    ScriptState* scriptStateFromPage(DOMWrapperWorld*, Page*);
-
-    inline DOMWrapperWorld* debuggerWorld() { return mainThreadNormalWorld(); }
-    inline DOMWrapperWorld* pluginWorld() { return mainThreadNormalWorld(); }
+inline DOMWrapperWorld* debuggerWorld() { return mainThreadNormalWorld(); }
+inline DOMWrapperWorld* pluginWorld() { return mainThreadNormalWorld(); }
 
 }
 

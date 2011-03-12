@@ -27,8 +27,10 @@
 #include "config.h"
 #include "CachedScript.h"
 
+#include "Cache.h"
 #include "CachedResourceClient.h"
 #include "CachedResourceClientWalker.h"
+#include "SharedBuffer.h"
 #include "TextResourceDecoder.h"
 #include <wtf/Vector.h>
 
@@ -51,7 +53,7 @@ CachedScript::~CachedScript()
 
 void CachedScript::didAddClient(CachedResourceClient* c)
 {
-    if (!m_loading)
+    if (!isLoading())
         c->notifyFinished(this);
 }
 
@@ -91,13 +93,13 @@ void CachedScript::data(PassRefPtr<SharedBuffer> data, bool allDataReceived)
 
     m_data = data;
     setEncodedSize(m_data.get() ? m_data->size() : 0);
-    m_loading = false;
+    setLoading(false);
     checkNotify();
 }
 
 void CachedScript::checkNotify()
 {
-    if (m_loading)
+    if (isLoading())
         return;
 
     CachedResourceClientWalker w(m_clients);
@@ -107,8 +109,8 @@ void CachedScript::checkNotify()
 
 void CachedScript::error()
 {
-    m_loading = false;
-    m_errorOccurred = true;
+    setLoading(false);
+    setErrorOccurred(true);
     checkNotify();
 }
 
@@ -116,7 +118,7 @@ void CachedScript::destroyDecodedData()
 {
     m_script = String();
     setDecodedSize(0);
-    if (isSafeToMakePurgeable())
+    if (!Cache::shouldMakeResourcePurgeableOnEviction() && isSafeToMakePurgeable())
         makePurgeable(true);
 }
 

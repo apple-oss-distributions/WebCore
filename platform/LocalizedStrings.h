@@ -107,6 +107,8 @@ namespace WebCore {
 #endif // ENABLE(CONTEXT_MENUS)
 
 
+    String missingPluginText();
+    String crashedPluginText();
     String multipleFileUploadText(unsigned numberOfFiles);
     String unknownFileSizeText();
 

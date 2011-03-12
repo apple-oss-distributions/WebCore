@@ -37,15 +37,15 @@ WebInspector.TimelineGrid = function()
     this.element.appendChild(this._itemsGraphsElement);
 
     this._dividersElement = document.createElement("div");
-    this._dividersElement.id = "resources-dividers";
+    this._dividersElement.className = "resources-dividers";
     this.element.appendChild(this._dividersElement);
 
     this._eventDividersElement = document.createElement("div");
-    this._eventDividersElement.id = "resources-event-dividers";
+    this._eventDividersElement.className = "resources-event-dividers";
     this.element.appendChild(this._eventDividersElement);
 
     this._dividersLabelBarElement = document.createElement("div");
-    this._dividersLabelBarElement.id = "resources-dividers-label-bar";
+    this._dividersLabelBarElement.className = "resources-dividers-label-bar";
     this.element.appendChild(this._dividersLabelBarElement);
 }
 
@@ -66,7 +66,6 @@ WebInspector.TimelineGrid.prototype = {
             paddingLeft = 0;
         this._currentDividerSlice = slice;
 
-        this._eventDividersElement.removeChildren();
         // Reuse divider elements and labels.
         var divider = this._dividersElement.firstChild;
         var dividerLabelBar = this._dividersLabelBarElement.firstChild;
@@ -133,6 +132,30 @@ WebInspector.TimelineGrid.prototype = {
     addEventDivider: function(divider)
     {
         this._eventDividersElement.appendChild(divider);
+    },
+
+    addEventDividers: function(dividers)
+    {
+        this.element.removeChild(this._eventDividersElement);
+        for (var i = 0; i < dividers.length; ++i)
+            if (dividers[i])
+                this._eventDividersElement.appendChild(dividers[i]);
+        this.element.appendChild(this._eventDividersElement);
+    },
+
+    removeEventDividers: function()
+    {
+        this._eventDividersElement.removeChildren();
+    },
+
+    hideEventDividers: function()
+    {
+        this._eventDividersElement.addStyleClass("hidden");
+    },
+
+    showEventDividers: function()
+    {
+        this._eventDividersElement.removeStyleClass("hidden");
     },
 
     setScrollAndDividerTop: function(scrollTop, dividersTop)

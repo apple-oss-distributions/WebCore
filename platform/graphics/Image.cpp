@@ -27,14 +27,14 @@
 #include "config.h"
 #include "Image.h"
 
-#include "TransformationMatrix.h"
+#include "AffineTransform.h"
 #include "BitmapImage.h"
 #include "GraphicsContext.h"
 #include "IntRect.h"
 #include "MIMETypeRegistry.h"
-#include <wtf/StdLibExtras.h>
-
+#include "SharedBuffer.h"
 #include <math.h>
+#include <wtf/StdLibExtras.h>
 
 #if PLATFORM(CG)
 #include <CoreFoundation/CoreFoundation.h>
@@ -53,6 +53,7 @@ Image::~Image()
 
 Image* Image::nullImage()
 {
+    ASSERT(isMainThread());
     DEFINE_STATIC_LOCAL(RefPtr<Image>, nullImage, (BitmapImage::create()));;
     return nullImage.get();
 }
@@ -161,7 +162,7 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
         return;
     }
 
-    TransformationMatrix patternTransform = TransformationMatrix().scaleNonUniform(scale.width(), scale.height());
+    AffineTransform patternTransform = AffineTransform().scaleNonUniform(scale.width(), scale.height());
     FloatRect tileRect(FloatPoint(), intrinsicTileSize);    
     drawPattern(ctxt, tileRect, patternTransform, oneTileRect.location(), styleColorSpace, op, destRect);
     
@@ -183,7 +184,7 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const Flo
         vRule = RepeatTile;
 
     FloatSize scale = calculatePatternScale(dstRect, srcRect, hRule, vRule);
-    TransformationMatrix patternTransform = TransformationMatrix().scaleNonUniform(scale.width(), scale.height());
+    AffineTransform patternTransform = AffineTransform().scaleNonUniform(scale.width(), scale.height());
 
     // We want to construct the phase such that the pattern is centered (when stretch is not
     // set for a particular rule).

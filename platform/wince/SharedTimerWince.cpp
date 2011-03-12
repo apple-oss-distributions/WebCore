@@ -29,13 +29,14 @@
 
 #include "Page.h"
 #include "SystemTime.h"
+#include "WebCoreInstanceHandle.h"
 #include "Widget.h"
 #include <wtf/Assertions.h>
 #include <wtf/CurrentTime.h>
 #include <windows.h>
 
 namespace JSC {
-extern void* g_stackBase;
+JS_EXPORTDATA extern void* g_stackBase;
 }
 
 namespace WebCore {
@@ -80,12 +81,12 @@ static void initializeOffScreenTimerWindow()
 
     WNDCLASS wcex = {0};
     wcex.lpfnWndProc    = TimerWindowWndProc;
-    wcex.hInstance      = Page::instanceHandle();
+    wcex.hInstance      = WebCore::instanceHandle();
     wcex.lpszClassName  = kTimerWindowClassName;
     RegisterClass(&wcex);
 
     timerWindowHandle = CreateWindow(kTimerWindowClassName, 0, 0,
-       CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, 0, 0, Page::instanceHandle(), 0);
+       CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, 0, 0, WebCore::instanceHandle(), 0);
 }
 
 void setSharedTimerFiredFunction(void (*f)())

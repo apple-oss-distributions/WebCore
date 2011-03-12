@@ -28,42 +28,43 @@
 
 namespace WebCore {
 
-    class TransformationMatrix;
+class AffineTransform;
 
-    class SVGStyledTransformableElement : public SVGStyledLocatableElement,
-                                          public SVGTransformable {
-    public:
-        SVGStyledTransformableElement(const QualifiedName&, Document*);
-        virtual ~SVGStyledTransformableElement();
-        
-        virtual bool isStyledTransformable() const { return true; }
+class SVGStyledTransformableElement : public SVGStyledLocatableElement,
+                                      public SVGTransformable {
+public:
+    SVGStyledTransformableElement(const QualifiedName&, Document*);
+    virtual ~SVGStyledTransformableElement();
+    
+    virtual bool isStyledTransformable() const { return true; }
 
-        virtual TransformationMatrix getCTM() const;
-        virtual TransformationMatrix getScreenCTM() const;
-        virtual SVGElement* nearestViewportElement() const;
-        virtual SVGElement* farthestViewportElement() const;
-        
-        virtual TransformationMatrix animatedLocalTransform() const;
-        virtual TransformationMatrix* supplementalTransform();
+    virtual AffineTransform getCTM(StyleUpdateStrategy = AllowStyleUpdate) const;
+    virtual AffineTransform getScreenCTM(StyleUpdateStrategy = AllowStyleUpdate) const;
+    virtual SVGElement* nearestViewportElement() const;
+    virtual SVGElement* farthestViewportElement() const;
 
-        virtual FloatRect getBBox() const;
+    virtual AffineTransform localCoordinateSpaceTransform(SVGLocatable::CTMScope mode) const { return SVGTransformable::localCoordinateSpaceTransform(mode); }
+    virtual AffineTransform animatedLocalTransform() const;
+    virtual AffineTransform* supplementalTransform();
 
-        virtual void parseMappedAttribute(MappedAttribute*);
-        virtual void synchronizeProperty(const QualifiedName&);
-        bool isKnownAttribute(const QualifiedName&);
+    virtual FloatRect getBBox(StyleUpdateStrategy = AllowStyleUpdate) const;
 
-        // "base class" methods for all the elements which render as paths
-        virtual Path toPathData() const { return Path(); }
-        virtual Path toClipPath() const;
-        virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual void parseMappedAttribute(MappedAttribute*);
+    virtual void synchronizeProperty(const QualifiedName&);
+    bool isKnownAttribute(const QualifiedName&);
 
-    protected:
-        DECLARE_ANIMATED_PROPERTY(SVGStyledTransformableElement, SVGNames::transformAttr, SVGTransformList*, Transform, transform)
+    // "base class" methods for all the elements which render as paths
+    virtual Path toPathData() const { return Path(); }
+    virtual Path toClipPath() const;
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
 
-    private:
-        // Used by <animateMotion>
-        OwnPtr<TransformationMatrix> m_supplementalTransform;
-    };
+protected:
+    DECLARE_ANIMATED_PROPERTY(SVGStyledTransformableElement, SVGNames::transformAttr, SVGTransformList*, Transform, transform)
+
+private:
+    // Used by <animateMotion>
+    OwnPtr<AffineTransform> m_supplementalTransform;
+};
 
 } // namespace WebCore
 

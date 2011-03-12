@@ -28,6 +28,7 @@
 #include "config.h"
 #include "GraphicsContext.h"
 
+#include "AffineTransform.h"
 #include "FloatConversion.h"
 #include "GraphicsContextPlatformPrivateCG.h"
 #include "GraphicsContextPrivate.h"
@@ -35,7 +36,6 @@
 #include "KURL.h"
 #include "Path.h"
 #include "Pattern.h"
-#include "TransformationMatrix.h"
 
 #include <CoreGraphics/CGBitmapContext.h>
 #include <CoreGraphics/CGPDFContext.h>
@@ -119,6 +119,18 @@ static void setCGStrokeColorSpace(CGContextRef context, ColorSpace colorSpace)
         ASSERT_NOT_REACHED();
         break;
     }
+}
+
+CGColorSpaceRef deviceRGBColorSpaceRef()
+{
+    static CGColorSpaceRef deviceSpace = CGColorSpaceCreateDeviceRGB();
+    return deviceSpace;
+}
+
+CGColorSpaceRef sRGBColorSpaceRef()
+{
+    // FIXME: Windows should be able to use kCGColorSpaceSRGB, this is tracked by http://webkit.org/b/31363.
+    return deviceRGBColorSpaceRef();
 }
 
 void setStrokeAndFillColor(CGContextRef context, CGColorRef color)
@@ -611,7 +623,7 @@ void GraphicsContext::fillPath()
         else
             CGContextClip(context);
         CGContextConcatCTM(context, m_common->state.fillGradient->gradientSpaceTransform());
-        CGContextDrawShading(context, m_common->state.fillGradient->platformGradient());
+        m_common->state.fillGradient->paint(this);
         CGContextRestoreGState(context);
         return;
     }
@@ -636,7 +648,7 @@ void GraphicsContext::strokePath()
         CGContextReplacePathWithStrokedPath(context);
         CGContextClip(context);
         CGContextConcatCTM(context, m_common->state.strokeGradient->gradientSpaceTransform());
-        CGContextDrawShading(context, m_common->state.strokeGradient->platformGradient());
+        m_common->state.strokeGradient->paint(this);
         CGContextRestoreGState(context);
         return;
     }
@@ -660,7 +672,7 @@ void GraphicsContext::fillRect(const FloatRect& rect)
         CGContextSaveGState(context);
         CGContextClipToRect(context, rect);
         CGContextConcatCTM(context, m_common->state.fillGradient->gradientSpaceTransform());
-        CGContextDrawShading(context, m_common->state.fillGradient->platformGradient());
+        m_common->state.fillGradient->paint(this);
         CGContextRestoreGState(context);
         return;
     }
@@ -901,7 +913,7 @@ void GraphicsContext::strokeRect(const FloatRect& r, float lineWidth)
         CGContextAddRect(context, r);
         CGContextReplacePathWithStrokedPath(context);
         CGContextClip(context);
-        CGContextDrawShading(context, m_common->state.strokeGradient->platformGradient());
+        m_common->state.strokeGradient->paint(this);
         CGContextRestoreGState(context);
         return;
     }
@@ -1014,7 +1026,7 @@ void GraphicsContext::translate(float x, float y)
     m_data->m_userToDeviceTransformKnownToBeIdentity = false;
 }
 
-void GraphicsContext::concatCTM(const TransformationMatrix& transform)
+void GraphicsContext::concatCTM(const AffineTransform& transform)
 {
     if (paintingDisabled())
         return;
@@ -1023,10 +1035,10 @@ void GraphicsContext::concatCTM(const TransformationMatrix& transform)
     m_data->m_userToDeviceTransformKnownToBeIdentity = false;
 }
 
-TransformationMatrix GraphicsContext::getCTM() const
+AffineTransform GraphicsContext::getCTM() const
 {
     CGAffineTransform t = CGContextGetCTM(platformContext());
-    return TransformationMatrix(t.a, t.b, t.c, t.d, t.tx, t.ty);
+    return AffineTransform(t.a, t.b, t.c, t.d, t.tx, t.ty);
 }
 
 static void InterpolateLinearGradient(void *info, const CGFloat *inData, CGFloat *outData)

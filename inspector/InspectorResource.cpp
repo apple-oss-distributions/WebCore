@@ -147,7 +147,7 @@ void InspectorResource::updateScriptObject(InspectorFrontend* frontend)
 
     ScriptObject jsonObject = frontend->newScriptObject();
     if (m_changes.hasChange(RequestChange)) {
-        jsonObject.set("url", requestURL());
+        jsonObject.set("url", m_requestURL.string());
         jsonObject.set("documentURL", m_frame->document()->url().string());
         jsonObject.set("host", m_requestURL.host());
         jsonObject.set("path", m_requestURL.path());
@@ -180,7 +180,7 @@ void InspectorResource::updateScriptObject(InspectorFrontend* frontend)
     }
 
     if (m_changes.hasChange(LengthChange)) {
-        jsonObject.set("contentLength", m_length);
+        jsonObject.set("resourceSize", m_length);
         jsonObject.set("didLengthChange", true);
     }
 
@@ -213,17 +213,15 @@ void InspectorResource::updateScriptObject(InspectorFrontend* frontend)
         m_changes.clearAll();
 }
 
-void InspectorResource::releaseScriptObject(InspectorFrontend* frontend, bool callRemoveResource)
+void InspectorResource::releaseScriptObject(InspectorFrontend* frontend)
 {
     m_changes.setAll();
 
     for (size_t i = 0; i < m_redirects.size(); ++i)
-        m_redirects[i]->releaseScriptObject(frontend, callRemoveResource);
+        m_redirects[i]->releaseScriptObject(frontend);
 
-    if (!callRemoveResource)
-        return;
-
-    frontend->removeResource(m_identifier);
+    if (frontend)
+        frontend->removeResource(m_identifier);
 }
 
 CachedResource* InspectorResource::cachedResource() const
@@ -231,7 +229,7 @@ CachedResource* InspectorResource::cachedResource() const
     // Try hard to find a corresponding CachedResource. During preloading, DocLoader may not have the resource in document resources set yet,
     // but Inspector will already try to fetch data that is only available via CachedResource (and it won't update once the resource is added,
     // because m_changes will not have the appropriate bits set).
-    const String& url = requestURL();
+    const String& url = m_requestURL.string();
     CachedResource* cachedResource = m_frame->document()->docLoader()->cachedResource(url);
     if (!cachedResource)
         cachedResource = cache()->resourceForURL(url);
@@ -264,8 +262,8 @@ InspectorResource::Type InspectorResource::cachedResourceType() const
 
 InspectorResource::Type InspectorResource::type() const
 {
-    if (!m_xmlHttpResponseText.isNull())
-        return XHR;
+    if (!m_overrideContent.isNull())
+        return m_overrideContentType;
 
     if (m_requestURL == m_loader->requestURL()) {
         InspectorResource::Type resourceType = cachedResourceType();
@@ -281,16 +279,17 @@ InspectorResource::Type InspectorResource::type() const
     return cachedResourceType();
 }
 
-void InspectorResource::setXMLHttpResponseText(const ScriptString& data)
+void InspectorResource::setOverrideContent(const ScriptString& data, Type type)
 {
-    m_xmlHttpResponseText = data;
+    m_overrideContent = data;
+    m_overrideContentType = type;
     m_changes.set(TypeChange);
 }
 
 String InspectorResource::sourceString() const
 {
-    if (!m_xmlHttpResponseText.isNull())
-        return String(m_xmlHttpResponseText);
+    if (!m_overrideContent.isNull())
+        return String(m_overrideContent);
 
     String textEncodingName;
     RefPtr<SharedBuffer> buffer = resourceData(&textEncodingName);

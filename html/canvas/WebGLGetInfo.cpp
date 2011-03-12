@@ -30,13 +30,13 @@
 
 #include "WebGLGetInfo.h"
 #include "WebGLBuffer.h"
-#include "WebGLFloatArray.h"
+#include "Float32Array.h"
 #include "WebGLFramebuffer.h"
-#include "WebGLIntArray.h"
+#include "Int32Array.h"
 #include "WebGLProgram.h"
 #include "WebGLRenderbuffer.h"
 #include "WebGLTexture.h"
-#include "WebGLUnsignedByteArray.h"
+#include "Uint8Array.h"
 
 namespace WebCore {
 
@@ -44,6 +44,16 @@ WebGLGetInfo::WebGLGetInfo(bool value)
     : m_type(kTypeBool)
     , m_bool(value)
 {
+}
+
+WebGLGetInfo::WebGLGetInfo(const bool* value, int size)
+    : m_type(kTypeBoolArray)
+{
+    if (!value || size <=0)
+        return;
+    m_boolArray.resize(size);
+    for (int ii = 0; ii < size; ++ii)
+        m_boolArray[ii] = value[ii];
 }
 
 WebGLGetInfo::WebGLGetInfo(float value)
@@ -81,7 +91,7 @@ WebGLGetInfo::WebGLGetInfo(PassRefPtr<WebGLBuffer> value)
 {
 }
 
-WebGLGetInfo::WebGLGetInfo(PassRefPtr<WebGLFloatArray> value)
+WebGLGetInfo::WebGLGetInfo(PassRefPtr<Float32Array> value)
     : m_type(kTypeWebGLFloatArray)
     , m_webglFloatArray(value)
 {
@@ -93,7 +103,7 @@ WebGLGetInfo::WebGLGetInfo(PassRefPtr<WebGLFramebuffer> value)
 {
 }
 
-WebGLGetInfo::WebGLGetInfo(PassRefPtr<WebGLIntArray> value)
+WebGLGetInfo::WebGLGetInfo(PassRefPtr<Int32Array> value)
     : m_type(kTypeWebGLIntArray)
     , m_webglIntArray(value)
 {
@@ -117,7 +127,7 @@ WebGLGetInfo::WebGLGetInfo(PassRefPtr<WebGLTexture> value)
 {
 }
 
-WebGLGetInfo::WebGLGetInfo(PassRefPtr<WebGLUnsignedByteArray> value)
+WebGLGetInfo::WebGLGetInfo(PassRefPtr<Uint8Array> value)
     : m_type(kTypeWebGLUnsignedByteArray)
     , m_webglUnsignedByteArray(value)
 {
@@ -136,6 +146,12 @@ bool WebGLGetInfo::getBool() const
 {
     ASSERT(getType() == kTypeBool);
     return m_bool;
+}
+
+const Vector<bool>& WebGLGetInfo::getBoolArray() const
+{
+    ASSERT(getType() == kTypeBoolArray);
+    return m_boolArray;
 }
 
 float WebGLGetInfo::getFloat() const
@@ -168,7 +184,7 @@ PassRefPtr<WebGLBuffer> WebGLGetInfo::getWebGLBuffer() const
     return m_webglBuffer;
 }
 
-PassRefPtr<WebGLFloatArray> WebGLGetInfo::getWebGLFloatArray() const
+PassRefPtr<Float32Array> WebGLGetInfo::getWebGLFloatArray() const
 {
     ASSERT(getType() == kTypeWebGLFloatArray);
     return m_webglFloatArray;
@@ -180,7 +196,7 @@ PassRefPtr<WebGLFramebuffer> WebGLGetInfo::getWebGLFramebuffer() const
     return m_webglFramebuffer;
 }
 
-PassRefPtr<WebGLIntArray> WebGLGetInfo::getWebGLIntArray() const
+PassRefPtr<Int32Array> WebGLGetInfo::getWebGLIntArray() const
 {
     ASSERT(getType() == kTypeWebGLIntArray);
     return m_webglIntArray;
@@ -204,7 +220,7 @@ PassRefPtr<WebGLTexture> WebGLGetInfo::getWebGLTexture() const
     return m_webglTexture;
 }
 
-PassRefPtr<WebGLUnsignedByteArray> WebGLGetInfo::getWebGLUnsignedByteArray() const
+PassRefPtr<Uint8Array> WebGLGetInfo::getWebGLUnsignedByteArray() const
 {
     ASSERT(getType() == kTypeWebGLUnsignedByteArray);
     return m_webglUnsignedByteArray;

@@ -49,7 +49,7 @@ public:
     float scale() const { return m_gestureScale; }
     float rotation() const { return m_gestureRotation; }
 
-private:
+protected:
     TouchEventType m_type;
     unsigned m_touchCount;
     Vector<IntPoint> m_touchLocations;

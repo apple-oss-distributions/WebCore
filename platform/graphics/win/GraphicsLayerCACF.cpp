@@ -29,20 +29,32 @@
 
 #include "GraphicsLayerCACF.h"
 
-#include "CString.h"
 #include "FloatConversion.h"
 #include "FloatRect.h"
+#include "Font.h"
+#include "FontSelector.h"
 #include "Image.h"
 #include "PlatformString.h"
 #include "SystemTime.h"
-#include "WKCACFLayer.h"
-#include <QuartzCoreInterface/QuartzCoreInterface.h>
+#include "WebLayer.h"
+#include "WebTiledLayer.h"
 #include <wtf/CurrentTime.h>
 #include <wtf/StringExtras.h>
+#include <wtf/text/CString.h>
 
 using namespace std;
 
 namespace WebCore {
+
+// The threshold width or height above which a tiled layer will be used. This should be
+// large enough to avoid tiled layers for most GraphicsLayers, but less than the D3D
+// texture size limit on all supported hardware.
+static const int cMaxPixelDimension = 2000;
+
+// The width and height of a single tile in a tiled layer. Should be large enough to
+// avoid lots of small tiles (and therefore lots of drawing callbacks), but small enough
+// to keep the overall tile cost low.
+static const int cTiledLayerTileSize = 512;
 
 static inline void copyTransform(CATransform3D& toT3D, const TransformationMatrix& t)
 {
@@ -124,7 +136,7 @@ GraphicsLayerCACF::GraphicsLayerCACF(GraphicsLayerClient* client)
     , m_contentsLayerPurpose(NoContentsLayer)
     , m_contentsLayerHasBackgroundColor(false)
 {
-    m_layer = WKCACFLayer::create(WKCACFLayer::Layer, this);
+    m_layer = WebLayer::create(WKCACFLayer::Layer, this);
     
     updateDebugIndicators();
 }
@@ -135,16 +147,19 @@ GraphicsLayerCACF::~GraphicsLayerCACF()
     if (m_layer)
         m_layer->removeFromSuperlayer();
     
+    if (m_contentsLayer)
+        m_contentsLayer->removeFromSuperlayer();
+
     if (m_transformLayer)
         m_transformLayer->removeFromSuperlayer();
 }
 
-void GraphicsLayerCACF::setName(const String& inName)
+void GraphicsLayerCACF::setName(const String& name)
 {
-    String name = String::format("CALayer(%p) GraphicsLayer(%p) ", m_layer.get(), this) + inName;
-    GraphicsLayer::setName(name);
+    String longName = String::format("CALayer(%p) GraphicsLayer(%p) ", m_layer.get(), this) + name;
+    GraphicsLayer::setName(longName);
     
-    m_layer->setName(inName);
+    m_layer->setName(longName);
 }
 
 NativeLayer GraphicsLayerCACF::nativeLayer() const
@@ -328,8 +343,10 @@ void GraphicsLayerCACF::setNeedsDisplay()
 
 void GraphicsLayerCACF::setNeedsDisplayInRect(const FloatRect& rect)
 {
-    if (drawsContent())
-        m_layer->setNeedsDisplay(rect);
+    if (drawsContent()) {
+        CGRect cgRect = rect;
+        m_layer->setNeedsDisplay(&cgRect);
+    }
 }
 
 void GraphicsLayerCACF::setContentsRect(const IntRect& rect)
@@ -364,21 +381,18 @@ void GraphicsLayerCACF::setContentsToImage(Image* image)
         updateSublayerList();
 }
 
-void GraphicsLayerCACF::setContentsToVideo(PlatformLayer* videoLayer)
+void GraphicsLayerCACF::setContentsToMedia(PlatformLayer* mediaLayer)
 {
-    bool childrenChanged = false;
+    if (mediaLayer == m_contentsLayer)
+        return;
 
-    if (videoLayer != m_contentsLayer.get())
-        childrenChanged = true;
+    m_contentsLayer = mediaLayer;
+    m_contentsLayerPurpose = mediaLayer ? ContentsLayerForMedia : NoContentsLayer;
 
-    m_contentsLayer = videoLayer;
-    m_contentsLayerPurpose = videoLayer ? ContentsLayerForVideo : NoContentsLayer;
+    updateContentsMedia();
 
-    updateContentsVideo();
-
-    // This has to happen after updateContentsVideo
-    if (childrenChanged)
-        updateSublayerList();
+    // This has to happen after updateContentsMedia
+    updateSublayerList();
 }
 
 void GraphicsLayerCACF::setGeometryOrientation(CompositingCoordinatesOrientation orientation)
@@ -422,6 +436,64 @@ void GraphicsLayerCACF::setDebugBorder(const Color& color, float borderWidth)
         clearBorderColor(m_layer.get());
         m_layer->setBorderWidth(0);
     }
+}
+
+bool GraphicsLayerCACF::requiresTiledLayer(const FloatSize& size) const
+{
+    if (!m_drawsContent)
+        return false;
+
+    // FIXME: catch zero-size height or width here (or earlier)?
+    return size.width() > cMaxPixelDimension || size.height() > cMaxPixelDimension;
+}
+
+void GraphicsLayerCACF::swapFromOrToTiledLayer(bool useTiledLayer)
+{
+    if (useTiledLayer == m_usingTiledLayer)
+        return;
+
+    CGSize tileSize = CGSizeMake(cTiledLayerTileSize, cTiledLayerTileSize);
+
+    RefPtr<WKCACFLayer> oldLayer = m_layer;
+    if (useTiledLayer)
+        m_layer = WebTiledLayer::create(tileSize, this);
+    else
+        m_layer = WebLayer::create(WKCACFLayer::Layer, this);
+    
+    m_usingTiledLayer = useTiledLayer;
+
+    if (useTiledLayer) {
+        if (GraphicsLayer::compositingCoordinatesOrientation() == GraphicsLayer::CompositingCoordinatesBottomUp)
+            m_layer->setContentsGravity(WKCACFLayer::BottomLeft);
+        else
+            m_layer->setContentsGravity(WKCACFLayer::TopLeft);
+    }
+    
+    m_layer->adoptSublayers(oldLayer.get());
+    if (oldLayer->superlayer())
+        oldLayer->superlayer()->replaceSublayer(oldLayer.get(), m_layer.get());
+    
+    updateLayerPosition();
+    updateLayerSize();
+    updateAnchorPoint();
+    updateTransform();
+    updateChildrenTransform();
+    updateMasksToBounds();
+    updateContentsOpaque();
+    updateBackfaceVisibility();
+    updateLayerBackgroundColor();
+    
+    updateOpacityOnLayer();
+    
+#ifndef NDEBUG
+    String name = String::format("CALayer(%p) GraphicsLayer(%p) %s", m_layer.get(), this, m_usingTiledLayer ? "[Tiled Layer] " : "") + m_name;
+    m_layer->setName(name);
+#endif
+
+    // need to tell new layer to draw itself
+    setNeedsDisplay();
+    
+    updateDebugIndicators();
 }
 
 GraphicsLayer::CompositingCoordinatesOrientation GraphicsLayerCACF::defaultContentsOrientation() const
@@ -487,6 +559,10 @@ void GraphicsLayerCACF::updateLayerSize()
         m_layer->setPosition(centerPoint);
     }
     
+    bool needTiledLayer = requiresTiledLayer(m_size);
+    if (needTiledLayer != m_usingTiledLayer)
+        swapFromOrToTiledLayer(needTiledLayer);
+    
     m_layer->setBounds(rect);
     
     // Note that we don't resize m_contentsLayer. It's up the caller to do that.
@@ -537,7 +613,7 @@ void GraphicsLayerCACF::updateLayerPreserves3D()
 {
     if (m_preserves3D && !m_transformLayer) {
         // Create the transform layer.
-        m_transformLayer = WKCACFLayer::create(WKCACFLayer::TransformLayer, this);
+        m_transformLayer = WebLayer::create(WKCACFLayer::TransformLayer, this);
 
 #ifndef NDEBUG
         m_transformLayer->setName(String().format("Transform Layer CATransformLayer(%p) GraphicsLayer(%p)", m_transformLayer.get(), this));
@@ -553,7 +629,7 @@ void GraphicsLayerCACF::updateLayerPreserves3D()
         m_layer->setPosition(point);
 
         m_layer->setAnchorPoint(CGPointMake(0.5f, 0.5f));
-        m_layer->setTransform(wkqcCATransform3DIdentity());
+        m_layer->setTransform(CATransform3DIdentity);
         
         // Set the old layer to opacity of 1. Further down we will set the opacity on the transform layer.
         m_layer->setOpacity(1);
@@ -586,6 +662,10 @@ void GraphicsLayerCACF::updateLayerPreserves3D()
 
 void GraphicsLayerCACF::updateLayerDrawsContent()
 {
+    bool needTiledLayer = requiresTiledLayer(m_size);
+    if (needTiledLayer != m_usingTiledLayer)
+        swapFromOrToTiledLayer(needTiledLayer);
+
     if (m_drawsContent)
         m_layer->setNeedsDisplay();
     else
@@ -610,7 +690,7 @@ void GraphicsLayerCACF::updateContentsImage()
 {
     if (m_pendingContentsImage) {
         if (!m_contentsLayer.get()) {
-            RefPtr<WKCACFLayer> imageLayer = WKCACFLayer::create(WKCACFLayer::Layer, this);
+            RefPtr<WKCACFLayer> imageLayer = WebLayer::create(WKCACFLayer::Layer, this);
 #ifndef NDEBUG
             imageLayer->setName("Image Layer");
 #endif
@@ -633,9 +713,9 @@ void GraphicsLayerCACF::updateContentsImage()
     }
 }
 
-void GraphicsLayerCACF::updateContentsVideo()
+void GraphicsLayerCACF::updateContentsMedia()
 {
-    // Video layer was set as m_contentsLayer, and will get parented in updateSublayerList().
+    // Media layer was set as m_contentsLayer, and will get parented in updateSublayerList().
     if (m_contentsLayer) {
         setupContentsLayer(m_contentsLayer.get());
         updateContentsRect();

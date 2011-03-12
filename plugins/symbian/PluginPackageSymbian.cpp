@@ -19,13 +19,13 @@
 #include "config.h"
 #include "PluginPackage.h"
 
-#include "CString.h"
 #include "MIMETypeRegistry.h"
 #include "npinterface.h"
 #include "npruntime_impl.h"
 #include "PluginDatabase.h"
 #include "PluginDebug.h"
 #include <QPluginLoader>
+#include <wtf/text/CString.h>
 
 namespace WebCore {
 
@@ -172,6 +172,11 @@ void PluginPackage::unload()
     m_pluginLoader->unload();
     delete m_pluginLoader;
     m_pluginLoader = 0;
+}
+
+uint16_t PluginPackage::NPVersion() const
+{
+    return NP_VERSION_MINOR;
 }
 }
 

@@ -141,7 +141,7 @@ module window {
         readonly attribute Document document;
 
         // CSSOM View Module
-        readonly attribute Media media;
+        readonly attribute StyleMedia styleMedia;
 
         // DOM Level 2 Style Interface
         CSSStyleDeclaration getComputedStyle(in Element element,
@@ -160,15 +160,20 @@ module window {
         readonly attribute [EnabledAtRuntime] DOMApplicationCache applicationCache;
 #endif    
 #if defined(ENABLE_DATABASE) && ENABLE_DATABASE
-        [EnabledAtRuntime] Database openDatabase(in DOMString name, in DOMString version, in DOMString displayName, in unsigned long estimatedSize)
+        [EnabledAtRuntime, Custom] Database openDatabase(in DOMString name, in DOMString version, in DOMString displayName, in unsigned long estimatedSize, in DatabaseCallback creationCallback)
             raises(DOMException);
 #endif
 #if defined(ENABLE_DOM_STORAGE) && ENABLE_DOM_STORAGE
-        readonly attribute [EnabledAtRuntime] Storage sessionStorage;
-        readonly attribute [EnabledAtRuntime] Storage localStorage;
+        readonly attribute [EnabledAtRuntime] Storage sessionStorage
+            getter raises(DOMException);
+        readonly attribute [EnabledAtRuntime] Storage localStorage
+            getter raises(DOMException);
 #endif
 #if defined(ENABLE_NOTIFICATIONS) && ENABLE_NOTIFICATIONS
         readonly attribute [EnabledAtRuntime] NotificationCenter webkitNotifications;
+#endif
+#if defined(ENABLE_INDEXED_DATABASE) && ENABLE_INDEXED_DATABASE
+        readonly attribute [EnabledAtRuntime] IndexedDatabaseRequest indexedDB;
 #endif
 
 #if defined(ENABLE_ORIENTATION_EVENTS) && ENABLE_ORIENTATION_EVENTS
@@ -201,9 +206,9 @@ module window {
         void clearInterval(in long handle);
 
         // Base64
-        [Custom] DOMString atob(in DOMString string)
+        DOMString atob(in [ConvertNullToNullString] DOMString string)
             raises(DOMException);
-        [Custom] DOMString btoa(in DOMString string)
+        DOMString btoa(in [ConvertNullToNullString] DOMString string)
             raises(DOMException);
 
         // Events
@@ -298,6 +303,11 @@ module window {
         attribute EventListener ongesturestart;
         attribute EventListener ongesturechange;
         attribute EventListener ongestureend;
+
+        attribute [Conditional=DEVICE_ORIENTATION,EnabledAtRuntime] DeviceMotionEventConstructor DeviceMotionEvent;
+        attribute [Conditional=DEVICE_ORIENTATION,EnabledAtRuntime] EventListener ondevicemotion;
+        attribute [Conditional=DEVICE_ORIENTATION,EnabledAtRuntime] DeviceOrientationEventConstructor DeviceOrientationEvent;
+        attribute [Conditional=DEVICE_ORIENTATION,EnabledAtRuntime] EventListener ondeviceorientation;
 
         // EventTarget interface
         [Custom] void addEventListener(in DOMString type,
@@ -420,6 +430,9 @@ module window {
         attribute HTMLParagraphElementConstructor HTMLParagraphElement;
         attribute HTMLParamElementConstructor HTMLParamElement;
         attribute HTMLPreElementConstructor HTMLPreElement;
+#if defined(ENABLE_PROGRESS_TAG) && ENABLE_PROGRESS_TAG
+        attribute HTMLProgressElementConstructor HTMLProgressElement;
+#endif
         attribute HTMLQuoteElementConstructor HTMLQuoteElement;
         attribute HTMLScriptElementConstructor HTMLScriptElement;
         attribute HTMLSelectElementConstructor HTMLSelectElement;
@@ -441,17 +454,18 @@ module window {
         attribute [CustomGetter] HTMLOptionElementConstructor Option; // Usable with new operator
 
         attribute CanvasRenderingContext2DConstructor CanvasRenderingContext2D;
-        attribute [Conditional=3D_CANVAS] WebGLRenderingContextConstructor WebGLRenderingContext;
+        attribute ImageDataConstructor ImageData;
+        attribute [Conditional=3D_CANVAS,EnabledAtRuntime] WebGLRenderingContextConstructor WebGLRenderingContext;
         attribute TextMetricsConstructor TextMetrics;
 
-        attribute [JSCCustomGetter,Conditional=3D_CANVAS] WebGLArrayBufferConstructor WebGLArrayBuffer; // Usable with new operator
-        attribute [JSCCustomGetter,Conditional=3D_CANVAS] WebGLByteArrayConstructor WebGLByteArray; // Usable with new operator
-        attribute [JSCCustomGetter,Conditional=3D_CANVAS] WebGLUnsignedByteArrayConstructor WebGLUnsignedByteArray; // Usable with new operator
-        attribute [JSCCustomGetter,Conditional=3D_CANVAS] WebGLShortArrayConstructor WebGLShortArray; // Usable with new operator
-        attribute [JSCCustomGetter,Conditional=3D_CANVAS] WebGLUnsignedShortArrayConstructor WebGLUnsignedShortArray; // Usable with new operator
-        attribute [JSCCustomGetter,Conditional=3D_CANVAS] WebGLIntArrayConstructor WebGLIntArray; // Usable with new operator
-        attribute [JSCCustomGetter,Conditional=3D_CANVAS] WebGLUnsignedIntArrayConstructor WebGLUnsignedIntArray; // Usable with new operator
-        attribute [JSCCustomGetter,Conditional=3D_CANVAS] WebGLFloatArrayConstructor WebGLFloatArray; // Usable with new operator
+        attribute [JSCCustomGetter,Conditional=3D_CANVAS,EnabledAtRuntime] ArrayBufferConstructor ArrayBuffer; // Usable with new operator
+        attribute [JSCCustomGetter,Conditional=3D_CANVAS,EnabledAtRuntime] Int8ArrayConstructor Int8Array; // Usable with new operator
+        attribute [JSCCustomGetter,Conditional=3D_CANVAS,EnabledAtRuntime] Uint8ArrayConstructor Uint8Array; // Usable with new operator
+        attribute [JSCCustomGetter,Conditional=3D_CANVAS,EnabledAtRuntime] Int16ArrayConstructor Int16Array; // Usable with new operator
+        attribute [JSCCustomGetter,Conditional=3D_CANVAS,EnabledAtRuntime] Uint16ArrayConstructor Uint16Array; // Usable with new operator
+        attribute [JSCCustomGetter,Conditional=3D_CANVAS,EnabledAtRuntime] Int32ArrayConstructor Int32Array; // Usable with new operator
+        attribute [JSCCustomGetter,Conditional=3D_CANVAS,EnabledAtRuntime] Uint32ArrayConstructor Uint32Array; // Usable with new operator
+        attribute [JSCCustomGetter,Conditional=3D_CANVAS,EnabledAtRuntime] Float32ArrayConstructor Float32Array; // Usable with new operator
 
         attribute EventConstructor Event;
         attribute BeforeLoadEventConstructor BeforeLoadEvent;
@@ -712,6 +726,10 @@ module window {
 
         attribute TouchEventConstructor TouchEvent;
 
+        attribute DOMFormDataConstructor FormData;
+
+        attribute [Conditional=FILE_READER|FILE_WRITER] FileErrorConstructor FileError;
+
 #endif // defined(LANGUAGE_JAVASCRIPT)
 
 #if defined(V8_BINDING) && V8_BINDING
@@ -721,3 +739,4 @@ module window {
     };
 
 }
+

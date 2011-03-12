@@ -33,13 +33,12 @@ namespace WebCore {
     
     class PurgeableBuffer : public Noncopyable {
     public:
-        static PurgeableBuffer* create(const char* data, size_t);
-        static PurgeableBuffer* create(const Vector<char>& v) { return create(v.data(), v.size()); }
+        static PurgeableBuffer* create(size_t);
         
         ~PurgeableBuffer();
 
         // Call makePurgeable(false) and check the return value before accessing the data.
-        const char* data() const;
+        char* data() const;
         size_t size() const { return m_size; }
         
         enum PurgePriority { PurgeLast, PurgeMiddle, PurgeFirst, PurgeDefault = PurgeMiddle };
@@ -62,12 +61,16 @@ namespace WebCore {
         mutable State m_state;
     };
 
-    inline PurgeableBuffer* PurgeableBuffer::create(const char*, size_t) { return 0; }
+#if !ENABLE(PURGEABLE_MEMORY)
+
+    inline PurgeableBuffer* PurgeableBuffer::create(size_t) { return 0; }
+
     inline PurgeableBuffer::~PurgeableBuffer() { }
-    inline const char* PurgeableBuffer::data() const { return 0; }
+    inline char* PurgeableBuffer::data() const { return 0; }
     inline void PurgeableBuffer::setPurgePriority(PurgePriority) { }
     inline bool PurgeableBuffer::wasPurged() const { return false; }
     inline bool PurgeableBuffer::makePurgeable(bool) { return false; }
+#endif
     
 }
 

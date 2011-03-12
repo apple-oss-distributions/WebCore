@@ -36,7 +36,7 @@ class VisibleSelection;
 
 class HTMLFormControlElement : public HTMLElement {
 public:
-    HTMLFormControlElement(const QualifiedName& tagName, Document*, HTMLFormElement*, ConstructionType = CreateElementZeroRefCount);
+    HTMLFormControlElement(const QualifiedName& tagName, Document*, HTMLFormElement*, ConstructionType = CreateHTMLElementZeroRefCount);
     virtual ~HTMLFormControlElement();
 
     virtual HTMLTagStatus endTagRequirement() const { return TagStatusRequired; }
@@ -94,6 +94,7 @@ public:
 
     virtual bool isFormControlElement() const { return true; }
     virtual bool isRadioButton() const { return false; }
+    virtual bool canTriggerImplicitSubmission() const { return false; }
 
     /* Override in derived classes to get the encoded name=value pair for submitting.
      * Return true for a successful control (see HTML4-17.13.2).
@@ -114,7 +115,7 @@ public:
 
     virtual bool willValidate() const;
     String validationMessage();
-    bool checkValidity();
+    bool checkValidity(Vector<RefPtr<HTMLFormControlElement> >* unhandledInvalidControls = 0);
     // This must be called when a validation constraint or control value is changed.
     void setNeedsValidityCheck();
     void setCustomValidity(const String&);
@@ -166,6 +167,7 @@ public:
 protected:
     virtual void willMoveToNewOwnerDocument();
     virtual void didMoveToNewOwnerDocument();
+    virtual void defaultEventHandler(Event*);
 };
 
 class HTMLTextFormControlElement : public HTMLFormControlElementWithState {

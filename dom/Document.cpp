@@ -34,15 +34,17 @@
 #include "CSSStyleSelector.h"
 #include "CSSStyleSheet.h"
 #include "CSSValueKeywords.h"
-#include "CString.h"
 #include "CachedCSSStyleSheet.h"
 #include "Chrome.h"
 #include "ChromeClient.h"
 #include "Comment.h"
 #include "Console.h"
 #include "CookieJar.h"
+#include "CustomEvent.h"
 #include "DOMImplementation.h"
 #include "DOMWindow.h"
+#include "DeviceMotionEvent.h"
+#include "DeviceOrientationEvent.h"
 #include "DocLoader.h"
 #include "DocumentFragment.h"
 #include "DocumentLoader.h"
@@ -127,6 +129,7 @@
 #include "TreeWalker.h"
 #include "UIEvent.h"
 #include "UserContentURLPattern.h"
+#include "ViewportArguments.h"
 #include "WebKitAnimationEvent.h"
 #include "WebKitTransitionEvent.h"
 #include "WheelEvent.h"
@@ -173,14 +176,22 @@
 #endif
 
 #include "GestureEvent.h"
+#if USE(V8)
+#include "RuntimeEnabledFeatures.h"
+#endif
 #include "TouchEvent.h"
 
 #include "CachedImage.h"
 #include "ChromeClient.h"
+#include "DeviceMotionClient.h"
+#include "DeviceMotionClientIPhone.h"
+#include "DeviceMotionController.h"
+#include "DeviceOrientationClient.h"
+#include "DeviceOrientationClientIPhone.h"
+#include "DeviceOrientationController.h"
 #include "Element.h"
 #include "Geolocation.h"
 #include "HTMLParserErrorCodes.h"
-#include "HTMLTokenizer.h"
 #include "Navigator.h"
 #include "Page.h"
 #include "WebCoreSystemInterface.h"
@@ -371,6 +382,7 @@ Document::Document(Frame* frame, bool isXHTML, bool isHTML)
     , m_styleRecalcTimer(this, &Document::styleRecalcTimerFired)
     , m_frameElementsShouldIgnoreScrolling(false)
     , m_containsValidityStyleRules(false)
+    , m_updateFocusAppearanceRestoresSelection(false)
     , m_title("")
     , m_rawTitle("")
     , m_titleSetExplicitly(false)
@@ -385,7 +397,6 @@ Document::Document(Frame* frame, bool isXHTML, bool isHTML)
     , m_bindingManager(new XBLBindingManager(this))
 #endif
     , m_savedRenderer(0)
-    , m_secureForms(0)
     , m_designMode(inherit)
     , m_selfOnlyRefCount(0)
 #if ENABLE(SVG)
@@ -406,11 +417,15 @@ Document::Document(Frame* frame, bool isXHTML, bool isHTML)
     , m_normalWorldWrapperCache(0)
 #endif
     , m_usingGeolocation(false)
-    , m_storageEventTimer(this, &Document::storageEventTimerFired)
+    , m_pendingEventTimer(this, &Document::pendingEventTimerFired)
 #if ENABLE(WML)
     , m_containsWMLContent(false)
 #endif
     , m_weakReference(DocumentWeakReference::create(this))
+    , m_deviceMotionClient(DeviceMotionClientIPhone::create())
+    , m_deviceMotionController(DeviceMotionController::create(m_deviceMotionClient.get()))
+    , m_deviceOrientationClient(DeviceOrientationClientIPhone::create())
+    , m_deviceOrientationController(DeviceOrientationController::create(m_deviceOrientationClient.get()))
     , m_isTelephoneNumberParsingEnabled(false)
     , m_totalImageDataSize(0)
     , m_animatedImageDataCount(0)
@@ -437,7 +452,7 @@ Document::Document(Frame* frame, bool isXHTML, bool isHTML)
 
     m_textColor = Color::black;
     m_listenerTypes = 0;
-    m_inDocument = true;
+    setInDocument();
     m_inStyleRecalc = false;
     m_closeAfterStyleRecalc = false;
 
@@ -447,6 +462,7 @@ Document::Document(Frame* frame, bool isXHTML, bool isHTML)
     m_usesFirstLetterRules = false;
     m_usesBeforeAfterRules = false;
     m_usesRemUnits = false;
+    m_usesLinkRules = false;
 
     m_gotoAnchorNeededAfterStylesheetsLoad = false;
  
@@ -470,7 +486,7 @@ Document::Document(Frame* frame, bool isXHTML, bool isHTML)
     static int docID = 0;
     m_docID = docID++;
 #if ENABLE(XHTMLMP)
-    m_shouldProcessNoScriptElement = settings() && !settings()->isJavaScriptEnabled();
+    m_shouldProcessNoScriptElement = m_frame->script()->canExecuteScripts(NotAboutToExecuteScript);
 #endif
 
     if (Settings* settings = this->settings())
@@ -547,13 +563,16 @@ Document::~Document()
     ASSERT(m_ranges.isEmpty());
     ASSERT(!m_styleRecalcTimer.isActive());
 
+    m_deviceMotionClient->deviceMotionControllerDestroyed();
+    m_deviceOrientationClient->deviceOrientationControllerDestroyed();
+    
     for (size_t i = 0; i < m_scriptsToExecuteSoon.size(); ++i)
         m_scriptsToExecuteSoon[i].first->element()->deref(); // Balances ref() in executeScriptSoon().
 
     removeAllEventListeners();
 
 #if USE(JSC)
-    forgetAllDOMNodesForDocument(this);
+    destroyAllWrapperCaches();
 #endif
 
     m_tokenizer.clear();
@@ -585,14 +604,29 @@ Document::~Document()
 #if USE(JSC)
 Document::JSWrapperCache* Document::createWrapperCache(DOMWrapperWorld* world)
 {
-    JSWrapperCache* wrapperCache = new JSWrapperCache();
+    JSWrapperCache* wrapperCache = new JSWrapperCache;
     m_wrapperCacheMap.set(world, wrapperCache);
     if (world->isNormal()) {
         ASSERT(!m_normalWorldWrapperCache);
         m_normalWorldWrapperCache = wrapperCache;
     }
-    world->rememberDocument(this);
+    world->didCreateWrapperCache(this);
     return wrapperCache;
+}
+
+void Document::destroyWrapperCache(DOMWrapperWorld* world)
+{
+    Document::JSWrapperCache* wrappers = wrapperCacheMap().take(world);
+    ASSERT(wrappers);
+    delete wrappers;
+    world->didDestroyWrapperCache(this);
+}
+
+void Document::destroyAllWrapperCaches()
+{
+    JSWrapperCacheMap& wrapperCacheMap = this->wrapperCacheMap();
+    while (!wrapperCacheMap.isEmpty())
+        destroyWrapperCache(wrapperCacheMap.begin()->first);
 }
 #endif
 
@@ -1124,8 +1158,10 @@ void Document::removeElementById(const AtomicString& elementId, Element* element
 
     if (m_elementsById.get(elementId.impl()) == element)
         m_elementsById.remove(elementId.impl());
-    else
+    else {
+        ASSERT(m_inRemovedLastRefFunction || m_duplicateIds.contains(elementId.impl()));
         m_duplicateIds.remove(elementId.impl());
+    }
 }
 
 Element* Document::getElementByAccessKey(const String& key) const
@@ -1239,7 +1275,7 @@ void Document::setTitle(const String& title, Element* titleElement)
     m_rawTitle = title;
     updateTitle();
 
-    if (m_titleSetExplicitly && m_titleElement && m_titleElement->hasTagName(titleTag))
+    if (m_titleSetExplicitly && m_titleElement && m_titleElement->hasTagName(titleTag) && !titleElement)
         static_cast<HTMLTitleElement*>(m_titleElement.get())->setText(m_title);
 }
 
@@ -1408,7 +1444,7 @@ void Document::recalcStyle(StyleChange change)
 
 bail_out:
     setNeedsStyleRecalc(NoStyleChange);
-    setChildNeedsStyleRecalc(false);
+    clearChildNeedsStyleRecalc();
     unscheduleStyleRecalc();
 
     if (view())
@@ -1431,6 +1467,8 @@ bail_out:
 
 void Document::updateStyleIfNeeded()
 {
+    ASSERT(!view() || (!view()->isInLayout() && !view()->isPainting()));
+    
     if (!childNeedsStyleRecalc() || inPageCache())
         return;
         
@@ -1502,6 +1540,17 @@ void Document::updateLayoutIgnorePendingStylesheets()
     updateLayout();
 
     m_ignorePendingStylesheets = oldIgnore;
+}
+
+PassRefPtr<RenderStyle> Document::styleForElementIgnoringPendingStylesheets(Element* element)
+{
+    ASSERT_ARG(element, element->document() == this);
+
+    bool oldIgnore = m_ignorePendingStylesheets;
+    m_ignorePendingStylesheets = true;
+    RefPtr<RenderStyle> style = styleSelector()->styleForElement(element, element->parent() ? element->parent()->computedStyle() : 0);
+    m_ignorePendingStylesheets = oldIgnore;
+    return style.release();
 }
 
 void Document::createStyleSelector()
@@ -1599,6 +1648,13 @@ void Document::suspendActiveDOMObjects()
     if (domWindow() && usingGeolocation())
         domWindow()->navigator()->geolocation()->suspend();
 
+#if ENABLE(DEVICE_ORIENTATION)
+    if (m_deviceMotionController)
+        m_deviceMotionController->suspendUpdates();
+    if (m_deviceOrientationController)
+        m_deviceOrientationController->suspendUpdates();
+#endif
+
     if (WebThreadCountOfObservedContentModifiers() > 0)
         if (frame() && frame()->page() && frame()->page()->chrome() && frame()->page()->chrome()->client())
             frame()->page()->chrome()->client()->clearContentChangeObservers(frame());
@@ -1611,6 +1667,13 @@ void Document::resumeActiveDOMObjects()
     if (domWindow() && usingGeolocation())
         domWindow()->navigator()->geolocation()->resume();
     
+#if ENABLE(DEVICE_ORIENTATION)
+    if (m_deviceMotionController)
+        m_deviceMotionController->resumeUpdates();
+    if (m_deviceOrientationController)
+        m_deviceOrientationController->resumeUpdates();
+#endif
+
     // FIXME: DDK: Do we need to add content change observers back here?
 }
 
@@ -1620,6 +1683,13 @@ void Document::stopActiveDOMObjects()
 
     if (domWindow() && usingGeolocation())
         domWindow()->navigator()->geolocation()->suspend();
+
+#if ENABLE(DEVICE_ORIENTATION)
+    if (m_deviceMotionController)
+        m_deviceMotionController->suspendUpdates();
+    if (m_deviceOrientationController)
+        m_deviceOrientationController->suspendUpdates();
+#endif
 
     if (WebThreadCountOfObservedContentModifiers() > 0)
         if (frame() && frame()->page() && frame()->page()->chrome() && frame()->page()->chrome()->client())
@@ -1815,7 +1885,7 @@ void Document::close()
     if (frame) {
         // This code calls implicitClose() if all loading has completed.
         FrameLoader* frameLoader = frame->loader();
-        frameLoader->endIfNotLoadingMainResource();
+        frameLoader->writer()->endIfNotLoadingMainResource();
         frameLoader->checkCompleted();
     } else {
         // Because we have no frame, we don't know if all loading has completed,
@@ -1882,9 +1952,9 @@ void Document::implicitClose()
     ImageLoader::dispatchPendingBeforeLoadEvents();
     ImageLoader::dispatchPendingLoadEvents();
     dispatchWindowLoadEvent();
-    dispatchWindowEvent(PageTransitionEvent::create(eventNames().pageshowEvent, false), this);
+    enqueuePageshowEvent(PageshowEventNotPersisted);
     if (m_pendingStateObject)
-        dispatchWindowEvent(PopStateEvent::create(m_pendingStateObject.release()));
+        enqueuePopstateEvent(m_pendingStateObject.release());
     
     if (f)
         f->loader()->handledOnloadEvents();
@@ -2083,9 +2153,9 @@ void Document::updateBaseURL()
         m_baseURL = KURL();
 
     if (m_elemSheet)
-        m_elemSheet->setBaseURL(m_baseURL);
+        m_elemSheet->setFinalURL(m_baseURL);
     if (m_mappedElementSheet)
-        m_mappedElementSheet->setBaseURL(m_baseURL);
+        m_mappedElementSheet->setFinalURL(m_baseURL);
 }
 
 String Document::userAgent(const KURL& url) const
@@ -2352,80 +2422,6 @@ void Document::processHttpEquiv(const String& equiv, const String& content)
     }
 }
 
-
-static void reportViewportWarning(Document *aDocument, ViewportErrorCode anErrorCode, const String& aReplacement)
-{
-    Tokenizer * tokenizer = aDocument->tokenizer();
-
-    Frame * frame = aDocument->frame();
-    if (!frame)
-        return;
-
-    String message = viewportErrorMessageTemplate(anErrorCode);
-    message.replace("%replacement", aReplacement);
-
-    frame->domWindow()->console()->addMessage(HTMLMessageSource, LogMessageType, viewportErrorMessageLevel(anErrorCode), message, tokenizer ? tokenizer->lineNumber() + 1 : 0, aDocument->url().string());
-}
-
-static void setViewportFeature(const String& keyString, const String& valueString, Document *aDocument, void* userData)
-{
-    ViewportArguments &arguments = *((ViewportArguments*)userData);
-    float value = -1;
-    bool didUseConstants = false;
-
-    CGSize screenSize = wkGetViewportScreenSize();
-    
-    if (equalIgnoringCase(valueString, "yes"))
-        value = 1;
-    else if (equalIgnoringCase(valueString, "device-width")) {
-        didUseConstants = true;
-        value = screenSize.width;
-    }
-    else if (equalIgnoringCase(valueString, "device-height")) {
-        didUseConstants = true;
-        value = screenSize.height;
-    }
-    // This allows us to distinguish the omission of a key from asking for the default value.
-    else if (equalIgnoringCase(valueString, "default"))
-        value = -2;
-    else if (valueString.length() != 0) // listing a key with no value is shorthand for key=default
-        value = valueString.toFloat();
-
-    if (keyString == "initial-scale")
-        arguments.initialScale = value;
-    else if (keyString == "minimum-scale")
-        arguments.minimumScale = value;
-    else if (keyString == "maximum-scale")
-    {
-        arguments.maximumScale = value;
-        
-        if (value > 10.0)
-            reportViewportWarning(aDocument, MaximumScaleTooLargeError, keyString);
-    }
-    else if (keyString == "user-scalable")
-        arguments.userScalable = value;
-    else if (keyString == "width") {
-        
-        if (value == screenSize.width && !didUseConstants)
-            reportViewportWarning(aDocument, DeviceWidthShouldBeUsedWarning, keyString);
-        else if (value == screenSize.height && !didUseConstants)
-            reportViewportWarning(aDocument, DeviceHeightShouldBeUsedWarning, keyString);
-        
-        arguments.width = value;
-    }
-    else if (keyString == "height") {
-        
-        if (value == screenSize.width && !didUseConstants)
-            reportViewportWarning(aDocument, DeviceWidthShouldBeUsedWarning, keyString);
-        else if (value == screenSize.height && !didUseConstants)
-            reportViewportWarning(aDocument, DeviceHeightShouldBeUsedWarning, keyString);
-        
-        arguments.height = value;
-    }
-    else
-        reportViewportWarning(aDocument, UnrecognizedViewportArgumentError, keyString);
-}
-
 static void setParserFeature(const String& keyString, const String& valueString, Document *aDocument, void* userData)
 {
     UNUSED_PARAM(aDocument);
@@ -2435,17 +2431,17 @@ static void setParserFeature(const String& keyString, const String& valueString,
 }
 
 // Though isspace() considers \t and \v to be whitespace, Win IE doesn't.
-static bool isSeparator(::UChar c)
+static bool isSeparator(UChar c)
 {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '=' || c == ',' || c == '\0';
 }
 
-void Document::processArguments(const String & features, void *userData, void (*argumentsCallback)(const String& keyString, const String& valueString, Document *aDocument, void* userData))
+void Document::processArguments(const String& features, void* data, ArgumentsCallback callback)
 {
     // Tread lightly in this code -- it was specifically designed to mimic Win IE's parsing behavior.
     int keyBegin, keyEnd;
     int valueBegin, valueEnd;
-    
+
     int i = 0;
     int length = features.length();
     String buffer = features.lower();
@@ -2457,19 +2453,19 @@ void Document::processArguments(const String & features, void *userData, void (*
             i++;
         }
         keyBegin = i;
-        
+
         // skip to first separator
         while (!isSeparator(buffer[i]))
             i++;
         keyEnd = i;
-        
+
         // skip to first '=', but don't skip past a ',' or the end of the string
         while (buffer[i] != '=') {
             if (buffer[i] == ',' || i >= length)
                 break;
             i++;
         }
-        
+
         // skip to first non-separator, but don't skip past a ',' or the end of the string
         while (isSeparator(buffer[i])) {
             if (buffer[i] == ',' || i >= length)
@@ -2477,31 +2473,30 @@ void Document::processArguments(const String & features, void *userData, void (*
             i++;
         }
         valueBegin = i;
-        
+
         // skip to first separator
         while (!isSeparator(buffer[i]))
             i++;
         valueEnd = i;
-        
+
         ASSERT(i <= length);
-        
-        String keyString(buffer.substring(keyBegin, keyEnd - keyBegin));
-        String valueString(buffer.substring(valueBegin, valueEnd - valueBegin));
-        argumentsCallback(keyString, valueString, this, userData);
+
+        String keyString = buffer.substring(keyBegin, keyEnd - keyBegin);
+        String valueString = buffer.substring(valueBegin, valueEnd - valueBegin);
+        callback(keyString, valueString, this, data);
     }
 }
 
-void Document::processViewport(const String & features)
+void Document::processViewport(const String& features)
 {
     ASSERT(!features.isNull());
-    
-    Frame *frame = this->frame();
+
+    Frame* frame = this->frame();
     if (!frame)
         return;
-    
-    ViewportArguments arguments;
 
-    processArguments(features, &arguments, setViewportFeature);
+    ViewportArguments arguments;
+    processArguments(features, (void*)&arguments, &setViewportFeature);
 
     if (frame->page())
         frame->page()->chrome()->client()->didReceiveViewportArguments(frame, arguments);
@@ -2716,7 +2711,6 @@ void Document::updateStyleSelector()
 #endif
 
     recalcStyleSelector();
-    
     // This recalcStyle initiates a new recalc cycle. We need to bracket it to
     // make sure animations get the correct update time
     if (m_frame)
@@ -2749,9 +2743,9 @@ void Document::addStyleSheetCandidateNode(Node* node, bool createdByParser)
     }
 
     // Determine an appropriate insertion point.
-    ListHashSet<Node*>::iterator begin = m_styleSheetCandidateNodes.begin();
-    ListHashSet<Node*>::iterator end = m_styleSheetCandidateNodes.end();
-    ListHashSet<Node*>::iterator it = end;
+    StyleSheetCandidateListHashSet::iterator begin = m_styleSheetCandidateNodes.begin();
+    StyleSheetCandidateListHashSet::iterator end = m_styleSheetCandidateNodes.end();
+    StyleSheetCandidateListHashSet::iterator it = end;
     Node* followingNode = 0;
     do {
         --it;
@@ -2783,11 +2777,11 @@ void Document::recalcStyleSelector()
     if (Settings* settings = this->settings())
         matchAuthorAndUserStyles = settings->authorAndUserStylesEnabled();
 
-    ListHashSet<Node*>::iterator begin = m_styleSheetCandidateNodes.begin();
-    ListHashSet<Node*>::iterator end = m_styleSheetCandidateNodes.end();
+    StyleSheetCandidateListHashSet::iterator begin = m_styleSheetCandidateNodes.begin();
+    StyleSheetCandidateListHashSet::iterator end = m_styleSheetCandidateNodes.end();
     if (!matchAuthorAndUserStyles)
         end = begin;
-    for (ListHashSet<Node*>::iterator it = begin; it != end; ++it) {
+    for (StyleSheetCandidateListHashSet::iterator it = begin; it != end; ++it) {
         Node* n = *it;
 
         StyleSheet* sheet = 0;
@@ -2978,7 +2972,7 @@ bool Document::setFocusedNode(PassRefPtr<Node> newFocusedNode)
     m_focusedNode = 0;
 
     // Remove focus from the existing focus node (if any)
-    if (oldFocusedNode && !oldFocusedNode->m_inDetach) { 
+    if (oldFocusedNode && !oldFocusedNode->inDetach()) { 
         if (oldFocusedNode->active())
             oldFocusedNode->setActive(false);
 
@@ -3001,7 +2995,9 @@ bool Document::setFocusedNode(PassRefPtr<Node> newFocusedNode)
             focusChangeBlocked = true;
             newFocusedNode = 0;
         }
-        oldFocusedNode->dispatchUIEvent(eventNames().DOMFocusOutEvent, 0, 0);
+        
+        oldFocusedNode->dispatchUIEvent(eventNames().focusoutEvent, 0, 0); // DOM level 3 name for the bubbling blur event.
+
         if (m_focusedNode) {
             // handler shifted focus
             focusChangeBlocked = true;
@@ -3012,6 +3008,14 @@ bool Document::setFocusedNode(PassRefPtr<Node> newFocusedNode)
             
         if (oldFocusedNode == oldFocusedNode->rootEditableElement())
             frame()->editor()->didEndEditing();
+
+        if (view()) {
+            Widget* oldWidget = widgetForNode(oldFocusedNode.get());
+            if (oldWidget)
+                oldWidget->setFocus(false);
+            else
+                view()->setFocus(false);
+        }
     }
 
     if (newFocusedNode) {
@@ -3031,13 +3035,15 @@ bool Document::setFocusedNode(PassRefPtr<Node> newFocusedNode)
             focusChangeBlocked = true;
             goto SetFocusedNodeDone;
         }
-        m_focusedNode->dispatchUIEvent(eventNames().DOMFocusInEvent, 0, 0);
+
+        m_focusedNode->dispatchUIEvent(eventNames().focusinEvent, 0, 0); // DOM level 3 bubbling focus event.
+
         if (m_focusedNode != newFocusedNode) { 
             // handler shifted focus
             focusChangeBlocked = true;
             goto SetFocusedNodeDone;
         }
-        m_focusedNode->setFocus();
+        m_focusedNode->setFocus(true);
 
         if (m_focusedNode == m_focusedNode->rootEditableElement())
             frame()->editor()->didBeginEditing();
@@ -3055,9 +3061,9 @@ bool Document::setFocusedNode(PassRefPtr<Node> newFocusedNode)
                 focusWidget = widgetForNode(m_focusedNode.get());
             }
             if (focusWidget)
-                focusWidget->setFocus();
+                focusWidget->setFocus(true);
             else
-                view()->setFocus();
+                view()->setFocus(true);
         }
     }
 
@@ -3255,22 +3261,22 @@ void Document::dispatchWindowLoadEvent()
     domWindow->dispatchLoadEvent();
 }
 
-void Document::enqueueStorageEvent(PassRefPtr<Event> storageEvent)
+void Document::enqueueEvent(PassRefPtr<Event> event)
 {
-    m_storageEventQueue.append(storageEvent);
-    if (!m_storageEventTimer.isActive())
-        m_storageEventTimer.startOneShot(0);
+    m_pendingEventQueue.append(event);
+    if (!m_pendingEventTimer.isActive())
+        m_pendingEventTimer.startOneShot(0);
 }
 
-void Document::storageEventTimerFired(Timer<Document>*)
+void Document::pendingEventTimerFired(Timer<Document>*)
 {
-    ASSERT(!m_storageEventTimer.isActive());
-    Vector<RefPtr<Event> > storageEventQueue;
-    storageEventQueue.swap(m_storageEventQueue);
+    ASSERT(!m_pendingEventTimer.isActive());
+    Vector<RefPtr<Event> > eventQueue;
+    eventQueue.swap(m_pendingEventQueue);
 
     typedef Vector<RefPtr<Event> >::const_iterator Iterator;
-    Iterator end = storageEventQueue.end();
-    for (Iterator it = storageEventQueue.begin(); it != end; ++it)
+    Iterator end = eventQueue.end();
+    for (Iterator it = eventQueue.begin(); it != end; ++it)
         dispatchWindowEvent(*it);
 }
 
@@ -3279,6 +3285,8 @@ PassRefPtr<Event> Document::createEvent(const String& eventType, ExceptionCode& 
     RefPtr<Event> event;
     if (eventType == "Event" || eventType == "Events" || eventType == "HTMLEvents")
         event = Event::create();
+    else if (eventType == "CustomEvent")
+        event = CustomEvent::create();
     else if (eventType == "KeyboardEvent" || eventType == "KeyboardEvents")
         event = KeyboardEvent::create();
     else if (eventType == "MessageEvent")
@@ -3313,10 +3321,20 @@ PassRefPtr<Event> Document::createEvent(const String& eventType, ExceptionCode& 
     else if (eventType == "SVGZoomEvents")
         event = SVGZoomEvent::create();
 #endif
+#if USE(V8)
+    else if (eventType == "TouchEvent" && RuntimeEnabledFeatures::touchEnabled())
+#else
     else if (eventType == "TouchEvent")
+#endif
         event = TouchEvent::create();
     else if (eventType == "GestureEvent")
         event = GestureEvent::create();
+#if ENABLE(DEVICE_ORIENTATION)
+    else if (eventType == "DeviceMotionEvent")
+        event = DeviceMotionEvent::create();
+    else if (eventType == "DeviceOrientationEvent")
+        event = DeviceOrientationEvent::create();
+#endif
     if (event)
         return event.release();
 
@@ -3753,6 +3771,9 @@ static Editor::Command command(Document* document, const String& commandName, bo
     Frame* frame = document->frame();
     if (!frame || frame->document() != document)
         return Editor::Command();
+
+    document->updateStyleIfNeeded();
+
     return frame->editor()->command(commandName,
         userInterface ? CommandFromDOMWithUserInterface : CommandFromDOM);
 }
@@ -4455,7 +4476,17 @@ void Document::finishedParsing()
 {
     setParsing(false);
     dispatchEvent(Event::create(eventNames().DOMContentLoadedEvent, true, false));
+
     if (Frame* f = frame()) {
+        // FrameLoader::finishedParsing() might end up calling Document::implicitClose() if all
+        // resource loads are complete. HTMLObjectElements can start loading their resources from
+        // post attach callbacks triggered by recalcStyle().  This means if we parse out an <object>
+        // tag and then reach the end of the document without updating styles, we might not have yet
+        // started the resource load and might fire the window load event too early.  To avoid this
+        // we force the styles to be up to date before calling FrameLoader::finishedParsing().
+        // See https://bugs.webkit.org/show_bug.cgi?id=36864 starting around comment 35.
+        updateStyleIfNeeded();
+
         f->loader()->finishedParsing();
 
 #if ENABLE(INSPECTOR)
@@ -4472,7 +4503,7 @@ Vector<String> Document::formElementsState() const
 {
     Vector<String> stateVector;
     stateVector.reserveInitialCapacity(m_formElementsWithState.size() * 3);
-    typedef ListHashSet<Element*>::const_iterator Iterator;
+    typedef FormElementListHashSet::const_iterator Iterator;
     Iterator end = m_formElementsWithState.end();
     for (Iterator it = m_formElementsWithState.begin(); it != end; ++it) {
         Element* elementWithState = *it;
@@ -4500,7 +4531,7 @@ bool Document::isTelephoneNumberParsingEnabled() const
 
 unsigned Document::formElementsCharacterCount() const
 {
-    typedef ListHashSet<Element*>::const_iterator Iterator;
+    typedef FormElementListHashSet::const_iterator Iterator;
     Iterator end = m_formElementsWithState.end();
     unsigned charCount = 0;
     for (Iterator it = m_formElementsWithState.begin(); it != end; ++it) {
@@ -4673,6 +4704,8 @@ void Document::setIconURL(const String& iconURL, const String& type)
         m_iconURL = iconURL;
     else if (!type.isEmpty())
         m_iconURL = iconURL;
+    if (Frame* f = frame())
+        f->loader()->setIconURL(m_iconURL);
 }
 
 void Document::setUseSecureKeyboardEntryWhenActive(bool usesSecureKeyboard)
@@ -4681,7 +4714,7 @@ void Document::setUseSecureKeyboardEntryWhenActive(bool usesSecureKeyboard)
         return;
         
     m_useSecureKeyboardEntryWhenActive = usesSecureKeyboard;
-    m_frame->updateSecureKeyboardEntryIfActive();
+    m_frame->selection()->updateSecureKeyboardEntryIfActive();
 }
 
 bool Document::useSecureKeyboardEntryWhenActive() const
@@ -4729,6 +4762,10 @@ void Document::initSecurityContext()
           // Some clients want file:// URLs to have universal access, but that
           // setting is dangerous for other clients.
           securityOrigin()->grantUniversalAccess();
+        } else if (!settings->allowFileAccessFromFileURLs() && securityOrigin()->isLocal()) {
+          // Some clients want file:// URLs to have even tighter restrictions by
+          // default, and not be able to access other local files.
+          securityOrigin()->enforceFilePathSeparation();
         }
     }
 
@@ -4787,7 +4824,9 @@ void Document::updateURLForPushOrReplaceState(const KURL& url)
     if (!f)
         return;
 
+    // FIXME: Eliminate this redundancy.
     setURL(url);
+    f->loader()->setURL(url);
     f->loader()->documentLoader()->replaceRequestURLForSameDocumentNavigation(url);
 }
 
@@ -4798,19 +4837,14 @@ void Document::statePopped(SerializedScriptValue* stateObject)
         return;
     
     if (f->loader()->isComplete())
-        dispatchWindowEvent(PopStateEvent::create(stateObject));
+        enqueuePopstateEvent(stateObject);
     else
         m_pendingStateObject = stateObject;
 }
 
-void Document::updateSandboxFlags()
+void Document::updateFocusAppearanceSoon(bool restorePreviousSelection)
 {
-    if (m_frame && securityOrigin())
-        securityOrigin()->setSandboxFlags(m_frame->loader()->sandboxFlags());
-}
-
-void Document::updateFocusAppearanceSoon()
-{
+    m_updateFocusAppearanceRestoresSelection = restorePreviousSelection;
     if (!m_updateFocusAppearanceTimer.isActive())
         m_updateFocusAppearanceTimer.startOneShot(0);
 }
@@ -4832,7 +4866,7 @@ void Document::updateFocusAppearanceTimerFired(Timer<Document>*)
 
     Element* element = static_cast<Element*>(node);
     if (element->isFocusable())
-        element->updateFocusAppearance(false);
+        element->updateFocusAppearance(m_updateFocusAppearanceRestoresSelection);
 }
 
 void Document::executeScriptSoonTimerFired(Timer<Document>* timer)
@@ -5302,8 +5336,10 @@ unsigned long Document::animatedImageDataCount()
 
 void Document::initDNSPrefetch()
 {
+    Settings* settings = this->settings();
+
     m_haveExplicitlyDisabledDNSPrefetch = false;
-    m_isDNSPrefetchEnabled = securityOrigin()->protocol() == "http";
+    m_isDNSPrefetchEnabled = settings && settings->dnsPrefetchingEnabled() && securityOrigin()->protocol() == "http";
 
     // Inherit DNS prefetch opt-out from parent frame    
     if (Document* parent = parentDocument()) {
@@ -5325,69 +5361,14 @@ void Document::parseDNSPrefetchControlHeader(const String& dnsPrefetchControl)
 
 void Document::reportException(const String& errorMessage, int lineNumber, const String& sourceURL)
 {
+    addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, errorMessage, lineNumber, sourceURL);
+}
+
+void Document::addMessage(MessageSource source, MessageType type, MessageLevel level, const String& message, unsigned lineNumber, const String& sourceURL)
+{
     if (DOMWindow* window = domWindow())
-        window->console()->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, errorMessage, lineNumber, sourceURL);
+        window->console()->addMessage(source, type, level, message, lineNumber, sourceURL);
 }
-
-void Document::addMessage(MessageDestination destination, MessageSource source, MessageType type, MessageLevel level, const String& message, unsigned lineNumber, const String& sourceURL)
-{
-    switch (destination) {
-#if ENABLE(INSPECTOR)
-    case InspectorControllerDestination:
-        if (page())
-            page()->inspectorController()->addMessageToConsole(source, type, level, message, lineNumber, sourceURL);
-        return;
-#endif
-    case ConsoleDestination:
-        if (DOMWindow* window = domWindow())
-            window->console()->addMessage(source, type, level, message, lineNumber, sourceURL);
-        return;
-    }
-    ASSERT_NOT_REACHED();
-}
-
-void Document::resourceRetrievedByXMLHttpRequest(unsigned long identifier, const ScriptString& sourceString)
-{
-#if ENABLE(INSPECTOR)
-    if (page())
-        page()->inspectorController()->resourceRetrievedByXMLHttpRequest(identifier, sourceString);
-#endif
-    Frame* frame = this->frame();
-    if (frame) {
-        FrameLoader* frameLoader = frame->loader();
-        frameLoader->notifier()->didLoadResourceByXMLHttpRequest(identifier, sourceString);
-    }
-}
-
-void Document::scriptImported(unsigned long identifier, const String& sourceString)
-{
-#if ENABLE(INSPECTOR)
-    if (page())
-        page()->inspectorController()->scriptImported(identifier, sourceString);
-#else
-    UNUSED_PARAM(identifier);
-    UNUSED_PARAM(sourceString);
-#endif
-}
-
-class ScriptExecutionContextTaskTimer : public TimerBase {
-public:
-    ScriptExecutionContextTaskTimer(PassRefPtr<Document> context, PassOwnPtr<ScriptExecutionContext::Task> task)
-        : m_context(context)
-        , m_task(task)
-    {
-    }
-
-private:
-    virtual void fired()
-    {
-        m_task->performTask(m_context.get());
-        delete this;
-    }
-
-    RefPtr<Document> m_context;
-    OwnPtr<ScriptExecutionContext::Task> m_task;
-};
 
 struct PerformTaskContext : Noncopyable {
     PerformTaskContext(PassRefPtr<DocumentWeakReference> documentReference, PassOwnPtr<ScriptExecutionContext::Task> task)
@@ -5415,12 +5396,7 @@ static void performTask(void* ctx)
 
 void Document::postTask(PassOwnPtr<Task> task)
 {
-    if (isMainThread()) {
-        ScriptExecutionContextTaskTimer* timer = new ScriptExecutionContextTaskTimer(static_cast<Document*>(this), task);
-        timer->startOneShot(0);
-    } else {
-        callOnMainThread(performTask, new PerformTaskContext(m_weakReference, task));
-    }
+    callOnMainThread(performTask, new PerformTaskContext(m_weakReference, task));
 }
 
 Element* Document::findAnchor(const String& name)
@@ -5466,6 +5442,59 @@ void Document::displayBufferModifiedByEncoding(UChar* buffer, unsigned len) cons
         m_decoder->encoding().displayBuffer(buffer, len);
 }
 
+void Document::enqueuePageshowEvent(PageshowEventPersistence persisted)
+{
+    // FIXME: https://bugs.webkit.org/show_bug.cgi?id=36334 Pageshow event needs to fire asynchronously.
+    dispatchWindowEvent(PageTransitionEvent::create(eventNames().pageshowEvent, persisted), this);
+}
+
+void Document::enqueueHashchangeEvent(const String& /*oldURL*/, const String& /*newURL*/)
+{
+    // FIXME: https://bugs.webkit.org/show_bug.cgi?id=36335 Hashchange event is now its own interface and takes two
+    //   URL arguments which we need to pass in here.
+    enqueueEvent(Event::create(eventNames().hashchangeEvent, false, false));
+}
+
+void Document::enqueuePopstateEvent(PassRefPtr<SerializedScriptValue> stateObject)
+{
+    // FIXME: https://bugs.webkit.org/show_bug.cgi?id=36202 Popstate event needs to fire asynchronously
+    dispatchWindowEvent(PopStateEvent::create(stateObject));
+}
+
+void Document::addMediaCanStartListener(MediaCanStartListener* listener)
+{
+    ASSERT(!m_mediaCanStartListeners.contains(listener));
+    m_mediaCanStartListeners.add(listener);
+}
+
+void Document::removeMediaCanStartListener(MediaCanStartListener* listener)
+{
+    ASSERT(m_mediaCanStartListeners.contains(listener));
+    m_mediaCanStartListeners.remove(listener);
+}
+
+MediaCanStartListener* Document::takeAnyMediaCanStartListener()
+{
+    HashSet<MediaCanStartListener*>::iterator slot = m_mediaCanStartListeners.begin();
+    if (slot == m_mediaCanStartListeners.end())
+        return 0;
+    MediaCanStartListener* listener = *slot;
+    m_mediaCanStartListeners.remove(slot);
+    return listener;
+}
+
+#if ENABLE(DEVICE_ORIENTATION)
+DeviceMotionController* Document::deviceMotionController() const
+{
+    return m_deviceMotionController.get();
+}
+
+DeviceOrientationController* Document::deviceOrientationController() const
+{
+    return m_deviceOrientationController.get();
+}
+#endif
+
 #if ENABLE(XHTMLMP)
 bool Document::isXHTMLMPDocument() const
 {
@@ -5473,8 +5502,9 @@ bool Document::isXHTMLMPDocument() const
         return false;
     // As per section 7.2 of OMA-WAP-XHTMLMP-V1_1-20061020-A.pdf, a conforming user agent
     // MUST accept XHTMLMP document identified as "application/vnd.wap.xhtml+xml"
-    // and SHOULD accept it identified as "application/xhtml+xml"
-    return frame()->loader()->responseMIMEType() == "application/vnd.wap.xhtml+xml" || frame()->loader()->responseMIMEType() == "application/xhtml+xml";
+    // and SHOULD accept it identified as "application/xhtml+xml" , "application/xhtml+xml" is a 
+    // general MIME type for all XHTML documents, not only for XHTMLMP
+    return frame()->loader()->writer()->mimeType() == "application/vnd.wap.xhtml+xml";
 }
 #endif
 
@@ -5482,6 +5512,11 @@ bool Document::isXHTMLMPDocument() const
 InspectorTimelineAgent* Document::inspectorTimelineAgent() const 
 {
     return page() ? page()->inspectorTimelineAgent() : 0;
+}
+
+InspectorController* Document::inspectorController() const 
+{
+    return page() ? page()->inspectorController() : 0;
 }
 #endif
 

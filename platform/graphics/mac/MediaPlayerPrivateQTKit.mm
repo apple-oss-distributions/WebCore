@@ -211,6 +211,7 @@ MediaPlayerPrivate::MediaPlayerPrivate(MediaPlayer* player)
     , m_reportedDuration(-1)
     , m_cachedDuration(-1)
     , m_timeToRestore(-1)
+    , m_preload(MediaPlayer::Auto)
     , m_startedPlaying(false)
     , m_isStreaming(false)
     , m_visible(false)
@@ -445,12 +446,7 @@ void MediaPlayerPrivate::createQTMovieLayer()
 #ifndef NDEBUG
         [(CALayer *)m_qtVideoLayer.get() setName:@"Video layer"];
 #endif
-
-        // Hang the video layer from the render layer, if we have one yet. If not, we'll do this
-        // later via acceleratedRenderingStateChanged().
-        GraphicsLayer* videoGraphicsLayer = m_player->mediaPlayerClient()->mediaPlayerGraphicsLayer(m_player);
-        if (videoGraphicsLayer)
-            videoGraphicsLayer->setContentsToMedia(m_qtVideoLayer.get());
+        // The layer will get hooked up via RenderLayerBacking::updateGraphicsLayerConfiguration().
     }
 #endif
 }
@@ -522,6 +518,11 @@ void MediaPlayerPrivate::setUpVideoRendering()
         createQTMovieLayer();
         break;
     }
+
+#if USE(ACCELERATED_COMPOSITING)
+    if (currentMode == MediaRenderingMovieLayer || preferredMode == MediaRenderingMovieLayer)
+        m_player->mediaPlayerClient()->mediaPlayerRenderingModeChanged(m_player);
+#endif
 }
 
 void MediaPlayerPrivate::tearDownVideoRendering()
@@ -549,7 +550,29 @@ QTTime MediaPlayerPrivate::createQTTime(float time) const
     return QTMakeTime(time * timeScale, timeScale);
 }
 
+void MediaPlayerPrivate::resumeLoad()
+{
+    m_delayingLoad = false;
+
+    if (m_movieURL)
+        loadInternal(m_movieURL);
+}
+
 void MediaPlayerPrivate::load(const String& url)
+{
+    m_movieURL = url;
+
+    // If the element is not supposed to load any data return immediately because QTKit
+    // doesn't have API to throttle loading.
+    if (m_preload == MediaPlayer::None) {
+        m_delayingLoad = true;
+        return;
+    }
+
+    loadInternal(url);
+}
+
+void MediaPlayerPrivate::loadInternal(const String& url)
 {
     if (m_networkState != MediaPlayer::Loading) {
         m_networkState = MediaPlayer::Loading;
@@ -570,11 +593,26 @@ void MediaPlayerPrivate::load(const String& url)
     [m_objcObserver.get() setDelayCallbacks:NO];
 }
 
+void MediaPlayerPrivate::prepareToPlay()
+{
+    if (!m_qtMovie || m_delayingLoad)
+        resumeLoad();
+}
+
 PlatformMedia MediaPlayerPrivate::platformMedia() const
 {
-    PlatformMedia plaftformMedia = { m_qtMovie.get() };
-    return plaftformMedia;
+    PlatformMedia pm;
+    pm.type = PlatformMedia::QTMovieType;
+    pm.media.qtMovie = m_qtMovie.get();
+    return pm;
 }
+
+#if USE(ACCELERATED_COMPOSITING)
+PlatformLayer* MediaPlayerPrivate::platformLayer() const
+{
+    return m_qtVideoLayer.get();
+}
+#endif
 
 void MediaPlayerPrivate::play()
 {
@@ -903,6 +941,7 @@ void MediaPlayerPrivate::updateStates()
             loadState = QTMovieLoadStateError;
 
         if (loadState != QTMovieLoadStateError) {
+            wkQTMovieSelectPreferredAlternates(m_qtMovie.get());
             cacheMovieScale();
             MediaPlayer::MovieLoadType movieType = movieLoadType();
             m_isStreaming = movieType == MediaPlayer::StoredStream || movieType == MediaPlayer::LiveStream;
@@ -1406,12 +1445,6 @@ void MediaPlayerPrivate::acceleratedRenderingStateChanged()
 {
     // Set up or change the rendering path if necessary.
     setUpVideoRendering();
-
-    if (currentRenderingMode() == MediaRenderingMovieLayer) {
-        GraphicsLayer* videoGraphicsLayer = m_player->mediaPlayerClient()->mediaPlayerGraphicsLayer(m_player);
-        if (videoGraphicsLayer)
-            videoGraphicsLayer->setContentsToMedia(m_qtVideoLayer.get());
-    }
 }
 #endif
 
@@ -1436,6 +1469,12 @@ MediaPlayer::MovieLoadType MediaPlayerPrivate::movieLoadType() const
     return movieType;
 }
 
+void MediaPlayerPrivate::setPreload(MediaPlayer::Preload preload)
+{
+    m_preload = preload;
+    if (m_delayingLoad && m_preload != MediaPlayer::None)
+        resumeLoad();
+}
 
 } // namespace WebCore
 

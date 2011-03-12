@@ -21,6 +21,7 @@
 #include "InlineFlowBox.h"
 
 #include "CachedImage.h"
+#include "CSSPropertyNames.h"
 #include "Document.h"
 #include "EllipsisBox.h"
 #include "GraphicsContext.h"
@@ -166,7 +167,7 @@ void InlineFlowBox::attachLineBoxToRenderObject()
 
 void InlineFlowBox::adjustPosition(int dx, int dy)
 {
-    InlineRunBox::adjustPosition(dx, dy);
+    InlineBox::adjustPosition(dx, dy);
     for (InlineBox* child = firstChild(); child; child = child->nextOnLine())
         child->adjustPosition(dx, dy);
     if (m_overflow)
@@ -296,9 +297,9 @@ int InlineFlowBox::placeBoxesHorizontally(int xPos, bool& needsWordSpacing)
             
             int childOverflowLeft = leftGlyphOverflow;
             int childOverflowRight = rightGlyphOverflow;
-            for (ShadowData* shadow = rt->style()->textShadow(); shadow; shadow = shadow->next) {
-                childOverflowLeft = min(childOverflowLeft, shadow->x - shadow->blur + leftGlyphOverflow);
-                childOverflowRight = max(childOverflowRight, shadow->x + shadow->blur + rightGlyphOverflow);
+            for (const ShadowData* shadow = rt->style()->textShadow(); shadow; shadow = shadow->next()) {
+                childOverflowLeft = min(childOverflowLeft, shadow->x() - shadow->blur() + leftGlyphOverflow);
+                childOverflowRight = max(childOverflowRight, shadow->x() + shadow->blur() + rightGlyphOverflow);
             }
             
             leftVisualOverflow = min(xPos + childOverflowLeft, leftVisualOverflow);
@@ -573,9 +574,9 @@ void InlineFlowBox::computeVerticalOverflow(int lineTop, int lineBottom, bool st
 
             int childOverflowTop = topGlyphOverflow;
             int childOverflowBottom = bottomGlyphOverflow;
-            for (ShadowData* shadow = rt->style()->textShadow(); shadow; shadow = shadow->next) {
-                childOverflowTop = min(childOverflowTop, shadow->y - shadow->blur + topGlyphOverflow);
-                childOverflowBottom = max(childOverflowBottom, shadow->y + shadow->blur + bottomGlyphOverflow);
+            for (const ShadowData* shadow = rt->style()->textShadow(); shadow; shadow = shadow->next()) {
+                childOverflowTop = min(childOverflowTop, shadow->y() - shadow->blur() + topGlyphOverflow);
+                childOverflowBottom = max(childOverflowBottom, shadow->y() + shadow->blur() + bottomGlyphOverflow);
             }
             
             topVisualOverflow = min(curr->y() + childOverflowTop, topVisualOverflow);
@@ -721,11 +722,11 @@ void InlineFlowBox::paintFillLayer(const RenderObject::PaintInfo& paintInfo, con
         // FIXME: What the heck do we do with RTL here? The math we're using is obviously not right,
         // but it isn't even clear how this should work at all.
         int xOffsetOnLine = 0;
-        for (InlineRunBox* curr = prevLineBox(); curr; curr = curr->prevLineBox())
+        for (InlineFlowBox* curr = prevLineBox(); curr; curr = curr->prevLineBox())
             xOffsetOnLine += curr->width();
         int startX = tx - xOffsetOnLine;
         int totalWidth = xOffsetOnLine;
-        for (InlineRunBox* curr = this; curr; curr = curr->nextLineBox())
+        for (InlineFlowBox* curr = this; curr; curr = curr->nextLineBox())
             totalWidth += curr->width();
         paintInfo.context->save();
         paintInfo.context->clip(IntRect(tx, ty, width(), height()));
@@ -778,7 +779,7 @@ void InlineFlowBox::paintBoxDecorations(RenderObject::PaintInfo& paintInfo, int 
         if (styleToUse->boxShadow())
             paintBoxShadow(context, styleToUse, Normal, tx, ty, w, h);
 
-        Color c = styleToUse->backgroundColor();
+        Color c = styleToUse->visitedDependentColor(CSSPropertyBackgroundColor);
         paintFillLayers(paintInfo, c, styleToUse->backgroundLayers(), tx, ty, w, h);
 
         if (styleToUse->boxShadow())
@@ -806,11 +807,11 @@ void InlineFlowBox::paintBoxDecorations(RenderObject::PaintInfo& paintInfo, int 
                 // FIXME: What the heck do we do with RTL here? The math we're using is obviously not right,
                 // but it isn't even clear how this should work at all.
                 int xOffsetOnLine = 0;
-                for (InlineRunBox* curr = prevLineBox(); curr; curr = curr->prevLineBox())
+                for (InlineFlowBox* curr = prevLineBox(); curr; curr = curr->prevLineBox())
                     xOffsetOnLine += curr->width();
                 int startX = tx - xOffsetOnLine;
                 int totalWidth = xOffsetOnLine;
-                for (InlineRunBox* curr = this; curr; curr = curr->nextLineBox())
+                for (InlineFlowBox* curr = this; curr; curr = curr->nextLineBox())
                     totalWidth += curr->width();
                 context->save();
                 context->clip(IntRect(tx, ty, w, h));
@@ -877,11 +878,11 @@ void InlineFlowBox::paintMask(RenderObject::PaintInfo& paintInfo, int tx, int ty
         // We have a mask image that spans multiple lines.
         // We need to adjust _tx and _ty by the width of all previous lines.
         int xOffsetOnLine = 0;
-        for (InlineRunBox* curr = prevLineBox(); curr; curr = curr->prevLineBox())
+        for (InlineFlowBox* curr = prevLineBox(); curr; curr = curr->prevLineBox())
             xOffsetOnLine += curr->width();
         int startX = tx - xOffsetOnLine;
         int totalWidth = xOffsetOnLine;
-        for (InlineRunBox* curr = this; curr; curr = curr->nextLineBox())
+        for (InlineFlowBox* curr = this; curr; curr = curr->nextLineBox())
             totalWidth += curr->width();
         paintInfo.context->save();
         paintInfo.context->clip(IntRect(tx, ty, w, h));
@@ -975,7 +976,7 @@ void InlineFlowBox::paintTextDecorations(RenderObject::PaintInfo& paintInfo, int
         tx += borderLeft() + paddingLeft();
 
         Color underline, overline, linethrough;
-        underline = overline = linethrough = styleToUse->color();
+        underline = overline = linethrough = styleToUse->visitedDependentColor(CSSPropertyColor);
         if (!parent())
             renderer()->getTextDecorationColors(deco, underline, overline, linethrough);
 
@@ -994,15 +995,15 @@ void InlineFlowBox::paintTextDecorations(RenderObject::PaintInfo& paintInfo, int
 
         bool setClip = false;
         int extraOffset = 0;
-        ShadowData* shadow = styleToUse->textShadow();
-        if (!linesAreOpaque && shadow && shadow->next) {
+        const ShadowData* shadow = styleToUse->textShadow();
+        if (!linesAreOpaque && shadow && shadow->next()) {
             IntRect clipRect(tx, ty, w, baselinePos + 2);
-            for (ShadowData* s = shadow; s; s = s->next) {
+            for (const ShadowData* s = shadow; s; s = s->next()) {
                 IntRect shadowRect(tx, ty, w, baselinePos + 2);
-                shadowRect.inflate(s->blur);
-                shadowRect.move(s->x, s->y);
+                shadowRect.inflate(s->blur());
+                shadowRect.move(s->x(), s->y());
                 clipRect.unite(shadowRect);
-                extraOffset = max(extraOffset, max(0, s->y) + s->blur);
+                extraOffset = max(extraOffset, max(0, s->y()) + s->blur());
             }
             context->save();
             context->clip(clipRect);
@@ -1015,14 +1016,14 @@ void InlineFlowBox::paintTextDecorations(RenderObject::PaintInfo& paintInfo, int
         bool setShadow = false;
         do {
             if (shadow) {
-                if (!shadow->next) {
+                if (!shadow->next()) {
                     // The last set of lines paints normally inside the clip.
                     ty -= extraOffset;
                     extraOffset = 0;
                 }
-                context->setShadow(IntSize(shadow->x, shadow->y - extraOffset), shadow->blur, shadow->color, colorSpace);
+                context->setShadow(IntSize(shadow->x(), shadow->y() - extraOffset), shadow->blur(), shadow->color(), colorSpace);
                 setShadow = true;
-                shadow = shadow->next;
+                shadow = shadow->next();
             }
 
             if (paintUnderline) {

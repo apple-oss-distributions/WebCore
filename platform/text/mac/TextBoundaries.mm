@@ -179,7 +179,7 @@ int findNextWordFromIndex(const UChar* chars, int len, int position, bool forwar
                 if (pos == UBRK_DONE) {
                     pos = len;
                 }
-            } while (pos <= len && (pos == 0 || !isSkipCharacter(chars[pos-1])) && isSkipCharacter(chars[pos]));
+            } while (pos < len && (pos == 0 || !isSkipCharacter(chars[pos-1])) && isSkipCharacter(chars[pos]));
         }
         else {
             do {

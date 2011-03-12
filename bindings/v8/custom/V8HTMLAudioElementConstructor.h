@@ -31,15 +31,16 @@
 #ifndef V8HTMLAudioElementConstructor_h
 #define V8HTMLAudioElementConstructor_h
 
+#include "WrapperTypeInfo.h"
+
 #include <v8.h>
 
 namespace WebCore {
 
 class V8HTMLAudioElementConstructor {
-private:
+public:
     static v8::Persistent<v8::FunctionTemplate> GetTemplate();
-
-    friend class V8ClassIndex;
+    static WrapperTypeInfo info;
 };
 
 }

@@ -59,7 +59,6 @@
 #import "WebCoreViewFactory.h"
 #import "htmlediting.h"
 #import "visible_units.h"
-#import <runtime/InitializeThreading.h>
 
 using namespace WebCore;
 using namespace HTMLNames;
@@ -152,6 +151,14 @@ using namespace std;
 #define NSAccessibilityLoadingProgressAttribute @"AXLoadingProgress"
 #endif
 
+#ifndef NSAccessibilityHasPopupAttribute
+#define NSAccessibilityHasPopupAttribute @"AXHasPopup"
+#endif
+
+#ifndef NSAccessibilityPlaceholderValueAttribute
+#define NSAccessibilityPlaceholderValueAttribute @"AXPlaceholderValue"
+#endif
+
 #ifdef BUILDING_ON_TIGER
 typedef unsigned NSUInteger;
 #define NSAccessibilityValueDescriptionAttribute @"AXValueDescription"
@@ -167,13 +174,6 @@ typedef unsigned NSUInteger;
 @end
 
 @implementation AccessibilityObjectWrapper
-
-+ (void)initialize
-{
-#ifndef BUILDING_ON_TIGER
-    WebCoreObjCFinalizeOnMainThread(self);
-#endif
-}
 
 - (id)initWithAccessibilityObject:(AccessibilityObject*)axObject
 {
@@ -319,8 +319,8 @@ static void AXAttributeStringSetStyle(NSMutableAttributedString* attrString, Ren
     AXAttributeStringSetFont(attrString, NSAccessibilityFontTextAttribute, style->font().primaryFont()->getNSFont(), range);
 
     // set basic colors
-    AXAttributeStringSetColor(attrString, NSAccessibilityForegroundColorTextAttribute, nsColor(style->color()), range);
-    AXAttributeStringSetColor(attrString, NSAccessibilityBackgroundColorTextAttribute, nsColor(style->backgroundColor()), range);
+    AXAttributeStringSetColor(attrString, NSAccessibilityForegroundColorTextAttribute, nsColor(style->visitedDependentColor(CSSPropertyColor)), range);
+    AXAttributeStringSetColor(attrString, NSAccessibilityBackgroundColorTextAttribute, nsColor(style->visitedDependentColor(CSSPropertyBackgroundColor)), range);
 
     // set super/sub scripting
     EVerticalAlign alignment = style->verticalAlign();
@@ -633,6 +633,9 @@ static WebCoreTextMarkerRange* textMarkerRangeFromVisiblePositions(VisiblePositi
         [additional addObject:NSAccessibilityARIABusyAttribute];
     }
     
+    if (m_object->ariaHasPopup())
+        [additional addObject:NSAccessibilityHasPopupAttribute];
+    
     return additional;
 }
 
@@ -735,6 +738,7 @@ static WebCoreTextMarkerRange* textMarkerRangeFromVisiblePositions(VisiblePositi
         [tempArray addObject:NSAccessibilityTitleUIElementAttribute];
         [tempArray addObject:NSAccessibilityAccessKeyAttribute];
         [tempArray addObject:NSAccessibilityRequiredAttribute];
+        [tempArray addObject:NSAccessibilityPlaceholderValueAttribute];
         textAttrs = [[NSArray alloc] initWithArray:tempArray];
         [tempArray release];
     }
@@ -1510,8 +1514,19 @@ static NSString* roleValueToNSString(AccessibilityRole value)
         }
         if (m_object->isProgressIndicator() || m_object->isSlider() || m_object->isScrollbar())
             return [NSNumber numberWithFloat:m_object->valueForRange()];
-        if (m_object->hasIntValue())
-            return [NSNumber numberWithInt:m_object->intValue()];
+        if (m_object->isHeading())
+            return [NSNumber numberWithInt:m_object->headingLevel()];
+        
+        if (m_object->isCheckboxOrRadio()) {
+            switch (m_object->checkboxOrRadioValue()) {
+            case ButtonStateOff:
+                return [NSNumber numberWithInt:0];
+            case ButtonStateOn:
+                return [NSNumber numberWithInt:1];
+            case ButtonStateMixed:
+                return [NSNumber numberWithInt:2];
+            }
+        }
 
         // radio groups return the selected radio button as the AXValue
         if (m_object->isRadioGroup()) {
@@ -1848,6 +1863,12 @@ static NSString* roleValueToNSString(AccessibilityRole value)
             [dropEffectsArray addObject:dropEffects[i]];
         return dropEffectsArray;
     }
+    
+    if ([attributeName isEqualToString:NSAccessibilityPlaceholderValueAttribute])
+        return m_object->placeholderValue();
+    
+    if ([attributeName isEqualToString:NSAccessibilityHasPopupAttribute])
+        return [NSNumber numberWithBool:m_object->ariaHasPopup()];
     
     // ARIA Live region attributes.
     if ([attributeName isEqualToString:NSAccessibilityARIALiveAttribute])
@@ -2656,22 +2677,19 @@ static RenderObject* rendererForView(NSView* view)
     return [super accessibilityArrayAttributeValues:attribute index:index maxCount:maxCount];
 }
 
-// These are used by DRT so that it can know when notifications are sent.
-// Since they are static, only one callback can be installed at a time (that's all DRT should need).
-typedef void (*AXPostedNotificationCallback)(id element, NSString* notification, void* context);
-static AXPostedNotificationCallback AXNotificationCallback = 0;
-static void* AXPostedNotificationContext = 0;
-
-- (void)accessibilitySetPostedNotificationCallback:(AXPostedNotificationCallback)function withContext:(void*)context
+// This is set by DRT when it wants to listen for notifications.
+static BOOL accessibilityShouldRepostNotifications;
+- (void)accessibilitySetShouldRepostNotifications:(BOOL)repost
 {
-    AXNotificationCallback = function;
-    AXPostedNotificationContext = context;
+    accessibilityShouldRepostNotifications = repost;
 }
 
-- (void)accessibilityPostedNotification:(NSString *)notification
+- (void)accessibilityPostedNotification:(NSString *)notificationName
 {
-    if (AXNotificationCallback)
-        AXNotificationCallback(self, notification, AXPostedNotificationContext);
+    if (accessibilityShouldRepostNotifications) {
+        NSDictionary* userInfo = [NSDictionary dictionaryWithObjectsAndKeys:notificationName, @"notificationName", nil];
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"AXDRTNotification" object:nil userInfo:userInfo];
+    }
 }
 
 @end

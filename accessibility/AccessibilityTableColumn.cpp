@@ -130,6 +130,9 @@ AccessibilityObject* AccessibilityTableColumn::headerObjectForSection(RenderTabl
     if (m_columnIndex >= numCols)
         return 0;
     
+    if (!section->numRows())
+        return 0;
+    
     RenderTableCell* cell = 0;
     // also account for cells that have a span
     for (int testCol = m_columnIndex; testCol >= 0; --testCol) {
@@ -156,6 +159,16 @@ AccessibilityObject* AccessibilityTableColumn::headerObjectForSection(RenderTabl
         return 0;
 
     return m_parentTable->axObjectCache()->getOrCreate(cell);
+}
+    
+bool AccessibilityTableColumn::accessibilityIsIgnored() const
+{
+    if (!m_parentTable)
+        return true;
+    
+    return true;
+    
+    return m_parentTable->accessibilityIsIgnored();
 }
     
 void AccessibilityTableColumn::addChildren()

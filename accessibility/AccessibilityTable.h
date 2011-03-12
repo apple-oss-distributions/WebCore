@@ -31,7 +31,11 @@
 
 #include "AccessibilityRenderObject.h"
 
+#if PLATFORM(MAC) && (defined(BUILDING_ON_TIGER) || defined(BUILDING_ON_LEOPARD))
 #define ACCESSIBILITY_TABLES 0
+#else
+#define ACCESSIBILITY_TABLES 1
+#endif
 
 namespace WebCore {
 
@@ -83,7 +87,6 @@ protected:
     AccessibilityTableHeaderContainer* m_headerContainer;
     mutable bool m_isAccessibilityTable;
     
-public:
     bool isTableExposableThroughAccessibility();
 };
     

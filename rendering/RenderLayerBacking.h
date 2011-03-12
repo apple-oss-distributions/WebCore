@@ -46,7 +46,7 @@ class RenderLayerCompositor;
 // 
 // There is one RenderLayerBacking for each RenderLayer that is composited.
 
-class RenderLayerBacking : public GraphicsLayerClient {
+class RenderLayerBacking : public GraphicsLayerClient, public Noncopyable {
 public:
     RenderLayerBacking(RenderLayer*);
     ~RenderLayerBacking();
@@ -62,6 +62,7 @@ public:
     void updateGraphicsLayerGeometry(); // make private
     // Update contents and clipping structure.
     void updateInternalHierarchy(); // make private
+    void updateDrawsContent();
     
     GraphicsLayer* graphicsLayer() const { return m_graphicsLayer.get(); }
 
@@ -109,6 +110,8 @@ public:
     IntRect compositedBounds() const;
     void setCompositedBounds(const IntRect&);
     void updateCompositedBounds();
+    
+    void updateAfterWidgetResize();
 
     FloatPoint graphicsLayerToContentsCoordinates(const GraphicsLayer*, const FloatPoint&);
     FloatPoint contentsToGraphicsLayerCoordinates(const GraphicsLayer*, const FloatPoint&);
@@ -160,7 +163,7 @@ private:
     void updateImageContents();
 
     bool rendererHasBackground() const;
-    const Color& rendererBackgroundColor() const;
+    const Color rendererBackgroundColor() const;
 
     bool hasNonCompositingContent() const;
     

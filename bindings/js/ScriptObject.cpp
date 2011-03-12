@@ -64,12 +64,16 @@ bool ScriptObject::set(const String& name, const String& value)
 {
     JSLock lock(SilenceAssertionsOnly);
     PutPropertySlot slot;
-    jsObject()->put(m_scriptState, Identifier(m_scriptState, name), jsString(m_scriptState, value), slot);
+    jsObject()->put(m_scriptState, Identifier(m_scriptState, stringToUString(name)), jsString(m_scriptState, stringToUString(value)), slot);
     return handleException(m_scriptState);
 }
 
 bool ScriptObject::set(const char* name, const ScriptObject& value)
 {
+    if (value.scriptState() != m_scriptState) {
+        ASSERT_NOT_REACHED();
+        return false;
+    }
     JSLock lock(SilenceAssertionsOnly);
     PutPropertySlot slot;
     jsObject()->put(m_scriptState, Identifier(m_scriptState, name), value.jsObject(), slot);

@@ -124,6 +124,8 @@ public:
     void stepDown(int, ExceptionCode&);
     void stepUp(ExceptionCode& ec) { stepUp(1, ec); }
     void stepDown(ExceptionCode& ec) { stepDown(1, ec); }
+    // stepUp()/stepDown() for user-interaction.
+    void stepUpFromRenderer(int);
 
     bool isTextButton() const { return m_type == SUBMIT || m_type == RESET || m_type == BUTTON; }
     virtual bool isRadioButton() const { return m_type == RADIO; }
@@ -131,11 +133,18 @@ public:
     virtual bool isSearchField() const { return m_type == SEARCH; }
     virtual bool isInputTypeHidden() const { return m_type == HIDDEN; }
     virtual bool isPasswordField() const { return m_type == PASSWORD; }
+    virtual bool isCheckbox() const { return m_type == CHECKBOX; }
+    virtual bool hasSpinButton() const { return m_type == NUMBER || m_type == DATE || m_type == DATETIME || m_type == DATETIMELOCAL || m_type == MONTH || m_type == TIME || m_type == WEEK; }
+    virtual bool canTriggerImplicitSubmission() const { return isTextField(); }
 
     bool checked() const { return m_checked; }
     void setChecked(bool, bool sendChangeEvent = false);
+
+    // 'indeterminate' is a state independent of the checked state that causes the control to draw in a way that hides the actual state.
+    bool allowsIndeterminate() const { return inputType() == CHECKBOX || inputType() == RADIO; }
     bool indeterminate() const { return m_indeterminate; }
     void setIndeterminate(bool);
+
     virtual int size() const;
     virtual const AtomicString& formControlType() const;
     void setType(const String&);
@@ -198,7 +207,6 @@ public:
 
     virtual void* preDispatchEventHandler(Event*);
     virtual void postDispatchEventHandler(Event*, void* dataFromPreDispatch);
-    virtual void defaultEventHandler(Event*);
 
     String altText() const;
     
@@ -263,21 +271,20 @@ public:
     virtual bool willRespondToMouseClickEvents();
     virtual void setDisabled(bool isDisabled) { HTMLFormControlElement::setDisabled(inputType() == FILE || isDisabled); }
     
-    // Converts the specified string to a floating number.
-    // If the conversion fails, the return value is false. Take care that leading or trailing unnecessary characters make failures.  This returns false for an empty string input.
-    // The double* parameter may be 0.
-    static bool parseToDoubleForNumberType(const String&, double*);
-    // Converts the specified number to a string. This is an implementation of
-    // HTML5's "algorithm to convert a number to a string" for NUMBER/RANGE types.
-    static String serializeForNumberType(double);
     // Parses the specified string as the InputType, and returns true if it is successfully parsed.
     // An instance pointed by the DateComponents* parameter will have parsed values and be
     // modified even if the parsing fails.  The DateComponents* parameter may be 0.
     static bool parseToDateComponents(InputType, const String&, DateComponents*);
+
+#if ENABLE(WCSS)
+    void setWapInputFormat(String& mask);
+    virtual InputElementData data() const { return m_data; }
+#endif
     
 protected:
     virtual void willMoveToNewOwnerDocument();
     virtual void didMoveToNewOwnerDocument();
+    virtual void defaultEventHandler(Event*);
 
 private:
     bool storesValueSeparateFromAttribute() const;
@@ -297,6 +304,8 @@ private:
     virtual bool isRequiredFormControl() const;
     virtual bool recalcWillValidate() const;
 
+    void updateCheckedRadioButtons();
+    
     PassRefPtr<HTMLFormElement> createTemporaryFormForIsIndex();
     // Helper for getAllowedValueStep();
     bool getStepParameters(double* defaultStep, double* stepScaleFactor) const;
@@ -310,7 +319,6 @@ private:
     // succeeds; Returns defaultValue otherwise. This function can
     // return NaN or Infinity only if defaultValue is NaN or Infinity.
     double parseToDouble(const String&, double defaultValue) const;
-
     // Create a string representation of the specified double value for the
     // current input type. If NaN or Infinity is specified, this returns an
     // emtpy string. This should not be called for types without valueAsNumber.

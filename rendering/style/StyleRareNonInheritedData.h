@@ -40,13 +40,14 @@ namespace WebCore {
 
 class AnimationList;
 class CSSStyleSelector;
+class ShadowData;
 class StyleFlexibleBoxData;
 class StyleMarqueeData;
 class StyleMultiColData;
 class StyleReflection;
 class StyleTransformData;
+
 struct ContentData;
-struct ShadowData;
 
 #if ENABLE(DASHBOARD_SUPPORT)
 class StyleDashboardRegion;
@@ -99,9 +100,13 @@ public:
     unsigned matchNearestMailBlockquoteColor : 1; // EMatchNearestMailBlockquoteColor, FIXME: This property needs to be eliminated. It should never have been added.
     unsigned m_appearance : 6; // EAppearance
     unsigned m_borderFit : 1; // EBorderFit
+    
+    short m_counterIncrement;
+    short m_counterReset;
+    
 #if USE(ACCELERATED_COMPOSITING)
     bool m_runningAcceleratedAnimation : 1;
-#endif    
+#endif
     unsigned m_imageLoadingBorder : 1;
     OwnPtr<ShadowData> m_boxShadow;  // For box-shadow decorations.
     

@@ -45,6 +45,9 @@ public:
     
     virtual void prepareToPlay() { }
     virtual PlatformMedia platformMedia() const { return NoPlatformMedia; }
+#if USE(ACCELERATED_COMPOSITING)
+    virtual PlatformLayer* platformLayer() const { return 0; }
+#endif
 
     virtual void play() = 0;
     virtual void pause() = 0;    
@@ -75,6 +78,9 @@ public:
     virtual void setVolume(float) = 0;
     virtual float volume() const { return 1; }
 
+    virtual bool supportsMuting() const { return false; }
+    virtual void setMuted(bool) { }
+
     virtual bool hasClosedCaptions() const { return false; }    
     virtual void setClosedCaptionsVisible(bool) { }
 
@@ -92,7 +98,7 @@ public:
 
     virtual void paintCurrentFrameInContext(GraphicsContext* c, const IntRect& r) { paint(c, r); }
 
-    virtual void setAutobuffer(bool) { };
+    virtual void setPreload(MediaPlayer::Preload) { };
 
     virtual bool hasAvailableVideoFrame() const { return readyState() >= MediaPlayer::HaveCurrentData; }
 

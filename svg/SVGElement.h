@@ -34,7 +34,7 @@ namespace WebCore {
     class SVGElementInstance;
     class SVGElementRareData;
     class SVGSVGElement;
-    class TransformationMatrix;
+    class AffineTransform;
 
     class SVGElement : public StyledElement {
     public:
@@ -70,14 +70,16 @@ namespace WebCore {
 
         void sendSVGLoadEventIfPossible(bool sendParentLoadEvents = false);
         
-        virtual TransformationMatrix* supplementalTransform() { return 0; }
+        virtual AffineTransform* supplementalTransform() { return 0; }
 
-        void setSynchronizedSVGAttributes(bool value) { m_areSVGAttributesValid = value; }
+        void invalidateSVGAttributes() { clearAreSVGAttributesValid(); }
 
         const HashSet<SVGElementInstance*>& instancesForElement() const;
 
         void setCursorElement(SVGCursorElement*);
         void setCursorImageValue(CSSCursorImageValue*);
+
+        virtual void updateAnimatedSVGAttribute(const QualifiedName&) const;
 
     protected:
         SVGElement(const QualifiedName&, Document*);
@@ -85,7 +87,6 @@ namespace WebCore {
         virtual void finishParsingChildren();
         virtual void insertedIntoDocument();
         virtual void attributeChanged(Attribute*, bool preserveDecls = false);
-        virtual void updateAnimatedSVGAttribute(const QualifiedName&) const;
 
         SVGElementRareData* rareSVGData() const;
         SVGElementRareData* ensureRareSVGData();
@@ -93,7 +94,6 @@ namespace WebCore {
     private:
         friend class SVGElementInstance;
 
-        virtual bool isSVGElement() const { return true; }
         virtual bool isSupported(StringImpl* feature, StringImpl* version) const;
 
         virtual ContainerNode* eventParentNode();

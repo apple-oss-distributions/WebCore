@@ -34,10 +34,11 @@ namespace WebCore {
 JSEventListener::JSEventListener(JSObject* function, JSObject* wrapper, bool isAttribute, DOMWrapperWorld* isolatedWorld)
     : EventListener(JSEventListenerType)
     , m_jsFunction(function)
-    , m_wrapper(wrapper)
     , m_isAttribute(isAttribute)
     , m_isolatedWorld(isolatedWorld)
 {
+    if (wrapper)
+        m_wrapper = wrapper;
 }
 
 JSEventListener::~JSEventListener()
@@ -59,7 +60,7 @@ void JSEventListener::markJSFunction(MarkStack& markStack)
 void JSEventListener::handleEvent(ScriptExecutionContext* scriptExecutionContext, Event* event)
 {
     ASSERT(scriptExecutionContext);
-    if (!scriptExecutionContext)
+    if (!scriptExecutionContext || scriptExecutionContext->isJSExecutionTerminated())
         return;
 
     JSLock lock(SilenceAssertionsOnly);
@@ -83,7 +84,7 @@ void JSEventListener::handleEvent(ScriptExecutionContext* scriptExecutionContext
             return;
         // FIXME: Is this check needed for other contexts?
         ScriptController* script = frame->script();
-        if (!script->canExecuteScripts() || script->isPaused())
+        if (!script->canExecuteScripts(AboutToExecuteScript) || script->isPaused())
             return;
     }
 
@@ -121,7 +122,7 @@ void JSEventListener::handleEvent(ScriptExecutionContext* scriptExecutionContext
             reportCurrentException(exec);
         else {
             if (!retval.isUndefinedOrNull() && event->storesResultAsString())
-                event->storeResult(retval.toString(exec));
+                event->storeResult(ustringToString(retval.toString(exec)));
             if (m_isAttribute) {
                 bool retvalbool;
                 if (retval.getBoolean(retvalbool) && !retvalbool)
@@ -129,51 +130,8 @@ void JSEventListener::handleEvent(ScriptExecutionContext* scriptExecutionContext
             }
         }
 
-        if (scriptExecutionContext->isDocument())
-            Document::updateStyleForAllDocuments();
         deref();
     }
-}
-
-bool JSEventListener::reportError(ScriptExecutionContext* context, const String& message, const String& url, int lineNumber)
-{
-    JSLock lock(SilenceAssertionsOnly);
-
-    JSObject* jsFunction = this->jsFunction(context);
-    if (!jsFunction)
-        return false;
-
-    JSDOMGlobalObject* globalObject = toJSDOMGlobalObject(context, m_isolatedWorld.get());
-    ExecState* exec = globalObject->globalExec();
-
-    CallData callData;
-    CallType callType = jsFunction->getCallData(callData);
-
-    if (callType == CallTypeNone)
-        return false;
-
-    MarkedArgumentBuffer args;
-    args.append(jsString(exec, message));
-    args.append(jsString(exec, url));
-    args.append(jsNumber(exec, lineNumber));
-
-    JSGlobalData* globalData = globalObject->globalData();
-    DynamicGlobalObjectScope globalObjectScope(exec, globalData->dynamicGlobalObject ? globalData->dynamicGlobalObject : globalObject);    
-
-    JSValue thisValue = globalObject->toThisObject(exec);
-
-    globalData->timeoutChecker.start();
-    JSValue returnValue = JSC::call(exec, jsFunction, callType, callData, thisValue, args);
-    globalData->timeoutChecker.stop();
-
-    // If an error occurs while handling the script error, it should be bubbled up.
-    if (exec->hadException()) {
-        exec->clearException();
-        return false;
-    }
-    
-    bool bubbleEvent;
-    return returnValue.getBoolean(bubbleEvent) && !bubbleEvent;
 }
 
 bool JSEventListener::virtualisAttribute() const

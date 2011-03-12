@@ -74,7 +74,7 @@ MediaControlShadowRootElement::MediaControlShadowRootElement(Document* document,
     renderer->setStyle(rootStyle.release());
     setRenderer(renderer);
     setAttached();
-    setInDocument(true);
+    setInDocument();
 }
 
 void MediaControlShadowRootElement::updateStyle()
@@ -92,7 +92,7 @@ MediaControlElement::MediaControlElement(Document* document, PseudoId pseudo, HT
     , m_mediaElement(mediaElement)
     , m_pseudoStyleId(pseudo)
 {
-    setInDocument(true);
+    setInDocument();
     switch (pseudo) {
     case MEDIA_CONTROLS_CURRENT_TIME_DISPLAY:
         m_displayType = MediaCurrentTimeDisplay;
@@ -318,7 +318,7 @@ MediaControlInputElement::MediaControlInputElement(Document* document, PseudoId 
     , m_pseudoStyleId(pseudo)
 {
     setInputType(type);
-    setInDocument(true);
+    setInDocument();
 
     switch (pseudo) {
     case MEDIA_CONTROLS_MUTE_BUTTON:
@@ -615,6 +615,9 @@ void MediaControlTimelineElement::defaultEventHandler(Event* event)
     if (event->isMouseEvent() && static_cast<MouseEvent*>(event)->button())
         return;
 
+    if (!attached())
+        return;
+
     if (event->type() == eventNames().mousedownEvent)
         m_mediaElement->beginScrubbing();
 
@@ -658,6 +661,9 @@ void MediaControlVolumeSliderElement::defaultEventHandler(Event* event)
 {
     // Left button is 0. Rejects mouse events not from left button.
     if (event->isMouseEvent() && static_cast<MouseEvent*>(event)->button())
+        return;
+
+    if (!attached())
         return;
 
     MediaControlInputElement::defaultEventHandler(event);
@@ -731,30 +737,9 @@ void MediaControlTimeDisplayElement::setVisible(bool visible)
     renderer()->setStyle(style.get());
 }
 
-String MediaControlTimeDisplayElement::formatTime(float time)
-{
-    if (!isfinite(time))
-        time = 0;
-    int seconds = (int)fabsf(time);
-    int hours = seconds / (60 * 60);
-    int minutes = (seconds / 60) % 60;
-    seconds %= 60;
-    if (hours) {
-        if (hours > 9)
-            return String::format("%s%02d:%02d:%02d", (time < 0 ? "-" : ""), hours, minutes, seconds);
-
-        return String::format("%s%01d:%02d:%02d", (time < 0 ? "-" : ""), hours, minutes, seconds);
-    }
-
-    return String::format("%s%02d:%02d", (time < 0 ? "-" : ""), minutes, seconds);
-}
-
 void MediaControlTimeDisplayElement::setCurrentValue(float time)
 {
     m_currentValue = time;
-
-    ExceptionCode ec;
-    setInnerText(formatTime(m_currentValue), ec);
 }
 
 

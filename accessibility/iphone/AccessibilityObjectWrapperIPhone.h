@@ -17,19 +17,17 @@
 #define AccessibilityObjectWrapperIPhone_h
 
 
-#include "AccessibilityObject.h"
 #include "AXObjectCache.h"
+#include "AccessibilityObject.h"
 
 @class WAKView;
 
-@interface AccessibilityObjectWrapper : NSObject
-{
+@interface AccessibilityObjectWrapper : NSObject {
     WebCore::AccessibilityObject* m_object;
     
     // Cached data to avoid frequent re-computation.
     int m_isAccessibilityElement;
     uint64_t m_accessibilityTraitsFromAncestor;
-    id m_accessibilityWebDocumentView;
 }
 
 - (id)initWithAccessibilityObject:(WebCore::AccessibilityObject*)axObject;

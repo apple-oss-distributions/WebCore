@@ -23,23 +23,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
+#include <wtf/RetainPtr.h>
 #include <CoreGraphics/CGContext.h>
 
 namespace WebCore {
 
 // FIXME: This would be in GraphicsContextCG.h if that existed.
-inline CGColorSpaceRef deviceRGBColorSpaceRef()
-{
-    static CGColorSpaceRef deviceSpace = CGColorSpaceCreateDeviceRGB();
-    return deviceSpace;
-}
+CGColorSpaceRef deviceRGBColorSpaceRef();
 
 // FIXME: This would be in GraphicsContextCG.h if that existed.
-inline CGColorSpaceRef sRGBColorSpaceRef()
-{
-    // FIXME: Windows should be able to use kCGColorSpaceSRGB, this is tracked by http://webkit.org/b/31363.
-    return deviceRGBColorSpaceRef();
-}
+CGColorSpaceRef sRGBColorSpaceRef();
 
 class GraphicsContextPlatformPrivate {
 public:
@@ -68,7 +61,7 @@ public:
     void scale(const FloatSize&) {}
     void rotate(float) {}
     void translate(float, float) {}
-    void concatCTM(const TransformationMatrix&) {}
+    void concatCTM(const AffineTransform&) {}
     void beginTransparencyLayer() {}
     void endTransparencyLayer() {}
 #endif
@@ -83,7 +76,7 @@ public:
     void scale(const FloatSize&);
     void rotate(float);
     void translate(float, float);
-    void concatCTM(const TransformationMatrix&);
+    void concatCTM(const AffineTransform&);
     void beginTransparencyLayer() { m_transparencyCount++; }
     void endTransparencyLayer() { m_transparencyCount--; }
 

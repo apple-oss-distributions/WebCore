@@ -32,6 +32,7 @@
 #include "MediaPlayerProxy.h"
 #endif
 
+#include "Document.h"
 #include "IntRect.h"
 #include "StringHash.h"
 #include <wtf/HashSet.h>
@@ -39,11 +40,17 @@
 #include <wtf/Noncopyable.h>
 #include <wtf/PassOwnPtr.h>
 
+#if USE(ACCELERATED_COMPOSITING)
+#include "GraphicsLayer.h"
+#endif
+
 #ifdef __OBJC__
 @class QTMovie;
 #else
 class QTMovie;
 #endif
+class QTMovieGWorld;
+class QTMovieVisualContext;
 
 namespace WebCore {
 
@@ -51,11 +58,22 @@ namespace WebCore {
 // types supported by the current media player.
 // We have to do that has multiple media players
 // backend can live at runtime.
-typedef struct PlatformMedia {
-    QTMovie* qtMovie;
-} PlatformMedia;
+struct PlatformMedia {
+    enum {
+        None,
+        QTMovieType,
+        QTMovieGWorldType,
+        QTMovieVisualContextType
+    } type;
 
-static const PlatformMedia NoPlatformMedia = { 0 };
+    union {
+        QTMovie* qtMovie;
+        QTMovieGWorld* qtMovieGWorld;
+        QTMovieVisualContext* qtMovieVisualContext;
+    } media;
+};
+
+extern const PlatformMedia NoPlatformMedia;
 
 class ContentType;
 class FrameView;
@@ -67,13 +85,12 @@ class MediaPlayerPrivateInterface;
 class String;
 class TimeRanges;
 
-#if USE(ACCELERATED_COMPOSITING)
-class GraphicsLayer;
-#endif
-
 class MediaPlayerClient {
 public:
     virtual ~MediaPlayerClient() { }
+
+    // Get the document which the media player is owned by
+    virtual Document* mediaPlayerOwningDocument() { return 0; }
 
     // the network state has changed
     virtual void mediaPlayerNetworkStateChanged(MediaPlayer*) { }
@@ -81,8 +98,11 @@ public:
     // the ready state has changed
     virtual void mediaPlayerReadyStateChanged(MediaPlayer*) { }
 
-    // the volume or muted state has changed
+    // the volume state has changed
     virtual void mediaPlayerVolumeChanged(MediaPlayer*) { }
+
+    // the mute state has changed
+    virtual void mediaPlayerMuteChanged(MediaPlayer*) { }
 
     // time has jumped, eg. not as a result of normal playback
     virtual void mediaPlayerTimeChanged(MediaPlayer*) { }
@@ -109,8 +129,9 @@ public:
     // whether the rendering system can accelerate the display of this MediaPlayer.
     virtual bool mediaPlayerRenderingCanBeAccelerated(MediaPlayer*) { return false; }
 
-    // return the GraphicsLayer that will host the presentation for this MediaPlayer.
-    virtual GraphicsLayer* mediaPlayerGraphicsLayer(MediaPlayer*) { return 0; }
+    // called when the media player's rendering mode changed, which indicates a change in the
+    // availability of the platformLayer().
+    virtual void mediaPlayerRenderingModeChanged(MediaPlayer*) { }
 #endif
 };
 
@@ -132,6 +153,9 @@ public:
     bool supportsFullscreen() const;
     bool supportsSave() const;
     PlatformMedia platformMedia() const;
+#if USE(ACCELERATED_COMPOSITING)
+    PlatformLayer* platformLayer() const;
+#endif
 
     IntSize naturalSize();
     bool hasVideo() const;
@@ -177,11 +201,14 @@ public:
     float volume() const;
     void setVolume(float);
 
+    bool muted() const;
+    void setMuted(bool);
+
     bool hasClosedCaptions() const;
     void setClosedCaptionsVisible(bool closedCaptionsVisible);
 
-    bool autobuffer() const;    
-    void setAutobuffer(bool);
+    bool autoplay() const;    
+    void setAutoplay(bool);
 
     void paint(GraphicsContext*, const IntRect&);
     void paintCurrentFrameInContext(GraphicsContext*, const IntRect&);
@@ -195,9 +222,14 @@ public:
     enum MovieLoadType { Unknown, Download, StoredStream, LiveStream };
     MovieLoadType movieLoadType() const;
 
+    enum Preload { None, MetaData, Auto };
+    Preload preload() const;
+    void setPreload(Preload);
+
     void networkStateChanged();
     void readyStateChanged();
-    void volumeChanged();
+    void volumeChanged(float);
+    void muteChanged(bool);
     void timeChanged();
     void sizeChanged();
     void rateChanged();
@@ -239,11 +271,12 @@ private:
     void* m_currentMediaEngine;
     FrameView* m_frameView;
     IntSize m_size;
+    Preload m_preload;
     bool m_visible;
     float m_rate;
     float m_volume;
+    bool m_muted;
     bool m_preservesPitch;
-    bool m_autobuffer;
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
     WebMediaPlayerProxy* m_playerProxy;    // not owned or used, passed to m_private
 #endif

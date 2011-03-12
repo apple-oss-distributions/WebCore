@@ -62,6 +62,17 @@ class XSSAuditor;
 
 typedef HashMap<void*, RefPtr<JSC::Bindings::RootObject> > RootObjectMap;
 
+enum ReasonForCallingCanExecuteScripts {
+    AboutToExecuteScript,
+    NotAboutToExecuteScript
+};
+
+// Whether to call the XSSAuditor to audit a script before passing it to the JavaScript engine.
+enum ShouldAllowXSS {
+    AllowXSS,
+    DoNotAllowXSS
+};
+
 class ScriptController {
     friend class ScriptCachedFrameData;
     typedef WTF::HashMap< RefPtr<DOMWrapperWorld>, JSC::ProtectedPtr<JSDOMWindowShell> > ShellMap;
@@ -71,6 +82,9 @@ public:
     ~ScriptController();
 
     static PassRefPtr<DOMWrapperWorld> createWorld();
+
+    JSDOMWindowShell* createWindowShell(DOMWrapperWorld*);
+    void destroyWindowShell(DOMWrapperWorld*);
 
     JSDOMWindowShell* windowShell(DOMWrapperWorld* world)
     {
@@ -89,9 +103,9 @@ public:
 
     static void getAllWorlds(Vector<DOMWrapperWorld*>&);
 
-    ScriptValue executeScript(const ScriptSourceCode&);
-    ScriptValue executeScript(const String& script, bool forceUserGesture = false);
-    ScriptValue executeScriptInWorld(DOMWrapperWorld* world, const String& script, bool forceUserGesture = false);
+    ScriptValue executeScript(const ScriptSourceCode&, ShouldAllowXSS shouldAllowXSS = DoNotAllowXSS);
+    ScriptValue executeScript(const String& script, bool forceUserGesture = false, ShouldAllowXSS shouldAllowXSS = DoNotAllowXSS);
+    ScriptValue executeScriptInWorld(DOMWrapperWorld* world, const String& script, bool forceUserGesture = false, ShouldAllowXSS shouldAllowXSS = DoNotAllowXSS);
 
     // Returns true if argument is a JavaScript URL.
     bool executeIfJavaScriptURL(const KURL&, bool userGesture = false, bool replaceDocument = true);
@@ -100,8 +114,8 @@ public:
     // Darwin is an exception to this rule: it is OK to call this function from any thread, even reentrantly.
     static void initializeThreading();
 
-    ScriptValue evaluate(const ScriptSourceCode&);
-    ScriptValue evaluateInWorld(const ScriptSourceCode&, DOMWrapperWorld*);
+    ScriptValue evaluate(const ScriptSourceCode&, ShouldAllowXSS shouldAllowXSS = DoNotAllowXSS);
+    ScriptValue evaluateInWorld(const ScriptSourceCode&, DOMWrapperWorld*, ShouldAllowXSS shouldAllowXSS = DoNotAllowXSS);
 
     void setEventHandlerLineNumber(int lineno) { m_handlerLineNumber = lineno; }
     int eventHandlerLineNumber() { return m_handlerLineNumber; }
@@ -110,7 +124,7 @@ public:
     bool processingUserGesture(DOMWrapperWorld*) const;
     bool anyPageIsProcessingUserGesture() const;
 
-    bool canExecuteScripts();
+    bool canExecuteScripts(ReasonForCallingCanExecuteScripts);
 
     // Debugger can be 0 to detach any existing Debugger.
     void attachDebugger(JSC::Debugger*); // Attaches/detaches in all worlds/window shells.
@@ -124,7 +138,7 @@ public:
     
     const String* sourceURL() const { return m_sourceURL; } // 0 if we are not evaluating any script
 
-    void clearWindowShell();
+    void clearWindowShell(bool goingIntoPageCache = false);
     void updateDocument();
 
     // Notifies the ScriptController that the securityOrigin of the current
@@ -144,7 +158,7 @@ public:
     PassRefPtr<JSC::Bindings::RootObject> createRootObject(void* nativeHandle);
 
 #if PLATFORM(MAC)
-#if ENABLE(MAC_JAVA_BRIDGE)
+#if ENABLE(JAVA_BRIDGE)
     static void initJavaJSBindings();
 #endif
     WebScriptObject* windowScriptObject();

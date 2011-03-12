@@ -2,7 +2,7 @@
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2003, 2006 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2006, 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -26,7 +26,6 @@
 
 #include "FloatRect.h"
 #include "FontCache.h"
-#include "FontFallbackList.h"
 #include "IntPoint.h"
 #include "GlyphBuffer.h"
 #include "WidthIterator.h"
@@ -105,10 +104,6 @@ Font& Font::operator=(const Font& other)
     return *this;
 }
 
-Font::~Font()
-{
-}
-
 bool Font::operator==(const Font& other) const
 {
     // Our FontData don't have to be checked, since checking the font description will be fine.
@@ -127,24 +122,6 @@ bool Font::operator==(const Font& other) const
            && (m_fontList ? m_fontList->generation() : 0) == (other.m_fontList ? other.m_fontList->generation() : 0);
 }
 
-const SimpleFontData* Font::primaryFont() const
-{
-    ASSERT(m_fontList);
-    return m_fontList->primarySimpleFontData(this);
-}
-
-const FontData* Font::fontDataAt(unsigned index) const
-{
-    ASSERT(m_fontList);
-    return m_fontList->fontDataAt(this, index);
-}
-
-const FontData* Font::fontDataForCharacters(const UChar* characters, int length) const
-{
-    ASSERT(m_fontList);
-    return m_fontList->fontDataForCharacters(this, characters, length);
-}
-
 void Font::update(PassRefPtr<FontSelector> fontSelector) const
 {
     // FIXME: It is pretty crazy that we are willing to just poke into a RefPtr, but it ends up 
@@ -155,12 +132,6 @@ void Font::update(PassRefPtr<FontSelector> fontSelector) const
     if (!m_fontList)
         m_fontList = FontFallbackList::create();
     m_fontList->invalidate(fontSelector);
-}
-
-bool Font::isFixedPitch() const
-{
-    ASSERT(m_fontList);
-    return m_fontList->isFixedPitch(this);
 }
 
 float Font::drawText(GraphicsContext* context, const TextRun& run, const FloatPoint& point, int from, int to) const
@@ -265,19 +236,15 @@ bool Font::isSVGFont() const
 }
 #endif
 
-FontSelector* Font::fontSelector() const
-{
-    return m_fontList ? m_fontList->fontSelector() : 0;
-}
-
 String Font::normalizeSpaces(const String& string)
 {
+    const UChar* characters = string.characters();
     unsigned length = string.length();
     Vector<UChar, 256> buffer(length);
     bool didReplacement = false;
 
     for (unsigned i = 0; i < length; ++i) {
-        UChar originalCharacter = string[i];
+        UChar originalCharacter = characters[i];
         buffer[i] = normalizeSpaces(originalCharacter);
         if (buffer[i] != originalCharacter)
             didReplacement = true;

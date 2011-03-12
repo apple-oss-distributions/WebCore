@@ -30,9 +30,9 @@
 #import "AuthenticationMac.h"
 #import "Base64.h"
 #import "BlockExceptions.h"
-#import "CString.h"
 #import "CredentialStorage.h"
 #import "DocLoader.h"
+#import "EmptyProtocolDefinitions.h"
 #import "FormDataStreamMac.h"
 #import "Frame.h"
 #import "FrameLoader.h"
@@ -47,6 +47,7 @@
 #import "SubresourceLoader.h"
 #import "WebCoreSystemInterface.h"
 #import "WebCoreURLResponse.h"
+#import <wtf/text/CString.h>
 #import <wtf/UnusedParam.h>
 
 #import "NSURLConnectionIPhone.h"
@@ -65,7 +66,7 @@ typedef int NSInteger;
 
 using namespace WebCore;
 
-@interface WebCoreResourceHandleAsDelegate : NSObject
+@interface WebCoreResourceHandleAsDelegate : NSObject <NSURLConnectionDelegate>
 {
     ResourceHandle* m_handle;
     id m_converter;
@@ -74,6 +75,13 @@ using namespace WebCore;
 }
 - (id)initWithHandle:(ResourceHandle*)handle;
 - (void)detachHandle;
+@end
+
+// WebCoreNSURLConnectionDelegateProxy exists so that we can cast m_proxy to it in order
+// to disambiguate the argument type in the -setDelegate: call.  This avoids a spurious
+// warning that the compiler would otherwise emit.
+@interface WebCoreNSURLConnectionDelegateProxy : NSObject <NSURLConnectionDelegate>
+- (void)setDelegate:(id<NSURLConnectionDelegate>)delegate;
 @end
 
 @interface NSURLConnection (NSURLConnectionTigerPrivate)
@@ -90,7 +98,7 @@ using namespace WebCore;
 
 #ifndef BUILDING_ON_TIGER
 
-@interface WebCoreSynchronousLoader : NSObject {
+@interface WebCoreSynchronousLoader : NSObject <NSURLConnectionDelegate> {
     NSURL *m_url;
     NSString *m_user;
     NSString *m_pass;
@@ -170,7 +178,7 @@ static NSURLConnection *createNSURLConnection(NSURLRequest *request, id delegate
 {
 #if defined(BUILDING_ON_TIGER)
     UNUSED_PARAM(shouldUseCredentialStorage);
-    return [[NSURLConnection alloc] initWithRequest:request delegate];
+    return [[NSURLConnection alloc] initWithRequest:request delegate:delegate];
 #else
 
 #if !defined(BUILDING_ON_LEOPARD)
@@ -207,17 +215,9 @@ bool ResourceHandle::start(Frame* frame)
     isInitializingConnection = YES;
 #endif
 
-    id delegate;
-    
-    if (d->m_mightDownloadFromHandle) {
-        ASSERT(!d->m_proxy);
-        d->m_proxy = wkCreateNSURLConnectionDelegateProxy();
-        [d->m_proxy.get() setDelegate:ResourceHandle::delegate()];
-        [d->m_proxy.get() release];
-        
-        delegate = d->m_proxy.get();
-    } else 
-        delegate = ResourceHandle::delegate();
+    ASSERT(!d->m_proxy);
+    d->m_proxy.adoptNS(wkCreateNSURLConnectionDelegateProxy());
+    [static_cast<WebCoreNSURLConnectionDelegateProxy*>(d->m_proxy.get()) setDelegate:ResourceHandle::delegate()];
 
     if ((!d->m_user.isEmpty() || !d->m_pass.isEmpty())
 #ifndef BUILDING_ON_TIGER
@@ -231,9 +231,9 @@ bool ResourceHandle::start(Frame* frame)
         d->m_request.setURL(urlWithCredentials);
     }
 
-#ifndef BUILDING_ON_TIGER
     bool shouldUseCredentialStorage = !client() || client()->shouldUseCredentialStorage(this);
 
+#ifndef BUILDING_ON_TIGER
     if (shouldUseCredentialStorage && d->m_request.url().protocolInHTTPFamily()) {
         if (d->m_user.isEmpty() && d->m_pass.isEmpty()) {
             // <rdar://problem/7174050> - For URLs that match the paths of those previously challenged for HTTP Basic authentication, 
@@ -266,6 +266,12 @@ bool ResourceHandle::start(Frame* frame)
 
     d->m_needsSiteSpecificQuirks = frame->settings() && frame->settings()->needsSiteSpecificQuirks();
 
+    // If a URL already has cookies, then we'll relax the 3rd party cookie policy and accept new cookies.
+    NSHTTPCookieStorage *sharedStorage = [NSHTTPCookieStorage sharedHTTPCookieStorage];
+    if ([sharedStorage cookieAcceptPolicy] == NSHTTPCookieAcceptPolicyOnlyFromMainDocumentDomain
+        && [[sharedStorage cookiesForURL:d->m_request.url()] count])
+        d->m_request.setFirstPartyForCookies(d->m_request.url());
+
     NSURLConnection *connection;
     
     long long maxContentLength = 10485760; 
@@ -290,11 +296,11 @@ bool ResourceHandle::start(Frame* frame)
     }
 
     if (d->m_shouldContentSniff || frame->settings()->localFileContentSniffingEnabled())
-        connection = [[NSURLConnectionIPhone alloc] _initWithRequest:d->m_request.nsURLRequest() delegate:delegate usesCache:useCache maxContentLength:maxContentLength startImmediately:YES connectionProperties:connectionProperties.get()];
+        connection = [[NSURLConnectionIPhone alloc] _initWithRequest:d->m_request.nsURLRequest() delegate:d->m_proxy.get() usesCache:useCache maxContentLength:maxContentLength startImmediately:YES connectionProperties:connectionProperties.get()];
     else {
         NSMutableURLRequest *request = [d->m_request.nsURLRequest() mutableCopy];
         wkSetNSURLRequestShouldContentSniff(request, NO);
-        connection = [[NSURLConnectionIPhone alloc] _initWithRequest:request delegate:delegate usesCache:useCache maxContentLength:maxContentLength startImmediately:YES connectionProperties:connectionProperties.get()];
+        connection = [[NSURLConnectionIPhone alloc] _initWithRequest:request delegate:d->m_proxy.get() usesCache:useCache maxContentLength:maxContentLength startImmediately:YES connectionProperties:connectionProperties.get()];
         [request release];
     }
 
@@ -445,13 +451,22 @@ void ResourceHandle::loadResourceSynchronously(const ResourceRequest& request, S
 
     ASSERT(!request.isEmpty());
     
-    NSURLRequest *nsRequest;
+    NSMutableURLRequest *mutableRequest = nil;
     if (!shouldContentSniffURL(request.url())) {
-        NSMutableURLRequest *mutableRequest = [[request.nsURLRequest() mutableCopy] autorelease];
+        mutableRequest = [[request.nsURLRequest() mutableCopy] autorelease];
         wkSetNSURLRequestShouldContentSniff(mutableRequest, NO);
-        nsRequest = mutableRequest;
-    } else
-        nsRequest = request.nsURLRequest();
+    } 
+
+    // If a URL already has cookies, then we'll ignore the 3rd party cookie policy and accept new cookies.
+    NSHTTPCookieStorage *sharedStorage = [NSHTTPCookieStorage sharedHTTPCookieStorage];
+    if ([sharedStorage cookieAcceptPolicy] == NSHTTPCookieAcceptPolicyOnlyFromMainDocumentDomain
+        && [[sharedStorage cookiesForURL:request.url()] count]) {
+        if (!mutableRequest)
+            mutableRequest = [[request.nsURLRequest() mutableCopy] autorelease];
+        [mutableRequest setMainDocumentURL:[mutableRequest URL]];
+    }
+    
+    NSURLRequest *nsRequest = mutableRequest ? mutableRequest : request.nsURLRequest();
             
     BEGIN_BLOCK_OBJC_EXCEPTIONS;
     
@@ -528,12 +543,25 @@ void ResourceHandle::didReceiveAuthenticationChallenge(const AuthenticationChall
     }
 
 #ifndef BUILDING_ON_TIGER
-    if (!challenge.previousFailureCount() && (!client() || client()->shouldUseCredentialStorage(this))) {
-        Credential credential = CredentialStorage::get(challenge.protectionSpace());
-        if (!credential.isEmpty() && credential != d->m_initialCredential) {
-            ASSERT(credential.persistence() == CredentialPersistenceNone);
-            [challenge.sender() useCredential:mac(credential) forAuthenticationChallenge:mac(challenge)];
-            return;
+    if (!client() || client()->shouldUseCredentialStorage(this)) {
+        if (!d->m_initialCredential.isEmpty() || challenge.previousFailureCount()) {
+            // The stored credential wasn't accepted, stop using it.
+            // There is a race condition here, since a different credential might have already been stored by another ResourceHandle,
+            // but the observable effect should be very minor, if any.
+            CredentialStorage::remove(challenge.protectionSpace());
+        }
+
+        if (!challenge.previousFailureCount()) {
+            Credential credential = CredentialStorage::get(challenge.protectionSpace());
+            if (!credential.isEmpty() && credential != d->m_initialCredential) {
+                ASSERT(credential.persistence() == CredentialPersistenceNone);
+                if (challenge.failureResponse().httpStatusCode() == 401) {
+                    // Store the credential back, possibly adding it as a default for this directory.
+                    CredentialStorage::set(credential, challenge.protectionSpace(), request().url());
+                }
+                [challenge.sender() useCredential:mac(credential) forAuthenticationChallenge:mac(challenge)];
+                return;
+            }
         }
     }
 #endif
@@ -567,6 +595,7 @@ void ResourceHandle::didCancelAuthenticationChallenge(const AuthenticationChalle
         client()->didCancelAuthenticationChallenge(this, challenge);
 }
 
+#if USE(PROTECTION_SPACE_AUTH_CALLBACK)
 bool ResourceHandle::canAuthenticateAgainstProtectionSpace(const ProtectionSpace& protectionSpace)
 {
     if (client())
@@ -574,12 +603,19 @@ bool ResourceHandle::canAuthenticateAgainstProtectionSpace(const ProtectionSpace
         
     return false;
 }
+#endif
 
 void ResourceHandle::receivedCredential(const AuthenticationChallenge& challenge, const Credential& credential)
 {
     ASSERT(!challenge.isNull());
     if (challenge != d->m_currentWebChallenge)
         return;
+
+    // FIXME: Support empty credentials. Currently, an empty credential cannot be stored in WebCore credential storage, as that's empty value for its map.
+    if (credential.isEmpty()) {
+        receivedRequestToContinueWithoutCredential(challenge);
+        return;
+    }
 
     if (credential.isEmpty()) {
         receivedRequestToContinueWithoutCredential(challenge);
@@ -749,6 +785,7 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
     m_handle->didCancelAuthenticationChallenge(core(challenge));
 }
 
+#if USE(PROTECTION_SPACE_AUTH_CALLBACK)
 - (BOOL)connection:(NSURLConnection *)unusedConnection canAuthenticateAgainstProtectionSpace:(NSURLProtectionSpace *)protectionSpace
 {
     UNUSED_PARAM(unusedConnection);
@@ -759,6 +796,7 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
     CallbackGuard guard;
     return m_handle->canAuthenticateAgainstProtectionSpace(core(protectionSpace));
 }
+#endif
 
 - (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)r
 {

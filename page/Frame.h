@@ -38,13 +38,19 @@
 #include "ScrollBehavior.h"
 #include "SelectionController.h"
 #include "UserScriptTypes.h"
+#include "ZoomMode.h"
 
 #include "FloatSize.h"
 
 #include "KURL.h"
+#include "ViewportArguments.h"
 
 #if PLATFORM(WIN)
 #include "FrameWin.h"
+#endif
+
+#if ENABLE(TILED_BACKING_STORE)
+#include "TiledBackingStoreClient.h"
 #endif
 
 #ifndef __OBJC__
@@ -71,6 +77,8 @@ namespace WebCore {
     class HTMLTableCellElement;
     class RegularExpression;
     class RenderLayer;
+    class RenderPart;
+    class TiledBackingStore;
 
     enum { 
         OverflowScrollNone =  0x0,
@@ -83,7 +91,11 @@ namespace WebCore {
     enum OverflowScrollAction { DoNotPerformOverflowScroll, PerformOverflowScroll };
     typedef Node* (*NodeQualifier)(HitTestResult aHitTestResult, Node* terminationNode, IntRect* frame);
 
-    class Frame : public RefCounted<Frame> {
+    class Frame : public RefCounted<Frame>
+#if ENABLE(TILED_BACKING_STORE)
+        , public TiledBackingStoreClient
+#endif
+    {
     public:
         static PassRefPtr<Frame> create(Page* page, HTMLFrameOwnerElement* ownerElement, FrameLoaderClient* client)
         {
@@ -98,6 +110,8 @@ namespace WebCore {
 
         Page* page() const;
         void detachFromPage();
+        void transferChildFrameToNewDocument();
+
         HTMLFrameOwnerElement* ownerElement() const;
 
         void pageDestroyed();
@@ -107,8 +121,12 @@ namespace WebCore {
         FrameView* view() const;
 
         void setDOMWindow(DOMWindow*);
-        DOMWindow* domWindow() const;
         void clearFormerDOMWindow(DOMWindow*);
+
+        // Unlike many of the accessors in Frame, domWindow() always creates a new DOMWindow if m_domWindow is null.
+        // Callers that don't need a new DOMWindow to be created should use existingDOMWindow().
+        DOMWindow* domWindow() const;
+        DOMWindow* existingDOMWindow() { return m_domWindow.get(); }
 
         Editor* editor() const;
         EventHandler* eventHandler() const;
@@ -128,13 +146,16 @@ namespace WebCore {
         void setExcludeFromTextSearch(bool);
 
         void createView(const IntSize&, const Color&, bool, const IntSize &, bool,
-                        ScrollbarMode = ScrollbarAuto, ScrollbarMode = ScrollbarAuto);
+                        ScrollbarMode = ScrollbarAuto, bool horizontalLock = false,
+                        ScrollbarMode = ScrollbarAuto, bool verticalLock = false);
 
         float documentScale() const;
         float contentsScale() const;    // Product of document scale and screen scale.
         void documentScaleChanged();
 
         void injectUserScripts(UserScriptInjectionTime);
+        
+        String layerTreeAsText() const;
 
     private:
         void injectUserScriptsForWorld(DOMWrapperWorld*, const UserScriptVector&, UserScriptInjectionTime);
@@ -149,7 +170,8 @@ namespace WebCore {
 
         Settings* settings() const; // can be NULL
 
-        void setPrinting(bool printing, float minPageWidth, float maxPageWidth, bool adjustViewSize);
+        enum AdjustViewSizeOrNot { DoNotAdjustViewSize, AdjustViewSize };
+        void setPrinting(bool printing, const FloatSize& pageSize, float maximumShrinkRatio, AdjustViewSizeOrNot);
 
         bool inViewSourceMode() const;
         void setInViewSourceMode(bool = true);
@@ -210,15 +232,20 @@ namespace WebCore {
             return document() ? document()->displayStringModifiedByEncoding(str) : str;
         }
 
+#if ENABLE(TILED_BACKING_STORE)
+        TiledBackingStore* tiledBackingStore() const { return m_tiledBackingStore.get(); }
+        void setTiledBackingStoreEnabled(bool);
+#endif
+
     private:
         void lifeSupportTimerFired(Timer<Frame>*);
 
     // === to be moved into FrameView
 
     public:
-        void setZoomFactor(float scale, bool isTextOnly);
+        void setZoomFactor(float scale, ZoomMode);
         float zoomFactor() const;
-        bool isZoomFactorTextOnly() const;
+        ZoomMode zoomMode() const;
         bool shouldApplyTextZoom() const;
         bool shouldApplyPageZoom() const;
         float pageZoomFactor() const { return shouldApplyPageZoom() ? zoomFactor() : 1.0f; }
@@ -260,7 +287,7 @@ namespace WebCore {
 
         RenderStyle* styleForSelectionStart(Node*& nodeToRemove) const;
 
-        unsigned markAllMatchesForText(const String&, bool caseFlag, unsigned limit);
+        unsigned countMatchesForText(const String&, bool caseFlag, unsigned limit, bool markMatches);
         bool markedTextMatchesAreHighlighted() const;
         void setMarkedTextMatchesAreHighlighted(bool flag);
 
@@ -279,7 +306,6 @@ namespace WebCore {
 
     public:
         TextGranularity selectionGranularity() const;
-        void setSelectionGranularity(TextGranularity);
 
         bool shouldChangeSelection(const VisibleSelection&) const;
         bool shouldDeleteSelection(const VisibleSelection&) const;
@@ -298,8 +324,6 @@ namespace WebCore {
 
         bool isContentEditable() const; // if true, everything in frame is editable
 
-        void updateSecureKeyboardEntryIfActive();
-
         CSSMutableStyleDeclaration* typingStyle() const;
         void setTypingStyle(CSSMutableStyleDeclaration*);
         void clearTypingStyle();
@@ -312,8 +336,6 @@ namespace WebCore {
 
         void revealSelection(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded, bool revealExtent = false);
         void setSelectionFromNone();
-
-        void setUseSecureKeyboardEntry(bool);
 
     private:
         void overflowAutoScrollTimerFired(Timer<Frame>*);
@@ -331,6 +353,15 @@ namespace WebCore {
 
         VisiblePosition visiblePositionForPoint(const IntPoint& framePoint);
         Document* documentAtPoint(const IntPoint& windowPoint);
+        
+    private:
+#if ENABLE(TILED_BACKING_STORE)
+        // TiledBackingStoreClient interface
+        virtual void tiledBackingStorePaintBegin();
+        virtual void tiledBackingStorePaint(GraphicsContext*, const IntRect&);
+        virtual void tiledBackingStorePaintEnd(const Vector<IntRect>& paintedArea);
+        virtual IntRect tiledBackingStoreContentsRect();
+#endif
 
     #if PLATFORM(MAC)
 
@@ -383,6 +414,9 @@ namespace WebCore {
         void setRangedSelectionInitialExtentToCurrentSelectionEnd();
         VisibleSelection rangedSelectionBase() const;
         VisibleSelection rangedSelectionInitialExtent() const;
+        void recursiveSetUpdateAppearanceEnabled(bool);
+    private:
+        void setTimersPausedInternal(bool);
 
     #if PLATFORM(WIN)
 
@@ -411,8 +445,6 @@ namespace WebCore {
         String m_kjsDefaultStatusBarText;
 
         float m_zoomFactor;
-
-        TextGranularity m_selectionGranularity;
 
         mutable SelectionController m_selectionController;
         mutable VisibleSelection m_mark;
@@ -447,6 +479,10 @@ namespace WebCore {
         bool m_needsReapplyStyles;
         bool m_isDisconnected;
         bool m_excludeFromTextSearch;
+
+#if ENABLE(TILED_BACKING_STORE)        
+        OwnPtr<TiledBackingStore> m_tiledBackingStore;
+#endif
 
         bool m_singleLineSelectionBehavior;
         int m_timersPausedCount;

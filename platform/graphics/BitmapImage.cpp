@@ -341,20 +341,10 @@ void BitmapImage::startAnimation(bool catchUpIfNecessary)
     if (m_frameTimer || !shouldAnimate() || frameCount() <= 1)
         return;
 
-    // Determine time for next frame to start.  By ignoring paint and timer lag
-    // in this calculation, we make the animation appear to run at its desired
-    // rate regardless of how fast it's being repainted.
-    const double currentDuration = frameDurationAtIndex(m_currentFrame);
+    // If we aren't already animating, set now as the animation start time.
     const double time = currentTime();
-    if (m_desiredFrameStartTime == 0) {
-        m_desiredFrameStartTime = time + currentDuration;
-    } else {
-        m_desiredFrameStartTime += currentDuration;
-
-        // Maintaining frame-to-frame delays is more important than
-        // maintaining absolute animation timing, so reset the timings each frame.
-        m_desiredFrameStartTime = time + currentDuration;
-    }
+    if (!m_desiredFrameStartTime)
+        m_desiredFrameStartTime = time;
 
     // Don't advance the animation to an incomplete frame.
     size_t nextFrame = (m_currentFrame + 1) % frameCount();
@@ -367,6 +357,16 @@ void BitmapImage::startAnimation(bool catchUpIfNecessary)
     // wait on it.
     if (!m_allDataReceived && repetitionCount(false) == cAnimationLoopOnce && m_currentFrame >= (frameCount() - 1))
         return;
+
+    // Determine time for next frame to start.  By ignoring paint and timer lag
+    // in this calculation, we make the animation appear to run at its desired
+    // rate regardless of how fast it's being repainted.
+    const double currentDuration = frameDurationAtIndex(m_currentFrame);
+    m_desiredFrameStartTime += currentDuration;
+
+    // Maintaining frame-to-frame delays is more important than
+    // maintaining absolute animation timing, so reset the timings each frame.
+    m_desiredFrameStartTime = time + currentDuration;
 
     // The image may load more slowly than it's supposed to animate, so that by
     // the time we reach the end of the first repetition, we're well behind.

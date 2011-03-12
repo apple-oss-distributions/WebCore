@@ -28,7 +28,6 @@
 #include "config.h"
 #include "FileSystem.h"
 
-#include "CString.h"
 #include "StringBuilder.h"
 #include "cutils/log.h"
 #include <dirent.h>
@@ -36,6 +35,7 @@
 #include <errno.h>
 #include <fnmatch.h>
 #include <sys/stat.h>
+#include <wtf/text/CString.h>
 
 namespace WebCore {
 
@@ -73,14 +73,6 @@ CString openTemporaryFile(const char* prefix, PlatformFileHandle& handle)
 bool unloadModule(PlatformModule module)
 {
     return !dlclose(module);
-}
-
-void closeFile(PlatformFileHandle& handle)
-{
-    if (isHandleValid(handle)) {
-        close(handle);
-        handle = invalidPlatformFileHandle;
-    }
 }
 
 int writeToFile(PlatformFileHandle handle, const char* data, int length)

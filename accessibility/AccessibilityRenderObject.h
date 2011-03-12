@@ -75,7 +75,6 @@ public:
     virtual bool isTextControl() const;
     virtual bool isNativeTextControl() const;
     virtual bool isWebArea() const;
-    virtual bool isCheckboxOrRadio() const;
     virtual bool isFileUploadButton() const;
     virtual bool isInputImage() const;
     virtual bool isProgressIndicator() const;
@@ -106,18 +105,19 @@ public:
     virtual bool isExpanded() const;
     virtual void setIsExpanded(bool);
 
-    const AtomicString& getAttribute(const QualifiedName&) const;
     virtual bool canSetFocusAttribute() const;
     virtual bool canSetTextRangeAttributes() const;
     virtual bool canSetValueAttribute() const;
     virtual bool canSetExpandedAttribute() const;
 
-    virtual bool hasIntValue() const;
+    virtual void setAccessibleName(String&);
     
+    // Provides common logic used by all elements when determining isIgnored.
+    AccessibilityObjectInclusion accessibilityIsIgnoredBase() const;
     virtual bool accessibilityIsIgnored() const;
     
     virtual int headingLevel() const;
-    virtual int intValue() const;
+    virtual AccessibilityButtonState checkboxOrRadioValue() const;
     virtual String valueDescription() const;
     virtual float valueForRange() const;
     virtual float maxValueForRange() const;
@@ -165,6 +165,8 @@ public:
     
     void setRenderer(RenderObject* renderer) { m_renderer = renderer; }
     RenderObject* renderer() const { return m_renderer; }
+    virtual Node* node() const;
+
     RenderView* topRenderer() const;
     RenderTextControl* textControl() const;
     Document* document() const;
@@ -191,10 +193,11 @@ public:
     virtual Widget* widgetForAttachmentView() const;
     virtual void getDocumentLinks(AccessibilityChildrenVector&);
     virtual FrameView* documentFrameView() const;
-    virtual String language() const;
     virtual unsigned hierarchicalLevel() const;
 
     virtual const AccessibilityChildrenVector& children();
+    virtual void clearChildren();
+    virtual void updateChildrenIfNecessary();
     
     virtual void setFocused(bool);
     virtual void setSelectedTextRange(const PlainTextRange&);
@@ -224,9 +227,10 @@ public:
     virtual void setSelectedVisiblePositionRange(const VisiblePositionRange&) const;
     virtual bool supportsARIAFlowTo() const;
     virtual void ariaFlowToElements(AccessibilityChildrenVector&) const;
+    virtual bool ariaHasPopup() const;
 
-    virtual bool supportsARIADropping();
-    virtual bool supportsARIADragging();
+    virtual bool supportsARIADropping() const;
+    virtual bool supportsARIADragging() const;
     virtual bool isARIAGrabbed();
     virtual void setARIAGrabbed(bool);
     virtual void determineARIADropEffects(Vector<String>&);
@@ -259,6 +263,7 @@ protected:
     
     void setRenderObject(RenderObject* renderer) { m_renderer = renderer; }
     void ariaLabeledByElements(Vector<Element*>& elements) const;
+    bool needsToUpdateChildren() const { return m_childrenDirty; }
     
     virtual bool isDetached() const { return !m_renderer; }
 
@@ -277,12 +282,15 @@ private:
     AccessibilityRole determineAriaRoleAttribute() const;
 
     bool isTabItemSelected() const;
+    bool isNativeCheckboxOrRadio() const;
     IntRect checkboxOrRadioRect() const;
     void addRadioButtonGroupMembers(AccessibilityChildrenVector& linkedUIElements) const;
     AccessibilityObject* internalLinkElement() const;
     AccessibilityObject* accessibilityImageMapHitTest(HTMLAreaElement*, const IntPoint&) const;
     AccessibilityObject* accessibilityParentForImageMap(HTMLMapElement* map) const;
-
+    bool renderObjectIsObservable(RenderObject*) const;
+    RenderObject* renderParentObject() const;
+    
     void ariaSelectedRows(AccessibilityChildrenVector&);
     
     bool elementAttributeValue(const QualifiedName&) const;
@@ -297,7 +305,6 @@ private:
     virtual bool ariaLiveRegionBusy() const;    
     
     void setNeedsToUpdateChildren() const { m_childrenDirty = true; }
-    bool needsToUpdateChildren() const { return m_childrenDirty; }
     
     mutable AccessibilityRole m_roleForMSAA;
 };

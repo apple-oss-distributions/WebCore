@@ -28,13 +28,21 @@
 #if ENABLE(VIDEO)
 #include "MediaPlayerPrivateQuickTimeWin.h"
 
+#include "Cookie.h"
+#include "CookieJar.h"
+#include "Frame.h"
+#include "FrameView.h"
 #include "GraphicsContext.h"
 #include "KURL.h"
-#include "QTMovieWin.h"
+#include "MediaPlayerPrivateTaskTimer.h"
+#include "QTMovieTask.h"
 #include "ScrollView.h"
+#include "SoftLinking.h"
+#include "StringBuilder.h"
 #include "StringHash.h"
 #include "TimeRanges.h"
 #include "Timer.h"
+#include <Wininet.h>
 #include <wtf/CurrentTime.h>
 #include <wtf/HashSet.h>
 #include <wtf/MathExtras.h>
@@ -46,10 +54,8 @@
 #endif
 
 #if DRAW_FRAME_RATE
-#include "Font.h"
-#include "FrameView.h"
-#include "Frame.h"
 #include "Document.h"
+#include "Font.h"
 #include "RenderObject.h"
 #include "RenderStyle.h"
 #include "Windows.h"
@@ -58,6 +64,9 @@
 using namespace std;
 
 namespace WebCore {
+
+SOFT_LINK_LIBRARY(Wininet)
+SOFT_LINK(Wininet, InternetSetCookieExW, DWORD, WINAPI, (LPCWSTR lpszUrl, LPCWSTR lpszCookieName, LPCWSTR lpszCookieData, DWORD dwFlags, DWORD_PTR dwReserved), (lpszUrl, lpszCookieName, lpszCookieData, dwFlags, dwReserved))
 
 MediaPlayerPrivateInterface* MediaPlayerPrivate::create(MediaPlayer* player) 
 { 
@@ -94,6 +103,7 @@ MediaPlayerPrivate::MediaPlayerPrivate(MediaPlayer* player)
 MediaPlayerPrivate::~MediaPlayerPrivate()
 {
     tearDownVideoRendering();
+    m_qtGWorld->setMovie(0);
 }
 
 bool MediaPlayerPrivate::supportsFullscreen() const
@@ -104,57 +114,112 @@ bool MediaPlayerPrivate::supportsFullscreen() const
 PlatformMedia MediaPlayerPrivate::platformMedia() const
 {
     PlatformMedia p;
-    p.qtMovie = reinterpret_cast<QTMovie*>(m_qtMovie.get());
+    p.type = PlatformMedia::QTMovieGWorldType;
+    p.media.qtMovieGWorld = m_qtGWorld.get();
     return p;
 }
 
-class TaskTimer : TimerBase {
-public:
-    static void initialize();
-    
-private:
-    static void setTaskTimerDelay(double);
-    static void stopTaskTimer();
-
-    void fired();
-
-    static TaskTimer* s_timer;
-};
-
-TaskTimer* TaskTimer::s_timer = 0;
-
-void TaskTimer::initialize()
+#if USE(ACCELERATED_COMPOSITING)
+PlatformLayer* MediaPlayerPrivate::platformLayer() const
 {
-    if (s_timer)
+    return m_qtVideoLayer ? m_qtVideoLayer->platformLayer() : 0;
+}
+#endif
+
+String MediaPlayerPrivate::rfc2616DateStringFromTime(CFAbsoluteTime time)
+{
+    static const char* const dayStrings[] = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+    static const char* const monthStrings[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    static const CFStringRef dateFormatString = CFSTR("%s, %02d %s %04d %02d:%02d:%02d GMT");
+    static CFTimeZoneRef gmtTimeZone;
+    if (!gmtTimeZone)
+        gmtTimeZone = CFTimeZoneCopyDefault();
+
+    CFGregorianDate dateValue = CFAbsoluteTimeGetGregorianDate(time, gmtTimeZone); 
+    if (!CFGregorianDateIsValid(dateValue, kCFGregorianAllUnits))
+        return String();
+
+    time = CFGregorianDateGetAbsoluteTime(dateValue, gmtTimeZone);
+    SInt32 day = CFAbsoluteTimeGetDayOfWeek(time, 0);
+
+    RetainPtr<CFStringRef> dateCFString(AdoptCF, CFStringCreateWithFormat(0, 0, dateFormatString, dayStrings[day - 1], dateValue.day, 
+        monthStrings[dateValue.month - 1], dateValue.year, dateValue.hour, dateValue.minute, (int)dateValue.second));
+    return dateCFString.get();
+}
+
+static void addCookieParam(StringBuilder& cookieBuilder, const String& name, const String& value)
+{
+    if (name.isEmpty())
         return;
 
-    s_timer = new TaskTimer;
+    // If this isn't the first parameter added, terminate the previous one.
+    if (cookieBuilder.length())
+        cookieBuilder.append("; ");
 
-    QTMovieWin::setTaskTimerFuncs(setTaskTimerDelay, stopTaskTimer);
+    // Add parameter name, and value if there is one.
+    cookieBuilder.append(name);
+    if (!value.isEmpty()) {
+        cookieBuilder.append("=");
+        cookieBuilder.append(value);
+    }
 }
 
-void TaskTimer::setTaskTimerDelay(double delayInSeconds)
+
+void MediaPlayerPrivate::setUpCookiesForQuickTime(const String& url)
 {
-    ASSERT(s_timer);
+    // WebCore loaded the page with the movie URL with CFNetwork but QuickTime will 
+    // use WinINet to download the movie, so we need to copy any cookies needed to
+    // download the movie into WinInet before asking QuickTime to open it.
+    Frame* frame = m_player->frameView() ? m_player->frameView()->frame() : 0;
+    if (!frame || !frame->page() || !frame->page()->cookieEnabled())
+        return;
 
-    s_timer->startOneShot(delayInSeconds);
-}
+    KURL movieURL = KURL(KURL(), url);
+    Vector<Cookie> documentCookies;
+    if (!getRawCookies(frame->document(), movieURL, documentCookies))
+        return;
 
-void TaskTimer::stopTaskTimer()
-{
-    ASSERT(s_timer);
+    for (size_t ndx = 0; ndx < documentCookies.size(); ndx++) {
+        const Cookie& cookie = documentCookies[ndx];
 
-    s_timer->stop();
-}
+        if (cookie.name.isEmpty())
+            continue;
 
-void TaskTimer::fired()
-{
-    QTMovieWin::taskTimerFired();
+        // Build up the cookie string with as much information as we can get so WinINet
+        // knows what to do with it.
+        StringBuilder cookieBuilder;
+        addCookieParam(cookieBuilder, cookie.name, cookie.value);
+        addCookieParam(cookieBuilder, "path", cookie.path);
+        if (cookie.expires) 
+            addCookieParam(cookieBuilder, "expires", rfc2616DateStringFromTime(cookie.expires));
+        if (cookie.httpOnly) 
+            addCookieParam(cookieBuilder, "httpOnly", String());
+        cookieBuilder.append(";");
+
+        String cookieURL;
+        if (!cookie.domain.isEmpty()) {
+            StringBuilder urlBuilder;
+
+            urlBuilder.append(movieURL.protocol());
+            urlBuilder.append("://");
+            if (cookie.domain[0] == '.')
+                urlBuilder.append(cookie.domain.substring(1));
+            else
+                urlBuilder.append(cookie.domain);
+            if (cookie.path.length() > 1)
+                urlBuilder.append(cookie.path);
+
+            cookieURL = urlBuilder.toString();
+        } else
+            cookieURL = movieURL;
+
+        InternetSetCookieExW(cookieURL.charactersWithNullTermination(), 0, cookieBuilder.toString().charactersWithNullTermination(), 0, 0);
+    }
 }
 
 void MediaPlayerPrivate::load(const String& url)
 {
-    if (!QTMovieWin::initializeQuickTime()) {
+    if (!QTMovie::initializeQuickTime()) {
         // FIXME: is this the right error to return?
         m_networkState = MediaPlayer::DecodeError; 
         m_player->networkStateChanged();
@@ -162,7 +227,7 @@ void MediaPlayerPrivate::load(const String& url)
     }
 
     // Initialize the task timer.
-    TaskTimer::initialize();
+    MediaPlayerPrivateTaskTimer::initialize();
 
     if (m_networkState != MediaPlayer::Loading) {
         m_networkState = MediaPlayer::Loading;
@@ -174,10 +239,15 @@ void MediaPlayerPrivate::load(const String& url)
     }
     cancelSeek();
 
-    m_qtMovie.set(new QTMovieWin(this));
+    setUpCookiesForQuickTime(url);
+
+    m_qtMovie = adoptRef(new QTMovie(this));
     m_qtMovie->load(url.characters(), url.length(), m_player->preservesPitch());
     m_qtMovie->setVolume(m_player->volume());
-    m_qtMovie->setVisible(m_player->visible());
+
+    m_qtGWorld = adoptRef(new QTMovieGWorld(this));
+    m_qtGWorld->setMovie(m_qtMovie.get());
+    m_qtGWorld->setVisible(m_player->visible());
 }
 
 void MediaPlayerPrivate::play()
@@ -278,7 +348,7 @@ bool MediaPlayerPrivate::paused() const
 {
     if (!m_qtMovie)
         return true;
-    return m_qtMovie->rate() == 0.0f;
+    return (!m_qtMovie->rate());
 }
 
 bool MediaPlayerPrivate::seeking() const
@@ -502,7 +572,7 @@ void MediaPlayerPrivate::setSize(const IntSize& size)
     if (m_hasUnsupportedTracks || !m_qtMovie || m_size == size)
         return;
     m_size = size;
-    m_qtMovie->setSize(size.width(), size.height());
+    m_qtGWorld->setSize(size.width(), size.height());
 }
 
 void MediaPlayerPrivate::setVisible(bool visible)
@@ -510,7 +580,7 @@ void MediaPlayerPrivate::setVisible(bool visible)
     if (m_hasUnsupportedTracks || !m_qtMovie || m_visible == visible)
         return;
 
-    m_qtMovie->setVisible(visible);
+    m_qtGWorld->setVisible(visible);
     m_visible = visible;
     if (m_visible) {
         if (isReadyForRendering())
@@ -533,7 +603,7 @@ void MediaPlayerPrivate::paint(GraphicsContext* p, const IntRect& r)
     HDC hdc = p->getWindowsContext(r);
     if (!hdc) {
         // The graphics context doesn't have an associated HDC so create a temporary
-        // bitmap where QTMovieWin can draw the frame and we can copy it.
+        // bitmap where QTMovieGWorld can draw the frame and we can copy it.
         usingTempBitmap = true;
         bitmap.set(p->createWindowsBitmap(r.size()));
         hdc = bitmap->hdc();
@@ -549,7 +619,7 @@ void MediaPlayerPrivate::paint(GraphicsContext* p, const IntRect& r)
         SetWorldTransform(hdc, &xform);
     }
 
-    m_qtMovie->paint(hdc, r.x(), r.y());
+    m_qtGWorld->paint(hdc, r.x(), r.y());
     if (usingTempBitmap)
         p->drawWindowsBitmap(bitmap.get(), r.topLeft());
     else
@@ -609,11 +679,11 @@ static HashSet<String> mimeTypeCache()
     static bool typeListInitialized = false;
 
     if (!typeListInitialized) {
-        unsigned count = QTMovieWin::countSupportedTypes();
+        unsigned count = QTMovie::countSupportedTypes();
         for (unsigned n = 0; n < count; n++) {
             const UChar* character;
             unsigned len;
-            QTMovieWin::getSupportedType(n, character, len);
+            QTMovie::getSupportedType(n, character, len);
             if (len)
                 typeCache.add(String(character, len));
         }
@@ -631,7 +701,7 @@ void MediaPlayerPrivate::getSupportedTypes(HashSet<String>& types)
 
 bool MediaPlayerPrivate::isAvailable()
 {
-    return QTMovieWin::initializeQuickTime();
+    return QTMovie::initializeQuickTime();
 }
 
 MediaPlayer::SupportsType MediaPlayerPrivate::supportsType(const String& type, const String& codecs)
@@ -641,7 +711,7 @@ MediaPlayer::SupportsType MediaPlayerPrivate::supportsType(const String& type, c
     return mimeTypeCache().contains(type) ? (codecs.isEmpty() ? MediaPlayer::MayBeSupported : MediaPlayer::IsSupported) : MediaPlayer::IsNotSupported;
 }
 
-void MediaPlayerPrivate::movieEnded(QTMovieWin* movie)
+void MediaPlayerPrivate::movieEnded(QTMovie* movie)
 {
     if (m_hasUnsupportedTracks)
         return;
@@ -650,7 +720,7 @@ void MediaPlayerPrivate::movieEnded(QTMovieWin* movie)
     didEnd();
 }
 
-void MediaPlayerPrivate::movieLoadStateChanged(QTMovieWin* movie)
+void MediaPlayerPrivate::movieLoadStateChanged(QTMovie* movie)
 {
     if (m_hasUnsupportedTracks)
         return;
@@ -659,7 +729,7 @@ void MediaPlayerPrivate::movieLoadStateChanged(QTMovieWin* movie)
     updateStates();
 }
 
-void MediaPlayerPrivate::movieTimeChanged(QTMovieWin* movie)
+void MediaPlayerPrivate::movieTimeChanged(QTMovie* movie)
 {
     if (m_hasUnsupportedTracks)
         return;
@@ -669,12 +739,12 @@ void MediaPlayerPrivate::movieTimeChanged(QTMovieWin* movie)
     m_player->timeChanged();
 }
 
-void MediaPlayerPrivate::movieNewImageAvailable(QTMovieWin* movie)
+void MediaPlayerPrivate::movieNewImageAvailable(QTMovieGWorld* movie)
 {
     if (m_hasUnsupportedTracks)
         return;
 
-    ASSERT(m_qtMovie.get() == movie);
+    ASSERT(m_qtGWorld.get() == movie);
 #if DRAW_FRAME_RATE
     if (m_startedPlaying) {
         m_frameCountWhilePlaying++;
@@ -745,6 +815,11 @@ void MediaPlayerPrivate::setUpVideoRendering()
 
     if (preferredMode == MediaRenderingMovieLayer)
         createLayerForMovie();
+
+#if USE(ACCELERATED_COMPOSITING)
+    if (currentMode == MediaRenderingMovieLayer || preferredMode == MediaRenderingMovieLayer)
+        m_player->mediaPlayerClient()->mediaPlayerRenderingModeChanged(m_player);
+#endif
 }
 
 void MediaPlayerPrivate::tearDownVideoRendering()
@@ -785,9 +860,9 @@ void MediaPlayerPrivate::paintContents(const GraphicsLayer*, GraphicsContext& co
     unsigned width;
     unsigned height;
 
-    m_qtMovie->getCurrentFrameInfo(buffer, bitsPerPixel, rowBytes, width, height);
+    m_qtGWorld->getCurrentFrameInfo(buffer, bitsPerPixel, rowBytes, width, height);
     if (!buffer)
-        return ;
+        return;
 
     RetainPtr<CFDataRef> data(AdoptCF, CFDataCreateWithBytesNoCopy(0, static_cast<UInt8*>(buffer), rowBytes * height, kCFAllocatorNull));
     RetainPtr<CGDataProviderRef> provider(AdoptCF, CGDataProviderCreateWithCFData(data.get()));
@@ -810,11 +885,6 @@ void MediaPlayerPrivate::createLayerForMovie()
     if (!m_qtMovie || m_qtVideoLayer)
         return;
 
-    // Do nothing if the parent layer hasn't been set up yet.
-    GraphicsLayer* videoGraphicsLayer = m_player->mediaPlayerClient()->mediaPlayerGraphicsLayer(m_player);
-    if (!videoGraphicsLayer)
-        return;
-
     // Create a GraphicsLayer that won't be inserted directly into the render tree, but will used 
     // as a wrapper for a WKCACFLayer which gets inserted as the content layer of the video 
     // renderer's GraphicsLayer.
@@ -829,9 +899,7 @@ void MediaPlayerPrivate::createLayerForMovie()
 #ifndef NDEBUG
     m_qtVideoLayer->setName("Video layer");
 #endif
-
-    // Hang the video layer from the render layer.
-    videoGraphicsLayer->setContentsToMedia(m_qtVideoLayer->platformLayer());
+    // The layer will get hooked up via RenderLayerBacking::updateGraphicsLayerConfiguration().
 #endif
 }
 
@@ -855,14 +923,6 @@ void MediaPlayerPrivate::acceleratedRenderingStateChanged()
     // Set up or change the rendering path if necessary.
     setUpVideoRendering();
 }
-
-void MediaPlayerPrivate::notifySyncRequired(const GraphicsLayer*)
-{
-    GraphicsLayerCACF* videoGraphicsLayer = static_cast<GraphicsLayerCACF*>(m_player->mediaPlayerClient()->mediaPlayerGraphicsLayer(m_player));
-    if (videoGraphicsLayer)
-        videoGraphicsLayer->notifySyncRequired();
- }
-
 
 #endif
 

@@ -40,12 +40,6 @@ bool GlyphPage::fill(unsigned offset, unsigned length, UChar* buffer, unsigned b
 {
     bool haveGlyphs = false;
 
-    if (fontData->isImageFont()) {
-        for (unsigned i = 0; i < length; ++i)
-            setGlyphDataForIndex(offset + i, buffer[i], fontData);
-        return true;
-    }
-
 #ifndef BUILDING_ON_TIGER
     Vector<CGGlyph, 512> glyphs(bufferLength);
     // We pass in either 256 or 512  UTF-16 characters
@@ -54,7 +48,7 @@ bool GlyphPage::fill(unsigned offset, unsigned length, UChar* buffer, unsigned b
     // It is indeed possible to get back 512 glyphs back from the API, so the glyph buffer we pass in must be 512
     // If we get back more than 256 glyphs though we'll ignore all the ones after 256, this should not happen 
     // as the only time we pass in 512 characters is when they are surrogates.
-    GSFontGetGlyphsForUnichars(fontData->platformData().font(), buffer, glyphs.data(), bufferLength);
+    CGFontGetGlyphsForUnichars(fontData->platformData().cgFont(), buffer, glyphs.data(), bufferLength);
 
     for (unsigned i = 0; i < length; ++i) {
         if (!glyphs[i])

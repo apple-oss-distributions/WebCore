@@ -36,6 +36,7 @@
 #include "PlatformString.h"
 #include "ScriptSourceCode.h"
 #include "ScriptValue.h"
+#include "ThreadGlobalData.h"
 
 #include <utility>
 #include <wtf/Noncopyable.h>
@@ -58,9 +59,9 @@ unsigned WorkerThread::workerThreadCount()
 
 struct WorkerThreadStartupData : Noncopyable {
 public:
-    static std::auto_ptr<WorkerThreadStartupData> create(const KURL& scriptURL, const String& userAgent, const String& sourceCode)
+    static PassOwnPtr<WorkerThreadStartupData> create(const KURL& scriptURL, const String& userAgent, const String& sourceCode)
     {
-        return std::auto_ptr<WorkerThreadStartupData>(new WorkerThreadStartupData(scriptURL, userAgent, sourceCode));
+        return new WorkerThreadStartupData(scriptURL, userAgent, sourceCode);
     }
 
     KURL m_scriptURL;
@@ -121,7 +122,7 @@ void* WorkerThread::workerThread()
         if (m_runLoop.terminated()) {
             // The worker was terminated before the thread had a chance to run. Since the context didn't exist yet,
             // forbidExecution() couldn't be called from stop().
-           m_workerContext->script()->forbidExecution();
+           m_workerContext->script()->forbidExecution(WorkerScriptController::TerminateRunningScript);
         }
     }
 
@@ -141,7 +142,10 @@ void* WorkerThread::workerThread()
     // The below assignment will destroy the context, which will in turn notify messaging proxy.
     // We cannot let any objects survive past thread exit, because no other thread will run GC or otherwise destroy them.
     m_workerContext = 0;
-    
+
+    // Clean up WebCore::ThreadGlobalData before WTF::WTFThreadData goes away!
+    threadGlobalData().destroy();
+
     // The thread object may be already destroyed from notification now, don't try to access "this".
     detachThread(threadID);
 
@@ -183,17 +187,25 @@ public:
         ASSERT(context->isWorkerContext());
         WorkerContext* workerContext = static_cast<WorkerContext*>(context);
 
+#if ENABLE(DATABASE)
         // We currently ignore any DatabasePolicy used for the document's
         // databases; if it's actually used anywhere, this should be revisited.
         DatabaseTaskSynchronizer cleanupSync;
         workerContext->stopDatabases(&cleanupSync);
+#endif
 
         workerContext->stopActiveDOMObjects();
+
+        // Event listeners would keep DOMWrapperWorld objects alive for too long. Also, they have references to JS objects,
+        // which become dangling once Heap is destroyed.
+        workerContext->removeAllEventListeners();
         workerContext->clearScript();
 
+#if ENABLE(DATABASE)
         // We wait for the database thread to clean up all its stuff so that we
         // can do more stringent leak checks as we exit.
         cleanupSync.waitForTaskCompletion();
+#endif
 
         // Stick a shutdown command at the end of the queue, so that we deal
         // with all the cleanup tasks the databases post first.
@@ -210,7 +222,7 @@ void WorkerThread::stop()
 
     // Ensure that tasks are being handled by thread event loop. If script execution weren't forbidden, a while(1) loop in JS could keep the thread alive forever.
     if (m_workerContext) {
-        m_workerContext->script()->forbidExecution();
+        m_workerContext->script()->forbidExecution(WorkerScriptController::TerminateRunningScript);
 
     // FIXME: Rudely killing the thread won't work when we allow nested workers, because they will try to post notifications of their destruction.
     // This can likely use the same mechanism as used for databases above.

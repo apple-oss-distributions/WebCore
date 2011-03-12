@@ -21,7 +21,6 @@
 #define PlatformTouchPoint_h
 
 #include "IntPoint.h"
-#include <wtf/Platform.h>
 #include <wtf/Vector.h>
 
 
@@ -49,13 +48,13 @@ public:
     PlatformTouchPoint(const IntPoint& windowPos, State);
 #endif
 
-    int id() const { return m_id; }
+    unsigned id() const { return m_id; }
     State state() const { return m_state; }
     IntPoint screenPos() const { return m_screenPos; }
     IntPoint pos() const { return m_pos; }
     
-private:
-    int m_id;
+protected:
+    unsigned m_id;
     State m_state;
     IntPoint m_screenPos;
     IntPoint m_pos;

@@ -3,7 +3,7 @@
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
  *           (C) 2006 Alexey Proskuryakov (ap@webkit.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  * Copyright (C) 2008, 2009 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
  *
  * This library is free software; you can redistribute it and/or
@@ -36,12 +36,13 @@
 #include "DocumentMarker.h"
 #include "ScriptExecutionContext.h"
 #include "Timer.h"
-#if USE(JSC)
-#include <runtime/WeakGCMap.h>
-#endif
 #include <wtf/HashCountedSet.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
+
+#if USE(JSC)
+#include <runtime/WeakGCMap.h>
+#endif
 
 #include "RenderStyle.h"
 
@@ -89,6 +90,7 @@ namespace WebCore {
     class IntPoint;
     class DOMWrapperWorld;
     class JSNode;
+    class MediaCanStartListener;
     class MouseEventWithHitTestResults;
     class NodeFilter;
     class NodeIterator;
@@ -140,6 +142,10 @@ namespace WebCore {
     typedef int ExceptionCode;
 
     class CachedImage;
+    class DeviceMotionClient;
+    class DeviceMotionController;
+    class DeviceOrientationClient;
+    class DeviceOrientationController;
     extern const int cLayoutScheduleThreshold;
 
 class FormElementKey {
@@ -182,6 +188,11 @@ struct FormElementKeyHashTraits : WTF::GenericHashTraits<FormElementKey> {
     static bool isDeletedValue(const FormElementKey& value) { return value.isHashTableDeletedValue(); }
 };
 
+enum PageshowEventPersistence {
+    PageshowEventNotPersisted = 0,
+    PageshowEventPersisted = 1
+};
+    
 
 class TextAutoSizingKey {
 public:
@@ -240,21 +251,6 @@ private:
     HashSet<RefPtr<Node> > m_autoSizedNodes;
 };
 
-
-struct ViewportArguments
-{
-    ViewportArguments() :initialScale(-1), minimumScale(-1), maximumScale(-1), width(-1), height(-1), userScalable(-1) { }
-    
-    float initialScale;
-    float minimumScale;
-    float maximumScale;
-    float width;
-    float height;
-    
-    float userScalable;
-    
-    bool hasCustomArgument() const { return initialScale != -1 || minimumScale != -1 || maximumScale != -1 || width != -1 || height != -1 || userScalable != -1; }
-};
 
 class Document : public ContainerNode, public ScriptExecutionContext {
 public:
@@ -517,6 +513,8 @@ public:
     void setUsesBeforeAfterRules(bool b) { m_usesBeforeAfterRules = b; }
     bool usesRemUnits() const { return m_usesRemUnits; }
     void setUsesRemUnits(bool b) { m_usesRemUnits = b; }
+    bool usesLinkRules() const { return linkColor() != visitedLinkColor() || m_usesLinkRules; }
+    void setUsesLinkRules(bool b) { m_usesLinkRules = b; }
 
     // Machinery for saving and restoring state when you leave and then go back to a page.
     void registerFormElementWithState(Element* e) { m_formElementsWithState.add(e); }
@@ -533,6 +531,7 @@ public:
     Settings* settings() const; // can be NULL
 #if ENABLE(INSPECTOR)
     InspectorTimelineAgent* inspectorTimelineAgent() const; // can be NULL
+    virtual InspectorController* inspectorController() const; // can be NULL
 #endif
 
     PassRefPtr<Range> createRange();
@@ -552,6 +551,7 @@ public:
     virtual void updateStyleIfNeeded();
     void updateLayout();
     void updateLayoutIgnorePendingStylesheets();
+    PassRefPtr<RenderStyle> styleForElementIgnoringPendingStylesheets(Element*);
     static void updateStyleForAllDocuments(); // FIXME: Try to reduce the # of calls to this function.
     DocLoader* docLoader() { return m_docLoader.get(); }
 
@@ -715,9 +715,6 @@ public:
     void dispatchWindowEvent(PassRefPtr<Event>, PassRefPtr<EventTarget> = 0);
     void dispatchWindowLoadEvent();
 
-    void enqueueStorageEvent(PassRefPtr<Event>);
-    void storageEventTimerFired(Timer<Document>*);
-
     PassRefPtr<Event> createEvent(const String& eventType, ExceptionCode&);
 
     // keep track of what types of event listeners are registered, so we don't
@@ -784,10 +781,10 @@ public:
      * @param content The header value (value of the meta tag's "content" attribute)
      */
     void processHttpEquiv(const String& equiv, const String& content);
-    void processArguments(const String & features, void *userData, void (*argumentsCallback)(const String& keyString, const String& valueString, Document * aDocument, void* userData));
-    void processViewport(const String & features);
     void processFormatDetection(const String & features);
     
+    void processViewport(const String& features);
+
     // Returns the owning element in the parent document.
     // Returns 0 if this is the top level document.
     Element* ownerElement() const;
@@ -806,8 +803,28 @@ public:
 
     String lastModified() const;
 
+    // The cookieURL is used to query the cookie database for this document's
+    // cookies. For example, if the cookie URL is http://example.com, we'll
+    // use the non-Secure cookies for example.com when computing
+    // document.cookie.
+    //
+    // Q: How is the cookieURL different from the document's URL?
+    // A: The two URLs are the same almost all the time.  However, if one
+    //    document inherits the security context of another document, it
+    //    inherits its cookieURL but not its URL.
+    //
     const KURL& cookieURL() const { return m_cookieURL; }
 
+    // The firstPartyForCookies is used to compute whether this document
+    // appears in a "third-party" context for the purpose of third-party
+    // cookie blocking.  The document is in a third-party context if the
+    // cookieURL and the firstPartyForCookies are from different hosts.
+    //
+    // Note: Some ports (including possibly Apple's) only consider the
+    //       document in a third-party context if the cookieURL and the
+    //       firstPartyForCookies have a different registry-controlled
+    //       domain.
+    //
     const KURL& firstPartyForCookies() const { return m_firstPartyForCookies; }
     void setFirstPartyForCookies(const KURL& url) { m_firstPartyForCookies = url; }
     
@@ -923,7 +940,7 @@ public:
     void removeNodeListCache() { ASSERT(m_numNodeListCaches > 0); --m_numNodeListCaches; }
     bool hasNodeListCaches() const { return m_numNodeListCaches; }
 
-    void updateFocusAppearanceSoon();
+    void updateFocusAppearanceSoon(bool restorePreviousSelection);
     void cancelFocusAppearanceUpdate();
         
     // FF method for accessing the selection added for compatibility.
@@ -937,9 +954,7 @@ public:
     void parseDNSPrefetchControlHeader(const String&);
 
     virtual void reportException(const String& errorMessage, int lineNumber, const String& sourceURL);
-    virtual void addMessage(MessageDestination, MessageSource, MessageType, MessageLevel, const String& message, unsigned lineNumber, const String& sourceURL);
-    virtual void resourceRetrievedByXMLHttpRequest(unsigned long identifier, const ScriptString& sourceString);
-    virtual void scriptImported(unsigned long, const String&);
+    virtual void addMessage(MessageSource, MessageType, MessageLevel, const String& message, unsigned lineNumber, const String& sourceURL);
     virtual void postTask(PassOwnPtr<Task>); // Executes the task on context's thread asynchronously.
 
 #if USE(JSC)
@@ -948,6 +963,8 @@ public:
     JSWrapperCacheMap& wrapperCacheMap() { return m_wrapperCacheMap; }
     JSWrapperCache* getWrapperCache(DOMWrapperWorld* world);
     JSWrapperCache* createWrapperCache(DOMWrapperWorld*);
+    void destroyWrapperCache(DOMWrapperWorld*);
+    void destroyAllWrapperCaches();
 #endif
 
     virtual void finishedParsing();
@@ -1008,8 +1025,6 @@ public:
     void updateURLForPushOrReplaceState(const KURL&);
     void statePopped(SerializedScriptValue*);
 
-    void updateSandboxFlags(); // Set sandbox flags as determined by the frame.
-
     bool processingLoadEvent() const { return m_processingLoadEvent; }
 
 #if ENABLE(DATABASE)
@@ -1018,6 +1033,7 @@ public:
 #endif
 
     virtual bool isContextThread() const;
+    virtual bool isJSExecutionTerminated() const { return false; }
 
     void setUsingGeolocation(bool f) { m_usingGeolocation = f; }
     bool usingGeolocation() const { return m_usingGeolocation; };
@@ -1033,7 +1049,20 @@ public:
     bool containsValidityStyleRules() const { return m_containsValidityStyleRules; }
     void setContainsValidityStyleRules() { m_containsValidityStyleRules = true; }
 
+    void enqueueEvent(PassRefPtr<Event>);
+    void enqueuePageshowEvent(PageshowEventPersistence);
+    void enqueueHashchangeEvent(const String& oldURL, const String& newURL);
+
+    void addMediaCanStartListener(MediaCanStartListener*);
+    void removeMediaCanStartListener(MediaCanStartListener*);
+    MediaCanStartListener* takeAnyMediaCanStartListener();
+
 #include "DocumentIPhone.h"
+
+#if ENABLE(DEVICE_ORIENTATION)
+    DeviceMotionController* deviceMotionController() const;
+    DeviceOrientationController* deviceOrientationController() const;
+#endif
 
 protected:
     Document(Frame*, bool isXHTML, bool isHTML);
@@ -1041,6 +1070,10 @@ protected:
     void clearXMLVersion() { m_xmlVersion = String(); }
 
 private:
+
+    typedef void (*ArgumentsCallback)(const String& keyString, const String& valueString, Document*, void* data);
+    void processArguments(const String& features, void* data, ArgumentsCallback);
+
     virtual bool isDocument() const { return true; }
     virtual void removedLastRef();
     virtual void determineParseMode() { }
@@ -1072,6 +1105,9 @@ private:
     void cacheDocumentElement() const;
 
     void createStyleSelector();
+
+    void enqueuePopstateEvent(PassRefPtr<SerializedScriptValue> stateObject);
+    void pendingEventTimerFired(Timer<Document>*);
 
     OwnPtr<CSSStyleSelector> m_styleSelector;
     bool m_didCalculateStyleSelector;
@@ -1144,10 +1180,14 @@ private:
     unsigned short m_listenerTypes;
 
     RefPtr<StyleSheetList> m_styleSheets; // All of the stylesheets that are currently in effect for our media type and stylesheet set.
-    ListHashSet<Node*> m_styleSheetCandidateNodes; // All of the nodes that could potentially provide stylesheets to the document (<link>, <style>, <?xml-stylesheet>)
+    
+    typedef ListHashSet<Node*, 32> StyleSheetCandidateListHashSet;
+    StyleSheetCandidateListHashSet m_styleSheetCandidateNodes; // All of the nodes that could potentially provide stylesheets to the document (<link>, <style>, <?xml-stylesheet>)
+
+    typedef ListHashSet<Element*, 64> FormElementListHashSet;
+    FormElementListHashSet m_formElementsWithState;
 
     typedef HashMap<FormElementKey, Vector<String>, FormElementKeyHash, FormElementKeyHashTraits> FormElementStateMap;
-    ListHashSet<Element*> m_formElementsWithState;
     FormElementStateMap m_stateForNewFormElements;
     
     Color m_linkColor;
@@ -1169,11 +1209,13 @@ private:
     bool m_usesFirstLetterRules;
     bool m_usesBeforeAfterRules;
     bool m_usesRemUnits;
+    bool m_usesLinkRules;
     bool m_gotoAnchorNeededAfterStylesheetsLoad;
     bool m_isDNSPrefetchEnabled;
     bool m_haveExplicitlyDisabledDNSPrefetch;
     bool m_frameElementsShouldIgnoreScrolling;
     bool m_containsValidityStyleRules;
+    bool m_updateFocusAppearanceRestoresSelection;
 
     String m_title;
     String m_rawTitle;
@@ -1230,7 +1272,6 @@ private:
 #endif
 
     RenderObject* m_savedRenderer;
-    int m_secureForms;
     
     RefPtr<TextResourceDecoder> m_decoder;
 
@@ -1290,14 +1331,23 @@ private:
 
     bool m_usingGeolocation;
 
-    Timer<Document> m_storageEventTimer;
-    Vector<RefPtr<Event> > m_storageEventQueue;
+    Timer<Document> m_pendingEventTimer;
+    Vector<RefPtr<Event> > m_pendingEventQueue;
 
 #if ENABLE(WML)
     bool m_containsWMLContent;
 #endif
 
     RefPtr<DocumentWeakReference> m_weakReference;
+
+    HashSet<MediaCanStartListener*> m_mediaCanStartListeners;
+
+#if ENABLE(DEVICE_ORIENTATION)
+    OwnPtr<DeviceMotionClient> m_deviceMotionClient;
+    OwnPtr<DeviceMotionController> m_deviceMotionController;
+    OwnPtr<DeviceOrientationClient> m_deviceOrientationClient;
+    OwnPtr<DeviceOrientationController> m_deviceOrientationController;
+#endif
 
 public:
     void addAutoSizingNode(Node *node, float size);
@@ -1343,6 +1393,22 @@ inline bool Document::hasElementWithId(AtomicStringImpl* id) const
 inline bool Node::isDocumentNode() const
 {
     return this == m_document;
+}
+
+// here because it uses a Document method but we really want to inline it
+inline Node::Node(Document* document, ConstructionType type)
+    : TreeShared<Node>(initialRefCount(type))
+    , m_document(document)
+    , m_previous(0)
+    , m_next(0)
+    , m_renderer(0)
+    , m_nodeFlags(type)
+{
+    if (m_document)
+        m_document->selfOnlyRef();
+#if !defined(NDEBUG) || (defined(DUMP_NODE_STATISTICS) && DUMP_NODE_STATISTICS)
+    trackForDebugging();
+#endif
 }
 
 } // namespace WebCore

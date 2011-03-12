@@ -30,6 +30,7 @@
 #include "AtomicString.h"
 #include "FontRenderingMode.h"
 #include "KURL.h"
+#include "ZoomMode.h"
 
 #include "Document.h"
 
@@ -106,6 +107,9 @@ namespace WebCore {
         bool loadsImagesAutomatically() const { return m_loadsImagesAutomatically; }
 
         void setJavaScriptEnabled(bool);
+        // Instead of calling isJavaScriptEnabled directly, please consider calling
+        // ScriptController::canExecuteScripts, which takes things like the
+        // HTML sandbox attribute into account.
         bool isJavaScriptEnabled() const { return m_isJavaScriptEnabled; }
 
         void setWebSecurityEnabled(bool);
@@ -114,11 +118,17 @@ namespace WebCore {
         void setAllowUniversalAccessFromFileURLs(bool);
         bool allowUniversalAccessFromFileURLs() const { return m_allowUniversalAccessFromFileURLs; }
 
+        void setAllowFileAccessFromFileURLs(bool);
+        bool allowFileAccessFromFileURLs() const { return m_allowFileAccessFromFileURLs; }
+
         void setJavaScriptCanOpenWindowsAutomatically(bool);
         bool javaScriptCanOpenWindowsAutomatically() const { return m_javaScriptCanOpenWindowsAutomatically; }
 
         void setJavaScriptCanAccessClipboard(bool);
-        bool javaScriptCanAccessClipboard() const { return m_javaScriptCanAccessClipboard; } 
+        bool javaScriptCanAccessClipboard() const { return m_javaScriptCanAccessClipboard; }
+
+        void setSpatialNavigationEnabled(bool);
+        bool isSpatialNavigationEnabled() const { return m_isSpatialNavigationEnabled; }
 
         void setJavaEnabled(bool);
         bool isJavaEnabled() const { return m_isJavaEnabled; }
@@ -126,19 +136,19 @@ namespace WebCore {
         void setImagesEnabled(bool);
         bool areImagesEnabled() const { return m_areImagesEnabled; }
 
+        void setMediaEnabled(bool);
+        bool isMediaEnabled() const { return m_isMediaEnabled; }
+
         void setPluginsEnabled(bool);
         bool arePluginsEnabled() const { return m_arePluginsEnabled; }
-
-        void setDatabasesEnabled(bool);
-        bool databasesEnabled() const { return m_databasesEnabled; }
 
         void setLocalStorageEnabled(bool);
         bool localStorageEnabled() const { return m_localStorageEnabled; }
 
-#if ENABLE(DOM_STORAGE)
+#if ENABLE(DOM_STORAGE)        
         void setLocalStorageQuota(unsigned);
         unsigned localStorageQuota() const { return m_localStorageQuota; }
-        
+
         // Allow clients concerned with memory consumption to set a quota on session storage
         // since the memory used won't be released until the Page is destroyed.
         // Default is noQuota.
@@ -157,6 +167,9 @@ namespace WebCore {
         
         void setUsesEncodingDetector(bool);
         bool usesEncodingDetector() const { return m_usesEncodingDetector; }
+
+        void setDNSPrefetchingEnabled(bool);
+        bool dnsPrefetchingEnabled() const { return m_dnsPrefetchingEnabled; }
 
         void setUserStyleSheetLocation(const KURL&);
         const KURL& userStyleSheetLocation() const { return m_userStyleSheetLocation; }
@@ -235,6 +248,9 @@ namespace WebCore {
         void setMediaPlaybackRequiresUserAction(bool flag) { m_mediaPlaybackRequiresUserAction = flag; }
         bool mediaPlaybackRequiresUserAction() const { return m_mediaPlaybackRequiresUserAction; }
 
+        void setMediaDataLoadsAutomatically(bool flag) { m_mediaDataLoadsAutomatically = flag; }
+        bool mediaDataLoadsAutomatically() const { return m_mediaDataLoadsAutomatically; }
+
         void setMinimumZoomFontSize(float size) { m_minimumZoomFontSize = size; }
         float minimumZoomFontSize() const { return m_minimumZoomFontSize; }
 
@@ -246,7 +262,9 @@ namespace WebCore {
 
         void setAlwaysUseBaselineOfPrimaryFont(bool flag) { m_alwaysUseBaselineOfPrimaryFont = flag; }
         bool alwaysUseBaselineOfPrimaryFont() const { return m_alwaysUseBaselineOfPrimaryFont; }
-
+        
+        void setAllowMultiElementImplicitSubmission(bool flag) { m_allowMultiElementImplicitFormSubmission = flag; }
+        bool allowMultiElementImplicitSubmission() { return m_allowMultiElementImplicitFormSubmission; }
         
         void setAuthorAndUserStylesEnabled(bool);
         bool authorAndUserStylesEnabled() const { return m_authorAndUserStylesEnabled; }
@@ -275,8 +293,8 @@ namespace WebCore {
         void setShouldPaintCustomScrollbars(bool);
         bool shouldPaintCustomScrollbars() const { return m_shouldPaintCustomScrollbars; }
 
-        void setZoomsTextOnly(bool);
-        bool zoomsTextOnly() const { return m_zoomsTextOnly; }
+        void setZoomMode(ZoomMode);
+        ZoomMode zoomMode() const { return m_zoomMode; }
         
         void setEnforceCSSMIMETypeInStrictMode(bool);
         bool enforceCSSMIMETypeInStrictMode() { return m_enforceCSSMIMETypeInStrictMode; }
@@ -325,11 +343,18 @@ namespace WebCore {
         void setWebGLEnabled(bool);
         bool webGLEnabled() const { return m_webGLEnabled; }
 
-        void setGeolocationEnabled(bool);
-        bool geolocationEnabled() const { return m_geolocationEnabled; }
-
         void setLoadDeferringEnabled(bool);
         bool loadDeferringEnabled() const { return m_loadDeferringEnabled; }
+        
+        void setTiledBackingStoreEnabled(bool);
+        bool tiledBackingStoreEnabled() const { return m_tiledBackingStoreEnabled; }
+
+        // This setting will be removed when an HTML5 compatibility issue is
+        // resolved and WebKit implementation of interactive validation is
+        // completed. See http://webkit.org/b/40520, http://webkit.org/b/40747,
+        // and http://webkit.org/b/40908
+        void setInteractiveFormValidationEnabled(bool flag) { m_interactiveFormValidation = flag; }
+        bool interactiveFormValidationEnabled() const { return m_interactiveFormValidation; }
 
     private:
         Page* m_page;
@@ -356,22 +381,26 @@ namespace WebCore {
         int m_layoutInterval;
         double m_maxParseDuration;
         bool m_alwaysUseBaselineOfPrimaryFont;
-#if ENABLE(DOM_STORAGE)
+        bool m_allowMultiElementImplicitFormSubmission;
+#if ENABLE(DOM_STORAGE)        
         unsigned m_localStorageQuota;
         unsigned m_sessionStorageQuota;
 #endif
         unsigned m_pluginAllowedRunTime;
+        ZoomMode m_zoomMode;
+        bool m_isSpatialNavigationEnabled : 1;
         bool m_isJavaEnabled : 1;
         bool m_loadsImagesAutomatically : 1;
         bool m_privateBrowsingEnabled : 1;
         bool m_caretBrowsingEnabled : 1;
         bool m_areImagesEnabled : 1;
+        bool m_isMediaEnabled : 1;
         bool m_arePluginsEnabled : 1;
-        bool m_databasesEnabled : 1;
         bool m_localStorageEnabled : 1;
         bool m_isJavaScriptEnabled : 1;
         bool m_isWebSecurityEnabled : 1;
         bool m_allowUniversalAccessFromFileURLs: 1;
+        bool m_allowFileAccessFromFileURLs: 1;
         bool m_javaScriptCanOpenWindowsAutomatically : 1;
         bool m_javaScriptCanAccessClipboard : 1;
         bool m_shouldPrintBackgrounds : 1;
@@ -399,12 +428,12 @@ namespace WebCore {
         bool m_foundationCachingEnabled : 1;
         bool m_mediaPlaybackAllowsInline : 1;
         bool m_mediaPlaybackRequiresUserAction : 1;
+        bool m_mediaDataLoadsAutomatically : 1;
         bool m_webArchiveDebugModeEnabled : 1;
         bool m_localFileContentSniffingEnabled : 1;
         bool m_inApplicationChromeMode : 1;
         bool m_offlineWebApplicationCacheEnabled : 1;
         bool m_shouldPaintCustomScrollbars : 1;
-        bool m_zoomsTextOnly : 1;
         bool m_enforceCSSMIMETypeInStrictMode : 1;
         bool m_usesEncodingDetector : 1;
         bool m_allowScriptsToCloseWindows : 1;
@@ -416,8 +445,10 @@ namespace WebCore {
         bool m_showRepaintCounter : 1;
         bool m_experimentalNotificationsEnabled : 1;
         bool m_webGLEnabled : 1;
-        bool m_geolocationEnabled : 1;
         bool m_loadDeferringEnabled : 1;
+        bool m_tiledBackingStoreEnabled : 1;
+        bool m_dnsPrefetchingEnabled : 1;
+        bool m_interactiveFormValidation: 1;
 
 #if USE(SAFARI_THEME)
         static bool gShouldPaintNativeControls;

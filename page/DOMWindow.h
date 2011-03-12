@@ -45,6 +45,7 @@ namespace WebCore {
     class Console;
     class DOMSelection;
     class Database;
+    class DatabaseCallback;
     class Document;
     class Element;
     class Event;
@@ -52,9 +53,10 @@ namespace WebCore {
     class FloatRect;
     class Frame;
     class History;
+    class IndexedDatabaseRequest;
     class InspectorTimelineAgent;
     class Location;
-    class Media;
+    class StyleMedia;
     class Navigator;
     class Node;
     class NotificationCenter;
@@ -144,6 +146,8 @@ namespace WebCore {
         void alert(const String& message);
         bool confirm(const String& message);
         String prompt(const String& message, const String& defaultValue);
+        String btoa(const String& stringToEncode, ExceptionCode&);
+        String atob(const String& encodedString, ExceptionCode&);
 
         bool find(const String&, bool caseSensitive, bool backwards, bool wrap, bool wholeWord, bool searchInFrames, bool showDialog) const;
 
@@ -189,7 +193,7 @@ namespace WebCore {
         // DOM Level 2 AbstractView Interface
         Document* document() const;
         // CSSOM View Module
-        PassRefPtr<Media> media() const;
+        PassRefPtr<StyleMedia> styleMedia() const;
 
         // DOM Level 2 Style Interface
         PassRefPtr<CSSStyleDeclaration> getComputedStyle(Element*, const String& pseudoElt) const;
@@ -203,13 +207,13 @@ namespace WebCore {
 
 #if ENABLE(DATABASE)
         // HTML 5 client-side database
-        PassRefPtr<Database> openDatabase(const String& name, const String& version, const String& displayName, unsigned long estimatedSize, ExceptionCode&);
+        PassRefPtr<Database> openDatabase(const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassRefPtr<DatabaseCallback> creationCallback, ExceptionCode&);
 #endif
 
 #if ENABLE(DOM_STORAGE)
         // HTML 5 key/value storage
-        Storage* sessionStorage() const;
-        Storage* localStorage() const;
+        Storage* sessionStorage(ExceptionCode&) const;
+        Storage* localStorage(ExceptionCode&) const;
 #endif
 
         Console* console() const;
@@ -220,6 +224,10 @@ namespace WebCore {
 
 #if ENABLE(NOTIFICATIONS)
         NotificationCenter* webkitNotifications() const;
+#endif
+
+#if ENABLE(INDEXED_DATABASE)
+        IndexedDatabaseRequest* indexedDB() const;
 #endif
 
         void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, const String& targetOrigin, DOMWindow* source, ExceptionCode&);
@@ -238,9 +246,9 @@ namespace WebCore {
         void resizeTo(float width, float height) const;
 
         // Timers
-        int setTimeout(ScheduledAction*, int timeout, ExceptionCode&);
+        int setTimeout(PassOwnPtr<ScheduledAction>, int timeout, ExceptionCode&);
         void clearTimeout(int timeoutId);
-        int setInterval(ScheduledAction*, int timeout, ExceptionCode&);
+        int setInterval(PassOwnPtr<ScheduledAction>, int timeout, ExceptionCode&);
         void clearInterval(int timeoutId);
 
         // Events
@@ -323,6 +331,11 @@ namespace WebCore {
         DEFINE_ATTRIBUTE_EVENT_LISTENER(orientationchange);
 #endif
 
+#if ENABLE(DEVICE_ORIENTATION)
+        DEFINE_ATTRIBUTE_EVENT_LISTENER(devicemotion);
+        DEFINE_ATTRIBUTE_EVENT_LISTENER(deviceorientation);
+#endif
+
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationstart, webkitAnimationStart);
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationiteration, webkitAnimationIteration);
         DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(webkitanimationend, webkitAnimationEnd);
@@ -352,7 +365,7 @@ namespace WebCore {
         Console* optionalConsole() const { return m_console.get(); }
         Navigator* optionalNavigator() const { return m_navigator.get(); }
         Location* optionalLocation() const { return m_location.get(); }
-        Media* optionalMedia() const { return m_media.get(); }
+        StyleMedia* optionalMedia() const { return m_media.get(); }
 #if ENABLE(DOM_STORAGE)
         Storage* optionalSessionStorage() const { return m_sessionStorage.get(); }
         Storage* optionalLocalStorage() const { return m_localStorage.get(); }
@@ -393,7 +406,7 @@ namespace WebCore {
         mutable RefPtr<Console> m_console;
         mutable RefPtr<Navigator> m_navigator;
         mutable RefPtr<Location> m_location;
-        mutable RefPtr<Media> m_media;
+        mutable RefPtr<StyleMedia> m_media;
 #if ENABLE(DOM_STORAGE)
         mutable RefPtr<Storage> m_sessionStorage;
         mutable RefPtr<Storage> m_localStorage;
@@ -403,6 +416,9 @@ namespace WebCore {
 #endif
 #if ENABLE(NOTIFICATIONS)
         mutable RefPtr<NotificationCenter> m_notifications;
+#endif
+#if ENABLE(INDEXED_DATABASE)
+        mutable RefPtr<IndexedDatabaseRequest> m_indexedDatabaseRequest;
 #endif
 
         EventTargetData m_eventTargetData;

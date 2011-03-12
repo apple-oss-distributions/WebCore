@@ -26,18 +26,21 @@
 #include "config.h"
 #include "DOMWindow.h"
 
+#include "Base64.h"
 #include "BarInfo.h"
 #include "BeforeUnloadEvent.h"
 #include "CSSComputedStyleDeclaration.h"
 #include "CSSRuleList.h"
 #include "CSSStyleSelector.h"
-#include "CString.h"
 #include "Chrome.h"
 #include "Console.h"
 #include "Database.h"
+#include "DatabaseCallback.h"
 #include "DOMApplicationCache.h"
 #include "DOMSelection.h"
 #include "DOMTimer.h"
+#include "DeviceMotionController.h"
+#include "DeviceOrientationController.h"
 #include "PageTransitionEvent.h"
 #include "Document.h"
 #include "Element.h"
@@ -52,10 +55,12 @@
 #include "FrameView.h"
 #include "HTMLFrameOwnerElement.h"
 #include "History.h"
+#include "IndexedDatabase.h"
+#include "IndexedDatabaseRequest.h"
 #include "InspectorController.h"
 #include "InspectorTimelineAgent.h"
 #include "Location.h"
-#include "Media.h"
+#include "StyleMedia.h"
 #include "MessageEvent.h"
 #include "Navigator.h"
 #include "NotificationCenter.h"
@@ -73,6 +78,7 @@
 #include "SuddenTermination.h"
 #include "WebKitPoint.h"
 #include <algorithm>
+#include <wtf/text/CString.h>
 #include <wtf/MathExtras.h>
 
 #include "ChromeClient.h"
@@ -452,6 +458,12 @@ void DOMWindow::clear()
         m_notifications->disconnectFrame();
     m_notifications = 0;
 #endif
+
+#if ENABLE(INDEXED_DATABASE)
+    if (m_indexedDatabaseRequest)
+        m_indexedDatabaseRequest->disconnectFrame();
+    m_indexedDatabaseRequest = 0;
+#endif
 }
 
 #if ENABLE(ORIENTATION_EVENTS)
@@ -551,7 +563,7 @@ Location* DOMWindow::location() const
 }
 
 #if ENABLE(DOM_STORAGE)
-Storage* DOMWindow::sessionStorage() const
+Storage* DOMWindow::sessionStorage(ExceptionCode& ec) const
 {
     if (m_sessionStorage)
         return m_sessionStorage.get();
@@ -559,9 +571,11 @@ Storage* DOMWindow::sessionStorage() const
     Document* document = this->document();
     if (!document)
         return 0;
-    
-    if (!document->securityOrigin()->canAccessStorage())
+
+    if (!document->securityOrigin()->canAccessLocalStorage()) {
+        ec = SECURITY_ERR;
         return 0;
+    }
 
     Page* page = document->page();
     if (!page)
@@ -576,18 +590,20 @@ Storage* DOMWindow::sessionStorage() const
     return m_sessionStorage.get();
 }
 
-Storage* DOMWindow::localStorage() const
+Storage* DOMWindow::localStorage(ExceptionCode& ec) const
 {
     if (m_localStorage)
         return m_localStorage.get();
-    
+
     Document* document = this->document();
     if (!document)
         return 0;
-    
-    if (!document->securityOrigin()->canAccessStorage())
+
+    if (!document->securityOrigin()->canAccessLocalStorage()) {
+        ec = SECURITY_ERR;
         return 0;
-        
+    }
+
     Page* page = document->page();
     if (!page)
         return 0;
@@ -624,6 +640,29 @@ NotificationCenter* DOMWindow::webkitNotifications() const
         m_notifications = NotificationCenter::create(document, provider);    
       
     return m_notifications.get();
+}
+#endif
+
+#if ENABLE(INDEXED_DATABASE)
+IndexedDatabaseRequest* DOMWindow::indexedDB() const
+{
+    if (m_indexedDatabaseRequest)
+        return m_indexedDatabaseRequest.get();
+
+    Document* document = this->document();
+    if (!document)
+        return 0;
+
+    // FIXME: See if access is allowed.
+
+    Page* page = document->page();
+    if (!page)
+        return 0;
+
+    // FIXME: See if indexedDatabase access is allowed.
+
+    m_indexedDatabaseRequest = IndexedDatabaseRequest::create(page->group().indexedDatabase(), m_frame);
+    return m_indexedDatabaseRequest.get();
 }
 #endif
 
@@ -803,6 +842,57 @@ String DOMWindow::prompt(const String& message, const String& defaultValue)
         return returnValue;
 
     return String();
+}
+
+static bool isSafeToConvertCharList(const String& string)
+{
+    for (unsigned i = 0; i < string.length(); i++) {
+        if (string[i] > 0xFF)
+            return false;
+    }
+
+    return true;
+}
+
+String DOMWindow::btoa(const String& stringToEncode, ExceptionCode& ec)
+{
+    if (stringToEncode.isNull())
+        return String();
+
+    if (!isSafeToConvertCharList(stringToEncode)) {
+        ec = INVALID_CHARACTER_ERR;
+        return String();
+    }
+
+    Vector<char> in;
+    in.append(stringToEncode.characters(), stringToEncode.length());
+    Vector<char> out;
+
+    base64Encode(in, out);
+
+    return String(out.data(), out.size());
+}
+
+String DOMWindow::atob(const String& encodedString, ExceptionCode& ec)
+{
+    if (encodedString.isNull())
+        return String();
+
+    if (!isSafeToConvertCharList(encodedString)) {
+        ec = INVALID_CHARACTER_ERR;
+        return String();
+    }
+
+    Vector<char> in;
+    in.append(encodedString.characters(), encodedString.length());
+    Vector<char> out;
+
+    if (!base64Decode(in, out)) {
+        ec = INVALID_CHARACTER_ERR;
+        return String();
+    }
+
+    return String(out.data(), out.size());
 }
 
 bool DOMWindow::find(const String& string, bool caseSensitive, bool backwards, bool wrap, bool /*wholeWord*/, bool /*searchInFrames*/, bool /*showDialog*/) const
@@ -1039,31 +1129,27 @@ Document* DOMWindow::document() const
     return m_frame->document();
 }
 
-PassRefPtr<Media> DOMWindow::media() const
+PassRefPtr<StyleMedia> DOMWindow::styleMedia() const
 {
     if (!m_media)
-        m_media = Media::create(m_frame);
+        m_media = StyleMedia::create(m_frame);
     return m_media.get();
 }
 
-PassRefPtr<CSSStyleDeclaration> DOMWindow::getComputedStyle(Element* elt, const String&) const
+PassRefPtr<CSSStyleDeclaration> DOMWindow::getComputedStyle(Element* elt, const String& pseudoElt) const
 {
     if (!elt)
         return 0;
 
-    // FIXME: This needs take pseudo elements into account.
-    return computedStyle(elt);
+    return computedStyle(elt, false, pseudoElt);
 }
 
-PassRefPtr<CSSRuleList> DOMWindow::getMatchedCSSRules(Element* elt, const String& pseudoElt, bool authorOnly) const
+PassRefPtr<CSSRuleList> DOMWindow::getMatchedCSSRules(Element* elt, const String&, bool authorOnly) const
 {
     if (!m_frame)
         return 0;
 
     Document* doc = m_frame->document();
-
-    if (!pseudoElt.isEmpty())
-        return doc->styleSelector()->pseudoStyleRulesForElement(elt, pseudoElt, authorOnly);
     return doc->styleSelector()->styleRulesForElement(elt, authorOnly);
 }
 
@@ -1104,20 +1190,16 @@ double DOMWindow::devicePixelRatio() const
 }
 
 #if ENABLE(DATABASE)
-PassRefPtr<Database> DOMWindow::openDatabase(const String& name, const String& version, const String& displayName, unsigned long estimatedSize, ExceptionCode& ec)
+PassRefPtr<Database> DOMWindow::openDatabase(const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassRefPtr<DatabaseCallback> creationCallback, ExceptionCode& ec)
 {
-    if (!m_frame)
-        return 0;
+    RefPtr<Database> database = 0;
+    if (m_frame && Database::isAvailable() && m_frame->document()->securityOrigin()->canAccessDatabase())
+        database = Database::openDatabase(m_frame->document(), name, version, displayName, estimatedSize, creationCallback, ec);
 
-    Document* document = m_frame->document();
-    if (!document->securityOrigin()->canAccessDatabase())
-        return 0;
+    if (!database && !ec)
+        ec = SECURITY_ERR;
 
-    Settings* settings = m_frame->settings();
-    if (!settings || !settings->databasesEnabled())
-        return 0;
-
-    return Database::openDatabase(document, name, version, displayName, estimatedSize, ec);
+    return database;
 }
 #endif
 
@@ -1232,7 +1314,7 @@ void DOMWindow::resizeTo(float width, float height) const
     page->chrome()->setWindowRect(fr);
 }
 
-int DOMWindow::setTimeout(ScheduledAction* action, int timeout, ExceptionCode& ec)
+int DOMWindow::setTimeout(PassOwnPtr<ScheduledAction> action, int timeout, ExceptionCode& ec)
 {
     ScriptExecutionContext* context = scriptExecutionContext();
     if (!context) {
@@ -1263,7 +1345,7 @@ void DOMWindow::clearTimeout(int timeoutId)
     DOMTimer::removeById(context, timeoutId);
 }
 
-int DOMWindow::setInterval(ScheduledAction* action, int timeout, ExceptionCode& ec)
+int DOMWindow::setInterval(PassOwnPtr<ScheduledAction> action, int timeout, ExceptionCode& ec)
 {
     ScriptExecutionContext* context = scriptExecutionContext();
     if (!context) {
@@ -1293,6 +1375,12 @@ bool DOMWindow::addEventListener(const AtomicString& eventType, PassRefPtr<Event
         addUnloadEventListener(this);
     else if (eventType == eventNames().beforeunloadEvent && allowsBeforeUnloadListeners(this))
         addBeforeUnloadEventListener(this);
+#if ENABLE(DEVICE_ORIENTATION)
+    else if (eventType == eventNames().devicemotionEvent && document())
+        document()->deviceMotionController()->addListener(this);
+    else if (eventType == eventNames().deviceorientationEvent && document())
+        document()->deviceOrientationController()->addListener(this);
+#endif
     else if (eventType == eventNames().scrollEvent)
         incrementScrollEventListenersCount();
 
@@ -1326,6 +1414,12 @@ bool DOMWindow::removeEventListener(const AtomicString& eventType, EventListener
         removeUnloadEventListener(this);
     else if (eventType == eventNames().beforeunloadEvent && allowsBeforeUnloadListeners(this))
         removeBeforeUnloadEventListener(this);
+#if ENABLE(DEVICE_ORIENTATION)
+    else if (eventType == eventNames().devicemotionEvent && document())
+        document()->deviceMotionController()->removeListener(this);
+    else if (eventType == eventNames().deviceorientationEvent && document())
+        document()->deviceOrientationController()->removeListener(this);
+#endif
     else if (eventType == eventNames().scrollEvent)
         decrementScrollEventListenersCount();
 
@@ -1401,20 +1495,21 @@ bool DOMWindow::dispatchEvent(PassRefPtr<Event> prpEvent, PassRefPtr<EventTarget
     }
 
 #if ENABLE(INSPECTOR)
-    InspectorTimelineAgent* timelineAgent = inspectorTimelineAgent();
-    bool timelineAgentIsActive = timelineAgent && hasEventListeners(event->type());
-    if (timelineAgentIsActive)
-        timelineAgent->willDispatchEvent(*event);
+    Page* inspectedPage = InspectorTimelineAgent::instanceCount() && frame() ? frame()->page() : 0;
+    if (inspectedPage) {
+        if (InspectorTimelineAgent* timelineAgent = hasEventListeners(event->type()) ? inspectedPage->inspectorTimelineAgent() : 0)
+            timelineAgent->willDispatchEvent(*event);
+        else
+            inspectedPage = 0;
+    }
 #endif
 
     bool result = fireEventListeners(event.get());
 
 #if ENABLE(INSPECTOR)
-    if (timelineAgentIsActive) {
-      timelineAgent = inspectorTimelineAgent();
-      if (timelineAgent)
+    if (inspectedPage)
+        if (InspectorTimelineAgent* timelineAgent = inspectedPage->inspectorTimelineAgent())
             timelineAgent->didDispatchEvent();
-    }
 #endif
 
     return result;
@@ -1423,6 +1518,13 @@ bool DOMWindow::dispatchEvent(PassRefPtr<Event> prpEvent, PassRefPtr<EventTarget
 void DOMWindow::removeAllEventListeners()
 {
     EventTarget::removeAllEventListeners();
+
+#if ENABLE(DEVICE_ORIENTATION)
+    if (document()) {
+        document()->deviceMotionController()->removeAllListeners(this);
+        document()->deviceOrientationController()->removeAllListeners(this);
+    }
+#endif
 
     if (m_scrollEventListenerCount) {
         m_scrollEventListenerCount = 1;

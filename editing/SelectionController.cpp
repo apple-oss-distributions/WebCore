@@ -26,7 +26,6 @@
 #include "config.h"
 #include "SelectionController.h"
 
-#include "CString.h"
 #include "DeleteSelectionCommand.h"
 #include "Document.h"
 #include "Editor.h"
@@ -47,12 +46,14 @@
 #include "Range.h"
 #include "RenderTheme.h"
 #include "RenderView.h"
+#include "SecureTextInput.h"
 #include "Settings.h"
 #include "TextIterator.h"
 #include "TypingCommand.h"
 #include "htmlediting.h"
 #include "visible_units.h"
 #include <stdio.h>
+#include <wtf/text/CString.h>
 
 #include "Color.h"
 #include "EditorClient.h"
@@ -70,10 +71,10 @@ const int NoXPosForVerticalArrowNavigation = INT_MIN;
 SelectionController::SelectionController(Frame* frame, bool isDragCaretController)
     : m_frame(frame)
     , m_xPosForVerticalArrowNavigation(NoXPosForVerticalArrowNavigation)
+    , m_granularity(CharacterGranularity)
     , m_caretBlinkTimer(this, &SelectionController::caretBlinkTimerFired)
     , m_needsLayout(true)
     , m_absCaretBoundsDirty(true)
-    , m_lastChangeWasHorizontalExtension(false)
     , m_isDragCaretController(isDragCaretController)
     , m_isCaretBlinkingSuspended(false)
     , m_focused(frame && frame->page() && frame->page()->focusController()->focusedFrame() == frame)
@@ -83,6 +84,7 @@ SelectionController::SelectionController(Frame* frame, bool isDragCaretControlle
     , m_caretBlinks(true)
     , m_closeTypingSuppressions(0)
 {
+    setIsDirectional(false);
 }
 
 void SelectionController::moveTo(const VisiblePosition &pos, bool userTriggered)
@@ -111,9 +113,11 @@ void SelectionController::moveTo(const Position &base, const Position &extent, E
     setSelection(VisibleSelection(base, extent, affinity), true, true, userTriggered);
 }
 
-void SelectionController::setSelection(const VisibleSelection& s, bool closeTyping, bool clearTypingStyle, bool userTriggered)
+void SelectionController::setSelection(const VisibleSelection& s, bool closeTyping, bool clearTypingStyle, bool userTriggered, TextGranularity granularity)
 {
-    m_lastChangeWasHorizontalExtension = false;
+    m_granularity = granularity;
+
+    setIsDirectional(false);
 
     if (m_isDragCaretController) {
         invalidateCaretRect();
@@ -134,7 +138,7 @@ void SelectionController::setSelection(const VisibleSelection& s, bool closeTypi
     
     // <http://bugs.webkit.org/show_bug.cgi?id=23464>: Infinite recursion at SelectionController::setSelection
     // if document->frame() == m_frame we can get into an infinite loop
-    if (document && document->frame() != m_frame && document != m_frame->document()) {
+    if (document && document->frame() && document->frame() != m_frame && document != m_frame->document()) {
         document->frame()->selection()->setSelection(s, closeTyping, clearTypingStyle, userTriggered);
         return;
     }
@@ -236,18 +240,35 @@ void SelectionController::nodeWillBeRemoved(Node *node)
     if (clearDOMTreeSelection)
         setSelection(VisibleSelection(), false, false);
 }
+    
+void SelectionController::setIsDirectional(bool isDirectional)
+{
+    Settings* settings = m_frame ? m_frame->settings() : 0;
+    m_isDirectional = !settings || settings->editingBehavior() != EditingMacBehavior || isDirectional;
+}
 
 void SelectionController::willBeModified(EAlteration alter, EDirection direction)
 {
     if (alter != EXTEND)
         return;
-    if (m_lastChangeWasHorizontalExtension)
-        return;
 
     Position start = m_selection.start();
     Position end = m_selection.end();
-    // FIXME: This is probably not correct for right and left when the direction is RTL.
-    switch (direction) {
+
+    if (m_isDirectional) {
+        // Make base and extent match start and end so we extend the user-visible selection.
+        // This only matters for cases where base and extend point to different positions than
+        // start and end (e.g. after a double-click to select a word).
+        if (m_selection.isBaseFirst()) {
+            m_selection.setBase(start);
+            m_selection.setExtent(end);            
+        } else {
+            m_selection.setBase(end);
+            m_selection.setExtent(start);
+        }
+    } else {
+        // FIXME: This is probably not correct for right and left when the direction is RTL.
+        switch (direction) {
         case RIGHT:
         case FORWARD:
             m_selection.setBase(start);
@@ -258,6 +279,7 @@ void SelectionController::willBeModified(EAlteration alter, EDirection direction
             m_selection.setBase(end);
             m_selection.setExtent(start);
             break;
+        }
     }
 }
 
@@ -271,6 +293,33 @@ TextDirection SelectionController::directionOfEnclosingBlock()
     if (renderer)
         return renderer->style()->direction();
     return LTR;
+}
+
+VisiblePosition SelectionController::positionForPlatform(bool isGetStart) const
+{
+    Position pos;
+    Settings* settings = m_frame ? m_frame->settings() : 0;
+    if (settings && settings->editingBehavior() == EditingMacBehavior)
+        pos = isGetStart ? m_selection.start() : m_selection.end();
+    else {
+        // Linux and Windows always extend selections from the extent endpoint.
+        // FIXME: VisibleSelection should be fixed to ensure as an invariant that
+        // base/extent always point to the same nodes as start/end, but which points
+        // to which depends on the value of isBaseFirst. Then this can be changed
+        // to just return m_sel.extent().
+        pos = m_selection.isBaseFirst() ? m_selection.end() : m_selection.start();
+    }
+    return VisiblePosition(pos, m_selection.affinity());
+}
+
+VisiblePosition SelectionController::startForPlatform() const
+{
+    return positionForPlatform(true);
+}
+
+VisiblePosition SelectionController::endForPlatform() const
+{
+    return positionForPlatform(false);
 }
 
 VisiblePosition SelectionController::modifyExtendingRight(TextGranularity granularity)
@@ -306,7 +355,7 @@ VisiblePosition SelectionController::modifyExtendingRight(TextGranularity granul
             pos = modifyExtendingForward(granularity);
     }
     return pos;
-}    
+}
         
 VisiblePosition SelectionController::modifyExtendingForward(TextGranularity granularity)
 {
@@ -328,16 +377,18 @@ VisiblePosition SelectionController::modifyExtendingForward(TextGranularity gran
             pos = nextParagraphPosition(pos, xPosForVerticalArrowNavigation(EXTENT));
             break;
         case SentenceBoundary:
-            pos = endOfSentence(VisiblePosition(m_selection.end(), m_selection.affinity()));
+            pos = endOfSentence(endForPlatform());
             break;
         case LineBoundary:
-            pos = logicalEndOfLine(VisiblePosition(m_selection.end(), m_selection.affinity()));
+            pos = endForPlatform();
+            pos.setAffinity(UPSTREAM);
+            pos = logicalEndOfLine(pos);
             break;
         case ParagraphBoundary:
-            pos = endOfParagraph(VisiblePosition(m_selection.end(), m_selection.affinity()));
+            pos = endOfParagraph(endForPlatform());
             break;
         case DocumentBoundary:
-            pos = VisiblePosition(m_selection.end(), m_selection.affinity());
+            pos = endForPlatform();
             if (isEditablePosition(pos.deepEquivalent()))
                 pos = endOfEditableContent(pos);
             else
@@ -393,25 +444,25 @@ VisiblePosition SelectionController::modifyMovingForward(TextGranularity granula
         case LineGranularity: {
             // down-arrowing from a range selection that ends at the start of a line needs
             // to leave the selection at that line start (no need to call nextLinePosition!)
-            pos = VisiblePosition(m_selection.end(), m_selection.affinity());
+            pos = endForPlatform();
             if (!isRange() || !isStartOfLine(pos))
                 pos = nextLinePosition(pos, xPosForVerticalArrowNavigation(START));
             break;
         }
         case ParagraphGranularity:
-            pos = nextParagraphPosition(VisiblePosition(m_selection.end(), m_selection.affinity()), xPosForVerticalArrowNavigation(START));
+            pos = nextParagraphPosition(endForPlatform(), xPosForVerticalArrowNavigation(START));
             break;
         case SentenceBoundary:
-            pos = endOfSentence(VisiblePosition(m_selection.end(), m_selection.affinity()));
+            pos = endOfSentence(endForPlatform());
             break;
         case LineBoundary:
-            pos = logicalEndOfLine(VisiblePosition(m_selection.end(), m_selection.affinity()));
+            pos = logicalEndOfLine(endForPlatform());
             break;
         case ParagraphBoundary:
-            pos = endOfParagraph(VisiblePosition(m_selection.end(), m_selection.affinity()));
+            pos = endOfParagraph(endForPlatform());
             break;
         case DocumentBoundary:
-            pos = VisiblePosition(m_selection.end(), m_selection.affinity());
+            pos = endForPlatform();
             if (isEditablePosition(pos.deepEquivalent()))
                 pos = endOfEditableContent(pos);
             else
@@ -481,16 +532,16 @@ VisiblePosition SelectionController::modifyExtendingBackward(TextGranularity gra
             pos = previousParagraphPosition(pos, xPosForVerticalArrowNavigation(EXTENT));
             break;
         case SentenceBoundary:
-            pos = startOfSentence(VisiblePosition(m_selection.start(), m_selection.affinity()));
+            pos = startOfSentence(startForPlatform());
             break;
         case LineBoundary:
-            pos = logicalStartOfLine(VisiblePosition(m_selection.start(), m_selection.affinity()));
+            pos = logicalStartOfLine(startForPlatform());
             break;
         case ParagraphBoundary:
-            pos = startOfParagraph(VisiblePosition(m_selection.start(), m_selection.affinity()));
+            pos = startOfParagraph(startForPlatform());
             break;
         case DocumentBoundary:
-            pos = VisiblePosition(m_selection.start(), m_selection.affinity());
+            pos = startForPlatform();
             if (isEditablePosition(pos.deepEquivalent()))
                 pos = startOfEditableContent(pos);
             else 
@@ -542,22 +593,22 @@ VisiblePosition SelectionController::modifyMovingBackward(TextGranularity granul
             pos = previousSentencePosition(VisiblePosition(m_selection.extent(), m_selection.affinity()));
             break;
         case LineGranularity:
-            pos = previousLinePosition(VisiblePosition(m_selection.start(), m_selection.affinity()), xPosForVerticalArrowNavigation(START));
+            pos = previousLinePosition(startForPlatform(), xPosForVerticalArrowNavigation(START));
             break;
         case ParagraphGranularity:
-            pos = previousParagraphPosition(VisiblePosition(m_selection.start(), m_selection.affinity()), xPosForVerticalArrowNavigation(START));
+            pos = previousParagraphPosition(startForPlatform(), xPosForVerticalArrowNavigation(START));
             break;
         case SentenceBoundary:
-            pos = startOfSentence(VisiblePosition(m_selection.start(), m_selection.affinity()));
+            pos = startOfSentence(startForPlatform());
             break;
         case LineBoundary:
-            pos = logicalStartOfLine(VisiblePosition(m_selection.start(), m_selection.affinity()));
+            pos = logicalStartOfLine(startForPlatform());
             break;
         case ParagraphBoundary:
-            pos = startOfParagraph(VisiblePosition(m_selection.start(), m_selection.affinity()));
+            pos = startOfParagraph(startForPlatform());
             break;
         case DocumentBoundary:
-            pos = VisiblePosition(m_selection.start(), m_selection.affinity());
+            pos = startForPlatform();
             if (isEditablePosition(pos.deepEquivalent()))
                 pos = startOfEditableContent(pos);
             else 
@@ -569,53 +620,61 @@ VisiblePosition SelectionController::modifyMovingBackward(TextGranularity granul
 
 bool SelectionController::modify(EAlteration alter, EDirection dir, TextGranularity granularity, bool userTriggered)
 {
+    Settings* settings = m_frame ? m_frame->settings() : 0;
+    return modify(alter, dir, granularity, userTriggered, settings);
+}
+    
+static bool isBoundary(TextGranularity granularity)
+{
+    return granularity == LineBoundary || granularity == ParagraphBoundary || granularity == DocumentBoundary;
+}    
+    
+bool SelectionController::modify(EAlteration alter, EDirection direction, TextGranularity granularity, bool userTriggered, Settings* settings)
+{
     if (userTriggered) {
         SelectionController trialSelectionController;
         trialSelectionController.setSelection(m_selection);
-        trialSelectionController.setLastChangeWasHorizontalExtension(m_lastChangeWasHorizontalExtension);
-        trialSelectionController.modify(alter, dir, granularity, false);
+        trialSelectionController.setIsDirectional(m_isDirectional);
+        trialSelectionController.modify(alter, direction, granularity, false, settings);
 
         bool change = m_frame->shouldChangeSelection(trialSelectionController.selection());
         if (!change)
             return false;
     }
 
-    if (m_frame)
-        m_frame->setSelectionGranularity(granularity);
-    
-    willBeModified(alter, dir);
+    willBeModified(alter, direction);
 
-    VisiblePosition pos;
-    switch (dir) {
+    VisiblePosition position;
+    switch (direction) {
         case RIGHT:
             if (alter == MOVE)
-                pos = modifyMovingRight(granularity);
+                position = modifyMovingRight(granularity);
             else
-                pos = modifyExtendingRight(granularity);
+                position = modifyExtendingRight(granularity);
             break;
         case FORWARD:
             if (alter == EXTEND)
-                pos = modifyExtendingForward(granularity);
+                position = modifyExtendingForward(granularity);
             else
-                pos = modifyMovingForward(granularity);
+                position = modifyMovingForward(granularity);
             break;
         case LEFT:
             if (alter == MOVE)
-                pos = modifyMovingLeft(granularity);
+                position = modifyMovingLeft(granularity);
             else
-                pos = modifyExtendingLeft(granularity);
+                position = modifyExtendingLeft(granularity);
             break;
         case BACKWARD:
             if (alter == EXTEND)
-                pos = modifyExtendingBackward(granularity);
+                position = modifyExtendingBackward(granularity);
             else
-                pos = modifyMovingBackward(granularity);
+                position = modifyMovingBackward(granularity);
             break;
     }
 
-    if (pos.isNull())
+    if (position.isNull())
         return false;
-    
+
     // Some of the above operations set an xPosForVerticalArrowNavigation.
     // Setting a selection will clear it, so save it to possibly restore later.
     // Note: the START position type is arbitrary because it is unused, it would be
@@ -624,28 +683,31 @@ bool SelectionController::modify(EAlteration alter, EDirection dir, TextGranular
 
     switch (alter) {
         case MOVE:
-            moveTo(pos, userTriggered);
+            moveTo(position, userTriggered);
             break;
         case EXTEND:
-            setExtent(pos, userTriggered);
-            break;
+            if (!settings || settings->editingBehavior() != EditingMacBehavior || m_selection.isCaret() || !isBoundary(granularity))
+                setExtent(position, userTriggered);
+            else {
+                // Standard Mac behavior when extending to a boundary is grow the selection rather
+                // than leaving the base in place and moving the extent. Matches NSTextView.
+                if (direction == FORWARD || direction == RIGHT)
+                    setEnd(position, userTriggered);
+                else
+                    setStart(position, userTriggered);
+            }
     }
     
     if (granularity == LineGranularity || granularity == ParagraphGranularity)
         m_xPosForVerticalArrowNavigation = x;
 
-    if (userTriggered) {
-        // User modified selection change also sets the granularity back to character.
-        // NOTE: The one exception is that we need to keep word granularity to
-        // preserve smart delete behavior when extending by word (e.g. double-click),
-        // then shift-option-right arrow, then delete needs to smart delete, per TextEdit.
-        if (!(alter == EXTEND && granularity == WordGranularity && m_frame->selectionGranularity() == WordGranularity))
-            m_frame->setSelectionGranularity(CharacterGranularity);
-    }
+    if (userTriggered)
+        m_granularity = CharacterGranularity;
+
 
     setNeedsLayout();
 
-    m_lastChangeWasHorizontalExtension = alter == EXTEND;
+    setIsDirectional(alter == EXTEND);
 
     return true;
 }
@@ -668,7 +730,7 @@ bool SelectionController::modify(EAlteration alter, int verticalDistance, bool u
     if (userTriggered) {
         SelectionController trialSelectionController;
         trialSelectionController.setSelection(m_selection);
-        trialSelectionController.setLastChangeWasHorizontalExtension(m_lastChangeWasHorizontalExtension);
+        trialSelectionController.setIsDirectional(m_isDirectional);
         trialSelectionController.modify(alter, verticalDistance, false);
 
         bool change = m_frame->shouldChangeSelection(trialSelectionController.selection());
@@ -736,20 +798,10 @@ bool SelectionController::modify(EAlteration alter, int verticalDistance, bool u
     }
 
     if (userTriggered)
-        m_frame->setSelectionGranularity(CharacterGranularity);
+        m_granularity = CharacterGranularity;
 
-    m_lastChangeWasHorizontalExtension = alter == EXTEND;
+    setIsDirectional(alter == EXTEND);
 
-    return true;
-}
-
-bool SelectionController::expandUsingGranularity(TextGranularity granularity)
-{
-    if (isNone())
-        return false;
-
-    m_selection.expandUsingGranularity(granularity);
-    m_needsLayout = true;
     return true;
 }
 
@@ -795,7 +847,24 @@ int SelectionController::xPosForVerticalArrowNavigation(EPositionType type)
 
 void SelectionController::clear()
 {
+    m_granularity = CharacterGranularity;
     setSelection(VisibleSelection());
+}
+
+void SelectionController::setStart(const VisiblePosition &pos, bool userTriggered)
+{
+    if (m_selection.isBaseFirst())
+        setBase(pos, userTriggered);
+    else
+        setExtent(pos, userTriggered);
+}
+
+void SelectionController::setEnd(const VisiblePosition &pos, bool userTriggered)
+{
+    if (m_selection.isBaseFirst())
+        setExtent(pos, userTriggered);
+    else
+        setBase(pos, userTriggered);
 }
 
 void SelectionController::setBase(const VisiblePosition &pos, bool userTriggered)
@@ -884,10 +953,10 @@ RenderObject* SelectionController::caretRenderer() const
     return paintedByBlock ? renderer : renderer->containingBlock();
 }
 
-IntRect SelectionController::localCaretRect() const
+IntRect SelectionController::localCaretRect()
 {
     if (m_needsLayout)
-        const_cast<SelectionController*>(this)->layout();
+        layout();
     
     return m_caretRect;
 }
@@ -919,7 +988,7 @@ static IntRect repaintRectForCaret(IntRect caret)
 
 IntRect SelectionController::caretRepaintRect() const
 {
-    return absoluteBoundsForLocalRect(repaintRectForCaret(localCaretRect()));
+    return absoluteBoundsForLocalRect(repaintRectForCaret(localCaretRectForPainting()));
 }
 
 bool SelectionController::recomputeCaretRect()
@@ -950,15 +1019,24 @@ bool SelectionController::recomputeCaretRect()
     IntRect oldAbsoluteCaretRepaintBounds = m_absoluteCaretRepaintBounds;
     // We believe that we need to inflate the local rect before transforming it to obtain the repaint bounds.
     m_absoluteCaretRepaintBounds = caretRepaintRect();
-    
-#if ENABLE(TEXT_CARET)
+
+#if ENABLE(TEXT_CARET)    
     if (RenderView* view = toRenderView(m_frame->document()->renderer())) {
         // FIXME: make caret repainting container-aware.
         view->repaintRectangleInViewAndCompositedLayers(oldAbsoluteCaretRepaintBounds, false);
-        view->repaintRectangleInViewAndCompositedLayers(m_absoluteCaretRepaintBounds, false);
+        if (shouldRepaintCaret(view))
+            view->repaintRectangleInViewAndCompositedLayers(m_absoluteCaretRepaintBounds, false);
     }
 #endif
     return true;
+}
+
+bool SelectionController::shouldRepaintCaret(const RenderView* view) const
+{
+    ASSERT(view);
+    Frame* frame = view->frameView() ? view->frameView()->frame() : 0; // The frame where the selection started.
+    bool caretBrowsing = frame && frame->settings() && frame->settings()->caretBrowsingEnabled();
+    return (caretBrowsing || isContentEditable());
 }
 
 void SelectionController::invalidateCaretRect()
@@ -986,7 +1064,8 @@ void SelectionController::invalidateCaretRect()
     m_needsLayout = true;
 
     if (!caretRectChanged) {
-        if (RenderView* view = toRenderView(d->renderer()))
+        RenderView* view = toRenderView(d->renderer());
+        if (view && shouldRepaintCaret(view))
             view->repaintRectangleInViewAndCompositedLayers(caretRepaintRect(), false);
     }
 }
@@ -1001,7 +1080,7 @@ void SelectionController::paintCaret(GraphicsContext* context, int tx, int ty, c
     if (!m_selection.isCaret())
         return;
 
-    IntRect drawingRect = localCaretRect();
+    IntRect drawingRect = localCaretRectForPainting();
     drawingRect.move(tx, ty);
     IntRect caret = intersection(drawingRect, clipRect);
     if (caret.isEmpty())
@@ -1011,7 +1090,7 @@ void SelectionController::paintCaret(GraphicsContext* context, int tx, int ty, c
     ColorSpace colorSpace = DeviceColorSpace;
     Element* element = rootEditableElement();
     if (element && element->renderer()) {
-        caretColor = element->renderer()->style()->color();
+        caretColor = element->renderer()->style()->visitedDependentColor(CSSPropertyColor);
         colorSpace = element->renderer()->style()->colorSpace();
     }
 
@@ -1280,18 +1359,34 @@ void SelectionController::focusedOrActiveStateChanged()
     // Caret blinking (blinks | does not blink)
     if (activeAndFocused)
         m_frame->setSelectionFromNone();
+#if !ENABLE(CONTENTEDITABLE)
     else
         clearCurrentSelection();
+#endif
     setCaretVisible(activeAndFocused);
 
     // Secure keyboard entry is set by the active frame.
     if (m_frame->document()->useSecureKeyboardEntryWhenActive())
-        m_frame->setUseSecureKeyboardEntry(activeAndFocused);
+        setUseSecureKeyboardEntry(activeAndFocused);
 }
 
 void SelectionController::pageActivationChanged()
 {
     focusedOrActiveStateChanged();
+}
+
+void SelectionController::updateSecureKeyboardEntryIfActive()
+{
+    if (m_frame->document() && isFocusedAndActive())
+        setUseSecureKeyboardEntry(m_frame->document()->useSecureKeyboardEntryWhenActive());
+}
+
+void SelectionController::setUseSecureKeyboardEntry(bool enable)
+{
+    if (enable)
+        enableSecureTextInput();
+    else
+        disableSecureTextInput();
 }
 
 void SelectionController::setFocused(bool flag)
@@ -1684,7 +1779,9 @@ VisibleSelection SelectionController::wordSelectionContainingCaretSelection(cons
         controller.modify(SelectionController::MOVE, SelectionController::BACKWARD, CharacterGranularity);
     }
     
-    controller.expandUsingGranularity(WordGranularity);
+    VisibleSelection newSelection = controller.selection();
+    newSelection.expandUsingGranularity(WordGranularity);
+    controller.setSelection(newSelection, controller.granularity());
     
     Position startPos(controller.selection().start());
     Position endPos(controller.selection().end());

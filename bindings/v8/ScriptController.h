@@ -55,6 +55,17 @@ class String;
 class Widget;
 class XSSAuditor;
 
+enum ReasonForCallingCanExecuteScripts {
+    AboutToExecuteScript,
+    NotAboutToExecuteScript
+};
+
+// Whether to call the XSSAuditor to audit a script before passing it to the JavaScript engine.
+enum ShouldAllowXSS {
+    AllowXSS,
+    DoNotAllowXSS
+};
+
 class ScriptController {
 public:
     ScriptController(Frame*);
@@ -64,8 +75,8 @@ public:
     // or this accessor should be made JSProxy*
     V8Proxy* proxy() { return m_proxy.get(); }
 
-    ScriptValue executeScript(const ScriptSourceCode&);
-    ScriptValue executeScript(const String& script, bool forceUserGesture = false);
+    ScriptValue executeScript(const ScriptSourceCode&, ShouldAllowXSS shouldAllowXSS = DoNotAllowXSS);
+    ScriptValue executeScript(const String& script, bool forceUserGesture = false, ShouldAllowXSS shouldAllowXSS = DoNotAllowXSS);
 
     // Returns true if argument is a JavaScript URL.
     bool executeIfJavaScriptURL(const KURL&, bool userGesture = false, bool replaceDocument = true);
@@ -76,7 +87,7 @@ public:
     // Evaluate a script file in the environment of this proxy.
     // If succeeded, 'succ' is set to true and result is returned
     // as a string.
-    ScriptValue evaluate(const ScriptSourceCode&);
+    ScriptValue evaluate(const ScriptSourceCode&, ShouldAllowXSS shouldAllowXSS = DoNotAllowXSS);
 
     void evaluateInIsolatedWorld(unsigned worldID, const Vector<ScriptSourceCode>&);
 
@@ -113,7 +124,7 @@ public:
     // Check if the javascript engine has been initialized.
     bool haveInterpreter() const;
 
-    bool canExecuteScripts();
+    bool canExecuteScripts(ReasonForCallingCanExecuteScripts);
 
     // FIXME: void* is a compile hack.
     void attachDebugger(void*);
@@ -143,7 +154,9 @@ public:
     void setEventHandlerLineNumber(int lineNumber);
 
     void setProcessingTimerCallback(bool processingTimerCallback) { m_processingTimerCallback = processingTimerCallback; }
-    bool processingUserGesture() const;
+    // FIXME: Currently we don't use the parameter world at all.
+    // See http://trac.webkit.org/changeset/54182
+    bool processingUserGesture(DOMWrapperWorld* world = 0) const;
     bool anyPageIsProcessingUserGesture() const;
 
     void setPaused(bool paused) { m_paused = paused; }
@@ -165,7 +178,7 @@ public:
 #endif
 
     // Dummy method to avoid a bunch of ifdef's in WebCore.
-    void evaluateInWorld(const ScriptSourceCode&, DOMWrapperWorld*) { }
+    void evaluateInWorld(const ScriptSourceCode&, DOMWrapperWorld*);
     static void getAllWorlds(Vector<DOMWrapperWorld*>& worlds);
 
 private:

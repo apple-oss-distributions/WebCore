@@ -41,11 +41,16 @@ bool AccessibilityObject::accessibilityIgnoreAttachment() const
     return [attachment accessibilityIsIgnored];
 }
 
-AccessibilityObjectPlatformInclusion AccessibilityObject::accessibilityPlatformIncludesObject() const
+AccessibilityObjectInclusion AccessibilityObject::accessibilityPlatformIncludesObject() const
 {
     if (isMenuListPopup() || isMenuListOption())
         return IgnoreObject;
 
+    // Never expose an unknown object on the Mac. Clients of the AX API will not know what to do with it.
+    // Special case is when the unknown object is actually an attachment.
+    if (roleValue() == UnknownRole && !isAttachment())
+        return IgnoreObject;
+    
     return DefaultBehavior;
 }
     

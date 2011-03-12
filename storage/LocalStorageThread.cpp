@@ -45,13 +45,13 @@ LocalStorageThread::LocalStorageThread()
 
 LocalStorageThread::~LocalStorageThread()
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
     ASSERT(!m_threadID);
 }
 
 bool LocalStorageThread::start()
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
     if (!m_threadID)
         m_threadID = createThread(LocalStorageThread::threadEntryPointCallback, this, "WebCore: LocalStorage");
     return m_threadID;
@@ -64,7 +64,7 @@ void* LocalStorageThread::threadEntryPointCallback(void* thread)
 
 void* LocalStorageThread::threadEntryPoint()
 {
-    ASSERT(!isMainThread());
+    ASSERT(!(isMainThread() || pthread_main_np()));
     while (OwnPtr<LocalStorageTask> task = m_queue.waitForMessage())
         task->performTask();
 
@@ -73,14 +73,14 @@ void* LocalStorageThread::threadEntryPoint()
 
 void LocalStorageThread::scheduleTask(PassOwnPtr<LocalStorageTask> task)
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
     ASSERT(!m_queue.killed() && m_threadID);
     m_queue.append(task);
 }
 
 void LocalStorageThread::terminate()
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
     ASSERT(!m_queue.killed() && m_threadID);
     // Even in weird, exceptional cases, don't wait on a nonexistent thread to terminate.
     if (!m_threadID)
@@ -95,7 +95,7 @@ void LocalStorageThread::terminate()
 
 void LocalStorageThread::performTerminate()
 {
-    ASSERT(!isMainThread());
+    ASSERT(!(isMainThread() || pthread_main_np()));
     m_queue.kill();
 }
 

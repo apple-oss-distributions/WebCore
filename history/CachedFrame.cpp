@@ -27,7 +27,6 @@
 #include "CachedPage.h"
 
 #include "CachedFramePlatformData.h"
-#include "CString.h"
 #include "DocumentLoader.h"
 #include "ExceptionCode.h"
 #include "EventNames.h"
@@ -36,6 +35,7 @@
 #include "FrameView.h"
 #include "Logging.h"
 #include "PageTransitionEvent.h"
+#include <wtf/text/CString.h>
 #include <wtf/RefCountedLeakCounter.h>
 
 #if ENABLE(SVG)
@@ -103,7 +103,7 @@ void CachedFrameBase::restore()
     for (unsigned i = 0; i < m_childFrames.size(); ++i)
         m_childFrames[i]->open();
 
-    m_document->dispatchWindowEvent(PageTransitionEvent::create(eventNames().pageshowEvent, true), m_document);
+    m_document->enqueuePageshowEvent(PageshowEventPersisted);
 }
 
 CachedFrame::CachedFrame(Frame* frame)
@@ -123,9 +123,10 @@ CachedFrame::CachedFrame(Frame* frame)
     // Custom scrollbar renderers will get reattached when the document comes out of the page cache
     m_view->detachCustomScrollbars();
 
-    m_document->documentWillBecomeInactive(); 
+    m_document->documentWillBecomeInactive();
     frame->clearTimers();
     m_document->setInPageCache(true);
+    frame->loader()->stopLoading(UnloadEventPolicyUnloadAndPageHide);
     
     frame->loader()->client()->savePlatformDataToCachedFrame(this);
 

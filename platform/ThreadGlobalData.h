@@ -49,20 +49,17 @@ namespace WebCore {
     public:
         ThreadGlobalData();
         ~ThreadGlobalData();
+        void destroy(); // called on workers to clean up the ThreadGlobalData before the thread exits.
 
         EventNames& eventNames() { return *m_eventNames; }
-        StringImpl* emptyString() { return m_emptyString; }
-        HashSet<StringImpl*>& atomicStringTable() { return *m_atomicStringTable; }
         ThreadTimers& threadTimers() { return *m_threadTimers; }
 
-#if USE(ICU_UNICODE) || USE(GLIB_ICU_UNICODE_HYBRID)
+#if USE(ICU_UNICODE)
         ICUConverterWrapper& cachedConverterICU() { return *m_cachedConverterICU; }
 #endif
 
 
     private:
-        StringImpl* m_emptyString;
-        HashSet<StringImpl*>* m_atomicStringTable;
         EventNames* m_eventNames;
         ThreadTimers* m_threadTimers;
 
@@ -70,7 +67,7 @@ namespace WebCore {
         bool m_isMainThread;
 #endif
 
-#if USE(ICU_UNICODE) || USE(GLIB_ICU_UNICODE_HYBRID)
+#if USE(ICU_UNICODE)
         ICUConverterWrapper* m_cachedConverterICU;
 #endif
 

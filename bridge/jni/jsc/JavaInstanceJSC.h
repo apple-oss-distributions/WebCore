@@ -26,7 +26,7 @@
 #ifndef JavaInstanceJSC_h
 #define JavaInstanceJSC_h
 
-#if ENABLE(MAC_JAVA_BRIDGE)
+#if ENABLE(JAVA_BRIDGE)
 
 #include "Bridge.h"
 #include "runtime_root.h"
@@ -50,16 +50,16 @@ public:
     jobject instance() const { return m_instance; }
     void setInstance(jobject instance) { m_instance = instance; }
 
-protected:
-    JObjectWrapper(jobject instance);
-    ~JObjectWrapper();
-
     void ref() { m_refCount++; }
     void deref()
     {
         if (!(--m_refCount))
             delete this;
     }
+
+protected:
+    JObjectWrapper(jobject instance);
+    ~JObjectWrapper();
 
     jobject m_instance;
 
@@ -82,7 +82,8 @@ public:
     virtual JSValue valueOf(ExecState*) const;
     virtual JSValue defaultValue(ExecState*, PreferredPrimitiveType) const;
 
-    virtual JSValue invokeMethod(ExecState* exec, const MethodList& method, const ArgList& args);
+    virtual JSValue getMethod(ExecState* exec, const Identifier& propertyName);
+    virtual JSValue invokeMethod(ExecState* exec, RuntimeMethod* method, const ArgList& args);
 
     jobject javaInstance() const { return m_instance->m_instance; }
 
@@ -92,6 +93,9 @@ public:
 
 protected:
     JavaInstance(jobject instance, PassRefPtr<RootObject>);
+
+    virtual RuntimeObject* newRuntimeObject(ExecState*);
+
     virtual void virtualBegin();
     virtual void virtualEnd();
 
@@ -103,6 +107,6 @@ protected:
 
 } // namespace JSC
 
-#endif // ENABLE(MAC_JAVA_BRIDGE)
+#endif // ENABLE(JAVA_BRIDGE)
 
 #endif // JavaInstanceJSC_h

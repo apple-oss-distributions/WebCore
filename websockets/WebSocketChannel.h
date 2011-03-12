@@ -35,8 +35,10 @@
 
 #include "SocketStreamHandleClient.h"
 #include "ThreadableWebSocketChannel.h"
+#include "Timer.h"
 #include "WebSocketHandshake.h"
 #include <wtf/RefCounted.h>
+#include <wtf/Vector.h>
 
 namespace WebCore {
 
@@ -57,6 +59,9 @@ namespace WebCore {
         virtual void close();
         virtual void disconnect(); // Will suppress didClose().
 
+        virtual void suspend();
+        virtual void resume();
+
         virtual void didOpen(SocketStreamHandle*);
         virtual void didClose(SocketStreamHandle*);
         virtual void didReceiveData(SocketStreamHandle*, const char*, int);
@@ -74,16 +79,23 @@ namespace WebCore {
     private:
         WebSocketChannel(ScriptExecutionContext*, WebSocketChannelClient*, const KURL&, const String& protocol);
 
-        bool appendToBuffer(const char* data, int len);
-        void skipBuffer(int len);
+        bool appendToBuffer(const char* data, size_t len);
+        void skipBuffer(size_t len);
+        bool processBuffer();
+        void resumeTimerFired(Timer<WebSocketChannel>* timer);
 
         ScriptExecutionContext* m_context;
         WebSocketChannelClient* m_client;
         WebSocketHandshake m_handshake;
         RefPtr<SocketStreamHandle> m_handle;
         char* m_buffer;
-        int m_bufferSize;
-        unsigned long m_unhandledBufferSize;
+        size_t m_bufferSize;
+
+        Timer<WebSocketChannel> m_resumeTimer;
+        bool m_suspended;
+        bool m_closed;
+        bool m_shouldDiscardReceivedData;
+        unsigned long m_unhandledBufferedAmount;
     };
 
 } // namespace WebCore

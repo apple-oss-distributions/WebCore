@@ -30,6 +30,8 @@
 
 #include "RenderBlock.h"
 
+#define ENABLE_DEBUG_MATH_LAYOUT 0
+
 namespace WebCore {
     
 class RenderMathMLBlock : public RenderBlock {
@@ -44,8 +46,48 @@ public:
     virtual bool hasBase() const { return false; }
     virtual int nonOperatorHeight() const;
     virtual void stretchToHeight(int height);
+
+#if ENABLE(DEBUG_MATH_LAYOUT)
+    virtual void paint(PaintInfo&, int tx, int ty);
+#endif
     
 protected:
+    int getBoxModelObjectHeight(RenderObject* object) 
+    {
+        if (object && object->isBoxModelObject()) {
+            RenderBoxModelObject* box = toRenderBoxModelObject(object);
+            return box->offsetHeight();
+        }
+        
+        return 0;
+    }
+    int getBoxModelObjectHeight(const RenderObject* object) 
+    {
+        if (object && object->isBoxModelObject()) {
+            const RenderBoxModelObject* box = toRenderBoxModelObject(object);
+            return box->offsetHeight();
+        }
+        
+        return 0;
+    }
+    int getBoxModelObjectWidth(RenderObject* object) 
+    {
+        if (object && object->isBoxModelObject()) {
+            RenderBoxModelObject* box = toRenderBoxModelObject(object);
+            return box->offsetWidth();
+        }
+        
+        return 0;
+    }
+    int getBoxModelObjectWidth(const RenderObject* object) 
+    {
+        if (object && object->isBoxModelObject()) {
+            const RenderBoxModelObject* box = toRenderBoxModelObject(object);
+            return box->offsetWidth();
+        }
+        
+        return 0;
+    }
     virtual PassRefPtr<RenderStyle> makeBlockStyle();
     
 };
@@ -61,7 +103,7 @@ inline const RenderMathMLBlock* toRenderMathMLBlock(const RenderObject* object)
     ASSERT(!object || object->isRenderMathMLBlock());
     return static_cast<const RenderMathMLBlock*>(object);
 }
-    
+
 }
 
 

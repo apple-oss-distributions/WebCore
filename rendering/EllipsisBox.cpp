@@ -31,13 +31,13 @@ void EllipsisBox::paint(RenderObject::PaintInfo& paintInfo, int tx, int ty)
 {
     GraphicsContext* context = paintInfo.context;
     RenderStyle* style = m_renderer->style(m_firstLine);
-    Color textColor = style->color();
+    Color textColor = style->visitedDependentColor(CSSPropertyColor);
     if (textColor != context->fillColor())
         context->setFillColor(textColor, style->colorSpace());
     bool setShadow = false;
     if (style->textShadow()) {
-        context->setShadow(IntSize(style->textShadow()->x, style->textShadow()->y),
-                           style->textShadow()->blur, style->textShadow()->color, style->colorSpace());
+        context->setShadow(IntSize(style->textShadow()->x(), style->textShadow()->y()),
+                           style->textShadow()->blur(), style->textShadow()->color(), style->colorSpace());
         setShadow = true;
     }
 
@@ -78,7 +78,7 @@ IntRect EllipsisBox::selectionRect(int tx, int ty)
 
 void EllipsisBox::paintSelection(GraphicsContext* context, int tx, int ty, RenderStyle* style, const Font& font)
 {
-    Color textColor = style->color();
+    Color textColor = style->visitedDependentColor(CSSPropertyColor);
     Color c = m_renderer->selectionBackgroundColor();
     if (!c.isValid() || !c.alpha())
         return;

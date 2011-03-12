@@ -33,8 +33,8 @@
 
 #include "DOMWindow.h"
 #include "ExceptionCode.h"
-#include "JSCustomSQLStatementCallback.h"
-#include "JSCustomSQLStatementErrorCallback.h"
+#include "JSSQLStatementCallback.h"
+#include "JSSQLStatementErrorCallback.h"
 #include "JSDOMWindowCustom.h"
 #include "SQLTransaction.h"
 
@@ -49,7 +49,7 @@ JSValue JSSQLTransaction::executeSql(ExecState* exec, const ArgList& args)
         return jsUndefined();
     }
 
-    String sqlStatement = args.at(0).toString(exec);
+    String sqlStatement = ustringToString(args.at(0).toString(exec));
     if (exec->hadException())
         return jsUndefined();
 
@@ -80,7 +80,7 @@ JSValue JSSQLTransaction::executeSql(ExecState* exec, const ArgList& args)
                 sqlValues.append(value.uncheckedGetNumber());
             else {
                 // Convert the argument to a string and append it
-                sqlValues.append(value.toString(exec));
+                sqlValues.append(ustringToString(value.toString(exec)));
                 if (exec->hadException())
                     return jsUndefined();
             }
@@ -95,7 +95,7 @@ JSValue JSSQLTransaction::executeSql(ExecState* exec, const ArgList& args)
             return jsUndefined();
         }
         
-        callback = JSCustomSQLStatementCallback::create(object, static_cast<JSDOMGlobalObject*>(exec->dynamicGlobalObject()));
+        callback = JSSQLStatementCallback::create(object, static_cast<JSDOMGlobalObject*>(exec->dynamicGlobalObject()));
     }
     
     RefPtr<SQLStatementErrorCallback> errorCallback;
@@ -106,7 +106,7 @@ JSValue JSSQLTransaction::executeSql(ExecState* exec, const ArgList& args)
             return jsUndefined();
         }
         
-        errorCallback = JSCustomSQLStatementErrorCallback::create(object, static_cast<JSDOMGlobalObject*>(exec->dynamicGlobalObject()));
+        errorCallback = JSSQLStatementErrorCallback::create(object, static_cast<JSDOMGlobalObject*>(exec->dynamicGlobalObject()));
     }
     
     ExceptionCode ec = 0;

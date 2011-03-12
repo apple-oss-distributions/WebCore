@@ -52,7 +52,7 @@ namespace WebCore {
 WorkerThreadableWebSocketChannel::WorkerThreadableWebSocketChannel(WorkerContext* context, WebSocketChannelClient* client, const String& taskMode, const KURL& url, const String& protocol)
     : m_workerContext(context)
     , m_workerClientWrapper(ThreadableWebSocketChannelClientWrapper::create(client))
-    , m_bridge(new Bridge(m_workerClientWrapper, m_workerContext, taskMode, url, protocol))
+    , m_bridge(Bridge::create(m_workerClientWrapper, m_workerContext, taskMode, url, protocol))
 {
 }
 
@@ -84,7 +84,7 @@ unsigned long WorkerThreadableWebSocketChannel::bufferedAmount() const
 
 void WorkerThreadableWebSocketChannel::close()
 {
-    if (!m_bridge)
+    if (m_bridge)
         m_bridge->close();
 }
 
@@ -92,6 +92,20 @@ void WorkerThreadableWebSocketChannel::disconnect()
 {
     m_bridge->disconnect();
     m_bridge.clear();
+}
+
+void WorkerThreadableWebSocketChannel::suspend()
+{
+    m_workerClientWrapper->suspend();
+    if (m_bridge)
+        m_bridge->suspend();
+}
+
+void WorkerThreadableWebSocketChannel::resume()
+{
+    m_workerClientWrapper->resume();
+    if (m_bridge)
+        m_bridge->resume();
 }
 
 WorkerThreadableWebSocketChannel::Peer::Peer(RefPtr<ThreadableWebSocketChannelClientWrapper> clientWrapper, WorkerLoaderProxy& loaderProxy, ScriptExecutionContext* context, const String& taskMode, const KURL& url, const String& protocol)
@@ -166,6 +180,22 @@ void WorkerThreadableWebSocketChannel::Peer::disconnect()
     m_mainWebSocketChannel = 0;
 }
 
+void WorkerThreadableWebSocketChannel::Peer::suspend()
+{
+    ASSERT(isMainThread());
+    if (!m_mainWebSocketChannel)
+        return;
+    m_mainWebSocketChannel->suspend();
+}
+
+void WorkerThreadableWebSocketChannel::Peer::resume()
+{
+    ASSERT(isMainThread());
+    if (!m_mainWebSocketChannel)
+        return;
+    m_mainWebSocketChannel->resume();
+}
+
 static void workerContextDidConnect(ScriptExecutionContext* context, RefPtr<ThreadableWebSocketChannelClientWrapper> workerClientWrapper)
 {
     ASSERT_UNUSED(context, context->isWorkerContext());
@@ -190,17 +220,17 @@ void WorkerThreadableWebSocketChannel::Peer::didReceiveMessage(const String& mes
     m_loaderProxy.postTaskForModeToWorkerContext(createCallbackTask(&workerContextDidReceiveMessage, m_workerClientWrapper, message), m_taskMode);
 }
 
-static void workerContextDidClose(ScriptExecutionContext* context, RefPtr<ThreadableWebSocketChannelClientWrapper> workerClientWrapper)
+static void workerContextDidClose(ScriptExecutionContext* context, RefPtr<ThreadableWebSocketChannelClientWrapper> workerClientWrapper, unsigned long unhandledBufferedAmount)
 {
     ASSERT_UNUSED(context, context->isWorkerContext());
-    workerClientWrapper->didClose();
+    workerClientWrapper->didClose(unhandledBufferedAmount);
 }
 
-void WorkerThreadableWebSocketChannel::Peer::didClose()
+void WorkerThreadableWebSocketChannel::Peer::didClose(unsigned long unhandledBufferedAmount)
 {
     ASSERT(isMainThread());
     m_mainWebSocketChannel = 0;
-    m_loaderProxy.postTaskForModeToWorkerContext(createCallbackTask(&workerContextDidClose, m_workerClientWrapper), m_taskMode);
+    m_loaderProxy.postTaskForModeToWorkerContext(createCallbackTask(&workerContextDidClose, m_workerClientWrapper, unhandledBufferedAmount), m_taskMode);
 }
 
 void WorkerThreadableWebSocketChannel::Bridge::setWebSocketChannel(ScriptExecutionContext* context, Bridge* thisPtr, Peer* peer, RefPtr<ThreadableWebSocketChannelClientWrapper> workerClientWrapper)
@@ -331,6 +361,36 @@ void WorkerThreadableWebSocketChannel::Bridge::disconnect()
         m_loaderProxy.postTaskToLoader(createCallbackTask(&mainThreadDestroy, peer));
     }
     m_workerContext = 0;
+}
+
+void WorkerThreadableWebSocketChannel::mainThreadSuspend(ScriptExecutionContext* context, Peer* peer)
+{
+    ASSERT(isMainThread());
+    ASSERT_UNUSED(context, context->isDocument());
+    ASSERT(peer);
+
+    peer->suspend();
+}
+
+void WorkerThreadableWebSocketChannel::Bridge::suspend()
+{
+    ASSERT(m_peer);
+    m_loaderProxy.postTaskToLoader(createCallbackTask(&WorkerThreadableWebSocketChannel::mainThreadSuspend, m_peer));
+}
+
+void WorkerThreadableWebSocketChannel::mainThreadResume(ScriptExecutionContext* context, Peer* peer)
+{
+    ASSERT(isMainThread());
+    ASSERT_UNUSED(context, context->isDocument());
+    ASSERT(peer);
+
+    peer->resume();
+}
+
+void WorkerThreadableWebSocketChannel::Bridge::resume()
+{
+    ASSERT(m_peer);
+    m_loaderProxy.postTaskToLoader(createCallbackTask(&WorkerThreadableWebSocketChannel::mainThreadResume, m_peer));
 }
 
 void WorkerThreadableWebSocketChannel::Bridge::clearClientWrapper()

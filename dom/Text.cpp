@@ -22,10 +22,10 @@
 #include "config.h"
 #include "Text.h"
 
-#include "CString.h"
 #include "ExceptionCode.h"
 #include "RenderText.h"
 #include "TextBreakIterator.h"
+#include <wtf/text/CString.h>
 
 #if ENABLE(SVG)
 #include "RenderSVGInlineText.h"
@@ -40,11 +40,6 @@
 using namespace std;
 
 namespace WebCore {
-
-Text::Text(Document* document, const String& data)
-    : CharacterData(document, data, CreateText)
-{
-}
 
 PassRefPtr<Text> Text::create(Document* document, const String& data)
 {
@@ -128,6 +123,8 @@ String Text::wholeText() const
             continue;
         const Text* t = static_cast<const Text*>(n);
         const String& data = t->data();
+        if (std::numeric_limits<unsigned>::max() - data.length() < resultLength)
+            CRASH();
         resultLength += data.length();
     }
     UChar* resultData;

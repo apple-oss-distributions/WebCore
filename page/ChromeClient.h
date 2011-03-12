@@ -53,6 +53,7 @@ class NSResponder;
 namespace WebCore {
 
     class AtomicString;
+    class Element;
     class FileChooser;
     class FloatRect;
     class Frame;
@@ -62,6 +63,7 @@ namespace WebCore {
     class IntRect;
     class Node;
     class Page;
+    class SecurityOrigin;
     class String;
     class Widget;
 
@@ -140,8 +142,10 @@ namespace WebCore {
         virtual IntRect windowResizerRect() const = 0;
 
         // Methods used by HostWindow.
-        virtual void repaint(const IntRect&, bool contentChanged, bool immediate = false, bool repaintContentOnly = false) = 0;
-        virtual void scroll(const IntSize& scrollDelta, const IntRect& rectToScroll, const IntRect& clipRect) = 0;
+        virtual void invalidateWindow(const IntRect&, bool) = 0;
+        virtual void invalidateContentsAndWindow(const IntRect&, bool) = 0;
+        virtual void invalidateContentsForSlowScroll(const IntRect&, bool) = 0;
+        virtual void scroll(const IntSize&, const IntRect&, const IntRect&) = 0;
         virtual IntPoint screenToWindow(const IntPoint&) const = 0;
         virtual IntRect windowToScreen(const IntRect&) const = 0;
         virtual PlatformPageClient platformPageClient() const = 0;
@@ -150,9 +154,13 @@ namespace WebCore {
         // End methods used by HostWindow.
 
         virtual void scrollbarsModeDidChange() const = 0;
+        virtual bool shouldMissingPluginMessageBeButton() const { return false; }
+        virtual void missingPluginButtonClicked(Element*) const { }
         virtual void mouseDidMoveOverElement(const HitTestResult&, unsigned modifierFlags) = 0;
 
         virtual void setToolTip(const String&, TextDirection) = 0;
+
+        virtual void didReceiveViewportArguments(Frame*, const ViewportArguments&) const { }
 
         virtual void print(Frame*) = 0;
 
@@ -167,6 +175,13 @@ namespace WebCore {
         // The chrome client would need to take some action such as evicting some
         // old caches.
         virtual void reachedMaxAppCacheSize(int64_t spaceNeeded) = 0;
+
+        // Callback invoked when the application cache origin quota is reached. This
+        // means that the resources attempting to be cached via the manifest are
+        // more than allowed on this origin. This callback allows the chrome client
+        // to take action, such as prompting the user to ask to increase the quota
+        // for this origin.
+        virtual void reachedApplicationCacheOriginQuota(SecurityOrigin* origin) = 0;
 #endif
 
 #if ENABLE(DASHBOARD_SUPPORT)
@@ -196,7 +211,6 @@ namespace WebCore {
         virtual void setNeedsScrollNotifications(Frame*, bool) = 0;
         virtual void observedContentChange(Frame*) = 0;
         virtual void clearContentChangeObservers(Frame*) = 0;
-        virtual void didReceiveViewportArguments(Frame*, const ViewportArguments&) = 0;
         virtual void notifyRevealedSelectionByScrollingFrame(Frame*) = 0;
         virtual bool isStopping() = 0;
         virtual void didLayout() = 0;
@@ -208,8 +222,11 @@ namespace WebCore {
         // This can be either a synchronous or asynchronous call. The ChromeClient can display UI asking the user for permission
         // to use Geolococation. The ChromeClient must call Geolocation::setShouldClearCache() appropriately.
         virtual void requestGeolocationPermissionForFrame(Frame*, Geolocation*) = 0;
+        virtual void cancelGeolocationPermissionRequestForFrame(Frame*, Geolocation*) = 0;
             
         virtual void runOpenPanel(Frame*, PassRefPtr<FileChooser>) = 0;
+        // Asynchronous request to load an icon for specified filenames.
+        virtual void chooseIconForFiles(const Vector<String>&, FileChooser*) = 0;
 
 
         // Notification that the given form element has changed. This function
@@ -230,6 +247,9 @@ namespace WebCore {
         // Sets a flag to specify that the view needs to be updated, so we need
         // to do an eager layout before the drawing.
         virtual void scheduleCompositingLayerSync() = 0;
+        // Returns whether or not the client can render the composited layer,
+        // regardless of the settings.
+        virtual bool allowsAcceleratedCompositing() const { return true; }
 #endif
 
         virtual bool supportsFullscreenForNode(const Node*) { return false; }
@@ -244,6 +264,14 @@ namespace WebCore {
 
 #endif
 
+
+#if ENABLE(WIDGETS_10_SUPPORT)
+        virtual bool isWindowed() { return false; }
+        virtual bool isFloating() { return false; }
+        virtual bool isFullscreen() { return false; }
+        virtual bool isMaximized() { return false; }
+        virtual bool isMinimized() { return false; }
+#endif
 
     protected:
         virtual ~ChromeClient() { }

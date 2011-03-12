@@ -23,6 +23,7 @@
 #if ENABLE(SVG)
 #include "SVGTextElement.h"
 
+#include "AffineTransform.h"
 #include "FloatRect.h"
 #include "MappedAttribute.h"
 #include "RenderSVGText.h"
@@ -30,7 +31,6 @@
 #include "SVGRenderStyle.h"
 #include "SVGTSpanElement.h"
 #include "SVGTransformList.h"
-#include "TransformationMatrix.h"
 
 namespace WebCore {
 
@@ -67,30 +67,30 @@ SVGElement* SVGTextElement::farthestViewportElement() const
     return SVGTransformable::farthestViewportElement(this);
 }
 
-FloatRect SVGTextElement::getBBox() const
+FloatRect SVGTextElement::getBBox(StyleUpdateStrategy styleUpdateStrategy) const
 {
-    return SVGTransformable::getBBox(this);
+    return SVGTransformable::getBBox(this, styleUpdateStrategy);
 }
 
-TransformationMatrix SVGTextElement::getScreenCTM() const
+AffineTransform SVGTextElement::getCTM(StyleUpdateStrategy styleUpdateStrategy) const
 {
-    return SVGTransformable::getScreenCTM(this);
+    return SVGLocatable::computeCTM(this, SVGLocatable::NearestViewportScope, styleUpdateStrategy);
 }
 
-TransformationMatrix SVGTextElement::getCTM() const
+AffineTransform SVGTextElement::getScreenCTM(StyleUpdateStrategy styleUpdateStrategy) const
 {
-    return SVGTransformable::getCTM(this);
+    return SVGLocatable::computeCTM(this, SVGLocatable::ScreenScope, styleUpdateStrategy);
 }
 
-TransformationMatrix SVGTextElement::animatedLocalTransform() const
+AffineTransform SVGTextElement::animatedLocalTransform() const
 {
     return m_supplementalTransform ? transform()->concatenate().matrix() * *m_supplementalTransform : transform()->concatenate().matrix();
 }
 
-TransformationMatrix* SVGTextElement::supplementalTransform()
+AffineTransform* SVGTextElement::supplementalTransform()
 {
     if (!m_supplementalTransform)
-        m_supplementalTransform.set(new TransformationMatrix());
+        m_supplementalTransform.set(new AffineTransform());
     return m_supplementalTransform.get();
 }
 
@@ -114,11 +114,14 @@ void SVGTextElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     SVGTextPositioningElement::svgAttributeChanged(attrName);
 
-    if (!renderer())
+    RenderObject* renderer = this->renderer();
+    if (!renderer)
         return;
 
-    if (SVGTransformable::isKnownAttribute(attrName))
-        renderer()->setNeedsLayout(true);
+    if (SVGTransformable::isKnownAttribute(attrName)) {
+        renderer->setNeedsTransformUpdate();
+        renderer->setNeedsLayout(true);
+    }
 }
 
 void SVGTextElement::synchronizeProperty(const QualifiedName& attrName)

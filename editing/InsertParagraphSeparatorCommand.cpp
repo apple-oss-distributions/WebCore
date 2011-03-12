@@ -44,6 +44,24 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
+// When inserting a new line, we want to avoid nesting empty divs if we can.  Otherwise, when
+// pasting, it's easy to have each new line be a div deeper than the previous.  E.g., in the case
+// below, we want to insert at ^ instead of |.
+// <div>foo<div>bar</div>|</div>^
+static Element* highestVisuallyEquivalentDivBelowRoot(Element* startBlock)
+{
+    Element* curBlock = startBlock;
+    // We don't want to return a root node (if it happens to be a div, e.g., in a document fragment) because there are no
+    // siblings for us to append to.
+    while (!curBlock->nextSibling() && curBlock->parentElement()->hasTagName(divTag) && curBlock->parentElement()->parentElement()) {
+        NamedNodeMap* attributes = curBlock->parentElement()->attributes(true);
+        if (attributes && !attributes->isEmpty())
+            break;
+        curBlock = curBlock->parentElement();
+    }
+    return curBlock;
+}
+
 InsertParagraphSeparatorCommand::InsertParagraphSeparatorCommand(Document *document, bool mustUseDefaultParagraphElement) 
     : CompositeEditCommand(document)
     , m_mustUseDefaultParagraphElement(mustUseDefaultParagraphElement)
@@ -64,7 +82,7 @@ void InsertParagraphSeparatorCommand::calculateStyleBeforeInsertion(const Positi
     if (!isStartOfParagraph(visiblePos) && !isEndOfParagraph(visiblePos))
         return;
     
-    m_style = editingStyleAtPosition(pos, IncludeTypingStyle);
+    m_style = ApplyStyleCommand::editingStyleAtPosition(pos, IncludeTypingStyle);
 }
 
 void InsertParagraphSeparatorCommand::applyStyleAfterInsertion(Node* originalEnclosingBlock)
@@ -214,7 +232,13 @@ void InsertParagraphSeparatorCommand::doApply()
                 // When inserting the newline after the blockquote, we don't want to apply the original style after the insertion
                 shouldApplyStyleAfterInsertion = false;
             }
-            insertNodeAfter(blockToInsert, startBlock);
+
+            // Most of the time we want to stay at the nesting level of the startBlock (e.g., when nesting within lists).  However,
+            // for div nodes, this can result in nested div tags that are hard to break out of.
+            Element* siblingNode = startBlock;
+            if (blockToInsert->hasTagName(divTag))
+                siblingNode = highestVisuallyEquivalentDivBelowRoot(startBlock);
+            insertNodeAfter(blockToInsert, siblingNode);
         }
 
         // Recreate the same structure in the new paragraph.
@@ -291,7 +315,7 @@ void InsertParagraphSeparatorCommand::doApply()
     Position leadingWhitespace = insertionPosition.leadingWhitespacePosition(VP_DEFAULT_AFFINITY);
     // FIXME: leadingWhitespacePosition is returning the position before preserved newlines for positions
     // after the preserved newline, causing the newline to be turned into a nbsp.
-    if (leadingWhitespace.isNotNull()) {
+    if (leadingWhitespace.isNotNull() && leadingWhitespace.node()->isTextNode()) {
         Text* textNode = static_cast<Text*>(leadingWhitespace.node());
         ASSERT(!textNode->renderer() || textNode->renderer()->style()->collapseWhiteSpace());
         replaceTextInNode(textNode, leadingWhitespace.deprecatedEditingOffset(), 1, nonBreakingSpaceString());
@@ -364,10 +388,10 @@ void InsertParagraphSeparatorCommand::doApply()
         insertionPosition = Position(insertionPosition.node(), 0);
         if (!insertionPosition.isRenderedCharacter()) {
             // Clear out all whitespace and insert one non-breaking space
-            ASSERT(insertionPosition.node()->isTextNode());
             ASSERT(!insertionPosition.node()->renderer() || insertionPosition.node()->renderer()->style()->collapseWhiteSpace());
             deleteInsignificantTextDownstream(insertionPosition);
-            insertTextIntoNode(static_cast<Text*>(insertionPosition.node()), 0, nonBreakingSpaceString());
+            if (insertionPosition.node()->isTextNode())
+                insertTextIntoNode(static_cast<Text*>(insertionPosition.node()), 0, nonBreakingSpaceString());
         }
     }
 

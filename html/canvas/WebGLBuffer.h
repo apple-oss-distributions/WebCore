@@ -27,7 +27,7 @@
 #define WebGLBuffer_h
 
 #include "CanvasObject.h"
-#include "WebGLArrayBuffer.h"
+#include "ArrayBuffer.h"
 
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
@@ -39,17 +39,13 @@ namespace WebCore {
         virtual ~WebGLBuffer() { deleteObject(); }
         
         static PassRefPtr<WebGLBuffer> create(WebGLRenderingContext*);
-        
-        // For querying previously created objects via e.g. getFramebufferAttachmentParameter
-        // FIXME: should consider canonicalizing these objects
-        static PassRefPtr<WebGLBuffer> create(WebGLRenderingContext*, Platform3DObject);
 
-        bool associateBufferData(unsigned long target, int size);
-        bool associateBufferData(unsigned long target, WebGLArray* array);
-        bool associateBufferSubData(unsigned long target, long offset, WebGLArray* array);
+        bool associateBufferData(int size);
+        bool associateBufferData(ArrayBufferView* array);
+        bool associateBufferSubData(long offset, ArrayBufferView* array);
         
-        unsigned byteLength(unsigned long target) const;
-        const WebGLArrayBuffer* elementArrayBuffer() const { return m_elementArrayBuffer.get(); }
+        unsigned byteLength() const;
+        const ArrayBuffer* elementArrayBuffer() const { return m_elementArrayBuffer.get(); }
                         
         // Gets the cached max index for the given type. Returns -1 if
         // none has been set.
@@ -57,16 +53,21 @@ namespace WebCore {
         // Sets the cached max index for the given type.
         void setCachedMaxIndex(unsigned long type, long value);
 
+        unsigned long getTarget() const { return m_target; }
+        void setTarget(unsigned long);
+
     protected:
         WebGLBuffer(WebGLRenderingContext*);
-        WebGLBuffer(WebGLRenderingContext*, Platform3DObject obj);
-        
+
         virtual void _deleteObject(Platform3DObject o);
     
     private:
-        RefPtr<WebGLArrayBuffer> m_elementArrayBuffer;
-        unsigned m_elementArrayBufferByteLength;
-        unsigned m_arrayBufferByteLength;
+        virtual bool isBuffer() const { return true; }
+
+        unsigned long m_target;
+
+        RefPtr<ArrayBuffer> m_elementArrayBuffer;
+        unsigned m_byteLength;
 
         // Optimization for index validation. For each type of index
         // (i.e., UNSIGNED_SHORT), cache the maximum index in the

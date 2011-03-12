@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2008, 2009 Apple Inc. All Rights Reserved.
+ * Copyright 2010, The Android Open Source Project
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,6 +27,7 @@
 #ifndef Geolocation_h
 #define Geolocation_h
 
+#include "GeolocationPositionCache.h"
 #include "GeolocationService.h"
 #include "Geoposition.h"
 #include "PositionCallback.h"
@@ -33,14 +35,6 @@
 #include "PositionErrorCallback.h"
 #include "PositionOptions.h"
 #include "Timer.h"
-#include <wtf/HashMap.h>
-#include <wtf/HashSet.h>
-#include <wtf/OwnPtr.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/Platform.h>
-#include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
-#include <wtf/Vector.h>
 
 namespace WebCore {
 
@@ -52,39 +46,44 @@ class GeolocationError;
 #endif
 
 class Geolocation : public RefCounted<Geolocation>
-#if !ENABLE(CLIENT_BASED_GEOLOCATION)
+#if !ENABLE(CLIENT_BASED_GEOLOCATION) && ENABLE(GEOLOCATION)
     , public GeolocationServiceClient
 #endif
 {
 public:
     static PassRefPtr<Geolocation> create(Frame* frame) { return adoptRef(new Geolocation(frame)); }
 
-    virtual ~Geolocation();
+    ~Geolocation();
 
     void disconnectFrame();
     
-    Geoposition* lastPosition();
-
     void getCurrentPosition(PassRefPtr<PositionCallback>, PassRefPtr<PositionErrorCallback>, PassRefPtr<PositionOptions>);
     int watchPosition(PassRefPtr<PositionCallback>, PassRefPtr<PositionErrorCallback>, PassRefPtr<PositionOptions>);
     void clearWatch(int watchId);
 
+    // These methods are used by Android and iOS.
     void suspend();
     void resume();
 
     void setIsAllowed(bool);
-    bool isAllowed() const { return m_allowGeolocation == Yes; }
-    bool isDenied() const { return m_allowGeolocation == No; }
-    
+    Frame* frame() const { return m_frame; }
+
     void setShouldClearCache(bool shouldClearCache) { m_shouldClearCache = shouldClearCache; }
     bool shouldClearCache() const { return m_shouldClearCache; }
 
 #if ENABLE(CLIENT_BASED_GEOLOCATION)
     void setPosition(GeolocationPosition*);
     void setError(GeolocationError*);
+#else
+    GeolocationService* getGeolocationService() const { return m_service.get(); }
 #endif
 
 private:
+    Geoposition* lastPosition();
+
+    bool isAllowed() const { return m_allowGeolocation == Yes; }
+    bool isDenied() const { return m_allowGeolocation == No; }
+    
     Geolocation(Frame*);
 
     class GeoNotifier : public RefCounted<GeoNotifier> {
@@ -93,6 +92,8 @@ private:
         
         void setFatalError(PassRefPtr<PositionError>);
         bool hasZeroTimeout() const;
+        void setUseCachedPosition();
+        void runSuccessCallback(Geoposition*);
         void startTimerIfNeeded();
         void timerFired(Timer<GeoNotifier>*);
         
@@ -102,6 +103,7 @@ private:
         RefPtr<PositionOptions> m_options;
         Timer<GeoNotifier> m_timer;
         RefPtr<PositionError> m_fatalError;
+        bool m_useCachedPosition;
 
     private:
         GeoNotifier(Geolocation*, PassRefPtr<PositionCallback>, PassRefPtr<PositionErrorCallback>, PassRefPtr<PositionOptions>);
@@ -112,6 +114,7 @@ private:
         void set(int id, PassRefPtr<GeoNotifier>);
         void remove(int id);
         void remove(GeoNotifier*);
+        bool contains(GeoNotifier*) const;
         void clear();
         bool isEmpty() const;
         void getNotifiersVector(Vector<RefPtr<GeoNotifier> >&) const;
@@ -141,7 +144,7 @@ private:
     bool startUpdating(GeoNotifier*);
     void stopUpdating();
 
-#if !ENABLE(CLIENT_BASED_GEOLOCATION)
+#if !ENABLE(CLIENT_BASED_GEOLOCATION) && ENABLE(GEOLOCATION)
     // GeolocationServiceClient
     virtual void geolocationServicePositionChanged(GeolocationService*);
     virtual void geolocationServiceErrorOccurred(GeolocationService*);
@@ -154,6 +157,9 @@ private:
 
     void fatalErrorOccurred(GeoNotifier*);
     void requestTimedOut(GeoNotifier*);
+    void requestUsesCachedPosition(GeoNotifier*);
+    bool haveSuitableCachedPosition(PositionOptions*);
+    void makeCachedPositionCallbacks();
 
     typedef HashSet<RefPtr<GeoNotifier> > GeoNotifierSet;
     
@@ -166,7 +172,6 @@ private:
     RefPtr<GeoNotifier> m_startRequestPermissionNotifier;
 #endif
     RefPtr<Geoposition> m_lastPosition;
-    RefPtr<Geoposition> m_currentPosition;
 
     enum {
         Unknown,
@@ -175,6 +180,11 @@ private:
         No
     } m_allowGeolocation;
     bool m_shouldClearCache;
+
+#if ENABLE(GEOLOCATION)
+    OwnPtr<GeolocationPositionCache> m_positionCache;
+#endif
+    GeoNotifierSet m_requestsAwaitingCachedPosition;
 };
     
 } // namespace WebCore

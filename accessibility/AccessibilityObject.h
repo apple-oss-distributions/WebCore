@@ -34,7 +34,6 @@
 #include "Range.h"
 #include "VisiblePosition.h"
 #include "VisibleSelection.h"
-#include <wtf/Platform.h>
 #include <wtf/RefPtr.h>
 #include <wtf/Vector.h>
 
@@ -204,10 +203,16 @@ enum AccessibilityOrientation {
     AccessibilityOrientationHorizontal,
 };
     
-enum AccessibilityObjectPlatformInclusion {
+enum AccessibilityObjectInclusion {
     IncludeObject,
     IgnoreObject,
     DefaultBehavior,
+};
+    
+enum AccessibilityButtonState {
+    ButtonStateOff = 0,
+    ButtonStateOn, 
+    ButtonStateMixed,
 };
 
 struct VisiblePositionRange {
@@ -264,7 +269,8 @@ public:
     virtual bool isTextControl() const { return false; }
     virtual bool isNativeTextControl() const { return false; }
     virtual bool isWebArea() const { return false; }
-    virtual bool isCheckboxOrRadio() const { return false; }
+    virtual bool isCheckbox() const { return roleValue() == CheckBoxRole; }
+    virtual bool isRadioButton() const { return roleValue() == RadioButtonRole; }
     virtual bool isListBox() const { return roleValue() == ListBoxRole; }
     virtual bool isMediaTimeline() const { return false; }
     virtual bool isMenuRelated() const { return false; }
@@ -298,6 +304,8 @@ public:
     bool isTreeItem() const { return roleValue() == TreeItemRole; }
     bool isScrollbar() const { return roleValue() == ScrollBarRole; }
     bool isButton() const { return roleValue() == ButtonRole; }
+    bool isListItem() const { return roleValue() == ListItemRole; }
+    bool isCheckboxOrRadio() const { return isCheckbox() || isRadioButton(); }
     
     virtual bool isChecked() const { return false; }
     virtual bool isEnabled() const { return false; }
@@ -325,13 +333,15 @@ public:
     virtual bool canSetSelectedChildrenAttribute() const { return false; }
     virtual bool canSetExpandedAttribute() const { return false; }
     
-    virtual bool hasIntValue() const { return false; }
-
+    // A programmatic way to set a name on an AccessibleObject.
+    virtual void setAccessibleName(String&) { }
+    
+    virtual Node* node() const { return 0; }
     bool accessibilityShouldUseUniqueId() const { return true; }
     virtual bool accessibilityIsIgnored() const  { return true; }
 
     virtual int headingLevel() const { return 0; }
-    virtual int intValue() const { return 0; }
+    virtual AccessibilityButtonState checkboxOrRadioValue() const;
     virtual String valueDescription() const { return String(); }
     virtual float valueForRange() const { return 0.0f; }
     virtual float maxValueForRange() const { return 0.0f; }
@@ -346,10 +356,11 @@ public:
     virtual void ariaOwnsElements(AccessibilityChildrenVector&) const { }
     virtual bool supportsARIAFlowTo() const { return false; }
     virtual void ariaFlowToElements(AccessibilityChildrenVector&) const { }
+    virtual bool ariaHasPopup() const { return false; }
     
     // ARIA drag and drop
-    virtual bool supportsARIADropping() { return false; }
-    virtual bool supportsARIADragging() { return false; }
+    virtual bool supportsARIADropping() const { return false; }
+    virtual bool supportsARIADragging() const { return false; }
     virtual bool isARIAGrabbed() { return false; }
     virtual void setARIAGrabbed(bool) { }
     virtual void determineARIADropEffects(Vector<String>&) { }
@@ -416,8 +427,9 @@ public:
     virtual Document* document() const { return 0; }
     virtual FrameView* topDocumentFrameView() const { return 0; }
     virtual FrameView* documentFrameView() const;
-    virtual String language() const;
+    String language() const;
     virtual unsigned hierarchicalLevel() const { return 0; }
+    const AtomicString& placeholderValue() const;
     
     virtual void setFocused(bool) { }
     virtual void setSelectedText(const String&) { }
@@ -440,6 +452,7 @@ public:
     virtual void addChildren() { }
     virtual bool canHaveChildren() const { return true; }
     virtual bool hasChildren() const { return m_haveChildren; }
+    virtual void updateChildrenIfNecessary() { }
     virtual void selectedChildren(AccessibilityChildrenVector&) { }
     virtual void visibleChildren(AccessibilityChildrenVector&) { }
     virtual void tabChildren(AccessibilityChildrenVector&) { }
@@ -448,7 +461,8 @@ public:
     virtual void handleActiveDescendantChanged() { }
 
     static AccessibilityRole ariaRoleToWebCoreRole(const String&);
-    
+    const AtomicString& getAttribute(const QualifiedName&) const;
+
     virtual VisiblePositionRange visiblePositionRange() const { return VisiblePositionRange(); }
     virtual VisiblePositionRange visiblePositionRangeForLine(unsigned) const { return VisiblePositionRange(); }
     
@@ -520,6 +534,8 @@ public:
     virtual bool ariaLiveRegionAtomic() const { return false; }
     virtual bool ariaLiveRegionBusy() const { return false; }
     
+    bool supportsARIAAttributes() const;
+    
 #if HAVE(ACCESSIBILITY)
 #if PLATFORM(GTK)
     AccessibilityObjectWrapper* wrapper() const;
@@ -533,18 +549,14 @@ public:
 #endif
 #endif
 
-    // a platform-specific method for determining if an attachment is ignored
 #if HAVE(ACCESSIBILITY)
+    // a platform-specific method for determining if an attachment is ignored
     bool accessibilityIgnoreAttachment() const;
+    // gives platforms the opportunity to indicate if and how an object should be included
+    AccessibilityObjectInclusion accessibilityPlatformIncludesObject() const;
 #else
     bool accessibilityIgnoreAttachment() const { return true; }
-#endif
-
-    // gives platforms the opportunity to indicate if and how an object should be included
-#if HAVE(ACCESSIBILITY)
-    AccessibilityObjectPlatformInclusion accessibilityPlatformIncludesObject() const;
-#else
-    AccessibilityObjectPlatformInclusion accessibilityPlatformIncludesObject() const { return DefaultBehavior; }
+    AccessibilityObjectInclusion accessibilityPlatformIncludesObject() const { return DefaultBehavior; }
 #endif
 
     int accessibilityPasswordFieldLength();
@@ -561,7 +573,6 @@ protected:
     
     virtual void clearChildren();
     virtual bool isDetached() const { return true; }
-    RenderListItem* renderListItemContainerForNode(Node* node) const;
     
 #if PLATFORM(MAC)
     RetainPtr<AccessibilityObjectWrapper> m_wrapper;

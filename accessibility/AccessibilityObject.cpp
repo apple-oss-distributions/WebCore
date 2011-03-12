@@ -150,6 +150,10 @@ bool AccessibilityObject::press() const
     
 String AccessibilityObject::language() const
 {
+    const AtomicString& lang = getAttribute(langAttr);
+    if (!lang.isEmpty())
+        return lang;
+
     AccessibilityObject* parent = parentObject();
     
     // as a last resort, fall back to the content language specified in the meta tag
@@ -157,7 +161,7 @@ String AccessibilityObject::language() const
         Document* doc = document();
         if (doc)
             return doc->contentLanguage();
-        return String();
+        return nullAtom;
     }
     
     return parent->language();
@@ -394,7 +398,7 @@ static bool replacedNodeNeedsCharacter(Node* replacedNode)
 }
 
 // Finds a RenderListItem parent give a node.
-RenderListItem* AccessibilityObject::renderListItemContainerForNode(Node* node) const
+static RenderListItem* renderListItemContainerForNode(Node* node)
 {
     for (Node* stringNode = node; stringNode; stringNode = stringNode->parent()) {
         RenderObject* renderObject = stringNode->renderer();
@@ -731,8 +735,8 @@ FrameView* AccessibilityObject::documentFrameView() const
 
 void AccessibilityObject::clearChildren()
 {
-    m_haveChildren = false;
     m_children.clear();
+    m_haveChildren = false;
 }
 
 AccessibilityObject* AccessibilityObject::anchorElementForNode(Node* node)
@@ -821,6 +825,19 @@ const String& AccessibilityObject::actionVerb() const
     return noAction;
 }
  
+const AtomicString& AccessibilityObject::getAttribute(const QualifiedName& attribute) const
+{
+    Node* elementNode = node();
+    if (!elementNode)
+        return nullAtom;
+    
+    if (!elementNode->isElementNode())
+        return nullAtom;
+    
+    Element* element = static_cast<Element*>(elementNode);
+    return element->getAttribute(attribute);
+}
+    
 // Lacking concrete evidence of orientation, horizontal means width > height. vertical is height > width;
 AccessibilityOrientation AccessibilityObject::orientation() const
 {
@@ -922,6 +939,15 @@ AccessibilityRole AccessibilityObject::ariaRoleToWebCoreRole(const String& value
     return roleMap->get(value);
 }
 
+const AtomicString& AccessibilityObject::placeholderValue() const
+{
+    const AtomicString& placeholder = getAttribute(placeholderAttr);
+    if (!placeholder.isEmpty())
+        return placeholder;
+    
+    return nullAtom;
+}
+    
 bool AccessibilityObject::isInsideARIALiveRegion() const
 {
     if (supportsARIALiveRegion())
@@ -935,11 +961,29 @@ bool AccessibilityObject::isInsideARIALiveRegion() const
     return false;
 }
 
+bool AccessibilityObject::supportsARIAAttributes() const
+{
+    return supportsARIALiveRegion() || supportsARIADragging() || supportsARIADropping() || supportsARIAFlowTo() || supportsARIAOwns();
+}
+    
 bool AccessibilityObject::supportsARIALiveRegion() const
 {
     const AtomicString& liveRegion = ariaLiveRegionStatus();
     return equalIgnoringCase(liveRegion, "polite") || equalIgnoringCase(liveRegion, "assertive");
 }
+    
+AccessibilityButtonState AccessibilityObject::checkboxOrRadioValue() const
+{
+    // If this is a real checkbox or radio button, AccessibilityRenderObject will handle.
+    // If it's an ARIA checkbox or radio, the aria-checked attribute should be used.
 
+    const AtomicString& result = getAttribute(aria_checkedAttr);
+    if (equalIgnoringCase(result, "true"))
+        return ButtonStateOn;
+    if (equalIgnoringCase(result, "mixed"))
+        return ButtonStateMixed;
+    
+    return ButtonStateOff;
+}
     
 } // namespace WebCore

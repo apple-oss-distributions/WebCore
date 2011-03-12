@@ -70,6 +70,7 @@
 #endif
 
 #if ENABLE(SVG)
+#include "RenderSVGResourceContainer.h"
 #include "SVGRenderSupport.h"
 #endif
 
@@ -119,12 +120,12 @@ RenderObject* RenderObject::createObject(Node* node, RenderStyle* style)
     if (node->hasTagName(rubyTag)) {
         if (style->display() == INLINE)
             return new (arena) RenderRubyAsInline(node);
-        else
+        else if (style->display() == BLOCK)
             return new (arena) RenderRubyAsBlock(node);
     }
     // treat <rt> as ruby text ONLY if it still has its default treatment of block
     if (node->hasTagName(rtTag) && style->display() == BLOCK)
-        return new (arena) RenderRubyText(node); 
+        return new (arena) RenderRubyText(node);
 #endif
 
     switch (style->display()) {
@@ -260,14 +261,6 @@ bool RenderObject::isHTMLMarquee() const
     return node() && node()->renderer() == this && node()->hasTagName(marqueeTag);
 }
 
-static void updateListMarkerNumbers(RenderObject* child)
-{
-    for (RenderObject* sibling = child; sibling; sibling = sibling->nextSibling()) {
-        if (sibling->isListItem())
-            toRenderListItem(sibling)->updateValue();
-    }
-}
-
 void RenderObject::addChild(RenderObject* newChild, RenderObject* beforeChild)
 {
     RenderObjectChildList* children = virtualChildren();
@@ -277,9 +270,7 @@ void RenderObject::addChild(RenderObject* newChild, RenderObject* beforeChild)
 
     bool needsTable = false;
 
-    if (newChild->isListItem())
-        updateListMarkerNumbers(beforeChild ? beforeChild : children->lastChild());
-    else if (newChild->isTableCol() && newChild->style()->display() == TABLE_COLUMN_GROUP)
+    if (newChild->isTableCol() && newChild->style()->display() == TABLE_COLUMN_GROUP)
         needsTable = !isTable();
     else if (newChild->isRenderBlock() && newChild->style()->display() == TABLE_CAPTION)
         needsTable = !isTable();
@@ -898,20 +889,13 @@ bool RenderObject::mustRepaintBackgroundOrBorder() const
 }
 
 void RenderObject::drawLineForBoxSide(GraphicsContext* graphicsContext, int x1, int y1, int x2, int y2,
-                                      BoxSide s, Color c, const Color& textcolor, EBorderStyle style,
+                                      BoxSide s, Color c, EBorderStyle style,
                                       int adjbw1, int adjbw2)
 {
     int width = (s == BSTop || s == BSBottom ? y2 - y1 : x2 - x1);
 
     if (style == DOUBLE && width < 3)
         style = SOLID;
-
-    if (!c.isValid()) {
-        if (style == INSET || style == OUTSET || style == RIDGE || style == GROOVE)
-            c.setRGB(238, 238, 238);
-        else
-            c = textcolor;
-    }
 
     switch (style) {
         case BNONE:
@@ -964,34 +948,34 @@ void RenderObject::drawLineForBoxSide(GraphicsContext* graphicsContext, int x1, 
                     case BSTop:
                         drawLineForBoxSide(graphicsContext, x1 + max((-adjbw1 * 2 + 1) / 3, 0),
                                    y1, x2 - max((-adjbw2 * 2 + 1) / 3, 0), y1 + third,
-                                   s, c, textcolor, SOLID, adjbw1bigthird, adjbw2bigthird);
+                                   s, c, SOLID, adjbw1bigthird, adjbw2bigthird);
                         drawLineForBoxSide(graphicsContext, x1 + max((adjbw1 * 2 + 1) / 3, 0),
                                    y2 - third, x2 - max((adjbw2 * 2 + 1) / 3, 0), y2,
-                                   s, c, textcolor, SOLID, adjbw1bigthird, adjbw2bigthird);
+                                   s, c, SOLID, adjbw1bigthird, adjbw2bigthird);
                         break;
                     case BSLeft:
                         drawLineForBoxSide(graphicsContext, x1, y1 + max((-adjbw1 * 2 + 1) / 3, 0),
                                    x1 + third, y2 - max((-adjbw2 * 2 + 1) / 3, 0),
-                                   s, c, textcolor, SOLID, adjbw1bigthird, adjbw2bigthird);
+                                   s, c, SOLID, adjbw1bigthird, adjbw2bigthird);
                         drawLineForBoxSide(graphicsContext, x2 - third, y1 + max((adjbw1 * 2 + 1) / 3, 0),
                                    x2, y2 - max((adjbw2 * 2 + 1) / 3, 0),
-                                   s, c, textcolor, SOLID, adjbw1bigthird, adjbw2bigthird);
+                                   s, c, SOLID, adjbw1bigthird, adjbw2bigthird);
                         break;
                     case BSBottom:
                         drawLineForBoxSide(graphicsContext, x1 + max((adjbw1 * 2 + 1) / 3, 0),
                                    y1, x2 - max((adjbw2 * 2 + 1) / 3, 0), y1 + third,
-                                   s, c, textcolor, SOLID, adjbw1bigthird, adjbw2bigthird);
+                                   s, c, SOLID, adjbw1bigthird, adjbw2bigthird);
                         drawLineForBoxSide(graphicsContext, x1 + max((-adjbw1 * 2 + 1) / 3, 0),
                                    y2 - third, x2 - max((-adjbw2 * 2 + 1) / 3, 0), y2,
-                                   s, c, textcolor, SOLID, adjbw1bigthird, adjbw2bigthird);
+                                   s, c, SOLID, adjbw1bigthird, adjbw2bigthird);
                         break;
                     case BSRight:
                         drawLineForBoxSide(graphicsContext, x1, y1 + max((adjbw1 * 2 + 1) / 3, 0),
                                    x1 + third, y2 - max((adjbw2 * 2 + 1) / 3, 0),
-                                   s, c, textcolor, SOLID, adjbw1bigthird, adjbw2bigthird);
+                                   s, c, SOLID, adjbw1bigthird, adjbw2bigthird);
                         drawLineForBoxSide(graphicsContext, x2 - third, y1 + max((-adjbw1 * 2 + 1) / 3, 0),
                                    x2, y2 - max((-adjbw2 * 2 + 1) / 3, 0),
-                                   s, c, textcolor, SOLID, adjbw1bigthird, adjbw2bigthird);
+                                   s, c, SOLID, adjbw1bigthird, adjbw2bigthird);
                         break;
                     default:
                         break;
@@ -1018,27 +1002,27 @@ void RenderObject::drawLineForBoxSide(GraphicsContext* graphicsContext, int x1, 
             switch (s) {
                 case BSTop:
                     drawLineForBoxSide(graphicsContext, x1 + max(-adjbw1, 0) / 2, y1, x2 - max(-adjbw2, 0) / 2, (y1 + y2 + 1) / 2,
-                               s, c, textcolor, s1, adjbw1bighalf, adjbw2bighalf);
+                               s, c, s1, adjbw1bighalf, adjbw2bighalf);
                     drawLineForBoxSide(graphicsContext, x1 + max(adjbw1 + 1, 0) / 2, (y1 + y2 + 1) / 2, x2 - max(adjbw2 + 1, 0) / 2, y2,
-                               s, c, textcolor, s2, adjbw1 / 2, adjbw2 / 2);
+                               s, c, s2, adjbw1 / 2, adjbw2 / 2);
                     break;
                 case BSLeft:
                     drawLineForBoxSide(graphicsContext, x1, y1 + max(-adjbw1, 0) / 2, (x1 + x2 + 1) / 2, y2 - max(-adjbw2, 0) / 2,
-                               s, c, textcolor, s1, adjbw1bighalf, adjbw2bighalf);
+                               s, c, s1, adjbw1bighalf, adjbw2bighalf);
                     drawLineForBoxSide(graphicsContext, (x1 + x2 + 1) / 2, y1 + max(adjbw1 + 1, 0) / 2, x2, y2 - max(adjbw2 + 1, 0) / 2,
-                               s, c, textcolor, s2, adjbw1 / 2, adjbw2 / 2);
+                               s, c, s2, adjbw1 / 2, adjbw2 / 2);
                     break;
                 case BSBottom:
                     drawLineForBoxSide(graphicsContext, x1 + max(adjbw1, 0) / 2, y1, x2 - max(adjbw2, 0) / 2, (y1 + y2 + 1) / 2,
-                               s, c, textcolor, s2, adjbw1bighalf, adjbw2bighalf);
+                               s, c, s2, adjbw1bighalf, adjbw2bighalf);
                     drawLineForBoxSide(graphicsContext, x1 + max(-adjbw1 + 1, 0) / 2, (y1 + y2 + 1) / 2, x2 - max(-adjbw2 + 1, 0) / 2, y2,
-                               s, c, textcolor, s1, adjbw1/2, adjbw2/2);
+                               s, c, s1, adjbw1 / 2, adjbw2 / 2);
                     break;
                 case BSRight:
                     drawLineForBoxSide(graphicsContext, x1, y1 + max(adjbw1, 0) / 2, (x1 + x2 + 1) / 2, y2 - max(adjbw2, 0) / 2,
-                               s, c, textcolor, s2, adjbw1bighalf, adjbw2bighalf);
+                               s, c, s2, adjbw1bighalf, adjbw2bighalf);
                     drawLineForBoxSide(graphicsContext, (x1 + x2 + 1) / 2, y1 + max(-adjbw1 + 1, 0) / 2, x2, y2 - max(-adjbw2 + 1, 0) / 2,
-                               s, c, textcolor, s1, adjbw1/2, adjbw2/2);
+                               s, c, s1, adjbw1 / 2, adjbw2 / 2);
                     break;
             }
             break;
@@ -1094,18 +1078,11 @@ void RenderObject::drawLineForBoxSide(GraphicsContext* graphicsContext, int x1, 
 }
 
 void RenderObject::drawArcForBoxSide(GraphicsContext* graphicsContext, int x, int y, float thickness, IntSize radius,
-                                     int angleStart, int angleSpan, BoxSide s, Color c, const Color& textColor,
+                                     int angleStart, int angleSpan, BoxSide s, Color c,
                                      EBorderStyle style, bool firstCorner)
 {
     if ((style == DOUBLE && thickness / 2 < 3) || ((style == RIDGE || style == GROOVE) && thickness / 2 < 2))
         style = SOLID;
-
-    if (!c.isValid()) {
-        if (style == INSET || style == OUTSET || style == RIDGE || style == GROOVE)
-            c.setRGB(238, 238, 238);
-        else
-            c = textColor;
-    }
 
     switch (style) {
         case BNONE:
@@ -1194,33 +1171,32 @@ void RenderObject::addPDFURLRect(GraphicsContext* context, const IntRect& rect)
     context->setURLForRect(n->document()->completeURL(href), rect);
 }
 
-void RenderObject::paintOutline(GraphicsContext* graphicsContext, int tx, int ty, int w, int h, const RenderStyle* style)
+void RenderObject::paintOutline(GraphicsContext* graphicsContext, int tx, int ty, int w, int h)
 {
     if (!hasOutline())
         return;
 
-    int ow = style->outlineWidth();
-    EBorderStyle os = style->outlineStyle();
+    RenderStyle* styleToUse = style();
+    int ow = styleToUse->outlineWidth();
+    EBorderStyle os = styleToUse->outlineStyle();
 
-    Color oc = style->outlineColor();
-    if (!oc.isValid())
-        oc = style->color();
+    Color oc = styleToUse->visitedDependentColor(CSSPropertyOutlineColor);
 
-    int offset = style->outlineOffset();
+    int offset = styleToUse->outlineOffset();
 
-    if (style->outlineStyleIsAuto() || hasOutlineAnnotation()) {
-        if (!theme()->supportsFocusRing(style)) {
+    if (styleToUse->outlineStyleIsAuto() || hasOutlineAnnotation()) {
+        if (!theme()->supportsFocusRing(styleToUse)) {
             // Only paint the focus ring by hand if the theme isn't able to draw the focus ring.
             Vector<IntRect> focusRingRects;
             addFocusRingRects(focusRingRects, tx, ty);
-            if (style->outlineStyleIsAuto())
+            if (styleToUse->outlineStyleIsAuto())
                 graphicsContext->drawFocusRing(focusRingRects, ow, offset, oc);
             else
                 addPDFURLRect(graphicsContext, unionRect(focusRingRects));
         }
     }
 
-    if (style->outlineStyleIsAuto() || style->outlineStyle() == BNONE)
+    if (styleToUse->outlineStyleIsAuto() || styleToUse->outlineStyle() == BNONE)
         return;
 
     tx -= offset;
@@ -1231,17 +1207,10 @@ void RenderObject::paintOutline(GraphicsContext* graphicsContext, int tx, int ty
     if (h < 0 || w < 0)
         return;
 
-    drawLineForBoxSide(graphicsContext, tx - ow, ty - ow, tx, ty + h + ow,
-               BSLeft, Color(oc), style->color(), os, ow, ow);
-
-    drawLineForBoxSide(graphicsContext, tx - ow, ty - ow, tx + w + ow, ty,
-               BSTop, Color(oc), style->color(), os, ow, ow);
-
-    drawLineForBoxSide(graphicsContext, tx + w, ty - ow, tx + w + ow, ty + h + ow,
-               BSRight, Color(oc), style->color(), os, ow, ow);
-
-    drawLineForBoxSide(graphicsContext, tx - ow, ty + h, tx + w + ow, ty + h + ow,
-               BSBottom, Color(oc), style->color(), os, ow, ow);
+    drawLineForBoxSide(graphicsContext, tx - ow, ty - ow, tx, ty + h + ow, BSLeft, oc, os, ow, ow);
+    drawLineForBoxSide(graphicsContext, tx - ow, ty - ow, tx + w + ow, ty, BSTop, oc, os, ow, ow);
+    drawLineForBoxSide(graphicsContext, tx + w, ty - ow, tx + w + ow, ty + h + ow, BSRight, oc, os, ow, ow);
+    drawLineForBoxSide(graphicsContext, tx - ow, ty + h, tx + w + ow, ty + h + ow, BSBottom, oc, os, ow, ow);
 }
 
 // This function is similar in spirit to RenderText::absoluteRectsForRange, but returns rectangles
@@ -1350,20 +1319,29 @@ RenderBoxModelObject* RenderObject::containerForRepaint() const
 
 void RenderObject::repaintUsingContainer(RenderBoxModelObject* repaintContainer, const IntRect& r, bool immediate)
 {
-    if (!repaintContainer || repaintContainer->isRenderView()) {
-        RenderView* v = repaintContainer ? toRenderView(repaintContainer) : view();
-        v->repaintViewRectangle(r, immediate);
-    } else {
-#if USE(ACCELERATED_COMPOSITING)
-        RenderView* v = view();
-        if (v->usesCompositing()) {
-            ASSERT(repaintContainer->hasLayer() && repaintContainer->layer()->isComposited());
-            repaintContainer->layer()->setBackingNeedsRepaintInRect(r);
-        }
-#else
-        ASSERT_NOT_REACHED();
-#endif
+    if (!repaintContainer) {
+        view()->repaintViewRectangle(r, immediate);
+        return;
     }
+
+#if USE(ACCELERATED_COMPOSITING)
+    RenderView* v = view();
+    if (repaintContainer->isRenderView()) {
+        ASSERT(repaintContainer == v);
+        if (!v->hasLayer() || !v->layer()->isComposited() || v->layer()->backing()->paintingGoesToWindow()) {
+            v->repaintViewRectangle(r, immediate);
+            return;
+        }
+    }
+    
+    if (v->usesCompositing()) {
+        ASSERT(repaintContainer->hasLayer() && repaintContainer->layer()->isComposited());
+        repaintContainer->layer()->setBackingNeedsRepaintInRect(r);
+    }
+#else
+    if (repaintContainer->isRenderView())
+        toRenderView(repaintContainer)->repaintViewRectangle(r, immediate);
+#endif
 }
 
 void RenderObject::repaint(bool immediate)
@@ -1401,13 +1379,14 @@ void RenderObject::repaintRectangle(const IntRect& r, bool immediate)
     repaintUsingContainer(repaintContainer ? repaintContainer : view, dirtyRect, immediate);
 }
 
-bool RenderObject::repaintAfterLayoutIfNeeded(RenderBoxModelObject* repaintContainer, const IntRect& oldBounds, const IntRect& oldOutlineBox)
+bool RenderObject::repaintAfterLayoutIfNeeded(RenderBoxModelObject* repaintContainer, const IntRect& oldBounds, const IntRect& oldOutlineBox, const IntRect* newBoundsPtr, const IntRect* newOutlineBoxRectPtr)
 {
     RenderView* v = view();
     if (v->printing())
         return false; // Don't repaint if we're printing.
 
-    IntRect newBounds = clippedOverflowRectForRepaint(repaintContainer);
+    ASSERT(!newBoundsPtr || *newBoundsPtr == clippedOverflowRectForRepaint(repaintContainer));
+    IntRect newBounds = newBoundsPtr ? *newBoundsPtr : clippedOverflowRectForRepaint(repaintContainer);
     IntRect newOutlineBox;
 
     bool fullRepaint = selfNeedsLayout();
@@ -1415,7 +1394,8 @@ bool RenderObject::repaintAfterLayoutIfNeeded(RenderBoxModelObject* repaintConta
     if (!fullRepaint && style()->borderFit() == BorderFitLines)
         fullRepaint = true;
     if (!fullRepaint) {
-        newOutlineBox = outlineBoundsForRepaint(repaintContainer);
+        ASSERT(!newOutlineBoxRectPtr || *newOutlineBoxRectPtr == outlineBoundsForRepaint(repaintContainer));
+        newOutlineBox = newOutlineBoxRectPtr ? *newOutlineBoxRectPtr : outlineBoundsForRepaint(repaintContainer);
         if (newOutlineBox.location() != oldOutlineBox.location() || (mustRepaintBackgroundOrBorder() && (newBounds != oldBounds || newOutlineBox != oldOutlineBox)))
             fullRepaint = true;
     }
@@ -1550,11 +1530,10 @@ void RenderObject::computeRectForRepaint(RenderBoxModelObject* repaintContainer,
             // anyway if its size does change.
             RenderBox* boxParent = toRenderBox(o);
 
+            IntRect repaintRect(rect);
+            repaintRect.move(-boxParent->layer()->scrolledContentOffset()); // For overflow:auto/scroll/hidden.
+
             IntRect boxRect(0, 0, boxParent->layer()->width(), boxParent->layer()->height());
-            int x = rect.x();
-            int y = rect.y();
-            boxParent->layer()->subtractScrolledContentOffset(x, y); // For overflow:auto/scroll/hidden.
-            IntRect repaintRect(x, y, rect.width(), rect.height());
             rect = intersection(repaintRect, boxRect);
             if (rect.isEmpty())
                 return;
@@ -1626,9 +1605,9 @@ Color RenderObject::selectionBackgroundColor() const
 {
     Color color;
     if (style()->userSelect() != SELECT_NONE) {
-         RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(SELECTION);
-        if (pseudoStyle && pseudoStyle->backgroundColor().isValid())
-            color = pseudoStyle->backgroundColor().blendWithWhite();
+        RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(SELECTION);
+        if (pseudoStyle && pseudoStyle->visitedDependentColor(CSSPropertyBackgroundColor).isValid())
+            color = pseudoStyle->visitedDependentColor(CSSPropertyBackgroundColor).blendWithWhite();
         else
             color = document()->frame()->selection()->isFocusedAndActive() ?
                     theme()->activeSelectionBackgroundColor() :
@@ -1645,9 +1624,9 @@ Color RenderObject::selectionForegroundColor() const
         return color;
 
     if (RefPtr<RenderStyle> pseudoStyle = getUncachedPseudoStyle(SELECTION)) {
-        color = pseudoStyle->textFillColor();
+        color = pseudoStyle->visitedDependentColor(CSSPropertyWebkitTextFillColor);
         if (!color.isValid())
-            color = pseudoStyle->color();
+            color = pseudoStyle->visitedDependentColor(CSSPropertyColor);
     } else
         color = document()->frame()->selection()->isFocusedAndActive() ?
                 theme()->activeSelectionForegroundColor() :
@@ -1746,6 +1725,14 @@ StyleDifference RenderObject::adjustStyleDifference(StyleDifference diff, unsign
             diff = StyleDifferenceRepaintLayer;
         else if (diff < StyleDifferenceRecompositeLayer)
             diff = StyleDifferenceRecompositeLayer;
+    }
+    
+    // The answer to requiresLayer() for plugins and iframes can change outside of the style system,
+    // since it depends on whether we decide to composite these elements. When the layer status of
+    // one of these elements changes, we need to force a layout.
+    if (diff == StyleDifferenceEqual && style() && isBoxModelObject()) {
+        if (hasLayer() != toRenderBoxModelObject(this)->requiresLayer())
+            diff = StyleDifferenceLayout;
     }
 #else
     UNUSED_PARAM(contextSensitiveProperties);
@@ -1888,9 +1875,10 @@ void RenderObject::styleWillChange(StyleDifference diff, const RenderStyle* newS
 #endif
 
         bool newStyleSlowScroll = newStyle && (newStyle->position() == FixedPosition
-                                               || (!shouldBlitOnFixedBackgroundImage && newStyle->hasFixedBackgroundImage()));
+                                                || (!shouldBlitOnFixedBackgroundImage && newStyle->hasFixedBackgroundImage()));
         bool oldStyleSlowScroll = m_style && (m_style->position() == FixedPosition
-                                               || (!shouldBlitOnFixedBackgroundImage && m_style->hasFixedBackgroundImage()));
+                                                || (!shouldBlitOnFixedBackgroundImage && m_style->hasFixedBackgroundImage()));
+
         if (oldStyleSlowScroll != newStyleSlowScroll) {
             if (oldStyleSlowScroll)
                 view()->frameView()->removeSlowRepaintObject();
@@ -2032,7 +2020,7 @@ void RenderObject::getTransformFromContainer(const RenderObject* containerObject
     if (containerObject && containerObject->hasLayer() && containerObject->style()->hasPerspective()) {
         // Perpsective on the container affects us, so we have to factor it in here.
         ASSERT(containerObject->hasLayer());
-        FloatPoint perspectiveOrigin = toRenderBox(containerObject)->layer()->perspectiveOrigin();
+        FloatPoint perspectiveOrigin = toRenderBoxModelObject(containerObject)->layer()->perspectiveOrigin();
 
         TransformationMatrix perspectiveMatrix;
         perspectiveMatrix.applyPerspective(containerObject->style()->perspective());
@@ -2436,21 +2424,17 @@ PassRefPtr<RenderStyle> RenderObject::getUncachedPseudoStyle(PseudoId pseudo, Re
     return result.release();
 }
 
-static Color decorationColor(RenderStyle* style)
+static Color decorationColor(RenderObject* renderer)
 {
     Color result;
-    if (style->textStrokeWidth() > 0) {
+    if (renderer->style()->textStrokeWidth() > 0) {
         // Prefer stroke color if possible but not if it's fully transparent.
-        result = style->textStrokeColor();
-        if (!result.isValid())
-            result = style->color();
+        result = renderer->style()->visitedDependentColor(CSSPropertyWebkitTextStrokeColor);
         if (result.alpha())
             return result;
     }
     
-    result = style->textFillColor();
-    if (!result.isValid())
-        result = style->color();
+    result = renderer->style()->visitedDependentColor(CSSPropertyWebkitTextFillColor);
     return result;
 }
 
@@ -2463,15 +2447,15 @@ void RenderObject::getTextDecorationColors(int decorations, Color& underline, Co
         if (currDecs) {
             if (currDecs & UNDERLINE) {
                 decorations &= ~UNDERLINE;
-                underline = decorationColor(curr->style());
+                underline = decorationColor(curr);
             }
             if (currDecs & OVERLINE) {
                 decorations &= ~OVERLINE;
-                overline = decorationColor(curr->style());
+                overline = decorationColor(curr);
             }
             if (currDecs & LINE_THROUGH) {
                 decorations &= ~LINE_THROUGH;
-                linethrough = decorationColor(curr->style());
+                linethrough = decorationColor(curr);
             }
         }
         curr = curr->parent();
@@ -2483,11 +2467,11 @@ void RenderObject::getTextDecorationColors(int decorations, Color& underline, Co
     // If we bailed out, use the element we bailed out at (typically a <font> or <a> element).
     if (decorations && curr) {
         if (decorations & UNDERLINE)
-            underline = decorationColor(curr->style());
+            underline = decorationColor(curr);
         if (decorations & OVERLINE)
-            overline = decorationColor(curr->style());
+            overline = decorationColor(curr);
         if (decorations & LINE_THROUGH)
-            linethrough = decorationColor(curr->style());
+            linethrough = decorationColor(curr);
     }
 }
 
@@ -2611,21 +2595,21 @@ int RenderObject::nextOffset(int current) const
 void RenderObject::adjustRectForOutlineAndShadow(IntRect& rect) const
 {
     int outlineSize = outlineStyleForRepaint()->outlineSize();
-    if (ShadowData* boxShadow = style()->boxShadow()) {
+    if (const ShadowData* boxShadow = style()->boxShadow()) {
         int shadowLeft = 0;
         int shadowRight = 0;
         int shadowTop = 0;
         int shadowBottom = 0;
 
         do {
-            if (boxShadow->style == Normal) {
-                shadowLeft = min(boxShadow->x - boxShadow->blur - boxShadow->spread - outlineSize, shadowLeft);
-                shadowRight = max(boxShadow->x + boxShadow->blur + boxShadow->spread + outlineSize, shadowRight);
-                shadowTop = min(boxShadow->y - boxShadow->blur - boxShadow->spread - outlineSize, shadowTop);
-                shadowBottom = max(boxShadow->y + boxShadow->blur + boxShadow->spread + outlineSize, shadowBottom);
+            if (boxShadow->style() == Normal) {
+                shadowLeft = min(boxShadow->x() - boxShadow->blur() - boxShadow->spread() - outlineSize, shadowLeft);
+                shadowRight = max(boxShadow->x() + boxShadow->blur() + boxShadow->spread() + outlineSize, shadowRight);
+                shadowTop = min(boxShadow->y() - boxShadow->blur() - boxShadow->spread() - outlineSize, shadowTop);
+                shadowBottom = max(boxShadow->y() + boxShadow->blur() + boxShadow->spread() + outlineSize, shadowBottom);
             }
 
-            boxShadow = boxShadow->next;
+            boxShadow = boxShadow->next();
         } while (boxShadow);
 
         rect.move(shadowLeft, shadowTop);
@@ -2758,13 +2742,19 @@ VisiblePosition RenderObject::createVisiblePosition(const Position& position)
 }
 
 #if ENABLE(SVG)
-const SVGRenderBase* RenderObject::toSVGRenderBase() const
+RenderSVGResourceContainer* RenderObject::toRenderSVGResourceContainer()
 {
     ASSERT_NOT_REACHED();
     return 0;
 }
 
 FloatRect RenderObject::objectBoundingBox() const
+{
+    ASSERT_NOT_REACHED();
+    return FloatRect();
+}
+
+FloatRect RenderObject::strokeBoundingBox() const
 {
     ASSERT_NOT_REACHED();
     return FloatRect();
@@ -2778,15 +2768,15 @@ FloatRect RenderObject::repaintRectInLocalCoordinates() const
     return FloatRect();
 }
 
-TransformationMatrix RenderObject::localTransform() const
+AffineTransform RenderObject::localTransform() const
 {
-    static const TransformationMatrix identity;
+    static const AffineTransform identity;
     return identity;
 }
 
-const TransformationMatrix& RenderObject::localToParentTransform() const
+const AffineTransform& RenderObject::localToParentTransform() const
 {
-    static const TransformationMatrix identity;
+    static const AffineTransform identity;
     return identity;
 }
 

@@ -33,18 +33,18 @@
 #include "GraphicsContext.h"
 #include "PointerEventsHitRules.h"
 #include "RenderLayer.h"
+#include "RenderSVGResourceContainer.h"
+#include "RenderSVGResourceFilter.h"
 #include "SVGImageElement.h"
 #include "SVGLength.h"
 #include "SVGPreserveAspectRatio.h"
 #include "SVGRenderSupport.h"
-#include "SVGResourceClipper.h"
-#include "SVGResourceFilter.h"
-#include "SVGResourceMasker.h"
 
 namespace WebCore {
 
 RenderSVGImage::RenderSVGImage(SVGImageElement* impl)
     : RenderImage(impl)
+    , m_needsTransformUpdate(true)
 {
 }
 
@@ -53,10 +53,13 @@ void RenderSVGImage::layout()
     ASSERT(needsLayout());
 
     LayoutRepainter repainter(*this, checkForRepaintDuringLayout());
-
     SVGImageElement* image = static_cast<SVGImageElement*>(node());
-    m_localTransform = image->animatedLocalTransform();
-    
+
+    if (m_needsTransformUpdate) {
+        m_localTransform = image->animatedLocalTransform();
+        m_needsTransformUpdate = false;
+    }
+
     // minimum height
     setHeight(errorOccurred() ? intrinsicSize().height() : 0);
 
@@ -80,7 +83,7 @@ void RenderSVGImage::paint(PaintInfo& paintInfo, int, int)
     paintInfo.context->concatCTM(localToParentTransform());
 
     if (paintInfo.phase == PaintPhaseForeground) {
-        SVGResourceFilter* filter = 0;
+        RenderSVGResourceFilter* filter = 0;
 
         PaintInfo savedInfo(paintInfo);
 
@@ -98,9 +101,15 @@ void RenderSVGImage::paint(PaintInfo& paintInfo, int, int)
     }
 
     if ((paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline) && style()->outlineWidth())
-        paintOutline(paintInfo.context, 0, 0, width(), height(), style());
+        paintOutline(paintInfo.context, 0, 0, width(), height());
 
     paintInfo.context->restore();
+}
+
+void RenderSVGImage::destroy()
+{
+    deregisterFromResources(this);
+    RenderImage::destroy();
 }
 
 bool RenderSVGImage::nodeAtFloatPoint(const HitTestRequest&, HitTestResult& result, const FloatPoint& pointInParent, HitTestAction hitTestAction)
@@ -144,22 +153,7 @@ FloatRect RenderSVGImage::repaintRectInLocalCoordinates() const
         return m_cachedLocalRepaintRect;
 
     m_cachedLocalRepaintRect = m_localBounds;
-
-    // FIXME: We need to be careful here. We assume that there is no filter,
-    // clipper or masker if the rects are empty.
-    FloatRect rect = filterBoundingBoxForRenderer(this);
-    if (!rect.isEmpty())
-        m_cachedLocalRepaintRect = rect;
-
-    rect = clipperBoundingBoxForRenderer(this);
-    if (!rect.isEmpty())
-        m_cachedLocalRepaintRect.intersect(rect);
-
-    rect = maskerBoundingBoxForRenderer(this);
-    if (!rect.isEmpty())
-        m_cachedLocalRepaintRect.intersect(rect);
-
-    style()->svgStyle()->inflateForShadow(m_cachedLocalRepaintRect);
+    intersectRepaintRectWithResources(this, m_cachedLocalRepaintRect);
 
     return m_cachedLocalRepaintRect;
 }
@@ -167,6 +161,12 @@ FloatRect RenderSVGImage::repaintRectInLocalCoordinates() const
 void RenderSVGImage::imageChanged(WrappedImagePtr image, const IntRect* rect)
 {
     RenderImage::imageChanged(image, rect);
+#if ENABLE(FILTERS)
+    // The image resource defaults to nullImage until the resource arrives.
+    // This empty image may be cached by SVG filter effects which must be invalidated.
+    if (RenderSVGResourceFilter* filter = getRenderSVGResourceById<RenderSVGResourceFilter>(document(), style()->svgStyle()->filterResource()))
+        filter->invalidateClient(this);
+#endif
     repaint();
 }
 
@@ -177,7 +177,6 @@ IntRect RenderSVGImage::clippedOverflowRectForRepaint(RenderBoxModelObject* repa
 
 void RenderSVGImage::computeRectForRepaint(RenderBoxModelObject* repaintContainer, IntRect& repaintRect, bool fixed)
 {
-    style()->svgStyle()->inflateForShadow(repaintRect);
     SVGRenderBase::computeRectForRepaint(this, repaintContainer, repaintRect, fixed);
 }
 

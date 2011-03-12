@@ -26,8 +26,6 @@
 #ifndef HTMLParserErrorCodes_h
 #define HTMLParserErrorCodes_h
 
-#include "Console.h"
-
 namespace WebCore {
 
 enum HTMLParserErrorCode { 
@@ -57,15 +55,6 @@ const char* htmlParserDocumentWriteMessage();
 
 bool isWarning(HTMLParserErrorCode);
 
-enum ViewportErrorCode {
-    DeviceWidthShouldBeUsedWarning,
-    DeviceHeightShouldBeUsedWarning,
-    UnrecognizedViewportArgumentError,
-    MaximumScaleTooLargeError
-};
-
-const char* viewportErrorMessageTemplate(ViewportErrorCode);
-MessageLevel viewportErrorMessageLevel(ViewportErrorCode);
 }
 
 #endif

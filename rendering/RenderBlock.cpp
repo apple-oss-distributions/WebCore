@@ -3,6 +3,7 @@
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2007 David Smith (catfish.man@gmail.com)
  * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) Research In Motion Limited 2010. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -185,7 +186,7 @@ void RenderBlock::destroy()
             // that will outlast this block. In the non-anonymous block case those
             // children will be destroyed by the time we return from this function.
             if (isAnonymousBlock()) {
-                for (InlineFlowBox* box = firstLineBox(); box; box = box->nextFlowBox()) {
+                for (InlineFlowBox* box = firstLineBox(); box; box = box->nextLineBox()) {
                     while (InlineBox* childBox = box->firstChild())
                         childBox->remove();
                 }
@@ -263,8 +264,14 @@ void RenderBlock::updateBeforeAfterContent(PseudoId pseudoId)
 void RenderBlock::addChild(RenderObject* newChild, RenderObject* beforeChild)
 {
     // Make sure we don't append things after :after-generated content if we have it.
-    if (!beforeChild && isAfterContent(lastChild()))
-        beforeChild = lastChild();
+    if (!beforeChild) {
+        RenderObject* lastRenderer = lastChild();
+
+        if (isAfterContent(lastRenderer))
+            beforeChild = lastRenderer;
+        else if (lastRenderer && lastRenderer->isAnonymousBlock() && isAfterContent(lastRenderer->lastChild()))
+            beforeChild = lastRenderer->lastChild();
+    }
 
     bool madeBoxesNonInline = false;
 
@@ -539,7 +546,8 @@ void RenderBlock::removeChild(RenderObject* oldChild)
     bool canDeleteAnonymousBlocks = !documentBeingDestroyed() && !isInline() && !oldChild->isInline() && 
                                     (!oldChild->isRenderBlock() || !toRenderBlock(oldChild)->inlineContinuation()) && 
                                     (!prev || (prev->isAnonymousBlock() && prev->childrenInline())) &&
-                                    (!next || (next->isAnonymousBlock() && next->childrenInline()));
+                                    (!next || (next->isAnonymousBlock() && next->childrenInline())) &&
+                                    !(prev && prev->firstChild() && prev->firstChild()->isInline() && prev->firstChild()->isRunIn());
     if (canDeleteAnonymousBlocks && prev && next) {
         // Take all the children out of the |next| block and put them in
         // the |prev| block.
@@ -581,10 +589,10 @@ bool RenderBlock::isSelfCollapsingBlock() const
     // (c) have border/padding,
     // (d) have a min-height
     // (e) have specified that one of our margins can't collapse using a CSS extension
-    if (height() > 0 ||
-        isTable() || (borderBottom() + paddingBottom() + borderTop() + paddingTop()) != 0 ||
-        style()->minHeight().isPositive() || 
-        style()->marginTopCollapse() == MSEPARATE || style()->marginBottomCollapse() == MSEPARATE)
+    if (height() > 0
+        || isTable() || borderAndPaddingHeight()
+        || style()->minHeight().isPositive()
+        || style()->marginTopCollapse() == MSEPARATE || style()->marginBottomCollapse() == MSEPARATE)
         return false;
 
     bool hasAutoHeight = style()->height().isAuto();
@@ -774,8 +782,7 @@ void RenderBlock::layoutBlock(bool relayoutChildren)
     if (previousHeight != height())
         relayoutChildren = true;
 
-    // It's weird that we're treating float information as normal flow overflow, but we do this because floatRect() isn't
-    // able to be propagated up the render tree yet.  Overflow information is however.  This check is designed to catch anyone
+    // This check is designed to catch anyone
     // who wasn't going to propagate float information up to the parent and yet could potentially be painted by its ancestor.
     if (isRoot() || expandsToEncloseOverhangingFloats())
         addOverflowFromFloats();
@@ -815,11 +822,7 @@ void RenderBlock::layoutBlock(bool relayoutChildren)
         
         if (hasOverflowClip()) {
             // Adjust repaint rect for scroll offset
-            int x = repaintRect.x();
-            int y = repaintRect.y();
-            layer()->subtractScrolledContentOffset(x, y);
-            repaintRect.setX(x);
-            repaintRect.setY(y);
+            repaintRect.move(-layer()->scrolledContentOffset());
 
             // Don't allow this rect to spill out of our overflow box.
             repaintRect.intersect(IntRect(0, 0, width(), height()));
@@ -993,7 +996,8 @@ bool RenderBlock::handleRunInChild(RenderBox* child)
     if (runInNode)
         runInNode->setRenderer(inlineRunIn);
 
-    // Destroy the block run-in.
+    // Destroy the block run-in, which includes deleting its line box tree.
+    blockRunIn->deleteLineBoxTree();
     blockRunIn->destroy();
 
     // The block acts like an inline, so just null out its
@@ -1549,7 +1553,7 @@ void RenderBlock::paint(PaintInfo& paintInfo, int tx, int ty)
 
 void RenderBlock::paintColumnRules(PaintInfo& paintInfo, int tx, int ty)
 {
-    const Color& ruleColor = style()->columnRuleColor();
+    const Color& ruleColor = style()->visitedDependentColor(CSSPropertyWebkitColumnRuleColor);
     bool ruleTransparent = style()->columnRuleIsTransparent();
     EBorderStyle ruleStyle = style()->columnRuleStyle();
     int ruleWidth = style()->columnRuleWidth();
@@ -1584,7 +1588,7 @@ void RenderBlock::paintColumnRules(PaintInfo& paintInfo, int tx, int ty)
             int ruleTop = ty + borderTop() + paddingTop();
             int ruleBottom = ruleTop + contentHeight();
             drawLineForBoxSide(paintInfo.context, ruleStart, ruleTop, ruleEnd, ruleBottom,
-                               style()->direction() == LTR ? BSLeft : BSRight, ruleColor, style()->color(), ruleStyle, 0, 0);
+                               style()->direction() == LTR ? BSLeft : BSRight, ruleColor, ruleStyle, 0, 0);
         }
         
         ruleX = currXOffset;
@@ -1734,11 +1738,14 @@ void RenderBlock::paintObject(PaintInfo& paintInfo, int tx, int ty)
     if (paintPhase == PaintPhaseBlockBackground)
         return;
 
-    // Adjust our painting position if we're inside a scrolled layer (e.g., an overflow:auto div).s
+    // Adjust our painting position if we're inside a scrolled layer (e.g., an overflow:auto div).
     int scrolledX = tx;
     int scrolledY = ty;
-    if (hasOverflowClip())
-        layer()->subtractScrolledContentOffset(scrolledX, scrolledY);
+    if (hasOverflowClip()) {
+        IntSize offset = layer()->scrolledContentOffset();
+        scrolledX -= offset.width();
+        scrolledY -= offset.height();
+    }
 
     // 2. paint contents
     if (paintPhase != PaintPhaseSelfOutline) {
@@ -1764,7 +1771,7 @@ void RenderBlock::paintObject(PaintInfo& paintInfo, int tx, int ty)
 
     // 5. paint outline.
     if ((paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseSelfOutline) && hasOutline() && style()->visibility() == VISIBLE)
-        paintOutline(paintInfo.context, tx, ty, width(), height(), style());
+        paintOutline(paintInfo.context, tx, ty, width(), height());
 
     // 6. paint continuation outlines.
     if ((paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseChildOutlines)) {
@@ -1961,18 +1968,16 @@ GapRects RenderBlock::selectionGapRectsForRepaint(RenderBoxModelObject* repaintC
     // FIXME: this is broken with transforms
     TransformState transformState(TransformState::ApplyTransformDirection, FloatPoint());
     mapLocalToContainer(repaintContainer, false, false, transformState);
-    FloatPoint offsetFromRepaintContainer = transformState.mappedPoint();
-    int x = offsetFromRepaintContainer.x();
-    int y = offsetFromRepaintContainer.y();
+    IntPoint offsetFromRepaintContainer = roundedIntPoint(transformState.mappedPoint());
 
     if (hasOverflowClip())
-        layer()->subtractScrolledContentOffset(x, y);
+        offsetFromRepaintContainer -= layer()->scrolledContentOffset();
 
     int lastTop = 0;
     int lastLeft = leftSelectionOffset(this, lastTop);
     int lastRight = rightSelectionOffset(this, lastTop);
     
-    return fillSelectionGaps(this, x, y, x, y, lastTop, lastLeft, lastRight);
+    return fillSelectionGaps(this, offsetFromRepaintContainer.x(), offsetFromRepaintContainer.y(), offsetFromRepaintContainer.x(), offsetFromRepaintContainer.y(), lastTop, lastLeft, lastRight);
 }
 
 void RenderBlock::paintSelection(PaintInfo& paintInfo, int tx, int ty)
@@ -1985,13 +1990,13 @@ void RenderBlock::paintSelection(PaintInfo& paintInfo, int tx, int ty)
 }
 
 #ifndef BUILDING_ON_TIGER
-static void clipOutPositionedObjects(const RenderObject::PaintInfo* paintInfo, int tx, int ty, ListHashSet<RenderBox*>* positionedObjects)
+    static void clipOutPositionedObjects(const RenderObject::PaintInfo* paintInfo, int tx, int ty, RenderBlock::PositionedObjectsListHashSet* positionedObjects)
 {
     if (!positionedObjects)
         return;
     
-    ListHashSet<RenderBox*>::const_iterator end = positionedObjects->end();
-    for (ListHashSet<RenderBox*>::const_iterator it = positionedObjects->begin(); it != end; ++it) {
+    RenderBlock::PositionedObjectsListHashSet::const_iterator end = positionedObjects->end();
+    for (RenderBlock::PositionedObjectsListHashSet::const_iterator it = positionedObjects->begin(); it != end; ++it) {
         RenderBox* r = *it;
         paintInfo->context->clipOut(IntRect(tx + r->x(), ty + r->y(), r->width(), r->height()));
     }
@@ -2277,7 +2282,7 @@ void RenderBlock::insertPositionedObject(RenderBox* o)
 {
     // Create the list of special objects if we don't aleady have one
     if (!m_positionedObjects)
-        m_positionedObjects = new ListHashSet<RenderBox*>;
+        m_positionedObjects = new RenderBlock::PositionedObjectsListHashSet;
 
     m_positionedObjects->add(o);
 }
@@ -2647,24 +2652,6 @@ RenderBlock::floatBottom() const
     return bottom;
 }
 
-IntRect RenderBlock::floatRect() const
-{
-    IntRect result;
-    if (!m_floatingObjects || hasOverflowClip() || hasColumns())
-        return result;
-    FloatingObject* r;
-    DeprecatedPtrListIterator<FloatingObject> it(*m_floatingObjects);
-    for (; (r = it.current()); ++it) {
-        if (r->m_shouldPaint && !r->m_renderer->hasSelfPaintingLayer()) {
-            IntRect childRect = r->m_renderer->visibleOverflowRect();
-            childRect.move(r->m_left + r->m_renderer->marginLeft(), r->m_top + r->m_renderer->marginTop());
-            result.unite(childRect);
-        }
-    }
-
-    return result;
-}
-
 int RenderBlock::lowestPosition(bool includeOverflowInterior, bool includeSelf) const
 {
     int bottom = includeSelf && width() > 0 ? height() : 0;
@@ -2833,7 +2820,7 @@ int RenderBlock::rightmostPosition(bool includeOverflowInterior, bool includeSel
     if (!includeSelf) {
         right = max(right, borderLeft() + paddingLeft() + paddingRight() + relativeOffset);
         if (childrenInline()) {
-            for (InlineRunBox* currBox = firstLineBox(); currBox; currBox = currBox->nextLineBox()) {
+            for (InlineFlowBox* currBox = firstLineBox(); currBox; currBox = currBox->nextLineBox()) {
                 int childRightEdge = currBox->x() + currBox->width();
                 
                 // If this node is a root editable element, then the rightmostPosition should account for a caret at the end.
@@ -2928,7 +2915,7 @@ int RenderBlock::leftmostPosition(bool includeOverflowInterior, bool includeSelf
     }
 
     if (!includeSelf && firstLineBox()) {
-        for (InlineRunBox* currBox = firstLineBox(); currBox; currBox = currBox->nextLineBox())
+        for (InlineFlowBox* currBox = firstLineBox(); currBox; currBox = currBox->nextLineBox())
             left = min(left, (int)currBox->x() + relativeOffset);
     }
     
@@ -3338,36 +3325,23 @@ bool RenderBlock::nodeAtPoint(const HitTestRequest& request, HitTestResult& resu
         // Hit test descendants first.
         int scrolledX = tx;
         int scrolledY = ty;
-        if (hasOverflowClip())
-            layer()->subtractScrolledContentOffset(scrolledX, scrolledY);
+        if (hasOverflowClip()) {
+            IntSize offset = layer()->scrolledContentOffset();
+            scrolledX -= offset.width();
+            scrolledY -= offset.height();
+        }
 
         // Hit test contents if we don't have columns.
-        if (!hasColumns() && hitTestContents(request, result, _x, _y, scrolledX, scrolledY, hitTestAction))
-            return true;
-            
-        // Hit test our columns if we do have them.
-        if (hasColumns() && hitTestColumns(request, result, _x, _y, scrolledX, scrolledY, hitTestAction))
-            return true;
-
-        // Hit test floats.
-        if (hitTestAction == HitTestFloat && m_floatingObjects) {
-            if (isRenderView()) {
-                scrolledX += toRenderView(this)->frameView()->scrollX();
-                scrolledY += toRenderView(this)->frameView()->scrollY();
+        if (!hasColumns()) {
+            if (hitTestContents(request, result, _x, _y, scrolledX, scrolledY, hitTestAction)) {
+                updateHitTestResult(result, IntPoint(_x - tx, _y - ty));
+                return true;
             }
-            
-            FloatingObject* o;
-            DeprecatedPtrListIterator<FloatingObject> it(*m_floatingObjects);
-            for (it.toLast(); (o = it.current()); --it) {
-                if (o->m_shouldPaint && !o->m_renderer->hasSelfPaintingLayer()) {
-                    int xoffset = scrolledX + o->m_left + o->m_renderer->marginLeft() - o->m_renderer->x();
-                    int yoffset =  scrolledY + o->m_top + o->m_renderer->marginTop() - o->m_renderer->y();
-                    if (o->m_renderer->hitTest(request, result, IntPoint(_x, _y), xoffset, yoffset)) {
-                        updateHitTestResult(result, IntPoint(_x - xoffset, _y - yoffset));
-                        return true;
-                    }
-                }
-            }
+            if (hitTestAction == HitTestFloat && hitTestFloats(request, result, _x, _y, scrolledX, scrolledY))
+                return true;
+        } else if (hitTestColumns(request, result, _x, _y, scrolledX, scrolledY, hitTestAction)) {
+            updateHitTestResult(result, IntPoint(_x - tx, _y - ty));
+            return true;
         }
     }
 
@@ -3377,6 +3351,32 @@ bool RenderBlock::nodeAtPoint(const HitTestRequest& request, HitTestResult& resu
         if (visibleToHitTesting() && boundsRect.contains(_x, _y)) {
             updateHitTestResult(result, IntPoint(_x - tx, _y - ty));
             return true;
+        }
+    }
+
+    return false;
+}
+
+bool RenderBlock::hitTestFloats(const HitTestRequest& request, HitTestResult& result, int x, int y, int tx, int ty)
+{
+    if (!m_floatingObjects)
+        return false;
+
+    if (isRenderView()) {
+        tx += toRenderView(this)->frameView()->scrollX();
+        ty += toRenderView(this)->frameView()->scrollY();
+    }
+
+    FloatingObject* floatingObject;
+    DeprecatedPtrListIterator<FloatingObject> it(*m_floatingObjects);
+    for (it.toLast(); (floatingObject = it.current()); --it) {
+        if (floatingObject->m_shouldPaint && !floatingObject->m_renderer->hasSelfPaintingLayer()) {
+            int xOffset = tx + floatingObject->m_left + floatingObject->m_renderer->marginLeft() - floatingObject->m_renderer->x();
+            int yOffset =  ty + floatingObject->m_top + floatingObject->m_renderer->marginTop() - floatingObject->m_renderer->y();
+            if (floatingObject->m_renderer->hitTest(request, result, IntPoint(x, y), xOffset, yOffset)) {
+                updateHitTestResult(result, IntPoint(x - xOffset, y - yOffset));
+                return true;
+            }
         }
     }
 
@@ -3395,16 +3395,16 @@ bool RenderBlock::hitTestColumns(const HitTestRequest& request, HitTestResult& r
     for (unsigned i = 0; i < colRects->size(); i++) {
         IntRect colRect = colRects->at(i);
         colRect.move(tx, ty);
-        
+
         if (colRect.contains(x, y)) {
             // The point is inside this column.
             // Adjust tx and ty to change where we hit test.
         
             int finalX = tx + currXOffset;
             int finalY = ty + currYOffset;
-            return hitTestContents(request, result, x, y, finalX, finalY, hitTestAction);
+            return hitTestContents(request, result, x, y, finalX, finalY, hitTestAction) || hitTestAction == HitTestFloat && hitTestFloats(request, result, x, y, finalX, finalY);
         }
-        
+
         // Move to the next position.
         if (style()->direction() == LTR)
             currXOffset += colRect.width() + colGap;
@@ -3624,15 +3624,16 @@ VisiblePosition RenderBlock::positionForPoint(const IntPoint& point)
 
 void RenderBlock::offsetForContents(int& tx, int& ty) const
 {
-    if (hasOverflowClip())
-        layer()->addScrolledContentOffset(tx, ty);
+    IntPoint contentsPoint(tx, ty);
 
-    if (hasColumns()) {
-        IntPoint contentsPoint(tx, ty);
+    if (hasOverflowClip())
+        contentsPoint += layer()->scrolledContentOffset();
+
+    if (hasColumns())
         adjustPointToColumnContents(contentsPoint);
-        tx = contentsPoint.x();
-        ty = contentsPoint.y();
-    }
+
+    tx = contentsPoint.x();
+    ty = contentsPoint.y();
 }
 
 int RenderBlock::availableWidth() const
@@ -4023,7 +4024,7 @@ void RenderBlock::calcPrefWidths()
     }
 
     int toAdd = 0;
-    toAdd = borderLeft() + borderRight() + paddingLeft() + paddingRight();
+    toAdd = borderAndPaddingWidth();
 
     if (hasOverflowClip() && style()->overflowY() == OSCROLL)
         toAdd += verticalScrollbarWidth();
@@ -4649,6 +4650,16 @@ RenderBlock* RenderBlock::firstLineBlock() const
     return firstLineBlock;
 }
 
+static RenderStyle* styleForFirstLetter(RenderObject* firstLetterBlock, RenderObject* firstLetterContainer)
+{
+    RenderStyle* pseudoStyle = firstLetterBlock->getCachedPseudoStyle(FIRST_LETTER, firstLetterContainer->firstLineStyle());
+    // Force inline display (except for floating first-letters).
+    pseudoStyle->setDisplay(pseudoStyle->isFloating() ? BLOCK : INLINE);
+    // CSS2 says first-letter can't be positioned.
+    pseudoStyle->setPosition(StaticPosition);
+    return pseudoStyle;
+}
+
 void RenderBlock::updateFirstLetter()
 {
     if (!document()->usesFirstLetterRules())
@@ -4680,10 +4691,12 @@ void RenderBlock::updateFirstLetter()
 
     // Drill into inlines looking for our first text child.
     RenderObject* currChild = firstLetterBlock->firstChild();
-    while (currChild && currChild->needsLayout() && ((!currChild->isReplaced() && !currChild->isRenderButton() && !currChild->isMenuList()) || currChild->isFloatingOrPositioned()) && !currChild->isText()) {
+    while (currChild && ((!currChild->isReplaced() && !currChild->isRenderButton() && !currChild->isMenuList()) || currChild->isFloatingOrPositioned()) && !currChild->isText()) {
         if (currChild->isFloatingOrPositioned()) {
-            if (currChild->style()->styleType() == FIRST_LETTER)
+            if (currChild->style()->styleType() == FIRST_LETTER) {
+                currChild = currChild->firstChild();
                 break;
+            } 
             currChild = currChild->nextSibling();
         } else
             currChild = currChild->firstChild();
@@ -4696,86 +4709,110 @@ void RenderBlock::updateFirstLetter()
     if (!currChild)
         return;
 
-    RenderObject* firstLetterContainer = currChild->parent();
-
     // If the child already has style, then it has already been created, so we just want
     // to update it.
-    if (currChild->style()->styleType() == FIRST_LETTER) {
-        RenderStyle* pseudo = firstLetterBlock->getCachedPseudoStyle(FIRST_LETTER,
-                                                                     firstLetterContainer->firstLineStyle());
-        currChild->setStyle(pseudo);
-        for (RenderObject* genChild = currChild->firstChild(); genChild; genChild = genChild->nextSibling()) {
+    if (currChild->parent()->style()->styleType() == FIRST_LETTER) {
+        RenderObject* firstLetter = currChild->parent();
+        RenderObject* firstLetterContainer = firstLetter->parent();
+        RenderStyle* pseudoStyle = styleForFirstLetter(firstLetterBlock, firstLetterContainer);
+
+        if (Node::diff(firstLetter->style(), pseudoStyle) == Node::Detach) {
+            // The first-letter renderer needs to be replaced. Create a new renderer of the right type.
+            RenderObject* newFirstLetter;
+            if (pseudoStyle->display() == INLINE)
+                newFirstLetter = new (renderArena()) RenderInline(document());
+            else
+                newFirstLetter = new (renderArena()) RenderBlock(document());
+            newFirstLetter->setStyle(pseudoStyle);
+
+            // Move the first letter into the new renderer.
+            view()->disableLayoutState();
+            while (RenderObject* child = firstLetter->firstChild()) {
+                if (child->isText())
+                    toRenderText(child)->dirtyLineBoxes(true);
+                firstLetter->removeChild(child);
+                newFirstLetter->addChild(child, 0);
+            }
+            RenderTextFragment* remainingText = toRenderTextFragment(firstLetter->nextSibling());
+            ASSERT(remainingText->node()->renderer() == remainingText);
+            // Replace the old renderer with the new one.
+            remainingText->setFirstLetter(newFirstLetter);
+            firstLetter->destroy();
+            firstLetter = newFirstLetter;
+            firstLetterContainer->addChild(firstLetter, remainingText);
+            view()->enableLayoutState();
+        } else
+            firstLetter->setStyle(pseudoStyle);
+
+        for (RenderObject* genChild = firstLetter->firstChild(); genChild; genChild = genChild->nextSibling()) {
             if (genChild->isText()) 
-                genChild->setStyle(pseudo);
+                genChild->setStyle(pseudoStyle);
         }
+
         return;
     }
 
+    if (!currChild->isText() || currChild->isBR())
+        return;
+
     // If the child does not already have style, we create it here.
-    if (currChild->isText() && !currChild->isBR() && currChild->parent()->style()->styleType() != FIRST_LETTER) {
-        // Our layout state is not valid for the repaints we are going to trigger by
-        // adding and removing children of firstLetterContainer.
-        view()->disableLayoutState();
+    RenderObject* firstLetterContainer = currChild->parent();
 
-        RenderText* textObj = toRenderText(currChild);
-        
-        // Create our pseudo style now that we have our firstLetterContainer determined.
-        RenderStyle* pseudoStyle = firstLetterBlock->getCachedPseudoStyle(FIRST_LETTER,
-                                                                          firstLetterContainer->firstLineStyle());
-        
-        // Force inline display (except for floating first-letters)
-        pseudoStyle->setDisplay(pseudoStyle->isFloating() ? BLOCK : INLINE);
-        pseudoStyle->setPosition(StaticPosition); // CSS2 says first-letter can't be positioned.
-        
-        RenderObject* firstLetter = 0;
-        if (pseudoStyle->display() == INLINE)
-            firstLetter = new (renderArena()) RenderInline(document());
-        else
-            firstLetter = new (renderArena()) RenderBlock(document());
-        firstLetter->setStyle(pseudoStyle);
-        firstLetterContainer->addChild(firstLetter, currChild);
-        
-        // The original string is going to be either a generated content string or a DOM node's
-        // string.  We want the original string before it got transformed in case first-letter has
-        // no text-transform or a different text-transform applied to it.
-        RefPtr<StringImpl> oldText = textObj->originalText();
-        ASSERT(oldText);
-        
-        if (oldText && oldText->length() > 0) {
-            unsigned int length = 0;
-            
-            // account for leading spaces and punctuation
-            while (length < oldText->length() && (isSpaceOrNewline((*oldText)[length]) || Unicode::isPunct((*oldText)[length])))
-                length++;
-            
-            // account for first letter
+    // Our layout state is not valid for the repaints we are going to trigger by
+    // adding and removing children of firstLetterContainer.
+    view()->disableLayoutState();
+
+    RenderText* textObj = toRenderText(currChild);
+
+    // Create our pseudo style now that we have our firstLetterContainer determined.
+    RenderStyle* pseudoStyle = styleForFirstLetter(firstLetterBlock, firstLetterContainer);
+
+    RenderObject* firstLetter = 0;
+    if (pseudoStyle->display() == INLINE)
+        firstLetter = new (renderArena()) RenderInline(document());
+    else
+        firstLetter = new (renderArena()) RenderBlock(document());
+    firstLetter->setStyle(pseudoStyle);
+    firstLetterContainer->addChild(firstLetter, currChild);
+
+    // The original string is going to be either a generated content string or a DOM node's
+    // string.  We want the original string before it got transformed in case first-letter has
+    // no text-transform or a different text-transform applied to it.
+    RefPtr<StringImpl> oldText = textObj->originalText();
+    ASSERT(oldText);
+
+    if (oldText && oldText->length() > 0) {
+        unsigned length = 0;
+
+        // account for leading spaces and punctuation
+        while (length < oldText->length() && (isSpaceOrNewline((*oldText)[length]) || Unicode::isPunct((*oldText)[length])))
             length++;
-            
-            // construct text fragment for the text after the first letter
-            // NOTE: this might empty
-            RenderTextFragment* remainingText = 
-                new (renderArena()) RenderTextFragment(textObj->node() ? textObj->node() : textObj->document(), oldText.get(), length, oldText->length() - length);
-            remainingText->setStyle(textObj->style());
-            if (remainingText->node())
-                remainingText->node()->setRenderer(remainingText);
-            
-            RenderObject* nextObj = textObj->nextSibling();
-            firstLetterContainer->removeChild(textObj);
-            firstLetterContainer->addChild(remainingText, nextObj);
-            remainingText->setFirstLetter(firstLetter);
-            
-            // construct text fragment for the first letter
-            RenderTextFragment* letter = 
-                new (renderArena()) RenderTextFragment(remainingText->node() ? remainingText->node() : remainingText->document(), oldText.get(), 0, length);
-            RefPtr<RenderStyle> newStyle = RenderStyle::create();
-            newStyle->inheritFrom(pseudoStyle);
-            letter->setStyle(newStyle.release());
-            firstLetter->addChild(letter);
 
-            textObj->destroy();
-        }
-        view()->enableLayoutState();
+        // account for first letter
+        length++;
+
+        // construct text fragment for the text after the first letter
+        // NOTE: this might empty
+        RenderTextFragment* remainingText = 
+            new (renderArena()) RenderTextFragment(textObj->node() ? textObj->node() : textObj->document(), oldText.get(), length, oldText->length() - length);
+        remainingText->setStyle(textObj->style());
+        if (remainingText->node())
+            remainingText->node()->setRenderer(remainingText);
+
+        RenderObject* nextObj = textObj->nextSibling();
+        firstLetterContainer->removeChild(textObj);
+        firstLetterContainer->addChild(remainingText, nextObj);
+        remainingText->setFirstLetter(firstLetter);
+        
+        // construct text fragment for the first letter
+        RenderTextFragment* letter = 
+            new (renderArena()) RenderTextFragment(remainingText->node() ? remainingText->node() : remainingText->document(), oldText.get(), 0, length);
+        letter->setStyle(pseudoStyle);
+        firstLetter->addChild(letter);
+
+        textObj->destroy();
     }
+    view()->enableLayoutState();
 }
 
 // Helper methods for obtaining the last line, computing line counts and heights for line counts

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -30,6 +30,10 @@ namespace WebCore {
 StyleRareInheritedData::StyleRareInheritedData()
     : textStrokeWidth(RenderStyle::initialTextStrokeWidth())
     , textShadow(0)
+    , indent(RenderStyle::initialTextIndent())
+    , m_effectiveZoom(RenderStyle::initialZoom())
+    , widows(RenderStyle::initialWidows())
+    , orphans(RenderStyle::initialOrphans())
     , textSecurity(RenderStyle::initialTextSecurity())
     , userModify(READ_ONLY)
     , wordBreak(RenderStyle::initialWordBreak())
@@ -40,6 +44,7 @@ StyleRareInheritedData::StyleRareInheritedData()
     , userSelect(RenderStyle::initialUserSelect())
     , colorSpace(DeviceColorSpace)
     , touchCalloutEnabled(RenderStyle::initialTouchCalloutEnabled())
+    , hyphens(HyphensManual)
     , tapHighlightColor(RenderStyle::initialTapHighlightColor())
     , compositionFillColor(RenderStyle::initialCompositionFillColor())
     , compositionFrameColor(RenderStyle::initialCompositionFrameColor())
@@ -54,6 +59,11 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , textFillColor(o.textFillColor)
     , textShadow(o.textShadow ? new ShadowData(*o.textShadow) : 0)
     , highlight(o.highlight)
+    , cursorData(o.cursorData)
+    , indent(o.indent)
+    , m_effectiveZoom(o.m_effectiveZoom)
+    , widows(o.widows)
+    , orphans(o.orphans)
     , textSecurity(o.textSecurity)
     , userModify(o.userModify)
     , wordBreak(o.wordBreak)
@@ -64,16 +74,28 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , userSelect(o.userSelect)
     , colorSpace(o.colorSpace)
     , touchCalloutEnabled(o.touchCalloutEnabled)
+    , hyphens(o.hyphens)
     , tapHighlightColor(o.tapHighlightColor)
     , compositionFillColor(o.compositionFillColor)
     , compositionFrameColor(o.compositionFrameColor)
     , textSizeAdjust(o.textSizeAdjust)
+    , hyphenationString(o.hyphenationString)
+    , hyphenationLocale(o.hyphenationLocale)
 {
 }
 
 StyleRareInheritedData::~StyleRareInheritedData()
 {
     delete textShadow;
+}
+
+static bool cursorDataEquivalent(const CursorList* c1, const CursorList* c2)
+{
+    if (c1 == c2)
+        return true;
+    if ((!c1 && c2) || (c1 && !c2))
+        return false;
+    return (*c1 == *c2);
 }
 
 bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
@@ -83,6 +105,11 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && textFillColor == o.textFillColor
         && shadowDataEquivalent(o)
         && highlight == o.highlight
+        && cursorDataEquivalent(cursorData.get(), o.cursorData.get())
+        && indent == o.indent
+        && m_effectiveZoom == o.m_effectiveZoom
+        && widows == o.widows
+        && orphans == o.orphans
         && textSecurity == o.textSecurity
         && userModify == o.userModify
         && wordBreak == o.wordBreak
@@ -97,7 +124,10 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && touchCalloutEnabled == o.touchCalloutEnabled
         && compositionFillColor == o.compositionFillColor
         && compositionFrameColor == o.compositionFrameColor
-    ;
+        && colorSpace == o.colorSpace
+        && hyphens == o.hyphens
+        && hyphenationString == o.hyphenationString
+        && hyphenationLocale == o.hyphenationLocale;
 }
 
 bool StyleRareInheritedData::shadowDataEquivalent(const StyleRareInheritedData& o) const

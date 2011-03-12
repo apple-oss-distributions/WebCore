@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
  * Copyright (C) 2008 Matt Lilek <webkit@mattlilek.com>
- * Copyright (C) 2009 Google Inc. All rights reserved.
+ * Copyright (C) 2010 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -43,15 +43,18 @@
 #include "ExceptionCode.h"
 #include "Frame.h"
 #include "FrameLoader.h"
+#include "InjectedScript.h"
 #include "InjectedScriptHost.h"
 #include "InspectorController.h"
 #include "InspectorResource.h"
 #include "JSDOMWindow.h"
+#include "JSDOMWindowCustom.h"
 #include "JSNode.h"
 #include "JSRange.h"
 #include "Node.h"
 #include "Page.h"
 #if ENABLE(DOM_STORAGE)
+#include "SerializedScriptValue.h"
 #include "Storage.h"
 #include "JSStorage.h"
 #endif
@@ -60,21 +63,22 @@
 #include <parser/SourceCode.h>
 #include <runtime/JSArray.h>
 #include <runtime/JSLock.h>
+#include <wtf/RefPtr.h>
 #include <wtf/Vector.h>
 
 #if ENABLE(JAVASCRIPT_DEBUGGER)
 #include "JavaScriptCallFrame.h"
-#include "JavaScriptDebugServer.h"
 #include "JSJavaScriptCallFrame.h"
+#include "ScriptDebugServer.h"
 #endif
 
 using namespace JSC;
 
 namespace WebCore {
 
-static ScriptObject createInjectedScript(const String& source, InjectedScriptHost* injectedScriptHost, ScriptState* scriptState, long id)
+ScriptObject InjectedScriptHost::createInjectedScript(const String& source, ScriptState* scriptState, long id)
 {
-    SourceCode sourceCode = makeSource(source);
+    SourceCode sourceCode = makeSource(stringToUString(source));
     JSLock lock(SilenceAssertionsOnly);
     JSDOMGlobalObject* globalObject = static_cast<JSDOMGlobalObject*>(scriptState->lexicalGlobalObject());
     JSValue globalThisValue = scriptState->globalThisValue();
@@ -88,9 +92,10 @@ static ScriptObject createInjectedScript(const String& source, InjectedScriptHos
         return ScriptObject();
 
     MarkedArgumentBuffer args;
-    args.append(toJS(scriptState, globalObject, injectedScriptHost));
+    args.append(toJS(scriptState, globalObject, this));
     args.append(globalThisValue);
     args.append(jsNumber(scriptState, id));
+    args.append(jsString(scriptState, String("JSC")));
     JSValue result = JSC::call(scriptState, functionValue, callType, callData, globalThisValue, args);
     if (result.isObject())
         return ScriptObject(scriptState, result.getObject());
@@ -115,23 +120,15 @@ JSValue JSInjectedScriptHost::databaseForId(ExecState* exec, const ArgList& args
 #endif
 
 #if ENABLE(JAVASCRIPT_DEBUGGER)
-
 JSValue JSInjectedScriptHost::currentCallFrame(ExecState* exec, const ArgList&)
 {
-    JavaScriptCallFrame* callFrame = impl()->currentCallFrame();
+    JavaScriptCallFrame* callFrame = ScriptDebugServer::shared().currentCallFrame();
     if (!callFrame || !callFrame->isValid())
         return jsUndefined();
 
     JSLock lock(SilenceAssertionsOnly);
     return toJS(exec, callFrame);
 }
-
-JSValue JSInjectedScriptHost::isActivation(ExecState*, const ArgList& args)
-{
-    JSObject* object = args.at(0).getObject();
-    return jsBoolean(object && object->isActivationObject());
-}
-
 #endif
 
 JSValue JSInjectedScriptHost::nodeForId(ExecState* exec, const ArgList& args)
@@ -194,20 +191,47 @@ JSValue JSInjectedScriptHost::selectDOMStorage(ExecState*, const ArgList& args)
 }
 #endif
 
-ScriptObject InjectedScriptHost::injectedScriptFor(ScriptState* scriptState)
+JSValue JSInjectedScriptHost::reportDidDispatchOnInjectedScript(ExecState* exec, const ArgList& args)
+{
+    if (args.size() < 3)
+        return jsUndefined();
+    
+    if (!args.at(0).isInt32())
+        return jsUndefined();
+    int callId = args.at(0).asInt32();
+    
+    RefPtr<SerializedScriptValue> result(SerializedScriptValue::create(exec, args.at(1)));
+    
+    bool isException;
+    if (!args.at(2).getBoolean(isException))
+        return jsUndefined();
+    impl()->reportDidDispatchOnInjectedScript(callId, result.get(), isException);
+    return jsUndefined();
+}
+
+InjectedScript InjectedScriptHost::injectedScriptFor(ScriptState* scriptState)
 {
     JSLock lock(SilenceAssertionsOnly);
     JSDOMGlobalObject* globalObject = static_cast<JSDOMGlobalObject*>(scriptState->lexicalGlobalObject());
     JSObject* injectedScript = globalObject->injectedScript();
     if (injectedScript)
-        return ScriptObject(scriptState, injectedScript);
+        return InjectedScript(ScriptObject(scriptState, injectedScript));
 
-    ASSERT(!m_injectedScriptSource.isEmpty());
-    ScriptObject injectedScriptObject = createInjectedScript(m_injectedScriptSource, this, scriptState, m_nextInjectedScriptId);
-    globalObject->setInjectedScript(injectedScriptObject.jsObject());
-    m_idToInjectedScript.set(m_nextInjectedScriptId, injectedScriptObject);
-    m_nextInjectedScriptId++;
-    return injectedScriptObject;
+    ASSERT(!m_injectedScriptSource.isEmpty()); 
+    pair<long, ScriptObject> injectedScriptObject = injectScript(m_injectedScriptSource, scriptState);
+    globalObject->setInjectedScript(injectedScriptObject.second.jsObject());
+    InjectedScript result(injectedScriptObject.second);
+    m_idToInjectedScript.set(injectedScriptObject.first, result);
+    return result;
+}
+
+bool InjectedScriptHost::canAccessInspectedWindow(ScriptState* scriptState)
+{
+    JSLock lock(SilenceAssertionsOnly);
+    JSDOMWindow* inspectedWindow = toJSDOMWindow(scriptState->lexicalGlobalObject());
+    if (!inspectedWindow)
+        return false;
+    return inspectedWindow->allowsAccessFromNoErrorMessage(scriptState);
 }
 
 } // namespace WebCore

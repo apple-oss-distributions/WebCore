@@ -35,6 +35,7 @@
 #include "FrameLoadRequest.h"
 #include "GenericBinding.h"
 #include "Page.h"
+#include "SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -67,10 +68,6 @@ Frame* BindingDOMWindow<Binding>::createWindow(State<Binding>* state,
 {
     ASSERT(callingFrame);
     ASSERT(enteredFrame);
-
-    // Sandboxed iframes cannot open new auxiliary browsing contexts.
-    if (callingFrame && callingFrame->loader()->isSandboxed(SandboxNavigation))
-        return 0;
 
     ResourceRequest request;
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006, 2007 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006, 2007, 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -161,27 +161,30 @@ static String keyIdentifierForKeyEvent(NSEvent* event)
 
 static int windowsKeyCodeForKeyEvent(NSEvent *event)
 {
-    int code = windowsKeyCodeForKeyCode([event keyCode]);
-    if (code)
-        return code;
+    int code = 0;
+    // There are several kinds of characters for which we produce key code from char code:
+    // 1. Roman letters. Windows keyboard layouts affect both virtual key codes and character codes for these,
+    //    so e.g. 'A' gets the same keyCode on QWERTY, AZERTY or Dvorak layouts.
+    // 2. Keys for which there is no known Mac virtual key codes, like PrintScreen.
+    // 3. Certain punctuation keys. On Windows, these are also remapped depending on current keyboard layout,
+    //    but see comment in windowsKeyCodeForCharCode().
+    if ([event type] == NSKeyDown || [event type] == NSKeyUp) {
+        // Cmd switches Roman letters for Dvorak-QWERTY layout, so try modified characters first.
+        NSString* s = [event characters];
+        code = [s length] > 0 ? windowsKeyCodeForCharCode([s characterAtIndex:0]) : 0;
+        if (code)
+            return code;
 
-    NSString* s = [event charactersIgnoringModifiers];
-    if ([s length] != 1)
-        return 0;
-    return windowsKeyCodeForCharCode([s characterAtIndex:0]);
-}
+        // Ctrl+A on an AZERTY keyboard would get VK_Q keyCode if we relied on -[NSEvent keyCode] below.
+        s = [event charactersIgnoringModifiers];
+        code = [s length] > 0 ? windowsKeyCodeForCharCode([s characterAtIndex:0]) : 0;
+        if (code)
+            return code;
+    }
 
-PlatformKeyboardEvent::PlatformKeyboardEvent()
-    : m_type(KeyDown)
-    , m_autoRepeat(false)
-    , m_windowsVirtualKeyCode(0)
-    , m_nativeVirtualKeyCode(0)
-    , m_isKeypad(false)
-    , m_shiftKey(false)
-    , m_ctrlKey(false)
-    , m_altKey(false)
-    , m_metaKey(false)
-{
+    // Map Mac virtual key code directly to Windows one for any keys not handled above.
+    // E.g. the key next to Caps Lock has the same Event.keyCode on U.S. keyboard ('A') and on Russian keyboard (CYRILLIC LETTER EF).
+    return windowsKeyCodeForKeyCode([event keyCode]);
 }
 
 PlatformKeyboardEvent::PlatformKeyboardEvent(NSEvent *event)
@@ -247,6 +250,15 @@ void PlatformKeyboardEvent::disambiguateKeyDownEvent(Type type, bool backwardCom
 bool PlatformKeyboardEvent::currentCapsLockState()
 {
     return GetCurrentKeyModifiers() & alphaLock;
+}
+
+void PlatformKeyboardEvent::getCurrentModifierState(bool& shiftKey, bool& ctrlKey, bool& altKey, bool& metaKey)
+{
+    UInt32 currentModifiers = GetCurrentKeyModifiers();
+    shiftKey = currentModifiers & ::shiftKey;
+    ctrlKey = currentModifiers & ::controlKey;
+    altKey = currentModifiers & ::optionKey;
+    metaKey = currentModifiers & ::cmdKey;
 }
 
 }

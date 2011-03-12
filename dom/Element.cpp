@@ -31,7 +31,6 @@
 #include "CSSParser.h"
 #include "CSSSelectorList.h"
 #include "CSSStyleSelector.h"
-#include "CString.h"
 #include "ClientRect.h"
 #include "ClientRectList.h"
 #include "Document.h"
@@ -45,7 +44,6 @@
 #include "HTMLNames.h"
 #include "HTMLTokenizer.h"
 #include "InspectorController.h"
-#include "NamedNodeMap.h"
 #include "NodeList.h"
 #include "NodeRenderStyle.h"
 #include "Page.h"
@@ -54,6 +52,7 @@
 #include "TextIterator.h"
 #include "XMLNames.h"
 #include "XMLTokenizer.h"
+#include <wtf/text/CString.h>
 
 #include "WKContentObservation.h"
 
@@ -66,12 +65,6 @@ namespace WebCore {
 using namespace HTMLNames;
 using namespace XMLNames;
     
-Element::Element(const QualifiedName& tagName, Document* document, ConstructionType type)
-    : ContainerNode(document, type)
-    , m_tagName(tagName)
-{
-}
-
 PassRefPtr<Element> Element::create(const QualifiedName& tagName, Document* document)
 {
     return adoptRef(new Element(tagName, document, CreateElement));
@@ -163,12 +156,12 @@ PassRefPtr<Element> Element::cloneElementWithoutChildren()
     // This is a sanity check as HTML overloads some of the DOM methods.
     ASSERT(isHTMLElement() == clone->isHTMLElement());
 
-    clone->copyNonAttributeProperties(this);
-
     // Clone attributes.
     if (namedAttrMap)
         clone->attributes()->setAttributes(*attributes(true)); // Call attributes(true) to force attribute synchronization to occur (for svg and style) before cloning happens.
     
+    clone->copyNonAttributeProperties(this);
+
     return clone.release();
 }
 
@@ -227,19 +220,15 @@ bool Element::hasAttribute(const QualifiedName& name) const
 
 const AtomicString& Element::getAttribute(const QualifiedName& name) const
 {
-    if (name == styleAttr && !m_isStyleAttributeValid)
+    if (UNLIKELY(name == styleAttr) && !isStyleAttributeValid())
         updateStyleAttribute();
 
 #if ENABLE(SVG)
-    if (!m_areSVGAttributesValid)
+    if (UNLIKELY(!areSVGAttributesValid()))
         updateAnimatedSVGAttribute(name);
 #endif
 
-    if (namedAttrMap)
-        if (Attribute* a = namedAttrMap->getAttributeItem(name))
-            return a->value();
-
-    return nullAtom;
+    return fastGetAttribute(name);
 }
 
 void Element::scrollIntoView(bool alignToTop) 
@@ -534,11 +523,11 @@ const AtomicString& Element::getAttribute(const String& name) const
     bool ignoreCase = shouldIgnoreAttributeCase(this);
     
     // Update the 'style' attribute if it's invalid and being requested:
-    if (!m_isStyleAttributeValid && equalPossiblyIgnoringCase(name, styleAttr.localName(), ignoreCase))
+    if (!isStyleAttributeValid() && equalPossiblyIgnoringCase(name, styleAttr.localName(), ignoreCase))
         updateStyleAttribute();
 
 #if ENABLE(SVG)
-    if (!m_areSVGAttributesValid) {
+    if (!areSVGAttributesValid()) {
         // We're not passing a namespace argument on purpose. SVGNames::*Attr are defined w/o namespaces as well.
         updateAnimatedSVGAttribute(QualifiedName(nullAtom, name, nullAtom));
     }
@@ -578,14 +567,17 @@ void Element::setAttribute(const AtomicString& name, const AtomicString& value, 
     else if (!old && !value.isNull())
         namedAttrMap->addAttribute(createAttribute(QualifiedName(nullAtom, localName, nullAtom), value));
     else if (old && !value.isNull()) {
-        old->setValue(value);
+        if (Attr* attrNode = old->attr())
+            attrNode->setValue(value);
+        else
+            old->setValue(value);
         attributeChanged(old);
     }
 
 #if ENABLE(INSPECTOR)
     if (Page* page = document()->page()) {
         if (InspectorController* inspectorController = page->inspectorController()) {
-            if (!m_synchronizingStyleAttribute)
+            if (!isSynchronizingStyleAttribute())
                 inspectorController->didModifyDOMAttr(this);
         }
     }
@@ -607,14 +599,17 @@ void Element::setAttribute(const QualifiedName& name, const AtomicString& value,
     else if (!old && !value.isNull())
         namedAttrMap->addAttribute(createAttribute(name, value));
     else if (old) {
-        old->setValue(value);
+        if (Attr* attrNode = old->attr())
+            attrNode->setValue(value);
+        else
+            old->setValue(value);
         attributeChanged(old);
     }
 
 #if ENABLE(INSPECTOR)
     if (Page* page = document()->page()) {
         if (InspectorController* inspectorController = page->inspectorController()) {
-            if (!m_synchronizingStyleAttribute)
+            if (!isSynchronizingStyleAttribute())
                 inspectorController->didModifyDOMAttr(this);
         }
     }
@@ -650,7 +645,8 @@ void Element::updateAfterAttributeChanged(Attribute* attr)
     } else if (attrName == aria_labelAttr || attrName == aria_labeledbyAttr || attrName == altAttr || attrName == titleAttr) {
         // If the content of an element changes due to an attribute change, notify accessibility.
         document()->axObjectCache()->contentChanged(renderer());
-    }
+    } else if (attrName == aria_selectedAttr)
+        document()->axObjectCache()->selectedChildrenChanged(renderer());
 }
     
 void Element::recalcStyleIfNeededAfterAttributeChanged(Attribute* attr)
@@ -719,11 +715,11 @@ void Element::setAttributeMap(PassRefPtr<NamedNodeMap> list, FragmentScriptingPe
 
 bool Element::hasAttributes() const
 {
-    if (!m_isStyleAttributeValid)
+    if (!isStyleAttributeValid())
         updateStyleAttribute();
 
 #if ENABLE(SVG)
-    if (!m_areSVGAttributesValid)
+    if (!areSVGAttributesValid())
         updateAnimatedSVGAttribute(anyQName());
 #endif
 
@@ -752,7 +748,8 @@ void Element::setPrefix(const AtomicString& prefix, ExceptionCode& ec)
 
 KURL Element::baseURI() const
 {
-    KURL base(KURL(), getAttribute(baseAttr));
+    const AtomicString& baseAttribute = getAttribute(baseAttr);
+    KURL base(KURL(), baseAttribute);
     if (!base.protocol().isEmpty())
         return base;
 
@@ -764,12 +761,12 @@ KURL Element::baseURI() const
     if (parentBase.isNull())
         return base;
 
-    return KURL(parentBase, base.string());
+    return KURL(parentBase, baseAttribute);
 }
 
 void Element::createAttributeMap() const
 {
-    namedAttrMap = NamedNodeMap::create(const_cast<Element*>(this));
+    namedAttrMap = NamedMappedAttrMap::create(const_cast<Element*>(this));
 }
 
 bool Element::isURLAttribute(Attribute*) const
@@ -834,7 +831,7 @@ void Element::attach()
         ElementRareData* data = rareData();
         if (data->needsFocusAppearanceUpdateSoonAfterAttach()) {
             if (isFocusable() && document()->focusedNode() == this)
-                document()->updateFocusAppearanceSoon();
+                document()->updateFocusAppearanceSoon(false /* don't restore selection */);
             data->setNeedsFocusAppearanceUpdateSoonAfterAttach(false);
         }
     }
@@ -862,18 +859,25 @@ bool Element::pseudoStyleCacheIsInvalid(const RenderStyle* currentStyle, RenderS
     if (!renderer() || !currentStyle)
         return false;
 
-    RenderStyle::PseudoStyleCache pseudoStyleCache;
-    currentStyle->getPseudoStyleCache(pseudoStyleCache);
-    size_t cacheSize = pseudoStyleCache.size();
+    const PseudoStyleCache* pseudoStyleCache = currentStyle->cachedPseudoStyles();
+    if (!pseudoStyleCache)
+        return false;
+
+    size_t cacheSize = pseudoStyleCache->size();
     for (size_t i = 0; i < cacheSize; ++i) {
         RefPtr<RenderStyle> newPseudoStyle;
-        PseudoId pseudoId = pseudoStyleCache[i]->styleType();
-        if (pseudoId == FIRST_LINE || pseudoId == FIRST_LINE_INHERITED)
+        PseudoId pseudoId = pseudoStyleCache->at(i)->styleType();
+        if (pseudoId == VISITED_LINK) {
+            newPseudoStyle =  newStyle->getCachedPseudoStyle(VISITED_LINK); // This pseudo-style was aggressively computed already when we first called styleForElement on the new style.
+            if (!newPseudoStyle || *newPseudoStyle != *pseudoStyleCache->at(i))
+                return true;
+        } else if (pseudoId == FIRST_LINE || pseudoId == FIRST_LINE_INHERITED)
             newPseudoStyle = renderer()->uncachedFirstLineStyle(newStyle);
         else
             newPseudoStyle = renderer()->getUncachedPseudoStyle(pseudoId, newStyle, newStyle);
-
-        if (*newPseudoStyle != *pseudoStyleCache[i]) {
+        if (!newPseudoStyle)
+            return true;
+        if (*newPseudoStyle != *pseudoStyleCache->at(i)) {
             if (pseudoId < FIRST_INTERNAL_PSEUDOID)
                 newStyle->setHasPseudoStyle(pseudoId);
             newStyle->addCachedPseudoStyle(newPseudoStyle);
@@ -959,7 +963,7 @@ void Element::recalcStyle(StyleChange change)
             attach(); // FIXME: The style gets computed twice by calling attach. We could do better if we passed the style along.
             // attach recalulates the style for all children. No need to do it twice.
             setNeedsStyleRecalc(NoStyleChange);
-            setChildNeedsStyleRecalc(false);
+            clearChildNeedsStyleRecalc();
             return;
         }
 
@@ -1025,7 +1029,7 @@ void Element::recalcStyle(StyleChange change)
     }
 
     setNeedsStyleRecalc(NoStyleChange);
-    setChildNeedsStyleRecalc(false);
+    clearChildNeedsStyleRecalc();
 }
 
 bool Element::childTypeAllowed(NodeType type)
@@ -1134,7 +1138,7 @@ void Element::childrenChanged(bool changedByParser, Node* beforeChange, Node* af
 void Element::finishParsingChildren()
 {
     ContainerNode::finishParsingChildren();
-    m_parsingChildrenFinished = true;
+    setIsParsingChildrenFinished();
     checkForSiblingStyleChanges(this, renderStyle(), true, lastChild(), 0, 0);
 }
 
@@ -1346,9 +1350,6 @@ void Element::focus(bool restorePreviousSelection)
     if (doc->focusedNode() == this)
         return;
 
-    if (!supportsFocus())
-        return;
-
     // If the stylesheets have already been loaded we can reliably check isFocusable.
     // If not, we continue and set the focused node on the focus controller below so
     // that it can be updated soon after attach. 
@@ -1358,11 +1359,17 @@ void Element::focus(bool restorePreviousSelection)
             return;
     }
 
+    if (!supportsFocus())
+        return;
+
     RefPtr<Node> protect;
     if (Page* page = doc->page()) {
         // Focus and change event handlers can cause us to lose our last ref.
+        // If a focus event handler changes the focus to a different node it
+        // does not make sense to continue and update appearence.
         protect = this;
-        page->focusController()->setFocusedNode(this, doc->frame());
+        if (!page->focusController()->setFocusedNode(this, doc->frame()))
+            return;
     }
 
     // Setting the focused node above might have invalidated the layout due to scripts.
@@ -1398,13 +1405,8 @@ void Element::updateFocusAppearance(bool /*restorePreviousSelection*/)
             frame->selection()->setSelection(newSelection);
             frame->revealSelection();
         }
-    }
-    // FIXME: I'm not sure all devices will want this off, but this is
-    // currently turned off for Android.
-#if !ENABLE(DIRECTIONAL_PAD_NAVIGATION)
-    else if (renderer() && !renderer()->isWidget())
+    } else if (renderer() && !renderer()->isWidget())
         renderer()->enclosingLayer()->scrollRectToVisible(getRect());
-#endif
 }
 
 void Element::blur()
@@ -1457,10 +1459,13 @@ void Element::setMinimumSizeForResizing(const IntSize& size)
     ensureRareData()->m_minimumSizeForResizing = size;
 }
 
-RenderStyle* Element::computedStyle()
+RenderStyle* Element::computedStyle(PseudoId pseudoElementSpecifier)
 {
+    // FIXME: Find and use the renderer from the pseudo element instead of the actual element so that the 'length'
+    // properties, which are only known by the renderer because it did the layout, will be correct and so that the
+    // values returned for the ":selection" pseudo-element will be correct.
     if (RenderStyle* usedStyle = renderStyle())
-        return usedStyle;
+        return pseudoElementSpecifier ? usedStyle->getCachedPseudoStyle(pseudoElementSpecifier) : usedStyle;
 
     if (!attached())
         // FIXME: Try to do better than this. Ensure that styleForElement() works for elements that are not in the
@@ -1469,8 +1474,8 @@ RenderStyle* Element::computedStyle()
 
     ElementRareData* data = ensureRareData();
     if (!data->m_computedStyle)
-        data->m_computedStyle = document()->styleSelector()->styleForElement(this, parent() ? parent()->computedStyle() : 0);
-    return data->m_computedStyle.get();
+        data->m_computedStyle = document()->styleForElementIgnoringPendingStylesheets(this);
+    return pseudoElementSpecifier ? data->m_computedStyle->getCachedPseudoStyle(pseudoElementSpecifier) : data->m_computedStyle.get();
 }
 
 void Element::cancelFocusAppearanceUpdate()

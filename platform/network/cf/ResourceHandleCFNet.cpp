@@ -32,7 +32,6 @@
 #include "AuthenticationCF.h"
 #include "AuthenticationChallenge.h"
 #include "Base64.h"
-#include "CString.h"
 #include "CookieStorageWin.h"
 #include "CredentialStorage.h"
 #include "DocLoader.h"
@@ -44,16 +43,24 @@
 #include "MIMETypeRegistry.h"
 #include "ResourceError.h"
 #include "ResourceResponse.h"
-
-#include <wtf/HashMap.h>
-#include <wtf/Threading.h>
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <process.h> // for _beginthread()
-
+#include "SharedBuffer.h"
 #include <CFNetwork/CFNetwork.h>
 #include <WebKitSystemInterface/WebKitSystemInterface.h>
+#include <process.h> // for _beginthread()
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <wtf/HashMap.h>
+#include <wtf/Threading.h>
+#include <wtf/text/CString.h>
+
+// FIXME: Remove this declaration once it's in WebKitSupportLibrary.
+extern "C" {
+__declspec(dllimport) CFURLConnectionRef CFURLConnectionCreateWithProperties(
+  CFAllocatorRef           alloc,
+  CFURLRequestRef          request,
+  CFURLConnectionClient *  client,
+  CFDictionaryRef properties);
+}
 
 namespace WebCore {
 
@@ -352,7 +359,16 @@ static CFURLRequestRef makeFinalRequest(const ResourceRequest& request, bool sho
 
     if (CFHTTPCookieStorageRef cookieStorage = currentCookieStorage()) {
         CFURLRequestSetHTTPCookieStorage(newRequest, cookieStorage);
-        CFURLRequestSetHTTPCookieStorageAcceptPolicy(newRequest, CFHTTPCookieStorageGetCookieAcceptPolicy(cookieStorage));
+        CFHTTPCookieStorageAcceptPolicy policy = CFHTTPCookieStorageGetCookieAcceptPolicy(cookieStorage);
+        CFURLRequestSetHTTPCookieStorageAcceptPolicy(newRequest, policy);
+
+        // If a URL already has cookies, then we'll relax the 3rd party cookie policy and accept new cookies.
+        if (policy == CFHTTPCookieStorageAcceptPolicyOnlyFromMainDocumentDomain) {
+            CFURLRef url = CFURLRequestGetURL(newRequest);
+            RetainPtr<CFArrayRef> cookies(AdoptCF, CFHTTPCookieStorageCopyCookiesForURL(cookieStorage, url, false));
+            if (CFArrayGetCount(cookies.get()))
+                CFURLRequestSetMainDocumentURL(newRequest, url);
+        }
     }
 
     return newRequest;
@@ -365,7 +381,7 @@ static CFDictionaryRef createConnectionProperties(bool shouldUseCredentialStorag
     static const CFStringRef kCFURLConnectionSocketStreamProperties = CFSTR("kCFURLConnectionSocketStreamProperties");
 
     CFDictionaryRef sessionID = shouldUseCredentialStorage ?
-        CFDictionaryCreate(0, 0, 0, 0, 0, 0) :
+        CFDictionaryCreate(0, 0, 0, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks) :
         CFDictionaryCreate(0, (const void**)&_kCFURLConnectionSessionID, (const void**)&webKitPrivateSessionCF, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
 
     CFDictionaryRef propertiesDictionary = CFDictionaryCreate(0, (const void**)&kCFURLConnectionSocketStreamProperties, (const void**)&sessionID, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
@@ -494,13 +510,26 @@ void ResourceHandle::didReceiveAuthenticationChallenge(const AuthenticationChall
         return;
     }
 
-    if (!challenge.previousFailureCount() && (!client() || client()->shouldUseCredentialStorage(this))) {
-        Credential credential = CredentialStorage::get(challenge.protectionSpace());
-        if (!credential.isEmpty() && credential != d->m_initialCredential) {
-            ASSERT(credential.persistence() == CredentialPersistenceNone);
-            RetainPtr<CFURLCredentialRef> cfCredential(AdoptCF, createCF(credential));
-            CFURLConnectionUseCredential(d->m_connection.get(), cfCredential.get(), challenge.cfURLAuthChallengeRef());
-            return;
+    if (!client() || client()->shouldUseCredentialStorage(this)) {
+        if (!d->m_initialCredential.isEmpty() || challenge.previousFailureCount()) {
+            // The stored credential wasn't accepted, stop using it.
+            // There is a race condition here, since a different credential might have already been stored by another ResourceHandle,
+            // but the observable effect should be very minor, if any.
+            CredentialStorage::remove(challenge.protectionSpace());
+        }
+
+        if (!challenge.previousFailureCount()) {
+            Credential credential = CredentialStorage::get(challenge.protectionSpace());
+            if (!credential.isEmpty() && credential != d->m_initialCredential) {
+                ASSERT(credential.persistence() == CredentialPersistenceNone);
+                if (challenge.failureResponse().httpStatusCode() == 401) {
+                    // Store the credential back, possibly adding it as a default for this directory.
+                    CredentialStorage::set(credential, challenge.protectionSpace(), firstRequest().url());
+                }
+                RetainPtr<CFURLCredentialRef> cfCredential(AdoptCF, createCF(credential));
+                CFURLConnectionUseCredential(d->m_connection.get(), cfCredential.get(), challenge.cfURLAuthChallengeRef());
+                return;
+            }
         }
     }
 
@@ -517,6 +546,12 @@ void ResourceHandle::receivedCredential(const AuthenticationChallenge& challenge
     ASSERT(challenge.cfURLAuthChallengeRef());
     if (challenge != d->m_currentWebChallenge)
         return;
+
+    // FIXME: Support empty credentials. Currently, an empty credential cannot be stored in WebCore credential storage, as that's empty value for its map.
+    if (credential.isEmpty()) {
+        receivedRequestToContinueWithoutCredential(challenge);
+        return;
+    }
 
     if (credential.persistence() == CredentialPersistenceForSession) {
         // Manage per-session credentials internally, because once NSURLCredentialPersistencePerSession is used, there is no way
@@ -708,12 +743,13 @@ void WebCoreSynchronousLoader::didReceiveChallenge(CFURLConnectionRef conn, CFUR
 {
     WebCoreSynchronousLoader* loader = static_cast<WebCoreSynchronousLoader*>(const_cast<void*>(clientInfo));
 
+    CFURLResponseRef urlResponse = (CFURLResponseRef)CFURLAuthChallengeGetFailureResponse(challenge);
+    CFHTTPMessageRef httpResponse = urlResponse ? CFURLResponseGetHTTPResponse(urlResponse) : 0;
+
     if (loader->m_user && loader->m_pass) {
         Credential credential(loader->m_user.get(), loader->m_pass.get(), CredentialPersistenceNone);
         RetainPtr<CFURLCredentialRef> cfCredential(AdoptCF, createCF(credential));
         
-        CFURLResponseRef urlResponse = (CFURLResponseRef)CFURLAuthChallengeGetFailureResponse(challenge);
-        CFHTTPMessageRef httpResponse = urlResponse ? CFURLResponseGetHTTPResponse(urlResponse) : 0;
         KURL urlToStore;
         if (httpResponse && CFHTTPMessageGetResponseStatusCode(httpResponse) == 401)
             urlToStore = loader->m_url.get();
@@ -729,6 +765,10 @@ void WebCoreSynchronousLoader::didReceiveChallenge(CFURLConnectionRef conn, CFUR
         Credential credential = CredentialStorage::get(core(CFURLAuthChallengeGetProtectionSpace(challenge)));
         if (!credential.isEmpty() && credential != loader->m_initialCredential) {
             ASSERT(credential.persistence() == CredentialPersistenceNone);
+            if (httpResponse && CFHTTPMessageGetResponseStatusCode(httpResponse) == 401) {
+                // Store the credential back, possibly adding it as a default for this directory.
+                CredentialStorage::set(credential, core(CFURLAuthChallengeGetProtectionSpace(challenge)), loader->m_url.get());
+            }
             RetainPtr<CFURLCredentialRef> cfCredential(AdoptCF, createCF(credential));
             CFURLConnectionUseCredential(conn, cfCredential.get(), challenge);
             return;

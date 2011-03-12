@@ -87,8 +87,10 @@ namespace WebCore {
         virtual bool shouldUseCredentialStorage();
         virtual void didReceiveAuthenticationChallenge(const AuthenticationChallenge&);
         void didCancelAuthenticationChallenge(const AuthenticationChallenge&);
-
+#if USE(PROTECTION_SPACE_AUTH_CALLBACK)
         virtual bool canAuthenticateAgainstProtectionSpace(const ProtectionSpace&);
+#endif
+
         virtual CFDictionaryRef connectionProperties();
 
         virtual void receivedCancellation(const AuthenticationChallenge&);
@@ -106,7 +108,9 @@ namespace WebCore {
         virtual bool shouldUseCredentialStorage(ResourceHandle*) { return shouldUseCredentialStorage(); }
         virtual void didReceiveAuthenticationChallenge(ResourceHandle*, const AuthenticationChallenge& challenge) { didReceiveAuthenticationChallenge(challenge); } 
         virtual void didCancelAuthenticationChallenge(ResourceHandle*, const AuthenticationChallenge& challenge) { didCancelAuthenticationChallenge(challenge); } 
+#if USE(PROTECTION_SPACE_AUTH_CALLBACK)
         virtual bool canAuthenticateAgainstProtectionSpace(ResourceHandle*, const ProtectionSpace& protectionSpace) { return canAuthenticateAgainstProtectionSpace(protectionSpace); }
+#endif
         virtual CFDictionaryRef connectionProperties(ResourceHandle*) { return connectionProperties(); }
         virtual void receivedCancellation(ResourceHandle*, const AuthenticationChallenge& challenge) { receivedCancellation(challenge); }
         virtual void willCacheResponse(ResourceHandle*, CacheStoragePolicy&);

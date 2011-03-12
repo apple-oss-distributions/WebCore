@@ -1,7 +1,7 @@
 /*
  * This file is part of the internal font implementation.
  *
- * Copyright (C) 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2008, 2010 Apple Inc. All rights reserved.
  * Copyright (C) 2007-2008 Torch Mobile, Inc.
  *
  * This library is free software; you can redistribute it and/or
@@ -26,16 +26,23 @@
 
 #include "FontData.h"
 #include "FontPlatformData.h"
+#include "FloatRect.h"
 #include "GlyphMetricsMap.h"
 #include "GlyphPageTreeNode.h"
 #include "TypesettingFeatures.h"
 #include <wtf/OwnPtr.h>
+#include <wtf/PassOwnPtr.h>
 
 #if USE(ATSUI)
 typedef struct OpaqueATSUStyle* ATSUStyle;
 #endif
 
-#if PLATFORM(WIN) && !OS(WINCE)
+#if USE(CORE_TEXT)
+#include <wtf/RetainPtr.h>
+#endif
+
+#if (PLATFORM(WIN) && !OS(WINCE)) \
+    || (OS(WINDOWS) && PLATFORM(WX))
 #include <usp10.h>
 #endif
 
@@ -54,7 +61,6 @@ typedef struct OpaqueATSUStyle* ATSUStyle;
 namespace WebCore {
 
 class FontDescription;
-class FontPlatformData;
 class SharedBuffer;
 class SVGFontData;
 
@@ -62,10 +68,12 @@ enum Pitch { UnknownPitch, FixedPitch, VariablePitch };
 
 class SimpleFontData : public FontData {
 public:
-    SimpleFontData(const FontPlatformData&, bool customFont = false, bool loading = false, SVGFontData* data = 0);
+    SimpleFontData(const FontPlatformData&, bool isCustomFont = false, bool isLoading = false);
+#if ENABLE(SVG_FONTS)
+    SimpleFontData(PassOwnPtr<SVGFontData>, int size, bool syntheticBold, bool syntheticItalic);
+#endif
     virtual ~SimpleFontData();
 
-public:
     const FontPlatformData& platformData() const { return m_platformData; }
     SimpleFontData* smallCapsFontData(const FontDescription& fontDescription) const;
 
@@ -87,7 +95,7 @@ public:
     float spaceWidth() const { return m_spaceWidth; }
     float adjustedSpaceWidth() const { return m_adjustedSpaceWidth; }
 
-#if PLATFORM(CG) || PLATFORM(CAIRO)
+#if PLATFORM(CG) || PLATFORM(CAIRO) || PLATFORM(WX)
     float syntheticBoldOffset() const { return m_syntheticBoldOffset; }
 #endif
 
@@ -117,10 +125,8 @@ public:
 #endif
 
     GSFontRef getGSFont() const { return m_platformData.font(); }
-    bool isImageFont() const { return m_platformData.m_isImageFont; };
 
 #if USE(CORE_TEXT)
-    CTFontRef getCTFont() const;
     CFDictionaryRef getCFStringAttributes(TypesettingFeatures) const;
 #endif
 
@@ -138,7 +144,7 @@ public:
     QFont getQtFont() const { return m_platformData.font(); }
 #endif
 
-#if PLATFORM(WIN)
+#if PLATFORM(WIN) || (OS(WINDOWS) && PLATFORM(WX))
     bool isSystemFont() const { return m_isSystemFont; }
 #if !OS(WINCE) // disable unused members to save space
     SCRIPT_FONTPROPERTIES* scriptFontProperties() const;
@@ -162,7 +168,8 @@ private:
 
     void commonInit();
 
-#if PLATFORM(WIN) && !OS(WINCE)
+#if (PLATFORM(WIN) && !OS(WINCE)) \
+    || (OS(WINDOWS) && PLATFORM(WX))
     void initGDIFont();
     void platformCommonDestroy();
     FloatRect boundsForGDIGlyph(Glyph glyph) const;
@@ -180,7 +187,7 @@ private:
 
     FontPlatformData m_platformData;
 
-    mutable GlyphMetricsMap<FloatRect> m_glyphToBoundsMap;
+    mutable OwnPtr<GlyphMetricsMap<FloatRect> > m_glyphToBoundsMap;
     mutable GlyphMetricsMap<float> m_glyphToWidthMap;
 
     bool m_treatAsFixedPitch;
@@ -202,7 +209,7 @@ private:
 
     mutable SimpleFontData* m_smallCapsFontData;
 
-#if PLATFORM(CG) || PLATFORM(CAIRO)
+#if PLATFORM(CG) || PLATFORM(CAIRO) || PLATFORM(WX)
     float m_syntheticBoldOffset;
 #endif
 
@@ -224,11 +231,10 @@ private:
 #endif
 
 #if USE(CORE_TEXT)
-    mutable RetainPtr<CTFontRef> m_CTFont;
     mutable HashMap<unsigned, RetainPtr<CFDictionaryRef> > m_CFStringAttributes;
 #endif
 
-#if PLATFORM(WIN)
+#if PLATFORM(WIN) || (OS(WINDOWS) && PLATFORM(WX))
     bool m_isSystemFont;
 #if !OS(WINCE) // disable unused members to save space
     mutable SCRIPT_CACHE m_scriptCache;
@@ -244,12 +250,17 @@ ALWAYS_INLINE FloatRect SimpleFontData::boundsForGlyph(Glyph glyph) const
     if (glyph == m_zeroWidthSpaceGlyph && glyph)
         return FloatRect();
 
-    FloatRect bounds = m_glyphToBoundsMap.metricsForGlyph(glyph);
-    if (bounds.width() != cGlyphSizeUnknown)
-        return bounds;
+    FloatRect bounds;
+    if (m_glyphToBoundsMap) {
+        bounds = m_glyphToBoundsMap->metricsForGlyph(glyph);
+        if (bounds.width() != cGlyphSizeUnknown)
+            return bounds;
+    }
 
     bounds = platformBoundsForGlyph(glyph);
-    m_glyphToBoundsMap.setMetricsForGlyph(glyph, bounds);
+    if (!m_glyphToBoundsMap)
+        m_glyphToBoundsMap.set(new GlyphMetricsMap<FloatRect>());
+    m_glyphToBoundsMap->setMetricsForGlyph(glyph, bounds);
     return bounds;
 }
 

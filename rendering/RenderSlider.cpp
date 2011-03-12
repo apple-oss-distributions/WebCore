@@ -30,6 +30,7 @@
 #include "HTMLInputElement.h"
 #include "HTMLDivElement.h"
 #include "HTMLNames.h"
+#include "HTMLParser.h"
 #include "MediaControlElements.h"
 #include "MouseEvent.h"
 #include "RenderLayer.h"
@@ -182,7 +183,7 @@ void RenderSlider::calcPrefWidths()
         m_minPrefWidth = min(m_minPrefWidth, calcContentBoxWidth(style()->maxWidth().value()));
     }
 
-    int toAdd = paddingLeft() + paddingRight() + borderLeft() + borderRight();
+    int toAdd = borderAndPaddingWidth();
     m_minPrefWidth += toAdd;
     m_maxPrefWidth += toAdd;
 
@@ -256,8 +257,7 @@ void RenderSlider::layout()
 
     RenderBox* thumb = m_thumb ? toRenderBox(m_thumb->renderer()) : 0;
 
-    IntSize baseSize(borderLeft() + paddingLeft() + paddingRight() + borderRight(),
-        borderTop() + paddingTop() + paddingBottom() + borderBottom());
+    IntSize baseSize(borderAndPaddingWidth(), borderAndPaddingHeight());
 
     if (thumb) {
         // Allow the theme to set the size of the thumb.
@@ -310,7 +310,7 @@ void RenderSlider::updateFromElement()
         m_thumb->setRenderer(m_thumb->createRenderer(renderArena(), thumbStyle.get()));
         m_thumb->renderer()->setStyle(thumbStyle.release());
         m_thumb->setAttached();
-        m_thumb->setInDocument(true);
+        m_thumb->setInDocument();
         addChild(m_thumb->renderer());
     }
     setNeedsLayout(true);
@@ -357,7 +357,7 @@ void RenderSlider::setValueForPosition(int position)
     if (style()->appearance() == SliderVerticalPart || style()->appearance() == MediaVolumeSliderPart)
         fraction = 1 - fraction;
     double value = range.clampValue(range.valueFromProportion(fraction));
-    element->setValueFromRenderer(HTMLInputElement::serializeForNumberType(value));
+    element->setValueFromRenderer(serializeForNumberType(value));
 
     // Also update the position if appropriate.
     if (position != currentPosition()) {

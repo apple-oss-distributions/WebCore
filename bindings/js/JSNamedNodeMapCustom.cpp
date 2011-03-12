@@ -69,13 +69,13 @@ JSValue JSNamedNodeMap::setNamedItemNS(ExecState* exec, const ArgList& args)
 
 bool JSNamedNodeMap::canGetItemsForName(ExecState*, NamedNodeMap* impl, const Identifier& propertyName)
 {
-    return impl->getNamedItem(propertyName);
+    return impl->getNamedItem(identifierToString(propertyName));
 }
 
-JSValue JSNamedNodeMap::nameGetter(ExecState* exec, const Identifier& propertyName, const PropertySlot& slot)
+JSValue JSNamedNodeMap::nameGetter(ExecState* exec, JSValue slotBase, const Identifier& propertyName)
 {
-    JSNamedNodeMap* thisObj = static_cast<JSNamedNodeMap*>(asObject(slot.slotBase()));
-    return toJS(exec, thisObj->impl()->getNamedItem(propertyName));
+    JSNamedNodeMap* thisObj = static_cast<JSNamedNodeMap*>(asObject(slotBase));
+    return toJS(exec, thisObj->impl()->getNamedItem(identifierToString(propertyName)));
 }
 
 void JSNamedNodeMap::markChildren(MarkStack& markStack)

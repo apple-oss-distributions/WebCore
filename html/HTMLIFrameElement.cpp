@@ -30,7 +30,7 @@
 #include "HTMLDocument.h"
 #include "HTMLNames.h"
 #include "MappedAttribute.h"
-#include "RenderPartObject.h"
+#include "RenderIFrame.h"
 
 namespace WebCore {
 
@@ -95,10 +95,12 @@ static SandboxFlags parseSandboxAttribute(MappedAttribute* attribute)
             flags &= ~SandboxForms;
         else if (equalIgnoringCase(sandboxToken, "allow-scripts"))
             flags &= ~SandboxScripts;
+        else if (equalIgnoringCase(sandboxToken, "allow-top-navigation"))
+            flags &= ~SandboxTopNavigation;
 
         start = end + 1;
     }
-    
+
     return flags;
 }
 #endif
@@ -141,7 +143,7 @@ bool HTMLIFrameElement::rendererIsNeeded(RenderStyle* style)
 
 RenderObject* HTMLIFrameElement::createRenderer(RenderArena* arena, RenderStyle*)
 {
-    return new (arena) RenderPartObject(this);
+    return new (arena) RenderIFrame(this);
 }
 
 void HTMLIFrameElement::insertedIntoDocument()

@@ -34,7 +34,6 @@
 #include "CachedScript.h"
 #include "CachedXSLStyleSheet.h"
 #include "Console.h"
-#include "CString.h"
 #include "Document.h"
 #include "DOMWindow.h"
 #include "HTMLElement.h"
@@ -44,6 +43,7 @@
 #include "loader.h"
 #include "SecurityOrigin.h"
 #include "Settings.h"
+#include <wtf/text/CString.h>
 
 #define PRELOAD_DEBUG 0
 
@@ -404,13 +404,17 @@ void DocLoader::requestPreload(CachedResource::Type type, const String& url, con
 {
     String encoding;
     if (type == CachedResource::Script || type == CachedResource::CSSStyleSheet)
-        encoding = charset.isEmpty() ? m_doc->frame()->loader()->encoding() : charset;
+        encoding = charset.isEmpty() ? m_doc->frame()->loader()->writer()->encoding() : charset;
 
     CachedResource* resource = requestResource(type, url, encoding, true);
-    if (!resource || m_preloads.contains(resource))
+    if (!resource || (m_preloads && m_preloads->contains(resource)))
         return;
     resource->increasePreloadCount();
-    m_preloads.add(resource);
+
+    if (!m_preloads)
+        m_preloads.set(new ListHashSet<CachedResource*>);
+    m_preloads->add(resource);
+
 #if PRELOAD_DEBUG
     printf("PRELOADING %s\n",  resource->url().latin1().data());
 #endif
@@ -421,8 +425,11 @@ void DocLoader::clearPreloads()
 #if PRELOAD_DEBUG
     printPreloadStats();
 #endif
-    ListHashSet<CachedResource*>::iterator end = m_preloads.end();
-    for (ListHashSet<CachedResource*>::iterator it = m_preloads.begin(); it != end; ++it) {
+    if (!m_preloads)
+        return;
+
+    ListHashSet<CachedResource*>::iterator end = m_preloads->end();
+    for (ListHashSet<CachedResource*>::iterator it = m_preloads->begin(); it != end; ++it) {
         CachedResource* res = *it;
         res->decreasePreloadCount();
         if (res->canDelete() && !res->inCache())

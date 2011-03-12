@@ -40,6 +40,10 @@ String MIMETypeForImageSourceType(const String& type);
 size_t sharedBufferGetBytesAtPosition(void* info, void* buffer, off_t position, size_t count);
 #endif
 
+#if ENABLE(RESPECT_EXIF_ORIENTATION)
+bool orientationRequiresWidthAndHeightSwapped(int);
+#endif
+
 }
 
 #endif // ImageSourceCG_h

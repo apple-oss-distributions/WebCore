@@ -2,7 +2,7 @@
  * Copyright (C) 2009 Google Inc. All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions areV8ClassIndex::WEBGL
+ * modification, are permitted provided that the following conditions are
  * met:
  * 
  *     * Redistributions of source code must retain the above copyright
@@ -42,12 +42,16 @@
 
 #include "V8Binding.h"
 #include "V8WebGLArray.h"
+#include "V8WebGLBuffer.h"
 #include "V8WebGLByteArray.h"
 #include "V8WebGLFloatArray.h"
+#include "V8WebGLFramebuffer.h"
 #include "V8WebGLIntArray.h"
 #include "V8WebGLProgram.h"
+#include "V8WebGLRenderbuffer.h"
 #include "V8WebGLShader.h"
 #include "V8WebGLShortArray.h"
+#include "V8WebGLTexture.h"
 #include "V8WebGLUniformLocation.h"
 #include "V8WebGLUnsignedByteArray.h"
 #include "V8WebGLUnsignedIntArray.h"
@@ -101,85 +105,18 @@ static int* jsArrayToIntArray(v8::Handle<v8::Array> array, uint32_t len)
     return data;
 }
 
-v8::Handle<v8::Value> V8WebGLRenderingContext::bufferDataCallback(const v8::Arguments& args)
-{
-    INC_STATS("DOM.WebGLRenderingContext.bufferData()");
-
-    // Forms:
-    // * bufferData(GLenum target, WebGLArray data, GLenum usage);
-    //   - Sets the buffer's data from the given WebGLArray
-    // * bufferData(GLenum target, GLsizeiptr size, GLenum usage);
-    //   - Sets the size of the buffer to the given size in bytes
-    if (args.Length() != 3) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-
-    WebGLRenderingContext* context = V8WebGLRenderingContext::toNative(args.Holder());
-    bool ok;
-    int target = toInt32(args[0], ok);
-    if (!ok) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-    int usage = toInt32(args[2], ok);
-    if (!ok) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-    if (args[1]->IsInt32()) {
-        int size = toInt32(args[1]);
-        ExceptionCode exceptionCode;
-        context->bufferData(target, size, usage, exceptionCode);
-    } else if (V8WebGLArray::HasInstance(args[1])) {
-        WebGLArray* array = V8WebGLArray::toNative(args[1]->ToObject());
-        ExceptionCode exceptionCode;
-        context->bufferData(target, array, usage, exceptionCode);
-    } else {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-    return v8::Undefined();
-}
-
-v8::Handle<v8::Value> V8WebGLRenderingContext::bufferSubDataCallback(const v8::Arguments& args)
-{
-    INC_STATS("DOM.WebGLRenderingContext.bufferSubData()");
-
-    // Forms:
-    // * bufferSubData(GLenum target, GLintptr offset, WebGLArray data);
-    if (args.Length() != 3) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-
-    WebGLRenderingContext* context = V8WebGLRenderingContext::toNative(args.Holder());
-    bool ok;
-    int target = toInt32(args[0], ok);
-    if (!ok) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-    int offset = toInt32(args[1], ok);
-    if (!ok) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-    if (!V8WebGLArray::HasInstance(args[2])) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-    WebGLArray* array = V8WebGLArray::toNative(args[2]->ToObject());
-    ExceptionCode exceptionCode;
-    context->bufferSubData(target, offset, array, exceptionCode);
-    return v8::Undefined();
-}
-
-static v8::Handle<v8::Value> toV8(const WebGLGetInfo& info)
+static v8::Handle<v8::Value> toV8Object(const WebGLGetInfo& info)
 {
     switch (info.getType()) {
     case WebGLGetInfo::kTypeBool:
         return v8::Boolean::New(info.getBool());
+    case WebGLGetInfo::kTypeBoolArray: {
+        const Vector<bool>& value = info.getBoolArray();
+        v8::Local<v8::Array> array = v8::Array::New(value.size());
+        for (size_t ii = 0; ii < value.size(); ++ii)
+            array->Set(v8::Integer::New(ii), v8::Boolean::New(value[ii]));
+        return array;
+    }
     case WebGLGetInfo::kTypeFloat:
         return v8::Number::New(info.getFloat());
     case WebGLGetInfo::kTypeLong:
@@ -191,23 +128,23 @@ static v8::Handle<v8::Value> toV8(const WebGLGetInfo& info)
     case WebGLGetInfo::kTypeUnsignedLong:
         return v8::Integer::NewFromUnsigned(info.getUnsignedLong());
     case WebGLGetInfo::kTypeWebGLBuffer:
-        return V8DOMWrapper::convertToV8Object(V8ClassIndex::WEBGLBUFFER, info.getWebGLBuffer());
+        return toV8(info.getWebGLBuffer());
     case WebGLGetInfo::kTypeWebGLFloatArray:
-        return V8DOMWrapper::convertToV8Object(V8ClassIndex::WEBGLFLOATARRAY, info.getWebGLFloatArray());
+        return toV8(info.getWebGLFloatArray());
     case WebGLGetInfo::kTypeWebGLFramebuffer:
-        return V8DOMWrapper::convertToV8Object(V8ClassIndex::WEBGLFRAMEBUFFER, info.getWebGLFramebuffer());
+        return toV8(info.getWebGLFramebuffer());
     case WebGLGetInfo::kTypeWebGLIntArray:
-        return V8DOMWrapper::convertToV8Object(V8ClassIndex::WEBGLINTARRAY, info.getWebGLIntArray());
+        return toV8(info.getWebGLIntArray());
     // FIXME: implement WebGLObjectArray
     // case WebGLGetInfo::kTypeWebGLObjectArray:
     case WebGLGetInfo::kTypeWebGLProgram:
-        return V8DOMWrapper::convertToV8Object(V8ClassIndex::WEBGLPROGRAM, info.getWebGLProgram());
+        return toV8(info.getWebGLProgram());
     case WebGLGetInfo::kTypeWebGLRenderbuffer:
-        return V8DOMWrapper::convertToV8Object(V8ClassIndex::WEBGLRENDERBUFFER, info.getWebGLRenderbuffer());
+        return toV8(info.getWebGLRenderbuffer());
     case WebGLGetInfo::kTypeWebGLTexture:
-        return V8DOMWrapper::convertToV8Object(V8ClassIndex::WEBGLTEXTURE, info.getWebGLTexture());
+        return toV8(info.getWebGLTexture());
     case WebGLGetInfo::kTypeWebGLUnsignedByteArray:
-        return V8DOMWrapper::convertToV8Object(V8ClassIndex::WEBGLUNSIGNEDBYTEARRAY, info.getWebGLUnsignedByteArray());
+        return toV8(info.getWebGLUnsignedByteArray());
     default:
         notImplemented();
         return v8::Undefined();
@@ -261,7 +198,7 @@ static v8::Handle<v8::Value> getObjectParameter(const v8::Arguments& args, Objec
         V8Proxy::setDOMException(ec);
         return v8::Undefined();
     }
-    return toV8(info);
+    return toV8Object(info);
 }
 
 static WebGLUniformLocation* toWebGLUniformLocation(v8::Handle<v8::Value> value, bool& ok)
@@ -317,7 +254,7 @@ v8::Handle<v8::Value> V8WebGLRenderingContext::getFramebufferAttachmentParameter
         V8Proxy::setDOMException(ec);
         return v8::Undefined();
     }
-    return toV8(info);
+    return toV8Object(info);
 }
 
 v8::Handle<v8::Value> V8WebGLRenderingContext::getParameterCallback(const v8::Arguments& args)
@@ -342,7 +279,7 @@ v8::Handle<v8::Value> V8WebGLRenderingContext::getParameterCallback(const v8::Ar
         V8Proxy::setDOMException(ec);
         return v8::Undefined();
     }
-    return toV8(info);
+    return toV8Object(info);
 }
 
 v8::Handle<v8::Value> V8WebGLRenderingContext::getProgramParameterCallback(const v8::Arguments& args)
@@ -368,7 +305,7 @@ v8::Handle<v8::Value> V8WebGLRenderingContext::getProgramParameterCallback(const
         V8Proxy::setDOMException(ec);
         return v8::Undefined();
     }
-    return toV8(info);
+    return toV8Object(info);
 }
 
 v8::Handle<v8::Value> V8WebGLRenderingContext::getRenderbufferParameterCallback(const v8::Arguments& args)
@@ -400,7 +337,7 @@ v8::Handle<v8::Value> V8WebGLRenderingContext::getShaderParameterCallback(const 
         V8Proxy::setDOMException(ec);
         return v8::Undefined();
     }
-    return toV8(info);
+    return toV8Object(info);
 }
 
 v8::Handle<v8::Value> V8WebGLRenderingContext::getTexParameterCallback(const v8::Arguments& args)
@@ -425,306 +362,18 @@ v8::Handle<v8::Value> V8WebGLRenderingContext::getUniformCallback(const v8::Argu
     bool ok = false;
     WebGLUniformLocation* location = toWebGLUniformLocation(args[1], ok);
 
-    if (!ok) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
     WebGLGetInfo info = context->getUniform(program, location, ec);
     if (ec) {
         V8Proxy::setDOMException(ec);
         return v8::Undefined();
     }
-    return toV8(info);
+    return toV8Object(info);
 }
 
 v8::Handle<v8::Value> V8WebGLRenderingContext::getVertexAttribCallback(const v8::Arguments& args)
 {
     INC_STATS("DOM.WebGLRenderingContext.getVertexAttrib()");
     return getObjectParameter(args, kVertexAttrib);
-}
-
-v8::Handle<v8::Value> V8WebGLRenderingContext::texImage2DCallback(const v8::Arguments& args)
-{
-    INC_STATS("DOM.WebGLRenderingContext.texImage2D()");
-
-    // Currently supported forms:
-    // * void texImage2D(in GLenum target, in GLint level,
-    //                   in GLint internalformat,
-    //                   in GLsizei width, in GLsizei height, in GLint border,
-    //                   in GLenum format, in GLenum type, in WebGLArray pixels);
-    // * void texImage2D(in GLenum target, in GLint level, in ImageData pixels,
-    //                   [Optional] in GLboolean flipY, [Optional] in GLboolean premulitplyAlpha);
-    // * void texImage2D(in GLenum target, in GLint level, in HTMLImageElement image,
-    //                   [Optional] in GLboolean flipY, [Optional] in GLboolean premultiplyAlpha);
-    // * void texImage2D(in GLenum target, in GLint level, in HTMLCanvasElement image,
-    //                   [Optional] in GLboolean flipY, [Optional] in GLboolean premultiplyAlpha);
-    // * void texImage2D(in GLenum target, in GLint level, in HTMLVideoElement image,
-    //                   [Optional] in GLboolean flipY, [Optional] in GLboolean premultiplyAlpha);
-    if (args.Length() != 3 &&
-        args.Length() != 4 &&
-        args.Length() != 5 &&
-        args.Length() != 9) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-
-    WebGLRenderingContext* context = V8WebGLRenderingContext::toNative(args.Holder());
-    bool ok;
-    int target = toInt32(args[0], ok);
-    if (!ok) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-    int level = toInt32(args[1], ok);
-    if (!ok) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-
-    ExceptionCode ec = 0;
-    if (args.Length() == 3 ||
-        args.Length() == 4 ||
-        args.Length() == 5) {
-        bool flipY = false;
-        bool premultiplyAlpha = false;
-        if (args.Length() >= 4)
-            flipY = args[3]->BooleanValue();
-        if (args.Length() >= 5)
-            premultiplyAlpha = args[4]->BooleanValue();
-
-        v8::Handle<v8::Value> arg = args[2];
-        if (V8HTMLImageElement::HasInstance(arg)) {
-            HTMLImageElement* element = V8HTMLImageElement::toNative(v8::Handle<v8::Object>::Cast(arg));
-            context->texImage2D(target, level, element, flipY, premultiplyAlpha, ec);
-        } else if (V8HTMLCanvasElement::HasInstance(arg)) {
-            HTMLCanvasElement* element = V8HTMLCanvasElement::toNative(v8::Handle<v8::Object>::Cast(arg));
-            context->texImage2D(target, level, element, flipY, premultiplyAlpha, ec);
-        } else if(V8ImageData::HasInstance(arg)) {
-            ImageData* imageElement = V8ImageData::toNative(v8::Handle<v8::Object>::Cast(arg));
-            context->texImage2D(target, level, imageElement, flipY, premultiplyAlpha, ec);
-        } else if (V8HTMLVideoElement::HasInstance(arg)) {
-            HTMLVideoElement* element = V8HTMLVideoElement::toNative(v8::Handle<v8::Object>::Cast(arg));
-            context->texImage2D(target, level, element, flipY, premultiplyAlpha, ec);
-        }
-        else {
-            // FIXME: consider different / better exception type.
-            V8Proxy::setDOMException(SYNTAX_ERR);
-            return notHandledByInterceptor();
-        }
-        // Fall through
-    } else if (args.Length() == 9) {
-        int internalformat = toInt32(args[2], ok);
-        if (!ok) {
-            V8Proxy::setDOMException(SYNTAX_ERR);
-            return notHandledByInterceptor();
-        }
-        int width = toInt32(args[3], ok);
-        if (!ok) {
-            V8Proxy::setDOMException(SYNTAX_ERR);
-            return notHandledByInterceptor();
-        }
-        int height = toInt32(args[4], ok);
-        if (!ok) {
-            V8Proxy::setDOMException(SYNTAX_ERR);
-            return notHandledByInterceptor();
-        }
-        int border = toInt32(args[5], ok);
-        if (!ok) {
-            V8Proxy::setDOMException(SYNTAX_ERR);
-            return notHandledByInterceptor();
-        }
-        int format = toInt32(args[6], ok);
-        if (!ok) {
-            V8Proxy::setDOMException(SYNTAX_ERR);
-            return notHandledByInterceptor();
-        }
-        int type = toInt32(args[7], ok);
-        if (!ok) {
-            V8Proxy::setDOMException(SYNTAX_ERR);
-            return notHandledByInterceptor();
-        }
-        v8::Handle<v8::Value> arg = args[8];
-        if (!arg->IsObject())
-        // Assume that the user is passing null for texture
-            context->texImage2D(target,
-                                level,
-                                internalformat,
-                                width,
-                                height,
-                                border,
-                                format,
-                                type,
-                                0,
-                                ec);
-     else if (V8WebGLArray::HasInstance(arg)) {
-            WebGLArray* array = V8WebGLArray::toNative(arg->ToObject());
-            context->texImage2D(target,
-                                level,
-                                internalformat,
-                                width,
-                                height,
-                                border,
-                                format,
-                                type,
-                                array,
-                                ec);
-            // Fall through
-        } else {
-            V8Proxy::setDOMException(SYNTAX_ERR);
-            return notHandledByInterceptor();
-        }
-    } else {
-        ASSERT_NOT_REACHED();
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-    if (ec) {
-        V8Proxy::setDOMException(ec);
-        return v8::Handle<v8::Value>();
-    }
-    return v8::Undefined();
-}
-
-v8::Handle<v8::Value> V8WebGLRenderingContext::texSubImage2DCallback(const v8::Arguments& args)
-{
-    INC_STATS("DOM.WebGLRenderingContext.texSubImage2D()");
-
-    // Currently supported forms:
-    // * void texSubImage2D(in GLenum target, in GLint level, in GLint xoffset, in GLint yoffset, 
-    //                      in GLsizei width, in GLsizei height, 
-    //                      in GLenum format, in GLenum type, in WebGLArray pixels);
-    // * void texSubImage2D(in GLenum target, in GLint level, in GLint xoffset, in GLint yoffset,
-    //                      in ImageData pixels, [Optional] GLboolean flipY, [Optional] in premultiplyAlpha);
-    // * void texSubImage2D(in GLenum target, in GLint level, in GLint xoffset, in GLint yoffset, 
-    //                      in HTMLImageElement image, [Optional] GLboolean flipY, [Optional] in premultiplyAlpha);
-    // * void texSubImage2D(in GLenum target, in GLint level, in GLint xoffset, in GLint yoffset, 
-    //                      in HTMLCanvasElement canvas, [Optional] GLboolean flipY, [Optional] in premultiplyAlpha);
-    // * void texSubImage2D(in GLenum target, in GLint level, in GLint xoffset, in GLint yoffset, 
-    //                      in HTMLVideoElement video, [Optional] GLboolean flipY, [Optional] in premultiplyAlpha);
-
-    if (args.Length() != 5 &&
-        args.Length() != 6 &&
-        args.Length() != 7 &&
-        args.Length() != 9) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-
-    WebGLRenderingContext* context = V8WebGLRenderingContext::toNative(args.Holder());
-    bool ok;
-    int target = toInt32(args[0], ok);
-    if (!ok) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-    int level = toInt32(args[1], ok);
-    if (!ok) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-    int xoff = toInt32(args[2], ok);
-    if (!ok) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-    int yoff = toInt32(args[3], ok);
-    if (!ok) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-
-    ExceptionCode ec = 0;
-    if (args.Length() == 5 ||
-        args.Length() == 6 ||
-        args.Length() == 7) {
-        bool flipY = false;
-        bool premultiplyAlpha = false;
-        if (args.Length() >= 6)
-            flipY = args[5]->BooleanValue();
-        if (args.Length() >= 7)
-            premultiplyAlpha = args[6]->BooleanValue();
-
-        v8::Handle<v8::Value> arg = args[4];
-        if (V8HTMLImageElement::HasInstance(arg)) {
-            HTMLImageElement* element = V8HTMLImageElement::toNative(v8::Handle<v8::Object>::Cast(arg));
-            context->texSubImage2D(target, level, xoff, yoff, element, flipY, premultiplyAlpha, ec);
-        } else if (V8HTMLCanvasElement::HasInstance(arg)) {
-            HTMLCanvasElement* element = V8HTMLCanvasElement::toNative(v8::Handle<v8::Object>::Cast(arg));
-            context->texSubImage2D(target, level, xoff, yoff, element, flipY, premultiplyAlpha, ec);
-        } else if(V8ImageData::HasInstance(arg)) {
-            ImageData* imageElement = V8ImageData::toNative(v8::Handle<v8::Object>::Cast(arg));
-            context->texSubImage2D(target, level, xoff, yoff, imageElement, flipY, premultiplyAlpha, ec);
-        } else if (V8HTMLVideoElement::HasInstance(arg)) {
-            HTMLVideoElement* element = V8HTMLVideoElement::toNative(v8::Handle<v8::Object>::Cast(arg));
-            context->texSubImage2D(target, level, xoff, yoff, element, flipY, premultiplyAlpha, ec);
-        }
-        else {
-            // FIXME: consider different / better exception type.
-            V8Proxy::setDOMException(SYNTAX_ERR);
-            return notHandledByInterceptor();
-        }
-        // Fall through
-    } else if (args.Length() == 9) {
-        int width = toInt32(args[4], ok);
-        if (!ok) {
-            V8Proxy::setDOMException(SYNTAX_ERR);
-            return notHandledByInterceptor();
-        }
-        int height = toInt32(args[5], ok);
-        if (!ok) {
-            V8Proxy::setDOMException(SYNTAX_ERR);
-            return notHandledByInterceptor();
-        }
-        int format = toInt32(args[6], ok);
-        if (!ok) {
-            V8Proxy::setDOMException(SYNTAX_ERR);
-            return notHandledByInterceptor();
-        }
-        int type = toInt32(args[7], ok);
-        if (!ok) {
-            V8Proxy::setDOMException(SYNTAX_ERR);
-            return notHandledByInterceptor();
-        }
-        v8::Handle<v8::Value> arg = args[8];
-        if (!arg->IsObject())
-        // Assume that the user is passing null for texture
-            context->texSubImage2D(target,
-                                   level,
-                                   xoff,
-                                   yoff,
-                                   width,
-                                   height,
-                                   format,
-                                   type,
-                                   0,
-                                   ec);
-     else if (V8WebGLArray::HasInstance(arg)) {
-            WebGLArray* array = V8WebGLArray::toNative(arg->ToObject());
-            context->texSubImage2D(target,
-                                   level,
-                                   xoff,
-                                   yoff,
-                                   width,
-                                   height,
-                                   format,
-                                   type,
-                                   array,
-                                   ec);
-            // Fall through
-        } else {
-            V8Proxy::setDOMException(SYNTAX_ERR);
-            return notHandledByInterceptor();
-        }
-    } else {
-        ASSERT_NOT_REACHED();
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
-    if (ec) {
-        V8Proxy::setDOMException(ec);
-        return v8::Handle<v8::Value>();
-    }
-    return v8::Undefined();
 }
 
 enum FunctionToCall {
@@ -750,21 +399,21 @@ static v8::Handle<v8::Value> vertexAttribAndUniformHelperf(const v8::Arguments& 
                                                            FunctionToCall functionToCall) {
     // Forms:
     // * glUniform1fv(WebGLUniformLocation location, Array data);
-    // * glUniform1fv(WebGLUniformLocation location, WebGLFloatArray data);
+    // * glUniform1fv(WebGLUniformLocation location, Float32Array data);
     // * glUniform2fv(WebGLUniformLocation location, Array data);
-    // * glUniform2fv(WebGLUniformLocation location, WebGLFloatArray data);
+    // * glUniform2fv(WebGLUniformLocation location, Float32Array data);
     // * glUniform3fv(WebGLUniformLocation location, Array data);
-    // * glUniform3fv(WebGLUniformLocation location, WebGLFloatArray data);
+    // * glUniform3fv(WebGLUniformLocation location, Float32Array data);
     // * glUniform4fv(WebGLUniformLocation location, Array data);
-    // * glUniform4fv(WebGLUniformLocation location, WebGLFloatArray data);
+    // * glUniform4fv(WebGLUniformLocation location, Float32Array data);
     // * glVertexAttrib1fv(GLint index, Array data);
-    // * glVertexAttrib1fv(GLint index, WebGLFloatArray data);
+    // * glVertexAttrib1fv(GLint index, Float32Array data);
     // * glVertexAttrib2fv(GLint index, Array data);
-    // * glVertexAttrib2fv(GLint index, WebGLFloatArray data);
+    // * glVertexAttrib2fv(GLint index, Float32Array data);
     // * glVertexAttrib3fv(GLint index, Array data);
-    // * glVertexAttrib3fv(GLint index, WebGLFloatArray data);
+    // * glVertexAttrib3fv(GLint index, Float32Array data);
     // * glVertexAttrib4fv(GLint index, Array data);
-    // * glVertexAttrib4fv(GLint index, WebGLFloatArray data);
+    // * glVertexAttrib4fv(GLint index, Float32Array data);
 
     if (args.Length() != 2) {
         V8Proxy::setDOMException(SYNTAX_ERR);
@@ -782,12 +431,8 @@ static v8::Handle<v8::Value> vertexAttribAndUniformHelperf(const v8::Arguments& 
 
     WebGLRenderingContext* context = V8WebGLRenderingContext::toNative(args.Holder());
 
-    if (!ok) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
     if (V8WebGLFloatArray::HasInstance(args[1])) {
-        WebGLFloatArray* array = V8WebGLFloatArray::toNative(args[1]->ToObject());
+        Float32Array* array = V8WebGLFloatArray::toNative(args[1]->ToObject());
         ASSERT(array != NULL);
         ExceptionCode ec = 0;
         switch (functionToCall) {
@@ -841,13 +486,13 @@ static v8::Handle<v8::Value> uniformHelperi(const v8::Arguments& args,
                                             FunctionToCall functionToCall) {
     // Forms:
     // * glUniform1iv(GLUniformLocation location, Array data);
-    // * glUniform1iv(GLUniformLocation location, WebGLIntArray data);
+    // * glUniform1iv(GLUniformLocation location, Int32Array data);
     // * glUniform2iv(GLUniformLocation location, Array data);
-    // * glUniform2iv(GLUniformLocation location, WebGLIntArray data);
+    // * glUniform2iv(GLUniformLocation location, Int32Array data);
     // * glUniform3iv(GLUniformLocation location, Array data);
-    // * glUniform3iv(GLUniformLocation location, WebGLIntArray data);
+    // * glUniform3iv(GLUniformLocation location, Int32Array data);
     // * glUniform4iv(GLUniformLocation location, Array data);
-    // * glUniform4iv(GLUniformLocation location, WebGLIntArray data);
+    // * glUniform4iv(GLUniformLocation location, Int32Array data);
 
     if (args.Length() != 2) {
         V8Proxy::setDOMException(SYNTAX_ERR);
@@ -858,12 +503,8 @@ static v8::Handle<v8::Value> uniformHelperi(const v8::Arguments& args,
     bool ok = false;
     WebGLUniformLocation* location = toWebGLUniformLocation(args[0], ok);
 
-    if (!ok) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
     if (V8WebGLIntArray::HasInstance(args[1])) {
-        WebGLIntArray* array = V8WebGLIntArray::toNative(args[1]->ToObject());
+        Int32Array* array = V8WebGLIntArray::toNative(args[1]->ToObject());
         ASSERT(array != NULL);
         ExceptionCode ec = 0;
         switch (functionToCall) {
@@ -958,13 +599,13 @@ static v8::Handle<v8::Value> uniformMatrixHelper(const v8::Arguments& args,
 {
     // Forms:
     // * glUniformMatrix2fv(GLint location, GLboolean transpose, Array data);
-    // * glUniformMatrix2fv(GLint location, GLboolean transpose, WebGLFloatArray data);
+    // * glUniformMatrix2fv(GLint location, GLboolean transpose, Float32Array data);
     // * glUniformMatrix3fv(GLint location, GLboolean transpose, Array data);
-    // * glUniformMatrix3fv(GLint location, GLboolean transpose, WebGLFloatArray data);
+    // * glUniformMatrix3fv(GLint location, GLboolean transpose, Float32Array data);
     // * glUniformMatrix4fv(GLint location, GLboolean transpose, Array data);
-    // * glUniformMatrix4fv(GLint location, GLboolean transpose, WebGLFloatArray data);
+    // * glUniformMatrix4fv(GLint location, GLboolean transpose, Float32Array data);
     //
-    // FIXME: need to change to accept WebGLFloatArray as well.
+    // FIXME: need to change to accept Float32Array as well.
     if (args.Length() != 3) {
         V8Proxy::setDOMException(SYNTAX_ERR);
         return notHandledByInterceptor();
@@ -975,13 +616,9 @@ static v8::Handle<v8::Value> uniformMatrixHelper(const v8::Arguments& args,
     bool ok = false;
     WebGLUniformLocation* location = toWebGLUniformLocation(args[0], ok);
     
-    if (!ok) {
-        V8Proxy::setDOMException(SYNTAX_ERR);
-        return notHandledByInterceptor();
-    }
     bool transpose = args[1]->BooleanValue();
     if (V8WebGLFloatArray::HasInstance(args[2])) {
-        WebGLFloatArray* array = V8WebGLFloatArray::toNative(args[2]->ToObject());
+        Float32Array* array = V8WebGLFloatArray::toNative(args[2]->ToObject());
         ASSERT(array != NULL);
         ExceptionCode ec = 0;
         switch (matrixSize) {

@@ -61,7 +61,9 @@ class wxMenu;
 #elif PLATFORM(CHROMIUM)
 #include "PopupMenuPrivate.h"
 #elif PLATFORM(HAIKU)
-class BMenu;
+namespace WebCore {
+class PopupMenuHaiku;
+}
 #endif
 
 namespace WebCore {
@@ -185,7 +187,7 @@ private:
 #elif PLATFORM(CHROMIUM)
     PopupMenuPrivate p;
 #elif PLATFORM(HAIKU)
-    BMenu* m_menu;
+    PopupMenuHaiku* m_menu;
 #endif
 
 };

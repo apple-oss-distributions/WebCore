@@ -32,6 +32,7 @@
 #include "KURL.h"
 #include "PurgeableBuffer.h"
 #include "Request.h"
+#include "SharedBuffer.h"
 #include <wtf/CurrentTime.h>
 #include <wtf/MathExtras.h>
 #include <wtf/RefCountedLeakCounter.h>
@@ -48,43 +49,38 @@ static RefCountedLeakCounter cachedResourceLeakCounter("CachedResource");
 
 CachedResource::CachedResource(const String& url, Type type)
     : m_url(url)
+    , m_request(0)
     , m_responseTimestamp(currentTime())
     , m_lastDecodedAccessTime(0)
-    , m_sendResourceLoadCallbacks(true)
+    , m_encodedSize(0)
+    , m_decodedSize(0)
+    , m_accessCount(0)
+    , m_handleCount(0)
     , m_preloadCount(0)
     , m_preloadResult(PreloadNotReferenced)
+    , m_inLiveDecodedResourcesList(false)
     , m_requestedFromNetworkingLayer(false)
+    , m_sendResourceLoadCallbacks(true)
+    , m_errorOccurred(false)
     , m_inCache(false)
     , m_loading(false)
+    , m_type(type)
+    , m_status(Pending)
+#ifndef NDEBUG
+    , m_deleted(false)
+    , m_lruIndex(0)
+#endif
+    , m_nextInAllResourcesList(0)
+    , m_prevInAllResourcesList(0)
+    , m_nextInLiveResourcesList(0)
+    , m_prevInLiveResourcesList(0)
     , m_docLoader(0)
-    , m_handleCount(0)
     , m_resourceToRevalidate(0)
     , m_proxyResource(0)
 {
 #ifndef NDEBUG
     cachedResourceLeakCounter.increment();
 #endif
-
-    m_type = type;
-    m_status = Pending;
-    m_encodedSize = 0;
-    m_decodedSize = 0;
-    m_request = 0;
-
-    m_accessCount = 0;
-    m_inLiveDecodedResourcesList = false;
-    
-    m_nextInAllResourcesList = 0;
-    m_prevInAllResourcesList = 0;
-    
-    m_nextInLiveResourcesList = 0;
-    m_prevInLiveResourcesList = 0;
-
-#ifndef NDEBUG
-    m_deleted = false;
-    m_lruIndex = 0;
-#endif
-    m_errorOccurred = false;
 }
 
 CachedResource::~CachedResource()
@@ -435,18 +431,11 @@ bool CachedResource::makePurgeable(bool purgeable)
         if (!m_data->hasOneRef())
             return false;
         
-        // Purgeable buffers are allocated in multiples of the page size (4KB in common CPUs) so it does not make sense for very small buffers.
-        const size_t purgeableThreshold = 4 * 4096;
-        if (m_data->size() < purgeableThreshold)
+        m_data->createPurgeableBuffer();
+        if (!m_data->hasPurgeableBuffer())
             return false;
-        
-        if (m_data->hasPurgeableBuffer()) {
-            m_purgeableData.set(m_data->releasePurgeableBuffer());
-        } else {
-            m_purgeableData.set(PurgeableBuffer::create(m_data->data(), m_data->size()));
-            if (!m_purgeableData)
-                return false;
-        }
+
+        m_purgeableData.set(m_data->releasePurgeableBuffer());
         
         m_purgeableData->makePurgeable(true);
         m_data.clear();

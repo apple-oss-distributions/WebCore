@@ -27,7 +27,6 @@
 #define IntPoint_h
 
 #include "IntSize.h"
-#include <wtf/Platform.h>
 
 #if PLATFORM(QT)
 #include <QDataStream>
@@ -50,10 +49,16 @@ QT_END_NAMESPACE
 typedef struct _GdkPoint GdkPoint;
 #elif PLATFORM(HAIKU)
 class BPoint;
+#elif PLATFORM(EFL)
+typedef struct _Evas_Point Evas_Point;
 #endif
 
 #if PLATFORM(WX)
 class wxPoint;
+#endif
+
+#if PLATFORM(BREWMP)
+typedef struct _point AEEPoint;
 #endif
 
 #if PLATFORM(SKIA)
@@ -68,6 +73,8 @@ public:
     IntPoint() : m_x(0), m_y(0) { }
     IntPoint(int x, int y) : m_x(x), m_y(y) { }
     explicit IntPoint(const IntSize& size) : m_x(size.width()), m_y(size.height()) { }
+
+    static IntPoint zero() { return IntPoint(); }
 
     int x() const { return m_x; }
     int y() const { return m_y; }
@@ -92,7 +99,7 @@ public:
 
     void clampNegativeToZero()
     {
-        *this = expandedTo(IntPoint());
+        *this = expandedTo(zero());
     }
 
 #if PLATFORM(CG)
@@ -115,11 +122,19 @@ public:
 #elif PLATFORM(HAIKU)
     explicit IntPoint(const BPoint&);
     operator BPoint() const;
+#elif PLATFORM(EFL)
+    explicit IntPoint(const Evas_Point&);
+    operator Evas_Point() const;
 #endif
 
 #if PLATFORM(WX)
     IntPoint(const wxPoint&);
     operator wxPoint() const;
+#endif
+
+#if PLATFORM(BREWMP)
+    IntPoint(const AEEPoint&);
+    operator AEEPoint() const;
 #endif
 
 #if PLATFORM(SKIA)
@@ -167,6 +182,11 @@ inline bool operator==(const IntPoint& a, const IntPoint& b)
 inline bool operator!=(const IntPoint& a, const IntPoint& b)
 {
     return a.x() != b.x() || a.y() != b.y();
+}
+
+inline IntPoint toPoint(const IntSize& size)
+{
+    return IntPoint(size.width(), size.height());
 }
 
 #if PLATFORM(QT)

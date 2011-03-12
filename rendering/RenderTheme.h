@@ -39,6 +39,9 @@ namespace WebCore {
 class Element;
 class PopupMenu;
 class RenderMenuList;
+#if ENABLE(PROGRESS_TAG)
+class RenderProgress;
+#endif
 class CSSStyleSheet;
 
 class RenderTheme : public RefCounted<RenderTheme> {
@@ -168,6 +171,13 @@ public:
     // Method for painting the caps lock indicator
     virtual bool paintCapsLockIndicator(RenderObject*, const RenderObject::PaintInfo&, const IntRect&) { return 0; };
 
+#if ENABLE(PROGRESS_TAG)
+    // Returns the repeat interval of the animation for the progress bar.
+    virtual double animationRepeatIntervalForProgressBar(RenderProgress*) const;
+    // Returns the duration of the animation for the progress bar.
+    virtual double animationDurationForProgressBar(RenderProgress*) const;
+#endif
+
     virtual bool paintCheckboxDecorations(RenderObject*, const RenderObject::PaintInfo&, const IntRect&) { return true; }
     virtual bool paintRadioDecorations(RenderObject*, const RenderObject::PaintInfo&, const IntRect&) { return true; }
     virtual bool paintButtonDecorations(RenderObject*, const RenderObject::PaintInfo&, const IntRect&) { return true; }
@@ -184,6 +194,9 @@ public:
     virtual bool shouldRenderMediaControlPart(ControlPart, Element*);
     virtual double mediaControlsFadeInDuration() { return 0.1; }
     virtual double mediaControlsFadeOutDuration() { return 0.3; }
+    virtual String formatMediaControlsTime(float time) const;
+    virtual String formatMediaControlsCurrentTime(float currentTime, float duration) const;
+    virtual String formatMediaControlsRemainingTime(float currentTime, float duration) const;
 #endif
 
 protected:
@@ -233,6 +246,11 @@ protected:
     virtual void adjustMenuListButtonStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
     virtual bool paintMenuListButton(RenderObject*, const RenderObject::PaintInfo&, const IntRect&) { return true; }
 
+#if ENABLE(PROGRESS_TAG)
+    virtual void adjustProgressBarStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
+    virtual bool paintProgressBar(RenderObject*, const RenderObject::PaintInfo&, const IntRect&) { return true; }
+#endif
+
     virtual void adjustSliderTrackStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
     virtual bool paintSliderTrack(RenderObject*, const RenderObject::PaintInfo&, const IntRect&) { return true; }
 
@@ -280,7 +298,9 @@ public:
     bool isEnabled(const RenderObject*) const;
     bool isFocused(const RenderObject*) const;
     bool isPressed(const RenderObject*) const;
+    bool isSpinUpButtonPartPressed(const RenderObject*) const;
     bool isHovered(const RenderObject*) const;
+    bool isSpinUpButtonPartHovered(const RenderObject*) const;
     bool isReadOnlyControl(const RenderObject*) const;
     bool isDefault(const RenderObject*) const;
 

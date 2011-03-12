@@ -4,6 +4,7 @@
                   2005, 2007 Eric Seidel <eric@webkit.org>
                   2009 Google, Inc.
                   2009 Dirk Schulze <krit@webkit.org>
+    Copyright (C) Research In Motion Limited 2010. All rights reserved.
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Library General Public
@@ -31,12 +32,10 @@
 #include "GraphicsContext.h"
 #include "PointerEventsHitRules.h"
 #include "RenderSVGContainer.h"
+#include "RenderSVGResourceFilter.h"
+#include "RenderSVGResourceMarker.h"
 #include "StrokeStyleApplier.h"
-#include "SVGPaintServer.h"
 #include "SVGRenderSupport.h"
-#include "SVGResourceFilter.h"
-#include "SVGResourceMarker.h"
-#include "SVGResourceMasker.h"
 #include "SVGStyledTransformableElement.h"
 #include "SVGTransformList.h"
 #include "SVGURIReference.h"
@@ -66,25 +65,18 @@ private:
 
 RenderPath::RenderPath(SVGStyledTransformableElement* node)
     : RenderSVGModelObject(node)
+    , m_needsBoundariesUpdate(false) // default is false, the cached rects are empty from the beginning
+    , m_needsPathUpdate(true) // default is true, so we grab a Path object once from SVGStyledTransformableElement
+    , m_needsTransformUpdate(true) // default is true, so we grab a AffineTransform object once from SVGStyledTransformableElement
 {
-}
-
-const TransformationMatrix& RenderPath::localToParentTransform() const
-{
-    return m_localTransform;
-}
-
-TransformationMatrix RenderPath::localTransform() const
-{
-    return m_localTransform;
 }
 
 bool RenderPath::fillContains(const FloatPoint& point, bool requiresFill) const
 {
-    if (m_path.isEmpty())
+    if (!m_fillBoundingBox.contains(point))
         return false;
 
-    if (requiresFill && !SVGPaintServer::fillPaintServer(style(), this))
+    if (requiresFill && !RenderSVGResource::fillPaintingResource(this, style()))
         return false;
 
     return m_path.contains(point, style()->svgStyle()->fillRule());
@@ -92,122 +84,63 @@ bool RenderPath::fillContains(const FloatPoint& point, bool requiresFill) const
 
 bool RenderPath::strokeContains(const FloatPoint& point, bool requiresStroke) const
 {
-    if (m_path.isEmpty())
+    if (!m_strokeAndMarkerBoundingBox.contains(point))
         return false;
 
-    if (requiresStroke && !SVGPaintServer::strokePaintServer(style(), this))
+    if (requiresStroke && !RenderSVGResource::strokePaintingResource(this, style()))
         return false;
 
     BoundingRectStrokeStyleApplier strokeStyle(this, style());
     return m_path.strokeContains(&strokeStyle, point);
 }
 
-FloatRect RenderPath::objectBoundingBox() const
-{
-    if (m_path.isEmpty())
-        return FloatRect();
-
-    if (m_cachedLocalFillBBox.isEmpty())
-        m_cachedLocalFillBBox = m_path.boundingRect();
-
-    return m_cachedLocalFillBBox;
-}
-
-FloatRect RenderPath::strokeBoundingBox() const
-{
-    if (m_path.isEmpty())
-        return FloatRect();
-
-    if (!m_cachedLocalStrokeBBox.isEmpty())
-        return m_cachedLocalStrokeBBox;
-
-    m_cachedLocalStrokeBBox = objectBoundingBox();
-    if (style()->svgStyle()->hasStroke()) {
-        BoundingRectStrokeStyleApplier strokeStyle(this, style());
-        m_cachedLocalStrokeBBox.unite(m_path.strokeBoundingRect(&strokeStyle));
-    }
-
-    return m_cachedLocalStrokeBBox;
-}
-
-FloatRect RenderPath::markerBoundingBox() const
-{
-    if (m_path.isEmpty())
-        return FloatRect();
-
-    if (m_cachedLocalMarkerBBox.isEmpty())
-        calculateMarkerBoundsIfNeeded();
-
-    return m_cachedLocalMarkerBBox;
-}
-
-FloatRect RenderPath::repaintRectInLocalCoordinates() const
-{
-    if (m_path.isEmpty())
-        return FloatRect();
-
-    // If we already have a cached repaint rect, return that
-    if (!m_cachedLocalRepaintRect.isEmpty())
-        return m_cachedLocalRepaintRect;
-
-    // FIXME: We need to be careful here. We assume that there is no filter,
-    // clipper, marker or masker if the rects are empty.
-    FloatRect rect = filterBoundingBoxForRenderer(this);
-    if (!rect.isEmpty())
-        m_cachedLocalRepaintRect = rect;
-    else {
-        m_cachedLocalRepaintRect = strokeBoundingBox();
-        m_cachedLocalRepaintRect.unite(markerBoundingBox());
-    }
-
-    rect = clipperBoundingBoxForRenderer(this);
-    if (!rect.isEmpty())
-        m_cachedLocalRepaintRect.intersect(rect);
-
-    rect = maskerBoundingBoxForRenderer(this);
-    if (!rect.isEmpty())
-        m_cachedLocalRepaintRect.intersect(rect);
-
-    style()->svgStyle()->inflateForShadow(m_cachedLocalRepaintRect);
-
-    return m_cachedLocalRepaintRect;
-}
-
-void RenderPath::setPath(const Path& newPath)
-{
-    m_path = newPath;
-    m_cachedLocalRepaintRect = FloatRect();
-    m_cachedLocalStrokeBBox = FloatRect();
-    m_cachedLocalFillBBox = FloatRect();
-    m_cachedLocalMarkerBBox = FloatRect();
-}
-
 void RenderPath::layout()
 {
     LayoutRepainter repainter(*this, checkForRepaintDuringLayout() && selfNeedsLayout());
-
     SVGStyledTransformableElement* element = static_cast<SVGStyledTransformableElement*>(node());
-    m_localTransform = element->animatedLocalTransform();
-    setPath(element->toPathData());
+
+    // We need to update the Path object whenever the underlying SVGStyledTransformableElement uses relative values
+    // as the viewport size may have changed. It would be nice to optimize this to detect these changes, and only
+    // update when needed, even when using relative values.
+    bool needsPathUpdate = m_needsPathUpdate;
+    if (!needsPathUpdate && element->hasRelativeValues())
+        needsPathUpdate = true;
+
+    if (needsPathUpdate) {
+        m_path = element->toPathData();
+        m_needsPathUpdate = false;
+    }
+
+    if (m_needsTransformUpdate) {
+        m_localTransform = element->animatedLocalTransform();
+        m_needsTransformUpdate = false;
+    }
+
+    // At this point LayoutRepainter already grabbed the old bounds,
+    // recalculate them now so repaintAfterLayout() uses the new bounds
+    if (needsPathUpdate || m_needsBoundariesUpdate) {
+        updateCachedBoundaries();
+        m_needsBoundariesUpdate = false;
+    }
 
     repainter.repaintAfterLayout();
     setNeedsLayout(false);
 }
 
-static inline void fillAndStrokePath(const Path& path, GraphicsContext* context, RenderStyle* style, RenderPath* object)
+static inline void fillAndStrokePath(const Path& path, GraphicsContext* context, RenderPath* object)
 {
     context->beginPath();
 
-    SVGPaintServer* fillPaintServer = SVGPaintServer::fillPaintServer(style, object);
-    if (fillPaintServer) {
+    if (RenderSVGResource* fillPaintingResource = RenderSVGResource::fillPaintingResource(object, object->style())) {
         context->addPath(path);
-        fillPaintServer->draw(context, object, ApplyToFillTargetType);
+        if (fillPaintingResource->applyResource(object, object->style(), context, ApplyToFillMode))
+            fillPaintingResource->postApplyResource(object, context, ApplyToFillMode);
     }
-    
-    SVGPaintServer* strokePaintServer = SVGPaintServer::strokePaintServer(style, object);
-    if (strokePaintServer) {
-        context->addPath(path); // path is cleared when filled.
-        strokePaintServer->draw(context, object, ApplyToStrokeTargetType);
+
+    if (RenderSVGResource* strokePaintingResource = RenderSVGResource::strokePaintingResource(object, object->style())) {
+        context->addPath(path);
+        if (strokePaintingResource->applyResource(object, object->style(), context, ApplyToStrokeMode))
+            strokePaintingResource->postApplyResource(object, context, ApplyToStrokeMode);
     }
 }
 
@@ -218,36 +151,39 @@ void RenderPath::paint(PaintInfo& paintInfo, int, int)
 
     FloatRect boundingBox = repaintRectInLocalCoordinates();
     FloatRect nonLocalBoundingBox = m_localTransform.mapRect(boundingBox);
-    // FIXME: The empty rect check is to deal with incorrect initial clip in renderSubtreeToImage
-    // unfortunately fixing that problem is fairly complex unless we were willing to just futz the
-    // rect to something "close enough"
-    if (!nonLocalBoundingBox.intersects(paintInfo.rect) && !paintInfo.rect.isEmpty())
+    if (!nonLocalBoundingBox.intersects(paintInfo.rect))
         return;
 
     PaintInfo childPaintInfo(paintInfo);
-    childPaintInfo.context->save();
-    applyTransformToPaintInfo(childPaintInfo, m_localTransform);
-    SVGResourceFilter* filter = 0;
+    bool drawsOutline = style()->outlineWidth() && (childPaintInfo.phase == PaintPhaseOutline || childPaintInfo.phase == PaintPhaseSelfOutline);
+    if (drawsOutline || childPaintInfo.phase == PaintPhaseForeground) {
+        childPaintInfo.context->save();
+        applyTransformToPaintInfo(childPaintInfo, m_localTransform);
+        RenderSVGResourceFilter* filter = 0;
 
-    if (childPaintInfo.phase == PaintPhaseForeground) {
-        PaintInfo savedInfo(childPaintInfo);
+        if (childPaintInfo.phase == PaintPhaseForeground) {
+            PaintInfo savedInfo(childPaintInfo);
 
-        if (prepareToRenderSVGContent(this, childPaintInfo, boundingBox, filter)) {
-            if (style()->svgStyle()->shapeRendering() == SR_CRISPEDGES)
-                childPaintInfo.context->setShouldAntialias(false);
-            fillAndStrokePath(m_path, childPaintInfo.context, style(), this);
+            if (prepareToRenderSVGContent(this, childPaintInfo, boundingBox, filter)) {
+                const SVGRenderStyle* svgStyle = style()->svgStyle();
+                if (svgStyle->shapeRendering() == SR_CRISPEDGES)
+                    childPaintInfo.context->setShouldAntialias(false);
 
-            if (static_cast<SVGStyledElement*>(node())->supportsMarkers())
-                m_markerLayoutInfo.drawMarkers(childPaintInfo);
+                fillAndStrokePath(m_path, childPaintInfo.context, this);
+
+                if (svgStyle->hasMarkers())
+                    m_markerLayoutInfo.drawMarkers(childPaintInfo);
+            }
+
+            finishRenderSVGContent(this, childPaintInfo, filter, savedInfo.context);
         }
-        finishRenderSVGContent(this, childPaintInfo, filter, savedInfo.context);
-    }
 
-    if ((childPaintInfo.phase == PaintPhaseOutline || childPaintInfo.phase == PaintPhaseSelfOutline) && style()->outlineWidth())
-        paintOutline(childPaintInfo.context, static_cast<int>(boundingBox.x()), static_cast<int>(boundingBox.y()),
-            static_cast<int>(boundingBox.width()), static_cast<int>(boundingBox.height()), style());
-    
-    childPaintInfo.context->restore();
+        if (drawsOutline)
+            paintOutline(childPaintInfo.context, static_cast<int>(boundingBox.x()), static_cast<int>(boundingBox.y()),
+                static_cast<int>(boundingBox.width()), static_cast<int>(boundingBox.height()));
+        
+        childPaintInfo.context->restore();
+    }
 }
 
 // This method is called from inside paintOutline() since we call paintOutline()
@@ -281,48 +217,88 @@ bool RenderPath::nodeAtFloatPoint(const HitTestRequest&, HitTestResult& result, 
     return false;
 }
 
-void RenderPath::calculateMarkerBoundsIfNeeded() const
+FloatRect RenderPath::calculateMarkerBoundsIfNeeded()
 {
     Document* doc = document();
 
     SVGElement* svgElement = static_cast<SVGElement*>(node());
     ASSERT(svgElement && svgElement->document());
     if (!svgElement->isStyled())
-        return;
+        return FloatRect();
 
     SVGStyledElement* styledElement = static_cast<SVGStyledElement*>(svgElement);
     if (!styledElement->supportsMarkers())
-        return;
+        return FloatRect();
 
     const SVGRenderStyle* svgStyle = style()->svgStyle();
-    AtomicString startMarkerId(svgStyle->startMarker());
-    AtomicString midMarkerId(svgStyle->midMarker());
-    AtomicString endMarkerId(svgStyle->endMarker());
+    ASSERT(svgStyle->hasMarkers());
 
-    SVGResourceMarker* startMarker = getMarkerById(doc, startMarkerId, this);
-    SVGResourceMarker* midMarker = getMarkerById(doc, midMarkerId, this);
-    SVGResourceMarker* endMarker = getMarkerById(doc, endMarkerId, this);
+    AtomicString startMarkerId(svgStyle->markerStartResource());
+    AtomicString midMarkerId(svgStyle->markerMidResource());
+    AtomicString endMarkerId(svgStyle->markerEndResource());
+
+    RenderSVGResourceMarker* startMarker = getRenderSVGResourceById<RenderSVGResourceMarker>(doc, startMarkerId);
+    RenderSVGResourceMarker* midMarker = getRenderSVGResourceById<RenderSVGResourceMarker>(doc, midMarkerId);
+    RenderSVGResourceMarker* endMarker = getRenderSVGResourceById<RenderSVGResourceMarker>(doc, endMarkerId);
 
     if (!startMarker && !startMarkerId.isEmpty())
         svgElement->document()->accessSVGExtensions()->addPendingResource(startMarkerId, styledElement);
     else if (startMarker)
-        startMarker->addClient(styledElement);
+        startMarker->addClient(this);
 
     if (!midMarker && !midMarkerId.isEmpty())
         svgElement->document()->accessSVGExtensions()->addPendingResource(midMarkerId, styledElement);
     else if (midMarker)
-        midMarker->addClient(styledElement);
+        midMarker->addClient(this);
 
     if (!endMarker && !endMarkerId.isEmpty())
         svgElement->document()->accessSVGExtensions()->addPendingResource(endMarkerId, styledElement);
     else if (endMarker)
-        endMarker->addClient(styledElement);
+        endMarker->addClient(this);
 
     if (!startMarker && !midMarker && !endMarker)
-        return;
+        return FloatRect();
 
     float strokeWidth = SVGRenderStyle::cssPrimitiveToLength(this, svgStyle->strokeWidth(), 1.0f);
-    m_cachedLocalMarkerBBox = m_markerLayoutInfo.calculateBoundaries(startMarker, midMarker, endMarker, strokeWidth, m_path);
+    return m_markerLayoutInfo.calculateBoundaries(startMarker, midMarker, endMarker, strokeWidth, m_path);
+}
+
+void RenderPath::styleWillChange(StyleDifference diff, const RenderStyle* newStyle)
+{
+    setNeedsBoundariesUpdate();
+    RenderSVGModelObject::styleWillChange(diff, newStyle);
+}
+
+void RenderPath::updateCachedBoundaries()
+{
+    if (m_path.isEmpty()) {
+        m_fillBoundingBox = FloatRect();
+        m_strokeAndMarkerBoundingBox = FloatRect();
+        m_repaintBoundingBox = FloatRect();
+        return;
+    }
+
+    // Cache _unclipped_ fill bounding box, used for calculations in resources
+    m_fillBoundingBox = m_path.boundingRect();
+
+    // Cache _unclipped_ stroke bounding box, used for calculations in resources (includes marker boundaries)
+    m_strokeAndMarkerBoundingBox = m_fillBoundingBox;
+
+    const SVGRenderStyle* svgStyle = style()->svgStyle();
+    if (svgStyle->hasStroke()) {
+        BoundingRectStrokeStyleApplier strokeStyle(this, style());
+        m_strokeAndMarkerBoundingBox.unite(m_path.strokeBoundingRect(&strokeStyle));
+    }
+
+    if (svgStyle->hasMarkers()) {
+        FloatRect markerBounds = calculateMarkerBoundsIfNeeded();
+        if (!markerBounds.isEmpty())
+            m_strokeAndMarkerBoundingBox.unite(markerBounds);
+    }
+
+    // Cache smallest possible repaint rectangle
+    m_repaintBoundingBox = m_strokeAndMarkerBoundingBox;
+    intersectRepaintRectWithResources(this, m_repaintBoundingBox);
 }
 
 }

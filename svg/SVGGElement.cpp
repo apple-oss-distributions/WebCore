@@ -23,6 +23,7 @@
 #if ENABLE(SVG)
 #include "SVGGElement.h"
 
+#include "RenderSVGHiddenContainer.h"
 #include "RenderSVGTransformableContainer.h"
 
 namespace WebCore {
@@ -55,14 +56,20 @@ void SVGGElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     SVGStyledTransformableElement::svgAttributeChanged(attrName);
 
-    if (!renderer())
+    RenderObject* renderer = this->renderer();
+    if (!renderer)
         return;
 
-    if (SVGTests::isKnownAttribute(attrName) || 
-        SVGLangSpace::isKnownAttribute(attrName) ||
-        SVGExternalResourcesRequired::isKnownAttribute(attrName) ||
-        SVGStyledTransformableElement::isKnownAttribute(attrName))
-        renderer()->setNeedsLayout(true);
+    if (SVGStyledTransformableElement::isKnownAttribute(attrName)) {
+        renderer->setNeedsTransformUpdate();
+        renderer->setNeedsLayout(true);
+        return;
+    }
+
+    if (SVGTests::isKnownAttribute(attrName)
+        || SVGLangSpace::isKnownAttribute(attrName)
+        || SVGExternalResourcesRequired::isKnownAttribute(attrName))
+        renderer->setNeedsLayout(true);
 }
 
 void SVGGElement::synchronizeProperty(const QualifiedName& attrName)
@@ -73,17 +80,21 @@ void SVGGElement::synchronizeProperty(const QualifiedName& attrName)
         synchronizeExternalResourcesRequired();
 }
 
-void SVGGElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+RenderObject* SVGGElement::createRenderer(RenderArena* arena, RenderStyle* style)
 {
-    SVGStyledTransformableElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    // SVG 1.1 testsuite explicitely uses constructs like <g display="none"><linearGradient>
+    // We still have to create renderers for the <g> & <linearGradient> element, though the
+    // subtree may be hidden - we only want the resource renderers to exist so they can be
+    // referenced from somewhere else.
+    if (style->display() == NONE)
+        return new (arena) RenderSVGHiddenContainer(this);
 
-    if (renderer())
-        renderer()->setNeedsLayout(true);
+    return new (arena) RenderSVGTransformableContainer(this);
 }
 
-RenderObject* SVGGElement::createRenderer(RenderArena* arena, RenderStyle*)
+bool SVGGElement::rendererIsNeeded(RenderStyle*)
 {
-    return new (arena) RenderSVGTransformableContainer(this);
+    return parentNode() && parentNode()->isSVGElement(); 
 }
 
 }

@@ -22,7 +22,6 @@
 
 #if ENABLE(WML)
 #include "WMLSelectElement.h"
-#include "CString.h"
 #include "HTMLNames.h"
 #include "MappedAttribute.h"
 #include "OptionElement.h"
@@ -32,6 +31,7 @@
 #include "WMLNames.h"
 #include "WMLVariables.h"
 #include <wtf/StdLibExtras.h>
+#include <wtf/text/CString.h>
 
 namespace WebCore {
 
@@ -108,8 +108,9 @@ void WMLSelectElement::setSelectedIndex(int optionIndex, bool deselect)
     SelectElement::setSelectedIndex(m_data, this, optionIndex, deselect, false, false);
 }
 
-void WMLSelectElement::setSelectedIndexByUser(int optionIndex, bool deselect, bool fireOnChangeNow)
+void WMLSelectElement::setSelectedIndexByUser(int optionIndex, bool deselect, bool fireOnChangeNow, bool allowMultipleSelection)
 {
+    UNUSED_PARAM(allowMultipleSelection);
     SelectElement::setSelectedIndex(m_data, this, optionIndex, deselect, fireOnChangeNow, true);
 }
 
@@ -543,6 +544,11 @@ String WMLSelectElement::iname() const
 String WMLSelectElement::ivalue() const
 {
     return parseValueSubstitutingVariableReferences(getAttribute(ivalueAttr));
+}
+
+void WMLSelectElement::listBoxSelectItem(int listIndex, bool allowMultiplySelections, bool shift, bool fireOnChangeNow)
+{
+    /* Dummy implementation as listBoxSelectItem is pure virtual in SelectElement class */
 }
 
 }

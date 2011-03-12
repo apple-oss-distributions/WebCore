@@ -31,29 +31,33 @@
 
 namespace WebCore {
 
-bool ScriptController::canExecuteScripts()
+bool ScriptController::canExecuteScripts(ReasonForCallingCanExecuteScripts reason)
 {
+    // FIXME: We should get this information from the document instead of the frame.
     if (m_frame->loader()->isSandboxed(SandboxScripts))
         return false;
 
     Settings* settings = m_frame->settings();
-    return m_frame->loader()->client()->allowJavaScript(settings && settings->isJavaScriptEnabled());
+    const bool allowed = m_frame->loader()->client()->allowJavaScript(settings && settings->isJavaScriptEnabled());
+    if (!allowed && reason == AboutToExecuteScript)
+        m_frame->loader()->client()->didNotAllowScript();
+    return allowed;
 }
 
-ScriptValue ScriptController::executeScript(const String& script, bool forceUserGesture)
+ScriptValue ScriptController::executeScript(const String& script, bool forceUserGesture, ShouldAllowXSS shouldAllowXSS)
 {
-    return executeScript(ScriptSourceCode(script, forceUserGesture ? KURL() : m_frame->loader()->url()));
+    return executeScript(ScriptSourceCode(script, forceUserGesture ? KURL() : m_frame->loader()->url()), shouldAllowXSS);
 }
 
-ScriptValue ScriptController::executeScript(const ScriptSourceCode& sourceCode)
+ScriptValue ScriptController::executeScript(const ScriptSourceCode& sourceCode, ShouldAllowXSS shouldAllowXSS)
 {
-    if (!canExecuteScripts() || isPaused())
+    if (!canExecuteScripts(AboutToExecuteScript) || isPaused())
         return ScriptValue();
 
     bool wasInExecuteScript = m_inExecuteScript;
     m_inExecuteScript = true;
 
-    ScriptValue result = evaluate(sourceCode);
+    ScriptValue result = evaluate(sourceCode, shouldAllowXSS);
 
     if (!wasInExecuteScript) {
         m_inExecuteScript = false;
@@ -77,10 +81,10 @@ bool ScriptController::executeIfJavaScriptURL(const KURL& url, bool userGesture,
 
     const int javascriptSchemeLength = sizeof("javascript:") - 1;
 
-    String script = decodeURLEscapeSequences(url.string().substring(javascriptSchemeLength));
+    String decodedURL = decodeURLEscapeSequences(url.string());
     ScriptValue result;
-    if (xssAuditor()->canEvaluateJavaScriptURL(script))
-        result = executeScript(script, userGesture);
+    if (xssAuditor()->canEvaluateJavaScriptURL(decodedURL))
+        result = executeScript(decodedURL.substring(javascriptSchemeLength), userGesture, AllowXSS);
 
     String scriptResult;
 #if USE(JSC)
@@ -97,7 +101,7 @@ bool ScriptController::executeIfJavaScriptURL(const KURL& url, bool userGesture,
     //        synchronously can cause crashes:
     //        http://bugs.webkit.org/show_bug.cgi?id=16782
     if (replaceDocument) 
-        m_frame->loader()->replaceDocument(scriptResult);
+        m_frame->loader()->writer()->replaceDocument(scriptResult);
 
     return true;
 }

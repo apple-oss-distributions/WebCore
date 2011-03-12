@@ -66,8 +66,6 @@ namespace WebCore {
 const double EventHandler::TextDragDelay = 0.15;
 #endif
 
-#if !ENABLE(EXPERIMENTAL_SINGLE_VIEW_MODE)
-
 static RetainPtr<NSEvent>& currentNSEventSlot()
 {
     DEFINE_STATIC_LOCAL(RetainPtr<NSEvent>, event, ());
@@ -660,58 +658,6 @@ bool EventHandler::eventActivatedView(const PlatformMouseEvent& event) const
 {
     return m_activationEventNumber == event.eventNumber();
 }
-
-#else // ENABLE(EXPERIMENTAL_SINGLE_VIEW_MODE)
-
-bool EventHandler::passMousePressEventToSubframe(MouseEventWithHitTestResults& mev, Frame* subframe)
-{
-    subframe->eventHandler()->handleMousePressEvent(mev.event());
-    return true;
-}
-
-bool EventHandler::passMouseMoveEventToSubframe(MouseEventWithHitTestResults& mev, Frame* subframe, HitTestResult* hoveredNode)
-{
-    if (m_mouseDownMayStartDrag && !m_mouseDownWasInSubframe)
-        return false;
-    subframe->eventHandler()->handleMouseMoveEvent(mev.event(), hoveredNode);
-    return true;
-}
-
-bool EventHandler::passMouseReleaseEventToSubframe(MouseEventWithHitTestResults& mev, Frame* subframe)
-{
-    subframe->eventHandler()->handleMouseReleaseEvent(mev.event());
-    return true;
-}
-
-bool EventHandler::passWheelEventToWidget(PlatformWheelEvent& wheelEvent, Widget* widget)
-{
-    if (!widget->isFrameView())
-        return false;
-
-    return static_cast<FrameView*>(widget)->frame()->eventHandler()->handleWheelEvent(wheelEvent);
-}
-
-void EventHandler::focusDocumentView()
-{
-    Page* page = m_frame->page();
-    if (!page)
-        return;
-    page->focusController()->setFocusedFrame(m_frame);
-}
-
-bool EventHandler::passWidgetMouseDownEventToWidget(const MouseEventWithHitTestResults&)
-{
-    notImplemented();
-    return false;
-}
-
-bool EventHandler::eventActivatedView(const PlatformMouseEvent&) const
-{
-    notImplemented();
-    return false;
-}
-
-#endif
 
 #if ENABLE(DRAG_SUPPORT)
 

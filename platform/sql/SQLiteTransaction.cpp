@@ -28,6 +28,8 @@
 
 #include "SQLiteDatabase.h"
 
+#include "SQLiteDatabaseTracker.h"
+
 namespace WebCore {
 
 SQLiteTransaction::SQLiteTransaction(SQLiteDatabase& db, bool readOnly)
@@ -54,11 +56,14 @@ void SQLiteTransaction::begin()
         // any statements. If that happens, this transaction will fail.
         // http://www.sqlite.org/lang_transaction.html
         // http://www.sqlite.org/lockingv3.html#locking
+        SQLiteDatabaseTracker::tracker().incrementTransactionInProgressCount();
         if (m_readOnly)
-            m_inProgress = m_db.executeCommand("BEGIN;");
+            m_inProgress = m_db.executeCommand("BEGIN");
         else
-            m_inProgress = m_db.executeCommand("BEGIN IMMEDIATE;");
+            m_inProgress = m_db.executeCommand("BEGIN IMMEDIATE");
         m_db.m_transactionInProgress = m_inProgress;
+        if (!m_inProgress)
+            SQLiteDatabaseTracker::tracker().decrementTransactionInProgressCount();
     }
 }
 
@@ -66,26 +71,42 @@ void SQLiteTransaction::commit()
 {
     if (m_inProgress) {
         ASSERT(m_db.m_transactionInProgress);
-        m_db.executeCommand("COMMIT;");
-        m_inProgress = false;
-        m_db.m_transactionInProgress = false;
+        m_inProgress = !m_db.executeCommand("COMMIT");
+        m_db.m_transactionInProgress = m_inProgress;
+        if (!m_inProgress)
+            SQLiteDatabaseTracker::tracker().decrementTransactionInProgressCount();
     }
 }
 
 void SQLiteTransaction::rollback()
 {
+    // We do not use the 'm_inProgress = m_db.executeCommand("ROLLBACK")' construct here,
+    // because m_inProgress should always be set to false after a ROLLBACK, and
+    // m_db.executeCommand("ROLLBACK") can sometimes harmlessly fail, thus returning
+    // a non-zero/true result (http://www.sqlite.org/lang_transaction.html).
     if (m_inProgress) {
         ASSERT(m_db.m_transactionInProgress);
-        m_db.executeCommand("ROLLBACK;");
+        m_db.executeCommand("ROLLBACK");
         m_inProgress = false;
         m_db.m_transactionInProgress = false;
+        SQLiteDatabaseTracker::tracker().decrementTransactionInProgressCount();
     }
 }
 
 void SQLiteTransaction::stop()
 {
-    m_inProgress = false;
-    m_db.m_transactionInProgress = false;
+    if (m_inProgress) {
+        m_inProgress = false;
+        m_db.m_transactionInProgress = false;
+        SQLiteDatabaseTracker::tracker().decrementTransactionInProgressCount();
+    }
+}
+
+bool SQLiteTransaction::wasRolledBackBySqlite() const
+{
+    // According to http://www.sqlite.org/c3ref/get_autocommit.html,
+    // the auto-commit flag should be off in the middle of a transaction
+    return m_inProgress && m_db.isAutoCommitOn();
 }
 
 } // namespace WebCore

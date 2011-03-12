@@ -32,17 +32,51 @@
 #include <wtf/RefCounted.h>
 
 namespace WebCore {
-    
+
     class WebGLFramebuffer : public CanvasObject {
     public:
         virtual ~WebGLFramebuffer() { deleteObject(); }
         
         static PassRefPtr<WebGLFramebuffer> create(WebGLRenderingContext*);
-        
+
+        bool isDepthAttached() const { return (m_depthAttachment && m_depthAttachment->object()); }
+        bool isStencilAttached() const { return (m_stencilAttachment && m_stencilAttachment->object()); }
+        bool isDepthStencilAttached() const { return (m_depthStencilAttachment && m_depthStencilAttachment->object()); }
+
+        void setAttachment(unsigned long, CanvasObject*);
+
+        // This function is called right after a framebuffer is bound.
+        // Because renderbuffers and textures attached to the framebuffer might
+        // have changed and the framebuffer might have become complete when it
+        // isn't bound, so we need to clear un-initialized renderbuffers.
+        void onBind();
+
+        // When a texture or a renderbuffer changes, we need to check the
+        // current bound framebuffer; if the newly changed object is attached
+        // to the framebuffer and the framebuffer becomes complete, we need to
+        // clear un-initialized renderbuffers.
+        void onAttachedObjectChange(CanvasObject*);
+
+        unsigned long getColorBufferFormat();
+
     protected:
         WebGLFramebuffer(WebGLRenderingContext*);
         
         virtual void _deleteObject(Platform3DObject);
+
+    private:
+        virtual bool isFramebuffer() const { return true; }
+
+        bool isUninitialized(CanvasObject*);
+        void setInitialized(CanvasObject*);
+        void initializeRenderbuffers();
+
+        // These objects are kept alive by the global table in
+        // WebGLRenderingContext.
+        CanvasObject* m_colorAttachment;
+        CanvasObject* m_depthAttachment;
+        CanvasObject* m_stencilAttachment;
+        CanvasObject* m_depthStencilAttachment;
     };
     
 } // namespace WebCore

@@ -26,6 +26,7 @@
 #ifndef RenderObject_h
 #define RenderObject_h
 
+#include "AffineTransform.h"
 #include "CachedResourceClient.h"
 #include "Document.h"
 #include "Element.h"
@@ -55,7 +56,7 @@ class RenderTheme;
 class TransformState;
 class VisiblePosition;
 #if ENABLE(SVG)
-class SVGRenderBase;
+class RenderSVGResourceContainer;
 #endif
 
 /*
@@ -299,8 +300,12 @@ public:
     virtual bool isListMarker() const { return false; }
     virtual bool isMedia() const { return false; }
     virtual bool isMenuList() const { return false; }
+#if ENABLE(PROGRESS_TAG)
+    virtual bool isProgress() const { return false; }
+#endif
     virtual bool isRenderBlock() const { return false; }
     virtual bool isRenderButton() const { return false; }
+    virtual bool isRenderIFrame() const { return false; }
     virtual bool isRenderImage() const { return false; }
     virtual bool isRenderInline() const { return false; }
     virtual bool isRenderPart() const { return false; }
@@ -352,13 +357,22 @@ public:
     // to add SVG renderer methods to RenderObject with an ASSERT_NOT_REACHED() default implementation.
     virtual bool isSVGRoot() const { return false; }
     virtual bool isSVGContainer() const { return false; }
+    virtual bool isSVGGradientStop() const { return false; }
     virtual bool isSVGHiddenContainer() const { return false; }
     virtual bool isRenderPath() const { return false; }
     virtual bool isSVGText() const { return false; }
     virtual bool isSVGImage() const { return false; }
     virtual bool isSVGForeignObject() const { return false; }
+    virtual bool isSVGResourceContainer() const { return false; }
+    virtual bool isSVGShadowTreeRootContainer() const { return false; }
 
-    virtual const SVGRenderBase* toSVGRenderBase() const;
+    virtual RenderSVGResourceContainer* toRenderSVGResourceContainer();
+
+    // FIXME: Those belong into a SVG specific base-class for all renderers (see above)
+    // Unfortunately we don't have such a class yet, because it's not possible for all renderers
+    // to inherit from RenderSVGObject -> RenderObject (some need RenderBlock inheritance for instance)
+    virtual void setNeedsTransformUpdate() { }
+    virtual void setNeedsBoundariesUpdate() { }
 
     // Per SVG 1.1 objectBoundingBox ignores clipping, masking, filter effects, opacity and stroke-width.
     // This is used for all computation of objectBoundingBox relative units and by SVGLocateable::getBBox().
@@ -367,19 +381,19 @@ public:
     // objectBoundingBox is returned local coordinates.
     // The name objectBoundingBox is taken from the SVG 1.1 spec.
     virtual FloatRect objectBoundingBox() const;
+    virtual FloatRect strokeBoundingBox() const;
 
     // Returns the smallest rectangle enclosing all of the painted content
     // respecting clipping, masking, filters, opacity, stroke-width and markers
     virtual FloatRect repaintRectInLocalCoordinates() const;
 
-    // FIXME: This accessor is deprecated and mostly around for SVGRenderTreeAsText.
     // This only returns the transform="" value from the element
     // most callsites want localToParentTransform() instead.
-    virtual TransformationMatrix localTransform() const;
+    virtual AffineTransform localTransform() const;
 
     // Returns the full transform mapping from local coordinates to local coords for the parent SVG renderer
     // This includes any viewport transforms and x/y offsets as well as the transform="" value off the element.
-    virtual const TransformationMatrix& localToParentTransform() const;
+    virtual const AffineTransform& localToParentTransform() const;
 
     // SVG uses FloatPoint precise hit testing, and passes the point in parent
     // coordinates instead of in repaint container coordinates.  Eventually the
@@ -408,6 +422,13 @@ public:
     
     bool hasBoxDecorations() const { return m_paintBackground; }
     bool mustRepaintBackgroundOrBorder() const;
+    bool hasBackground() const
+    {
+        Color color = style()->visitedDependentColor(CSSPropertyBackgroundColor);
+        if (color.isValid() && color.alpha() > 0)
+            return true;
+        return style()->hasBackgroundImage();
+    }
 
     bool needsLayout() const { return m_needsLayout || m_normalChildNeedsLayout || m_posChildNeedsLayout || m_needsPositionedMovementLayout; }
     bool selfNeedsLayout() const { return m_needsLayout; }
@@ -427,9 +448,9 @@ public:
     bool hasMask() const { return style() && style()->hasMask(); }
 
     void drawLineForBoxSide(GraphicsContext*, int x1, int y1, int x2, int y2, BoxSide,
-                            Color, const Color& textcolor, EBorderStyle, int adjbw1, int adjbw2);
+                            Color, EBorderStyle, int adjbw1, int adjbw2);
     void drawArcForBoxSide(GraphicsContext*, int x, int y, float thickness, IntSize radius, int angleStart,
-                           int angleSpan, BoxSide, Color, const Color& textcolor, EBorderStyle, bool firstCorner);
+                           int angleSpan, BoxSide, Color, EBorderStyle, bool firstCorner);
 
     // The pseudo element style can be cached or uncached.  Use the cached method if the pseudo element doesn't respect
     // any pseudo classes (and therefore has no concept of changing state).
@@ -537,10 +558,6 @@ public:
 
     /* This function performs a layout only if one is needed. */
     void layoutIfNeeded() { if (needsLayout()) layout(); }
-
-    // Called when a positioned object moves but doesn't necessarily change size.  A simplified layout is attempted
-    // that just updates the object's position. If the size does change, the object remains dirty.
-    virtual void tryLayoutDoingPositionedMovementOnly() { }
     
     // used for element state updates that cannot be fixed with a
     // repaint and do not need a relayout
@@ -643,8 +660,8 @@ public:
     // Repaint a specific subrectangle within a given object.  The rect |r| is in the object's coordinate space.
     void repaintRectangle(const IntRect&, bool immediate = false);
 
-    // Repaint only if our old bounds and new bounds are different.
-    bool repaintAfterLayoutIfNeeded(RenderBoxModelObject* repaintContainer, const IntRect& oldBounds, const IntRect& oldOutlineBox);
+    // Repaint only if our old bounds and new bounds are different. The caller may pass in newBounds and newOutlineBox if they are known.
+    bool repaintAfterLayoutIfNeeded(RenderBoxModelObject* repaintContainer, const IntRect& oldBounds, const IntRect& oldOutlineBox, const IntRect* newBoundsPtr = 0, const IntRect* newOutlineBoxPtr = 0);
 
     // Repaint only if the object moved.
     virtual void repaintDuringLayoutIfMoved(const IntRect& rect);
@@ -809,7 +826,7 @@ protected:
     // Overrides should call the superclass at the start
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
 
-    void paintOutline(GraphicsContext*, int tx, int ty, int w, int h, const RenderStyle*);
+    void paintOutline(GraphicsContext*, int tx, int ty, int w, int h);
     void addPDFURLRect(GraphicsContext*, const IntRect&);
 
     virtual IntRect viewRect() const;
@@ -818,7 +835,7 @@ protected:
 
     void arenaDelete(RenderArena*, void* objectBase);
 
-    virtual IntRect outlineBoundsForRepaint(RenderBoxModelObject* /*repaintContainer*/) const { return IntRect(); }
+    virtual IntRect outlineBoundsForRepaint(RenderBoxModelObject* /*repaintContainer*/, IntPoint* /*cachedOffsetToRepaintContainer*/ = 0) const { return IntRect(); }
 
     class LayoutRepainter {
     public:

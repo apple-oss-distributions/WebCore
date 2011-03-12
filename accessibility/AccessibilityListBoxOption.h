@@ -51,12 +51,12 @@ public:
     void setHTMLElement(HTMLElement* element) { m_optionElement = element; }
     
     virtual AccessibilityRole roleValue() const { return ListBoxOptionRole; }
-    virtual bool accessibilityIsIgnored() const { return false; }
+    virtual bool accessibilityIsIgnored() const;
     virtual bool isSelected() const;
     virtual bool isEnabled() const;
     virtual String stringValue() const;
     virtual Element* actionElement() const;
-    
+    virtual Node* node() const { return m_optionElement; }
     virtual void setSelected(bool);
     virtual bool canSetSelectedAttribute() const;
 

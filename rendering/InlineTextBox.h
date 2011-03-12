@@ -23,7 +23,7 @@
 #ifndef InlineTextBox_h
 #define InlineTextBox_h
 
-#include "InlineRunBox.h"
+#include "InlineBox.h"
 #include "RenderText.h" // so textRenderer() can be inline
 
 namespace WebCore {
@@ -37,18 +37,22 @@ const unsigned short cFullTruncation = USHRT_MAX - 1;
 void updateGraphicsContext(GraphicsContext*, const Color& fillColor, const Color& strokeColor, float strokeThickness, ColorSpace);
 Color correctedTextColor(Color textColor, Color backgroundColor);
 
-class InlineTextBox : public InlineRunBox {
+class InlineTextBox : public InlineBox {
 public:
     InlineTextBox(RenderObject* obj)
-        : InlineRunBox(obj)
+        : InlineBox(obj)
+        , m_prevTextBox(0)
+        , m_nextTextBox(0)
         , m_start(0)
         , m_len(0)
         , m_truncation(cNoTruncation)
     {
     }
 
-    InlineTextBox* nextTextBox() const { return static_cast<InlineTextBox*>(nextLineBox()); }
-    InlineTextBox* prevTextBox() const { return static_cast<InlineTextBox*>(prevLineBox()); }
+    InlineTextBox* prevTextBox() const { return m_prevTextBox; }
+    InlineTextBox* nextTextBox() const { return m_nextTextBox; }
+    void setNextTextBox(InlineTextBox* n) { m_nextTextBox = n; }
+    void setPreviousTextBox(InlineTextBox* p) { m_prevTextBox = p; }
 
     unsigned start() const { return m_start; }
     unsigned end() const { return m_len ? m_start + m_len - 1 : m_start; }
@@ -72,6 +76,9 @@ public:
     }
 
     unsigned short truncation() { return m_truncation; }
+
+    bool hasHyphen() const { return m_hasEllipsisBoxOrHyphen; }
+    void setHasHyphen(bool hasHyphen) { m_hasEllipsisBoxOrHyphen = hasHyphen; }
 
 private:
     virtual int selectionTop();
@@ -125,6 +132,9 @@ public:
     bool containsCaretOffset(int offset) const; // false for offset after line break
 
 private:
+    InlineTextBox* m_prevTextBox; // The previous box that also uses our RenderObject
+    InlineTextBox* m_nextTextBox; // The next box that also uses our RenderObject
+
     int m_start;
     unsigned short m_len;
 
@@ -143,7 +153,7 @@ protected:
 #endif
 
 private:
-    void paintDecoration(GraphicsContext*, int tx, int ty, int decoration, ShadowData*);
+    void paintDecoration(GraphicsContext*, int tx, int ty, int decoration, const ShadowData*);
     void paintSelection(GraphicsContext*, int tx, int ty, RenderStyle*, const Font&);
     void paintSpellingOrGrammarMarker(GraphicsContext*, int tx, int ty, const DocumentMarker&, RenderStyle*, const Font&, bool grammar);
     void paintTextMatchMarker(GraphicsContext*, int tx, int ty, const DocumentMarker&, RenderStyle*, const Font&);

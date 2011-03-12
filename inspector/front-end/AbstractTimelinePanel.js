@@ -308,8 +308,10 @@ WebInspector.AbstractTimelinePanel.prototype = {
             staleItemsLength = this._staleItems.length;
         }
 
+
+        const isBarOpaqueAtLeft = this.sidebarTree.selectedTreeElement && this.sidebarTree.selectedTreeElement.isBarOpaqueAtLeft;
         for (var i = 0; i < staleItemsLength; ++i)
-            this._staleItems[i]._itemsTreeElement._itemGraph.refresh(this.calculator);
+            this._staleItems[i]._itemsTreeElement._itemGraph.refresh(this.calculator, isBarOpaqueAtLeft);
 
         this._staleItems = [];
 
@@ -422,6 +424,16 @@ WebInspector.AbstractTimelinePanel.prototype = {
     addEventDivider: function(divider)
     {
         this._timelineGrid.addEventDivider(divider);
+    },
+
+    hideEventDividers: function()
+    {
+        this._timelineGrid.hideEventDividers();
+    },
+
+    showEventDividers: function()
+    {
+        this._timelineGrid.showEventDividers();
     }
 }
 

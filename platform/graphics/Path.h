@@ -33,6 +33,11 @@
 
 #if PLATFORM(CG)
 typedef struct CGPath PlatformPath;
+#elif PLATFORM(OPENVG)
+namespace WebCore {
+class PlatformPathOpenVG;
+}
+typedef WebCore::PlatformPathOpenVG PlatformPath;
 #elif PLATFORM(QT)
 #include <qpainterpath.h>
 typedef QPainterPath PlatformPath;
@@ -67,13 +72,13 @@ typedef PlatformPath* PlatformPathPtr;
 
 namespace WebCore {
 
+    class AffineTransform;
     class FloatPoint;
     class FloatRect;
     class FloatSize;
     class GraphicsContext;
     class String;
     class StrokeStyleApplier;
-    class TransformationMatrix;
 
     enum WindRule {
         RULE_NONZERO = 0,
@@ -145,7 +150,7 @@ namespace WebCore {
         static Path createLine(const FloatPoint&, const FloatPoint&);
 
         void apply(void* info, PathApplierFunction) const;
-        void transform(const TransformationMatrix&);
+        void transform(const AffineTransform&);
 
     private:
         PlatformPathPtr m_path;

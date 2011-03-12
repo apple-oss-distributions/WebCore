@@ -28,6 +28,7 @@
 #include "config.h"
 #include "Path.h"
 
+#include "AffineTransform.h"
 #include "FloatRect.h"
 #include "NotImplemented.h"
 #include "PlatformString.h"
@@ -146,7 +147,7 @@ void Path::apply(void* info, PathApplierFunction function) const
     notImplemented();
 }
 
-void Path::transform(const TransformationMatrix& transform)
+void Path::transform(const AffineTransform& transform)
 {
     notImplemented();
 }

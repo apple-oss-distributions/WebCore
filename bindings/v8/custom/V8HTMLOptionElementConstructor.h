@@ -31,16 +31,17 @@
 #ifndef V8HTMLOptionElementConstructor_h
 #define V8HTMLOptionElementConstructor_h
 
+#include "WrapperTypeInfo.h"
+
 #include <v8.h>
 
 namespace WebCore {
 
-    class V8HTMLOptionElementConstructor {
-    private:
-        static v8::Persistent<v8::FunctionTemplate> GetTemplate();
-
-        friend class V8ClassIndex;
-    };
+class V8HTMLOptionElementConstructor {
+public:
+    static v8::Persistent<v8::FunctionTemplate> GetTemplate();
+    static WrapperTypeInfo info;
+};
 
 }
 

@@ -28,16 +28,17 @@
 
 #include "CSSMutableStyleDeclaration.h"
 #include "CharacterNames.h"
-#include "CString.h"
 #include "Document.h"
 #include "Frame.h"
 #include "FrameView.h"
 #include "HTMLElement.h"
 #include "HTMLNames.h"
 #include "InlineTextBox.h"
+#include "PrintContext.h"
 #include "RenderBR.h"
 #include "RenderFileUploadControl.h"
 #include "RenderInline.h"
+#include "RenderListItem.h"
 #include "RenderListMarker.h"
 #include "RenderPart.h"
 #include "RenderTableCell.h"
@@ -51,6 +52,7 @@
 #if ENABLE(SVG)
 #include "RenderPath.h"
 #include "RenderSVGContainer.h"
+#include "RenderSVGGradientStop.h"
 #include "RenderSVGImage.h"
 #include "RenderSVGInlineText.h"
 #include "RenderSVGRoot.h"
@@ -178,9 +180,12 @@ String quoteAndEscapeNonPrintables(const String& s)
     return String::adopt(result);
 }
 
-static TextStream &operator<<(TextStream& ts, const RenderObject& o)
+void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, RenderAsTextBehavior behavior)
 {
     ts << o.renderName();
+
+    if (behavior & RenderAsTextShowAddresses)
+        ts << " " << &o;
 
     if (o.style() && o.style()->zIndex())
         ts << " zI: " << o.style()->zIndex();
@@ -254,7 +259,7 @@ static TextStream &operator<<(TextStream& ts, const RenderObject& o)
             ts << " [textStrokeWidth=" << o.style()->textStrokeWidth() << "]";
 
         if (!o.isBoxModelObject())
-            return ts;
+            return;
 
         const RenderBoxModelObject& box = *toRenderBoxModelObject(&o);
         if (box.borderTop() || box.borderRight() || box.borderBottom() || box.borderLeft()) {
@@ -367,8 +372,6 @@ static TextStream &operator<<(TextStream& ts, const RenderObject& o)
         }
     }
 #endif
-
-    return ts;
 }
 
 static void writeTextRun(TextStream& ts, const RenderText& o, const InlineTextBox& run)
@@ -388,11 +391,19 @@ static void writeTextRun(TextStream& ts, const RenderText& o, const InlineTextBo
         << "\n";
 }
 
-void write(TextStream& ts, const RenderObject& o, int indent)
+void write(TextStream& ts, const RenderObject& o, int indent, RenderAsTextBehavior behavior)
 {
 #if ENABLE(SVG)
     if (o.isRenderPath()) {
         write(ts, *toRenderPath(&o), indent);
+        return;
+    }
+    if (o.isSVGGradientStop()) {
+        writeSVGGradientStop(ts, *toRenderSVGGradientStop(&o), indent);
+        return;
+    }
+    if (o.isSVGResourceContainer()) {
+        writeSVGResourceContainer(ts, o, indent);
         return;
     }
     if (o.isSVGContainer()) {
@@ -418,7 +429,8 @@ void write(TextStream& ts, const RenderObject& o, int indent)
 
     writeIndent(ts, indent);
 
-    ts << o << "\n";
+    RenderTreeAsText::writeRenderObject(ts, o, behavior);
+    ts << "\n";
 
     if (o.isText() && !o.isBR()) {
         const RenderText& text = *toRenderText(&o);
@@ -431,7 +443,7 @@ void write(TextStream& ts, const RenderObject& o, int indent)
     for (RenderObject* child = o.firstChild(); child; child = child->nextSibling()) {
         if (child->hasLayer())
             continue;
-        write(ts, *child, indent + 1);
+        write(ts, *child, indent + 1, behavior);
     }
 
     if (o.isWidget()) {
@@ -443,7 +455,7 @@ void write(TextStream& ts, const RenderObject& o, int indent)
                 view->layout();
                 RenderLayer* l = root->layer();
                 if (l)
-                    writeLayers(ts, l, l, IntRect(l->x(), l->y(), l->width(), l->height()), indent + 1);
+                    writeLayers(ts, l, l, IntRect(l->x(), l->y(), l->width(), l->height()), indent + 1, behavior);
             }
         }
     }
@@ -461,7 +473,12 @@ static void write(TextStream& ts, RenderLayer& l,
 {
     writeIndent(ts, indent);
 
-    ts << "layer " << layerBounds;
+    ts << "layer ";
+    
+    if (behavior & RenderAsTextShowAddresses)
+        ts << &l << " ";
+      
+    ts << layerBounds;
 
     if (!layerBounds.isEmpty()) {
         if (!backgroundClipRect.contains(layerBounds))
@@ -500,7 +517,7 @@ static void write(TextStream& ts, RenderLayer& l,
     ts << "\n";
 
     if (paintPhase != LayerPaintPhaseBackground)
-        write(ts, *l.renderer(), indent + 1);
+        write(ts, *l.renderer(), indent + 1, behavior);
 }
 
 static void writeLayers(TextStream& ts, const RenderLayer* rootLayer, RenderLayer* l,
@@ -601,6 +618,13 @@ static void writeSelection(TextStream& ts, const RenderObject* o)
 
 String externalRepresentation(Frame* frame, RenderAsTextBehavior behavior)
 {
+    PrintContext printContext(frame);
+    if (behavior & RenderAsTextPrintingMode) {
+        if (!frame->contentRenderer())
+            return String();
+        printContext.begin(frame->contentRenderer()->width());
+    }
+
     frame->document()->updateLayout();
 
     RenderObject* o = frame->contentRenderer();
@@ -608,9 +632,6 @@ String externalRepresentation(Frame* frame, RenderAsTextBehavior behavior)
         return String();
 
     TextStream ts;
-#if ENABLE(SVG)
-    writeRenderResources(ts, o->document());
-#endif
     if (o->hasLayer()) {
         RenderLayer* l = toRenderBox(o)->layer();
         writeLayers(ts, l, l, IntRect(l->x(), l->y(), l->width(), l->height()), 0, behavior);
@@ -648,6 +669,19 @@ String counterValueForElement(Element* element)
         }
     }
     return stream.release();
+}
+
+String markerTextForListItem(Element* element)
+{
+    // Make sure the element is not freed during the layout.
+    RefPtr<Element> elementRef(element);
+    element->document()->updateLayout();
+
+    RenderObject* renderer = element->renderer();
+    if (!renderer || !renderer->isListItem())
+        return String();
+
+    return toRenderListItem(renderer)->markerText();
 }
 
 } // namespace WebCore

@@ -62,7 +62,7 @@ using std::max;
 
 PassRefPtr<HTMLElement> HTMLElement::create(const QualifiedName& tagName, Document* document)
 {
-    return adoptRef(new HTMLElement(tagName, document, CreateElement));
+    return adoptRef(new HTMLElement(tagName, document, CreateHTMLElement));
 }
 
 String HTMLElement::nodeName() const
@@ -111,6 +111,7 @@ static const TagPriorityMap* createTagPriorityMap()
     map->add(centerTag.localName().impl(), 5);
     map->add(footerTag.localName().impl(), 5);
     map->add(headerTag.localName().impl(), 5);
+    map->add(hgroupTag.localName().impl(), 5);
     map->add(nobrTag.localName().impl(), 5);
     map->add(rubyTag.localName().impl(), 5);
     map->add(navTag.localName().impl(), 5);
@@ -203,6 +204,10 @@ void HTMLElement::parseMappedAttribute(MappedAttribute *attr)
         setAttributeEventListener(eventNames().mousewheelEvent, createAttributeEventListener(this, attr));
     } else if (attr->name() == onfocusAttr) {
         setAttributeEventListener(eventNames().focusEvent, createAttributeEventListener(this, attr));
+    } else if (attr->name() == onfocusinAttr) {
+        setAttributeEventListener(eventNames().focusinEvent, createAttributeEventListener(this, attr));
+    } else if (attr->name() == onfocusoutAttr) {
+        setAttributeEventListener(eventNames().focusoutEvent, createAttributeEventListener(this, attr));
     } else if (attr->name() == onblurAttr) {
         setAttributeEventListener(eventNames().blurEvent, createAttributeEventListener(this, attr));
     } else if (attr->name() == onkeydownAttr) {
@@ -635,9 +640,9 @@ bool HTMLElement::isContentEditable() const
     if (document()->frame() && document()->frame()->isContentEditable())
         return true;
 
-    // FIXME: this is a terrible thing to do here:
-    // https://bugs.webkit.org/show_bug.cgi?id=21834
-    document()->updateStyleIfNeeded();
+    // Ideally we'd call ASSERT!needsStyleRecalc()) here, but
+    // ContainerNode::setFocus() calls setNeedsStyleRecalc(), so the assertion
+    // would fire in the middle of Document::setFocusedNode().
 
     if (!renderer()) {
         if (parentNode())
@@ -654,8 +659,6 @@ bool HTMLElement::isContentRichlyEditable() const
     if (document()->frame() && document()->frame()->isContentEditable())
         return true;
 
-    document()->updateStyleIfNeeded();
-
     if (!renderer()) {
         if (parentNode())
             return parentNode()->isContentEditable();
@@ -668,8 +671,6 @@ bool HTMLElement::isContentRichlyEditable() const
 
 String HTMLElement::contentEditable() const 
 {
-    document()->updateStyleIfNeeded();
-
     if (!renderer())
         return "false";
     
@@ -873,6 +874,9 @@ static HashSet<AtomicStringImpl*>* inlineTagList()
         tagList.add(rpTag.localName().impl());
         tagList.add(rtTag.localName().impl());
         tagList.add(rubyTag.localName().impl());
+#if ENABLE(PROGRESS_TAG)
+        tagList.add(progressTag.localName().impl());
+#endif
     }
     return &tagList;
 }
@@ -901,6 +905,7 @@ static HashSet<AtomicStringImpl*>* blockTagList()
         tagList.add(h5Tag.localName().impl());
         tagList.add(h6Tag.localName().impl());
         tagList.add(headerTag.localName().impl());
+        tagList.add(hgroupTag.localName().impl());
         tagList.add(hrTag.localName().impl());
         tagList.add(isindexTag.localName().impl());
         tagList.add(layerTag.localName().impl());
@@ -991,8 +996,8 @@ bool HTMLElement::rendererIsNeeded(RenderStyle *style)
 {
 #if !ENABLE(XHTMLMP)
     if (hasLocalName(noscriptTag)) {
-        Settings* settings = document()->settings();
-        if (settings && settings->isJavaScriptEnabled())
+        Frame* frame = document()->frame();
+        if (frame && frame->script()->canExecuteScripts(NotAboutToExecuteScript))
             return false;
     }
 #endif

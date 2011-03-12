@@ -27,6 +27,8 @@
 #include "DocLoader.h"
 #include "Document.h"
 #include "Element.h"
+#include "HTMLNames.h"
+#include "HTMLObjectElement.h"
 #include "RenderImage.h"
 
 #include "Frame.h"
@@ -259,7 +261,7 @@ void ImageLoader::updateRenderer()
         // is a complete image.  This prevents flickering in the case where a dynamic
         // change is happening between two images.
         CachedImage* cachedImage = imageRenderer->cachedImage();
-        if (m_image != cachedImage && (m_imageComplete || !imageRenderer->cachedImage()))
+        if (m_image != cachedImage && (m_imageComplete || !cachedImage))
             imageRenderer->setCachedImage(m_image.get());
     }
 }
@@ -282,6 +284,9 @@ void ImageLoader::dispatchPendingBeforeLoadEvent()
         m_image = 0;
     }
     loadEventSender().cancelEvent(this);
+    
+    if (m_element->hasTagName(HTMLNames::objectTag))
+        static_cast<HTMLObjectElement*>(m_element)->renderFallbackContent();
 }
 
 void ImageLoader::dispatchPendingLoadEvent()
@@ -304,6 +309,11 @@ void ImageLoader::dispatchPendingBeforeLoadEvents()
 void ImageLoader::dispatchPendingLoadEvents()
 {
     loadEventSender().dispatchPendingEvents();
+}
+
+void ImageLoader::elementWillMoveToNewOwnerDocument()
+{
+    setImage(0);
 }
 
 ImageEventSender::ImageEventSender(const AtomicString& eventType)

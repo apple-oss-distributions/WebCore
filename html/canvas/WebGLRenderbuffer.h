@@ -38,16 +38,23 @@ namespace WebCore {
         virtual ~WebGLRenderbuffer() { deleteObject(); }
         
         static PassRefPtr<WebGLRenderbuffer> create(WebGLRenderingContext*);
-        
-        // For querying previously created objects via e.g. getFramebufferAttachmentParameter
-        // FIXME: should consider canonicalizing these objects
-        static PassRefPtr<WebGLRenderbuffer> create(WebGLRenderingContext*, Platform3DObject renderbuffer);
+
+        void setInternalFormat(unsigned long internalformat) { m_internalFormat = internalformat; }
+        unsigned long getInternalFormat() const { return m_internalFormat; }
+
+        bool isInitialized() const { return m_initialized; }
+        void setInitialized() { m_initialized = true; }
 
     protected:
         WebGLRenderbuffer(WebGLRenderingContext*);
-        WebGLRenderbuffer(WebGLRenderingContext*, Platform3DObject);
         
         virtual void _deleteObject(Platform3DObject);
+
+    private:
+        virtual bool isRenderbuffer() const { return true; }
+
+        unsigned long m_internalFormat;
+        bool m_initialized;
     };
     
 } // namespace WebCore

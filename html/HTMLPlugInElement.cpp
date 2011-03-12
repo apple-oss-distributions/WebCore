@@ -23,6 +23,8 @@
 #include "config.h"
 #include "HTMLPlugInElement.h"
 
+#include "Chrome.h"
+#include "ChromeClient.h"
 #include "CSSPropertyNames.h"
 #include "Document.h"
 #include "Frame.h"
@@ -31,6 +33,7 @@
 #include "HTMLNames.h"
 #include "MappedAttribute.h"
 #include "Page.h"
+#include "RenderEmbeddedObject.h"
 #include "RenderWidget.h"
 #include "ScriptController.h"
 #include "Settings.h"
@@ -48,6 +51,7 @@ HTMLPlugInElement::HTMLPlugInElement(const QualifiedName& tagName, Document* doc
     : HTMLFrameOwnerElement(tagName, doc)
 #if ENABLE(NETSCAPE_PLUGIN_API)
     , m_NPObject(0)
+    , m_isCapturingMouseEvents(false)
 #endif
 {
 }
@@ -67,6 +71,13 @@ HTMLPlugInElement::~HTMLPlugInElement()
 void HTMLPlugInElement::detach()
 {
     m_instance.clear();
+
+    if (m_isCapturingMouseEvents) {
+        if (Frame* frame = document()->frame())
+            frame->eventHandler()->setCapturingMouseEventsNode(0);
+        m_isCapturingMouseEvents = false;
+    }
+
     HTMLFrameOwnerElement::detach();
 }
 
@@ -151,7 +162,18 @@ bool HTMLPlugInElement::checkDTD(const Node* newChild)
 
 void HTMLPlugInElement::defaultEventHandler(Event* event)
 {
+    // Firefox seems to use a fake event listener to dispatch events to plug-in (tested with mouse events only).
+    // This is observable via different order of events - in Firefox, event listeners specified in HTML attributes fires first, then an event
+    // gets dispatched to plug-in, and only then other event listeners fire. Hopefully, this difference does not matter in practice.
+
+    // FIXME: Mouse down and scroll events are passed down to plug-in via custom code in EventHandler; these code paths should be united.
+
     RenderObject* r = renderer();
+    if (r && r->isEmbeddedObject() && toRenderEmbeddedObject(r)->showsMissingPluginIndicator()) {
+        toRenderEmbeddedObject(r)->handleMissingPluginIndicatorEvent(event);
+        return;
+    }
+
     if (!r || !r->isWidget())
         return;
     Widget* widget = toRenderWidget(r)->widget();

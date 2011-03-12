@@ -27,6 +27,7 @@
 #define EventHandler_h
 
 #include "DragActions.h"
+#include "FocusDirection.h"
 #include "PlatformMouseEvent.h"
 #include "ScrollTypes.h"
 #include "Timer.h"
@@ -39,9 +40,11 @@
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 
-#if PLATFORM(MAC) && !defined(__OBJC__) && !ENABLE(EXPERIMENTAL_SINGLE_VIEW_MODE)
+#if PLATFORM(MAC) && !defined(__OBJC__)
 class NSView;
 #endif
+
+#include <wtf/HashMap.h>
 
 #ifdef __OBJC__
 @class WAKView;
@@ -53,7 +56,9 @@ class AtomicString;
 class Clipboard;
 class Cursor;
 class Event;
+class EventTarget;
 class FloatPoint;
+class FloatQuad;
 class Frame;
 class HitTestRequest;
 class HitTestResult;
@@ -109,6 +114,8 @@ public:
     RenderObject* autoscrollRenderer() const;
     void updateAutoscrollRenderer();
 
+    void dispatchFakeMouseMoveEventSoonInQuad(const FloatQuad&);
+
     HitTestResult hitTestResultAtPoint(const IntPoint&, bool allowShadowContent, bool ignoreClipping = false, HitTestScrollbars scrollbars = DontHitTestScrollbars);
 
     bool mousePressed() const { return m_mousePressed; }
@@ -150,6 +157,8 @@ public:
     bool mouseDownMayStartSelect() const { return m_mouseDownMayStartSelect; }
 
     bool mouseMoved(const PlatformMouseEvent&);
+
+    void lostMouseCapture();
 
     bool handleMousePressEvent(const PlatformMouseEvent&);
     bool handleMouseMoveEvent(const PlatformMouseEvent&, HitTestResult* hoveredNode = 0);
@@ -195,7 +204,7 @@ public:
     void sendResizeEvent();
     void sendScrollEvent();
     
-#if PLATFORM(MAC) && defined(__OBJC__) && !ENABLE(EXPERIMENTAL_SINGLE_VIEW_MODE)
+#if PLATFORM(MAC) && defined(__OBJC__)
     PassRefPtr<KeyboardEvent> currentKeyboardEvent() const;
 
     void mouseDown(WebEvent *);
@@ -276,6 +285,9 @@ private:
     void setAutoscrollRenderer(RenderObject*);
     void autoscrollTimerFired(Timer<EventHandler>*);
 
+    void fakeMouseMoveEventTimerFired(Timer<EventHandler>*);
+    void cancelFakeMouseMoveEvent();
+
 
     Node* nodeUnderMouse() const;
     
@@ -318,6 +330,7 @@ private:
 
     void defaultSpaceEventHandler(KeyboardEvent*);
     void defaultTabEventHandler(KeyboardEvent*);
+    void defaultArrowEventHandler(FocusDirection, KeyboardEvent*);
 
 #if ENABLE(DRAG_SUPPORT)
     void allowDHTMLDrag(bool& flagDHTML, bool& flagUA) const;
@@ -340,9 +353,11 @@ private:
     
     void setFrameWasScrolledByUser();
 
+    FocusDirection focusDirectionForKey(const AtomicString&) const;
+
     bool capturesDragging() const { return m_capturesDragging; }
 
-#if PLATFORM(MAC) && defined(__OBJC__) && !ENABLE(EXPERIMENTAL_SINGLE_VIEW_MODE)
+#if PLATFORM(MAC) && defined(__OBJC__)
     NSView *mouseDownViewIfStillGood();
 
     PlatformMouseEvent currentPlatformMouseEvent() const;
@@ -379,6 +394,8 @@ private:
     bool m_mouseDownMayStartAutoscroll;
     bool m_mouseDownWasInSubframe;
 
+    Timer<EventHandler> m_fakeMouseMoveEventTimer;
+
 #if ENABLE(SVG)
     bool m_svgPan;
     RefPtr<SVGElementInstance> m_instanceUnderMouse;
@@ -403,6 +420,7 @@ private:
     unsigned m_firstTouchID;
     HashMap< unsigned, RefPtr<Touch> > m_touchesByID;
     EventTargetSet m_gestureTargets;
+    RefPtr<Frame> m_touchEventTargetSubframe;
 
 #if ENABLE(DRAG_SUPPORT)
     RefPtr<Node> m_dragTarget;
@@ -424,10 +442,8 @@ private:
 
     RefPtr<Node> m_previousWheelScrolledNode;
 
-#if PLATFORM(MAC) && !ENABLE(EXPERIMENTAL_SINGLE_VIEW_MODE)
     NSView *m_mouseDownView;
     bool m_sendingEventToSubview;
-#endif
 };
 
 } // namespace WebCore

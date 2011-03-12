@@ -84,10 +84,12 @@ WebInspector.Panel.prototype = {
         WebInspector.currentFocusElement = this.defaultFocusedElement;
 
         this.updateSidebarWidth();
+        this._restoreScrollPositions();
     },
 
     hide: function()
     {
+        this._storeScrollPositions();
         WebInspector.View.prototype.hide.call(this);
 
         if (this._statusBarItemContainer && this._statusBarItemContainer.parentNode)
@@ -230,16 +232,17 @@ WebInspector.Panel.prototype = {
         var currentView = this._searchResults[this._currentSearchResultIndex];
 
         if (currentView.showingLastSearchResult()) {
-            if (++this._currentSearchResultIndex >= this._searchResults.length)
-                this._currentSearchResultIndex = 0;
-            currentView = this._searchResults[this._currentSearchResultIndex];
+            if (this.searchIteratesOverViews()) {
+                if (++this._currentSearchResultIndex >= this._searchResults.length)
+                    this._currentSearchResultIndex = 0;
+                currentView = this._searchResults[this._currentSearchResultIndex];
+            }
             showFirstResult = true;
         }
 
         if (currentView !== this.visibleView) {
-            currentView = this.visibleView;
-            this._currentSearchResultIndex = 0;
-            showFirstResult = true;
+            this.showView(currentView);
+            WebInspector.focusSearchField();
         }
 
         if (showFirstResult)
@@ -264,14 +267,18 @@ WebInspector.Panel.prototype = {
         var currentView = this._searchResults[this._currentSearchResultIndex];
 
         if (currentView.showingFirstSearchResult()) {
-            if (--this._currentSearchResultIndex < 0)
-                this._currentSearchResultIndex = (this._searchResults.length - 1);
-            currentView = this._searchResults[this._currentSearchResultIndex];
+            if (this.searchIteratesOverViews()) {
+                if (--this._currentSearchResultIndex < 0)
+                    this._currentSearchResultIndex = (this._searchResults.length - 1);
+                currentView = this._searchResults[this._currentSearchResultIndex];
+            }
             showLastResult = true;
         }
 
-        if (currentView !== this.visibleView)
+        if (currentView !== this.visibleView) {
             this.showView(currentView);
+            WebInspector.focusSearchField();
+        }
 
         if (showLastResult)
             currentView.jumpToLastSearchResult();
@@ -368,14 +375,43 @@ WebInspector.Panel.prototype = {
             visibleView.resize();
     },
 
-    canShowSourceLineForURL: function(url)
+    canShowSourceLine: function(url, line)
     {
         return false;
     },
 
-    showSourceLineForURL: function(url, line)
+    showSourceLine: function(url, line)
     {
         return false;
+    },
+
+    searchIteratesOverViews: function()
+    {
+        return false;
+    },
+
+    elementsToRestoreScrollPositionsFor: function()
+    {
+        return [];
+    },
+
+    _storeScrollPositions: function()
+    {
+        var elements = this.elementsToRestoreScrollPositionsFor();
+        for (var i = 0; i < elements.length; ++i) {
+            var container = elements[i];
+            container._scrollTop = container.scrollTop;
+        }
+    },
+
+    _restoreScrollPositions: function()
+    {
+        var elements = this.elementsToRestoreScrollPositionsFor();
+        for (var i = 0; i < elements.length; ++i) {
+            var container = elements[i];
+            if (container._scrollTop)
+                container.scrollTop = container._scrollTop;
+        }
     }
 }
 

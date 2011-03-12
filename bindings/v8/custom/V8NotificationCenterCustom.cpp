@@ -37,48 +37,14 @@
 #include "Notification.h"
 #include "NotificationCenter.h"
 #include "V8Binding.h"
-#include "V8CustomBinding.h"
 #include "V8CustomEventListener.h"
 #include "V8CustomVoidCallback.h"
 #include "V8Notification.h"
 #include "V8Proxy.h"
 #include "V8Utilities.h"
 #include "WorkerContext.h"
-#include "WorkerContextExecutionProxy.h"
 
 namespace WebCore {
-
-v8::Handle<v8::Value> V8Notification::addEventListenerCallback(const v8::Arguments& args)
-{
-    INC_STATS("DOM.Notification.addEventListener()");
-    Notification* notification = V8Notification::toNative(args.Holder());
-
-    RefPtr<EventListener> listener = V8DOMWrapper::getEventListener(notification, args[1], false, ListenerFindOrCreate);
-    if (listener) {
-        String type = toWebCoreString(args[0]);
-        bool useCapture = args[2]->BooleanValue();
-        notification->addEventListener(type, listener, useCapture);
-        createHiddenDependency(args.Holder(), args[1], cacheIndex);
-    }
-
-    return v8::Undefined();
-}
-
-v8::Handle<v8::Value> V8Notification::removeEventListenerCallback(const v8::Arguments& args)
-{
-    INC_STATS("DOM.Notification.removeEventListener()");
-    Notification* notification = V8Notification::toNative(args.Holder());
-
-    RefPtr<EventListener> listener = V8DOMWrapper::getEventListener(notification, args[1], false, ListenerFindOnly);
-    if (listener) {
-        String type = toWebCoreString(args[0]);
-        bool useCapture = args[2]->BooleanValue();
-        notification->removeEventListener(type, listener.get(), useCapture);
-        removeHiddenDependency(args.Holder(), args[1], cacheIndex);
-    }
-
-    return v8::Undefined();
-}
 
 v8::Handle<v8::Value> V8NotificationCenter::createHTMLNotificationCallback(const v8::Arguments& args)
 {
@@ -92,10 +58,7 @@ v8::Handle<v8::Value> V8NotificationCenter::createHTMLNotificationCallback(const
     if (ec)
         return throwError(ec);
 
-    if (notificationCenter->context()->isWorkerContext())
-        return WorkerContextExecutionProxy::convertToV8Object(V8ClassIndex::NOTIFICATION, notification.get());
-
-    return V8DOMWrapper::convertToV8Object(V8ClassIndex::NOTIFICATION, notification.get());
+    return toV8(notification.get());
 }
 
 v8::Handle<v8::Value> V8NotificationCenter::createNotificationCallback(const v8::Arguments& args)
@@ -109,10 +72,7 @@ v8::Handle<v8::Value> V8NotificationCenter::createNotificationCallback(const v8:
     if (ec)
         return throwError(ec);
 
-    if (notificationCenter->context()->isWorkerContext())
-        return WorkerContextExecutionProxy::convertToV8Object(V8ClassIndex::NOTIFICATION, notification.get());
-
-    return V8DOMWrapper::convertToV8Object(V8ClassIndex::NOTIFICATION, notification.get());
+    return toV8(notification.get());
 }
 
 v8::Handle<v8::Value> V8NotificationCenter::requestPermissionCallback(const v8::Arguments& args)

@@ -26,9 +26,9 @@
 #endif
 
 #include "QualifiedName.h"
-#include "StaticConstructors.h"
 #include <wtf/Assertions.h>
 #include <wtf/HashSet.h>
+#include <wtf/StaticConstructors.h>
 
 namespace WebCore {
 
@@ -78,6 +78,7 @@ void QualifiedName::deref()
     if (!m_impl)
         return;
 #endif
+    ASSERT(!isHashTableDeletedValue());
 
     if (m_impl->hasOneRef())
         gNameCache->remove(m_impl);

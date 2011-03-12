@@ -161,6 +161,20 @@ void DeleteSelectionCommand::initializeStartEnd(Position& start, Position& end)
     }
 }
 
+void DeleteSelectionCommand::setStartingSelectionOnSmartDelete(const Position& start, const Position& end)
+{
+    VisiblePosition newBase;
+    VisiblePosition newExtent;
+    if (startingSelection().isBaseFirst()) {
+        newBase = start;
+        newExtent = end;
+    } else {
+        newBase = end;
+        newExtent = start;        
+    }
+    setStartingSelection(VisibleSelection(newBase, newExtent));            
+}
+    
 void DeleteSelectionCommand::initializePositionData()
 {
     Position start, end;
@@ -230,6 +244,8 @@ void DeleteSelectionCommand::initializePositionData()
             m_upstreamStart = pos.upstream();
             m_downstreamStart = pos.downstream();
             m_leadingWhitespace = m_upstreamStart.leadingWhitespacePosition(visiblePos.affinity());
+
+            setStartingSelectionOnSmartDelete(m_upstreamStart, m_upstreamEnd);
         }
         
         // trailing whitespace is only considered for smart delete if there is no leading
@@ -241,6 +257,8 @@ void DeleteSelectionCommand::initializePositionData()
             m_upstreamEnd = pos.upstream();
             m_downstreamEnd = pos.downstream();
             m_trailingWhitespace = m_downstreamEnd.trailingWhitespacePosition(VP_DEFAULT_AFFINITY);
+
+            setStartingSelectionOnSmartDelete(m_downstreamStart, m_downstreamEnd);
         }
     }
     
@@ -276,14 +294,14 @@ void DeleteSelectionCommand::saveTypingStyleState()
         return;
 
     // Figure out the typing style in effect before the delete is done.
-    m_typingStyle = editingStyleAtPosition(positionBeforeTabSpan(m_selectionToDelete.start()));
+    m_typingStyle = ApplyStyleCommand::editingStyleAtPosition(positionBeforeTabSpan(m_selectionToDelete.start()));
 
     removeEnclosingAnchorStyle(m_typingStyle.get(), m_selectionToDelete.start());
 
     // If we're deleting into a Mail blockquote, save the style at end() instead of start()
     // We'll use this later in computeTypingStyleAfterDelete if we end up outside of a Mail blockquote
     if (nearestMailBlockquote(m_selectionToDelete.start().node()))
-        m_deleteIntoBlockquoteStyle = editingStyleAtPosition(m_selectionToDelete.end());
+        m_deleteIntoBlockquoteStyle = ApplyStyleCommand::editingStyleAtPosition(m_selectionToDelete.end());
     else
         m_deleteIntoBlockquoteStyle = 0;
 }
@@ -519,12 +537,12 @@ void DeleteSelectionCommand::fixupWhitespace()
 {
     updateLayout();
     // FIXME: isRenderedCharacter should be removed, and we should use VisiblePosition::characterAfter and VisiblePosition::characterBefore
-    if (m_leadingWhitespace.isNotNull() && !m_leadingWhitespace.isRenderedCharacter()) {
+    if (m_leadingWhitespace.isNotNull() && !m_leadingWhitespace.isRenderedCharacter() && m_leadingWhitespace.node()->isTextNode()) {
         Text* textNode = static_cast<Text*>(m_leadingWhitespace.node());
         ASSERT(!textNode->renderer() || textNode->renderer()->style()->collapseWhiteSpace());
         replaceTextInNode(textNode, m_leadingWhitespace.deprecatedEditingOffset(), 1, nonBreakingSpaceString());
     }
-    if (m_trailingWhitespace.isNotNull() && !m_trailingWhitespace.isRenderedCharacter()) {
+    if (m_trailingWhitespace.isNotNull() && !m_trailingWhitespace.isRenderedCharacter() && m_trailingWhitespace.node()->isTextNode()) {
         Text* textNode = static_cast<Text*>(m_trailingWhitespace.node());
         ASSERT(!textNode->renderer() ||textNode->renderer()->style()->collapseWhiteSpace());
         replaceTextInNode(textNode, m_trailingWhitespace.deprecatedEditingOffset(), 1, nonBreakingSpaceString());

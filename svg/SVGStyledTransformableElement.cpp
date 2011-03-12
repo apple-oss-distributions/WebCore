@@ -23,13 +23,13 @@
 #if ENABLE(SVG)
 #include "SVGStyledTransformableElement.h"
 
+#include "AffineTransform.h"
 #include "Attr.h"
 #include "MappedAttribute.h"
 #include "RenderPath.h"
 #include "SVGDocument.h"
 #include "SVGStyledElement.h"
 #include "SVGTransformList.h"
-#include "TransformationMatrix.h"
 
 namespace WebCore {
 
@@ -44,25 +44,25 @@ SVGStyledTransformableElement::~SVGStyledTransformableElement()
 {
 }
 
-TransformationMatrix SVGStyledTransformableElement::getCTM() const
+AffineTransform SVGStyledTransformableElement::getCTM(StyleUpdateStrategy styleUpdateStrategy) const
 {
-    return SVGTransformable::getCTM(this);
+    return SVGLocatable::computeCTM(this, SVGLocatable::NearestViewportScope, styleUpdateStrategy);
 }
 
-TransformationMatrix SVGStyledTransformableElement::getScreenCTM() const
+AffineTransform SVGStyledTransformableElement::getScreenCTM(StyleUpdateStrategy styleUpdateStrategy) const
 {
-    return SVGTransformable::getScreenCTM(this);
+    return SVGLocatable::computeCTM(this, SVGLocatable::ScreenScope, styleUpdateStrategy);
 }
 
-TransformationMatrix SVGStyledTransformableElement::animatedLocalTransform() const
+AffineTransform SVGStyledTransformableElement::animatedLocalTransform() const
 {
     return m_supplementalTransform ? transform()->concatenate().matrix() * *m_supplementalTransform : transform()->concatenate().matrix();
 }
     
-TransformationMatrix* SVGStyledTransformableElement::supplementalTransform()
+AffineTransform* SVGStyledTransformableElement::supplementalTransform()
 {
     if (!m_supplementalTransform)
-        m_supplementalTransform.set(new TransformationMatrix());
+        m_supplementalTransform.set(new AffineTransform());
     return m_supplementalTransform.get();
 }
 
@@ -102,9 +102,9 @@ SVGElement* SVGStyledTransformableElement::farthestViewportElement() const
     return SVGTransformable::farthestViewportElement(this);
 }
 
-FloatRect SVGStyledTransformableElement::getBBox() const
+FloatRect SVGStyledTransformableElement::getBBox(StyleUpdateStrategy styleUpdateStrategy) const
 {
-    return SVGTransformable::getBBox(this);
+    return SVGTransformable::getBBox(this, styleUpdateStrategy);
 }
 
 RenderObject* SVGStyledTransformableElement::createRenderer(RenderArena* arena, RenderStyle*)

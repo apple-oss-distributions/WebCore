@@ -46,13 +46,13 @@ public:
 };
 
 // This file contains JS wrapper objects for SVG datatypes, that are passed around by value
-// in WebCore/svg (aka. 'POD types'). For instance SVGMatrix is mapped to TransformationMatrix, and
+// in WebCore/svg (aka. 'POD types'). For instance SVGMatrix is mapped to AffineTransform, and
 // passed around as const reference. SVG DOM demands these objects to be "live", changes to any
 // of the writable attributes of SVGMatrix need to be reflected in the object which exposed the
 // SVGMatrix object (i.e. 'someElement.transform.matrix.a = 50.0', in that case 'SVGTransform').
-// The SVGTransform class stores its "TransformationMatrix m_matrix" object on the stack. If it would
+// The SVGTransform class stores its "AffineTransform m_matrix" object on the stack. If it would
 // be stored as pointer we could just build an auto-generated JSSVG* wrapper object around it
-// and all changes to that object would automatically affect the TransformationMatrix* object stored
+// and all changes to that object would automatically affect the AffineTransform* object stored
 // in the SVGTransform object. For the sake of efficiency and memory we don't pass around any
 // primitive values as pointers, so a custom JS wrapper object is needed for all SVG types, that
 // are internally represented by POD types (SVGRect <-> FloatRect, SVGPoint <-> FloatPoint, ...).
@@ -71,7 +71,7 @@ public:
 // GetterMethod and SetterMethod are each 12 bytes. We have to pack to a size
 // greater than or equal to that to avoid an alignment warning (C4121). 16 is
 // the next-largest size allowed for packing, so we use that.
-#pragma pack(16)
+#pragma pack(push, 16)
 #endif
 template<typename PODType, typename PODTypeCreator>
 class JSSVGDynamicPODTypeWrapper : public JSSVGPODTypeWrapper<PODType> {
@@ -113,6 +113,9 @@ private:
     GetterMethod m_getter;
     SetterMethod m_setter;
 };
+#if COMPILER(MSVC)
+#pragma pack(pop)
+#endif
 
 // Represents a JS wrapper object for SVG POD types (not for SVGAnimated* classes). Any modification to the SVG POD
 // types don't cause any updates unlike JSSVGDynamicPODTypeWrapper. This class is used for return values (ie. getBBox())
@@ -175,7 +178,7 @@ private:
 // GetterMethod and SetterMethod are each 12 bytes. We have to pack to a size
 // greater than or equal to that to avoid an alignment warning (C4121). 16 is
 // the next-largest size allowed for packing, so we use that.
-#pragma pack(16)
+#pragma pack(push, 16)
 #endif
 template<typename PODType, typename ParentType>
 class JSSVGStaticPODTypeWrapperWithParent : public JSSVGPODTypeWrapper<PODType> {
@@ -310,6 +313,9 @@ struct PODTypeWrapperCacheInfo {
     GetterMethod getter;
     SetterMethod setter;
 };
+#if COMPILER(MSVC)
+#pragma pack(pop)
+#endif
 
 template<typename PODType, typename PODTypeCreator>
 struct PODTypeWrapperCacheInfoHash {

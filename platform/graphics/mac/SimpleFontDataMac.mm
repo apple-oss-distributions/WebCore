@@ -44,6 +44,7 @@
 #import <wtf/Assertions.h>
 #import <wtf/StdLibExtras.h>
 #import <wtf/RetainPtr.h>
+#import <wtf/UnusedParam.h>
 
 #include <wtf/UnusedParam.h>
 
@@ -59,24 +60,47 @@ static inline float scaleEmToUnits(float x, unsigned unitsPerEm) { return x / un
 
 void SimpleFontData::platformInit()
 {
-    m_syntheticBoldOffset = m_platformData.m_syntheticBold ? ceilf(GSFontGetSize(m_platformData.font())  / 24.0f) : 0.f;
+    m_syntheticBoldOffset = m_platformData.m_syntheticBold ? ceilf(m_platformData.size()  / 24.0f) : 0.f;
     m_spaceGlyph = 0;
     m_spaceWidth = 0;
     m_adjustedSpaceWidth = 0;
-    m_ascent = ceilf(GSFontGetAscent(m_platformData.font()));
-    m_descent = ceilf(-GSFontGetDescent(m_platformData.font()));
-    m_lineSpacing = GSFontGetLineSpacing(m_platformData.font());
-    m_lineGap = GSFontGetLineGap(m_platformData.font());
-    m_xHeight = GSFontGetXHeight(m_platformData.font());
-    m_unitsPerEm = GSFontGetUnitsPerEm(m_platformData.font());    
-}
+    if (GSFontRef gsFont = m_platformData.font()) {
+        m_ascent = ceilf(GSFontGetAscent(gsFont));
+        m_descent = ceilf(-GSFontGetDescent(gsFont));
+        m_lineSpacing = GSFontGetLineSpacing(gsFont);
+        m_lineGap = GSFontGetLineGap(gsFont);
+        m_xHeight = GSFontGetXHeight(gsFont);
+        m_unitsPerEm = GSFontGetUnitsPerEm(gsFont);
+    } else {
+        CGFontRef cgFont = m_platformData.cgFont();
 
+        m_unitsPerEm = CGFontGetUnitsPerEm(cgFont);
+
+        float pointSize = m_platformData.size();
+        m_ascent = lroundf(scaleEmToUnits(CGFontGetAscent(cgFont), m_unitsPerEm) * pointSize);
+        m_descent = lroundf(-scaleEmToUnits(CGFontGetDescent(cgFont), m_unitsPerEm) * pointSize);
+        m_lineGap = lroundf(scaleEmToUnits(CGFontGetLeading(cgFont), m_unitsPerEm) * pointSize);
+        m_xHeight = scaleEmToUnits(CGFontGetXHeight(cgFont), m_unitsPerEm) * pointSize;
+
+        m_lineSpacing = m_ascent + m_descent + m_lineGap;
+    }
+
+    if (!m_platformData.m_isEmoji)
+        return;
+
+    int thirdOfSize = m_platformData.size() / 3;
+    m_ascent = thirdOfSize;
+    m_descent = thirdOfSize;
+    m_lineGap = thirdOfSize;
+    m_lineSpacing = 0;
+}
+    
 
 void SimpleFontData::platformCharWidthInit()
 {
     m_avgCharWidth = 0;
     m_maxCharWidth = 0;
-
+    
 
     // Fallback to a cross-platform estimate, which will populate these values if they are non-positive.
     initCharWidths();
@@ -141,115 +165,43 @@ void SimpleFontData::determinePitch()
     }
 }
 
-float SimpleFontData::platformWidthForGlyph(Glyph glyph) const
-{
-    if (platformData().m_isImageFont) {
-        // returns the proper scaled advance for the image size - see Font::drawGlyphs
-        return std::min(platformData().m_size + (platformData().m_size <= 15.0f ? 4.0f : 6.0f), 22.0f);
-    }
-    GSFontRef font = platformData().font();
-    float pointSize = GSFontGetSize(font);
-    CGAffineTransform m = CGAffineTransformMakeScale(pointSize, pointSize);
-    CGSize advance;
-    if (!GSFontGetGlyphTransformedAdvances(font, &m, kCGFontRenderingModeAntialiased, &glyph, 1, &advance)) {      
-        LOG_ERROR("Unable to cache glyph widths for %@ %f", GSFontGetFullName(font), pointSize);
-        advance.width = 0;
-    }
-    return advance.width + m_syntheticBoldOffset;
-}
-
 FloatRect SimpleFontData::platformBoundsForGlyph(Glyph glyph) const
 {
     FloatRect boundingBox;
 #ifndef BUILDING_ON_TIGER
     CGRect box;
-    CGFontGetGlyphBBoxes(GSFontGetCGFont(platformData().font()), &glyph, 1, &box);
+    CGFontGetGlyphBBoxes(platformData().cgFont(), &glyph, 1, &box);
     float pointSize = platformData().m_size;
     CGFloat scale = pointSize / unitsPerEm();
     boundingBox = CGRectApplyAffineTransform(box, CGAffineTransformMakeScale(scale, -scale));
+#else
+    // FIXME: Custom fonts don't have NSFonts, so this function doesn't compute correct bounds for these on Tiger.
+    if (!m_platformData.font())
+        return boundingBox;
+    boundingBox = [m_platformData.font() boundingRectForGlyph:glyph];
+#endif
     if (m_syntheticBoldOffset)
         boundingBox.setWidth(boundingBox.width() + m_syntheticBoldOffset);
-#endif
+
     return boundingBox;
 }
-        
-#if USE(ATSUI)
-void SimpleFontData::checkShapesArabic() const
+
+float SimpleFontData::platformWidthForGlyph(Glyph glyph) const
 {
-    ASSERT(!m_checkedShapesArabic);
-
-    m_checkedShapesArabic = true;
-    
-    ATSUFontID fontID = m_platformData.m_atsuFontID;
-    if (!fontID) {
-        LOG_ERROR("unable to get ATSUFontID for %@", m_platformData.font());
-        return;
+    if (platformData().m_isEmoji) {
+        // returns the proper scaled advance for the image size - see Font::drawGlyphs
+        return std::min(platformData().m_size + (platformData().m_size <= 15.0f ? 4.0f : 6.0f), 22.0f);
     }
-
-    // This function is called only on fonts that contain Arabic glyphs. Our
-    // heuristic is that if such a font has a glyph metamorphosis table, then
-    // it includes shaping information for Arabic.
-    FourCharCode tables[] = { 'morx', 'mort' };
-    for (unsigned i = 0; i < sizeof(tables) / sizeof(tables[0]); ++i) {
-        ByteCount tableSize;
-        OSStatus status = ATSFontGetTable(fontID, tables[i], 0, 0, 0, &tableSize);
-        if (status == noErr) {
-            m_shapesArabic = true;
-            return;
-        }
-
-        if (status != kATSInvalidFontTableAccess)
-            LOG_ERROR("ATSFontGetTable failed (%d)", status);
+    float pointSize = platformData().m_size;
+    CGAffineTransform m = CGAffineTransformMakeScale(pointSize, pointSize);
+    CGSize advance;
+    static const CGFontRenderingStyle renderingStyle = kCGFontRenderingStyleAntialiasing | kCGFontRenderingStyleSubpixelPositioning | kCGFontRenderingStyleSubpixelQuantization | kCGFontAntialiasingStyleUnfiltered;
+    if (!CGFontGetGlyphAdvancesForStyle(platformData().cgFont(), &m, renderingStyle, &glyph, 1, &advance)) {
+        RetainPtr<CFStringRef> fullName(AdoptCF, CGFontCopyFullName(platformData().cgFont()));
+        LOG_ERROR("Unable to cache glyph widths for %@ %f", fullName.get(), pointSize);
+        advance.width = 0;
     }
+    return advance.width + m_syntheticBoldOffset;
 }
-#endif
-
-#if USE(CORE_TEXT)
-CTFontRef SimpleFontData::getCTFont() const
-{
-    if (!m_CTFont) {
-        m_CTFont.adoptCF(CTFontCreateWithGraphicsFont(GSFontGetCGFont(m_platformData.font()), m_platformData.size(), &CGAffineTransformIdentity, NULL));
-    }
-    return m_CTFont.get();
-}
-
-CFDictionaryRef SimpleFontData::getCFStringAttributes(TypesettingFeatures typesettingFeatures) const
-{
-    unsigned key = typesettingFeatures + 1;
-    pair<HashMap<unsigned, RetainPtr<CFDictionaryRef> >::iterator, bool> addResult = m_CFStringAttributes.add(key, RetainPtr<CFDictionaryRef>());
-    RetainPtr<CFDictionaryRef>& attributesDictionary = addResult.first->second;
-    if (!addResult.second)
-        return attributesDictionary.get();
-
-    bool allowLigatures = platformData().allowsLigatures() || (typesettingFeatures & Ligatures);
-
-    static const int ligaturesNotAllowedValue = 0;
-    static CFNumberRef ligaturesNotAllowed = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &ligaturesNotAllowedValue);
-
-    static const int ligaturesAllowedValue = 1;
-    static CFNumberRef ligaturesAllowed = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &ligaturesAllowedValue);
-
-    if (!(typesettingFeatures & Kerning)) {
-        static const float kerningAdjustmentValue = 0;
-        static CFNumberRef kerningAdjustment = CFNumberCreate(kCFAllocatorDefault, kCFNumberFloatType, &kerningAdjustmentValue);
-        static const void* keysWithKerningDisabled[] = { kCTFontAttributeName, kCTKernAttributeName, kCTLigatureAttributeName };
-        const void* valuesWithKerningDisabled[] = { getCTFont(), kerningAdjustment, allowLigatures
-            ? ligaturesAllowed : ligaturesNotAllowed };
-        attributesDictionary.adoptCF(CFDictionaryCreate(NULL, keysWithKerningDisabled, valuesWithKerningDisabled,
-            sizeof(keysWithKerningDisabled) / sizeof(*keysWithKerningDisabled),
-            &kCFCopyStringDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
-    } else {
-        // By omitting the kCTKernAttributeName attribute, we get Core Text's standard kerning.
-        static const void* keysWithKerningEnabled[] = { kCTFontAttributeName, kCTLigatureAttributeName };
-        const void* valuesWithKerningEnabled[] = { getCTFont(), allowLigatures ? ligaturesAllowed : ligaturesNotAllowed };
-        attributesDictionary.adoptCF(CFDictionaryCreate(NULL, keysWithKerningEnabled, valuesWithKerningEnabled,
-            sizeof(keysWithKerningEnabled) / sizeof(*keysWithKerningEnabled),
-            &kCFCopyStringDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
-    }
-
-    return attributesDictionary.get();
-}
-
-#endif
 
 } // namespace WebCore

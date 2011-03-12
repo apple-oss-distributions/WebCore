@@ -32,7 +32,7 @@
 #include "MappedAttribute.h"
 #include "Position.h"
 #include "RenderSVGText.h"
-#include "SVGCharacterLayoutInfo.h"
+#include "SVGCharacterData.h"
 #include "SVGInlineTextBox.h"
 #include "SVGLength.h"
 #include "SVGNames.h"
@@ -124,7 +124,7 @@ struct SVGInlineTextBoxQueryWalker {
     {
     }
 
-    void chunkPortionCallback(SVGInlineTextBox* textBox, int startOffset, const TransformationMatrix&,
+    void chunkPortionCallback(SVGInlineTextBox* textBox, int startOffset, const AffineTransform&,
                               const Vector<SVGChar>::iterator& start, const Vector<SVGChar>::iterator& end)
     {
         RenderStyle* style = textBox->textRenderer()->style();

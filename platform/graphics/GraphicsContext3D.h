@@ -28,21 +28,44 @@
 
 #include "PlatformString.h"
 
+#include "GraphicsLayer.h"
+
 #include <wtf/ListHashSet.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/PassOwnPtr.h>
 
 // FIXME: Find a better way to avoid the name confliction for NO_ERROR.
-#if PLATFORM(CHROMIUM) && OS(WINDOWS)
+#if ((PLATFORM(CHROMIUM) && OS(WINDOWS)) || PLATFORM(WIN) || (PLATFORM(QT) && OS(WINDOWS)))
 #undef NO_ERROR
 #endif
 
 #if PLATFORM(MAC)
-#include <OpenGL/OpenGL.h>
+#include <OpenGLES/ES2/gl.h>
+#ifdef __OBJC__
+#import <OpenGLES/EAGL.h>
+typedef EAGLContext* PlatformGraphicsContext3D;
+#else
+typedef void* PlatformGraphicsContext3D;
+#endif
+#include <wtf/RetainPtr.h>
+
+const  PlatformGraphicsContext3D NullPlatformGraphicsContext3D = 0;
+typedef GLuint Platform3DObject;
+const Platform3DObject NullPlatform3DObject = 0;
+
+#ifdef __OBJC__
+@class CALayer;
+@class WebGLLayer;
+#else
+typedef void* CALayer;
+typedef void* WebGLLayer;
+#endif
+#elif PLATFORM(QT)
+#include <QtOpenGL/QtOpenGL>
 
 typedef void* PlatformGraphicsContext3D;
 const  PlatformGraphicsContext3D NullPlatformGraphicsContext3D = 0;
-typedef GLuint Platform3DObject;
+typedef int Platform3DObject;
 const Platform3DObject NullPlatform3DObject = 0;
 #else
 typedef void* PlatformGraphicsContext3D;
@@ -53,18 +76,20 @@ const Platform3DObject NullPlatform3DObject = 0;
 
 namespace WebCore {
     class WebGLActiveInfo;
-    class WebGLArray;
+    class ArrayBufferView;
     class WebGLBuffer;
-    class WebGLUnsignedByteArray;
-    class WebGLFloatArray;
+    class Uint8Array;
+    class Float32Array;
     class WebGLFramebuffer;
-    class WebGLIntArray;
+    class Int32Array;
     class WebGLProgram;
     class WebGLRenderbuffer;
     class WebGLRenderingContext;
     class WebGLShader;
     class WebGLTexture;
     class Image;
+    class ImageData;
+    class HostWindow;
 
     struct ActiveInfo {
         String name;
@@ -73,7 +98,7 @@ namespace WebCore {
     };
 
     // FIXME: ideally this would be used on all platforms.
-#if PLATFORM(CHROMIUM)
+#if PLATFORM(CHROMIUM) || PLATFORM(QT)
     class GraphicsContext3DInternal;
 #endif
 
@@ -354,6 +379,7 @@ namespace WebCore {
             DEPTH_COMPONENT16 = 0x81A5,
             STENCIL_INDEX = 0x1901,
             STENCIL_INDEX8 = 0x8D48,
+            DEPTH_STENCIL = 0x84F9,
             RENDERBUFFER_WIDTH = 0x8D42,
             RENDERBUFFER_HEIGHT = 0x8D43,
             RENDERBUFFER_INTERNAL_FORMAT = 0x8D44,
@@ -370,6 +396,7 @@ namespace WebCore {
             COLOR_ATTACHMENT0 = 0x8CE0,
             DEPTH_ATTACHMENT = 0x8D00,
             STENCIL_ATTACHMENT = 0x8D20,
+            DEPTH_STENCIL_ATTACHMENT = 0x821A,
             NONE = 0,
             FRAMEBUFFER_COMPLETE = 0x8CD5,
             FRAMEBUFFER_INCOMPLETE_ATTACHMENT = 0x8CD6,
@@ -379,7 +406,11 @@ namespace WebCore {
             FRAMEBUFFER_BINDING = 0x8CA6,
             RENDERBUFFER_BINDING = 0x8CA7,
             MAX_RENDERBUFFER_SIZE = 0x84E8,
-            INVALID_FRAMEBUFFER_OPERATION = 0x0506
+            INVALID_FRAMEBUFFER_OPERATION = 0x0506,
+
+            // WebGL-specific enums
+            UNPACK_FLIP_Y_WEBGL = 0x9240,
+            UNPACK_PREMULTIPLY_ALPHA_WEBGL = 0x9241
         };
         
         // Context creation attributes.
@@ -387,7 +418,7 @@ namespace WebCore {
             Attributes()
                 : alpha(true)
                 , depth(true)
-                , stencil(true)
+                , stencil(false)
                 , antialias(true)
                 , premultipliedAlpha(true)
             {
@@ -400,24 +431,108 @@ namespace WebCore {
             bool premultipliedAlpha;
         };
 
-        static PassOwnPtr<GraphicsContext3D> create(Attributes attrs);
+        static PassOwnPtr<GraphicsContext3D> create(Attributes attrs, HostWindow* hostWindow);
         virtual ~GraphicsContext3D();
 
 #if PLATFORM(MAC)
         PlatformGraphicsContext3D platformGraphicsContext3D() const { return m_contextObj; }
         Platform3DObject platformTexture() const { return m_texture; }
+        CALayer* platformLayer() const { return static_cast<CALayer*>(m_webGLLayer.get()); }
 #elif PLATFORM(CHROMIUM)
         PlatformGraphicsContext3D platformGraphicsContext3D() const;
+        Platform3DObject platformTexture() const;
+#elif PLATFORM(QT)
+        PlatformGraphicsContext3D platformGraphicsContext3D();
         Platform3DObject platformTexture() const;
 #else
         PlatformGraphicsContext3D platformGraphicsContext3D() const { return NullPlatformGraphicsContext3D; }
         Platform3DObject platformTexture() const { return NullPlatform3DObject; }
 #endif
         void makeContextCurrent();
-        
+
+#if PLATFORM(MAC)
+        // With multisampling on, blit from multisampleFBO to regular FBO.
+        void prepareTexture();
+#endif
+
         // Helper to return the size in bytes of OpenGL data types
         // like GL_FLOAT, GL_INT, etc.
         int sizeInBytes(int type);
+
+        bool isGLES2Compliant() const;
+
+        //----------------------------------------------------------------------
+        // Helpers for texture uploading and pixel readback.
+        //
+
+        // Computes the components per pixel and bytes per component
+        // for the given format and type combination. Returns false if
+        // either was an invalid enum.
+        bool computeFormatAndTypeParameters(unsigned int format,
+                                            unsigned int type,
+                                            unsigned long* componentsPerPixel,
+                                            unsigned long* bytesPerComponent);
+
+        // Extracts the contents of the given Image into the passed Vector,
+        // packing the pixel data according to the given format and type,
+        // and obeying the flipY and premultiplyAlpha flags. Returns true
+        // upon success.
+        bool extractImageData(Image* image,
+                              unsigned int format,
+                              unsigned int type,
+                              bool flipY,
+                              bool premultiplyAlpha,
+                              Vector<uint8_t>& data);
+
+        // Extracts the contents of the given ImageData into the passed Vector,
+        // packing the pixel data according to the given format and type,
+        // and obeying the flipY and premultiplyAlpha flags. Returns true
+        // upon success.
+        bool extractImageData(ImageData*,
+                              unsigned int format,
+                              unsigned int type,
+                              bool flipY,
+                              bool premultiplyAlpha,
+                              Vector<uint8_t>& data);
+
+        // Helper function which extracts the user-supplied texture
+        // data, applying the flipY and premultiplyAlpha parameters.
+        // If the data is not tightly packed according to the passed
+        // unpackAlignment, the output data will be tightly packed.
+        // Returns true if successful, false if any error occurred.
+        bool extractTextureData(unsigned int width, unsigned int height,
+                                unsigned int format, unsigned int type,
+                                unsigned int unpackAlignment,
+                                bool flipY, bool premultiplyAlpha,
+                                ArrayBufferView* pixels,
+                                Vector<uint8_t>& data);
+
+        // Flips the given image data vertically, in-place.
+        void flipVertically(void* imageData,
+                            unsigned int width,
+                            unsigned int height,
+                            unsigned int bytesPerPixel,
+                            unsigned int unpackAlignment);
+
+        // Attempt to enumerate all possible native image formats to
+        // reduce the amount of temporary allocations during texture
+        // uploading. This enum must be public because it is accessed
+        // by non-member functions.
+        enum SourceDataFormat {
+            kSourceFormatRGBA8,
+            kSourceFormatRGB8,
+            kSourceFormatBGRA8,
+            kSourceFormatRGBA5551,
+            kSourceFormatRGBA4444,
+            kSourceFormatRGB565,
+            kSourceFormatR8,
+            kSourceFormatRA8,
+            kSourceFormatA8
+        };
+
+        //----------------------------------------------------------------------
+        // Entry points for WebGL.
+        //
 
         void activeTexture(unsigned long texture);
         void attachShader(WebGLProgram* program, WebGLShader* shader);
@@ -433,8 +548,8 @@ namespace WebCore {
         void blendFuncSeparate(unsigned long srcRGB, unsigned long dstRGB, unsigned long srcAlpha, unsigned long dstAlpha);
 
         void bufferData(unsigned long target, int size, unsigned long usage);
-        void bufferData(unsigned long target, WebGLArray* data, unsigned long usage);
-        void bufferSubData(unsigned long target, long offset, WebGLArray* data);
+        void bufferData(unsigned long target, ArrayBufferView* data, unsigned long usage);
+        void bufferSubData(unsigned long target, long offset, ArrayBufferView* data);
 
         unsigned long checkFramebufferStatus(unsigned long target);
         void clear(unsigned long mask);
@@ -529,7 +644,7 @@ namespace WebCore {
         void pixelStorei(unsigned long pname, long param);
         void polygonOffset(double factor, double units);
         
-        PassRefPtr<WebGLArray> readPixels(long x, long y, unsigned long width, unsigned long height, unsigned long format, unsigned long type);
+        void readPixels(long x, long y, unsigned long width, unsigned long height, unsigned long format, unsigned long type, void* data);
         
         void releaseShaderCompiler();
         void renderbufferStorage(unsigned long target, unsigned long internalformat, unsigned long width, unsigned long height);
@@ -543,16 +658,12 @@ namespace WebCore {
         void stencilOp(unsigned long fail, unsigned long zfail, unsigned long zpass);
         void stencilOpSeparate(unsigned long face, unsigned long fail, unsigned long zfail, unsigned long zpass);
 
-        // These next several functions return an error code (0 if no errors) rather than using an ExceptionCode.
-        // Currently they return -1 on any error.
         int texImage2D(unsigned target, unsigned level, unsigned internalformat, unsigned width, unsigned height, unsigned border, unsigned format, unsigned type, void* pixels);
-        int texImage2D(unsigned target, unsigned level, Image* image, bool flipY, bool premultiplyAlpha);
 
         void texParameterf(unsigned target, unsigned pname, float param);
         void texParameteri(unsigned target, unsigned pname, int param);
 
         int texSubImage2D(unsigned target, unsigned level, unsigned xoffset, unsigned yoffset, unsigned width, unsigned height, unsigned format, unsigned type, void* pixels);
-        int texSubImage2D(unsigned target, unsigned level, unsigned xoffset, unsigned yoffset, Image* image, bool flipY, bool premultiplyAlpha);
 
         void uniform1f(long location, float x);
         void uniform1fv(long location, float* v, int size);
@@ -595,6 +706,9 @@ namespace WebCore {
         // Helpers for notification about paint events
         void beginPaint(WebGLRenderingContext* context);
         void endPaint();
+#if PLATFORM(QT)
+        void paint(QPainter* painter, const QRect& rect) const;
+#endif
 
         // Support for buffer creation and deletion
         unsigned createBuffer();
@@ -622,7 +736,61 @@ namespace WebCore {
         void synthesizeGLError(unsigned long error);
 
     private:        
-        GraphicsContext3D(Attributes attrs);
+        GraphicsContext3D(Attributes attrs, HostWindow* hostWindow);
+
+        // Each platform must provide an implementation of this method.
+        //
+        // Gets the data for the given Image into outputVector in the
+        // format specified by the (OpenGL-style) format and type
+        // arguments. Despite the fact that the outputVector contains
+        // uint8_t, if the format and type specify packed pixels, then
+        // it will essentially contain uint16_t after the extraction
+        // process.
+        //
+        // If premultiplyAlpha is true, the alpha channel, if any,
+        // will be multiplied into the color channels during the
+        // extraction process. This premultiplication occurs before
+        // any packing of pixel data.
+        //
+        // No vertical flip of the image data is performed by this
+        // method.
+        bool getImageData(Image* image,
+                          unsigned int format,
+                          unsigned int type,
+                          bool premultiplyAlpha,
+                          Vector<uint8_t>& outputVector);
+
+        // Possible alpha operations that may need to occur during
+        // pixel packing. FIXME: kAlphaDoUnmultiply is lossy and must
+        // be removed.
+        enum AlphaOp {
+            kAlphaDoNothing = 0,
+            kAlphaDoPremultiply = 1,
+            kAlphaDoUnmultiply = 2
+        };
+
+        // Helper for getImageData which implements packing of pixel
+        // data into the specified OpenGL destination format and type.
+        // A sourceUnpackAlignment of zero indicates that the source
+        // data is tightly packed. Non-zero values may take a slow path.
+        // Destination data will have no gaps between rows.
+        bool packPixels(const uint8_t* sourceData,
+                        SourceDataFormat sourceDataFormat,
+                        unsigned int width,
+                        unsigned int height,
+                        unsigned int sourceUnpackAlignment,
+                        unsigned int destinationFormat,
+                        unsigned int destinationType,
+                        AlphaOp alphaOp,
+                        void* destinationData);
+
+#if PLATFORM(MAC)
+        // Take into account the user's requested context creation attributes,
+        // in particular stencil and antialias, and determine which could or
+        // could not be honored based on the capabilities of the OpenGL
+        // implementation.
+        void validateAttributes();
+#endif
 
         int m_currentWidth, m_currentHeight;
         
@@ -630,16 +798,26 @@ namespace WebCore {
         Attributes m_attrs;
         Vector<Vector<float> > m_vertexArray;
         
-        CGLContextObj m_contextObj;
+        PlatformGraphicsContext3D m_contextObj;
+        RetainPtr<PlatformLayer> m_webGLLayer;
         GLuint m_texture;
         GLuint m_fbo;
-        GLuint m_depthBuffer;
+        GLuint m_depthStencilBuffer;
+
+        // For tracking which FBO is bound
+        GLuint m_boundFBO;
+
+        // For multisampling
+        GLuint m_multisampleFBO;
+        GLuint m_multisampleDepthStencilBuffer;
+        GLuint m_multisampleColorBuffer;
+
         // Errors raised by synthesizeGLError().
         ListHashSet<unsigned long> m_syntheticErrors;
 #endif        
 
         // FIXME: ideally this would be used on all platforms.
-#if PLATFORM(CHROMIUM)
+#if PLATFORM(CHROMIUM) || PLATFORM(QT)
         friend class GraphicsContext3DInternal;
         OwnPtr<GraphicsContext3DInternal> m_internal;
 #endif

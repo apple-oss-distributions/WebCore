@@ -33,7 +33,8 @@ WebInspector.ScriptView = function(script)
 
     this._frameNeedsSetup = true;
     this._sourceFrameSetup = false;
-    this.sourceFrame = new WebInspector.SourceFrame(this.element, this._addBreakpoint.bind(this));
+    var canEditScripts = WebInspector.panels.scripts.canEditScripts();
+    this.sourceFrame = new WebInspector.SourceFrame(this.element, this._addBreakpoint.bind(this), this._removeBreakpoint.bind(this), canEditScripts ? this._editLine.bind(this) : null);
 }
 
 WebInspector.ScriptView.prototype = {
@@ -52,9 +53,16 @@ WebInspector.ScriptView.prototype = {
 
         this.attach();
 
-        this.sourceFrame.setContent("text/javascript", this.script.source);
+        this.sourceFrame.setContent("text/javascript", this._prependWhitespace(this.script.source));
         this._sourceFrameSetup = true;
         delete this._frameNeedsSetup;
+    },
+
+    _prependWhitespace: function(content) {
+        var prefix = "";
+        for (var i = 0; i < this.script.startingLine - 1; ++i)
+            prefix += "\n";
+        return prefix + content;
     },
 
     attach: function()
@@ -67,6 +75,12 @@ WebInspector.ScriptView.prototype = {
     {
         var breakpoint = new WebInspector.Breakpoint(this.script.sourceURL, line, this.script.sourceID);
         WebInspector.panels.scripts.addBreakpoint(breakpoint);
+    },
+
+    _editLineComplete: function(newBody)
+    {
+        this.script.source = newBody;
+        this.sourceFrame.updateContent(this._prependWhitespace(newBody));
     },
 
     // The follow methods are pulled from SourceView, since they are
@@ -87,6 +101,8 @@ WebInspector.ScriptView.prototype = {
     showingLastSearchResult: WebInspector.SourceView.prototype.showingLastSearchResult,
     _jumpToSearchResult: WebInspector.SourceView.prototype._jumpToSearchResult,
     _sourceFrameSetupFinished: WebInspector.SourceView.prototype._sourceFrameSetupFinished,
+    _removeBreakpoint: WebInspector.SourceView.prototype._removeBreakpoint,
+    _editLine: WebInspector.SourceView.prototype._editLine,
     resize: WebInspector.SourceView.prototype.resize
 }
 

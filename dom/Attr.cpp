@@ -38,10 +38,10 @@ inline Attr::Attr(Element* element, Document* document, PassRefPtr<Attribute> at
     , m_element(element)
     , m_attribute(attribute)
     , m_ignoreChildrenChanged(0)
-    , m_specified(true)  
+    , m_specified(true)
 {
     ASSERT(!m_attribute->attr());
-    m_attribute->m_impl = this;
+    m_attribute->bindAttr(this);
 }
 
 PassRefPtr<Attr> Attr::create(Element* element, Document* document, PassRefPtr<Attribute> attribute)
@@ -54,7 +54,7 @@ PassRefPtr<Attr> Attr::create(Element* element, Document* document, PassRefPtr<A
 Attr::~Attr()
 {
     ASSERT(m_attribute->attr() == this);
-    m_attribute->m_impl = 0;
+    m_attribute->unbindAttr(this);
 }
 
 void Attr::createTextChild()
@@ -117,13 +117,21 @@ String Attr::nodeValue() const
     return value();
 }
 
-void Attr::setValue(const AtomicString& value, ExceptionCode&)
+void Attr::setValue(const AtomicString& value)
 {
     m_ignoreChildrenChanged++;
     removeChildren();
     m_attribute->setValue(value);
     createTextChild();
     m_ignoreChildrenChanged--;
+}
+
+void Attr::setValue(const AtomicString& value, ExceptionCode&)
+{
+    if (m_element && (m_attribute->name() == HTMLNames::idAttr))
+        m_element->updateId(m_element->fastGetAttribute(HTMLNames::idAttr), value);
+
+    setValue(value);
 
     if (m_element)
         m_element->attributeChanged(m_attribute.get());
@@ -167,7 +175,10 @@ void Attr::childrenChanged(bool changedByParser, Node* beforeChange, Node* after
         if (n->isTextNode())
             val += static_cast<Text *>(n)->data();
     }
-    
+
+    if (m_element && (m_attribute->name() == HTMLNames::idAttr))
+        m_element->updateId(m_attribute->value(), val);
+
     m_attribute->setValue(val.impl());
     if (m_element)
         m_element->attributeChanged(m_attribute.get());

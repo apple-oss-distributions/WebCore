@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 Google Inc. All rights reserved.
+ * Copyright (C) 2010 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -31,36 +31,35 @@
 #include "config.h"
 #include "DatabaseTracker.h"
 
-#include "CString.h"
 #include "Database.h"
 #include "DatabaseObserver.h"
 #include "DatabaseThread.h"
 #include "QuotaTracker.h"
 #include "ScriptExecutionContext.h"
 #include "SecurityOrigin.h"
+#include "SecurityOriginHash.h"
 #include "SQLiteFileSystem.h"
 #include <wtf/HashSet.h>
 #include <wtf/MainThread.h>
 #include <wtf/StdLibExtras.h>
+#include <wtf/text/CString.h>
 
 namespace WebCore {
 
 DatabaseTracker& DatabaseTracker::tracker()
 {
-    DEFINE_STATIC_LOCAL(DatabaseTracker, tracker, ());
+    DEFINE_STATIC_LOCAL(DatabaseTracker, tracker, (""));
     return tracker;
 }
 
-DatabaseTracker::DatabaseTracker()
+DatabaseTracker::DatabaseTracker(const String&)
 {
     SQLiteFileSystem::registerSQLiteVFS();
 }
 
-bool DatabaseTracker::canEstablishDatabase(ScriptExecutionContext*, const String&, const String&, unsigned long)
+bool DatabaseTracker::canEstablishDatabase(ScriptExecutionContext* scriptExecutionContext, const String& name, const String& displayName, unsigned long estimatedSize)
 {
-    // In Chromium, a database can always be established (even though we might not
-    // be able to write anything to it if the quota for this origin was exceeded)
-    return true;
+    return DatabaseObserver::canEstablishDatabase(scriptExecutionContext, name, displayName, estimatedSize);
 }
 
 void DatabaseTracker::setDatabaseDetails(SecurityOrigin*, const String&, const String&, unsigned long)
@@ -76,6 +75,25 @@ String DatabaseTracker::fullPathForDatabase(SecurityOrigin* origin, const String
 void DatabaseTracker::addOpenDatabase(Database* database)
 {
     ASSERT(database->scriptExecutionContext()->isContextThread());
+    MutexLocker openDatabaseMapLock(m_openDatabaseMapGuard);
+    if (!m_openDatabaseMap)
+        m_openDatabaseMap.set(new DatabaseOriginMap());
+
+    DatabaseNameMap* nameMap = m_openDatabaseMap->get(database->securityOrigin());
+    if (!nameMap) {
+        nameMap = new DatabaseNameMap();
+        m_openDatabaseMap->set(database->securityOrigin(), nameMap);
+    }
+
+    String name(database->stringIdentifier());
+    DatabaseSet* databaseSet = nameMap->get(name);
+    if (!databaseSet) {
+        databaseSet = new DatabaseSet();
+        nameMap->set(name, databaseSet);
+    }
+
+    databaseSet->add(database);
+
     DatabaseObserver::databaseOpened(database);
 }
 
@@ -107,7 +125,44 @@ void DatabaseTracker::removeOpenDatabase(Database* database)
         return;
     }
 
+    MutexLocker openDatabaseMapLock(m_openDatabaseMapGuard);
+    ASSERT(m_openDatabaseMap);
+    DatabaseNameMap* nameMap = m_openDatabaseMap->get(database->securityOrigin());
+    ASSERT(nameMap);
+    String name(database->stringIdentifier());
+    DatabaseSet* databaseSet = nameMap->get(name);
+    ASSERT(databaseSet);
+    databaseSet->remove(database);
+
+    if (databaseSet->isEmpty()) {
+        nameMap->remove(name);
+        delete databaseSet;
+        if (nameMap->isEmpty()) {
+            m_openDatabaseMap->remove(database->securityOrigin());
+            delete nameMap;
+        }
+    }
+
     DatabaseObserver::databaseClosed(database);
+}
+
+
+void DatabaseTracker::getOpenDatabases(SecurityOrigin* origin, const String& name, HashSet<RefPtr<Database> >* databases)
+{
+    MutexLocker openDatabaseMapLock(m_openDatabaseMapGuard);
+    if (!m_openDatabaseMap)
+        return;
+
+    DatabaseNameMap* nameMap = m_openDatabaseMap->get(origin);
+    if (!nameMap)
+        return;
+
+    DatabaseSet* databaseSet = nameMap->get(name);
+    if (!databaseSet)
+        return;
+
+    for (DatabaseSet::iterator it = databaseSet->begin(); it != databaseSet->end(); ++it)
+        databases->add(*it);
 }
 
 unsigned long long DatabaseTracker::getMaxSizeForDatabase(const Database* database)

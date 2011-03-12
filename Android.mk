@@ -112,6 +112,9 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	dom/Comment.cpp \
 	dom/ContainerNode.cpp \
 	dom/DOMImplementation.cpp \
+	dom/DeviceMotionController.cpp \
+	dom/DeviceMotionData.cpp \
+	dom/DeviceMotionEvent.cpp \
 	dom/Document.cpp \
 	dom/DocumentFragment.cpp \
 	dom/DocumentType.cpp \
@@ -128,7 +131,6 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	dom/ExceptionCode.cpp \
 	dom/InputElement.cpp \
 	dom/KeyboardEvent.cpp \
-	dom/MappedAttribute.cpp \
 	dom/MessageChannel.cpp \
 	dom/MessageEvent.cpp \
 	dom/MessagePort.cpp \
@@ -137,8 +139,8 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	dom/MouseRelatedEvent.cpp \
 	dom/MutationEvent.cpp \
 	dom/NameNodeList.cpp \
-	dom/NamedAttrMap.cpp \
 	dom/NamedMappedAttrMap.cpp \
+	dom/NamedNodeMap.cpp \
 	dom/Node.cpp \
 	dom/NodeFilter.cpp \
 	dom/NodeFilterCondition.cpp \
@@ -146,6 +148,9 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	dom/Notation.cpp \
 	dom/OptionElement.cpp \
 	dom/OptionGroupElement.cpp \
+	dom/DeviceOrientation.cpp \
+	dom/DeviceOrientationController.cpp \
+	dom/DeviceOrientationEvent.cpp \
 	dom/OverflowEvent.cpp \
 	dom/PageTransitionEvent.cpp \
 	dom/Position.cpp \
@@ -173,6 +178,8 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	dom/TreeWalker.cpp \
 	dom/UIEvent.cpp \
 	dom/UIEventWithKeyState.cpp \
+	dom/UserGestureIndicator.cpp \
+	dom/ViewportArguments.cpp \
 	dom/WebKitAnimationEvent.cpp \
 	dom/WebKitTransitionEvent.cpp \
 	dom/WheelEvent.cpp \
@@ -239,6 +246,7 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	\
 	html/Blob.cpp \
 	html/CollectionCache.cpp \
+	html/DOMFormData.cpp \
 	html/File.cpp \
 	html/FileList.cpp \
 	html/FormDataList.cpp \
@@ -283,6 +291,7 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	loader/DocLoader.cpp \
 	loader/DocumentLoader.cpp \
 	loader/DocumentThreadableLoader.cpp \
+	loader/DocumentWriter.cpp \
 	loader/FormState.cpp \
 	loader/FrameLoader.cpp \
 	loader/HistoryController.cpp \
@@ -336,6 +345,7 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	page/FrameTree.cpp \
 	page/FrameView.cpp \
 	page/Geolocation.cpp \
+	page/GeolocationPositionCache.cpp \
 	page/History.cpp \
 	page/Location.cpp \
 	page/MouseEventWithHitTestResults.cpp \
@@ -350,6 +360,8 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	page/Screen.cpp \
 	page/SecurityOrigin.cpp \
 	page/Settings.cpp \
+	page/SpatialNavigation.cpp \
+	page/SuspendableTimer.cpp \
 	page/UserContentURLPattern.cpp \
 	page/WindowFeatures.cpp \
 	page/WorkerNavigator.cpp \
@@ -465,6 +477,7 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	platform/graphics/skia/SkiaUtils.cpp \
 	platform/graphics/skia/TransformationMatrixSkia.cpp \
 	\
+	platform/graphics/transforms/AffineTransform.cpp \
 	platform/graphics/transforms/Matrix3DTransformOperation.cpp \
 	platform/graphics/transforms/MatrixTransformOperation.cpp \
 	platform/graphics/transforms/PerspectiveTransformOperation.cpp \
@@ -479,6 +492,7 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	platform/image-decoders/gif/GIFImageDecoder.cpp \
 	platform/image-decoders/gif/GIFImageReader.cpp \
 	\
+	platform/mock/DeviceOrientationClientMock.cpp \
 	platform/mock/GeolocationServiceMock.cpp \
 	\
 	platform/network/AuthenticationChallengeBase.cpp \
@@ -505,15 +519,12 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	platform/sql/SQLiteStatement.cpp \
 	platform/sql/SQLiteTransaction.cpp \
 	\
-	platform/text/AtomicString.cpp \
 	platform/text/Base64.cpp \
 	platform/text/BidiContext.cpp \
-	platform/text/CString.cpp \
 	platform/text/RegularExpression.cpp \
 	platform/text/SegmentedString.cpp \
 	platform/text/String.cpp \
 	platform/text/StringBuilder.cpp \
-	platform/text/StringImpl.cpp \
 	platform/text/TextBreakIteratorICU.cpp \
 	platform/text/TextCodec.cpp \
 	platform/text/TextCodecICU.cpp \
@@ -567,8 +578,10 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	rendering/RenderFlexibleBox.cpp \
 	rendering/RenderForeignObject.cpp \
 	rendering/RenderFrame.cpp \
+	rendering/RenderFrameBase.cpp \
 	rendering/RenderFrameSet.cpp \
 	rendering/RenderHTMLCanvas.cpp \
+	rendering/RenderIFrame.cpp \
 	rendering/RenderImage.cpp \
 	rendering/RenderImageGeneratedContent.cpp \
 	rendering/RenderInline.cpp \
@@ -585,7 +598,6 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	rendering/RenderObject.cpp \
 	rendering/RenderObjectChildList.cpp \
 	rendering/RenderPart.cpp \
-	rendering/RenderPartObject.cpp \
 	rendering/RenderPath.cpp \
 	rendering/RenderReplaced.cpp \
 	rendering/RenderReplica.cpp \
@@ -600,6 +612,16 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	rendering/RenderSVGInline.cpp \
 	rendering/RenderSVGInlineText.cpp \
 	rendering/RenderSVGModelObject.cpp \
+	rendering/RenderSVGResource.cpp \
+	rendering/RenderSVGResourceClipper.cpp \
+	rendering/RenderSVGResourceFilter.cpp \
+	rendering/RenderSVGResourceGradient.cpp \
+	rendering/RenderSVGResourceLinearGradient.cpp \
+	rendering/RenderSVGResourceMarker.cpp \
+	rendering/RenderSVGResourceMasker.cpp \
+	rendering/RenderSVGResourcePattern.cpp \
+	rendering/RenderSVGResourceRadialGradient.cpp \
+	rendering/RenderSVGResourceSolidColor.cpp \
 	rendering/RenderSVGRoot.cpp \
 	rendering/RenderSVGShadowTreeRootContainer.cpp \
 	rendering/RenderSVGTSpan.cpp \
@@ -634,6 +656,7 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 
 ifeq ($(ENABLE_SVG), true)
 LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
+	rendering/SVGCharacterData.cpp \
 	rendering/SVGCharacterLayoutInfo.cpp \
 	rendering/SVGInlineFlowBox.cpp \
 	rendering/SVGInlineTextBox.cpp \
@@ -845,17 +868,6 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	svg/animation/SVGSMILElement.cpp \
 	\
 	svg/graphics/SVGImage.cpp \
-	svg/graphics/SVGPaintServer.cpp \
-	svg/graphics/SVGPaintServerGradient.cpp \
-	svg/graphics/SVGPaintServerLinearGradient.cpp \
-	svg/graphics/SVGPaintServerPattern.cpp \
-	svg/graphics/SVGPaintServerRadialGradient.cpp \
-	svg/graphics/SVGPaintServerSolid.cpp \
-	svg/graphics/SVGResource.cpp \
-	svg/graphics/SVGResourceClipper.cpp \
-	svg/graphics/SVGResourceFilter.cpp \
-	svg/graphics/SVGResourceMarker.cpp \
-	svg/graphics/SVGResourceMasker.cpp \
 	\
 	svg/graphics/filters/SVGFEConvolveMatrix.cpp \
 	svg/graphics/filters/SVGFEDiffuseLighting.cpp \
@@ -891,5 +903,6 @@ LOCAL_SRC_FILES := $(LOCAL_SRC_FILES) \
 	\
 	xml/DOMParser.cpp \
 	xml/XMLHttpRequest.cpp \
+	xml/XMLHttpRequestProgressEventThrottle.cpp \
 	xml/XMLHttpRequestUpload.cpp \
 	xml/XMLSerializer.cpp

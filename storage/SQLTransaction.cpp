@@ -35,6 +35,7 @@
 #include "Database.h"
 #include "DatabaseAuthorizer.h"
 #include "DatabaseDetails.h"
+#include "DatabaseThread.h"
 #include "DatabaseTracker.h"
 #include "ExceptionCode.h"
 #include "Logging.h"
@@ -86,6 +87,7 @@ SQLTransaction::SQLTransaction(Database* db, PassRefPtr<SQLTransactionCallback> 
 
 SQLTransaction::~SQLTransaction()
 {
+    ASSERT(!m_sqliteTransaction);
 }
 
 void SQLTransaction::executeSQL(const String& sqlStatement, const Vector<SQLValue>& arguments, PassRefPtr<SQLStatementCallback> callback, PassRefPtr<SQLStatementErrorCallback> callbackError, ExceptionCode& e)
@@ -159,11 +161,14 @@ void SQLTransaction::checkAndHandleClosedDatabase()
     m_statementQueue.clear();
     m_nextStep = 0;
 
+    // The next steps should be executed only if we're on the DB thread.
+    if (currentThread() != database()->scriptExecutionContext()->databaseThread()->getThreadID())
+        return;
+
     // The current SQLite transaction should be stopped, as well
     if (m_sqliteTransaction) {
         m_sqliteTransaction->stop();
         m_sqliteTransaction.clear();
-        DatabaseTracker::decrementTransactionInProgressCount();
     }
 
     if (m_lockAcquired)
@@ -213,6 +218,16 @@ bool SQLTransaction::shouldPerformWhilePaused() const
     return m_nextStep != s_firstTransactionStepMethod;
 }
 
+void SQLTransaction::notifyDatabaseThreadIsShuttingDown()
+{
+    ASSERT(currentThread() == database()->scriptExecutionContext()->databaseThread()->getThreadID());
+
+    // If the transaction is in progress, we should roll it back here, since this is our last
+    // oportunity to do something related to this transaction on the DB thread.
+    // Clearing m_sqliteTransaction invokes SQLiteTransaction's destructor which does just that.
+    m_sqliteTransaction.clear();
+}
+
 void SQLTransaction::acquireLock()
 {
     m_database->transactionCoordinator()->acquireLock(this);
@@ -245,7 +260,6 @@ void SQLTransaction::openTransactionAndPreflight()
         m_database->m_sqliteDatabase.setMaximumSize(m_database->maximumSize());
 
     ASSERT(!m_sqliteTransaction);
-    DatabaseTracker::incrementTransactionInProgressCount();
     m_sqliteTransaction.set(new SQLiteTransaction(m_database->m_sqliteDatabase, m_readOnly));
 
     m_database->m_databaseAuthorizer->disable();
@@ -256,7 +270,6 @@ void SQLTransaction::openTransactionAndPreflight()
     if (!m_sqliteTransaction->inProgress()) {
         ASSERT(!m_database->m_sqliteDatabase.transactionInProgress());
         m_sqliteTransaction.clear();
-        DatabaseTracker::decrementTransactionInProgressCount();
         m_transactionError = SQLError::create(0, "unable to open a transaction to the database");
         handleTransactionError(false);
         return;
@@ -266,7 +279,6 @@ void SQLTransaction::openTransactionAndPreflight()
     if (m_wrapper && !m_wrapper->performPreflight(this)) {
         ASSERT(!m_database->m_sqliteDatabase.transactionInProgress());
         m_sqliteTransaction.clear();
-        DatabaseTracker::decrementTransactionInProgressCount();
         m_transactionError = m_wrapper->sqlError();
         if (!m_transactionError)
             m_transactionError = SQLError::create(0, "unknown error occured setting up transaction");
@@ -287,7 +299,7 @@ void SQLTransaction::deliverTransactionCallback()
 
     if (m_callback) {
         m_executeSqlAllowed = true;
-        m_callback->handleEvent(this, shouldDeliverErrorCallback);
+        shouldDeliverErrorCallback = !m_callback->handleEvent(m_database->scriptExecutionContext(), this);
         m_executeSqlAllowed = false;
     } else
         shouldDeliverErrorCallback = true;
@@ -314,7 +326,7 @@ void SQLTransaction::runStatements()
     // If there is a series of statements queued up that are all successful and have no associated
     // SQLStatementCallback objects, then we can burn through the queue
     do {
-        if (m_shouldRetryCurrentStatement) {
+        if (m_shouldRetryCurrentStatement && !m_sqliteTransaction->wasRolledBackBySqlite()) {
             m_shouldRetryCurrentStatement = false;
             // FIXME - Another place that needs fixing up after <rdar://problem/5628468> is addressed.
             // See ::openTransactionAndPreflight() for discussion
@@ -394,8 +406,8 @@ bool SQLTransaction::runCurrentStatement()
 void SQLTransaction::handleCurrentStatementError()
 {
     // Transaction Steps 6.error - Call the statement's error callback, but if there was no error callback,
-    // jump to the transaction error callback
-    if (m_currentStatement->hasStatementErrorCallback()) {
+    // or the transaction was rolled back, jump to the transaction error callback
+    if (m_currentStatement->hasStatementErrorCallback() && !m_sqliteTransaction->wasRolledBackBySqlite()) {
         m_nextStep = &SQLTransaction::deliverStatementCallback;
         LOG(StorageAPI, "Scheduling deliverStatementCallback for transaction %p\n", this);
         m_database->scheduleTransactionCallback(this);
@@ -463,12 +475,14 @@ void SQLTransaction::postflightAndCommit()
         return;
     }
 
+    // The commit was successful, so vacuum the database if needed
+    m_database->incrementalVacuumIfNeeded();
+
     // The commit was successful, notify the delegates if the transaction modified this database
     if (m_modifiedDatabase)
         m_database->transactionClient()->didCommitTransaction(this);
 
     m_sqliteTransaction.clear();
-    DatabaseTracker::decrementTransactionInProgressCount();
 
     // Now release our unneeded callbacks, to break reference cycles.
     m_callback = 0;
@@ -507,6 +521,7 @@ void SQLTransaction::cleanupAfterSuccessCallback()
     // There is no next step
     LOG(StorageAPI, "Transaction %p is complete\n", this);
     ASSERT(!m_database->m_sqliteDatabase.transactionInProgress());
+    m_sqliteTransaction.clear();
     m_nextStep = 0;
 
     // Release the lock on this database
@@ -544,7 +559,7 @@ void SQLTransaction::deliverTransactionErrorCallback()
     // Transaction Step 12 - If exists, invoke error callback with the last
     // error to have occurred in this transaction.
     if (m_errorCallback)
-        m_errorCallback->handleEvent(m_transactionError.get());
+        m_errorCallback->handleEvent(m_database->scriptExecutionContext(), m_transactionError.get());
 
     m_nextStep = &SQLTransaction::cleanupAfterTransactionErrorCallback;
     LOG(StorageAPI, "Scheduling cleanupAfterTransactionErrorCallback for transaction %p\n", this);
@@ -562,7 +577,6 @@ void SQLTransaction::cleanupAfterTransactionErrorCallback()
 
         ASSERT(!m_database->m_sqliteDatabase.transactionInProgress());
         m_sqliteTransaction.clear();
-        DatabaseTracker::decrementTransactionInProgressCount();
     }
     m_database->m_databaseAuthorizer->enable();
 

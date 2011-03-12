@@ -33,7 +33,6 @@
 #include "CSSMutableStyleDeclaration.h"
 #include "CSSPropertyLonghand.h"
 #include "CSSPropertyNames.h"
-#include "CString.h"
 #include "CompositeAnimation.h"
 #include "Document.h"
 #include "EventNames.h"
@@ -92,10 +91,17 @@ static inline Color blendFunc(const AnimationBase* anim, const Color& from, cons
     if (progress == 1 && !to.isValid())
         return Color();
 
-    return Color(blendFunc(anim, from.red(), to.red(), progress),
-                 blendFunc(anim, from.green(), to.green(), progress),
-                 blendFunc(anim, from.blue(), to.blue(), progress),
-                 blendFunc(anim, from.alpha(), to.alpha(), progress));
+    // Contrary to the name, RGBA32 actually stores ARGB, so we can initialize Color directly from premultipliedARGBFromColor().
+    // Also, premultipliedARGBFromColor() bails on zero alpha, so special-case that.
+    Color premultFrom = from.alpha() ? premultipliedARGBFromColor(from) : 0;
+    Color premultTo = to.alpha() ? premultipliedARGBFromColor(to) : 0;
+
+    Color premultBlended(blendFunc(anim, premultFrom.red(), premultTo.red(), progress),
+                 blendFunc(anim, premultFrom.green(), premultTo.green(), progress),
+                 blendFunc(anim, premultFrom.blue(), premultTo.blue(), progress),
+                 blendFunc(anim, premultFrom.alpha(), premultTo.alpha(), progress));
+
+    return Color(colorFromPremultipliedARGB(premultBlended.rgb()));
 }
 
 static inline Length blendFunc(const AnimationBase*, const Length& from, const Length& to, double progress)
@@ -129,9 +135,9 @@ static inline ShadowStyle blendFunc(const AnimationBase* anim, ShadowStyle from,
 static inline ShadowData* blendFunc(const AnimationBase* anim, const ShadowData* from, const ShadowData* to, double progress)
 {  
     ASSERT(from && to);
-    return new ShadowData(blendFunc(anim, from->x, to->x, progress), blendFunc(anim, from->y, to->y, progress), 
-                          blendFunc(anim, from->blur, to->blur, progress), blendFunc(anim, from->spread, to->spread, progress),
-                          blendFunc(anim, from->style, to->style, progress), blendFunc(anim, from->color, to->color, progress));
+    return new ShadowData(blendFunc(anim, from->x(), to->x(), progress), blendFunc(anim, from->y(), to->y(), progress), 
+                          blendFunc(anim, from->blur(), to->blur(), progress), blendFunc(anim, from->spread(), to->spread(), progress),
+                          blendFunc(anim, from->style(), to->style(), progress), blendFunc(anim, from->color(), to->color(), progress));
 }
 
 static inline TransformOperations blendFunc(const AnimationBase* anim, const TransformOperations& from, const TransformOperations& to, double progress)
@@ -290,18 +296,19 @@ public:
 };
 #endif // USE(ACCELERATED_COMPOSITING)
 
-class PropertyWrapperShadow : public PropertyWrapperGetter<ShadowData*> {
+class PropertyWrapperShadow : public PropertyWrapperBase {
 public:
-    PropertyWrapperShadow(int prop, ShadowData* (RenderStyle::*getter)() const, void (RenderStyle::*setter)(ShadowData*, bool))
-        : PropertyWrapperGetter<ShadowData*>(prop, getter)
+    PropertyWrapperShadow(int prop, const ShadowData* (RenderStyle::*getter)() const, void (RenderStyle::*setter)(ShadowData*, bool))
+        : PropertyWrapperBase(prop)
+        , m_getter(getter)
         , m_setter(setter)
     {
     }
 
     virtual bool equals(const RenderStyle* a, const RenderStyle* b) const
     {
-        ShadowData* shadowA = (a->*m_getter)();
-        ShadowData* shadowB = (b->*m_getter)();
+        const ShadowData* shadowA = (a->*m_getter)();
+        const ShadowData* shadowB = (b->*m_getter)();
         
         while (true) {
             if (!shadowA && !shadowB)   // end of both lists
@@ -313,8 +320,8 @@ public:
             if (*shadowA != *shadowB)
                 return false;
         
-            shadowA = shadowA->next;
-            shadowB = shadowB->next;
+            shadowA = shadowA->next();
+            shadowB = shadowB->next();
         }
 
         return true;
@@ -322,29 +329,30 @@ public:
 
     virtual void blend(const AnimationBase* anim, RenderStyle* dst, const RenderStyle* a, const RenderStyle* b, double progress) const
     {
-        ShadowData* shadowA = (a->*m_getter)();
-        ShadowData* shadowB = (b->*m_getter)();
+        const ShadowData* shadowA = (a->*m_getter)();
+        const ShadowData* shadowB = (b->*m_getter)();
         ShadowData defaultShadowData(0, 0, 0, 0, Normal, Color::transparent);
 
         ShadowData* newShadowData = 0;
         
         while (shadowA || shadowB) {
-            ShadowData* srcShadow = shadowA ? shadowA : &defaultShadowData;
-            ShadowData* dstShadow = shadowB ? shadowB : &defaultShadowData;
+            const ShadowData* srcShadow = shadowA ? shadowA : &defaultShadowData;
+            const ShadowData* dstShadow = shadowB ? shadowB : &defaultShadowData;
             
             if (!newShadowData)
                 newShadowData = blendFunc(anim, srcShadow, dstShadow, progress);
             else
-                newShadowData->next = blendFunc(anim, srcShadow, dstShadow, progress);
+                newShadowData->setNext(blendFunc(anim, srcShadow, dstShadow, progress));
 
-            shadowA = shadowA ? shadowA->next : 0;
-            shadowB = shadowB ? shadowB->next : 0;
+            shadowA = shadowA ? shadowA->next() : 0;
+            shadowB = shadowB ? shadowB->next() : 0;
         }
         
         (dst->*m_setter)(newShadowData, false);
     }
 
 private:
+    const ShadowData* (RenderStyle::*m_getter)() const;
     void (RenderStyle::*m_setter)(ShadowData*, bool);
 };
 
@@ -554,7 +562,7 @@ static int gPropertyWrapperMap[numCSSProperties];
 static const int cInvalidPropertyWrapperIndex = -1;
 
 
-static void ensurePropertyMap()
+void AnimationBase::ensurePropertyMap()
 {
     // FIXME: This data is never destroyed. Maybe we should ref count it and toss it when the last AnimationController is destroyed?
     if (gPropertyWrappers == 0) {
@@ -939,28 +947,33 @@ void AnimationBase::updateStateMachine(AnimStateInput input, double param)
         case AnimationStateStartWaitStyleAvailable:
             ASSERT(input == AnimationStateInputStyleAvailable || input == AnimationStateInputPlayStatePaused);
 
-            // Start timer has fired, tell the animation to start and wait for it to respond with start time
-            m_animState = AnimationStateStartWaitResponse;
-
-            overrideAnimations();
-
-            // Start the animation
-            if (overridden()) {
-                // We won't try to start accelerated animations if we are overridden and
-                // just move on to the next state.
+            if (input == AnimationStateInputStyleAvailable) {
+                // Start timer has fired, tell the animation to start and wait for it to respond with start time
                 m_animState = AnimationStateStartWaitResponse;
-                m_fallbackAnimating = true;
-                updateStateMachine(AnimationStateInputStartTimeSet, beginAnimationUpdateTime());
-            }
-            else {
-                double timeOffset = 0;
-                // If the value for 'animation-delay' is negative then the animation appears to have started in the past.
-                if (m_animation->delay() < 0)
-                    timeOffset = -m_animation->delay();
-                bool started = startAnimation(timeOffset);
 
-                m_compAnim->animationController()->addToStartTimeResponseWaitList(this, started);
-                m_fallbackAnimating = !started;
+                overrideAnimations();
+
+                // Start the animation
+                if (overridden()) {
+                    // We won't try to start accelerated animations if we are overridden and
+                    // just move on to the next state.
+                    m_animState = AnimationStateStartWaitResponse;
+                    m_fallbackAnimating = true;
+                    updateStateMachine(AnimationStateInputStartTimeSet, beginAnimationUpdateTime());
+                } else {
+                    double timeOffset = 0;
+                    // If the value for 'animation-delay' is negative then the animation appears to have started in the past.
+                    if (m_animation->delay() < 0)
+                        timeOffset = -m_animation->delay();
+                    bool started = startAnimation(timeOffset);
+
+                    m_compAnim->animationController()->addToStartTimeResponseWaitList(this, started);
+                    m_fallbackAnimating = !started;
+                }
+            } else {
+                // We're waiting for the style to be available and we got a pause. Pause and wait
+                m_pauseTime = beginAnimationUpdateTime();
+                m_animState = AnimationStatePausedWaitStyleAvailable;
             }
             break;
         case AnimationStateStartWaitResponse:
@@ -1050,17 +1063,51 @@ void AnimationBase::updateStateMachine(AnimStateInput input, double param)
             updateStateMachine(AnimationStateInputStartAnimation, 0);
             break;
         case AnimationStatePausedWaitResponse:
+        case AnimationStatePausedWaitStyleAvailable:
         case AnimationStatePausedRun:
             // We treat these two cases the same. The only difference is that, when we are in
             // AnimationStatePausedWaitResponse, we don't yet have a valid startTime, so we send 0 to startAnimation.
             // When the AnimationStateInputStartTimeSet comes in and we were in AnimationStatePausedRun, we will notice
             // that we have already set the startTime and will ignore it.
-            ASSERT(input == AnimationStateInputPlayStateRunning || input == AnimationStateInputStartTimeSet);
+            ASSERT(input == AnimationStateInputPlayStateRunning || input == AnimationStateInputStartTimeSet || input == AnimationStateInputStyleAvailable);
             ASSERT(paused());
             
-            // If we are paused, but we get the callback that notifies us that an accelerated animation started,
-            // then we ignore the start time and just move into the paused-run state.
-            if (m_animState == AnimationStatePausedWaitResponse && input == AnimationStateInputStartTimeSet) {
+            if (input == AnimationStateInputPlayStateRunning) {
+                // Update the times
+                if (m_animState == AnimationStatePausedRun)
+                    m_startTime += beginAnimationUpdateTime() - m_pauseTime;
+                else
+                    m_startTime = 0;
+                m_pauseTime = -1;
+
+                if (m_animState == AnimationStatePausedWaitStyleAvailable)
+                    m_animState = AnimationStateStartWaitStyleAvailable;
+                else {
+                    // We were either running or waiting for a begin time response from the animation.
+                    // Either way we need to restart the animation (possibly with an offset if we
+                    // had already been running) and wait for it to start.
+                    m_animState = AnimationStateStartWaitResponse;
+
+                    // Start the animation
+                    if (overridden()) {
+                        // We won't try to start accelerated animations if we are overridden and
+                        // just move on to the next state.
+                        updateStateMachine(AnimationStateInputStartTimeSet, beginAnimationUpdateTime());
+                        m_fallbackAnimating = false;
+                    } else {
+                        bool started = startAnimation(beginAnimationUpdateTime() - m_startTime);
+                        m_compAnim->animationController()->addToStartTimeResponseWaitList(this, started);
+                        m_fallbackAnimating = started;
+                    }
+                }
+                break;
+            }
+            
+            if (input == AnimationStateInputStartTimeSet) {
+                ASSERT(m_animState == AnimationStatePausedWaitResponse);
+                
+                // We are paused but we got the callback that notifies us that an accelerated animation started.
+                // We ignore the start time and just move into the paused-run state.
                 m_animState = AnimationStatePausedRun;
                 ASSERT(m_startTime == 0);
                 m_startTime = param;
@@ -1068,27 +1115,11 @@ void AnimationBase::updateStateMachine(AnimStateInput input, double param)
                 break;
             }
             
-            // Update the times
-            if (m_animState == AnimationStatePausedRun)
-                m_startTime += beginAnimationUpdateTime() - m_pauseTime;
-            else
-                m_startTime = 0;
-            m_pauseTime = -1;
-
-            // We were waiting for a begin time response from the animation, go back and wait again
-            m_animState = AnimationStateStartWaitResponse;
-
-            // Start the animation
-            if (overridden()) {
-                // We won't try to start accelerated animations if we are overridden and
-                // just move on to the next state.
-                updateStateMachine(AnimationStateInputStartTimeSet, beginAnimationUpdateTime());
-                m_fallbackAnimating = true;
-            } else {
-                bool started = startAnimation(beginAnimationUpdateTime() - m_startTime);
-                m_compAnim->animationController()->addToStartTimeResponseWaitList(this, started);
-                m_fallbackAnimating = !started;
-            }
+            ASSERT(m_animState == AnimationStatePausedWaitStyleAvailable);
+            // We are paused but we got the callback that notifies us that style has been updated.
+            // We move to the AnimationStatePausedWaitResponse state
+            m_animState = AnimationStatePausedWaitResponse;
+            overrideAnimations();
             break;
         case AnimationStateFillingForwards:
         case AnimationStateDone:

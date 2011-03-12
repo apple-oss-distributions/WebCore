@@ -30,7 +30,8 @@ js_binding_scripts := \
 	$(LOCAL_PATH)/bindings/scripts/IDLStructure.pm \
 	$(LOCAL_PATH)/bindings/scripts/generate-bindings.pl
 
-FEATURE_DEFINES := ANDROID_ORIENTATION_SUPPORT ENABLE_TOUCH_EVENTS=1 V8_BINDING ENABLE_DATABASE=1 ENABLE_OFFLINE_WEB_APPLICATIONS=1 ENABLE_DOM_STORAGE=1 ENABLE_VIDEO=1 ENABLE_WORKERS=1 ENABLE_GEOLOCATION=1
+FEATURE_DEFINES := ANDROID_ORIENTATION_SUPPORT ENABLE_TOUCH_EVENTS=1 ENABLE_DATABASE=1 ENABLE_OFFLINE_WEB_APPLICATIONS=1 ENABLE_DOM_STORAGE=1 ENABLE_VIDEO=1 ENABLE_WORKERS=1 ENABLE_GEOLOCATION=1 ENABLE_DEVICE_ORIENTATION=1
+FEATURE_DEFINES += V8_BINDING
 
 # CSS
 GEN := \
@@ -51,10 +52,10 @@ GEN := \
     $(intermediates)/bindings/V8CSSVariablesDeclaration.h \
     $(intermediates)/bindings/V8CSSVariablesRule.h \
     $(intermediates)/bindings/V8Counter.h \
-    $(intermediates)/bindings/V8Media.h \
     $(intermediates)/bindings/V8MediaList.h \
     $(intermediates)/bindings/V8Rect.h \
     $(intermediates)/bindings/V8RGBColor.h \
+    $(intermediates)/bindings/V8StyleMedia.h \
     $(intermediates)/bindings/V8StyleSheet.h \
     $(intermediates)/bindings/V8StyleSheetList.h  \
     $(intermediates)/bindings/V8WebKitCSSKeyframeRule.h \
@@ -66,8 +67,7 @@ $(GEN): PRIVATE_PATH := $(LOCAL_PATH)
 $(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include css --include dom --include html --outputdir $(dir $@) $<
 $(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/css/%.idl $(js_binding_scripts)
 	$(transform-generated-source)
-LOCAL_GENERATED_SOURCES += $(GEN) $(GEN:%.h=%.cpp)
-
+LOCAL_GENERATED_SOURCES += $(GEN)
 
 # We also need the .cpp files, which are generated as side effects of the
 # above rules.  Specifying this explicitly makes -j2 work.
@@ -85,6 +85,8 @@ GEN := \
     $(intermediates)/bindings/V8Comment.h \
     $(intermediates)/bindings/V8DOMCoreException.h \
     $(intermediates)/bindings/V8DOMImplementation.h \
+    $(intermediates)/bindings/V8DeviceMotionEvent.h \
+    $(intermediates)/bindings/V8DeviceOrientationEvent.h \
     $(intermediates)/bindings/V8Document.h \
     $(intermediates)/bindings/V8DocumentFragment.h \
     $(intermediates)/bindings/V8DocumentType.h \
@@ -114,6 +116,9 @@ GEN := \
     $(intermediates)/bindings/V8RangeException.h \
     $(intermediates)/bindings/V8Text.h \
     $(intermediates)/bindings/V8TextEvent.h \
+    $(intermediates)/bindings/V8Touch.h \
+    $(intermediates)/bindings/V8TouchEvent.h \
+    $(intermediates)/bindings/V8TouchList.h \
     $(intermediates)/bindings/V8TreeWalker.h \
     $(intermediates)/bindings/V8UIEvent.h \
     $(intermediates)/bindings/V8WebKitAnimationEvent.h \
@@ -124,7 +129,7 @@ $(GEN): PRIVATE_PATH := $(LOCAL_PATH)
 $(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include dom --include html --outputdir $(dir $@) $<
 $(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/dom/%.idl $(js_binding_scripts)
 	$(transform-generated-source)
-LOCAL_GENERATED_SOURCES += $(GEN) $(GEN:%.h=%.cpp)
+LOCAL_GENERATED_SOURCES += $(GEN)
 
 # We also need the .cpp files, which are generated as side effects of the
 # above rules.  Specifying this explicitly makes -j2 work.
@@ -136,6 +141,7 @@ GEN := \
     $(intermediates)/bindings/V8DataGridColumn.h \
     $(intermediates)/bindings/V8DataGridColumnList.h \
     $(intermediates)/bindings/V8File.h \
+    $(intermediates)/bindings/V8FileError.h \
     $(intermediates)/bindings/V8FileList.h \
     $(intermediates)/bindings/V8HTMLAllCollection.h \
     $(intermediates)/bindings/V8HTMLAnchorElement.h \
@@ -218,7 +224,7 @@ $(GEN): PRIVATE_PATH := $(LOCAL_PATH)
 $(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include dom --include html --outputdir $(dir $@) $<
 $(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/html/%.idl $(js_binding_scripts)
 	$(transform-generated-source)
-LOCAL_GENERATED_SOURCES += $(GEN) $(GEN:%.h=%.cpp)
+LOCAL_GENERATED_SOURCES += $(GEN)
 
 # We also need the .cpp files, which are generated as side effects of the
 # above rules.  Specifying this explicitly makes -j2 work.
@@ -236,7 +242,7 @@ $(GEN): PRIVATE_PATH := $(LOCAL_PATH)
 $(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include dom --include html --include html/canvas --outputdir $(dir $@) $<
 $(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/html/canvas/%.idl $(js_binding_scripts)
 	$(transform-generated-source)
-LOCAL_GENERATED_SOURCES += $(GEN) $(GEN:%.h=%.cpp)
+LOCAL_GENERATED_SOURCES += $(GEN)
 
 # We also need the .cpp files, which are generated as side effects of the
 # above rules.  Specifying this explicitly makes -j2 work.
@@ -250,13 +256,13 @@ $(GEN): PRIVATE_PATH := $(LOCAL_PATH)
 $(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include dom --include html --outputdir $(dir $@) $<
 $(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/loader/appcache/%.idl $(js_binding_scripts)
 	$(transform-generated-source)
-LOCAL_GENERATED_SOURCES += $(GEN) $(GEN:%.h=%.cpp)
+LOCAL_GENERATED_SOURCES += $(GEN)
 
 # We also need the .cpp files, which are generated as side effects of the
 # above rules.  Specifying this explicitly makes -j2 work.
 $(patsubst %.h,%.cpp,$(GEN)): $(intermediates)/bindings/%.cpp : $(intermediates)/bindings/%.h
 
-# page
+# Page
 GEN := \
     $(intermediates)/bindings/V8BarInfo.h \
     $(intermediates)/bindings/V8Console.h \
@@ -276,7 +282,7 @@ $(GEN): PRIVATE_PATH := $(LOCAL_PATH)
 $(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include dom --include html --outputdir $(dir $@) $<
 $(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/page/%.idl $(js_binding_scripts)
 	$(transform-generated-source)
-LOCAL_GENERATED_SOURCES += $(GEN) $(GEN:%.h=%.cpp)
+LOCAL_GENERATED_SOURCES += $(GEN)
 
 # We also need the .cpp files, which are generated as side effects of the
 # above rules.  Specifying this explicitly makes -j2 work.
@@ -292,7 +298,7 @@ $(GEN): PRIVATE_PATH := $(LOCAL_PATH)
 $(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include dom --include html --outputdir $(dir $@) $<
 $(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/plugins/%.idl $(js_binding_scripts)
 	$(transform-generated-source)
-LOCAL_GENERATED_SOURCES += $(GEN) $(GEN:%.h=%.cpp)
+LOCAL_GENERATED_SOURCES += $(GEN)
 
 # We also need the .cpp files, which are generated as side effects of the
 # above rules.  Specifying this explicitly makes -j2 work.
@@ -310,7 +316,7 @@ $(GEN): PRIVATE_PATH := $(LOCAL_PATH)
 $(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include dom --include html --outputdir $(dir $@) $<
 $(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/storage/%.idl $(js_binding_scripts)
 	$(transform-generated-source)
-LOCAL_GENERATED_SOURCES += $(GEN) $(GEN:%.h=%.cpp)
+LOCAL_GENERATED_SOURCES += $(GEN)
 
 # We also need the .cpp files, which are generated as side effects of the
 # above rules.  Specifying this explicitly makes -j2 work.
@@ -325,31 +331,37 @@ $(GEN): PRIVATE_PATH := $(LOCAL_PATH)
 $(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include dom --include html --outputdir $(dir $@) $<
 $(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/storage/%.idl $(js_binding_scripts)
 	$(transform-generated-source)
-LOCAL_GENERATED_SOURCES += $(GEN) $(GEN:%.h=%.cpp)
+LOCAL_GENERATED_SOURCES += $(GEN)
 
 # We also need the .cpp files, which are generated as side effects of the
 # above rules.  Specifying this explicitly makes -j2 work.
 $(patsubst %.h,%.cpp,$(GEN)): $(intermediates)/bindings/%.cpp : $(intermediates)/bindings/%.h
 
 # SVG
-ifeq ($(ENABLE_SVG), true)
+# These headers are required by the V8 bindings even when SVG is disabled
 GEN := \
+    $(intermediates)/bindings/V8SVGColor.h \
+    $(intermediates)/bindings/V8SVGDocument.h \
+    $(intermediates)/bindings/V8SVGElement.h \
+    $(intermediates)/bindings/V8SVGElementInstance.h \
+    $(intermediates)/bindings/V8SVGException.h \
+    $(intermediates)/bindings/V8SVGPaint.h \
+    $(intermediates)/bindings/V8SVGZoomEvent.h
+
+ifeq ($(ENABLE_SVG), true)
+GEN += \
     $(intermediates)/bindings/V8SVGAElement.h \
     $(intermediates)/bindings/V8SVGAltGlyphElement.h \
     $(intermediates)/bindings/V8SVGAngle.h \
     $(intermediates)/bindings/V8SVGCircleElement.h \
     $(intermediates)/bindings/V8SVGClipPathElement.h \
-    $(intermediates)/bindings/V8SVGColor.h \
     $(intermediates)/bindings/V8SVGComponentTransferFunctionElement.h \
     $(intermediates)/bindings/V8SVGCursorElement.h \
     $(intermediates)/bindings/V8SVGDefsElement.h \
     $(intermediates)/bindings/V8SVGDescElement.h \
-    $(intermediates)/bindings/V8SVGDocument.h \
     $(intermediates)/bindings/V8SVGElement.h \
-    $(intermediates)/bindings/V8SVGElementInstance.h \
     $(intermediates)/bindings/V8SVGElementInstanceList.h \
     $(intermediates)/bindings/V8SVGEllipseElement.h \
-    $(intermediates)/bindings/V8SVGException.h \
     $(intermediates)/bindings/V8SVGFEBlendElement.h \
     $(intermediates)/bindings/V8SVGFEColorMatrixElement.h \
     $(intermediates)/bindings/V8SVGFEComponentTransferElement.h \
@@ -396,7 +408,6 @@ GEN := \
     $(intermediates)/bindings/V8SVGMissingGlyphElement.h \
     $(intermediates)/bindings/V8SVGNumber.h \
     $(intermediates)/bindings/V8SVGNumberList.h \
-    $(intermediates)/bindings/V8SVGPaint.h \
     $(intermediates)/bindings/V8SVGPathElement.h \
     $(intermediates)/bindings/V8SVGPathSeg.h \
     $(intermediates)/bindings/V8SVGPathSegArcAbs.h \
@@ -449,7 +460,6 @@ GEN := \
     $(intermediates)/bindings/V8SVGUnitTypes.h \
     $(intermediates)/bindings/V8SVGUseElement.h \
     $(intermediates)/bindings/V8SVGViewElement.h \
-    $(intermediates)/bindings/V8SVGZoomEvent.h \
     \
     $(intermediates)/bindings/V8SVGAnimatedAngle.h \
     $(intermediates)/bindings/V8SVGAnimatedEnumeration.h \
@@ -464,6 +474,7 @@ GEN := \
     $(intermediates)/bindings/V8SVGAnimatedRect.h \
     $(intermediates)/bindings/V8SVGAnimatedString.h \
     $(intermediates)/bindings/V8SVGAnimatedTransformList.h
+endif
 
 ifeq ($(ENABLE_SVG_ANIMATION), true)
 GEN += \
@@ -478,12 +489,11 @@ $(GEN): PRIVATE_PATH := $(LOCAL_PATH)
 $(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include css --include dom --include html --include svg --outputdir $(dir $@) $<
 $(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/svg/%.idl $(js_binding_scripts)
 	$(transform-generated-source)
-LOCAL_GENERATED_SOURCES += $(GEN) $(GEN:%.h=%.cpp)
+LOCAL_GENERATED_SOURCES += $(GEN)
 
 # We also need the .cpp files, which are generated as side effects of the
 # above rules.  Specifying this explicitly makes -j2 work.
 $(patsubst %.h,%.cpp,$(GEN)): $(intermediates)/bindings/%.cpp : $(intermediates)/bindings/%.h
-endif
 
 # Workers
 GEN := \
@@ -499,7 +509,7 @@ $(GEN): PRIVATE_PATH := $(LOCAL_PATH)
 $(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include dom --include html --include workers --outputdir $(dir $@) $<
 $(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/workers/%.idl $(js_binding_scripts)
 	$(transform-generated-source)
-LOCAL_GENERATED_SOURCES += $(GEN) $(GEN:%.h=%.cpp)
+LOCAL_GENERATED_SOURCES += $(GEN)
 
 # We also need the .cpp files, which are generated as side effects of the
 # above rules.  Specifying this explicitly makes -j2 work.
@@ -507,27 +517,76 @@ $(patsubst %.h,%.cpp,$(GEN)): $(intermediates)/bindings/%.cpp : $(intermediates)
 
 # XML
 GEN := \
+    $(intermediates)/bindings/V8DOMFormData.h \
     $(intermediates)/bindings/V8DOMParser.h \
     $(intermediates)/bindings/V8XMLHttpRequest.h \
     $(intermediates)/bindings/V8XMLHttpRequestException.h \
     $(intermediates)/bindings/V8XMLHttpRequestProgressEvent.h \
     $(intermediates)/bindings/V8XMLHttpRequestUpload.h \
     $(intermediates)/bindings/V8XMLSerializer.h \
+    $(intermediates)/bindings/V8XPathException.h \
     $(intermediates)/bindings/V8XPathNSResolver.h
 
 $(GEN): PRIVATE_PATH := $(LOCAL_PATH)
 $(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include dom --include html --outputdir $(dir $@) $<
 $(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/xml/%.idl $(js_binding_scripts)
 	$(transform-generated-source)
-LOCAL_GENERATED_SOURCES += $(GEN) $(GEN:%.h=%.cpp)
+LOCAL_GENERATED_SOURCES += $(GEN)
 
 # We also need the .cpp files, which are generated as side effects of the
 # above rules.  Specifying this explicitly makes -j2 work.
 $(patsubst %.h,%.cpp,$(GEN)): $(intermediates)/bindings/%.cpp : $(intermediates)/bindings/%.h
 #end
 
-# HTML tag and attribute names
+# Inspector
+# These headers are required by the V8 bindings even when Inspector is disabled
+GEN := \
+    $(intermediates)/bindings/V8InjectedScriptHost.h \
+    $(intermediates)/bindings/V8InspectorBackend.h \
+    $(intermediates)/bindings/V8InspectorFrontendHost.h
 
+$(GEN): PRIVATE_PATH := $(LOCAL_PATH)
+$(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include dom --include html --outputdir $(dir $@) $<
+$(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/inspector/%.idl $(js_binding_scripts)
+	$(transform-generated-source)
+LOCAL_GENERATED_SOURCES += $(GEN)
+
+# We also need the .cpp files, which are generated as side effects of the
+# above rules.  Specifying this explicitly makes -j2 work.
+$(patsubst %.h,%.cpp,$(GEN)): $(intermediates)/bindings/%.cpp : $(intermediates)/bindings/%.h
+
+# Notifications
+# These headers are required by the V8 bindings even when Notifications are disabled
+GEN := \
+    $(intermediates)/bindings/V8Notification.h \
+    $(intermediates)/bindings/V8NotificationCenter.h
+
+$(GEN): PRIVATE_PATH := $(LOCAL_PATH)
+$(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include dom --include html --outputdir $(dir $@) $<
+$(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/notifications/%.idl $(js_binding_scripts)
+	$(transform-generated-source)
+LOCAL_GENERATED_SOURCES += $(GEN)
+
+# We also need the .cpp files, which are generated as side effects of the
+# above rules.  Specifying this explicitly makes -j2 work.
+$(patsubst %.h,%.cpp,$(GEN)): $(intermediates)/bindings/%.cpp : $(intermediates)/bindings/%.h
+
+# Web Sockets
+# These headers are required by the V8 bindings even when Web Sockets are disabled
+GEN := \
+    $(intermediates)/bindings/V8WebSocket.h
+
+$(GEN): PRIVATE_PATH := $(LOCAL_PATH)
+$(GEN): PRIVATE_CUSTOM_TOOL = SOURCE_ROOT=$(PRIVATE_PATH) perl -I$(PRIVATE_PATH)/bindings/scripts $(PRIVATE_PATH)/bindings/scripts/generate-bindings.pl --defines "$(FEATURE_DEFINES) LANGUAGE_JAVASCRIPT" --generator V8 --include dom --include html --outputdir $(dir $@) $<
+$(GEN): $(intermediates)/bindings/V8%.h : $(LOCAL_PATH)/websockets/%.idl $(js_binding_scripts)
+	$(transform-generated-source)
+LOCAL_GENERATED_SOURCES += $(GEN)
+
+# We also need the .cpp files, which are generated as side effects of the
+# above rules.  Specifying this explicitly makes -j2 work.
+$(patsubst %.h,%.cpp,$(GEN)): $(intermediates)/bindings/%.cpp : $(intermediates)/bindings/%.h
+
+# HTML tag and attribute names
 GEN:= $(intermediates)/HTMLNames.cpp $(intermediates)/HTMLElementFactory.cpp
 $(GEN): PRIVATE_PATH := $(LOCAL_PATH)
 $(GEN): PRIVATE_CUSTOM_TOOL = perl -I $(PRIVATE_PATH)/bindings/scripts $< --tags $(PRIVATE_PATH)/html/HTMLTagNames.in --attrs $(PRIVATE_PATH)/html/HTMLAttributeNames.in --factory --wrapperFactory --output $(dir $@)
@@ -536,7 +595,6 @@ $(GEN): $(LOCAL_PATH)/dom/make_names.pl $(LOCAL_PATH)/html/HTMLTagNames.in $(LOC
 LOCAL_GENERATED_SOURCES += $(GEN)
 
 # SVG tag and attribute names
-
 ifeq ($(ENABLE_SVG), true)
 GEN:= $(intermediates)/SVGNames.cpp  $(intermediates)/SVGElementFactory.cpp
 SVG_FLAGS:=ENABLE_SVG_AS_IMAGE=1 ENABLE_SVG_FILTERS=1 ENABLE_SVG_FONTS=1 ENABLE_SVG_FOREIGN_OBJECT=1 ENABLE_SVG_USE=1

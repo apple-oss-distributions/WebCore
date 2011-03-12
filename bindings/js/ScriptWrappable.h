@@ -31,11 +31,30 @@
 #ifndef ScriptWrappable_h
 #define ScriptWrappable_h
 
+#include "JSDOMWrapper.h"
+#include <runtime/WeakGCPtr.h>
+
 namespace WebCore {
 
 class ScriptWrappable {
 public:
-    ScriptWrappable() { }
+    DOMObject* wrapper() const
+    {
+        return m_wrapper.get();
+    }
+    
+    void setWrapper(DOMObject* wrapper)
+    {
+        m_wrapper = wrapper;
+    }
+    
+    void clearWrapper(DOMObject* wrapper) 
+    { 
+        m_wrapper.clear(wrapper); 
+    }
+    
+private:
+    JSC::WeakGCPtr<DOMObject> m_wrapper;
 };
 
 } // namespace WebCore

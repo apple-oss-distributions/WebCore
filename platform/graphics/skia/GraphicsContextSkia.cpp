@@ -31,6 +31,7 @@
 #include "config.h"
 #include "GraphicsContext.h"
 
+#include "AffineTransform.h"
 #include "Color.h"
 #include "FloatRect.h"
 #include "Gradient.h"
@@ -41,7 +42,6 @@
 #include "NativeImageSkia.h"
 #include "NotImplemented.h"
 #include "PlatformContextSkia.h"
-#include "TransformationMatrix.h"
 
 #include "SkBitmap.h"
 #include "SkBlurDrawLooper.h"
@@ -91,9 +91,9 @@ inline float square(float n)
 // bugs.  Leaving the code in for now, so we can revert easily if necessary.
 // #define ENSURE_VALUE_SAFETY_FOR_SKIA
 
+#ifdef ENSURE_VALUE_SAFETY_FOR_SKIA
 static bool isCoordinateSkiaSafe(float coord)
 {
-#ifdef ENSURE_VALUE_SAFETY_FOR_SKIA
     // First check for valid floats.
 #if defined(_MSC_VER)
     if (!_finite(coord))
@@ -110,10 +110,8 @@ static bool isCoordinateSkiaSafe(float coord)
         return false;
 
     return true;
-#else
-    return true;
-#endif
 }
+#endif
 
 static bool isPointSkiaSafe(const SkMatrix& transform, const SkPoint& pt)
 {
@@ -439,11 +437,11 @@ void GraphicsContext::clipToImageBuffer(const FloatRect& rect,
 #endif
 }
 
-void GraphicsContext::concatCTM(const TransformationMatrix& xform)
+void GraphicsContext::concatCTM(const AffineTransform& affine)
 {
     if (paintingDisabled())
         return;
-    platformContext()->canvas()->concat(xform);
+    platformContext()->canvas()->concat(affine);
 }
 
 void GraphicsContext::drawConvexPolygon(size_t numPoints,
@@ -734,8 +732,6 @@ void GraphicsContext::fillRect(const FloatRect& rect)
         ClipRectToCanvas(*platformContext()->canvas(), r, &r);
     }
 
-    const GraphicsContextState& state = m_common->state;
-
     SkPaint paint;
     platformContext()->setupPaintForFilling(&paint);
     platformContext()->canvas()->drawRect(r, paint);
@@ -805,15 +801,15 @@ void GraphicsContext::fillRoundedRect(const IntRect& rect,
     platformContext()->canvas()->drawPath(path, paint);
 }
 
-TransformationMatrix GraphicsContext::getCTM() const
+AffineTransform GraphicsContext::getCTM() const
 {
     const SkMatrix& m = platformContext()->canvas()->getTotalMatrix();
-    return TransformationMatrix(SkScalarToDouble(m.getScaleX()),      // a
-                                SkScalarToDouble(m.getSkewY()),       // b
-                                SkScalarToDouble(m.getSkewX()),       // c
-                                SkScalarToDouble(m.getScaleY()),      // d
-                                SkScalarToDouble(m.getTranslateX()),  // e
-                                SkScalarToDouble(m.getTranslateY())); // f
+    return AffineTransform(SkScalarToDouble(m.getScaleX()),
+                           SkScalarToDouble(m.getSkewY()),
+                           SkScalarToDouble(m.getSkewX()),
+                           SkScalarToDouble(m.getScaleY()),
+                           SkScalarToDouble(m.getTranslateX()),
+                           SkScalarToDouble(m.getTranslateY()));
 }
 
 FloatRect GraphicsContext::roundToDevicePixels(const FloatRect& rect)
@@ -978,9 +974,7 @@ void GraphicsContext::setPlatformFillPattern(Pattern* pattern)
     if (paintingDisabled())
         return;
 
-    SkShader* pat = pattern->createPlatformPattern(getCTM());
-    platformContext()->setFillShader(pat);
-    pat->safeUnref();
+    platformContext()->setFillShader(pattern->platformPattern(getCTM()));
 }
 
 void GraphicsContext::setPlatformShadow(const IntSize& size,
@@ -1065,9 +1059,7 @@ void GraphicsContext::setPlatformStrokePattern(Pattern* pattern)
     if (paintingDisabled())
         return;
 
-    SkShader* pat = pattern->createPlatformPattern(getCTM());
-    platformContext()->setStrokeShader(pat);
-    pat->safeUnref();
+    platformContext()->setStrokeShader(pattern->platformPattern(getCTM()));
 }
 
 void GraphicsContext::setPlatformTextDrawingMode(int mode)
@@ -1126,11 +1118,8 @@ void GraphicsContext::strokePath()
     if (!isPathSkiaSafe(getCTM(), path))
         return;
 
-    const GraphicsContextState& state = m_common->state;
-
     SkPaint paint;
     platformContext()->setupPaintForStroking(&paint, 0, 0);
-
     platformContext()->canvas()->drawPath(path, paint);
 }
 
@@ -1142,12 +1131,9 @@ void GraphicsContext::strokeRect(const FloatRect& rect, float lineWidth)
     if (!isRectSkiaSafe(getCTM(), rect))
         return;
 
-    const GraphicsContextState& state = m_common->state;
-
     SkPaint paint;
     platformContext()->setupPaintForStroking(&paint, 0, 0);
     paint.setStrokeWidth(WebCoreFloatToSkScalar(lineWidth));
-
     platformContext()->canvas()->drawRect(rect, paint);
 }
 

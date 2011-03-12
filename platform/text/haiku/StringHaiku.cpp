@@ -20,23 +20,24 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #include "config.h"
-#include "CString.h"
-
 #include "PlatformString.h"
+#include <wtf/text/CString.h>
 
 #include <String.h>
-
 
 namespace WebCore {
 
 // String conversions
-String::String(const BString& str)
+String::String(const BString& string)
 {
-    m_impl = String::fromUTF8(str.String(), str.Length()).impl();
+    if (string.Length())
+        m_impl = String::fromUTF8(string.String(), string.Length()).impl();
+    else
+        m_impl = StringImpl::empty();
 }
 
 String::operator BString() const

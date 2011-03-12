@@ -1,10 +1,10 @@
 #
 # Copyright (C) 2009 Google Inc. All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
 # met:
-# 
+#
 #     * Redistributions of source code must retain the above copyright
 # notice, this list of conditions and the following disclaimer.
 #     * Redistributions in binary form must reproduce the above
@@ -14,7 +14,7 @@
 #     * Neither the name of Google Inc. nor the names of its
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 # "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
 # LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -101,7 +101,11 @@
     # If set to 1, doesn't compile debug symbols into webcore reducing the
     # size of the binary and increasing the speed of gdb.  gcc only.
     'remove_webcore_debug_symbols%': 0,
-  
+
+    # If set to 0, doesn't build SVG support, reducing the size of the
+    # binary and increasing the speed of gdb.
+    'enable_svg%': 1,
+
     'webcore_include_dirs': [
       '../',
       '../accessibility',
@@ -111,7 +115,6 @@
       '../bindings/v8',
       '../bindings/v8/custom',
       '../bindings/v8/specialization',
-      '../bridge',
       '../css',
       '../dom',
       '../dom/default',
@@ -165,7 +168,48 @@
       '../workers',
       '../xml',
     ],
+
+    'bindings_idl_files': [
+      '<@(webcore_bindings_idl_files)',
+    ],
+
+    'bindings_idl_files!': [
+      # Custom bindings in bindings/v8/custom exist for these.
+      '../dom/EventListener.idl',
+      '../dom/EventTarget.idl',
+      '../html/VoidCallback.idl',
+
+      # Bindings with custom Objective-C implementations.
+      '../page/AbstractView.idl',
+
+      # FIXME: I don't know why all of these are excluded.
+      # Extra SVG bindings to exclude.
+      '../svg/ElementTimeControl.idl',
+      '../svg/SVGAnimatedPathData.idl',
+      '../svg/SVGExternalResourcesRequired.idl',
+      '../svg/SVGFilterPrimitiveStandardAttributes.idl',
+      '../svg/SVGFitToViewBox.idl',
+
+      '../svg/SVGHKernElement.idl',
+      '../svg/SVGLangSpace.idl',
+      '../svg/SVGLocatable.idl',
+      '../svg/SVGStylable.idl',
+      '../svg/SVGTests.idl',
+      '../svg/SVGTransformable.idl',
+      '../svg/SVGViewSpec.idl',
+      '../svg/SVGZoomAndPan.idl',
+
+      # FIXME: I don't know why these are excluded, either.
+      # Someone (me?) should figure it out and add appropriate comments.
+      '../css/CSSUnknownRule.idl',
+    ],
+
     'conditions': [
+      ['enable_svg!=0', {
+        'bindings_idl_files': [
+          '<@(webcore_svg_bindings_idl_files)',
+        ],
+      }],
       ['OS=="mac"', {
         'webcore_include_dirs+': [
           # platform/graphics/cg and mac needs to come before
@@ -177,8 +221,8 @@
           # FIXME: Eliminate dependency on platform/graphics/mac and
           # related directories.
           # platform/graphics/cg may need to stick around, though.
-          '../platform/graphics/cg',
           '../platform/graphics/mac',
+          '../platform/graphics/cg',
         ],
         'webcore_include_dirs': [
           # FIXME: Eliminate dependency on platform/mac and related
@@ -199,6 +243,23 @@
           '../platform/win',
         ],
       }],
+      ['OS=="win" and buildtype=="Official"', {
+        # On windows official release builds, we try to preserve symbol space.
+        'derived_sources_aggregate_files': [
+          '<(SHARED_INTERMEDIATE_DIR)/webkit/bindings/V8DerivedSourcesAll.cpp',
+        ],
+      },{
+        'derived_sources_aggregate_files': [
+          '<(SHARED_INTERMEDIATE_DIR)/webkit/bindings/V8DerivedSources1.cpp',
+          '<(SHARED_INTERMEDIATE_DIR)/webkit/bindings/V8DerivedSources2.cpp',
+          '<(SHARED_INTERMEDIATE_DIR)/webkit/bindings/V8DerivedSources3.cpp',
+          '<(SHARED_INTERMEDIATE_DIR)/webkit/bindings/V8DerivedSources4.cpp',
+          '<(SHARED_INTERMEDIATE_DIR)/webkit/bindings/V8DerivedSources5.cpp',
+          '<(SHARED_INTERMEDIATE_DIR)/webkit/bindings/V8DerivedSources6.cpp',
+          '<(SHARED_INTERMEDIATE_DIR)/webkit/bindings/V8DerivedSources7.cpp',
+          '<(SHARED_INTERMEDIATE_DIR)/webkit/bindings/V8DerivedSources8.cpp',
+        ],
+      }]
     ],
   },
   'targets': [
@@ -216,40 +277,8 @@
         '../html/HTMLEntityNames.gperf',
         '../platform/ColorData.gperf',
 
-        # idl rule
-        '<@(webcore_bindings_idl_files)',
-      ],
-      'sources!': [
-        # Custom bindings in bindings/v8/custom exist for these.
-        '../dom/EventListener.idl',
-        '../dom/EventTarget.idl',
-        '../html/VoidCallback.idl',
-
-        # JSC-only.
-        '../inspector/JavaScriptCallFrame.idl',
-
-        # Bindings with custom Objective-C implementations.
-        '../page/AbstractView.idl',
-
-        # FIXME: I don't know why all of these are excluded.
-        # Extra SVG bindings to exclude.
-        '../svg/ElementTimeControl.idl',
-        '../svg/SVGAnimatedPathData.idl',
-        '../svg/SVGExternalResourcesRequired.idl',
-        '../svg/SVGFitToViewBox.idl',
-        '../svg/SVGHKernElement.idl',
-        '../svg/SVGLangSpace.idl',
-        '../svg/SVGLocatable.idl',
-        '../svg/SVGStylable.idl',
-        '../svg/SVGTests.idl',
-        '../svg/SVGTransformable.idl',
-        '../svg/SVGViewSpec.idl',
-        '../svg/SVGZoomAndPan.idl',
-
-        # FIXME: I don't know why these are excluded, either.
-        # Someone (me?) should figure it out and add appropriate comments.
-        '../css/CSSUnknownRule.idl',
-
+        # idl rules
+        '<@(bindings_idl_files)',
       ],
       'actions': [
         # Actions to build derived sources.
@@ -258,7 +287,6 @@
           'inputs': [
             '../css/makeprop.pl',
             '../css/CSSPropertyNames.in',
-            '../css/SVGCSSPropertyNames.in',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/webkit/CSSPropertyNames.cpp',
@@ -271,13 +299,19 @@
             '--',
             '<@(_inputs)'
           ],
+          'conditions': [
+            ['enable_svg!=0', {
+              'inputs': [
+                '../css/SVGCSSPropertyNames.in',
+              ],
+            }],
+          ],
         },
         {
           'action_name': 'CSSValueKeywords',
           'inputs': [
             '../css/makevalues.pl',
             '../css/CSSValueKeywords.in',
-            '../css/SVGCSSValueKeywords.in',
           ],
           'outputs': [
             '<(SHARED_INTERMEDIATE_DIR)/webkit/CSSValueKeywords.c',
@@ -289,6 +323,13 @@
             '<@(_outputs)',
             '--',
             '<@(_inputs)'
+          ],
+          'conditions': [
+            ['enable_svg!=0', {
+              'inputs': [
+                '../css/SVGCSSValueKeywords.in',
+              ],
+            }],
           ],
         },
         {
@@ -302,9 +343,8 @@
             '<(SHARED_INTERMEDIATE_DIR)/webkit/HTMLNames.cpp',
             '<(SHARED_INTERMEDIATE_DIR)/webkit/HTMLNames.h',
             '<(SHARED_INTERMEDIATE_DIR)/webkit/HTMLElementFactory.cpp',
-            # Pass --wrapperFactory to make_names to get these (JSC build?)
-            #'<(SHARED_INTERMEDIATE_DIR)/webkit/JSHTMLElementWrapperFactory.cpp',
-            #'<(SHARED_INTERMEDIATE_DIR)/webkit/JSHTMLElementWrapperFactory.h',
+            '<(SHARED_INTERMEDIATE_DIR)/webkit/V8HTMLElementWrapperFactory.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/webkit/V8HTMLElementWrapperFactory.h',
           ],
           'action': [
             'python',
@@ -314,6 +354,7 @@
             '<@(_inputs)',
             '--',
             '--factory',
+            '--wrapperFactoryV8',
             '--extraDefines', '<(feature_defines)'
           ],
         },
@@ -329,9 +370,8 @@
             '<(SHARED_INTERMEDIATE_DIR)/webkit/SVGNames.h',
             '<(SHARED_INTERMEDIATE_DIR)/webkit/SVGElementFactory.cpp',
             '<(SHARED_INTERMEDIATE_DIR)/webkit/SVGElementFactory.h',
-            # Pass --wrapperFactory to make_names to get these (JSC build?)
-            #'<(SHARED_INTERMEDIATE_DIR)/webkit/JSSVGElementWrapperFactory.cpp',
-            #'<(SHARED_INTERMEDIATE_DIR)/webkit/JSSVGElementWrapperFactory.h',
+            '<(SHARED_INTERMEDIATE_DIR)/webkit/V8SVGElementWrapperFactory.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/webkit/V8SVGElementWrapperFactory.h',
           ],
           'action': [
             'python',
@@ -341,6 +381,7 @@
             '<@(_inputs)',
             '--',
             '--factory',
+            '--wrapperFactoryV8',
             '--extraDefines', '<(feature_defines)'
           ],
         },
@@ -445,6 +486,29 @@
             '<@(_outputs)',
             '--',
             '<@(_inputs)'
+          ],
+        },
+        {
+          'action_name': 'derived_sources_all_in_one',
+          'variables': {
+            # Write sources into a file, so that the action command line won't
+            # exceed OS limites.
+            'idls_list_temp_file': '<|(idls_list_temp_file.tmp <@(bindings_idl_files))',
+          },
+          'inputs': [
+            'scripts/action_derivedsourcesallinone.py',
+            '<(idls_list_temp_file)',
+            '<!@(cat <(idls_list_temp_file))',
+          ],
+          'outputs': [
+            '<@(derived_sources_aggregate_files)',
+          ],
+          'action': [
+            'python',
+            'scripts/action_derivedsourcesallinone.py',
+            '<(idls_list_temp_file)',
+            '--',
+            '<@(derived_sources_aggregate_files)',
           ],
         },
       ],
@@ -576,16 +640,15 @@
         ],
       },
       'sources': [
-        # This file includes all the .cpp files generated from the .idl files
+        # These files include all the .cpp files generated from the .idl files
         # in webcore_files.
-        '../bindings/v8/DerivedSourcesAllInOne.cpp',
+        '<@(derived_sources_aggregate_files)',
 
         # Additional .cpp files from webcore_bindings_sources actions.
         '<(SHARED_INTERMEDIATE_DIR)/webkit/HTMLElementFactory.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/webkit/HTMLNames.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/webkit/SVGElementFactory.cpp',
-        '<(SHARED_INTERMEDIATE_DIR)/webkit/SVGNames.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/webkit/UserAgentStyleSheetsData.cpp',
+        '<(SHARED_INTERMEDIATE_DIR)/webkit/V8HTMLElementWrapperFactory.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/webkit/XLinkNames.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/webkit/XMLNSNames.cpp',
         '<(SHARED_INTERMEDIATE_DIR)/webkit/XMLNames.cpp',
@@ -599,6 +662,13 @@
           'dependencies': [
             '<(chromium_src_dir)/v8/tools/gyp/v8.gyp:v8',
           ],
+        }],
+        ['enable_svg!=0', {
+          'sources': [
+            '<(SHARED_INTERMEDIATE_DIR)/webkit/SVGElementFactory.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/webkit/SVGNames.cpp',
+            '<(SHARED_INTERMEDIATE_DIR)/webkit/V8SVGElementWrapperFactory.cpp',
+         ],
         }],
         ['OS=="mac"', {
           'include_dirs': [
@@ -648,7 +718,7 @@
         '<(chromium_src_dir)/third_party/sqlite/sqlite.gyp:sqlite',
       ],
       'defines': [
-        'WEBCORE_NAVIGATOR_VENDOR="Google Inc."', 
+        'WEBCORE_NAVIGATOR_VENDOR="Google Inc."',
       ],
       'include_dirs': [
         '<(INTERMEDIATE_DIR)',
@@ -672,10 +742,6 @@
         ['exclude', '(android|cairo|cf|cg|curl|gtk|haiku|linux|mac|opentype|posix|qt|soup|symbian|win|wx)/'],
         ['exclude', '(?<!Chromium)(Android|Cairo|CF|CG|Curl|Gtk|Linux|Mac|OpenType|POSIX|Posix|Qt|Safari|Soup|Symbian|Win|Wx)\\.(cpp|mm?)$'],
         ['include', 'platform/graphics/opentype/OpenTypeSanitizer\\.cpp$'],
-        # Exclude everything in svg/ directly but not in subdirectories.
-        # Everything in svg/*.cpp is included in svg/SVGAllInOne.cpp.
-        ['exclude', 'svg/[^/]+\\.cpp$'],
-        ['include', 'svg/SVGAllInOne\\.cpp$'],
 
         # JSC-only.
         ['exclude', 'inspector/JavaScript[^/]*\\.cpp$'],
@@ -703,6 +769,9 @@
 
         # Don't build StorageEventDispatcher.  We have our own implementation.
         '../storage/StorageEventDispatcher.cpp',
+
+        # Don't build IndexedDatabase.  We have our own implementation.
+        '../storage/IndexedDatabase.cpp',
 
         # Use history/BackForwardListChromium.cpp instead.
         '../history/BackForwardList.cpp',
@@ -739,9 +808,6 @@
         '../dom/StaticStringList.cpp',
         '../loader/icon/IconFetcher.cpp',
         '../loader/UserStyleSheetLoader.cpp',
-        '../platform/graphics/GraphicsLayer.cpp',
-        '../platform/graphics/RenderLayerBacking.cpp',
-        '../platform/graphics/RenderLayerCompositor.cpp',
 
         # We use a multi-process version from the WebKit API.
         '../dom/default/PlatformMessagePortChannel.cpp',
@@ -817,6 +883,20 @@
           ],
           'export_dependent_settings': [
             '<(chromium_src_dir)/v8/tools/gyp/v8.gyp:v8',
+          ],
+        }],
+        ['enable_svg!=0', {
+          'sources/': [
+            ['exclude', 'svg/[^/]+\\.cpp$'],
+            ['include', 'svg/SVGAllInOne\\.cpp$'],
+          ],
+        }, {  # svg disabled
+          'sources/': [
+            ['exclude', 'svg/'],
+            ['exclude', 'css/svg/'],
+            ['exclude', 'rendering/style/SVG'],
+            ['exclude', 'rendering/RenderSVG'],
+            ['exclude', 'rendering/SVG'],
           ],
         }],
         ['OS=="linux" or OS=="freebsd"', {
@@ -957,6 +1037,7 @@
             '../platform/graphics/skia/FloatPointSkia.cpp',
             '../platform/graphics/skia/FloatRectSkia.cpp',
             '../platform/graphics/skia/GradientSkia.cpp',
+            '../platform/graphics/skia/GraphicsContext3DSkia.cpp',
             '../platform/graphics/skia/GraphicsContextSkia.cpp',
             '../platform/graphics/skia/ImageBufferSkia.cpp',
             '../platform/graphics/skia/ImageSkia.cpp',
@@ -991,6 +1072,9 @@
             '../platform/image-decoders/skia/ImageDecoderSkia.cpp',
             '../platform/image-decoders/xbm/XBMImageDecoder.cpp',
             '../platform/image-decoders/xbm/XBMImageDecoder.h',
+
+            # Again, Skia is not used on Mac.
+            '../platform/chromium/DragImageChromiumSkia.cpp',
           ],
           'direct_dependent_settings': {
             'include_dirs': [

@@ -23,19 +23,29 @@
 #ifndef RenderEmbeddedObject_h
 #define RenderEmbeddedObject_h
 
-#include "RenderPartObject.h"
+#include "RenderPart.h"
 
 namespace WebCore {
 
-// Renderer for embeds and objects.
-class RenderEmbeddedObject : public RenderPartObject {
+class MouseEvent;
+
+// Renderer for embeds and objects, often, but not always, rendered via plug-ins.
+// For example, <embed src="foo.html"> does not invoke a plug-in.
+class RenderEmbeddedObject : public RenderPart {
 public:
     RenderEmbeddedObject(Element*);
     virtual ~RenderEmbeddedObject();
 
     void updateWidget(bool onlyCreateNonNetscapePlugins);
+    void setShowsMissingPluginIndicator();
+    void setShowsCrashedPluginIndicator();
+    bool showsMissingPluginIndicator() const { return m_showsMissingPluginIndicator; }
 
+    bool hasFallbackContent() const { return m_hasFallbackContent; }
     void setUpdatingWidget(bool updatingWidget) { m_updatingWidget = updatingWidget; }
+
+    void handleMissingPluginIndicatorEvent(Event*);
+
 #if USE(ACCELERATED_COMPOSITING)
     virtual bool allowsAcceleratedCompositing() const;
 #endif
@@ -44,12 +54,25 @@ private:
     virtual const char* renderName() const { return "RenderEmbeddedObject"; }
     virtual bool isEmbeddedObject() const { return true; }
 
+    virtual void paintReplaced(PaintInfo&, int, int);
+    virtual void paint(PaintInfo& paintInfo, int, int);
+
 #if USE(ACCELERATED_COMPOSITING)
     virtual bool requiresLayer() const;
 #endif
 
     virtual void layout();
+    virtual void viewCleared();
+    
+    void setMissingPluginIndicatorIsPressed(bool);
+    bool isInMissingPluginIndicator(MouseEvent*);
+    bool getReplacementTextGeometry(int tx, int ty, FloatRect& contentRect, Path&, FloatRect& replacementTextRect, Font&, TextRun&, float& textWidth);
 
+    String m_replacementText;
+    bool m_hasFallbackContent;
+    bool m_showsMissingPluginIndicator;
+    bool m_missingPluginIndicatorIsPressed;
+    bool m_mouseDownWasInMissingPluginIndicator;
     bool m_updatingWidget;
 };
 

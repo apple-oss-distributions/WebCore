@@ -32,6 +32,11 @@
 #include "FloatPoint.h"
 #include "RotateTransformOperation.h"
 #include "TextStream.h"
+#include <wtf/text/CString.h>
+
+#ifndef NDEBUG
+#include <stdio.h>
+#endif
 
 namespace WebCore {
 
@@ -60,7 +65,6 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_anchorPoint(0.5f, 0.5f, 0)
     , m_opacity(1)
     , m_zPosition(0)
-    , m_contentsScale(1.0f)
     , m_backgroundColorSet(false)
     , m_contentsOpaque(false)
     , m_preserves3D(false)
@@ -243,30 +247,6 @@ void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const I
         m_client->paintContents(this, context, m_paintingPhase, clip);
 }
 
-float GraphicsLayer::clampedContentsScaleForScale(float scale) const
-{
-    const float kMaxScale = 5.0f;
-    const float kMinScale = 0.01f;
-
-    // clamp
-    float result = std::max(kMinScale, std::min(scale, kMaxScale));
-
-    // if it hasn't changed much, don't do any work
-    if ((fabs(result - m_contentsScale) / m_contentsScale) < 0.25)
-        return m_contentsScale;
-
-    return result;
-}
-
-void GraphicsLayer::setContentsScale(float scale)
-{
-    float newScale = clampedContentsScaleForScale(scale);
-    if (newScale == m_contentsScale)
-        return;
-
-    m_contentsScale = newScale;
-}
-
 void GraphicsLayer::suspendAnimations(double)
 {
 }
@@ -413,17 +393,23 @@ static void writeIndent(TextStream& ts, int indent)
         ts << "  ";
 }
 
-void GraphicsLayer::dumpLayer(TextStream& ts, int indent) const
+void GraphicsLayer::dumpLayer(TextStream& ts, int indent, LayerTreeAsTextBehavior behavior) const
 {
     writeIndent(ts, indent);
-    ts << "(" << "GraphicsLayer" << " " << static_cast<void*>(const_cast<GraphicsLayer*>(this));
-    ts << " \"" << m_name << "\"\n";
-    dumpProperties(ts, indent);
+    ts << "(" << "GraphicsLayer";
+
+    if (behavior & LayerTreeAsTextDebug) {
+        ts << " " << static_cast<void*>(const_cast<GraphicsLayer*>(this));
+        ts << " \"" << m_name << "\"";
+    }
+
+    ts << "\n";
+    dumpProperties(ts, indent, behavior);
     writeIndent(ts, indent);
     ts << ")\n";
 }
 
-void GraphicsLayer::dumpProperties(TextStream& ts, int indent) const
+void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeAsTextBehavior behavior) const
 {
     writeIndent(ts, indent + 1);
     ts << "(position " << m_position.x() << " " << m_position.y() << ")\n";
@@ -441,21 +427,23 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent) const
     ts << "(usingTiledLayer " << m_usingTiledLayer << ")\n";
 
     writeIndent(ts, indent + 1);
-    ts << "(m_preserves3D " << m_preserves3D << ")\n";
+    ts << "(preserves3D " << m_preserves3D << ")\n";
 
     writeIndent(ts, indent + 1);
     ts << "(drawsContent " << m_drawsContent << ")\n";
 
     writeIndent(ts, indent + 1);
-    ts << "(m_backfaceVisibility " << (m_backfaceVisibility ? "visible" : "hidden") << ")\n";
+    ts << "(backfaceVisibility " << (m_backfaceVisibility ? "visible" : "hidden") << ")\n";
 
-    writeIndent(ts, indent + 1);
-    ts << "(client ";
-    if (m_client)
-        ts << static_cast<void*>(m_client);
-    else
-        ts << "none";
-    ts << ")\n";
+    if (behavior & LayerTreeAsTextDebug) {
+        writeIndent(ts, indent + 1);
+        ts << "(";
+        if (m_client)
+            ts << "client " << static_cast<void*>(m_client);
+        else
+            ts << "no client";
+        ts << ")\n";
+    }
 
     writeIndent(ts, indent + 1);
     ts << "(backgroundColor ";
@@ -491,13 +479,19 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent) const
 
     if (m_replicaLayer) {
         writeIndent(ts, indent + 1);
-        ts << "(replica layer " << m_replicaLayer << ")\n";
-        m_replicaLayer->dumpLayer(ts, indent+2);
+        ts << "(replica layer";
+        if (behavior & LayerTreeAsTextDebug)
+            ts << " " << m_replicaLayer;
+        ts << ")\n";
+        m_replicaLayer->dumpLayer(ts, indent + 2, behavior);
     }
 
     if (m_replicatedLayer) {
         writeIndent(ts, indent + 1);
-        ts << "(replicated layer " << m_replicatedLayer << ")\n";
+        ts << "(replicated layer";
+        if (behavior & LayerTreeAsTextDebug)
+            ts << " " << m_replicatedLayer;;
+        ts << ")\n";
     }
     
     if (m_children.size()) {
@@ -506,12 +500,31 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent) const
         
         unsigned i;
         for (i = 0; i < m_children.size(); i++)
-            m_children[i]->dumpLayer(ts, indent+2);
+            m_children[i]->dumpLayer(ts, indent + 2, behavior);
         writeIndent(ts, indent + 1);
         ts << ")\n";
     }
 }
 
+String GraphicsLayer::layerTreeAsText(LayerTreeAsTextBehavior behavior) const
+{
+    TextStream ts;
+
+    dumpLayer(ts, 0, behavior);
+    return ts.release();
+}
+
 } // namespace WebCore
+
+#ifndef NDEBUG
+void showGraphicsLayerTree(const WebCore::GraphicsLayer* layer)
+{
+    if (!layer)
+        return;
+
+    WebCore::String output = layer->layerTreeAsText(LayerTreeAsTextDebug);
+    fprintf(stderr, "%s\n", output.utf8().data());
+}
+#endif
 
 #endif // USE(ACCELERATED_COMPOSITING)

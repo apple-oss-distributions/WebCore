@@ -66,13 +66,17 @@ namespace WebCore {
         ChromeClient* client() { return m_client; }
 
         // HostWindow methods.
-        virtual void repaint(const IntRect&, bool contentChanged, bool immediate = false, bool repaintContentOnly = false);
-        virtual void scroll(const IntSize& scrollDelta, const IntRect& rectToScroll, const IntRect& clipRect);
+
+        virtual void invalidateWindow(const IntRect&, bool);
+        virtual void invalidateContentsAndWindow(const IntRect&, bool);
+        virtual void invalidateContentsForSlowScroll(const IntRect&, bool);
+        virtual void scroll(const IntSize&, const IntRect&, const IntRect&);
         virtual IntPoint screenToWindow(const IntPoint&) const;
         virtual IntRect windowToScreen(const IntRect&) const;
         virtual PlatformPageClient platformPageClient() const;
-        virtual void scrollRectIntoView(const IntRect&, const ScrollView*) const;
         virtual void scrollbarsModeDidChange() const;
+
+        void scrollRectIntoView(const IntRect&) const;
 
         void contentsSizeChanged(Frame*, const IntSize&) const;
 
@@ -135,8 +139,10 @@ namespace WebCore {
         void print(Frame*);
 
         void requestGeolocationPermissionForFrame(Frame*, Geolocation*);
-            
+        void cancelGeolocationPermissionRequestForFrame(Frame*, Geolocation*);
+
         void runOpenPanel(Frame*, PassRefPtr<FileChooser>);
+        void chooseIconForFiles(const Vector<String>&, FileChooser*);
 
 
 #if PLATFORM(MAC)

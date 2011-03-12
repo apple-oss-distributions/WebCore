@@ -29,7 +29,6 @@
 #include "config.h"
 #include "PluginPackage.h"
 
-#include "CString.h"
 #include "MIMETypeRegistry.h"
 #include "PluginDatabase.h"
 #include "PluginDebug.h"
@@ -37,6 +36,7 @@
 #include "npruntime_impl.h"
 #include <string.h>
 #include <wtf/OwnArrayPtr.h>
+#include <wtf/text/CString.h>
 #include <shlwapi.h>
 
 namespace WebCore {
@@ -335,4 +335,8 @@ bool PluginPackage::equal(const PluginPackage& a, const PluginPackage& b)
     return true;
 }
 
+uint16_t PluginPackage::NPVersion() const
+{
+    return NP_VERSION_MINOR;
+}
 }

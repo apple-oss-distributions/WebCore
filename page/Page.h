@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  * Copyright (C) 2008 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
  *
  * This library is free software; you can redistribute it and/or
@@ -33,10 +33,6 @@
 
 #include "Settings.h"
 
-#if PLATFORM(WIN) || (PLATFORM(WX) && OS(WINDOWS)) || (PLATFORM(QT) && defined(Q_WS_WIN))
-typedef struct HINSTANCE__* HINSTANCE;
-#endif
-
 namespace JSC {
     class Debugger;
 }
@@ -48,6 +44,10 @@ namespace WebCore {
     class ChromeClient;
     class ContextMenuClient;
     class ContextMenuController;
+    class DeviceMotionClient;
+    class DeviceMotionController;
+    class DeviceOrientationClient;
+    class DeviceOrientationController;
     class Document;
     class DragClient;
     class DragController;
@@ -61,25 +61,26 @@ namespace WebCore {
     class InspectorClient;
     class InspectorController;
     class InspectorTimelineAgent;
+    class MediaCanStartListener;
     class Node;
     class PageGroup;
     class PluginData;
     class PluginHalter;
     class PluginHalterClient;
-    class PluginView;
     class ProgressTracker;
     class RenderTheme;
     class VisibleSelection;
     class SelectionController;
     class Settings;
+
 #if ENABLE(DOM_STORAGE)
     class StorageNamespace;
 #endif
-#if ENABLE(WML)
-    class WMLPageState;
-#endif
 #if ENABLE(NOTIFICATIONS)
     class NotificationPresenter;
+#endif
+#if ENABLE(WML)
+    class WMLPageState;
 #endif
 
     typedef uint64_t LinkHash;
@@ -90,7 +91,32 @@ namespace WebCore {
     public:
         static void setNeedsReapplyStyles();
 
-        Page(ChromeClient*, ContextMenuClient*, EditorClient*, DragClient*, InspectorClient*, PluginHalterClient*, GeolocationControllerClient*);
+        // It is up to the platform to ensure that non-null clients are provided where required.
+        struct PageClients {
+            PageClients()
+                : chromeClient(0)
+                , contextMenuClient(0)
+                , editorClient(0)
+                , dragClient(0)
+                , inspectorClient(0)
+                , pluginHalterClient(0)
+                , geolocationControllerClient(0)
+                , deviceMotionClient(0)
+                , deviceOrientationClient(0)
+            { }
+
+            ChromeClient* chromeClient;
+            ContextMenuClient* contextMenuClient;
+            EditorClient* editorClient;
+            DragClient* dragClient;
+            InspectorClient* inspectorClient;
+            PluginHalterClient* pluginHalterClient;
+            GeolocationControllerClient* geolocationControllerClient;
+            DeviceMotionClient* deviceMotionClient;
+            DeviceOrientationClient* deviceOrientationClient;
+        };
+
+        Page(const PageClients&);
         ~Page();
 
         RenderTheme* theme() const { return m_theme.get(); };
@@ -98,10 +124,8 @@ namespace WebCore {
         static void refreshPlugins(bool reload);
         PluginData* pluginData() const;
 
-        void setCanStartPlugins(bool);
-        bool canStartPlugins() const { return m_canStartPlugins; }
-        void addUnstartedPlugin(PluginView*);
-        void removeUnstartedPlugin(PluginView*);
+        void setCanStartMedia(bool);
+        bool canStartMedia() const { return m_canStartMedia; }
 
         EditorClient* editorClient() const { return m_editorClient; }
 
@@ -152,13 +176,10 @@ namespace WebCore {
 #if ENABLE(CLIENT_BASED_GEOLOCATION)
         GeolocationController* geolocationController() const { return m_geolocationController.get(); }
 #endif
+#if ENABLE(DEVICE_ORIENTATION)
+#endif
         Settings* settings() const { return m_settings.get(); }
         ProgressTracker* progress() const { return m_progress.get(); }
-
-#if ENABLE(INSPECTOR)
-        void setParentInspectorController(InspectorController* controller) { m_parentInspectorController = controller; }
-        InspectorController* parentInspectorController() const { return m_parentInspectorController; }
-#endif
         
         void setTabKeyCyclesThroughElements(bool b) { m_tabKeyCyclesThroughElements = b; }
         bool tabKeyCyclesThroughElements() const { return m_tabKeyCyclesThroughElements; }
@@ -198,6 +219,8 @@ namespace WebCore {
         void userStyleSheetLocationChanged();
         const String& userStyleSheet() const;
 
+        void privateBrowsingStateChanged();
+
         void didStartPlugin(HaltablePlugin*);
         void didStopPlugin(HaltablePlugin*);
         void pluginAllowedRunTimeChanged();
@@ -205,12 +228,6 @@ namespace WebCore {
         static void setDebuggerForAllPages(JSC::Debugger*);
         void setDebugger(JSC::Debugger*);
         JSC::Debugger* debugger() const { return m_debugger; }
-
-#if PLATFORM(WIN) || (PLATFORM(WX) && OS(WINDOWS)) || (PLATFORM(QT) && defined(Q_WS_WIN))
-        // The global DLL or application instance used for all windows.
-        static void setInstanceHandle(HINSTANCE instanceHandle) { s_instanceHandle = instanceHandle; }
-        static HINSTANCE instanceHandle() { return s_instanceHandle; }
-#endif
 
         static void removeAllVisitedLinks();
 
@@ -252,6 +269,8 @@ namespace WebCore {
         void checkFrameCountConsistency() const;
 #endif
 
+        MediaCanStartListener* takeAnyMediaCanStartListener();
+
         OwnPtr<Chrome> m_chrome;
         OwnPtr<SelectionController> m_dragCaretController;
 #if ENABLE(DRAG_SUPPORT)
@@ -266,6 +285,8 @@ namespace WebCore {
 #endif
 #if ENABLE(CLIENT_BASED_GEOLOCATION)
         OwnPtr<GeolocationController> m_geolocationController;
+#endif
+#if ENABLE(DEVICE_ORIENTATION)
 #endif
         OwnPtr<Settings> m_settings;
         OwnPtr<ProgressTracker> m_progress;
@@ -295,10 +316,6 @@ namespace WebCore {
 
         bool m_javaScriptURLsAreAllowed;
 
-#if ENABLE(INSPECTOR)
-        InspectorController* m_parentInspectorController;
-#endif
-
         String m_userStyleSheetPath;
         mutable String m_userStyleSheet;
         mutable bool m_didLoadUserStyleSheet;
@@ -312,17 +329,12 @@ namespace WebCore {
         double m_customHTMLTokenizerTimeDelay;
         int m_customHTMLTokenizerChunkSize;
 
-        bool m_canStartPlugins;
-        HashSet<PluginView*> m_unstartedPlugins;
+        bool m_canStartMedia;
 
         OwnPtr<PluginHalter> m_pluginHalter;
 
 #if ENABLE(DOM_STORAGE)
         RefPtr<StorageNamespace> m_sessionStorage;
-#endif
-
-#if PLATFORM(WIN) || (PLATFORM(WX) && defined(__WXMSW__)) || (PLATFORM(QT) && defined(Q_WS_WIN))
-        static HINSTANCE s_instanceHandle;
 #endif
 
 #if ENABLE(WML)

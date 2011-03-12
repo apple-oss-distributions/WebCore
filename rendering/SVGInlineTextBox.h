@@ -24,6 +24,7 @@
 
 #if ENABLE(SVG)
 #include "InlineTextBox.h"
+#include "RenderSVGResource.h"
 
 namespace WebCore {
 
@@ -35,14 +36,20 @@ namespace WebCore {
     enum SVGTextPaintSubphase {
         SVGTextPaintSubphaseBackground,
         SVGTextPaintSubphaseGlyphFill,
+        SVGTextPaintSubphaseGlyphFillSelection,
         SVGTextPaintSubphaseGlyphStroke,
+        SVGTextPaintSubphaseGlyphStrokeSelection,
         SVGTextPaintSubphaseForeground
     };
 
     struct SVGTextPaintInfo {
-        SVGTextPaintInfo() : activePaintServer(0), subphase(SVGTextPaintSubphaseBackground) {}
+        SVGTextPaintInfo()
+            : activePaintingResource(0)
+            , subphase(SVGTextPaintSubphaseBackground)
+        {
+        }
 
-        SVGPaintServer* activePaintServer;
+        RenderSVGResource* activePaintingResource;
         SVGTextPaintSubphase subphase;
     };
 
@@ -83,6 +90,7 @@ namespace WebCore {
     private:
         friend class RenderSVGInlineText;
         bool svgCharacterHitsPosition(int x, int y, int& offset) const;
+        bool chunkSelectionStartEnd(const UChar* chunk, int chunkLength, int& selectionStart, int& selectionEnd);
         
         int m_height;
     };

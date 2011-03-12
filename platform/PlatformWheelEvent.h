@@ -38,6 +38,10 @@ class WebEvent;
 typedef struct _GdkEventScroll GdkEventScroll;
 #endif
 
+#if PLATFORM(EFL)
+#include <Evas.h>
+#endif
+
 #if PLATFORM(QT)
 QT_BEGIN_NAMESPACE
 class QWheelEvent;
@@ -124,6 +128,10 @@ namespace WebCore {
 
 #if PLATFORM(GTK)
         PlatformWheelEvent(GdkEventScroll*);
+#endif
+
+#if PLATFORM(EFL)
+        PlatformWheelEvent(const Evas_Event_Mouse_Wheel*);
 #endif
 
 #if PLATFORM(MAC) && defined(__OBJC__)

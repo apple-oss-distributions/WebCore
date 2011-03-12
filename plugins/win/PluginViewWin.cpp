@@ -26,51 +26,51 @@
  */
 
 #include "config.h"
-
 #include "PluginView.h"
 
 #include "BitmapImage.h"
-#if !PLATFORM(WX)
-#include "BitmapInfo.h"
-#endif
 #include "Bridge.h"
 #include "Document.h"
 #include "DocumentLoader.h"
 #include "Element.h"
 #include "EventNames.h"
-#include "FrameLoader.h"
-#include "FrameLoadRequest.h"
-#include "FrameTree.h"
+#include "FocusController.h"
 #include "Frame.h"
+#include "FrameLoadRequest.h"
+#include "FrameLoader.h"
+#include "FrameTree.h"
 #include "FrameView.h"
 #include "GraphicsContext.h"
-#include "HostWindow.h"
-#include "Image.h"
 #include "HTMLNames.h"
 #include "HTMLPlugInElement.h"
+#include "HostWindow.h"
+#include "Image.h"
+#include "JSDOMBinding.h"
 #include "JSDOMWindow.h"
 #include "KeyboardEvent.h"
 #include "MIMETypeRegistry.h"
 #include "MouseEvent.h"
 #include "Page.h"
-#include "FocusController.h"
 #include "PlatformMouseEvent.h"
-#include "PluginMessageThrottlerWin.h"
-#include "PluginPackage.h"
-#include "PluginMainThreadScheduler.h"
-#include "RenderWidget.h"
-#include "JSDOMBinding.h"
-#include "ScriptController.h"
 #include "PluginDatabase.h"
 #include "PluginDebug.h"
+#include "PluginMainThreadScheduler.h"
+#include "PluginMessageThrottlerWin.h"
 #include "PluginPackage.h"
+#include "RenderWidget.h"
+#include "ScriptController.h"
 #include "Settings.h"
+#include "WebCoreInstanceHandle.h"
 #include "c_instance.h"
 #include "npruntime_impl.h"
 #include "runtime_root.h"
 #include <runtime/JSLock.h>
 #include <runtime/JSValue.h>
 #include <wtf/ASCIICType.h>
+
+#if !PLATFORM(WX)
+#include "BitmapInfo.h"
+#endif
 
 #if OS(WINCE)
 #undef LOG_NPERROR
@@ -140,7 +140,7 @@ static BYTE* endPaint;
 typedef HDC (WINAPI *PtrBeginPaint)(HWND, PAINTSTRUCT*);
 typedef BOOL (WINAPI *PtrEndPaint)(HWND, const PAINTSTRUCT*);
 
-#if OS(WINDOWS) && PLATFORM(X86_64) && COMPILER(MSVC)
+#if OS(WINDOWS) && CPU(X86_64) && COMPILER(MSVC)
 extern "C" HDC __stdcall _HBeginPaint(HWND hWnd, LPPAINTSTRUCT lpPaint);
 extern "C" BOOL __stdcall _HEndPaint(HWND hWnd, const PAINTSTRUCT* lpPaint);
 #endif
@@ -289,10 +289,10 @@ static bool registerPluginView()
     haveRegisteredWindowClass = true;
 
 #if PLATFORM(QT)
-    Page::setInstanceHandle((HINSTANCE)(qWinAppInst()));
+    WebCore::setInstanceHandle((HINSTANCE)(qWinAppInst()));
 #endif
 
-    ASSERT(Page::instanceHandle());
+    ASSERT(WebCore::instanceHandle());
 
 #if OS(WINCE)
     WNDCLASS wcex = { 0 };
@@ -309,7 +309,7 @@ static bool registerPluginView()
     wcex.lpfnWndProc    = DefWindowProc;
     wcex.cbClsExtra     = 0;
     wcex.cbWndExtra     = 0;
-    wcex.hInstance      = Page::instanceHandle();
+    wcex.hInstance      = WebCore::instanceHandle();
     wcex.hIcon          = 0;
     wcex.hCursor        = LoadCursor(0, IDC_ARROW);
     wcex.hbrBackground  = (HBRUSH)COLOR_WINDOW;
@@ -463,12 +463,12 @@ void PluginView::updatePluginWidget()
     }
 }
 
-void PluginView::setFocus()
+void PluginView::setFocus(bool focused)
 {
-    if (platformPluginWidget())
+    if (focused && platformPluginWidget())
         SetFocus(platformPluginWidget());
 
-    Widget::setFocus();
+    Widget::setFocus(focused);
 }
 
 void PluginView::show()
@@ -544,7 +544,7 @@ void PluginView::paintIntoTransformedContext(HDC hdc)
 
     NPEvent npEvent;
     npEvent.event = WM_WINDOWPOSCHANGED;
-    npEvent.lParam = reinterpret_cast<uint32>(&windowpos);
+    npEvent.lParam = reinterpret_cast<uintptr_t>(&windowpos);
     npEvent.wParam = 0;
 
     dispatchNPEvent(npEvent);
@@ -552,7 +552,7 @@ void PluginView::paintIntoTransformedContext(HDC hdc)
     setNPWindowRect(frameRect());
 
     npEvent.event = WM_PAINT;
-    npEvent.wParam = reinterpret_cast<uint32>(hdc);
+    npEvent.wParam = reinterpret_cast<uintptr_t>(hdc);
 
     // This is supposed to be a pointer to the dirty rect, but it seems that the Flash plugin
     // ignores it so we just pass null.
@@ -585,9 +585,9 @@ void PluginView::paintWindowedPluginIntoContext(GraphicsContext* context, const 
 
     // The plugin expects the DC to be in client coordinates, so we translate
     // the DC to make that so.
-    TransformationMatrix ctm = context->getCTM();
+    AffineTransform ctm = context->getCTM();
     ctm.translate(locationInWindow.x(), locationInWindow.y());
-    XFORM transform = static_cast<XFORM>(ctm);
+    XFORM transform = static_cast<XFORM>(ctm.toTransformationMatrix());
 
     SetWorldTransform(hdc, &transform);
 
@@ -609,6 +609,10 @@ void PluginView::paint(GraphicsContext* context, const IntRect& rect)
 
     if (context->paintingDisabled())
         return;
+
+    // Ensure that we have called SetWindow before we try to paint.
+    if (!m_haveCalledSetWindow)
+        setNPWindowRect(frameRect());
 
     if (m_isWindowed) {
 #if !OS(WINCE)
@@ -815,6 +819,8 @@ void PluginView::setNPWindowRect(const IntRect& rect)
         m_plugin->pluginFuncs()->setwindow(m_instance, &m_npWindow);
         setCallingPlugin(false);
 
+        m_haveCalledSetWindow = true;
+
         if (!m_isWindowed)
             return;
 
@@ -829,12 +835,12 @@ void PluginView::setNPWindowRect(const IntRect& rect)
 #else
         WNDPROC currentWndProc = (WNDPROC)GetWindowLongPtr(platformPluginWidget(), GWLP_WNDPROC);
         if (currentWndProc != PluginViewWndProc)
-            m_pluginWndProc = (WNDPROC)SetWindowLongPtr(platformPluginWidget(), GWLP_WNDPROC, (LONG)PluginViewWndProc);
+            m_pluginWndProc = (WNDPROC)SetWindowLongPtr(platformPluginWidget(), GWLP_WNDPROC, (LONG_PTR)PluginViewWndProc);
 #endif
     }
 }
 
-NPError PluginView::handlePostReadFile(Vector<char>& buffer, uint32 len, const char* buf)
+NPError PluginView::handlePostReadFile(Vector<char>& buffer, uint32_t len, const char* buf)
 {
     String filename(buf, len);
 
@@ -867,73 +873,30 @@ NPError PluginView::handlePostReadFile(Vector<char>& buffer, uint32 len, const c
     return NPERR_NO_ERROR;
 }
 
-NPError PluginView::getValueStatic(NPNVariable variable, void* value)
+bool PluginView::platformGetValueStatic(NPNVariable, void*, NPError*)
 {
-    LOG(Plugins, "PluginView::getValueStatic(%s)", prettyNameForNPNVariable(variable).data());
-
-    return NPERR_GENERIC_ERROR;
+    return false;
 }
 
-NPError PluginView::getValue(NPNVariable variable, void* value)
+bool PluginView::platformGetValue(NPNVariable variable, void* value, NPError* result)
 {
-    LOG(Plugins, "PluginView::getValue(%s)", prettyNameForNPNVariable(variable).data());
-
     switch (variable) {
-#if ENABLE(NETSCAPE_PLUGIN_API)
-        case NPNVWindowNPObject: {
-            if (m_isJavaScriptPaused)
-                return NPERR_GENERIC_ERROR;
-
-            NPObject* windowScriptObject = m_parentFrame->script()->windowScriptNPObject();
-
-            // Return value is expected to be retained, as described here: <http://www.mozilla.org/projects/plugin/npruntime.html>
-            if (windowScriptObject)
-                _NPN_RetainObject(windowScriptObject);
-
-            void** v = (void**)value;
-            *v = windowScriptObject;
-
-            return NPERR_NO_ERROR;
-        }
-
-        case NPNVPluginElementNPObject: {
-            if (m_isJavaScriptPaused)
-                return NPERR_GENERIC_ERROR;
-
-            NPObject* pluginScriptObject = 0;
-
-            if (m_element->hasTagName(appletTag) || m_element->hasTagName(embedTag) || m_element->hasTagName(objectTag))
-                pluginScriptObject = static_cast<HTMLPlugInElement*>(m_element)->getNPObject();
-
-            // Return value is expected to be retained, as described here: <http://www.mozilla.org/projects/plugin/npruntime.html>
-            if (pluginScriptObject)
-                _NPN_RetainObject(pluginScriptObject);
-
-            void** v = (void**)value;
-            *v = pluginScriptObject;
-
-            return NPERR_NO_ERROR;
-        }
-#endif
-
         case NPNVnetscapeWindow: {
             HWND* w = reinterpret_cast<HWND*>(value);
-
             *w = windowHandleForPageClient(parent() ? parent()->hostWindow()->platformPageClient() : 0);
-
-            return NPERR_NO_ERROR;
+            *result = NPERR_NO_ERROR;
+            return true;
         }
 
         case NPNVSupportsWindowless: {
-            NPBool *result = reinterpret_cast<NPBool*>(value);
-
-            *result = TRUE;
-            
-            return NPERR_NO_ERROR;
+            NPBool* flag = reinterpret_cast<NPBool*>(value);
+            *flag = TRUE;
+            *result = NPERR_NO_ERROR;
+            return true;
         }
 
-        default:
-            return NPERR_GENERIC_ERROR;
+    default:
+        return false;
     }
 }
 
@@ -1011,7 +974,7 @@ bool PluginView::platformStart()
 
         HWND parentWindowHandle = windowHandleForPageClient(m_parentFrame->view()->hostWindow()->platformPageClient());
         HWND window = ::CreateWindowEx(0, kWebPluginViewdowClassName, 0, flags,
-                                       0, 0, 0, 0, parentWindowHandle, 0, Page::instanceHandle(), 0);
+                                       0, 0, 0, 0, parentWindowHandle, 0, WebCore::instanceHandle(), 0);
 
 #if OS(WINDOWS) && (PLATFORM(QT) || PLATFORM(WX))
         m_window = window;
@@ -1021,7 +984,7 @@ bool PluginView::platformStart()
 
         // Calling SetWindowLongPtrA here makes the window proc ASCII, which is required by at least
         // the Shockwave Director plug-in.
-#if OS(WINDOWS) && PLATFORM(X86_64) && COMPILER(MSVC)
+#if OS(WINDOWS) && CPU(X86_64)
         ::SetWindowLongPtrA(platformPluginWidget(), GWLP_WNDPROC, (LONG_PTR)DefWindowProcA);
 #elif OS(WINCE)
         ::SetWindowLong(platformPluginWidget(), GWL_WNDPROC, (LONG)DefWindowProc);

@@ -72,15 +72,15 @@ DOM_CLASSES = \
     CSSVariablesRule \
     CSSVariablesDeclaration \
     WebGLActiveInfo \
-    WebGLArray \
-    WebGLArrayBuffer \
+    ArrayBufferView \
+    ArrayBuffer \
     WebGLBuffer \
-    WebGLByteArray \
+    Int8Array \
     WebGLContextAttributes \
-    WebGLFloatArray \
+    Float32Array \
     WebGLFramebuffer \
     CanvasGradient \
-    WebGLIntArray \
+    Int32Array \
     CanvasPattern \
     WebGLProgram \
     WebGLRenderbuffer \
@@ -88,12 +88,12 @@ DOM_CLASSES = \
     CanvasRenderingContext2D \
     WebGLRenderingContext \
     WebGLShader \
-    WebGLShortArray \
+    Int16Array \
     WebGLTexture \
     WebGLUniformLocation \
-    WebGLUnsignedByteArray \
-    WebGLUnsignedIntArray \
-    WebGLUnsignedShortArray \
+    Uint8Array \
+    Uint32Array \
+    Uint16Array \
     CharacterData \
     ClientRect \
     ClientRectList \
@@ -103,16 +103,21 @@ DOM_CLASSES = \
     Console \
     Coordinates \
     Counter \
+    CustomEvent \
     DataGridColumn \
     DataGridColumnList \
     DedicatedWorkerContext \
     DOMApplicationCache \
     DOMCoreException \
+    DOMFormData \
     DOMImplementation \
     DOMParser \
     DOMSelection \
     DOMWindow \
     Database \
+    DatabaseCallback \
+    DeviceMotionEvent \
+    DeviceOrientationEvent \
     Document \
     DocumentFragment \
     DocumentType \
@@ -127,6 +132,7 @@ DOM_CLASSES = \
     EventSource \
     EventTarget \
     File \
+    FileError \
     FileList \
     Geolocation \
     Geoposition \
@@ -185,6 +191,7 @@ DOM_CLASSES = \
     HTMLParagraphElement \
     HTMLParamElement \
     HTMLPreElement \
+    HTMLProgressElement \
     HTMLQuoteElement \
     HTMLScriptElement \
     HTMLSelectElement \
@@ -207,7 +214,6 @@ DOM_CLASSES = \
     InspectorFrontendHost \
     KeyboardEvent \
     Location \
-    Media \
     MediaError \
     MediaList \
     MessageChannel \
@@ -240,10 +246,16 @@ DOM_CLASSES = \
     Rect \
     SharedWorker \
     SharedWorkerContext \
+    ScriptProfile \
+    ScriptProfileNode \
     SQLError \
     SQLResultSet \
     SQLResultSetRowList \
+    SQLStatementCallback \
+    SQLStatementErrorCallback \
     SQLTransaction \
+    SQLTransactionCallback \
+    SQLTransactionErrorCallback \
     Storage \
     StorageEvent \
     SVGAElement \
@@ -392,12 +404,16 @@ DOM_CLASSES = \
     SVGZoomAndPan \
     SVGZoomEvent \
     Screen \
+    StyleMedia \
     StyleSheet \
     StyleSheetList \
     Text \
     TextEvent \
     TextMetrics \
     TimeRanges \
+    Touch \
+    TouchEvent \
+    TouchList \
     TreeWalker \
     UIEvent \
     ValidityState \
@@ -427,9 +443,6 @@ DOM_CLASSES = \
     XSLTProcessor \
     \
     GestureEvent \
-    Touch \
-    TouchEvent \
-    TouchList \
 #
 
 .PHONY : all
@@ -628,6 +641,10 @@ ifeq ($(findstring ENABLE_DATALIST,$(FEATURE_DEFINES)), ENABLE_DATALIST)
     HTML_FLAGS := $(HTML_FLAGS) ENABLE_DATALIST=1
 endif
 
+ifeq ($(findstring ENABLE_PROGRESS_TAG,$(FEATURE_DEFINES)), ENABLE_PROGRESS_TAG)
+    HTML_FLAGS := $(HTML_FLAGS) ENABLE_PROGRESS_TAG=1
+endif
+
 ifeq ($(findstring ENABLE_VIDEO,$(FEATURE_DEFINES)), ENABLE_VIDEO)
     HTML_FLAGS := $(HTML_FLAGS) ENABLE_VIDEO=1
 endif
@@ -804,7 +821,7 @@ OBJC_DOM_HEADERS=$(filter-out DOMDOMWindow.h DOMMimeType.h DOMPlugin.h,$(DOM_CLA
 
 all : $(OBJC_DOM_HEADERS)
 
-all : CharsetData.cpp WebCore.exp WebCore.LP64.exp
+all : CharsetData.cpp WebCore.exp WebCore.LP64.exp WebCore.LP64.armv6.exp
 
 # --------
 
@@ -834,7 +851,7 @@ endif
 
     WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.TextAutosizing.exp
 
-ifeq ($(shell /usr/bin/gcc -isysroot $(SDKROOT) -E -P -dM -F $(BUILT_PRODUCTS_DIR) $(FRAMEWORK_FLAGS) WebCore/ForwardingHeaders/wtf/Platform.h | grep ENABLE_MAC_JAVA_BRIDGE | cut -d' ' -f3), 1)
+ifeq ($(shell /usr/bin/gcc -isysroot $(SDKROOT) -E -P -dM -F $(BUILT_PRODUCTS_DIR) $(FRAMEWORK_FLAGS) WebCore/ForwardingHeaders/wtf/Platform.h | grep ENABLE_JAVA_BRIDGE | cut -d' ' -f3), 1)
     WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.JNI.exp
 endif
 
@@ -890,11 +907,26 @@ ifeq ($(findstring ENABLE_CLIENT_BASED_GEOLOCATION,$(FEATURE_DEFINES)), ENABLE_C
     WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.ClientBasedGeolocation.exp
 endif
 
+ifeq ($(findstring ENABLE_GEOLOCATION,$(FEATURE_DEFINES)), ENABLE_GEOLOCATION)
+    WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.Geolocation.exp
+endif
+
+ifeq ($(shell gcc -E -P -dM $(FRAMEWORK_FLAGS) WebCore/ForwardingHeaders/wtf/Platform.h | grep WTF_USE_PROTECTION_SPACE_AUTH_CALLBACK | cut -d' ' -f3), 1)
+    WEBCORE_EXPORT_DEPENDENCIES := $(WEBCORE_EXPORT_DEPENDENCIES) WebCore.ProtectionSpaceAuthCallback.exp
+endif
+
 WebCore.exp : WebCore.base.exp $(WEBCORE_EXPORT_DEPENDENCIES)
 	cat $^ > $@
 
 # Switch NSRect, NSSize and NSPoint with their CG counterparts for 64-bit.
 WebCore.LP64.exp : WebCore.exp
+	cat $^ | sed -e s/7_NSRect/6CGRect/ -e s/7_NSSize/6CGSize/ -e s/8_NSPoint/7CGPoint/ > $@
+
+# Filter out export files that should not be included in ARMv6 builds
+ARMV6_FILTERED_EXPORT_FILES := WebCore.Inspector.exp
+WEBCORE_ARMV6_EXPORT_DEPENDENCIES := $(filter-out $(ARMV6_FILTERED_EXPORT_FILES),$(WEBCORE_EXPORT_DEPENDENCIES))
+
+WebCore.LP64.armv6.exp : WebCore.base.exp $(WEBCORE_ARMV6_EXPORT_DEPENDENCIES)
 	cat $^ | sed -e s/7_NSRect/6CGRect/ -e s/7_NSSize/6CGSize/ -e s/8_NSPoint/7CGPoint/ > $@
 
 # --------

@@ -105,6 +105,17 @@ IntRect AccessibilityListBoxOption::elementRect() const
     return rect;
 }
 
+bool AccessibilityListBoxOption::accessibilityIsIgnored() const
+{
+    if (!m_optionElement)
+        return true;
+    
+    if (equalIgnoringCase(getAttribute(aria_hiddenAttr), "true"))
+        return true;
+    
+    return parentObject()->accessibilityIsIgnored();
+}
+    
 bool AccessibilityListBoxOption::canSetSelectedAttribute() const
 {
     if (!m_optionElement)
@@ -127,6 +138,10 @@ String AccessibilityListBoxOption::stringValue() const
 {
     if (!m_optionElement)
         return String();
+    
+    const AtomicString& ariaLabel = getAttribute(aria_labelAttr);
+    if (!ariaLabel.isNull())
+        return ariaLabel;
     
     if (m_optionElement->hasTagName(optionTag))
         return static_cast<HTMLOptionElement*>(m_optionElement)->text();

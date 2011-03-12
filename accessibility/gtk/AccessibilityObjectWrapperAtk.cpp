@@ -42,7 +42,6 @@
 #include "AccessibilityTableColumn.h"
 #include "AccessibilityTableRow.h"
 #include "AtomicString.h"
-#include "CString.h"
 #include "Document.h"
 #include "DocumentType.h"
 #include "Editor.h"
@@ -57,6 +56,7 @@
 #include "NotImplemented.h"
 #include "RenderText.h"
 #include "TextEncoding.h"
+#include <wtf/text/CString.h>
 
 #include <atk/atk.h>
 #include <glib.h>
@@ -360,8 +360,10 @@ static AtkRole atkRole(AccessibilityRole role)
         return ATK_ROLE_TREE;
     case MenuBarRole:
         return ATK_ROLE_MENU_BAR;
+    case MenuListPopupRole:
     case MenuRole:
         return ATK_ROLE_MENU;
+    case MenuListOptionRole:
     case MenuItemRole:
         return ATK_ROLE_MENU_ITEM;
     case ColumnRole:
@@ -379,6 +381,7 @@ static AtkRole atkRole(AccessibilityRole role)
         return ATK_ROLE_PROGRESS_BAR;
     case WindowRole:
         return ATK_ROLE_WINDOW;
+    case PopUpButtonRole:
     case ComboBoxRole:
         return ATK_ROLE_COMBO_BOX;
     case SplitGroupRole:
@@ -448,6 +451,8 @@ static AtkRole webkit_accessible_get_role(AtkObject* object)
                 return ATK_ROLE_LABEL;
             if (node->hasTagName(HTMLNames::divTag))
                 return ATK_ROLE_SECTION;
+            if (node->hasTagName(HTMLNames::formTag))
+                return ATK_ROLE_FORM;
         }
     }
 
@@ -876,7 +881,7 @@ gchar* textForObject(AccessibilityRenderObject* accObject)
             g_string_append(str, "\n");
             range = accObject->doAXRangeForLine(++lineNumber);
         }
-    } else {
+    } else if (accObject->renderer()) {
         // For RenderBlocks, piece together the text from the RenderText objects they contain.
         for (RenderObject* obj = accObject->renderer()->firstChild(); obj; obj = obj->nextSibling()) {
             if (obj->isBR()) {
@@ -884,14 +889,14 @@ gchar* textForObject(AccessibilityRenderObject* accObject)
                 continue;
             }
 
-            RenderText* renderText = toRenderText(obj);
-            // Be sure we have a RenderText object we can work with.
-            if (!renderText || !obj->isText()) {
+            RenderText* renderText;
+            if (obj->isText())
+                renderText = toRenderText(obj);
+            else if (obj->firstChild() && obj->firstChild()->isText()) {
                 // Handle RenderInlines (and any other similiar RenderObjects).
                 renderText = toRenderText(obj->firstChild());
-                if (!renderText)
-                    continue;
-            }
+            } else
+                continue;
 
             InlineTextBox* box = renderText->firstTextBox();
             while (box) {
@@ -996,8 +1001,13 @@ static gint webkit_accessible_text_get_caret_offset(AtkText* text)
     // coreObject is the unignored object whose offset the caller is requesting.
     // focusedObject is the object with the caret. It is likely ignored -- unless it's a link.
     AccessibilityObject* coreObject = core(text);
-    RenderObject* focusedNode = coreObject->selection().end().node()->renderer();
-    AccessibilityObject* focusedObject = coreObject->document()->axObjectCache()->getOrCreate(focusedNode);
+    Node* focusedNode = coreObject->selection().end().node();
+
+    if (!focusedNode)
+        return 0;
+
+    RenderObject* focusedRenderer = focusedNode->renderer();
+    AccessibilityObject* focusedObject = coreObject->document()->axObjectCache()->getOrCreate(focusedRenderer);
 
     int offset;
     // Don't ignore links if the offset is being requested for a link.
@@ -1563,7 +1573,7 @@ static const gchar* webkit_accessible_document_get_locale(AtkDocument* document)
 {
 
     // TODO: Should we fall back on lang xml:lang when the following comes up empty?
-    String language = static_cast<AccessibilityRenderObject*>(core(document))->language();
+    String language = core(document)->language();
     if (!language.isEmpty())
         return returnString(language);
 
@@ -1656,7 +1666,7 @@ static guint16 getInterfaceMaskFromObject(AccessibilityObject* coreObject)
             interfaceMask |= 1 << WAI_TEXT;
             if (!coreObject->isReadOnly())
                 interfaceMask |= 1 << WAI_EDITABLE_TEXT;
-        } else if (static_cast<AccessibilityRenderObject*>(coreObject)->renderer()->childrenInline())
+        } else if (role != TableRole && static_cast<AccessibilityRenderObject*>(coreObject)->renderer()->childrenInline())
             interfaceMask |= 1 << WAI_TEXT;
 
     // Image

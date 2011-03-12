@@ -55,6 +55,7 @@ public:
     void deliverNotification(MediaPlayerProxyNotificationType notification);
     bool callbacksDelayed() { return (m_delayCallbacks > 0); }
     void prepareToPlay();
+    void setDeferredProperties();
 
 private:
     MediaPlayerPrivateiPhone(MediaPlayer *player);
@@ -128,11 +129,14 @@ private:
 
     bool usingNetwork() const { return m_usingNetwork; }
     bool inFullscreen() const { return m_inFullScreen; }
+    
+    void addDeferredProperty(NSString *propertyName, id propertyValue);
 
 private:
     MediaPlayer* m_mediaPlayer;
     RetainPtr<NSObject> m_mediaPlayerHelper;    // this is the MediaPlayerProxy.
     RetainPtr<WebCoreMediaPlayerNotificationHelper> m_objcHelper;
+    RetainPtr<NSMutableDictionary> m_deferredProperties;
 
     MediaPlayer::NetworkState m_networkState;
     MediaPlayer::ReadyState m_readyState;

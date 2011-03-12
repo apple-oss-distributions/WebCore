@@ -105,58 +105,33 @@ JSValue JSWorkerContext::importScripts(ExecState* exec, const ArgList& args)
 
     Vector<String> urls;
     for (unsigned i = 0; i < args.size(); i++) {
-        urls.append(args.at(i).toString(exec));
+        urls.append(ustringToString(args.at(i).toString(exec)));
         if (exec->hadException())
             return jsUndefined();
     }
     ExceptionCode ec = 0;
-    int signedLineNumber;
-    intptr_t sourceID;
-    UString sourceURL;
-    JSValue function;
-    exec->interpreter()->retrieveLastCaller(exec, signedLineNumber, sourceID, sourceURL, function);
 
-    impl()->importScripts(urls, sourceURL, signedLineNumber >= 0 ? signedLineNumber : 0, ec);
+    impl()->importScripts(urls, ec);
     setDOMException(exec, ec);
-    return jsUndefined();
-}
-
-JSValue JSWorkerContext::addEventListener(ExecState* exec, const ArgList& args)
-{
-    JSValue listener = args.at(1);
-    if (!listener.isObject())
-        return jsUndefined();
-
-    impl()->addEventListener(args.at(0).toString(exec), JSEventListener::create(asObject(listener), this, false, currentWorld(exec)), args.at(2).toBoolean(exec));
-    return jsUndefined();
-}
-
-JSValue JSWorkerContext::removeEventListener(ExecState* exec, const ArgList& args)
-{
-    JSValue listener = args.at(1);
-    if (!listener.isObject())
-        return jsUndefined();
-
-    impl()->removeEventListener(args.at(0).toString(exec), JSEventListener::create(asObject(listener), this, false, currentWorld(exec)).get(), args.at(2).toBoolean(exec));
     return jsUndefined();
 }
 
 JSValue JSWorkerContext::setTimeout(ExecState* exec, const ArgList& args)
 {
-    ScheduledAction* action = ScheduledAction::create(exec, args, currentWorld(exec));
+    OwnPtr<ScheduledAction> action = ScheduledAction::create(exec, args, currentWorld(exec));
     if (exec->hadException())
         return jsUndefined();
     int delay = args.at(1).toInt32(exec);
-    return jsNumber(exec, impl()->setTimeout(action, delay));
+    return jsNumber(exec, impl()->setTimeout(action.release(), delay));
 }
 
 JSValue JSWorkerContext::setInterval(ExecState* exec, const ArgList& args)
 {
-    ScheduledAction* action = ScheduledAction::create(exec, args, currentWorld(exec));
+    OwnPtr<ScheduledAction> action = ScheduledAction::create(exec, args, currentWorld(exec));
     if (exec->hadException())
         return jsUndefined();
     int delay = args.at(1).toInt32(exec);
-    return jsNumber(exec, impl()->setInterval(action, delay));
+    return jsNumber(exec, impl()->setInterval(action.release(), delay));
 }
 
 

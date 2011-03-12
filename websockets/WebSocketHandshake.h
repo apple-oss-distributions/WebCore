@@ -35,12 +35,13 @@
 
 #include "KURL.h"
 #include "PlatformString.h"
+#include "WebSocketHandshakeRequest.h"
 #include <wtf/Noncopyable.h>
 
 namespace WebCore {
 
-    class ScriptExecutionContext;
     class HTTPHeaderMap;
+    class ScriptExecutionContext;
 
     class WebSocketHandshake : public Noncopyable {
     public:
@@ -58,12 +59,12 @@ namespace WebCore {
         void setClientProtocol(const String& protocol);
 
         bool secure() const;
-        void setSecure(bool secure);
 
         String clientOrigin() const;
         String clientLocation() const;
 
         CString clientHandshakeMessage() const;
+        WebSocketHandshakeRequest clientHandshakeRequest() const;
 
         void reset();
         void clearScriptExecutionContext();
@@ -91,7 +92,7 @@ namespace WebCore {
         // Reads all headers except for the two predefined ones.
         const char* readHTTPHeaders(const char* start, const char* end, HTTPHeaderMap* headers);
         bool processHeaders(const HTTPHeaderMap& headers);
-        void checkResponseHeaders();
+        bool checkResponseHeaders();
 
         KURL m_url;
         String m_clientProtocol;
@@ -105,6 +106,11 @@ namespace WebCore {
         String m_wsProtocol;
         String m_setCookie;
         String m_setCookie2;
+
+        String m_secWebSocketKey1;
+        String m_secWebSocketKey2;
+        unsigned char m_key3[8];
+        unsigned char m_expectedChallengeResponse[16];
     };
 
 } // namespace WebCore

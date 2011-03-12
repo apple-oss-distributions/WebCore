@@ -25,7 +25,7 @@
 
 #include <wtf/Platform.h>
 
-#if OS(WINDOWS) && !defined(BUILDING_WX__) && !COMPILER(GCC)
+#if !PLATFORM(CHROMIUM) && OS(WINDOWS) && !defined(BUILDING_WX__) && !COMPILER(GCC)
 #if defined(BUILDING_JavaScriptCore) || defined(BUILDING_WTF)
 #define JS_EXPORTDATA __declspec(dllexport)
 #else
@@ -42,8 +42,6 @@
 #define JS_EXPORTCLASS
 #define WEBKIT_EXPORTDATA
 #endif
-
-#define MOBILE 0
 
 #ifdef __APPLE__
 #define HAVE_FUNC_USLEEP 1
@@ -119,9 +117,6 @@
 // On MSW, wx headers need to be included before windows.h is.
 // The only way we can always ensure this is if we include wx here.
 #if PLATFORM(WX)
-// The defines in KeyboardCodes.h conflict with Windows as well, and the only way I've found
-// to address the problem is include KeyboarddCodes.h before windows.h, so do it here.
-#include "KeyboardCodes.h"
 #include <wx/defs.h>
 #endif
 
@@ -134,7 +129,7 @@
 
 #if COMPILER(MSVC)
 #define SKIP_STATIC_CONSTRUCTORS_ON_MSVC 1
-#else
+#elif !COMPILER(WINSCW)
 #define SKIP_STATIC_CONSTRUCTORS_ON_GCC 1
 #endif
 
@@ -158,26 +153,10 @@
 #define WTF_USE_PTHREADS 0
 #endif
 
-// ATSUI vs. CoreText
-#define WTF_USE_ATSUI 0
-#define WTF_USE_CORE_TEXT 1
-
 // New theme
 
 #if OS(SYMBIAN)
-#undef WIN32
-#undef _WIN32
-#undef SKIP_STATIC_CONSTRUCTORS_ON_GCC
 #define USE_SYSTEM_MALLOC 1
-#define U_HAVE_INT8_T 0
-#define U_HAVE_INT16_T 0
-#define U_HAVE_INT32_T 0
-#define U_HAVE_INT64_T 0
-#define U_HAVE_INTTYPES_H 0
-
-#include <stdio.h>
-#include <limits.h>
-#include <wtf/MathExtras.h>
 #endif
 
 #if PLATFORM(CHROMIUM)

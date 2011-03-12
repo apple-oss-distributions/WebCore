@@ -1,4 +1,5 @@
 /*
+ * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies).
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Dirk Mueller (mueller@kde.org)
@@ -41,7 +42,7 @@ public:
 
     virtual int selectedIndex() const;
     virtual void setSelectedIndex(int index, bool deselect = true);
-    virtual void setSelectedIndexByUser(int index, bool deselect = true, bool fireOnChangeNow = false);
+    virtual void setSelectedIndexByUser(int index, bool deselect = true, bool fireOnChangeNow = false, bool allowMultipleSelection = false);
 
     unsigned length() const;
 
@@ -79,6 +80,8 @@ public:
     CollectionCache* collectionInfo() { m_collectionInfo.checkConsistency(); return &m_collectionInfo; }
 
     void scrollToSelection();
+
+    void listBoxSelectItem(int listIndex, bool allowMultiplySelections, bool shift, bool fireOnChangeNow = true);
 
     virtual bool willRespondToMouseClickEvents();
 

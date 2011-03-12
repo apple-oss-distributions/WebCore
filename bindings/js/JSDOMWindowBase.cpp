@@ -23,7 +23,6 @@
 #include "config.h"
 #include "JSDOMWindowBase.h"
 
-#include "CString.h"
 #include "Chrome.h"
 #include "Console.h"
 #include "DOMWindow.h"
@@ -36,6 +35,9 @@
 #include "ScriptController.h"
 #include "SecurityOrigin.h"
 #include "Settings.h"
+#include "WebCoreJSClientData.h"
+#include <wtf/Threading.h>
+#include <wtf/text/CString.h>
 
 #include "ChromeClient.h"
 
@@ -168,12 +170,11 @@ JSGlobalData* JSDOMWindowBase::commonJSGlobalData()
 
     static JSGlobalData* globalData = 0;
     if (!globalData) {
-        globalData = JSGlobalData::createLeaked().releaseRef();
+        globalData = JSGlobalData::createLeaked(ThreadStackTypeLarge).releaseRef();
         globalData->timeoutChecker.setTimeoutInterval(10000); // 10 seconds
 #ifndef NDEBUG
-        globalData->mainThreadOnly = true;
 #endif
-        globalData->clientData = new WebCoreJSClientData(globalData);
+        initNormalWorldClientData(globalData);
     }
 
     return globalData;

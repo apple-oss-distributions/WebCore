@@ -51,13 +51,28 @@ public:
 
 private:
     virtual void setTextInternal(PassRefPtr<StringImpl>);
-    virtual UChar previousCharacter();
+    virtual UChar previousCharacter() const;
 
     unsigned m_start;
     unsigned m_end;
     RefPtr<StringImpl> m_contentString;
     RenderObject* m_firstLetter;
 };
+
+inline RenderTextFragment* toRenderTextFragment(RenderObject* object)
+{ 
+    ASSERT(!object || toRenderText(object)->isTextFragment());
+    return static_cast<RenderTextFragment*>(object);
+}
+
+inline const RenderTextFragment* toRenderTextFragment(const RenderObject* object)
+{ 
+    ASSERT(!object || toRenderText(object)->isTextFragment());
+    return static_cast<const RenderTextFragment*>(object);
+}
+
+// This will catch anyone doing an unnecessary cast.
+void toRenderTextFragment(const RenderTextFragment*);
 
 } // namespace WebCore
 

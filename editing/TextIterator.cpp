@@ -254,21 +254,23 @@ TextIterator::TextIterator()
     , m_textCharacters(0)
     , m_textLength(0)
     , m_lastCharacter(0)
-    , m_emitCharactersBetweenAllVisiblePositions(false)
-    , m_enterTextControls(false)
+    , m_emitsCharactersBetweenAllVisiblePositions(false)
+    , m_entersTextControls(false)
+    , m_emitsTextWithoutTranscoding(false)
 {
 }
 
-TextIterator::TextIterator(const Range* r, bool emitCharactersBetweenAllVisiblePositions, bool enterTextControls) 
-    : m_startContainer(0) 
+TextIterator::TextIterator(const Range* r, TextIteratorBehavior behavior)
+    : m_startContainer(0)
     , m_startOffset(0)
     , m_endContainer(0)
     , m_endOffset(0)
     , m_positionNode(0)
     , m_textCharacters(0)
     , m_textLength(0)
-    , m_emitCharactersBetweenAllVisiblePositions(emitCharactersBetweenAllVisiblePositions)
-    , m_enterTextControls(enterTextControls)
+    , m_emitsCharactersBetweenAllVisiblePositions(behavior & TextIteratorEmitsCharactersBetweenAllVisiblePositions)
+    , m_entersTextControls(behavior & TextIteratorEntersTextControls)
+    , m_emitsTextWithoutTranscoding(behavior & TextIteratorEmitsTextsWithoutTranscoding)
 {
     if (!r)
         return;
@@ -304,11 +306,11 @@ TextIterator::TextIterator(const Range* r, bool emitCharactersBetweenAllVisibleP
     m_pastEndNode = nextInPreOrderCrossingShadowBoundaries(endContainer, endOffset);
 
     // initialize node processing state
-    m_needAnotherNewline = false;
+    m_needsAnotherNewline = false;
     m_textBox = 0;
 
     // initialize record of previous node processing
-    m_haveEmitted = false;
+    m_hasEmitted = false;
     m_lastTextNode = 0;
     m_lastTextNodeEndedWithCollapsedSpace = false;
     m_lastCharacter = 0;
@@ -329,16 +331,16 @@ void TextIterator::advance()
     m_textLength = 0;
 
     // handle remembered node that needed a newline after the text node's newline
-    if (m_needAnotherNewline) {
+    if (m_needsAnotherNewline) {
         // Emit the extra newline, and position it *inside* m_node, after m_node's 
         // contents, in case it's a block, in the same way that we position the first 
         // newline.  The range for the emitted newline should start where the line 
         // break begins.
         // FIXME: It would be cleaner if we emitted two newlines during the last 
-        // iteration, instead of using m_needAnotherNewline.
+        // iteration, instead of using m_needsAnotherNewline.
         Node* baseNode = m_node->lastChild() ? m_node->lastChild() : m_node;
         emitCharacter('\n', baseNode->parentNode(), baseNode, 1, 1);
-        m_needAnotherNewline = false;
+        m_needsAnotherNewline = false;
         return;
     }
 
@@ -371,7 +373,11 @@ void TextIterator::advance()
                     m_handledNode = handleTextNode();
                 else if (renderer && (renderer->isImage() || renderer->isWidget() ||
                          (renderer->node() && renderer->node()->isElementNode() &&
-                          static_cast<Element*>(renderer->node())->isFormControlElement())))
+                          static_cast<Element*>(renderer->node())->isFormControlElement()))
+#if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
+                          && !(renderer->node()->hasTagName(videoTag) || renderer->node()->hasTagName(audioTag))
+#endif
+                          )
                     m_handledNode = handleReplacedElement();
                 else
                     m_handledNode = handleNonTextNode();
@@ -472,7 +478,7 @@ bool TextIterator::handleTextNode()
         m_sortedTextBoxesPosition = 0;
     }
     
-    m_textBox = renderer->containsReversedText() ? m_sortedTextBoxes[0] : renderer->firstTextBox();
+    m_textBox = renderer->containsReversedText() ? (m_sortedTextBoxes.isEmpty() ? 0 : m_sortedTextBoxes[0]) : renderer->firstTextBox();
     handleTextBox();
     return true;
 }
@@ -563,7 +569,7 @@ bool TextIterator::handleReplacedElement()
         return false;
     }
 
-    if (m_enterTextControls && renderer->isTextControl()) {
+    if (m_entersTextControls && renderer->isTextControl()) {
         if (HTMLElement* innerTextElement = toRenderTextControl(renderer)->innerTextElement()) {
             m_node = innerTextElement->shadowTreeRootNode();
             pushFullyClippedState(m_fullyClippedStack, m_node);
@@ -572,9 +578,9 @@ bool TextIterator::handleReplacedElement()
         }
     }
 
-    m_haveEmitted = true;
+    m_hasEmitted = true;
 
-    if (m_emitCharactersBetweenAllVisiblePositions) {
+    if (m_emitsCharactersBetweenAllVisiblePositions) {
         // We want replaced elements to behave like punctuation for boundary 
         // finding, and to simply take up space for the selection preservation 
         // code in moveParagraphs, so we use a comma.
@@ -736,7 +742,7 @@ static int maxOffsetIncludingCollapsedSpaces(Node* node)
 // Whether or not we should emit a character as we enter m_node (if it's a container) or as we hit it (if it's atomic).
 bool TextIterator::shouldRepresentNodeOffsetZero()
 {
-    if (m_emitCharactersBetweenAllVisiblePositions && m_node->renderer() && m_node->renderer()->isTable())
+    if (m_emitsCharactersBetweenAllVisiblePositions && m_node->renderer() && m_node->renderer()->isTable())
         return true;
         
     // Leave element positioned flush with start of a paragraph
@@ -745,7 +751,7 @@ bool TextIterator::shouldRepresentNodeOffsetZero()
         return false;
     
     // Otherwise, show the position if we have emitted any characters
-    if (m_haveEmitted)
+    if (m_hasEmitted)
         return true;
     
     // We've not emitted anything yet. Generally, there is no need for any positioning then.
@@ -767,7 +773,7 @@ bool TextIterator::shouldRepresentNodeOffsetZero()
 
     // If we started as m_startContainer offset 0 and the current node is a descendant of
     // the start container, we already had enough context to correctly decide whether to
-    // emit after a preceding block. We chose not to emit (m_haveEmitted is false),
+    // emit after a preceding block. We chose not to emit (m_hasEmitted is false),
     // so don't second guess that now.
     // NOTE: Is this really correct when m_node is not a leftmost descendant? Probably
     // immaterial since we likely would have already emitted something by now.
@@ -791,7 +797,7 @@ bool TextIterator::shouldRepresentNodeOffsetZero()
 
 bool TextIterator::shouldEmitSpaceBeforeAndAfterNode(Node* node)
 {
-    return node->renderer() && node->renderer()->isTable() && (node->renderer()->isInline() || m_emitCharactersBetweenAllVisiblePositions);
+    return node->renderer() && node->renderer()->isTable() && (node->renderer()->isInline() || m_emitsCharactersBetweenAllVisiblePositions);
 }
 
 void TextIterator::representNodeOffsetZero()
@@ -818,7 +824,7 @@ bool TextIterator::handleNonTextNode()
 {
     if (shouldEmitNewlineForNode(m_node))
         emitCharacter('\n', m_node->parentNode(), m_node, 0, 1);
-    else if (m_emitCharactersBetweenAllVisiblePositions && m_node->renderer() && m_node->renderer()->isHR())
+    else if (m_emitsCharactersBetweenAllVisiblePositions && m_node->renderer() && m_node->renderer()->isHR())
         emitCharacter(' ', m_node->parentNode(), m_node, 0, 1);
     else
         representNodeOffsetZero();
@@ -829,10 +835,10 @@ bool TextIterator::handleNonTextNode()
 void TextIterator::exitNode()
 {
     // prevent emitting a newline when exiting a collapsed block at beginning of the range
-    // FIXME: !m_haveEmitted does not necessarily mean there was a collapsed block... it could
+    // FIXME: !m_hasEmitted does not necessarily mean there was a collapsed block... it could
     // have been an hr (e.g.). Also, a collapsed block could have height (e.g. a table) and
     // therefore look like a blank line.
-    if (!m_haveEmitted)
+    if (!m_hasEmitted)
         return;
         
     // Emit with a position *inside* m_node, after m_node's contents, in 
@@ -853,8 +859,8 @@ void TextIterator::exitNode()
             // insert a newline with a position following this block's contents.
             emitCharacter('\n', baseNode->parentNode(), baseNode, 1, 1);
             // remember whether to later add a newline for the current node
-            ASSERT(!m_needAnotherNewline);
-            m_needAnotherNewline = addNewline;
+            ASSERT(!m_needsAnotherNewline);
+            m_needsAnotherNewline = addNewline;
         } else if (addNewline)
             // insert a newline with a position following this block's contents.
             emitCharacter('\n', baseNode->parentNode(), baseNode, 1, 1);
@@ -867,7 +873,7 @@ void TextIterator::exitNode()
 
 void TextIterator::emitCharacter(UChar c, Node* textNode, Node* offsetBaseNode, int textStartOffset, int textEndOffset)
 {
-    m_haveEmitted = true;
+    m_hasEmitted = true;
     
     // remember information with which to construct the TextIterator::range()
     // NOTE: textNode is often not a text node, so the range will specify child nodes of positionNode
@@ -889,19 +895,19 @@ void TextIterator::emitCharacter(UChar c, Node* textNode, Node* offsetBaseNode, 
 void TextIterator::emitText(Node* textNode, int textStartOffset, int textEndOffset)
 {
     RenderText* renderer = toRenderText(m_node->renderer());
-    String str = renderer->text();
-    ASSERT(str.characters());
+    m_text = m_emitsTextWithoutTranscoding ? renderer->textWithoutTranscoding() : renderer->text();
+    ASSERT(m_text.characters());
 
     m_positionNode = textNode;
     m_positionOffsetBaseNode = 0;
     m_positionStartOffset = textStartOffset;
     m_positionEndOffset = textEndOffset;
-    m_textCharacters = str.characters() + textStartOffset;
+    m_textCharacters = m_text.characters() + textStartOffset;
     m_textLength = textEndOffset - textStartOffset;
-    m_lastCharacter = str[textEndOffset - 1];
+    m_lastCharacter = m_text[textEndOffset - 1];
 
     m_lastTextNodeEndedWithCollapsedSpace = false;
-    m_haveEmitted = true;
+    m_hasEmitted = true;
 }
 
 PassRefPtr<Range> TextIterator::range() const
@@ -1152,11 +1158,11 @@ CharacterIterator::CharacterIterator()
 {
 }
 
-CharacterIterator::CharacterIterator(const Range* r, bool emitCharactersBetweenAllVisiblePositions, bool enterTextControls)
+CharacterIterator::CharacterIterator(const Range* r, TextIteratorBehavior behavior)
     : m_offset(0)
     , m_runOffset(0)
     , m_atBreak(true)
-    , m_textIterator(r, emitCharactersBetweenAllVisiblePositions, enterTextControls)
+    , m_textIterator(r, behavior)
 {
     while (!atEnd() && m_textIterator.length() == 0)
         m_textIterator.advance();
@@ -1991,7 +1997,7 @@ size_t SearchBuffer::length() const
 int TextIterator::rangeLength(const Range* r, bool forSelectionPreservation)
 {
     int length = 0;
-    for (TextIterator it(r, forSelectionPreservation); !it.atEnd(); it.advance())
+    for (TextIterator it(r, forSelectionPreservation ? TextIteratorEmitsCharactersBetweenAllVisiblePositions : TextIteratorDefaultBehavior); !it.atEnd(); it.advance())
         length += it.length();
     
     return length;
@@ -2013,7 +2019,7 @@ PassRefPtr<Range> TextIterator::rangeFromLocationAndLength(Element* scope, int r
 
     RefPtr<Range> textRunRange;
 
-    TextIterator it(rangeOfContents(scope).get(), forSelectionPreservation);
+    TextIterator it(rangeOfContents(scope).get(), forSelectionPreservation ? TextIteratorEmitsCharactersBetweenAllVisiblePositions : TextIteratorDefaultBehavior);
     
     // FIXME: the atEnd() check shouldn't be necessary, workaround for <http://bugs.webkit.org/show_bug.cgi?id=6289>.
     if (rangeLocation == 0 && rangeLength == 0 && it.atEnd()) {
@@ -2037,16 +2043,25 @@ PassRefPtr<Range> TextIterator::rangeFromLocationAndLength(Element* scope, int r
         
         // Fix textRunRange->endPosition(), but only if foundStart || foundEnd, because it is only
         // in those cases that textRunRange is used.
-        if (foundStart || foundEnd) {
+        if (foundEnd) {
             // FIXME: This is a workaround for the fact that the end of a run is often at the wrong
             // position for emitted '\n's.
             if (len == 1 && it.characters()[0] == '\n') {
-                Position runStart = textRunRange->startPosition();
-                Position runEnd = rangeCompliantEquivalent(VisiblePosition(runStart).next().deepEquivalent());
-                if (runEnd.isNotNull()) {
+                scope->document()->updateLayoutIgnorePendingStylesheets();
+                it.advance();
+                if (!it.atEnd()) {
+                    RefPtr<Range> range = it.range();
                     ExceptionCode ec = 0;
-                    textRunRange->setEnd(runEnd.node(), runEnd.deprecatedEditingOffset(), ec);
+                    textRunRange->setEnd(range->startContainer(), range->startOffset(), ec);
                     ASSERT(!ec);
+                } else {
+                    Position runStart = textRunRange->startPosition();
+                    Position runEnd = VisiblePosition(runStart).next().deepEquivalent();
+                    if (runEnd.isNotNull()) {
+                        ExceptionCode ec = 0;
+                        textRunRange->setEnd(runEnd.node(), runEnd.deprecatedEditingOffset(), ec);
+                        ASSERT(!ec);
+                    }
                 }
             }
         }
@@ -2095,7 +2110,7 @@ PassRefPtr<Range> TextIterator::rangeFromLocationAndLength(Element* scope, int r
 
 // --------
     
-UChar* plainTextToMallocAllocatedBuffer(const Range* r, unsigned& bufferLength, bool isDisplayString) 
+UChar* plainTextToMallocAllocatedBuffer(const Range* r, unsigned& bufferLength, bool isDisplayString)
 {
     UChar* result = 0;
 
@@ -2107,7 +2122,7 @@ UChar* plainTextToMallocAllocatedBuffer(const Range* r, unsigned& bufferLength, 
     Vector<TextSegment>* textSegments = 0;
     Vector<UChar> textBuffer;
     textBuffer.reserveInitialCapacity(cMaxSegmentSize);
-    for (TextIterator it(r); !it.atEnd(); it.advance()) {
+    for (TextIterator it(r, isDisplayString ? TextIteratorDefaultBehavior : TextIteratorEmitsTextsWithoutTranscoding); !it.atEnd(); it.advance()) {
         if (textBuffer.size() && textBuffer.size() + it.length() > cMaxSegmentSize) {
             UChar* newSegmentBuffer = static_cast<UChar*>(malloc(textBuffer.size() * sizeof(UChar)));
             if (!newSegmentBuffer)
@@ -2227,14 +2242,14 @@ PassRefPtr<Range> findPlainText(const Range* range, const String& target, bool f
     size_t matchStart;
     size_t matchLength;
     {
-        CharacterIterator findIterator(range, false, true);
+        CharacterIterator findIterator(range, TextIteratorEntersTextControls);
         matchLength = findPlainText(findIterator, target, forward, caseSensitive, matchStart);
         if (!matchLength)
             return collapsedToBoundary(range, forward);
     }
 
     // Then, find the document position of the start and the end of the text.
-    CharacterIterator computeRangeIterator(range, false, true);
+    CharacterIterator computeRangeIterator(range, TextIteratorEntersTextControls);
     return characterSubrange(computeRangeIterator, matchStart, matchLength);
 }
 

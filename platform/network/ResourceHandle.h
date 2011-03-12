@@ -99,7 +99,7 @@ class ResourceHandle : public RefCounted<ResourceHandle>
 #endif
     {
 private:
-    ResourceHandle(const ResourceRequest&, ResourceHandleClient*, bool defersLoading, bool shouldContentSniff, bool mightDownloadFromHandle);
+    ResourceHandle(const ResourceRequest&, ResourceHandleClient*, bool defersLoading, bool shouldContentSniff);
 
     enum FailureType {
         BlockedFailure,
@@ -108,9 +108,10 @@ private:
 
 public:
     // FIXME: should not need the Frame
-    static PassRefPtr<ResourceHandle> create(const ResourceRequest&, ResourceHandleClient*, Frame*, bool defersLoading, bool shouldContentSniff, bool mightDownloadFromHandle = false);
+    static PassRefPtr<ResourceHandle> create(const ResourceRequest&, ResourceHandleClient*, Frame*, bool defersLoading, bool shouldContentSniff);
 
     static void loadResourceSynchronously(const ResourceRequest&, StoredCredentials, ResourceError&, ResourceResponse&, Vector<char>& data, Frame* frame);
+    static void prepareForURL(const KURL&);
     static bool willLoadFromCache(ResourceRequest&, Frame*);
 #if PLATFORM(MAC)
     static bool didSendBodyDataDelegateExists();
@@ -131,9 +132,9 @@ public:
 
 #if PLATFORM(MAC)
     void didCancelAuthenticationChallenge(const AuthenticationChallenge&);
-
+#if USE(PROTECTION_SPACE_AUTH_CALLBACK)
     bool canAuthenticateAgainstProtectionSpace(const ProtectionSpace&);
-
+#endif
     NSURLConnection *connection() const;
     WebCoreResourceHandleAsDelegate *delegate();
     void releaseDelegate();

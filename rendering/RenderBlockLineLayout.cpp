@@ -24,6 +24,8 @@
 
 #include "BidiResolver.h"
 #include "CharacterNames.h"
+#include "Hyphenation.h"
+#include "InlineIterator.h"
 #include "InlineTextBox.h"
 #include "Logging.h"
 #include "RenderArena.h"
@@ -45,36 +47,6 @@ namespace WebCore {
 
 // We don't let our line box tree for a single line get any deeper than this.
 const unsigned cMaxLineDepth = 200;
-
-class InlineIterator {
-public:
-    InlineIterator()
-        : block(0)
-        , obj(0)
-        , pos(0)
-        , nextBreakablePosition(-1)
-    {
-    }
-
-    InlineIterator(RenderBlock* b, RenderObject* o, unsigned p)
-        : block(b)
-        , obj(o)
-        , pos(p)
-        , nextBreakablePosition(-1)
-    {
-    }
-
-    void increment(InlineBidiResolver* resolver = 0);
-    bool atEnd() const;
-
-    UChar current() const;
-    Direction direction() const;
-
-    RenderBlock* block;
-    RenderObject* obj;
-    unsigned pos;
-    int nextBreakablePosition;
-};
 
 static int getBorderPaddingMargin(RenderBoxModelObject* child, bool endOfInline)
 {
@@ -99,247 +71,6 @@ static int inlineWidth(RenderObject* child, bool start = true, bool end = true)
     }
     return extraWidth;
 }
-
-struct BidiRun : BidiCharacterRun {
-    BidiRun(int start, int stop, RenderObject* object, BidiContext* context, Direction dir)
-        : BidiCharacterRun(start, stop, context, dir)
-        , m_object(object)
-        , m_box(0)
-    {
-    }
-
-    void destroy();
-
-    // Overloaded new operator.
-    void* operator new(size_t, RenderArena*) throw();
-
-    // Overridden to prevent the normal delete from being called.
-    void operator delete(void*, size_t);
-
-    BidiRun* next() { return static_cast<BidiRun*>(m_next); }
-
-private:
-    // The normal operator new is disallowed.
-    void* operator new(size_t) throw();
-
-public:
-    RenderObject* m_object;
-    InlineBox* m_box;
-};
-
-#ifndef NDEBUG
-static RefCountedLeakCounter bidiRunCounter("BidiRun");
-
-static bool inBidiRunDestroy;
-#endif
-
-void BidiRun::destroy()
-{
-#ifndef NDEBUG
-    inBidiRunDestroy = true;
-#endif
-    RenderArena* renderArena = m_object->renderArena();
-    delete this;
-#ifndef NDEBUG
-    inBidiRunDestroy = false;
-#endif
-
-    // Recover the size left there for us by operator delete and free the memory.
-    renderArena->free(*reinterpret_cast<size_t*>(this), this);
-}
-
-void* BidiRun::operator new(size_t sz, RenderArena* renderArena) throw()
-{
-#ifndef NDEBUG
-    bidiRunCounter.increment();
-#endif
-    return renderArena->allocate(sz);
-}
-
-void BidiRun::operator delete(void* ptr, size_t sz)
-{
-#ifndef NDEBUG
-    bidiRunCounter.decrement();
-#endif
-    ASSERT(inBidiRunDestroy);
-
-    // Stash size where destroy() can find it.
-    *(size_t*)ptr = sz;
-}
-
-// ---------------------------------------------------------------------
-
-inline bool operator==(const InlineIterator& it1, const InlineIterator& it2)
-{
-    return it1.pos == it2.pos && it1.obj == it2.obj;
-}
-
-inline bool operator!=(const InlineIterator& it1, const InlineIterator& it2)
-{
-    return it1.pos != it2.pos || it1.obj != it2.obj;
-}
-
-static inline RenderObject* bidiNext(RenderBlock* block, RenderObject* current, InlineBidiResolver* resolver = 0, bool skipInlines = true, bool* endOfInlinePtr = 0)
-{
-    RenderObject* next = 0;
-    bool oldEndOfInline = endOfInlinePtr ? *endOfInlinePtr : false;
-    bool endOfInline = false;
-
-    while (current) {
-        next = 0;
-        if (!oldEndOfInline && !current->isFloating() && !current->isReplaced() && !current->isPositioned() && !current->isText()) {
-            next = current->firstChild();
-            if (next && resolver && next->isRenderInline()) {
-                EUnicodeBidi ub = next->style()->unicodeBidi();
-                if (ub != UBNormal) {
-                    TextDirection dir = next->style()->direction();
-                    Direction d = (ub == Embed
-                        ? (dir == RTL ? RightToLeftEmbedding : LeftToRightEmbedding)
-                        : (dir == RTL ? RightToLeftOverride : LeftToRightOverride));
-                    resolver->embed(d);
-                }
-            }
-        }
-
-        if (!next) {
-            if (!skipInlines && !oldEndOfInline && current->isRenderInline()) {
-                next = current;
-                endOfInline = true;
-                break;
-            }
-
-            while (current && current != block) {
-                if (resolver && current->isRenderInline() && current->style()->unicodeBidi() != UBNormal)
-                    resolver->embed(PopDirectionalFormat);
-
-                next = current->nextSibling();
-                if (next) {
-                    if (resolver && next->isRenderInline()) {
-                        EUnicodeBidi ub = next->style()->unicodeBidi();
-                        if (ub != UBNormal) {
-                            TextDirection dir = next->style()->direction();
-                            Direction d = (ub == Embed
-                                ? (dir == RTL ? RightToLeftEmbedding: LeftToRightEmbedding)
-                                : (dir == RTL ? RightToLeftOverride : LeftToRightOverride));
-                            resolver->embed(d);
-                        }
-                    }
-                    break;
-                }
-                
-                current = current->parent();
-                if (!skipInlines && current && current != block && current->isRenderInline()) {
-                    next = current;
-                    endOfInline = true;
-                    break;
-                }
-            }
-        }
-
-        if (!next)
-            break;
-
-        if (next->isText() || next->isFloating() || next->isReplaced() || next->isPositioned()
-            || ((!skipInlines || !next->firstChild()) // Always return EMPTY inlines.
-                && next->isRenderInline()))
-            break;
-        current = next;
-    }
-
-    if (endOfInlinePtr)
-        *endOfInlinePtr = endOfInline;
-
-    return next;
-}
-
-static RenderObject* bidiFirst(RenderBlock* block, InlineBidiResolver* resolver, bool skipInlines = true)
-{
-    if (!block->firstChild())
-        return 0;
-    
-    RenderObject* o = block->firstChild();
-    if (o->isRenderInline()) {
-        if (resolver) {
-            EUnicodeBidi ub = o->style()->unicodeBidi();
-            if (ub != UBNormal) {
-                TextDirection dir = o->style()->direction();
-                Direction d = (ub == Embed
-                    ? (dir == RTL ? RightToLeftEmbedding : LeftToRightEmbedding)
-                    : (dir == RTL ? RightToLeftOverride : LeftToRightOverride));
-                resolver->embed(d);
-            }
-        }
-        if (skipInlines && o->firstChild())
-            o = bidiNext(block, o, resolver, skipInlines);
-        else {
-            // Never skip empty inlines.
-            if (resolver)
-                resolver->commitExplicitEmbedding();
-            return o; 
-        }
-    }
-
-    if (o && !o->isText() && !o->isReplaced() && !o->isFloating() && !o->isPositioned())
-        o = bidiNext(block, o, resolver, skipInlines);
-
-    if (resolver)
-        resolver->commitExplicitEmbedding();
-    return o;
-}
-
-inline void InlineIterator::increment(InlineBidiResolver* resolver)
-{
-    if (!obj)
-        return;
-    if (obj->isText()) {
-        pos++;
-        if (pos >= toRenderText(obj)->textLength()) {
-            obj = bidiNext(block, obj, resolver);
-            pos = 0;
-            nextBreakablePosition = -1;
-        }
-    } else {
-        obj = bidiNext(block, obj, resolver);
-        pos = 0;
-        nextBreakablePosition = -1;
-    }
-}
-
-template<>
-inline void InlineBidiResolver::increment()
-{
-    current.increment(this);
-}
-
-inline bool InlineIterator::atEnd() const
-{
-    return !obj;
-}
-
-inline UChar InlineIterator::current() const
-{
-    if (!obj || !obj->isText())
-        return 0;
-
-    RenderText* text = toRenderText(obj);
-    if (pos >= text->textLength())
-        return 0;
-
-    return text->characters()[pos];
-}
-
-ALWAYS_INLINE Direction InlineIterator::direction() const
-{
-    if (UChar c = current())
-        return Unicode::direction(c);
-
-    if (obj && obj->isListMarker())
-        return obj->style()->direction() == LTR ? LeftToRight : RightToLeft;
-
-    return OtherNeutral;
-}
-
-// -------------------------------------------------------------------------------------------------
 
 static void chopMidpointsAt(LineMidpointState& lineMidpointState, RenderObject* obj, unsigned pos)
 {
@@ -398,7 +129,7 @@ static void addMidpoint(LineMidpointState& lineMidpointState, const InlineIterat
     midpoints[lineMidpointState.numMidpoints++] = midpoint;
 }
 
-static void appendRunsForObject(int start, int end, RenderObject* obj, InlineBidiResolver& resolver)
+void RenderBlock::appendRunsForObject(int start, int end, RenderObject* obj, InlineBidiResolver& resolver)
 {
     if (start > end || obj->isFloating() ||
         (obj->isPositioned() && !obj->style()->hasStaticX() && !obj->style()->hasStaticY() && !obj->container()->isRenderInline()))
@@ -439,36 +170,6 @@ static void appendRunsForObject(int start, int end, RenderObject* obj, InlineBid
         } else
            resolver.addRun(new (obj->renderArena()) BidiRun(start, end, obj, resolver.context(), resolver.dir()));
     }
-}
-
-template <>
-void InlineBidiResolver::appendRun()
-{
-    if (!emptyRun && !eor.atEnd()) {
-        int start = sor.pos;
-        RenderObject *obj = sor.obj;
-        while (obj && obj != eor.obj && obj != endOfLine.obj) {
-            appendRunsForObject(start, obj->length(), obj, *this);        
-            start = 0;
-            obj = bidiNext(sor.block, obj);
-        }
-        if (obj) {
-            unsigned pos = obj == eor.obj ? eor.pos : UINT_MAX;
-            if (obj == endOfLine.obj && endOfLine.pos <= pos) {
-                reachedEndOfLine = true;
-                pos = endOfLine.pos;
-            }
-            // It's OK to add runs for zero-length RenderObjects, just don't make the run larger than it should be
-            int end = obj->length() ? pos+1 : 0;
-            appendRunsForObject(start, end, obj, *this);
-        }
-        
-        eor.increment();
-        sor = eor;
-    }
-
-    m_direction = OtherNeutral;
-    m_status.eor = OtherNeutral;
 }
 
 static inline InlineBox* createInlineBoxForRenderer(RenderObject* obj, bool isRootLineBox, bool isOnlyRun = false)
@@ -590,6 +291,8 @@ RootInlineBox* RenderBlock::constructLine(unsigned runCount, BidiRun* firstRun, 
             text->setStart(r->m_start);
             text->setLen(r->m_stop - r->m_start);
             text->m_dirOverride = r->dirOverride(visuallyOrdered);
+            if (r->m_hasHyphen)
+                text->setHasHyphen(true);
         }
     }
 
@@ -643,7 +346,12 @@ void RenderBlock::computeHorizontalPositionsForLine(RootInlineBox* lineBox, bool
             }
             HashSet<const SimpleFontData*> fallbackFonts;
             GlyphOverflow glyphOverflow;
-            r->m_box->setWidth(rt->width(r->m_start, r->m_stop - r->m_start, totWidth, firstLine, &fallbackFonts, &glyphOverflow));
+            int hyphenWidth = 0;
+            if (static_cast<InlineTextBox*>(r->m_box)->hasHyphen()) {
+                const AtomicString& hyphenString = rt->style()->hyphenString();
+                hyphenWidth = rt->style(firstLine)->font().width(TextRun(hyphenString.characters(), hyphenString.length()));
+            }
+            r->m_box->setWidth(rt->width(r->m_start, r->m_stop - r->m_start, totWidth, firstLine, &fallbackFonts, &glyphOverflow) + hyphenWidth);
             if (!fallbackFonts.isEmpty()
 #if ENABLE(SVG)
                     && !isSVGText()
@@ -968,7 +676,8 @@ void RenderBlock::layoutInlineChildren(bool relayoutChildren, int& repaintTop, i
             isLineEmpty = true;
             
             EClear clear = CNONE;
-            end = findNextLineBreak(resolver, firstLine, isLineEmpty, previousLineBrokeCleanly, &clear);
+            bool hyphenated;
+            end = findNextLineBreak(resolver, firstLine, isLineEmpty, previousLineBrokeCleanly, hyphenated, &clear);
             if (resolver.position().atEnd()) {
                 resolver.deleteRuns();
                 checkForFloatsFromLastLine = true;
@@ -1034,6 +743,8 @@ void RenderBlock::layoutInlineChildren(bool relayoutChildren, int& repaintTop, i
 
                 RootInlineBox* lineBox = 0;
                 if (resolver.runCount()) {
+                    if (hyphenated)
+                        resolver.logicallyLastRun()->m_hasHyphen = true;
                     lineBox = constructLine(resolver.runCount(), resolver.firstRun(), resolver.lastRun(), firstLine, !end.obj, end.obj && !end.pos ? end.obj : 0);
                     if (lineBox) {
                         lineBox->setEndsWithBreak(previousLineBrokeCleanly);
@@ -1449,7 +1160,7 @@ static bool inlineFlowRequiresLineBox(RenderInline* flow)
     return !flow->firstChild() && flow->hasHorizontalBordersPaddingOrMargin();
 }
 
-static inline bool requiresLineBox(const InlineIterator& it, bool isLineEmpty, bool previousLineBrokeCleanly)
+bool RenderBlock::requiresLineBox(const InlineIterator& it, bool isLineEmpty, bool previousLineBrokeCleanly)
 {
     if (it.obj->isFloatingOrPositioned())
         return false;
@@ -1601,8 +1312,40 @@ static inline unsigned textWidth(RenderText* text, unsigned from, unsigned len, 
     return font.width(TextRun(text->characters() + from, len, !collapseWhiteSpace, xPos));
 }
 
+static void tryHyphenating(RenderText* text, const Font& font, const AtomicString& localeIdentifier, int lastSpace, int pos, int xPos, int availableWidth, bool isFixedPitch, bool collapseWhiteSpace, int lastSpaceWordSpacing, InlineIterator& lineBreak, int nextBreakable, bool& hyphenated)
+{
+    const AtomicString& hyphenString = text->style()->hyphenString();
+    int hyphenWidth = font.width(TextRun(hyphenString.characters(), hyphenString.length()));
+
+    int maxPrefixWidth = availableWidth - xPos - hyphenWidth - lastSpaceWordSpacing;
+    // If the maximum width available for the prefix before the hyphen is small, then it is very unlikely
+    // that an hyphenation opportunity exists, so do not bother to look for it.
+    if (maxPrefixWidth <= font.pixelSize() * 5 / 4)
+        return;
+
+    unsigned prefixLength = font.offsetForPosition(TextRun(text->characters() + lastSpace, pos - lastSpace, !collapseWhiteSpace, xPos + lastSpaceWordSpacing), maxPrefixWidth, false);
+    if (!prefixLength)
+        return;
+
+    prefixLength = lastHyphenLocation(text->characters() + lastSpace, pos - lastSpace, prefixLength + 1, localeIdentifier);
+    if (!prefixLength)
+        return;
+
+#if !ASSERT_DISABLED
+    int prefixWidth = hyphenWidth + textWidth(text, lastSpace, prefixLength, font, xPos, isFixedPitch, collapseWhiteSpace) + lastSpaceWordSpacing;
+    ASSERT(xPos + prefixWidth <= availableWidth);
+#else
+    UNUSED_PARAM(isFixedPitch);
+#endif
+
+    lineBreak.obj = text;
+    lineBreak.pos = lastSpace + prefixLength;
+    lineBreak.nextBreakablePosition = nextBreakable;
+    hyphenated = true;
+}
+
 InlineIterator RenderBlock::findNextLineBreak(InlineBidiResolver& resolver, bool firstLine,  bool& isLineEmpty, bool& previousLineBrokeCleanly, 
-                                              EClear* clear)
+                                              bool& hyphenated, EClear* clear)
 {
     ASSERT(resolver.position().block == this);
 
@@ -1639,6 +1382,8 @@ InlineIterator RenderBlock::findNextLineBreak(InlineBidiResolver& resolver, bool
 
     bool prevLineBrokeCleanly = previousLineBrokeCleanly;
     previousLineBrokeCleanly = false;
+
+    hyphenated = false;
 
     bool autoWrapWasEverTrueOnLine = false;
     bool floatsFitOnLine = true;
@@ -1813,8 +1558,10 @@ InlineIterator RenderBlock::findNextLineBreak(InlineBidiResolver& resolver, bool
             int len = strlen - pos;
             const UChar* str = t->characters();
 
-            const Font& f = t->style(firstLine)->font();
+            RenderStyle* style = t->style(firstLine);
+            const Font& f = style->font();
             bool isFixedPitch = f.isFixedPitch();
+            bool canHyphenate = style->hyphens() == HyphensAuto && WebCore::canHyphenate(style->hyphenationLocale());
 
             int lastSpace = pos;
             int wordSpacing = o->style()->wordSpacing();
@@ -1884,6 +1631,11 @@ InlineIterator RenderBlock::findNextLineBreak(InlineBidiResolver& resolver, bool
                     len--;
                     lastSpaceWordSpacing = 0;
                     lastSpace = pos; // Cheesy hack to prevent adding in widths of the run twice.
+                    if (style->hyphens() == HyphensNone) {
+                        // Prevent a line break at the soft hyphen by ensuring that betweenWords is false
+                        // in the next iteration.
+                        atStart = true;
+                    }
                     continue;
                 }
                 
@@ -1954,6 +1706,11 @@ InlineIterator RenderBlock::findNextLineBreak(InlineBidiResolver& resolver, bool
                             }
                         }
                         if (lineWasTooWide || w + tmpW > width) {
+                            if (canHyphenate && w + tmpW > width) {
+                                tryHyphenating(t, f, style->hyphenationLocale(), lastSpace, pos, w + tmpW - additionalTmpW, width, isFixedPitch, collapseWhiteSpace, lastSpaceWordSpacing, lBreak, nextBreakable, hyphenated);
+                                if (hyphenated)
+                                    goto end;
+                            }
                             if (lBreak.obj && shouldPreserveNewline(lBreak.obj) && lBreak.obj->isText() && toRenderText(lBreak.obj)->textLength() && !toRenderText(lBreak.obj)->isWordBreak() && toRenderText(lBreak.obj)->characters()[lBreak.pos] == '\n') {
                                 if (!stoppedIgnoringSpaces && pos > 0) {
                                     // We need to stop right before the newline and then start up again.
@@ -2059,9 +1816,15 @@ InlineIterator RenderBlock::findNextLineBreak(InlineBidiResolver& resolver, bool
             }
 
             // IMPORTANT: pos is > length here!
-            if (!ignoringSpaces)
-                tmpW += textWidth(t, lastSpace, pos - lastSpace, f, w + tmpW, isFixedPitch, collapseWhiteSpace) + lastSpaceWordSpacing;
+            int additionalTmpW = ignoringSpaces ? 0 : textWidth(t, lastSpace, pos - lastSpace, f, w + tmpW, isFixedPitch, collapseWhiteSpace) + lastSpaceWordSpacing;
+            tmpW += additionalTmpW;
             tmpW += inlineWidth(o, !appliedStartWidth, true);
+
+            if (canHyphenate && w + tmpW > width) {
+                tryHyphenating(t, f, style->hyphenationLocale(), lastSpace, pos, w + tmpW - additionalTmpW, width, isFixedPitch, collapseWhiteSpace, lastSpaceWordSpacing, lBreak, nextBreakable, hyphenated);
+                if (hyphenated)
+                    goto end;
+            }
         } else
             ASSERT_NOT_REACHED();
 
@@ -2163,19 +1926,12 @@ InlineIterator RenderBlock::findNextLineBreak(InlineBidiResolver& resolver, bool
                 lBreak.nextBreakablePosition = -1;
             }
         } else if (lBreak.obj) {
-            if (last != o && !last->isListMarker()) {
-                // better to break between object boundaries than in the middle of a word (except for list markers)
-                lBreak.obj = o;
-                lBreak.pos = 0;
-                lBreak.nextBreakablePosition = -1;
-            } else {
-                // Don't ever break in the middle of a word if we can help it.
-                // There's no room at all. We just have to be on this line,
-                // even though we'll spill out.
-                lBreak.obj = o;
-                lBreak.pos = pos;
-                lBreak.nextBreakablePosition = -1;
-            }
+            // Don't ever break in the middle of a word if we can help it.
+            // There's no room at all. We just have to be on this line,
+            // even though we'll spill out.
+            lBreak.obj = o;
+            lBreak.pos = pos;
+            lBreak.nextBreakablePosition = -1;
         }
     }
 

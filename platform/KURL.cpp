@@ -29,9 +29,9 @@
 
 #include "KURL.h"
 
-#include "CString.h"
 #include "StringHash.h"
 #include "TextEncoding.h"
+#include <wtf/text/CString.h>
 #include <wtf/HashMap.h>
 #include <wtf/StdLibExtras.h>
 
@@ -41,7 +41,7 @@
 #include <QUrl>
 #elif USE(GLIB_UNICODE)
 #include <glib.h>
-#include <wtf/gtk/GOwnPtr.h>
+#include "GOwnPtr.h"
 #endif
 
 #include <stdio.h>
@@ -425,9 +425,9 @@ void KURL::init(const KURL& base, const String& relative, const TextEncoding& en
 
         switch (str[0]) {
         case '\0':
-            // the reference must be empty - the RFC says this is a
-            // reference to the same document
+            // The reference is empty, so this is a reference to the same document with any fragment identifier removed.
             *this = base;
+            removeFragmentIdentifier();
             break;
         case '#': {
             // must be fragment-only reference
@@ -1353,27 +1353,29 @@ bool protocolHostAndPortAreEqual(const KURL& a, const KURL& b)
 {
     if (a.m_schemeEnd != b.m_schemeEnd)
         return false;
+
     int hostStartA = a.hostStart();
+    int hostLengthA = a.hostEnd() - hostStartA;
     int hostStartB = b.hostStart();
-    if (a.m_hostEnd - hostStartA != b.m_hostEnd - hostStartB)
+    int hostLengthB = b.hostEnd() - b.hostStart();
+    if (hostLengthA != hostLengthB)
         return false;
 
     // Check the scheme
     for (int i = 0; i < a.m_schemeEnd; ++i)
         if (a.string()[i] != b.string()[i])
             return false;
-    
+
     // And the host
-    for (int i = hostStartA; i < a.m_hostEnd; ++i)
-        if (a.string()[i] != b.string()[i])
+    for (int i = 0; i < hostLengthA; ++i)
+        if (a.string()[hostStartA + i] != b.string()[hostStartB + i])
             return false;
-    
+
     if (a.port() != b.port())
         return false;
 
     return true;
 }
-    
 
 String encodeWithURLEscapeSequences(const String& notEncodedString)
 {

@@ -972,7 +972,7 @@ String createMarkup(const Range* range, Vector<Node*>* nodes, EAnnotateForInterc
     
     Node* body = enclosingNodeWithTag(Position(commonAncestor, 0), bodyTag);
     // FIXME: Do this for all fully selected blocks, not just the body.
-    Node* fullySelectedRoot = body && *VisibleSelection::selectionFromContentsOfNode(body).toNormalizedRange() == *updatedRange ? body : 0;
+    Node* fullySelectedRoot = body && areRangesEqual(VisibleSelection::selectionFromContentsOfNode(body).toNormalizedRange().get(), updatedRange.get()) ? body : 0;
     RefPtr<CSSMutableStyleDeclaration> fullySelectedRootStyle = fullySelectedRoot ? styleFromMatchedRulesAndInlineDecl(fullySelectedRoot) : 0;
     if (annotate && fullySelectedRoot) {
         if (shouldIncludeWrapperForFullySelectedRoot(fullySelectedRoot, fullySelectedRootStyle.get()))
@@ -1018,7 +1018,7 @@ String createMarkup(const Range* range, Vector<Node*>* nodes, EAnnotateForInterc
     // Add a wrapper span with the styles that all of the nodes in the markup inherit.
     Node* parentOfLastClosed = lastClosed ? lastClosed->parentNode() : 0;
     if (parentOfLastClosed && parentOfLastClosed->renderer()) {
-        RefPtr<CSSMutableStyleDeclaration> style = editingStyleAtPosition(Position(parentOfLastClosed, 0));
+        RefPtr<CSSMutableStyleDeclaration> style = ApplyStyleCommand::editingStyleAtPosition(Position(parentOfLastClosed, 0));
 
         // Styles that Mail blockquotes contribute should only be placed on the Mail blockquote, to help
         // us differentiate those styles from ones that the user has applied.  This helps us
@@ -1042,7 +1042,7 @@ String createMarkup(const Range* range, Vector<Node*>* nodes, EAnnotateForInterc
         // Add a style span with the document's default styles.  We add these in a separate
         // span so that at paste time we can differentiate between document defaults and user
         // applied styles.
-        RefPtr<CSSMutableStyleDeclaration> defaultStyle = editingStyleAtPosition(Position(document->documentElement(), 0));
+        RefPtr<CSSMutableStyleDeclaration> defaultStyle = ApplyStyleCommand::editingStyleAtPosition(Position(document->documentElement(), 0));
 
         if (defaultStyle->length() > 0)
             addStyleMarkup(preMarkups, markups, defaultStyle.get(), document);

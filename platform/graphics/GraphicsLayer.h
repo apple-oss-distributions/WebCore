@@ -33,9 +33,6 @@
 #include "FloatPoint.h"
 #include "FloatPoint3D.h"
 #include "FloatSize.h"
-#if ENABLE(3D_CANVAS)
-#include "GraphicsContext3D.h"
-#endif
 #include "GraphicsLayerClient.h"
 #include "IntRect.h"
 #include "TransformationMatrix.h"
@@ -50,7 +47,7 @@
 typedef CALayer PlatformLayer;
 typedef CALayer* NativeLayer;
 #else
-typedef void* PlatformLayer;
+typedef void PlatformLayer;
 typedef void* NativeLayer;
 #endif
 #elif PLATFORM(WIN)
@@ -60,13 +57,27 @@ typedef WKCACFLayer PlatformLayer;
 typedef void* NativeLayer;
 }
 #elif PLATFORM(QT)
+QT_BEGIN_NAMESPACE
 class QGraphicsItem;
+QT_END_NAMESPACE
 typedef QGraphicsItem PlatformLayer;
 typedef QGraphicsItem* NativeLayer;
+#elif PLATFORM(CHROMIUM)
+namespace WebCore {
+class LayerChromium;
+typedef LayerChromium PlatformLayer;
+typedef void* NativeLayer;
+}
 #else
 typedef void* PlatformLayer;
 typedef void* NativeLayer;
 #endif
+
+enum LayerTreeAsTextBehaviorFlags {
+    LayerTreeAsTextBehaviorNormal = 0,
+    LayerTreeAsTextDebug = 1 << 0, // Dump extra debugging info like layer addresses.
+};
+typedef unsigned LayerTreeAsTextBehavior;
 
 namespace WebCore {
 
@@ -74,7 +85,7 @@ class FloatPoint3D;
 class GraphicsContext;
 class Image;
 class TextStream;
-class TimingFunction;
+struct TimingFunction;
 
 // Base class for animation values (also used for transitions). Here to
 // represent values for properties being animated via the GraphicsLayer,
@@ -267,6 +278,8 @@ public:
     virtual void setNeedsDisplay() = 0;
     // mark the given rect (in layer coords) as needing dispay. Never goes deep.
     virtual void setNeedsDisplayInRect(const FloatRect&) = 0;
+    
+    virtual void setContentsNeedsDisplay() { };
 
     // Set that the position/size of the contents (image or video).
     IntRect contentsRect() const { return m_contentsRect; }
@@ -289,8 +302,7 @@ public:
     virtual void setContentsBackgroundColor(const Color&) { }
     
 #if ENABLE(3D_CANVAS)
-    virtual void setContentsToGraphicsContext3D(const GraphicsContext3D*) { }
-    virtual void setGraphicsContext3DNeedsDisplay() { }
+    virtual void setContentsToWebGL(PlatformLayer*) { }
 #endif
     // Callback from the underlying graphics system to draw layer contents.
     void paintGraphicsLayerContents(GraphicsContext&, const IntRect& clip);
@@ -301,10 +313,10 @@ public:
     
     // Change the scale at which the contents are rendered. Note that contentsScale may not return
     // the same value passed to setContentsScale(), because of clamping and hysteresis.
-    float contentsScale() const { return m_contentsScale; }
-    virtual void setContentsScale(float);
+    virtual float contentsScale() const = 0;
+    virtual void setContentsScale(float) = 0;
 
-    void dumpLayer(TextStream&, int indent = 0) const;
+    void dumpLayer(TextStream&, int indent = 0, LayerTreeAsTextBehavior = LayerTreeAsTextBehaviorNormal) const;
 
     int repaintCount() const { return m_repaintCount; }
     int incrementRepaintCount() { return ++m_repaintCount; }
@@ -339,6 +351,10 @@ public:
     // Some compositing systems may do internal batching to synchronize compositing updates
     // with updates drawn into the window. This is a signal to flush any internal batched state.
     virtual void syncCompositingState() { }
+    
+    // Return a string with a human readable form of the layer tree, If debug is true 
+    // pointers for the layers and timing data will be included in the returned string.
+    String layerTreeAsText(LayerTreeAsTextBehavior = LayerTreeAsTextBehaviorNormal) const;
 
 protected:
 
@@ -355,9 +371,7 @@ protected:
 
     GraphicsLayer(GraphicsLayerClient*);
 
-    void dumpProperties(TextStream&, int indent) const;
-
-    float clampedContentsScaleForScale(float scale) const;
+    void dumpProperties(TextStream&, int indent, LayerTreeAsTextBehavior) const;
 
     GraphicsLayerClient* m_client;
     String m_name;
@@ -375,9 +389,6 @@ protected:
     Color m_backgroundColor;
     float m_opacity;
     float m_zPosition;
-
-    float m_contentsScale;
-
     bool m_backgroundColorSet : 1;
     bool m_contentsOpaque : 1;
     bool m_preserves3D: 1;
@@ -407,6 +418,11 @@ protected:
 
 
 } // namespace WebCore
+
+#ifndef NDEBUG
+// Outside the WebCore namespace for ease of invocation from gdb.
+void showGraphicsLayerTree(const WebCore::GraphicsLayer* layer);
+#endif
 
 #endif // USE(ACCELERATED_COMPOSITING)
 

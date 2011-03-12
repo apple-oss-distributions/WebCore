@@ -25,7 +25,7 @@
 #include "config.h"
 #include "Path.h"
 
-#include "TransformationMatrix.h"
+#include "AffineTransform.h"
 #include "CairoPath.h"
 #include "FloatRect.h"
 #include "GraphicsContext.h"
@@ -89,7 +89,7 @@ bool Path::hasCurrentPoint() const
 void Path::translate(const FloatSize& p)
 {
     cairo_t* cr = platformPath()->m_cr;
-    cairo_translate(cr, p.width(), p.height());
+    cairo_translate(cr, -p.width(), -p.height());
 }
 
 void Path::moveTo(const FloatPoint& p)
@@ -267,9 +267,6 @@ FloatRect Path::strokeBoundingRect(StrokeStyleApplier* applier)
 
 bool Path::contains(const FloatPoint& point, WindRule rule) const
 {
-    if (!boundingRect().contains(point))
-        return false;
-
     cairo_t* cr = platformPath()->m_cr;
     cairo_fill_rule_t cur = cairo_get_fill_rule(cr);
     cairo_set_fill_rule(cr, rule == RULE_EVENODD ? CAIRO_FILL_RULE_EVEN_ODD : CAIRO_FILL_RULE_WINDING);
@@ -326,7 +323,7 @@ void Path::apply(void* info, PathApplierFunction function) const
     cairo_path_destroy(path);
 }
 
-void Path::transform(const TransformationMatrix& trans)
+void Path::transform(const AffineTransform& trans)
 {
     cairo_t* m_cr = platformPath()->m_cr;
     cairo_matrix_t c_matrix = cairo_matrix_t(trans);

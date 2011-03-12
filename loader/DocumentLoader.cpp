@@ -265,7 +265,7 @@ void DocumentLoader::finishedLoading()
     commitIfReady();
     if (FrameLoader* loader = frameLoader()) {
         loader->finishedLoadingDocument(this);
-        loader->end();
+        loader->writer()->end();
     }
 }
 
@@ -307,7 +307,7 @@ void DocumentLoader::setupForReplaceByMIMEType(const String& newMIMEType)
     }
     
     frameLoader()->finishedLoadingDocument(this);
-    m_frame->loader()->end();
+    m_frame->loader()->writer()->end();
     
     frameLoader()->setReplacing();
     m_gotFirstByte = false;
@@ -604,6 +604,17 @@ void DocumentLoader::setTitle(const String& title)
         frameLoader()->willChangeTitle(this);
         m_pageTitle = title;
         frameLoader()->didChangeTitle(this);
+    }
+}
+
+void DocumentLoader::setIconURL(const String& iconURL)
+{
+    if (iconURL.isEmpty())
+        return;
+
+    if (m_pageIconURL != iconURL) {
+        m_pageIconURL = iconURL;
+        frameLoader()->didChangeIcons(this);
     }
 }
 

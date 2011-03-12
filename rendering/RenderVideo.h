@@ -34,24 +34,20 @@ namespace WebCore {
     
 class HTMLMediaElement;
 class HTMLVideoElement;
-#if USE(ACCELERATED_COMPOSITING)
-class GraphicsLayer;
-#endif
 
 class RenderVideo : public RenderMedia {
 public:
     RenderVideo(HTMLVideoElement*);
     virtual ~RenderVideo();
 
-    static IntSize defaultSize();
-
     void videoSizeChanged();
     IntRect videoBox() const;
-    
+
+    static IntSize defaultSize();
+
 #if USE(ACCELERATED_COMPOSITING)
     bool supportsAcceleratedRendering() const;
     void acceleratedRenderingStateChanged();
-    GraphicsLayer* videoGraphicsLayer() const;
 #endif
 
 private:
@@ -74,9 +70,6 @@ private:
     virtual int calcReplacedHeight() const;
     virtual int minimumReplacedHeight() const;
     
-    int calcAspectRatioWidth() const;
-    int calcAspectRatioHeight() const;
-
     void updatePlayer();
 
     IntSize m_cachedImageSize;

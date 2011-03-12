@@ -96,13 +96,30 @@ void Gradient::addColorStop(float value, const Color& color)
     m_stops.append(ColorStop(value, r, g, b, a));
 
     m_stopsSorted = false;
+    platformDestroy();
+}
 
+void Gradient::addColorStop(const Gradient::ColorStop& stop)
+{
+    m_stops.append(stop);
+
+    m_stopsSorted = false;
     platformDestroy();
 }
 
 static inline bool compareStops(const Gradient::ColorStop& a, const Gradient::ColorStop& b)
 {
     return a.stop < b.stop;
+}
+
+void Gradient::sortStopsIfNecessary()
+{
+    if (m_stopsSorted)
+        return;
+
+    if (m_stops.size())
+        std::stable_sort(m_stops.begin(), m_stops.end(), compareStops);
+    m_stopsSorted = true;
 }
 
 void Gradient::getColor(float value, float* r, float* g, float* b, float* a) const
@@ -179,14 +196,14 @@ void Gradient::setSpreadMethod(GradientSpreadMethod spreadMethod)
     m_spreadMethod = spreadMethod;
 }
 
-void Gradient::setGradientSpaceTransform(const TransformationMatrix& gradientSpaceTransformation)
+void Gradient::setGradientSpaceTransform(const AffineTransform& gradientSpaceTransformation)
 { 
     m_gradientSpaceTransformation = gradientSpaceTransformation;
     setPlatformGradientSpaceTransform(gradientSpaceTransformation);
 }
 
 #if !PLATFORM(SKIA)
-void Gradient::setPlatformGradientSpaceTransform(const TransformationMatrix&)
+void Gradient::setPlatformGradientSpaceTransform(const AffineTransform&)
 {
 }
 #endif

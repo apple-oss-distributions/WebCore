@@ -30,7 +30,6 @@
 #include "Frame.h"
 
 #include "ApplyStyleCommand.h"
-#include "BeforeUnloadEvent.h"
 #include "CSSComputedStyleDeclaration.h"
 #include "CSSMutableStyleDeclaration.h"
 #include "CSSProperty.h"
@@ -49,6 +48,7 @@
 #include "FrameLoaderClient.h"
 #include "FrameView.h"
 #include "GraphicsContext.h"
+#include "GraphicsLayer.h"
 #include "HTMLDocument.h"
 #include "HTMLFormControlElement.h"
 #include "HTMLFormElement.h"
@@ -75,6 +75,7 @@
 #include "TextIterator.h"
 #include "TextResourceDecoder.h"
 #include "UserContentURLPattern.h"
+#include "UserTypingGestureIndicator.h"
 #include "XMLNSNames.h"
 #include "XMLNames.h"
 #include "htmlediting.h"
@@ -83,6 +84,10 @@
 #include "visible_units.h"
 #include <wtf/RefCountedLeakCounter.h>
 #include <wtf/StdLibExtras.h>
+
+#if USE(ACCELERATED_COMPOSITING)
+#include "RenderLayerCompositor.h"
+#endif
 
 #if USE(JSC)
 #include "JSDOMWindowShell.h"
@@ -116,6 +121,10 @@
 #include "MathMLNames.h"
 #endif
 
+#if ENABLE(TILED_BACKING_STORE)
+#include "TiledBackingStore.h"
+#endif
+
 using namespace std;
 
 namespace WebCore {
@@ -142,7 +151,6 @@ Frame::Frame(Page* page, HTMLFrameOwnerElement* ownerElement, FrameLoaderClient*
     , m_redirectScheduler(this)
     , m_ownerElement(ownerElement)
     , m_script(this)
-    , m_selectionGranularity(CharacterGranularity)
     , m_selectionController(this)
     , m_editor(this)
     , m_eventHandler(this)
@@ -187,9 +195,13 @@ Frame::Frame(Page* page, HTMLFrameOwnerElement* ownerElement, FrameLoaderClient*
     XMLNSNames::init();
     XMLNames::init();
 
-    if (!ownerElement)
+    if (!ownerElement) {
         page->setMainFrame(this);
-    else {
+#if ENABLE(TILED_BACKING_STORE)
+        // Top level frame only for now.
+        setTiledBackingStoreEnabled(page->settings()->tiledBackingStoreEnabled());
+#endif
+    } else {
         page->incrementFrameCount();
         // Make sure we will not end up with two frames referencing the same owner element.
         ASSERT((!(ownerElement->m_contentFrame)) || (ownerElement->m_contentFrame->ownerElement() != ownerElement));
@@ -199,6 +211,10 @@ Frame::Frame(Page* page, HTMLFrameOwnerElement* ownerElement, FrameLoaderClient*
 #ifndef NDEBUG
     frameCounter.increment();
 #endif
+
+    // Pause future timers if this frame is created when page is in pending state.
+    if (parent && parent->timersPaused())
+        setTimersPaused(true);
 }
 
 Frame::~Frame()
@@ -282,6 +298,11 @@ void Frame::setView(PassRefPtr<FrameView> view)
     // Since this part may be getting reused as a result of being
     // pulled from the back/forward cache, reset this flag.
     loader()->resetMultipleFormSubmissionProtection();
+    
+#if ENABLE(TILED_BACKING_STORE)
+    if (m_view && tiledBackingStore())
+        m_view->setPaintsEntireContents(true);
+#endif
 }
 
 ScriptController* Frame::script()
@@ -302,8 +323,7 @@ void Frame::setDocument(PassRefPtr<Document> newDoc)
     }
 
     m_doc = newDoc;
-    if (m_doc && selection()->isFocusedAndActive())
-        setUseSecureKeyboardEntry(m_doc->useSecureKeyboardEntryWhenActive());
+    selection()->updateSecureKeyboardEntryIfActive();
 
     if (m_doc && !m_doc->attached())
         m_doc->attach();
@@ -383,12 +403,7 @@ Editor* Frame::editor() const
 
 TextGranularity Frame::selectionGranularity() const
 {
-    return m_selectionGranularity;
-}
-
-void Frame::setSelectionGranularity(TextGranularity granularity)
-{
-    m_selectionGranularity = granularity;
+    return m_selectionController.granularity();
 }
 
 SelectionController* Frame::dragCaretController() const
@@ -733,53 +748,38 @@ bool Frame::singleLineSelectionBehavior() const
     return m_singleLineSelectionBehavior;
 }
 
-bool Frame::isZoomFactorTextOnly() const
+ZoomMode Frame::zoomMode() const
 {
-    return m_page->settings()->zoomsTextOnly();
+    return m_page->settings()->zoomMode();
 }
 
 bool Frame::shouldApplyTextZoom() const
 {
-    if (m_zoomFactor == 1.0f || !isZoomFactorTextOnly())
-        return false;
-#if ENABLE(SVG)
-    if (m_doc->isSVGDocument())
-        return false;
-#endif
-    return true;
+    return m_zoomFactor != 1.0f && zoomMode() == ZoomTextOnly;
 }
 
 bool Frame::shouldApplyPageZoom() const
 {
-    if (m_zoomFactor == 1.0f || isZoomFactorTextOnly())
-        return false;
-#if ENABLE(SVG)
-    if (m_doc->isSVGDocument())
-        return false;
-#endif
-    return true;
+    return m_zoomFactor != 1.0f && zoomMode() == ZoomPage;
 }
 
-void Frame::setZoomFactor(float percent, bool isTextOnly)
+void Frame::setZoomFactor(float percent, ZoomMode mode)
 {
-    if (m_zoomFactor == percent && isZoomFactorTextOnly() == isTextOnly)
+    if (m_zoomFactor == percent && zoomMode() == mode)
         return;
 
 #if ENABLE(SVG)
-    // SVG doesn't care if the zoom factor is text only.  It will always apply a
-    // zoom to the whole SVG.
+    // Respect SVGs zoomAndPan="disabled" property in standalone SVG documents.
+    // FIXME: How to handle compound documents + zoomAndPan="disabled"? Needs SVG WG clarification.
     if (m_doc->isSVGDocument()) {
         if (!static_cast<SVGDocument*>(m_doc.get())->zoomAndPanEnabled())
             return;
-        m_zoomFactor = percent;
-        m_page->settings()->setZoomsTextOnly(true); // We do this to avoid doing any scaling of CSS pixels, since the SVG has its own notion of zoom.
         if (m_doc->renderer())
-            m_doc->renderer()->repaint();
-        return;
+            m_doc->renderer()->setNeedsLayout(true);
     }
 #endif
 
-    if (!isTextOnly) {
+    if (mode == ZoomPage) {
         // Update the scroll position when doing a full page zoom, so the content stays in relatively the same position.
         IntPoint scrollPosition = view()->scrollPosition();
         float percentDifference = (percent / m_zoomFactor);
@@ -787,12 +787,12 @@ void Frame::setZoomFactor(float percent, bool isTextOnly)
     }
 
     m_zoomFactor = percent;
-    m_page->settings()->setZoomsTextOnly(isTextOnly);
+    m_page->settings()->setZoomMode(mode);
 
     m_doc->recalcStyle(Node::Force);
 
     for (Frame* child = tree()->firstChild(); child; child = child->tree()->nextSibling())
-        child->setZoomFactor(m_zoomFactor, isTextOnly);
+        child->setZoomFactor(m_zoomFactor, mode);
 
     if (m_doc->renderer() && m_doc->renderer()->needsLayout() && view()->didFirstLayout())
         view()->layout();
@@ -899,8 +899,8 @@ int Frame::checkOverflowScroll(OverflowScrollAction action)
         if (visiblePos.isNotNull()) {
             VisibleSelection sel = selection()->selection();
             sel.setExtent(visiblePos);
-            if (m_selectionGranularity != CharacterGranularity) {
-                sel.expandUsingGranularity(m_selectionGranularity);
+            if (selectionGranularity() != CharacterGranularity) {
+                sel.expandUsingGranularity(selectionGranularity());
             }
             if (shouldChangeSelection(sel)) {
                 selection()->setSelection(sel);
@@ -913,15 +913,16 @@ int Frame::checkOverflowScroll(OverflowScrollAction action)
     return scrollType;
 }
 
-void Frame::setPrinting(bool printing, float minPageWidth, float maxPageWidth, bool adjustViewSize)
+void Frame::setPrinting(bool printing, const FloatSize& pageSize, float maximumShrinkRatio, AdjustViewSizeOrNot shouldAdjustViewSize)
 {
     m_doc->setPrinting(printing);
-    view()->setMediaType(printing ? "print" : "screen");
+    view()->adjustMediaTypeForPrinting(printing);
+
     m_doc->updateStyleSelector();
-    view()->forceLayoutWithPageWidthRange(minPageWidth, maxPageWidth, adjustViewSize);
+    view()->forceLayoutForPagination(pageSize, maximumShrinkRatio, shouldAdjustViewSize);
 
     for (Frame* child = tree()->firstChild(); child; child = child->tree()->nextSibling())
-        child->setPrinting(printing, minPageWidth, maxPageWidth, adjustViewSize);
+        child->setPrinting(printing, pageSize, maximumShrinkRatio, shouldAdjustViewSize);
 }
 
 void Frame::setJSStatusBarText(const String& text)
@@ -1050,17 +1051,6 @@ bool Frame::isContentEditable() const
     if (m_editor.clientIsEditable())
         return true;
     return m_doc->inDesignMode();
-}
-
-void Frame::setUseSecureKeyboardEntry(bool enable)
-{
-    UNUSED_PARAM(enable);
-}
-
-void Frame::updateSecureKeyboardEntryIfActive()
-{
-    if (selection()->isFocusedAndActive())
-        setUseSecureKeyboardEntry(m_doc->useSecureKeyboardEntryWhenActive());
 }
 
 CSSMutableStyleDeclaration *Frame::typingStyle() const
@@ -1472,13 +1462,13 @@ void Frame::revealSelection(const ScrollAlignment& alignment, bool revealExtent)
         // FIXME: This code only handles scrolling the startContainer's layer, but
         // the selection rect could intersect more than just that.
         // See <rdar://problem/4799899>.
-        if (RenderLayer* layer = start.node()->renderer()->enclosingLayer())
-        {
+        if (RenderLayer* layer = start.node()->renderer()->enclosingLayer()) {
             layer->setAdjustForPurpleCaretWhenScrolling(true);
             layer->scrollRectToVisible(rect, false, alignment, alignment);
             layer->setAdjustForPurpleCaretWhenScrolling(false);
             if (page())
                 page()->chrome()->client()->notifyRevealedSelectionByScrollingFrame(this);
+            selection()->updateAppearance();
         }
     }
 }
@@ -1605,7 +1595,7 @@ bool Frame::findString(const String& target, bool forward, bool caseFlag, bool w
     // If we started in the selection and the found range exactly matches the existing selection, find again.
     // Build a selection with the found range to remove collapsed whitespace.
     // Compare ranges instead of selection objects to ignore the way that the current selection was made.
-    if (startInSelection && *VisibleSelection(resultRange.get()).toNormalizedRange() == *selection.toNormalizedRange()) {
+    if (startInSelection && areRangesEqual(VisibleSelection(resultRange.get()).toNormalizedRange().get(), selection.toNormalizedRange().get())) {
         searchRange = rangeOfContents(document());
         if (forward)
             setStart(searchRange.get(), selection.visibleEnd());
@@ -1660,7 +1650,7 @@ bool Frame::findString(const String& target, bool forward, bool caseFlag, bool w
     return true;
 }
 
-unsigned Frame::markAllMatchesForText(const String& target, bool caseFlag, unsigned limit)
+unsigned Frame::countMatchesForText(const String& target, bool caseFlag, unsigned limit, bool markMatches)
 {
     if (target.isEmpty())
         return 0;
@@ -1683,7 +1673,8 @@ unsigned Frame::markAllMatchesForText(const String& target, bool caseFlag, unsig
         // Only treat the result as a match if it is visible
         if (editor()->insideVisibleArea(resultRange.get())) {
             ++matchCount;
-            document()->addMarker(resultRange.get(), DocumentMarker::TextMatch);
+            if (markMatches)
+                document()->addMarker(resultRange.get(), DocumentMarker::TextMatch);
         }
 
         // Stop looking if we hit the specified limit. A limit of 0 means no limit.
@@ -1701,16 +1692,16 @@ unsigned Frame::markAllMatchesForText(const String& target, bool caseFlag, unsig
             searchRange->setEnd(shadowTreeRoot, shadowTreeRoot->childNodeCount(), exception);
     } while (true);
 
-    // Do a "fake" paint in order to execute the code that computes the rendered rect for
-    // each text match.
-    Document* doc = document();
-    if (m_view && contentRenderer()) {
-        doc->updateLayout(); // Ensure layout is up to date.
-        IntRect visibleRect = m_view->visibleContentRect();
-        if (!visibleRect.isEmpty()) {
-            GraphicsContext context((PlatformGraphicsContext*)0);
-            context.setPaintingDisabled(true);
-            m_view->paintContents(&context, visibleRect);
+    if (markMatches) {
+        // Do a "fake" paint in order to execute the code that computes the rendered rect for each text match.
+        if (m_view && contentRenderer()) {
+            document()->updateLayout(); // Ensure layout is up to date.
+            IntRect visibleRect = m_view->visibleContentRect();
+            if (!visibleRect.isEmpty()) {
+                GraphicsContext context((PlatformGraphicsContext*)0);
+                context.setPaintingDisabled(true);
+                m_view->paintContents(&context, visibleRect);
+            }
         }
     }
 
@@ -1806,6 +1797,54 @@ void Frame::disconnectOwnerElement()
     m_ownerElement = 0;
 }
 
+// The frame is moved in DOM, potentially to another page.
+void Frame::transferChildFrameToNewDocument()
+{
+    ASSERT(m_ownerElement);
+    Frame* newParent = m_ownerElement->document()->frame();
+    bool didTransfer = false;
+
+    // Switch page.
+    Page* newPage = newParent ? newParent->page() : 0;
+    if (m_page != newPage) {
+        if (page()->focusController()->focusedFrame() == this)
+            page()->focusController()->setFocusedFrame(0);
+
+        if (m_page)
+            m_page->decrementFrameCount();
+
+        m_page = newPage;
+
+        if (newPage)
+            newPage->incrementFrameCount();
+
+        didTransfer = true;
+    }
+
+    // Update the frame tree.
+    Frame* oldParent = tree()->parent();
+    if (oldParent != newParent) {
+        if (oldParent)
+            oldParent->tree()->removeChild(this);
+        if (newParent) {
+            newParent->tree()->appendChild(this);
+            m_ownerElement->setName();
+        }
+        didTransfer = true;
+    }
+
+    // Avoid unnecessary calls to client and frame subtree if the frame ended
+    // up on the same page and under the same parent frame.
+    if (didTransfer) {
+        // Let external clients update themselves.
+        loader()->client()->didTransferChildFrameToNewDocument();
+
+        // Do the same for all the children.
+        for (Frame* child = tree()->firstChild(); child; child = child->tree()->nextSibling())
+            child->transferChildFrameToNewDocument();
+    }
+}
+
 String Frame::documentTypeString() const
 {
     if (DocumentType* doctype = document()->doctype())
@@ -1838,28 +1877,9 @@ void Frame::unfocusWindow()
 
 bool Frame::shouldClose()
 {
-    Chrome* chrome = page() ? page()->chrome() : 0;
-    if (!chrome || !chrome->canRunBeforeUnloadConfirmPanel())
-        return true;
-
-    if (!m_domWindow)
-        return true;
-
-    RefPtr<Document> doc = document();
-    HTMLElement* body = doc->body();
-    if (!body)
-        return true;
-
-    RefPtr<BeforeUnloadEvent> beforeUnloadEvent = BeforeUnloadEvent::create();
-    m_domWindow->dispatchEvent(beforeUnloadEvent.get(), m_domWindow->document());
-
-    if (!beforeUnloadEvent->defaultPrevented())
-        doc->defaultEventHandler(beforeUnloadEvent.get());
-    if (beforeUnloadEvent->result().isNull())
-        return true;
-
-    String text = doc->displayStringModifiedByEncoding(beforeUnloadEvent->result());
-    return chrome->runBeforeUnloadConfirmPanel(text, this);
+    // FIXME: Some WebKit clients call Frame::shouldClose() directly.
+    // We should transition them to calling FrameLoader::shouldClose() then get rid of this method.
+    return m_loader.shouldClose();
 }
 
 void Frame::scheduleClose()
@@ -1957,7 +1977,8 @@ Document* Frame::documentAtPoint(const IntPoint& point)
 void Frame::createView(const IntSize& viewportSize,
                        const Color& backgroundColor, bool transparent,
                        const IntSize& fixedLayoutSize, bool useFixedLayout,
-                       ScrollbarMode horizontalScrollbarMode, ScrollbarMode verticalScrollbarMode)
+                       ScrollbarMode horizontalScrollbarMode, bool horizontalLock,
+                       ScrollbarMode verticalScrollbarMode, bool verticalLock)
 {
     ASSERT(this);
     ASSERT(m_page);
@@ -1977,7 +1998,7 @@ void Frame::createView(const IntSize& viewportSize,
     } else
         frameView = FrameView::create(this);
 
-    frameView->setScrollbarModes(horizontalScrollbarMode, verticalScrollbarMode);
+    frameView->setScrollbarModes(horizontalScrollbarMode, verticalScrollbarMode, horizontalLock, verticalLock);
 
     setView(frameView);
 
@@ -1992,6 +2013,69 @@ void Frame::createView(const IntSize& viewportSize,
 
     if (HTMLFrameOwnerElement* owner = ownerElement())
         view()->setCanHaveScrollbars(owner->scrollingMode() != ScrollbarAlwaysOff);
+}
+
+#if ENABLE(TILED_BACKING_STORE)
+void Frame::setTiledBackingStoreEnabled(bool enabled)
+{
+    if (!enabled) {
+        m_tiledBackingStore.clear();
+        return;
+    }
+    if (m_tiledBackingStore)
+        return;
+    m_tiledBackingStore.set(new TiledBackingStore(this));
+    if (m_view)
+        m_view->setPaintsEntireContents(true);
+}
+
+void Frame::tiledBackingStorePaintBegin()
+{
+    if (!m_view)
+        return;
+    m_view->layoutIfNeededRecursive();
+    m_view->flushDeferredRepaints();
+}
+
+void Frame::tiledBackingStorePaint(GraphicsContext* context, const IntRect& rect)
+{
+    if (!m_view)
+        return;
+    m_view->paintContents(context, rect);
+}
+
+void Frame::tiledBackingStorePaintEnd(const Vector<IntRect>& paintedArea)
+{
+    if (!m_page || !m_view)
+        return;
+    unsigned size = paintedArea.size();
+    // Request repaint from the system
+    for (int n = 0; n < size; ++n)
+        m_page->chrome()->invalidateContentsAndWindow(m_view->contentsToWindow(paintedArea[n]), false);
+}
+
+IntRect Frame::tiledBackingStoreContentsRect()
+{
+    if (!m_view)
+        return IntRect();
+    return IntRect(IntPoint(), m_view->contentsSize());
+}
+#endif
+
+String Frame::layerTreeAsText() const
+{
+#if USE(ACCELERATED_COMPOSITING)
+    if (!contentRenderer())
+        return String();
+
+    GraphicsLayer* rootLayer = contentRenderer()->compositor()->rootPlatformLayer();
+    if (!rootLayer)
+        return String();
+        
+    return rootLayer->layerTreeAsText();
+#else
+    return String();
+#endif
 }
 
 void Frame::setEmbeddedEditingMode(bool b)

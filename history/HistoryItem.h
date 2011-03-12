@@ -33,6 +33,7 @@
 #include <wtf/PassOwnPtr.h>
 
 #include "Document.h"
+#include "ViewportArguments.h"
 
 #if PLATFORM(MAC)
 #import <wtf/RetainPtr.h>

@@ -30,7 +30,6 @@
 #include "FloatSize.h"
 #include "IntPoint.h"
 #include <wtf/MathExtras.h>
-#include <wtf/Platform.h>
 
 #if PLATFORM(CG)
 typedef struct CGPoint CGPoint;
@@ -54,6 +53,7 @@ struct SkPoint;
 
 namespace WebCore {
 
+class AffineTransform;
 class TransformationMatrix;
 class IntPoint;
 
@@ -62,6 +62,9 @@ public:
     FloatPoint() : m_x(0), m_y(0) { }
     FloatPoint(float x, float y) : m_x(x), m_y(y) { }
     FloatPoint(const IntPoint&);
+
+
+    static FloatPoint zero() { return FloatPoint(); }
 
     static FloatPoint narrowPrecision(double x, double y);
 
@@ -94,6 +97,7 @@ public:
 #endif
 
     FloatPoint matrixTransform(const TransformationMatrix&) const;
+    FloatPoint matrixTransform(const AffineTransform&) const;
 
 private:
     float m_x, m_y;

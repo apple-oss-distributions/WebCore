@@ -29,7 +29,6 @@
 
 #include "Base64.h"
 #include "BitmapImage.h"
-#include "CString.h"
 #include "GraphicsContext.h"
 #include "ImageData.h"
 
@@ -39,9 +38,14 @@
 #include <ImageIO/ImageIO.h>
 #include <ImageIO/CGImageSourcePrivate.h>
 #include <wtf/Assertions.h>
+#include <wtf/text/CString.h>
 #include <wtf/OwnArrayPtr.h>
 #include <wtf/RetainPtr.h>
+#include <wtf/Threading.h>
 #include <math.h>
+
+// CA uses ARGB32 for textures and ARGB32 -> ARGB32 resampling is optimized.
+#define USE_ARGB32 1
 
 using namespace std;
 
@@ -87,7 +91,11 @@ ImageBuffer::ImageBuffer(const IntSize& size, ImageColorSpace imageColorSpace, b
     }
 
     RetainPtr<CGContextRef> cgContext(AdoptCF, CGBitmapContextCreate(m_data.m_data, size.width(), size.height(), 8, bytesPerRow,
-        colorSpace.get(), (imageColorSpace == GrayScale) ? kCGImageAlphaNone : kCGImageAlphaPremultipliedLast));
+#if USE_ARGB32
+        colorSpace.get(), ((imageColorSpace == GrayScale) ? kCGImageAlphaNoneSkipFirst : kCGImageAlphaPremultipliedFirst) | kCGBitmapByteOrder32Host));
+#else
+        colorSpace.get(), (imageColorSpace == GrayScale) ? kCGImageAlphaNone : kCGImageAlphaPremultipliedLast));   
+#endif
     if (!cgContext)
         return;
 
@@ -161,6 +169,20 @@ PassRefPtr<ImageData> getImageData(const IntRect& rect, const ImageBufferData& i
         for (int x = 0; x < numColumns; x++) {
             int basex = x * 4;
             unsigned char alpha = srcRows[basex + 3];
+#if USE_ARGB32
+            // byte order is different as we use image buffers of ARGB32
+            if (multiplied == Unmultiplied && alpha) {
+                destRows[basex] = (srcRows[basex + 2] * 255) / alpha;
+                destRows[basex + 1] = (srcRows[basex + 1] * 255) / alpha;
+                destRows[basex + 2] = (srcRows[basex] * 255) / alpha;
+                destRows[basex + 3] = alpha;
+            } else {
+                destRows[basex] = srcRows[basex + 2];
+                destRows[basex + 1] = srcRows[basex + 1];
+                destRows[basex + 2] = srcRows[basex];
+                destRows[basex + 3] = alpha;
+            }
+#else
             if (multiplied == Unmultiplied && alpha) {
                 destRows[basex] = (srcRows[basex] * 255) / alpha;
                 destRows[basex + 1] = (srcRows[basex + 1] * 255) / alpha;
@@ -168,6 +190,7 @@ PassRefPtr<ImageData> getImageData(const IntRect& rect, const ImageBufferData& i
                 destRows[basex + 3] = alpha;
             } else
                 reinterpret_cast<uint32_t*>(destRows + basex)[0] = reinterpret_cast<uint32_t*>(srcRows + basex)[0];
+#endif
         }
         srcRows += srcBytesPerRow;
         destRows += destBytesPerRow;
@@ -223,6 +246,20 @@ void putImageData(ImageData*& source, const IntRect& sourceRect, const IntPoint&
         for (int x = 0; x < numColumns; x++) {
             int basex = x * 4;
             unsigned char alpha = srcRows[basex + 3];
+#if USE_ARGB32
+            // byte order is different as we use image buffers of ARGB32
+            if (multiplied == Unmultiplied && alpha != 255) {
+                destRows[basex] = (srcRows[basex + 2] * alpha + 254) / 255;
+                destRows[basex + 1] = (srcRows[basex + 1] * alpha + 254) / 255;
+                destRows[basex + 2] = (srcRows[basex + 0] * alpha + 254) / 255;
+                destRows[basex + 3] = alpha;
+            } else {
+                destRows[basex] = srcRows[basex + 2];
+                destRows[basex + 1] = srcRows[basex + 1];
+                destRows[basex + 2] = srcRows[basex];
+                destRows[basex + 3] = alpha;
+            }
+#else
             if (multiplied == Unmultiplied && alpha != 255) {
                 destRows[basex] = (srcRows[basex] * alpha + 254) / 255;
                 destRows[basex + 1] = (srcRows[basex + 1] * alpha + 254) / 255;
@@ -230,6 +267,7 @@ void putImageData(ImageData*& source, const IntRect& sourceRect, const IntPoint&
                 destRows[basex + 3] = alpha;
             } else
                 reinterpret_cast<uint32_t*>(destRows + basex)[0] = reinterpret_cast<uint32_t*>(srcRows + basex)[0];
+#endif
         }
         destRows += destBytesPerRow;
         srcRows += srcBytesPerRow;
@@ -248,6 +286,8 @@ void ImageBuffer::putPremultipliedImageData(ImageData* source, const IntRect& so
 
 static RetainPtr<CFStringRef> utiFromMIMEType(const String& mimeType)
 {
+    ASSERT(isMainThread()); // It is unclear if CFSTR is threadsafe.
+
     // FIXME: Add Windows support for all the supported UTIs when a way to convert from MIMEType to UTI reliably is found.
     // For now, only support PNG, JPEG, and GIF. See <rdar://problem/6095286>.
     static const CFStringRef kUTTypePNG = CFSTR("public.png");
@@ -273,34 +313,19 @@ String ImageBuffer::toDataURL(const String& mimeType) const
     if (!image)
         return "data:,";
 
-    size_t width = CGImageGetWidth(image.get());
-    size_t height = CGImageGetHeight(image.get());
-
-    OwnArrayPtr<uint32_t> imageData(new uint32_t[width * height]);
-    if (!imageData)
-        return "data:,";
-    
-    RetainPtr<CGImageRef> transformedImage(AdoptCF, CGBitmapContextCreateImage(context()->platformContext()));
-    if (!transformedImage)
+    RetainPtr<CFMutableDataRef> data(AdoptCF, CFDataCreateMutable(kCFAllocatorDefault, 0));
+    if (!data)
         return "data:,";
 
-    RetainPtr<CFMutableDataRef> transformedImageData(AdoptCF, CFDataCreateMutable(kCFAllocatorDefault, 0));
-    if (!transformedImageData)
+    RetainPtr<CGImageDestinationRef> destination(AdoptCF, CGImageDestinationCreateWithData(data.get(), utiFromMIMEType(mimeType).get(), 1, 0));
+    if (!destination)
         return "data:,";
 
-    RetainPtr<CGImageDestinationRef> imageDestination(AdoptCF, CGImageDestinationCreateWithData(transformedImageData.get(),
-        utiFromMIMEType(mimeType).get(), 1, 0));
-    if (!imageDestination)
-        return "data:,";
-
-    CGImageDestinationAddImage(imageDestination.get(), transformedImage.get(), 0);
-    CGImageDestinationFinalize(imageDestination.get());
-
-    Vector<char> in;
-    in.append(CFDataGetBytePtr(transformedImageData.get()), CFDataGetLength(transformedImageData.get()));
+    CGImageDestinationAddImage(destination.get(), image.get(), 0);
+    CGImageDestinationFinalize(destination.get());
 
     Vector<char> out;
-    base64Encode(in, out);
+    base64Encode(reinterpret_cast<const char*>(CFDataGetBytePtr(data.get())), CFDataGetLength(data.get()), out);
     out.append('\0');
 
     return String::format("data:%s;base64,%s", mimeType.utf8().data(), out.data());

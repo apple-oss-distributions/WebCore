@@ -33,7 +33,6 @@
 #include "ScriptController.h"
 
 #include "PlatformBridge.h"
-#include "CString.h"
 #include "Document.h"
 #include "DOMWindow.h"
 #include "Event.h"
@@ -48,15 +47,19 @@
 #include "NPV8Object.h"
 #include "ScriptSourceCode.h"
 #include "Settings.h"
+#include "UserGestureIndicator.h"
 #include "V8Binding.h"
 #include "V8BindingState.h"
+#include "V8DOMWindow.h"
 #include "V8Event.h"
+#include "V8HTMLEmbedElement.h"
 #include "V8IsolatedContext.h"
 #include "V8NPObject.h"
 #include "V8Proxy.h"
 #include "Widget.h"
 #include "XSSAuditor.h"
 #include <wtf/StdLibExtras.h>
+#include <wtf/text/CString.h>
 
 namespace WebCore {
 
@@ -65,6 +68,7 @@ void ScriptController::initializeThreading()
     static bool initializedThreading = false;
     if (!initializedThreading) {
         WTF::initializeThreading();
+        WTF::initializeMainThread();
         initializedThreading = true;
     }
 }
@@ -148,12 +152,13 @@ void ScriptController::updatePlatformScriptObjects()
     notImplemented();
 }
 
-bool ScriptController::processingUserGesture() const
+bool ScriptController::processingUserGesture(DOMWrapperWorld*) const
 {
     Frame* activeFrame = V8Proxy::retrieveFrameForEnteredContext();
-    // No script is running, so it must be run by users.
+    // No script is running, so it is user-initiated unless the gesture stack
+    // explicitly says it is not.
     if (!activeFrame)
-        return true;
+        return UserGestureIndicator::processingUserGesture();
 
     V8Proxy* activeProxy = activeFrame->script()->proxy();
 
@@ -169,12 +174,12 @@ bool ScriptController::processingUserGesture() const
 
     v8::Handle<v8::Object> global = v8Context->Global();
     v8::Handle<v8::Value> jsEvent = global->Get(v8::String::NewSymbol("event"));
-    Event* event = V8DOMWrapper::isDOMEventWrapper(jsEvent) ? V8Event::toNative(v8::Handle<v8::Object>::Cast(jsEvent)) : 0;
+    Event* event = V8DOMWrapper::isValidDOMObject(jsEvent) ? V8Event::toNative(v8::Handle<v8::Object>::Cast(jsEvent)) : 0;
 
     // Based on code from kjs_bindings.cpp.
     // Note: This is more liberal than Firefox's implementation.
     if (event) {
-        if (event->createdByDOM())
+        if (!UserGestureIndicator::processingUserGesture())
             return false;
 
         const AtomicString& type = event->type();
@@ -188,7 +193,7 @@ bool ScriptController::processingUserGesture() const
 
         if (eventOk)
             return true;
-    } else if (activeProxy->inlineCode() && !activeProxy->timerCallback()) {
+    } else if (m_sourceURL && m_sourceURL->isNull() && !activeProxy->timerCallback()) {
         // This is the <a href="javascript:window.open('...')> case -> we let it through.
         return true;
     }
@@ -214,11 +219,13 @@ void ScriptController::evaluateInIsolatedWorld(unsigned worldID, const Vector<Sc
 }
 
 // Evaluate a script file in the environment of this proxy.
-ScriptValue ScriptController::evaluate(const ScriptSourceCode& sourceCode)
+ScriptValue ScriptController::evaluate(const ScriptSourceCode& sourceCode, ShouldAllowXSS shouldAllowXSS)
 {
     String sourceURL = sourceCode.url();
-    
-    if (!m_XSSAuditor->canEvaluate(sourceCode.source())) {
+    const String* savedSourceURL = m_sourceURL;
+    m_sourceURL = &sourceURL;
+
+    if (!shouldAllowXSS && !m_XSSAuditor->canEvaluate(sourceCode.source())) {
         // This script is not safe to be evaluated.
         return ScriptValue();
     }
@@ -235,8 +242,10 @@ ScriptValue ScriptController::evaluate(const ScriptSourceCode& sourceCode)
     v8::Local<v8::Value> object = m_proxy->evaluate(sourceCode, 0);
 
     // Evaluating the JavaScript could cause the frame to be deallocated
-    // so we starot the keep alive timer here.
+    // so we start the keep alive timer here.
     m_frame->keepAlive();
+
+    m_sourceURL = savedSourceURL;
 
     if (object.IsEmpty() || object->IsUndefined())
         return ScriptValue();
@@ -353,6 +362,15 @@ void ScriptController::getAllWorlds(Vector<DOMWrapperWorld*>& worlds)
     worlds.append(mainThreadNormalWorld());
 }
 
+void ScriptController::evaluateInWorld(const ScriptSourceCode& source,
+                                       DOMWrapperWorld* world)
+{
+    Vector<ScriptSourceCode> sources;
+    sources.append(source);
+    // FIXME: Get an ID from the world param.
+    evaluateInIsolatedWorld(0, sources);
+}
+
 static NPObject* createNoScriptObject()
 {
     notImplemented();
@@ -368,7 +386,7 @@ static NPObject* createScriptObject(Frame* frame)
 
     v8::Context::Scope scope(v8Context);
     DOMWindow* window = frame->domWindow();
-    v8::Handle<v8::Value> global = V8DOMWrapper::convertToV8Object(V8ClassIndex::DOMWINDOW, window);
+    v8::Handle<v8::Value> global = toV8(window);
     ASSERT(global->IsObject());
     return npCreateV8ScriptObject(0, v8::Handle<v8::Object>::Cast(global), window);
 }
@@ -378,7 +396,7 @@ NPObject* ScriptController::windowScriptNPObject()
     if (m_windowScriptNPObject)
         return m_windowScriptNPObject;
 
-    if (canExecuteScripts()) {
+    if (canExecuteScripts(NotAboutToExecuteScript)) {
         // JavaScript is enabled, so there is a JavaScript window object.
         // Return an NPObject bound to the window object.
         m_windowScriptNPObject = createScriptObject(m_frame);
@@ -395,7 +413,7 @@ NPObject* ScriptController::windowScriptNPObject()
 NPObject* ScriptController::createScriptObjectForPluginElement(HTMLPlugInElement* plugin)
 {
     // Can't create NPObjects when JavaScript is disabled.
-    if (!canExecuteScripts())
+    if (!canExecuteScripts(NotAboutToExecuteScript))
         return createNoScriptObject();
 
     v8::HandleScope handleScope;
@@ -405,7 +423,7 @@ NPObject* ScriptController::createScriptObjectForPluginElement(HTMLPlugInElement
     v8::Context::Scope scope(v8Context);
 
     DOMWindow* window = m_frame->domWindow();
-    v8::Handle<v8::Value> v8plugin = V8DOMWrapper::convertToV8Object(V8ClassIndex::HTMLEMBEDELEMENT, plugin);
+    v8::Handle<v8::Value> v8plugin = toV8(static_cast<HTMLEmbedElement*>(plugin));
     if (!v8plugin->IsObject())
         return createNoScriptObject();
 

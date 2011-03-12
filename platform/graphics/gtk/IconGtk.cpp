@@ -30,10 +30,10 @@
 #include "config.h"
 #include "Icon.h"
 
-#include "CString.h"
 #include "GraphicsContext.h"
 #include "MIMETypeRegistry.h"
 #include "PassRefPtr.h"
+#include <wtf/text/CString.h>
 
 #include <gtk/gtk.h>
 
@@ -87,6 +87,7 @@ static String lookupIconName(String MIMEType)
     return GTK_STOCK_FILE;
 }
 
+// FIXME: Move the code to ChromeClient::iconForFiles().
 PassRefPtr<Icon> Icon::createIconForFiles(const Vector<String>& filenames)
 {
     if (filenames.isEmpty())

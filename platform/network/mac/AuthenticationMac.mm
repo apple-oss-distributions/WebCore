@@ -83,7 +83,7 @@ using namespace WebCore;
 namespace WebCore {
 
 #if defined(BUILDING_ON_TIGER) || defined(BUILDING_ON_LEOPARD)
-// There is no contqnt in headers, but NTLM is supported.
+// There is no constant in headers, but NTLM is supported.
 NSString * const NSURLAuthenticationMethodNTLM = @"NSURLAuthenticationMethodNTLM";
 #endif
 
@@ -197,12 +197,14 @@ NSURLProtectionSpace *mac(const ProtectionSpace& coreSpace)
         case ProtectionSpaceAuthenticationSchemeNTLM:
             method = NSURLAuthenticationMethodNTLM;
             break;
+#if USE(PROTECTION_SPACE_AUTH_CALLBACK)
         case ProtectionSpaceAuthenticationSchemeServerTrustEvaluationRequested:
             method = NSURLAuthenticationMethodServerTrust;
             break;
         case ProtectionSpaceAuthenticationSchemeClientCertificateRequested:
             method = NSURLAuthenticationMethodClientCertificate;
             break;
+#endif
         default:
             ASSERT_NOT_REACHED();
     }
@@ -301,10 +303,12 @@ ProtectionSpace core(NSURLProtectionSpace *macSpace)
         scheme = ProtectionSpaceAuthenticationSchemeHTMLForm;
     else if ([method isEqualToString:NSURLAuthenticationMethodNTLM])
         scheme = ProtectionSpaceAuthenticationSchemeNTLM;
+#if USE(PROTECTION_SPACE_AUTH_CALLBACK)
     else if ([method isEqualToString:NSURLAuthenticationMethodClientCertificate])
         scheme = ProtectionSpaceAuthenticationSchemeClientCertificateRequested;
     else if ([method isEqualToString:NSURLAuthenticationMethodServerTrust])
         scheme = ProtectionSpaceAuthenticationSchemeServerTrustEvaluationRequested;
+#endif
     else {
         scheme = ProtectionSpaceAuthenticationSchemeUnknown;
         ASSERT_NOT_REACHED();
