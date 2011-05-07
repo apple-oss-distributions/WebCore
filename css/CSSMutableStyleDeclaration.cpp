@@ -39,7 +39,6 @@ namespace WebCore {
 
 CSSMutableStyleDeclaration::CSSMutableStyleDeclaration()
     : m_node(0)
-    , m_variableDependentValueCount(0)
     , m_strictParsing(false)
 #ifndef NDEBUG
     , m_iteratorCount(0)
@@ -50,7 +49,6 @@ CSSMutableStyleDeclaration::CSSMutableStyleDeclaration()
 CSSMutableStyleDeclaration::CSSMutableStyleDeclaration(CSSRule* parent)
     : CSSStyleDeclaration(parent)
     , m_node(0)
-    , m_variableDependentValueCount(0)
     , m_strictParsing(!parent || parent->useStrictParsing())
 #ifndef NDEBUG
     , m_iteratorCount(0)
@@ -58,11 +56,10 @@ CSSMutableStyleDeclaration::CSSMutableStyleDeclaration(CSSRule* parent)
 {
 }
 
-CSSMutableStyleDeclaration::CSSMutableStyleDeclaration(CSSRule* parent, const Vector<CSSProperty>& properties, unsigned variableDependentValueCount)
+CSSMutableStyleDeclaration::CSSMutableStyleDeclaration(CSSRule* parent, const Vector<CSSProperty>& properties)
     : CSSStyleDeclaration(parent)
     , m_properties(properties)
     , m_node(0)
-    , m_variableDependentValueCount(variableDependentValueCount)
     , m_strictParsing(!parent || parent->useStrictParsing())
 #ifndef NDEBUG
     , m_iteratorCount(0)
@@ -75,7 +72,6 @@ CSSMutableStyleDeclaration::CSSMutableStyleDeclaration(CSSRule* parent, const Ve
 CSSMutableStyleDeclaration::CSSMutableStyleDeclaration(CSSRule* parent, const CSSProperty* const * properties, int numProperties)
     : CSSStyleDeclaration(parent)
     , m_node(0)
-    , m_variableDependentValueCount(0)
     , m_strictParsing(!parent || parent->useStrictParsing())
 #ifndef NDEBUG
     , m_iteratorCount(0)
@@ -85,8 +81,6 @@ CSSMutableStyleDeclaration::CSSMutableStyleDeclaration(CSSRule* parent, const CS
     for (int i = 0; i < numProperties; ++i) {
         ASSERT(properties[i]);
         m_properties.append(*properties[i]);
-        if (properties[i]->value()->isVariableDependentValue())
-            m_variableDependentValueCount++;
     }
     // FIXME: This allows duplicate properties.
 }
@@ -452,9 +446,6 @@ String CSSMutableStyleDeclaration::removeProperty(int propertyID, bool notifyCha
     
     String value = returnText ? foundProperty->value()->cssText() : String();
 
-    if (foundProperty->value()->isVariableDependentValue())
-        m_variableDependentValueCount--;
-
     // A more efficient removal strategy would involve marking entries as empty
     // and sweeping them when the vector grows too big.
     m_properties.remove(foundProperty - m_properties.data());
@@ -480,13 +471,12 @@ void CSSMutableStyleDeclaration::setNeedsStyleRecalc()
         return;
     }
 
-    // FIXME: quick&dirty hack for KDE 3.0... make this MUCH better! (Dirk)
     StyleBase* root = this;
     while (StyleBase* parent = root->parent())
         root = parent;
     if (root->isCSSStyleSheet())
         if (Document* doc = static_cast<CSSStyleSheet*>(root)->doc())
-            doc->updateStyleSelector();
+            doc->styleSelectorChanged(DeferRecalcStyle);
 }
 
 bool CSSMutableStyleDeclaration::getPropertyPriority(int propertyID) const
@@ -604,8 +594,6 @@ void CSSMutableStyleDeclaration::addParsedProperties(const CSSProperty* const* p
             removeProperty(properties[i]->id(), false);
             ASSERT(properties[i]);
             m_properties.append(*properties[i]);
-            if (properties[i]->value()->isVariableDependentValue())
-                m_variableDependentValueCount++;
         }
     }
     // FIXME: This probably should have a call to setNeedsStyleRecalc() if something changed. We may also wish to add
@@ -816,7 +804,7 @@ PassRefPtr<CSSMutableStyleDeclaration> CSSMutableStyleDeclaration::makeMutable()
 
 PassRefPtr<CSSMutableStyleDeclaration> CSSMutableStyleDeclaration::copy() const
 {
-    return adoptRef(new CSSMutableStyleDeclaration(0, m_properties, m_variableDependentValueCount));
+    return adoptRef(new CSSMutableStyleDeclaration(0, m_properties));
 }
 
 const CSSProperty* CSSMutableStyleDeclaration::findPropertyWithId(int propertyID) const

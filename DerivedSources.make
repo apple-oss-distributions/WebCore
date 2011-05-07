@@ -69,8 +69,6 @@ DOM_CLASSES = \
     CSSUnknownRule \
     CSSValue \
     CSSValueList \
-    CSSVariablesRule \
-    CSSVariablesDeclaration \
     WebGLActiveInfo \
     ArrayBufferView \
     ArrayBuffer \

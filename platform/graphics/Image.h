@@ -148,9 +148,6 @@ public:
     virtual bool getHBITMAPOfSize(HBITMAP, LPSIZE) { return false; }
 #endif
     
-    virtual unsigned animatedImageSize() { return 0; }
-    virtual void disableImageAnimation() { }
-
 #if PLATFORM(GTK)
     virtual GdkPixbuf* getGdkPixbuf() { return 0; }
     static PassRefPtr<Image> loadPlatformThemeIcon(const char* name, int size);

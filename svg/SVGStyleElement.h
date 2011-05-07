@@ -33,6 +33,7 @@ namespace WebCore {
                             public StyleElement {
     public:
         SVGStyleElement(const QualifiedName&, Document*, bool createdByParser);
+        virtual ~SVGStyleElement();
 
         // Derived from: 'Element'
         virtual void parseMappedAttribute(MappedAttribute*);
@@ -53,7 +54,7 @@ namespace WebCore {
         virtual String title() const;
         void setTitle(const AtomicString&, ExceptionCode&);
 
-        StyleSheet* sheet();
+        using StyleElement::sheet;
         
     protected:
         bool m_createdByParser;

@@ -154,6 +154,8 @@ public:
         m_lineCountForTextAutosizing = NOT_SET;
     }
 
+    virtual void updateFirstLetter();
+
 protected:
     void moveChildTo(RenderObject* to, RenderObjectChildList* toChildList, RenderObject* child);
     void moveChildTo(RenderObject* to, RenderObjectChildList* toChildList, RenderObject* beforeChild, RenderObject* child);
@@ -193,8 +195,6 @@ protected:
 
     virtual int firstLineBoxBaseline() const;
     virtual int lastLineBoxBaseline() const;
-
-    virtual void updateFirstLetter();
 
     virtual void updateHitTestResult(HitTestResult&, const IntPoint&);
 

@@ -433,8 +433,10 @@ void Node::setDocument(Document* document)
         document->addNodeListCache();
     }
 
-    if (m_document)
+    if (m_document) {
+        m_document->moveNodeIteratorsToNewDocument(this, document);
         m_document->selfOnlyDeref();
+    }
 
     m_document = document;
 
@@ -3015,7 +3017,7 @@ void Node::defaultEventHandler(Event* event)
             if (Frame* frame = document()->frame())
                 frame->eventHandler()->defaultTextInputEventHandler(static_cast<TextEvent*>(event));
 #if ENABLE(PAN_SCROLLING)
-    } else if (eventType == eventNames().mousedownEvent) {
+    } else if (eventType == eventNames().mousedownEvent && event->isMouseEvent()) {
         MouseEvent* mouseEvent = static_cast<MouseEvent*>(event);
         if (mouseEvent->button() == MiddleButton) {
             if (enclosingLinkEventParentOrSelf())

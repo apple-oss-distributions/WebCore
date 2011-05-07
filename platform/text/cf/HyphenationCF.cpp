@@ -26,6 +26,7 @@
 #include "config.h"
 #include "Hyphenation.h"
 
+
 #include "AtomicString.h"
 #include "AtomicStringKeyedMRUCache.h"
 #include "TextBreakIteratorInternalICU.h"
@@ -72,3 +73,4 @@ size_t lastHyphenLocation(const UChar* characters, size_t length, size_t beforeI
 }
 
 } // namespace WebCore
+

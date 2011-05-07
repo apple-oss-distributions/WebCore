@@ -31,6 +31,10 @@
 #include "HTMLObjectElement.h"
 #include "RenderImage.h"
 
+#if ENABLE(DISK_IMAGE_CACHE)
+#include "DiskImageCache.h"
+#endif
+
 #include "Frame.h"
 #include "HTMLNames.h"
 #include "Page.h"
@@ -239,15 +243,7 @@ void ImageLoader::notifyFinished(CachedResource*)
         return;
 
     loadEventSender().dispatchEventSoon(this);
-    Document* document = m_element->document();
-    Document* mainFrameDocument = document->topDocument();
-    document->incrementTotalImageDataSize(m_image.get());
-    unsigned animatedImageSize = m_image->animatedImageSize();
-    if (animatedImageSize) {
-        mainFrameDocument->incrementAnimatedImageDataCount(animatedImageSize);
-        if (mainFrameDocument->animatedImageDataCount() > 2 * 1024 * 1024)
-            m_image->stopAnimatedImage();
-    }
+    m_element->document()->incrementTotalImageDataSize(m_image.get());
 }
 
 void ImageLoader::updateRenderer()
@@ -381,6 +377,13 @@ bool ImageLoader::memoryLimitReached()
 {
     if (!element() || !element()->document() || !element()->document()->page() || !element()->document()->page()->mainFrame() || !element()->document()->page()->mainFrame()->document())
         return false;
+
+#if ENABLE(DISK_IMAGE_CACHE)
+    // If the disk image cache is full, then as a worst case scenario we choose to stop loading images.
+    if (diskImageCache()->isEnabled() && !diskImageCache()->isFull())
+        return false;
+#endif
+
     Frame *mainFrame = element()->document()->page()->mainFrame();
     Document *mainFrameDocument = mainFrame->document();
     static unsigned long maxImageSize = mainFrame->settings()->maximumDecodedImageSize() / 2; //allow half as much total encoded data as the max decoded size of one image. We can tweak this value...

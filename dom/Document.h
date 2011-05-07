@@ -252,6 +252,8 @@ private:
 };
 
 
+enum StyleSelectorUpdateFlag { RecalcStyleImmediately, DeferRecalcStyle };
+
 class Document : public ContainerNode, public ScriptExecutionContext {
 public:
     static PassRefPtr<Document> create(Frame* frame)
@@ -435,6 +437,7 @@ public:
 
     // Other methods (not part of DOM)
     bool isHTMLDocument() const { return m_isHTML; }
+    bool isXHTMLDocument() const { return m_isXHTML; }
     virtual bool isImageDocument() const { return false; }
 #if ENABLE(SVG)
     virtual bool isSVGDocument() const { return false; }
@@ -497,8 +500,7 @@ public:
      * constructed from these which is used to create the a new style selector which collates all of the stylesheets
      * found and is used to calculate the derived styles for all rendering objects.
      */
-    void updateStyleSelector();
-
+    void styleSelectorChanged(StyleSelectorUpdateFlag);
     void recalcStyleSelector();
 
     bool usesDescendantRules() const { return m_usesDescendantRules; }
@@ -687,10 +689,12 @@ public:
     
     void scheduleStyleRecalc();
     void unscheduleStyleRecalc();
+    bool isPendingStyleRecalc() const;
     void styleRecalcTimerFired(Timer<Document>*);
 
     void attachNodeIterator(NodeIterator*);
     void detachNodeIterator(NodeIterator*);
+    void moveNodeIteratorsToNewDocument(Node*, Document*);
 
     void attachRange(Range*);
     void detachRange(Range*);
@@ -1200,9 +1204,12 @@ private:
     bool m_loadingSheet;
     bool m_visuallyOrdered;
     bool m_bParsing;
+    
     Timer<Document> m_styleRecalcTimer;
+    bool m_pendingStyleRecalcShouldForce;
     bool m_inStyleRecalc;
     bool m_closeAfterStyleRecalc;
+
     bool m_usesDescendantRules;
     bool m_usesSiblingRules;
     bool m_usesFirstLineRules;
@@ -1367,9 +1374,6 @@ public:
     void decrementTotalImageDataSize(CachedImage* image);
     unsigned long totalImageDataSize();
 
-    void incrementAnimatedImageDataCount(unsigned count);
-    unsigned long animatedImageDataCount();
-
 private:
     bool m_isTelephoneNumberParsingEnabled;
     
@@ -1381,7 +1385,6 @@ private:
 #endif
     
     unsigned long m_totalImageDataSize;
-    unsigned long m_animatedImageDataCount;
 };
 
 inline bool Document::hasElementWithId(AtomicStringImpl* id) const

@@ -65,7 +65,7 @@ public:
     virtual void destroyDecodedData();
 
     virtual void data(PassRefPtr<SharedBuffer> data, bool allDataReceived);
-    virtual void error();
+    virtual void error(CachedResource::Status);
     
     virtual void httpStatusCodeError() { m_httpStatusCodeErrorOccurred = true; }
     bool httpStatusCodeErrorOccurred() const { return m_httpStatusCodeErrorOccurred; }
@@ -75,6 +75,7 @@ public:
     void checkNotify();
     
     virtual bool isImage() const { return true; }
+    virtual bool isManual() const { return false; }
 
     void clear();
     
@@ -91,23 +92,38 @@ public:
 
     virtual bool shouldDecodeFrame(const Image* image, const IntSize& frameSize);
 
+#if ENABLE(DISK_IMAGE_CACHE)
+    virtual bool canUseDiskImageCache() const;
+    virtual void useDiskImageCache();
+#endif
+
 private:
     void createImage();
     size_t maximumDecodedImageSize();
     // If not null, changeRect is the changed part of the image.
     void notifyObservers(const IntRect* changeRect = 0);
     void decodedDataDeletionTimerFired(Timer<CachedImage>*);
+    virtual PurgePriority purgePriority() const { return PurgeFirst; }
 
     RefPtr<Image> m_image;
     Timer<CachedImage> m_decodedDataDeletionTimer;
     bool m_httpStatusCodeErrorOccurred;
 
-public:
-    unsigned animatedImageSize();
-    void stopAnimatedImage();
-
 private:
     bool checkOutOfMemory();
+};
+
+class CachedImageManual : public CachedImage
+{
+public:
+    CachedImageManual(const String&, Image*);
+    virtual ~CachedImageManual();
+    void addFakeClient() { addClient(m_fakeClient); }
+    void removeFakeClient() { removeClient(m_fakeClient); }
+    virtual bool isManual() const { return true; }
+
+private:
+    CachedResourceClient* m_fakeClient;
 };
 
 }

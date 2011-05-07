@@ -29,6 +29,10 @@
 
 #include "PurgeableBuffer.h"
 
+#if ENABLE(DISK_IMAGE_CACHE)
+#include "DiskImageCache.h"
+#endif
+
 using namespace std;
 
 namespace WebCore {
@@ -59,12 +63,20 @@ static inline void freeSegment(char* p)
 SharedBuffer::SharedBuffer()
     : m_size(0)
     , m_shouldUsePurgeableMemory(false)
+#if ENABLE(DISK_IMAGE_CACHE)
+    , m_isMemoryMapped(false)
+    , m_diskImageCacheId(DiskImageCache::invalidDiskCacheId)
+#endif
 {
 }
 
 SharedBuffer::SharedBuffer(const char* data, int size)
     : m_size(0)
     , m_shouldUsePurgeableMemory(false)
+#if ENABLE(DISK_IMAGE_CACHE)
+    , m_isMemoryMapped(false)
+    , m_diskImageCacheId(DiskImageCache::invalidDiskCacheId)
+#endif
 {
     append(data, size);
 }
@@ -72,12 +84,23 @@ SharedBuffer::SharedBuffer(const char* data, int size)
 SharedBuffer::SharedBuffer(const unsigned char* data, int size)
     : m_size(0)
     , m_shouldUsePurgeableMemory(false)
+#if ENABLE(DISK_IMAGE_CACHE)
+    , m_isMemoryMapped(false)
+    , m_diskImageCacheId(DiskImageCache::invalidDiskCacheId)
+#endif
 {
     append(reinterpret_cast<const char*>(data), size);
 }
     
 SharedBuffer::~SharedBuffer()
 {
+#if ENABLE(DISK_IMAGE_CACHE)
+    if (m_diskImageCacheId) {
+        diskImageCache()->removeItem(m_diskImageCacheId);
+        m_isMemoryMapped = false;
+        m_diskImageCacheId = DiskImageCache::invalidDiskCacheId;
+    }
+#endif
     clear();
 }
 
@@ -150,8 +173,40 @@ void SharedBuffer::createPurgeableBuffer() const
     m_segments.clear();
 }
 
+#if ENABLE(DISK_IMAGE_CACHE)
+bool SharedBuffer::isAllowedToBeMemoryMapped() const
+{
+    return m_diskImageCacheId != DiskImageCache::invalidDiskCacheId;
+}
+
+void SharedBuffer::allowToBeMemoryMapped()
+{
+    ASSERT(!isMemoryMapped());
+    ASSERT(!m_diskImageCacheId);
+
+    m_diskImageCacheId = diskImageCache()->writeItem(this);
+}
+
+void SharedBuffer::markAsMemoryMapped()
+{
+    ASSERT(!isMemoryMapped());
+
+    m_isMemoryMapped = true;
+    unsigned savedSize = m_size;
+    clear();
+    m_size = savedSize;
+}
+#endif
+
 const char* SharedBuffer::data() const
 {
+#if ENABLE(DISK_IMAGE_CACHE)
+    if (isMemoryMapped()) {
+        void* mapping = diskImageCache()->dataForItem(m_diskImageCacheId);
+        return static_cast<const char*>(mapping);
+    }
+#endif
+
     if (hasPlatformData())
         return platformData();
     
@@ -166,6 +221,9 @@ const char* SharedBuffer::data() const
 void SharedBuffer::append(const char* data, unsigned length)
 {
     ASSERT(!m_purgeableBuffer);
+#if ENABLE(DISK_IMAGE_CACHE)
+    ASSERT(!isMemoryMapped());
+#endif
 
     maybeTransferPlatformData();
     
@@ -239,6 +297,9 @@ PurgeableBuffer* SharedBuffer::releasePurgeableBuffer()
 
 const Vector<char>& SharedBuffer::buffer() const
 {
+#if ENABLE(DISK_IMAGE_CACHE)
+    ASSERT(!isMemoryMapped());
+#endif
     unsigned bufferSize = m_buffer.size();
     if (m_size > bufferSize) {
         m_buffer.resize(m_size);
@@ -258,6 +319,16 @@ const Vector<char>& SharedBuffer::buffer() const
 
 unsigned SharedBuffer::getSomeData(const char*& someData, unsigned position) const
 {
+#if ENABLE(DISK_IMAGE_CACHE)
+    ASSERT(position < size());
+    if (isMemoryMapped()) {
+        void* mapping = diskImageCache()->dataForItem(m_diskImageCacheId);
+        const char* data = static_cast<const char*>(mapping);
+        someData = data + position;
+        return size() - position;
+    }
+#endif
+
     if (hasPlatformData() || m_purgeableBuffer) {
         someData = data() + position;
         return size() - position;

@@ -50,9 +50,7 @@
 #import <wtf/text/CString.h>
 #import <wtf/UnusedParam.h>
 
-#import "NSURLConnectionIPhone.h"
 #import "RuntimeApplicationChecksIPhone.h"
-#import "Settings.h"
 #import "WebCoreThreadMessage.h"
 
 #import "QuickLook.h"
@@ -274,13 +272,6 @@ bool ResourceHandle::start(Frame* frame)
 
     NSURLConnection *connection;
     
-    long long maxContentLength = 10485760; 
-    bool useCache = false;
-    if (frame->settings()) { //webcore settings can be nil
-        maxContentLength = frame->settings()->maximumResourceDataLength();
-        useCache = d->m_request.isMainResourceRequest() || frame->settings()->foundationCachingEnabled();
-    }
-
     RetainPtr<NSMutableDictionary> connectionProperties(AdoptNS, [[NSMutableDictionary alloc] initWithDictionary:(NSDictionary *)client()->connectionProperties(this)]);
 
     // FIXME: This is handled in createNSURLConnection() for PLATFORM(MAC).
@@ -296,11 +287,11 @@ bool ResourceHandle::start(Frame* frame)
     }
 
     if (d->m_shouldContentSniff || frame->settings()->localFileContentSniffingEnabled())
-        connection = [[NSURLConnectionIPhone alloc] _initWithRequest:d->m_request.nsURLRequest() delegate:d->m_proxy.get() usesCache:useCache maxContentLength:maxContentLength startImmediately:YES connectionProperties:connectionProperties.get()];
+        connection = [[NSURLConnection alloc] _initWithRequest:d->m_request.nsURLRequest() delegate:d->m_proxy.get() usesCache:NO maxContentLength:0 startImmediately:NO connectionProperties:connectionProperties.get()];
     else {
         NSMutableURLRequest *request = [d->m_request.nsURLRequest() mutableCopy];
         wkSetNSURLRequestShouldContentSniff(request, NO);
-        connection = [[NSURLConnectionIPhone alloc] _initWithRequest:request delegate:d->m_proxy.get() usesCache:useCache maxContentLength:maxContentLength startImmediately:YES connectionProperties:connectionProperties.get()];
+        connection = [[NSURLConnection alloc] _initWithRequest:request delegate:d->m_proxy.get() usesCache:NO maxContentLength:0 startImmediately:NO connectionProperties:connectionProperties.get()];
         [request release];
     }
 
@@ -308,7 +299,7 @@ bool ResourceHandle::start(Frame* frame)
         NSInvocation *invocation = WebThreadMakeNSInvocation(connection, @selector(start));
         WebThreadCallAPI(invocation);
     } else
-        [(NSURLConnectionIPhone *)connection start];
+        [connection start];
 
 #ifndef NDEBUG
     isInitializingConnection = NO;
@@ -508,6 +499,8 @@ void ResourceHandle::willSendRequest(ResourceRequest& request, const ResourceRes
     d->m_pass = url.pass();
     d->m_lastHTTPMethod = request.httpMethod();
     request.removeCredentials();
+    if (!protocolHostAndPortAreEqual(request.url(), redirectResponse.url()))
+        request.clearHTTPAuthorization();
 
     client()->willSendRequest(this, request, redirectResponse);
 }
@@ -1132,6 +1125,10 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
         Credential credential = CredentialStorage::get(core([challenge protectionSpace]));
         if (!credential.isEmpty() && credential != m_initialCredential) {
             ASSERT(credential.persistence() == CredentialPersistenceNone);
+            if ([[challenge failureResponse] isKindOfClass:[NSHTTPURLResponse class]] && [(NSHTTPURLResponse *)[challenge failureResponse] statusCode] == 401) {
+                // Store the credential back, possibly adding it as a default for this directory.
+                CredentialStorage::set(credential, core([challenge protectionSpace]), m_url);
+            }
             [[challenge sender] useCredential:mac(credential) forAuthenticationChallenge:challenge];
             return;
         }

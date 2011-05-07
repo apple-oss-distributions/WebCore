@@ -209,7 +209,7 @@ void XMLTokenizer::doEnd()
     if (m_sawXSLTransform) {
         m_doc->setTransformSource(new TransformSource(m_originalSourceForTransform));
         m_doc->setParsing(false); // Make the doc think it's done, so it will apply xsl sheets.
-        m_doc->updateStyleSelector();
+        m_doc->styleSelectorChanged(RecalcStyleImmediately);
         m_doc->setParsing(true);
         m_parserStopped = true;
     }

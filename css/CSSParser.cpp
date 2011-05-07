@@ -53,9 +53,6 @@
 #include "CSSUnicodeRangeValue.h"
 #include "CSSValueKeywords.h"
 #include "CSSValueList.h"
-#include "CSSVariableDependentValue.h"
-#include "CSSVariablesDeclaration.h"
-#include "CSSVariablesRule.h"
 #include "Counter.h"
 #include "Document.h"
 #include "FloatConversion.h"
@@ -66,12 +63,12 @@
 #include "Pair.h"
 #include "Rect.h"
 #include "ShadowValue.h"
-#include "StringBuffer.h"
 #include "WebKitCSSKeyframeRule.h"
 #include "WebKitCSSKeyframesRule.h"
 #include "WebKitCSSTransformValue.h"
 #include <limits.h>
 #include <wtf/dtoa.h>
+#include <wtf/text/StringBuffer.h>
 
 #if ENABLE(DASHBOARD_SUPPORT)
 #include "DashboardRegion.h"
@@ -151,7 +148,6 @@ CSSParser::CSSParser(bool strictParsing)
     , m_line(0)
     , m_lastSelectorLine(0)
     , m_allowImportRules(true)
-    , m_allowVariablesRules(true)
     , m_allowNamespaceDeclarations(true)
     , m_floatingMediaQuery(0)
     , m_floatingMediaQueryExp(0)
@@ -167,8 +163,6 @@ CSSParser::~CSSParser()
     clearProperties();
     fastFree(m_parsedProperties);
 
-    clearVariables();
-    
     delete m_valueList;
 
     fastFree(m_data);
@@ -329,6 +323,9 @@ void CSSParser::parseSelector(const String& string, Document* doc, CSSSelectorLi
     cssyyparse(this);
 
     m_selectorListForParseSelector = 0;
+
+    // The style sheet will be deleted right away, so it won't outlive the document.
+    ASSERT(dummyStyleSheet->hasOneRef());
 }
 
 bool CSSParser::parseDeclaration(CSSMutableStyleDeclaration* declaration, const String& string)
@@ -568,14 +565,6 @@ bool CSSParser::parseValue(int propId, bool important)
         if (num != 1)
             return false;
         addProperty(propId, CSSInitialValue::createExplicit(), important);
-        return true;
-    }
-
-    // If we have any variables, then we don't parse the list of values yet.  We add them to the declaration
-    // as unresolved, and allow them to be parsed later.  The parse is considered "successful" for now, even though
-    // it might ultimately fail once the variable has been resolved.
-    if (!inShorthand() && checkForVariables(m_valueList)) {
-        addUnresolvedProperty(propId, important);
         return true;
     }
 
@@ -1741,7 +1730,6 @@ bool CSSParser::parseValue(int propId, bool important)
     case CSSPropertyTextLineThrough:
     case CSSPropertyTextOverline:
     case CSSPropertyTextUnderline:
-    case CSSPropertyWebkitVariableDeclarationBlock:
         return false;
 #if ENABLE(WCSS)
     case CSSPropertyWapInputFormat:
@@ -3555,7 +3543,7 @@ bool CSSParser::parseFontFaceSrc()
             // There are two allowed functions: local() and format().             
             CSSParserValueList* args = val->function->args;
             if (args && args->size() == 1) {
-                if (equalIgnoringCase(val->function->name, "local(") && !expectComma) {
+                if (equalIgnoringCase(val->function->name, "local(") && !expectComma && (args->current()->unit == CSSPrimitiveValue::CSS_STRING || args->current()->unit == CSSPrimitiveValue::CSS_IDENT)) {
                     expectComma = true;
                     allowFormat = false;
                     CSSParserValue* a = args->current();
@@ -4891,7 +4879,6 @@ int CSSParser::lex(void* yylvalWithoutType)
     case UNICODERANGE:
     case FUNCTION:
     case NOTFUNCTION:
-    case VARCALL:
         yylval->string.characters = t;
         yylval->string.length = length;
         break;
@@ -4962,7 +4949,6 @@ void CSSParser::recheckAtKeyword(const UChar* str, int len)
         yyTok = WEBKIT_KEYFRAMES_SYM;
     else if (equalIgnoringCase(ruleName, "@-webkit-mediaquery"))
         yyTok = WEBKIT_MEDIAQUERY_SYM;
-    // FIXME: Add CSS Variables if we ever decide to turn it back on.
 }
 
 UChar* CSSParser::text(int *length)
@@ -4996,19 +4982,6 @@ UChar* CSSParser::text(int *length)
             ++start;
             l -= 2;
         }
-        break;
-    case VARCALL:
-        // "-webkit-var("{w}{ident}{w}")"
-        // strip "-webkit-var(" and ")"
-        start += 12;
-        l -= 13;
-        // strip {w}
-        while (l && isCSSWhitespace(*start)) {
-            ++start;
-            --l;
-        }
-        while (l && isCSSWhitespace(start[l - 1]))
-            --l;
         break;
     default:
         break;
@@ -5241,7 +5214,7 @@ CSSRule* CSSParser::createMediaRule(MediaList* media, CSSRuleList* rules)
 {
     if (!media || !rules || !m_styleSheet)
         return 0;
-    m_allowImportRules = m_allowNamespaceDeclarations = m_allowVariablesRules = false;
+    m_allowImportRules = m_allowNamespaceDeclarations = false;
     RefPtr<CSSMediaRule> rule = CSSMediaRule::create(m_styleSheet, media, rules);
     CSSMediaRule* result = rule.get();
     m_parsedStyleObjects.append(rule.release());
@@ -5259,7 +5232,7 @@ CSSRuleList* CSSParser::createRuleList()
 
 WebKitCSSKeyframesRule* CSSParser::createKeyframesRule()
 {
-    m_allowImportRules = m_allowNamespaceDeclarations = m_allowVariablesRules = false;
+    m_allowImportRules = m_allowNamespaceDeclarations = false;
     RefPtr<WebKitCSSKeyframesRule> rule = WebKitCSSKeyframesRule::create(m_styleSheet);
     WebKitCSSKeyframesRule* rulePtr = rule.get();
     m_parsedStyleObjects.append(rule.release());
@@ -5268,7 +5241,7 @@ WebKitCSSKeyframesRule* CSSParser::createKeyframesRule()
 
 CSSRule* CSSParser::createStyleRule(Vector<CSSSelector*>* selectors)
 {
-    m_allowImportRules = m_allowNamespaceDeclarations = m_allowVariablesRules = false;
+    m_allowImportRules = m_allowNamespaceDeclarations = false;
     CSSStyleRule* result = 0;
     if (selectors) {
         RefPtr<CSSStyleRule> rule = CSSStyleRule::create(m_styleSheet, m_lastSelectorLine);
@@ -5285,7 +5258,7 @@ CSSRule* CSSParser::createStyleRule(Vector<CSSSelector*>* selectors)
 
 CSSRule* CSSParser::createFontFaceRule()
 {
-    m_allowImportRules = m_allowNamespaceDeclarations = m_allowVariablesRules = false;
+    m_allowImportRules = m_allowNamespaceDeclarations = false;
     RefPtr<CSSFontFaceRule> rule = CSSFontFaceRule::create(m_styleSheet);
     for (unsigned i = 0; i < m_numParsedProperties; ++i) {
         CSSProperty* property = m_parsedProperties[i];
@@ -5308,70 +5281,13 @@ void CSSParser::addNamespace(const AtomicString& prefix, const AtomicString& uri
     if (!m_styleSheet || !m_allowNamespaceDeclarations)
         return;
     m_allowImportRules = false;
-    m_allowVariablesRules = false;
     m_styleSheet->addNamespace(this, prefix, uri);
 }
-
-#if !ENABLE(CSS_VARIABLES)
-
-CSSRule* CSSParser::createVariablesRule(MediaList*, bool)
-{
-    return 0;
-}
-
-bool CSSParser::addVariable(const CSSParserString&, CSSParserValueList*)
-{
-    return false;
-}
-
-bool CSSParser::addVariableDeclarationBlock(const CSSParserString&)
-{
-    return false;
-}
-
-#else
-
-CSSRule* CSSParser::createVariablesRule(MediaList* mediaList, bool variablesKeyword)
-{
-    if (!m_allowVariablesRules)
-        return 0;
-    m_allowImportRules = false;
-    RefPtr<CSSVariablesRule> rule = CSSVariablesRule::create(m_styleSheet, mediaList, variablesKeyword);
-    rule->setDeclaration(CSSVariablesDeclaration::create(rule.get(), m_variableNames, m_variableValues));
-    clearVariables();    
-    CSSRule* result = rule.get();
-    m_parsedStyleObjects.append(rule.release());
-    return result;
-}
-
-bool CSSParser::addVariable(const CSSParserString& name, CSSParserValueList* valueList)
-{
-    if (checkForVariables(valueList)) {
-        delete valueList;
-        return false;
-    }
-    m_variableNames.append(String(name));
-    m_variableValues.append(CSSValueList::createFromParserValueList(valueList));
-    return true;
-}
-
-bool CSSParser::addVariableDeclarationBlock(const CSSParserString&)
-{
-// FIXME: Disabling declarations as variable values for now since they no longer have a common base class with CSSValues.
-#if 0
-    m_variableNames.append(String(name));
-    m_variableValues.append(CSSMutableStyleDeclaration::create(0, m_parsedProperties, m_numParsedProperties));
-    clearProperties();
-#endif
-    return true;
-}
-
-#endif
 
 CSSRule* CSSParser::createPageRule(CSSSelector* pageSelector)
 {
     // FIXME: Margin at-rules are ignored.
-    m_allowImportRules = m_allowNamespaceDeclarations = m_allowVariablesRules = false;
+    m_allowImportRules = m_allowNamespaceDeclarations = false;
     CSSPageRule* pageRule = 0;
     if (pageSelector) {
         RefPtr<CSSPageRule> rule = CSSPageRule::create(m_styleSheet, pageSelector, m_lastSelectorLine);
@@ -5403,73 +5319,6 @@ void CSSParser::endDeclarationsForMarginBox()
     ASSERT(m_numParsedPropertiesBeforeMarginBox != INVALID_NUM_PARSED_PROPERTIES);
     rollbackLastProperties(m_numParsedProperties - m_numParsedPropertiesBeforeMarginBox);
     m_numParsedPropertiesBeforeMarginBox = INVALID_NUM_PARSED_PROPERTIES;
-}
-
-void CSSParser::clearVariables()
-{
-    m_variableNames.clear();
-    m_variableValues.clear();
-}
-
-bool CSSParser::parseVariable(CSSVariablesDeclaration* declaration, const String& variableName, const String& variableValue)
-{
-    m_styleSheet = static_cast<CSSStyleSheet*>(declaration->stylesheet());
-
-    String nameValuePair = variableName + ": ";
-    nameValuePair += variableValue;
-
-    setupParser("@-webkit-variables-decls{", nameValuePair, "} ");
-    cssyyparse(this);
-    m_rule = 0;
-
-    bool ok = false;
-    if (m_variableNames.size()) {
-        ok = true;
-        declaration->addParsedVariable(variableName, m_variableValues[0]);
-    } 
-    
-    clearVariables();
-
-    return ok;
-}
-
-void CSSParser::parsePropertyWithResolvedVariables(int propId, bool isImportant, CSSMutableStyleDeclaration* declaration, CSSParserValueList* list)
-{
-    m_valueList = list;
-    m_styleSheet = static_cast<CSSStyleSheet*>(declaration->stylesheet());
-
-    if (parseValue(propId, isImportant))
-        declaration->addParsedProperties(m_parsedProperties, m_numParsedProperties);
-        
-    clearProperties();
-    m_valueList = 0;
-}
-
-bool CSSParser::checkForVariables(CSSParserValueList* valueList)
-{
-    if (!valueList || !valueList->containsVariables())
-        return false;
-
-    bool hasVariables = false;
-    for (unsigned i = 0; i < valueList->size(); ++i) {
-        if (valueList->valueAt(i)->isVariable()) {
-            hasVariables = true;
-            break;
-        } 
-        
-        if (valueList->valueAt(i)->unit == CSSParserValue::Function && checkForVariables(valueList->valueAt(i)->function->args)) {
-            hasVariables = true;
-            break;
-        }
-    }
-
-    return hasVariables;
-}
-
-void CSSParser::addUnresolvedProperty(int propId, bool important)
-{
-    RefPtr<CSSVariableDependentValue> val = CSSVariableDependentValue::create(CSSValueList::createFromParserValueList(m_valueList));
-    addProperty(propId, val.release(), important);
 }
 
 void CSSParser::deleteFontFaceOnlyValues()

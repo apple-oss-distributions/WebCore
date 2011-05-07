@@ -33,12 +33,24 @@
 #include "FrameLoaderClient.h"
 #include "ResourceHandle.h"
 
+#include "MIMETypeRegistry.h"
+#include "RuntimeApplicationChecksIPhone.h"
+
 namespace WebCore {
 
 NSCachedURLResponse* ResourceLoader::willCacheResponse(ResourceHandle*, NSCachedURLResponse* response)
 {
     if (!m_sendResourceLoadCallbacks)
         return 0;
+
+    // For MobileSafari, exclude images from the CFURLCache in order to make room for text resources needed
+    // earlier during page loads.
+    if (applicationIsMobileSafari()) {
+        String mimeType = String([[response response] MIMEType]);
+        if (MIMETypeRegistry::isSupportedImageMIMEType(mimeType))
+            return nil;
+    }
+
     return frameLoader()->client()->willCacheResponse(documentLoader(), identifier(), response);
 }
 

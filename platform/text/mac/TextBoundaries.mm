@@ -146,6 +146,16 @@ void findWordBoundary(const UChar* chars, int len, int position, int* start, int
     int i = pos;
     U16_NEXT(chars,i,len,ch);
     bool isComplex = requiresContextForWordBoundary(ch);
+    
+    // FIXME: This check improves our word boundary behavior, but doesn't actually go far enough.
+    // See <rdar://problem/8853951> Take complex word boundary finding path when necessary
+    if (!isComplex) {
+        // Check again for complex text, at the start of the run.
+        i = 0;
+        U16_NEXT(chars, i, len, ch);
+        isComplex = requiresContextForWordBoundary(ch);
+    }
+    
     if (isComplex) {
         findComplexWordBoundary(chars,len, position, start, end);
     } else {

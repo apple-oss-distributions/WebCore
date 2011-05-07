@@ -39,6 +39,13 @@
 #include <stdio.h>
 #include <wtf/CurrentTime.h>
 
+#if ENABLE(DISK_IMAGE_CACHE)
+#include "DiskImageCache.h"
+#include "Logging.h"
+#endif
+
+#include "BitmapImage.h"
+
 using namespace std;
 
 namespace WebCore {
@@ -112,7 +119,12 @@ CachedResource* Cache::requestResource(DocLoader* docLoader, CachedResource::Typ
             FrameLoader::reportLocalLoadFailed(doc->frame(), url.string());
         return 0;
     }
-    
+
+    if (resource && resource->type() != type) {
+        evict(resource);
+        resource = 0;
+    }
+
     if (!resource) {
         // The resource does not exist. Create it.
         resource = createResource(type, url, charset);
@@ -141,9 +153,6 @@ CachedResource* Cache::requestResource(DocLoader* docLoader, CachedResource::Typ
             resource->setDocLoader(docLoader);
         }
     }
-
-    if (resource->type() != type)
-        return 0;
 
     if (!disabled()) {
         // This will move the resource to the front of its LRU list and increase its access count.
@@ -264,6 +273,48 @@ unsigned Cache::liveCapacity() const
 { 
     // Live resource capacity is whatever is left over after calculating dead resource capacity.
     return m_capacity - deadCapacity();
+}
+
+bool Cache::addImageToCache(NativeImagePtr image, const KURL& url)
+{
+    ASSERT(image);
+    removeImageFromCache(url);  // Remove cache entry if it already exists.
+
+    RefPtr<BitmapImage> bitmapImage = BitmapImage::create(image);
+    if (!bitmapImage)
+        return false;
+
+    CachedImageManual* cachedImage = new CachedImageManual(url, bitmapImage.get());
+    if (!cachedImage)
+        return false;
+
+    // Actual release of the CGImageRef is done in BitmapImage.
+    CFRetain(image);
+    cachedImage->addFakeClient();
+    m_resources.set(url, cachedImage);
+    cachedImage->setInCache(true);
+    resourceAccessed(cachedImage); // To adjust cache size.
+    return true;
+}
+
+void Cache::removeImageFromCache(const KURL& url)
+{
+    CachedResource* resource = m_resources.get(url);
+    if (!resource)
+        return;
+
+    // A resource exists and is not a manually cached image, so just remove it.
+    if (!resource->isImage() || !static_cast<CachedImage*>(resource)->isManual()) {
+        evict(resource);
+        return;
+    }
+
+    // Removing the last client of a CachedImage turns the resource
+    // into a dead resource which will eventually be evicted when
+    // dead resources are pruned. That might be immediately since
+    // removing the last client triggers a Cache::prune, so the
+    // resource may be deleted after this call.
+    static_cast<CachedImageManual*>(resource)->removeFakeClient();
 }
 
 void Cache::pruneLiveResources(bool critical)
@@ -394,6 +445,44 @@ void Cache::pruneDeadResources()
     m_inPruneDeadResources = false;
 }
 
+#if ENABLE(DISK_IMAGE_CACHE)
+void Cache::flushCachedImagesToDisk()
+{
+    if (!diskImageCache()->isEnabled())
+        return;
+
+#ifndef NDEBUG
+    double start = WTF::currentTimeMS();
+    unsigned resourceCount = 0;
+    unsigned cachedSize = 0;
+#endif
+
+    for (size_t i = m_allResources.size(); i > 0; --i) {
+        CachedResource* current = m_allResources[i - 1].m_tail;
+        while (current) {
+            CachedResource* prev = current->m_prevInAllResourcesList;
+
+            if (!current->isUsingDiskImageCache() && current->canUseDiskImageCache()) {
+                current->useDiskImageCache();
+                current->destroyDecodedData();
+#ifndef NDEBUG
+                LOG(DiskImageCache, "Cache::diskCacheResources(): attempting to save (%d) bytes", current->data()->size());
+                resourceCount += 1;
+                cachedSize += current->data()->size();
+#endif
+            }
+
+            current = prev;
+        }
+    }
+
+#ifndef NDEBUG
+    double end = WTF::currentTimeMS();
+    LOG(DiskImageCache, "DiskImageCache: took (%f) ms to cache (%d) bytes for (%d) resources", end - start, cachedSize, resourceCount);
+#endif
+}
+#endif
+
 void Cache::setCapacities(unsigned minDeadBytes, unsigned maxDeadBytes, unsigned totalBytes)
 {
     ASSERT(minDeadBytes <= maxDeadBytes);
@@ -411,6 +500,9 @@ bool Cache::makeResourcePurgeable(CachedResource* resource)
 
     if (!resource->inCache())
         return false;
+
+    if (resource->isPurgeable())
+        return true;
 
     if (!resource->isSafeToMakePurgeable())
         return false;
@@ -437,8 +529,9 @@ void Cache::evict(CachedResource* resource)
         removeFromLiveDecodedResourcesList(resource);
 
         // If the resource was purged, it means we had already decremented the size when we made the
-        // resource purgeable in makeResourcePurgeable().
-        if (!Cache::shouldMakeResourcePurgeableOnEviction() || !resource->wasPurged())
+        // resource purgeable in makeResourcePurgeable(). So adjust the size if we are evicting a
+        // resource that was not marked as purgeable.
+        if (!Cache::shouldMakeResourcePurgeableOnEviction() || !resource->isPurgeable())
             adjustSize(resource->hasClients(), -static_cast<int>(resource->size()));
     } else
         ASSERT(m_resources.get(resource->url()) != resource);
@@ -686,6 +779,10 @@ void Cache::TypeStatistic::addResource(CachedResource* o)
     decodedSize += o->decodedSize();
     purgeableSize += purgeable ? pageSize : 0;
     purgedSize += purged ? pageSize : 0;
+#if ENABLE(DISK_IMAGE_CACHE)
+    // Only the data inside the resource was mapped, not the entire resource.
+    mappedSize += o->isUsingDiskImageCache() ? o->data()->size() : 0;
+#endif
 }
 
 Cache::Statistics Cache::getStatistics()
@@ -742,21 +839,31 @@ void Cache::setDisabled(bool disabled)
 void Cache::dumpStats()
 {
     Statistics s = getStatistics();
-    printf("%-11s %-11s %-11s %-11s %-11s %-11s %-11s\n", "", "Count", "Size", "LiveSize", "DecodedSize", "PurgeableSize", "PurgedSize");
-    printf("%-11s %-11s %-11s %-11s %-11s %-11s %-11s\n", "-----------", "-----------", "-----------", "-----------", "-----------", "-----------", "-----------");
-    printf("%-11s %11d %11d %11d %11d %11d %11d\n", "Images", s.images.count, s.images.size, s.images.liveSize, s.images.decodedSize, s.images.purgeableSize, s.images.purgedSize);
-    printf("%-11s %11d %11d %11d %11d %11d %11d\n", "CSS", s.cssStyleSheets.count, s.cssStyleSheets.size, s.cssStyleSheets.liveSize, s.cssStyleSheets.decodedSize, s.cssStyleSheets.purgeableSize, s.cssStyleSheets.purgedSize);
-#if ENABLE(XSLT)
-    printf("%-11s %11d %11d %11d %11d %11d %11d\n", "XSL", s.xslStyleSheets.count, s.xslStyleSheets.size, s.xslStyleSheets.liveSize, s.xslStyleSheets.decodedSize, s.xslStyleSheets.purgeableSize, s.xslStyleSheets.purgedSize);
+#if ENABLE(DISK_IMAGE_CACHE)
+    printf("%-13s %-13s %-13s %-13s %-13s %-13s %-13s %-13s %-13s\n", "", "Count", "Size", "LiveSize", "DecodedSize", "PurgeableSize", "PurgedSize", "Mapped", "\"Real\"");
+    printf("%-13s %-13s %-13s %-13s %-13s %-13s %-13s %-13s %-13s\n", "-------------", "-------------", "-------------", "-------------", "-------------", "-------------", "-------------", "-------------", "-------------");
+    printf("%-13s %13d %13d %13d %13d %13d %13d %13d %13d\n", "Images", s.images.count, s.images.size, s.images.liveSize, s.images.decodedSize, s.images.purgeableSize, s.images.purgedSize, s.images.mappedSize, s.images.size - s.images.mappedSize);
+#else
+    printf("%-13s %-13s %-13s %-13s %-13s %-13s %-13s\n", "", "Count", "Size", "LiveSize", "DecodedSize", "PurgeableSize", "PurgedSize");
+    printf("%-13s %-13s %-13s %-13s %-13s %-13s %-13s\n", "-------------", "-------------", "-------------", "-------------", "-------------", "-------------", "-------------");
+    printf("%-13s %13d %13d %13d %13d %13d %13d\n", "Images", s.images.count, s.images.size, s.images.liveSize, s.images.decodedSize, s.images.purgeableSize, s.images.purgedSize);
 #endif
-    printf("%-11s %11d %11d %11d %11d %11d %11d\n", "JavaScript", s.scripts.count, s.scripts.size, s.scripts.liveSize, s.scripts.decodedSize, s.scripts.purgeableSize, s.scripts.purgedSize);
-    printf("%-11s %11d %11d %11d %11d %11d %11d\n", "Fonts", s.fonts.count, s.fonts.size, s.fonts.liveSize, s.fonts.decodedSize, s.fonts.purgeableSize, s.fonts.purgedSize);
-    printf("%-11s %-11s %-11s %-11s %-11s %-11s %-11s\n\n", "-----------", "-----------", "-----------", "-----------", "-----------", "-----------", "-----------");
+    printf("%-13s %13d %13d %13d %13d %13d %13d\n", "CSS", s.cssStyleSheets.count, s.cssStyleSheets.size, s.cssStyleSheets.liveSize, s.cssStyleSheets.decodedSize, s.cssStyleSheets.purgeableSize, s.cssStyleSheets.purgedSize);
+#if ENABLE(XSLT)
+    printf("%-13s %13d %13d %13d %13d %13d %13d\n", "XSL", s.xslStyleSheets.count, s.xslStyleSheets.size, s.xslStyleSheets.liveSize, s.xslStyleSheets.decodedSize, s.xslStyleSheets.purgeableSize, s.xslStyleSheets.purgedSize);
+#endif
+    printf("%-13s %13d %13d %13d %13d %13d %13d\n", "JavaScript", s.scripts.count, s.scripts.size, s.scripts.liveSize, s.scripts.decodedSize, s.scripts.purgeableSize, s.scripts.purgedSize);
+    printf("%-13s %13d %13d %13d %13d %13d %13d\n", "Fonts", s.fonts.count, s.fonts.size, s.fonts.liveSize, s.fonts.decodedSize, s.fonts.purgeableSize, s.fonts.purgedSize);
+    printf("%-13s %-13s %-13s %-13s %-13s %-13s %-13s\n\n", "-------------", "-------------", "-------------", "-------------", "-------------", "-------------", "-------------");
 }
 
 void Cache::dumpLRULists(bool includeLive) const
 {
+#if ENABLE(DISK_IMAGE_CACHE)
+    printf("LRU-SP lists in eviction order (Kilobytes decoded, Kilobytes encoded, Access count, Referenced, isPurgeable, wasPurged, isMemoryMapped):\n");
+#else
     printf("LRU-SP lists in eviction order (Kilobytes decoded, Kilobytes encoded, Access count, Referenced, isPurgeable, wasPurged):\n");
+#endif
 
     int size = m_allResources.size();
     for (int i = size - 1; i >= 0; i--) {
@@ -765,7 +872,11 @@ void Cache::dumpLRULists(bool includeLive) const
         while (current) {
             CachedResource* prev = current->m_prevInAllResourcesList;
             if (includeLive || !current->hasClients())
+#if ENABLE(DISK_IMAGE_CACHE)
+                printf("(%.1fK, %.1fK, %uA, %dR, %d, %d, %d); ", current->decodedSize() / 1024.0f, (current->encodedSize() + current->overheadSize()) / 1024.0f, current->accessCount(), current->hasClients(), current->isPurgeable(), current->wasPurged(), current->isUsingDiskImageCache());
+#else
                 printf("(%.1fK, %.1fK, %uA, %dR, %d, %d); ", current->decodedSize() / 1024.0f, (current->encodedSize() + current->overheadSize()) / 1024.0f, current->accessCount(), current->hasClients(), current->isPurgeable(), current->wasPurged());
+#endif
 
             current = prev;
         }

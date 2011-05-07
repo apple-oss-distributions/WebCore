@@ -478,12 +478,14 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
     if (isGSFontWeightBold(fontDescription.weight()) || fontDescription.italic())
         actualTraits = GSFontGetTraits(gsFont);
 
-    bool syntheticBold = (traits & GSBoldFontMask) && !(actualTraits & GSBoldFontMask);
-    bool syntheticOblique = (traits & GSItalicFontMask) && !(actualTraits & GSItalicFontMask);  
+    DEFINE_STATIC_LOCAL(AtomicString, appleColorEmoji, ("apple color emoji"));
+    bool isAppleColorEmoji = equalIgnoringCase(family, appleColorEmoji);
+
+    bool syntheticBold = (traits & GSBoldFontMask) && !(actualTraits & GSBoldFontMask) && !isAppleColorEmoji;
+    bool syntheticOblique = (traits & GSItalicFontMask) && !(actualTraits & GSItalicFontMask) && !isAppleColorEmoji;  
 
     FontPlatformData* result = new FontPlatformData(gsFont, syntheticBold, syntheticOblique);
-    DEFINE_STATIC_LOCAL(AtomicString, appleColorEmoji, ("apple color emoji"));
-    if (equalIgnoringCase(family, appleColorEmoji))
+    if (isAppleColorEmoji)
         result->m_isEmoji = true;
     return result;
 }

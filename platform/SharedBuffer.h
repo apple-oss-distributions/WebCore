@@ -117,6 +117,16 @@ public:
     void createPurgeableBuffer() const;
     void shouldUsePurgeableMemory(bool use) { m_shouldUsePurgeableMemory = use; }
 
+#if ENABLE(DISK_IMAGE_CACHE)
+    // Calling this will cause this buffer to be memory mapped.
+    void allowToBeMemoryMapped();
+    bool isAllowedToBeMemoryMapped() const;
+
+    // This is called only once the buffer has been completely memory mapped.
+    void markAsMemoryMapped();
+    bool isMemoryMapped() const { return m_isMemoryMapped; }
+#endif
+
 private:
     SharedBuffer();
     SharedBuffer(const char*, int);
@@ -131,6 +141,10 @@ private:
     mutable Vector<char*> m_segments;
     bool m_shouldUsePurgeableMemory;
     mutable OwnPtr<PurgeableBuffer> m_purgeableBuffer;
+#if ENABLE(DISK_IMAGE_CACHE)
+    bool m_isMemoryMapped;
+    unsigned m_diskImageCacheId; // disk_cache_id_t is unsigned.
+#endif
 #if PLATFORM(CF)
     SharedBuffer(CFDataRef);
     RetainPtr<CFDataRef> m_cfData;

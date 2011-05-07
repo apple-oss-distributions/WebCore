@@ -49,7 +49,7 @@ namespace WebCore {
         virtual void setEncoding(const String&);
         virtual String encoding() const;
         virtual void data(PassRefPtr<SharedBuffer> data, bool allDataReceived);
-        virtual void error();
+        virtual void error(CachedResource::Status);
 
         virtual bool schedule() const { return true; }
 
@@ -57,6 +57,7 @@ namespace WebCore {
     
     private:
         bool canUseSheet(bool enforceMIMEType, bool* hasValidMIMEType) const;
+        virtual PurgePriority purgePriority() const { return PurgeLast; }
 
     protected:
         RefPtr<TextResourceDecoder> m_decoder;

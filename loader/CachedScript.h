@@ -47,7 +47,7 @@ namespace WebCore {
         virtual void setEncoding(const String&);
         virtual String encoding() const;
         virtual void data(PassRefPtr<SharedBuffer> data, bool allDataReceived);
-        virtual void error();
+        virtual void error(CachedResource::Status);
 
         virtual bool schedule() const { return false; }
 
@@ -57,6 +57,7 @@ namespace WebCore {
 
     private:
         void decodedDataDeletionTimerFired(Timer<CachedScript>*);
+        virtual PurgePriority purgePriority() const { return PurgeLast; }
 
         String m_script;
         RefPtr<TextResourceDecoder> m_decoder;

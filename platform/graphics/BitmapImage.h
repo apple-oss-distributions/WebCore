@@ -209,9 +209,6 @@ protected:
 #endif
 
     // Decodes and caches a frame. Never accessed except internally.
-    virtual unsigned animatedImageSize();
-    virtual void disableImageAnimation();
-    bool m_imageAnimationDisabled;
     double m_progressiveLoadChunkTime;
     unsigned m_progressiveLoadChunkCount;
     

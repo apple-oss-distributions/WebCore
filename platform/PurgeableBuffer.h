@@ -26,6 +26,7 @@
 #ifndef PurgeableBuffer_h
 #define PurgeableBuffer_h
 
+#include "PurgePriority.h"
 #include <wtf/Noncopyable.h>
 #include <wtf/Vector.h>
 
@@ -41,9 +42,8 @@ namespace WebCore {
         char* data() const;
         size_t size() const { return m_size; }
         
-        enum PurgePriority { PurgeLast, PurgeMiddle, PurgeFirst, PurgeDefault = PurgeMiddle };
         PurgePriority purgePriority() const { return m_purgePriority; }
-        void setPurgePriority(PurgePriority);
+        void setPurgePriority(PurgePriority priority) { m_purgePriority = priority; }
         
         bool isPurgeable() const { return m_state != NonVolatile; }
         bool wasPurged() const;
@@ -67,7 +67,6 @@ namespace WebCore {
 
     inline PurgeableBuffer::~PurgeableBuffer() { }
     inline char* PurgeableBuffer::data() const { return 0; }
-    inline void PurgeableBuffer::setPurgePriority(PurgePriority) { }
     inline bool PurgeableBuffer::wasPurged() const { return false; }
     inline bool PurgeableBuffer::makePurgeable(bool) { return false; }
 #endif

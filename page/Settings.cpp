@@ -67,7 +67,6 @@ Settings::Settings(Page* page)
     , m_defaultFontSize(0)
     , m_defaultFixedFontSize(0)
     , m_maximumDecodedImageSize(12582912) // Possibly overridden in constructor body
-    , m_maximumResourceDataLength(10485760)
     , m_minimumZoomFontSize(15.0f)
     , m_layoutInterval(cLayoutScheduleThreshold)
     , m_maxParseDuration(defaultTokenizerTimeDelay)
@@ -116,7 +115,6 @@ Settings::Settings(Page* page)
     , m_frameFlatteningEnabled(false)
     , m_standalone(false)
     , m_telephoneNumberParsingEnabled(false)
-    , m_foundationCachingEnabled(false)
     , m_mediaPlaybackAllowsInline(false)
     , m_mediaPlaybackRequiresUserAction(true)
     , m_mediaDataLoadsAutomatically(false)
@@ -472,16 +470,6 @@ void Settings::setAuthorAndUserStylesEnabled(bool authorAndUserStylesEnabled)
 
     m_authorAndUserStylesEnabled = authorAndUserStylesEnabled;
     setNeedsReapplyStylesInAllFrames(m_page);
-}
-
-void Settings::setMaximumResourceDataLength(long long length)
-{
-    m_maximumResourceDataLength = length;
-}
-
-long long Settings::maximumResourceDataLength()
-{
-    return m_maximumResourceDataLength;
 }
 
 void Settings::setStandalone(bool flag)

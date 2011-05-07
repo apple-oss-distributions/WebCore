@@ -38,7 +38,6 @@ module window {
         CustomNativeConverter,
         CustomPutFunction,
         EventTarget,
-        OmitConstructor,
         ExtendsDOMGlobalObject,
         GenerateNativeConverter,
         LegacyParent=JSDOMWindowBase
@@ -66,7 +65,7 @@ module window {
 
         [DoNotCheckDomainSecurity] void focus();
         [DoNotCheckDomainSecurity] void blur();
-        [DoNotCheckDomainSecurity] void close();
+        [DoNotCheckDomainSecurity, CallWith=ScriptExecutionContext] void close();
 
         void print();
         void stop();
@@ -148,9 +147,11 @@ module window {
                                              in DOMString pseudoElement);
 
         // WebKit extensions
+#if defined(LANGUAGE_JAVASCRIPT) && LANGUAGE_JAVASCRIPT
         CSSRuleList getMatchedCSSRules(in Element element,
-                                       in DOMString pseudoElement,
-                                       in [Optional] boolean authorOnly);
+                                       in DOMString pseudoElement);
+#endif
+
         attribute [Replaceable] double devicePixelRatio;
         
         WebKitPoint webkitConvertPointFromPageToNode(in Node node, in WebKitPoint p);
@@ -340,9 +341,6 @@ module window {
         attribute CSSPageRuleConstructor CSSPageRule;
         attribute CSSStyleRuleConstructor CSSStyleRule;
         
-        attribute CSSVariablesRuleConstructor CSSVariablesRule;
-        attribute CSSVariablesDeclarationConstructor CSSVariablesDeclaration;
-
         attribute CSSStyleDeclarationConstructor CSSStyleDeclaration;
         attribute MediaListConstructor MediaList;
         attribute CounterConstructor Counter;

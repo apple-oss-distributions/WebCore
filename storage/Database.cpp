@@ -821,6 +821,7 @@ String Database::fileName() const
 
 void Database::incrementalVacuumIfNeeded()
 {
+    SQLiteTransactionInProgressAutoCounter transactionCounter;
     int64_t freeSpaceSize = m_sqliteDatabase.freeSpaceSize();
     int64_t totalSize = m_sqliteDatabase.totalSize();
     if (totalSize <= 10 * freeSpaceSize)

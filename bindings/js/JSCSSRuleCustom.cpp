@@ -32,14 +32,12 @@
 #include "CSSMediaRule.h"
 #include "CSSPageRule.h"
 #include "CSSStyleRule.h"
-#include "CSSVariablesRule.h"
 #include "JSCSSCharsetRule.h"
 #include "JSCSSFontFaceRule.h"
 #include "JSCSSImportRule.h"
 #include "JSCSSMediaRule.h"
 #include "JSCSSPageRule.h"
 #include "JSCSSStyleRule.h"
-#include "JSCSSVariablesRule.h"
 #include "JSWebKitCSSKeyframeRule.h"
 #include "JSWebKitCSSKeyframesRule.h"
 #include "WebKitCSSKeyframeRule.h"
@@ -48,6 +46,17 @@
 using namespace JSC;
 
 namespace WebCore {
+
+void JSCSSRule::markChildren(MarkStack& markStack)
+{
+    Base::markChildren(markStack);
+
+    if (CSSStyleSheet* parentStyleSheet = impl()->parentStyleSheet())
+        markDOMObjectWrapper(markStack, *Heap::heap(this)->globalData(), parentStyleSheet);
+
+    if (CSSRule* parentRule = impl()->parentRule())
+        markDOMObjectWrapper(markStack, *Heap::heap(this)->globalData(), parentRule);
+}
 
 JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, CSSRule* rule)
 {
@@ -76,9 +85,6 @@ JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, CSSRule* rule)
             break;
         case CSSRule::CHARSET_RULE:
             wrapper = CREATE_DOM_OBJECT_WRAPPER(exec, globalObject, CSSCharsetRule, rule);
-            break;
-        case CSSRule::VARIABLES_RULE:
-            wrapper = CREATE_DOM_OBJECT_WRAPPER(exec, globalObject, CSSVariablesRule, rule);
             break;
         case CSSRule::WEBKIT_KEYFRAME_RULE:
             wrapper = CREATE_DOM_OBJECT_WRAPPER(exec, globalObject, WebKitCSSKeyframeRule, rule);

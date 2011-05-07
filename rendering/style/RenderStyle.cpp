@@ -24,7 +24,6 @@
 
 #include "CSSPropertyNames.h"
 #include "CSSStyleSelector.h"
-#include "CachedImage.h"
 #include "CounterContent.h"
 #include "FontSelector.h"
 #include "RenderArena.h"
@@ -248,6 +247,19 @@ RenderStyle* RenderStyle::addCachedPseudoStyle(PassRefPtr<RenderStyle> pseudo)
     m_cachedPseudoStyles->append(pseudo);
 
     return result;
+}
+
+void RenderStyle::removeCachedPseudoStyle(PseudoId pid)
+{
+    if (!m_cachedPseudoStyles)
+        return;
+    for (size_t i = 0; i < m_cachedPseudoStyles->size(); ++i) {
+        RenderStyle* pseudoStyle = m_cachedPseudoStyles->at(i).get();
+        if (pseudoStyle->styleType() == pid) {
+            m_cachedPseudoStyles->remove(i);
+            return;
+        }
+    }
 }
 
 bool RenderStyle::inheritedNotEqual(const RenderStyle* other) const
@@ -619,7 +631,7 @@ void RenderStyle::setClip(Length top, Length right, Length bottom, Length left)
     data->clip.m_left = left;
 }
 
-void RenderStyle::addCursor(CachedImage* image, const IntPoint& hotSpot)
+void RenderStyle::addCursor(PassRefPtr<StyleImage> image, const IntPoint& hotSpot)
 {
     if (!rareInheritedData.access()->cursorData)
         rareInheritedData.access()->cursorData = CursorList::create();

@@ -65,6 +65,7 @@
 #include "Scrollbar.h"
 #include "SelectionController.h"
 #include "Settings.h"
+#include "StyleCachedImage.h"
 #include "TextEvent.h"
 #include "TextIterator.h"
 #include "UserGestureIndicator.h"
@@ -606,11 +607,11 @@ void EventHandler::updateSelectionForMouseDrag(Node* targetNode, const IntPoint&
     if (!targetNode)
         return;
 
+    if (!canMouseDragExtendSelect(targetNode))
+        return;
+
     RenderObject* targetRenderer = targetNode->renderer();
     if (!targetRenderer)
-        return;
-        
-    if (!canMouseDragExtendSelect(targetNode))
         return;
 
     VisiblePosition targetPosition(targetRenderer->positionForPoint(localPoint));

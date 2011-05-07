@@ -30,10 +30,19 @@
 
 #include "PurgeableBuffer.h"
 
+#if ENABLE(DISK_IMAGE_CACHE)
+#include "DiskImageCache.h"
+#endif
+
 namespace WebCore {
 
 SharedBuffer::SharedBuffer(CFDataRef cfData)
     : m_size(0)
+    , m_shouldUsePurgeableMemory(false)
+#if ENABLE(DISK_IMAGE_CACHE)
+    , m_isMemoryMapped(false)
+    , m_diskImageCacheId(DiskImageCache::invalidDiskCacheId)
+#endif
     , m_cfData(cfData)
 {
 }

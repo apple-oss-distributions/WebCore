@@ -76,6 +76,8 @@ namespace WebCore {
         JSDOMWindowShell* shell() const;
 
         static JSC::JSGlobalData* commonJSGlobalData();
+        static bool commonJSGlobalDataExists();
+        static JSC::JSGlobalData*& commonJSGlobalDataInternal();
 
     private:
         struct JSDOMWindowBaseData : public JSDOMGlobalObjectData {

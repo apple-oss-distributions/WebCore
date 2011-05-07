@@ -29,6 +29,7 @@
 
 #include "WebGLRenderingContext.h"
 
+#include "CachedImage.h"
 #include "CanvasPixelArray.h"
 #include "Console.h"
 #include "DOMWindow.h"
@@ -1792,8 +1793,13 @@ void WebGLRenderingContext::polygonOffset(double factor, double units)
     cleanupAfterGraphicsCall(false);
 }
 
-PassRefPtr<ArrayBufferView> WebGLRenderingContext::readPixels(long x, long y, unsigned long width, unsigned long height, unsigned long format, unsigned long type)
+PassRefPtr<ArrayBufferView> WebGLRenderingContext::readPixels(long x, long y, unsigned long width, unsigned long height, unsigned long format, unsigned long type, ExceptionCode& ec)
 {
+    if (!canvas()->originClean()) {
+        ec = SECURITY_ERR;
+        return 0;
+    }
+
     // Validate input parameters.
     unsigned long componentsPerPixel, bytesPerComponent;
     if (!m_context->computeFormatAndTypeParameters(format, type, &componentsPerPixel, &bytesPerComponent)) {
@@ -2026,6 +2032,7 @@ void WebGLRenderingContext::texImage2D(unsigned target, unsigned level, unsigned
         m_context->synthesizeGLError(GraphicsContext3D::INVALID_VALUE);
         return;
     }
+    checkOrigin(image);
     texImage2DImpl(target, level, internalformat, format, type, image->cachedImage()->image(),
                    m_unpackFlipY, m_unpackPremultiplyAlpha, ec);
 }
@@ -2038,6 +2045,7 @@ void WebGLRenderingContext::texImage2D(unsigned target, unsigned level, unsigned
         m_context->synthesizeGLError(GraphicsContext3D::INVALID_VALUE);
         return;
     }
+    checkOrigin(canvas);
     texImage2DImpl(target, level, internalformat, format, type, canvas->buffer()->image(),
                    m_unpackFlipY, m_unpackPremultiplyAlpha, ec);
 }
@@ -2111,6 +2119,7 @@ void WebGLRenderingContext::texImage2D(unsigned target, unsigned level, HTMLImag
         m_context->synthesizeGLError(GraphicsContext3D::INVALID_VALUE);
         return;
     }
+    checkOrigin(image);
     texImage2DImpl(target, level, GraphicsContext3D::RGBA, GraphicsContext3D::RGBA, GraphicsContext3D::UNSIGNED_BYTE, image->cachedImage()->image(), flipY, premultiplyAlpha, ec);
 }
 
@@ -2137,6 +2146,7 @@ void WebGLRenderingContext::texImage2D(unsigned target, unsigned level, HTMLCanv
         m_context->synthesizeGLError(GraphicsContext3D::INVALID_VALUE);
         return;
     }
+    checkOrigin(canvas);
     texImage2DImpl(target, level, GraphicsContext3D::RGBA, GraphicsContext3D::RGBA, GraphicsContext3D::UNSIGNED_BYTE, canvas->buffer()->image(), flipY, premultiplyAlpha, ec);
 }
 

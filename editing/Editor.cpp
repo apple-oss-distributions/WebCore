@@ -1862,6 +1862,7 @@ void Editor::markBadGrammar(const VisibleSelection& selection)
 #endif
 }
 
+
 static inline bool isAmbiguousBoundaryCharacter(UChar character)
 {
     // These are characters that can behave as word boundaries, but can appear within words.
@@ -2044,6 +2045,7 @@ void Editor::markAllMisspellingsAndBadGrammarInRanges(bool markSpelling, Range* 
         }
     }
 }
+
 
 
 void Editor::markMisspellingsAndBadGrammar(const VisibleSelection& spellingSelection, bool markGrammar, const VisibleSelection& grammarSelection)

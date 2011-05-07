@@ -266,7 +266,6 @@ z-index
 -webkit-user-drag
 -webkit-user-modify
 -webkit-user-select
--webkit-variable-declaration-block
 -webkit-touch-callout
 -webkit-tap-highlight-color
 -webkit-composition-fill-color

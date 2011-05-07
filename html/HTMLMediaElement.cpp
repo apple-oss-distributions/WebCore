@@ -500,9 +500,9 @@ void HTMLMediaElement::load(bool isUserGesture, ExceptionCode& ec)
         prepareForLoad();
         loadInternal();
 
-        // If this method was called directly by the user, tell the media engine to start loading data as 
-        // soon as the movie validates.
-        if (isUserGesture)
+        // If this method was called directly by the user or the application allows any script to trigger playback, 
+        // tell the media engine to start loading data as soon as the movie validates.
+        if (isUserGesture || (document()->settings() && !document()->settings()->mediaPlaybackRequiresUserAction()))
             m_player->prepareToPlay();
     }
 }
@@ -1740,13 +1740,13 @@ bool HTMLMediaElement::endedPlayback() const
     // readyState attribute is HAVE_METADATA or greater, 
     if (m_readyState < HAVE_METADATA)
         return false;
-    
-    // and the current playback position is the end of the media resource and the direction 
+
+    // and the current playback position is the end of the media resource and the direction
     // of playback is forwards and the media element does not have a loop attribute specified,
     float now = currentTime();
     if (m_playbackRate > 0)
-        return now >= dur && !loop();
-    
+        return dur > 0 && now >= dur && !loop();
+
     // or the current playback position is the earliest possible position and the direction 
     // of playback is backwards
     if (m_playbackRate < 0)
@@ -2058,6 +2058,17 @@ void HTMLMediaElement::getPluginProxyParams(KURL& url, Vector<String>& names, Ve
         && (applicationIsDumpRenderTree() || hasAttribute(webkit_playsinlineAttr))) {
         names.append("_media_element_allow_inline_");
         values.append("true");
+    }
+
+    String attributeValue = getAttribute(x_webkit_airplayAttr);
+    if (equalIgnoringCase(attributeValue, "allow") || equalIgnoringCase(attributeValue, "deny")) {
+        names.append("_media_element_airplay_");
+        values.append(attributeValue);
+    }
+
+    if (hasAttribute(data_youtube_idAttr)) {
+        names.append("_media_element_youtube_video_id_");
+        values.append(getAttribute(data_youtube_idAttr));
     }
 }
 

@@ -26,12 +26,17 @@
 #include "CachePolicy.h"
 #include "FrameLoaderTypes.h"
 #include "PlatformString.h"
+#include "PurgePriority.h"
 #include "ResourceResponse.h"
 #include <wtf/HashCountedSet.h>
 #include <wtf/HashSet.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/Vector.h>
 #include <time.h>
+
+#if ENABLE(DISK_IMAGE_CACHE)
+#include "SharedBuffer.h"
+#endif
 
 namespace WebCore {
 
@@ -40,8 +45,8 @@ class CachedResourceClient;
 class CachedResourceHandleBase;
 class DocLoader;
 class InspectorResource;
-class Request;
 class PurgeableBuffer;
+class Request;
 
 // A resource that is held in the cache. Classes who want to use this object should derive
 // from CachedResourceClient, to get the function calls in case the requested data has arrived.
@@ -65,11 +70,11 @@ public:
     };
 
     enum Status {
-        NotCached,    // this URL is not cached
         Unknown,      // let cache decide what to do with it
-        New,          // inserting new item
         Pending,      // only partially loaded
-        Cached        // regular case
+        Cached,       // regular case
+        LoadError,
+        DecodeError
     };
 
     CachedResource(const String& url, Type);
@@ -81,8 +86,8 @@ public:
     virtual void setEncoding(const String&) { }
     virtual String encoding() const { return String(); }
     virtual void data(PassRefPtr<SharedBuffer> data, bool allDataReceived) = 0;
-    virtual void error() = 0;
-    virtual void httpStatusCodeError() { error(); } // Images keep loading in spite of HTTP errors (for legacy compat with <img>, etc.).
+    virtual void error(CachedResource::Status) = 0;
+    virtual void httpStatusCodeError() { error(LoadError); } // Images keep loading in spite of HTTP errors (for legacy compat with <img>, etc.).
 
     const String &url() const { return m_url; }
     Type type() const { return static_cast<Type>(m_type); }
@@ -156,8 +161,7 @@ public:
     String accept() const { return m_accept; }
     void setAccept(const String& accept) { m_accept = accept; }
 
-    bool errorOccurred() const { return m_errorOccurred; }
-    void setErrorOccurred(bool b) { m_errorOccurred = b; }
+    bool errorOccurred() const { return (status() == LoadError || status() == DecodeError); }
 
     bool sendResourceLoadCallbacks() const { return m_sendResourceLoadCallbacks; }
     
@@ -184,6 +188,12 @@ public:
     // triggering a load. We should make it protected again if we can find a
     // better way to handle the archive case.
     bool makePurgeable(bool purgeable);
+
+#if ENABLE(DISK_IMAGE_CACHE)
+    bool isUsingDiskImageCache() const { return m_data && m_data->isAllowedToBeMemoryMapped(); }
+    virtual bool canUseDiskImageCache() const { return false; }
+    virtual void useDiskImageCache() { ASSERT(canUseDiskImageCache()); }
+#endif
 
 protected:
     void setEncodedSize(unsigned);
@@ -214,6 +224,7 @@ private:
     void switchClientsToRevalidatedResource();
     void clearResourceToRevalidate();
     void updateResponseAfterRevalidation(const ResourceResponse& validatingResponse);
+    virtual PurgePriority purgePriority() const { return PurgeDefault; }
 
     double currentAge() const;
     double freshnessLifetime() const;
@@ -232,7 +243,6 @@ private:
     bool m_requestedFromNetworkingLayer : 1;
     bool m_sendResourceLoadCallbacks : 1;
 
-    bool m_errorOccurred : 1;
     bool m_inCache : 1;
     bool m_loading : 1;
 

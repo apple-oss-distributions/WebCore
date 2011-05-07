@@ -30,6 +30,11 @@ namespace WebCore {
 
 typedef int ExceptionCode;
 
+enum CSSRuleFilter {
+    AllCSSRules,
+    SameOriginCSSRulesOnly
+}; 
+
 class CSSRule : public StyleBase {
 public:
     // FIXME: Change name to Type.
@@ -41,8 +46,8 @@ public:
         MEDIA_RULE,
         FONT_FACE_RULE,
         PAGE_RULE,
-        VARIABLES_RULE,
-        WEBKIT_KEYFRAMES_RULE,
+        // 7 used to be VARIABLES_RULE
+        WEBKIT_KEYFRAMES_RULE = 8,
         WEBKIT_KEYFRAME_RULE
     };
 

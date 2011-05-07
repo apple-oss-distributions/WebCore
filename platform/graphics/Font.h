@@ -226,6 +226,11 @@ public:
 #endif
 
 private:
+    bool loadingCustomFonts() const
+    {
+        return m_fontList && m_fontList->loadingCustomFonts();
+    }
+
     FontDescription m_fontDescription;
     mutable RefPtr<FontFallbackList> m_fontList;
     float m_letterSpacing;

@@ -258,7 +258,7 @@ sub IndexGetterReturnsStrings
 {
     my $type = shift;
 
-    return 1 if $type eq "CSSStyleDeclaration" or $type eq "MediaList" or $type eq "CSSVariablesDeclaration";
+    return 1 if $type eq "CSSStyleDeclaration" or $type eq "MediaList";
     return 0;
 }
 
@@ -1609,6 +1609,12 @@ sub GenerateImplementation
                 push(@implContent, "JSValue ${constructorFunctionName}(ExecState* exec, JSValue slotBase, const Identifier&)\n");
                 push(@implContent, "{\n");
                 push(@implContent, "    ${className}* domObject = static_cast<$className*>(asObject(slotBase));\n");
+
+                if ($dataNode->extendedAttributes->{"CheckDomainSecurity"}) {
+                    push(@implContent, "    if (!domObject->allowsAccessFrom(exec))\n");
+                    push(@implContent, "        return jsUndefined();\n");
+                }
+
                 push(@implContent, "    return ${className}::getConstructor(exec, domObject->globalObject());\n");
                 push(@implContent, "}\n");
             }
@@ -1883,6 +1889,11 @@ sub GenerateImplementation
                             $callWithArg = "dynamicFrame";
                         } elsif ($callWith eq "ScriptState") {
                             $callWithArg = "exec";
+                        } elsif ($callWith eq "ScriptExecutionContext") {
+                            push(@implContent, "    ScriptExecutionContext* scriptContext = static_cast<JSDOMGlobalObject*>(exec->lexicalGlobalObject())->scriptExecutionContext();\n");
+                            push(@implContent, "    if (!scriptContext)\n");
+                            push(@implContent, "        return jsUndefined();\n");
+                            $callWithArg = "scriptContext"; 
                         }
                         $functionString .= ", " if $paramIndex;
                         $functionString .= $callWithArg;
@@ -2734,7 +2745,19 @@ public:
     ${constructorClassName}(ExecState* exec, JSDOMGlobalObject* globalObject)
         : DOMConstructorObject(${constructorClassName}::createStructure(globalObject->objectPrototype()), globalObject)
     {
+EOF
+
+    if ($interfaceName eq "DOMWindow") {
+$implContent .= << "EOF";
+        putDirect(exec->propertyNames().prototype, globalObject->prototype(), None);
+EOF
+    } else {
+$implContent .= << "EOF";
         putDirect(exec->propertyNames().prototype, ${protoClassName}::self(exec, globalObject), None);
+EOF
+    }
+
+$implContent .= << "EOF";
     }
     virtual bool getOwnPropertySlot(ExecState*, const Identifier&, PropertySlot&);
     virtual bool getOwnPropertyDescriptor(ExecState*, const Identifier&, PropertyDescriptor&);

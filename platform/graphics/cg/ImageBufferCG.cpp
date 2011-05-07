@@ -110,6 +110,12 @@ ImageBuffer::~ImageBuffer()
     fastFree(m_data.m_data);
 }
 
+size_t ImageBuffer::dataSize() const
+{
+    unsigned bytesPerRow = m_size.width() * 4;
+    return m_size.height() * bytesPerRow;
+}
+
 GraphicsContext* ImageBuffer::context() const
 {
     return m_context.get();

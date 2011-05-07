@@ -4,6 +4,7 @@
  * Copyright (C) 2007 Alp Toker <alp@atoker.com>
  * Copyright (C) 2008 Eric Seidel <eric@webkit.org>
  * Copyright (C) 2008 Dirk Schulze <krit@webkit.org>
+ * Copyright (C) 2010 Torch Mobile (Beijing) Co. Ltd. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -169,12 +170,7 @@ void CanvasRenderingContext2D::setStrokeStyle(PassRefPtr<CanvasStyle> style)
     if (!style)
         return;
 
-    if (canvas()->originClean()) {
-        if (CanvasPattern* pattern = style->canvasPattern()) {
-            if (!pattern->originClean())
-                canvas()->setOriginTainted();
-        }
-    }
+    checkOrigin(style->canvasPattern());
 
     state().m_strokeStyle = style;
     GraphicsContext* c = drawingContext();
@@ -193,12 +189,7 @@ void CanvasRenderingContext2D::setFillStyle(PassRefPtr<CanvasStyle> style)
     if (!style)
         return;
  
-    if (canvas()->originClean()) {
-        if (CanvasPattern* pattern = style->canvasPattern()) {
-            if (!pattern->originClean())
-                canvas()->setOriginTainted();
-        }
-    }
+    checkOrigin(style->canvasPattern());
 
     state().m_fillStyle = style;
     GraphicsContext* c = drawingContext();
@@ -946,17 +937,6 @@ static inline FloatRect normalizeRect(const FloatRect& rect)
         max(rect.height(), -rect.height()));
 }
 
-void CanvasRenderingContext2D::checkOrigin(const KURL& url)
-{
-    if (canvas()->securityOrigin().taintsCanvas(url))
-        canvas()->setOriginTainted();
-}
-
-void CanvasRenderingContext2D::checkOrigin(const String& url)
-{
-    checkOrigin(KURL(KURL(), url));
-}
-
 void CanvasRenderingContext2D::drawImage(HTMLImageElement* image, float x, float y, ExceptionCode& ec)
 {
     if (!image) {
@@ -1018,11 +998,7 @@ void CanvasRenderingContext2D::drawImage(HTMLImageElement* image, const FloatRec
     if (!cachedImage)
         return;
 
-    if (canvas()->originClean())
-        checkOrigin(cachedImage->response().url());
-
-    if (canvas()->originClean() && !cachedImage->image()->hasSingleSecurityOrigin())
-        canvas()->setOriginTainted();
+    checkOrigin(image);
 
     FloatRect sourceRect = c->roundToDevicePixels(srcRect);
     FloatRect destRect = c->roundToDevicePixels(dstRect);
@@ -1089,8 +1065,7 @@ void CanvasRenderingContext2D::drawImage(HTMLCanvasElement* sourceCanvas, const 
     if (!buffer)
         return;
 
-    if (!sourceCanvas->originClean())
-        canvas()->setOriginTainted();
+    checkOrigin(sourceCanvas);
 
     c->drawImage(buffer->image(), DeviceColorSpace, destRect, sourceRect, state().m_globalComposite);
     willDraw(destRect); // This call comes after drawImage, since the buffer we draw into may be our own, and we need to make sure it is dirty.
@@ -1150,11 +1125,7 @@ void CanvasRenderingContext2D::drawImage(HTMLVideoElement* video, const FloatRec
     if (!state().m_invertibleCTM)
         return;
 
-    if (canvas()->originClean())
-        checkOrigin(video->currentSrc());
-
-    if (canvas()->originClean() && !video->hasSingleSecurityOrigin())
-        canvas()->setOriginTainted();
+    checkOrigin(video);
 
     FloatRect sourceRect = c->roundToDevicePixels(srcRect);
     FloatRect destRect = c->roundToDevicePixels(dstRect);
@@ -1183,11 +1154,7 @@ void CanvasRenderingContext2D::drawImageFromRect(HTMLImageElement* image,
     if (!cachedImage)
         return;
 
-    if (canvas()->originClean())
-        checkOrigin(cachedImage->response().url());
-
-    if (canvas()->originClean() && !cachedImage->image()->hasSingleSecurityOrigin())
-        canvas()->setOriginTainted();
+    checkOrigin(image);
 
     GraphicsContext* c = drawingContext();
     if (!c)
@@ -1469,7 +1436,16 @@ void CanvasRenderingContext2D::setFont(const String& newFont)
     state().m_font.update(styleSelector->fontSelector());
     state().m_realizedFont = true;
 }
-        
+
+void CanvasRenderingContext2D::updateFont()
+{
+    if (!state().m_realizedFont)
+        return;
+
+    const Font& font = state().m_font;
+    font.update(font.fontSelector());
+}
+
 String CanvasRenderingContext2D::textAlign() const
 {
     return textAlignName(state().m_textAlign);
@@ -1532,7 +1508,7 @@ void CanvasRenderingContext2D::drawTextInternal(const String& text, float x, flo
         return;
     
     const Font& font = accessFont();
-
+    
     // FIXME: Handle maxWidth.
     // FIXME: Need to turn off font smoothing.
 
@@ -1635,6 +1611,8 @@ void CanvasRenderingContext2D::drawTextInternal(const String& text, float x, flo
 
 const Font& CanvasRenderingContext2D::accessFont()
 {
+    canvas()->document()->updateStyleIfNeeded();
+
     if (!state().m_realizedFont)
         setFont(state().m_unparsedFont);
     return state().m_font;

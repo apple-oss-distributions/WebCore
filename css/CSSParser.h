@@ -42,7 +42,6 @@ namespace WebCore {
     class CSSStyleSheet;
     class CSSValue;
     class CSSValueList;
-    class CSSVariablesDeclaration;
     class Document;
     class MediaList;
     class MediaQueryExp;
@@ -158,8 +157,6 @@ namespace WebCore {
         PassRefPtr<CSSValueList> parseTransform();
         bool parseTransformOrigin(int propId, int& propId1, int& propId2, int& propId3, RefPtr<CSSValue>&, RefPtr<CSSValue>&, RefPtr<CSSValue>&);
         bool parsePerspectiveOrigin(int propId, int& propId1, int& propId2,  RefPtr<CSSValue>&, RefPtr<CSSValue>&);
-        bool parseVariable(CSSVariablesDeclaration*, const String& variableName, const String& variableValue);
-        void parsePropertyWithResolvedVariables(int propId, bool important, CSSMutableStyleDeclaration*, CSSParserValueList*);
 
         int yyparse();
 
@@ -183,7 +180,6 @@ namespace WebCore {
         CSSRuleList* createRuleList();
         CSSRule* createStyleRule(Vector<CSSSelector*>* selectors);
         CSSRule* createFontFaceRule();
-        CSSRule* createVariablesRule(MediaList*, bool variablesKeyword);
         CSSRule* createPageRule(CSSSelector* pageSelector);
         CSSRule* createMarginAtRule(CSSSelector::MarginBoxType marginBox);
         void startDeclarationsForMarginBox();
@@ -199,10 +195,6 @@ namespace WebCore {
 
         void addNamespace(const AtomicString& prefix, const AtomicString& uri);
 
-        bool addVariable(const CSSParserString&, CSSParserValueList*);
-        bool addVariableDeclarationBlock(const CSSParserString&);
-        bool checkForVariables(CSSParserValueList*);
-        void addUnresolvedProperty(int propId, bool important);
         void invalidBlockHit();
 
         Vector<CSSSelector*>* reusableSelectorVector() { return &m_reusableSelectorVector; }
@@ -230,9 +222,6 @@ namespace WebCore {
         bool m_hasFontFaceOnlyValues;
         bool m_hadSyntacticallyValidCSSRule;
 
-        Vector<String> m_variableNames;
-        Vector<RefPtr<CSSValue> > m_variableValues;
-
         AtomicString m_defaultNamespace;
 
         // tokenizer methods and data
@@ -252,8 +241,6 @@ namespace WebCore {
         bool inShorthand() const { return m_inParseShorthand; }
 
         void checkForOrphanedUnits();
-        
-        void clearVariables();
 
         void deleteFontFaceOnlyValues();
 
@@ -282,7 +269,6 @@ namespace WebCore {
         int m_lastSelectorLine;
 
         bool m_allowImportRules;
-        bool m_allowVariablesRules;
         bool m_allowNamespaceDeclarations;
 
         Vector<RefPtr<StyleBase> > m_parsedStyleObjects;

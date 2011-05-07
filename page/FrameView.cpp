@@ -50,6 +50,7 @@
 #include "RenderPart.h"
 #include "RenderScrollbar.h"
 #include "RenderScrollbarPart.h"
+#include "RenderText.h"
 #include "RenderTheme.h"
 #include "RenderView.h"
 #include "Settings.h"
@@ -659,14 +660,14 @@ void FrameView::layout(bool allowSubtree)
     // Viewport-dependent media queries may cause us to need completely different style information.
     // Check that here.
     if (document->styleSelector()->affectedByViewportChange())
-        document->updateStyleSelector();
+        document->styleSelectorChanged(RecalcStyleImmediately);
 
     // Always ensure our style info is up-to-date.  This can happen in situations where
     // the layout beats any sort of style recalc update that needs to occur.
     if (m_frame->needsReapplyStyles())
         m_frame->reapplyStyles();
-    else if (document->childNeedsStyleRecalc())
-        document->recalcStyle();
+    else
+        document->updateStyleIfNeeded();
     
     bool subtree = m_layoutRoot;
 
@@ -1035,8 +1036,11 @@ bool FrameView::scrollToAnchor(const String& name)
             if (anchorNode && anchorNode->hasTagName(SVGNames::viewTag)) {
                 RefPtr<SVGViewElement> viewElement = anchorNode->hasTagName(SVGNames::viewTag) ? static_cast<SVGViewElement*>(anchorNode) : 0;
                 if (viewElement.get()) {
-                    RefPtr<SVGSVGElement> svg = static_cast<SVGSVGElement*>(SVGLocatable::nearestViewportElement(viewElement.get()));
-                    svg->inheritViewAttributes(viewElement.get());
+                    SVGElement* element = SVGLocatable::nearestViewportElement(viewElement.get());
+                    if (element->hasTagName(SVGNames::svgTag)) {
+                        RefPtr<SVGSVGElement> svg = static_cast<SVGSVGElement*>(element);
+                        svg->inheritViewAttributes(viewElement.get());
+                    }
                 }
             }
         }
@@ -1177,6 +1181,28 @@ IntSize FrameView::offsetInWindow() const
     curOffset += parentView->offsetInWindow();
     
     return curOffset;
+}
+
+
+static unsigned countRenderedCharactersInRenderObjectWithThreshold(RenderObject *obj, unsigned countSoFar, unsigned threshold)
+{
+    if (obj->isText())
+        countSoFar += toRenderText(obj)->text()->length();
+
+    for (RenderObject *child = obj->firstChild(); child; child = child->nextSibling()) {
+        if (countSoFar >= threshold)
+            break;
+        countSoFar = countRenderedCharactersInRenderObjectWithThreshold(child, countSoFar, threshold);
+    }
+
+    return countSoFar;
+}
+
+bool FrameView::renderedCharactersExceed(unsigned threshold)
+{
+    if (!m_frame->contentRenderer())
+        return 0;
+    return countRenderedCharactersInRenderObjectWithThreshold(m_frame->contentRenderer(), 0, threshold) >= threshold;
 }
 
 

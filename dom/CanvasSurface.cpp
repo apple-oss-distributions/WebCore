@@ -129,6 +129,8 @@ void CanvasSurface::createImageBuffer() const
         return;
     m_imageBuffer->context()->scale(FloatSize(size.width() / unscaledSize.width(), size.height() / unscaledSize.height()));
     m_imageBuffer->context()->setShadowsIgnoreTransforms(true);
+    
+    createdImageBuffer(m_imageBuffer->dataSize());
 }
 
 GraphicsContext* CanvasSurface::drawingContext() const

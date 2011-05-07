@@ -380,7 +380,7 @@ void Loader::Host::servePendingRequests(RequestQueue& requestsPending, bool& ser
         } else {            
             docLoader->decrementRequestCount();
             docLoader->setLoadInProgress(true);
-            request->cachedResource()->error();
+            request->cachedResource()->error(CachedResource::LoadError);
             docLoader->setLoadInProgress(false);
             delete request;
         }
@@ -413,7 +413,8 @@ void Loader::Host::didFinishLoading(SubresourceLoader* loader)
     if (!resource->errorOccurred()) {
         docLoader->setLoadInProgress(true);
         resource->data(loader->resourceData(), true);
-        resource->finish();
+        if (!resource->errorOccurred())
+            resource->finish();
     }
 
     delete request;
@@ -460,7 +461,7 @@ void Loader::Host::didFail(SubresourceLoader* loader, bool cancelled)
 
     if (!cancelled) {
         docLoader->setLoadInProgress(true);
-        resource->error();
+        resource->error(CachedResource::LoadError);
     }
     
     docLoader->setLoadInProgress(false);
@@ -550,7 +551,7 @@ void Loader::Host::didReceiveData(SubresourceLoader* loader, const char* data, i
     
     if (resource->errorOccurred())
         return;
-        
+
     if (resource->response().httpStatusCode() / 100 == 4) {
         // Treat a 4xx response like a network error for all resources but images (which will ignore the error and continue to load for 
         // legacy compatibility).

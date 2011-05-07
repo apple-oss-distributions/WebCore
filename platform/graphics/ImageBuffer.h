@@ -72,6 +72,8 @@ namespace WebCore {
         const IntSize& size() const { return m_size; }
         GraphicsContext* context() const;
 
+        size_t dataSize() const;
+
         Image* image() const;
 
         void clearImage() { m_image.clear(); }

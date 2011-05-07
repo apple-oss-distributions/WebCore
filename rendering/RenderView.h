@@ -46,6 +46,8 @@ public:
 
     virtual bool requiresLayer() const { return true; }
 
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const;
+
     virtual void layout();
     virtual void calcWidth();
     virtual void calcHeight();

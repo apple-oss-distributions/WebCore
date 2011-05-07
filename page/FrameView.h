@@ -102,6 +102,7 @@ public:
     bool needsFullRepaint() const { return m_doFullRepaint; }
     IntSize offsetInWindow() const;
     void setFrameRect(const IntRect &rect);
+    bool renderedCharactersExceed(unsigned threshold);
 
 #if USE(ACCELERATED_COMPOSITING)
     void updateCompositingLayers();

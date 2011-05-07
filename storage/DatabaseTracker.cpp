@@ -1295,6 +1295,10 @@ void DatabaseTracker::setDatabasesPaused(bool paused)
             DatabaseSet::iterator k = databaseSet->begin();
             DatabaseSet::iterator dbSetEnd = databaseSet->end();
             for (; k != dbSetEnd; ++k) {
+                // If the database is not open it could be in the process of shutting down but
+                // has not infomed this thread yet.
+                if (!(*k)->opened())
+                    continue;
                 ScriptExecutionContext* context = (*k)->scriptExecutionContext();
                 if (context) {
                     DatabaseThread* thread = context->databaseThread();

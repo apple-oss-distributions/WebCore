@@ -69,9 +69,9 @@ public:
     {
         return adoptRef(new CSSMutableStyleDeclaration(parentRule, properties, numProperties));
     }
-    static PassRefPtr<CSSMutableStyleDeclaration> create(const Vector<CSSProperty>& properties, unsigned variableDependentValueCount)
+    static PassRefPtr<CSSMutableStyleDeclaration> create(const Vector<CSSProperty>& properties)
     {
-        return adoptRef(new CSSMutableStyleDeclaration(0, properties, variableDependentValueCount));
+        return adoptRef(new CSSMutableStyleDeclaration(0, properties));
     }
 
     CSSMutableStyleDeclaration& operator=(const CSSMutableStyleDeclaration&);
@@ -129,8 +129,6 @@ public:
 
     void merge(CSSMutableStyleDeclaration*, bool argOverridesOnConflict = true);
 
-    bool hasVariableDependentValue() const { return m_variableDependentValueCount > 0; }
-    
     void setStrictParsing(bool b) { m_strictParsing = b; }
     bool useStrictParsing() const { return m_strictParsing; }
 
@@ -141,7 +139,7 @@ protected:
 
 private:
     CSSMutableStyleDeclaration();
-    CSSMutableStyleDeclaration(CSSRule* parentRule, const Vector<CSSProperty>&, unsigned variableDependentValueCount);
+    CSSMutableStyleDeclaration(CSSRule* parentRule, const Vector<CSSProperty>&);
     CSSMutableStyleDeclaration(CSSRule* parentRule, const CSSProperty* const *, int numProperties);
 
     virtual PassRefPtr<CSSMutableStyleDeclaration> makeMutable();
@@ -162,7 +160,6 @@ private:
     Vector<CSSProperty, 4> m_properties;
 
     Node* m_node;
-    unsigned m_variableDependentValueCount : 24;
     bool m_strictParsing : 1;
 #ifndef NDEBUG
     unsigned m_iteratorCount : 4;

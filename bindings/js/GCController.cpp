@@ -72,6 +72,10 @@ void GCController::gcTimerFired(Timer<GCController>*)
 void GCController::garbageCollectNow()
 {
     JSLock lock(SilenceAssertionsOnly);
+    // If JavaScript was never run in this process, there's no need to call GC which will
+    // end up creating a JSGlobalData unnecessarily.
+    if (!JSDOMWindow::commonJSGlobalDataExists())
+        return;
     if (!JSDOMWindow::commonJSGlobalData()->heap.isBusy())
         collect(0);
 }

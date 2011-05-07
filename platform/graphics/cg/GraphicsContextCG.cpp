@@ -55,11 +55,13 @@
 #include <wtf/HashMap.h>
 #include <wtf/UnusedParam.h>
 
+
 // Building on 10.6 or later: kCGInterpolationMedium is defined in the CGInterpolationQuality enum.
 #define HAVE_CG_INTERPOLATION_MEDIUM 1
 
 // Targeting 10.6 or later: use kCGInterpolationMedium.
 #define WTF_USE_CG_INTERPOLATION_MEDIUM 1
+
 
 using namespace std;
 

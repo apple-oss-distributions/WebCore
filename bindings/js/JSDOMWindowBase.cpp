@@ -168,7 +168,7 @@ JSGlobalData* JSDOMWindowBase::commonJSGlobalData()
 {
     ASSERT(isMainThread() || pthread_main_np());
 
-    static JSGlobalData* globalData = 0;
+    JSGlobalData*& globalData = commonJSGlobalDataInternal();
     if (!globalData) {
         globalData = JSGlobalData::createLeaked(ThreadStackTypeLarge).releaseRef();
         globalData->timeoutChecker.setTimeoutInterval(10000); // 10 seconds
@@ -178,6 +178,18 @@ JSGlobalData* JSDOMWindowBase::commonJSGlobalData()
     }
 
     return globalData;
+}
+
+bool JSDOMWindowBase::commonJSGlobalDataExists()
+{
+    return commonJSGlobalDataInternal();
+}
+
+JSGlobalData*& JSDOMWindowBase::commonJSGlobalDataInternal()
+{
+    ASSERT(isMainThread() || pthread_main_np());
+    static JSGlobalData* commonJSGlobalData;
+    return commonJSGlobalData;
 }
 
 void JSDOMWindowBase::destroyJSDOMWindowBaseData(void* jsDOMWindowBaseData)

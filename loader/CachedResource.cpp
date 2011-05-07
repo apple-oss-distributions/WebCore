@@ -61,7 +61,6 @@ CachedResource::CachedResource(const String& url, Type type)
     , m_inLiveDecodedResourcesList(false)
     , m_requestedFromNetworkingLayer(false)
     , m_sendResourceLoadCallbacks(true)
-    , m_errorOccurred(false)
     , m_inCache(false)
     , m_loading(false)
     , m_type(type)
@@ -382,7 +381,7 @@ void CachedResource::updateResponseAfterRevalidation(const ResourceResponse& val
     
 bool CachedResource::canUseCacheValidator() const
 {
-    if (m_loading || m_errorOccurred)
+    if (m_loading || errorOccurred())
         return false;
 
     if (m_response.cacheControlContainsNoStore())
@@ -395,7 +394,7 @@ bool CachedResource::canUseCacheValidator() const
     
 bool CachedResource::mustRevalidate(CachePolicy cachePolicy) const
 {
-    if (m_errorOccurred)
+    if (errorOccurred())
         return true;
 
     if (m_loading)
@@ -412,6 +411,14 @@ bool CachedResource::mustRevalidate(CachePolicy cachePolicy) const
 
 bool CachedResource::isSafeToMakePurgeable() const
 { 
+#if ENABLE(DISK_IMAGE_CACHE)
+    // It does not make sense to have a resource in the disk image cache
+    // (memory mapped on disk) and purgeable (in memory). So do not allow
+    // disk image cached resources to be purgeable.
+    if (isUsingDiskImageCache())
+        return false;
+#endif
+
     return !hasClients() && !m_proxyResource && !m_resourceToRevalidate;
 }
 
@@ -436,6 +443,7 @@ bool CachedResource::makePurgeable(bool purgeable)
             return false;
 
         m_purgeableData.set(m_data->releasePurgeableBuffer());
+        m_purgeableData->setPurgePriority(purgePriority());
         
         m_purgeableData->makePurgeable(true);
         m_data.clear();

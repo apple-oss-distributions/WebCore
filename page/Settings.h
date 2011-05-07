@@ -233,15 +233,9 @@ namespace WebCore {
         void setStandalone(bool flag);
         bool standalone() const { return m_standalone; }
 
-        void setMaximumResourceDataLength(long long length);
-        long long maximumResourceDataLength();
-
         void setTelephoneNumberParsingEnabled(bool flag) { m_telephoneNumberParsingEnabled = flag; }
         bool telephoneNumberParsingEnabled() const { return m_telephoneNumberParsingEnabled; }
         
-        void setFoundationCachingEnabled(bool flag) { m_foundationCachingEnabled = flag; }
-        bool foundationCachingEnabled() const { return m_foundationCachingEnabled; }
-
         void setMediaPlaybackAllowsInline(bool flag) { m_mediaPlaybackAllowsInline = flag; }
         bool mediaPlaybackAllowsInline() const { return m_mediaPlaybackAllowsInline; }
 
@@ -376,7 +370,6 @@ namespace WebCore {
         int m_defaultFontSize;
         int m_defaultFixedFontSize;
         size_t m_maximumDecodedImageSize;
-        long long m_maximumResourceDataLength;
         float m_minimumZoomFontSize;
         int m_layoutInterval;
         double m_maxParseDuration;
@@ -425,7 +418,6 @@ namespace WebCore {
         bool m_frameFlatteningEnabled : 1;
         bool m_standalone : 1;     
         bool m_telephoneNumberParsingEnabled : 1;
-        bool m_foundationCachingEnabled : 1;
         bool m_mediaPlaybackAllowsInline : 1;
         bool m_mediaPlaybackRequiresUserAction : 1;
         bool m_mediaDataLoadsAutomatically : 1;

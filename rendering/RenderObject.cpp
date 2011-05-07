@@ -256,6 +256,15 @@ bool RenderObject::isHR() const
     return node() && node()->hasTagName(hrTag);
 }
 
+bool RenderObject::isLegend() const
+{
+    return node() && (node()->hasTagName(legendTag)
+#if ENABLE(WML)
+                      || node()->hasTagName(WMLNames::insertedLegendTag)
+#endif
+                     );
+}
+
 bool RenderObject::isHTMLMarquee() const
 {
     return node() && node()->renderer() == this && node()->hasTagName(marqueeTag);
@@ -1222,9 +1231,16 @@ void RenderObject::collectSelectionRects(Vector<SelectionRect>& rects, unsigned 
 {
     Vector<FloatQuad> quads;
 
-    if (!firstChild())
-        absoluteQuads(quads);
-    else {
+    if (!firstChild()) {
+        // WebKit's position for an empty span after a BR is incorrect, so we can't trust 
+        // quads for them.  We don't need selection rects for those anyway though, since they 
+        // are just empty containers.
+        // See https://bugs.webkit.org/show_bug.cgi?id=49358
+        RenderObject* previous = previousSibling();
+        Node* n = node();
+        if (!(previous && previous->isBR() && n && n->isContainerNode() && isInline()))
+            absoluteQuads(quads);
+    } else {
         unsigned offset = start;
         for (RenderObject* child = childAt(start); child && offset < end; child = child->nextSibling(), ++offset)
             child->absoluteQuads(quads);

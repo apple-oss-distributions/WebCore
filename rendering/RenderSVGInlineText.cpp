@@ -138,11 +138,25 @@ InlineTextBox* RenderSVGInlineText::createTextBox()
     return box;
 }
 
-IntRect RenderSVGInlineText::localCaretRect(InlineBox*, int, int*)
+IntRect RenderSVGInlineText::localCaretRect(InlineBox* box, int caretOffset, int*)
 {
-    // SVG doesn't have any editable content where a caret rect would be needed.
-    // FIXME: That's not sufficient. The localCaretRect function is also used for selection.
-    return IntRect();
+    if (!box->isInlineTextBox())
+        return IntRect();
+		
+    InlineTextBox* textBox = static_cast<InlineTextBox*>(box);
+    if (static_cast<unsigned>(caretOffset) < textBox->start() || static_cast<unsigned>(caretOffset) > textBox->start() + textBox->len())
+        return IntRect();
+        
+    // Use the edge of the selection rect to determine the caret rect.
+    if (static_cast<unsigned>(caretOffset) < textBox->start() + textBox->len()) {
+        IntRect rect = textBox->selectionRect(0, 0, caretOffset, caretOffset + 1);
+        int x = box->direction() == LTR ? rect.x() : rect.right();
+        return IntRect(x, rect.y(), caretWidth, rect.height());
+    }
+    
+    IntRect rect = textBox->selectionRect(0, 0, caretOffset - 1, caretOffset);
+    int x = box->direction() == LTR ? rect.right() : rect.x();
+    return IntRect(x, rect.y(), caretWidth, rect.height());
 }
 
 VisiblePosition RenderSVGInlineText::positionForPoint(const IntPoint& point)

@@ -60,6 +60,10 @@ namespace WebCore {
     extern WTFLogChannel LogProgress;
     extern WTFLogChannel LogFileAPI;
 
+#if ENABLE(DISK_IMAGE_CACHE)
+    extern WTFLogChannel LogDiskImageCache;
+#endif
+
     void InitializeLoggingChannelsIfNecessary();
     WTFLogChannel* getChannelFromName(const String& channelName);
 }

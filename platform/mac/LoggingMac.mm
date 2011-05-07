@@ -69,6 +69,10 @@ void InitializeLoggingChannelsIfNecessary()
     initializeWithUserDefault(LogMedia);
     initializeWithUserDefault(LogPlugins);
     initializeWithUserDefault(LogArchives);
+
+#if ENABLE(DISK_IMAGE_CACHE)
+    initializeWithUserDefault(LogDiskImageCache);
+#endif
 }
 
 }

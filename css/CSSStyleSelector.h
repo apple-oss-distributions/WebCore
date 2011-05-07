@@ -23,6 +23,7 @@
 #define CSSStyleSelector_h
 
 #include "CSSFontSelector.h"
+#include "CSSRule.h"
 #include "LinkHash.h"
 #include "MediaQueryExp.h"
 #include "RenderStyle.h"
@@ -49,8 +50,6 @@ class CSSSelector;
 class CSSStyleRule;
 class CSSStyleSheet;
 class CSSValue;
-class CSSVariableDependentValue;
-class CSSVariablesRule;
 class DataGridColumn;
 class Document;
 class Element;
@@ -115,8 +114,8 @@ public:
 
     public:
         // These methods will give back the set of rules that matched for a given element (or a pseudo-element).
-        PassRefPtr<CSSRuleList> styleRulesForElement(Element*, bool authorOnly);
-        PassRefPtr<CSSRuleList> pseudoStyleRulesForElement(Element*, PseudoId, bool authorOnly);
+        PassRefPtr<CSSRuleList> styleRulesForElement(Element*, bool authorOnly, CSSRuleFilter filter = AllCSSRules);
+        PassRefPtr<CSSRuleList> pseudoStyleRulesForElement(Element*, PseudoId, bool authorOnly, CSSRuleFilter filter = AllCSSRules);
 
         // Given a CSS keyword in the range (xx-small to -webkit-xxx-large), this function will return
         // the correct font size scaled relative to the user's default (medium).
@@ -155,10 +154,6 @@ public:
 
         void allVisitedStateChanged() { m_checker.allVisitedStateChanged(); }
         void visitedStateChanged(LinkHash visitedHash) { m_checker.visitedStateChanged(visitedHash); }
-
-        void addVariables(CSSVariablesRule* variables);
-        CSSValue* resolveVariableDependentValue(CSSVariableDependentValue*);
-        void resolveVariablesForDeclaration(CSSMutableStyleDeclaration* decl, CSSMutableStyleDeclaration* newDecl, HashSet<String>& usedBlockVariables);
 
         void addKeyframeStyle(PassRefPtr<WebKitCSSKeyframesRule> rule);
         void addPageStyle(PassRefPtr<CSSPageRule>);
@@ -216,6 +211,7 @@ public:
             Document* m_document;
             bool m_strictParsing;
             bool m_collectRulesOnly;
+            bool m_sameOriginOnly;
             PseudoId m_pseudoStyle;
             bool m_documentIsHTML;
             mutable bool m_matchVisitedPseudoClass;
@@ -300,9 +296,6 @@ public:
         HashSet<AtomicStringImpl*> m_selectorAttrs;
         Vector<CSSMutableStyleDeclaration*> m_additionalAttributeStyleDecls;
         Vector<MediaQueryResult*> m_viewportDependentMediaQueryResults;
-        
-        HashMap<String, CSSVariablesRule*> m_variablesMap;
-        HashMap<CSSMutableStyleDeclaration*, RefPtr<CSSMutableStyleDeclaration> > m_resolvedVariablesDeclarations;
     };
 
     class CSSRuleData : public Noncopyable {

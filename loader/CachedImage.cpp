@@ -49,6 +49,10 @@
 #include "SVGImage.h"
 #endif
 
+#if ENABLE(DISK_IMAGE_CACHE)
+#include "DiskImageCache.h"
+#endif
+
 using std::max;
 
 namespace WebCore {
@@ -271,21 +275,6 @@ bool CachedImage::checkOutOfMemory()
             return true;
     return false;
 }
-
-unsigned CachedImage::animatedImageSize()
-{
-    if (!m_image)
-        return 0;
-    return m_image->animatedImageSize();
-}
-    
-void CachedImage::stopAnimatedImage()
-{
-    if (!m_image)
-        return;
-    m_image->disableImageAnimation();
-}
-    
     
 void CachedImage::data(PassRefPtr<SharedBuffer> data, bool allDataReceived)
 {
@@ -310,7 +299,7 @@ void CachedImage::data(PassRefPtr<SharedBuffer> data, bool allDataReceived)
         size_t estimatedDecodedImageSize = s.width() * s.height() * 4; // no overflow check
         if (m_image->isNull() || (maxDecodedImageSize > 0 && estimatedDecodedImageSize > maxDecodedImageSize) || checkOutOfMemory())
         {
-            error();
+            error(errorOccurred() ? status() : DecodeError);
             if (inCache())
                 cache()->remove(this);
             return;
@@ -330,10 +319,11 @@ void CachedImage::data(PassRefPtr<SharedBuffer> data, bool allDataReceived)
     }
 }
 
-void CachedImage::error()
+void CachedImage::error(CachedResource::Status status)
 {
     clear();
-    setErrorOccurred(true);
+    setStatus(status);
+    ASSERT(errorOccurred() || httpStatusCodeErrorOccurred());
     m_data.clear();
     notifyObservers();
     setLoading(false);
@@ -436,10 +426,66 @@ bool CachedImage::shouldDecodeFrame(const Image* /*image*/, const IntSize& frame
 #endif
 }
 
+#if ENABLE(DISK_IMAGE_CACHE)
+bool CachedImage::canUseDiskImageCache() const
+{
+    if (isLoading() || errorOccurred())
+        return false;
+
+    if (!m_data)
+        return false;
+
+    if (isPurgeable())
+        return false;
+
+    if (m_data->size() < diskImageCache()->minimumImageSize())
+        return false;
+
+    // "Cache-Control: no-store" resources may be marked as such because they may
+    // contain sensitive information. We should not write these resources to disk.
+    if (m_response.cacheControlContainsNoStore())
+        return false;
+
+    // Testing shows that PDF images did not work when memory mapped.
+    // However, SVG images and Bitmap images were fine. See:
+    // <rdar://problem/8591834> Disk Image Cache should support PDF Images
+    if (m_response.mimeType() == "application/pdf")
+        return false;
+
+    return true;
+}
+
+void CachedImage::useDiskImageCache()
+{
+    ASSERT(canUseDiskImageCache());
+    ASSERT(!isUsingDiskImageCache());
+
+    m_data->allowToBeMemoryMapped();
+}
+#endif
+
 void CachedImage::changedInRect(const Image* image, const IntRect& rect)
 {
     if (image == m_image)
         notifyObservers(&rect);
+}
+
+CachedImageManual::CachedImageManual(const String& url, Image* image)
+    : CachedImage(image)
+    , m_fakeClient(new CachedResourceClient)
+{
+    m_url = url;
+    // Use the incoming URL in the response field. This ensures that code
+    // using the response directly, such as origin checks for security,
+    // actually see something.
+    m_response.setURL(KURL(ParsedURLString, url));
+    setStatus(Cached);
+    setLoading(false);
+}
+
+CachedImageManual::~CachedImageManual()
+{
+    delete m_fakeClient;
 }
 
 } //namespace WebCore

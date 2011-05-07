@@ -62,6 +62,10 @@ WTFLogChannel LogArchives =          { 0x04000000, "WebCoreLogLevel", WTFLogChan
 WTFLogChannel LogProgress =          { 0x08000000, "WebCoreLogLevel", WTFLogChannelOff };
 WTFLogChannel LogFileAPI =           { 0x10000000, "WebCoreLogLevel", WTFLogChannelOff };
 
+#if ENABLE(DISK_IMAGE_CACHE)
+WTFLogChannel LogDiskImageCache =    { 0x00000010, "IOSWebCoreLogLevel", WTFLogChannelOff };
+#endif
+
 WTFLogChannel* getChannelFromName(const String& channelName)
 {
     if (!(channelName.length() >= 2))
@@ -132,6 +136,11 @@ WTFLogChannel* getChannelFromName(const String& channelName)
 
     if (equalIgnoringCase(channelName, String("FileAPI")))
         return &LogFileAPI;
+
+#if ENABLE(DISK_IMAGE_CACHE)
+    if (equalIgnoringCase(channelName, String("DiskImageCache")))
+        return &LogDiskImageCache;
+#endif
 
     return 0;
 }

@@ -35,6 +35,8 @@
 #include <wtf/Noncopyable.h>
 #include <wtf/Vector.h>
 
+#include "ImageSource.h"
+
 namespace WebCore  {
 
 class CachedCSSStyleSheet;
@@ -90,7 +92,12 @@ public:
         int decodedSize;
         int purgeableSize;
         int purgedSize;
+#if ENABLE(DISK_IMAGE_CACHE)
+        int mappedSize;
+        TypeStatistic() : count(0), size(0), liveSize(0), decodedSize(0), purgeableSize(0), purgedSize(0), mappedSize(0) { }
+#else
         TypeStatistic() : count(0), size(0), liveSize(0), decodedSize(0), purgeableSize(0), purgedSize(0) { }
+#endif
         void addResource(CachedResource*);
     };
     
@@ -169,6 +176,10 @@ public:
 
     static bool shouldMakeResourcePurgeableOnEviction();
 
+#if ENABLE(DISK_IMAGE_CACHE)
+    void flushCachedImagesToDisk(); // Flush encoded data from resources still referenced by Web pages.
+#endif
+
     // Function to collect cache statistics for the caches window in the Safari Debug menu.
     Statistics getStatistics();
 
@@ -186,8 +197,10 @@ private:
     unsigned liveCapacity() const;
     unsigned deadCapacity() const;
     
-    void pruneDeadResources(); // Flush decoded and encoded data from resources not referenced by Web pages.
 public:
+    bool addImageToCache(NativeImagePtr image, const KURL& url);
+    void removeImageFromCache(const KURL& url);
+    void pruneDeadResources(); // Flush decoded and encoded data from resources not referenced by Web pages.
     void pruneLiveResources(bool critical = false); // Flush decoded data from resources still referenced by Web pages.
 private:
 

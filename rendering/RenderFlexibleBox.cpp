@@ -652,7 +652,7 @@ void RenderFlexibleBox::layoutVerticalBox(bool relayoutChildren)
         while (child) {
             if (!child->isPositioned()) {
                 if (relayoutChildren || (child->isReplaced() && (child->style()->width().isPercent() || child->style()->height().isPercent())) ||
-                    (child->style()->height().isAuto() && child->isBlockFlow() && !child->needsLayout())) {
+                    (child->style()->height().isAuto() && child->isBlockFlow())) {
                     child->setChildNeedsLayout(true, false);
                     
                     // Dirty all the positioned objects.

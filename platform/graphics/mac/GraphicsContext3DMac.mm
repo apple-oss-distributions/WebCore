@@ -809,10 +809,6 @@ void GraphicsContext3D::releaseShaderCompiler()
 void GraphicsContext3D::renderbufferStorage(unsigned long target, unsigned long internalformat, unsigned long width, unsigned long height)
 {
     ensureContext(m_contextObj);
-    if (internalformat == DEPTH_STENCIL)
-        internalformat = GL_DEPTH24_STENCIL8_EXT;
-    else if (internalformat == DEPTH_COMPONENT16)
-        internalformat = GL_DEPTH_COMPONENT;
     ::glRenderbufferStorageEXT(target, internalformat, width, height);
 }
 

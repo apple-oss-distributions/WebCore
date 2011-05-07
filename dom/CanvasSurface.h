@@ -84,6 +84,7 @@ public:
 
     void setMaxiumDecodedImageSize(float maximumDecodedImageSize) { m_maximumDecodedImageSize = maximumDecodedImageSize; }
     float maximumDecodedImageSize() { return m_maximumDecodedImageSize; }
+    virtual void createdImageBuffer(size_t) const { }
 
 protected:
     void setSurfaceSize(const IntSize&);

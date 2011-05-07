@@ -50,7 +50,6 @@ class WebGLUniformLocation;
 class HTMLImageElement;
 class HTMLVideoElement;
 class ImageData;
-class WebKitCSSMatrix;
 
     class WebGLRenderingContext : public CanvasRenderingContext {
     public:
@@ -182,7 +181,7 @@ class WebKitCSSMatrix;
         void pixelStorei(unsigned long pname, long param);
         void polygonOffset(double factor, double units);
         
-        PassRefPtr<ArrayBufferView> readPixels(long x, long y, unsigned long width, unsigned long height, unsigned long format, unsigned long type);
+        PassRefPtr<ArrayBufferView> readPixels(long x, long y, unsigned long width, unsigned long height, unsigned long format, unsigned long type, ExceptionCode&);
         
         void releaseShaderCompiler();
         void renderbufferStorage(unsigned long target, unsigned long internalformat, unsigned long width, unsigned long height);

@@ -240,7 +240,6 @@ void CSSPrimitiveValue::cleanup()
         case CSS_STRING:
         case CSS_URI:
         case CSS_ATTR:
-        case CSS_PARSER_VARIABLE_FUNCTION_SYNTAX:
         case CSS_PARSER_HEXCOLOR:
             if (m_value.string)
                 m_value.string->deref();
@@ -422,19 +421,12 @@ double CSSPrimitiveValue::computeLengthDouble(RenderStyle* style, RenderStyle* r
     return zoomedResult;
 }
 
-void CSSPrimitiveValue::setFloatValue(unsigned short unitType, double floatValue, ExceptionCode& ec)
+void CSSPrimitiveValue::setFloatValue(unsigned short, double, ExceptionCode& ec)
 {
-    ec = 0;
-
-    if (m_type < CSS_NUMBER || m_type > CSS_DIMENSION || unitType < CSS_NUMBER || unitType > CSS_DIMENSION) {
-        ec = INVALID_ACCESS_ERR;
-        return;
-    }
-
-    cleanup();
-
-    m_value.num = floatValue;
-    m_type = unitType;
+    // Keeping values immutable makes optimizations easier and allows sharing of the primitive value objects. 
+    // No other engine supports mutating style through this API. Computed style is always read-only anyway.
+    // Supporting setter would require making primitive value copy-on-write and taking care of style invalidation.
+    ec = NO_MODIFICATION_ALLOWED_ERR;
 }
 
 static double scaleFactorForConversion(unsigned short unitType)
@@ -511,23 +503,12 @@ double CSSPrimitiveValue::getDoubleValue(unsigned short unitType)
 }
 
 
-void CSSPrimitiveValue::setStringValue(unsigned short stringType, const String& stringValue, ExceptionCode& ec)
+void CSSPrimitiveValue::setStringValue(unsigned short, const String&, ExceptionCode& ec)
 {
-    ec = 0;
-
-    if (m_type < CSS_STRING || m_type > CSS_ATTR || stringType < CSS_STRING || stringType > CSS_ATTR) {
-        ec = INVALID_ACCESS_ERR;
-        return;
-    }
-
-    cleanup();
-
-    if (stringType != CSS_IDENT) {
-        m_value.string = stringValue.impl();
-        m_value.string->ref();
-        m_type = stringType;
-    }
-    // FIXME: parse ident
+    // Keeping values immutable makes optimizations easier and allows sharing of the primitive value objects. 
+    // No other engine supports mutating style through this API. Computed style is always read-only anyway.
+    // Supporting setter would require making primitive value copy-on-write and taking care of style invalidation.
+    ec = NO_MODIFICATION_ALLOWED_ERR;
 }
 
 String CSSPrimitiveValue::getStringValue(ExceptionCode& ec) const
@@ -537,7 +518,6 @@ String CSSPrimitiveValue::getStringValue(ExceptionCode& ec) const
         case CSS_STRING:
         case CSS_ATTR:
         case CSS_URI:
-        case CSS_PARSER_VARIABLE_FUNCTION_SYNTAX:
             return m_value.string;
         case CSS_IDENT:
             return valueOrPropertyName(m_value.ident);
@@ -555,7 +535,6 @@ String CSSPrimitiveValue::getStringValue() const
         case CSS_STRING:
         case CSS_ATTR:
         case CSS_URI:
-        case CSS_PARSER_VARIABLE_FUNCTION_SYNTAX:
              return m_value.string;
         case CSS_IDENT:
             return valueOrPropertyName(m_value.ident);
@@ -823,11 +802,6 @@ String CSSPrimitiveValue::cssText() const
             }
             break;
 #endif
-        case CSS_PARSER_VARIABLE_FUNCTION_SYNTAX:
-            text = "-webkit-var(";
-            text += m_value.string;
-            text += ")";
-            break;
         case CSS_PARSER_OPERATOR: {
             char c = static_cast<char>(m_value.ident);
             text = String(&c, 1U);
@@ -874,7 +848,6 @@ CSSParserValue CSSPrimitiveValue::parserValue() const
             break;
         case CSS_STRING:
         case CSS_URI:
-        case CSS_PARSER_VARIABLE_FUNCTION_SYNTAX:
         case CSS_PARSER_HEXCOLOR:
             value.string.characters = const_cast<UChar*>(m_value.string->characters());
             value.string.length = m_value.string->length();

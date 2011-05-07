@@ -119,7 +119,6 @@
 #include "SegmentedString.h"
 #include "SelectionController.h"
 #include "Settings.h"
-#include "StringBuffer.h"
 #include "StyleSheetList.h"
 #include "TextEvent.h"
 #include "TextIterator.h"
@@ -143,6 +142,7 @@
 #include <wtf/MainThread.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/StdLibExtras.h>
+#include <wtf/text/StringBuffer.h>
 
 #if ENABLE(SHARED_WORKERS)
 #include "SharedWorkerRepository.h"
@@ -380,6 +380,7 @@ Document::Document(Frame* frame, bool isXHTML, bool isHTML)
     , m_domtree_version(0)
     , m_styleSheets(StyleSheetList::create(this))
     , m_styleRecalcTimer(this, &Document::styleRecalcTimerFired)
+    , m_pendingStyleRecalcShouldForce(false)
     , m_frameElementsShouldIgnoreScrolling(false)
     , m_containsValidityStyleRules(false)
     , m_updateFocusAppearanceRestoresSelection(false)
@@ -428,7 +429,6 @@ Document::Document(Frame* frame, bool isXHTML, bool isHTML)
     , m_deviceOrientationController(DeviceOrientationController::create(m_deviceOrientationClient.get()))
     , m_isTelephoneNumberParsingEnabled(false)
     , m_totalImageDataSize(0)
-    , m_animatedImageDataCount(0)
 {
     m_document = this;
 
@@ -597,6 +597,17 @@ Document::~Document()
 
     if (m_styleSheets)
         m_styleSheets->documentDestroyed();
+
+    if (m_elemSheet)
+        m_elemSheet->clearOwnerNode();
+    if (m_mappedElementSheet)
+        m_mappedElementSheet->clearOwnerNode();
+    if (m_pageUserSheet)
+        m_pageUserSheet->clearOwnerNode();
+    if (m_pageGroupUserSheets) {
+        for (size_t i = 0; i < m_pageGroupUserSheets->size(); ++i)
+            (*m_pageGroupUserSheets)[i]->clearOwnerNode();
+    }
 
     m_weakReference->clear();
 }
@@ -1358,7 +1369,7 @@ void Document::scheduleStyleRecalc()
     if (m_styleRecalcTimer.isActive() || inPageCache())
         return;
 
-    ASSERT(childNeedsStyleRecalc());
+    ASSERT(childNeedsStyleRecalc() || m_pendingStyleRecalcShouldForce);
 
     if (!documentsThatNeedStyleRecalc)
         documentsThatNeedStyleRecalc = new HashSet<Document*>;
@@ -1381,6 +1392,11 @@ void Document::unscheduleStyleRecalc()
         documentsThatNeedStyleRecalc->remove(this);
 
     m_styleRecalcTimer.stop();
+}
+
+bool Document::isPendingStyleRecalc() const
+{
+    return m_styleRecalcTimer.isActive() && !m_inStyleRecalc;
 }
 
 void Document::styleRecalcTimerFired(Timer<Document>*)
@@ -1469,14 +1485,16 @@ void Document::updateStyleIfNeeded()
 {
     ASSERT(!view() || (!view()->isInLayout() && !view()->isPainting()));
     
-    if (!childNeedsStyleRecalc() || inPageCache())
+    if ((!m_pendingStyleRecalcShouldForce && !childNeedsStyleRecalc()) || inPageCache())
         return;
-        
+
     if (m_frame)
         m_frame->animation()->beginAnimationUpdate();
         
-    recalcStyle(NoChange);
+    recalcStyle(m_pendingStyleRecalcShouldForce ? Force : NoChange);
     
+    m_pendingStyleRecalcShouldForce = false;
+
     // Tell the animation controller that updateStyleIfNeeded is finished and it can do any post-processing
     if (m_frame)
         m_frame->animation()->endAnimationUpdate();
@@ -1491,7 +1509,6 @@ void Document::updateStyleForAllDocuments()
         HashSet<Document*>::iterator it = documentsThatNeedStyleRecalc->begin();
         Document* doc = *it;
         documentsThatNeedStyleRecalc->remove(doc);
-        ASSERT(doc->childNeedsStyleRecalc() && !doc->inPageCache());
         doc->updateStyleIfNeeded();
     }
 }
@@ -1529,7 +1546,7 @@ void Document::updateLayoutIgnorePendingStylesheets()
         // suspend JS instead of doing a layout with inaccurate information.
         if (body() && !body()->renderer() && m_pendingSheetLayout == NoLayoutWithPendingSheets) {
             m_pendingSheetLayout = DidLayoutWithPendingSheets;
-            updateStyleSelector();
+            styleSelectorChanged(RecalcStyleImmediately);
         } else if (m_hasNodesWithPlaceholderStyle)
             // If new nodes have been added or style recalc has been done with style sheets still pending, some nodes 
             // may not have had their real style calculated yet. Normally this gets cleaned when style sheets arrive 
@@ -1716,8 +1733,11 @@ void Document::clearAXObjectCache()
 {
     // clear cache in top document
     if (m_axObjectCache) {
-        delete m_axObjectCache;
+        // Clear the cache member variable before calling delete because attempts
+        // are made to access it during destruction.
+        AXObjectCache* axObjectCache = m_axObjectCache;
         m_axObjectCache = 0;
+        delete axObjectCache;
         return;
     }
     
@@ -2186,7 +2206,7 @@ CSSStyleSheet* Document::pageUserSheet()
 void Document::clearPageUserSheet()
 {
     m_pageUserSheet = 0;
-    updateStyleSelector();
+    styleSelectorChanged(DeferRecalcStyle);
 }
 
 const Vector<RefPtr<CSSStyleSheet> >* Document::pageGroupUserSheets() const
@@ -2228,7 +2248,7 @@ void Document::clearPageGroupUserSheets()
 {
     m_pageGroupUserSheets.clear();
     m_pageGroupUserSheetCacheValid = false;
-    updateStyleSelector();
+    styleSelectorChanged(DeferRecalcStyle);
 }
 
 CSSStyleSheet* Document::elementSheet()
@@ -2392,7 +2412,7 @@ void Document::processHttpEquiv(const String& equiv, const String& content)
         // -dwh
         m_selectedStylesheetSet = content;
         m_preferredStylesheetSet = content;
-        updateStyleSelector();
+        styleSelectorChanged(DeferRecalcStyle);
     } else if (equalIgnoringCase(equiv, "refresh")) {
         double delay;
         String url;
@@ -2665,9 +2685,7 @@ String Document::selectedStylesheetSet() const
 void Document::setSelectedStylesheetSet(const String& aString)
 {
     m_selectedStylesheetSet = aString;
-    updateStyleSelector();
-    if (renderer())
-        renderer()->repaint();
+    styleSelectorChanged(DeferRecalcStyle);
 }
 
 // This method is called whenever a top-level stylesheet has finished loading.
@@ -2683,27 +2701,24 @@ void Document::removePendingSheet()
         printf("Stylesheet loaded at time %d. %d stylesheets still remain.\n", elapsedTime(), m_pendingStylesheets);
 #endif
 
-    updateStyleSelector();
-    
-    if (!m_pendingStylesheets && m_tokenizer)
+    styleSelectorChanged(RecalcStyleImmediately);
+
+    if (m_pendingStylesheets)
+        return;
+
+    if (m_tokenizer)
         m_tokenizer->executeScriptsWaitingForStylesheets();
 
-    if (!m_pendingStylesheets && m_gotoAnchorNeededAfterStylesheetsLoad && view())
+    if (m_gotoAnchorNeededAfterStylesheetsLoad && view())
         view()->scrollToFragment(m_frame->loader()->url());
 }
 
-void Document::updateStyleSelector()
+void Document::styleSelectorChanged(StyleSelectorUpdateFlag updateFlag)
 {
     // Don't bother updating, since we haven't loaded all our style info yet
     // and haven't calculated the style selector for the first time.
-    if (!m_didCalculateStyleSelector && !haveStylesheetsLoaded())
+    if (!attached() || (!m_didCalculateStyleSelector && !haveStylesheetsLoaded()))
         return;
-
-    if (didLayoutWithPendingStylesheets() && m_pendingStylesheets <= 0) {
-        m_pendingSheetLayout = IgnoreLayoutWithPendingSheets;
-        if (renderer())
-            renderer()->repaint();
-    }
 
 #ifdef INSTRUMENT_LAYOUT_SCHEDULING
     if (!ownerElement())
@@ -2711,6 +2726,19 @@ void Document::updateStyleSelector()
 #endif
 
     recalcStyleSelector();
+    
+    if (updateFlag == DeferRecalcStyle) {
+        m_pendingStyleRecalcShouldForce = true;
+        scheduleStyleRecalc();
+        return;
+    }
+    
+    if (didLayoutWithPendingStylesheets() && m_pendingStylesheets <= 0) {
+        m_pendingSheetLayout = IgnoreLayoutWithPendingSheets;
+        if (renderer())
+            renderer()->repaint();
+    }
+
     // This recalcStyle initiates a new recalc cycle. We need to bracket it to
     // make sure animations get the correct update time
     if (m_frame)
@@ -2787,7 +2815,8 @@ void Document::recalcStyleSelector()
         StyleSheet* sheet = 0;
 
         if (n->nodeType() == PROCESSING_INSTRUCTION_NODE) {
-            // Processing instruction (XML documents only)
+            // Processing instruction (XML documents only).
+            // We don't support linking to embedded CSS stylesheets, see <https://bugs.webkit.org/show_bug.cgi?id=49281> for discussion.
             ProcessingInstruction* pi = static_cast<ProcessingInstruction*>(n);
             sheet = pi->sheet();
 #if ENABLE(XSLT)
@@ -2799,25 +2828,6 @@ void Document::recalcStyleSelector()
                 return;
             }
 #endif
-            if (!sheet && !pi->localHref().isEmpty()) {
-                // Processing instruction with reference to an element in this document - e.g.
-                // <?xml-stylesheet href="#mystyle">, with the element
-                // <foo id="mystyle">heading { color: red; }</foo> at some location in
-                // the document
-                Element* elem = getElementById(pi->localHref().impl());
-                if (elem) {
-                    String sheetText("");
-                    for (Node* c = elem->firstChild(); c; c = c->nextSibling()) {
-                        if (c->nodeType() == TEXT_NODE || c->nodeType() == CDATA_SECTION_NODE)
-                            sheetText += c->nodeValue();
-                    }
-
-                    RefPtr<CSSStyleSheet> cssSheet = CSSStyleSheet::create(this);
-                    cssSheet->parseString(sheetText);
-                    pi->setCSSStyleSheet(cssSheet);
-                    sheet = cssSheet.get();
-                }
-            }
         } else if ((n->isHTMLElement() && (n->hasTagName(linkTag) || n->hasTagName(styleTag)))
 #if ENABLE(SVG)
             ||  (n->isSVGElement() && n->hasTagName(SVGNames::styleTag))
@@ -3114,6 +3124,18 @@ void Document::attachNodeIterator(NodeIterator *ni)
 void Document::detachNodeIterator(NodeIterator *ni)
 {
     m_nodeIterators.remove(ni);
+}
+
+void Document::moveNodeIteratorsToNewDocument(Node* node, Document* newDocument)
+{
+    HashSet<NodeIterator*> nodeIteratorsList = m_nodeIterators;
+    HashSet<NodeIterator*>::const_iterator nodeIteratorsEnd = nodeIteratorsList.end();
+    for (HashSet<NodeIterator*>::const_iterator it = nodeIteratorsList.begin(); it != nodeIteratorsEnd; ++it) {
+        if ((*it)->root() == node) {
+            detachNodeIterator(*it);
+            newDocument->attachNodeIterator(*it);
+        }
+    }
 }
 
 void Document::nodeChildrenChanged(ContainerNode* container)
@@ -3678,7 +3700,7 @@ void Document::setInPageCache(bool flag)
         m_savedRenderer = renderer();
         if (FrameView* v = view())
             v->resetScrollbars();
-        unscheduleStyleRecalc();
+        m_styleRecalcTimer.stop();
     } else {
         ASSERT(renderer() == 0 || renderer() == m_savedRenderer);
         ASSERT(m_renderArena);
@@ -5319,18 +5341,6 @@ unsigned long Document::totalImageDataSize()
     ASSERT(topDocument() == this);
     // This is not fully accurate, it not include CSS loaded images for example
     return m_totalImageDataSize;
-}        
-
-void Document::incrementAnimatedImageDataCount(unsigned count)
-{
-    ASSERT(topDocument() == this);
-    m_animatedImageDataCount += count;
-}
-
-unsigned long Document::animatedImageDataCount()
-{
-    ASSERT(topDocument() == this);
-    return m_animatedImageDataCount;
 }        
 
 

@@ -66,6 +66,20 @@ JSC::JSValue setWebGLArrayFromArray(JSC::ExecState* exec, T* webGLArray, JSC::Ar
     return JSC::throwError(exec, JSC::SyntaxError);
 }
 
+template <typename JSType, typename WebCoreType>
+static JSC::JSValue toJSArrayBufferView(JSC::ExecState* exec, JSDOMGlobalObject* globalObject, WebCoreType* object)
+{
+    if (!object)
+        return JSC::jsNull();
+
+    if (DOMObject* wrapper = getCachedDOMObjectWrapper(exec, object))
+        return wrapper;
+
+    exec->heap()->reportExtraMemoryCost(object->byteLength());
+
+    return createDOMObjectWrapper<JSType>(exec, globalObject, object);
 }
+
+} // namespace WebCore
 
 #endif // JSWebGLArrayHelper_h

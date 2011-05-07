@@ -47,7 +47,6 @@ static int frameBytes(const IntSize& frameSize)
 
 BitmapImage::BitmapImage(ImageObserver* observer)
     : Image(observer)
-    , m_imageAnimationDisabled(false)
     , m_progressiveLoadChunkTime(0)
     , m_progressiveLoadChunkCount(0)
     , m_currentFrame(0)
@@ -491,16 +490,4 @@ bool BitmapImage::internalAdvanceAnimation(bool skippingFrames)
     return advancedAnimation;
 }
 
-unsigned BitmapImage::animatedImageSize()
-{
-    if (frameCount() <= 1)
-        return 0;
-    return (width() * height() * 4 * frameCount());
-}
-    
-void BitmapImage::disableImageAnimation()
-{
-    m_imageAnimationDisabled = true;
-}
-    
 }

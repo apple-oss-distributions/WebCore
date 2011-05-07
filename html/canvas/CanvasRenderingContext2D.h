@@ -50,7 +50,6 @@ namespace WebCore {
     class HTMLImageElement;
     class HTMLVideoElement;
     class ImageData;
-    class KURL;
     class TextMetrics;
 
     typedef int ExceptionCode;
@@ -190,6 +189,7 @@ namespace WebCore {
 
         String font() const;
         void setFont(const String&);
+        void updateFont();
         
         String textAlign() const;
         void setTextAlign(const String&);
@@ -262,8 +262,6 @@ namespace WebCore {
 #endif
         
         void prepareGradientForDashboard(CanvasGradient* gradient) const;
-        void checkOrigin(const KURL&);
-        void checkOrigin(const String&);
 
         Vector<State, 1> m_stateStack;
         bool m_usesCSSCompatibilityParseMode;
