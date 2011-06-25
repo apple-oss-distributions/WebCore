@@ -36,16 +36,20 @@
 
 #include "CookieJar.h"
 #include "Document.h"
+#include "InspectorInstrumentation.h"
 #include "Logging.h"
-#include "PlatformString.h"
+#include "Page.h"
+#include "ProgressTracker.h"
+#include "ScriptCallStack.h"
 #include "ScriptExecutionContext.h"
 #include "SocketStreamError.h"
 #include "SocketStreamHandle.h"
-#include "StringHash.h"
 #include "WebSocketChannelClient.h"
 #include "WebSocketHandshake.h"
 
 #include <wtf/text/CString.h>
+#include <wtf/text/WTFString.h>
+#include <wtf/text/StringHash.h>
 #include <wtf/Deque.h>
 #include <wtf/FastMalloc.h>
 #include <wtf/HashMap.h>
@@ -58,10 +62,19 @@ WebSocketChannel::WebSocketChannel(ScriptExecutionContext* context, WebSocketCha
     , m_handshake(url, protocol, context)
     , m_buffer(0)
     , m_bufferSize(0)
+    , m_resumeTimer(this, &WebSocketChannel::resumeTimerFired)
     , m_suspended(false)
     , m_closed(false)
+    , m_shouldDiscardReceivedData(false)
     , m_unhandledBufferedAmount(0)
+    , m_identifier(0)
 {
+    if (m_context->isDocument())
+        if (Page* page = static_cast<Document*>(m_context)->page())
+            m_identifier = page->progress()->createUniqueIdentifier();
+
+    if (m_identifier)
+        InspectorInstrumentation::didCreateWebSocket(m_context, m_identifier, url, m_context->url());
 }
 
 WebSocketChannel::~WebSocketChannel()
@@ -86,7 +99,8 @@ bool WebSocketChannel::send(const String& msg)
     ASSERT(!m_suspended);
     Vector<char> buf;
     buf.append('\0');  // frame type
-    buf.append(msg.utf8().data(), msg.utf8().length());
+    CString utf8 = msg.utf8();
+    buf.append(utf8.data(), utf8.length());
     buf.append('\xff');  // frame end
     return m_handle->send(buf.data(), buf.size());
 }
@@ -110,6 +124,8 @@ void WebSocketChannel::close()
 void WebSocketChannel::disconnect()
 {
     LOG(Network, "WebSocketChannel %p disconnect", this);
+    if (m_identifier && m_context)
+        InspectorInstrumentation::didCloseWebSocket(m_context, m_identifier);
     m_handshake.clearScriptExecutionContext();
     m_client = 0;
     m_context = 0;
@@ -125,12 +141,8 @@ void WebSocketChannel::suspend()
 void WebSocketChannel::resume()
 {
     m_suspended = false;
-    RefPtr<WebSocketChannel> protect(this); // The client can close the channel, potentially removing the last reference.
-    while (!m_suspended && m_client && m_buffer)
-        if (!processBuffer())
-            break;
-    if (!m_suspended && m_client && m_closed && m_handle)
-        didClose(m_handle.get());
+    if ((m_buffer || m_closed) && m_client && !m_resumeTimer.isActive())
+        m_resumeTimer.startOneShot(0);
 }
 
 void WebSocketChannel::didOpen(SocketStreamHandle* handle)
@@ -139,9 +151,11 @@ void WebSocketChannel::didOpen(SocketStreamHandle* handle)
     ASSERT(handle == m_handle);
     if (!m_context)
         return;
-    const CString& handshakeMessage = m_handshake.clientHandshakeMessage();
+    if (m_identifier)
+        InspectorInstrumentation::willSendWebSocketHandshakeRequest(m_context, m_identifier, m_handshake.clientHandshakeRequest());
+    CString handshakeMessage = m_handshake.clientHandshakeMessage();
     if (!handle->send(handshakeMessage.data(), handshakeMessage.length())) {
-        m_context->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, "Error sending handshake message.", 0, m_handshake.clientOrigin());
+        m_context->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, "Error sending handshake message.", 0, m_handshake.clientOrigin(), 0);
         handle->close();
     }
 }
@@ -149,6 +163,8 @@ void WebSocketChannel::didOpen(SocketStreamHandle* handle)
 void WebSocketChannel::didClose(SocketStreamHandle* handle)
 {
     LOG(Network, "WebSocketChannel %p didClose", this);
+    if (m_identifier && m_context)
+        InspectorInstrumentation::didCloseWebSocket(m_context, m_identifier);
     ASSERT_UNUSED(handle, handle == m_handle || !m_handle);
     m_closed = true;
     if (m_handle) {
@@ -174,10 +190,14 @@ void WebSocketChannel::didReceiveData(SocketStreamHandle* handle, const char* da
         return;
     }
     if (!m_client) {
+        m_shouldDiscardReceivedData = true;
         handle->close();
         return;
     }
+    if (m_shouldDiscardReceivedData)
+        return;
     if (!appendToBuffer(data, len)) {
+        m_shouldDiscardReceivedData = true;
         handle->close();
         return;
     }
@@ -186,10 +206,25 @@ void WebSocketChannel::didReceiveData(SocketStreamHandle* handle, const char* da
             break;
 }
 
-void WebSocketChannel::didFail(SocketStreamHandle* handle, const SocketStreamError&)
+void WebSocketChannel::didFail(SocketStreamHandle* handle, const SocketStreamError& error)
 {
     LOG(Network, "WebSocketChannel %p didFail", this);
     ASSERT(handle == m_handle || !m_handle);
+    if (m_context) {
+        String message;
+        if (error.isNull())
+            message = "WebSocket network error";
+        else if (error.localizedDescription().isNull())
+            message = "WebSocket network error: error code " + String::number(error.errorCode());
+        else
+            message = "WebSocket network error: " + error.localizedDescription();
+        String failingURL = error.failingURL();
+        ASSERT(failingURL.isNull() || m_handshake.url().string() == failingURL);
+        if (failingURL.isNull())
+            failingURL = m_handshake.url().string();
+        m_context->addMessage(OtherMessageSource, NetworkErrorMessageType, ErrorMessageLevel, message, 0, failingURL, 0);
+    }
+    m_shouldDiscardReceivedData = true;
     handle->close();
 }
 
@@ -201,23 +236,28 @@ void WebSocketChannel::didCancelAuthenticationChallenge(SocketStreamHandle*, con
 {
 }
 
-bool WebSocketChannel::appendToBuffer(const char* data, int len)
+bool WebSocketChannel::appendToBuffer(const char* data, size_t len)
 {
+    size_t newBufferSize = m_bufferSize + len;
+    if (newBufferSize < m_bufferSize) {
+        LOG(Network, "WebSocket buffer overflow (%lu+%lu)", static_cast<unsigned long>(m_bufferSize), static_cast<unsigned long>(len));
+        return false;
+    }
     char* newBuffer = 0;
-    if (tryFastMalloc(m_bufferSize + len).getValue(newBuffer)) {
+    if (tryFastMalloc(newBufferSize).getValue(newBuffer)) {
         if (m_buffer)
             memcpy(newBuffer, m_buffer, m_bufferSize);
         memcpy(newBuffer + m_bufferSize, data, len);
         fastFree(m_buffer);
         m_buffer = newBuffer;
-        m_bufferSize += len;
+        m_bufferSize = newBufferSize;
         return true;
     }
-    m_context->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, String::format("WebSocket frame (at %d bytes) is too long.", m_bufferSize + len), 0, m_handshake.clientOrigin());
+    m_context->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, "WebSocket frame (at " + String::number(static_cast<unsigned long>(newBufferSize)) + " bytes) is too long.", 0, m_handshake.clientOrigin(), 0);
     return false;
 }
 
-void WebSocketChannel::skipBuffer(int len)
+void WebSocketChannel::skipBuffer(size_t len)
 {
     ASSERT(len <= m_bufferSize);
     m_bufferSize -= len;
@@ -234,11 +274,16 @@ bool WebSocketChannel::processBuffer()
     ASSERT(!m_suspended);
     ASSERT(m_client);
     ASSERT(m_buffer);
+    if (m_shouldDiscardReceivedData)
+        return false;
+
     if (m_handshake.mode() == WebSocketHandshake::Incomplete) {
         int headerLength = m_handshake.readServerHandshake(m_buffer, m_bufferSize);
         if (headerLength <= 0)
             return false;
         if (m_handshake.mode() == WebSocketHandshake::Connected) {
+            if (m_identifier)
+                InspectorInstrumentation::didReceiveWebSocketHandshakeResponse(m_context, m_identifier, m_handshake.serverHandshakeResponse());
             if (!m_handshake.serverSetCookie().isEmpty()) {
                 if (m_context->isDocument()) {
                     Document* document = static_cast<Document*>(m_context);
@@ -252,11 +297,12 @@ bool WebSocketChannel::processBuffer()
             LOG(Network, "WebSocketChannel %p connected", this);
             skipBuffer(headerLength);
             m_client->didConnect();
-            LOG(Network, "remaining in read buf %ul", m_bufferSize);
+            LOG(Network, "remaining in read buf %lu", static_cast<unsigned long>(m_bufferSize));
             return m_buffer;
         }
         LOG(Network, "WebSocketChannel %p connection failed", this);
         skipBuffer(headerLength);
+        m_shouldDiscardReceivedData = true;
         if (!m_closed)
             m_handle->close();
         return false;
@@ -270,27 +316,52 @@ bool WebSocketChannel::processBuffer()
 
     unsigned char frameByte = static_cast<unsigned char>(*p++);
     if ((frameByte & 0x80) == 0x80) {
-        int length = 0;
+        size_t length = 0;
+        bool errorFrame = false;
         while (p < end) {
-            if (length > std::numeric_limits<int>::max() / 128) {
-                LOG(Network, "frame length overflow %d", length);
-                skipBuffer(p + length - m_buffer);
-                m_client->didReceiveMessageError();
-                if (!m_client)
-                    return false;
-                if (!m_closed)
-                    m_handle->close();
-                return false;
+            if (length > std::numeric_limits<size_t>::max() / 128) {
+                LOG(Network, "frame length overflow %lu", static_cast<unsigned long>(length));
+                errorFrame = true;
+                break;
             }
-            char msgByte = *p;
-            length = length * 128 + (msgByte & 0x7f);
+            size_t newLength = length * 128;
+            unsigned char msgByte = static_cast<unsigned char>(*p);
+            unsigned int lengthMsgByte = msgByte & 0x7f;
+            if (newLength > std::numeric_limits<size_t>::max() - lengthMsgByte) {
+                LOG(Network, "frame length overflow %lu+%u", static_cast<unsigned long>(newLength), lengthMsgByte);
+                errorFrame = true;
+                break;
+            }
+            newLength += lengthMsgByte;
+            if (newLength < length) { // sanity check
+                LOG(Network, "frame length integer wrap %lu->%lu", static_cast<unsigned long>(length), static_cast<unsigned long>(newLength));
+                errorFrame = true;
+                break;
+            }
+            length = newLength;
             ++p;
             if (!(msgByte & 0x80))
                 break;
         }
+        if (p + length < p) {
+            LOG(Network, "frame buffer pointer wrap %p+%lu->%p", p, static_cast<unsigned long>(length), p + length);
+            errorFrame = true;
+        }
+        if (errorFrame) {
+            skipBuffer(m_bufferSize); // Save memory.
+            m_shouldDiscardReceivedData = true;
+            m_client->didReceiveMessageError();
+            if (!m_client)
+                return false;
+            if (!m_closed)
+                m_handle->close();
+            return false;
+        }
+        ASSERT(p + length >= p);
         if (p + length < end) {
             p += length;
             nextFrame = p;
+            ASSERT(nextFrame > m_buffer);
             skipBuffer(nextFrame - m_buffer);
             m_client->didReceiveMessageError();
             return m_buffer;
@@ -316,6 +387,18 @@ bool WebSocketChannel::processBuffer()
         return m_buffer;
     }
     return false;
+}
+
+void WebSocketChannel::resumeTimerFired(Timer<WebSocketChannel>* timer)
+{
+    ASSERT_UNUSED(timer, timer == &m_resumeTimer);
+
+    RefPtr<WebSocketChannel> protect(this); // The client can close the channel, potentially removing the last reference.
+    while (!m_suspended && m_client && m_buffer)
+        if (!processBuffer())
+            break;
+    if (!m_suspended && m_client && m_closed && m_handle)
+        didClose(m_handle.get());
 }
 
 }  // namespace WebCore

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2006, 2008, 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,9 +27,11 @@
 #include "TextCodecUTF16.h"
 
 #include "PlatformString.h"
-#include "StringBuffer.h"
 #include <wtf/text/CString.h>
+#include <wtf/text/StringBuffer.h>
 #include <wtf/PassOwnPtr.h>
+
+using namespace std;
 
 namespace WebCore {
 
@@ -50,12 +52,12 @@ void TextCodecUTF16::registerEncodingNames(EncodingNameRegistrar registrar)
 
 static PassOwnPtr<TextCodec> newStreamingTextDecoderUTF16LE(const TextEncoding&, const void*)
 {
-    return new TextCodecUTF16(true);
+    return adoptPtr(new TextCodecUTF16(true));
 }
 
 static PassOwnPtr<TextCodec> newStreamingTextDecoderUTF16BE(const TextEncoding&, const void*)
 {
-    return new TextCodecUTF16(false);
+    return adoptPtr(new TextCodecUTF16(false));
 }
 
 void TextCodecUTF16::registerCodecs(TextCodecRegistrar registrar)
@@ -68,6 +70,8 @@ String TextCodecUTF16::decode(const char* bytes, size_t length, bool, bool, bool
 {
     if (!length)
         return String();
+
+    // FIXME: This should generate an error if there is an unpaired surrogate.
 
     const unsigned char* p = reinterpret_cast<const unsigned char*>(bytes);
     size_t numBytes = length + m_haveBufferedByte;
@@ -115,23 +119,32 @@ String TextCodecUTF16::decode(const char* bytes, size_t length, bool, bool, bool
 
 CString TextCodecUTF16::encode(const UChar* characters, size_t length, UnencodableHandling)
 {
+    // We need to be sure we can double the length without overflowing.
+    // Since the passed-in length is the length of an actual existing
+    // character buffer, each character is two bytes, and we know
+    // the buffer doesn't occupy the entire address space, we can
+    // assert here that doubling the length does not overflow size_t
+    // and there's no need for a runtime check.
+    ASSERT(length <= numeric_limits<size_t>::max() / 2);
+
     char* bytes;
     CString string = CString::newUninitialized(length * 2, bytes);
 
     // FIXME: CString is not a reasonable data structure for encoded UTF-16, which will have
-    // null characters inside it. Perhaps the result of encode should not be a CString?
-    if (m_littleEndian)
+    // null characters inside it. Perhaps the result of encode should not be a CString.
+    if (m_littleEndian) {
         for (size_t i = 0; i < length; ++i) {
             UChar c = characters[i];
             bytes[i * 2] = c;
             bytes[i * 2 + 1] = c >> 8;
         }
-    else
+    } else {
         for (size_t i = 0; i < length; ++i) {
             UChar c = characters[i];
             bytes[i * 2] = c >> 8;
             bytes[i * 2 + 1] = c;
         }
+    }
 
     return string;
 }

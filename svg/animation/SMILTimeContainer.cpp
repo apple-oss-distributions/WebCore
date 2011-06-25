@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 Apple Inc. All Rights Reserved.
+ * Copyright (C) 2008 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,11 +27,11 @@
 #include "SMILTimeContainer.h"
 
 #if ENABLE(SVG)
-
 #include "CSSComputedStyleDeclaration.h"
 #include "CSSParser.h"
 #include "Document.h"
 #include "SVGAnimationElement.h"
+#include "SVGNames.h"
 #include "SVGSMILElement.h"
 #include "SVGSVGElement.h"
 #include <wtf/CurrentTime.h>
@@ -196,15 +196,15 @@ String SMILTimeContainer::baseValueFor(ElementAttributePair key)
     if (it != m_savedBaseValues.end())
         return it->second;
     
-    SVGElement* target = key.first;
-    String attributeName = key.second;
-    ASSERT(target);
-    ASSERT(!attributeName.isEmpty());
+    SVGElement* targetElement = key.first;
+    QualifiedName attributeName = key.second;
+    ASSERT(targetElement);
+    ASSERT(attributeName != anyQName());
     String baseValue;
-    if (SVGAnimationElement::attributeIsCSS(attributeName))
-        baseValue = computedStyle(target)->getPropertyValue(cssPropertyID(attributeName));
+    if (SVGAnimationElement::isTargetAttributeCSSProperty(targetElement, attributeName))
+        baseValue = computedStyle(targetElement)->getPropertyValue(cssPropertyID(attributeName.localName()));
     else
-        baseValue = target->getAttribute(attributeName);
+        baseValue = targetElement->getAttribute(attributeName);
     m_savedBaseValues.add(key, baseValue);
     return baseValue;
 }
@@ -236,7 +236,8 @@ void SMILTimeContainer::updateAnimations(SMILTime elapsed)
             ASSERT(animation->timeContainer() == this);
 
             SVGElement* targetElement = animation->targetElement();
-            if (!targetElement || targetElement->getIDAttribute() != m_nextSamplingTarget)
+            // FIXME: This should probably be using getIdAttribute instead of idForStyleResolution.
+            if (!targetElement || !targetElement->hasID() || targetElement->idForStyleResolution() != m_nextSamplingTarget)
                 continue;
 
             samplingDiff = animation->intervalBegin();
@@ -254,7 +255,7 @@ void SMILTimeContainer::updateAnimations(SMILTime elapsed)
     sortByPriority(toAnimate, elapsed);
     
     // Calculate animation contributions.
-    typedef HashMap<ElementAttributePair, SVGSMILElement*> ResultElementMap;
+    typedef HashMap<ElementAttributePair, RefPtr<SVGSMILElement> > ResultElementMap;
     ResultElementMap resultsElements;
     for (unsigned n = 0; n < toAnimate.size(); ++n) {
         SVGSMILElement* animation = toAnimate[n];
@@ -263,18 +264,21 @@ void SMILTimeContainer::updateAnimations(SMILTime elapsed)
         SVGElement* targetElement = animation->targetElement();
         if (!targetElement)
             continue;
-        String attributeName = animation->attributeName();
-        if (attributeName.isEmpty()) {
+        
+        QualifiedName attributeName = animation->attributeName();
+        if (attributeName == anyQName()) {
             if (animation->hasTagName(SVGNames::animateMotionTag))
-                attributeName = SVGNames::animateMotionTag.localName();
+                attributeName = SVGNames::animateMotionTag;
             else
                 continue;
         }
         
         // Results are accumulated to the first animation that animates a particular element/attribute pair.
         ElementAttributePair key(targetElement, attributeName); 
-        SVGSMILElement* resultElement = resultsElements.get(key);
+        SVGSMILElement* resultElement = resultsElements.get(key).get();
         if (!resultElement) {
+            if (!animation->hasValidAttributeType())
+                continue;
             resultElement = animation;
             resultElement->resetToBaseValue(baseValueFor(key));
             resultsElements.add(key, resultElement);
@@ -296,7 +300,7 @@ void SMILTimeContainer::updateAnimations(SMILTime elapsed)
     Vector<SVGSMILElement*> animationsToApply;
     ResultElementMap::iterator end = resultsElements.end();
     for (ResultElementMap::iterator it = resultsElements.begin(); it != end; ++it)
-        animationsToApply.append(it->second);
+        animationsToApply.append(it->second.get());
 
     // Sort <animateTranform> to be the last one to be applied. <animate> may change transform attribute as
     // well (directly or indirectly by modifying <use> x/y) and this way transforms combine properly.

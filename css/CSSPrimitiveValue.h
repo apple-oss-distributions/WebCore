@@ -24,6 +24,7 @@
 
 #include "CSSValue.h"
 #include "Color.h"
+#include <wtf/Forward.h>
 #include <wtf/PassRefPtr.h>
 
 namespace WebCore {
@@ -34,9 +35,17 @@ class Pair;
 class RGBColor;
 class Rect;
 class RenderStyle;
-class StringImpl;
 
 struct Length;
+
+template<typename T, T max, T min> inline T roundForImpreciseConversion(double value)
+{
+    // Dimension calculations are imprecise, often resulting in values of e.g.
+    // 44.99998.  We need to go ahead and round if we're really close to the
+    // next integer value.
+    value += (value < 0) ? -0.01 : +0.01;
+    return ((value > max) || (value < min)) ? 0 : static_cast<T>(value);
+}
 
 class CSSPrimitiveValue : public CSSValue {
 public:
@@ -74,24 +83,37 @@ public:
         // These next types are just used internally to allow us to translate back and forth from CSSPrimitiveValues to CSSParserValues.
         CSS_PARSER_OPERATOR = 103,
         CSS_PARSER_INTEGER = 104,
-        CSS_PARSER_VARIABLE_FUNCTION_SYNTAX = 105,
-        CSS_PARSER_HEXCOLOR = 106,
+        CSS_PARSER_HEXCOLOR = 105,
         
         // This is used internally for unknown identifiers 
-        CSS_PARSER_IDENTIFIER = 107,
+        CSS_PARSER_IDENTIFIER = 106,
         
         // These are from CSS3 Values and Units, but that isn't a finished standard yet
-        CSS_TURN = 108,
-        CSS_REMS = 109
+        CSS_TURN = 107,
+        CSS_REMS = 108,
+
+        // This is used internally for counter names (as opposed to counter values)
+        CSS_COUNTER_NAME = 109
     };
     
+    // This enum follows the CSSParser::Units enum augmented with UNIT_FREQUENCY for frequencies.
+    enum UnitCategory {
+        UNumber,
+        UPercent,
+        ULength,
+        UAngle,
+        UTime,
+        UFrequency,
+        UOther
+    };
+
     static bool isUnitTypeLength(int type) { return (type > CSSPrimitiveValue::CSS_PERCENTAGE && type < CSSPrimitiveValue::CSS_DEG) ||
                                                     type == CSSPrimitiveValue::CSS_REMS; }
 
-    static PassRefPtr<CSSPrimitiveValue> createIdentifier(int ident);
-    static PassRefPtr<CSSPrimitiveValue> createColor(unsigned rgbValue);
-    static PassRefPtr<CSSPrimitiveValue> create(double value, UnitTypes type);
-    static PassRefPtr<CSSPrimitiveValue> create(const String& value, UnitTypes type);
+    static PassRefPtr<CSSPrimitiveValue> createIdentifier(int identifier) { return adoptRef(new CSSPrimitiveValue(identifier)); }
+    static PassRefPtr<CSSPrimitiveValue> createColor(unsigned rgbValue) { return adoptRef(new CSSPrimitiveValue(rgbValue)); }
+    static PassRefPtr<CSSPrimitiveValue> create(double value, UnitTypes type) { return adoptRef(new CSSPrimitiveValue(value, type)); }
+    static PassRefPtr<CSSPrimitiveValue> create(const String& value, UnitTypes type) { return adoptRef(new CSSPrimitiveValue(value, type)); }
     
     template<typename T> static PassRefPtr<CSSPrimitiveValue> create(T value)
     {
@@ -103,8 +125,6 @@ public:
     void cleanup();
 
     unsigned short primitiveType() const { return m_type; }
-
-    bool isVariable() const { return m_type == CSS_PARSER_VARIABLE_FUNCTION_SYNTAX; }
 
     /*
      * computes a length in pixels out of the given CSSValue. Need the RenderStyle to get
@@ -129,17 +149,17 @@ public:
     // use with care!!!
     void setPrimitiveType(unsigned short type) { m_type = type; }
     
-    double getDoubleValue(unsigned short unitType, ExceptionCode&);
-    double getDoubleValue(unsigned short unitType);
+    double getDoubleValue(unsigned short unitType, ExceptionCode&) const;
+    double getDoubleValue(unsigned short unitType) const;
     double getDoubleValue() const { return m_value.num; }
 
     void setFloatValue(unsigned short unitType, double floatValue, ExceptionCode&);
-    float getFloatValue(unsigned short unitType, ExceptionCode& ec) { return static_cast<float>(getDoubleValue(unitType, ec)); }
-    float getFloatValue(unsigned short unitType) { return static_cast<float>(getDoubleValue(unitType)); }
+    float getFloatValue(unsigned short unitType, ExceptionCode& ec) const { return static_cast<float>(getDoubleValue(unitType, ec)); }
+    float getFloatValue(unsigned short unitType) const { return static_cast<float>(getDoubleValue(unitType)); }
     float getFloatValue() const { return static_cast<float>(m_value.num); }
 
-    int getIntValue(unsigned short unitType, ExceptionCode& ec) { return static_cast<int>(getDoubleValue(unitType, ec)); }
-    int getIntValue(unsigned short unitType) { return static_cast<int>(getDoubleValue(unitType)); }
+    int getIntValue(unsigned short unitType, ExceptionCode& ec) const { return static_cast<int>(getDoubleValue(unitType, ec)); }
+    int getIntValue(unsigned short unitType) const { return static_cast<int>(getDoubleValue(unitType)); }
     int getIntValue() const { return static_cast<int>(m_value.num); }
 
     void setStringValue(unsigned short stringType, const String& stringValue, ExceptionCode&);
@@ -160,15 +180,13 @@ public:
 
     DashboardRegion* getDashboardRegionValue() const { return m_type != CSS_DASHBOARD_REGION ? 0 : m_value.region; }
 
-    int getIdent();
+    int getIdent() const;
     template<typename T> inline operator T() const; // Defined in CSSPrimitiveValueMappings.h
 
     virtual bool parseString(const String&, bool = false);
     virtual String cssText() const;
 
     virtual bool isQuirkValue() { return false; }
-
-    virtual CSSParserValue parserValue() const;
 
     virtual void addSubresourceStyleURLs(ListHashSet<KURL>&, const CSSStyleSheet*);
 
@@ -191,16 +209,24 @@ private:
     static void create(unsigned); // compile-time guard
     template<typename T> operator T*(); // compile-time guard
 
+    static PassRefPtr<CSSPrimitiveValue> createUncachedIdentifier(int identifier);
+    static PassRefPtr<CSSPrimitiveValue> createUncachedColor(unsigned rgbValue);
+    static PassRefPtr<CSSPrimitiveValue> createUncached(double value, UnitTypes type);
+
+    static UnitTypes canonicalUnitTypeForCategory(UnitCategory category);
+
     void init(PassRefPtr<Counter>);
     void init(PassRefPtr<Rect>);
     void init(PassRefPtr<Pair>);
     void init(PassRefPtr<DashboardRegion>); // FIXME: Dashboard region should not be a primitive value.
+    bool getDoubleValueInternal(UnitTypes targetUnitType, double* result) const;
 
     virtual bool isPrimitiveValue() const { return true; }
 
     virtual unsigned short cssValueType() const;
 
-    int m_type;
+    int m_type : 31;
+    mutable unsigned m_hasCachedCSSText : 1;
     union {
         int ident;
         double num;
@@ -211,7 +237,6 @@ private:
         Pair* pair;
         DashboardRegion* region;
     } m_value;
-    mutable String m_cachedCSSText;
 };
 
 } // namespace WebCore

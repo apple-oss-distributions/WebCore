@@ -35,6 +35,7 @@ public:
     {
         return adoptRef(new CSSBorderImageValue(image, sliceRect, horizontalRule, verticalRule));
     }
+    virtual ~CSSBorderImageValue();
 
     virtual String cssText() const;
 
@@ -55,6 +56,7 @@ public:
 
 private:
     CSSBorderImageValue(PassRefPtr<CSSValue> image, PassRefPtr<Rect> sliceRect, int horizontalRule, int verticalRule);
+    virtual bool isBorderImageValue() const { return true; }
 };
 
 } // namespace WebCore

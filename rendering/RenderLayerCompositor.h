@@ -26,6 +26,7 @@
 #ifndef RenderLayerCompositor_h
 #define RenderLayerCompositor_h
 
+#include "ChromeClient.h"
 #include "RenderLayer.h"
 #include "RenderLayerBacking.h"
 
@@ -34,6 +35,8 @@ namespace WebCore {
 #define PROFILE_LAYER_REBUILD 0
 
 class GraphicsLayer;
+class RenderEmbeddedObject;
+class RenderPart;
 #if ENABLE(VIDEO)
 class RenderVideo;
 #endif
@@ -51,11 +54,11 @@ enum CompositingUpdateType {
 // 
 // There is one RenderLayerCompositor per RenderView.
 
-class RenderLayerCompositor {
+class RenderLayerCompositor : public GraphicsLayerClient {
 public:
     RenderLayerCompositor(RenderView*);
     ~RenderLayerCompositor();
-    
+
     // Return true if this RenderView is in "compositing mode" (i.e. has one or more
     // composited RenderLayers)
     bool inCompositingMode() const { return m_compositing; }
@@ -65,10 +68,9 @@ public:
     
     // Returns true if the accelerated compositing is enabled
     bool hasAcceleratedCompositing() const { return m_hasAcceleratedCompositing; }
-    
-    bool showDebugBorders() const { return m_showDebugBorders; }
-    bool showRepaintCounter() const { return m_showRepaintCounter; }
-    
+
+    bool canRender3DTransforms() const;
+
     // Copy the accelerated compositing related flags from Settings
     void cacheAcceleratedCompositingFlags();
 
@@ -82,11 +84,23 @@ public:
     void setCompositingConsultsOverlap(bool b) { m_compositingConsultsOverlap = b; }
     bool compositingConsultsOverlap() const { return m_compositingConsultsOverlap; }
     
-    void scheduleSync();
+    // GraphicsLayers buffer state, which gets pushed to the underlying platform layers
+    // at specific times.
+    void scheduleLayerFlush();
+    void flushPendingLayerChanges();
+    bool isFlushingLayers() const { return m_flushingLayers; }
+    
+    // flushPendingLayerChanges() flushes the entire GraphicsLayer tree, which can cross frame boundaries.
+    // This call returns the rootmost compositor that is being flushed (including self).
+    RenderLayerCompositor* enclosingCompositorFlushingLayers() const;
     
     // Rebuild the tree of compositing layers
     void updateCompositingLayers(CompositingUpdateType = CompositingUpdateAfterLayoutOrStyleChange, RenderLayer* updateRoot = 0);
-
+    // This is only used when state changes and we do not exepect a style update or layout to happen soon (e.g. when
+    // we discover that an iframe is overlapped during painting).
+    void scheduleCompositingLayerUpdate();
+    bool compositingLayerUpdatePending() const;
+    
     // Update the compositing state of the given layer. Returns true if that state changed.
     enum CompositingChangeRepaint { CompositingChangeRepaintNow, CompositingChangeWillRepaintLater };
     bool updateLayerCompositingState(RenderLayer*, CompositingChangeRepaint = CompositingChangeRepaintNow);
@@ -121,12 +135,20 @@ public:
     RenderLayer* rootRenderLayer() const;
     GraphicsLayer* rootPlatformLayer() const;
 
-    void didMoveOnscreen();
-    void willMoveOffscreen();
+    enum RootLayerAttachment {
+        RootLayerUnattached,
+        RootLayerAttachedViaChromeClient,
+        RootLayerAttachedViaEnclosingFrame
+    };
 
+    RootLayerAttachment rootLayerAttachment() const { return m_rootLayerAttachment; }
+    void updateRootLayerAttachment();
     void updateRootLayerPosition();
     
-    void didStartAcceleratedAnimation();
+    void didMoveOnscreen();
+    void willMoveOffscreen();
+    
+    void didStartAcceleratedAnimation(CSSPropertyID);
     
 #if ENABLE(VIDEO)
     // Use by RenderVideo to ask if it should try to use accelerated compositing.
@@ -137,13 +159,46 @@ public:
     // to know if there is non-affine content, e.g. for drawing into an image.
     bool has3DContent() const;
     
-    // Some platforms may wish to connect compositing layer trees between iframes and
-    // their parent document.
-    static bool shouldPropagateCompositingToIFrameParent();
+    // Most platforms connect compositing layer trees between iframes and their parent document.
+    // Some (currently just Mac) allow iframes to do their own compositing.
+    static bool allowsIndependentlyCompositedFrames(const FrameView*);
+    bool shouldPropagateCompositingToEnclosingFrame() const;
 
-    void setRootPlatformLayerClippingBox(const IntRect& contentsBox);
+    HTMLFrameOwnerElement* enclosingFrameElement() const;
+
+    static RenderLayerCompositor* frameContentsCompositor(RenderPart*);
+    // Return true if the layers changed.
+    static bool parentFrameContentLayers(RenderPart*);
+
+    // Update the geometry of the layers used for clipping and scrolling in frames.
+    void frameViewDidChangeLocation(const IntPoint& contentsOffset);
+    void frameViewDidChangeSize();
+    void frameViewDidScroll(const IntPoint& = IntPoint());
+
+    String layerTreeAsText(bool showDebugInfo = false);
+
+    // These are named to avoid conflicts with the functions in GraphicsLayerClient
+    // These return the actual internal variables.
+    bool compositorShowDebugBorders() const { return m_showDebugBorders; }
+    bool compositorShowRepaintCounter() const { return m_showRepaintCounter; }
+
+    void updateContentsScale(float, RenderLayer* = 0);
+
+    GraphicsLayer* layerForHorizontalScrollbar() const { return m_layerForHorizontalScrollbar.get(); }
+    GraphicsLayer* layerForVerticalScrollbar() const { return m_layerForVerticalScrollbar.get(); }
+    GraphicsLayer* layerForScrollCorner() const { return m_layerForScrollCorner.get(); }
 
 private:
+    // GraphicsLayerClient Implementation
+    virtual void notifyAnimationStarted(const GraphicsLayer*, double) { }
+    virtual void notifySyncRequired(const GraphicsLayer*) { scheduleLayerFlush(); }
+    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect&);
+
+    // These calls return false always. They are saying that the layers associated with this client
+    // (the clipLayer and scrollLayer) should never show debugging info.
+    virtual bool showDebugBorders() const { return false; }
+    virtual bool showRepaintCounter() const { return false; }
+    
     // Whether the given RL needs a compositing layer.
     bool needsToBeComposited(const RenderLayer*) const;
     // Whether the layer has an intrinsic need for compositing layer.
@@ -160,6 +215,8 @@ private:
     typedef HashMap<RenderLayer*, IntRect> OverlapMap;
     static void addToOverlapMap(OverlapMap&, RenderLayer*, IntRect& layerBounds, bool& boundsComputed);
     static bool overlapsCompositedLayers(OverlapMap&, const IntRect& layerBounds);
+
+    void updateCompositingLayersTimerFired(Timer<RenderLayerCompositor>*);
 
     // Returns true if any layer's compositing changed
     void computeCompositingRequirements(RenderLayer*, OverlapMap*, struct CompositingState&, bool& layersChanged);
@@ -178,30 +235,67 @@ private:
 
     void ensureRootPlatformLayer();
     void destroyRootPlatformLayer();
+
+    void attachRootPlatformLayer(RootLayerAttachment);
+    void detachRootPlatformLayer();
     
+    void rootLayerAttachmentChanged();
+
+    void updateOverflowControlsLayers();
+
+    void scheduleNeedsStyleRecalc(Element*);
+    void notifyIFramesOfCompositingChange();
+
     // Whether a running transition or animation enforces the need for a compositing layer.
     bool requiresCompositingForAnimation(RenderObject*) const;
     bool requiresCompositingForTransform(RenderObject*) const;
     bool requiresCompositingForVideo(RenderObject*) const;
     bool requiresCompositingForCanvas(RenderObject*) const;
     bool requiresCompositingForPlugin(RenderObject*) const;
-    bool requiresCompositingForIFrame(RenderObject*) const;
+    bool requiresCompositingForFrame(RenderObject*) const;
     bool requiresCompositingWhenDescendantsAreCompositing(RenderObject*) const;
+    bool requiresCompositingForFullScreen(RenderObject*) const;
+
+    bool requiresScrollLayer(RootLayerAttachment) const;
+    bool requiresHorizontalScrollbarLayer() const;
+    bool requiresVerticalScrollbarLayer() const;
+    bool requiresScrollCornerLayer() const;
 
 private:
     RenderView* m_renderView;
     OwnPtr<GraphicsLayer> m_rootPlatformLayer;
+    Timer<RenderLayerCompositor> m_updateCompositingLayersTimer;
+
     bool m_hasAcceleratedCompositing;
+    ChromeClient::CompositingTriggerFlags m_compositingTriggers;
+
     bool m_showDebugBorders;
     bool m_showRepaintCounter;
     bool m_compositingConsultsOverlap;
+
+    // When true, we have to wait until layout has happened before we can decide whether to enter compositing mode,
+    // because only then do we know the final size of plugins and iframes.
+    // FIXME: once set, this is never cleared.
+    mutable bool m_compositingDependsOnGeometry;
+
     bool m_compositing;
-    bool m_rootLayerAttached;
     bool m_compositingLayersNeedRebuild;
+    bool m_flushingLayers;
+    bool m_forceCompositingMode;
+
+    RootLayerAttachment m_rootLayerAttachment;
 
     // Enclosing clipping layer for iframe content
-    OwnPtr<GraphicsLayer> m_clippingLayer;
-    
+    OwnPtr<GraphicsLayer> m_clipLayer;
+    OwnPtr<GraphicsLayer> m_scrollLayer;
+
+    // Enclosing layer for overflow controls and the clipping layer
+    OwnPtr<GraphicsLayer> m_overflowControlsHostLayer;
+
+    // Layers for overflow controls
+    OwnPtr<GraphicsLayer> m_layerForHorizontalScrollbar;
+    OwnPtr<GraphicsLayer> m_layerForVerticalScrollbar;
+    OwnPtr<GraphicsLayer> m_layerForScrollCorner;
 #if PROFILE_LAYER_REBUILD
     int m_rootLayerUpdateCount;
 #endif

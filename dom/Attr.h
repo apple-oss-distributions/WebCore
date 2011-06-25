@@ -48,6 +48,7 @@ public:
 
     const AtomicString& value() const { return m_attribute->value(); }
     void setValue(const AtomicString&, ExceptionCode&);
+    void setValue(const AtomicString&);
 
     Attribute* attr() const { return m_attribute.get(); }
     const QualifiedName& qualifiedName() const { return m_attribute->name(); }
@@ -78,7 +79,7 @@ private:
     virtual PassRefPtr<Node> cloneNode(bool deep);
 
     virtual bool isAttributeNode() const { return true; }
-    virtual bool childTypeAllowed(NodeType);
+    virtual bool childTypeAllowed(NodeType) const;
 
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 

@@ -23,12 +23,13 @@
 #include "config.h"
 #include "RenderTextFragment.h"
 
+#include "RenderBlock.h"
 #include "Text.h"
 
 namespace WebCore {
 
 RenderTextFragment::RenderTextFragment(Node* node, StringImpl* str, int startOffset, int length)
-    : RenderText(node, str ? str->substring(startOffset, length) : 0)
+    : RenderText(node, str ? str->substring(startOffset, length) : PassRefPtr<StringImpl>(0))
     , m_start(startOffset)
     , m_end(length)
     , m_firstLetter(0)
@@ -44,13 +45,27 @@ RenderTextFragment::RenderTextFragment(Node* node, StringImpl* str)
 {
 }
 
+RenderTextFragment::~RenderTextFragment()
+{
+}
+
 PassRefPtr<StringImpl> RenderTextFragment::originalText() const
 {
     Node* e = node();
     RefPtr<StringImpl> result = ((e && e->isTextNode()) ? static_cast<Text*>(e)->dataImpl() : contentString());
-    if (result && (start() > 0 || start() < result->length()))
-        result = result->substring(start(), end());
-    return result.release();
+    if (!result)
+        return 0;
+    return result->substring(start(), end());
+}
+
+void RenderTextFragment::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
+{
+    RenderText::styleDidChange(diff, oldStyle);
+
+    if (RenderBlock* block = blockForAccompanyingFirstLetter()) {
+        block->style()->removeCachedPseudoStyle(FIRST_LETTER);
+        block->updateFirstLetter();
+    }
 }
 
 void RenderTextFragment::destroy()
@@ -81,11 +96,22 @@ UChar RenderTextFragment::previousCharacter() const
     if (start()) {
         Node* e = node();
         StringImpl*  original = ((e && e->isTextNode()) ? static_cast<Text*>(e)->dataImpl() : contentString());
-        if (original)
+        if (original && start() <= original->length())
             return (*original)[start() - 1];
     }
 
     return RenderText::previousCharacter();
+}
+
+RenderBlock* RenderTextFragment::blockForAccompanyingFirstLetter() const
+{
+    if (!m_firstLetter)
+        return 0;
+    for (RenderObject* block = m_firstLetter->parent(); block; block = block->parent()) {
+        if (block->style()->hasPseudoStyle(FIRST_LETTER) && block->canHaveChildren() && block->isRenderBlock())
+            return toRenderBlock(block);
+    }
+    return 0;
 }
 
 } // namespace WebCore

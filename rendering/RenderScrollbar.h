@@ -32,23 +32,25 @@
 
 namespace WebCore {
 
+class Frame;
 class RenderBox;
 class RenderScrollbarPart;
 class RenderStyle;
 
 class RenderScrollbar : public Scrollbar {
 protected:
-    RenderScrollbar(ScrollbarClient*, ScrollbarOrientation, RenderBox*);
+    RenderScrollbar(ScrollableArea*, ScrollbarOrientation, RenderBox*, Frame*);
 
 public:
     friend class Scrollbar;
-    static PassRefPtr<Scrollbar> createCustomScrollbar(ScrollbarClient*, ScrollbarOrientation, RenderBox*);
+    static PassRefPtr<Scrollbar> createCustomScrollbar(ScrollableArea*, ScrollbarOrientation, RenderBox*, Frame* owningFrame = 0);
     virtual ~RenderScrollbar();
 
     static ScrollbarPart partForStyleResolve();
     static RenderScrollbar* scrollbarForStyleResolve();
 
-    RenderBox* owningRenderer() const { return m_owner; }
+    RenderBox* owningRenderer() const;
+    void clearOwningRenderer() { m_owner = 0; }
 
     void paintPart(GraphicsContext*, ScrollbarPart, const IntRect&);
 
@@ -57,6 +59,8 @@ public:
     IntRect trackPieceRectWithMargins(ScrollbarPart, const IntRect&);
 
     int minimumThumbLength();
+
+    virtual bool isOverlayScrollbar() const { return false; }
 
 private:
     virtual void setParent(ScrollView*);
@@ -77,6 +81,7 @@ private:
     void updateScrollbarPart(ScrollbarPart, bool destroy = false);
 
     RenderBox* m_owner;
+    Frame* m_owningFrame;
     HashMap<unsigned, RenderScrollbarPart*> m_parts;
 };
 

@@ -24,10 +24,9 @@
 
 #include "OverlapTestRequestClient.h"
 #include "RenderReplaced.h"
+#include "Widget.h"
 
 namespace WebCore {
-
-class Widget;
 
 class RenderWidget : public RenderReplaced, private OverlapTestRequestClient {
 public:
@@ -44,6 +43,8 @@ public:
 
     void showSubstituteImage(PassRefPtr<Image>);
 
+    void notifyWidget(WidgetNotification);
+    
     static void suspendWidgetHierarchyUpdates();
     static void resumeWidgetHierarchyUpdates();
 
@@ -66,10 +67,10 @@ private:
 
     virtual void destroy();
     virtual void setSelectionState(SelectionState);
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, int x, int y, int tx, int ty, HitTestAction);
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const IntPoint& pointInContainer, int tx, int ty, HitTestAction);
     virtual void setOverlapTestResult(bool);
 
-    bool setWidgetGeometry(const IntRect&);
+    bool setWidgetGeometry(const IntRect&, const IntSize&);
 
     RefPtr<Widget> m_widget;
     RefPtr<Image> m_substituteImage;

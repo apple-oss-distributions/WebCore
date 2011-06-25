@@ -27,9 +27,9 @@
 #include "TextCodecUserDefined.h"
 
 #include "PlatformString.h"
-#include "StringBuffer.h"
 #include <stdio.h>
 #include <wtf/text/CString.h>
+#include <wtf/text/StringBuffer.h>
 #include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
@@ -41,7 +41,7 @@ void TextCodecUserDefined::registerEncodingNames(EncodingNameRegistrar registrar
 
 static PassOwnPtr<TextCodec> newStreamingTextDecoderUserDefined(const TextEncoding&, const void*)
 {
-    return new TextCodecUserDefined;
+    return adoptPtr(new TextCodecUserDefined);
 }
 
 void TextCodecUserDefined::registerCodecs(TextCodecRegistrar registrar)

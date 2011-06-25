@@ -34,7 +34,7 @@ namespace WebCore {
 CSSCanvasValue::~CSSCanvasValue()
 {
     if (m_element)
-        m_element->setObserver(0);
+        m_element->removeObserver(this);
 }
 
 String CSSCanvasValue::cssText() const
@@ -61,9 +61,8 @@ void CSSCanvasValue::canvasResized(HTMLCanvasElement*)
 
 void CSSCanvasValue::canvasDestroyed(HTMLCanvasElement* element)
 {
-    ASSERT(element == m_element);
-    if (element == m_element)
-        m_element = 0;
+    ASSERT_UNUSED(element, element == m_element);
+    m_element = 0;
 }
 
 IntSize CSSCanvasValue::fixedSize(const RenderObject* renderer)
@@ -79,18 +78,18 @@ HTMLCanvasElement* CSSCanvasValue::element(Document* document)
         m_element = document->getCSSCanvasElement(m_name);
         if (!m_element)
             return 0;
-        m_element->setObserver(this);
+        m_element->addObserver(this);
     }
     return m_element;
 }
 
-Image* CSSCanvasValue::image(RenderObject* renderer, const IntSize& /*size*/)
+PassRefPtr<Image> CSSCanvasValue::image(RenderObject* renderer, const IntSize& /*size*/)
 {
     ASSERT(m_clients.contains(renderer));
     HTMLCanvasElement* elt = element(renderer->document());
     if (!elt || !elt->buffer())
         return 0;
-    return elt->buffer()->image();
+    return elt->copiedImage();
 }
 
 } // namespace WebCore

@@ -35,6 +35,7 @@
 #include "Event.h"
 #include "EventException.h"
 #include <wtf/StdLibExtras.h>
+#include <wtf/Vector.h>
 
 using namespace WTF;
 
@@ -65,6 +66,10 @@ bool eventDispatchForbidden()
     return gEventDispatchForbidden > 0;
 }
 #endif // NDEBUG
+
+EventTargetData::EventTargetData()
+{
+}
 
 EventTargetData::~EventTargetData()
 {
@@ -114,6 +119,18 @@ SVGElementInstance* EventTarget::toSVGElementInstance()
 }
 #endif
 
+#if ENABLE(WEB_AUDIO)
+AudioContext* EventTarget::toAudioContext()
+{
+    return 0;
+}
+
+JavaScriptAudioNode* EventTarget::toJavaScriptAudioNode()
+{
+    return 0;
+}
+#endif
+
 #if ENABLE(WEB_SOCKETS)
 WebSocket* EventTarget::toWebSocket()
 {
@@ -156,8 +173,33 @@ Notification* EventTarget::toNotification()
 }
 #endif
 
-#if ENABLE(FILE_READER)
+#if ENABLE(BLOB)
 FileReader* EventTarget::toFileReader()
+{
+    return 0;
+}
+#endif
+#if ENABLE(FILE_SYSTEM)
+FileWriter* EventTarget::toFileWriter()
+{
+    return 0;
+}
+#endif
+
+#if ENABLE(INDEXED_DATABASE)
+IDBDatabase* EventTarget::toIDBDatabase()
+{
+    return 0;
+}
+IDBRequest* EventTarget::toIDBRequest()
+{
+    return 0;
+}
+IDBTransaction* EventTarget::toIDBTransaction()
+{
+    return 0;
+}
+IDBVersionChangeRequest* EventTarget::toIDBVersionChangeRequest()
 {
     return 0;
 }
@@ -269,6 +311,10 @@ bool EventTarget::dispatchEvent(PassRefPtr<Event> event)
     return fireEventListeners(event.get());
 }
 
+void EventTarget::uncaughtExceptionInEventHandler()
+{
+}
+
 bool EventTarget::fireEventListeners(Event* event)
 {
     ASSERT(!eventDispatchForbidden());
@@ -282,14 +328,6 @@ bool EventTarget::fireEventListeners(Event* event)
     if (result != d->eventListenerMap.end())
         fireEventListeners(event, d, *result->second);
     
-    // Alias DOMFocusIn/DOMFocusOut to focusin/focusout (and vice versa). Just consider them to be the
-    // same event (triggering one another's handlers).  This mechanism allows us to deprecate or change event
-    // names in the future and still make them be interoperable.
-    if (event->hasAliasedType() && !event->immediatePropagationStopped()) {
-        EventListenerMap::iterator result = d->eventListenerMap.find(event->aliasedType());
-        if (result != d->eventListenerMap.end())
-            fireEventListeners(event, d, *result->second);
-    }
     return !event->defaultPrevented();
 }
         
@@ -351,6 +389,32 @@ void EventTarget::removeAllEventListeners()
         d->firingEventIterators[i].iterator = 0;
         d->firingEventIterators[i].end = 0;
     }
+}
+
+EventListenerIterator::EventListenerIterator()
+    : m_index(0)
+{
+}
+
+EventListenerIterator::EventListenerIterator(EventTarget* target)
+    : m_index(0)
+{
+    EventTargetData* data = target->eventTargetData();
+    if (!data)
+        return;
+    m_mapIterator = data->eventListenerMap.begin();
+    m_mapEnd = data->eventListenerMap.end();
+}
+
+EventListener* EventListenerIterator::nextListener()
+{
+    for (; m_mapIterator != m_mapEnd; ++m_mapIterator) {
+        EventListenerVector& listeners = *m_mapIterator->second;
+        if (m_index < listeners.size())
+            return listeners[m_index++].listener.get();
+        m_index = 0;
+    }
+    return 0;
 }
 
 } // namespace WebCore

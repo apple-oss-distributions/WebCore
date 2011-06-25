@@ -31,7 +31,7 @@ module core {
 
         readonly attribute boolean specified;
 
-                 attribute [ConvertNullStringTo=Null, ConvertNullToNullString, CustomSetter] DOMString value 
+                 attribute [ConvertNullStringTo=Null, ConvertNullToNullString] DOMString value 
                      setter raises(DOMException);
 
         // DOM Level 2
@@ -42,8 +42,10 @@ module core {
 
         readonly attribute boolean isId;
 
-        // extensions
+#if defined(LANGUAGE_OBJECTIVE_C) && LANGUAGE_OBJECTIVE_C
+        // This extension is no longer needed, but it has to remain available in Objective C, as it's public API.
         readonly attribute CSSStyleDeclaration style;
+#endif
     };
 
 }

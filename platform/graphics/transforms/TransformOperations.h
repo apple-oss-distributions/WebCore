@@ -31,7 +31,8 @@
 
 namespace WebCore {
 
-class TransformOperations : public FastAllocBase {
+class TransformOperations {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     TransformOperations(bool makeIdentity = false);
     
@@ -55,6 +56,11 @@ public:
             if (m_operations[i]->is3DOperation())
                 return true;
         return false;
+    }
+    
+    void clear()
+    {
+        m_operations.clear();
     }
     
     Vector<RefPtr<TransformOperation> >& operations() { return m_operations; }

@@ -27,9 +27,12 @@
 #include "config.h"
 #include "BridgeJSC.h"
 
+#include "JSDOMWindowBase.h"
 #include "runtime_object.h"
 #include "runtime_root.h"
-#include <runtime/JSLock.h>
+#include "runtime/JSLock.h"
+#include "runtime/ObjectPrototype.h"
+
 
 #if PLATFORM(QT)
 #include "qt_instance.h"
@@ -51,7 +54,7 @@ Array::~Array()
 
 Instance::Instance(PassRefPtr<RootObject> rootObject)
     : m_rootObject(rootObject)
-    , m_runtimeObject(0)
+    , m_runtimeObject(*WebCore::JSDOMWindowBase::commonJSGlobalData())
 {
     ASSERT(m_rootObject);
 }
@@ -83,37 +86,32 @@ void Instance::end()
     virtualEnd();
 }
 
-RuntimeObject* Instance::createRuntimeObject(ExecState* exec)
+JSObject* Instance::createRuntimeObject(ExecState* exec)
 {
     ASSERT(m_rootObject);
     ASSERT(m_rootObject->isValid());
-    if (m_runtimeObject)
-        return m_runtimeObject;
+    if (RuntimeObject* existingObject = m_runtimeObject.get())
+        return existingObject;
+
     JSLock lock(SilenceAssertionsOnly);
-    m_runtimeObject = newRuntimeObject(exec);
-    m_rootObject->addRuntimeObject(m_runtimeObject);
-    return m_runtimeObject;
+    RuntimeObject* newObject = newRuntimeObject(exec);
+    m_runtimeObject.set(exec->globalData(), newObject, 0);
+    m_rootObject->addRuntimeObject(exec->globalData(), newObject);
+    return newObject;
 }
 
 RuntimeObject* Instance::newRuntimeObject(ExecState* exec)
 {
     JSLock lock(SilenceAssertionsOnly);
-    return new (exec)RuntimeObject(exec, this);
-}
 
-void Instance::willDestroyRuntimeObject()
-{
-    ASSERT(m_rootObject);
-    ASSERT(m_rootObject->isValid());
-    ASSERT(m_runtimeObject);
-    m_rootObject->removeRuntimeObject(m_runtimeObject);
-    m_runtimeObject = 0;
+    // FIXME: deprecatedGetDOMStructure uses the prototype off of the wrong global object
+    // We need to pass in the right global object for "i".
+    return new (exec) RuntimeObject(exec, exec->lexicalGlobalObject(), WebCore::deprecatedGetDOMStructure<RuntimeObject>(exec), this);
 }
 
 void Instance::willInvalidateRuntimeObject()
 {
-    ASSERT(m_runtimeObject);
-    m_runtimeObject = 0;
+    m_runtimeObject.clear();
 }
 
 RootObject* Instance::rootObject() const

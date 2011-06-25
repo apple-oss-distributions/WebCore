@@ -23,16 +23,18 @@
 #include "config.h"
 #include "HTMLPlugInElement.h"
 
+#include "Attribute.h"
+#include "Chrome.h"
+#include "ChromeClient.h"
 #include "CSSPropertyNames.h"
 #include "Document.h"
 #include "Frame.h"
 #include "FrameLoader.h"
 #include "FrameTree.h"
 #include "HTMLNames.h"
-#include "MappedAttribute.h"
 #include "Page.h"
+#include "RenderEmbeddedObject.h"
 #include "RenderWidget.h"
-#include "ScriptController.h"
 #include "Settings.h"
 #include "Widget.h"
 
@@ -46,9 +48,11 @@ using namespace HTMLNames;
 
 HTMLPlugInElement::HTMLPlugInElement(const QualifiedName& tagName, Document* doc)
     : HTMLFrameOwnerElement(tagName, doc)
+    , m_inBeforeLoadEventHandler(false)
 #if ENABLE(NETSCAPE_PLUGIN_API)
     , m_NPObject(0)
 #endif
+    , m_isCapturingMouseEvents(false)
 {
 }
 
@@ -67,6 +71,13 @@ HTMLPlugInElement::~HTMLPlugInElement()
 void HTMLPlugInElement::detach()
 {
     m_instance.clear();
+
+    if (m_isCapturingMouseEvents) {
+        if (Frame* frame = document()->frame())
+            frame->eventHandler()->setCapturingMouseEventsNode(0);
+        m_isCapturingMouseEvents = false;
+    }
+
     HTMLFrameOwnerElement::detach();
 }
 
@@ -81,31 +92,25 @@ PassScriptInstance HTMLPlugInElement::getInstance() const
     if (m_instance)
         return m_instance;
 
-    RenderWidget* renderWidget = renderWidgetForJSBindings();
-    if (renderWidget && renderWidget->widget())
-        m_instance = frame->script()->createScriptInstanceForWidget(renderWidget->widget());
+    if (Widget* widget = pluginWidget())
+        m_instance = frame->script()->createScriptInstanceForWidget(widget);
 
     return m_instance;
 }
 
-String HTMLPlugInElement::height() const
+Widget* HTMLPlugInElement::pluginWidget() const
 {
-    return getAttribute(heightAttr);
-}
+    if (m_inBeforeLoadEventHandler) {
+        // The plug-in hasn't loaded yet, and it makes no sense to try to load if beforeload handler happened to touch the plug-in element.
+        // That would recursively call beforeload for the same element.
+        return 0;
+    }
 
-void HTMLPlugInElement::setHeight(const String& value)
-{
-    setAttribute(heightAttr, value);
-}
+    RenderWidget* renderWidget = renderWidgetForJSBindings();
+    if (!renderWidget)
+        return 0;
 
-String HTMLPlugInElement::width() const
-{
-    return getAttribute(widthAttr);
-}
-
-void HTMLPlugInElement::setWidth(const String& value)
-{
-    setAttribute(widthAttr, value);
+    return renderWidget->widget();
 }
 
 bool HTMLPlugInElement::mapToEntry(const QualifiedName& attrName, MappedAttributeEntry& result) const
@@ -126,7 +131,7 @@ bool HTMLPlugInElement::mapToEntry(const QualifiedName& attrName, MappedAttribut
     return HTMLFrameOwnerElement::mapToEntry(attrName, result);
 }
 
-void HTMLPlugInElement::parseMappedAttribute(MappedAttribute* attr)
+void HTMLPlugInElement::parseMappedAttribute(Attribute* attr)
 {
     if (attr->name() == widthAttr)
         addCSSLength(attr, CSSPropertyWidth, attr->value());
@@ -144,11 +149,6 @@ void HTMLPlugInElement::parseMappedAttribute(MappedAttribute* attr)
         HTMLFrameOwnerElement::parseMappedAttribute(attr);
 }
 
-bool HTMLPlugInElement::checkDTD(const Node* newChild)
-{
-    return newChild->hasTagName(paramTag) || HTMLFrameOwnerElement::checkDTD(newChild);
-}
-
 void HTMLPlugInElement::defaultEventHandler(Event* event)
 {
     // Firefox seems to use a fake event listener to dispatch events to plug-in (tested with mouse events only).
@@ -158,9 +158,14 @@ void HTMLPlugInElement::defaultEventHandler(Event* event)
     // FIXME: Mouse down and scroll events are passed down to plug-in via custom code in EventHandler; these code paths should be united.
 
     RenderObject* r = renderer();
+    if (r && r->isEmbeddedObject() && toRenderEmbeddedObject(r)->showsMissingPluginIndicator()) {
+        toRenderEmbeddedObject(r)->handleMissingPluginIndicatorEvent(event);
+        return;
+    }
+
     if (!r || !r->isWidget())
         return;
-    Widget* widget = toRenderWidget(r)->widget();
+    RefPtr<Widget> widget = toRenderWidget(r)->widget();
     if (!widget)
         return;
     widget->handleEvent(event);
@@ -177,10 +182,5 @@ NPObject* HTMLPlugInElement::getNPObject()
 }
 
 #endif /* ENABLE(NETSCAPE_PLUGIN_API) */
-
-void HTMLPlugInElement::updateWidgetCallback(Node* n)
-{
-    static_cast<HTMLPlugInElement*>(n)->updateWidget();
-}
 
 }
