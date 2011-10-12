@@ -25,26 +25,15 @@
 
 #if defined(__OBJC__)
 
-#if !defined(BUILDING_ON_TIGER) && !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD)
-#include <Foundation/NSPrivateDecls.h>
-#endif
-
 #define EMPTY_PROTOCOL(NAME) \
 @protocol NAME <NSObject> \
 @end
 
-#if defined(BUILDING_ON_TIGER) || defined(BUILDING_ON_LEOPARD)
+#ifdef BUILDING_ON_LEOPARD
 
 EMPTY_PROTOCOL(NSTableViewDataSource)
 EMPTY_PROTOCOL(NSTableViewDelegate)
 EMPTY_PROTOCOL(NSWindowDelegate)
-
-#endif
-
-#if defined(BUILDING_ON_TIGER) || defined(BUILDING_ON_LEOPARD) || defined(BUILDING_ON_SNOW_LEOPARD) || !defined(__COCOA_FORMAL_PROTOCOLS_2__)
-
-EMPTY_PROTOCOL(NSURLConnectionDelegate)
-EMPTY_PROTOCOL(NSURLDownloadDelegate)
 
 #endif
 

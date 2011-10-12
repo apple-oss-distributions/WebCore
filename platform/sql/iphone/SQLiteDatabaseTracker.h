@@ -31,7 +31,8 @@
 
 namespace WebCore {
 
-class SQLiteDatabaseTracker : public Noncopyable {
+class SQLiteDatabaseTracker {
+    WTF_MAKE_NONCOPYABLE(SQLiteDatabaseTracker);
 public:
     static SQLiteDatabaseTracker& tracker();
     static void decrementTransactionInProgressCount();

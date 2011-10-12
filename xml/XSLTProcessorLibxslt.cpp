@@ -26,26 +26,29 @@
 
 #include "XSLTProcessor.h"
 
+#include "CachedResourceLoader.h"
 #include "Console.h"
 #include "DOMWindow.h"
-#include "DocLoader.h"
+#include "Document.h"
 #include "Frame.h"
 #include "ResourceError.h"
 #include "ResourceHandle.h"
 #include "ResourceRequest.h"
 #include "ResourceResponse.h"
+#include "SecurityOrigin.h"
 #include "TransformSource.h"
-#include "XMLTokenizer.h"
+#include "XMLDocumentParser.h"
 #include "XSLStyleSheet.h"
 #include "XSLTExtensions.h"
 #include "XSLTUnicodeSort.h"
-#include "loader.h"
 #include "markup.h"
 #include <libxslt/imports.h>
+#include <libxslt/security.h>
 #include <libxslt/variables.h>
 #include <libxslt/xsltutils.h>
 #include <wtf/Assertions.h>
 #include <wtf/Vector.h>
+#include <wtf/text/CString.h>
 #include <wtf/text/StringBuffer.h>
 #include <wtf/unicode/UTF8.h>
 
@@ -62,6 +65,12 @@ SOFT_LINK(libxslt, xsltSetCtxtSortFunc, void, (xsltTransformContextPtr ctxt, xsl
 SOFT_LINK(libxslt, xsltSetLoaderFunc, void, (xsltDocLoaderFunc f), (f))
 SOFT_LINK(libxslt, xsltSaveResultTo, int, (xmlOutputBufferPtr buf, xmlDocPtr result, xsltStylesheetPtr style), (buf, result, style))
 SOFT_LINK(libxslt, xsltNextImport, xsltStylesheetPtr, (xsltStylesheetPtr style), (style))
+SOFT_LINK(libxslt, xsltNewSecurityPrefs, xsltSecurityPrefsPtr, (), ())
+SOFT_LINK(libxslt, xsltFreeSecurityPrefs, void, (xsltSecurityPrefsPtr sec), (sec))
+SOFT_LINK(libxslt, xsltSetSecurityPrefs, int, (xsltSecurityPrefsPtr sec, xsltSecurityOption option, xsltSecurityCheck func), (sec, option, func))
+SOFT_LINK(libxslt, xsltSetCtxtSecurityPrefs, int, (xsltSecurityPrefsPtr sec, xsltTransformContextPtr ctxt), (sec, ctxt))
+SOFT_LINK(libxslt, xsltSecurityForbid, int, (xsltSecurityPrefsPtr sec, xsltTransformContextPtr ctxt, const char* value), (sec, ctxt, value))
+
 #endif
 
 namespace WebCore {
@@ -97,12 +106,12 @@ void XSLTProcessor::parseErrorFunc(void* userData, xmlError* error)
 
 // FIXME: There seems to be no way to control the ctxt pointer for loading here, thus we have globals.
 static XSLTProcessor* globalProcessor = 0;
-static DocLoader* globalDocLoader = 0;
+static CachedResourceLoader* globalCachedResourceLoader = 0;
 static xmlDocPtr docLoaderFunc(const xmlChar* uri,
-                                    xmlDictPtr,
-                                    int options,
-                                    void* ctxt,
-                                    xsltLoadType type)
+                               xmlDictPtr,
+                               int options,
+                               void* ctxt,
+                               xsltLoadType type)
 {
     if (!globalProcessor)
         return 0;
@@ -118,14 +127,14 @@ static xmlDocPtr docLoaderFunc(const xmlChar* uri,
 
         Vector<char> data;
 
-        bool requestAllowed = globalDocLoader->frame() && globalDocLoader->doc()->securityOrigin()->canRequest(url);
+        bool requestAllowed = globalCachedResourceLoader->frame() && globalCachedResourceLoader->document()->securityOrigin()->canRequest(url);
         if (requestAllowed) {
-            globalDocLoader->frame()->loader()->loadResourceSynchronously(url, AllowStoredCredentials, error, response, data);
-            requestAllowed = globalDocLoader->doc()->securityOrigin()->canRequest(response.url());
+            globalCachedResourceLoader->frame()->loader()->loadResourceSynchronously(url, AllowStoredCredentials, error, response, data);
+            requestAllowed = globalCachedResourceLoader->document()->securityOrigin()->canRequest(response.url());
         }
         if (!requestAllowed) {
             data.clear();
-            globalDocLoader->printAccessDeniedMessage(url);
+            globalCachedResourceLoader->printAccessDeniedMessage(url);
         }
 
         Console* console = 0;
@@ -152,11 +161,11 @@ static xmlDocPtr docLoaderFunc(const xmlChar* uri,
     return 0;
 }
 
-static inline void setXSLTLoadCallBack(xsltDocLoaderFunc func, XSLTProcessor* processor, DocLoader* loader)
+static inline void setXSLTLoadCallBack(xsltDocLoaderFunc func, XSLTProcessor* processor, CachedResourceLoader* cachedResourceLoader)
 {
     xsltSetLoaderFunc(func);
     globalProcessor = processor;
-    globalDocLoader = loader;
+    globalCachedResourceLoader = cachedResourceLoader;
 }
 
 static int writeToVector(void* context, const char* buffer, int len)
@@ -240,9 +249,12 @@ static void freeXsltParamArray(const char** params)
 static xsltStylesheetPtr xsltStylesheetPointer(RefPtr<XSLStyleSheet>& cachedStylesheet, Node* stylesheetRootNode)
 {
     if (!cachedStylesheet && stylesheetRootNode) {
-        cachedStylesheet = XSLStyleSheet::create(stylesheetRootNode->parent() ? stylesheetRootNode->parent() : stylesheetRootNode,
+        cachedStylesheet = XSLStyleSheet::createForXSLTProcessor(stylesheetRootNode->parentNode() ? stylesheetRootNode->parentNode() : stylesheetRootNode,
             stylesheetRootNode->document()->url().string(),
             stylesheetRootNode->document()->url()); // FIXME: Should we use baseURL here?
+
+        // According to Mozilla documentation, the node must be a Document node, an xsl:stylesheet or xsl:transform element.
+        // But we just use text content regardless of node type.
         cachedStylesheet->parseString(createMarkup(stylesheetRootNode));
     }
 
@@ -261,7 +273,7 @@ static inline xmlDocPtr xmlDocPtrFromNode(Node* sourceNode, bool& shouldDelete)
     if (sourceIsDocument && ownerDocument->transformSource())
         sourceDoc = (xmlDocPtr)ownerDocument->transformSource()->platformSource();
     if (!sourceDoc) {
-        sourceDoc = (xmlDocPtr)xmlDocPtrForString(ownerDocument->docLoader(), createMarkup(sourceNode),
+        sourceDoc = (xmlDocPtr)xmlDocPtrForString(ownerDocument->cachedResourceLoader(), createMarkup(sourceNode),
             sourceIsDocument ? ownerDocument->url().string() : String());
         shouldDelete = sourceDoc;
     }
@@ -291,7 +303,7 @@ bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String
 {
     RefPtr<Document> ownerDocument = sourceNode->document();
 
-    setXSLTLoadCallBack(docLoaderFunc, this, ownerDocument->docLoader());
+    setXSLTLoadCallBack(docLoaderFunc, this, ownerDocument->cachedResourceLoader());
     xsltStylesheetPtr sheet = xsltStylesheetPointer(m_stylesheet, m_stylesheetRootNode.get());
     if (!sheet) {
         setXSLTLoadCallBack(0, 0, 0);
@@ -313,7 +325,18 @@ bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String
         xsltTransformContextPtr transformContext = xsltNewTransformContext(sheet, sourceDoc);
         registerXSLTExtensions(transformContext);
 
-        // <http://bugs.webkit.org/show_bug.cgi?id=16077>: XSLT processor <xsl:sort> algorithm only compares by code point
+        xsltSecurityPrefsPtr securityPrefs = xsltNewSecurityPrefs();
+        // Read permissions are checked by docLoaderFunc.
+        if (0 != xsltSetSecurityPrefs(securityPrefs, XSLT_SECPREF_WRITE_FILE, xsltSecurityForbid))
+            CRASH();
+        if (0 != xsltSetSecurityPrefs(securityPrefs, XSLT_SECPREF_CREATE_DIRECTORY, xsltSecurityForbid))
+            CRASH();
+        if (0 != xsltSetSecurityPrefs(securityPrefs, XSLT_SECPREF_WRITE_NETWORK, xsltSecurityForbid))
+            CRASH();
+        if (0 != xsltSetCtxtSecurityPrefs(securityPrefs, transformContext))
+            CRASH();
+
+        // <http://bugs.webkit.org/show_bug.cgi?id=16077>: XSLT processor <xsl:sort> algorithm only compares by code point.
         xsltSetCtxtSortFunc(transformContext, xsltUnicodeSortFunction);
 
         // This is a workaround for a bug in libxslt.
@@ -326,6 +349,7 @@ bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String
         xmlDocPtr resultDoc = xsltApplyStylesheetUser(sheet, sourceDoc, 0, 0, 0, transformContext);
 
         xsltFreeTransformContext(transformContext);
+        xsltFreeSecurityPrefs(securityPrefs);
         freeXsltParamArray(params);
 
         if (shouldFreeSourceDoc)

@@ -58,43 +58,71 @@ namespace WebCore {
 const float smallCapsFontSizeMultiplier = 0.7f;
 static inline float scaleEmToUnits(float x, unsigned unitsPerEm) { return x / unitsPerEm; }
 
+static bool fontHasVerticalGlyphs(CTFontRef ctFont)
+{
+    // The check doesn't look neat but this is what AppKit does for vertical writing...
+    RetainPtr<CFArrayRef> tableTags(AdoptCF, CTFontCopyAvailableTables(ctFont, kCTFontTableOptionExcludeSynthetic));
+    CFIndex numTables = CFArrayGetCount(tableTags.get());
+    for (CFIndex index = 0; index < numTables; ++index) {
+        CTFontTableTag tag = (CTFontTableTag)(uintptr_t)CFArrayGetValueAtIndex(tableTags.get(), index);
+        if (tag == kCTFontTableVhea || tag == kCTFontTableVORG)
+            return true;
+    }
+    return false;
+}
+
 void SimpleFontData::platformInit()
 {
     m_syntheticBoldOffset = m_platformData.m_syntheticBold ? ceilf(m_platformData.size()  / 24.0f) : 0.f;
     m_spaceGlyph = 0;
     m_spaceWidth = 0;
-    m_adjustedSpaceWidth = 0;
+    unsigned unitsPerEm;
+    float ascent;
+    float descent;
+    float lineGap;
+    float lineSpacing;
+    float xHeight;
     if (GSFontRef gsFont = m_platformData.font()) {
-        m_ascent = ceilf(GSFontGetAscent(gsFont));
-        m_descent = ceilf(-GSFontGetDescent(gsFont));
-        m_lineSpacing = GSFontGetLineSpacing(gsFont);
-        m_lineGap = GSFontGetLineGap(gsFont);
-        m_xHeight = GSFontGetXHeight(gsFont);
-        m_unitsPerEm = GSFontGetUnitsPerEm(gsFont);
+        ascent = ceilf(GSFontGetAscent(gsFont));
+        descent = ceilf(-GSFontGetDescent(gsFont));
+        lineSpacing = GSFontGetLineSpacing(gsFont);
+        lineGap = GSFontGetLineGap(gsFont);
+        xHeight = GSFontGetXHeight(gsFont);
+        unitsPerEm = GSFontGetUnitsPerEm(gsFont);
     } else {
         CGFontRef cgFont = m_platformData.cgFont();
 
-        m_unitsPerEm = CGFontGetUnitsPerEm(cgFont);
+        unitsPerEm = CGFontGetUnitsPerEm(cgFont);
 
         float pointSize = m_platformData.size();
-        m_ascent = lroundf(scaleEmToUnits(CGFontGetAscent(cgFont), m_unitsPerEm) * pointSize);
-        m_descent = lroundf(-scaleEmToUnits(CGFontGetDescent(cgFont), m_unitsPerEm) * pointSize);
-        m_lineGap = lroundf(scaleEmToUnits(CGFontGetLeading(cgFont), m_unitsPerEm) * pointSize);
-        m_xHeight = scaleEmToUnits(CGFontGetXHeight(cgFont), m_unitsPerEm) * pointSize;
+        ascent = lroundf(scaleEmToUnits(CGFontGetAscent(cgFont), unitsPerEm) * pointSize);
+        descent = lroundf(-scaleEmToUnits(-abs(CGFontGetDescent(cgFont)), unitsPerEm) * pointSize);
+        lineGap = lroundf(scaleEmToUnits(CGFontGetLeading(cgFont), unitsPerEm) * pointSize);
+        xHeight = scaleEmToUnits(CGFontGetXHeight(cgFont), unitsPerEm) * pointSize;
 
-        m_lineSpacing = m_ascent + m_descent + m_lineGap;
+        lineSpacing = ascent + descent + lineGap;
     }
+
+    m_fontMetrics.setUnitsPerEm(unitsPerEm);
+    m_fontMetrics.setAscent(ascent);
+    m_fontMetrics.setDescent(descent);
+    m_fontMetrics.setLineGap(lineGap);
+    m_fontMetrics.setLineSpacing(lineSpacing);
+    m_fontMetrics.setXHeight(xHeight);
+
+    if (platformData().orientation() == Vertical && !isTextOrientationFallback())
+        m_hasVerticalGlyphs = fontHasVerticalGlyphs(m_platformData.ctFont());
 
     if (!m_platformData.m_isEmoji)
         return;
 
     int thirdOfSize = m_platformData.size() / 3;
-    m_ascent = thirdOfSize;
-    m_descent = thirdOfSize;
-    m_lineGap = thirdOfSize;
-    m_lineSpacing = 0;
+    m_fontMetrics.setAscent(thirdOfSize);
+    m_fontMetrics.setDescent(thirdOfSize);
+    m_fontMetrics.setLineGap(thirdOfSize);
+    m_fontMetrics.setLineSpacing(0);
 }
-    
+
 
 void SimpleFontData::platformCharWidthInit()
 {
@@ -108,40 +136,69 @@ void SimpleFontData::platformCharWidthInit()
 
 void SimpleFontData::platformDestroy()
 {
+    if (!isCustomFont() && m_derivedFontData) {
+        // These come from the cache.
+        if (m_derivedFontData->smallCaps)
+            fontCache()->releaseFontData(m_derivedFontData->smallCaps.leakPtr());
+
+        if (m_derivedFontData->emphasisMark)
+            fontCache()->releaseFontData(m_derivedFontData->emphasisMark.leakPtr());
+    }
+
+}
+
+PassOwnPtr<SimpleFontData> SimpleFontData::createScaledFontData(const FontDescription& fontDescription, float scaleFactor) const
+{
+    if (isCustomFont()) {
+        FontPlatformData scaledFontData(m_platformData);
+        scaledFontData.m_size = scaledFontData.m_size * scaleFactor;
+        return adoptPtr(new SimpleFontData(scaledFontData, true, false));
+    }
+
+    BEGIN_BLOCK_OBJC_EXCEPTIONS;
+    float size = m_platformData.size() * scaleFactor;
+    GSFontTraitMask fontTraits = GSFontGetTraits(m_platformData.font());
+    FontPlatformData scaledFontData(GSFontCreateWithName(GSFontGetFamilyName(m_platformData.font()), fontTraits, size), size, false, false, m_platformData.orientation());
+
+    // AppKit resets the type information (screen/printer) when you convert a font to a different size.
+    // We have to fix up the font that we're handed back.
+    UNUSED_PARAM(fontDescription);
+
+    if (scaledFontData.font()) {
+        if (m_platformData.m_syntheticBold)
+            fontTraits |= GSBoldFontMask;
+        if (m_platformData.m_syntheticOblique)
+            fontTraits |= GSItalicFontMask;
+
+        GSFontTraitMask scaledFontTraits = GSFontGetTraits(scaledFontData.font());
+        scaledFontData.m_syntheticBold = (fontTraits & GSBoldFontMask) && !(scaledFontTraits & GSBoldFontMask);
+        scaledFontData.m_syntheticOblique = (fontTraits & GSItalicFontMask) && !(scaledFontTraits & GSItalicFontMask);
+
+        return adoptPtr(fontCache()->getCachedFontData(&scaledFontData));
+    }
+    END_BLOCK_OBJC_EXCEPTIONS;
+
+    return nullptr;
 }
 
 SimpleFontData* SimpleFontData::smallCapsFontData(const FontDescription& fontDescription) const
 {
-    if (!m_smallCapsFontData) {
-        if (isCustomFont()) {
-            FontPlatformData smallCapsFontData(m_platformData);
-            smallCapsFontData.m_size = smallCapsFontData.m_size * smallCapsFontSizeMultiplier;
-            m_smallCapsFontData = new SimpleFontData(smallCapsFontData, true, false);
-        } else {
-            BEGIN_BLOCK_OBJC_EXCEPTIONS;
-            GSFontTraitMask fontTraits= GSFontGetTraits(m_platformData.font());
-            FontPlatformData smallCapsFont(GSFontCreateWithName(GSFontGetFamilyName(m_platformData.font()), fontTraits, GSFontGetSize(m_platformData.font()) * smallCapsFontSizeMultiplier));
-            
-            // AppKit resets the type information (screen/printer) when you convert a font to a different size.
-            // We have to fix up the font that we're handed back.
-            UNUSED_PARAM(fontDescription);
+    if (!m_derivedFontData)
+        m_derivedFontData = DerivedFontData::create(isCustomFont());
+    if (!m_derivedFontData->smallCaps)
+        m_derivedFontData->smallCaps = createScaledFontData(fontDescription, smallCapsFontSizeMultiplier);
 
-            if (smallCapsFont.font()) {
-                if (m_platformData.m_syntheticBold)
-                    fontTraits |= GSBoldFontMask;
-                if (m_platformData.m_syntheticOblique)
-                    fontTraits |= GSItalicFontMask;
+    return m_derivedFontData->smallCaps.get();
+}
 
-                GSFontTraitMask smallCapsFontTraits= GSFontGetTraits(smallCapsFont.font());
-                smallCapsFont.m_syntheticBold = (fontTraits & GSBoldFontMask) && !(smallCapsFontTraits & GSBoldFontMask);
-                smallCapsFont.m_syntheticOblique = (fontTraits & GSItalicFontMask) && !(smallCapsFontTraits & GSItalicFontMask);
+SimpleFontData* SimpleFontData::emphasisMarkFontData(const FontDescription& fontDescription) const
+{
+    if (!m_derivedFontData)
+        m_derivedFontData = DerivedFontData::create(isCustomFont());
+    if (!m_derivedFontData->emphasisMark)
+        m_derivedFontData->emphasisMark = createScaledFontData(fontDescription, .5f);
 
-                m_smallCapsFontData = fontCache()->getCachedFontData(&smallCapsFont);
-            }
-            END_BLOCK_OBJC_EXCEPTIONS;
-        }
-    }
-    return m_smallCapsFontData;
+    return m_derivedFontData->emphasisMark.get();
 }
 
 bool SimpleFontData::containsCharacters(const UChar* characters, int length) const
@@ -168,18 +225,8 @@ void SimpleFontData::determinePitch()
 FloatRect SimpleFontData::platformBoundsForGlyph(Glyph glyph) const
 {
     FloatRect boundingBox;
-#ifndef BUILDING_ON_TIGER
-    CGRect box;
-    CGFontGetGlyphBBoxes(platformData().cgFont(), &glyph, 1, &box);
-    float pointSize = platformData().m_size;
-    CGFloat scale = pointSize / unitsPerEm();
-    boundingBox = CGRectApplyAffineTransform(box, CGAffineTransformMakeScale(scale, -scale));
-#else
-    // FIXME: Custom fonts don't have NSFonts, so this function doesn't compute correct bounds for these on Tiger.
-    if (!m_platformData.font())
-        return boundingBox;
-    boundingBox = [m_platformData.font() boundingRectForGlyph:glyph];
-#endif
+    boundingBox = CTFontGetBoundingRectsForGlyphs(m_platformData.ctFont(), platformData().orientation() == Vertical ? kCTFontVerticalOrientation : kCTFontHorizontalOrientation, &glyph, 0, 1);
+    boundingBox.setY(-boundingBox.maxY());
     if (m_syntheticBoldOffset)
         boundingBox.setWidth(boundingBox.width() + m_syntheticBoldOffset);
 
@@ -188,19 +235,23 @@ FloatRect SimpleFontData::platformBoundsForGlyph(Glyph glyph) const
 
 float SimpleFontData::platformWidthForGlyph(Glyph glyph) const
 {
-    if (platformData().m_isEmoji) {
-        // returns the proper scaled advance for the image size - see Font::drawGlyphs
-        return std::min(platformData().m_size + (platformData().m_size <= 15.0f ? 4.0f : 6.0f), 22.0f);
-    }
-    float pointSize = platformData().m_size;
-    CGAffineTransform m = CGAffineTransformMakeScale(pointSize, pointSize);
     CGSize advance;
-    static const CGFontRenderingStyle renderingStyle = kCGFontRenderingStyleAntialiasing | kCGFontRenderingStyleSubpixelPositioning | kCGFontRenderingStyleSubpixelQuantization | kCGFontAntialiasingStyleUnfiltered;
-    if (!CGFontGetGlyphAdvancesForStyle(platformData().cgFont(), &m, renderingStyle, &glyph, 1, &advance)) {
-        RetainPtr<CFStringRef> fullName(AdoptCF, CGFontCopyFullName(platformData().cgFont()));
-        LOG_ERROR("Unable to cache glyph widths for %@ %f", fullName.get(), pointSize);
-        advance.width = 0;
-    }
+    if (platformData().orientation() == Horizontal || m_isBrokenIdeographFallback) {
+        if (platformData().m_isEmoji) {
+            // returns the proper scaled advance for the image size - see Font::drawGlyphs
+            return std::min(platformData().m_size + (platformData().m_size <= 15.0f ? 4.0f : 6.0f), 22.0f);
+        }
+        float pointSize = platformData().m_size;
+        CGAffineTransform m = CGAffineTransformMakeScale(pointSize, pointSize);
+        static const CGFontRenderingStyle renderingStyle = kCGFontRenderingStyleAntialiasing | kCGFontRenderingStyleSubpixelPositioning | kCGFontRenderingStyleSubpixelQuantization | kCGFontAntialiasingStyleUnfiltered;
+        if (!CGFontGetGlyphAdvancesForStyle(platformData().cgFont(), &m, renderingStyle, &glyph, 1, &advance)) {
+            RetainPtr<CFStringRef> fullName(AdoptCF, CGFontCopyFullName(platformData().cgFont()));
+            LOG_ERROR("Unable to cache glyph widths for %@ %f", fullName.get(), pointSize);
+            advance.width = 0;
+        }
+    } else
+        CTFontGetAdvancesForGlyphs(m_platformData.ctFont(), kCTFontVerticalOrientation, &glyph, &advance, 1);
+
     return advance.width + m_syntheticBoldOffset;
 }
 

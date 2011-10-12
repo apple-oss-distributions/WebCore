@@ -23,15 +23,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#include "Image.h"
+#ifndef PDFDocumentImage_h
+#define PDFDocumentImage_h
 
 #include "FloatRect.h"
 #include "GraphicsTypes.h"
+#include "Image.h"
 
-#if PLATFORM(CG)
+#if USE(CG)
 
-#include <CoreFoundation/CoreFoundation.h>
-#include <CoreGraphics/CoreGraphics.h>
+typedef struct CGPDFDocument *CGPDFDocumentRef;
 
 namespace WebCore {
 
@@ -76,4 +77,6 @@ namespace WebCore {
 
 }
 
-#endif // PLATFORM(CG)
+#endif // USE(CG)
+
+#endif // PDFDocumentImage_h

@@ -23,14 +23,15 @@
 #ifndef ImageLoader_h
 #define ImageLoader_h
 
-#include "AtomicString.h"
 #include "CachedResourceClient.h"
 #include "CachedResourceHandle.h"
+#include <wtf/text/AtomicString.h>
 
 namespace WebCore {
 
 class Element;
 class ImageLoadEventSender;
+class RenderImageResource;
 
 class ImageLoader : public CachedResourceClient {
 public:
@@ -55,8 +56,6 @@ public:
 
     void setLoadManually(bool loadManually) { m_loadManually = loadManually; }
 
-    virtual bool memoryLimitReached();
-
     bool haveFiredBeforeLoadEvent() const { return m_firedBeforeLoad; }
     bool haveFiredLoadEvent() const { return m_firedLoad; }
 
@@ -74,6 +73,7 @@ private:
     void dispatchPendingBeforeLoadEvent();
     void dispatchPendingLoadEvent();
 
+    RenderImageResource* renderImageResource();
     void updateRenderer();
 
     Element* m_element;

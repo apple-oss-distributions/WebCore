@@ -22,6 +22,7 @@
 
 #include "config.h"
 #include "PlatformTouchEvent.h"
+#include <wtf/CurrentTime.h>
 
 
 namespace WebCore {
@@ -41,6 +42,7 @@ PlatformTouchEvent::PlatformTouchEvent(QTouchEvent* event)
     m_altKey = (event->modifiers() & Qt::AltModifier);
     m_shiftKey = (event->modifiers() & Qt::ShiftModifier);
     m_metaKey = (event->modifiers() & Qt::MetaModifier);
+    m_timestamp = WTF::currentTime();
 }
 
 }

@@ -31,16 +31,17 @@ void WebCoreObjCDeallocOnWebThread(Class cls);
 void WebCoreObjCDeallocWithWebThreadLock(Class cls);
 
 // Asynchronous from main thread to web thread.
-void WebThreadCallAPI(NSInvocation *invocation);
+void WebThreadCallAPI(NSInvocation *invocation); /* DEPRECATED; use WebThreadRun() in WebCoreThreadRun.h */
 void WebThreadAdoptAndRelease(id obj);
 
 // Synchronous from web thread to main thread, or main thread to main thread.
 void WebThreadCallDelegate(NSInvocation *invocation);
-void WebThreadPostNotification(NSString *name, id object, id userInfo);
 
 // Asynchronous from web thread to main thread, but synchronous when called on the main thread.
 void WebThreadCallDelegateAsync(NSInvocation *invocation);
-void WebThreadPostNotificationAsync(NSString *name, id object, id userInfo);
+
+// Asynchronous from web thread to main thread, but synchronous when called on the main thread.
+void WebThreadPostNotification(NSString *name, id object, id userInfo);
 
 // Convenience method for making an NSInvocation object
 NSInvocation *WebThreadMakeNSInvocation(id target, SEL selector);

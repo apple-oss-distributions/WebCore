@@ -32,7 +32,7 @@
 #include <QDataStream>
 #endif
 
-#if PLATFORM(CG)
+#if USE(CG) || USE(SKIA_ON_MAC_CHROME)
 typedef struct CGPoint CGPoint;
 #endif
 
@@ -61,7 +61,7 @@ class wxPoint;
 typedef struct _point AEEPoint;
 #endif
 
-#if PLATFORM(SKIA)
+#if USE(SKIA)
 struct SkPoint;
 struct SkIPoint;
 #endif
@@ -102,7 +102,12 @@ public:
         *this = expandedTo(zero());
     }
 
-#if PLATFORM(CG)
+    IntPoint transposedPoint() const
+    {
+        return IntPoint(m_y, m_x);
+    }
+
+#if USE(CG) || USE(SKIA_ON_MAC_CHROME)
     explicit IntPoint(const CGPoint&); // don't do this implicitly since it's lossy
     operator CGPoint() const;
 #endif
@@ -137,7 +142,7 @@ public:
     operator AEEPoint() const;
 #endif
 
-#if PLATFORM(SKIA)
+#if USE(SKIA)
     IntPoint(const SkIPoint&);
     operator SkIPoint() const;
     operator SkPoint() const;

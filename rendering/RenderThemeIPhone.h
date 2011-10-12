@@ -19,7 +19,7 @@ public:
 
     virtual int popupInternalPaddingRight(RenderStyle*) const;
     
-    static void adjustButtonBorderRadius(RenderStyle*, RenderButton*);
+    static void adjustRoundBorderRadius(RenderStyle*, RenderBox*);
 
 protected:
 
@@ -29,42 +29,44 @@ protected:
     
     // Methods for each appearance value.
     virtual void adjustCheckboxStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
-    virtual bool paintCheckboxDecorations(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual bool paintCheckboxDecorations(RenderObject*, const PaintInfo&, const IntRect&);
 
     virtual void adjustRadioStyle(CSSStyleSelector*, RenderStyle*, Element*) const;    
-    virtual bool paintRadioDecorations(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual bool paintRadioDecorations(RenderObject*, const PaintInfo&, const IntRect&);
     
     virtual void adjustButtonStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
-    virtual bool paintButtonDecorations(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r);
-    virtual bool paintPushButtonDecorations(RenderObject* o, const RenderObject::PaintInfo& i, const IntRect& r);
+    virtual bool paintButtonDecorations(RenderObject* o, const PaintInfo& i, const IntRect& r);
+    virtual bool paintPushButtonDecorations(RenderObject* o, const PaintInfo& i, const IntRect& r);
     virtual void setButtonSize(RenderStyle*) const;
     
-    virtual bool paintTextFieldDecorations(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual bool paintTextFieldDecorations(RenderObject*, const PaintInfo&, const IntRect&);
 
-    virtual bool paintTextAreaDecorations(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual bool paintTextAreaDecorations(RenderObject*, const PaintInfo&, const IntRect&);
 
     virtual void adjustMenuListButtonStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
-    virtual bool paintMenuListButtonDecorations(RenderObject*, const RenderObject::PaintInfo&, const IntRect&);
+    virtual bool paintMenuListButtonDecorations(RenderObject*, const PaintInfo&, const IntRect&);
+
+    virtual void adjustSliderTrackStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
+    virtual bool paintSliderTrack(RenderObject*, const PaintInfo&, const IntRect&);
+
+    virtual void adjustSliderThumbSize(RenderObject*) const;
+    virtual bool paintSliderThumbDecorations(RenderObject*, const PaintInfo&, const IntRect&);
+
+    virtual void adjustSearchFieldStyle(CSSStyleSelector*, RenderStyle*, Element*) const;
+    virtual bool paintSearchFieldDecorations(RenderObject*, const PaintInfo&, const IntRect&);
     
     virtual Color platformActiveSelectionBackgroundColor() const;
     virtual Color platformInactiveSelectionBackgroundColor() const;
-        
+
+    virtual bool shouldShowPlaceholderWhenFocused() const;
+    virtual bool shouldHaveSpinButton(HTMLInputElement*) const;
+
 private:
     RenderThemeIPhone() { }
     virtual ~RenderThemeIPhone() { }
 
-    typedef enum
-    {
-        InsetGradient,
-        ShineGradient,
-        ShadeGradient,
-        ConvexGradient,
-        ConcaveGradient
-    } IPhoneGradientName;
-
     const Color& shadowColor() const;
-    IPhoneGradientRef gradientWithName(IPhoneGradientName aGradientName) const;
-    FloatRect addRoundedBorderClip(const FloatRect& aRect, const BorderData&, GraphicsContext* aContext);
+    FloatRect addRoundedBorderClip(RenderObject* box, GraphicsContext*, const IntRect&);
 };
     
 }

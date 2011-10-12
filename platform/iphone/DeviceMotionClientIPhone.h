@@ -29,6 +29,7 @@
 #include "DeviceMotionClient.h"
 #include "DeviceMotionController.h"
 #include "DeviceMotionData.h"
+#include <wtf/PassOwnPtr.h>
 #include <wtf/RefPtr.h>
 
 #ifdef __OBJC__
@@ -43,7 +44,7 @@ class DeviceMotionClientIPhone : public DeviceMotionClient {
 public:
     static PassOwnPtr<DeviceMotionClientIPhone> create()
     {
-        return new DeviceMotionClientIPhone();
+        return adoptPtr(new DeviceMotionClientIPhone());
     }
     DeviceMotionClientIPhone();
     virtual ~DeviceMotionClientIPhone();

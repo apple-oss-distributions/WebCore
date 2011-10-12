@@ -24,7 +24,9 @@
 #ifndef SimpleFontData_h
 #define SimpleFontData_h
 
+#include "FontBaseline.h"
 #include "FontData.h"
+#include "FontMetrics.h"
 #include "FontPlatformData.h"
 #include "FloatRect.h"
 #include "GlyphMetricsMap.h"
@@ -37,7 +39,7 @@
 typedef struct OpaqueATSUStyle* ATSUStyle;
 #endif
 
-#if USE(CORE_TEXT)
+#if PLATFORM(MAC) || USE(CORE_TEXT)
 #include <wtf/RetainPtr.h>
 #endif
 
@@ -46,7 +48,7 @@ typedef struct OpaqueATSUStyle* ATSUStyle;
 #include <usp10.h>
 #endif
 
-#if PLATFORM(CAIRO)
+#if USE(CAIRO)
 #include <cairo.h>
 #endif
 
@@ -64,28 +66,49 @@ class FontDescription;
 class SharedBuffer;
 class SVGFontData;
 
+enum FontDataVariant { AutoVariant, NormalVariant, SmallCapsVariant, EmphasisMarkVariant, BrokenIdeographVariant };
 enum Pitch { UnknownPitch, FixedPitch, VariablePitch };
 
 class SimpleFontData : public FontData {
 public:
-    SimpleFontData(const FontPlatformData&, bool isCustomFont = false, bool isLoading = false);
+    SimpleFontData(const FontPlatformData&, bool isCustomFont = false, bool isLoading = false, bool isTextOrientationFallback = false);
 #if ENABLE(SVG_FONTS)
     SimpleFontData(PassOwnPtr<SVGFontData>, int size, bool syntheticBold, bool syntheticItalic);
 #endif
     virtual ~SimpleFontData();
 
     const FontPlatformData& platformData() const { return m_platformData; }
-    SimpleFontData* smallCapsFontData(const FontDescription& fontDescription) const;
 
-    // vertical metrics
-    int ascent() const { return m_ascent; }
-    int descent() const { return m_descent; }
-    int lineSpacing() const { return m_lineSpacing; }
-    int lineGap() const { return m_lineGap; }
+    SimpleFontData* smallCapsFontData(const FontDescription&) const;
+    SimpleFontData* emphasisMarkFontData(const FontDescription&) const;
+    SimpleFontData* brokenIdeographFontData() const;
+
+    SimpleFontData* variantFontData(const FontDescription& description, FontDataVariant variant) const
+    {
+        switch (variant) {
+        case SmallCapsVariant:
+            return smallCapsFontData(description);
+        case EmphasisMarkVariant:
+            return emphasisMarkFontData(description);
+        case BrokenIdeographVariant:
+            return brokenIdeographFontData();
+        case AutoVariant:
+        case NormalVariant:
+            break;
+        }
+        ASSERT_NOT_REACHED();
+        return const_cast<SimpleFontData*>(this);
+    }
+
+    SimpleFontData* verticalRightOrientationFontData() const;
+    SimpleFontData* uprightOrientationFontData() const;
+
+    bool hasVerticalGlyphs() const { return m_hasVerticalGlyphs; }
+    bool isTextOrientationFallback() const { return m_isTextOrientationFallback; }
+
+    const FontMetrics& fontMetrics() const { return m_fontMetrics; }
     float maxCharWidth() const { return m_maxCharWidth; }
     float avgCharWidth() const { return m_avgCharWidth; }
-    float xHeight() const { return m_xHeight; }
-    unsigned unitsPerEm() const { return m_unitsPerEm; }
 
     FloatRect boundsForGlyph(Glyph) const;
     float widthForGlyph(Glyph glyph) const;
@@ -95,11 +118,12 @@ public:
     float spaceWidth() const { return m_spaceWidth; }
     float adjustedSpaceWidth() const { return m_adjustedSpaceWidth; }
 
-#if PLATFORM(CG) || PLATFORM(CAIRO) || PLATFORM(WX)
+#if USE(CG) || USE(CAIRO) || PLATFORM(WX) || USE(SKIA_ON_MAC_CHROME)
     float syntheticBoldOffset() const { return m_syntheticBoldOffset; }
 #endif
 
     Glyph spaceGlyph() const { return m_spaceGlyph; }
+    bool isZeroWidthSpaceGlyph(Glyph glyph) const { return glyph == m_zeroWidthSpaceGlyph && glyph; }
 
     virtual const SimpleFontData* fontDataForCharacter(UChar32) const;
     virtual bool containsCharacters(const UChar*, int length) const;
@@ -126,8 +150,8 @@ public:
 
     GSFontRef getGSFont() const { return m_platformData.font(); }
 
-#if USE(CORE_TEXT)
-    CFDictionaryRef getCFStringAttributes(TypesettingFeatures) const;
+#if PLATFORM(MAC) || USE(CORE_TEXT)
+    CFDictionaryRef getCFStringAttributes(TypesettingFeatures, FontOrientation) const;
 #endif
 
 #if USE(ATSUI)
@@ -168,6 +192,8 @@ private:
 
     void commonInit();
 
+    PassOwnPtr<SimpleFontData> createScaledFontData(const FontDescription&, float scaleFactor) const;
+
 #if (PLATFORM(WIN) && !OS(WINCE)) \
     || (OS(WINDOWS) && PLATFORM(WX))
     void initGDIFont();
@@ -176,15 +202,10 @@ private:
     float widthForGDIGlyph(Glyph glyph) const;
 #endif
 
-    int m_ascent;
-    int m_descent;
-    int m_lineSpacing;
-    int m_lineGap;
+    FontMetrics m_fontMetrics;
     float m_maxCharWidth;
     float m_avgCharWidth;
-    float m_xHeight;
-    unsigned m_unitsPerEm;
-
+    
     FontPlatformData m_platformData;
 
     mutable OwnPtr<GlyphMetricsMap<FloatRect> > m_glyphToBoundsMap;
@@ -198,7 +219,11 @@ private:
 
     bool m_isCustomFont;  // Whether or not we are custom font loaded via @font-face
     bool m_isLoading; // Whether or not this custom font is still in the act of loading.
-
+    
+    bool m_isTextOrientationFallback;
+    bool m_isBrokenIdeographFallback;
+    bool m_hasVerticalGlyphs;
+    
     Glyph m_spaceGlyph;
     float m_spaceWidth;
     float m_adjustedSpaceWidth;
@@ -207,18 +232,30 @@ private:
 
     GlyphData m_missingGlyphData;
 
-    mutable SimpleFontData* m_smallCapsFontData;
+    struct DerivedFontData {
+        static PassOwnPtr<DerivedFontData> create(bool forCustomFont);
+        ~DerivedFontData();
 
-#if PLATFORM(CG) || PLATFORM(CAIRO) || PLATFORM(WX)
+        bool forCustomFont;
+        OwnPtr<SimpleFontData> smallCaps;
+        OwnPtr<SimpleFontData> emphasisMark;
+        OwnPtr<SimpleFontData> brokenIdeograph;
+        OwnPtr<SimpleFontData> verticalRightOrientation;
+        OwnPtr<SimpleFontData> uprightOrientation;
+
+    private:
+        DerivedFontData(bool custom)
+            : forCustomFont(custom)
+        {
+        }
+    };
+
+    mutable OwnPtr<DerivedFontData> m_derivedFontData;
+
+#if USE(CG) || USE(CAIRO) || PLATFORM(WX) || USE(SKIA_ON_MAC_CHROME)
     float m_syntheticBoldOffset;
 #endif
 
-#ifdef BUILDING_ON_TIGER
-public:
-    void* m_styleGroup;
-
-private:
-#endif
 
 #if USE(ATSUI)
 public:
@@ -230,7 +267,7 @@ public:
 private:
 #endif
 
-#if USE(CORE_TEXT)
+#if PLATFORM(MAC) || USE(CORE_TEXT)
     mutable HashMap<unsigned, RetainPtr<CFDictionaryRef> > m_CFStringAttributes;
 #endif
 
@@ -242,12 +279,11 @@ private:
 #endif
 #endif
 };
-    
-    
-#if !PLATFORM(QT)
+
+#if !(PLATFORM(QT) && !HAVE(QRAWFONT))
 ALWAYS_INLINE FloatRect SimpleFontData::boundsForGlyph(Glyph glyph) const
 {
-    if (glyph == m_zeroWidthSpaceGlyph && glyph)
+    if (isZeroWidthSpaceGlyph(glyph))
         return FloatRect();
 
     FloatRect bounds;
@@ -259,14 +295,14 @@ ALWAYS_INLINE FloatRect SimpleFontData::boundsForGlyph(Glyph glyph) const
 
     bounds = platformBoundsForGlyph(glyph);
     if (!m_glyphToBoundsMap)
-        m_glyphToBoundsMap.set(new GlyphMetricsMap<FloatRect>());
+        m_glyphToBoundsMap = adoptPtr(new GlyphMetricsMap<FloatRect>);
     m_glyphToBoundsMap->setMetricsForGlyph(glyph, bounds);
     return bounds;
 }
 
 ALWAYS_INLINE float SimpleFontData::widthForGlyph(Glyph glyph) const
 {
-    if (glyph == m_zeroWidthSpaceGlyph && glyph)
+    if (isZeroWidthSpaceGlyph(glyph))
         return 0;
 
     float width = m_glyphToWidthMap.metricsForGlyph(glyph);

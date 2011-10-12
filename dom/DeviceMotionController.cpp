@@ -40,6 +40,11 @@ DeviceMotionController::DeviceMotionController(DeviceMotionClient* client)
     m_client->setController(this);
 }
 
+DeviceMotionController::~DeviceMotionController()
+{
+    m_client->deviceMotionControllerDestroyed();
+}
+
 void DeviceMotionController::timerFired(Timer<DeviceMotionController>* timer)
 {
     ASSERT_UNUSED(timer, timer == &m_timer);
@@ -49,7 +54,7 @@ void DeviceMotionController::timerFired(Timer<DeviceMotionController>* timer)
     RefPtr<DeviceMotionData> deviceMotionData = m_client ? m_client->currentDeviceMotion() : DeviceMotionData::create();
     RefPtr<DeviceMotionEvent> event = DeviceMotionEvent::create(eventNames().devicemotionEvent, deviceMotionData.get());
  
-    Vector<DOMWindow*> listenersVector;
+    Vector<RefPtr<DOMWindow> > listenersVector;
     copyToVector(m_newListeners, listenersVector);
     m_newListeners.clear();
     for (size_t i = 0; i < listenersVector.size(); ++i)
@@ -110,7 +115,7 @@ void DeviceMotionController::resumeUpdates()
 void DeviceMotionController::didChangeDeviceMotion(DeviceMotionData* deviceMotionData)
 {
     RefPtr<DeviceMotionEvent> event = DeviceMotionEvent::create(eventNames().devicemotionEvent, deviceMotionData);
-    Vector<DOMWindow*> listenersVector;
+    Vector<RefPtr<DOMWindow> > listenersVector;
     copyToVector(m_listeners, listenersVector);
     for (size_t i = 0; i < listenersVector.size(); ++i)
         listenersVector[i]->dispatchEvent(event);

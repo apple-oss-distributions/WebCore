@@ -29,6 +29,9 @@
 #include <wtf/RetainPtr.h>
 #include <CoreFoundation/CFURL.h>
 
+#include "RuntimeApplicationChecksIPhone.h"
+#include <CoreFoundation/CFPriv.h>
+
 using namespace std;
 
 namespace WebCore {

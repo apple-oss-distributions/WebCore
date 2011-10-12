@@ -79,7 +79,10 @@ typedef struct _WKQuad {
 - (CGRect)boundingBox;
 - (NSArray *)lineBoxRects WEBKIT_OBJC_METHOD_ANNOTATION(AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER);
 
+- (CGRect)boundingBoxUsingTransforms; // takes transforms into account
+
 - (WKQuad)absoluteQuad;
+- (WKQuad)absoluteQuadAndInsideFixedPosition:(BOOL *)insideFixed;
 - (NSArray *)lineBoxQuads;      // returns array of WKQuadObject
 
 - (NSURL *)hrefURL;
@@ -88,7 +91,6 @@ typedef struct _WKQuad {
 - (NSString *)hrefLabel;
 - (NSString *)hrefTitle;
 - (CGRect)boundingFrame;
-- (CGRect)innerFrame;
 - (WKQuad)innerFrameQuad;       // takes transforms into account
 - (float)computedFontSize;
 - (DOMNode *)nextFocusNode;

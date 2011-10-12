@@ -26,6 +26,7 @@
 #include "config.h"
 #include "PositionIterator.h"
 
+#include "HTMLNames.h"
 #include "Node.h"
 #include "RenderBlock.h"
 #include "htmlediting.h"
@@ -38,10 +39,13 @@ PositionIterator::operator Position() const
 {
     if (m_nodeAfterPositionInAnchor) {
         ASSERT(m_nodeAfterPositionInAnchor->parentNode() == m_anchorNode);
+        // FIXME: This check is inadaquete because any ancestor could be ignored by editing
+        if (editingIgnoresContent(m_nodeAfterPositionInAnchor->parentNode()))
+            return positionBeforeNode(m_anchorNode);
         return positionInParentBeforeNode(m_nodeAfterPositionInAnchor);
     }
     if (m_anchorNode->hasChildNodes())
-        return lastDeepEditingPositionForNode(m_anchorNode);
+        return lastPositionInOrAfterNode(m_anchorNode);
     return Position(m_anchorNode, m_offsetInAnchor);
 }
 
@@ -98,6 +102,13 @@ void PositionIterator::decrement()
     }
 }
 
+void PositionIterator::setOffsetInLeafNode(int offset)
+{
+    ASSERT(!m_anchorNode->hasChildNodes());
+    ASSERT(0 <= offset && offset <= lastOffsetForEditing(m_anchorNode));
+    m_offsetInAnchor = offset;
+}
+
 bool PositionIterator::atStart() const
 {
     if (!m_anchorNode)
@@ -147,19 +158,19 @@ bool PositionIterator::isCandidate() const
         return false;
 
     if (renderer->isBR())
-        return !m_offsetInAnchor && !Position::nodeIsUserSelectNone(m_anchorNode->parent());
+        return !m_offsetInAnchor && !Position::nodeIsUserSelectNone(m_anchorNode->parentNode());
 
     if (renderer->isText())
-        return Position(*this).inRenderedText() && !Position::nodeIsUserSelectNone(m_anchorNode);
+        return !Position::nodeIsUserSelectNone(m_anchorNode) && Position(*this).inRenderedText();
 
     if (isTableElement(m_anchorNode) || editingIgnoresContent(m_anchorNode))
-        return (atStartOfNode() || atEndOfNode()) && !Position::nodeIsUserSelectNone(m_anchorNode->parent());
+        return (atStartOfNode() || atEndOfNode()) && !Position::nodeIsUserSelectNone(m_anchorNode->parentNode());
 
     if (!m_anchorNode->hasTagName(htmlTag) && renderer->isBlockFlow()) {
         if (toRenderBlock(renderer)->height() || m_anchorNode->hasTagName(bodyTag)) {
             if (!Position::hasRenderedNonAnonymousDescendantsWithHeight(renderer))
                 return atStartOfNode() && !Position::nodeIsUserSelectNone(m_anchorNode);
-            return m_anchorNode->isContentEditable() && !Position::nodeIsUserSelectNone(m_anchorNode) && Position(*this).atEditingBoundary();
+            return m_anchorNode->rendererIsEditable() && !Position::nodeIsUserSelectNone(m_anchorNode) && Position(*this).atEditingBoundary();
         }
     }
 

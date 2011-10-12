@@ -40,6 +40,8 @@ namespace WebCore {
 - (void)scrollingModes:(int*)hMode vertical:(int*)vMode;
 #endif
 - (void)setScrollBarsSuppressed:(BOOL)suppressed repaintOnUnsuppress:(BOOL)repaint;
+- (void)setScrollOrigin:(NSPoint)origin updatePositionAtAll:(BOOL)updatePositionAtAll immediately:(BOOL)updatePositionImmediately;
+- (NSPoint)scrollOrigin;
 @end
 
 @protocol WebCoreFrameView

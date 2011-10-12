@@ -32,6 +32,16 @@ bool applicationIsMobileMail();
 bool applicationIsMobileSafari();
 bool applicationIsDumpRenderTree();
 bool applicationIsMobileStore();
+bool applicationIsWebApp();
+bool applicationIsOkCupid();
+bool applicationIsSolarWalk();
+bool applicationIsFacebook();
+bool applicationIsFacebookTouchHD();
+bool applicationIsEpicurious();
+bool applicationIsDaijisenDictionary();
+bool applicationIsNASAHD();
+bool applicationIsMASH();
+bool applicationIsTheEconomistOnIPhone();
 
 } // namespace WebCore
 

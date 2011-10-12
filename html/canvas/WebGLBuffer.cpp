@@ -25,20 +25,23 @@
 
 #include "config.h"
 
-#if ENABLE(3D_CANVAS)
+#if ENABLE(WEBGL)
 
 #include "WebGLBuffer.h"
+
+#include "ArrayBufferView.h"
+#include "CheckedInt.h"
 #include "WebGLRenderingContext.h"
 
 namespace WebCore {
-    
+
 PassRefPtr<WebGLBuffer> WebGLBuffer::create(WebGLRenderingContext* ctx)
 {
     return adoptRef(new WebGLBuffer(ctx));
 }
 
 WebGLBuffer::WebGLBuffer(WebGLRenderingContext* ctx)
-    : CanvasObject(ctx)
+    : WebGLObject(ctx)
     , m_target(0)
     , m_byteLength(0)
     , m_nextAvailableCacheEntry(0)
@@ -47,94 +50,138 @@ WebGLBuffer::WebGLBuffer(WebGLRenderingContext* ctx)
     clearCachedMaxIndices();
 }
 
-void WebGLBuffer::_deleteObject(Platform3DObject object)
+void WebGLBuffer::deleteObjectImpl(Platform3DObject object)
 {
     context()->graphicsContext3D()->deleteBuffer(object);
 }
 
-bool WebGLBuffer::associateBufferData(int size)
+bool WebGLBuffer::associateBufferDataImpl(ArrayBuffer* array, GC3Dintptr byteOffset, GC3Dsizeiptr byteLength)
 {
+    if (byteLength < 0 || byteOffset < 0)
+        return false;
+
+    if (array && byteLength) {
+        CheckedInt<GC3Dintptr> checkedOffset(byteOffset);
+        CheckedInt<GC3Dsizeiptr> checkedLength(byteLength);
+        CheckedInt<GC3Dintptr> checkedMax = checkedOffset + checkedLength;
+        if (!checkedMax.valid() || checkedMax.value() > static_cast<int32_t>(array->byteLength()))
+            return false;
+    }
+
     switch (m_target) {
     case GraphicsContext3D::ELEMENT_ARRAY_BUFFER:
+        m_byteLength = byteLength;
+        clearCachedMaxIndices();
+        if (byteLength) {
+            m_elementArrayBuffer = ArrayBuffer::create(byteLength, 1);
+            if (!m_elementArrayBuffer) {
+                m_byteLength = 0;
+                return false;
+            }
+            if (array) {
+                // We must always clone the incoming data because client-side
+                // modifications without calling bufferData or bufferSubData
+                // must never be able to change the validation results.
+                memcpy(static_cast<unsigned char*>(m_elementArrayBuffer->data()),
+                       static_cast<unsigned char*>(array->data()) + byteOffset,
+                       byteLength);
+            }
+        } else
+            m_elementArrayBuffer = 0;
+        return true;
     case GraphicsContext3D::ARRAY_BUFFER:
-        m_byteLength = size;
+        m_byteLength = byteLength;
         return true;
     default:
         return false;
     }
 }
 
+bool WebGLBuffer::associateBufferData(GC3Dsizeiptr size)
+{
+    if (size < 0)
+        return false;
+    return associateBufferDataImpl(0, 0, size);
+}
+
+bool WebGLBuffer::associateBufferData(ArrayBuffer* array)
+{
+    if (!array)
+        return false;
+    return associateBufferDataImpl(array, 0, array->byteLength());
+}
+
 bool WebGLBuffer::associateBufferData(ArrayBufferView* array)
 {
-    if (!m_target)
-        return false;
     if (!array)
         return false;
-
-    if (m_target == GraphicsContext3D::ELEMENT_ARRAY_BUFFER) {
-        clearCachedMaxIndices();
-        m_byteLength = array->byteLength();
-        // We must always clone the incoming data because client-side
-        // modifications without calling bufferData or bufferSubData
-        // must never be able to change the validation results.
-        m_elementArrayBuffer = ArrayBuffer::create(array->buffer().get());
-        return true;
-    }
-
-    if (m_target == GraphicsContext3D::ARRAY_BUFFER) {
-        m_byteLength = array->byteLength();
-        return true;
-    }
-    
-    return false;
+    return associateBufferDataImpl(array->buffer().get(), array->byteOffset(), array->byteLength());
 }
 
-bool WebGLBuffer::associateBufferSubData(long offset, ArrayBufferView* array)
+bool WebGLBuffer::associateBufferSubDataImpl(GC3Dintptr offset, ArrayBuffer* array, GC3Dintptr arrayByteOffset, GC3Dsizeiptr byteLength)
 {
-    if (!m_target)
-        return false;
-    if (!array)
+    if (!array || offset < 0 || arrayByteOffset < 0 || byteLength < 0)
         return false;
 
-    if (m_target == GraphicsContext3D::ELEMENT_ARRAY_BUFFER) {
-        clearCachedMaxIndices();
-
-        // We need to protect against integer overflow with these tests
-        if (offset < 0)
+    if (byteLength) {
+        CheckedInt<GC3Dintptr> checkedBufferOffset(offset);
+        CheckedInt<GC3Dintptr> checkedArrayOffset(arrayByteOffset);
+        CheckedInt<GC3Dsizeiptr> checkedLength(byteLength);
+        CheckedInt<GC3Dintptr> checkedArrayMax = checkedArrayOffset + checkedLength;
+        CheckedInt<GC3Dintptr> checkedBufferMax = checkedBufferOffset + checkedLength;
+        if (!checkedArrayMax.valid() || checkedArrayMax.value() > static_cast<int32_t>(array->byteLength()) || !checkedBufferMax.valid() || checkedBufferMax.value() > m_byteLength)
             return false;
-            
-        unsigned long uoffset = static_cast<unsigned long>(offset);
-        if (uoffset > m_byteLength || array->byteLength() > m_byteLength - uoffset)
-            return false;
-            
-        memcpy(static_cast<unsigned char*>(m_elementArrayBuffer->data()) + offset, array->baseAddress(), array->byteLength());
-        return true;
     }
 
-    if (m_target == GraphicsContext3D::ARRAY_BUFFER)
-        return array->byteLength() + offset <= m_byteLength;
-
-    return false;
+    switch (m_target) {
+    case GraphicsContext3D::ELEMENT_ARRAY_BUFFER:
+        clearCachedMaxIndices();
+        if (byteLength) {
+            if (!m_elementArrayBuffer)
+                return false;
+            memcpy(static_cast<unsigned char*>(m_elementArrayBuffer->data()) + offset,
+                   static_cast<unsigned char*>(array->data()) + arrayByteOffset,
+                   byteLength);
+        }
+        return true;
+    case GraphicsContext3D::ARRAY_BUFFER:
+        return true;
+    default:
+        return false;
+    }
 }
 
-unsigned WebGLBuffer::byteLength() const
+bool WebGLBuffer::associateBufferSubData(GC3Dintptr offset, ArrayBuffer* array)
+{
+    if (!array)
+        return false;
+    return associateBufferSubDataImpl(offset, array, 0, array->byteLength());
+}
+
+bool WebGLBuffer::associateBufferSubData(GC3Dintptr offset, ArrayBufferView* array)
+{
+    if (!array)
+        return false;
+    return associateBufferSubDataImpl(offset, array->buffer().get(), array->byteOffset(), array->byteLength());
+}
+
+GC3Dsizeiptr WebGLBuffer::byteLength() const
 {
     return m_byteLength;
 }
 
-long WebGLBuffer::getCachedMaxIndex(unsigned long type)
+int WebGLBuffer::getCachedMaxIndex(GC3Denum type)
 {
-    size_t numEntries = sizeof(m_maxIndexCache) / sizeof(MaxIndexCacheEntry);
-    for (size_t i = 0; i < numEntries; i++)
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(m_maxIndexCache); ++i)
         if (m_maxIndexCache[i].type == type)
             return m_maxIndexCache[i].maxIndex;
     return -1;
 }
 
-void WebGLBuffer::setCachedMaxIndex(unsigned long type, long value)
+void WebGLBuffer::setCachedMaxIndex(GC3Denum type, int value)
 {
-    int numEntries = sizeof(m_maxIndexCache) / sizeof(MaxIndexCacheEntry);
-    for (int i = 0; i < numEntries; i++)
+    size_t numEntries = WTF_ARRAY_LENGTH(m_maxIndexCache);
+    for (size_t i = 0; i < numEntries; ++i)
         if (m_maxIndexCache[i].type == type) {
             m_maxIndexCache[i].maxIndex = value;
             return;
@@ -144,7 +191,7 @@ void WebGLBuffer::setCachedMaxIndex(unsigned long type, long value)
     m_nextAvailableCacheEntry = (m_nextAvailableCacheEntry + 1) % numEntries;
 }
 
-void WebGLBuffer::setTarget(unsigned long target)
+void WebGLBuffer::setTarget(GC3Denum target)
 {
     // In WebGL, a buffer is bound to one target in its lifetime
     if (m_target)
@@ -160,4 +207,4 @@ void WebGLBuffer::clearCachedMaxIndices()
 
 }
 
-#endif // ENABLE(3D_CANVAS)
+#endif // ENABLE(WEBGL)

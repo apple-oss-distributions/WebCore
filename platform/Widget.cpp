@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.  All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -106,6 +106,10 @@ IntPoint Widget::convertToContainingWindow(const IntPoint& localPoint) const
 }
 
 #if !PLATFORM(MAC)
+void Widget::setBoundsSize(const IntSize&)
+{
+}
+
 IntRect Widget::convertFromRootToContainingWindow(const Widget*, const IntRect& rect)
 {
     return rect;
@@ -124,16 +128,6 @@ IntPoint Widget::convertFromRootToContainingWindow(const Widget*, const IntPoint
 IntPoint Widget::convertFromContainingWindowToRoot(const Widget*, const IntPoint& point)
 {
     return point;
-}
-#endif
-
-#if !PLATFORM(MAC) && !PLATFORM(GTK)
-void Widget::releasePlatformWidget()
-{
-}
-
-void Widget::retainPlatformWidget()
-{
 }
 #endif
 
@@ -172,6 +166,23 @@ IntPoint Widget::convertFromContainingView(const IntPoint& parentPoint) const
         return parentScrollView->convertSelfToChild(this, parentPoint);
 
     return parentPoint;
+}
+
+FloatQuad Widget::convertToContainingView(const FloatQuad& localQuad) const
+{
+    if (const ScrollView* parentScrollView = parent())
+        return parentScrollView->convertChildToSelf(this, localQuad);
+
+    return localQuad;
+}
+
+FloatQuad Widget::convertToRootContainingView(const FloatQuad& localQuad) const
+{
+    if (!parent())
+        return localQuad;
+
+    FloatQuad containingQuad = convertToContainingView(localQuad);
+    return parent()->convertToRootContainingView(containingQuad);
 }
 
 #if !PLATFORM(EFL)

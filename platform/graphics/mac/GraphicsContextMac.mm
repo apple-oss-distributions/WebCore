@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2004, 2005, 2006 Apple Computer, Inc.  All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -46,7 +46,7 @@ namespace WebCore {
 // calls in this file are all exception-safe, so we don't block
 // exceptions for those.
 
-    
+
 void GraphicsContext::drawFocusRing(const Vector<IntRect>& rects, int width, int offset, const Color& color)
 {
     UNUSED_PARAM(rects);
@@ -55,41 +55,57 @@ void GraphicsContext::drawFocusRing(const Vector<IntRect>& rects, int width, int
     UNUSED_PARAM(color);
 }
 
-#ifdef BUILDING_ON_TIGER // Post-Tiger's setCompositeOperation() is defined in GraphicsContextCG.cpp.
-void GraphicsContext::setCompositeOperation(CompositeOperator op)
-{
-    if (paintingDisabled())
-        return;
-    NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
-    [[NSGraphicsContext graphicsContextWithGraphicsPort:platformContext() flipped:YES]
-        setCompositingOperation:(NSCompositingOperation)op];
-    [pool drain];
-}
-#endif
 
-static CGPatternRef createSpellingPattern(bool& usingDot)
+static CGPatternRef createDotPattern(bool& usingDot, const char* resourceName)
 {
-    CGImageRef image = WKGraphicsCreateImageFromBundleWithName("SpellingDot");
+    CGImageRef image = WKGraphicsCreateImageFromBundleWithName(resourceName);
     ASSERT(image); // if image is not available, we want to know
-    CGPatternRef spellingPattern = WKCreatePatternFromCGImage(image);
+    CGPatternRef dotPattern = WKCreatePatternFromCGImage(image);
     CGImageRelease(image);
     usingDot = true;
-    return spellingPattern;
+    return dotPattern;
 }
 
 // WebKit on Mac is a standard platform component, so it must use the standard platform artwork for underline.
-void GraphicsContext::drawLineForMisspellingOrBadGrammar(const IntPoint& point, int width, bool grammar)
+void GraphicsContext::drawLineForTextChecking(const FloatPoint& point, float width, TextCheckingLineStyle style)
 {
     if (paintingDisabled())
         return;
         
     // These are the same for misspelling or bad grammar.
     int patternHeight = cMisspellingLineThickness;
-    int patternWidth = cMisspellingLinePatternWidth;
- 
-    UNUSED_PARAM(grammar);
-    bool usingDot = false;
-    DEFINE_STATIC_LOCAL(RetainPtr<CGPattern>, spellingPattern, (createSpellingPattern(usingDot)));
+    float patternWidth = cMisspellingLinePatternWidth;
+
+    bool usingDot;
+    CGPatternRef dotPattern;
+    switch (style) {
+        case TextCheckingSpellingLineStyle:
+        {
+            // Constants for spelling pattern color.
+            static bool usingDotForSpelling = false;
+            DEFINE_STATIC_LOCAL(RetainPtr<CGPatternRef>, spellingPattern, (createDotPattern(usingDotForSpelling, "SpellingDot")));
+            dotPattern = spellingPattern.get();
+            usingDot = usingDotForSpelling;
+            break;
+        }
+        case TextCheckingGrammarLineStyle:
+        {
+            ASSERT_NOT_REACHED();
+            return;
+        }
+        case TextCheckingDictationPhraseWithAlternativesLineStyle:
+        {
+            static bool usingDotForDictationPhraseWithAlternatives = false;
+            DEFINE_STATIC_LOCAL(RetainPtr<CGPatternRef>, dictationPhraseWithAlternativesPattern, (createDotPattern(usingDotForDictationPhraseWithAlternatives, "DictationPhraseWithAlternativesDot")));
+            dotPattern = dictationPhraseWithAlternativesPattern.get();
+            usingDot = usingDotForDictationPhraseWithAlternatives;
+            break;
+        }
+        default:
+            // FIXME: Should remove default case so we get compile-time errors.
+            ASSERT_NOT_REACHED();
+            return;
+    }
 
     // Make sure to draw only complete dots.
     // NOTE: Code here used to shift the underline to the left and increase the width
@@ -98,7 +114,7 @@ void GraphicsContext::drawLineForMisspellingOrBadGrammar(const IntPoint& point, 
     // space between adjacent misspelled words was underlined.
     if (usingDot) {
         // allow slightly more considering that the pattern ends with a transparent pixel
-        int widthMod = width % patternWidth;
+        float widthMod = fmodf(width, patternWidth);
         if (patternWidth - widthMod > cMisspellingLinePatternGapWidth)
             width -= widthMod;
     }
@@ -112,7 +128,7 @@ void GraphicsContext::drawLineForMisspellingOrBadGrammar(const IntPoint& point, 
     CGContextRef context = platformContext();
     CGContextSaveGState(context);
 
-    WKSetPattern(context, spellingPattern.get(), YES, YES);
+    WKSetPattern(context, dotPattern, YES, YES);
 
     wkSetPatternPhaseInUserSpace(context, point);
 

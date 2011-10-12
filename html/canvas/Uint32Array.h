@@ -27,67 +27,34 @@
 #ifndef Uint32Array_h
 #define Uint32Array_h
 
-#include "ArrayBufferView.h"
-#include <limits>
-#include <wtf/MathExtras.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
+#include "IntegralTypedArrayBase.h"
 
 namespace WebCore {
 
-class Uint32Array : public ArrayBufferView {
-  public:
-    virtual bool isUnsignedIntArray() const { return true; }
+class ArrayBuffer;
 
+class Uint32Array : public IntegralTypedArrayBase<unsigned int> {
+public:
     static PassRefPtr<Uint32Array> create(unsigned length);
     static PassRefPtr<Uint32Array> create(unsigned int* array, unsigned length);
     static PassRefPtr<Uint32Array> create(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length);
 
-    unsigned int* data() { return static_cast<unsigned int*>(baseAddress()); }
+    // Can’t use "using" here due to a bug in the RVCT compiler.
+    void set(TypedArrayBase<unsigned int>* array, unsigned offset, ExceptionCode& ec) { TypedArrayBase<unsigned int>::set(array, offset, ec); }
+    void set(unsigned index, double value) { IntegralTypedArrayBase<unsigned int>::set(index, value); }
 
-    virtual unsigned length() const;
-    virtual unsigned byteLength() const;
-    virtual PassRefPtr<ArrayBufferView> slice(int start, int end);
+    PassRefPtr<Uint32Array> subarray(int start) const;
+    PassRefPtr<Uint32Array> subarray(int start, int end) const;
 
-    void set(unsigned index, double value)
-    {
-        if (index >= m_size)
-            return;
-        if (isnan(value)) // Clamp NaN to 0
-            value = 0;
-        if (value < std::numeric_limits<unsigned int>::min())
-            value = std::numeric_limits<unsigned int>::min();
-        else if (value > std::numeric_limits<unsigned int>::max())
-            value = std::numeric_limits<unsigned int>::max();
-        unsigned int* storage = static_cast<unsigned int*>(m_baseAddress);
-        storage[index] = static_cast<unsigned int>(value);
-    }
+private:
+    Uint32Array(PassRefPtr<ArrayBuffer> buffer,
+                unsigned byteOffset,
+                unsigned length);
+    // Make constructor visible to superclass.
+    friend class TypedArrayBase<unsigned int>;
 
-    bool get(unsigned index, unsigned int& result) const
-    {
-        if (index >= m_size)
-            return false;
-        result = item(index);
-        return true;
-    }
-
-    unsigned int get(unsigned index) const
-    {
-        return item(index);
-    }
-
-    unsigned int item(unsigned index) const
-    {
-        ASSERT(index < m_size);
-        unsigned int* storage = static_cast<unsigned int*>(m_baseAddress);
-        return storage[index];
-    }
-
-    void set(Uint32Array* array, unsigned offset, ExceptionCode& ec);
-
-  private:
-    Uint32Array(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length);
-    unsigned m_size;
+    // Overridden from ArrayBufferView.
+    virtual bool isUnsignedIntArray() const { return true; }
 };
 
 } // namespace WebCore

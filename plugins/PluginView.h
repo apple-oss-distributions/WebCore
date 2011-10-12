@@ -32,9 +32,9 @@
 #include "HaltablePlugin.h"
 #include "IntRect.h"
 #include "MediaCanStartListener.h"
+#include "PluginViewBase.h"
 #include "ResourceRequest.h"
 #include "Timer.h"
-#include "Widget.h"
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/OwnPtr.h>
@@ -57,12 +57,28 @@ typedef PlatformWidget PlatformPluginWidget;
 #include <QPixmap>
 #endif
 #endif
+#if PLATFORM(QT)
+#if USE(TEXTURE_MAPPER)
+#include "TextureMapperPlatformLayer.h"
+#endif
 
+#include <QGraphicsItem>
+#include <QImage>
+QT_BEGIN_NAMESPACE
+class QPainter;
+QT_END_NAMESPACE
+#endif
+#if PLATFORM(GTK)
+typedef struct _GtkSocket GtkSocket;
+#endif
+
+#if USE(JSC)
 namespace JSC {
     namespace Bindings {
         class Instance;
     }
 }
+#endif
 
 namespace WebCore {
     class Element;
@@ -86,7 +102,8 @@ namespace WebCore {
         PluginStatusLoadedSuccessfully
     };
 
-    class PluginRequest : public Noncopyable {
+    class PluginRequest {
+        WTF_MAKE_NONCOPYABLE(PluginRequest); WTF_MAKE_FAST_ALLOCATED;
     public:
         PluginRequest(const FrameLoadRequest& frameLoadRequest, bool sendNotification, void* notifyData, bool shouldAllowPopups)
             : m_frameLoadRequest(frameLoadRequest)
@@ -114,7 +131,7 @@ namespace WebCore {
         virtual void didFail(const ResourceError&) = 0;
     };
 
-    class PluginView : public Widget
+    class PluginView : public PluginViewBase
 #if ENABLE(NETSCAPE_PLUGIN_API)
                      , private PluginStreamClient
 #endif
@@ -133,7 +150,12 @@ namespace WebCore {
         void setNPWindowRect(const IntRect&);
         static PluginView* currentPluginView();
 
+#if ENABLE(NETSCAPE_PLUGIN_API)
+        NPObject* npObject();
+#endif
+#if USE(JSC)
         PassRefPtr<JSC::Bindings::Instance> bindingInstance();
+#endif
 
         PluginStatus status() const { return m_status; }
 
@@ -157,6 +179,9 @@ namespace WebCore {
         NPError getValue(NPNVariable variable, void* value);
         static NPError getValueStatic(NPNVariable variable, void* value);
         NPError setValue(NPPVariable variable, void* value);
+        NPError getValueForURL(NPNURLVariable variable, const char* url, char** value, uint32_t* len);
+        NPError setValueForURL(NPNURLVariable variable, const char* url, const char* value, uint32_t len);
+        NPError getAuthenticationInfo(const char* protocol, const char* host, int32_t port, const char* scheme, const char* realm, char** username, uint32_t* ulen, char** password, uint32_t* plen);
         void invalidateRect(NPRect*);
         void invalidateRegion(NPRegion);
 #endif
@@ -232,6 +257,14 @@ namespace WebCore {
         static void keepAlive(NPP);
 #endif
         void keepAlive();
+
+#if USE(ACCELERATED_COMPOSITING)
+#if defined(XP_UNIX) && ENABLE(NETSCAPE_PLUGIN_API) && PLATFORM(QT)
+        virtual PlatformLayer* platformLayer() const;
+#else
+        virtual PlatformLayer* platformLayer() const { return 0; }
+#endif
+#endif
 
     private:
         PluginView(Frame* parentFrame, const IntSize&, PluginPackage*, Element*, const KURL&, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually);
@@ -361,7 +394,7 @@ public:
 
 private:
 
-#if defined(XP_UNIX) || OS(SYMBIAN)
+#if defined(XP_UNIX) || OS(SYMBIAN) || PLATFORM(GTK)
         void setNPWindowIfNeeded();
 #elif defined(XP_MACOSX)
         NP_CGContext m_npCgContext;
@@ -389,6 +422,29 @@ private:
         Display* m_pluginDisplay;
 
         void initXEvent(XEvent* event);
+#endif
+
+#if PLATFORM(QT) 
+#if defined(MOZ_PLATFORM_MAEMO) && (MOZ_PLATFORM_MAEMO >= 5)
+        QImage m_image;
+        bool m_renderToImage;
+        void paintUsingImageSurfaceExtension(QPainter* painter, const IntRect& exposedRect);
+#endif
+#if defined(XP_UNIX) && ENABLE(NETSCAPE_PLUGIN_API)
+        void paintUsingXPixmap(QPainter* painter, const QRect &exposedRect);
+#if USE(ACCELERATED_COMPOSITING)
+        OwnPtr<PlatformLayer> m_platformLayer;
+        friend class PluginGraphicsLayerQt;
+#endif // USE(ACCELERATED_COMPOSITING)
+#endif
+#endif // PLATFORM(QT)
+
+#if PLATFORM(GTK)
+        static gboolean plugRemovedCallback(GtkSocket*, PluginView*);
+        static void plugAddedCallback(GtkSocket*, PluginView*);
+        void updateWidgetAllocationAndClip();
+        bool m_plugAdded;
+        IntRect m_delayedAllocation;
 #endif
 
         IntRect m_clipRect; // The clip rect to apply to a windowed plug-in

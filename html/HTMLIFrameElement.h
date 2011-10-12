@@ -37,11 +37,8 @@ private:
 
     virtual bool isKeyboardFocusable(KeyboardEvent*) const { return false; }
     
-    virtual HTMLTagStatus endTagRequirement() const { return TagStatusRequired; }
-    virtual int tagPriority() const { return 1; }
-
     virtual bool mapToEntry(const QualifiedName&, MappedAttributeEntry&) const;
-    virtual void parseMappedAttribute(MappedAttribute*);
+    virtual void parseMappedAttribute(Attribute*);
 
     virtual void insertedIntoDocument();
     virtual void removedFromDocument();

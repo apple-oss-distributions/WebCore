@@ -37,11 +37,7 @@
 #import "WebFontCache.h"
 #import <wtf/StdLibExtras.h>
 
-#import "CharacterNames.h"
-
-#ifdef BUILDING_ON_TIGER
-typedef int NSInteger;
-#endif
+#import <wtf/unicode/CharacterNames.h>
 
 namespace WebCore {
 
@@ -85,7 +81,7 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
     // Unlike OS X, our fallback font on iPhone is Arial Unicode, which doesn't have some apple-specific glyphs like F8FF.
     // Fall back to the Apple Fallback font in this case.
     if (length > 0 && requiresCustomFallbackFont(*characters))
-        return getCachedFontData(getCustomFallbackFont(*characters, font));
+        return getCachedFontData(getCustomFallbackFont(*characters, font), DoNotRetain);
 
     UChar32 c = *characters;
     if (length > 1 && U16_IS_LEAD(c) && U16_IS_TRAIL(characters[1]))
@@ -99,6 +95,7 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
     bool useIndicFont = false;
     bool useThaiFont = false;
     bool useTibetanFont = false;
+    bool useCanadianAboriginalSyllabicsFont = false;
     bool useEmojiFont = false;
     if (length > 0) {
         do {
@@ -148,6 +145,10 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
                 break;
             if (c <= 0x11FF) {
                 useKoreanFont = true;
+                break;
+            }
+            if (c > 0x1400 && c < 0x1780) {
+                useCanadianAboriginalSyllabicsFont = true;
                 break;
             }
             if (c < 0x2E80)
@@ -283,7 +284,7 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
             }
         }
         
-        simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? *cjkBold[preferredCJKFont] : *cjkPlain[preferredCJKFont]);
+        simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? *cjkBold[preferredCJKFont] : *cjkPlain[preferredCJKFont], false, DoNotRetain);
         bool useSecondaryFont = true;
         if (simpleFontData) {
             CGGlyph glyphs[2];
@@ -295,22 +296,22 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
         }
 
         if (useSecondaryFont)
-            simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? *cjkBold[secondaryCJKFont] : *cjkPlain[secondaryCJKFont]);
+            simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? *cjkBold[secondaryCJKFont] : *cjkPlain[secondaryCJKFont], false, DoNotRetain);
     } else if (useKoreanFont) {
         DEFINE_STATIC_LOCAL(AtomicString, koreanFont, ("AppleGothic"));
-        simpleFontData = getCachedFontData(font.fontDescription(), koreanFont);    
+        simpleFontData = getCachedFontData(font.fontDescription(), koreanFont, false, DoNotRetain);
     } else if (useCyrillicFont) {
         DEFINE_STATIC_LOCAL(AtomicString, cyrillicPlain, ("HelveticaNeue"));
         DEFINE_STATIC_LOCAL(AtomicString, cyrillicBold, ("HelveticaNeue-Bold"));
-        simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? cyrillicBold : cyrillicPlain);
+        simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? cyrillicBold : cyrillicPlain, false, DoNotRetain);
     } else if (useArabicFont) {
         DEFINE_STATIC_LOCAL(AtomicString, arabicPlain, ("GeezaPro"));
         DEFINE_STATIC_LOCAL(AtomicString, arabicBold, ("GeezaPro-Bold"));
-        simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? arabicBold : arabicPlain);
+        simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? arabicBold : arabicPlain, false, DoNotRetain);
     } else if (useHebrewFont) {
         DEFINE_STATIC_LOCAL(AtomicString, hebrewPlain, ("ArialHebrew"));
         DEFINE_STATIC_LOCAL(AtomicString, hebrewBold, ("ArialHebrew-Bold"));
-        simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? hebrewBold : hebrewPlain);
+        simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? hebrewBold : hebrewPlain, false, DoNotRetain);
     } else if (useIndicFont) {
         DEFINE_STATIC_LOCAL(AtomicString, devanagariFont, ("DevanagariSangamMN"));
         DEFINE_STATIC_LOCAL(AtomicString, bengaliFont, ("BanglaSangamMN"));
@@ -364,16 +365,20 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
         if (indicPageOrderIndex < (sizeof(indicUnicodePageFonts) / sizeof(AtomicString*))) {
             AtomicString* indicFontString = isGSFontWeightBold(font.fontDescription().weight()) ? indicUnicodePageFontsBold[indicPageOrderIndex] : indicUnicodePageFonts[indicPageOrderIndex];
             if (indicFontString)
-                simpleFontData = getCachedFontData(font.fontDescription(), *indicFontString);
+                simpleFontData = getCachedFontData(font.fontDescription(), *indicFontString, false, DoNotRetain);
         }
     } else if (useThaiFont) {
         DEFINE_STATIC_LOCAL(AtomicString, thaiPlain, ("Thonburi"));
         DEFINE_STATIC_LOCAL(AtomicString, thaiBold, ("Thonburi-Bold"));
-        simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? thaiBold : thaiPlain);
+        simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? thaiBold : thaiPlain, false, DoNotRetain);
     } else if (useTibetanFont) {
         DEFINE_STATIC_LOCAL(AtomicString, tibetanPlain, ("Kailasa"));
         DEFINE_STATIC_LOCAL(AtomicString, tibetanBold, ("Kailasa-Bold"));
-        simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? tibetanBold : tibetanPlain);
+        simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? tibetanBold : tibetanPlain, false, DoNotRetain);
+    } else if (useCanadianAboriginalSyllabicsFont) {
+        DEFINE_STATIC_LOCAL(AtomicString, casPlain, ("EuphemiaUCAS"));
+        DEFINE_STATIC_LOCAL(AtomicString, casBold, ("EuphemiaUCAS-Bold"));
+        simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? casBold : casPlain, false, DoNotRetain);
     } else {
         DEFINE_STATIC_LOCAL(AtomicString, appleColorEmoji, ("apple color emoji"));
         if (!useEmojiFont) {
@@ -381,13 +386,13 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
                 useEmojiFont = CFCharacterSetIsLongCharacterMember(appleColorEmojiCharacterSet(), c);
         }
         if (useEmojiFont)
-            simpleFontData = getCachedFontData(font.fontDescription(), appleColorEmoji);
+            simpleFontData = getCachedFontData(font.fontDescription(), appleColorEmoji, false, DoNotRetain);
     }
 
     if (simpleFontData)
         return simpleFontData;
 
-    return getLastResortFallbackFont(font.fontDescription());
+    return getNonRetainedLastResortFallbackFont(font.fontDescription());
 }
 
 SimpleFontData* FontCache::getSimilarFontPlatformData(const Font& font)
@@ -428,10 +433,10 @@ SimpleFontData* FontCache::getSimilarFontPlatformData(const Font& font)
     return simpleFontData;
 }
 
-SimpleFontData* FontCache::getLastResortFallbackFont(const FontDescription& fontDescription)
+SimpleFontData* FontCache::getLastResortFallbackFont(const FontDescription& fontDescription, ShouldRetain shouldRetain)
 {
     DEFINE_STATIC_LOCAL(AtomicString, fallbackFontStr, (".PhoneFallback"));
-    return getCachedFontData(fontDescription, fallbackFontStr);
+    return getCachedFontData(fontDescription, fallbackFontStr, false, shouldRetain);
 }
 
 FontPlatformData* FontCache::getCustomFallbackFont(const UInt32 c, const Font& font)
@@ -470,21 +475,21 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
         traits |= GSBoldFontMask;
     float size = fontDescription.computedPixelSize();
     
-    GSFontRef gsFont = [WebFontCache createFontWithFamily:family traits:traits weight:fontDescription.weight() size:size];
+    RetainPtr<GSFontRef> gsFont(AdoptCF, [WebFontCache createFontWithFamily:family traits:traits weight:fontDescription.weight() size:size]);
     if (!gsFont)
         return 0;
 
     GSFontTraitMask actualTraits = 0;
     if (isGSFontWeightBold(fontDescription.weight()) || fontDescription.italic())
-        actualTraits = GSFontGetTraits(gsFont);
+        actualTraits = GSFontGetTraits(gsFont.get());
 
     DEFINE_STATIC_LOCAL(AtomicString, appleColorEmoji, ("apple color emoji"));
     bool isAppleColorEmoji = equalIgnoringCase(family, appleColorEmoji);
 
     bool syntheticBold = (traits & GSBoldFontMask) && !(actualTraits & GSBoldFontMask) && !isAppleColorEmoji;
-    bool syntheticOblique = (traits & GSItalicFontMask) && !(actualTraits & GSItalicFontMask) && !isAppleColorEmoji;  
+    bool syntheticOblique = (traits & GSItalicFontMask) && !(actualTraits & GSItalicFontMask) && !isAppleColorEmoji;
 
-    FontPlatformData* result = new FontPlatformData(gsFont, syntheticBold, syntheticOblique);
+    FontPlatformData* result = new FontPlatformData(gsFont.get(), size, syntheticBold, syntheticOblique, fontDescription.orientation(), fontDescription.textOrientation(), fontDescription.widthVariant());
     if (isAppleColorEmoji)
         result->m_isEmoji = true;
     return result;

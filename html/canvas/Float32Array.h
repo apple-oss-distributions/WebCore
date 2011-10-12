@@ -27,67 +27,47 @@
 #ifndef Float32Array_h
 #define Float32Array_h
 
-#include "ArrayBufferView.h"
+#include "TypedArrayBase.h"
 #include <wtf/MathExtras.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
 
 namespace WebCore {
 
-class Float32Array : public ArrayBufferView {
-  public:
-    virtual bool isFloatArray() const { return true; }
-
+class Float32Array : public TypedArrayBase<float> {
+public:
     static PassRefPtr<Float32Array> create(unsigned length);
-    static PassRefPtr<Float32Array> create(float* array, unsigned length);
+    static PassRefPtr<Float32Array> create(const float* array, unsigned length);
     static PassRefPtr<Float32Array> create(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length);
 
-    float* data() { return static_cast<float*>(baseAddress()); }
-
-    virtual unsigned length() const;
-    virtual unsigned byteLength() const;
-    virtual PassRefPtr<ArrayBufferView> slice(int start, int end);
+    using TypedArrayBase<float>::set;
 
     void set(unsigned index, double value)
     {
-        if (index >= m_size)
+        if (index >= TypedArrayBase<float>::m_length)
             return;
-        if (isnan(value)) // Clamp NaN to 0
-            value = 0;
-        float* storage = static_cast<float*>(m_baseAddress);
-        storage[index] = static_cast<float>(value);
+        TypedArrayBase<float>::data()[index] = static_cast<float>(value);
     }
 
-    bool get(unsigned index, float& result) const
-    {
-        if (index >= m_size)
-            return false;
-        result = item(index);
-        return true;
-    }
-
-    float get(unsigned index) const
-    {
-        return item(index);
-    }
-
+    // Invoked by the indexed getter. Does not perform range checks; caller
+    // is responsible for doing so and returning undefined as necessary.
     float item(unsigned index) const
     {
-        ASSERT(index < m_size);
-        float* storage = static_cast<float*>(m_baseAddress);
-        float result = storage[index];
-        if (isnan(result)) {
-            // Clamp NaN to 0
-            result = 0;
-        }
+        ASSERT(index < TypedArrayBase<float>::m_length);
+        float result = TypedArrayBase<float>::data()[index];
         return result;
     }
 
-    void set(Float32Array* array, unsigned offset, ExceptionCode& ec);
+    PassRefPtr<Float32Array> subarray(int start) const;
+    PassRefPtr<Float32Array> subarray(int start, int end) const;
 
-  private:
-    Float32Array(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length);
-    unsigned m_size;
+private:
+    Float32Array(PassRefPtr<ArrayBuffer> buffer,
+                    unsigned byteOffset,
+                    unsigned length);
+    // Make constructor visible to superclass.
+    friend class TypedArrayBase<float>;
+
+    // Overridden from ArrayBufferView.
+    virtual bool isFloatArray() const { return true; }
 };
 
 } // namespace WebCore

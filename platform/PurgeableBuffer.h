@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 Apple Inc. All Rights Reserved.
+ * Copyright (C) 2008, 2010 Apple Inc. All Rights Reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,14 +27,15 @@
 #define PurgeableBuffer_h
 
 #include "PurgePriority.h"
-#include <wtf/Noncopyable.h>
+#include <wtf/PassOwnPtr.h>
 #include <wtf/Vector.h>
 
 namespace WebCore {
     
-    class PurgeableBuffer : public Noncopyable {
+    class PurgeableBuffer {
+        WTF_MAKE_NONCOPYABLE(PurgeableBuffer);
     public:
-        static PurgeableBuffer* create(size_t);
+        static PassOwnPtr<PurgeableBuffer> create(size_t);
         
         ~PurgeableBuffer();
 
@@ -62,9 +63,7 @@ namespace WebCore {
     };
 
 #if !ENABLE(PURGEABLE_MEMORY)
-
-    inline PurgeableBuffer* PurgeableBuffer::create(size_t) { return 0; }
-
+    inline PassOwnPtr<PurgeableBuffer> PurgeableBuffer::create(size_t) { return nullptr; }
     inline PurgeableBuffer::~PurgeableBuffer() { }
     inline char* PurgeableBuffer::data() const { return 0; }
     inline bool PurgeableBuffer::wasPurged() const { return false; }

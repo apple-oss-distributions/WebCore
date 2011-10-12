@@ -42,7 +42,8 @@ typedef unsigned disk_cache_id_t;
 namespace WebCore {
 
 // Global disk image cache object.
-class DiskImageCache : public Noncopyable {
+class DiskImageCache {
+    WTF_MAKE_NONCOPYABLE(DiskImageCache);
 private:
 
     // Internal entrys kept in a table.
@@ -72,6 +73,8 @@ private:
         bool isMapped() const { return m_mapping != NULL; }
 
     private:
+        bool mapInternal(const String& path);
+
         RefPtr<SharedBuffer> m_buffer;
         disk_cache_id_t m_id;
         unsigned m_size;

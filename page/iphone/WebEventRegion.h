@@ -16,8 +16,6 @@
 #ifndef WebEventRegion_h
 #define WebEventRegion_h
 
-#import <wtf/Platform.h>
-
 
 #import <CoreGraphics/CGGeometry.h>
 #import <Foundation/NSObject.h>

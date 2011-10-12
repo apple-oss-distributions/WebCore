@@ -32,7 +32,8 @@ typedef enum {
     kWAKWindowTilingModeMinimal,
     kWAKWindowTilingModePanning,
     kWAKWindowTilingModeZooming,
-    kWAKWindowTilingModeDisabled
+    kWAKWindowTilingModeDisabled,
+    kWAKWindowTilingModeScrollToTop,
 } WAKWindowTilingMode;
 
 typedef enum {
@@ -90,17 +91,28 @@ typedef enum {
 - (void)setNeedsDisplayInRect:(CGRect)rect;
 - (BOOL)tilesOpaque;
 - (void)setTilesOpaque:(BOOL)opaque;
-- (NSString *)tileMinificationFilter;
-- (void)setTileMinificationFilter:(NSString *)filter;
 - (CGRect)visibleRect;
 - (void)removeAllNonVisibleTiles;
 - (void)removeAllTiles;
+- (void)removeForegroundTiles;
 - (void)setTilingMode:(WAKWindowTilingMode)mode;
 - (WAKWindowTilingMode)tilingMode;
 - (void)setTilingDirection:(WAKTilingDirection)tilingDirection;
 - (WAKTilingDirection)tilingDirection;
 - (BOOL)hasPendingDraw;
 - (void)hostLayerSizeChanged;
+- (void)setZoomedOutTileScale:(float)scale;
+- (float)zoomedOutTileScale;
+- (void)setCurrentTileScale:(float)scale;
+- (float)currentTileScale;
+- (void)setKeepsZoomedOutTiles:(BOOL)keepsZoomedOutTiles;
+- (BOOL)keepsZoomedOutTiles;
+
+- (void)dumpTiles;
+
+- (void)setTileBordersVisible:(BOOL)visible;
+- (void)setTilePaintCountsVisible:(BOOL)visible;
+- (void)setAcceleratedDrawingEnabled:(BOOL)enabled;
 
 - (void)willRotate;
 - (void)didRotate;

@@ -26,8 +26,9 @@
 #include "config.h"
 #include "break_lines.h"
 
-#include "CharacterNames.h"
 #include "TextBreakIterator.h"
+#include <wtf/StdLibExtras.h>
+#include <wtf/unicode/CharacterNames.h>
 
 #import <unicode/ubrk.h>
 #import <unicode/utypes.h>
@@ -114,8 +115,7 @@ static const unsigned char asciiLineBreakTable[][(asciiLineBreakTableLastChar - 
 #undef DI
 #undef AL
 
-COMPILE_ASSERT(sizeof(asciiLineBreakTable) / sizeof(asciiLineBreakTable[0]) == asciiLineBreakTableLastChar - asciiLineBreakTableFirstChar + 1,
-        TestLineBreakTableConsistency);
+COMPILE_ASSERT(WTF_ARRAY_LENGTH(asciiLineBreakTable) == asciiLineBreakTableLastChar - asciiLineBreakTableFirstChar + 1, TestLineBreakTableConsistency);
 
 static inline bool shouldBreakAfter(UChar ch, UChar nextCh)
 {
@@ -145,20 +145,10 @@ static inline bool needsLineBreakIterator(UChar ch)
     return ch > asciiLineBreakTableLastChar && ch != noBreakSpace;
 }
 
-#if PLATFORM(MAC) && defined(BUILDING_ON_TIGER)
-static inline TextBreakLocatorRef lineBreakLocator()
+int nextBreakablePosition(LazyLineBreakIterator& lazyBreakIterator, int pos, bool treatNoBreakSpaceAsBreak)
 {
-    TextBreakLocatorRef locator = 0;
-    UCCreateTextBreakLocator(0, 0, kUCTextBreakLineMask, &locator);
-    return locator;
-}
-#endif
-
-int nextBreakablePosition(const UChar* str, int pos, int len, bool treatNoBreakSpaceAsBreak)
-{
-#if !PLATFORM(MAC) || !defined(BUILDING_ON_TIGER)
-    TextBreakIterator* breakIterator = 0;
-#endif
+    const UChar* str = lazyBreakIterator.string();
+    int len = lazyBreakIterator.length();
     int nextBreak = -1;
 
     UChar lastCh = pos > 0 ? str[pos - 1] : 0;
@@ -170,19 +160,9 @@ int nextBreakablePosition(const UChar* str, int pos, int len, bool treatNoBreakS
 
         if (needsLineBreakIterator(ch) || needsLineBreakIterator(lastCh)) {
             if (nextBreak < i && i) {
-#if !PLATFORM(MAC) || !defined(BUILDING_ON_TIGER)
-                if (!breakIterator)
-                    breakIterator = lineBreakIterator(str, len);
+                TextBreakIterator* breakIterator = lazyBreakIterator.get();
                 if (breakIterator)
                     nextBreak = textBreakFollowing(breakIterator, i - 1);
-#else
-                static TextBreakLocatorRef breakLocator = lineBreakLocator();
-                if (breakLocator) {
-                    UniCharArrayOffset nextUCBreak;
-                    if (UCFindTextBreak(breakLocator, kUCTextBreakLineMask, 0, str, len, i, &nextUCBreak) == 0)
-                        nextBreak = nextUCBreak;
-                }
-#endif
             }
             if (i == nextBreak && !isBreakableSpace(lastCh, treatNoBreakSpaceAsBreak))
                 return i;

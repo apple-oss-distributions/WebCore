@@ -25,67 +25,38 @@
  */
 
 #include "config.h"
-
-#if ENABLE(3D_CANVAS)
-
-#include "ArrayBuffer.h"
 #include "Uint16Array.h"
 
 namespace WebCore {
 
 PassRefPtr<Uint16Array> Uint16Array::create(unsigned length)
 {
-    RefPtr<ArrayBuffer> buffer = ArrayBuffer::create(length, sizeof(unsigned short));
-    return create(buffer, 0, length);
+    return TypedArrayBase<unsigned short>::create<Uint16Array>(length);
 }
 
 PassRefPtr<Uint16Array> Uint16Array::create(unsigned short* array, unsigned length)
 {
-    RefPtr<Uint16Array> a = Uint16Array::create(length);
-    for (unsigned i = 0; i < length; ++i)
-        a->set(i, array[i]);
-    return a;
+    return TypedArrayBase<unsigned short>::create<Uint16Array>(array, length);
 }
 
-PassRefPtr<Uint16Array> Uint16Array::create(PassRefPtr<ArrayBuffer> buffer,
-                                                                    unsigned byteOffset,
-                                                                    unsigned length)
+PassRefPtr<Uint16Array> Uint16Array::create(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length)
 {
-    RefPtr<ArrayBuffer> buf(buffer);
-    if (!verifySubRange<unsigned short>(buf, byteOffset, length))
-        return 0;
-
-    return adoptRef(new Uint16Array(buf, byteOffset, length));
+    return TypedArrayBase<unsigned short>::create<Uint16Array>(buffer, byteOffset, length);
 }
 
-Uint16Array::Uint16Array(PassRefPtr<ArrayBuffer> buffer,
-                                                 unsigned byteOffset,
-                                                 unsigned length)
-        : ArrayBufferView(buffer, byteOffset)
-        , m_size(length)
+Uint16Array::Uint16Array(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length)
+    : IntegralTypedArrayBase<unsigned short>(buffer, byteOffset, length)
 {
 }
 
-unsigned Uint16Array::length() const {
-    return m_size;
-}
-
-unsigned Uint16Array::byteLength() const {
-    return m_size * sizeof(unsigned short);
-}
-
-PassRefPtr<ArrayBufferView> Uint16Array::slice(int start, int end)
+PassRefPtr<Uint16Array> Uint16Array::subarray(int start) const
 {
-    unsigned offset, length;
-    calculateOffsetAndLength(start, end, m_size, &offset, &length);
-    clampOffsetAndNumElements<unsigned short>(buffer(), m_byteOffset, &offset, &length);
-    return create(buffer(), offset, length);
+    return subarray(start, length());
 }
 
-void Uint16Array::set(Uint16Array* array, unsigned offset, ExceptionCode& ec) {
-    setImpl(array, offset * sizeof(unsigned short), ec);
+PassRefPtr<Uint16Array> Uint16Array::subarray(int start, int end) const
+{
+    return subarrayImpl<Uint16Array>(start, end);
 }
 
 }
-
-#endif // ENABLE(3D_CANVAS)

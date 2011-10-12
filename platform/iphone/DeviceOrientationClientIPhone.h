@@ -29,6 +29,7 @@
 #include "DeviceOrientationClient.h"
 #include "DeviceOrientationController.h"
 #include "DeviceOrientation.h"
+#include <wtf/PassOwnPtr.h>
 #include <wtf/RefPtr.h>
 
 #ifdef __OBJC__
@@ -43,7 +44,7 @@ class DeviceOrientationClientIPhone : public DeviceOrientationClient {
 public:
     static PassOwnPtr<DeviceOrientationClientIPhone> create()
     {
-        return new DeviceOrientationClientIPhone();
+        return adoptPtr(new DeviceOrientationClientIPhone());
     }
     DeviceOrientationClientIPhone();
     virtual ~DeviceOrientationClientIPhone();
@@ -53,7 +54,7 @@ public:
     virtual DeviceOrientation* lastOrientation() const;
     virtual void deviceOrientationControllerDestroyed();
 
-    void orientationChanged(double, double, double);
+    void orientationChanged(double, double, double, double, double);
 
 private:
     CoreMotionManager* m_motionManager;

@@ -29,12 +29,8 @@
 #include "JSDOMWindow.h"
 #include <runtime/JSGlobalData.h>
 #include <runtime/JSLock.h>
-#include <runtime/Collector.h>
+#include <heap/Heap.h>
 #include <wtf/StdLibExtras.h>
-
-#if USE(PTHREADS)
-#include <pthread.h>
-#endif
 
 using namespace JSC;
 
@@ -82,13 +78,31 @@ void GCController::garbageCollectNow()
 
 void GCController::garbageCollectOnAlternateThreadForDebugging(bool waitUntilDone)
 {
-#if USE(PTHREADS)
-    pthread_t thread;
-    pthread_create(&thread, NULL, collect, NULL);
+    ThreadIdentifier threadID = createThread(collect, 0, "WebCore: GCController");
 
-    if (waitUntilDone)
-        pthread_join(thread, NULL);
-#endif
+    if (waitUntilDone) {
+        waitForThreadCompletion(threadID, 0);
+        return;
+    }
+
+    detachThread(threadID);
+}
+
+void GCController::releaseExecutableMemory()
+{
+    if (!JSDOMWindow::commonJSGlobalDataExists())
+        return;
+
+    // We shouldn't have any javascript running on our stack when this function is called. The
+    // following line asserts that.
+    ASSERT(!JSDOMWindow::commonJSGlobalData()->dynamicGlobalObject);
+
+    // But be safe in release builds just in case...
+    if (JSDOMWindow::commonJSGlobalData()->dynamicGlobalObject)
+        return;
+
+    JSLock lock(SilenceAssertionsOnly);
+    JSDOMWindow::commonJSGlobalData()->releaseExecutableMemory();
 }
 
 } // namespace WebCore

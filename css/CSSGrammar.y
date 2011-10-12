@@ -2,7 +2,7 @@
 
 /*
  *  Copyright (C) 2002-2003 Lars Knoll (knoll@kde.org)
- *  Copyright (C) 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
+ *  Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010 Apple Inc. All rights reserved.
  *  Copyright (C) 2006 Alexey Proskuryakov (ap@nypop.com)
  *  Copyright (C) 2008 Eric Seidel <eric@webkit.org>
  *
@@ -30,10 +30,12 @@
 #include "CSSPropertyNames.h"
 #include "CSSRuleList.h"
 #include "CSSSelector.h"
+#include "CSSSelectorList.h"
 #include "CSSStyleSheet.h"
 #include "Document.h"
 #include "HTMLNames.h"
 #include "MediaList.h"
+#include "MediaQueryExp.h"
 #include "WebKitCSSKeyframeRule.h"
 #include "WebKitCSSKeyframesRule.h"
 #include <wtf/FastMalloc.h>
@@ -68,8 +70,8 @@ using namespace HTMLNames;
 
     CSSRule* rule;
     CSSRuleList* ruleList;
-    CSSSelector* selector;
-    Vector<CSSSelector*>* selectorList;
+    CSSParserSelector* selector;
+    Vector<OwnPtr<CSSParserSelector> >* selectorList;
     CSSSelector::MarginBoxType marginBox;
     CSSSelector::Relation relation;
     MediaList* mediaList;
@@ -78,7 +80,7 @@ using namespace HTMLNames;
     MediaQueryExp* mediaQueryExp;
     CSSParserValue value;
     CSSParserValueList* valueList;
-    Vector<MediaQueryExp*>* mediaQueryExpList;
+    Vector<OwnPtr<MediaQueryExp> >* mediaQueryExpList;
     WebKitCSSKeyframeRule* keyframeRule;
     WebKitCSSKeyframesRule* keyframesRule;
     float val;
@@ -98,7 +100,7 @@ static int cssyylex(YYSTYPE* yylval, void* parser)
 
 %}
 
-%expect 50
+%expect 54
 
 %nonassoc LOWEST_PREC
 
@@ -179,22 +181,28 @@ static int cssyylex(YYSTYPE* yylval, void* parser)
 %token <number> TURNS
 %token <number> MSECS
 %token <number> SECS
-%token <number> HERZ
-%token <number> KHERZ
+%token <number> HERTZ
+%token <number> KHERTZ
 %token <string> DIMEN
+%token <string> INVALIDDIMEN
 %token <number> PERCENTAGE
 %token <number> FLOATTOKEN
 %token <number> INTEGER
 
 %token <string> URI
 %token <string> FUNCTION
+%token <string> ANYFUNCTION
 %token <string> NOTFUNCTION
+%token <string> CALCFUNCTION
+%token <string> MINFUNCTION
+%token <string> MAXFUNCTION
 
 %token <string> UNICODERANGE
 
 %type <relation> combinator
 
 %type <rule> charset
+%type <rule> ignored_charset
 %type <rule> ruleset
 %type <rule> media
 %type <rule> import
@@ -219,7 +227,6 @@ static int cssyylex(YYSTYPE* yylval, void* parser)
 %type <string> string_or_uri
 %type <string> ident_or_string
 %type <string> medium
-%type <string> hexcolor
 %type <marginBox> margin_sym
 
 %type <string> media_feature
@@ -245,10 +252,12 @@ static int cssyylex(YYSTYPE* yylval, void* parser)
 %type <selector> simple_selector
 %type <selector> selector
 %type <selectorList> selector_list
+%type <selectorList> simple_selector_list
 %type <selector> selector_with_trailing_whitespace
 %type <selector> class
 %type <selector> attrib
 %type <selector> pseudo
+%type <selector> pseudo_page
 %type <selector> page_selector
 
 %type <boolean> declaration_list
@@ -267,6 +276,14 @@ static int cssyylex(YYSTYPE* yylval, void* parser)
 %type <value> term
 %type <value> unary_term
 %type <value> function
+%type <value> calc_func_term
+%type <character> calc_func_operator
+%type <valueList> calc_func_expr
+%type <valueList> calc_func_expr_list
+%type <valueList> calc_func_paren_expr
+%type <value> calc_function
+%type <string> min_or_max
+%type <value> min_or_max_function
 
 %type <string> element_name
 %type <string> attr_name
@@ -296,7 +313,7 @@ webkit_keyframe_rule:
 ;
 
 webkit_decls:
-    WEBKIT_DECLS_SYM '{' maybe_space declaration_list '}' {
+    WEBKIT_DECLS_SYM '{' maybe_space_before_declaration declaration_list '}' {
         /* can be empty */
     }
 ;
@@ -367,6 +384,13 @@ charset:
   }
 ;
 
+ignored_charset:
+    CHARSET_SYM maybe_space STRING maybe_space ';' {
+        // Ignore any @charset rule not at the beginning of the style sheet.
+        $$ = 0;
+    }
+;
+
 rule_list:
    /* empty */
  | rule_list rule maybe_sgml {
@@ -377,7 +401,9 @@ rule_list:
  ;
 
 valid_rule:
-    ruleset
+    before_ruleset ruleset {
+        $$ = $2;
+    }
   | media
   | page
   | font_face
@@ -390,6 +416,7 @@ rule:
     valid_rule {
         static_cast<CSSParser*>(parser)->m_hadSyntacticallyValidCSSRule = true;
     }
+  | ignored_charset
   | invalid_rule
   | invalid_at
   ;
@@ -629,7 +656,14 @@ page:
     PAGE_SYM maybe_space page_selector maybe_space
     '{' maybe_space declarations_and_margins closing_brace {
         CSSParser* p = static_cast<CSSParser*>(parser);
-        $$ = p->createPageRule(p->sinkFloatingSelector($3));
+        if ($3)
+            $$ = p->createPageRule(p->sinkFloatingSelector($3));
+        else {
+            // Clear properties in the invalid @page rule.
+            p->clearProperties();
+            // Also clear margin at-rules here once we fully implement margin at-rules parsing.
+            $$ = 0;
+        }
     }
     | PAGE_SYM error invalid_block {
       $$ = 0;
@@ -643,20 +677,26 @@ page_selector:
     IDENT {
         CSSParser* p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
-        $$->m_tag = QualifiedName(nullAtom, $1, p->m_defaultNamespace);
+        $$->setTag(QualifiedName(nullAtom, $1, p->m_defaultNamespace));
+        $$->setForPage();
     }
-    | IDENT pseudo {
+    | IDENT pseudo_page {
         CSSParser* p = static_cast<CSSParser*>(parser);
         $$ = $2;
-        if ($$)
-            $$->m_tag = QualifiedName(nullAtom, $1, p->m_defaultNamespace);
+        if ($$) {
+            $$->setTag(QualifiedName(nullAtom, $1, p->m_defaultNamespace));
+            $$->setForPage();
+        }
     }
-    | pseudo {
+    | pseudo_page {
         $$ = $1;
+        if ($$)
+            $$->setForPage();
     }
     | /* empty */ {
         CSSParser* p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
+        $$->setForPage();
     }
     ;
 
@@ -753,9 +793,31 @@ unary_operator:
   | '+' { $$ = 1; }
   ;
 
+maybe_space_before_declaration:
+    maybe_space {
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        p->markPropertyStart();
+    }
+  ;
+
+before_ruleset:
+    /* empty */ {
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        p->markSelectorListStart();
+    }
+  ;
+
+before_rule_opening_brace:
+    /* empty */ {
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        p->markSelectorListEnd();
+    }
+  ;
+
 ruleset:
-    selector_list '{' maybe_space declaration_list closing_brace {
-        $$ = static_cast<CSSParser*>(parser)->createStyleRule($1);
+    selector_list before_rule_opening_brace '{' maybe_space_before_declaration declaration_list closing_brace {
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        $$ = p->createStyleRule($1);
     }
   ;
 
@@ -764,10 +826,9 @@ selector_list:
         if ($1) {
             CSSParser* p = static_cast<CSSParser*>(parser);
             $$ = p->reusableSelectorVector();
-            deleteAllValues(*$$);
             $$->shrink(0);
             $$->append(p->sinkFloatingSelector($1));
-            p->updateLastSelectorLine();
+            p->updateLastSelectorLineAndPosition();
         }
     }
     | selector_list ',' maybe_space selector %prec UNIMPORTANT_TOK {
@@ -775,7 +836,7 @@ selector_list:
             CSSParser* p = static_cast<CSSParser*>(parser);
             $$ = $1;
             $$->append(p->sinkFloatingSelector($4));
-            p->updateLastSelectorLine();
+            p->updateLastSelectorLineAndPosition();
         } else
             $$ = 0;
     }
@@ -805,13 +866,11 @@ selector:
             $$ = 0;
         else if ($$) {
             CSSParser* p = static_cast<CSSParser*>(parser);
-            CSSSelector* end = $$;
+            CSSParserSelector* end = $$;
             while (end->tagHistory())
                 end = end->tagHistory();
-            end->m_relation = CSSSelector::Descendant;
+            end->setRelation(CSSSelector::Descendant);
             end->setTagHistory(p->sinkFloatingSelector($1));
-            if (Document* doc = p->document())
-                doc->setUsesDescendantRules(true);
         }
     }
     | selector combinator simple_selector {
@@ -820,18 +879,11 @@ selector:
             $$ = 0;
         else if ($$) {
             CSSParser* p = static_cast<CSSParser*>(parser);
-            CSSSelector* end = $$;
+            CSSParserSelector* end = $$;
             while (end->tagHistory())
                 end = end->tagHistory();
-            end->m_relation = $2;
+            end->setRelation($2);
             end->setTagHistory(p->sinkFloatingSelector($1));
-            if ($2 == CSSSelector::Child) {
-                if (Document* doc = p->document())
-                    doc->setUsesDescendantRules(true);
-            } else if ($2 == CSSSelector::DirectAdjacent || $2 == CSSSelector::IndirectAdjacent) {
-                if (Document* doc = p->document())
-                    doc->setUsesSiblingRules(true);
-            }
         }
     }
     | selector error {
@@ -849,52 +901,59 @@ simple_selector:
     element_name {
         CSSParser* p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
-        $$->m_tag = QualifiedName(nullAtom, $1, p->m_defaultNamespace);
+        $$->setTag(QualifiedName(nullAtom, $1, p->m_defaultNamespace));
     }
     | element_name specifier_list {
         $$ = $2;
-        if ($$) {
-            CSSParser* p = static_cast<CSSParser*>(parser);
-            $$->m_tag = QualifiedName(nullAtom, $1, p->m_defaultNamespace);
-        }
+        if ($$)
+            static_cast<CSSParser*>(parser)->updateSpecifiersWithElementName(nullAtom, $1, $$);
     }
     | specifier_list {
         $$ = $1;
-        CSSParser* p = static_cast<CSSParser*>(parser);
-        if ($$ && p->m_defaultNamespace != starAtom)
-            $$->m_tag = QualifiedName(nullAtom, starAtom, p->m_defaultNamespace);
+        if ($$)
+            static_cast<CSSParser*>(parser)->updateSpecifiersWithElementName(nullAtom, starAtom, $$);
     }
     | namespace_selector element_name {
         AtomicString namespacePrefix = $1;
         CSSParser* p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
         if (p->m_styleSheet)
-            $$->m_tag = QualifiedName(namespacePrefix, $2,
-                                      p->m_styleSheet->determineNamespace(namespacePrefix));
+            $$->setTag(QualifiedName(namespacePrefix, $2,
+                                      p->m_styleSheet->determineNamespace(namespacePrefix)));
         else // FIXME: Shouldn't this case be an error?
-            $$->m_tag = QualifiedName(nullAtom, $2, p->m_defaultNamespace);
+            $$->setTag(QualifiedName(nullAtom, $2, p->m_defaultNamespace));
     }
     | namespace_selector element_name specifier_list {
         $$ = $3;
-        if ($$) {
-            AtomicString namespacePrefix = $1;
-            CSSParser* p = static_cast<CSSParser*>(parser);
-            if (p->m_styleSheet)
-                $$->m_tag = QualifiedName(namespacePrefix, $2,
-                                          p->m_styleSheet->determineNamespace(namespacePrefix));
-            else // FIXME: Shouldn't this case be an error?
-                $$->m_tag = QualifiedName(nullAtom, $2, p->m_defaultNamespace);
-        }
+        if ($$)
+            static_cast<CSSParser*>(parser)->updateSpecifiersWithElementName($1, $2, $$);
     }
     | namespace_selector specifier_list {
         $$ = $2;
-        if ($$) {
-            AtomicString namespacePrefix = $1;
+        if ($$)
+            static_cast<CSSParser*>(parser)->updateSpecifiersWithElementName($1, starAtom, $$);
+    }
+  ;
+
+simple_selector_list:
+    simple_selector %prec UNIMPORTANT_TOK {
+        if ($1) {
             CSSParser* p = static_cast<CSSParser*>(parser);
-            if (p->m_styleSheet)
-                $$->m_tag = QualifiedName(namespacePrefix, starAtom,
-                                          p->m_styleSheet->determineNamespace(namespacePrefix));
-        }
+            $$ = p->createFloatingSelectorVector();
+            $$->append(p->sinkFloatingSelector($1));
+        } else
+            $$ = 0
+    }
+    | simple_selector_list maybe_space ',' maybe_space simple_selector %prec UNIMPORTANT_TOK {
+        if ($1 && $5) {
+            CSSParser* p = static_cast<CSSParser*>(parser);
+            $$ = $1;
+            $$->append(p->sinkFloatingSelector($5));
+        } else
+            $$ = 0;
+    }
+    | simple_selector_list error {
+        $$ = 0;
     }
   ;
 
@@ -921,15 +980,8 @@ specifier_list:
     | specifier_list specifier {
         if (!$2)
             $$ = 0;
-        else if ($1) {
-            $$ = $1;
-            CSSParser* p = static_cast<CSSParser*>(parser);
-            CSSSelector* end = $1;
-            while (end->tagHistory())
-                end = end->tagHistory();
-            end->m_relation = CSSSelector::SubSelector;
-            end->setTagHistory(p->sinkFloatingSelector($2));
-        }
+        else if ($1)
+            $$ = static_cast<CSSParser*>(parser)->updateSpecifiers($1, $2);
     }
     | specifier_list error {
         $$ = 0;
@@ -940,10 +992,10 @@ specifier:
     IDSEL {
         CSSParser* p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
-        $$->m_match = CSSSelector::Id;
+        $$->setMatch(CSSSelector::Id);
         if (!p->m_strict)
             $1.lower();
-        $$->m_value = $1;
+        $$->setValue($1);
     }
   | HEX {
         if ($1.characters[0] >= '0' && $1.characters[0] <= '9') {
@@ -951,10 +1003,10 @@ specifier:
         } else {
             CSSParser* p = static_cast<CSSParser*>(parser);
             $$ = p->createFloatingSelector();
-            $$->m_match = CSSSelector::Id;
+            $$->setMatch(CSSSelector::Id);
             if (!p->m_strict)
                 $1.lower();
-            $$->m_value = $1;
+            $$->setValue($1);
         }
     }
   | class
@@ -966,10 +1018,10 @@ class:
     '.' IDENT {
         CSSParser* p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
-        $$->m_match = CSSSelector::Class;
+        $$->setMatch(CSSSelector::Class);
         if (!p->m_strict)
             $2.lower();
-        $$->m_value = $2;
+        $$->setValue($2);
     }
   ;
 
@@ -988,13 +1040,13 @@ attrib:
     '[' maybe_space attr_name ']' {
         $$ = static_cast<CSSParser*>(parser)->createFloatingSelector();
         $$->setAttribute(QualifiedName(nullAtom, $3, nullAtom));
-        $$->m_match = CSSSelector::Set;
+        $$->setMatch(CSSSelector::Set);
     }
     | '[' maybe_space attr_name match maybe_space ident_or_string maybe_space ']' {
         $$ = static_cast<CSSParser*>(parser)->createFloatingSelector();
         $$->setAttribute(QualifiedName(nullAtom, $3, nullAtom));
-        $$->m_match = (CSSSelector::Match)$4;
-        $$->m_value = $6;
+        $$->setMatch((CSSSelector::Match)$4);
+        $$->setValue($6);
     }
     | '[' maybe_space namespace_selector attr_name ']' {
         AtomicString namespacePrefix = $3;
@@ -1002,7 +1054,7 @@ attrib:
         $$ = p->createFloatingSelector();
         $$->setAttribute(QualifiedName(namespacePrefix, $4,
                                    p->m_styleSheet->determineNamespace(namespacePrefix)));
-        $$->m_match = CSSSelector::Set;
+        $$->setMatch(CSSSelector::Set);
     }
     | '[' maybe_space namespace_selector attr_name match maybe_space ident_or_string maybe_space ']' {
         AtomicString namespacePrefix = $3;
@@ -1010,8 +1062,8 @@ attrib:
         $$ = p->createFloatingSelector();
         $$->setAttribute(QualifiedName(namespacePrefix, $4,
                                    p->m_styleSheet->determineNamespace(namespacePrefix)));
-        $$->m_match = (CSSSelector::Match)$5;
-        $$->m_value = $7;
+        $$->setMatch((CSSSelector::Match)$5);
+        $$->setValue($7);
     }
   ;
 
@@ -1041,104 +1093,84 @@ ident_or_string:
   | STRING
     ;
 
+pseudo_page:
+    ':' IDENT {
+        $$ = static_cast<CSSParser*>(parser)->createFloatingSelector();
+        $$->setMatch(CSSSelector::PagePseudoClass);
+        $2.lower();
+        $$->setValue($2);
+        CSSSelector::PseudoType type = $$->pseudoType();
+        if (type == CSSSelector::PseudoUnknown)
+            $$ = 0;
+    }
+
 pseudo:
     ':' IDENT {
         $$ = static_cast<CSSParser*>(parser)->createFloatingSelector();
-        $$->m_match = CSSSelector::PseudoClass;
+        $$->setMatch(CSSSelector::PseudoClass);
         $2.lower();
-        $$->m_value = $2;
+        $$->setValue($2);
         CSSSelector::PseudoType type = $$->pseudoType();
         if (type == CSSSelector::PseudoUnknown)
             $$ = 0;
-        else if (type == CSSSelector::PseudoEmpty ||
-                 type == CSSSelector::PseudoFirstChild ||
-                 type == CSSSelector::PseudoFirstOfType ||
-                 type == CSSSelector::PseudoLastChild ||
-                 type == CSSSelector::PseudoLastOfType ||
-                 type == CSSSelector::PseudoOnlyChild ||
-                 type == CSSSelector::PseudoOnlyOfType) {
-            CSSParser* p = static_cast<CSSParser*>(parser);
-            Document* doc = p->document();
-            if (doc)
-                doc->setUsesSiblingRules(true);
-        } else if (type == CSSSelector::PseudoFirstLine) {
-            CSSParser* p = static_cast<CSSParser*>(parser);
-            if (Document* doc = p->document())
-                doc->setUsesFirstLineRules(true);
-        } else if (type == CSSSelector::PseudoBefore ||
-                   type == CSSSelector::PseudoAfter) {
-            CSSParser* p = static_cast<CSSParser*>(parser);
-            if (Document* doc = p->document())
-                doc->setUsesBeforeAfterRules(true);
-        } else if (type == CSSSelector::PseudoLink || type == CSSSelector::PseudoVisited) {
-            CSSParser* p = static_cast<CSSParser*>(parser);
-            if (Document* doc = p->document())
-                doc->setUsesLinkRules(true);
-        }
     }
     | ':' ':' IDENT {
         $$ = static_cast<CSSParser*>(parser)->createFloatingSelector();
-        $$->m_match = CSSSelector::PseudoElement;
+        $$->setMatch(CSSSelector::PseudoElement);
         $3.lower();
-        $$->m_value = $3;
-        CSSSelector::PseudoType type = $$->pseudoType();
-        if (type == CSSSelector::PseudoUnknown)
+        $$->setValue($3);
+        // FIXME: This call is needed to force selector to compute the pseudoType early enough.
+        $$->pseudoType();
+    }
+    // use by :-webkit-any.
+    // FIXME: should we support generic selectors here or just simple_selectors?
+    // Use simple_selector_list for now to match -moz-any.
+    // See http://lists.w3.org/Archives/Public/www-style/2010Sep/0566.html for some
+    // related discussion with respect to :not.
+    | ':' ANYFUNCTION maybe_space simple_selector_list maybe_space ')' {
+        if ($4) {
+            CSSParser *p = static_cast<CSSParser*>(parser);
+            $$ = p->createFloatingSelector();
+            $$->setMatch(CSSSelector::PseudoClass);
+            $$->adoptSelectorVector(*p->sinkFloatingSelectorVector($4));
+            $2.lower();
+            $$->setValue($2);
+            CSSSelector::PseudoType type = $$->pseudoType();
+            if (type != CSSSelector::PseudoAny)
+                $$ = 0;
+        } else
             $$ = 0;
-        else if (type == CSSSelector::PseudoFirstLine) {
-            CSSParser* p = static_cast<CSSParser*>(parser);
-            if (Document* doc = p->document())
-                doc->setUsesFirstLineRules(true);
-        } else if (type == CSSSelector::PseudoBefore ||
-                   type == CSSSelector::PseudoAfter) {
-            CSSParser* p = static_cast<CSSParser*>(parser);
-            if (Document* doc = p->document())
-                doc->setUsesBeforeAfterRules(true);
-        }
     }
     // used by :nth-*(ax+b)
     | ':' FUNCTION maybe_space NTH maybe_space ')' {
         CSSParser *p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
-        $$->m_match = CSSSelector::PseudoClass;
+        $$->setMatch(CSSSelector::PseudoClass);
         $$->setArgument($4);
-        $$->m_value = $2;
+        $$->setValue($2);
         CSSSelector::PseudoType type = $$->pseudoType();
         if (type == CSSSelector::PseudoUnknown)
             $$ = 0;
-        else if (type == CSSSelector::PseudoNthChild ||
-                 type == CSSSelector::PseudoNthOfType ||
-                 type == CSSSelector::PseudoNthLastChild ||
-                 type == CSSSelector::PseudoNthLastOfType) {
-            if (p->document())
-                p->document()->setUsesSiblingRules(true);
-        }
     }
     // used by :nth-*
     | ':' FUNCTION maybe_space maybe_unary_operator INTEGER maybe_space ')' {
         CSSParser *p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
-        $$->m_match = CSSSelector::PseudoClass;
+        $$->setMatch(CSSSelector::PseudoClass);
         $$->setArgument(String::number($4 * $5));
-        $$->m_value = $2;
+        $$->setValue($2);
         CSSSelector::PseudoType type = $$->pseudoType();
         if (type == CSSSelector::PseudoUnknown)
             $$ = 0;
-        else if (type == CSSSelector::PseudoNthChild ||
-                 type == CSSSelector::PseudoNthOfType ||
-                 type == CSSSelector::PseudoNthLastChild ||
-                 type == CSSSelector::PseudoNthLastOfType) {
-            if (p->document())
-                p->document()->setUsesSiblingRules(true);
-        }
     }
     // used by :nth-*(odd/even) and :lang
     | ':' FUNCTION maybe_space IDENT maybe_space ')' {
         CSSParser *p = static_cast<CSSParser*>(parser);
         $$ = p->createFloatingSelector();
-        $$->m_match = CSSSelector::PseudoClass;
+        $$->setMatch(CSSSelector::PseudoClass);
         $$->setArgument($4);
         $2.lower();
-        $$->m_value = $2;
+        $$->setValue($2);
         CSSSelector::PseudoType type = $$->pseudoType();
         if (type == CSSSelector::PseudoUnknown)
             $$ = 0;
@@ -1146,8 +1178,8 @@ pseudo:
                  type == CSSSelector::PseudoNthOfType ||
                  type == CSSSelector::PseudoNthLastChild ||
                  type == CSSSelector::PseudoNthLastOfType) {
-            if (p->document())
-                p->document()->setUsesSiblingRules(true);
+            if (!isValidNthToken($4))
+                $$ = 0;
         }
     }
     // used by :not
@@ -1157,10 +1189,14 @@ pseudo:
         else {
             CSSParser* p = static_cast<CSSParser*>(parser);
             $$ = p->createFloatingSelector();
-            $$->m_match = CSSSelector::PseudoClass;
-            $$->setSimpleSelector(p->sinkFloatingSelector($4));
+            $$->setMatch(CSSSelector::PseudoClass);
+
+            Vector<OwnPtr<CSSParserSelector> > selectorVector;
+            selectorVector.append(p->sinkFloatingSelector($4));
+            $$->adoptSelectorVector(selectorVector);
+
             $2.lower();
-            $$->m_value = $2;
+            $$->setValue($2);
         }
     }
   ;
@@ -1193,6 +1229,8 @@ declaration_list:
 
 decl_list:
     declaration ';' maybe_space {
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        p->markPropertyStart();
         $$ = $1;
     }
     | declaration invalid_block_list maybe_space {
@@ -1202,20 +1240,28 @@ decl_list:
         $$ = false;
     }
     | error ';' maybe_space {
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        p->markPropertyStart();
         $$ = false;
     }
     | error invalid_block_list error ';' maybe_space {
         $$ = false;
     }
     | decl_list declaration ';' maybe_space {
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        p->markPropertyStart();
         $$ = $1;
         if ($2)
             $$ = $2;
     }
     | decl_list error ';' maybe_space {
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        p->markPropertyStart();
         $$ = $1;
     }
     | decl_list error invalid_block_list error ';' maybe_space {
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        p->markPropertyStart();
         $$ = $1;
     }
     ;
@@ -1224,15 +1270,19 @@ declaration:
     property ':' maybe_space expr prio {
         $$ = false;
         CSSParser* p = static_cast<CSSParser*>(parser);
+        bool isPropertyParsed = false;
         if ($1 && $4) {
             p->m_valueList = p->sinkFloatingValueList($4);
             int oldParsedProperties = p->m_numParsedProperties;
             $$ = p->parseValue($1, $5);
             if (!$$)
                 p->rollbackLastProperties(p->m_numParsedProperties - oldParsedProperties);
+            else
+                isPropertyParsed = true;
             delete p->m_valueList;
             p->m_valueList = 0;
         }
+        p->markPropertyEnd($5, isPropertyParsed);
     }
     |
     property error {
@@ -1243,11 +1293,15 @@ declaration:
         /* The default movable type template has letter-spacing: .none;  Handle this by looking for
         error tokens at the start of an expr, recover the expr and then treat as an error, cleaning
         up and deleting the shifted expr.  */
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        p->markPropertyEnd(false, false);
         $$ = false;
     }
     |
     property ':' maybe_space expr prio error {
         /* When we encounter something like p {color: red !important fail;} we should drop the declaration */
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        p->markPropertyEnd(false, false);
         $$ = false;
     }
     |
@@ -1258,11 +1312,15 @@ declaration:
     |
     property ':' maybe_space {
         /* div { font-family: } Just reduce away this property with no value. */
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        p->markPropertyEnd(false, false);
         $$ = false;
     }
     |
     property ':' maybe_space error {
         /* if we come across rules with invalid values like this case: p { weight: *; }, just discard the rule */
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        p->markPropertyEnd(false, false);
         $$ = false;
     }
     |
@@ -1340,10 +1398,16 @@ term:
   | unary_operator DIMEN maybe_space { $$.id = 0; $$.string = $2; $$.unit = CSSPrimitiveValue::CSS_DIMENSION; }
   | URI maybe_space { $$.id = 0; $$.string = $1; $$.unit = CSSPrimitiveValue::CSS_URI; }
   | UNICODERANGE maybe_space { $$.id = 0; $$.string = $1; $$.unit = CSSPrimitiveValue::CSS_UNICODE_RANGE; }
-  | hexcolor { $$.id = 0; $$.string = $1; $$.unit = CSSPrimitiveValue::CSS_PARSER_HEXCOLOR; }
+  | HEX maybe_space { $$.id = 0; $$.string = $1; $$.unit = CSSPrimitiveValue::CSS_PARSER_HEXCOLOR; }
   | '#' maybe_space { $$.id = 0; $$.string = CSSParserString(); $$.unit = CSSPrimitiveValue::CSS_PARSER_HEXCOLOR; } /* Handle error case: "color: #;" */
   /* FIXME: according to the specs a function can have a unary_operator in front. I know no case where this makes sense */
   | function {
+      $$ = $1;
+  }
+  | calc_function {
+      $$ = $1;
+  }
+  | min_or_max_function {
       $$ = $1;
   }
   | '%' maybe_space { /* Handle width: %; */
@@ -1367,8 +1431,8 @@ unary_term:
   | TURNS maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_TURN; }
   | MSECS maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_MS; }
   | SECS maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_S; }
-  | HERZ maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_HZ; }
-  | KHERZ maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_KHZ; }
+  | HERTZ maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_HZ; }
+  | KHERTZ maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_KHZ; }
   | EMS maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_EMS; }
   | QEMS maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSParserValue::Q_EMS; }
   | EXS maybe_space { $$.id = 0; $$.fValue = $1; $$.unit = CSSPrimitiveValue::CSS_EXS; }
@@ -1387,7 +1451,7 @@ function:
         CSSParser* p = static_cast<CSSParser*>(parser);
         CSSParserFunction* f = p->createFloatingFunction();
         f->name = $1;
-        f->args = p->sinkFloatingValueList($3);
+        f->args = adoptPtr(p->sinkFloatingValueList($3));
         $$.id = 0;
         $$.unit = CSSParserValue::Function;
         $$.function = f;
@@ -1396,22 +1460,149 @@ function:
         CSSParser* p = static_cast<CSSParser*>(parser);
         CSSParserFunction* f = p->createFloatingFunction();
         f->name = $1;
-        f->args = 0;
+        f->args = nullptr;
         $$.id = 0;
         $$.unit = CSSParserValue::Function;
         $$.function = f;
   }
   ;
-/*
- * There is a constraint on the color that it must
- * have either 3 or 6 hex-digits (i.e., [0-9a-fA-F])
- * after the "#"; e.g., "#000" is OK, but "#abcd" is not.
- */
-hexcolor:
-  HEX maybe_space { $$ = $1; }
-  | IDSEL maybe_space { $$ = $1; }
+ 
+calc_func_term:
+  unary_term { $$ = $1; }
+  | unary_operator unary_term { $$ = $2; $$.fValue *= $1; }
   ;
 
+calc_func_operator:
+    '+' WHITESPACE {
+        $$ = '+';
+    }
+    | '-' WHITESPACE {
+        $$ = '-';
+    }
+    | '*' maybe_space {
+        $$ = '*';
+    }
+    | '/' maybe_space {
+        $$ = '/';
+    }
+    | IDENT maybe_space {
+        if (equalIgnoringCase("mod", $1.characters, $1.length))
+            $$ = '%';
+        else
+            $$ = 0;
+    }
+  ;
+
+calc_func_paren_expr:
+    '(' maybe_space calc_func_expr maybe_space ')' maybe_space {
+        if ($3) {
+            $$ = $3;
+            CSSParserValue v;
+            v.id = 0;
+            v.unit = CSSParserValue::Operator;
+            v.iValue = '(';
+            $$->insertValueAt(0, v);
+            v.iValue = ')';
+            $$->addValue(v);
+        } else
+            $$ = 0;
+    }
+
+calc_func_expr:
+    calc_func_term maybe_space {
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        $$ = p->createFloatingValueList();
+        $$->addValue(p->sinkFloatingValue($1));
+    }
+    | calc_func_expr calc_func_operator calc_func_term {
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        if ($1 && $2) {
+            $$ = $1;
+            CSSParserValue v;
+            v.id = 0;
+            v.unit = CSSParserValue::Operator;
+            v.iValue = $2;
+            $$->addValue(v);
+            $$->addValue(p->sinkFloatingValue($3));
+        } else
+            $$ = 0;
+
+    }
+    | calc_func_expr calc_func_operator calc_func_paren_expr {
+        if ($1 && $2 && $3) {
+            $$ = $1;
+            CSSParserValue v;
+            v.id = 0;
+            v.unit = CSSParserValue::Operator;
+            v.iValue = $2;
+            $$->addValue(v);
+            $$->extend(*($3));
+        } else 
+            $$ = 0;
+    }
+    | calc_func_paren_expr
+    | calc_func_expr error {
+        $$ = 0;
+    }
+  ;
+
+calc_func_expr_list:
+    calc_func_expr  {
+        $$ = $1;
+    }    
+    | calc_func_expr_list ',' maybe_space calc_func_expr {
+        if ($1 && $4) {
+            $$ = $1;
+            CSSParserValue v;
+            v.id = 0;
+            v.unit = CSSParserValue::Operator;
+            v.iValue = ',';
+            $$->addValue(v);
+            $$->extend(*($4));
+        } else
+            $$ = 0;
+    }
+    
+
+calc_function:
+    CALCFUNCTION maybe_space calc_func_expr ')' maybe_space {
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        CSSParserFunction* f = p->createFloatingFunction();
+        f->name = $1;
+        f->args = adoptPtr(p->sinkFloatingValueList($3));
+        $$.id = 0;
+        $$.unit = CSSParserValue::Function;
+        $$.function = f;
+    }
+    | CALCFUNCTION maybe_space error {
+        YYERROR;
+    }
+    ;
+
+
+min_or_max:
+    MINFUNCTION {
+        $$ = $1;
+    }
+    | MAXFUNCTION {
+        $$ = $1;
+    }
+    ;
+
+min_or_max_function:
+    min_or_max maybe_space calc_func_expr_list ')' maybe_space {
+        CSSParser* p = static_cast<CSSParser*>(parser);
+        CSSParserFunction* f = p->createFloatingFunction();
+        f->name = $1;
+        f->args = adoptPtr(p->sinkFloatingValueList($3));
+        $$.id = 0;
+        $$.unit = CSSParserValue::Function;
+        $$.function = f;
+    } 
+    | min_or_max maybe_space error {
+        YYERROR;
+    }
+    ;
 
 /* error handling rules */
 

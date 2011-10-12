@@ -24,9 +24,6 @@
  */
 
 #include "config.h"
-
-#if ENABLE(3D_CANVAS)
-
 #include "ArrayBuffer.h"
 
 #include <wtf/RefPtr.h>
@@ -43,38 +40,52 @@ PassRefPtr<ArrayBuffer> ArrayBuffer::create(unsigned numElements, unsigned eleme
 
 PassRefPtr<ArrayBuffer> ArrayBuffer::create(ArrayBuffer* other)
 {
-    void* data = tryAllocate(other->byteLength(), 1);
+    return ArrayBuffer::create(other->data(), other->byteLength());
+}
+
+PassRefPtr<ArrayBuffer> ArrayBuffer::create(void* source, unsigned byteLength)
+{
+    void* data = tryAllocate(byteLength, 1);
     if (!data)
         return 0;
-    RefPtr<ArrayBuffer> buffer = adoptRef(new ArrayBuffer(data, other->byteLength()));
-    memcpy(buffer->data(), other->data(), other->byteLength());
+    RefPtr<ArrayBuffer> buffer = adoptRef(new ArrayBuffer(data, byteLength));
+    memcpy(buffer->data(), source, byteLength);
     return buffer.release();
 }
 
 ArrayBuffer::ArrayBuffer(void* data, unsigned sizeInBytes)
     : m_sizeInBytes(sizeInBytes)
-    , m_data(data) {
+    , m_data(data)
+{
 }
 
-void* ArrayBuffer::data() {
+void* ArrayBuffer::data()
+{
     return m_data;
 }
 
-const void* ArrayBuffer::data() const {
+const void* ArrayBuffer::data() const
+{
     return m_data;
 }
 
-unsigned ArrayBuffer::byteLength() const {
+unsigned ArrayBuffer::byteLength() const
+{
     return m_sizeInBytes;
 }
 
-ArrayBuffer::~ArrayBuffer() {
+ArrayBuffer::~ArrayBuffer()
+{
     WTF::fastFree(m_data);
 }
 
-void* ArrayBuffer::tryAllocate(unsigned numElements, unsigned elementByteSize) {
+void* ArrayBuffer::tryAllocate(unsigned numElements, unsigned elementByteSize)
+{
     void* result;
-    // Do not allow 32-bit overflow of the total size
+    // Do not allow 32-bit overflow of the total size.
+    // FIXME: Why not? The tryFastCalloc function already checks its arguments,
+    // and will fail if there is any overflow, so why should we include a
+    // redudant unnecessarily restrictive check here?
     if (numElements) {
         unsigned totalSize = numElements * elementByteSize;
         if (totalSize / numElements != elementByteSize)
@@ -86,5 +97,3 @@ void* ArrayBuffer::tryAllocate(unsigned numElements, unsigned elementByteSize) {
 }
 
 }
-
-#endif // ENABLE(3D_CANVAS)

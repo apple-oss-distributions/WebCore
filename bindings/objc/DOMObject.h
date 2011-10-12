@@ -43,7 +43,7 @@ typedef struct DOMObjectInternal DOMObjectInternal;
 @end
 
 @interface DOMObject (DOMLinkStyle)
-- (DOMStyleSheet *)sheet;
+@property(readonly, retain) DOMStyleSheet *sheet;
 @end
 
 #endif

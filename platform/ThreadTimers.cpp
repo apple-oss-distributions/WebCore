@@ -57,7 +57,7 @@ ThreadTimers::ThreadTimers()
     // On iPhone WebKit, this is initialized from the main thread, but
     // isMainThread() checks for the Web Thread, and may not be initialized
     // when this method is called.
-    if (isMainThread() || pthread_main_np())
+    if (pthread_main_np() || isMainThread())
         setSharedTimer(mainThreadSharedTimer());
 }
 
@@ -97,7 +97,7 @@ void ThreadTimers::sharedTimerFired()
 
 void ThreadTimers::sharedTimerFiredInternal()
 {
-    ASSERT(WebThreadIsLocked() || !WebThreadIsEnabled());
+    ASSERT((WebThreadIsCurrent() || pthread_main_np()) && WebThreadIsLocked() || (!WebThreadIsCurrent() && !pthread_main_np()) || !WebThreadIsEnabled());
     // Do a re-entrancy check.
     if (m_firingTimers)
         return;

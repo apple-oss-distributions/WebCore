@@ -57,6 +57,14 @@ RenderReplaced::~RenderReplaced()
 {
 }
 
+void RenderReplaced::destroy()
+{
+    if (!documentBeingDestroyed() && parent())
+        parent()->dirtyLinesFromChangedChild(this);
+
+    RenderBox::destroy();
+}
+
 void RenderReplaced::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
     RenderBox::styleDidChange(diff, oldStyle);
@@ -75,14 +83,14 @@ void RenderReplaced::layout()
     
     setHeight(minimumReplacedHeight());
 
-    calcWidth();
-    calcHeight();
+    computeLogicalWidth();
+    computeLogicalHeight();
 
     m_overflow.clear();
     addShadowOverflow();
+    updateLayerTransform();
     
-    repainter.repaintAfterLayout();    
-
+    repainter.repaintAfterLayout();
     setNeedsLayout(false);
 }
  
@@ -106,17 +114,18 @@ void RenderReplaced::paint(PaintInfo& paintInfo, int tx, int ty)
         paintBoxDecorations(paintInfo, tx, ty);
     
     if (paintInfo.phase == PaintPhaseMask) {
-        paintMask(paintInfo, tx, ty);
+        paintMask(paintInfo, IntSize(tx, ty));
         return;
     }
 
+    IntRect paintRect = IntRect(IntPoint(tx, ty), size());
     if ((paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline) && style()->outlineWidth())
-        paintOutline(paintInfo.context, tx, ty, width(), height());
+        paintOutline(paintInfo.context, paintRect);
     
     if (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection)
         return;
     
-    if (!shouldPaintWithinRoot(paintInfo))
+    if (!paintInfo.shouldPaintWithinRoot(this))
         return;
     
     bool drawSelectionTint = selectionState() != SelectionNone && !document()->printing();
@@ -135,11 +144,7 @@ void RenderReplaced::paint(PaintInfo& paintInfo, int tx, int ty)
         else {
             // Push a clip if we have a border radius, since we want to round the foreground content that gets painted.
             paintInfo.context->save();
-            
-            IntSize topLeft, topRight, bottomLeft, bottomRight;
-            style()->getBorderRadiiForRect(borderRect, topLeft, topRight, bottomLeft, bottomRight);
-
-            paintInfo.context->addRoundedRectClip(borderRect, topLeft, topRight, bottomLeft, bottomRight);
+            paintInfo.context->addRoundedRectClip(style()->getRoundedBorderFor(paintRect));
         }
     }
 
@@ -165,7 +170,7 @@ bool RenderReplaced::shouldPaint(PaintInfo& paintInfo, int& tx, int& ty)
             && paintInfo.phase != PaintPhaseSelection && paintInfo.phase != PaintPhaseMask)
         return false;
 
-    if (!shouldPaintWithinRoot(paintInfo))
+    if (!paintInfo.shouldPaintWithinRoot(this))
         return false;
         
     // if we're invisible or haven't received a layout yet, then just bail.
@@ -176,8 +181,8 @@ bool RenderReplaced::shouldPaint(PaintInfo& paintInfo, int& tx, int& ty)
     int currentTY = ty + y();
 
     // Early exit if the element touches the edges.
-    int top = currentTY + topVisibleOverflow();
-    int bottom = currentTY + bottomVisibleOverflow();
+    int top = currentTY + minYVisualOverflow();
+    int bottom = currentTY + maxYVisualOverflow();
     if (isSelected() && m_inlineBoxWrapper) {
         int selTop = ty + m_inlineBoxWrapper->root()->selectionTop();
         int selBottom = ty + selTop + m_inlineBoxWrapper->root()->selectionHeight();
@@ -186,9 +191,9 @@ bool RenderReplaced::shouldPaint(PaintInfo& paintInfo, int& tx, int& ty)
     }
     
     int os = 2 * maximalOutlineSize(paintInfo.phase);
-    if (currentTX + leftVisibleOverflow() >= paintInfo.rect.right() + os || currentTX + rightVisibleOverflow() <= paintInfo.rect.x() - os)
+    if (currentTX + minXVisualOverflow() >= paintInfo.rect.maxX() + os || currentTX + maxXVisualOverflow() <= paintInfo.rect.x() - os)
         return false;
-    if (top >= paintInfo.rect.bottom() + os || bottom <= paintInfo.rect.y() - os)
+    if (top >= paintInfo.rect.maxY() + os || bottom <= paintInfo.rect.y() - os)
         return false;
 
     return true;
@@ -200,84 +205,74 @@ static inline bool lengthIsSpecified(Length length)
     return lengthType == Fixed || lengthType == Percent;
 }
 
-int RenderReplaced::calcReplacedWidth(bool includeMaxWidth) const
+int RenderReplaced::computeReplacedLogicalWidth(bool includeMaxWidth) const
 {
-    int width;
+    int logicalWidth;
     if (lengthIsSpecified(style()->width()))
-        width = calcReplacedWidthUsing(style()->width());
+        logicalWidth = computeReplacedLogicalWidthUsing(style()->logicalWidth());
     else if (m_hasIntrinsicSize)
-        width = calcAspectRatioWidth();
+        logicalWidth = calcAspectRatioLogicalWidth();
     else
-        width = intrinsicSize().width();
+        logicalWidth = intrinsicLogicalWidth();
 
-    int minW = calcReplacedWidthUsing(style()->minWidth());
-    int maxW = !includeMaxWidth || style()->maxWidth().isUndefined() ? width : calcReplacedWidthUsing(style()->maxWidth());
+    int minLogicalWidth = computeReplacedLogicalWidthUsing(style()->logicalMinWidth());
+    int maxLogicalWidth = !includeMaxWidth || style()->logicalMaxWidth().isUndefined() ? logicalWidth : computeReplacedLogicalWidthUsing(style()->logicalMaxWidth());
 
-    return max(minW, min(width, maxW));
+    return max(minLogicalWidth, min(logicalWidth, maxLogicalWidth));
 }
 
-int RenderReplaced::calcReplacedHeight() const
+int RenderReplaced::computeReplacedLogicalHeight() const
 {
-    int height;
-    if (lengthIsSpecified(style()->height()))
-        height = calcReplacedHeightUsing(style()->height());
+    int logicalHeight;
+    if (lengthIsSpecified(style()->logicalHeight()))
+        logicalHeight = computeReplacedLogicalHeightUsing(style()->logicalHeight());
     else if (m_hasIntrinsicSize)
-        height = calcAspectRatioHeight();
+        logicalHeight = calcAspectRatioLogicalHeight();
     else
-        height = intrinsicSize().height();
+        logicalHeight = intrinsicLogicalHeight();
 
-    int minH = calcReplacedHeightUsing(style()->minHeight());
-    int maxH = style()->maxHeight().isUndefined() ? height : calcReplacedHeightUsing(style()->maxHeight());
+    int minLogicalHeight = computeReplacedLogicalHeightUsing(style()->logicalMinHeight());
+    int maxLogicalHeight = style()->logicalMaxHeight().isUndefined() ? logicalHeight : computeReplacedLogicalHeightUsing(style()->logicalMaxHeight());
 
-    return max(minH, min(height, maxH));
+    return max(minLogicalHeight, min(logicalHeight, maxLogicalHeight));
 }
 
-int RenderReplaced::calcAspectRatioWidth() const
+int RenderReplaced::calcAspectRatioLogicalWidth() const
 {
-    int intrinsicWidth = intrinsicSize().width();
-    int intrinsicHeight = intrinsicSize().height();
+    int intrinsicWidth = intrinsicLogicalWidth();
+    int intrinsicHeight = intrinsicLogicalHeight();
     if (!intrinsicHeight)
         return 0;
-    return RenderBox::calcReplacedHeight() * intrinsicWidth / intrinsicHeight;
+    return RenderBox::computeReplacedLogicalHeight() * intrinsicWidth / intrinsicHeight;
 }
 
-int RenderReplaced::calcAspectRatioHeight() const
+int RenderReplaced::calcAspectRatioLogicalHeight() const
 {
-    int intrinsicWidth = intrinsicSize().width();
-    int intrinsicHeight = intrinsicSize().height();
+    int intrinsicWidth = intrinsicLogicalWidth();
+    int intrinsicHeight = intrinsicLogicalHeight();
     if (!intrinsicWidth)
         return 0;
-    return RenderBox::calcReplacedWidth() * intrinsicHeight / intrinsicWidth;
+    return RenderBox::computeReplacedLogicalWidth() * intrinsicHeight / intrinsicWidth;
 }
 
-void RenderReplaced::calcPrefWidths()
+void RenderReplaced::computePreferredLogicalWidths()
 {
-    ASSERT(prefWidthsDirty());
+    ASSERT(preferredLogicalWidthsDirty());
 
     int borderAndPadding = borderAndPaddingWidth();
-    m_maxPrefWidth = calcReplacedWidth(false) + borderAndPadding;
+    m_maxPreferredLogicalWidth = computeReplacedLogicalWidth(false) + borderAndPadding;
 
     if (style()->maxWidth().isFixed() && style()->maxWidth().value() != undefinedLength)
-        m_maxPrefWidth = min(m_maxPrefWidth, style()->maxWidth().value() + (style()->boxSizing() == CONTENT_BOX ? borderAndPadding : 0));
+        m_maxPreferredLogicalWidth = min(m_maxPreferredLogicalWidth, style()->maxWidth().value() + (style()->boxSizing() == CONTENT_BOX ? borderAndPadding : 0));
 
     if (style()->width().isPercent() || style()->height().isPercent()
         || style()->maxWidth().isPercent() || style()->maxHeight().isPercent()
         || style()->minWidth().isPercent() || style()->minHeight().isPercent())
-        m_minPrefWidth = 0;
+        m_minPreferredLogicalWidth = 0;
     else
-        m_minPrefWidth = m_maxPrefWidth;
+        m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth;
 
-    setPrefWidthsDirty(false);
-}
-
-int RenderReplaced::lineHeight(bool, bool) const
-{
-    return height() + marginTop() + marginBottom();
-}
-
-int RenderReplaced::baselinePosition(bool, bool) const
-{
-    return height() + marginTop() + marginBottom();
+    setPreferredLogicalWidthsDirty(false);
 }
 
 unsigned RenderReplaced::caretMaxRenderedOffset() const
@@ -288,32 +283,27 @@ unsigned RenderReplaced::caretMaxRenderedOffset() const
 VisiblePosition RenderReplaced::positionForPoint(const IntPoint& point)
 {
     // FIXME: This code is buggy if the replaced element is relative positioned.
-
-    // Start out with our own dimensions. These will wind up being used
-    // if we're a block-level replaced element.
-    int top = y();
-    int bottom = y() + height();
-
     InlineBox* box = inlineBoxWrapper();
-    if (box) {
-        // We're an inline replaced element. Use root inline box to determine top and bottom.
-        RootInlineBox* root = box->root();
-        top = root->lineTop();
-        bottom = root->nextRootBox() ? root->nextRootBox()->lineTop() : root->lineBottom();
-    }
-
-    if (point.y() + y() < top)
+    RootInlineBox* rootBox = box ? box->root() : 0;
+    
+    int top = rootBox ? rootBox->selectionTop() : logicalTop();
+    int bottom = rootBox ? rootBox->selectionBottom() : logicalBottom();
+    
+    int blockDirectionPosition = isHorizontalWritingMode() ? point.y() + y() : point.x() + x();
+    int lineDirectionPosition = isHorizontalWritingMode() ? point.x() + x() : point.y() + y();
+    
+    if (blockDirectionPosition < top)
         return createVisiblePosition(caretMinOffset(), DOWNSTREAM); // coordinates are above
     
-    if (point.y() + y() >= bottom)
+    if (blockDirectionPosition >= bottom)
         return createVisiblePosition(caretMaxOffset(), DOWNSTREAM); // coordinates are below
     
     if (node()) {
-        if (point.x() <= width() / 2)
+        if (lineDirectionPosition <= logicalLeft() + (logicalWidth() / 2))
             return createVisiblePosition(0, DOWNSTREAM);
         return createVisiblePosition(1, DOWNSTREAM);
     }
-
+    
     return RenderBox::positionForPoint(point);
 }
 
@@ -341,25 +331,22 @@ IntRect RenderReplaced::localSelectionRect(bool checkWhetherSelected) const
     if (!m_inlineBoxWrapper)
         // We're a block-level replaced element.  Just return our own dimensions.
         return IntRect(0, 0, width(), height());
-
-    RenderBlock* cb =  containingBlock();
-    if (!cb)
-        return IntRect();
     
     RootInlineBox* root = m_inlineBoxWrapper->root();
-    return IntRect(0, root->selectionTop() - y(), width(), root->selectionHeight());
+    int newLogicalTop = root->block()->style()->isFlippedBlocksWritingMode() ? m_inlineBoxWrapper->logicalBottom() - root->selectionBottom() : root->selectionTop() - m_inlineBoxWrapper->logicalTop();
+    if (root->block()->style()->isHorizontalWritingMode())
+        return IntRect(0, newLogicalTop, width(), root->selectionHeight());
+    return IntRect(newLogicalTop, 0, root->selectionHeight(), height());
 }
 
 void RenderReplaced::setSelectionState(SelectionState s)
 {
-    RenderBox::setSelectionState(s);
+    RenderBox::setSelectionState(s); // The selection state for our containing block hierarchy is updated by the base class call.
     if (m_inlineBoxWrapper) {
         RootInlineBox* line = m_inlineBoxWrapper->root();
         if (line)
             line->setHasSelectedChildren(isSelected());
     }
-    
-    containingBlock()->setSelectionState(s);
 }
 
 bool RenderReplaced::isSelected() const
@@ -403,7 +390,7 @@ IntRect RenderReplaced::clippedOverflowRectForRepaint(RenderBoxModelObject* repa
 
     // The selectionRect can project outside of the overflowRect, so take their union
     // for repainting to avoid selection painting glitches.
-    IntRect r = unionRect(localSelectionRect(false), visibleOverflowRect());
+    IntRect r = unionRect(localSelectionRect(false), visualOverflowRect());
 
     RenderView* v = view();
     if (v) {

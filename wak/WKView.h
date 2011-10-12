@@ -88,6 +88,9 @@ struct WKView {
     float scale;
     
     bool drawsOwnDescendants;
+
+    // This is really a WAKView.
+    void *wrapper;
 };
 
 WKViewRef WKViewGetFocusView (void);
@@ -104,6 +107,7 @@ CGRect WKViewGetBounds (WKViewRef view);
 
 void WKViewSetFrameOrigin (WKViewRef view, CGPoint newPoint);
 void WKViewSetFrameSize (WKViewRef view, CGSize newSize);
+void WKViewSetBoundsOrigin(WKViewRef view, CGPoint newOrigin);
 void WKViewSetBoundsSize (WKViewRef view, CGSize newSize);
 
 CGRect WKViewGetFrame (WKViewRef view);

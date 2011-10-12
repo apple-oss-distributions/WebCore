@@ -25,6 +25,8 @@
 
 namespace WebCore {
 
+class PlatformTouchEvent;
+
 class TouchEvent : public MouseRelatedEvent {
 public:
     static PassRefPtr<TouchEvent> create()
@@ -44,7 +46,7 @@ public:
                                        touches, targetTouches, changedTouches,
                                        scale, rotation, isSimulated));
     }
-    virtual ~TouchEvent() {}
+    virtual ~TouchEvent();
 
     void initTouchEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view, int detail, 
                         int screenX, int screenY, int clientX, int clientY,
@@ -61,14 +63,18 @@ public:
     float scale() const { return m_scale; }
     float rotation() const { return m_rotation; }
 
+    void setPlatformTouchEvent(const PlatformTouchEvent&);
+    const PlatformTouchEvent* platformTouchEvent() const { return m_platformEvent.get(); }
+
 private:
-    TouchEvent() { }
+    TouchEvent();
     TouchEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view, int detail, 
                int screenX, int screenY, int pageX, int pageY,
                bool ctrlKey, bool altKey, bool shiftKey, bool metaKey,
                TouchList* touches, TouchList* targetTouches, TouchList* changedTouches,
                float scale, float rotation, bool isSimulated = false);
 
+    OwnPtr<PlatformTouchEvent> m_platformEvent;
     RefPtr<TouchList> m_touches;
     RefPtr<TouchList> m_targetTouches;
     RefPtr<TouchList> m_changedTouches;

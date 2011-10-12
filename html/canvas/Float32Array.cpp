@@ -25,62 +25,38 @@
  */
 
 #include "config.h"
-
-#if ENABLE(3D_CANVAS)
-
 #include "Float32Array.h"
 
 namespace WebCore {
 
 PassRefPtr<Float32Array> Float32Array::create(unsigned length)
 {
-    RefPtr<ArrayBuffer> buffer = ArrayBuffer::create(length, sizeof(float));
-    return create(buffer, 0, length);
+    return TypedArrayBase<float>::create<Float32Array>(length);
 }
 
-PassRefPtr<Float32Array> Float32Array::create(float* array, unsigned length)
+PassRefPtr<Float32Array> Float32Array::create(const float* array, unsigned length)
 {
-    RefPtr<Float32Array> a = Float32Array::create(length);
-    for (unsigned i = 0; i < length; ++i)
-        a->set(i, array[i]);
-    return a;
+    return TypedArrayBase<float>::create<Float32Array>(array, length);
 }
 
 PassRefPtr<Float32Array> Float32Array::create(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length)
 {
-    RefPtr<ArrayBuffer> buf(buffer);
-    if (!verifySubRange<float>(buf, byteOffset, length))
-        return 0;
-
-    return adoptRef(new Float32Array(buf, byteOffset, length));
+    return TypedArrayBase<float>::create<Float32Array>(buffer, byteOffset, length);
 }
 
 Float32Array::Float32Array(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length)
-        : ArrayBufferView(buffer, byteOffset)
-        , m_size(length)
+    : TypedArrayBase<float>(buffer, byteOffset, length)
 {
 }
 
-unsigned Float32Array::length() const {
-    return m_size;
-}
-
-unsigned Float32Array::byteLength() const {
-    return m_size * sizeof(float);
-}
-
-PassRefPtr<ArrayBufferView> Float32Array::slice(int start, int end)
+PassRefPtr<Float32Array> Float32Array::subarray(int start) const
 {
-    unsigned offset, length;
-    calculateOffsetAndLength(start, end, m_size, &offset, &length);
-    clampOffsetAndNumElements<float>(buffer(), m_byteOffset, &offset, &length);
-    return create(buffer(), offset, length);
+    return subarray(start, length());
 }
 
-void Float32Array::set(Float32Array* array, unsigned offset, ExceptionCode& ec) {
-    setImpl(array, offset * sizeof(float), ec);
+PassRefPtr<Float32Array> Float32Array::subarray(int start, int end) const
+{
+    return subarrayImpl<Float32Array>(start, end);
 }
 
 }
-
-#endif // ENABLE(3D_CANVAS)

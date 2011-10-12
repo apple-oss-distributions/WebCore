@@ -33,10 +33,11 @@
 #include "IntRect.h"
 #include "MIMETypeRegistry.h"
 #include "SharedBuffer.h"
+#include "WKGraphics.h"
 #include <math.h>
 #include <wtf/StdLibExtras.h>
 
-#if PLATFORM(CG)
+#if USE(CG)
 #include <CoreFoundation/CoreFoundation.h>
 #endif
 
@@ -53,7 +54,7 @@ Image::~Image()
 
 Image* Image::nullImage()
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
     DEFINE_STATIC_LOCAL(RefPtr<Image>, nullImage, (BitmapImage::create()));;
     return nullImage.get();
 }
@@ -81,10 +82,10 @@ void Image::fillWithSolidColor(GraphicsContext* ctxt, const FloatRect& dstRect, 
     if (color.alpha() <= 0)
         return;
     
-    ctxt->save();
+    CompositeOperator previousOperator = ctxt->compositeOperation();
     ctxt->setCompositeOperation(!color.hasAlpha() && op == CompositeSourceOver ? CompositeCopy : op);
     ctxt->fillRect(dstRect, color, styleColorSpace);
-    ctxt->restore();
+    ctxt->setCompositeOperation(previousOperator);
 }
 
 static inline FloatSize calculatePatternScale(const FloatRect& dstRect, const FloatRect& srcRect, Image::TileRule hRule, Image::TileRule vRule)
@@ -112,6 +113,11 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
         return;
     }
 
+    // See <https://webkit.org/b/59043>.
+#if !PLATFORM(WX)
+    ASSERT(!isBitmapImage() || static_cast<BitmapImage*>(this)->notSolidColor());
+#endif
+
     FloatSize intrinsicTileSize = size();
     if (hasRelativeWidth())
         intrinsicTileSize.setWidth(scaledTileSize.width());
@@ -135,6 +141,28 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
         visibleSrcRect.setHeight(destRect.height() / scale.height());
         draw(ctxt, destRect, visibleSrcRect, styleColorSpace, op);
         return;
+    }
+
+    // When using accelerated drawing on iOS, it's faster to stretch an image than to tile it.
+    if (ctxt->isAcceleratedContext()) {
+        if (size().width() == 1 && intersection(oneTileRect, destRect).height() == destRect.height()) {
+            FloatRect visibleSrcRect;
+            visibleSrcRect.setX(0);
+            visibleSrcRect.setY((destRect.y() - oneTileRect.y()) / scale.height());
+            visibleSrcRect.setWidth(1);
+            visibleSrcRect.setHeight(destRect.height() / scale.height());
+            draw(ctxt, destRect, visibleSrcRect, styleColorSpace, op);
+            return;
+        }
+        if (size().height() == 1 && intersection(oneTileRect, destRect).width() == destRect.width()) {
+            FloatRect visibleSrcRect;
+            visibleSrcRect.setX((destRect.x() - oneTileRect.x()) / scale.width());
+            visibleSrcRect.setY(0);
+            visibleSrcRect.setWidth(destRect.width() / scale.width());
+            visibleSrcRect.setHeight(1);
+            draw(ctxt, destRect, visibleSrcRect, styleColorSpace, op);
+            return;
+        }
     }
 
     // CGPattern uses lots of memory got caching when the tile size is large (4691859, 6239505).

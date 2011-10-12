@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.  All rights reserved.
+ * Copyright (C) 2004, 2005, 2006 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,13 +26,12 @@
 #include "config.h"
 #include "BitmapImage.h"
 
-#if PLATFORM(CG)
+#if USE(CG)
 
 #include "AffineTransform.h"
 #include "FloatConversion.h"
 #include "FloatRect.h"
-#include "GraphicsContext.h"
-#include "GraphicsContextPlatformPrivateCG.h"
+#include "GraphicsContextCG.h"
 #include "ImageObserver.h"
 #if ENABLE(RESPECT_EXIF_ORIENTATION)
 #include "ImageSourceCG.h"
@@ -40,6 +39,8 @@
 #include "PDFDocumentImage.h"
 #include "PlatformString.h"
 #include <CoreGraphics/CoreGraphics.h>
+#include <CoreFoundation/CFArray.h>
+#include <wtf/RetainPtr.h>
 
 #if PLATFORM(MAC) || PLATFORM(CHROMIUM)
 #include "WebCoreSystemInterface.h"
@@ -118,17 +119,23 @@ void BitmapImage::checkForSolidColor()
         return;
     }
 
-    // checkForSolidColor() is called from frameAtIndex() and recursing back would mess up the decoded size count.
-    if (!m_frames.size())
-        return;
-    CGImageRef image = m_frames[0].m_frame;
+    // checkForSolidColor() may be called from frameAtIndex(). On iOS frameAtIndex() gets passed a scaleHint
+    // argument which it uses to tell CG to create a scaled down image. Since we don't know the scaleHint
+    // here, if we call frameAtIndex() again, we would pass it the default scale of 1 and would end up
+    // recreating the image. So we do a quick check and call frameAtIndex(0) only if we haven't yet created an
+    // image.
+    CGImageRef image = 0;
+    if (m_frames.size())
+        image = m_frames[0].m_frame;
+
+    if (!image)
+        image = frameAtIndex(0);
     
     // Currently we only check for solid color in the important special case of a 1x1 image.
     if (image && CGImageGetWidth(image) == 1 && CGImageGetHeight(image) == 1) {
         // <rdar://problem/5106514> Floating-point contexts are not supported on iPhone
         unsigned char pixel[4] = {0, 0, 0, 0}; // RGBA
-        static CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
-        RetainPtr<CGContextRef> bmap(AdoptCF, CGBitmapContextCreate(pixel, 1, 1, 8, sizeof(pixel), space,
+        RetainPtr<CGContextRef> bmap(AdoptCF, CGBitmapContextCreate(pixel, 1, 1, 8, sizeof(pixel), deviceRGBColorSpaceRef(),
             kCGImageAlphaPremultipliedLast));
         if (!bmap)
             return;
@@ -143,7 +150,7 @@ void BitmapImage::checkForSolidColor()
     }
 }
 
-static RetainPtr<CGImageRef> imageWithColorSpace(CGImageRef originalImage, ColorSpace colorSpace)
+RetainPtr<CGImageRef> Image::imageWithColorSpace(CGImageRef originalImage, ColorSpace colorSpace)
 {
     CGColorSpaceRef originalColorSpace = CGImageGetColorSpace(originalImage);
 
@@ -153,11 +160,12 @@ static RetainPtr<CGImageRef> imageWithColorSpace(CGImageRef originalImage, Color
         return originalImage;
 
     switch (colorSpace) {
-    case DeviceColorSpace:
+    case ColorSpaceDeviceRGB:
         return originalImage;
-    case sRGBColorSpace:
-        return RetainPtr<CGImageRef>(AdoptCF, CGImageCreateCopyWithColorSpace(originalImage, 
-            sRGBColorSpaceRef()));
+    case ColorSpaceSRGB:
+        return RetainPtr<CGImageRef>(AdoptCF, CGImageCreateCopyWithColorSpace(originalImage, sRGBColorSpaceRef()));
+    case ColorSpaceLinearRGB:
+        return RetainPtr<CGImageRef>(AdoptCF, CGImageCreateCopyWithColorSpace(originalImage, linearRGBColorSpaceRef()));
     }
 
     ASSERT_NOT_REACHED();
@@ -167,6 +175,33 @@ static RetainPtr<CGImageRef> imageWithColorSpace(CGImageRef originalImage, Color
 CGImageRef BitmapImage::getCGImageRef()
 {
     return frameAtIndex(0);
+}
+
+CGImageRef BitmapImage::getFirstCGImageRefOfSize(const IntSize& size)
+{
+    size_t count = frameCount();
+    for (size_t i = 0; i < count; ++i) {
+        CGImageRef cgImage = frameAtIndex(i);
+        if (cgImage && IntSize(CGImageGetWidth(cgImage), CGImageGetHeight(cgImage)) == size)
+            return cgImage;
+    }
+
+    // Fallback to the default CGImageRef if we can't find the right size
+    return getCGImageRef();
+}
+
+RetainPtr<CFArrayRef> BitmapImage::getCGImageArray()
+{
+    size_t count = frameCount();
+    if (!count)
+        return 0;
+    
+    CFMutableArrayRef array = CFArrayCreateMutable(NULL, count, &kCFTypeArrayCallBacks);
+    for (size_t i = 0; i < count; ++i) {
+        if (CGImageRef currFrame = frameAtIndex(i))
+            CFArrayAppendValue(array, currFrame);
+    }
+    return RetainPtr<CFArrayRef>(AdoptCF, array);
 }
 
 void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& destRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator compositeOp)
@@ -179,8 +214,7 @@ void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& destRect, const F
     if (CGContextGetType(ctxt->platformContext()) == kCGContextTypePDF)
         image.adoptCF(copyUnscaledFrameAtIndex(m_currentFrame));
     else
-        image = frameAtIndex(m_currentFrame, std::min(1.0f, std::max(transformedDstRect.size.width  / srcRect.width(),
-                                                                            transformedDstRect.size.height / srcRect.height())));
+        image = frameAtIndex(m_currentFrame, std::min(1.0f, std::max(transformedDstRect.size.width  / srcRect.width(), transformedDstRect.size.height / srcRect.height())));
     if (!image) // If it's too early we won't have an image yet.
         return;
     
@@ -189,128 +223,19 @@ void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& destRect, const F
         return;
     }
 
-    float currHeight = CGImageGetHeight(image.get());
+    float scale = m_frames[m_currentFrame].m_scale;
 #if ENABLE(RESPECT_EXIF_ORIENTATION)
-    if (orientationRequiresWidthAndHeightSwapped(frameOrientationAtIndex(m_currentFrame)))
-        currHeight = CGImageGetWidth(image.get());
+    int orientation = frameOrientationAtIndex(m_currentFrame);
 #endif
-    // Unapply the scaling since we are getting this from a scaled bitmap.
-    currHeight /= m_frames[m_currentFrame].m_scale;
-    if (currHeight <= srcRect.y())
-        return;
-
-    CGContextRef context = ctxt->platformContext();
-    ctxt->save();
-
-    // Anti-aliasing is on by default on the iPhone. Need to turn it off when drawing images.
-    CGContextSetShouldAntialias(context, false);
-    
-    bool shouldUseSubimage = false;
-
-    // If the source rect is a subportion of the image, then we compute an inflated destination rect that will hold the entire image
-    // and then set a clip to the portion that we want to display.
-    FloatRect adjustedDestRect = destRect;
     FloatSize selfSize = currentFrameSize();
-    if (srcRect.size() != selfSize) {
-        CGInterpolationQuality interpolationQuality = CGContextGetInterpolationQuality(context);
-        // When the image is scaled using high-quality interpolation, we create a temporary CGImage
-        // containing only the portion we want to display. We need to do this because high-quality
-        // interpolation smoothes sharp edges, causing pixels from outside the source rect to bleed
-        // into the destination rect. See <rdar://problem/6112909>.
-        shouldUseSubimage = (interpolationQuality == kCGInterpolationHigh || interpolationQuality == kCGInterpolationDefault) && srcRect.size() != destRect.size();
-        float xScale = srcRect.width() / destRect.width();
-        float yScale = srcRect.height() / destRect.height();
-        if (shouldUseSubimage) {
-            FloatRect subimageRect = srcRect;
-            float leftPadding = srcRect.x() - floorf(srcRect.x());
-            float topPadding = srcRect.y() - floorf(srcRect.y());
 
-            subimageRect.move(-leftPadding, -topPadding);
-            adjustedDestRect.move(-leftPadding / xScale, -topPadding / yScale);
-
-            subimageRect.setWidth(ceilf(subimageRect.width() + leftPadding));
-            adjustedDestRect.setWidth(subimageRect.width() / xScale);
-
-            subimageRect.setHeight(ceilf(subimageRect.height() + topPadding));
-            adjustedDestRect.setHeight(subimageRect.height() / yScale);
-
-            image.adoptCF(CGImageCreateWithImageInRect(image.get(), subimageRect));
-            if (currHeight < srcRect.bottom()) {
-                ASSERT(CGImageGetHeight(image.get()) == currHeight - CGRectIntegral(srcRect).origin.y);
-                adjustedDestRect.setHeight(CGImageGetHeight(image.get()) / yScale);
-            }
-        } else {
-            adjustedDestRect.setLocation(FloatPoint(destRect.x() - srcRect.x() / xScale, destRect.y() - srcRect.y() / yScale));
-            adjustedDestRect.setSize(FloatSize(selfSize.width() / xScale, selfSize.height() / yScale));
-        }
-
-        CGContextClipToRect(context, destRect);
-    }
-
-    // If the image is only partially loaded, then shrink the destination rect that we're drawing into accordingly.
-    if (!shouldUseSubimage && currHeight < selfSize.height())
-        adjustedDestRect.setHeight(adjustedDestRect.height() * currHeight / selfSize.height());
-    
-    // Align to pixel boundaries
-    adjustedDestRect = ctxt->roundToDevicePixels(adjustedDestRect);
-
+    ctxt->drawNativeImage(image.get(), selfSize, styleColorSpace, destRect, srcRect,
 #if ENABLE(RESPECT_EXIF_ORIENTATION)
-    // Rotate the image based on the orientation
-    float w = adjustedDestRect.width();
-    float h = adjustedDestRect.height();
-    CGAffineTransform transform;
-    switch (frameOrientationAtIndex(m_currentFrame)) {
-        case BitmapImage::ImageEXIFOrientationBottomRight:
-            transform = CGAffineTransformMake(-1,  0,  0, -1,  w, h); 
-            break;
-        case BitmapImage::ImageEXIFOrientationLeftBottom:
-            transform = CGAffineTransformMake( 0,  1, -1,  0,  w, 0);
-            break;
-        case BitmapImage::ImageEXIFOrientationRightTop:
-            transform = CGAffineTransformMake( 0, -1,  1,  0,  0, h); 
-            break;
-        case BitmapImage::ImageEXIFOrientationTopRight:
-            transform = CGAffineTransformMake(-1,  0,  0,  1,  w, 0); 
-            break;
-        case BitmapImage::ImageEXIFOrientationBottomLeft:
-            transform = CGAffineTransformMake( 1,  0,  0, -1,  0, h); 
-            break;
-        case BitmapImage::ImageEXIFOrientationLeftTop:
-            transform = CGAffineTransformMake( 0, -1, -1,  0,  w, h);
-            break;
-        case BitmapImage::ImageEXIFOrientationRightBottom:
-            transform = CGAffineTransformMake( 0,  1,  1,  0,  0, 0); 
-            break;
-        default: 
-            transform = CGAffineTransformIdentity;
-            break;
-    }
-    CGContextTranslateCTM(context, adjustedDestRect.x(), adjustedDestRect.bottom());
+        orientation,
 #endif
+        scale,
+        compositeOp);
 
-    ctxt->setCompositeOperation(compositeOp);
-
-    // Flip the coords.
-    CGContextScaleCTM(context, 1, -1);
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-    CGContextConcatCTM(context, transform);
-    if (orientationRequiresWidthAndHeightSwapped(frameOrientationAtIndex(m_currentFrame))) {
-        // The destination rect will have it's width and height already reversed for the orientation of
-        // the image, as it was needed for page layout, so we need to reverse it back here.
-        adjustedDestRect = FloatRect(adjustedDestRect.x(), adjustedDestRect.y(), adjustedDestRect.height(), adjustedDestRect.width());
-    }
-    adjustedDestRect.setLocation(FloatPoint());
-#else    
-    adjustedDestRect.setY(-adjustedDestRect.bottom());
-#endif
-
-    // Adjust the color space.
-    image = imageWithColorSpace(image.get(), styleColorSpace);
-
-    // Draw the image.
-    CGContextDrawImage(context, adjustedDestRect, image.get());
-
-    ctxt->restore();
 
     if (imageObserver())
         imageObserver()->didDraw(this);
@@ -337,7 +262,7 @@ void Image::drawPattern(GraphicsContext* ctxt, const FloatRect& tileRect, const 
         return;
 
     CGContextRef context = ctxt->platformContext();
-    ctxt->save();
+    GraphicsContextStateSaver stateSaver(*ctxt);
     CGContextClipToRect(context, destRect);
     ctxt->setCompositeOperation(op);
     CGContextTranslateCTM(context, destRect.x(), destRect.y() + destRect.height());
@@ -365,13 +290,11 @@ void Image::drawPattern(GraphicsContext* ctxt, const FloatRect& tileRect, const 
     }
 
     // Adjust the color space.
-    subImage = imageWithColorSpace(subImage.get(), styleColorSpace);
+    subImage = Image::imageWithColorSpace(subImage.get(), styleColorSpace);
     
-#ifndef BUILDING_ON_TIGER
     // Leopard has an optimized call for the tiling of image patterns, but we can only use it if the image has been decoded enough that
     // its buffer is the same size as the overall image.  Because a partially decoded CGImageRef with a smaller width or height than the
     // overall image buffer needs to tile with "gaps", we can't use the optimized tiling call in that case.
-    // FIXME: Could create WebKitSystemInterface SPI for CGCreatePatternWithImage2 and probably make Tiger tile faster as well.
     // FIXME: We cannot use CGContextDrawTiledImage with scaled tiles on Leopard, because it suffers from rounding errors.  Snow Leopard is ok.
     float scaledTileWidth = tileRect.width() * narrowPrecisionToFloat(patternTransform.a());
     float w = CGImageGetWidth(tileImage);
@@ -382,12 +305,8 @@ void Image::drawPattern(GraphicsContext* ctxt, const FloatRect& tileRect, const 
 #endif
         CGContextDrawTiledImage(context, FloatRect(adjustedX, adjustedY, scaledTileWidth, scaledTileHeight), subImage.get());
     else {
-#endif
 
-    // On Leopard, this code now only runs for partially decoded images whose buffers do not yet match the overall size of the image.
-    // On Tiger this code runs all the time.  This code is suboptimal because the pattern does not reference the image directly, and the
-    // pattern is destroyed before exiting the function.  This means any decoding the pattern does doesn't end up cached anywhere, so we
-    // redecode every time we paint.
+    // On Leopard and newer, this code now only runs for partially decoded images whose buffers do not yet match the overall size of the image.
     static const CGPatternCallbacks patternCallbacks = { 0, drawPatternCallback, NULL };
     CGAffineTransform matrix = CGAffineTransformMake(narrowPrecisionToCGFloat(patternTransform.a()), 0, 0, narrowPrecisionToCGFloat(patternTransform.d()), adjustedX, adjustedY);
     matrix = CGAffineTransformConcat(matrix, CGContextGetCTM(context));
@@ -398,10 +317,8 @@ void Image::drawPattern(GraphicsContext* ctxt, const FloatRect& tileRect, const 
     RetainPtr<CGPatternRef> pattern(AdoptCF, CGPatternCreate(subImage.get(), CGRectMake(0, 0, tileRect.width(), tileRect.height()),
                                              matrix, tileRect.width(), tileRect.height(), 
                                              kCGPatternTilingConstantSpacing, true, &patternCallbacks));
-    if (!pattern) {
-        ctxt->restore();
+    if (!pattern)
         return;
-    }
 
     RetainPtr<CGColorSpaceRef> patternSpace(AdoptCF, CGColorSpaceCreatePattern(0));
     
@@ -416,11 +333,9 @@ void Image::drawPattern(GraphicsContext* ctxt, const FloatRect& tileRect, const 
     CGContextSetFillColorWithColor(context, color.get());
     CGContextFillRect(context, CGContextGetClipBoundingBox(context));
 
-#ifndef BUILDING_ON_TIGER
     }
-#endif
 
-    ctxt->restore();
+    stateSaver.restore();
 
     if (imageObserver())
         imageObserver()->didDraw(this);
@@ -444,4 +359,4 @@ NativeImagePtr BitmapImage::copyUnscaledFrameAtIndex(size_t index)
 
 }
 
-#endif // PLATFORM(CG)
+#endif // USE(CG)

@@ -21,6 +21,8 @@
 
 package IDLParser;
 
+use strict;
+
 use IPC::Open2;
 use IDLStructure;
 
@@ -66,8 +68,12 @@ sub Parse
     if (!$preprocessor) {
         require Config;
         my $gccLocation = "";
-        if (($Config::Config{'osname'}) =~ /solaris/i) {
+        if ($ENV{CC}) {
+            $gccLocation = $ENV{CC};
+        } elsif (($Config::Config{'osname'}) =~ /solaris/i) {
             $gccLocation = "/usr/sfw/bin/gcc";
+        } elsif ($ENV{SDKROOT}) {
+            chomp($gccLocation = `xcrun -find cc -sdkroot $ENV{SDKROOT}`);
         } else {
             $gccLocation = "/usr/bin/gcc";
         }
@@ -80,7 +86,7 @@ sub Parse
 
     print " | *** Starting to parse $fileName...\n |\n" unless $beQuiet;
 
-    $pid = open2(\*PP_OUT, \*PP_IN, split(' ', $preprocessor), (map { "-D$_" } split(' ', $defines)), $fileName);
+    my $pid = open2(\*PP_OUT, \*PP_IN, split(' ', $preprocessor), (map { "-D$_" } split(' ', $defines)), $fileName);
     close PP_IN;
     my @documentContent = <PP_OUT>;
     close PP_OUT;
@@ -146,7 +152,7 @@ sub dumpExtendedAttributes
     }
 
     my @temp;
-    while (($name, $value) = each(%{$attrs})) {
+    while ((my $name, my $value) = each(%{$attrs})) {
         push(@temp, "$name=$value");
     }
 
@@ -161,11 +167,11 @@ sub parseExtendedAttributes
     my %attrs = ();
 
     foreach my $value (split(/\s*,\s*/, $str)) {
-        ($name,$value) = split(/\s*=\s*/, $value, 2);
+        (my $name, my $val) = split(/\s*=\s*/, $value, 2);
 
         # Attributes with no value are set to be true
-        $value = 1 unless defined $value;
-        $attrs{$name} = $value;
+        $val = 1 unless defined $val;
+        $attrs{$name} = $val;
         die("Invalid extended attribute name: '$name'\n") if $name =~ /\s/;
     }
 
@@ -230,9 +236,9 @@ sub ParseInterface
         # Match identifier of the interface, and enclosed data...
         $data =~ /$IDLStructure::interfaceSelector/;
 
-        $interfaceExtendedAttributes = (defined($1) ? $1 : " "); chop($interfaceExtendedAttributes);
+        my $interfaceExtendedAttributes = (defined($1) ? $1 : " "); chop($interfaceExtendedAttributes);
         $interfaceName = (defined($2) ? $2 : die("Parsing error!\nSource:\n$data\n)"));
-        $interfaceBase = (defined($3) ? $3 : "");
+        my $interfaceBase = (defined($3) ? $3 : "");
         $interfaceData = (defined($4) ? $4 : die("Parsing error!\nSource:\n$data\n)"));
 
         # Fill in known parts of the domClass datastructure now...
@@ -255,7 +261,7 @@ sub ParseInterface
         my @interfaceMethods = split(/;/, $interfaceData);
 
         foreach my $line (@interfaceMethods) {
-            if ($line =~ /attribute/) {
+            if ($line =~ /\Wattribute\W/) {
                 $line =~ /$IDLStructure::interfaceAttributeSelector/;
 
                 my $attributeType = (defined($1) ? $1 : die("Parsing error!\nSource:\n$line\n)"));
@@ -325,11 +331,13 @@ sub ParseInterface
                     my $line = $_;
 
                     $line =~ /$IDLStructure::interfaceParameterSelector/;
-                    my $paramExtendedAttributes = (defined($1) ? $1 : " "); chop($paramExtendedAttributes);
-                    my $paramType = (defined($2) ? $2 : die("Parsing error!\nSource:\n$line\n)"));
-                    my $paramName = (defined($3) ? $3 : die("Parsing error!\nSource:\n$line\n)"));
+                    my $paramDirection = $1;
+                    my $paramExtendedAttributes = (defined($2) ? $2 : " "); chop($paramExtendedAttributes);
+                    my $paramType = (defined($3) ? $3 : die("Parsing error!\nSource:\n$line\n)"));
+                    my $paramName = (defined($4) ? $4 : die("Parsing error!\nSource:\n$line\n)"));
 
                     my $paramDataNode = new domSignature();
+                    $paramDataNode->direction($paramDirection);
                     $paramDataNode->name($paramName);
                     $paramDataNode->type($paramType);
                     $paramDataNode->extendedAttributes(parseExtendedAttributes($paramExtendedAttributes));

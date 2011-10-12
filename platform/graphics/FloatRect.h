@@ -29,13 +29,9 @@
 
 #include "FloatPoint.h"
 
-#if PLATFORM(EFL)
-#include <Evas.h>
-#endif
-
 #include <CoreGraphics/CGGeometry.h>
 
-#if PLATFORM(CG)
+#if USE(CG) || USE(SKIA_ON_MAC_CHROME)
 typedef struct CGRect CGRect;
 #endif
 
@@ -54,8 +50,12 @@ class wxRect2DDouble;
 class BRect;
 #endif
 
-#if PLATFORM(SKIA)
+#if USE(SKIA)
 struct SkRect;
+#endif
+
+#if USE(CAIRO)
+typedef struct _cairo_rectangle cairo_rectangle_t;
 #endif
 
 namespace WebCore {
@@ -85,6 +85,8 @@ public:
 
     float x() const { return m_location.x(); }
     float y() const { return m_location.y(); }
+    float maxX() const { return x() + width(); }
+    float maxY() const { return y() + height(); }
     float width() const { return m_size.width(); }
     float height() const { return m_size.height(); }
 
@@ -94,9 +96,6 @@ public:
     void setHeight(float height) { m_size.setHeight(height); }
 
     bool isEmpty() const { return m_size.isEmpty(); }
-
-    float right() const { return x() + width(); }
-    float bottom() const { return y() + height(); }
 
     FloatPoint center() const { return FloatPoint(x() + width() / 2, y() + height() / 2); }
 
@@ -108,13 +107,13 @@ public:
 
     void intersect(const FloatRect&);
     void unite(const FloatRect&);
+    void uniteIfNonZero(const FloatRect&);
 
     // Note, this doesn't match what IntRect::contains(IntPoint&) does; the int version
     // is really checking for containment of 1x1 rect, but that doesn't make sense with floats.
     bool contains(float px, float py) const
-        { return px >= x() && px <= right() && py >= y() && py <= bottom(); }
+        { return px >= x() && px <= maxX() && py >= y() && py <= maxY(); }
     bool contains(const FloatPoint& point) const { return contains(point.x(), point.y()); }
-
 
     void inflateX(float dx) {
         m_location.setX(m_location.x() - dx);
@@ -128,7 +127,12 @@ public:
     void scale(float s) { scale(s, s); }
     void scale(float sx, float sy);
 
-#if PLATFORM(CG)
+    // Re-initializes this rectangle to fit the sets of passed points.
+    void fitToPoints(const FloatPoint& p0, const FloatPoint& p1);
+    void fitToPoints(const FloatPoint& p0, const FloatPoint& p1, const FloatPoint& p2);
+    void fitToPoints(const FloatPoint& p0, const FloatPoint& p1, const FloatPoint& p2, const FloatPoint& p3);
+
+#if USE(CG) || USE(SKIA_ON_MAC_CHROME)
     FloatRect(const CGRect&);
     operator CGRect() const;
 #endif
@@ -137,11 +141,7 @@ public:
 #if PLATFORM(QT)
     FloatRect(const QRectF&);
     operator QRectF() const;
-#endif
-
-#if PLATFORM(EFL)
-    explicit FloatRect(const Eina_Rectangle&);
-    operator Eina_Rectangle() const;
+    FloatRect normalized() const;
 #endif
 
 #if PLATFORM(WX) && USE(WXGC)
@@ -154,7 +154,7 @@ public:
     operator BRect() const;
 #endif
 
-#if PLATFORM(SKIA)
+#if USE(SKIA)
     FloatRect(const SkRect&);
     operator SkRect() const;
 #endif
@@ -163,9 +163,21 @@ public:
     operator VGRect() const;
 #endif
 
+#if USE(CAIRO)
+    FloatRect(const cairo_rectangle_t&);
+    operator cairo_rectangle_t() const;
+#endif
+
 private:
     FloatPoint m_location;
     FloatSize m_size;
+
+    void setLocationAndSizeFromEdges(float left, float top, float right, float bottom)
+    {
+        m_location.set(left, top);
+        m_size.setWidth(right - left);
+        m_size.setHeight(bottom - top);
+    }
 };
 
 inline FloatRect intersection(const FloatRect& a, const FloatRect& b)

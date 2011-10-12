@@ -27,68 +27,34 @@
 #ifndef Uint16Array_h
 #define Uint16Array_h
 
-#include "ArrayBufferView.h"
-#include <limits>
-#include <wtf/MathExtras.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
+#include "IntegralTypedArrayBase.h"
 
 namespace WebCore {
 
-class Uint16Array : public ArrayBufferView {
-  public:
-    virtual bool isUnsignedShortArray() const { return true; }
+class ArrayBuffer;
 
+class Uint16Array : public IntegralTypedArrayBase<unsigned short> {
+public:
     static PassRefPtr<Uint16Array> create(unsigned length);
     static PassRefPtr<Uint16Array> create(unsigned short* array, unsigned length);
     static PassRefPtr<Uint16Array> create(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length);
 
-    unsigned short* data() { return static_cast<unsigned short*>(baseAddress()); }
+    // Can’t use "using" here due to a bug in the RVCT compiler.
+    void set(TypedArrayBase<unsigned short>* array, unsigned offset, ExceptionCode& ec) { TypedArrayBase<unsigned short>::set(array, offset, ec); }
+    void set(unsigned index, double value) { IntegralTypedArrayBase<unsigned short>::set(index, value); }
 
-    virtual unsigned length() const;
-    virtual unsigned byteLength() const;
-    virtual PassRefPtr<ArrayBufferView> slice(int start, int end);
+    PassRefPtr<Uint16Array> subarray(int start) const;
+    PassRefPtr<Uint16Array> subarray(int start, int end) const;
 
-    void set(unsigned index, double value)
-    {
-        if (index >= m_size)
-            return;
-        if (isnan(value)) // Clamp NaN to 0
-            value = 0;
-        if (value < std::numeric_limits<unsigned short>::min())
-            value = std::numeric_limits<unsigned short>::min();
-        else if (value > std::numeric_limits<unsigned short>::max())
-            value = std::numeric_limits<unsigned short>::max();
-        unsigned short* storage = static_cast<unsigned short*>(m_baseAddress);
-        storage[index] = static_cast<unsigned short>(value);
-    }
+private:
+    Uint16Array(PassRefPtr<ArrayBuffer> buffer,
+                unsigned byteOffset,
+                unsigned length);
+    // Make constructor visible to superclass.
+    friend class TypedArrayBase<unsigned short>;
 
-    bool get(unsigned index, unsigned short& result) const
-    {
-        if (index >= m_size)
-            return false;
-        unsigned short* storage = static_cast<unsigned short*>(m_baseAddress);
-        result = storage[index];
-        return true;
-    }
-
-    unsigned short get(unsigned index) const
-    {
-        return item(index);
-    }
-
-    unsigned short item(unsigned index) const
-    {
-        ASSERT(index < m_size);
-        unsigned short* storage = static_cast<unsigned short*>(m_baseAddress);
-        return storage[index];
-    }
-
-    void set(Uint16Array* array, unsigned offset, ExceptionCode& ec);
-
-  private:
-    Uint16Array(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset,unsigned length);
-    unsigned m_size;
+    // Overridden from ArrayBufferView.
+    virtual bool isUnsignedShortArray() const { return true; }
 };
 
 } // namespace WebCore

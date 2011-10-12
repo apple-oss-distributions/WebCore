@@ -26,14 +26,19 @@
 #ifndef Cursor_h
 #define Cursor_h
 
+#include "Image.h"
+#include "IntPoint.h"
+#include <wtf/RefPtr.h>
+
 #if PLATFORM(WIN)
 typedef struct HICON__* HICON;
 typedef HICON HCURSOR;
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
-#include <wtf/RefPtr.h>
+#elif PLATFORM(MAC)
+#include <wtf/RetainPtr.h>
 #elif PLATFORM(GTK)
-typedef struct _GdkCursor GdkCursor;
+#include "GRefPtrGtk.h"
 #elif PLATFORM(QT)
 #include <QCursor>
 #elif PLATFORM(CHROMIUM)
@@ -52,19 +57,75 @@ typedef struct HICON__ *HICON;
 typedef HICON HCURSOR;
 #endif
 
+#if PLATFORM(WIN) || PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(QT) || PLATFORM(EFL)
+#define WTF_USE_LAZY_NATIVE_CURSOR 1
+#endif
+
 namespace WebCore {
 
     class Image;
-    class IntPoint;
 
 
     class Cursor {
     public:
+        enum Type {
+            Pointer,
+            Cross,
+            Hand,
+            IBeam,
+            Wait,
+            Help,
+            EastResize,
+            NorthResize,
+            NorthEastResize,
+            NorthWestResize,
+            SouthResize,
+            SouthEastResize,
+            SouthWestResize,
+            WestResize,
+            NorthSouthResize,
+            EastWestResize,
+            NorthEastSouthWestResize,
+            NorthWestSouthEastResize,
+            ColumnResize,
+            RowResize,
+            MiddlePanning,
+            EastPanning,
+            NorthPanning,
+            NorthEastPanning,
+            NorthWestPanning,
+            SouthPanning,
+            SouthEastPanning,
+            SouthWestPanning,
+            WestPanning,
+            Move,
+            VerticalText,
+            Cell,
+            ContextMenu,
+            Alias,
+            Progress,
+            NoDrop,
+            Copy,
+            None,
+            NotAllowed,
+            ZoomIn,
+            ZoomOut,
+            Grab,
+            Grabbing,
+            Custom
+        };
+
+        static const Cursor& fromType(Cursor::Type);
+
         Cursor()
-        { }
+        {
+        }
 
     };
 
+    IntPoint determineHotSpot(Image*, const IntPoint& specifiedHotSpot);
+    const char* nameForCursorType(Cursor::Type);
+    
     static Cursor* _cursor = 0;
     static const Cursor& cursor() {
         if (_cursor == 0)
@@ -92,6 +153,15 @@ namespace WebCore {
     inline const Cursor& northWestSouthEastResizeCursor() { return cursor(); }
     inline const Cursor& columnResizeCursor() { return cursor(); }
     inline const Cursor& rowResizeCursor() { return cursor(); }
+    inline const Cursor& middlePanningCursor() { return cursor(); }
+    inline const Cursor& eastPanningCursor() { return cursor(); }
+    inline const Cursor& northPanningCursor() { return cursor(); }
+    inline const Cursor& northEastPanningCursor() { return cursor(); }
+    inline const Cursor& northWestPanningCursor() { return cursor(); }
+    inline const Cursor& southPanningCursor() { return cursor(); }
+    inline const Cursor& southEastPanningCursor() { return cursor(); }
+    inline const Cursor& southWestPanningCursor() { return cursor(); }
+    inline const Cursor& westPanningCursor() { return cursor(); }
     inline const Cursor& verticalTextCursor() { return cursor(); }
     inline const Cursor& cellCursor() { return cursor(); }
     inline const Cursor& contextMenuCursor() { return cursor(); }

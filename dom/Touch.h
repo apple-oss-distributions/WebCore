@@ -74,4 +74,4 @@ private:
 } // namespace WebCore
 
 
-#endif // Touch_h
+#endif /* Touch_h */

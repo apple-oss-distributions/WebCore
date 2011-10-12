@@ -31,7 +31,9 @@ module core {
         readonly attribute [Custom] double alpha;
         readonly attribute [Custom] double beta;
         readonly attribute [Custom] double gamma;
-        [Custom] void initDeviceOrientationEvent(in DOMString type, in boolean bubbles, in boolean cancelable, in double alpha, in double beta, in double gamma);
+        readonly attribute [Custom] double webkitCompassHeading;
+        readonly attribute [Custom] double webkitCompassAccuracy;
+        [Custom] void initDeviceOrientationEvent(in DOMString type, in boolean bubbles, in boolean cancelable, in double alpha, in double beta, in double gamma, in double compassHeading, in double compassAccuracy);
     };
 
 }

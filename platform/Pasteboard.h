@@ -43,9 +43,17 @@
 // knowledge of the frame and editor or moved into the editing directory.
 
 #if PLATFORM(MAC)
+#ifdef __OBJC__
+@class NSFileWrapper;
+@class NSPasteboard;
+@class NSArray;
+@class NSDictionary;
+#else
 class NSFileWrapper;
 class NSPasteboard;
 class NSArray;
+class NSDictionary;
+#endif
 #endif
 
 #if PLATFORM(WIN)
@@ -56,11 +64,6 @@ typedef struct HWND__* HWND;
 #if PLATFORM(CHROMIUM)
 #include "PasteboardPrivate.h"
 #endif
-
-namespace WTF {
-class CString;
-}
-using WTF::CString;
 
 namespace WebCore {
 
@@ -78,29 +81,22 @@ class HitTestResult;
 class KURL;
 class Node;
 class Range;
-class String;
+class ArchiveResource;
     
-class Pasteboard : public Noncopyable {
+class Pasteboard {
+    WTF_MAKE_NONCOPYABLE(Pasteboard); WTF_MAKE_FAST_ALLOCATED;
 public:
-#if PLATFORM(MAC)
-    //Helper functions to allow Clipboard to share code
-    static void writeSelection(NSPasteboard* pasteboard, Range* selectedRange, bool canSmartCopyOrDelete, Frame* frame);
-    static void writeURL(NSPasteboard* pasteboard, NSArray* types, const KURL& url, const String& titleStr, Frame* frame);
-    static void writePlainText(NSPasteboard* pasteboard, const String& text);
-#endif
     
     static Pasteboard* generalPasteboard();
-    void writeSelection(Range*, bool canSmartCopyOrDelete, Frame*);
     void writePlainText(const String&);
-    void writeURL(const KURL&, const String&, Frame* = 0);
-    void writeImage(Node*, const KURL&, const String& title);
-#if PLATFORM(MAC)
-    void writeFileWrapperAsRTFDAttachment(NSFileWrapper*);
-#endif
+    void writePlainText(const String&, Frame*);
+    static NSArray* supportedPasteboardTypes();
+    void writeSelection(Range*, bool canSmartCopyOrDelete, Frame*);
     void clear();
     bool canSmartReplace();
     PassRefPtr<DocumentFragment> documentFragment(Frame*, PassRefPtr<Range>, bool allowPlainText, bool& chosePlainText);
     String plainText(Frame* = 0);
+    
 #if PLATFORM(QT) || PLATFORM(CHROMIUM)
     bool isSelectionMode() const;
     void setSelectionMode(bool selectionMode);
@@ -109,17 +105,18 @@ public:
 #if PLATFORM(GTK)
     void setHelper(PasteboardHelper*);
     PasteboardHelper* helper();
+    ~Pasteboard();
 #endif
 
 private:
     Pasteboard();
-    ~Pasteboard();
 
 #if PLATFORM(MAC)
-    Pasteboard(NSPasteboard *);
-    RetainPtr<NSPasteboard> m_pasteboard;
+    PassRefPtr<DocumentFragment> documentFragmentWithImageResource(Frame* frame, PassRefPtr<ArchiveResource> resource);
 #endif
 
+
+    PassRefPtr<DocumentFragment> documentFragmentForPasteboardItemAtIndex(Frame*, int index);
 #if PLATFORM(WIN)
     HWND m_owner;
 #endif

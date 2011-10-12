@@ -28,6 +28,7 @@
 #include "SharedBuffer.h"
 
 #include "PurgeableBuffer.h"
+#include <wtf/PassOwnPtr.h>
 
 #if ENABLE(DISK_IMAGE_CACHE)
 #include "DiskImageCache.h"
@@ -66,6 +67,8 @@ SharedBuffer::SharedBuffer()
 #if ENABLE(DISK_IMAGE_CACHE)
     , m_isMemoryMapped(false)
     , m_diskImageCacheId(DiskImageCache::invalidDiskCacheId)
+    , m_notifyMemoryMappedCallback(NULL)
+    , m_notifyMemoryMappedCallbackData(NULL)
 #endif
 {
 }
@@ -76,6 +79,8 @@ SharedBuffer::SharedBuffer(const char* data, int size)
 #if ENABLE(DISK_IMAGE_CACHE)
     , m_isMemoryMapped(false)
     , m_diskImageCacheId(DiskImageCache::invalidDiskCacheId)
+    , m_notifyMemoryMappedCallback(NULL)
+    , m_notifyMemoryMappedCallbackData(NULL)
 #endif
 {
     append(data, size);
@@ -87,6 +92,8 @@ SharedBuffer::SharedBuffer(const unsigned char* data, int size)
 #if ENABLE(DISK_IMAGE_CACHE)
     , m_isMemoryMapped(false)
     , m_diskImageCacheId(DiskImageCache::invalidDiskCacheId)
+    , m_notifyMemoryMappedCallback(NULL)
+    , m_notifyMemoryMappedCallbackData(NULL)
 #endif
 {
     append(reinterpret_cast<const char*>(data), size);
@@ -112,11 +119,11 @@ PassRefPtr<SharedBuffer> SharedBuffer::adoptVector(Vector<char>& vector)
     return buffer.release();
 }
 
-PassRefPtr<SharedBuffer> SharedBuffer::adoptPurgeableBuffer(PurgeableBuffer* purgeableBuffer) 
+PassRefPtr<SharedBuffer> SharedBuffer::adoptPurgeableBuffer(PassOwnPtr<PurgeableBuffer> purgeableBuffer) 
 { 
     ASSERT(!purgeableBuffer->isPurgeable());
     RefPtr<SharedBuffer> buffer = create();
-    buffer->m_purgeableBuffer.set(purgeableBuffer);
+    buffer->m_purgeableBuffer = purgeableBuffer;
     return buffer.release();
 }
 
@@ -148,7 +155,7 @@ void SharedBuffer::createPurgeableBuffer() const
     if (!m_shouldUsePurgeableMemory)
         return;
 
-    m_purgeableBuffer.set(PurgeableBuffer::create(m_size));
+    m_purgeableBuffer = PurgeableBuffer::create(m_size);
     if (!m_purgeableBuffer)
         return;
 
@@ -171,6 +178,9 @@ void SharedBuffer::createPurgeableBuffer() const
         freeSegment(m_segments[i]);
     }
     m_segments.clear();
+#if HAVE(CFNETWORK_DATA_ARRAY_CALLBACK)
+    copyDataArrayAndClear(destination, bytesLeft);
+#endif
 }
 
 #if ENABLE(DISK_IMAGE_CACHE)
@@ -179,22 +189,57 @@ bool SharedBuffer::isAllowedToBeMemoryMapped() const
     return m_diskImageCacheId != DiskImageCache::invalidDiskCacheId;
 }
 
-void SharedBuffer::allowToBeMemoryMapped()
+SharedBuffer::MemoryMappingState SharedBuffer::allowToBeMemoryMapped()
 {
-    ASSERT(!isMemoryMapped());
-    ASSERT(!m_diskImageCacheId);
+    if (isMemoryMapped())
+        return SharedBuffer::SuccessAlreadyMapped;
+
+    if (isAllowedToBeMemoryMapped())
+        return SharedBuffer::PreviouslyQueuedForMapping;
 
     m_diskImageCacheId = diskImageCache()->writeItem(this);
+    if (m_diskImageCacheId == DiskImageCache::invalidDiskCacheId)
+        return SharedBuffer::FailureCacheFull;
+
+    return SharedBuffer::QueuedForMapping;
 }
 
+void SharedBuffer::failedMemoryMap()
+{
+    if (m_notifyMemoryMappedCallback)
+        m_notifyMemoryMappedCallback(this, SharedBuffer::Failed, m_notifyMemoryMappedCallbackData);
+}
+    
 void SharedBuffer::markAsMemoryMapped()
 {
     ASSERT(!isMemoryMapped());
 
     m_isMemoryMapped = true;
-    unsigned savedSize = m_size;
+    unsigned savedSize = size();
     clear();
     m_size = savedSize;
+    
+    if (m_notifyMemoryMappedCallback)
+        m_notifyMemoryMappedCallback(this, SharedBuffer::Succeeded, m_notifyMemoryMappedCallbackData);
+}
+
+SharedBuffer::MemoryMappedNotifyCallbackData SharedBuffer::memoryMappedNotificationCallbackData() const
+{
+    return m_notifyMemoryMappedCallbackData;
+}
+
+SharedBuffer::MemoryMappedNotifyCallback SharedBuffer::memoryMappedNotificationCallback() const
+{
+    return m_notifyMemoryMappedCallback;
+}
+
+void SharedBuffer::setMemoryMappedNotificationCallback(SharedBuffer::MemoryMappedNotifyCallback callback, MemoryMappedNotifyCallbackData data)
+{
+    ASSERT(!m_notifyMemoryMappedCallback || !callback);
+    ASSERT(!m_notifyMemoryMappedCallbackData || !data);
+    
+    m_notifyMemoryMappedCallback = callback;
+    m_notifyMemoryMappedCallbackData = data;
 }
 #endif
 
@@ -271,6 +316,9 @@ void SharedBuffer::clear()
 
     m_buffer.clear();
     m_purgeableBuffer.clear();
+#if HAVE(CFNETWORK_DATA_ARRAY_CALLBACK)
+    m_dataArray.clear();
+#endif
 }
 
 PassRefPtr<SharedBuffer> SharedBuffer::copy() const
@@ -289,7 +337,7 @@ PassRefPtr<SharedBuffer> SharedBuffer::copy() const
     return clone;
 }
 
-PurgeableBuffer* SharedBuffer::releasePurgeableBuffer()
+PassOwnPtr<PurgeableBuffer> SharedBuffer::releasePurgeableBuffer()
 { 
     ASSERT(hasOneRef()); 
     return m_purgeableBuffer.release(); 
@@ -313,6 +361,9 @@ const Vector<char>& SharedBuffer::buffer() const
             freeSegment(m_segments[i]);
         }
         m_segments.clear();
+#if HAVE(CFNETWORK_DATA_ARRAY_CALLBACK)
+        copyDataArrayAndClear(destination, bytesLeft);
+#endif
     }
     return m_buffer;
 }
@@ -356,7 +407,7 @@ unsigned SharedBuffer::getSomeData(const char*& someData, unsigned position) con
     return segment == segments - 1 ? segmentedSize - position : segmentSize - positionInSegment;
 }
 
-#if !PLATFORM(CF)
+#if !USE(CF) || PLATFORM(QT)
 
 inline void SharedBuffer::clearPlatformData()
 {

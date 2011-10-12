@@ -94,6 +94,9 @@ enum MediaPlayerProxyNotificationType {
 - (BOOL)_hasVideo;
 - (BOOL)_hasAudio;
 
+- (BOOL)_hasClosedCaptions;
+- (void)_setClosedCaptionsVisible:(BOOL)visible;
+
 - (NSTimeInterval)_duration;
 
 - (double)_currentTime;

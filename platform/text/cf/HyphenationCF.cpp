@@ -26,21 +26,22 @@
 #include "config.h"
 #include "Hyphenation.h"
 
-
-#include "AtomicString.h"
 #include "AtomicStringKeyedMRUCache.h"
 #include "TextBreakIteratorInternalICU.h"
 #include <wtf/ListHashSet.h>
 #include <wtf/RetainPtr.h>
+#include <wtf/UnusedParam.h>
 
 namespace WebCore {
+
+#if !PLATFORM(WIN) || (defined(MAC_OS_X_VERSION_10_7) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7)
 
 template<>
 RetainPtr<CFLocaleRef> AtomicStringKeyedMRUCache<RetainPtr<CFLocaleRef> >::createValueForNullKey()
 {
-    RetainPtr<CFStringRef> cfLocaleIdentifier(AdoptCF, CFStringCreateWithBytesNoCopy(kCFAllocatorDefault, reinterpret_cast<const UInt8*>(currentSearchLocaleID()), strlen(currentSearchLocaleID()), kCFStringEncodingASCII, false, kCFAllocatorNull));
-    RetainPtr<CFLocaleRef> locale(AdoptCF, CFLocaleCreate(kCFAllocatorDefault, cfLocaleIdentifier.get()));
-    return locale;
+    RetainPtr<CFLocaleRef> locale(AdoptCF, CFLocaleCopyCurrent());
+
+    return CFStringIsHyphenationAvailableForLocale(locale.get()) ? locale : 0;
 }
 
 template<>
@@ -48,29 +49,51 @@ RetainPtr<CFLocaleRef> AtomicStringKeyedMRUCache<RetainPtr<CFLocaleRef> >::creat
 {
     RetainPtr<CFStringRef> cfLocaleIdentifier(AdoptCF, localeIdentifier.createCFString());
     RetainPtr<CFLocaleRef> locale(AdoptCF, CFLocaleCreate(kCFAllocatorDefault, cfLocaleIdentifier.get()));
-    return locale;
+
+    return CFStringIsHyphenationAvailableForLocale(locale.get()) ? locale : 0;
 }
 
-bool canHyphenate(const AtomicString& /* localeIdentifer */)
+static AtomicStringKeyedMRUCache<RetainPtr<CFLocaleRef> >& cfLocaleCache()
+{
+    DEFINE_STATIC_LOCAL(AtomicStringKeyedMRUCache<RetainPtr<CFLocaleRef> >, cache, ());
+    return cache;
+}
+
+bool canHyphenate(const AtomicString& localeIdentifier)
 {
 #if !(defined(WTF_ARM_ARCH_VERSION) && WTF_ARM_ARCH_VERSION == 6)
-    return true;
+    return cfLocaleCache().get(localeIdentifier);
 #else
     // Hyphenation is not available on devices with ARMv6 processors. See <rdar://8352570>.
+    UNUSED_PARAM(localeIdentifier);
     return false;
 #endif
 }
 
 size_t lastHyphenLocation(const UChar* characters, size_t length, size_t beforeIndex, const AtomicString& localeIdentifier)
 {
-    RetainPtr<CFStringRef> string(AdoptCF, CFStringCreateWithCharactersNoCopy(kCFAllocatorDefault, characters, length, kCFAllocatorNull));
+    RetainPtr<CFStringRef> string(AdoptCF, CFStringCreateWithCharactersNoCopy(kCFAllocatorDefault, reinterpret_cast<const UniChar*>(characters), length, kCFAllocatorNull));
 
-    DEFINE_STATIC_LOCAL(AtomicStringKeyedMRUCache<RetainPtr<CFLocaleRef> >, cfLocaleCache, ());
-    RetainPtr<CFLocaleRef> locale = cfLocaleCache.get(localeIdentifier);
+    RetainPtr<CFLocaleRef> locale = cfLocaleCache().get(localeIdentifier);
+    ASSERT(locale);
 
     CFIndex result = CFStringGetHyphenationLocationBeforeIndex(string.get(), beforeIndex, CFRangeMake(0, length), 0, locale.get(), 0);
     return result == kCFNotFound ? 0 : result;
 }
 
-} // namespace WebCore
+#else
 
+bool canHyphenate(const AtomicString&)
+{
+    return false;
+}
+
+size_t lastHyphenLocation(const UChar*, size_t, size_t, const AtomicString&)
+{
+    ASSERT_NOT_REACHED();
+    return 0;
+}
+
+#endif // PLATFORM(WIN) && (!defined(MAC_OS_X_VERSION_10_7) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7)
+
+} // namespace WebCore

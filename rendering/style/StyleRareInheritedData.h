@@ -25,17 +25,18 @@
 #ifndef StyleRareInheritedData_h
 #define StyleRareInheritedData_h
 
-#include "AtomicString.h"
 #include "Color.h"
 #include "Length.h"
 #include <wtf/RefCounted.h>
 #include <wtf/PassRefPtr.h>
+#include <wtf/text/AtomicString.h>
 
 #include "TextSizeAdjustment.h"
 
 namespace WebCore {
 
 class CursorList;
+class QuotesData;
 class ShadowData;
 
 // This struct is for rarely used inherited CSS3, CSS2, and WebKit-specific properties.
@@ -57,8 +58,9 @@ public:
     Color textStrokeColor;
     float textStrokeWidth;
     Color textFillColor;
+    Color textEmphasisColor;
 
-    ShadowData* textShadow; // Our text shadow information for shadowed text drawing.
+    OwnPtr<ShadowData> textShadow; // Our text shadow information for shadowed text drawing.
     AtomicString highlight; // Apple-specific extension for custom highlight rendering.
     
     RefPtr<CursorList> cursorData;
@@ -78,15 +80,27 @@ public:
     unsigned resize : 2; // EResize
     unsigned userSelect : 1;  // EUserSelect
     unsigned colorSpace : 1; // ColorSpace
-    unsigned touchCalloutEnabled : 1;
+    unsigned speak : 3; // ESpeak
     unsigned hyphens : 2; // Hyphens
+    unsigned textEmphasisFill : 1; // TextEmphasisFill
+    unsigned textEmphasisMark : 3; // TextEmphasisMark
+    unsigned textEmphasisPosition : 1; // TextEmphasisPosition
+    unsigned m_lineBoxContain: 7; // LineBoxContain
+    unsigned touchCalloutEnabled : 1;
+    unsigned useTouchOverflowScrolling: 1;
     Color tapHighlightColor;
     Color compositionFillColor;
     Color compositionFrameColor;
     TextSizeAdjustment textSizeAdjust; // An Apple extension to an Apple extension.
-    
+
     AtomicString hyphenationString;
-    AtomicString hyphenationLocale;
+    short hyphenationLimitBefore;
+    short hyphenationLimitAfter;
+
+    AtomicString locale;
+
+    AtomicString textEmphasisCustomMark;
+    RefPtr<QuotesData> quotes;
 
 private:
     StyleRareInheritedData();

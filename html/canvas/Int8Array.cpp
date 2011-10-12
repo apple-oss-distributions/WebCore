@@ -25,63 +25,38 @@
  */
 
 #include "config.h"
-
-#if ENABLE(3D_CANVAS)
-
-#include "ArrayBuffer.h"
 #include "Int8Array.h"
 
 namespace WebCore {
 
 PassRefPtr<Int8Array> Int8Array::create(unsigned length)
 {
-    RefPtr<ArrayBuffer> buffer = ArrayBuffer::create(length, sizeof(signed char));
-    return create(buffer, 0, length);
+    return TypedArrayBase<signed char>::create<Int8Array>(length);
 }
 
 PassRefPtr<Int8Array> Int8Array::create(signed char* array, unsigned length)
 {
-    RefPtr<Int8Array> a = Int8Array::create(length);
-    for (unsigned i = 0; i < length; ++i)
-        a->set(i, array[i]);
-    return a;
+    return TypedArrayBase<signed char>::create<Int8Array>(array, length);
 }
 
 PassRefPtr<Int8Array> Int8Array::create(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length)
 {
-    RefPtr<ArrayBuffer> buf(buffer);
-    if (!verifySubRange<signed char>(buf, byteOffset, length))
-        return 0;
-
-    return adoptRef(new Int8Array(buf, byteOffset, length));
+    return TypedArrayBase<signed char>::create<Int8Array>(buffer, byteOffset, length);
 }
 
-Int8Array::Int8Array(PassRefPtr<ArrayBuffer> buffer, unsigned offset, unsigned length)
-    : ArrayBufferView(buffer, offset)
-    , m_size(length)
+Int8Array::Int8Array(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length)
+    : IntegralTypedArrayBase<signed char>(buffer, byteOffset, length)
 {
 }
 
-unsigned Int8Array::length() const {
-    return m_size;
-}
-
-unsigned Int8Array::byteLength() const {
-    return m_size * sizeof(signed char);
-}
-
-PassRefPtr<ArrayBufferView> Int8Array::slice(int start, int end)
+PassRefPtr<Int8Array> Int8Array::subarray(int start) const
 {
-    unsigned offset, length;
-    calculateOffsetAndLength(start, end, m_size, &offset, &length);
-    clampOffsetAndNumElements<signed char>(buffer().get(), m_byteOffset, &offset, &length);
-    return create(buffer(), offset, length);
+    return subarray(start, length());
 }
 
-void Int8Array::set(Int8Array* array, unsigned offset, ExceptionCode& ec) {
-    setImpl(array, offset * sizeof(signed char), ec);
+PassRefPtr<Int8Array> Int8Array::subarray(int start, int end) const
+{
+    return subarrayImpl<Int8Array>(start, end);
 }
 
 }
-
-#endif // ENABLE(3D_CANVAS)

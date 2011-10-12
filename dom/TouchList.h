@@ -32,17 +32,17 @@ public:
     {
         return adoptRef(new TouchList());
     }
-    virtual ~TouchList() {}
+    virtual ~TouchList();
     
     virtual bool isTouchList() { return true; }
 
     unsigned length() const { return m_values.size(); }
     Touch* item (unsigned index) { return index < length() ? m_values[index].get() : 0; }
     
-    void append(const PassRefPtr<Touch>);
+    void append(PassRefPtr<Touch>);
     
 private:
-    TouchList() { }
+    TouchList();
 
     Vector<RefPtr<Touch> > m_values;
 };
@@ -50,4 +50,4 @@ private:
 } // namespace WebCore
 
 
-#endif // TouchList_h
+#endif /* TouchList_h */

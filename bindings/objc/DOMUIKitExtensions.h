@@ -15,7 +15,7 @@
 #import <WebCore/DOMRange.h>
 
 typedef enum { 
-    // The first four match SelectionController::EDirection.  The last two don't have WebKit counterparts because
+    // The first four match SelectionDirection.  The last two don't have WebKit counterparts because
     // they aren't necessary until there is support vertical layout.
     WebTextAdjustmentForward,
     WebTextAdjustmentBackward,
@@ -29,6 +29,7 @@ typedef enum {
 
 - (void)move:(UInt32)amount inDirection:(WebTextAdjustmentDirection)direction;
 - (void)extend:(UInt32)amount inDirection:(WebTextAdjustmentDirection)direction;
+- (DOMNode *)firstNode;
 
 @end
 

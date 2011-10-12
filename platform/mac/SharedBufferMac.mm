@@ -31,9 +31,6 @@
 #include <string.h>
 #include <wtf/PassRefPtr.h>
 
-#ifdef BUILDING_ON_TIGER
-typedef unsigned NSUInteger;
-#endif
 
 using namespace WebCore;
 
@@ -49,9 +46,7 @@ using namespace WebCore;
 
 + (void)initialize
 {
-#ifndef BUILDING_ON_TIGER
     WebCoreObjCFinalizeOnMainThread(self);
-#endif
 }
 
 - (void)dealloc

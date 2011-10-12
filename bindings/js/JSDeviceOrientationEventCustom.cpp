@@ -35,46 +35,66 @@ using namespace JSC;
 
 namespace WebCore {
 
-JSValue JSDeviceOrientationEvent::alpha(ExecState* exec) const
+JSValue JSDeviceOrientationEvent::alpha(ExecState*) const
 {
     DeviceOrientationEvent* imp = static_cast<DeviceOrientationEvent*>(impl());
     if (!imp->orientation()->canProvideAlpha())
         return jsNull();
-    return jsNumber(exec, imp->orientation()->alpha());
+    return jsNumber(imp->orientation()->alpha());
 }
 
-JSValue JSDeviceOrientationEvent::beta(ExecState* exec) const
+JSValue JSDeviceOrientationEvent::beta(ExecState*) const
 {
     DeviceOrientationEvent* imp = static_cast<DeviceOrientationEvent*>(impl());
     if (!imp->orientation()->canProvideBeta())
         return jsNull();
-    return jsNumber(exec, imp->orientation()->beta());
+    return jsNumber(imp->orientation()->beta());
 }
 
-JSValue JSDeviceOrientationEvent::gamma(ExecState* exec) const
+JSValue JSDeviceOrientationEvent::gamma(ExecState*) const
 {
     DeviceOrientationEvent* imp = static_cast<DeviceOrientationEvent*>(impl());
     if (!imp->orientation()->canProvideGamma())
         return jsNull();
-    return jsNumber(exec, imp->orientation()->gamma());
+    return jsNumber(imp->orientation()->gamma());
 }
 
-JSValue JSDeviceOrientationEvent::initDeviceOrientationEvent(ExecState* exec, const ArgList& args)
+JSValue JSDeviceOrientationEvent::webkitCompassHeading(ExecState*) const
 {
-    const UString& typeArg = args.at(0).toString(exec);
-    bool bubbles = args.at(1).toBoolean(exec);
-    bool cancelable = args.at(2).toBoolean(exec);
+    DeviceOrientationEvent* imp = static_cast<DeviceOrientationEvent*>(impl());
+    if (!imp->orientation()->canProvideCompassHeading())
+        return jsNull();
+    return jsNumber(imp->orientation()->compassHeading());
+}
+
+JSValue JSDeviceOrientationEvent::webkitCompassAccuracy(ExecState*) const
+{
+    DeviceOrientationEvent* imp = static_cast<DeviceOrientationEvent*>(impl());
+    if (!imp->orientation()->canProvideCompassAccuracy())
+        return jsNull();
+    return jsNumber(imp->orientation()->compassAccuracy());
+}
+
+JSValue JSDeviceOrientationEvent::initDeviceOrientationEvent(ExecState* exec)
+{
+    const String& type = ustringToString(exec->argument(0).toString(exec));
+    bool bubbles = exec->argument(1).toBoolean(exec);
+    bool cancelable = exec->argument(2).toBoolean(exec);
     // If alpha, beta or gamma are null or undefined, mark them as not provided.
     // Otherwise, use the standard JavaScript conversion.
-    bool alphaProvided = !args.at(3).isUndefinedOrNull();
-    double alpha = args.at(3).toNumber(exec);
-    bool betaProvided = !args.at(4).isUndefinedOrNull();
-    double beta = args.at(4).toNumber(exec);
-    bool gammaProvided = !args.at(5).isUndefinedOrNull();
-    double gamma = args.at(5).toNumber(exec);
-    RefPtr<DeviceOrientation> orientation = DeviceOrientation::create(alphaProvided, alpha, betaProvided, beta, gammaProvided, gamma);
+    bool alphaProvided = !exec->argument(3).isUndefinedOrNull();
+    double alpha = exec->argument(3).toNumber(exec);
+    bool betaProvided = !exec->argument(4).isUndefinedOrNull();
+    double beta = exec->argument(4).toNumber(exec);
+    bool gammaProvided = !exec->argument(5).isUndefinedOrNull();
+    double gamma = exec->argument(5).toNumber(exec);
+    bool compassHeadingProvided = !exec->argument(6).isUndefinedOrNull();
+    double compassHeading = exec->argument(6).toNumber(exec);
+    bool compassAccuracyProvided = !exec->argument(7).isUndefinedOrNull();
+    double compassAccuracy = exec->argument(7).toNumber(exec);
+    RefPtr<DeviceOrientation> orientation = DeviceOrientation::create(alphaProvided, alpha, betaProvided, beta, gammaProvided, gamma, compassHeadingProvided, compassHeading, compassAccuracyProvided, compassAccuracy);
     DeviceOrientationEvent* imp = static_cast<DeviceOrientationEvent*>(impl());
-    imp->initDeviceOrientationEvent(ustringToAtomicString(typeArg), bubbles, cancelable, orientation.get());
+    imp->initDeviceOrientationEvent(type, bubbles, cancelable, orientation.get());
     return jsUndefined();
 }
 

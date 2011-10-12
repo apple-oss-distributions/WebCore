@@ -21,7 +21,7 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef ResourceRequest_h
@@ -30,7 +30,19 @@
 #include "ResourceRequestBase.h"
 
 #include <wtf/RetainPtr.h>
+#if USE(CFNETWORK)
 typedef const struct _CFURLRequest* CFURLRequestRef;
+#endif
+
+#ifdef __OBJC__
+@class NSURLRequest;
+#else
+class NSURLRequest;
+#endif
+
+#if USE(CFURLSTORAGESESSIONS)
+typedef const struct __CFURLStorageSession* CFURLStorageSessionRef;
+#endif
 
 namespace WebCore {
 
@@ -38,38 +50,96 @@ namespace WebCore {
     public:
         ResourceRequest(const String& url) 
             : ResourceRequestBase(KURL(ParsedURLString, url), UseProtocolCachePolicy)
+            , m_mainResourceRequest(false)
         {
         }
 
         ResourceRequest(const KURL& url) 
             : ResourceRequestBase(url, UseProtocolCachePolicy)
+            , m_mainResourceRequest(false)
         {
         }
 
         ResourceRequest(const KURL& url, const String& referrer, ResourceRequestCachePolicy policy = UseProtocolCachePolicy) 
             : ResourceRequestBase(url, policy)
+            , m_mainResourceRequest(false)
         {
             setHTTPReferrer(referrer);
         }
         
         ResourceRequest()
             : ResourceRequestBase(KURL(), UseProtocolCachePolicy)
+            , m_mainResourceRequest(false)
         {
         }
         
+#if USE(CFNETWORK)
+#if PLATFORM(MAC)
+        ResourceRequest(NSURLRequest *);
+        void updateNSURLRequest();
+#endif
+
         ResourceRequest(CFURLRequestRef cfRequest)
             : ResourceRequestBase()
-            , m_cfRequest(cfRequest) { }
-        
-        CFURLRequestRef cfURLRequest() const;       
+            , m_mainResourceRequest(false)
+            , m_cfRequest(cfRequest)
+        {
+#if PLATFORM(MAC)
+            updateNSURLRequest();
+#endif
+        }
+
+        CFURLRequestRef cfURLRequest() const;
+#else
+        ResourceRequest(NSURLRequest *nsRequest)
+            : ResourceRequestBase()
+            , m_mainResourceRequest(false)
+            , m_nsRequest(nsRequest) { }
+
+#endif
+
+#if PLATFORM(MAC)
+        void applyWebArchiveHackForMail();
+        NSURLRequest *nsURLRequest() const;
+#endif
+
+#if USE(CFURLSTORAGESESSIONS)
+        void setStorageSession(CFURLStorageSessionRef);
+#endif
+
+        static bool httpPipeliningEnabled();
+        static void setHTTPPipeliningEnabled(bool);
+
+#if PLATFORM(MAC)
+        static bool useQuickLookResourceCachingQuirks();
+#endif
+
+        void setMainResourceRequest(bool isMainResourceRequest) { m_mainResourceRequest = isMainResourceRequest; }
+        bool isMainResourceRequest() const { return m_mainResourceRequest; }
+
+    private:
+        bool m_mainResourceRequest;
 
     private:
         friend class ResourceRequestBase;
 
         void doUpdatePlatformRequest();
         void doUpdateResourceRequest();
-        
-        RetainPtr<CFURLRequestRef> m_cfRequest;      
+
+        PassOwnPtr<CrossThreadResourceRequestData> doPlatformCopyData(PassOwnPtr<CrossThreadResourceRequestData> data) const { return data; }
+        void doPlatformAdopt(PassOwnPtr<CrossThreadResourceRequestData>) { }
+
+#if USE(CFNETWORK)
+        RetainPtr<CFURLRequestRef> m_cfRequest;
+#endif
+#if PLATFORM(MAC)
+        RetainPtr<NSURLRequest> m_nsRequest;
+#endif
+
+        static bool s_httpPipeliningEnabled;
+    };
+
+    struct CrossThreadResourceRequestData : public CrossThreadResourceRequestDataBase {
     };
 
 } // namespace WebCore

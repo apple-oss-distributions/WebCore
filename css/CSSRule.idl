@@ -23,6 +23,7 @@ module css {
     // Introduced in DOM Level 2:
     interface [
         CustomMarkFunction,
+        GenerateIsReachable,
         CustomToJS,
         Polymorphic
     ] CSSRule {

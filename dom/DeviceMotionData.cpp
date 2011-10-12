@@ -35,9 +35,7 @@ PassRefPtr<DeviceMotionData::Acceleration> DeviceMotionData::Acceleration::creat
     return adoptRef(new DeviceMotionData::Acceleration(canProvideX, x, canProvideY, y, canProvideZ, z));
 }
 
-DeviceMotionData::Acceleration::Acceleration(bool canProvideX, double x,
-                                             bool canProvideY, double y,
-                                             bool canProvideZ, double z)
+DeviceMotionData::Acceleration::Acceleration(bool canProvideX, double x, bool canProvideY, double y, bool canProvideZ, double z)
     : m_x(x)
     , m_y(y)
     , m_z(z)
@@ -55,9 +53,7 @@ PassRefPtr<DeviceMotionData::RotationRate> DeviceMotionData::RotationRate::creat
     return adoptRef(new DeviceMotionData::RotationRate(canProvideAlpha, alpha, canProvideBeta, beta, canProvideGamma, gamma));
 }
 
-DeviceMotionData::RotationRate::RotationRate(bool canProvideAlpha, double alpha,
-                                             bool canProvideBeta, double beta,
-                                             bool canProvideGamma, double gamma)
+DeviceMotionData::RotationRate::RotationRate(bool canProvideAlpha, double alpha, bool canProvideBeta, double beta, bool canProvideGamma, double gamma)
     : m_alpha(alpha)
     , m_beta(beta)
     , m_gamma(gamma)
@@ -72,10 +68,8 @@ PassRefPtr<DeviceMotionData> DeviceMotionData::create()
     return adoptRef(new DeviceMotionData);
 }
 
-PassRefPtr<DeviceMotionData> DeviceMotionData::create(PassRefPtr<Acceleration> acceleration,
-                                                      PassRefPtr<Acceleration> accelerationIncludingGravity,
-                                                      PassRefPtr<RotationRate> rotationRate,
-                                                      bool canProvideInterval, double interval)
+PassRefPtr<DeviceMotionData> DeviceMotionData::create(PassRefPtr<Acceleration> acceleration, PassRefPtr<Acceleration> accelerationIncludingGravity,
+                                                      PassRefPtr<RotationRate> rotationRate, bool canProvideInterval, double interval)
 {
     return adoptRef(new DeviceMotionData(acceleration, accelerationIncludingGravity, rotationRate, canProvideInterval, interval));
 }
@@ -85,10 +79,8 @@ DeviceMotionData::DeviceMotionData()
 {
 }
 
-DeviceMotionData::DeviceMotionData(PassRefPtr<Acceleration> acceleration,
-                                   PassRefPtr<Acceleration> accelerationIncludingGravity,
-                                   PassRefPtr<RotationRate> rotationRate,
-                                   bool canProvideInterval, double interval)
+DeviceMotionData::DeviceMotionData(PassRefPtr<Acceleration> acceleration, PassRefPtr<Acceleration> accelerationIncludingGravity,
+                                   PassRefPtr<RotationRate> rotationRate, bool canProvideInterval, double interval)
     : m_acceleration(acceleration)
     , m_accelerationIncludingGravity(accelerationIncludingGravity)
     , m_rotationRate(rotationRate)

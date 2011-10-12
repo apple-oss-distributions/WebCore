@@ -37,6 +37,7 @@
 #import "Frame.h"
 #import "HTMLElement.h"
 #import "HTMLNames.h"
+#import "HTMLParserIdioms.h"
 #import "Image.h"
 #import "NodeFilter.h"
 #import "RenderImage.h"
@@ -143,7 +144,6 @@ static void createElementClassMap()
     addElementClass(HTMLNames::preTag, [DOMHTMLPreElement class]);
     addElementClass(HTMLNames::qTag, [DOMHTMLQuoteElement class]);
     addElementClass(HTMLNames::scriptTag, [DOMHTMLScriptElement class]);
-    addElementClass(HTMLNames::keygenTag, [DOMHTMLSelectElement class]);
     addElementClass(HTMLNames::selectTag, [DOMHTMLSelectElement class]);
     addElementClass(HTMLNames::styleTag, [DOMHTMLStyleElement class]);
     addElementClass(HTMLNames::tableTag, [DOMHTMLTableElement class]);
@@ -178,9 +178,11 @@ static void createElementClassMap()
     addElementClass(SVGNames::feColorMatrixTag, [DOMSVGFEColorMatrixElement class]);
     addElementClass(SVGNames::feComponentTransferTag, [DOMSVGFEComponentTransferElement class]);
     addElementClass(SVGNames::feCompositeTag, [DOMSVGFECompositeElement class]);
+    addElementClass(SVGNames::feConvolveMatrixTag, [DOMSVGFEConvolveMatrixElement class]);
     addElementClass(SVGNames::feDiffuseLightingTag, [DOMSVGFEDiffuseLightingElement class]);
     addElementClass(SVGNames::feDisplacementMapTag, [DOMSVGFEDisplacementMapElement class]);
     addElementClass(SVGNames::feDistantLightTag, [DOMSVGFEDistantLightElement class]);
+    addElementClass(SVGNames::feDropShadowTag, [DOMSVGFEDropShadowElement class]);
     addElementClass(SVGNames::feFloodTag, [DOMSVGFEFloodElement class]);
     addElementClass(SVGNames::feFuncATag, [DOMSVGFEFuncAElement class]);
     addElementClass(SVGNames::feFuncBTag, [DOMSVGFEFuncBElement class]);
@@ -406,6 +408,8 @@ Class kitClass(WebCore::Node* impl)
             // FIXME: Create an XPath objective C wrapper
             // See http://bugs.webkit.org/show_bug.cgi?id=8755
             return nil;
+        case WebCore::Node::SHADOW_ROOT_NODE:
+            return [DOMNode class];
     }
     ASSERT_NOT_REACHED();
     return nil;
@@ -449,11 +453,20 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
 // quad in page coordinates, taking transforms into account. c.f. - (NSRect)boundingBox;
 - (WKQuad)absoluteQuad
 {
+    return [self absoluteQuadAndInsideFixedPosition:0];
+}
+
+- (WKQuad)absoluteQuadAndInsideFixedPosition:(BOOL *)insideFixed
+{
     core(self)->document()->updateLayoutIgnorePendingStylesheets();
     WebCore::RenderObject *renderer = core(self)->renderer();
     if (renderer) {
         Vector<FloatQuad> quads;
-        renderer->absoluteQuads(quads);
+        bool wasFixed = false;
+        renderer->absoluteQuads(quads, &wasFixed);
+        if (insideFixed)
+            *insideFixed = wasFixed;
+
         if (quads.size() == 0)
             return WebCore::emptyQuad();
         
@@ -468,6 +481,16 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
     }
 
     return WebCore::emptyQuad();
+}
+
+// this method is like - (CGRect)boundingBox, but it accounts for for transforms
+- (CGRect)boundingBoxUsingTransforms
+{
+    core(self)->document()->updateLayoutIgnorePendingStylesheets();
+    WebCore::RenderObject* renderer = core(self)->renderer();
+    if (!renderer)
+        return CGRectZero;
+    return renderer->absoluteBoundingBoxRect(true);
 }
 
 // returns array of WKQuadObject
@@ -500,7 +523,7 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
 {
     Element *link= [self _linkElement];
     if (link)
-        return link->document()->completeURL(deprecatedParseURL(link->getAttribute("href")));
+        return link->document()->completeURL(stripLeadingAndTrailingHTMLSpaces(link->getAttribute(HTMLNames::hrefAttr)));
     
     return nil;
 }
@@ -509,7 +532,7 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
 {
     Element *target = [self _linkElement];
     
-    if(target) return target->getAttribute("target");
+    if(target) return target->getAttribute(HTMLNames::targetAttr);
     
     return nil;
 }
@@ -546,39 +569,21 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
     return [self boundingBox];
 }
 
-- (CGRect)innerFrame
-{
-	WebCore::Node * node = core(self);
-	RenderObject * renderer = node->renderer();
-	
-	if (!renderer) return CGRectZero;
-    
-	RenderStyle * style = renderer->style();
-	CGRect innerFrame = [self boundingFrame];
-	
-	innerFrame.origin.x += style->borderLeftWidth();
-	innerFrame.size.width -= style->borderLeftWidth() + style->borderRightWidth();
-    
-	innerFrame.origin.y += style->borderBottomWidth();  // not top?
-	innerFrame.size.height -= style->borderBottomWidth() + style->borderTopWidth();
-	
-	return innerFrame;
-}
-
 - (WKQuad)innerFrameQuad       // takes transforms into account
 {
     core(self)->document()->updateLayoutIgnorePendingStylesheets();
-    WebCore::RenderObject *renderer = core(self)->renderer();
+    RenderObject* renderer = core(self)->renderer();
     if (!renderer)
         return emptyQuad();
 
-	RenderStyle * style = renderer->style();
+    RenderStyle* style = renderer->style();
     IntRect boundingBox = renderer->absoluteBoundingBoxRect(true /* use transforms*/);
 
-	boundingBox.move(style->borderLeftWidth(), style->borderBottomWidth());  // not top?
-	boundingBox.setWidth(boundingBox.width() - style->borderLeftWidth() + style->borderRightWidth());
-	boundingBox.setHeight(boundingBox.height() - style->borderBottomWidth() + style->borderTopWidth());
+    boundingBox.move(style->borderLeftWidth(), style->borderTopWidth());
+    boundingBox.setWidth(boundingBox.width() - style->borderLeftWidth() - style->borderRightWidth());
+    boundingBox.setHeight(boundingBox.height() - style->borderBottomWidth() - style->borderTopWidth());
 
+    // FIXME: This function advertises returning a quad, but it actually returns a bounding box (so there is no rotation, for instance).
     return wkQuadFromFloatQuad(FloatQuad(boundingBox));
 }
 
@@ -675,7 +680,7 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
     ASSERT(name);
     WebCore::Element* element = core(self);
     ASSERT(element);
-    return element->document()->completeURL(deprecatedParseURL(element->getAttribute(name)));
+    return element->document()->completeURL(stripLeadingAndTrailingHTMLSpaces(element->getAttribute(name)));
 }
 
 - (BOOL)isFocused
@@ -690,11 +695,7 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
 @implementation DOMHTMLLinkElement (WebPrivate)
 - (BOOL)_mediaQueryMatchesForOrientation:(int)orientation
 {
-    HTMLLinkElement* link = static_cast<HTMLLinkElement*>(core(self));
-    String media = link->media();
-    if (media.isEmpty())
-        return true;
-    Document* document = link->document();
+    Document* document = static_cast<HTMLLinkElement*>(core(self))->document();
     FrameView* frameView = document->frame() ? document->frame()->view() : 0;
     if (!frameView)
         return false;
@@ -708,16 +709,27 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
         frameView->setFixedLayoutSize(IntSize(layoutHeight, layoutWidth));
         frameView->setUseFixedLayout(true);
     }
-    
-    RefPtr<MediaList> mediaList = MediaList::createAllowingDescriptionSyntax(media);
-    MediaQueryEvaluator screenEval("screen", document->frame(), document->renderer() ? document->renderer()->style() : 0);
-    
-    bool result = screenEval.eval(mediaList.get());
+        
+    bool result = [self _mediaQueryMatches];
 
     frameView->setFixedLayoutSize(savedFixedLayoutSize);
     frameView->setUseFixedLayout(savedUseFixedLayout);
 
     return result;
+}
+
+- (BOOL)_mediaQueryMatches
+{
+    HTMLLinkElement* link = static_cast<HTMLLinkElement*>(core(self));
+    String media = link->getAttribute(HTMLNames::mediaAttr);
+    if (media.isEmpty())
+        return true;
+    Document* document = link->document();
+
+    RefPtr<MediaList> mediaList = MediaList::createAllowingDescriptionSyntax(media);
+    MediaQueryEvaluator screenEval("screen", document->frame(), document->renderer() ? document->renderer()->style() : 0);
+
+    return screenEval.eval(mediaList.get());
 }
 @end
 

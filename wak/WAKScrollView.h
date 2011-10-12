@@ -18,6 +18,7 @@
 {
     WAKView *_documentView;  // Only here so the ObjC instance stays around.
     id _delegate;
+    NSPoint _scrollOrigin;
 }
 
 - (CGRect)documentVisibleRect;
@@ -41,6 +42,8 @@
 
 - (CGRect)actualDocumentVisibleRect;
 - (void)setActualScrollPosition:(CGPoint)point;
+
+- (BOOL)inProgrammaticScroll;
 
 @end
 

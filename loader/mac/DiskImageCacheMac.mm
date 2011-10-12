@@ -28,6 +28,7 @@
 
 #if ENABLE(DISK_IMAGE_CACHE)
 
+#include "FileSystem.h"
 #include "PlatformString.h"
 
 // FIXME: Move this to a generic place, like FileSystem.h and FileSystemIPhone.mm?
@@ -35,57 +36,6 @@
 // used elsewhere, such as QuickLook code where this was pulled from.
 
 namespace WebCore {
-
-static NSString *createTemporaryDirectory(NSString *directoryPrefix)
-{
-    NSString *tempDirectoryComponent = [directoryPrefix stringByAppendingString:@"-XXXXXXXX"];
-    const char* tempDirectoryCString = [[NSTemporaryDirectory() stringByAppendingPathComponent:tempDirectoryComponent] fileSystemRepresentation];
-    if (!tempDirectoryCString)
-        return nil;
-
-    const size_t length = strlen(tempDirectoryCString) + 1; // For NULL terminator.
-    ASSERT(length < MAXPATHLEN);
-    if (length >= MAXPATHLEN)
-        return nil;
-
-    Vector<char, MAXPATHLEN> path(length);
-    memcpy(path.data(), tempDirectoryCString, length);
-
-    if (!mkdtemp(path.data()))
-        return nil;
-
-    return [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path.data() length:length - 1]; // Just the strlen.
-}
-
-static NSString *createTemporaryFile(NSString *directoryPath, NSString *filePrefix)
-{
-    NSString *tempFileComponent = [filePrefix stringByAppendingString:@"-XXXXXXXX"];
-    const char* templatePathCString = [[directoryPath stringByAppendingPathComponent:tempFileComponent] fileSystemRepresentation];
-    if (!templatePathCString)
-        return nil;
-
-    const size_t length = strlen(templatePathCString) + 1; // For NULL terminator.
-    ASSERT(length < MAXPATHLEN);
-    if (length >= MAXPATHLEN)
-        return nil;
-
-    Vector<char, MAXPATHLEN> path(length);
-    memcpy(path.data(), templatePathCString, length);
-
-    int fd = mkstemp(path.data());
-    if (fd < 0)
-        return nil;
-
-    int err = fchmod(fd, S_IRUSR | S_IWUSR);
-    if (err < 0) {
-        close(fd);
-        unlink(path.data());
-        return nil;
-    }
-
-    close(fd);
-    return [[NSFileManager defaultManager] stringWithFileSystemRepresentation:path.data() length:length - 1]; // Just the strlen.
-}
 
 String DiskImageCache::temporaryDirectory()
 {

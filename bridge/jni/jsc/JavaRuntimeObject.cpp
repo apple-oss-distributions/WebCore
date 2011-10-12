@@ -24,9 +24,11 @@
  */
 
 #include "config.h"
+#include "JavaRuntimeObject.h"
 
 #include "JavaInstanceJSC.h"
-#include "JavaRuntimeObject.h"
+#include "JSDOMBinding.h"
+#include "runtime/ObjectPrototype.h"
 
 #if ENABLE(JAVA_BRIDGE)
 
@@ -35,9 +37,12 @@ namespace Bindings {
 
 const ClassInfo JavaRuntimeObject::s_info = { "JavaRuntimeObject", &RuntimeObject::s_info, 0, 0 };
 
-JavaRuntimeObject::JavaRuntimeObject(ExecState* exec, PassRefPtr<JavaInstance> instance)
-    : RuntimeObject(exec, instance)
+JavaRuntimeObject::JavaRuntimeObject(ExecState* exec, JSGlobalObject* globalObject, PassRefPtr<JavaInstance> instance)
+    // FIXME: deprecatedGetDOMStructure uses the prototype off of the wrong global object
+    // We need to pass in the right global object for "i".
+    : RuntimeObject(exec, globalObject, WebCore::deprecatedGetDOMStructure<JavaRuntimeObject>(exec), instance)
 {
+    ASSERT(inherits(&s_info));
 }
 
 JavaRuntimeObject::~JavaRuntimeObject()

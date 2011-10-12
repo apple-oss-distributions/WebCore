@@ -28,6 +28,7 @@
 
 #import "DeviceMotionClientIPhone.h"
 #import "DeviceOrientationClientIPhone.h"
+#import <CoreLocation/CoreLocation.h>
 #import <CoreMotion/CoreMotion.h>
 #import <wtf/HashCountedSet.h>
 
@@ -37,10 +38,12 @@ const float kMotionUpdateInterval = 0.05f;
 @interface CoreMotionManager : NSObject
 {
     CMMotionManager* m_motionManager;
+    CLLocationManager* m_locationManager;
     HashSet<WebCore::DeviceMotionClientIPhone*> m_deviceMotionClients;
     HashSet<WebCore::DeviceOrientationClientIPhone*> m_deviceOrientationClients;
     NSTimer* m_updateTimer;
     BOOL m_gyroAvailable;
+    BOOL m_headingAvailable;
 }
 
 + (CoreMotionManager *)sharedManager;
@@ -49,6 +52,7 @@ const float kMotionUpdateInterval = 0.05f;
 - (void)addOrientationClient:(WebCore::DeviceOrientationClientIPhone *)client;
 - (void)removeOrientationClient:(WebCore::DeviceOrientationClientIPhone *)client;
 - (BOOL)gyroAvailable;
+- (BOOL)headingAvailable;
 @end
 
 

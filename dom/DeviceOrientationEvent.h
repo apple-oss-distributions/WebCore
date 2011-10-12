@@ -26,8 +26,6 @@
 #ifndef DeviceOrientationEvent_h
 #define DeviceOrientationEvent_h
 
-#include "DOMWindow.h"
-#include "DeviceOrientation.h"
 #include "Event.h"
 
 namespace WebCore {

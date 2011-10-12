@@ -40,7 +40,9 @@ typedef struct _GdkEventMotion GdkEventMotion;
 #endif
 
 #if PLATFORM(EFL)
-#include <Evas.h>
+typedef struct _Evas_Event_Mouse_Down Evas_Event_Mouse_Down;
+typedef struct _Evas_Event_Mouse_Up Evas_Event_Mouse_Up;
+typedef struct _Evas_Event_Mouse_Move Evas_Event_Mouse_Move;
 #endif
 
 #if PLATFORM(QT)
@@ -128,10 +130,11 @@ namespace WebCore {
 #if PLATFORM(GTK) 
         PlatformMouseEvent(GdkEventButton*);
         PlatformMouseEvent(GdkEventMotion*);
+        void setClickCount(int count) { m_clickCount = count; }
 #endif
 
 #if PLATFORM(EFL)
-        void setClickCount(Evas_Button_Flags);
+        void setClickCount(unsigned int);
         PlatformMouseEvent(const Evas_Event_Mouse_Down*, IntPoint);
         PlatformMouseEvent(const Evas_Event_Mouse_Up*, IntPoint);
         PlatformMouseEvent(const Evas_Event_Mouse_Move*, IntPoint);
@@ -149,9 +152,9 @@ namespace WebCore {
 #endif
 
 #if PLATFORM(WIN)
-        PlatformMouseEvent(HWND, UINT, WPARAM, LPARAM, bool activatedWebView = false);
+        PlatformMouseEvent(HWND, UINT, WPARAM, LPARAM, bool didActivateWebView = false);
         void setClickCount(int count) { m_clickCount = count; }
-        bool activatedWebView() const { return m_activatedWebView; }
+        bool didActivateWebView() const { return m_didActivateWebView; }
 #endif
 
 #if PLATFORM(WX)
@@ -179,10 +182,6 @@ namespace WebCore {
         double m_timestamp; // unit: seconds
         unsigned m_modifierFlags;
 
-
-#if PLATFORM(WIN)
-        bool m_activatedWebView;
-#endif
     };
 
 #if PLATFORM(MAC) && defined(__OBJC__)

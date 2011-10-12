@@ -33,26 +33,31 @@ PassRefPtr<DeviceOrientation> DeviceOrientation::create()
     return adoptRef(new DeviceOrientation);
 }
 
-PassRefPtr<DeviceOrientation> DeviceOrientation::create(bool canProvideAlpha, double alpha, bool canProvideBeta, double beta, bool canProvideGamma, double gamma)
+PassRefPtr<DeviceOrientation> DeviceOrientation::create(bool canProvideAlpha, double alpha, bool canProvideBeta, double beta, bool canProvideGamma, double gamma, bool canProvideCompassHeading, double compassHeading, bool canProvideCompassAccuracy, double compassAccuracy)
 {
-    return adoptRef(new DeviceOrientation(canProvideAlpha, alpha, canProvideBeta, beta, canProvideGamma, gamma));
+    return adoptRef(new DeviceOrientation(canProvideAlpha, alpha, canProvideBeta, beta, canProvideGamma, gamma, canProvideCompassHeading, compassHeading, canProvideCompassAccuracy, compassAccuracy));
 }
-
 
 DeviceOrientation::DeviceOrientation()
     : m_canProvideAlpha(false)
     , m_canProvideBeta(false)
     , m_canProvideGamma(false)
+    , m_canProvideCompassHeading(false)
+    , m_canProvideCompassAccuracy(false)
 {
 }
 
-DeviceOrientation::DeviceOrientation(bool canProvideAlpha, double alpha, bool canProvideBeta, double beta, bool canProvideGamma, double gamma)
+DeviceOrientation::DeviceOrientation(bool canProvideAlpha, double alpha, bool canProvideBeta, double beta, bool canProvideGamma, double gamma, bool canProvideCompassHeading, double compassHeading, bool canProvideCompassAccuracy, double compassAccuracy)
     : m_canProvideAlpha(canProvideAlpha)
     , m_canProvideBeta(canProvideBeta)
     , m_canProvideGamma(canProvideGamma)
     , m_alpha(alpha)
     , m_beta(beta)
     , m_gamma(gamma)
+    , m_canProvideCompassHeading(canProvideCompassHeading)
+    , m_canProvideCompassAccuracy(canProvideCompassAccuracy)
+    , m_compassHeading(compassHeading)
+    , m_compassAccuracy(compassAccuracy)
 {
 }
 
@@ -84,6 +89,26 @@ bool DeviceOrientation::canProvideBeta() const
 bool DeviceOrientation::canProvideGamma() const
 {
     return m_canProvideGamma;
+}
+
+double DeviceOrientation::compassHeading() const
+{
+    return m_compassHeading;
+}
+
+double DeviceOrientation::compassAccuracy() const
+{
+    return m_compassAccuracy;
+}
+
+bool DeviceOrientation::canProvideCompassHeading() const
+{
+    return m_canProvideCompassHeading;
+}
+
+bool DeviceOrientation::canProvideCompassAccuracy() const
+{
+    return m_canProvideCompassAccuracy;
 }
 
 } // namespace WebCore

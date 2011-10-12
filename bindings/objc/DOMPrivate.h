@@ -26,6 +26,7 @@
 
 #import <WebCore/DOM.h>
 
+#import <WebCore/WebAutocapitalize.h>
 #import <GraphicsServices/GraphicsServices.h>
 
 @interface DOMNode (DOMNodeExtensionsPendingPublic)
@@ -98,4 +99,14 @@
 enum { WebMediaQueryOrientationCurrent, WebMediaQueryOrientationPortrait, WebMediaQueryOrientationLandscape };
 @interface DOMHTMLLinkElement (WebPrivate)
 - (BOOL)_mediaQueryMatchesForOrientation:(int)orientation;
+- (BOOL)_mediaQueryMatches;
+@end
+
+// These changes are useful to get the AutocapitalizeType on particular form controls.
+@interface DOMHTMLInputElement (AutocapitalizeAdditions)
+- (WebAutocapitalizeType)_autocapitalizeType;
+@end
+
+@interface DOMHTMLTextAreaElement (AutocapitalizeAdditions)
+- (WebAutocapitalizeType)_autocapitalizeType;
 @end

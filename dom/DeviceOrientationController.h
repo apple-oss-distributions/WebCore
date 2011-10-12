@@ -30,6 +30,7 @@
 #include "Timer.h"
 
 #include <wtf/HashCountedSet.h>
+
 #include <wtf/Noncopyable.h>
 #include <wtf/PassOwnPtr.h>
 
@@ -39,14 +40,16 @@ class DeviceOrientation;
 class DeviceOrientationClient;
 class Page;
 
-class DeviceOrientationController : public Noncopyable {
+class DeviceOrientationController {
+    WTF_MAKE_NONCOPYABLE(DeviceOrientationController);
 
 public:
     DeviceOrientationController(Page*, DeviceOrientationClient*);
+    ~DeviceOrientationController();
 
     static PassOwnPtr<DeviceOrientationController> create(DeviceOrientationClient* client)
     {
-        return new DeviceOrientationController(0, client);
+        return adoptPtr(new DeviceOrientationController(0, client));
     }
 
     void suspendUpdates();
@@ -58,14 +61,16 @@ public:
 
     void didChangeDeviceOrientation(DeviceOrientation*);
 
+    bool isActive() { return !m_listeners.isEmpty(); }
+
 private:
     void timerFired(Timer<DeviceOrientationController>*);
 
     Page* m_page;
     DeviceOrientationClient* m_client;
-    typedef HashCountedSet<DOMWindow*> ListenersCountedSet;
+    typedef HashCountedSet<RefPtr<DOMWindow> > ListenersCountedSet;
     ListenersCountedSet m_listeners;
-    typedef HashSet<DOMWindow*> ListenersSet;
+    typedef HashSet<RefPtr<DOMWindow> > ListenersSet;
     ListenersSet m_newListeners;
     Timer<DeviceOrientationController> m_timer;
 };

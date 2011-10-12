@@ -31,7 +31,7 @@
 #include "IntPoint.h"
 #include <wtf/MathExtras.h>
 
-#if PLATFORM(CG)
+#if USE(CG) || USE(SKIA_ON_MAC_CHROME)
 typedef struct CGPoint CGPoint;
 #endif
 
@@ -47,7 +47,7 @@ QT_END_NAMESPACE
 class BPoint;
 #endif
 
-#if PLATFORM(SKIA)
+#if USE(SKIA)
 struct SkPoint;
 #endif
 
@@ -73,9 +73,36 @@ public:
 
     void setX(float x) { m_x = x; }
     void setY(float y) { m_y = y; }
-    void move(float dx, float dy) { m_x += dx; m_y += dy; }
+    void set(float x, float y)
+    {
+        m_x = x;
+        m_y = y;
+    }
+    void move(float dx, float dy)
+    {
+        m_x += dx;
+        m_y += dy;
+    }
+    void scale(float sx, float sy)
+    {
+        m_x *= sx;
+        m_y *= sy;
+    }
 
-#if PLATFORM(CG)
+    void normalize();
+
+    float dot(const FloatPoint& a) const
+    {
+        return m_x * a.x() + m_y * a.y();
+    }
+
+    float length() const;
+    float lengthSquared() const
+    {
+        return m_x * m_x + m_y * m_y;
+    }
+
+#if USE(CG) || USE(SKIA_ON_MAC_CHROME)
     FloatPoint(const CGPoint&);
     operator CGPoint() const;
 #endif
@@ -91,7 +118,7 @@ public:
     operator BPoint() const;
 #endif
 
-#if PLATFORM(SKIA)
+#if USE(SKIA)
     operator SkPoint() const;
     FloatPoint(const SkPoint&);
 #endif
@@ -110,6 +137,12 @@ inline FloatPoint& operator+=(FloatPoint& a, const FloatSize& b)
     return a;
 }
 
+inline FloatPoint& operator+=(FloatPoint& a, const FloatPoint& b)
+{
+    a.move(b.x(), b.y());
+    return a;
+}
+
 inline FloatPoint& operator-=(FloatPoint& a, const FloatSize& b)
 {
     a.move(-b.width(), -b.height());
@@ -119,6 +152,11 @@ inline FloatPoint& operator-=(FloatPoint& a, const FloatSize& b)
 inline FloatPoint operator+(const FloatPoint& a, const FloatSize& b)
 {
     return FloatPoint(a.x() + b.width(), a.y() + b.height());
+}
+
+inline FloatPoint operator+(const FloatPoint& a, const FloatPoint& b)
+{
+    return FloatPoint(a.x() + b.x(), a.y() + b.y());
 }
 
 inline FloatSize operator-(const FloatPoint& a, const FloatPoint& b)
@@ -141,10 +179,26 @@ inline bool operator!=(const FloatPoint& a, const FloatPoint& b)
     return a.x() != b.x() || a.y() != b.y();
 }
 
+inline float operator*(const FloatPoint& a, const FloatPoint& b)
+{
+    // dot product
+    return a.dot(b);
+}
+
 inline IntPoint roundedIntPoint(const FloatPoint& p)
 {
     return IntPoint(static_cast<int>(roundf(p.x())), static_cast<int>(roundf(p.y())));
 }
+
+inline IntPoint flooredIntPoint(const FloatPoint& p)
+{
+    return IntPoint(static_cast<int>(p.x()), static_cast<int>(p.y()));
+}
+
+float findSlope(const FloatPoint& p1, const FloatPoint& p2, float& c);
+
+// Find point where lines through the two pairs of points intersect. Returns false if the lines don't intersect.
+bool findIntersection(const FloatPoint& p1, const FloatPoint& p2, const FloatPoint& d1, const FloatPoint& d2, FloatPoint& intersection);
 
 }
 

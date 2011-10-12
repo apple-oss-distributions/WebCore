@@ -23,16 +23,17 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef WebGLArray_h
-#define WebGLArray_h
+#ifndef ArrayBufferView_h
+#define ArrayBufferView_h
+
+#include "ArrayBuffer.h"
+#include "ExceptionCode.h"
 
 #include <algorithm>
-#include "ExceptionCode.h"
 #include <limits.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
-#include "ArrayBuffer.h"
 
 namespace WebCore {
 
@@ -45,22 +46,24 @@ class ArrayBufferView : public RefCounted<ArrayBufferView> {
     virtual bool isIntArray() const { return false; }
     virtual bool isUnsignedIntArray() const { return false; }
     virtual bool isFloatArray() const { return false; }
+    virtual bool isDataView() const { return false; }
 
-    PassRefPtr<ArrayBuffer> buffer() {
+    PassRefPtr<ArrayBuffer> buffer() const
+    {
         return m_buffer;
     }
 
-    void* baseAddress() {
+    void* baseAddress() const
+    {
         return m_baseAddress;
     }
 
-    unsigned byteOffset() const {
+    unsigned byteOffset() const
+    {
         return m_byteOffset;
     }
 
-    virtual unsigned length() const = 0;
     virtual unsigned byteLength() const = 0;
-    virtual PassRefPtr<ArrayBufferView> slice(int start, int end) = 0;
 
     virtual ~ArrayBufferView();
 
@@ -69,8 +72,12 @@ class ArrayBufferView : public RefCounted<ArrayBufferView> {
 
     void setImpl(ArrayBufferView* array, unsigned byteOffset, ExceptionCode& ec);
 
-    void calculateOffsetAndLength(int start, int end, unsigned arraySize,
-                                  unsigned* offset, unsigned* length);
+    void setRangeImpl(const char* data, size_t dataByteLength, unsigned byteOffset, ExceptionCode& ec);
+
+    void zeroRangeImpl(unsigned byteOffset, size_t rangeByteLength, ExceptionCode& ec);
+
+    static void calculateOffsetAndLength(int start, int end, unsigned arraySize,
+                                         unsigned* offset, unsigned* length);
 
     // Helper to verify that a given sub-range of an ArrayBuffer is
     // within range.
@@ -122,4 +129,4 @@ class ArrayBufferView : public RefCounted<ArrayBufferView> {
 
 } // namespace WebCore
 
-#endif // WebGLArray_h
+#endif // ArrayBufferView_h

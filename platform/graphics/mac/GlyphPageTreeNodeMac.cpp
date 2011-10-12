@@ -29,68 +29,62 @@
 #include "config.h"
 #include "GlyphPageTreeNode.h"
 
+#include "Font.h"
 #include "SimpleFontData.h"
 #include "WebCoreSystemInterface.h"
+#include <CoreText/CoreText.h>
+#include <CoreText/CTFontPriv.h>
 
 #include <wtf/UnusedParam.h>
 
 namespace WebCore {
 
+static bool shouldUseCoreText(UChar* buffer, unsigned bufferLength, const SimpleFontData* fontData)
+{
+    if (fontData->platformData().widthVariant() != RegularWidth || fontData->hasVerticalGlyphs()) {
+        // Ideographs don't have a vertical variant or width variants.
+        for (unsigned i = 0; i < bufferLength; ++i) {
+            if (!Font::isCJKIdeograph(buffer[i]))
+                return true;
+        }
+    }
+
+    return false;
+}
+
 bool GlyphPage::fill(unsigned offset, unsigned length, UChar* buffer, unsigned bufferLength, const SimpleFontData* fontData)
 {
     bool haveGlyphs = false;
 
-#ifndef BUILDING_ON_TIGER
-    Vector<CGGlyph, 512> glyphs(bufferLength);
-    // We pass in either 256 or 512  UTF-16 characters
-    // 256 for U+FFFF and less
-    // 512 (double character surrogates) for U+10000 and above
-    // It is indeed possible to get back 512 glyphs back from the API, so the glyph buffer we pass in must be 512
-    // If we get back more than 256 glyphs though we'll ignore all the ones after 256, this should not happen 
-    // as the only time we pass in 512 characters is when they are surrogates.
-    CGFontGetGlyphsForUnichars(fontData->platformData().cgFont(), buffer, glyphs.data(), bufferLength);
-
-    for (unsigned i = 0; i < length; ++i) {
-        if (!glyphs[i])
-            setGlyphDataForIndex(offset + i, 0, 0);
-        else {
-            setGlyphDataForIndex(offset + i, glyphs[i], fontData);
-            haveGlyphs = true;
+    if (!shouldUseCoreText(buffer, bufferLength, fontData)) {
+        Vector<CGGlyph, 512> glyphs(bufferLength);
+        // We pass in either 256 or 512  UTF-16 characters
+        // 256 for U+FFFF and less
+        // 512 (double character surrogates) for U+10000 and above
+        // It is indeed possible to get back 512 glyphs back from the API, so the glyph buffer we pass in must be 512
+        // If we get back more than 256 glyphs though we'll ignore all the ones after 256, this should not happen 
+        // as the only time we pass in 512 characters is when they are surrogates.
+        CGFontGetGlyphsForUnichars(fontData->platformData().cgFont(), buffer, glyphs.data(), bufferLength);
+        for (unsigned i = 0; i < length; ++i) {
+            if (!glyphs[i])
+                setGlyphDataForIndex(offset + i, 0, 0);
+            else {
+                setGlyphDataForIndex(offset + i, glyphs[i], fontData);
+                haveGlyphs = true;
+            }
+        }
+    } else {
+        Vector<CGGlyph, 512> glyphs(bufferLength);
+        CTFontGetVerticalGlyphsForCharacters(fontData->platformData().ctFont(), buffer, glyphs.data(), bufferLength);
+        for (unsigned i = 0; i < length; ++i) {
+            if (!glyphs[i])
+                setGlyphDataForIndex(offset + i, 0, 0);
+            else {
+                setGlyphDataForIndex(offset + i, glyphs[i], fontData);
+                haveGlyphs = true;
+            }
         }
     }
-#else
-    // Use an array of long so we get good enough alignment.
-    long glyphVector[(GLYPH_VECTOR_SIZE + sizeof(long) - 1) / sizeof(long)];
-    
-    OSStatus status = wkInitializeGlyphVector(GlyphPage::size, &glyphVector);
-    if (status != noErr)
-        // This should never happen, perhaps indicates a bad font!  If it does the
-        // font substitution code will find an alternate font.
-        return false;
-
-    wkConvertCharToGlyphs(fontData->m_styleGroup, buffer, bufferLength, &glyphVector);
-
-    unsigned numGlyphs = wkGetGlyphVectorNumGlyphs(&glyphVector);
-    if (numGlyphs != length) {
-        // This should never happen, perhaps indicates a bad font?
-        // If it does happen, the font substitution code will find an alternate font.
-        wkClearGlyphVector(&glyphVector);
-        return false;
-    }
-
-    ATSLayoutRecord* glyphRecord = (ATSLayoutRecord*)wkGetGlyphVectorFirstRecord(glyphVector);
-    for (unsigned i = 0; i < length; i++) {
-        Glyph glyph = glyphRecord->glyphID;
-        if (!glyph)
-            setGlyphDataForIndex(offset + i, 0, 0);
-        else {
-            setGlyphDataForIndex(offset + i, glyph, fontData);
-            haveGlyphs = true;
-        }
-        glyphRecord = (ATSLayoutRecord *)((char *)glyphRecord + wkGetGlyphVectorRecordSize(glyphVector));
-    }
-    wkClearGlyphVector(&glyphVector);
-#endif
 
     return haveGlyphs;
 }

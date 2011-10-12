@@ -22,10 +22,12 @@
 #include "config.h"
 #include "TextBreakIterator.h"
 
+#include "LineBreakIteratorPoolICU.h"
 #include "PlatformString.h"
-#include "TextBreakIteratorInternalICU.h"
-#include <unicode/ubrk.h>
-#include <wtf/Assertions.h>
+
+#include "WebCoreThread.h"
+
+using namespace std;
 
 namespace WebCore {
 
@@ -68,12 +70,25 @@ TextBreakIterator* wordBreakIterator(const UChar* string, int length)
         staticWordBreakIterator, UBRK_WORD, string, length);
 }
 
-TextBreakIterator* lineBreakIterator(const UChar* string, int length)
+TextBreakIterator* acquireLineBreakIterator(const UChar* string, int length, const AtomicString& locale)
 {
-    static bool createdLineBreakIterator = false;
-    static TextBreakIterator* staticLineBreakIterator;
-    return setUpIterator(createdLineBreakIterator,
-        staticLineBreakIterator, UBRK_LINE, string, length);
+    UBreakIterator* iterator = LineBreakIteratorPool::sharedPool().take(locale);
+
+    UErrorCode setTextStatus = U_ZERO_ERROR;
+    ubrk_setText(iterator, string, length, &setTextStatus);
+    if (U_FAILURE(setTextStatus)) {
+        LOG_ERROR("ubrk_setText failed with status %d", setTextStatus);
+        return 0;
+    }
+
+    return reinterpret_cast<TextBreakIterator*>(iterator);
+}
+
+void releaseLineBreakIterator(TextBreakIterator* iterator)
+{
+    ASSERT_ARG(iterator, iterator);
+
+    LineBreakIteratorPool::sharedPool().put(reinterpret_cast<UBreakIterator*>(iterator));
 }
 
 TextBreakIterator* sentenceBreakIterator(const UChar* string, int length)

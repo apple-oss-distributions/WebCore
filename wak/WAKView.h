@@ -42,7 +42,9 @@ extern NSString *WAKViewDidScrollNotification;
 - (NSRect)frame;
 
 - (void)setFrame:(NSRect)frameRect;
+- (void)setFrameOrigin:(NSPoint)newOrigin;
 - (void)setFrameSize:(NSSize)newSize;
+- (void)setBoundsOrigin:(NSPoint)newOrigin;
 - (void)setBoundsSize:(NSSize)size;
 - (void)frameSizeChanged;
 

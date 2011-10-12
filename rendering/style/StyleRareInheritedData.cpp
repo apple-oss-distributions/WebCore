@@ -22,14 +22,16 @@
 #include "config.h"
 #include "StyleRareInheritedData.h"
 
+#include "CursorList.h"
+#include "QuotesData.h"
 #include "RenderStyle.h"
 #include "RenderStyleConstants.h"
+#include "ShadowData.h"
 
 namespace WebCore {
 
 StyleRareInheritedData::StyleRareInheritedData()
     : textStrokeWidth(RenderStyle::initialTextStrokeWidth())
-    , textShadow(0)
     , indent(RenderStyle::initialTextIndent())
     , m_effectiveZoom(RenderStyle::initialZoom())
     , widows(RenderStyle::initialWidows())
@@ -42,13 +44,21 @@ StyleRareInheritedData::StyleRareInheritedData()
     , khtmlLineBreak(LBNORMAL)
     , resize(RenderStyle::initialResize())
     , userSelect(RenderStyle::initialUserSelect())
-    , colorSpace(DeviceColorSpace)
-    , touchCalloutEnabled(RenderStyle::initialTouchCalloutEnabled())
+    , colorSpace(ColorSpaceDeviceRGB)
+    , speak(SpeakNormal)
     , hyphens(HyphensManual)
+    , textEmphasisFill(TextEmphasisFillFilled)
+    , textEmphasisMark(TextEmphasisMarkNone)
+    , textEmphasisPosition(TextEmphasisPositionOver)
+    , m_lineBoxContain(RenderStyle::initialLineBoxContain())
+    , touchCalloutEnabled(RenderStyle::initialTouchCalloutEnabled())
+    , useTouchOverflowScrolling(RenderStyle::initialUseTouchOverflowScrolling())
     , tapHighlightColor(RenderStyle::initialTapHighlightColor())
     , compositionFillColor(RenderStyle::initialCompositionFillColor())
     , compositionFrameColor(RenderStyle::initialCompositionFrameColor())
     , textSizeAdjust(RenderStyle::initialTextSizeAdjust())
+    , hyphenationLimitBefore(-1)
+    , hyphenationLimitAfter(-1)
 {
 }
 
@@ -57,7 +67,8 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , textStrokeColor(o.textStrokeColor)
     , textStrokeWidth(o.textStrokeWidth)
     , textFillColor(o.textFillColor)
-    , textShadow(o.textShadow ? new ShadowData(*o.textShadow) : 0)
+    , textEmphasisColor(o.textEmphasisColor)
+    , textShadow(o.textShadow ? adoptPtr(new ShadowData(*o.textShadow)) : nullptr)
     , highlight(o.highlight)
     , cursorData(o.cursorData)
     , indent(o.indent)
@@ -73,20 +84,28 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , resize(o.resize)
     , userSelect(o.userSelect)
     , colorSpace(o.colorSpace)
-    , touchCalloutEnabled(o.touchCalloutEnabled)
+    , speak(o.speak)
     , hyphens(o.hyphens)
+    , textEmphasisFill(o.textEmphasisFill)
+    , textEmphasisMark(o.textEmphasisMark)
+    , textEmphasisPosition(o.textEmphasisPosition)
+    , m_lineBoxContain(o.m_lineBoxContain)
+    , touchCalloutEnabled(o.touchCalloutEnabled)
+    , useTouchOverflowScrolling(o.useTouchOverflowScrolling)
     , tapHighlightColor(o.tapHighlightColor)
     , compositionFillColor(o.compositionFillColor)
     , compositionFrameColor(o.compositionFrameColor)
     , textSizeAdjust(o.textSizeAdjust)
     , hyphenationString(o.hyphenationString)
-    , hyphenationLocale(o.hyphenationLocale)
+    , hyphenationLimitBefore(o.hyphenationLimitBefore)
+    , hyphenationLimitAfter(o.hyphenationLimitAfter)
+    , locale(o.locale)
+    , textEmphasisCustomMark(o.textEmphasisCustomMark)
 {
 }
 
 StyleRareInheritedData::~StyleRareInheritedData()
 {
-    delete textShadow;
 }
 
 static bool cursorDataEquivalent(const CursorList* c1, const CursorList* c2)
@@ -103,6 +122,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
     return textStrokeColor == o.textStrokeColor
         && textStrokeWidth == o.textStrokeWidth
         && textFillColor == o.textFillColor
+        && textEmphasisColor == o.textEmphasisColor
         && shadowDataEquivalent(o)
         && highlight == o.highlight
         && cursorDataEquivalent(cursorData.get(), o.cursorData.get())
@@ -120,14 +140,23 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && resize == o.resize
         && userSelect == o.userSelect
         && colorSpace == o.colorSpace
+        && speak == o.speak
+        && hyphens == o.hyphens
+        && hyphenationLimitBefore == o.hyphenationLimitBefore
+        && hyphenationLimitAfter == o.hyphenationLimitAfter
+        && textEmphasisFill == o.textEmphasisFill
+        && textEmphasisMark == o.textEmphasisMark
+        && textEmphasisPosition == o.textEmphasisPosition
+        && m_lineBoxContain == o.m_lineBoxContain
         && tapHighlightColor == o.tapHighlightColor
         && touchCalloutEnabled == o.touchCalloutEnabled
+        && useTouchOverflowScrolling == o.useTouchOverflowScrolling
         && compositionFillColor == o.compositionFillColor
         && compositionFrameColor == o.compositionFrameColor
-        && colorSpace == o.colorSpace
-        && hyphens == o.hyphens
         && hyphenationString == o.hyphenationString
-        && hyphenationLocale == o.hyphenationLocale;
+        && locale == o.locale
+        && textEmphasisCustomMark == o.textEmphasisCustomMark
+        && *quotes == *o.quotes;
 }
 
 bool StyleRareInheritedData::shadowDataEquivalent(const StyleRareInheritedData& o) const

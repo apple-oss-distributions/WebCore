@@ -26,12 +26,12 @@
 #ifndef GCController_h
 #define GCController_h
 
-#include <wtf/Noncopyable.h>
 #include "Timer.h"
 
 namespace WebCore {
 
-    class GCController : public Noncopyable {
+    class GCController {
+        WTF_MAKE_NONCOPYABLE(GCController); WTF_MAKE_FAST_ALLOCATED;
         friend GCController& gcController();
 
     public:
@@ -39,6 +39,8 @@ namespace WebCore {
         void garbageCollectNow(); // It's better to call garbageCollectSoon, unless you have a specific reason not to.
 
         void garbageCollectOnAlternateThreadForDebugging(bool waitUntilDone); // Used for stress testing.
+
+        void releaseExecutableMemory();
 
     private:
         GCController(); // Use gcController() instead

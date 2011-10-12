@@ -42,6 +42,8 @@ SharedBuffer::SharedBuffer(CFDataRef cfData)
 #if ENABLE(DISK_IMAGE_CACHE)
     , m_isMemoryMapped(false)
     , m_diskImageCacheId(DiskImageCache::invalidDiskCacheId)
+    , m_notifyMemoryMappedCallback(NULL)
+    , m_notifyMemoryMappedCallbackData(NULL)
 #endif
     , m_cfData(cfData)
 {
@@ -99,5 +101,31 @@ void SharedBuffer::clearPlatformData()
 {
     m_cfData = 0;
 }
+
+#if HAVE(CFNETWORK_DATA_ARRAY_CALLBACK)
+void SharedBuffer::append(CFDataRef data)
+{
+    ASSERT(data);
+    m_dataArray.append(data);
+    m_size += CFDataGetLength(data);
+}
+
+void SharedBuffer::copyDataArrayAndClear(char *destination, unsigned bytesToCopy) const
+{
+    if (m_dataArray.isEmpty())
+        return;
+
+    CFIndex bytesLeft = bytesToCopy;
+    Vector<RetainPtr<CFDataRef> >::const_iterator end = m_dataArray.end();
+    for (Vector<RetainPtr<CFDataRef> >::const_iterator it = m_dataArray.begin(); it != end; ++it) {
+        CFIndex dataLen = CFDataGetLength(it->get());
+        ASSERT(bytesLeft >= dataLen);
+        memcpy(destination, CFDataGetBytePtr(it->get()), dataLen);
+        destination += dataLen;
+        bytesLeft -= dataLen;
+    }
+    m_dataArray.clear();
+}
+#endif
 
 }

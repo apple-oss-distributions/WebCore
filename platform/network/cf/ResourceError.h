@@ -29,7 +29,15 @@
 #include "ResourceErrorBase.h"
 
 #include <wtf/RetainPtr.h>
+#if USE(CFNETWORK)
 #include <CoreFoundation/CFStream.h>
+#endif
+
+#ifdef __OBJC__
+@class NSError;
+#else
+class NSError;
+#endif
 
 namespace WebCore {
 
@@ -46,28 +54,48 @@ public:
     {
     }
 
-    ResourceError(CFStreamError error);
+    ResourceError(CFErrorRef error);
 
-    ResourceError(CFErrorRef error)
-        : m_dataIsUpToDate(false)
-        , m_platformError(error)
-    {
-        m_isNull = !error;
-    }
-
+    CFErrorRef cfError() const;
     operator CFErrorRef() const;
+
+#if USE(CFNETWORK)
+#if PLATFORM(WIN)
+    ResourceError(const String& domain, int errorCode, const String& failingURL, const String& localizedDescription, CFDataRef certificate);
+    PCCERT_CONTEXT certificate() const;
+#endif
+    ResourceError(CFStreamError error);
+    CFStreamError cfStreamError() const;
     operator CFStreamError() const;
+#endif
+
+#if PLATFORM(MAC)
+    ResourceError(NSError *);
+    NSError *nsError() const;
+    operator NSError *() const;
+#endif
 
 private:
     friend class ResourceErrorBase;
 
     void platformLazyInit();
+    void platformCopy(ResourceError&) const;
     static bool platformCompare(const ResourceError& a, const ResourceError& b);
 
     bool m_dataIsUpToDate;
+#if USE(CFNETWORK)
     mutable RetainPtr<CFErrorRef> m_platformError;
+#if PLATFORM(MAC)
+    mutable RetainPtr<NSError> m_platformNSError;
+#endif
+#if PLATFORM(WIN)
+    RetainPtr<CFDataRef> m_certificate;
+#endif
+#else
+    mutable RetainPtr<NSError> m_platformError;
+#endif
 };
 
 } // namespace WebCore
 
-#endif // ResourceError_h_
+#endif // ResourceError_h

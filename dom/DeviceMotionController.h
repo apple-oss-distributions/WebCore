@@ -29,6 +29,7 @@
 #include "DOMWindow.h"
 #include "Timer.h"
 #include <wtf/HashCountedSet.h>
+
 #include <wtf/OwnPtr.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/PassOwnPtr.h>
@@ -38,14 +39,16 @@ namespace WebCore {
 class DeviceMotionData;
 class DeviceMotionClient;
 
-class DeviceMotionController : public Noncopyable {
+class DeviceMotionController {
+    WTF_MAKE_NONCOPYABLE(DeviceMotionController);
 
 public:
     DeviceMotionController(DeviceMotionClient*);
+    ~DeviceMotionController();
 
     static PassOwnPtr<DeviceMotionController> create(DeviceMotionClient* client)
     {
-        return new DeviceMotionController(client);
+        return adoptPtr(new DeviceMotionController(client));
     }
     
     void suspendUpdates();
@@ -57,13 +60,15 @@ public:
 
     void didChangeDeviceMotion(DeviceMotionData*);
 
+    bool isActive() { return !m_listeners.isEmpty(); }
+
 private:
     void timerFired(Timer<DeviceMotionController>*);
     
     DeviceMotionClient* m_client;
-    typedef HashCountedSet<DOMWindow*> ListenersCountedSet;
+    typedef HashCountedSet<RefPtr<DOMWindow> > ListenersCountedSet;
     ListenersCountedSet m_listeners;
-    typedef HashSet<DOMWindow*> ListenersSet;
+    typedef HashSet<RefPtr<DOMWindow> > ListenersSet;
     ListenersSet m_newListeners;
     Timer<DeviceMotionController> m_timer;
 };

@@ -36,22 +36,78 @@
 #include "MIMETypeRegistry.h"
 #include "RuntimeApplicationChecksIPhone.h"
 
+#if HAVE(CFNETWORK_DATA_ARRAY_CALLBACK)
+#include "InspectorInstrumentation.h"
+#endif
+
+#if USE(CFNETWORK)
+@interface NSCachedURLResponse (Details)
+-(id)_initWithCFCachedURLResponse:(CFCachedURLResponseRef)cachedResponse;
+-(CFCachedURLResponseRef)_CFCachedURLResponse;
+@end
+#endif
+
 namespace WebCore {
+
+#if USE(CFNETWORK)
+
+CFCachedURLResponseRef ResourceLoader::willCacheResponse(ResourceHandle*, CFCachedURLResponseRef cachedResponse)
+{
+    if (!m_sendResourceLoadCallbacks)
+        return 0;
+
+    RetainPtr<NSCachedURLResponse> nsCachedResponse(AdoptNS, [[NSCachedURLResponse alloc] _initWithCFCachedURLResponse:cachedResponse]);
+    return [frameLoader()->client()->willCacheResponse(documentLoader(), identifier(), nsCachedResponse.get()) _CFCachedURLResponse];
+}
+
+#else
 
 NSCachedURLResponse* ResourceLoader::willCacheResponse(ResourceHandle*, NSCachedURLResponse* response)
 {
     if (!m_sendResourceLoadCallbacks)
         return 0;
 
-    // For MobileSafari, exclude images from the CFURLCache in order to make room for text resources needed
-    // earlier during page loads.
-    if (applicationIsMobileSafari()) {
-        String mimeType = String([[response response] MIMEType]);
-        if (MIMETypeRegistry::isSupportedImageMIMEType(mimeType))
-            return nil;
-    }
-
     return frameLoader()->client()->willCacheResponse(documentLoader(), identifier(), response);
 }
+
+#endif
+
+#if HAVE(CFNETWORK_DATA_ARRAY_CALLBACK)
+
+void ResourceLoader::didReceiveDataArray(CFArrayRef dataArray)
+{
+    // Protect this in this delegate method since the additional processing can do
+    // anything including possibly derefing this; one example of this is Radar 3266216.
+    RefPtr<ResourceLoader> protector(this);
+
+    if (!m_shouldBufferData)
+        return;
+
+    if (!m_resourceData)
+        m_resourceData = SharedBuffer::create();
+
+    CFIndex arrayCount = CFArrayGetCount(dataArray);
+    for (CFIndex i = 0; i < arrayCount; ++i) {
+        CFDataRef data = static_cast<CFDataRef>(CFArrayGetValueAtIndex(dataArray, i));
+        int dataLen = static_cast<int>(CFDataGetLength(data));
+
+        m_resourceData->append(data);
+
+        // FIXME: If we get a resource with more than 2B bytes, this code won't do the right thing.
+        // However, with today's computers and networking speeds, this won't happen in practice.
+        // Could be an issue with a giant local file.
+        if (m_sendResourceLoadCallbacks && m_frame)
+            frameLoader()->notifier()->didReceiveData(this, reinterpret_cast<const char*>(CFDataGetBytePtr(data)), dataLen, dataLen);
+    }
+}
+
+void ResourceLoader::didReceiveDataArray(ResourceHandle*, CFArrayRef dataArray)
+{
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willReceiveResourceData(m_frame.get(), identifier());
+    didReceiveDataArray(dataArray);
+    InspectorInstrumentation::didReceiveResourceData(cookie);
+}
+
+#endif
 
 }

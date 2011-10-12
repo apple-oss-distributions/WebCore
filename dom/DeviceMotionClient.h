@@ -33,8 +33,10 @@ namespace WebCore {
 class DeviceMotionController;
 class DeviceMotionData;
 
-class DeviceMotionClient : public Noncopyable {
+class DeviceMotionClient {
+    WTF_MAKE_NONCOPYABLE(DeviceMotionClient);
 public:
+    DeviceMotionClient() {}
     virtual ~DeviceMotionClient() {}
     virtual void setController(DeviceMotionController*) = 0;
     virtual void startUpdating() = 0;

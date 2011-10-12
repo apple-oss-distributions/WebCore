@@ -31,6 +31,7 @@
 
 #if ENABLE(DATABASE)
 
+#include "AbstractDatabase.h"
 #include "Chrome.h"
 #include "ChromeClient.h"
 #include "Database.h"
@@ -47,6 +48,7 @@
 #include "SQLiteStatement.h"
 #include <wtf/MainThread.h>
 #include <wtf/StdLibExtras.h>
+#include <wtf/text/CString.h>
 
 #include "WebCoreThread.h"
 
@@ -110,7 +112,6 @@ String DatabaseTracker::trackerDatabasePath() const
 void DatabaseTracker::openTrackerDatabase(bool createIfDoesNotExist)
 {
     ASSERT(!m_databaseGuard.tryLock());
-    ASSERT(WebThreadIsLockedOrDisabled());
 
     if (m_database.isOpen())
         return;
@@ -145,7 +146,6 @@ bool DatabaseTracker::canEstablishDatabase(ScriptExecutionContext* context, cons
     ProposedDatabase details;
 
     unsigned long long requirement;
-    unsigned long long tempUsage;
     {
         MutexLocker lockDatabase(m_databaseGuard);
         Locker<OriginQuotaManager> quotaManagerLocker(originQuotaManager());
@@ -165,7 +165,6 @@ bool DatabaseTracker::canEstablishDatabase(ScriptExecutionContext* context, cons
 
         // If the database will fit, allow its creation.
         requirement = usage + max(1UL, estimatedSize);
-        tempUsage = usage;
         if (requirement < usage) {
             doneCreatingDatabase(origin, name);
             return false; // If the estimated size is so big it causes an overflow, don't allow creation.
@@ -211,7 +210,6 @@ bool DatabaseTracker::hasEntryForOrigin(SecurityOrigin* origin)
 bool DatabaseTracker::hasEntryForDatabase(SecurityOrigin* origin, const String& databaseIdentifier)
 {
     ASSERT(!m_databaseGuard.tryLock());
-    ASSERT(WebThreadIsLockedOrDisabled());
     openTrackerDatabase(false);
     if (!m_database.isOpen())
         return false;
@@ -226,9 +224,8 @@ bool DatabaseTracker::hasEntryForDatabase(SecurityOrigin* origin, const String& 
     return statement.step() == SQLResultRow;
 }
 
-unsigned long long DatabaseTracker::getMaxSizeForDatabase(const Database* database)
+unsigned long long DatabaseTracker::getMaxSizeForDatabase(const AbstractDatabase* database)
 {
-    ASSERT(currentThread() == database->scriptExecutionContext()->databaseThread()->getThreadID());
     // The maximum size for a database is the full quota for its origin, minus the current usage within the origin,
     // plus the current usage of the given database
     MutexLocker lockDatabase(m_databaseGuard);
@@ -237,10 +234,39 @@ unsigned long long DatabaseTracker::getMaxSizeForDatabase(const Database* databa
     return quotaForOriginNoLock(origin) - originQuotaManager().diskUsage(origin) + SQLiteFileSystem::getDatabaseFileSize(database->fileName());
 }
 
-void DatabaseTracker::databaseChanged(Database* database)
+void DatabaseTracker::databaseChanged(AbstractDatabase* database)
 {
     Locker<OriginQuotaManager> quotaManagerLocker(originQuotaManager());
     originQuotaManager().markDatabase(database);
+}
+
+void DatabaseTracker::interruptAllDatabasesForContext(const ScriptExecutionContext* context)
+{
+    Vector<RefPtr<AbstractDatabase> > openDatabases;
+    {
+        MutexLocker openDatabaseMapLock(m_openDatabaseMapGuard);
+
+        if (!m_openDatabaseMap)
+            return;
+
+        DatabaseNameMap* nameMap = m_openDatabaseMap->get(context->securityOrigin());
+        if (!nameMap)
+            return;
+
+        DatabaseNameMap::const_iterator dbNameMapEndIt = nameMap->end();
+        for (DatabaseNameMap::const_iterator dbNameMapIt = nameMap->begin(); dbNameMapIt != dbNameMapEndIt; ++dbNameMapIt) {
+            DatabaseSet* databaseSet = dbNameMapIt->second;
+            DatabaseSet::const_iterator dbSetEndIt = databaseSet->end();
+            for (DatabaseSet::const_iterator dbSetIt = databaseSet->begin(); dbSetIt != dbSetEndIt; ++dbSetIt) {
+                if ((*dbSetIt)->scriptExecutionContext() == context)
+                    openDatabases.append(*dbSetIt);
+            }
+        }
+    }
+
+    Vector<RefPtr<AbstractDatabase> >::const_iterator openDatabasesEndIt = openDatabases.end();
+    for (Vector<RefPtr<AbstractDatabase> >::const_iterator openDatabasesIt = openDatabases.begin(); openDatabasesIt != openDatabasesEndIt; ++openDatabasesIt)
+        (*openDatabasesIt)->interrupt();
 }
 
 String DatabaseTracker::originPath(SecurityOrigin* origin) const
@@ -252,7 +278,6 @@ String DatabaseTracker::fullPathForDatabaseNoLock(SecurityOrigin* origin, const 
 {
     ASSERT(!m_databaseGuard.tryLock());
     ASSERT(!originQuotaManager().tryLock());
-    ASSERT(WebThreadIsLockedOrDisabled());
 
     for (HashSet<ProposedDatabase*>::iterator iter = m_proposedDatabases.begin(); iter != m_proposedDatabases.end(); ++iter)
         if ((*iter)->second.name() == name && (*iter)->first->equal(origin))
@@ -316,7 +341,7 @@ void DatabaseTracker::populateOrigins()
     if (m_quotaMap)
         return;
 
-    m_quotaMap.set(new QuotaMap);
+    m_quotaMap = adoptPtr(new QuotaMap);
 
     openTrackerDatabase(false);
     if (!m_database.isOpen())
@@ -349,7 +374,6 @@ void DatabaseTracker::origins(Vector<RefPtr<SecurityOrigin> >& result)
 bool DatabaseTracker::databaseNamesForOriginNoLock(SecurityOrigin* origin, Vector<String>& resultVector)
 {
     ASSERT(!m_databaseGuard.tryLock());
-    ASSERT(WebThreadIsLockedOrDisabled());
     openTrackerDatabase(false);
     if (!m_database.isOpen())
         return false;
@@ -488,7 +512,7 @@ unsigned long long DatabaseTracker::usageForDatabase(const String& name, Securit
     return SQLiteFileSystem::getDatabaseFileSize(path);
 }
 
-void DatabaseTracker::addOpenDatabase(Database* database)
+void DatabaseTracker::addOpenDatabase(AbstractDatabase* database)
 {
     if (!database)
         return;
@@ -497,7 +521,7 @@ void DatabaseTracker::addOpenDatabase(Database* database)
         MutexLocker openDatabaseMapLock(m_openDatabaseMapGuard);
 
         if (!m_openDatabaseMap)
-            m_openDatabaseMap.set(new DatabaseOriginMap);
+            m_openDatabaseMap = adoptPtr(new DatabaseOriginMap);
 
         String name(database->stringIdentifier());
         DatabaseNameMap* nameMap = m_openDatabaseMap->get(database->securityOrigin());
@@ -515,13 +539,19 @@ void DatabaseTracker::addOpenDatabase(Database* database)
         databaseSet->add(database);
 
         LOG(StorageAPI, "Added open Database %s (%p)\n", database->stringIdentifier().ascii().data(), database);
+
+        Locker<OriginQuotaManager> quotaManagerLocker(originQuotaManager());
+        if (!originQuotaManager().tracksOrigin(database->securityOrigin())) {
+            originQuotaManager().trackOrigin(database->securityOrigin());
+            originQuotaManager().addDatabase(database->securityOrigin(), database->stringIdentifier(), database->fileName());
+        }
     }
 
     MutexLocker lockDatabase(m_databaseGuard);
     doneCreatingDatabase(database->securityOrigin(), database->stringIdentifier());
 }
 
-void DatabaseTracker::removeOpenDatabase(Database* database)
+void DatabaseTracker::removeOpenDatabase(AbstractDatabase* database)
 {
     if (!database)
         return;
@@ -562,13 +592,13 @@ void DatabaseTracker::removeOpenDatabase(Database* database)
 
         m_openDatabaseMap->remove(database->securityOrigin());
         delete nameMap;
-    }
 
-    Locker<OriginQuotaManager> quotaManagerLocker(originQuotaManager());
-    originQuotaManager().removeOrigin(database->securityOrigin());
+        Locker<OriginQuotaManager> quotaManagerLocker(originQuotaManager());
+        originQuotaManager().removeOrigin(database->securityOrigin());
+    }
 }
 
-void DatabaseTracker::getOpenDatabases(SecurityOrigin* origin, const String& name, HashSet<RefPtr<Database> >* databases)
+void DatabaseTracker::getOpenDatabases(SecurityOrigin* origin, const String& name, HashSet<RefPtr<AbstractDatabase> >* databases)
 {
     MutexLocker openDatabaseMapLock(m_openDatabaseMapGuard);
     if (!m_openDatabaseMap)
@@ -589,7 +619,6 @@ void DatabaseTracker::getOpenDatabases(SecurityOrigin* origin, const String& nam
 unsigned long long DatabaseTracker::usageForOriginNoLock(SecurityOrigin* origin)
 {
     ASSERT(!originQuotaManager().tryLock());
-    ASSERT(WebThreadIsLockedOrDisabled());
 
     // Use the OriginQuotaManager mechanism to calculate the usage
     if (originQuotaManager().tracksOrigin(origin))
@@ -666,7 +695,11 @@ void DatabaseTracker::setQuota(SecurityOrigin* origin, unsigned long long quota)
         }
 
         if (error)
+#if OS(WINDOWS)
+            LOG_ERROR("Failed to set quota %I64u in tracker database for origin %s", quota, origin->databaseIdentifier().ascii().data());
+#else
             LOG_ERROR("Failed to set quota %llu in tracker database for origin %s", quota, origin->databaseIdentifier().ascii().data());
+#endif
     }
 
     // FIXME: Is it really OK to update the quota in memory if we failed to update it on disk?
@@ -684,7 +717,6 @@ bool DatabaseTracker::addDatabase(SecurityOrigin* origin, const String& name, co
 {
     ASSERT(!m_databaseGuard.tryLock());
     ASSERT(m_quotaMap);
-    ASSERT(WebThreadIsLockedOrDisabled());
     openTrackerDatabase(true);
     if (!m_database.isOpen())
         return false;
@@ -994,7 +1026,7 @@ bool DatabaseTracker::deleteDatabaseFile(SecurityOrigin* origin, const String& n
     }
 #endif
 
-    Vector<RefPtr<Database> > deletedDatabases;
+    Vector<RefPtr<AbstractDatabase> > deletedDatabases;
 
     // Make sure not to hold the any locks when calling
     // Database::markAsDeletedAndClose(), since that can cause a deadlock
@@ -1035,7 +1067,6 @@ bool DatabaseTracker::deleteDatabaseFile(SecurityOrigin* origin, const String& n
 void DatabaseTracker::originsDidChange()
 {
     // This is called when origins have been added or deleted by another app.
-    ASSERT(WebThreadIsLockedOrDisabled());
     
     // Keep track of the origins that have been added or deleted.
     Vector<RefPtr<SecurityOrigin> > changedOrigins;
@@ -1117,7 +1148,6 @@ void DatabaseTracker::removeDeletedOpenedDatabases()
 {
     // This is called when another app has deleted a database.  Go through all opened databases in this
     // tracker and close any that's no longer being tracked in the database.
-    ASSERT(WebThreadIsLockedOrDisabled());
     
     {
         // Acquire the lock before calling openTrackerDatabase.
@@ -1164,7 +1194,7 @@ void DatabaseTracker::removeDeletedOpenedDatabases()
                     DatabaseSet* databaseSet = dbNameMapIt->second;
                     DatabaseSet::const_iterator dbEnd = databaseSet->end();
                     for (DatabaseSet::const_iterator dbIt = databaseSet->begin(); dbIt != dbEnd; ++dbIt) {
-                        Database* db = *dbIt;
+                        Database* db = static_cast<Database*>(*dbIt);
                         
                         // We are done if this database has already been marked as deleted.
                         if (db->deleted())
@@ -1273,8 +1303,6 @@ void DatabaseTracker::emptyDatabaseFilesRemovalTaskDidFinish()
 
 void DatabaseTracker::setDatabasesPaused(bool paused)
 {
-    ASSERT(WebThreadIsLockedOrDisabled() || WebThreadIsCurrent());
-
     MutexLocker openDatabaseMapLock(m_openDatabaseMapGuard);
     if (!m_openDatabaseMap)
         return;
@@ -1295,10 +1323,6 @@ void DatabaseTracker::setDatabasesPaused(bool paused)
             DatabaseSet::iterator k = databaseSet->begin();
             DatabaseSet::iterator dbSetEnd = databaseSet->end();
             for (; k != dbSetEnd; ++k) {
-                // If the database is not open it could be in the process of shutting down but
-                // has not infomed this thread yet.
-                if (!(*k)->opened())
-                    continue;
                 ScriptExecutionContext* context = (*k)->scriptExecutionContext();
                 if (context) {
                     DatabaseThread* thread = context->databaseThread();

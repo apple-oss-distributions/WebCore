@@ -18,7 +18,13 @@ typedef struct {
     CGContextRef currentCGContext;
 } WebThreadContext;
     
-extern bool webThreadShouldYield;
+extern volatile bool webThreadShouldYield;
+
+#ifdef __OBJC__
+@class NSRunLoop;
+#else
+class NSRunLoop;
+#endif
 
 // The lock is automatically freed at the bottom of the runloop. No need to unlock.
 // Note that calling this function may hang your UI for several seconds. Don't use
@@ -55,10 +61,13 @@ static inline bool WebThreadShouldYield(void) { return webThreadShouldYield; }
 static inline void WebThreadSetShouldYield() { webThreadShouldYield = true; }
 
 CFRunLoopRef WebThreadRunLoop(void);
+NSRunLoop* WebThreadNSRunLoop(void);
 WebThreadContext *WebThreadCurrentContext(void);
 bool WebThreadContextIsCurrent(void);
 
 void WebThreadPrepareForDrawing(void);
+
+void WebThreadSetDelegateSourceRunLoopMode(CFStringRef mode);
 
 #if defined(__cplusplus)
 }

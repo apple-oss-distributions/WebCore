@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2004, 2005, 2006, 2007 Apple Inc.  All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,8 +26,9 @@
 #include "config.h"
 #include "Color.h"
 
-#if PLATFORM(CG)
+#if USE(CG)
 
+#include "GraphicsContextCG.h"
 #include <wtf/Assertions.h>
 #include <wtf/RetainPtr.h>
 #include <CoreGraphics/CoreGraphics.h>
@@ -44,29 +45,17 @@ CGColorRef createCGColorWithDeviceWhite(CGFloat w, CGFloat a)
     return CGColorCreate(graySpace.get(), components);
 }
 
-CGColorSpaceRef deviceRGBColorSpace()
-{
-    DEFINE_STATIC_LOCAL(RetainPtr<CGColorSpaceRef>, colorSpace, (AdoptCF, CGColorSpaceCreateDeviceRGB()));
-    return colorSpace.get();
-}
-
 static CGColorRef createCGColorWithDeviceRGBA(CGColorRef sourceColor)
 {
-    if (!sourceColor || CFEqual(CGColorGetColorSpace(sourceColor), deviceRGBColorSpace()))
+    if (!sourceColor || CFEqual(CGColorGetColorSpace(sourceColor), deviceRGBColorSpaceRef()))
         return CGColorRetain(sourceColor);
     
-    RetainPtr<CGColorTransformRef> colorTransform(AdoptCF, CGColorTransformCreate(deviceRGBColorSpace(), NULL));
+    RetainPtr<CGColorTransformRef> colorTransform(AdoptCF, CGColorTransformCreate(deviceRGBColorSpaceRef(), NULL));
     if (!colorTransform)
         return CGColorRetain(sourceColor);
     
     // CGColorTransformConvertColor() returns a +1 retained object.
     return CGColorTransformConvertColor(colorTransform.get(), sourceColor, kCGRenderingIntentDefault);
-}
-
-static CGColorRef createCGColorWithDeviceRGBA(CGFloat r, CGFloat g, CGFloat b, CGFloat a)
-{
-    const CGFloat components[] = { r, g, b, a };
-    return CGColorCreate(deviceRGBColorSpace(), components);
 }
 
 
@@ -106,74 +95,83 @@ Color::Color(CGColorRef color)
     }
 
     m_color = makeRGBA(r * 255, g * 255, b * 255, a * 255);
+    m_valid = true;
 }
 
-#if OS(WINDOWS)
-
-CGColorRef createCGColor(const Color& c)
+static inline CGColorSpaceRef cachedCGColorSpace(ColorSpace colorSpace)
 {
-    CGColorRef color = NULL;
-    CMProfileRef prof = NULL;
-    CMGetSystemProfile(&prof);
+    switch (colorSpace) {
+    case ColorSpaceDeviceRGB:
+        return deviceRGBColorSpaceRef();
+    case ColorSpaceSRGB:
+        return sRGBColorSpaceRef();
+    case ColorSpaceLinearRGB:
+        return linearRGBColorSpaceRef();
+    }
+    ASSERT_NOT_REACHED();
+    return deviceRGBColorSpaceRef();
+}
 
-    RetainPtr<CGColorSpaceRef> rgbSpace(AdoptCF, CGColorSpaceCreateWithPlatformColorSpace(prof));
+static CGColorRef leakCGColor(const Color& color, ColorSpace colorSpace)
+{
+    CGFloat components[4];
+    color.getRGBA(components[0], components[1], components[2], components[3]);
+    return CGColorCreate(cachedCGColorSpace(colorSpace), components);
+}
 
-    if (rgbSpace) {
-        CGFloat components[4] = { static_cast<CGFloat>(c.red()) / 255, static_cast<CGFloat>(c.green()) / 255,
-                                  static_cast<CGFloat>(c.blue()) / 255, static_cast<CGFloat>(c.alpha()) / 255 };
-        color = CGColorCreate(rgbSpace.get(), components);
+template<ColorSpace colorSpace> static CGColorRef cachedCGColor(const Color& color)
+{
+    switch (color.rgb()) {
+    case Color::transparent: {
+        static CGColorRef transparentCGColor = leakCGColor(color, colorSpace);
+        return transparentCGColor;
+    }
+    case Color::black: {
+        static CGColorRef blackCGColor = leakCGColor(color, colorSpace);
+        return blackCGColor;
+    }
+    case Color::white: {
+        static CGColorRef whiteCGColor = leakCGColor(color, colorSpace);
+        return whiteCGColor;
+    }
     }
 
-    CMCloseProfile(prof);
+    ASSERT(color.rgb());
 
-    return color;
-}
+    const size_t cacheSize = 32;
+    static RGBA32 cachedRGBAValues[cacheSize];
+    static RetainPtr<CGColorRef>* cachedCGColors = new RetainPtr<CGColorRef>[cacheSize];
 
-#endif // OS(WINDOWS)
-
-
-CGColorRef createCGColor(const Color &color)
-{
-    RGBA32 c = color.rgb();
-    switch (c) {
-        case 0: {
-            DEFINE_STATIC_LOCAL(RetainPtr<CGColorRef>, clearColor, (AdoptCF, createCGColorWithDeviceRGBA(0.f, 0.f, 0.f, 0.f)));
-            return CGColorRetain(clearColor.get());
-        }
-        case Color::black: {
-            DEFINE_STATIC_LOCAL(RetainPtr<CGColorRef>, blackColor, (AdoptCF, createCGColorWithDeviceRGBA(0.f, 0.f, 0.f, 1.f)));
-            return CGColorRetain(blackColor.get());
-        }
-        case Color::white: {
-            DEFINE_STATIC_LOCAL(RetainPtr<CGColorRef>, whiteColor, (AdoptCF, createCGColorWithDeviceRGBA(1.f, 1.f, 1.f, 1.f)));
-            return CGColorRetain(whiteColor.get());
-        }
-        default: {
-            const int cacheSize = 32;
-            static RGBA32 cachedRGBAValues[cacheSize];
-            static RetainPtr<CGColorRef>* cachedColors = new RetainPtr<CGColorRef>[cacheSize];
-
-            for (int i = 0; i != cacheSize; ++i) {
-                if (cachedRGBAValues[i] == c)
-                    return CGColorRetain(cachedColors[i].get());
-            }
-
-            CGColorRef result =  createCGColorWithDeviceRGBA(color.red() / 255.f, color.green() / 255.f, color.blue() / 255.f, color.alpha() / 255.f);
-
-            static int cursor;
-            cachedRGBAValues[cursor] = c;
-            cachedColors[cursor] = result;
-            if (++cursor == cacheSize)
-                cursor = 0;
-            
-            return result;
-        }
+    for (size_t i = 0; i < cacheSize; ++i) {
+        if (cachedRGBAValues[i] == color.rgb())
+            return cachedCGColors[i].get();
     }
 
-    return NULL;
+    CGColorRef newCGColor = leakCGColor(color, colorSpace);
+
+    static size_t cursor;
+    cachedRGBAValues[cursor] = color.rgb();
+    cachedCGColors[cursor].adoptCF(newCGColor);
+    if (++cursor == cacheSize)
+        cursor = 0;
+
+    return newCGColor;
 }
 
+CGColorRef cachedCGColor(const Color& color, ColorSpace colorSpace)
+{
+    switch (colorSpace) {
+    case ColorSpaceDeviceRGB:
+        return cachedCGColor<ColorSpaceDeviceRGB>(color);
+    case ColorSpaceSRGB:
+        return cachedCGColor<ColorSpaceSRGB>(color);
+    case ColorSpaceLinearRGB:
+        return cachedCGColor<ColorSpaceLinearRGB>(color);
+    }
+    ASSERT_NOT_REACHED();
+    return cachedCGColor(color, ColorSpaceDeviceRGB);
+}
 
 }
 
-#endif // PLATFORM(CG)
+#endif // USE(CG)

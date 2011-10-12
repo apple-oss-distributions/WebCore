@@ -36,6 +36,24 @@ enum TouchPhaseType { TouchPhaseBegan, TouchPhaseMoved, TouchPhaseStationary, To
 class PlatformTouchEvent {
 public:
     PlatformTouchEvent(WebEvent *);
+    PlatformTouchEvent(const PlatformTouchEvent& other)
+        : m_type(other.m_type)
+        , m_touchCount(other.m_touchCount)
+        , m_touchLocations(other.m_touchLocations)
+        , m_touchGlobalLocations(other.m_touchGlobalLocations)
+        , m_touchIdentifiers(other.m_touchIdentifiers)
+        , m_touchPhases(other.m_touchPhases)
+        , m_gestureScale(other.m_gestureScale)
+        , m_gestureRotation(other.m_gestureRotation)
+        , m_isGesture(other.m_isGesture)
+        , m_position(other.m_position)
+        , m_globalPosition(other.m_globalPosition)
+        , m_shiftKey(other.m_shiftKey)
+        , m_ctrlKey(other.m_ctrlKey)
+        , m_altKey(other.m_altKey)
+        , m_metaKey(other.m_metaKey)
+    {
+    }
     
     TouchEventType eventType() const { return m_type; }
     unsigned touchCount() const { return m_touchCount; }
@@ -49,6 +67,17 @@ public:
     float scale() const { return m_gestureScale; }
     float rotation() const { return m_gestureRotation; }
 
+    const IntPoint& pos() const { return m_position; }
+    int x() const { return m_position.x(); }
+    int y() const { return m_position.y(); }
+    int globalX() const { return m_globalPosition.x(); }
+    int globalY() const { return m_globalPosition.y(); }
+
+    bool shiftKey() const { return m_shiftKey; }
+    bool ctrlKey() const { return m_ctrlKey; }
+    bool altKey() const { return m_altKey; }
+    bool metaKey() const { return m_metaKey; }
+
 protected:
     TouchEventType m_type;
     unsigned m_touchCount;
@@ -56,9 +85,15 @@ protected:
     Vector<IntPoint> m_touchGlobalLocations;
     Vector<unsigned> m_touchIdentifiers;
     Vector<TouchPhaseType> m_touchPhases;
-    bool m_isGesture;
     float m_gestureScale;
     float m_gestureRotation;
+    bool m_isGesture;
+    IntPoint m_position;
+    IntPoint m_globalPosition;
+    bool m_shiftKey;
+    bool m_ctrlKey;
+    bool m_altKey;
+    bool m_metaKey;
 };
 
 } // namespace WebCore

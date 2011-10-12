@@ -36,16 +36,20 @@
 
 #include "CookieJar.h"
 #include "Document.h"
+#include "InspectorInstrumentation.h"
 #include "Logging.h"
-#include "PlatformString.h"
+#include "Page.h"
+#include "ProgressTracker.h"
+#include "ScriptCallStack.h"
 #include "ScriptExecutionContext.h"
 #include "SocketStreamError.h"
 #include "SocketStreamHandle.h"
-#include "StringHash.h"
 #include "WebSocketChannelClient.h"
 #include "WebSocketHandshake.h"
 
 #include <wtf/text/CString.h>
+#include <wtf/text/WTFString.h>
+#include <wtf/text/StringHash.h>
 #include <wtf/Deque.h>
 #include <wtf/FastMalloc.h>
 #include <wtf/HashMap.h>
@@ -63,7 +67,14 @@ WebSocketChannel::WebSocketChannel(ScriptExecutionContext* context, WebSocketCha
     , m_closed(false)
     , m_shouldDiscardReceivedData(false)
     , m_unhandledBufferedAmount(0)
+    , m_identifier(0)
 {
+    if (m_context->isDocument())
+        if (Page* page = static_cast<Document*>(m_context)->page())
+            m_identifier = page->progress()->createUniqueIdentifier();
+
+    if (m_identifier)
+        InspectorInstrumentation::didCreateWebSocket(m_context, m_identifier, url, m_context->url());
 }
 
 WebSocketChannel::~WebSocketChannel()
@@ -88,7 +99,8 @@ bool WebSocketChannel::send(const String& msg)
     ASSERT(!m_suspended);
     Vector<char> buf;
     buf.append('\0');  // frame type
-    buf.append(msg.utf8().data(), msg.utf8().length());
+    CString utf8 = msg.utf8();
+    buf.append(utf8.data(), utf8.length());
     buf.append('\xff');  // frame end
     return m_handle->send(buf.data(), buf.size());
 }
@@ -112,6 +124,8 @@ void WebSocketChannel::close()
 void WebSocketChannel::disconnect()
 {
     LOG(Network, "WebSocketChannel %p disconnect", this);
+    if (m_identifier && m_context)
+        InspectorInstrumentation::didCloseWebSocket(m_context, m_identifier);
     m_handshake.clearScriptExecutionContext();
     m_client = 0;
     m_context = 0;
@@ -137,9 +151,11 @@ void WebSocketChannel::didOpen(SocketStreamHandle* handle)
     ASSERT(handle == m_handle);
     if (!m_context)
         return;
-    const CString& handshakeMessage = m_handshake.clientHandshakeMessage();
+    if (m_identifier)
+        InspectorInstrumentation::willSendWebSocketHandshakeRequest(m_context, m_identifier, m_handshake.clientHandshakeRequest());
+    CString handshakeMessage = m_handshake.clientHandshakeMessage();
     if (!handle->send(handshakeMessage.data(), handshakeMessage.length())) {
-        m_context->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, "Error sending handshake message.", 0, m_handshake.clientOrigin());
+        m_context->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, "Error sending handshake message.", 0, m_handshake.clientOrigin(), 0);
         handle->close();
     }
 }
@@ -147,6 +163,8 @@ void WebSocketChannel::didOpen(SocketStreamHandle* handle)
 void WebSocketChannel::didClose(SocketStreamHandle* handle)
 {
     LOG(Network, "WebSocketChannel %p didClose", this);
+    if (m_identifier && m_context)
+        InspectorInstrumentation::didCloseWebSocket(m_context, m_identifier);
     ASSERT_UNUSED(handle, handle == m_handle || !m_handle);
     m_closed = true;
     if (m_handle) {
@@ -188,10 +206,24 @@ void WebSocketChannel::didReceiveData(SocketStreamHandle* handle, const char* da
             break;
 }
 
-void WebSocketChannel::didFail(SocketStreamHandle* handle, const SocketStreamError&)
+void WebSocketChannel::didFail(SocketStreamHandle* handle, const SocketStreamError& error)
 {
     LOG(Network, "WebSocketChannel %p didFail", this);
     ASSERT(handle == m_handle || !m_handle);
+    if (m_context) {
+        String message;
+        if (error.isNull())
+            message = "WebSocket network error";
+        else if (error.localizedDescription().isNull())
+            message = "WebSocket network error: error code " + String::number(error.errorCode());
+        else
+            message = "WebSocket network error: " + error.localizedDescription();
+        String failingURL = error.failingURL();
+        ASSERT(failingURL.isNull() || m_handshake.url().string() == failingURL);
+        if (failingURL.isNull())
+            failingURL = m_handshake.url().string();
+        m_context->addMessage(OtherMessageSource, NetworkErrorMessageType, ErrorMessageLevel, message, 0, failingURL, 0);
+    }
     m_shouldDiscardReceivedData = true;
     handle->close();
 }
@@ -221,7 +253,7 @@ bool WebSocketChannel::appendToBuffer(const char* data, size_t len)
         m_bufferSize = newBufferSize;
         return true;
     }
-    m_context->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, String::format("WebSocket frame (at %lu bytes) is too long.", static_cast<unsigned long>(newBufferSize)), 0, m_handshake.clientOrigin());
+    m_context->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, "WebSocket frame (at " + String::number(static_cast<unsigned long>(newBufferSize)) + " bytes) is too long.", 0, m_handshake.clientOrigin(), 0);
     return false;
 }
 
@@ -250,6 +282,8 @@ bool WebSocketChannel::processBuffer()
         if (headerLength <= 0)
             return false;
         if (m_handshake.mode() == WebSocketHandshake::Connected) {
+            if (m_identifier)
+                InspectorInstrumentation::didReceiveWebSocketHandshakeResponse(m_context, m_identifier, m_handshake.serverHandshakeResponse());
             if (!m_handshake.serverSetCookie().isEmpty()) {
                 if (m_context->isDocument()) {
                     Document* document = static_cast<Document*>(m_context);

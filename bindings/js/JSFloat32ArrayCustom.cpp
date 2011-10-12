@@ -24,13 +24,11 @@
  */
 
 #include "config.h"
-
-#if ENABLE(3D_CANVAS)
-
-#include "JSWebGLArrayHelper.h"
 #include "JSFloat32Array.h"
+#include "JSArrayBufferViewHelper.h"
 
 #include "Float32Array.h"
+#include "JSArrayBufferViewHelper.h"
 
 using namespace JSC;
 
@@ -46,33 +44,19 @@ JSC::JSValue toJS(JSC::ExecState* exec, JSDOMGlobalObject* globalObject, Float32
     return toJSArrayBufferView<JSFloat32Array>(exec, globalObject, object);
 }
 
-JSC::JSValue JSFloat32Array::set(JSC::ExecState* exec, JSC::ArgList const& args)
+JSC::JSValue JSFloat32Array::set(JSC::ExecState* exec)
 {
-    if (args.size() > 2)
-        return throwError(exec, SyntaxError);
+    return setWebGLArrayHelper(exec, impl(), toFloat32Array);
+}
 
-    if (args.size() == 2 && args.at(0).isInt32()) {
-        // void set(in unsigned long index, in float value);
-        unsigned index = args.at(0).toUInt32(exec);
-        impl()->set(index, static_cast<float>(args.at(1).toNumber(exec)));
-        return jsUndefined();
-    }
-
-    Float32Array* array = toFloat32Array(args.at(0));
-    if (array) {
-        // void set(in Float32Array array, [Optional] in unsigned long offset);
-        unsigned offset = 0;
-        if (args.size() == 2)
-            offset = args.at(1).toInt32(exec);
-        ExceptionCode ec = 0;
-        impl()->set(array, offset, ec);
-        setDOMException(exec, ec);
-        return jsUndefined();
-    }
-
-    return setWebGLArrayFromArray(exec, impl(), args);
+EncodedJSValue JSC_HOST_CALL JSFloat32ArrayConstructor::constructJSFloat32Array(ExecState* exec)
+{
+    JSFloat32ArrayConstructor* jsConstructor = static_cast<JSFloat32ArrayConstructor*>(exec->callee());
+    RefPtr<Float32Array> array = constructArrayBufferView<Float32Array, float>(exec);
+    if (!array.get())
+        // Exception has already been thrown.
+        return JSValue::encode(JSValue());
+    return JSValue::encode(asObject(toJS(exec, jsConstructor->globalObject(), array.get())));
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(3D_CANVAS)

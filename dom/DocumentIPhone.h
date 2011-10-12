@@ -17,7 +17,7 @@ public:
     PassRefPtr<Touch> createTouch(DOMWindow* view, EventTarget* target, long identifier, long pageX, long pageY, long screenX, long screenY, ExceptionCode&);
     PassRefPtr<TouchList> createTouchList(ExceptionCode&);
 
-    typedef HashMap< RefPtr<Node>, unsigned > TouchListenerMap;
+    typedef HashCountedSet<Node*> TouchListenerMap;
 
     void setInTouchEventHandling(bool handling);
 
@@ -30,7 +30,7 @@ public:
     void getTouchRects(Vector<IntRect>&);
 private:
     void setTouchEventListenersDirty(bool);
-    IntRect eventRectRelativeToRoot(RenderObject*);
+    IntRect eventRectRelativeToRoot(Node*, RenderObject*);
     void touchEventsChangedTimerFired(Timer<Document>*);
     void checkChildRenderers(RenderObject*, const IntRect& containingRect, Vector<IntRect>& nodeRects);
     void removeTouchEventListenersInDocument(Document*);

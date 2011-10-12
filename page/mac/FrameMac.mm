@@ -32,8 +32,6 @@
 #import "ColorMac.h"
 #import "Cursor.h"
 #import "DOMInternal.h"
-#import "DocumentLoader.h"
-#import "EditorClient.h"
 #import "Event.h"
 #import "FrameLoaderClient.h"
 #import "FrameView.h"
@@ -54,12 +52,7 @@
 #import "SimpleFontData.h"
 #import "WebCoreViewFactory.h"
 #import "visible_units.h"
-
 #import <wtf/StdLibExtras.h>
-
-#if ENABLE(DASHBOARD_SUPPORT)
-#import "WebDashboardRegion.h"
-#endif
 
 #import "EventListener.h"
 #import <wtf/GetPtr.h>
@@ -151,43 +144,6 @@ static RegularExpression* regExpForLabels(NSArray* labels)
     return result;
 }
 
-NSString* Frame::searchForNSLabelsAboveCell(RegularExpression* regExp, HTMLTableCellElement* cell, size_t* resultDistanceFromStartOfCell)
-{
-    RenderObject* cellRenderer = cell->renderer();
-
-    if (cellRenderer && cellRenderer->isTableCell()) {
-        RenderTableCell* tableCellRenderer = toRenderTableCell(cellRenderer);
-        RenderTableCell* cellAboveRenderer = tableCellRenderer->table()->cellAbove(tableCellRenderer);
-
-        if (cellAboveRenderer) {
-            HTMLTableCellElement* aboveCell =
-                static_cast<HTMLTableCellElement*>(cellAboveRenderer->node());
-
-            if (aboveCell) {
-                // search within the above cell we found for a match
-                size_t lengthSearched = 0;    
-                for (Node* n = aboveCell->firstChild(); n; n = n->traverseNextNode(aboveCell)) {
-                    if (n->isTextNode() && n->renderer() && n->renderer()->style()->visibility() == VISIBLE) {
-                        // For each text chunk, run the regexp
-                        String nodeString = n->nodeValue();
-                        int pos = regExp->searchRev(nodeString);
-                        if (pos >= 0) {
-                            if (resultDistanceFromStartOfCell)
-                                *resultDistanceFromStartOfCell = lengthSearched;
-                            return nodeString.substring(pos, regExp->matchedLength());
-                        }
-                        lengthSearched += nodeString.length();
-                    }
-                }
-            }
-        }
-    }
-    // Any reason in practice to search all cells in that are above cell?
-    if (resultDistanceFromStartOfCell)
-        *resultDistanceFromStartOfCell = notFound;
-    return nil;
-}
-
 NSString* Frame::searchForLabelsBeforeElement(NSArray* labels, Element* element, size_t* resultDistance, bool* resultIsInCellAbove)
 {
     RegularExpression* regExp = regExpForLabels(labels);
@@ -206,7 +162,7 @@ NSString* Frame::searchForLabelsBeforeElement(NSArray* labels, Element* element,
         *resultIsInCellAbove = false;
 
     // walk backwards in the node tree, until another element, or form, or end of tree
-    int unsigned lengthSearched = 0;
+    unsigned lengthSearched = 0;
     Node* n;
     for (n = element->traversePreviousNode();
          n && lengthSearched < charsSearchedThreshold;
@@ -306,66 +262,7 @@ NSString* Frame::matchLabelsAgainstElement(NSArray* labels, Element* element)
 }
 
 
-NSDictionary* Frame::fontAttributesForSelectionStart() const
-{
-    Node* nodeToRemove;
-    RenderStyle* style = styleForSelectionStart(nodeToRemove);
-    if (!style)
-        return nil;
-
-    NSMutableDictionary* result = [NSMutableDictionary dictionary];
-
-
-    return result;
-}
-
-NSWritingDirection Frame::baseWritingDirectionForSelectionStart() const
-{
-    // Convert WebCore's WritingDirection into an NSWritingDirection.
-    WritingDirection direction = editor()->baseWritingDirectionForSelectionStart();
-    ASSERT(direction != NaturalWritingDirection);
-    return direction == LeftToRightWritingDirection ? NSWritingDirectionLeftToRight : NSWritingDirectionRightToLeft;
-}
-
-#if ENABLE(DASHBOARD_SUPPORT)
-NSMutableDictionary* Frame::dashboardRegionsDictionary()
-{
-    Document* doc = document();
-
-    const Vector<DashboardRegionValue>& regions = doc->dashboardRegions();
-    size_t n = regions.size();
-
-    // Convert the Vector<DashboardRegionValue> into a NSDictionary of WebDashboardRegions
-    NSMutableDictionary* webRegions = [NSMutableDictionary dictionaryWithCapacity:n];
-    for (size_t i = 0; i < n; i++) {
-        const DashboardRegionValue& region = regions[i];
-
-        if (region.type == StyleDashboardRegion::None)
-            continue;
-        
-        NSString *label = region.label;
-        WebDashboardRegionType type = WebDashboardRegionTypeNone;
-        if (region.type == StyleDashboardRegion::Circle)
-            type = WebDashboardRegionTypeCircle;
-        else if (region.type == StyleDashboardRegion::Rectangle)
-            type = WebDashboardRegionTypeRectangle;
-        NSMutableArray *regionValues = [webRegions objectForKey:label];
-        if (!regionValues) {
-            regionValues = [[NSMutableArray alloc] initWithCapacity:1];
-            [webRegions setObject:regionValues forKey:label];
-            [regionValues release];
-        }
-        
-        WebDashboardRegion *webRegion = [[WebDashboardRegion alloc] initWithRect:region.bounds clip:region.clip type:type];
-        [regionValues addObject:webRegion];
-        [webRegion release];
-    }
-    
-    return webRegions;
-}
-#endif
-
-DragImageRef Frame::dragImageForSelection() 
+DragImageRef Frame::dragImageForSelection()
 {
     return nil;
 }

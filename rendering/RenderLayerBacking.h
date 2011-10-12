@@ -40,16 +40,26 @@ namespace WebCore {
 class KeyframeList;
 class RenderLayerCompositor;
 
+enum CompositingLayerType {
+    NormalCompositingLayer, // non-tiled layer with backing store
+    TiledCompositingLayer, // tiled layer (always has backing store)
+    MediaCompositingLayer, // layer that contains an image, video, webGL or plugin
+    ContainerCompositingLayer // layer with no backing store
+};
+
 // RenderLayerBacking controls the compositing behavior for a single RenderLayer.
 // It holds the various GraphicsLayers, and makes decisions about intra-layer rendering
 // optimizations.
 // 
 // There is one RenderLayerBacking for each RenderLayer that is composited.
 
-class RenderLayerBacking : public GraphicsLayerClient, public Noncopyable {
+class RenderLayerBacking : public GraphicsLayerClient {
+    WTF_MAKE_NONCOPYABLE(RenderLayerBacking); WTF_MAKE_FAST_ALLOCATED;
 public:
     RenderLayerBacking(RenderLayer*);
     ~RenderLayerBacking();
+
+    void layerWillBeDestroyed();
 
     RenderLayer* owningLayer() const { return m_owningLayer; }
 
@@ -61,7 +71,6 @@ public:
     // Update graphics layer position and bounds.
     void updateGraphicsLayerGeometry(); // make private
     // Update contents and clipping structure.
-    void updateInternalHierarchy(); // make private
     void updateDrawsContent();
     
     GraphicsLayer* graphicsLayer() const { return m_graphicsLayer.get(); }
@@ -76,10 +85,14 @@ public:
 
     bool hasContentsLayer() const { return m_foregroundLayer != 0; }
     GraphicsLayer* foregroundLayer() const { return m_foregroundLayer.get(); }
+
+    bool hasScrollingLayer() const { return m_scrollingLayer; }
+    GraphicsLayer* scrollingLayer() const { return m_scrollingLayer.get(); }
+    GraphicsLayer* scrollingContentsLayer() const { return m_scrollingContentsLayer.get(); }
     
     bool hasMaskLayer() const { return m_maskLayer != 0; }
 
-    GraphicsLayer* parentForSublayers() const { return m_clippingLayer ? m_clippingLayer.get() : m_graphicsLayer.get(); }
+    GraphicsLayer* parentForSublayers() const;
     GraphicsLayer* childForSuperlayers() const { return m_ancestorClippingLayer ? m_ancestorClippingLayer.get() : m_graphicsLayer.get(); }
 
     // RenderLayers with backing normally short-circuit paintLayer() because
@@ -94,15 +107,17 @@ public:
     // r is in the coordinate space of the layer's render object
     void setContentsNeedDisplayInRect(const IntRect& r);
 
-    // Notification from the renderer that its content changed; used by RenderImage.
-    void rendererContentChanged();
+    // Notification from the renderer that its content changed.
+    void contentChanged(RenderLayer::ContentChangeType);
 
     // Interface to start, finish, suspend and resume animations and transitions
-    bool startAnimation(double timeOffset, const Animation* anim, const KeyframeList& keyframes);
     bool startTransition(double timeOffset, int property, const RenderStyle* fromStyle, const RenderStyle* toStyle);
-    void animationFinished(const String& name);
-    void animationPaused(double timeOffset, const String& name);
+    void transitionPaused(double timeOffset, int property);
     void transitionFinished(int property);
+
+    bool startAnimation(double timeOffset, const Animation* anim, const KeyframeList& keyframes);
+    void animationPaused(double timeOffset, const String& name);
+    void animationFinished(const String& name);
 
     void suspendAnimations(double time = 0);
     void resumeAnimations();
@@ -113,32 +128,49 @@ public:
     
     void updateAfterWidgetResize();
 
-    FloatPoint graphicsLayerToContentsCoordinates(const GraphicsLayer*, const FloatPoint&);
-    FloatPoint contentsToGraphicsLayerCoordinates(const GraphicsLayer*, const FloatPoint&);
-
     // GraphicsLayerClient interface
     virtual void notifyAnimationStarted(const GraphicsLayer*, double startTime);
     virtual void notifySyncRequired(const GraphicsLayer*);
 
     virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& clip);
 
+    virtual float backingScaleFactor() const;
+    virtual float pageScaleFactor() const;
+    virtual void didCommitChangesForLayer(const GraphicsLayer*) const;
+
     virtual bool showDebugBorders() const;
     virtual bool showRepaintCounter() const;
+    virtual void platformLayerChanged(GraphicsLayer*, PlatformLayer* oldPlatformLayer, PlatformLayer* newPlatformLayer);
+    virtual float minimumDocumentScale() const;
+    virtual bool allowCompositingLayerVisualDegradation() const;
 
     IntRect contentsBox() const;
     
-    void updateContentsScale(float scale);
+    // For informative purposes only.
+    CompositingLayerType compositingLayerType() const;
+    
+    GraphicsLayer* layerForHorizontalScrollbar() const { return m_layerForHorizontalScrollbar.get(); }
+    GraphicsLayer* layerForVerticalScrollbar() const { return m_layerForVerticalScrollbar.get(); }
+    GraphicsLayer* layerForScrollCorner() const { return m_layerForScrollCorner.get(); }
 
 private:
-    void createGraphicsLayer();
-    void destroyGraphicsLayer();
+    void createPrimaryGraphicsLayer();
+    void destroyGraphicsLayers();
+    
+    PassOwnPtr<GraphicsLayer> createGraphicsLayer(const String&);
 
     RenderBoxModelObject* renderer() const { return m_owningLayer->renderer(); }
     RenderLayerCompositor* compositor() const { return m_owningLayer->compositor(); }
 
+    void updateInternalHierarchy();
     bool updateClippingLayers(bool needsAncestorClip, bool needsDescendantClip);
+    bool updateOverflowControlsLayers(bool needsHorizontalScrollbarLayer, bool needsVerticalScrollbarLayer, bool needsScrollCornerLayer);
     bool updateForegroundLayer(bool needsForegroundLayer);
     bool updateMaskLayer(bool needsMaskLayer);
+    bool requiresHorizontalScrollbarLayer() const;
+    bool requiresVerticalScrollbarLayer() const;
+    bool requiresScrollCornerLayer() const;
+    bool updateScrollingLayers(bool scrollingLayers);
 
     GraphicsLayerPaintingPhase paintingPhaseForPrimaryLayer() const;
     
@@ -165,13 +197,17 @@ private:
     bool rendererHasBackground() const;
     const Color rendererBackgroundColor() const;
 
-    bool hasNonCompositingContent() const;
+    bool hasNonCompositingDescendants() const;
     
     void paintIntoLayer(RenderLayer* rootLayer, GraphicsContext*, const IntRect& paintDirtyRect,
                     PaintBehavior paintBehavior, GraphicsLayerPaintingPhase, RenderObject* paintingRoot);
 
     static int graphicsLayerToCSSProperty(AnimatedPropertyID);
     static AnimatedPropertyID cssToGraphicsLayerProperty(int);
+
+#ifndef NDEBUG
+    String nameForLayer() const;
+#endif
 
 private:
     RenderLayer* m_owningLayer;
@@ -181,6 +217,13 @@ private:
     OwnPtr<GraphicsLayer> m_foregroundLayer;       // only used in cases where we need to draw the foreground separately
     OwnPtr<GraphicsLayer> m_clippingLayer;         // only used if we have clipping on a stacking context, with compositing children
     OwnPtr<GraphicsLayer> m_maskLayer;             // only used if we have a mask
+
+    OwnPtr<GraphicsLayer> m_layerForHorizontalScrollbar;
+    OwnPtr<GraphicsLayer> m_layerForVerticalScrollbar;
+    OwnPtr<GraphicsLayer> m_layerForScrollCorner;
+
+    OwnPtr<GraphicsLayer> m_scrollingLayer;         // only used if the layer is touch-scrollable.
+    OwnPtr<GraphicsLayer> m_scrollingContentsLayer; // only used if the layer is touch-scrollable.
 
     IntRect m_compositedBounds;
 

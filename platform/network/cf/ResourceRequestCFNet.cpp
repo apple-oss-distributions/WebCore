@@ -26,17 +26,34 @@
 #include "config.h"
 #include "ResourceRequestCFNet.h"
 
-#include "FormDataStreamCFNet.h"
+#include "ResourceHandle.h"
 #include "ResourceRequest.h"
 
+#if USE(CFNETWORK)
+#include "FormDataStreamCFNet.h"
 #include <CFNetwork/CFURLRequestPriv.h>
+#endif
+
+#if PLATFORM(MAC)
+#include "ResourceLoadPriority.h"
+#include "WebCoreSystemInterface.h"
+#include <dlfcn.h>
+#endif
+
+#if PLATFORM(WIN)
 #include <WebKitSystemInterface/WebKitSystemInterface.h>
+#endif
 
 namespace WebCore {
+
+bool ResourceRequest::s_httpPipeliningEnabled = true;
+
+#if USE(CFNETWORK)
 
 typedef void (*CFURLRequestSetContentDispositionEncodingFallbackArrayFunction)(CFMutableURLRequestRef, CFArrayRef);
 typedef CFArrayRef (*CFURLRequestCopyContentDispositionEncodingFallbackArrayFunction)(CFURLRequestRef);
 
+#if PLATFORM(WIN)
 static HMODULE findCFNetworkModule()
 {
 #ifndef DEBUG_ALL
@@ -55,6 +72,17 @@ static CFURLRequestCopyContentDispositionEncodingFallbackArrayFunction findCFURL
 {
     return reinterpret_cast<CFURLRequestCopyContentDispositionEncodingFallbackArrayFunction>(GetProcAddress(findCFNetworkModule(), "_CFURLRequestCopyContentDispositionEncodingFallbackArray"));
 }
+#elif PLATFORM(MAC)
+static CFURLRequestSetContentDispositionEncodingFallbackArrayFunction findCFURLRequestSetContentDispositionEncodingFallbackArrayFunction()
+{
+    return reinterpret_cast<CFURLRequestSetContentDispositionEncodingFallbackArrayFunction>(dlsym(RTLD_DEFAULT, "_CFURLRequestSetContentDispositionEncodingFallbackArray"));
+}
+
+static CFURLRequestCopyContentDispositionEncodingFallbackArrayFunction findCFURLRequestCopyContentDispositionEncodingFallbackArrayFunction()
+{
+    return reinterpret_cast<CFURLRequestCopyContentDispositionEncodingFallbackArrayFunction>(dlsym(RTLD_DEFAULT, "_CFURLRequestCopyContentDispositionEncodingFallbackArray"));
+}
+#endif
 
 static void setContentDispositionEncodingFallbackArray(CFMutableURLRequestRef request, CFArrayRef fallbackArray)
 {
@@ -112,12 +140,17 @@ void ResourceRequest::doUpdatePlatformRequest()
         CFURLRequestSetMainDocumentURL(cfRequest, firstPartyForCookies.get());
         CFURLRequestSetCachePolicy(cfRequest, (CFURLRequestCachePolicy)cachePolicy());
         CFURLRequestSetTimeoutInterval(cfRequest, timeoutInterval());
-    } else {
+    } else
         cfRequest = CFURLRequestCreateMutable(0, url.get(), (CFURLRequestCachePolicy)cachePolicy(), timeoutInterval(), firstPartyForCookies.get());
-    }
+#if USE(CFURLSTORAGESESSIONS)
+    wkSetRequestStorageSession(ResourceHandle::currentStorageSession(), cfRequest);
+#endif
 
     RetainPtr<CFStringRef> requestMethod(AdoptCF, httpMethod().createCFString());
     CFURLRequestSetHTTPRequestMethod(cfRequest, requestMethod.get());
+
+    if (httpPipeliningEnabled())
+        wkSetHTTPPipeliningPriority(cfRequest, toHTTPPipeliningPriority(m_priority));
 
     setHeaderFields(cfRequest, httpHeaderFields());
     WebCore::setHTTPBody(cfRequest, httpBody());
@@ -142,10 +175,29 @@ void ResourceRequest::doUpdatePlatformRequest()
     }
 
     m_cfRequest.adoptCF(cfRequest);
+#if PLATFORM(MAC)
+    updateNSURLRequest();
+#endif
 }
 
 void ResourceRequest::doUpdateResourceRequest()
 {
+    if (!m_cfRequest) {
+        // <rdar://problem/9913526>
+        // This is a hack to mimic the subtle behaviour of the Foundation based ResourceRequest
+        // code. That code does not reset m_httpMethod if the NSURLRequest is nil. I filed
+        // <https://bugs.webkit.org/show_bug.cgi?id=66336> to track that.
+        // Another related bug is <https://bugs.webkit.org/show_bug.cgi?id=66350>. Fixing that
+        // would, ideally, allow us to not have this hack. But unfortunately that caused layout test
+        // failures.
+        // Removal of this hack is tracked by <rdar://problem/9970499>.
+
+        String httpMethod = m_httpMethod;
+        *this = ResourceRequest();
+        m_httpMethod = httpMethod;
+        return;
+    }
+
     m_url = CFURLRequestGetURL(m_cfRequest.get());
 
     m_cachePolicy = (ResourceRequestCachePolicy)CFURLRequestGetCachePolicy(m_cfRequest.get());
@@ -156,6 +208,9 @@ void ResourceRequest::doUpdateResourceRequest()
         CFRelease(method);
     }
     m_allowCookies = CFURLRequestShouldHandleHTTPCookies(m_cfRequest.get());
+
+    if (httpPipeliningEnabled())
+        m_priority = toResourceLoadPriority(wkGetHTTPPipeliningPriority(m_cfRequest.get()));
 
     m_httpHeaderFields.clear();
     if (CFDictionaryRef headers = CFURLRequestCopyAllHTTPHeaderFields(m_cfRequest.get())) {
@@ -182,10 +237,80 @@ void ResourceRequest::doUpdateResourceRequest()
     m_httpBody = httpBodyFromRequest(m_cfRequest.get());
 }
 
+#if USE(CFURLSTORAGESESSIONS)
+
+void ResourceRequest::setStorageSession(CFURLStorageSessionRef storageSession)
+{
+    CFMutableURLRequestRef cfRequest = CFURLRequestCreateMutableCopy(0, m_cfRequest.get());
+    wkSetRequestStorageSession(storageSession, cfRequest);
+    m_cfRequest.adoptCF(cfRequest);
+#if PLATFORM(MAC)
+    updateNSURLRequest();
+#endif
+}
+
+#endif
+
+#if PLATFORM(MAC)
+void ResourceRequest::applyWebArchiveHackForMail()
+{
+}
+#endif
+
+#endif // USE(CFNETWORK)
+
+bool ResourceRequest::httpPipeliningEnabled()
+{
+    return s_httpPipeliningEnabled;
+}
+
+void ResourceRequest::setHTTPPipeliningEnabled(bool flag)
+{
+    s_httpPipeliningEnabled = flag;
+}
+
+static inline bool readBooleanPreference(CFStringRef key)
+{
+    Boolean keyExistsAndHasValidFormat;
+    Boolean result = CFPreferencesGetAppBooleanValue(key, kCFPreferencesCurrentApplication, &keyExistsAndHasValidFormat);
+    return keyExistsAndHasValidFormat ? result : false;
+}
+
 unsigned initializeMaximumHTTPConnectionCountPerHost()
 {
     static const unsigned preferredConnectionCount = 6;
-    return wkInitializeMaximumHTTPConnectionCountPerHost(preferredConnectionCount);
+
+    // Always set the connection count per host, even when pipelining.
+    unsigned maximumHTTPConnectionCountPerHost = wkInitializeMaximumHTTPConnectionCountPerHost(preferredConnectionCount);
+
+    static const unsigned unlimitedConnectionCount = 10000;
+
+    if (!ResourceRequest::httpPipeliningEnabled() && readBooleanPreference(CFSTR("WebKitEnableHTTPPipelining")))
+        ResourceRequest::setHTTPPipeliningEnabled(true);
+
+    if (ResourceRequest::httpPipeliningEnabled()) {
+        wkSetHTTPPipeliningMaximumPriority(ResourceLoadPriorityHighest);
+#if !PLATFORM(WIN)
+        // FIXME: <rdar://problem/9375609> Implement minimum fast lane priority setting on Windows
+        wkSetHTTPPipeliningMinimumFastLanePriority(ResourceLoadPriorityMedium);
+#endif
+        // When pipelining do not rate-limit requests sent from WebCore since CFNetwork handles that.
+        return unlimitedConnectionCount;
+    }
+
+    return maximumHTTPConnectionCountPerHost;
+}
+    
+void initializeHTTPConnectionSettingsOnStartup()
+{
+    // This need to be called from WebKitInitialize so the calls happen early enough, before any requests are made. <rdar://problem/9691871>
+    // Desktop doesn't have early initialization so it is not clear how this should be done there. The CFNetwork SPI probably
+    // needs to become more forgiving.
+    // We can't read settings here as this is called too early for that. All values need to be constants.
+    static const unsigned preferredConnectionCount = 6;
+    wkInitializeMaximumHTTPConnectionCountPerHost(preferredConnectionCount);
+    wkSetHTTPPipeliningMaximumPriority(ResourceLoadPriorityHighest);
+    wkSetHTTPPipeliningMinimumFastLanePriority(ResourceLoadPriorityMedium);
 }
 
-}
+} // namespace WebCore

@@ -46,6 +46,6 @@ ProtectionSpace core(NSURLProtectionSpace *);
 Credential core(NSURLCredential *);
 
 }
-#endif
+#endif // __OBJC__
 
-#endif
+#endif // AuthenticationMac_h

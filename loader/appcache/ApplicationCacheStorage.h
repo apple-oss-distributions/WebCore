@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008, 2010 Apple Inc. All Rights Reserved.
+ * Copyright (C) 2008, 2010, 2011 Apple Inc. All Rights Reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,10 +29,11 @@
 #if ENABLE(OFFLINE_WEB_APPLICATIONS)
 
 #include "PlatformString.h"
+#include "SecurityOriginHash.h"
 #include "SQLiteDatabase.h"
-#include "StringHash.h"
-
 #include <wtf/HashCountedSet.h>
+#include <wtf/HashSet.h>
+#include <wtf/text/StringHash.h>
 
 namespace WebCore {
 
@@ -45,7 +46,8 @@ template <class T>
 class StorageIDJournal;
 class SecurityOrigin;
 
-class ApplicationCacheStorage : public Noncopyable {
+class ApplicationCacheStorage {
+    WTF_MAKE_NONCOPYABLE(ApplicationCacheStorage); WTF_MAKE_FAST_ALLOCATED;
 public:
     enum FailureReason {
         OriginQuotaReached,
@@ -67,11 +69,13 @@ public:
     bool quotaForOrigin(const SecurityOrigin*, int64_t& quota);
     bool remainingSizeForOriginExcludingCache(const SecurityOrigin*, ApplicationCache*, int64_t& remainingSize);
     bool storeUpdatedQuotaForOrigin(const SecurityOrigin*, int64_t quota);
+    bool checkOriginQuota(ApplicationCacheGroup*, ApplicationCache* oldCache, ApplicationCache* newCache, int64_t& totalSpaceNeeded);
 
     ApplicationCacheGroup* cacheGroupForURL(const KURL&); // Cache to load a main resource from.
     ApplicationCacheGroup* fallbackCacheGroupForURL(const KURL&); // Cache that has a fallback entry to load a main resource from if normal loading fails.
 
     ApplicationCacheGroup* findOrCreateCacheGroup(const KURL& manifestURL);
+    ApplicationCacheGroup* findInMemoryCacheGroup(const KURL& manifestURL) const;
     void cacheGroupDestroyed(ApplicationCacheGroup*);
     void cacheGroupMadeObsolete(ApplicationCacheGroup*);
         
@@ -92,6 +96,9 @@ public:
     bool deleteCacheGroup(const String& manifestURL);
     void vacuumDatabaseFile();
 
+    void getOriginsWithCache(HashSet<RefPtr<SecurityOrigin>, SecurityOriginHash>&);
+    void deleteAllEntries();
+
     static int64_t unknownQuota() { return -1; }
     static int64_t noQuota() { return std::numeric_limits<int64_t>::max(); }
 private:
@@ -107,6 +114,9 @@ private:
     bool store(ApplicationCacheResource*, unsigned cacheStorageID);
 
     bool ensureOriginRecord(const SecurityOrigin*);
+    bool shouldStoreResourceAsFlatFile(ApplicationCacheResource*);
+    void deleteTables();
+    bool writeDataToUniqueFileInDirectory(SharedBuffer*, const String& directory, String& outFilename, const String& fileExtension);
 
     void loadManifestHostHashes();
     
@@ -118,6 +128,8 @@ private:
     bool executeSQLCommand(const String&);
 
     void checkForMaxSizeReached();
+    void checkForDeletedResources();
+    long long flatFileAreaSize();
     
     String m_cacheDirectory;
     String m_cacheFile;

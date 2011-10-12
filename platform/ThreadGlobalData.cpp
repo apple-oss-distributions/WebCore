@@ -28,10 +28,10 @@
 #include "ThreadGlobalData.h"
 
 #include "EventNames.h"
-#include "StringImpl.h"
 #include "ThreadTimers.h"
 #include <wtf/UnusedParam.h>
 #include <wtf/WTFThreadData.h>
+#include <wtf/text/StringImpl.h>
 
 #if USE(ICU_UNICODE)
 #include "TextCodecICU.h"
@@ -51,7 +51,7 @@ namespace WebCore {
 
 #if ENABLE(WORKERS)
 ThreadSpecific<ThreadGlobalData>* ThreadGlobalData::staticData;
-#error Need a separate ThreadGlobalData::staticData that is shared by the main thread and the Web Thread.
+ThreadGlobalData* ThreadGlobalData::sharedMainThreadStaticData;
 #else
 ThreadGlobalData* ThreadGlobalData::staticData;
 #endif
@@ -60,7 +60,7 @@ ThreadGlobalData::ThreadGlobalData()
     : m_eventNames(new EventNames)
     , m_threadTimers(new ThreadTimers)
 #ifndef NDEBUG
-    , m_isMainThread(isMainThread())
+    , m_isMainThread(pthread_main_np() || isMainThread())
 #endif
 #if USE(ICU_UNICODE)
     , m_cachedConverterICU(new ICUConverterWrapper)
@@ -92,5 +92,18 @@ void ThreadGlobalData::destroy()
     delete m_threadTimers;
     m_threadTimers = 0;
 }
+
+#if ENABLE(WORKERS)
+void ThreadGlobalData::setWebCoreThreadData()
+{
+    ASSERT(isWebThread());
+    ASSERT(&threadGlobalData() != ThreadGlobalData::sharedMainThreadStaticData);
+
+    // Set WebThread's ThreadGlobalData object to be the same as the main UI thread.
+    ThreadGlobalData::staticData->replace(ThreadGlobalData::sharedMainThreadStaticData);
+
+    ASSERT(&threadGlobalData() == ThreadGlobalData::sharedMainThreadStaticData);
+}
+#endif
 
 } // namespace WebCore

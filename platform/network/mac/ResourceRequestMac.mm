@@ -25,34 +25,66 @@
 
 #import "config.h"
 #import "ResourceRequest.h"
-#import "WebCoreSystemInterface.h"
 
 #import "FormDataStreamMac.h"
+#import "ResourceRequestCFNet.h"
+#import "RuntimeApplicationChecks.h"
+#import "WebCoreSystemInterface.h"
 
 #import <Foundation/Foundation.h>
 
-#import "loader.h"
+#import "RuntimeApplicationChecksIPhone.h"
+#include <CoreFoundation/CFPriv.h>
 
-#ifdef BUILDING_ON_TIGER
-typedef unsigned NSUInteger;
-#endif
-
-@interface NSURLRequest (WebCoreContentDispositionEncoding)
+@interface NSURLRequest (WebNSURLRequestDetails)
 - (NSArray *)contentDispositionEncodingFallbackArray;
++ (void)setDefaultTimeoutInterval:(NSTimeInterval)seconds;
+- (CFURLRequestRef)_CFURLRequest;
+- (id)_initWithCFURLRequest:(CFURLRequestRef)request;
 @end
 
-@interface NSMutableURLRequest (WebCoreContentDispositionEncoding)
+@interface NSMutableURLRequest (WebMutableNSURLRequestDetails)
 - (void)setContentDispositionEncodingFallbackArray:(NSArray *)theEncodingFallbackArray;
 @end
 
 namespace WebCore {
 
-NSURLRequest* ResourceRequest::nsURLRequest() const
+NSURLRequest *ResourceRequest::nsURLRequest() const
 { 
     updatePlatformRequest();
     
     return [[m_nsRequest.get() retain] autorelease]; 
 }
+
+#if USE(CFNETWORK)
+
+ResourceRequest::ResourceRequest(NSURLRequest *nsRequest)
+    : ResourceRequestBase()
+    , m_mainResourceRequest(false)
+    , m_cfRequest([nsRequest _CFURLRequest])
+    , m_nsRequest(nsRequest)
+{
+}
+
+void ResourceRequest::updateNSURLRequest()
+{
+    // There is client code that extends NSURLRequest and expects to get back, in the delegate
+    // callbacks, an object of the same type that they passed into WebKit. To keep then running, we
+    // create an object of the same type and return that. See <rdar://9843582>.
+    // Also, developers really really want an NSMutableURLRequest so try to create an
+    // NSMutableURLRequest instead of NSURLRequest.
+    static Class nsURLRequestClass = [NSURLRequest class];
+    static Class nsMutableURLRequestClass = [NSMutableURLRequest class];
+    Class requestClass = [m_nsRequest.get() class];
+
+    if (!requestClass || requestClass == nsURLRequestClass)
+        requestClass = nsMutableURLRequestClass;
+
+    if (m_cfRequest)
+        m_nsRequest.adoptNS([[requestClass alloc] _initWithCFURLRequest:m_cfRequest.get()]);
+}
+
+#else
 
 void ResourceRequest::doUpdateResourceRequest()
 {
@@ -64,7 +96,10 @@ void ResourceRequest::doUpdateResourceRequest()
     if (NSString* method = [m_nsRequest.get() HTTPMethod])
         m_httpMethod = method;
     m_allowCookies = [m_nsRequest.get() HTTPShouldHandleCookies];
-    
+
+    if (ResourceRequest::httpPipeliningEnabled())
+        m_priority = toResourceLoadPriority(wkGetHTTPPipeliningPriority([m_nsRequest.get() _CFURLRequest]));
+
     NSDictionary *headers = [m_nsRequest.get() allHTTPHeaderFields];
     NSEnumerator *e = [headers keyEnumerator];
     NSString *name;
@@ -92,6 +127,17 @@ void ResourceRequest::doUpdateResourceRequest()
             m_httpBody = formData;
 }
 
+static void applyFacebookTouchHDURLQuirkIfNecessary(NSMutableURLRequest *nsRequest)
+{
+    if (!applicationIsFacebookTouchHD() || _CFExecutableLinkedOnOrAfter(CFSystemVersionTelluride))
+        return;
+
+    NSString *urlString = [[nsRequest URL] absoluteString];
+    NSRange range = [urlString rangeOfString:@"http://local//" options:NSAnchoredSearch];
+    if (range.location != NSNotFound)
+        [nsRequest setURL:[NSURL URLWithString:[urlString stringByReplacingCharactersInRange:range withString:@"http://local://"]]];
+}
+
 void ResourceRequest::doUpdatePlatformRequest()
 {
     if (isNull()) {
@@ -106,16 +152,18 @@ void ResourceRequest::doUpdatePlatformRequest()
     else
         nsRequest = [[NSMutableURLRequest alloc] initWithURL:url()];
 
-#ifdef BUILDING_ON_TIGER
-    wkSupportsMultipartXMixedReplace(nsRequest);
-#endif
+    applyFacebookTouchHDURLQuirkIfNecessary(nsRequest);
 
-    if (isHttpPipeliningEnabled())
-        wkSupportsHttpPipelining(nsRequest, priority());
+    if (ResourceRequest::httpPipeliningEnabled())
+        wkSetHTTPPipeliningPriority([nsRequest _CFURLRequest], toHTTPPipeliningPriority(m_priority));
 
     [nsRequest setCachePolicy:(NSURLRequestCachePolicy)cachePolicy()];
-    if (timeoutInterval() != unspecifiedTimeoutInterval)
-        [nsRequest setTimeoutInterval:timeoutInterval()];
+
+    double timeoutInterval = ResourceRequestBase::timeoutInterval();
+    if (timeoutInterval)
+        [nsRequest setTimeoutInterval:timeoutInterval];
+    // Otherwise, respect NSURLRequest default timeout.
+
     [nsRequest setMainDocumentURL:firstPartyForCookies()];
     if (!httpMethod().isEmpty())
         [nsRequest setHTTPMethod:httpMethod()];
@@ -153,14 +201,24 @@ void ResourceRequest::doUpdatePlatformRequest()
 
 void ResourceRequest::applyWebArchiveHackForMail()
 {
-    // Hack because Mail checks for this property to detect data / archive loads
-    [NSURLProtocol setProperty:@"" forKey:@"WebDataRequest" inRequest:(NSMutableURLRequest *)nsURLRequest()];
-}
-    
-unsigned initializeMaximumHTTPConnectionCountPerHost()
-{
-    static const unsigned preferredConnectionCount = 6;
-    return wkInitializeMaximumHTTPConnectionCountPerHost(preferredConnectionCount);
 }
 
+#if USE(CFURLSTORAGESESSIONS)
+
+void ResourceRequest::setStorageSession(CFURLStorageSessionRef storageSession)
+{
+    m_nsRequest = wkCopyRequestWithStorageSession(storageSession, m_nsRequest.get());
 }
+
+#endif
+    
+#endif // USE(CFNETWORK)
+
+
+bool ResourceRequest::useQuickLookResourceCachingQuirks()
+{
+    return false;
+}
+
+} // namespace WebCore
+

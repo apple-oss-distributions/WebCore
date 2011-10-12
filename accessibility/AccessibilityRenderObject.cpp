@@ -32,11 +32,11 @@
 #include "AXObjectCache.h"
 #include "AccessibilityImageMapLink.h"
 #include "AccessibilityListBox.h"
-#include "CharacterNames.h"
 #include "EventNames.h"
 #include "FloatRect.h"
 #include "Frame.h"
 #include "FrameLoader.h"
+#include "FrameSelection.h"
 #include "HTMLAreaElement.h"
 #include "HTMLFormElement.h"
 #include "HTMLFrameElementBase.h"
@@ -44,6 +44,7 @@
 #include "HTMLInputElement.h"
 #include "HTMLLabelElement.h"
 #include "HTMLMapElement.h"
+#include "HTMLNames.h"
 #include "HTMLOptGroupElement.h"
 #include "HTMLOptionElement.h"
 #include "HTMLOptionsCollection.h"
@@ -52,7 +53,9 @@
 #include "HitTestRequest.h"
 #include "HitTestResult.h"
 #include "LocalizedStrings.h"
+#include "MathMLNames.h"
 #include "NodeList.h"
+#include "Page.h"
 #include "ProgressTracker.h"
 #include "RenderButton.h"
 #include "RenderFieldset.h"
@@ -60,6 +63,7 @@
 #include "RenderHTMLCanvas.h"
 #include "RenderImage.h"
 #include "RenderInline.h"
+#include "RenderLayer.h"
 #include "RenderListBox.h"
 #include "RenderListMarker.h"
 #include "RenderMenuList.h"
@@ -70,12 +74,13 @@
 #include "RenderView.h"
 #include "RenderWidget.h"
 #include "SelectElement.h"
-#include "SelectionController.h"
 #include "Text.h"
 #include "TextIterator.h"
 #include "htmlediting.h"
 #include "visible_units.h"
 #include <wtf/StdLibExtras.h>
+#include <wtf/text/StringBuilder.h>
+#include <wtf/unicode/CharacterNames.h>
 
 using namespace std;
 
@@ -119,8 +124,19 @@ void AccessibilityRenderObject::detach()
     m_renderer = 0;    
 }
 
-static inline bool isInlineWithContinuation(RenderObject* renderer)
+RenderBoxModelObject* AccessibilityRenderObject::renderBoxModelObject() const
 {
+    if (!m_renderer || !m_renderer->isBoxModelObject())
+        return 0;
+    return toRenderBoxModelObject(m_renderer);
+}
+
+static inline bool isInlineWithContinuation(RenderObject* object)
+{
+    if (!object->isBoxModelObject())
+        return false;
+
+    RenderBoxModelObject* renderer = toRenderBoxModelObject(object);
     if (!renderer->isRenderInline())
         return false;
 
@@ -156,7 +172,7 @@ static inline RenderObject* firstChildConsideringContinuation(RenderObject* rend
 static inline RenderObject* lastChildConsideringContinuation(RenderObject* renderer)
 {
     RenderObject* lastChild = renderer->lastChild();
-    RenderObject* prev = renderer;
+    RenderObject* prev;
     RenderObject* cur = renderer;
 
     if (!cur->isRenderInline() && !cur->isRenderBlock())
@@ -169,10 +185,10 @@ static inline RenderObject* lastChildConsideringContinuation(RenderObject* rende
             lastChild = lc;
 
         if (cur->isRenderInline()) {
-            cur = toRenderInline(cur)->inlineContinuation();
-            ASSERT(cur || !toRenderInline(prev)->continuation());
+            cur = toRenderInline(cur)->inlineElementContinuation();
+            ASSERT_UNUSED(prev, cur || !toRenderInline(prev)->continuation());
         } else
-            cur = toRenderBlock(cur)->inlineContinuation();
+            cur = toRenderBlock(cur)->inlineElementContinuation();
     }
 
     return lastChild;
@@ -206,12 +222,12 @@ AccessibilityObject* AccessibilityRenderObject::lastChild() const
 
 static inline RenderInline* startOfContinuations(RenderObject* r)
 {
-    if (r->isInlineContinuation())
+    if (r->isInlineElementContinuation())
         return toRenderInline(r->node()->renderer());
 
     // Blocks with a previous continuation always have a next continuation
-    if (r->isRenderBlock() && toRenderBlock(r)->inlineContinuation())
-        return toRenderInline(toRenderBlock(r)->inlineContinuation()->node()->renderer());
+    if (r->isRenderBlock() && toRenderBlock(r)->inlineElementContinuation())
+        return toRenderInline(toRenderBlock(r)->inlineElementContinuation()->node()->renderer());
 
     return 0;
 }
@@ -227,10 +243,10 @@ static inline RenderObject* endOfContinuations(RenderObject* renderer)
     while (cur) {
         prev = cur;
         if (cur->isRenderInline()) {
-            cur = toRenderInline(cur)->inlineContinuation();
+            cur = toRenderInline(cur)->inlineElementContinuation();
             ASSERT(cur || !toRenderInline(prev)->continuation());
         } else 
-            cur = toRenderBlock(cur)->inlineContinuation();
+            cur = toRenderBlock(cur)->inlineElementContinuation();
     }
 
     return prev;
@@ -259,7 +275,7 @@ static inline RenderObject* childBeforeConsideringContinuations(RenderInline* r,
                 return prev;
 
             prev = curContainer;
-            curContainer = toRenderBlock(curContainer)->inlineContinuation();
+            curContainer = toRenderBlock(curContainer)->inlineElementContinuation();
         }
     }
 
@@ -270,7 +286,7 @@ static inline RenderObject* childBeforeConsideringContinuations(RenderInline* r,
 
 static inline bool firstChildIsInlineContinuation(RenderObject* renderer)
 {
-    return renderer->firstChild() && renderer->firstChild()->isInlineContinuation();
+    return renderer->firstChild() && renderer->firstChild()->isInlineElementContinuation();
 }
 
 AccessibilityObject* AccessibilityRenderObject::previousSibling() const
@@ -321,7 +337,7 @@ AccessibilityObject* AccessibilityRenderObject::nextSibling() const
     // Case 1: node is a block and has an inline continuation. Next sibling is the inline continuation's
     // first child.
     RenderInline* inlineContinuation;
-    if (m_renderer->isRenderBlock() && (inlineContinuation = toRenderBlock(m_renderer)->inlineContinuation()))
+    if (m_renderer->isRenderBlock() && (inlineContinuation = toRenderBlock(m_renderer)->inlineElementContinuation()))
         nextSibling = firstChildConsideringContinuation(inlineContinuation);
 
     // Case 2: Anonymous block parent of the start of a continuation - skip all the way to
@@ -342,10 +358,10 @@ AccessibilityObject* AccessibilityRenderObject::nextSibling() const
     else if (isInlineWithContinuation(m_renderer->parent())) {
         RenderObject* continuation = toRenderInline(m_renderer->parent())->continuation();
         
-        // Case 4a: continuation is a block - in this case the block itself is the next sibling.
+        // Case 5a: continuation is a block - in this case the block itself is the next sibling.
         if (continuation->isRenderBlock())
             nextSibling = continuation;
-        // Case 4b: continuation is an inline - in this case the inline's first child is the next sibling
+        // Case 5b: continuation is an inline - in this case the inline's first child is the next sibling
         else
             nextSibling = firstChildConsideringContinuation(continuation);
     }
@@ -356,6 +372,16 @@ AccessibilityObject* AccessibilityRenderObject::nextSibling() const
     return axObjectCache()->getOrCreate(nextSibling);
 }
 
+static RenderBoxModelObject* nextContinuation(RenderObject* renderer)
+{
+    ASSERT(renderer);
+    if (renderer->isRenderInline() && !renderer->isReplaced())
+        return toRenderInline(renderer)->continuation();
+    if (renderer->isRenderBlock())
+        return toRenderBlock(renderer)->inlineElementContinuation();
+    return 0;
+}
+    
 RenderObject* AccessibilityRenderObject::renderParentObject() const
 {
     if (!m_renderer)
@@ -365,7 +391,8 @@ RenderObject* AccessibilityRenderObject::renderParentObject() const
 
     // Case 1: node is a block and is an inline's continuation. Parent
     // is the start of the continuation chain.
-    RenderInline* startOfConts = 0;
+    RenderObject* startOfConts = 0;
+    RenderObject* firstChild = 0;
     if (m_renderer->isRenderBlock() && (startOfConts = startOfContinuations(m_renderer)))
         parent = startOfConts;
 
@@ -374,6 +401,20 @@ RenderObject* AccessibilityRenderObject::renderParentObject() const
     else if (parent && parent->isRenderInline() && (startOfConts = startOfContinuations(parent)))
         parent = startOfConts;
     
+    // Case 3: The first sibling is the beginning of a continuation chain. Find the origin of that continuation.
+    else if (parent && (firstChild = parent->firstChild()) && firstChild->node()) {
+        // Get the node's renderer and follow that continuation chain until the first child is found
+        RenderObject* nodeRenderFirstChild = firstChild->node()->renderer();
+        if (nodeRenderFirstChild != firstChild) {
+            for (RenderObject* contsTest = nodeRenderFirstChild; contsTest; contsTest = nextContinuation(contsTest)) {
+                if (contsTest == firstChild) {
+                    parent = nodeRenderFirstChild->parent();
+                    break;
+                }
+            }
+        }
+    }
+        
     return parent;
 }
     
@@ -397,7 +438,15 @@ AccessibilityObject* AccessibilityRenderObject::parentObject() const
             return parent;
     }
     
-    return axObjectCache()->getOrCreate(renderParentObject());
+    RenderObject* parentObj = renderParentObject();
+    if (parentObj)
+        return axObjectCache()->getOrCreate(parentObj);
+    
+    // WebArea's parent should be the scroll view containing it.
+    if (isWebArea())
+        return axObjectCache()->getOrCreate(m_renderer->frame()->view());
+    
+    return 0;
 }
 
 bool AccessibilityRenderObject::isWebArea() const
@@ -420,15 +469,9 @@ bool AccessibilityRenderObject::isNativeTextControl() const
     return m_renderer->isTextControl();
 }
     
-bool AccessibilityRenderObject::isTextControl() const
-{
-    AccessibilityRole role = roleValue();
-    return role == TextAreaRole || role == TextFieldRole;
-}
-
 bool AccessibilityRenderObject::isNativeImage() const
 {
-    return m_renderer->isImage();
+    return m_renderer->isBoxModelObject() && toRenderBoxModelObject(m_renderer)->isImage();
 }    
     
 bool AccessibilityRenderObject::isImage() const
@@ -438,12 +481,12 @@ bool AccessibilityRenderObject::isImage() const
 
 bool AccessibilityRenderObject::isAttachment() const
 {
-    if (!m_renderer)
+    RenderBoxModelObject* renderer = renderBoxModelObject();
+    if (!renderer)
         return false;
-    
     // Widgets are the replaced elements that we represent to AX as attachments
-    bool isWidget = m_renderer && m_renderer->isWidget();
-    ASSERT(!isWidget || (m_renderer->isReplaced() && !isImage()));
+    bool isWidget = renderer->isWidget();
+    ASSERT(!isWidget || (renderer->isReplaced() && !isImage()));
     return isWidget && ariaRoleAttribute() == UnknownRole;
 }
 
@@ -455,7 +498,7 @@ bool AccessibilityRenderObject::isPasswordField() const
     if (ariaRoleAttribute() != UnknownRole)
         return false;
 
-    InputElement* inputElement = toInputElement(static_cast<Element*>(m_renderer->node()));
+    HTMLInputElement* inputElement = m_renderer->node()->toInputElement();
     if (!inputElement)
         return false;
 
@@ -466,7 +509,7 @@ bool AccessibilityRenderObject::isFileUploadButton() const
 {
     if (m_renderer && m_renderer->node() && m_renderer->node()->hasTagName(inputTag)) {
         HTMLInputElement* input = static_cast<HTMLInputElement*>(m_renderer->node());
-        return input->inputType() == HTMLInputElement::FILE;
+        return input->isFileUpload();
     }
     
     return false;
@@ -477,7 +520,7 @@ bool AccessibilityRenderObject::isInputImage() const
     Node* elementNode = node();
     if (roleValue() == ButtonRole && elementNode && elementNode->hasTagName(inputTag)) {
         HTMLInputElement* input = static_cast<HTMLInputElement*>(elementNode);
-        return input->inputType() == HTMLInputElement::IMAGE;
+        return input->isImageButton();
     }
     
     return false;
@@ -545,10 +588,10 @@ bool AccessibilityRenderObject::isPressed() const
 bool AccessibilityRenderObject::isIndeterminate() const
 {
     ASSERT(m_renderer);
-    if (!m_renderer->node() || !m_renderer->node()->isElementNode())
+    if (!m_renderer->node())
         return false;
 
-    InputElement* inputElement = toInputElement(static_cast<Element*>(m_renderer->node()));
+    HTMLInputElement* inputElement = m_renderer->node()->toInputElement();
     if (!inputElement)
         return false;
 
@@ -558,8 +601,8 @@ bool AccessibilityRenderObject::isIndeterminate() const
 bool AccessibilityRenderObject::isNativeCheckboxOrRadio() const
 {
     Node* elementNode = node();
-    if (elementNode && elementNode->isElementNode()) {
-        InputElement* input = toInputElement(static_cast<Element*>(elementNode));
+    if (elementNode) {
+        HTMLInputElement* input = elementNode->toInputElement();
         if (input)
             return input->isCheckbox() || input->isRadioButton();
     }
@@ -570,11 +613,11 @@ bool AccessibilityRenderObject::isNativeCheckboxOrRadio() const
 bool AccessibilityRenderObject::isChecked() const
 {
     ASSERT(m_renderer);
-    if (!m_renderer->node() || !m_renderer->node()->isElementNode())
+    if (!m_renderer->node())
         return false;
 
     // First test for native checkedness semantics
-    InputElement* inputElement = toInputElement(static_cast<Element*>(m_renderer->node()));
+    HTMLInputElement* inputElement = m_renderer->node()->toInputElement();
     if (inputElement)
         return inputElement->isChecked();
 
@@ -606,7 +649,7 @@ bool AccessibilityRenderObject::isMultiSelectable() const
     if (equalIgnoringCase(ariaMultiSelectable, "false"))
         return false;
     
-    if (!m_renderer->isListBox())
+    if (!m_renderer->isBoxModelObject() || !toRenderBoxModelObject(m_renderer)->isListBox())
         return false;
     return m_renderer->node() && static_cast<HTMLSelectElement*>(m_renderer->node())->multiple();
 }
@@ -623,27 +666,26 @@ bool AccessibilityRenderObject::isReadOnly() const
         HTMLElement* body = document->body();
         if (body && body->isContentEditable())
             return false;
-        
-        Frame* frame = document->frame();
-        if (!frame)
-            return true;
-        
-        return !frame->isContentEditable();
+
+        return !document->rendererIsEditable();
     }
 
-    if (m_renderer->isTextField())
-        return static_cast<HTMLInputElement*>(m_renderer->node())->readOnly();
-    if (m_renderer->isTextArea())
-        return static_cast<HTMLTextAreaElement*>(m_renderer->node())->readOnly();
-    
-    return !m_renderer->node() || !m_renderer->node()->isContentEditable();
+    if (m_renderer->isBoxModelObject()) {
+        RenderBoxModelObject* box = toRenderBoxModelObject(m_renderer);
+        if (box->isTextField())
+            return static_cast<HTMLInputElement*>(box->node())->readOnly();
+        if (box->isTextArea())
+            return static_cast<HTMLTextAreaElement*>(box->node())->readOnly();
+    }
+
+    return !m_renderer->node() || !m_renderer->node()->rendererIsEditable();
 }
 
 bool AccessibilityRenderObject::isOffScreen() const
 {
     ASSERT(m_renderer);
     IntRect contentRect = m_renderer->absoluteClippedOverflowRect();
-    FrameView* view = m_renderer->document()->frame()->view();
+    FrameView* view = m_renderer->frame()->view();
     FloatRect viewRect = view->visibleContentRect();
     viewRect.intersect(contentRect);
     return viewRect.isEmpty();
@@ -702,10 +744,10 @@ bool AccessibilityRenderObject::isControl() const
 
 bool AccessibilityRenderObject::isFieldset() const
 {
-    if (!m_renderer)
+    RenderBoxModelObject* renderer = renderBoxModelObject();
+    if (!renderer)
         return false;
-    
-    return m_renderer->isFieldset();
+    return renderer->isFieldset();
 }
   
 bool AccessibilityRenderObject::isGroup() const
@@ -756,8 +798,8 @@ Element* AccessibilityRenderObject::anchorElement() const
     
     // Search up the render tree for a RenderObject with a DOM node.  Defer to an earlier continuation, though.
     for (currRenderer = m_renderer; currRenderer && !currRenderer->node(); currRenderer = currRenderer->parent()) {
-        if (currRenderer->isRenderBlock()) {
-            RenderInline* continuation = toRenderBlock(currRenderer)->inlineContinuation();
+        if (currRenderer->isAnonymousBlock()) {
+            RenderObject* continuation = toRenderBlock(currRenderer)->continuation();
             if (continuation)
                 return cache->getOrCreate(continuation)->anchorElement();
         }
@@ -792,7 +834,7 @@ Element* AccessibilityRenderObject::actionElement() const
         } else if (node->hasTagName(buttonTag))
             return static_cast<Element*>(node);
     }
-            
+
     if (isFileUploadButton())
         return static_cast<Element*>(m_renderer->node());
             
@@ -802,7 +844,7 @@ Element* AccessibilityRenderObject::actionElement() const
     if (isImageButton())
         return static_cast<Element*>(m_renderer->node());
     
-    if (m_renderer->isMenuList())
+    if (m_renderer->isBoxModelObject() && toRenderBoxModelObject(m_renderer)->isMenuList())
         return static_cast<Element*>(m_renderer->node());
 
     AccessibilityRole role = roleValue();
@@ -823,7 +865,7 @@ Element* AccessibilityRenderObject::mouseButtonListener() const
     
     // check if our parent is a mouse button listener
     while (node && !node->isElementNode())
-        node = node->parent();
+        node = node->parentNode();
 
     if (!node)
         return 0;
@@ -837,25 +879,30 @@ Element* AccessibilityRenderObject::mouseButtonListener() const
     return 0;
 }
 
-void AccessibilityRenderObject::increment()
+void AccessibilityRenderObject::alterSliderValue(bool increase)
 {
     if (roleValue() != SliderRole)
         return;
+
+    if (!getAttribute(stepAttr).isEmpty())
+        changeValueByStep(increase);
+    else
+        changeValueByPercent(increase ? 5 : -5);
+}
     
-    changeValueByPercent(5);
+void AccessibilityRenderObject::increment()
+{
+    alterSliderValue(true);
 }
 
 void AccessibilityRenderObject::decrement()
 {
-    if (roleValue() != SliderRole)
-        return;
-    
-    changeValueByPercent(-5);
+    alterSliderValue(false);
 }
 
 static Element* siblingWithAriaRole(String role, Node* node)
 {
-    Node* sibling = node->parent()->firstChild();
+    Node* sibling = node->parentNode()->firstChild();
     while (sibling) {
         if (sibling->isElementNode()) {
             const AtomicString& siblingAriaRole = static_cast<Element*>(sibling)->getAttribute(roleAttr);
@@ -971,6 +1018,19 @@ unsigned AccessibilityRenderObject::hierarchicalLevel() const
     return level;
 }
 
+static TextIteratorBehavior textIteratorBehaviorForTextRange()
+{
+    TextIteratorBehavior behavior = TextIteratorIgnoresStyleVisibility;
+
+#if PLATFORM(GTK)
+    // We need to emit replaced elements for GTK, and present
+    // them with the 'object replacement character' (0xFFFC).
+    behavior = static_cast<TextIteratorBehavior>(behavior | TextIteratorEmitsObjectReplacementCharacters);
+#endif
+
+    return behavior;
+}
+
 String AccessibilityRenderObject::textUnderElement() const
 {
     if (!m_renderer)
@@ -985,7 +1045,8 @@ String AccessibilityRenderObject::textUnderElement() const
             // catch stale WebCoreAXObject (see <rdar://problem/3960196>)
             if (frame->document() != node->document())
                 return String();
-            return plainText(rangeOfContents(node).get());
+
+            return plainText(rangeOfContents(node).get(), textIteratorBehaviorForTextRange());
         }
     }
     
@@ -1024,6 +1085,11 @@ String AccessibilityRenderObject::valueDescription() const
     return getAttribute(aria_valuetextAttr).string();
 }
     
+float AccessibilityRenderObject::stepValueForRange() const
+{
+    return getAttribute(stepAttr).toFloat();
+}
+    
 float AccessibilityRenderObject::valueForRange() const
 {
     if (!isProgressIndicator() && !isSlider() && !isScrollbar())
@@ -1052,7 +1118,9 @@ String AccessibilityRenderObject::stringValue() const
 {
     if (!m_renderer || isPasswordField())
         return String();
-    
+
+    RenderBoxModelObject* cssBox = renderBoxModelObject();
+
     if (ariaRoleAttribute() == StaticTextRole) {
         String staticText = text();
         if (!staticText.length())
@@ -1063,7 +1131,7 @@ String AccessibilityRenderObject::stringValue() const
     if (m_renderer->isText())
         return textUnderElement();
     
-    if (m_renderer->isMenuList()) {
+    if (cssBox && cssBox->isMenuList()) {
         // RenderMenuList will go straight to the text() of its selected item.
         // This has to be overriden in the case where the selected item has an aria label
         SelectElement* selectNode = toSelectElement(static_cast<Element*>(m_renderer->node()));
@@ -1085,11 +1153,11 @@ String AccessibilityRenderObject::stringValue() const
     if (m_renderer->isListMarker())
         return toRenderListMarker(m_renderer)->text();
     
-    if (m_renderer->isRenderButton())
+    if (cssBox && cssBox->isRenderButton())
         return toRenderButton(m_renderer)->text();
 
     if (isWebArea()) {
-        if (m_renderer->document()->frame())
+        if (m_renderer->frame())
             return String();
         
         // FIXME: should use startOfDocument and endOfDocument (or rangeForDocument?) here
@@ -1097,8 +1165,9 @@ String AccessibilityRenderObject::stringValue() const
         VisiblePosition endVisiblePosition = m_renderer->positionForCoordinates(INT_MAX, INT_MAX);
         if (startVisiblePosition.isNull() || endVisiblePosition.isNull())
             return String();
-        
-        return plainText(makeRange(startVisiblePosition, endVisiblePosition).get());
+
+        return plainText(makeRange(startVisiblePosition, endVisiblePosition).get(),
+                         textIteratorBehaviorForTextRange());
     }
     
     if (isTextControl())
@@ -1123,7 +1192,7 @@ static String accessibleNameForNode(Node* node)
         return static_cast<HTMLInputElement*>(node)->value();
 
     if (node->isHTMLElement()) {
-        const AtomicString& alt = static_cast<HTMLElement*>(node)->getAttribute(altAttr);
+        const AtomicString& alt = toHTMLElement(node)->getAttribute(altAttr);
         if (!alt.isEmpty())
             return alt;
     }
@@ -1133,33 +1202,29 @@ static String accessibleNameForNode(Node* node)
 
 String AccessibilityRenderObject::accessibilityDescriptionForElements(Vector<Element*> &elements) const
 {
-    Vector<UChar> ariaLabel;
+    StringBuilder builder;
     unsigned size = elements.size();
     for (unsigned i = 0; i < size; ++i) {
         Element* idElement = elements[i];
-        
-        String nameFragment = accessibleNameForNode(idElement);
-        ariaLabel.append(nameFragment.characters(), nameFragment.length());
-        for (Node* n = idElement->firstChild(); n; n = n->traverseNextNode(idElement)) {
-            nameFragment = accessibleNameForNode(n);
-            ariaLabel.append(nameFragment.characters(), nameFragment.length());
-        }
-            
+
+        builder.append(accessibleNameForNode(idElement));
+        for (Node* n = idElement->firstChild(); n; n = n->traverseNextNode(idElement))
+            builder.append(accessibleNameForNode(n));
+
         if (i != size - 1)
-            ariaLabel.append(' ');
+            builder.append(' ');
     }
-    return String::adopt(ariaLabel);
+    return builder.toString();
 }
 
-    
 void AccessibilityRenderObject::elementsFromAttribute(Vector<Element*>& elements, const QualifiedName& attribute) const
 {
     Node* node = m_renderer->node();
     if (!node || !node->isElementNode())
         return;
 
-    Document* document = m_renderer->document();
-    if (!document)
+    TreeScope* scope = node->treeScope();
+    if (!scope)
         return;
     
     String idList = getAttribute(attribute).string();
@@ -1173,7 +1238,7 @@ void AccessibilityRenderObject::elementsFromAttribute(Vector<Element*>& elements
     unsigned size = idVector.size();
     for (unsigned i = 0; i < size; ++i) {
         String idName = idVector[i];
-        Element* idElement = document->getElementById(idName);
+        Element* idElement = scope->getElementById(idName);
         if (idElement)
             elements.append(idElement);
     }
@@ -1201,7 +1266,7 @@ static HTMLLabelElement* labelForElement(Element* element)
     for (unsigned i = 0; i < len; i++) {
         if (list->item(i)->hasTagName(labelTag)) {
             HTMLLabelElement* label = static_cast<HTMLLabelElement*>(list->item(i));
-            if (label->correspondingControl() == element)
+            if (label->control() == element)
                 return label;
         }
     }
@@ -1212,11 +1277,11 @@ static HTMLLabelElement* labelForElement(Element* element)
 HTMLLabelElement* AccessibilityRenderObject::labelElementContainer() const
 {
     if (!m_renderer)
-        return false;
+        return 0;
 
     // the control element should not be considered part of the label
     if (isControl())
-        return false;
+        return 0;
     
     // find if this has a parent that is a label
     for (Node* parentNode = m_renderer->node(); parentNode; parentNode = parentNode->parentNode()) {
@@ -1266,10 +1331,9 @@ String AccessibilityRenderObject::title() const
         || ariaRole == RadioButtonRole
         || ariaRole == CheckBoxRole
         || ariaRole == TabRole
-        || isHeading())
-        return textUnderElement();
-    
-    if (isLink())
+        || ariaRole == PopUpButtonRole
+        || isHeading()
+        || isLink())
         return textUnderElement();
     
     return String();
@@ -1282,12 +1346,9 @@ String AccessibilityRenderObject::ariaDescribedByAttribute() const
     
     return accessibilityDescriptionForElements(elements);
 }
-
-String AccessibilityRenderObject::accessibilityDescription() const
+    
+String AccessibilityRenderObject::ariaAccessibilityDescription() const
 {
-    if (!m_renderer)
-        return String();
-
     const AtomicString& ariaLabel = getAttribute(aria_labelAttr);
     if (!ariaLabel.isEmpty())
         return ariaLabel;
@@ -1296,15 +1357,36 @@ String AccessibilityRenderObject::accessibilityDescription() const
     if (!ariaDescription.isEmpty())
         return ariaDescription;
     
+    return String();
+}
+
+String AccessibilityRenderObject::accessibilityDescription() const
+{
+    if (!m_renderer)
+        return String();
+
+    // Static text should not have a description, it should only have a stringValue.
+    if (roleValue() == StaticTextRole)
+        return String();
+    
+    String ariaDescription = ariaAccessibilityDescription();
+    if (!ariaDescription.isEmpty())
+        return ariaDescription;
+    
+    Node* node = m_renderer->node();
     if (isImage() || isInputImage() || isNativeImage()) {
-        Node* node = m_renderer->node();
         if (node && node->isHTMLElement()) {
-            const AtomicString& alt = static_cast<HTMLElement*>(node)->getAttribute(altAttr);
+            const AtomicString& alt = toHTMLElement(node)->getAttribute(altAttr);
             if (alt.isEmpty())
                 return String();
             return alt;
         }
     }
+    
+#if ENABLE(MATHML)
+    if (node && node->isElementNode() && static_cast<Element*>(node)->isMathMLElement())
+        return getAttribute(MathMLNames::alttextAttr);
+#endif
     
     if (isWebArea()) {
         Document* document = m_renderer->document();
@@ -1326,11 +1408,11 @@ String AccessibilityRenderObject::accessibilityDescription() const
                 return static_cast<HTMLFrameElementBase*>(owner)->getAttribute(nameAttr);
             }
             if (owner->isHTMLElement())
-                return static_cast<HTMLElement*>(owner)->getAttribute(nameAttr);
+                return toHTMLElement(owner)->getAttribute(nameAttr);
         }
         owner = document->body();
         if (owner && owner->isHTMLElement())
-            return static_cast<HTMLElement*>(owner)->getAttribute(nameAttr);
+            return toHTMLElement(owner)->getAttribute(nameAttr);
     }
 
     return String();
@@ -1346,8 +1428,12 @@ IntRect AccessibilityRenderObject::boundingBoxRect() const
     if (obj->node()) // If we are a continuation, we want to make sure to use the primary renderer.
         obj = obj->node()->renderer();
     
+    // absoluteFocusRingQuads will query the hierarchy below this element, which for large webpages can be very slow.
+    // For a web area, which will have the most elements of any element, absoluteQuads should be used.
     Vector<FloatQuad> quads;
     if (obj->isText())
+        toRenderText(obj)->absoluteQuads(quads, 0, RenderText::ClipToEllipsis);
+    else if (isWebArea())
         obj->absoluteQuads(quads);
     else
         obj->absoluteFocusRingQuads(quads);
@@ -1364,6 +1450,11 @@ IntRect AccessibilityRenderObject::boundingBoxRect() const
             result.unite(r);
         }
     }
+
+    // The size of the web area should be the content size, not the clipped size.
+    if (isWebArea() && obj->frame()->view())
+        result.setSize(obj->frame()->view()->contentsSize());
+    
     return result;
 }
     
@@ -1428,10 +1519,8 @@ AccessibilityObject* AccessibilityRenderObject::internalLinkElement() const
         return 0;
     
     // check if URL is the same as current URL
-    linkURL.removeFragmentIdentifier();
     KURL documentURL = m_renderer->document()->url();
-    documentURL.removeFragmentIdentifier();
-    if (documentURL != linkURL)
+    if (!equalIgnoringFragmentIdentifier(documentURL, linkURL))
         return 0;
     
     Node* linkedNode = m_renderer->document()->findAnchor(fragmentIdentifier);
@@ -1442,6 +1531,14 @@ AccessibilityObject* AccessibilityRenderObject::internalLinkElement() const
     return firstAccessibleObjectFromNode(linkedNode);
 }
 
+ESpeak AccessibilityRenderObject::speakProperty() const
+{
+    if (!m_renderer)
+        return AccessibilityObject::speakProperty();
+    
+    return m_renderer->style()->speak();
+}
+    
 void AccessibilityRenderObject::addRadioButtonGroupMembers(AccessibilityChildrenVector& linkedUIElements) const
 {
     if (!m_renderer || roleValue() != RadioButtonRole)
@@ -1547,11 +1644,6 @@ bool AccessibilityRenderObject::isARIAGrabbed()
     return elementAttributeValue(aria_grabbedAttr);
 }
 
-void AccessibilityRenderObject::setARIAGrabbed(bool grabbed)
-{
-    setElementAttributeValue(aria_grabbedAttr, grabbed);
-}
-
 void AccessibilityRenderObject::determineARIADropEffects(Vector<String>& effects)
 {
     const AtomicString& dropEffects = getAttribute(aria_dropeffectAttr);
@@ -1570,6 +1662,11 @@ bool AccessibilityRenderObject::exposesTitleUIElement() const
     if (!isControl())
         return false;
 
+    // If this control is ignored (because it's invisible), 
+    // then the label needs to be exposed so it can be visible to accessibility.
+    if (accessibilityIsIgnored())
+        return true;
+    
     // checkbox or radio buttons don't expose the title ui element unless it has a title already
     if (isCheckboxOrRadio() && getAttribute(titleAttr).isEmpty())
         return false;
@@ -1692,16 +1789,23 @@ bool AccessibilityRenderObject::accessibilityIsIgnored() const
     if (roleValue() == IgnoredRole)
         return true;
     
+    if (roleValue() == PresentationalRole || inheritsPresentationalRole())
+        return true;
+    
     // An ARIA tree can only have tree items and static text as children.
     if (!isAllowedChildOfTree())
         return true;
+
+    // Allow the platform to decide if the attachment is ignored or not.
+    if (isAttachment())
+        return accessibilityIgnoreAttachment();
     
     // ignore popup menu items because AppKit does
     for (RenderObject* parent = m_renderer->parent(); parent; parent = parent->parent()) {
-        if (parent->isMenuList())
+        if (parent->isBoxModelObject() && toRenderBoxModelObject(parent)->isMenuList())
             return true;
     }
-    
+
     // find out if this element is inside of a label element.
     // if so, it may be ignored because it's the label for a checkbox or radio button
     AccessibilityObject* controlObject = correspondingControlForLabelElement();
@@ -1717,7 +1821,13 @@ bool AccessibilityRenderObject::accessibilityIsIgnored() const
         RenderText* renderText = toRenderText(m_renderer);
         if (m_renderer->isBR() || !renderText->firstTextBox())
             return true;
-        
+
+        // static text beneath TextControls is reported along with the text control text so it's ignored.
+        for (AccessibilityObject* parent = parentObject(); parent; parent = parent->parentObject()) { 
+            if (parent->roleValue() == TextFieldRole)
+                return true;
+        }
+
         // text elements that are just empty whitespace should not be returned
         return renderText->text()->containsOnlyWhitespace();
     }
@@ -1735,16 +1845,13 @@ bool AccessibilityRenderObject::accessibilityIsIgnored() const
     if (ariaRoleAttribute() != UnknownRole)
         return false;
 
-    if (!helpText().isEmpty())
-        return false;
-    
     // don't ignore labels, because they serve as TitleUIElements
     Node* node = m_renderer->node();
     if (node && node->hasTagName(labelTag))
         return false;
     
     // Anything that is content editable should not be ignored.
-    // However, one cannot just call node->isContentEditable() since that will ask if its parents
+    // However, one cannot just call node->rendererIsEditable() since that will ask if its parents
     // are also editable. Only the top level content editable region should be exposed.
     if (node && node->isElementNode()) {
         Element* element = static_cast<Element*>(node);
@@ -1752,6 +1859,10 @@ bool AccessibilityRenderObject::accessibilityIsIgnored() const
         if (equalIgnoringCase(contentEditable, "true"))
             return false;
     }
+    
+    // List items play an important role in defining the structure of lists. They should not be ignored.
+    if (roleValue() == ListItemRole)
+        return false;
     
     // if this element has aria attributes on it, it should not be ignored.
     if (supportsARIAAttributes())
@@ -1795,16 +1906,22 @@ bool AccessibilityRenderObject::accessibilityIsIgnored() const
         return false;
     }
     
-    // make a platform-specific decision
-    if (isAttachment())
-        return accessibilityIgnoreAttachment();
+    if (isWebArea() || m_renderer->isListMarker())
+        return false;
     
-    return !m_renderer->isListMarker() && !isWebArea();
+    // Using the help text to decide an element's visibility is not as definitive
+    // as previous checks, so this should remain as one of the last.
+    if (!helpText().isEmpty())
+        return false;
+    
+    // By default, objects should be ignored so that the AX hierarchy is not 
+    // filled with unnecessary items.
+    return true;
 }
 
 bool AccessibilityRenderObject::isLoaded() const
 {
-    return !m_renderer->document()->tokenizer();
+    return !m_renderer->document()->parser();
 }
 
 double AccessibilityRenderObject::estimatedLoadingProgress() const
@@ -1833,7 +1950,7 @@ String AccessibilityRenderObject::text() const
 {
     // If this is a user defined static text, use the accessible name computation.
     if (ariaRoleAttribute() == StaticTextRole)
-        return accessibilityDescription();
+        return ariaAccessibilityDescription();
     
     if (!isTextControl() || isPasswordField())
         return String();
@@ -1860,35 +1977,22 @@ int AccessibilityRenderObject::textLength() const
     return text().length();
 }
 
-PassRefPtr<Range> AccessibilityRenderObject::ariaSelectedTextDOMRange() const
+PlainTextRange AccessibilityRenderObject::ariaSelectedTextRange() const
 {
     Node* node = m_renderer->node();
     if (!node)
-        return 0;
-    
-    RefPtr<Range> currentSelectionRange = selection().toNormalizedRange();
-    if (!currentSelectionRange)
-        return 0;
+        return PlainTextRange();
     
     ExceptionCode ec = 0;
-    if (!currentSelectionRange->intersectsNode(node, ec))
-        return Range::create(currentSelectionRange->ownerDocument());
+    VisibleSelection visibleSelection = selection();
+    RefPtr<Range> currentSelectionRange = visibleSelection.toNormalizedRange();
+    if (!currentSelectionRange || !currentSelectionRange->intersectsNode(node, ec))
+        return PlainTextRange();
     
-    RefPtr<Range> ariaRange = rangeOfContents(node);
-    Position startPosition, endPosition;
+    int start = indexForVisiblePosition(visibleSelection.start());
+    int end = indexForVisiblePosition(visibleSelection.end());
     
-    // Find intersection of currentSelectionRange and ariaRange
-    if (ariaRange->startOffset() > currentSelectionRange->startOffset())
-        startPosition = ariaRange->startPosition();
-    else
-        startPosition = currentSelectionRange->startPosition();
-    
-    if (ariaRange->endOffset() < currentSelectionRange->endOffset())
-        endPosition = ariaRange->endPosition();
-    else
-        endPosition = currentSelectionRange->endPosition();
-    
-    return Range::create(ariaRange->ownerDocument(), startPosition, endPosition);
+    return PlainTextRange(start, end - start);
 }
 
 String AccessibilityRenderObject::selectedText() const
@@ -1906,10 +2010,7 @@ String AccessibilityRenderObject::selectedText() const
     if (ariaRoleAttribute() == UnknownRole)
         return String();
     
-    RefPtr<Range> ariaRange = ariaSelectedTextDOMRange();
-    if (!ariaRange)
-        return String();
-    return ariaRange->text();
+    return doAXStringForRange(ariaSelectedTextRange());
 }
 
 const AtomicString& AccessibilityRenderObject::accessKey() const
@@ -1924,7 +2025,7 @@ const AtomicString& AccessibilityRenderObject::accessKey() const
 
 VisibleSelection AccessibilityRenderObject::selection() const
 {
-    return m_renderer->document()->frame()->selection()->selection();
+    return m_renderer->frame()->selection()->selection();
 }
 
 PlainTextRange AccessibilityRenderObject::selectedTextRange() const
@@ -1943,20 +2044,16 @@ PlainTextRange AccessibilityRenderObject::selectedTextRange() const
     if (ariaRole == UnknownRole)
         return PlainTextRange();
     
-    RefPtr<Range> ariaRange = ariaSelectedTextDOMRange();
-    if (!ariaRange)
-        return PlainTextRange();
-    return PlainTextRange(ariaRange->startOffset(), ariaRange->endOffset());
+    return ariaSelectedTextRange();
 }
 
 void AccessibilityRenderObject::setSelectedTextRange(const PlainTextRange& range)
 {
     if (isNativeTextControl()) {
-        RenderTextControl* textControl = toRenderTextControl(m_renderer);
-        textControl->setSelectionRange(range.start, range.start + range.length);
+        setSelectionRange(m_renderer->node(), range.start, range.start + range.length);
         return;
     }
-    
+
     Document* document = m_renderer->document();
     if (!document)
         return;
@@ -1964,8 +2061,8 @@ void AccessibilityRenderObject::setSelectedTextRange(const PlainTextRange& range
     if (!frame)
         return;
     Node* node = m_renderer->node();
-    frame->selection()->setSelection(VisibleSelection(Position(node, range.start),
-        Position(node, range.start + range.length), DOWNSTREAM));
+    frame->selection()->setSelection(VisibleSelection(Position(node, range.start, Position::PositionIsOffsetInAnchor),
+        Position(node, range.start + range.length, Position::PositionIsOffsetInAnchor), DOWNSTREAM));
 }
 
 KURL AccessibilityRenderObject::url() const
@@ -1992,14 +2089,6 @@ bool AccessibilityRenderObject::isVisited() const
     // FIXME: Is it a privacy violation to expose visited information to accessibility APIs?
     return m_renderer->style()->isLink() && m_renderer->style()->insideLink() == InsideVisitedLink;
 }
-    
-bool AccessibilityRenderObject::isExpanded() const
-{
-    if (equalIgnoringCase(getAttribute(aria_expandedAttr), "true"))
-        return true;
-    
-    return false;  
-}
 
 void AccessibilityRenderObject::setElementAttributeValue(const QualifiedName& attributeName, bool value)
 {
@@ -2022,26 +2111,14 @@ bool AccessibilityRenderObject::elementAttributeValue(const QualifiedName& attri
     return equalIgnoringCase(getAttribute(attributeName), "true");
 }
     
-void AccessibilityRenderObject::setIsExpanded(bool isExpanded)
-{
-    // Combo boxes, tree items and rows can be expanded (in different ways on different platforms).
-    // That action translates into setting the aria-expanded attribute to true.
-    AccessibilityRole role = roleValue();
-    switch (role) {
-    case ComboBoxRole:
-    case TreeItemRole:
-    case RowRole:
-        setElementAttributeValue(aria_expandedAttr, isExpanded);
-        break;
-    default:
-        break;
-    }
-}
-    
 bool AccessibilityRenderObject::isRequired() const
 {
     if (equalIgnoringCase(getAttribute(aria_requiredAttr), "true"))
         return true;
+    
+    Node* n = node();
+    if (n && (n->isElementNode() && static_cast<Element*>(n)->isFormControlElement()))
+        return static_cast<HTMLFormControlElement*>(n)->required();
     
     return false;
 }
@@ -2142,6 +2219,18 @@ void AccessibilityRenderObject::setFocused(bool on)
     }
 }
 
+void AccessibilityRenderObject::changeValueByStep(bool increase)
+{
+    float step = stepValueForRange();
+    float value = valueForRange();
+    
+    value += increase ? step : -step;
+
+    setValue(String::number(value));
+    
+    axObjectCache()->postNotification(m_renderer, AXObjectCache::AXValueChanged, true);
+}
+    
 void AccessibilityRenderObject::changeValueByPercent(float percentChange)
 {
     float range = maxValueForRange() - minValueForRange();
@@ -2151,11 +2240,6 @@ void AccessibilityRenderObject::changeValueByPercent(float percentChange)
     setValue(String::number(value));
     
     axObjectCache()->postNotification(m_renderer, AXObjectCache::AXValueChanged, true);
-}
-    
-void AccessibilityRenderObject::setSelected(bool enabled)
-{
-    setElementAttributeValue(aria_selectedAttr, enabled);
 }
 
 void AccessibilityRenderObject::setSelectedRows(AccessibilityChildrenVector& selectedRows)
@@ -2176,20 +2260,21 @@ void AccessibilityRenderObject::setSelectedRows(AccessibilityChildrenVector& sel
     
 void AccessibilityRenderObject::setValue(const String& string)
 {
-    if (!m_renderer)
+    if (!m_renderer || !m_renderer->node() || !m_renderer->node()->isElementNode())
         return;
-    
+    Element* element = static_cast<Element*>(m_renderer->node());
+
+    if (!m_renderer->isBoxModelObject())
+        return;
+    RenderBoxModelObject* renderer = toRenderBoxModelObject(m_renderer);
+
     // FIXME: Do we want to do anything here for ARIA textboxes?
-    if (m_renderer->isTextField()) {
-        HTMLInputElement* input = static_cast<HTMLInputElement*>(m_renderer->node());
-        input->setValue(string);
-    } else if (m_renderer->isTextArea()) {
-        HTMLTextAreaElement* textArea = static_cast<HTMLTextAreaElement*>(m_renderer->node());
-        textArea->setValue(string);
-    } else if (roleValue() == SliderRole) {
-        Node* element = m_renderer->node();
-        if (element && element->isElementNode())
-            static_cast<Element*>(element)->setAttribute(aria_valuenowAttr, string);
+    if (renderer->isTextField()) {
+        // FIXME: This is not safe!  Other elements could have a TextField renderer.
+        static_cast<HTMLInputElement*>(element)->setValue(string);
+    } else if (renderer->isTextArea()) {
+        // FIXME: This is not safe!  Other elements could have a TextArea renderer.
+        static_cast<HTMLTextAreaElement*>(element)->setValue(string);
     }
 }
 
@@ -2232,7 +2317,11 @@ bool AccessibilityRenderObject::isEnabled() const
 
 RenderView* AccessibilityRenderObject::topRenderer() const
 {
-    return m_renderer->document()->topDocument()->renderView();
+    Document* topDoc = topDocument();
+    if (!topDoc)
+        return 0;
+    
+    return topDoc->renderView();
 }
 
 Document* AccessibilityRenderObject::document() const
@@ -2242,22 +2331,26 @@ Document* AccessibilityRenderObject::document() const
     return m_renderer->document();
 }
 
+Document* AccessibilityRenderObject::topDocument() const
+{
+    if (!document())
+        return 0;
+    return document()->topDocument();
+}
+    
 FrameView* AccessibilityRenderObject::topDocumentFrameView() const
 {
-    return topRenderer()->view()->frameView();
+    RenderView* renderView = topRenderer();
+    if (!renderView || !renderView->view())
+        return 0;
+    return renderView->view()->frameView();
 }
 
 Widget* AccessibilityRenderObject::widget() const
 {
-    if (!m_renderer->isWidget())
+    if (!m_renderer->isBoxModelObject() || !toRenderBoxModelObject(m_renderer)->isWidget())
         return 0;
     return toRenderWidget(m_renderer)->widget();
-}
-
-AXObjectCache* AccessibilityRenderObject::axObjectCache() const
-{
-    ASSERT(m_renderer);
-    return m_renderer->document()->axObjectCache();
 }
 
 AccessibilityObject* AccessibilityRenderObject::accessibilityParentForImageMap(HTMLMapElement* map) const
@@ -2286,7 +2379,7 @@ void AccessibilityRenderObject::getDocumentLinks(AccessibilityChildrenVector& re
             if (!axobj->accessibilityIsIgnored() && axobj->isLink())
                 result.append(axobj);
         } else {
-            Node* parent = curr->parent();
+            Node* parent = curr->parentNode();
             if (parent && curr->hasTagName(areaTag) && parent->hasTagName(mapTag)) {
                 AccessibilityImageMapLink* areaObject = static_cast<AccessibilityImageMapLink*>(axObjectCache()->getOrCreate(ImageMapLinkRole));
                 areaObject->setHTMLAreaElement(static_cast<HTMLAreaElement*>(curr));
@@ -2336,8 +2429,8 @@ VisiblePositionRange AccessibilityRenderObject::visiblePositionRange() const
     if (!node)
         return VisiblePositionRange();
 
-    VisiblePosition startPos = firstDeepEditingPositionForNode(node);
-    VisiblePosition endPos = lastDeepEditingPositionForNode(node);
+    VisiblePosition startPos = firstPositionInOrBeforeNode(node);
+    VisiblePosition endPos = lastPositionInOrAfterNode(node);
 
     // the VisiblePositions are equal for nodes like buttons, so adjust for that
     // FIXME: Really?  [button, 0] and [button, 1] are distinct (before and after the button)
@@ -2373,9 +2466,9 @@ VisiblePositionRange AccessibilityRenderObject::visiblePositionRangeForLine(unsi
     // NOTE: ignores results of sel.modify because it returns false when
     // starting at an empty line.  The resulting selection in that case
     // will be a caret at visiblePos.
-    SelectionController selection;
+    FrameSelection selection;
     selection.setSelection(VisibleSelection(visiblePos));
-    selection.modify(SelectionController::EXTEND, SelectionController::RIGHT, LineBoundary);
+    selection.modify(FrameSelection::AlterationExtend, DirectionRight, LineBoundary);
     
     return VisiblePositionRange(selection.selection().visibleStart(), selection.selection().visibleEnd());
 }
@@ -2387,8 +2480,8 @@ VisiblePosition AccessibilityRenderObject::visiblePositionForIndex(int index) co
     
     if (isNativeTextControl())
         return toRenderTextControl(m_renderer)->visiblePositionForIndex(index);
-    
-    if (!isTextControl() && !m_renderer->isText())
+
+    if (!allowsTextRanges() && !m_renderer->isText())
         return VisiblePosition();
     
     Node* node = m_renderer->node();
@@ -2396,20 +2489,20 @@ VisiblePosition AccessibilityRenderObject::visiblePositionForIndex(int index) co
         return VisiblePosition();
     
     if (index <= 0)
-        return VisiblePosition(node, 0, DOWNSTREAM);
+        return VisiblePosition(firstPositionInOrBeforeNode(node), DOWNSTREAM);
     
     ExceptionCode ec = 0;
     RefPtr<Range> range = Range::create(m_renderer->document());
     range->selectNodeContents(node, ec);
     CharacterIterator it(range.get());
     it.advance(index - 1);
-    return VisiblePosition(it.range()->endContainer(ec), it.range()->endOffset(ec), UPSTREAM);
+    return VisiblePosition(Position(it.range()->endContainer(ec), it.range()->endOffset(ec), Position::PositionIsOffsetInAnchor), UPSTREAM);
 }
     
 int AccessibilityRenderObject::indexForVisiblePosition(const VisiblePosition& pos) const
 {
     if (isNativeTextControl())
-        return toRenderTextControl(m_renderer)->indexForVisiblePosition(pos);
+        return RenderTextControl::indexForVisiblePosition(toRenderTextControl(m_renderer)->innerTextElement(), pos);
     
     if (!isTextControl())
         return 0;
@@ -2419,14 +2512,21 @@ int AccessibilityRenderObject::indexForVisiblePosition(const VisiblePosition& po
         return 0;
     
     Position indexPosition = pos.deepEquivalent();
-    if (!indexPosition.node() || indexPosition.node()->rootEditableElement() != node)
+    if (!indexPosition.anchorNode() || indexPosition.anchorNode()->rootEditableElement() != node)
         return 0;
     
     ExceptionCode ec = 0;
     RefPtr<Range> range = Range::create(m_renderer->document());
     range->setStart(node, 0, ec);
-    range->setEnd(indexPosition.node(), indexPosition.deprecatedEditingOffset(), ec);
+    range->setEnd(indexPosition.anchorNode(), indexPosition.deprecatedEditingOffset(), ec);
+
+#if PLATFORM(GTK)
+    // We need to consider replaced elements for GTK, as they will be
+    // presented with the 'object replacement character' (0xFFFC).
+    return TextIterator::rangeLength(range.get(), true);
+#else
     return TextIterator::rangeLength(range.get());
+#endif
 }
 
 IntRect AccessibilityRenderObject::boundsForVisiblePositionRange(const VisiblePositionRange& visiblePositionRange) const
@@ -2456,7 +2556,7 @@ IntRect AccessibilityRenderObject::boundsForVisiblePositionRange(const VisiblePo
     ourrect.unite(rect2);
     
     // if the rectangle spans lines and contains multiple text chars, use the range's bounding box intead
-    if (rect1.bottom() != rect2.bottom()) {
+    if (rect1.maxY() != rect2.maxY()) {
         RefPtr<Range> dataRange = makeRange(range.start, range.end);
         IntRect boundingBox = dataRange->boundingBox();
         String rangeString = plainText(dataRange.get());
@@ -2474,18 +2574,31 @@ void AccessibilityRenderObject::setSelectedVisiblePositionRange(const VisiblePos
     
     // make selection and tell the document to use it. if it's zero length, then move to that position
     if (range.start == range.end)
-        m_renderer->document()->frame()->selection()->moveTo(range.start, true);
+        m_renderer->frame()->selection()->moveTo(range.start, true);
     else {
         VisibleSelection newSelection = VisibleSelection(range.start, range.end);
-        m_renderer->document()->frame()->selection()->setSelection(newSelection);
+        m_renderer->frame()->selection()->setSelection(newSelection);
     }    
 }
 
 VisiblePosition AccessibilityRenderObject::visiblePositionForPoint(const IntPoint& point) const
 {
+    if (!m_renderer)
+        return VisiblePosition();
+    
     // convert absolute point to view coordinates
-    FrameView* frameView = m_renderer->document()->topDocument()->renderer()->view()->frameView();
+    Document* topDoc = topDocument();
+    if (!topDoc || !topDoc->renderer() || !topDoc->renderer()->view())
+        return VisiblePosition();
+    
+    FrameView* frameView = topDoc->renderer()->view()->frameView();
+    if (!frameView)
+        return VisiblePosition();
+    
     RenderView* renderView = topRenderer();
+    if (!renderView)
+        return VisiblePosition();
+    
     Node* innerNode = 0;
     
     // locate the node containing the point
@@ -2498,16 +2611,19 @@ VisiblePosition AccessibilityRenderObject::visiblePositionForPoint(const IntPoin
         HitTestResult result(ourpoint);
         renderView->layer()->hitTest(request, result);
         innerNode = result.innerNode();
-        if (!innerNode || !innerNode->renderer())
+        if (!innerNode)
+            return VisiblePosition();
+        
+        RenderObject* renderer = innerNode->renderer();
+        if (!renderer)
             return VisiblePosition();
         
         pointResult = result.localPoint();
-        
+
         // done if hit something other than a widget
-        RenderObject* renderer = innerNode->renderer();
         if (!renderer->isWidget())
             break;
-        
+
         // descend into widget (FRAME, IFRAME, OBJECT...)
         Widget* widget = toRenderWidget(renderer)->widget();
         if (!widget || !widget->isFrameView())
@@ -2544,7 +2660,7 @@ int AccessibilityRenderObject::index(const VisiblePosition& position) const
     if (!isTextControl())
         return -1;
     
-    Node* node = position.deepEquivalent().node();
+    Node* node = position.deepEquivalent().deprecatedNode();
     if (!node)
         return -1;
     
@@ -2572,20 +2688,11 @@ PlainTextRange AccessibilityRenderObject::doAXRangeForLine(unsigned lineNumber) 
         if (visiblePos.isNull() || visiblePos == savedVisiblePos)
             return PlainTextRange();
     }
-    
-    // make a caret selection for the marker position, then extend it to the line
-    // NOTE: ignores results of selection.modify because it returns false when
-    // starting at an empty line.  The resulting selection in that case
-    // will be a caret at visiblePos.
-    SelectionController selection;
-    selection.setSelection(VisibleSelection(visiblePos));
-    selection.modify(SelectionController::EXTEND, SelectionController::LEFT, LineBoundary);
-    selection.modify(SelectionController::EXTEND, SelectionController::RIGHT, LineBoundary);
-    
-    // calculate the indices for the selection start and end
-    VisiblePosition startPosition = selection.selection().visibleStart();
-    VisiblePosition endPosition = selection.selection().visibleEnd();
-    int index1 = indexForVisiblePosition(startPosition);
+
+    // Get the end of the line based on the starting position.
+    VisiblePosition endPosition = endOfLine(visiblePos);
+
+    int index1 = indexForVisiblePosition(visiblePos);
     int index2 = indexForVisiblePosition(endPosition);
     
     // add one to the end index for a line break not caused by soft line wrap (to match AppKit)
@@ -2639,7 +2746,7 @@ String AccessibilityRenderObject::doAXStringForRange(const PlainTextRange& range
 // on the display screen, in pixels.
 IntRect AccessibilityRenderObject::doAXBoundsForRange(const PlainTextRange& range) const
 {
-    if (isTextControl())
+    if (allowsTextRanges())
         return boundsForVisiblePositionRange(visiblePositionRangeForRange(range));
     return IntRect();
 }
@@ -2649,7 +2756,7 @@ AccessibilityObject* AccessibilityRenderObject::accessibilityImageMapHitTest(HTM
     if (!area)
         return 0;
     
-    HTMLMapElement* map = static_cast<HTMLMapElement*>(area->parent());
+    HTMLMapElement* map = static_cast<HTMLMapElement*>(area->parentNode());
     AccessibilityObject* parent = accessibilityParentForImageMap(map);
     if (!parent)
         return 0;
@@ -2665,15 +2772,14 @@ AccessibilityObject* AccessibilityRenderObject::accessibilityImageMapHitTest(HTM
     return 0;
 }
     
-AccessibilityObject* AccessibilityRenderObject::doAccessibilityHitTest(const IntPoint& point) const
+AccessibilityObject* AccessibilityRenderObject::accessibilityHitTest(const IntPoint& point) const
 {
     if (!m_renderer || !m_renderer->hasLayer())
         return 0;
     
     RenderLayer* layer = toRenderBox(m_renderer)->layer();
      
-    HitTestRequest request(HitTestRequest::ReadOnly |
-                           HitTestRequest::Active);
+    HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active);
     HitTestResult hitTestResult = HitTestResult(point);
     layer->hitTest(request, hitTestResult);
     if (!hitTestResult.innerNode())
@@ -2691,15 +2797,12 @@ AccessibilityObject* AccessibilityRenderObject::doAccessibilityHitTest(const Int
         return 0;
     
     AccessibilityObject* result = obj->document()->axObjectCache()->getOrCreate(obj);
+    result->updateChildrenIfNecessary();
 
-    if (obj->isListBox()) {
-        // Make sure the children are initialized so that hit testing finds the right element.
-        AccessibilityListBox* listBox = static_cast<AccessibilityListBox*>(result);
-        listBox->updateChildrenIfNecessary();
-        return listBox->doAccessibilityHitTest(point);
-    }
-        
-    if (result->accessibilityIsIgnored()) {
+    // Allow the element to perform any hit-testing it might need to do to reach non-render children.
+    result = result->elementAccessibilityHitTest(point);
+    
+    if (result && result->accessibilityIsIgnored()) {
         // If this element is the label of a control, a hit test should return the control.
         AccessibilityObject* controlObject = result->correspondingControlForLabelElement();
         if (controlObject && !controlObject->exposesTitleUIElement())
@@ -2709,15 +2812,6 @@ AccessibilityObject* AccessibilityRenderObject::doAccessibilityHitTest(const Int
     }
 
     return result;
-}
-
-AccessibilityObject* AccessibilityRenderObject::focusedUIElement() const
-{
-    Page* page = m_renderer->document()->page();
-    if (!page)
-        return 0;
-
-    return AXObjectCache::focusedUIElementForPage(page);
 }
 
 bool AccessibilityRenderObject::shouldFocusActiveDescendant() const
@@ -2762,7 +2856,7 @@ AccessibilityObject* AccessibilityRenderObject::activeDescendant() const
     if (activeDescendantAttrStr.isNull() || activeDescendantAttrStr.isEmpty())
         return 0;
     
-    Element* target = document()->getElementById(activeDescendantAttrStr);
+    Element* target = element->treeScope()->getElementById(activeDescendantAttrStr);
     if (!target)
         return 0;
     
@@ -2773,6 +2867,39 @@ AccessibilityObject* AccessibilityRenderObject::activeDescendant() const
     return 0;
 }
 
+void AccessibilityRenderObject::handleAriaExpandedChanged()
+{
+    // Find if a parent of this object should handle aria-expanded changes.
+    AccessibilityObject* containerParent = this->parentObject();
+    while (containerParent) {
+        bool foundParent = false;
+        
+        switch (containerParent->roleValue()) {
+        case TreeRole:
+        case TreeGridRole:
+        case GridRole:
+        case TableRole:
+        case BrowserRole:
+            foundParent = true;
+            break;
+        default:
+            break;
+        }
+        
+        if (foundParent)
+            break;
+        
+        containerParent = containerParent->parentObject();
+    }
+    
+    // Post that the row count changed.
+    if (containerParent)
+        axObjectCache()->postNotification(containerParent, document(), AXObjectCache::AXRowCountChanged, true);
+
+    // Post that the specific row either collapsed or expanded.
+    if (roleValue() == RowRole || roleValue() == TreeItemRole)
+        axObjectCache()->postNotification(this, document(), isExpanded() ? AXObjectCache::AXRowExpanded : AXObjectCache::AXRowCollapsed, true);
+}
 
 void AccessibilityRenderObject::handleActiveDescendantChanged()
 {
@@ -2794,7 +2921,7 @@ AccessibilityObject* AccessibilityRenderObject::correspondingControlForLabelElem
     if (!labelElement)
         return 0;
     
-    HTMLElement* correspondingControl = labelElement->correspondingControl();
+    HTMLElement* correspondingControl = labelElement->control();
     if (!correspondingControl)
         return 0;
     
@@ -2823,7 +2950,12 @@ bool AccessibilityRenderObject::renderObjectIsObservable(RenderObject* renderer)
         return true;
     
     // AX clients will listen for AXSelectedChildrenChanged on listboxes.
-    if (renderer->isListBox() || axObjectCache()->nodeHasRole(renderer->node(), "listbox"))
+    Node* node = renderer->node();
+    if (nodeHasRole(node, "listbox") || (renderer->isBoxModelObject() && toRenderBoxModelObject(renderer)->isListBox()))
+        return true;
+
+    // Textboxes should send out notifications.
+    if (nodeHasRole(node, "textbox"))
         return true;
     
     return false;
@@ -2850,21 +2982,31 @@ AccessibilityRole AccessibilityRenderObject::determineAriaRoleAttribute() const
 
     if (role == ButtonRole && ariaHasPopup())
         role = PopUpButtonRole;
+
+    if (role == TextAreaRole && ariaIsMultiline())
+        role = TextFieldRole;
     
     if (role)
         return role;
+
+    AccessibilityObject* parentObject = parentObjectUnignored();
+    if (!parentObject)
+        return UnknownRole;
+
+    AccessibilityRole parentAriaRole = parentObject->ariaRoleAttribute();
+
     // selects and listboxes both have options as child roles, but they map to different roles within WebCore
     if (equalIgnoringCase(ariaRole, "option")) {
-        if (parentObjectUnignored()->ariaRoleAttribute() == MenuRole)
+        if (parentAriaRole == MenuRole)
             return MenuItemRole;
-        if (parentObjectUnignored()->ariaRoleAttribute() == ListBoxRole)
+        if (parentAriaRole == ListBoxRole)
             return ListBoxOptionRole;
     }
     // an aria "menuitem" may map to MenuButton or MenuItem depending on its parent
     if (equalIgnoringCase(ariaRole, "menuitem")) {
-        if (parentObjectUnignored()->ariaRoleAttribute() == GroupRole)
+        if (parentAriaRole == GroupRole)
             return MenuButtonRole;
-        if (parentObjectUnignored()->ariaRoleAttribute() == MenuRole)
+        if (parentAriaRole == MenuRole || parentAriaRole == MenuBarRole)
             return MenuItemRole;
     }
     
@@ -2897,40 +3039,44 @@ AccessibilityRole AccessibilityRenderObject::determineAccessibilityRole()
     AccessibilityRole ariaRole = ariaRoleAttribute();
     if (ariaRole != UnknownRole)
         return ariaRole;
-    
+
+    RenderBoxModelObject* cssBox = renderBoxModelObject();
+
     if (node && node->isLink()) {
-        if (m_renderer->isImage())
+        if (cssBox && cssBox->isImage())
             return ImageMapRole;
         return WebCoreLinkRole;
     }
+    if (cssBox && cssBox->isListItem())
+        return ListItemRole;
     if (m_renderer->isListMarker())
         return ListMarkerRole;
     if (node && node->hasTagName(buttonTag))
         return ButtonRole;
     if (m_renderer->isText())
         return StaticTextRole;
-    if (m_renderer->isImage()) {
+    if (cssBox && cssBox->isImage()) {
         if (node && node->hasTagName(inputTag))
             return ButtonRole;
         return ImageRole;
     }
     if (node && node->hasTagName(canvasTag))
         return ImageRole;
-    
-    if (m_renderer->isRenderView())
+
+    if (cssBox && cssBox->isRenderView())
         return WebAreaRole;
     
-    if (m_renderer->isTextField())
+    if (cssBox && cssBox->isTextField())
         return TextFieldRole;
     
-    if (m_renderer->isTextArea())
+    if (cssBox && cssBox->isTextArea())
         return TextAreaRole;
-    
+
     if (node && node->hasTagName(inputTag)) {
         HTMLInputElement* input = static_cast<HTMLInputElement*>(node);
-        if (input->inputType() == HTMLInputElement::CHECKBOX)
+        if (input->isCheckbox())
             return CheckBoxRole;
-        if (input->inputType() == HTMLInputElement::RADIO)
+        if (input->isRadioButton())
             return RadioButtonRole;
         if (input->isTextButton())
             return ButtonRole;
@@ -2942,11 +3088,16 @@ AccessibilityRole AccessibilityRenderObject::determineAccessibilityRole()
     if (isFileUploadButton())
         return ButtonRole;
     
-    if (m_renderer->isMenuList())
+    if (cssBox && cssBox->isMenuList())
         return PopUpButtonRole;
     
     if (headingLevel())
         return HeadingRole;
+    
+#if ENABLE(MATHML)
+    if (node && node->hasTagName(MathMLNames::mathTag))
+        return DocumentMathRole;
+#endif
     
     if (node && node->hasTagName(ddTag))
         return DefinitionListDefinitionRole;
@@ -2976,9 +3127,28 @@ AccessibilityRole AccessibilityRenderObject::determineAccessibilityRole()
 #if PLATFORM(GTK)
     if (m_renderer->isHR())
         return SplitterRole;
+
+    if (node && node->hasTagName(pTag))
+        return ParagraphRole;
+
+    if (node && node->hasTagName(labelTag))
+        return LabelRole;
+
+    if (node && node->hasTagName(divTag))
+        return DivRole;
+
+    if (node && node->hasTagName(formTag))
+        return FormRole;
+#else
+    if (node && node->hasTagName(labelTag))
+        return GroupRole;
 #endif
 
-    if (m_renderer->isBlockFlow() || (node && node->hasTagName(labelTag)))
+    if (m_renderer->isBlockFlow())
+        return GroupRole;
+    
+    // If the element does not have role, but it has ARIA attributes, accessibility should fallback to exposing it as a group.
+    if (supportsARIAAttributes())
         return GroupRole;
     
     return UnknownRole;
@@ -2993,6 +3163,49 @@ AccessibilityOrientation AccessibilityRenderObject::orientation() const
         return AccessibilityOrientationVertical;
     
     return AccessibilityObject::orientation();
+}
+    
+bool AccessibilityRenderObject::inheritsPresentationalRole() const
+{
+    // ARIA spec says that when a parent object is presentational, and it has required child elements,
+    // those child elements are also presentational. For example, <li> becomes presentational from <ul>.
+    // http://www.w3.org/WAI/PF/aria/complete#presentation
+    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, listItemParents, ());
+
+    HashSet<QualifiedName>* possibleParentTagNames = 0;
+    switch (roleValue()) {
+    case ListItemRole:
+    case ListMarkerRole:
+        if (listItemParents.isEmpty()) {
+            listItemParents.add(ulTag);
+            listItemParents.add(olTag);
+            listItemParents.add(dlTag);
+        }
+        possibleParentTagNames = &listItemParents;
+        break;
+    default:
+        break;
+    }
+    
+    // Not all elements need to check for this, only ones that are required children.
+    if (!possibleParentTagNames)
+        return false;
+    
+    for (AccessibilityObject* parent = parentObject(); parent; parent = parent->parentObject()) { 
+        if (!parent->isAccessibilityRenderObject())
+            continue;
+        
+        Node* elementNode = static_cast<AccessibilityRenderObject*>(parent)->node();
+        if (!elementNode || !elementNode->isElementNode())
+            continue;
+        
+        // If native tag of the parent element matches an acceptable name, then return
+        // based on its presentational status.
+        if (possibleParentTagNames->contains(static_cast<Element*>(elementNode)->tagQName()))
+            return parent->roleValue() == PresentationalRole;
+    }
+    
+    return false;
 }
     
 bool AccessibilityRenderObject::isPresentationalChildOfAriaRole() const
@@ -3095,6 +3308,8 @@ void AccessibilityRenderObject::childrenChanged()
     if (!m_renderer)
         return;
     
+    bool sentChildrenChanged = false;
+    
     // Go up the accessibility parent chain, but only if the element already exists. This method is
     // called during render layouts, minimal work should be done. 
     // If AX elements are created now, they could interrogate the render tree while it's in a funky state.
@@ -3104,6 +3319,13 @@ void AccessibilityRenderObject::childrenChanged()
             continue;
         
         AccessibilityRenderObject* axParent = static_cast<AccessibilityRenderObject*>(parent);
+        
+        // Send the children changed notification on the first accessibility render object ancestor.
+        if (!sentChildrenChanged) {
+            axObjectCache()->postNotification(axParent->renderer(), AXObjectCache::AXChildrenChanged, true);
+            sentChildrenChanged = true;
+        }
+        
         // Only do work if the children haven't been marked dirty. This has the effect of blocking
         // future live region change notifications until the AX tree has been accessed again. This
         // is a good performance win for all parties.
@@ -3150,8 +3372,7 @@ void AccessibilityRenderObject::updateChildrenIfNecessary()
     if (needsToUpdateChildren())
         clearChildren();        
     
-    if (!hasChildren())
-        addChildren();    
+    AccessibilityObject::updateChildrenIfNecessary();
 }
     
 const AccessibilityObject::AccessibilityChildrenVector& AccessibilityRenderObject::children()
@@ -3184,13 +3405,23 @@ void AccessibilityRenderObject::addChildren()
             unsigned length = children.size();
             for (unsigned i = 0; i < length; ++i)
                 m_children.append(children[i]);
-        } else
+        } else {
+            ASSERT(obj->parentObject() == this);
             m_children.append(obj);
+        }
+    }
+    
+    // FrameView's need to be inserted into the AX hierarchy when encountered.
+    if (isAttachment()) {
+        Widget* widget = widgetForAttachmentView();
+        if (widget && widget->isFrameView())
+            m_children.append(axObjectCache()->getOrCreate(widget));
     }
     
     // for a RenderImage, add the <area> elements as individual accessibility objects
-    if (m_renderer->isRenderImage()) {
-        HTMLMapElement* map = toRenderImage(m_renderer)->imageMap();
+    RenderBoxModelObject* cssBox = renderBoxModelObject();
+    if (cssBox && cssBox->isRenderImage()) {
+        HTMLMapElement* map = toRenderImage(cssBox)->imageMap();
         if (map) {
             for (Node* current = map->firstChild(); current; current = current->traverseNextNode(map)) {
 
@@ -3225,6 +3456,7 @@ const AtomicString& AccessibilityRenderObject::ariaLiveRegionStatus() const
         case ApplicationStatusRole:
             return liveRegionStatusPolite;
         case ApplicationTimerRole:
+        case ApplicationMarqueeRole:
             return liveRegionStatusOff;
         default:
             break;
@@ -3370,15 +3602,6 @@ void AccessibilityRenderObject::setAccessibleName(String& name)
         static_cast<Element*>(domNode)->setAttribute(aria_labelAttr, name);
 }
     
-void AccessibilityRenderObject::updateBackingStore()
-{
-    if (!m_renderer)
-        return;
-
-    // Updating layout may delete m_renderer and this object.
-    m_renderer->document()->updateLayoutIgnorePendingStylesheets();
-}
-
 static bool isLinkable(const AccessibilityRenderObject& object)
 {
     if (!object.renderer())
@@ -3484,7 +3707,7 @@ static AccessibilityRole msaaRoleForRenderer(const RenderObject* renderer)
     if (renderer->isText())
         return EditableTextRole;
 
-    if (renderer->isListItem())
+    if (renderer->isBoxModelObject() && toRenderBoxModelObject(renderer)->isListItem())
         return ListItemRole;
 
     return UnknownRole;

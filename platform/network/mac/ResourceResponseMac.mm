@@ -32,72 +32,146 @@
 #import <Foundation/Foundation.h>
 #import <wtf/StdLibExtras.h>
 #import <limits>
+#include <wtf/text/CString.h>
 
-@interface NSURLResponse (FoundationSecretsWebCoreKnowsAbout)
+using namespace std;
+
+@interface NSURLResponse (WebNSURLResponseDetails)
 - (NSTimeInterval)_calculatedExpiration;
+- (id)_initWithCFURLResponse:(CFURLResponseRef)response;
+- (CFURLResponseRef) _CFURLResponse;
++ (id)_responseWithCFURLResponse:(CFURLResponseRef)response;
 @end
 
-#ifdef BUILDING_ON_TIGER
-typedef int NSInteger;
-#endif
 
 namespace WebCore {
 
+static NSString* const commonHeaderFields[] = {
+    @"Age", @"Cache-Control", @"Content-Type", @"Date", @"Etag", @"Expires", @"Last-Modified", @"Pragma"
+};
+static const int numCommonHeaderFields = sizeof(commonHeaderFields) / sizeof(AtomicString*);
+
+void ResourceResponse::initNSURLResponse() const
+{
+    // Work around a mistake in the NSURLResponse class - <rdar://problem/3346574>.
+    // The init function takes an NSInteger, even though the accessor returns a long long.
+    // For values that won't fit in an NSInteger, pass -1 instead.
+    NSInteger expectedContentLength;
+    if (m_expectedContentLength < 0 || m_expectedContentLength > numeric_limits<NSInteger>::max())
+        expectedContentLength = -1;
+    else
+        expectedContentLength = static_cast<NSInteger>(m_expectedContentLength);
+    m_nsResponse.adoptNS([[NSURLResponse alloc] initWithURL:m_url MIMEType:m_mimeType expectedContentLength:expectedContentLength textEncodingName:m_textEncodingName]);
+}
+
+#if USE(CFNETWORK)
+
 NSURLResponse *ResourceResponse::nsURLResponse() const
 {
-    if (!m_nsResponse && !m_isNull) {
-        // Work around a mistake in the NSURLResponse class.
-        // The init function takes an NSInteger, even though the accessor returns a long long.
-        // For values that won't fit in an NSInteger, pass -1 instead.
-        NSInteger expectedContentLength;
-        if (m_expectedContentLength < 0 || m_expectedContentLength > std::numeric_limits<NSInteger>::max())
-            expectedContentLength = -1;
-        else
-            expectedContentLength = static_cast<NSInteger>(m_expectedContentLength);
-        const_cast<ResourceResponse*>(this)->m_nsResponse.adoptNS([[NSURLResponse alloc] initWithURL:m_url MIMEType:m_mimeType expectedContentLength:expectedContentLength textEncodingName:m_textEncodingName]);
+    if (!m_nsResponse && !m_cfResponse && !m_isNull) {
+        initNSURLResponse();
+        m_cfResponse = [m_nsResponse.get() _CFURLResponse];
     }
+
+    if (!m_cfResponse)
+        return nil;
+
+    if (!m_nsResponse)
+        m_nsResponse.adoptNS([[NSURLResponse _responseWithCFURLResponse:m_cfResponse.get()] retain]);
+
     return m_nsResponse.get();
 }
 
-void ResourceResponse::platformLazyInit()
+ResourceResponse::ResourceResponse(NSURLResponse* nsResponse)
+    : m_cfResponse([nsResponse _CFURLResponse])
+    , m_nsResponse(nsResponse)
+    , m_initLevel(Uninitialized)
 {
-    if (m_isUpToDate)
-        return;
-    m_isUpToDate = true;
-
-    if (m_isNull) {
-        ASSERT(!m_nsResponse);
-        return;
-    }
-    
-    m_url = [m_nsResponse.get() URL];
-    m_mimeType = [m_nsResponse.get() MIMEType];
-    m_expectedContentLength = [m_nsResponse.get() expectedContentLength];
-    m_textEncodingName = [m_nsResponse.get() textEncodingName];
-    m_suggestedFilename = [m_nsResponse.get() suggestedFilename];
-    
-    if ([m_nsResponse.get() isKindOfClass:[NSHTTPURLResponse class]]) {
-        NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)m_nsResponse.get();
-        
-        m_httpStatusCode = [httpResponse statusCode];
-
-        RetainPtr<NSString> httpStatusLine(AdoptNS, wkCopyNSURLResponseStatusLine(m_nsResponse.get()));
-        if (httpStatusLine)
-            m_httpStatusText = extractReasonPhraseFromHTTPStatusLine(httpStatusLine.get());
-        else
-            m_httpStatusText = "OK";
-        
-        NSDictionary *headers = [httpResponse allHeaderFields];
-        NSEnumerator *e = [headers keyEnumerator];
-        while (NSString *name = [e nextObject])
-            m_httpHeaderFields.set(name, [headers objectForKey:name]);
-    } else
-        m_httpStatusCode = 0;
+    m_isNull = !nsResponse;
 }
 
+#else
+
+NSURLResponse *ResourceResponse::nsURLResponse() const
+{
+    if (!m_nsResponse && !m_isNull)
+        initNSURLResponse();
+    return m_nsResponse.get();
+}
+
+void ResourceResponse::platformLazyInit(InitLevel initLevel)
+{
+    if (m_initLevel >= initLevel)
+        return;
+
+    if (m_isNull || !m_nsResponse)
+        return;
+    
+    if (m_initLevel < CommonFieldsOnly && initLevel >= CommonFieldsOnly) {
+        NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
+
+        m_httpHeaderFields.clear();
+        m_url = [m_nsResponse.get() URL];
+        m_mimeType = [m_nsResponse.get() MIMEType];
+        m_expectedContentLength = [m_nsResponse.get() expectedContentLength];
+        m_textEncodingName = [m_nsResponse.get() textEncodingName];
+
+        // Workaround for <rdar://problem/8757088>, can be removed once that is fixed.
+        unsigned textEncodingNameLength = m_textEncodingName.length();
+        if (textEncodingNameLength >= 2 && m_textEncodingName[0U] == '"' && m_textEncodingName[textEncodingNameLength - 1] == '"')
+            m_textEncodingName = m_textEncodingName.substring(1, textEncodingNameLength - 2);
+
+        if ([m_nsResponse.get() isKindOfClass:[NSHTTPURLResponse class]]) {
+            NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)m_nsResponse.get();
+
+            m_httpStatusCode = [httpResponse statusCode];
+
+            NSDictionary *headers = [httpResponse allHeaderFields];
+            
+            for (int i = 0; i < numCommonHeaderFields; i++) {
+                if (NSString* headerValue = [headers objectForKey:commonHeaderFields[i]])
+                    m_httpHeaderFields.set([commonHeaderFields[i] UTF8String], headerValue);
+            }
+        } else
+            m_httpStatusCode = 0;
+        
+        [pool drain];
+    }
+
+    if (m_initLevel < CommonAndUncommonFields && initLevel >= CommonAndUncommonFields) {
+        if ([m_nsResponse.get() isKindOfClass:[NSHTTPURLResponse class]]) {
+            NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
+
+            NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)m_nsResponse.get();
+
+            RetainPtr<NSString> httpStatusLine(AdoptNS, wkCopyNSURLResponseStatusLine(m_nsResponse.get()));
+            if (httpStatusLine)
+                m_httpStatusText = extractReasonPhraseFromHTTPStatusLine(httpStatusLine.get());
+            else
+                m_httpStatusText = "OK";
+
+            NSDictionary *headers = [httpResponse allHeaderFields];
+            NSEnumerator *e = [headers keyEnumerator];
+            while (NSString *name = [e nextObject])
+                m_httpHeaderFields.set(name, [headers objectForKey:name]);
+            
+            [pool drain];
+        }
+    }
+     
+    if (m_initLevel < AllFields && initLevel >= AllFields)
+        m_suggestedFilename = [m_nsResponse.get() suggestedFilename];
+
+    m_initLevel = initLevel;
+}
+
+    
 bool ResourceResponse::platformCompare(const ResourceResponse& a, const ResourceResponse& b)
 {
     return a.nsURLResponse() == b.nsURLResponse();
 }
 
-}
+#endif // USE(CFNETWORK)
+
+} // namespace WebCore
+

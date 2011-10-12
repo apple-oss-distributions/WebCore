@@ -22,23 +22,20 @@
 #include "config.h"
 #include "ImageLoader.h"
 
-#include "CSSHelper.h"
 #include "CachedImage.h"
-#include "DocLoader.h"
+#include "CachedResourceLoader.h"
 #include "Document.h"
 #include "Element.h"
 #include "HTMLNames.h"
 #include "HTMLObjectElement.h"
 #include "RenderImage.h"
 
-#if ENABLE(DISK_IMAGE_CACHE)
-#include "DiskImageCache.h"
+#if ENABLE(SVG)
+#include "RenderSVGImage.h"
 #endif
-
-#include "Frame.h"
-#include "HTMLNames.h"
-#include "Page.h"
-#include "Settings.h"
+#if ENABLE(VIDEO)
+#include "RenderVideo.h"
+#endif
 
 #if !ASSERT_DISABLED
 // ImageLoader objects are allocated as members of other objects, so generic pointer check would always fail.
@@ -60,7 +57,8 @@ template<> struct ValueCheck<WebCore::ImageLoader*> {
 
 namespace WebCore {
 
-class ImageEventSender : public Noncopyable {
+class ImageEventSender {
+    WTF_MAKE_NONCOPYABLE(ImageEventSender); WTF_MAKE_FAST_ALLOCATED;
 public:
     ImageEventSender(const AtomicString& eventType);
 
@@ -69,8 +67,11 @@ public:
 
     void dispatchPendingEvents();
 
-#if !ASSERT_DISABLED
-    bool hasPendingEvents(ImageLoader* loader) { return m_dispatchSoonList.find(loader) != notFound; }
+#ifndef NDEBUG
+    bool hasPendingEvents(ImageLoader* loader) const
+    {
+        return m_dispatchSoonList.find(loader) != notFound || m_dispatchingList.find(loader) != notFound;
+    }
 #endif
 
 private:
@@ -106,8 +107,6 @@ ImageLoader::ImageLoader(Element* element)
 
 ImageLoader::~ImageLoader()
 {
-    if (m_image && m_image->isLoaded())
-        m_element->document()->decrementTotalImageDataSize(m_image.get());
     if (m_image)
         m_image->removeClient(this);
 
@@ -125,10 +124,6 @@ void ImageLoader::setImage(CachedImage* newImage)
     ASSERT(m_failedLoadURL.isEmpty());
     CachedImage* oldImage = m_image.get();
     if (newImage != oldImage) {
-        if (oldImage && oldImage->isLoaded())
-            m_element->document()->decrementTotalImageDataSize(oldImage);
-        if (newImage && newImage->isLoaded())
-            m_element->document()->incrementTotalImageDataSize(newImage);
         m_image = newImage;
         if (!m_firedBeforeLoad) {
             beforeLoadEventSender().cancelEvent(this);
@@ -145,11 +140,8 @@ void ImageLoader::setImage(CachedImage* newImage)
             oldImage->removeClient(this);
     }
 
-    if (RenderObject* renderer = m_element->renderer()) {
-        if (!renderer->isImage())
-            return;
-        toRenderImage(renderer)->resetAnimation();
-    }
+    if (RenderImageResource* imageResource = renderImageResource())
+        imageResource->resetAnimation();
 }
 
 void ImageLoader::updateFromElement()
@@ -158,11 +150,6 @@ void ImageLoader::updateFromElement()
     // down the raw HTML parsing case by loading images we don't intend to display.
     Document* document = m_element->document();
     if (!document->renderer())
-        return;
-    // A manually loaded image is loaded through a different data source and does not use standard loading mechanisms.
-    // If don't have any information on the image itself at this point (m_image is null) we can reject the load if we've already passed the memory limit.
-    // Otherwise memory limits will be checked in CachedImage::data().
-    if (!(m_loadManually && !m_image.get()) && memoryLimitReached())
         return;
 
     AtomicString attr = m_element->getAttribute(m_element->imageSourceAttributeName());
@@ -177,13 +164,15 @@ void ImageLoader::updateFromElement()
     CachedImage* newImage = 0;
     if (!(attr.isNull() || (attr.isEmpty() && document->baseURI().isLocalFile()))) {
         if (m_loadManually) {
-            document->docLoader()->setAutoLoadImages(false);
+            bool autoLoadOtherImages = document->cachedResourceLoader()->autoLoadImages();
+            document->cachedResourceLoader()->setAutoLoadImages(false);
             newImage = new CachedImage(sourceURI(attr));
             newImage->setLoading(true);
-            newImage->setDocLoader(document->docLoader());
-            document->docLoader()->m_documentResources.set(newImage->url(), newImage);
+            newImage->setOwningCachedResourceLoader(document->cachedResourceLoader());
+            document->cachedResourceLoader()->m_documentResources.set(newImage->url(), newImage);
+            document->cachedResourceLoader()->setAutoLoadImages(autoLoadOtherImages);
         } else
-            newImage = document->docLoader()->requestImage(sourceURI(attr));
+            newImage = document->cachedResourceLoader()->requestImage(sourceURI(attr));
 
         // If we do not have an image here, it means that a cross-site
         // violation occurred.
@@ -192,10 +181,6 @@ void ImageLoader::updateFromElement()
     
     CachedImage* oldImage = m_image.get();
     if (newImage != oldImage) {
-        if (oldImage && oldImage->isLoaded())
-            document->decrementTotalImageDataSize(oldImage);
-        if (newImage && newImage->isLoaded())
-            document->incrementTotalImageDataSize(newImage);
         if (!m_firedBeforeLoad)
             beforeLoadEventSender().cancelEvent(this);
         if (!m_firedLoad)
@@ -217,11 +202,8 @@ void ImageLoader::updateFromElement()
             oldImage->removeClient(this);
     }
 
-    if (RenderObject* renderer = m_element->renderer()) {
-        if (!renderer->isImage())
-            return;
-        toRenderImage(renderer)->resetAnimation();
-    }
+    if (RenderImageResource* imageResource = renderImageResource())
+        imageResource->resetAnimation();
 }
 
 void ImageLoader::updateFromElementIgnoringPreviousError()
@@ -231,9 +213,10 @@ void ImageLoader::updateFromElementIgnoringPreviousError()
     updateFromElement();
 }
 
-void ImageLoader::notifyFinished(CachedResource*)
+void ImageLoader::notifyFinished(CachedResource* resource)
 {
     ASSERT(m_failedLoadURL.isEmpty());
+    ASSERT(resource == m_image.get());
 
     m_imageComplete = true;
     if (haveFiredBeforeLoadEvent())
@@ -242,24 +225,50 @@ void ImageLoader::notifyFinished(CachedResource*)
     if (m_firedLoad)
         return;
 
+    if (resource->wasCanceled()) {
+        m_firedLoad = true;
+        return;
+    }
+
     loadEventSender().dispatchEventSoon(this);
-    m_element->document()->incrementTotalImageDataSize(m_image.get());
+}
+
+RenderImageResource* ImageLoader::renderImageResource()
+{
+    RenderObject* renderer = m_element->renderer();
+
+    if (!renderer)
+        return 0;
+
+    if (renderer->isImage())
+        return toRenderImage(renderer)->imageResource();
+
+#if ENABLE(SVG)
+    if (renderer->isSVGImage())
+        return toRenderSVGImage(renderer)->imageResource();
+#endif
+
+#if ENABLE(VIDEO)
+    if (renderer->isVideo())
+        return toRenderVideo(renderer)->imageResource();
+#endif
+
+    return 0;
 }
 
 void ImageLoader::updateRenderer()
 {
-    if (RenderObject* renderer = m_element->renderer()) {
-        if (!renderer->isImage() && !renderer->isVideo())
-            return;
-        RenderImage* imageRenderer = toRenderImage(renderer);
-        
-        // Only update the renderer if it doesn't have an image or if what we have
-        // is a complete image.  This prevents flickering in the case where a dynamic
-        // change is happening between two images.
-        CachedImage* cachedImage = imageRenderer->cachedImage();
-        if (m_image != cachedImage && (m_imageComplete || !cachedImage))
-            imageRenderer->setCachedImage(m_image.get());
-    }
+    RenderImageResource* imageResource = renderImageResource();
+
+    if (!imageResource)
+        return;
+
+    // Only update the renderer if it doesn't have an image or if what we have
+    // is a complete image.  This prevents flickering in the case where a dynamic
+    // change is happening between two images.
+    CachedImage* cachedImage = imageResource->cachedImage();
+    if (m_image != cachedImage && (m_imageComplete || !cachedImage))
+        imageResource->setCachedImage(m_image.get());
 }
 
 void ImageLoader::dispatchPendingBeforeLoadEvent()
@@ -279,7 +288,9 @@ void ImageLoader::dispatchPendingBeforeLoadEvent()
         m_image->removeClient(this);
         m_image = 0;
     }
+
     loadEventSender().cancelEvent(this);
+    m_firedLoad = true;
     
     if (m_element->hasTagName(HTMLNames::objectTag))
         static_cast<HTMLObjectElement*>(m_element)->renderFallbackContent();
@@ -359,6 +370,7 @@ void ImageEventSender::dispatchPendingEvents()
     size_t size = m_dispatchingList.size();
     for (size_t i = 0; i < size; ++i) {
         if (ImageLoader* loader = m_dispatchingList[i]) {
+            m_dispatchingList[i] = 0;
             if (m_eventType == eventNames().beforeloadEvent)
                 loader->dispatchPendingBeforeLoadEvent();
             else
@@ -371,23 +383,6 @@ void ImageEventSender::dispatchPendingEvents()
 void ImageEventSender::timerFired(Timer<ImageEventSender>*)
 {
     dispatchPendingEvents();
-}
-
-bool ImageLoader::memoryLimitReached()
-{
-    if (!element() || !element()->document() || !element()->document()->page() || !element()->document()->page()->mainFrame() || !element()->document()->page()->mainFrame()->document())
-        return false;
-
-#if ENABLE(DISK_IMAGE_CACHE)
-    // If the disk image cache is full, then as a worst case scenario we choose to stop loading images.
-    if (diskImageCache()->isEnabled() && !diskImageCache()->isFull())
-        return false;
-#endif
-
-    Frame *mainFrame = element()->document()->page()->mainFrame();
-    Document *mainFrameDocument = mainFrame->document();
-    static unsigned long maxImageSize = mainFrame->settings()->maximumDecodedImageSize() / 2; //allow half as much total encoded data as the max decoded size of one image. We can tweak this value...
-    return mainFrameDocument->totalImageDataSize() > maxImageSize;
 }
 
 }

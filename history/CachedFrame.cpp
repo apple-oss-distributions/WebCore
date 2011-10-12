@@ -27,14 +27,19 @@
 #include "CachedPage.h"
 
 #include "CachedFramePlatformData.h"
+#include "Document.h"
 #include "DocumentLoader.h"
 #include "ExceptionCode.h"
 #include "EventNames.h"
+#include "FocusController.h"
 #include "Frame.h"
 #include "FrameLoaderClient.h"
 #include "FrameView.h"
+#include "HistoryItem.h"
 #include "Logging.h"
+#include "Page.h"
 #include "PageTransitionEvent.h"
+#include "SerializedScriptValue.h"
 #include <wtf/text/CString.h>
 #include <wtf/RefCountedLeakCounter.h>
 
@@ -44,7 +49,10 @@
 
 #include "Chrome.h"
 #include "ChromeClient.h"
-#include "Page.h"
+
+#if USE(ACCELERATED_COMPOSITING)
+#include "PageCache.h"
+#endif
 
 namespace WebCore {
 
@@ -61,8 +69,11 @@ CachedFrameBase::CachedFrameBase(Frame* frame)
     , m_documentLoader(frame->loader()->documentLoader())
     , m_view(frame->view())
     , m_mousePressNode(frame->eventHandler()->mousePressNode())
-    , m_url(frame->loader()->url())
+    , m_url(frame->document()->url())
     , m_isMainFrame(!frame->tree()->parent())
+#if USE(ACCELERATED_COMPOSITING)
+    , m_isComposited(frame->view()->hasCompositedContent())
+#endif
 {
 }
 
@@ -78,7 +89,10 @@ CachedFrameBase::~CachedFrameBase()
 void CachedFrameBase::restore()
 {
     ASSERT(m_document->view() == m_view);
-    
+
+    if (m_isMainFrame)
+        m_view->setParentVisible(true);
+
     Frame* frame = m_view->frame();
     m_cachedFrameScriptData->restore(frame);
 
@@ -87,13 +101,21 @@ void CachedFrameBase::restore()
         m_document->accessSVGExtensions()->unpauseAnimations();
 #endif
 
-    frame->animation()->resumeAnimations(m_document.get());
+    frame->animation()->resumeAnimationsForDocument(m_document.get());
     frame->eventHandler()->setMousePressNode(m_mousePressNode.get());
     m_document->resumeActiveDOMObjects();
+    m_document->resumeScriptedAnimationControllerCallbacks();
 
     // It is necessary to update any platform script objects after restoring the
     // cached page.
     frame->script()->updatePlatformScriptObjects();
+
+#if USE(ACCELERATED_COMPOSITING)
+    if (m_isComposited)
+        frame->view()->restoreBackingStores();
+#endif
+
+    frame->loader()->client()->didRestoreFromPageCache();
 
     // Reconstruct the FrameTree
     for (unsigned i = 0; i < m_childFrames.size(); ++i)
@@ -103,7 +125,23 @@ void CachedFrameBase::restore()
     for (unsigned i = 0; i < m_childFrames.size(); ++i)
         m_childFrames[i]->open();
 
+    if (m_isMainFrame) {
+        frame->loader()->client()->didRestoreFrameHierarchyForCachedFrame();
+
+        if (DOMWindow* domWindow = m_document->domWindow()) {
+            // FIXME: add SCROLL_LISTENER to the list of event types on Document, and use m_document->hasListenerType() <rdar://problem/9615482>
+            if (domWindow->scrollEventListenerCount() > 0 && frame->page())
+                frame->page()->chrome()->client()->setNeedsScrollNotifications(frame, true);
+        }
+    }
+
     m_document->enqueuePageshowEvent(PageshowEventPersisted);
+    
+    HistoryItem* historyItem = frame->loader()->history()->currentItem();
+    m_document->enqueuePopstateEvent(historyItem && historyItem->stateObject() ? historyItem->stateObject() : SerializedScriptValue::nullValue());
+    
+
+    m_document->documentDidBecomeActive();
 }
 
 CachedFrame::CachedFrame(Frame* frame)
@@ -116,10 +154,9 @@ CachedFrame::CachedFrame(Frame* frame)
     ASSERT(m_documentLoader);
     ASSERT(m_view);
 
-    // Active DOM objects must be suspended before we cached the frame script data
-    m_document->suspendActiveDOMObjects();
-    m_cachedFrameScriptData.set(new ScriptCachedFrameData(frame));
-    
+    if (frame->page()->focusController()->focusedFrame() == frame)
+        frame->page()->focusController()->setFocusedFrame(frame->page()->mainFrame());
+
     // Custom scrollbar renderers will get reattached when the document comes out of the page cache
     m_view->detachCustomScrollbars();
 
@@ -127,12 +164,26 @@ CachedFrame::CachedFrame(Frame* frame)
     frame->clearTimers();
     m_document->setInPageCache(true);
     frame->loader()->stopLoading(UnloadEventPolicyUnloadAndPageHide);
-    
-    frame->loader()->client()->savePlatformDataToCachedFrame(this);
 
     // Create the CachedFrames for all Frames in the FrameTree.
     for (Frame* child = frame->tree()->firstChild(); child; child = child->tree()->nextSibling())
         m_childFrames.append(CachedFrame::create(child));
+
+    // Active DOM objects must be suspended before we cache the frame script data,
+    // but after we've fired the pagehide event, in case that creates more objects.
+    // Suspending must also happen after we've recursed over child frames, in case
+    // those create more objects.
+    // FIXME: It's still possible to have objects created after suspending in some cases, see http://webkit.org/b/53733 for more details.
+    m_document->suspendScriptedAnimationControllerCallbacks();
+    m_document->suspendActiveDOMObjects(ActiveDOMObject::DocumentWillBecomeInactive);
+    m_cachedFrameScriptData = adoptPtr(new ScriptCachedFrameData(frame));
+
+    frame->loader()->client()->savePlatformDataToCachedFrame(this);
+
+#if USE(ACCELERATED_COMPOSITING)
+    if (m_isComposited && pageCache()->shouldClearBackingStores())
+        frame->view()->clearBackingStores();
+#endif
 
     // Deconstruct the FrameTree, to restore it later.
     // We do this for two reasons:
@@ -143,6 +194,8 @@ CachedFrame::CachedFrame(Frame* frame)
 
     if (!m_isMainFrame)
         frame->page()->decrementFrameCount();
+
+    frame->loader()->client()->didSaveToPageCache();
 
 #ifndef NDEBUG
     if (m_isMainFrame)
@@ -222,9 +275,9 @@ void CachedFrame::destroy()
     clear();
 }
 
-void CachedFrame::setCachedFramePlatformData(CachedFramePlatformData* data)
+void CachedFrame::setCachedFramePlatformData(PassOwnPtr<CachedFramePlatformData> data)
 {
-    m_cachedFramePlatformData.set(data);
+    m_cachedFramePlatformData = data;
 }
 
 CachedFramePlatformData* CachedFrame::cachedFramePlatformData()

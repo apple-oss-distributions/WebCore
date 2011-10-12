@@ -32,6 +32,7 @@
 #include "MediaPlayerProxy.h"
 
 #include "MediaPlayerPrivate.h"
+#include <wtf/PassOwnPtr.h>
 #include <wtf/RetainPtr.h>
 
 #ifdef __OBJC__
@@ -55,13 +56,13 @@ public:
     void deliverNotification(MediaPlayerProxyNotificationType notification);
     bool callbacksDelayed() { return (m_delayCallbacks > 0); }
     void prepareToPlay();
-    void setDeferredProperties();
+    void processDeferredRequests();
 
 private:
     MediaPlayerPrivateiPhone(MediaPlayer *player);
 
     // engine support
-    static MediaPlayerPrivateInterface* create(MediaPlayer* player);
+    static PassOwnPtr<MediaPlayerPrivateInterface> create(MediaPlayer* player);
     static void getSupportedTypes(HashSet<String>& types);
     static MediaPlayer::SupportsType supportsType(const String& type, const String& codecs);
     static bool isAvailable();
@@ -78,6 +79,9 @@ private:
 
     void enterFullScreen();
     void exitFullScreen();
+
+    bool hasClosedCaptions() const;
+    void setClosedCaptionsVisible(bool);
 
     void load(const String& url);
     void cancelLoad();
@@ -130,7 +134,10 @@ private:
     bool usingNetwork() const { return m_usingNetwork; }
     bool inFullscreen() const { return m_inFullScreen; }
     
-    void addDeferredProperty(NSString *propertyName, id propertyValue);
+    void addDeferredRequest(NSString *name, id value);
+
+    void attributeChanged(const String& name, const String& value);
+    bool readyForPlayback() const;
 
 private:
     MediaPlayer* m_mediaPlayer;
@@ -140,10 +147,13 @@ private:
 
     MediaPlayer::NetworkState m_networkState;
     MediaPlayer::ReadyState m_readyState;
+    
+    enum BufferingState { Empty, UnlikeleyToKeepUp, LikeleyToKeepUp, Full };
 
     int m_delayCallbacks;
     int m_changingVolume;
     float m_requestedRate;
+    BufferingState m_bufferingState;
     bool m_visible : 1;
     bool m_usingNetwork : 1;
     bool m_inFullScreen : 1;

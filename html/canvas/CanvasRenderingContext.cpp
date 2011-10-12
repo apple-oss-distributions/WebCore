@@ -31,7 +31,6 @@
 #include "HTMLCanvasElement.h"
 #include "HTMLImageElement.h"
 #include "HTMLVideoElement.h"
-#include "Image.h"
 #include "KURL.h"
 #include "SecurityOrigin.h"
 
@@ -40,16 +39,6 @@ namespace WebCore {
 CanvasRenderingContext::CanvasRenderingContext(HTMLCanvasElement* canvas)
     : m_canvas(canvas)
 {
-}
-
-void CanvasRenderingContext::ref()
-{
-    m_canvas->ref();
-}
-
-void CanvasRenderingContext::deref()
-{
-    m_canvas->deref(); 
 }
 
 void CanvasRenderingContext::checkOrigin(const CanvasPattern* pattern)
@@ -78,9 +67,11 @@ void CanvasRenderingContext::checkOrigin(const HTMLImageElement* image)
 
 void CanvasRenderingContext::checkOrigin(const HTMLVideoElement* video)
 {
+#if ENABLE(VIDEO)
     checkOrigin(KURL(KURL(), video->currentSrc()));
     if (canvas()->originClean() && video && !video->hasSingleSecurityOrigin())
         canvas()->setOriginTainted();
+#endif
 }
 
 void CanvasRenderingContext::checkOrigin(const KURL& url)
@@ -93,6 +84,5 @@ void CanvasRenderingContext::checkOrigin(const KURL& url)
     else
         m_cleanOrigins.add(url.string());
 }
-
 
 } // namespace WebCore

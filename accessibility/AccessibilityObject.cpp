@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2008, 2009, 2011 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,11 +31,12 @@
 
 #include "AXObjectCache.h"
 #include "AccessibilityRenderObject.h"
-#include "CharacterNames.h"
 #include "FloatRect.h"
 #include "FocusController.h"
 #include "Frame.h"
 #include "FrameLoader.h"
+#include "FrameSelection.h"
+#include "HTMLNames.h"
 #include "LocalizedStrings.h"
 #include "NodeList.h"
 #include "NotImplemented.h"
@@ -48,11 +49,13 @@
 #include "RenderTheme.h"
 #include "RenderView.h"
 #include "RenderWidget.h"
-#include "SelectionController.h"
 #include "TextIterator.h"
 #include "htmlediting.h"
 #include "visible_units.h"
 #include <wtf/StdLibExtras.h>
+#include <wtf/text/StringBuilder.h>
+#include <wtf/text/WTFString.h>
+#include <wtf/unicode/CharacterNames.h>
 
 using namespace std;
 
@@ -222,9 +225,9 @@ static VisiblePosition updateAXLineStartForVisiblePosition(const VisiblePosition
         if (tempPosition.isNull())
             break;
         p = tempPosition.deepEquivalent();
-        if (!p.node())
+        if (!p.deprecatedNode())
             break;
-        renderer = p.node()->renderer();
+        renderer = p.deprecatedNode()->renderer();
         if (!renderer || (renderer->isRenderBlock() && !p.deprecatedEditingOffset()))
             break;
         InlineBox* box;
@@ -318,7 +321,7 @@ VisiblePositionRange AccessibilityObject::paragraphForPosition(const VisiblePosi
 
 static VisiblePosition startOfStyleRange(const VisiblePosition visiblePos)
 {
-    RenderObject* renderer = visiblePos.deepEquivalent().node()->renderer();
+    RenderObject* renderer = visiblePos.deepEquivalent().deprecatedNode()->renderer();
     RenderObject* startRenderer = renderer;
     RenderStyle* style = renderer->style();
 
@@ -336,12 +339,12 @@ static VisiblePosition startOfStyleRange(const VisiblePosition visiblePos)
         startRenderer = r;
     }
 
-    return VisiblePosition(startRenderer->node(), 0, VP_DEFAULT_AFFINITY);
+    return firstPositionInOrBeforeNode(startRenderer->node());
 }
 
 static VisiblePosition endOfStyleRange(const VisiblePosition& visiblePos)
 {
-    RenderObject* renderer = visiblePos.deepEquivalent().node()->renderer();
+    RenderObject* renderer = visiblePos.deepEquivalent().deprecatedNode()->renderer();
     RenderObject* endRenderer = renderer;
     RenderStyle* style = renderer->style();
 
@@ -359,7 +362,7 @@ static VisiblePosition endOfStyleRange(const VisiblePosition& visiblePos)
         endRenderer = r;
     }
 
-    return lastDeepEditingPositionForNode(endRenderer->node());
+    return lastPositionInOrAfterNode(endRenderer->node());
 }
 
 VisiblePositionRange AccessibilityObject::styleRangeForPosition(const VisiblePosition& visiblePos) const
@@ -373,7 +376,8 @@ VisiblePositionRange AccessibilityObject::styleRangeForPosition(const VisiblePos
 // NOTE: Consider providing this utility method as AX API
 VisiblePositionRange AccessibilityObject::visiblePositionRangeForRange(const PlainTextRange& range) const
 {
-    if (range.start + range.length > text().length())
+    unsigned textLength = getLengthForTextRange();
+    if (range.start + range.length > textLength)
         return VisiblePositionRange();
 
     VisiblePosition startPosition = visiblePositionForIndex(range.start);
@@ -400,14 +404,11 @@ static bool replacedNodeNeedsCharacter(Node* replacedNode)
 // Finds a RenderListItem parent give a node.
 static RenderListItem* renderListItemContainerForNode(Node* node)
 {
-    for (Node* stringNode = node; stringNode; stringNode = stringNode->parent()) {
-        RenderObject* renderObject = stringNode->renderer();
-        if (!renderObject || !renderObject->isListItem())
-            continue;
-        
-        return toRenderListItem(renderObject);
+    for (; node; node = node->parentNode()) {
+        RenderBoxModelObject* renderer = node->renderBoxModelObject();
+        if (renderer && renderer->isListItem())
+            return toRenderListItem(renderer);
     }
-    
     return 0;
 }
     
@@ -432,12 +433,7 @@ String AccessibilityObject::listMarkerTextForNodeAndPosition(Node* node, const V
     // Append text, plus the period that follows the text.
     // FIXME: Not all list marker styles are followed by a period, but this
     // sounds much better when there is a synthesized pause because of a period.
-    Vector<UChar> resultVector;
-    resultVector.append(markerText.characters(), markerText.length());
-    resultVector.append('.');
-    resultVector.append(' ');
-    
-    return String::adopt(resultVector);
+    return markerText + ". ";
 }
     
 String AccessibilityObject::stringForVisiblePositionRange(const VisiblePositionRange& visiblePositionRange) const
@@ -445,7 +441,7 @@ String AccessibilityObject::stringForVisiblePositionRange(const VisiblePositionR
     if (visiblePositionRange.isNull())
         return String();
 
-    Vector<UChar> resultVector;
+    StringBuilder builder;
     RefPtr<Range> range = makeRange(visiblePositionRange.start, visiblePositionRange.end);
     for (TextIterator it(range.get()); !it.atEnd(); it.advance()) {
         // non-zero length means textual node, zero length means replaced node (AKA "attachments" in AX)
@@ -453,9 +449,9 @@ String AccessibilityObject::stringForVisiblePositionRange(const VisiblePositionR
             // Add a textual representation for list marker text
             String listMarkerText = listMarkerTextForNodeAndPosition(it.node(), visiblePositionRange.start);
             if (!listMarkerText.isEmpty())
-                resultVector.append(listMarkerText.characters(), listMarkerText.length());
-                
-            resultVector.append(it.characters(), it.length());
+                builder.append(listMarkerText);
+
+            builder.append(it.characters(), it.length());
         } else {
             // locate the node and starting offset for this replaced range
             int exception = 0;
@@ -464,11 +460,11 @@ String AccessibilityObject::stringForVisiblePositionRange(const VisiblePositionR
             int offset = it.range()->startOffset(exception);
 
             if (replacedNodeNeedsCharacter(node->childNode(offset)))
-                resultVector.append(objectReplacementCharacter);
+                builder.append(objectReplacementCharacter);
         }
     }
 
-    return String::adopt(resultVector);
+    return builder.toString();
 }
 
 int AccessibilityObject::lengthForVisiblePositionRange(const VisiblePositionRange& visiblePositionRange) const
@@ -651,7 +647,7 @@ AccessibilityObject* AccessibilityObject::accessibilityObjectForPosition(const V
     if (visiblePos.isNull())
         return 0;
 
-    RenderObject* obj = visiblePos.deepEquivalent().node()->renderer();
+    RenderObject* obj = visiblePos.deepEquivalent().deprecatedNode()->renderer();
     if (!obj)
         return 0;
 
@@ -720,6 +716,22 @@ unsigned AccessibilityObject::doAXLineForIndex(unsigned index)
 {
     return lineForPosition(visiblePositionForIndex(index, false));
 }
+    
+void AccessibilityObject::updateBackingStore()
+{
+    // Updating the layout may delete this object.
+    if (Document* document = this->document())
+        document->updateLayoutIgnorePendingStylesheets();
+}
+
+Document* AccessibilityObject::document() const
+{
+    FrameView* frameView = documentFrameView();
+    if (!frameView)
+        return 0;
+    
+    return frameView->frame()->document();
+}
 
 FrameView* AccessibilityObject::documentFrameView() const 
 { 
@@ -731,6 +743,12 @@ FrameView* AccessibilityObject::documentFrameView() const
         return 0;
 
     return object->documentFrameView();
+}
+    
+void AccessibilityObject::updateChildrenIfNecessary()
+{
+    if (!hasChildren())
+        addChildren();    
 }
 
 void AccessibilityObject::clearChildren()
@@ -824,6 +842,25 @@ const String& AccessibilityObject::actionVerb() const
     DEFINE_STATIC_LOCAL(const String, noAction, ());
     return noAction;
 }
+
+bool AccessibilityObject::ariaIsMultiline() const
+{
+    return equalIgnoringCase(getAttribute(aria_multilineAttr), "true");
+}
+
+const AtomicString& AccessibilityObject::invalidStatus() const
+{
+    DEFINE_STATIC_LOCAL(const AtomicString, invalidStatusFalse, ("false"));
+    
+    // aria-invalid can return false (default), grammer, spelling, or true.
+    const AtomicString& ariaInvalid = getAttribute(aria_invalidAttr);
+    
+    // If empty or not present, it should return false.
+    if (ariaInvalid.isEmpty())
+        return invalidStatusFalse;
+    
+    return ariaInvalid;
+}
  
 const AtomicString& AccessibilityObject::getAttribute(const QualifiedName& attribute) const
 {
@@ -835,7 +872,7 @@ const AtomicString& AccessibilityObject::getAttribute(const QualifiedName& attri
         return nullAtom;
     
     Element* element = static_cast<Element*>(elementNode);
-    return element->getAttribute(attribute);
+    return element->fastGetAttribute(attribute);
 }
     
 // Lacking concrete evidence of orientation, horizontal means width > height. vertical is height > width;
@@ -884,7 +921,7 @@ static ARIARoleMap* createARIARoleMap()
         { "img", ImageRole },
         { "link", WebCoreLinkRole },
         { "list", ListRole },        
-        { "listitem", GroupRole },        
+        { "listitem", ListItemRole },        
         { "listbox", ListBoxRole },
         { "log", ApplicationLogRole },
         // "option" isn't here because it may map to different roles depending on the parent element's role
@@ -892,14 +929,14 @@ static ARIARoleMap* createARIARoleMap()
         { "marquee", ApplicationMarqueeRole },
         { "math", DocumentMathRole },
         { "menu", MenuRole },
-        { "menubar", GroupRole },
+        { "menubar", MenuBarRole },
         // "menuitem" isn't here because it may map to different roles depending on the parent element's role
         { "menuitemcheckbox", MenuItemRole },
         { "menuitemradio", MenuItemRole },
         { "note", DocumentNoteRole },
         { "navigation", LandmarkNavigationRole },
         { "option", ListBoxOptionRole },
-        { "presentation", IgnoredRole },
+        { "presentation", PresentationalRole },
         { "progressbar", ProgressIndicatorRole },
         { "radio", RadioButtonRole },
         { "radiogroup", RadioGroupRole },
@@ -925,9 +962,8 @@ static ARIARoleMap* createARIARoleMap()
         { "treeitem", TreeItemRole }
     };
     ARIARoleMap* roleMap = new ARIARoleMap;
-    
-    const unsigned numRoles = sizeof(roles) / sizeof(roles[0]);
-    for (unsigned i = 0; i < numRoles; ++i)
+
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(roles); ++i)
         roleMap->set(roles[i].ariaRole, roles[i].webcoreRole);
     return roleMap;
 }
@@ -935,8 +971,21 @@ static ARIARoleMap* createARIARoleMap()
 AccessibilityRole AccessibilityObject::ariaRoleToWebCoreRole(const String& value)
 {
     ASSERT(!value.isEmpty());
+    
     static const ARIARoleMap* roleMap = createARIARoleMap();
-    return roleMap->get(value);
+
+    Vector<String> roleVector;
+    value.split(' ', roleVector);
+    AccessibilityRole role = UnknownRole;
+    unsigned size = roleVector.size();
+    for (unsigned i = 0; i < size; ++i) {
+        String roleName = roleVector[i];
+        role = roleMap->get(roleName);
+        if (role)
+            return role;
+    }
+    
+    return role;
 }
 
 const AtomicString& AccessibilityObject::placeholderValue() const
@@ -970,6 +1019,64 @@ bool AccessibilityObject::supportsARIALiveRegion() const
 {
     const AtomicString& liveRegion = ariaLiveRegionStatus();
     return equalIgnoringCase(liveRegion, "polite") || equalIgnoringCase(liveRegion, "assertive");
+}
+
+AccessibilityObject* AccessibilityObject::elementAccessibilityHitTest(const IntPoint& point) const
+{ 
+    // Send the hit test back into the sub-frame if necessary.
+    if (isAttachment()) {
+        Widget* widget = widgetForAttachmentView();
+        // Normalize the point for the widget's bounds.
+        if (widget && widget->isFrameView())
+            return axObjectCache()->getOrCreate(widget)->accessibilityHitTest(IntPoint(point - widget->frameRect().location()));
+    }
+
+    return const_cast<AccessibilityObject*>(this); 
+}
+    
+AXObjectCache* AccessibilityObject::axObjectCache() const
+{
+    Document* doc = document();
+    if (doc)
+        return doc->axObjectCache();
+    return 0;
+}
+    
+AccessibilityObject* AccessibilityObject::focusedUIElement() const
+{
+    Document* doc = document();
+    if (!doc)
+        return 0;
+    
+    Page* page = doc->page();
+    if (!page)
+        return 0;
+    
+    return AXObjectCache::focusedUIElementForPage(page);
+}
+    
+AccessibilitySortDirection AccessibilityObject::sortDirection() const
+{
+    const AtomicString& sortAttribute = getAttribute(aria_sortAttr);
+    if (equalIgnoringCase(sortAttribute, "ascending"))
+        return SortDirectionAscending;
+    if (equalIgnoringCase(sortAttribute, "descending"))
+        return SortDirectionDescending;
+    
+    return SortDirectionNone;
+}
+    
+bool AccessibilityObject::supportsARIAExpanded() const
+{
+    return !getAttribute(aria_expandedAttr).isEmpty();
+}
+    
+bool AccessibilityObject::isExpanded() const
+{
+    if (equalIgnoringCase(getAttribute(aria_expandedAttr), "true"))
+        return true;
+    
+    return false;  
 }
     
 AccessibilityButtonState AccessibilityObject::checkboxOrRadioValue() const

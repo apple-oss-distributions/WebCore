@@ -26,67 +26,33 @@
 #ifndef Int16Array_h
 #define Int16Array_h
 
-#include "ArrayBufferView.h"
-#include <limits>
-#include <wtf/MathExtras.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
+#include "IntegralTypedArrayBase.h"
 
 namespace WebCore {
 
-class Int16Array : public ArrayBufferView {
-  public:
-    virtual bool isShortArray() const { return true; }
+class ArrayBuffer;
 
+class Int16Array : public IntegralTypedArrayBase<short> {
+public:
     static PassRefPtr<Int16Array> create(unsigned length);
     static PassRefPtr<Int16Array> create(short* array, unsigned length);
     static PassRefPtr<Int16Array> create(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length);
 
-    short* data() { return static_cast<short*>(baseAddress()); }
+    using TypedArrayBase<short>::set;
+    using IntegralTypedArrayBase<short>::set;
 
-    virtual unsigned length() const;
-    virtual unsigned byteLength() const;
-    virtual PassRefPtr<ArrayBufferView> slice(int start, int end);
+    PassRefPtr<Int16Array> subarray(int start) const;
+    PassRefPtr<Int16Array> subarray(int start, int end) const;
 
-    void set(unsigned index, double value)
-    {
-        if (index >= m_size)
-            return;
-        if (isnan(value)) // Clamp NaN to 0
-            value = 0;
-        if (value < std::numeric_limits<short>::min())
-            value = std::numeric_limits<short>::min();
-        else if (value > std::numeric_limits<short>::max())
-            value = std::numeric_limits<short>::max();
-        short* storage = static_cast<short*>(m_baseAddress);
-        storage[index] = static_cast<short>(value);
-    }
+private:
+    Int16Array(PassRefPtr<ArrayBuffer> buffer,
+               unsigned byteOffset,
+               unsigned length);
+    // Make constructor visible to superclass.
+    friend class TypedArrayBase<short>;
 
-    bool get(unsigned index, short& result) const
-    {
-        if (index >= m_size)
-            return false;
-        result = item(index);
-        return true;
-    }
-
-    short get(unsigned index) const
-    {
-        return item(index);
-    }
-
-    short item(unsigned index) const
-    {
-        ASSERT(index < m_size);
-        short* storage = static_cast<short*>(m_baseAddress);
-        return storage[index];
-    }
-
-    void set(Int16Array* array, unsigned offset, ExceptionCode& ec);
-
-  private:
-    Int16Array(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length);
-    unsigned m_size;
+    // Overridden from ArrayBufferView.
+    virtual bool isShortArray() const { return true; }
 };
 
 } // namespace WebCore

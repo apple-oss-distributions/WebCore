@@ -30,6 +30,7 @@
 
 #include "DeviceOrientation.h"
 #include "V8Binding.h"
+#include "V8BindingMacros.h"
 #include "V8Proxy.h"
 
 #include <v8.h>
@@ -69,17 +70,17 @@ v8::Handle<v8::Value> V8DeviceOrientationEvent::gammaAccessorGetter(v8::Local<v8
 v8::Handle<v8::Value> V8DeviceOrientationEvent::initDeviceOrientationEventCallback(const v8::Arguments& args)
 {
     DeviceOrientationEvent* imp = V8DeviceOrientationEvent::toNative(args.Holder());
-    V8Parameter<> type = args[0];
+    STRING_TO_V8PARAMETER_EXCEPTION_BLOCK(V8Parameter<>, type, args[0]);
     bool bubbles = args[1]->BooleanValue();
     bool cancelable = args[2]->BooleanValue();
     // If alpha, beta or gamma are null or undefined, mark them as not provided.
     // Otherwise, use the standard JavaScript conversion.
     bool alphaProvided = !isUndefinedOrNull(args[3]);
-    double alpha = static_cast<double>(args[3]->NumberValue());
+    double alpha = args[3]->NumberValue();
     bool betaProvided = !isUndefinedOrNull(args[4]);
-    double beta = static_cast<double>(args[4]->NumberValue());
+    double beta = args[4]->NumberValue();
     bool gammaProvided = !isUndefinedOrNull(args[5]);
-    double gamma = static_cast<double>(args[5]->NumberValue());
+    double gamma = args[5]->NumberValue();
     RefPtr<DeviceOrientation> orientation = DeviceOrientation::create(alphaProvided, alpha, betaProvided, beta, gammaProvided, gamma);
     imp->initDeviceOrientationEvent(type, bubbles, cancelable, orientation.get());
     return v8::Handle<v8::Value>();

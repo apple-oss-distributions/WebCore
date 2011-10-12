@@ -37,7 +37,8 @@ namespace WebCore {
 
 class TimerHeapElement;
 
-class TimerBase : public Noncopyable {
+class TimerBase {
+    WTF_MAKE_NONCOPYABLE(TimerBase); WTF_MAKE_FAST_ALLOCATED;
 public:
     TimerBase();
     virtual ~TimerBase();
@@ -53,7 +54,8 @@ public:
     double nextFireInterval() const;
     double repeatInterval() const { return m_repeatInterval; }
 
-    void augmentRepeatInterval(double delta) { setNextFireTime(m_nextFireTime + delta); m_repeatInterval += delta; }
+    void augmentFireInterval(double delta) { setNextFireTime(m_nextFireTime + delta); }
+    void augmentRepeatInterval(double delta) { augmentFireInterval(delta); m_repeatInterval += delta; }
 
     static void fireTimersInNestedEventLoop();
 
@@ -106,7 +108,12 @@ private:
 inline bool TimerBase::isActive() const
 {
     // For iPhone timers are always run on the main thread or the Web Thread.
+    // Unless we have workers enabled in which case timers can run on other threads.
+#if ENABLE(WORKERS)
+    ASSERT(WebThreadIsCurrent() || pthread_main_np() || m_thread == currentThread());
+#else
     ASSERT(WebThreadIsCurrent() || pthread_main_np());
+#endif
     return m_nextFireTime;
 }
 

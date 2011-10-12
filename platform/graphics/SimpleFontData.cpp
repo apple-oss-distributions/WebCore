@@ -47,15 +47,16 @@ using namespace std;
 
 namespace WebCore {
 
-SimpleFontData::SimpleFontData(const FontPlatformData& platformData, bool isCustomFont, bool isLoading)
+SimpleFontData::SimpleFontData(const FontPlatformData& platformData, bool isCustomFont, bool isLoading, bool isTextOrientationFallback)
     : m_maxCharWidth(-1)
     , m_avgCharWidth(-1)
-    , m_unitsPerEm(defaultUnitsPerEm)
     , m_platformData(platformData)
     , m_treatAsFixedPitch(false)
     , m_isCustomFont(isCustomFont)
     , m_isLoading(isLoading)
-    , m_smallCapsFontData(0)
+    , m_isTextOrientationFallback(isTextOrientationFallback)
+    , m_isBrokenIdeographFallback(false)
+    , m_hasVerticalGlyphs(false)
 {
     platformInit();
     platformGlyphInit();
@@ -69,45 +70,59 @@ SimpleFontData::SimpleFontData(PassOwnPtr<SVGFontData> svgFontData, int size, bo
     , m_svgFontData(svgFontData)
     , m_isCustomFont(true)
     , m_isLoading(false)
-    , m_smallCapsFontData(0)
+    , m_isTextOrientationFallback(false)
+    , m_isBrokenIdeographFallback(false)
+    , m_hasVerticalGlyphs(false)
 {
     SVGFontFaceElement* svgFontFaceElement = m_svgFontData->svgFontFaceElement();
-    m_unitsPerEm = svgFontFaceElement->unitsPerEm();
+    unsigned unitsPerEm = svgFontFaceElement->unitsPerEm();
 
-    double scale = size;
-    if (m_unitsPerEm)
-        scale /= m_unitsPerEm;
+    float scale = size;
+    if (unitsPerEm)
+        scale /= unitsPerEm;
 
-    m_ascent = static_cast<int>(svgFontFaceElement->ascent() * scale);
-    m_descent = static_cast<int>(svgFontFaceElement->descent() * scale);
-    m_xHeight = static_cast<int>(svgFontFaceElement->xHeight() * scale);
-    m_lineGap = 0.1f * size;
-    m_lineSpacing = m_ascent + m_descent + m_lineGap;
+    float xHeight = svgFontFaceElement->xHeight() * scale;
+    float ascent = svgFontFaceElement->ascent() * scale;
+    float descent = svgFontFaceElement->descent() * scale;
+    float lineGap = 0.1f * size;
 
     SVGFontElement* associatedFontElement = svgFontFaceElement->associatedFontElement();
+    if (!xHeight) {    
+        // Fallback if x_heightAttr is not specified for the font element.
+        Vector<SVGGlyph> letterXGlyphs;
+        associatedFontElement->getGlyphIdentifiersForString(String("x", 1), letterXGlyphs);
+        xHeight = letterXGlyphs.isEmpty() ? 2 * ascent / 3 : letterXGlyphs.first().horizontalAdvanceX * scale;
+    }
 
-    Vector<SVGGlyphIdentifier> spaceGlyphs;
+    m_fontMetrics.setUnitsPerEm(unitsPerEm);
+    m_fontMetrics.setAscent(ascent);
+    m_fontMetrics.setDescent(descent);
+    m_fontMetrics.setLineGap(lineGap);
+    m_fontMetrics.setLineSpacing(roundf(ascent) + roundf(descent) + roundf(lineGap));
+    m_fontMetrics.setXHeight(xHeight);
+
+    Vector<SVGGlyph> spaceGlyphs;
     associatedFontElement->getGlyphIdentifiersForString(String(" ", 1), spaceGlyphs);
-    m_spaceWidth = spaceGlyphs.isEmpty() ? m_xHeight : static_cast<float>(spaceGlyphs.first().horizontalAdvanceX * scale);
+    m_spaceWidth = spaceGlyphs.isEmpty() ? xHeight : spaceGlyphs.first().horizontalAdvanceX * scale;
 
-    Vector<SVGGlyphIdentifier> numeralZeroGlyphs;
+    Vector<SVGGlyph> numeralZeroGlyphs;
     associatedFontElement->getGlyphIdentifiersForString(String("0", 1), numeralZeroGlyphs);
-    m_avgCharWidth = numeralZeroGlyphs.isEmpty() ? m_spaceWidth : static_cast<float>(numeralZeroGlyphs.first().horizontalAdvanceX * scale);
+    m_avgCharWidth = numeralZeroGlyphs.isEmpty() ? m_spaceWidth : numeralZeroGlyphs.first().horizontalAdvanceX * scale;
 
-    Vector<SVGGlyphIdentifier> letterWGlyphs;
+    Vector<SVGGlyph> letterWGlyphs;
     associatedFontElement->getGlyphIdentifiersForString(String("W", 1), letterWGlyphs);
-    m_maxCharWidth = letterWGlyphs.isEmpty() ? m_ascent : static_cast<float>(letterWGlyphs.first().horizontalAdvanceX * scale);
+    m_maxCharWidth = letterWGlyphs.isEmpty() ? ascent : letterWGlyphs.first().horizontalAdvanceX * scale;
 
-    // FIXME: is there a way we can get the space glyph from the SVGGlyphIdentifier above?
+    // FIXME: is there a way we can get the space glyph from the SVGGlyph above?
     m_spaceGlyph = 0;
     m_zeroWidthSpaceGlyph = 0;
     determinePitch();
-    m_adjustedSpaceWidth = roundf(m_spaceWidth);
     m_missingGlyphData.fontData = this;
     m_missingGlyphData.glyph = 0;
 }
 #endif
 
+#if !(PLATFORM(QT) && !HAVE(QRAWFONT))
 // Estimates of avgCharWidth and maxCharWidth for platforms that don't support accessing these values from the font.
 void SimpleFontData::initCharWidths()
 {
@@ -123,14 +138,12 @@ void SimpleFontData::initCharWidths()
 
     // If we can't retrieve the width of a '0', fall back to the x height.
     if (m_avgCharWidth <= 0.f)
-        m_avgCharWidth = m_xHeight;
+        m_avgCharWidth = m_fontMetrics.xHeight();
 
     if (m_maxCharWidth <= 0.f)
-        m_maxCharWidth = max<float>(m_avgCharWidth, m_ascent);
+        m_maxCharWidth = max(m_avgCharWidth, m_fontMetrics.floatAscent());
 }
 
-#if !PLATFORM(QT)
-// Estimates of avgCharWidth and maxCharWidth for platforms that don't support accessing these values from the font.
 void SimpleFontData::platformGlyphInit()
 {
     GlyphPage* glyphPageZero = GlyphPageTreeNode::getRootChild(this, 0)->page();
@@ -179,11 +192,8 @@ SimpleFontData::~SimpleFontData()
 #endif
         platformDestroy();
 
-    if (!isCustomFont()) {
-        if (m_smallCapsFontData)
-            fontCache()->releaseFontData(m_smallCapsFontData);
+    if (!isCustomFont())
         GlyphPageTreeNode::pruneTreeFontData(this);
-    }
 }
 
 const SimpleFontData* SimpleFontData::fontDataForCharacter(UChar32) const
@@ -194,6 +204,38 @@ const SimpleFontData* SimpleFontData::fontDataForCharacter(UChar32) const
 bool SimpleFontData::isSegmented() const
 {
     return false;
+}
+
+SimpleFontData* SimpleFontData::verticalRightOrientationFontData() const
+{
+    if (!m_derivedFontData)
+        m_derivedFontData = DerivedFontData::create(isCustomFont());
+    if (!m_derivedFontData->verticalRightOrientation) {
+        FontPlatformData verticalRightPlatformData(m_platformData);
+        verticalRightPlatformData.setOrientation(Horizontal);
+        m_derivedFontData->verticalRightOrientation = adoptPtr(new SimpleFontData(verticalRightPlatformData, isCustomFont(), false, true));
+    }
+    return m_derivedFontData->verticalRightOrientation.get();
+}
+
+SimpleFontData* SimpleFontData::uprightOrientationFontData() const
+{
+    if (!m_derivedFontData)
+        m_derivedFontData = DerivedFontData::create(isCustomFont());
+    if (!m_derivedFontData->uprightOrientation)
+        m_derivedFontData->uprightOrientation = adoptPtr(new SimpleFontData(m_platformData, isCustomFont(), false, true));
+    return m_derivedFontData->uprightOrientation.get();
+}
+
+SimpleFontData* SimpleFontData::brokenIdeographFontData() const
+{
+    if (!m_derivedFontData)
+        m_derivedFontData = DerivedFontData::create(isCustomFont());
+    if (!m_derivedFontData->brokenIdeograph) {
+        m_derivedFontData->brokenIdeograph = adoptPtr(new SimpleFontData(m_platformData, isCustomFont(), false));
+        m_derivedFontData->brokenIdeograph->m_isBrokenIdeographFallback = true;
+    }
+    return m_derivedFontData->brokenIdeograph.get();
 }
 
 #ifndef NDEBUG
@@ -207,5 +249,27 @@ String SimpleFontData::description() const
     return platformData().description();
 }
 #endif
+
+PassOwnPtr<SimpleFontData::DerivedFontData> SimpleFontData::DerivedFontData::create(bool forCustomFont)
+{
+    return adoptPtr(new DerivedFontData(forCustomFont));
+}
+
+SimpleFontData::DerivedFontData::~DerivedFontData()
+{
+    if (!forCustomFont)
+        return;
+
+    if (smallCaps)
+        GlyphPageTreeNode::pruneTreeCustomFontData(smallCaps.get());
+    if (emphasisMark)
+        GlyphPageTreeNode::pruneTreeCustomFontData(emphasisMark.get());
+    if (brokenIdeograph)
+        GlyphPageTreeNode::pruneTreeCustomFontData(brokenIdeograph.get());
+    if (verticalRightOrientation)
+        GlyphPageTreeNode::pruneTreeCustomFontData(verticalRightOrientation.get());
+    if (uprightOrientation)
+        GlyphPageTreeNode::pruneTreeCustomFontData(uprightOrientation.get());
+}
 
 } // namespace WebCore

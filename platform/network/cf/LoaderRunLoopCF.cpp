@@ -26,6 +26,11 @@
 #include "config.h"
 #include "LoaderRunLoopCF.h"
 
+#if USE(CFNETWORK)
+
+#include "AutodrainedPool.h"
+#include <CoreFoundation/CoreFoundation.h>
+#include <limits>
 #include <wtf/Threading.h>
 
 namespace WebCore {
@@ -45,22 +50,33 @@ static void* runLoaderThread(void*)
     CFRunLoopSourceRef bogusSource = CFRunLoopSourceCreate(0, 0, &ctxt);
     CFRunLoopAddSource(loaderRunLoopObject, bogusSource, kCFRunLoopDefaultMode);
 
-    CFRunLoopRun();
+    SInt32 result;
+    do {
+        AutodrainedPool pool;
+        result = CFRunLoopRunInMode(kCFRunLoopDefaultMode, std::numeric_limits<double>::max(), true);
+    } while (result != kCFRunLoopRunStopped && result != kCFRunLoopRunFinished);
 
     return 0;
 }
 
 CFRunLoopRef loaderRunLoop()
 {
-    ASSERT(isMainThread());
+    ASSERT(isMainThread() || pthread_main_np());
     if (!loaderRunLoopObject) {
         createThread(runLoaderThread, 0, "WebCore: CFNetwork Loader");
         while (!loaderRunLoopObject) {
-            // FIXME: Sleep 10? that can't be right...
+            // FIXME: <http://webkit.org/b/55402> - loaderRunLoop() should use synchronization instead of while loop
+#if PLATFORM(WIN)
             Sleep(10);
+#else
+            struct timespec sleepTime = { 0, 10 * 1000 * 1000 };
+            nanosleep(&sleepTime, 0);
+#endif
         }
     }
     return loaderRunLoopObject;
 }
 
-}
+} // namespace WebCore
+
+#endif // USE(CFNETWORK)

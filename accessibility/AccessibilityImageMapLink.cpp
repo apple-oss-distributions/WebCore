@@ -33,18 +33,16 @@
 #include "AccessibilityRenderObject.h"
 #include "Document.h"
 #include "HTMLNames.h"
-#include "IntRect.h"
-#include "RenderObject.h"
-
-using namespace std;
+#include "RenderBoxModelObject.h"
 
 namespace WebCore {
     
 using namespace HTMLNames;
 
 AccessibilityImageMapLink::AccessibilityImageMapLink()
-    : m_areaElement(0), 
-      m_mapElement(0)
+    : m_areaElement(0)
+    , m_mapElement(0)
+    , m_parent(0)
 {
 }
 
@@ -136,14 +134,9 @@ IntRect AccessibilityImageMapLink::elementRect() const
     if (!renderer)
         return IntRect();
     
-    return m_areaElement->getRect(renderer);
+    return m_areaElement->computeRect(renderer);
 }
     
-IntSize AccessibilityImageMapLink::size() const
-{
-    return elementRect().size();
-}
-
 String AccessibilityImageMapLink::stringValueForMSAA() const
 {
     return url();

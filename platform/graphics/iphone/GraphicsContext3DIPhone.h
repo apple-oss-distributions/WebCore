@@ -55,5 +55,6 @@
 #define GL_RGB8 GL_RGB
 #define GL_RGBA8 GL_RGBA
 #define GL_STENCIL_ATTACHMENT_EXT GL_STENCIL_ATTACHMENT
+#define GL_UNSIGNED_INT_8_8_8_8_REV GL_RGBA
 
 #endif // GraphicsContext3DIPhone_h

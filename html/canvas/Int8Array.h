@@ -27,72 +27,34 @@
 #ifndef Int8Array_h
 #define Int8Array_h
 
-#include "ArrayBufferView.h"
-#include <limits>
-#include <wtf/MathExtras.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefCounted.h>
+#include "IntegralTypedArrayBase.h"
 
 namespace WebCore {
 
 class ArrayBuffer;
 
-class Int8Array : public ArrayBufferView {
-  public:
-    virtual bool isByteArray() const { return true; }
-
+class Int8Array : public IntegralTypedArrayBase<signed char> {
+public:
     static PassRefPtr<Int8Array> create(unsigned length);
     static PassRefPtr<Int8Array> create(signed char* array, unsigned length);
     static PassRefPtr<Int8Array> create(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length);
 
-    char* data() { return static_cast<char*>(baseAddress()); }
+    // Can’t use "using" here due to a bug in the RVCT compiler.
+    void set(TypedArrayBase<signed char>* array, unsigned offset, ExceptionCode& ec) { TypedArrayBase<signed char>::set(array, offset, ec); }
+    void set(unsigned index, double value) { IntegralTypedArrayBase<signed char>::set(index, value); }
 
-    virtual unsigned length() const;
-    virtual unsigned byteLength() const;
-    virtual PassRefPtr<ArrayBufferView> slice(int start, int end);
+    PassRefPtr<Int8Array> subarray(int start) const;
+    PassRefPtr<Int8Array> subarray(int start, int end) const;
 
-    void set(unsigned index, double value)
-    {
-        if (index >= m_size)
-            return;
-        if (isnan(value)) // Clamp NaN to 0
-            value = 0;
-        if (value < std::numeric_limits<signed char>::min())
-            value = std::numeric_limits<signed char>::min();
-        else if (value > std::numeric_limits<signed char>::max())
-            value = std::numeric_limits<signed char>::max();
-        signed char* storage = static_cast<signed char*>(m_baseAddress);
-        storage[index] = static_cast<signed char>(value);
-    }
-
-    bool get(unsigned index, signed char& result) const
-    {
-        if (index >= m_size)
-            return false;
-        signed char* storage = static_cast<signed char*>(m_baseAddress);
-        result = storage[index];
-        return true;
-    }
-
-    signed char get(unsigned index) const
-    {
-        return item(index);
-    }
-
-    signed char item(unsigned index) const
-    {
-        ASSERT(index < m_size);
-        signed char* storage = static_cast<signed char*>(m_baseAddress);
-        return storage[index];
-    }
-
-    void set(Int8Array* array, unsigned offset, ExceptionCode& ec);
-
-  private:
+private:
     Int8Array(PassRefPtr<ArrayBuffer> buffer,
-                   unsigned offset,
+                   unsigned byteOffset,
                    unsigned length);
-    unsigned m_size;
+    // Make constructor visible to superclass.
+    friend class TypedArrayBase<signed char>;
+
+    // Overridden from ArrayBufferView.
+    virtual bool isByteArray() const { return true; }
 };
 
 } // namespace WebCore

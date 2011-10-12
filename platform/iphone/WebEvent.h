@@ -41,7 +41,8 @@ typedef enum
     WebEventFlagMaskControl    = 0x00040000,
     WebEventFlagMaskAlternate  = 0x00080000,
     WebEventFlagMaskCommand    = 0x00100000,
-} WebEventFlags;
+} WebEventFlagValues;
+typedef unsigned WebEventFlags;
 
 // These enum values are copied directly from GSEvent for compatibility.
 typedef enum
@@ -64,6 +65,7 @@ typedef enum
     NSString *_charactersIgnoringModifiers;
     WebEventFlags _modifierFlags;
     BOOL _keyRepeating;
+    BOOL _popupVariant;
     uint16_t _keyCode;
     BOOL _tabKey;
     WebEventCharacterSet _characterSet;
@@ -82,10 +84,37 @@ typedef enum
     float _gestureRotation;
 }
 
-- (WebEvent *)initWithMouseEventType:(WebEventType)type withTimeStamp:(CFTimeInterval)timeStamp withLocation:(CGPoint)point;
-- (WebEvent *)initWithScrollWheelEventWithTimeStamp:(CFTimeInterval)timeStamp withLocation:(CGPoint)point withDeltaX:(float)deltaX withDeltaY:(float)deltaY;
-- (WebEvent *)initWithTouchEventType:(WebEventType)type withTimeStamp:(CFTimeInterval)timeStamp withLocation:(CGPoint)point withTouchCount:(unsigned)touchCount withTouchLocations:(NSArray *)touchLocations withTouchGlobalLocations:(NSArray *)touchGlobalLocations withTouchIdentifiers:(NSArray *)touchIdentifiers withTouchPhases:(NSArray *)touchPhases isGesture:(BOOL)isGesture withGestureScale:(float)gestureScale withGestureRotation:(float)gestureRotation;
-- (WebEvent *)initWithKeyEventType:(WebEventType)type withTimeStamp:(CFTimeInterval)timeStamp withCharacters:(NSString *)characters withCharactersIgnoringModifiers:(NSString *)charactersIgnoringModifiers withModifiers:(WebEventFlags)modifiers isRepeating:(BOOL)repeating withKeyCode:(uint16_t)keyCode isTabKey:(BOOL)tabKey withCharacterSet:(WebEventCharacterSet)characterSet;
+- (WebEvent *)initWithMouseEventType:(WebEventType)type
+                           timeStamp:(CFTimeInterval)timeStamp
+                            location:(CGPoint)point;
+
+- (WebEvent *)initWithScrollWheelEventWithTimeStamp:(CFTimeInterval)timeStamp
+                                           location:(CGPoint)point
+                                              deltaX:(float)deltaX
+                                              deltaY:(float)deltaY;
+
+- (WebEvent *)initWithTouchEventType:(WebEventType)type
+                           timeStamp:(CFTimeInterval)timeStamp
+                            location:(CGPoint)point
+                           modifiers:(WebEventFlags)modifiers
+                          touchCount:(unsigned)touchCount
+                      touchLocations:(NSArray *)touchLocations
+                touchGlobalLocations:(NSArray *)touchGlobalLocations
+                    touchIdentifiers:(NSArray *)touchIdentifiers
+                         touchPhases:(NSArray *)touchPhases isGesture:(BOOL)isGesture
+                        gestureScale:(float)gestureScale
+                     gestureRotation:(float)gestureRotation;
+
+- (WebEvent *)initWithKeyEventType:(WebEventType)type
+                         timeStamp:(CFTimeInterval)timeStamp
+                        characters:(NSString *)characters
+       charactersIgnoringModifiers:(NSString *)charactersIgnoringModifiers
+                         modifiers:(WebEventFlags)modifiers
+                       isRepeating:(BOOL)repeating
+                    isPopupVariant:(BOOL)popupVariant
+                           keyCode:(uint16_t)keyCode
+                          isTabKey:(BOOL)tabKey
+                      characterSet:(WebEventCharacterSet)characterSet;
 
 @property(nonatomic,readonly) WebEventType type;
 @property(nonatomic,readonly) CFTimeInterval timestamp;
@@ -98,6 +127,7 @@ typedef enum
 @property(nonatomic,readonly,retain) NSString *charactersIgnoringModifiers;
 @property(nonatomic,readonly) WebEventFlags modifierFlags;
 @property(nonatomic,readonly,getter=isKeyRepeating) BOOL keyRepeating;
+@property(nonatomic,readonly,getter=isPopupVariant) BOOL popupVariant;
 @property(nonatomic,readonly) uint16_t keyCode;
 @property(nonatomic,readonly,getter=isTabKey) BOOL tabKey;
 @property(nonatomic,readonly) WebEventCharacterSet characterSet;

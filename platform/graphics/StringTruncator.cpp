@@ -29,11 +29,12 @@
 #include "config.h"
 #include "StringTruncator.h"
 
-#include "CharacterNames.h"
 #include "Font.h"
 #include "TextBreakIterator.h"
+#include "TextRun.h"
 #include <wtf/Assertions.h>
 #include <wtf/Vector.h>
+#include <wtf/unicode/CharacterNames.h>
 
 #include <wtf/UnusedParam.h>
 
@@ -193,7 +194,7 @@ static float stringWidth(const Font& renderer, const UChar* characters, unsigned
     TextRun run(characters, length);
     if (disableRoundingHacks)
         run.disableRoundingHacks();
-    return renderer.floatWidth(run);
+    return renderer.width(run);
 }
 
 static String truncateString(const String& string, float maxWidth, const Font& font, TruncationFunction truncateToBuffer, bool disableRoundingHacks, float *resultWidth, bool insertEllipsis = true,  float customTruncationElementWidth = 0, bool alwaysTruncate = false)
@@ -207,6 +208,7 @@ static String truncateString(const String& string, float maxWidth, const Font& f
     ASSERT(maxWidth >= 0);
     
     float currentEllipsisWidth = insertEllipsis ? stringWidth(font, &horizontalEllipsis, 1, disableRoundingHacks) : customTruncationElementWidth;
+    
     UChar stringBuffer[STRING_BUFFER_SIZE];
     unsigned truncatedLength;
     unsigned keepCount;
@@ -225,7 +227,7 @@ static String truncateString(const String& string, float maxWidth, const Font& f
     float width = stringWidth(font, stringBuffer, truncatedLength, disableRoundingHacks);
     if (!insertEllipsis && alwaysTruncate)
         width += customTruncationElementWidth;
-    if (width <= maxWidth) {
+    if ((width - maxWidth) < 0.0001) {  // Ignore rounding errors.
         if (resultWidth)
             *resultWidth = width;
         return string;
@@ -262,7 +264,7 @@ static String truncateString(const String& string, float maxWidth, const Font& f
         ASSERT(keepCount > keepCountForLargestKnownToFit);
         
         truncatedLength = truncateToBuffer(string, length, keepCount, stringBuffer, insertEllipsis);
-        
+
         width = stringWidth(font, stringBuffer, truncatedLength, disableRoundingHacks);
         if (!insertEllipsis)
             width += customTruncationElementWidth;
@@ -289,45 +291,45 @@ static String truncateString(const String& string, float maxWidth, const Font& f
     return String(stringBuffer, truncatedLength);
 }
 
-String StringTruncator::centerTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks)
+String StringTruncator::centerTruncate(const String& string, float maxWidth, const Font& font, EnableRoundingHacksOrNot enableRoundingHacks)
 {
-    return truncateString(string, maxWidth, font, centerTruncateToBuffer, disableRoundingHacks, 0);
+    return truncateString(string, maxWidth, font, centerTruncateToBuffer, !enableRoundingHacks, 0);
 }
 
-String StringTruncator::rightTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks)
+String StringTruncator::rightTruncate(const String& string, float maxWidth, const Font& font, EnableRoundingHacksOrNot enableRoundingHacks)
 {
-    return truncateString(string, maxWidth, font, rightTruncateToBuffer, disableRoundingHacks, 0);
+    return truncateString(string, maxWidth, font, rightTruncateToBuffer, !enableRoundingHacks, 0);
 }
 
-float StringTruncator::width(const String& string, const Font& font, bool disableRoundingHacks)
+float StringTruncator::width(const String& string, const Font& font, EnableRoundingHacksOrNot enableRoundingHacks)
 {
-    return stringWidth(font, string.characters(), string.length(), disableRoundingHacks);
+    return stringWidth(font, string.characters(), string.length(), !enableRoundingHacks);
 }
 
 
-String StringTruncator::centerTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis, float customTruncationElementWidth)
+String StringTruncator::centerTruncate(const String& string, float maxWidth, const Font& font, EnableRoundingHacksOrNot enableRoundingHacks, float& resultWidth, bool insertEllipsis, float customTruncationElementWidth)
 {
-    return truncateString(string, maxWidth, font, centerTruncateToBuffer, disableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth);
+    return truncateString(string, maxWidth, font, centerTruncateToBuffer, !enableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth);
 }
 
-String StringTruncator::rightTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis, float customTruncationElementWidth)
+String StringTruncator::rightTruncate(const String& string, float maxWidth, const Font& font, EnableRoundingHacksOrNot enableRoundingHacks, float& resultWidth, bool insertEllipsis, float customTruncationElementWidth)
 {
-    return truncateString(string, maxWidth, font, rightTruncateToBuffer, disableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth);
+    return truncateString(string, maxWidth, font, rightTruncateToBuffer, !enableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth);
 }
 
-String StringTruncator::leftTruncate(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis, float customTruncationElementWidth)
+String StringTruncator::leftTruncate(const String& string, float maxWidth, const Font& font, EnableRoundingHacksOrNot enableRoundingHacks, float& resultWidth, bool insertEllipsis, float customTruncationElementWidth)
 {
-    return truncateString(string, maxWidth, font, leftTruncateToBuffer, disableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth);
+    return truncateString(string, maxWidth, font, leftTruncateToBuffer, !enableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth);
 }
     
-String StringTruncator::rightClipToCharacter(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis, float customTruncationElementWidth) 
+String StringTruncator::rightClipToCharacter(const String& string, float maxWidth, const Font& font, EnableRoundingHacksOrNot enableRoundingHacks, float& resultWidth, bool insertEllipsis, float customTruncationElementWidth) 
 {
-    return truncateString(string, maxWidth, font, rightClipToCharacterBuffer, disableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth);
+    return truncateString(string, maxWidth, font, rightClipToCharacterBuffer, !enableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth);
 }
 
-String StringTruncator::rightClipToWord(const String& string, float maxWidth, const Font& font, bool disableRoundingHacks, float& resultWidth, bool insertEllipsis,  float customTruncationElementWidth, bool alwaysTruncate) 
+String StringTruncator::rightClipToWord(const String& string, float maxWidth, const Font& font, EnableRoundingHacksOrNot enableRoundingHacks, float& resultWidth, bool insertEllipsis,  float customTruncationElementWidth, bool alwaysTruncate) 
 {
-    return truncateString(string, maxWidth, font, rightClipToWordBuffer, disableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth, alwaysTruncate);
+    return truncateString(string, maxWidth, font, rightClipToWordBuffer, !enableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth, alwaysTruncate);
 }
     
 

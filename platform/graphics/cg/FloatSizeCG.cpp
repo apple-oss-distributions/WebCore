@@ -27,7 +27,7 @@
 #include "config.h"
 #include "FloatSize.h"
 
-#if PLATFORM(CG)
+#if USE(CG) || USE(SKIA_ON_MAC_CHROME)
 
 #include <CoreGraphics/CoreGraphics.h>
 
@@ -44,4 +44,4 @@ FloatSize::operator CGSize() const
 
 }
 
-#endif // PLATFORM(CG)
+#endif // USE(CG)

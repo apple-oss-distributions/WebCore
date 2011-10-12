@@ -76,6 +76,9 @@ void WKWindowSetNeedsDisplayInRect(WKWindowRef window, CGRect rect);
     
 void WKWindowDrawRect(WKWindowRef window, CGRect dirtyRect);
 
+void WKWindowSetTileBordersVisible(WKWindowRef window, bool flag);
+void WKWindowSetTilePaintCountsVisible(WKWindowRef window, bool flag);
+
 #ifdef __cplusplus
 }
 #endif

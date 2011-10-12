@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2007, 2008, 2011 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -24,16 +24,15 @@
  */
 
 #include "config.h"
-
-#if !USE(GOOGLEURL)
-
 #include "KURL.h"
 
-#include "StringHash.h"
 #include "TextEncoding.h"
-#include <wtf/text/CString.h>
+#include <stdio.h>
 #include <wtf/HashMap.h>
+#include <wtf/HexNumber.h>
 #include <wtf/StdLibExtras.h>
+#include <wtf/text/CString.h>
+#include <wtf/text/StringHash.h>
 
 #if USE(ICU_UNICODE)
 #include <unicode/uidna.h>
@@ -44,7 +43,9 @@
 #include "GOwnPtr.h"
 #endif
 
-#include <stdio.h>
+// FIXME: This file makes too much use of the + operator on String.
+// We either have to optimize that operator so it doesn't involve
+// so many allocations, or change this to use StringBuffer instead.
 
 using namespace std;
 using namespace WTF;
@@ -54,9 +55,22 @@ namespace WebCore {
 typedef Vector<char, 512> CharBuffer;
 typedef Vector<UChar, 512> UCharBuffer;
 
-// FIXME: This file makes too much use of the + operator on String.
-// We either have to optimize that operator so it doesn't involve
-// so many allocations, or change this to use Vector<UChar> instead.
+static const unsigned maximumValidPortNumber = 0xFFFE;
+static const unsigned invalidPortNumber = 0xFFFF;
+
+static inline bool isLetterMatchIgnoringCase(UChar character, char lowercaseLetter)
+{
+    ASSERT(isASCIILower(lowercaseLetter));
+    return (character | 0x20) == lowercaseLetter;
+}
+
+#if !USE(GOOGLEURL)
+
+static inline bool isLetterMatchIgnoringCase(char character, char lowercaseLetter)
+{
+    ASSERT(isASCIILower(lowercaseLetter));
+    return (character | 0x20) == lowercaseLetter;
+}
 
 enum URLCharacterClasses {
     // alpha 
@@ -85,8 +99,6 @@ enum URLCharacterClasses {
     // not allowed in path
     BadChar = 1 << 6
 };
-
-static const char hexDigits[17] = "0123456789ABCDEF";
 
 static const unsigned char characterClassTable[256] = {
     /* 0 nul */ PathSegmentEndChar,    /* 1 soh */ BadChar,
@@ -215,13 +227,9 @@ static const unsigned char characterClassTable[256] = {
     /* 252 */ BadChar, /* 253 */ BadChar, /* 254 */ BadChar, /* 255 */ BadChar
 };
 
-static const unsigned maximumValidPortNumber = 0xFFFE;
-static const unsigned invalidPortNumber = 0xFFFF;
-
 static int copyPathRemovingDots(char* dst, const char* src, int srcStart, int srcEnd);
 static void encodeRelativeString(const String& rel, const TextEncoding&, CharBuffer& ouput);
 static String substituteBackslashes(const String&);
-static bool isValidProtocol(const String&);
 
 static inline bool isSchemeFirstChar(char c) { return characterClassTable[static_cast<unsigned char>(c)] & SchemeFirstChar; }
 static inline bool isSchemeFirstChar(UChar c) { return c <= 0xff && (characterClassTable[c] & SchemeFirstChar); }
@@ -233,6 +241,14 @@ static inline bool isIPv6Char(unsigned char c) { return characterClassTable[c] &
 static inline bool isPathSegmentEndChar(char c) { return characterClassTable[static_cast<unsigned char>(c)] & PathSegmentEndChar; }
 static inline bool isPathSegmentEndChar(UChar c) { return c <= 0xff && (characterClassTable[c] & PathSegmentEndChar); }
 static inline bool isBadChar(unsigned char c) { return characterClassTable[c] & BadChar; }
+
+static inline bool isSchemeCharacterMatchIgnoringCase(char character, char schemeCharacter)
+{
+    ASSERT(isSchemeChar(character));
+    ASSERT(schemeCharacter & 0x20);
+    ASSERT(isASCIILower(schemeCharacter) || (!isASCIIUpper(schemeCharacter) && isSchemeChar(schemeCharacter)));
+    return (character | 0x20) == schemeCharacter;
+}
 
 static inline int hexDigitValue(UChar c)
 {
@@ -297,7 +313,7 @@ inline bool KURL::protocolIs(const String& string, const char* protocol)
 void KURL::invalidate()
 {
     m_isValid = false;
-    m_protocolInHTTPFamily = false;
+    m_protocolIsInHTTPFamily = false;
     m_schemeEnd = 0;
     m_userStart = 0;
     m_userEnd = 0;
@@ -322,6 +338,12 @@ KURL::KURL(ParsedURLStringTag, const String& url)
     ASSERT(url == m_string);
 }
 
+KURL::KURL(ParsedURLStringTag, const URLString& url)
+{
+    parse(url.string());
+    ASSERT(url.string() == m_string);
+}
+
 KURL::KURL(const KURL& base, const String& relative)
 {
     init(base, relative, UTF8Encoding());
@@ -334,6 +356,14 @@ KURL::KURL(const KURL& base, const String& relative, const TextEncoding& encodin
     // has its contents added to a URL as query params and it makes sense
     // to be consistent.
     init(base, relative, encoding.encodingForFormSubmission());
+}
+
+static bool shouldTrimFromURL(unsigned char c)
+{
+    // Browsers ignore leading/trailing whitespace and control
+    // characters from URLs.  Note that c is an *unsigned* char here
+    // so this comparison should only catch control characters.
+    return c <= ' ';
 }
 
 void KURL::init(const KURL& base, const String& relative, const TextEncoding& encoding)
@@ -371,15 +401,15 @@ void KURL::init(const KURL& base, const String& relative, const TextEncoding& en
         len = strlen(str);
     }
 
-    // Get rid of leading whitespace.
-    while (*str == ' ') {
+    // Get rid of leading whitespace and control characters.
+    while (len && shouldTrimFromURL(*str)) {
         originalString = 0;
         str++;
         --len;
     }
 
-    // Get rid of trailing whitespace.
-    while (len && str[len - 1] == ' ') {
+    // Get rid of trailing whitespace and control characters.
+    while (len && shouldTrimFromURL(str[len - 1])) {
         originalString = 0;
         str[--len] = '\0';
     }
@@ -551,12 +581,12 @@ String KURL::lastPathComponent() const
     if (!hasPath())
         return String();
 
-    int end = m_pathEnd - 1;
+    unsigned end = m_pathEnd - 1;
     if (m_string[end] == '/')
         --end;
 
-    int start = m_string.reverseFind('/', end);
-    if (start < m_portEnd)
+    size_t start = m_string.reverseFind('/', end);
+    if (start < static_cast<unsigned>(m_portEnd))
         return String();
     ++start;
 
@@ -616,6 +646,33 @@ bool KURL::hasFragmentIdentifier() const
     return m_fragmentEnd != m_queryEnd;
 }
 
+void KURL::copyParsedQueryTo(ParsedURLParameters& parameters) const
+{
+    const UChar* pos = m_string.characters() + m_pathEnd + 1;
+    const UChar* end = m_string.characters() + m_queryEnd;
+    while (pos < end) {
+        const UChar* parameterStart = pos;
+        while (pos < end && *pos != '&')
+            ++pos;
+        const UChar* parameterEnd = pos;
+        if (pos < end) {
+            ASSERT(*pos == '&');
+            ++pos;
+        }
+        if (parameterStart == parameterEnd)
+            continue;
+        const UChar* nameStart = parameterStart;
+        const UChar* equalSign = parameterStart;
+        while (equalSign < parameterEnd && *equalSign != '=')
+            ++equalSign;
+        if (equalSign == nameStart)
+            continue;
+        String name(nameStart, equalSign - nameStart);
+        String value = equalSign == parameterEnd ? String() : String(equalSign + 1, parameterEnd - equalSign - 1);
+        parameters.set(name, value);
+    }
+}
+
 String KURL::baseAsString() const
 {
     return m_string.left(m_pathAfterLastSlash);
@@ -653,7 +710,7 @@ bool KURL::protocolIs(const char* protocol) const
 
     // Do the comparison without making a new string object.
     for (int i = 0; i < m_schemeEnd; ++i) {
-        if (!protocol[i] || toASCIILower(m_string[i]) != protocol[i])
+        if (!protocol[i] || !isSchemeCharacterMatchIgnoringCase(m_string[i], protocol[i]))
             return false;
     }
     return !protocol[m_schemeEnd]; // We should have consumed all characters in the argument.
@@ -675,7 +732,7 @@ String KURL::path() const
 bool KURL::setProtocol(const String& s)
 {
     // Firefox and IE remove everything after the first ':'.
-    int separatorPosition = s.find(':');
+    size_t separatorPosition = s.find(':');
     String newProtocol = s.substring(0, separatorPosition);
 
     if (!isValidProtocol(newProtocol))
@@ -820,7 +877,11 @@ void KURL::setPath(const String& s)
 
     // FIXME: encodeWithURLEscapeSequences does not correctly escape '#' and '?', so fragment and query parts
     // may be inadvertently affected.
-    parse(m_string.left(m_portEnd) + encodeWithURLEscapeSequences(s) + m_string.substring(m_pathEnd));
+    String path = s;
+    if (path.isEmpty() || path[0] != '/')
+        path = "/" + path;
+
+    parse(m_string.left(m_portEnd) + encodeWithURLEscapeSequences(path) + m_string.substring(m_pathEnd));
 }
 
 String KURL::prettyURL() const
@@ -882,23 +943,23 @@ String decodeURLEscapeSequences(const String& str, const TextEncoding& encoding)
 
     CharBuffer buffer;
 
-    int length = str.length();
-    int decodedPosition = 0;
-    int searchPosition = 0;
-    int encodedRunPosition;
-    while ((encodedRunPosition = str.find('%', searchPosition)) >= 0) {
+    unsigned length = str.length();
+    unsigned decodedPosition = 0;
+    unsigned searchPosition = 0;
+    size_t encodedRunPosition;
+    while ((encodedRunPosition = str.find('%', searchPosition)) != notFound) {
         // Find the sequence of %-escape codes.
-        int encodedRunEnd = encodedRunPosition;
+        unsigned encodedRunEnd = encodedRunPosition;
         while (length - encodedRunEnd >= 3
                 && str[encodedRunEnd] == '%'
                 && isASCIIHexDigit(str[encodedRunEnd + 1])
                 && isASCIIHexDigit(str[encodedRunEnd + 2]))
             encodedRunEnd += 3;
+        searchPosition = encodedRunEnd;
         if (encodedRunEnd == encodedRunPosition) {
             ++searchPosition;
             continue;
         }
-        searchPosition = encodedRunEnd;
 
         // Decode the %-escapes into bytes.
         unsigned runLength = (encodedRunEnd - encodedRunPosition) / 3;
@@ -926,13 +987,11 @@ String decodeURLEscapeSequences(const String& str, const TextEncoding& encoding)
     return String::adopt(result);
 }
 
-bool KURL::isLocalFile() const
+// Caution: This function does not bounds check.
+static void appendEscapedChar(char*& buffer, unsigned char c)
 {
-    // Including feed here might be a bad idea since drag and drop uses this check
-    // and including feed would allow feeds to potentially let someone's blog
-    // read the contents of the clipboard on a drag, even without a drop.
-    // Likewise with using the FrameLoader::shouldTreatURLAsLocal() function.
-    return protocolIs("file");
+    *buffer++ = '%';
+    placeByteAsHex(c, buffer);
 }
 
 static void appendEscapingBadChars(char*& buffer, const char* strStart, size_t length)
@@ -944,16 +1003,37 @@ static void appendEscapingBadChars(char*& buffer, const char* strStart, size_t l
     while (str < strEnd) {
         unsigned char c = *str++;
         if (isBadChar(c)) {
-            if (c == '%' || c == '?') {
+            if (c == '%' || c == '?')
                 *p++ = c;
-            } else if (c != 0x09 && c != 0x0a && c != 0x0d) {
-                *p++ = '%';
-                *p++ = hexDigits[c >> 4];
-                *p++ = hexDigits[c & 0xF];
-            }
-        } else {
+            else if (c != 0x09 && c != 0x0a && c != 0x0d)
+                appendEscapedChar(p, c);
+        } else
             *p++ = c;
+    }
+
+    buffer = p;
+}
+
+static void escapeAndAppendFragment(char*& buffer, const char* strStart, size_t length)
+{
+    char* p = buffer;
+
+    const char* str = strStart;
+    const char* strEnd = strStart + length;
+    while (str < strEnd) {
+        unsigned char c = *str++;
+        // Strip CR, LF and Tab from fragments, per:
+        // https://bugs.webkit.org/show_bug.cgi?id=8770
+        if (c == 0x09 || c == 0x0a || c == 0x0d)
+            continue;
+
+        // Chrome and IE allow non-ascii characters in fragments, however doing
+        // so would hit an ASSERT in checkEncodedString, so for now we don't.
+        if (c < 0x20 || c >= 127) {
+            appendEscapedChar(p, c);
+            continue;
         }
+        *p++ = c;
     }
 
     buffer = p;
@@ -994,11 +1074,6 @@ static int copyPathRemovingDots(char* dst, const char* src, int srcStart, int sr
                     baseStringPos += 3;
                     if (dst > bufferPathStart + 1)
                         dst--;
-                    // Note that these two while blocks differ subtly.
-                    // The first helps to remove multiple adjoining slashes as we rewind.
-                    // The +1 to bufferPathStart in the first while block prevents eating a leading slash
-                    while (dst > bufferPathStart + 1 && dst[-1] == '/')
-                        dst--;
                     while (dst > bufferPathStart && dst[-1] != '/')
                         dst--;
                     continue;
@@ -1028,11 +1103,6 @@ static inline bool hasSlashDotOrDotDot(const char* str)
     return false;
 }
 
-static inline bool matchLetter(char c, char lowercaseLetter)
-{
-    return (c | 0x20) == lowercaseLetter;
-}
-
 void KURL::parse(const String& string)
 {
     checkEncodedString(string);
@@ -1041,6 +1111,72 @@ void KURL::parse(const String& string)
     copyASCII(string.characters(), string.length(), buffer.data());
     buffer[string.length()] = '\0';
     parse(buffer.data(), &string);
+}
+
+typedef int (*strncmpFunctionDeclaration)(const char*, const char*, size_t);
+
+static strncmpFunctionDeclaration strncmpFunction = strncmp;
+static bool shouldCanonicalizeScheme = true;
+
+void enableKURLSchemeCanonicalization(bool linkedOnOrAfterTelluride)
+{
+    shouldCanonicalizeScheme = linkedOnOrAfterTelluride;
+    strncmpFunction = shouldCanonicalizeScheme ? strncmp : strncasecmp;
+}
+
+static inline bool equal(const char* a, size_t lenA, const char* b, size_t lenB)
+{
+    if (lenA != lenB)
+        return false;
+    ASSERT(strncmpFunction);
+    return !strncmpFunction(a, b, lenA);
+}
+
+// List of default schemes is taken from google-url:
+// http://code.google.com/p/google-url/source/browse/trunk/src/url_canon_stdurl.cc#120
+static inline bool isDefaultPortForScheme(const char* port, size_t portLength, const char* scheme, size_t schemeLength)
+{
+    // This switch is theoretically a performance optimization.  It came over when
+    // the code was moved from google-url, but may be removed later.
+    switch (schemeLength) {
+    case 2:
+        return equal("ws", 2, scheme, schemeLength) && equal("80", 2, port, portLength);
+    case 3:
+        if (equal("ftp", 3, scheme, schemeLength))
+            return equal("21", 2, port, portLength);
+        if (equal("wss", 3, scheme, schemeLength))
+            return equal("443", 3, port, portLength);
+        break;
+    case 4:
+        return equal("http", 4, scheme, schemeLength) && equal("80", 2, port, portLength);
+    case 5:
+        return equal("https", 5, scheme, schemeLength) && equal("443", 3, port, portLength);
+    case 6:
+        return equal("gopher", 6, scheme, schemeLength) && equal("70", 2, port, portLength);
+    }
+    return false;
+}
+
+static inline bool hostPortIsEmptyButCredentialsArePresent(int hostStart, int portEnd, char userEndChar)
+{
+    return userEndChar == '@' && hostStart == portEnd;
+}
+
+static bool isNonFileHierarchicalScheme(const char* scheme, size_t schemeLength)
+{
+    switch (schemeLength) {
+    case 2:
+        return equal("ws", 2, scheme, schemeLength);
+    case 3:
+        return equal("ftp", 3, scheme, schemeLength) || equal("wss", 3, scheme, schemeLength);
+    case 4:
+        return equal("http", 4, scheme, schemeLength);
+    case 5:
+        return equal("https", 5, scheme, schemeLength);
+    case 6:
+        return equal("gopher", 6, scheme, schemeLength);
+    }
+    return false;
 }
 
 void KURL::parse(const char* url, const String* originalString)
@@ -1079,25 +1215,29 @@ void KURL::parse(const char* url, const String* originalString)
     int portEnd;
 
     bool hierarchical = url[schemeEnd + 1] == '/';
+    bool hasSecondSlash = hierarchical && url[schemeEnd + 2] == '/';
 
     bool isFile = schemeEnd == 4
-        && matchLetter(url[0], 'f')
-        && matchLetter(url[1], 'i')
-        && matchLetter(url[2], 'l')
-        && matchLetter(url[3], 'e');
+        && isLetterMatchIgnoringCase(url[0], 'f')
+        && isLetterMatchIgnoringCase(url[1], 'i')
+        && isLetterMatchIgnoringCase(url[2], 'l')
+        && isLetterMatchIgnoringCase(url[3], 'e');
 
-    m_protocolInHTTPFamily = matchLetter(url[0], 'h')
-        && matchLetter(url[1], 't')
-        && matchLetter(url[2], 't')
-        && matchLetter(url[3], 'p')
-        && (url[4] == ':' || (matchLetter(url[4], 's') && url[5] == ':'));
+    m_protocolIsInHTTPFamily = isLetterMatchIgnoringCase(url[0], 'h')
+        && isLetterMatchIgnoringCase(url[1], 't')
+        && isLetterMatchIgnoringCase(url[2], 't')
+        && isLetterMatchIgnoringCase(url[3], 'p')
+        && (url[4] == ':' || (isLetterMatchIgnoringCase(url[4], 's') && url[5] == ':'));
 
-    if (hierarchical && url[schemeEnd + 2] == '/') {
+    if ((hierarchical && hasSecondSlash) || isNonFileHierarchicalScheme(url, schemeEnd)) {
         // The part after the scheme is either a net_path or an abs_path whose first path segment is empty.
         // Attempt to find an authority.
-
         // FIXME: Authority characters may be scanned twice, and it would be nice to be faster.
-        userStart += 2;
+
+        if (hierarchical)
+            userStart++;
+        if (hasSecondSlash)
+            userStart++;
         userEnd = userStart;
 
         int colonPos = 0;
@@ -1168,7 +1308,13 @@ void KURL::parse(const char* url, const String* originalString)
             return;
         }
 
-        if (userStart == portEnd && !m_protocolInHTTPFamily && !isFile) {
+        if (hostPortIsEmptyButCredentialsArePresent(hostStart, portEnd, url[userEnd])) {
+            // in this circumstance, act as if there is an erroneous hostname containing an '@'
+            userEnd = userStart;
+            hostStart = userEnd;
+        }
+
+        if (userStart == portEnd && !m_protocolIsInHTTPFamily && !isFile) {
             // No authority found, which means that this is not a net_path, but rather an abs_path whose first two
             // path segments are empty. For file, http and https only, an empty authority is allowed.
             userStart -= 2;
@@ -1218,20 +1364,25 @@ void KURL::parse(const char* url, const String* originalString)
 
     // copy in the scheme
     const char *schemeEndPtr = url + schemeEnd;
-    while (strPtr < schemeEndPtr)
-        *p++ = *strPtr++;
+    if (shouldCanonicalizeScheme || m_protocolIsInHTTPFamily) {
+        while (strPtr < schemeEndPtr)
+            *p++ = toASCIILower(*strPtr++);
+    } else {
+        while (strPtr < schemeEndPtr)
+            *p++ = *strPtr++;
+    }
     m_schemeEnd = p - buffer.data();
 
     bool hostIsLocalHost = portEnd - userStart == 9
-        && matchLetter(url[userStart], 'l')
-        && matchLetter(url[userStart+1], 'o')
-        && matchLetter(url[userStart+2], 'c')
-        && matchLetter(url[userStart+3], 'a')
-        && matchLetter(url[userStart+4], 'l')
-        && matchLetter(url[userStart+5], 'h')
-        && matchLetter(url[userStart+6], 'o')
-        && matchLetter(url[userStart+7], 's')
-        && matchLetter(url[userStart+8], 't');
+        && isLetterMatchIgnoringCase(url[userStart], 'l')
+        && isLetterMatchIgnoringCase(url[userStart+1], 'o')
+        && isLetterMatchIgnoringCase(url[userStart+2], 'c')
+        && isLetterMatchIgnoringCase(url[userStart+3], 'a')
+        && isLetterMatchIgnoringCase(url[userStart+4], 'l')
+        && isLetterMatchIgnoringCase(url[userStart+5], 'h')
+        && isLetterMatchIgnoringCase(url[userStart+6], 'o')
+        && isLetterMatchIgnoringCase(url[userStart+7], 's')
+        && isLetterMatchIgnoringCase(url[userStart+8], 't');
 
     // File URLs need a host part unless it is just file:// or file://localhost
     bool degenFilePath = pathStart == pathEnd && (hostStart == hostEnd || hostIsLocalHost);
@@ -1278,21 +1429,24 @@ void KURL::parse(const char* url, const String* originalString)
         }
         m_hostEnd = p - buffer.data();
 
-        // copy in the port
+        // Copy in the port if the URL has one (and it's not default).
         if (hostEnd != portStart) {
-            *p++ = ':';
-            strPtr = url + portStart;
-            const char *portEndPtr = url + portEnd;
-            while (strPtr < portEndPtr)
-                *p++ = *strPtr++;
+            const char* portStr = url + portStart;
+            size_t portLength = portEnd - portStart;
+            if (portLength && !isDefaultPortForScheme(portStr, portLength, buffer.data(), m_schemeEnd)) {
+                *p++ = ':';
+                const char* portEndPtr = url + portEnd;
+                while (portStr < portEndPtr)
+                    *p++ = *portStr++;
+            }
         }
         m_portEnd = p - buffer.data();
     } else
         m_userStart = m_userEnd = m_passwordEnd = m_hostEnd = m_portEnd = p - buffer.data();
 
     // For canonicalization, ensure we have a '/' for no path.
-    // Do this only for hierarchical URL with protocol http or https.
-    if (m_protocolInHTTPFamily && hierarchical && pathEnd == pathStart)
+    // Do this only for URL with protocol http or https.
+    if (m_protocolIsInHTTPFamily && pathEnd == pathStart)
         *p++ = '/';
 
     // add path, escaping bad characters
@@ -1322,7 +1476,7 @@ void KURL::parse(const char* url, const String* originalString)
     // add fragment, escaping bad characters
     if (fragmentEnd != queryEnd) {
         *p++ = '#';
-        appendEscapingBadChars(p, url + fragmentStart, fragmentEnd - fragmentStart);
+        escapeAndAppendFragment(p, url + fragmentStart, fragmentEnd - fragmentStart);
     }
     m_fragmentEnd = p - buffer.data();
 
@@ -1388,11 +1542,9 @@ String encodeWithURLEscapeSequences(const String& notEncodedString)
     const char* strEnd = str + asUTF8.length();
     while (str < strEnd) {
         unsigned char c = *str++;
-        if (isBadChar(c)) {
-            *p++ = '%';
-            *p++ = hexDigits[c >> 4];
-            *p++ = hexDigits[c & 0xF];
-        } else
+        if (isBadChar(c))
+            appendEscapedChar(p, c);
+        else
             *p++ = c;
     }
 
@@ -1614,13 +1766,13 @@ static void encodeRelativeString(const String& rel, const TextEncoding& encoding
 
 static String substituteBackslashes(const String& string)
 {
-    int questionPos = string.find('?');
-    int hashPos = string.find('#');
-    int pathEnd;
+    size_t questionPos = string.find('?');
+    size_t hashPos = string.find('#');
+    unsigned pathEnd;
 
-    if (hashPos >= 0 && (questionPos < 0 || questionPos > hashPos))
+    if (hashPos != notFound && (questionPos == notFound || questionPos > hashPos))
         pathEnd = hashPos;
-    else if (questionPos >= 0)
+    else if (questionPos != notFound)
         pathEnd = questionPos;
     else
         pathEnd = string.length();
@@ -1651,14 +1803,9 @@ bool protocolIs(const String& url, const char* protocol)
     for (int i = 0; ; ++i) {
         if (!protocol[i])
             return url[i] == ':';
-        if (toASCIILower(url[i]) != protocol[i])
+        if (!isLetterMatchIgnoringCase(url[i], protocol[i]))
             return false;
     }
-}
-
-bool protocolIsJavaScript(const String& url)
-{
-    return protocolIs(url, "javascript");
 }
 
 bool isValidProtocol(const String& protocol)
@@ -1674,6 +1821,44 @@ bool isValidProtocol(const String& protocol)
             return false;
     }
     return true;
+}
+
+#ifndef NDEBUG
+void KURL::print() const
+{
+    printf("%s\n", m_string.utf8().data());
+}
+#endif
+
+#endif // !USE(GOOGLEURL)
+
+String KURL::strippedForUseAsReferrer() const
+{
+    KURL referrer(*this);
+    referrer.setUser(String());
+    referrer.setPass(String());
+    referrer.removeFragmentIdentifier();
+    return referrer.string();
+}
+
+bool KURL::isLocalFile() const
+{
+    // Including feed here might be a bad idea since drag and drop uses this check
+    // and including feed would allow feeds to potentially let someone's blog
+    // read the contents of the clipboard on a drag, even without a drop.
+    // Likewise with using the FrameLoader::shouldTreatURLAsLocal() function.
+    return protocolIs("file");
+}
+
+bool protocolIsJavaScript(const String& url)
+{
+    return protocolIs(url, "javascript");
+}
+
+const KURL& blankURL()
+{
+    DEFINE_STATIC_LOCAL(KURL, staticBlankURL, (ParsedURLString, "about:blank"));
+    return staticBlankURL;
 }
 
 bool isDefaultPortForProtocol(unsigned short port, const String& protocol)
@@ -1769,7 +1954,7 @@ bool portAllowed(const KURL& url)
         6669, // Alternate IRC [Apple addition]
         invalidPortNumber, // Used to block all invalid port numbers
     };
-    const unsigned short* const blockedPortListEnd = blockedPortList + sizeof(blockedPortList) / sizeof(blockedPortList[0]);
+    const unsigned short* const blockedPortListEnd = blockedPortList + WTF_ARRAY_LENGTH(blockedPortList);
 
 #ifndef NDEBUG
     // The port list must be sorted for binary_search to work.
@@ -1799,31 +1984,28 @@ bool portAllowed(const KURL& url)
 String mimeTypeFromDataURL(const String& url)
 {
     ASSERT(protocolIs(url, "data"));
-    int index = url.find(';');
-    if (index == -1)
+    size_t index = url.find(';');
+    if (index == notFound)
         index = url.find(',');
-    if (index != -1) {
-        int len = index - 5;
-        if (len > 0)
-            return url.substring(5, len);
+    if (index != notFound) {
+        if (index > 5)
+            return url.substring(5, index - 5);
         return "text/plain"; // Data URLs with no MIME type are considered text/plain.
     }
     return "";
 }
 
-const KURL& blankURL()
+bool protocolIsInHTTPFamily(const String& url)
 {
-    DEFINE_STATIC_LOCAL(KURL, staticBlankURL, (ParsedURLString, "about:blank"));
-    return staticBlankURL;
+    unsigned length = url.length();
+    const UChar* characters = url.characters();
+    return length > 4
+        && isLetterMatchIgnoringCase(characters[0], 'h')
+        && isLetterMatchIgnoringCase(characters[1], 't')
+        && isLetterMatchIgnoringCase(characters[2], 't')
+        && isLetterMatchIgnoringCase(characters[3], 'p')
+        && (characters[4] == ':'
+            || (isLetterMatchIgnoringCase(characters[4], 's') && length > 5 && characters[5] == ':'));
 }
 
-#ifndef NDEBUG
-void KURL::print() const
-{
-    printf("%s\n", m_string.utf8().data());
 }
-#endif
-
-}
-
-#endif  // !USE(GOOGLEURL)

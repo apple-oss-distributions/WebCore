@@ -25,65 +25,38 @@
  */
 
 #include "config.h"
-
-#if ENABLE(3D_CANVAS)
-
-#include "ArrayBuffer.h"
 #include "Uint32Array.h"
 
 namespace WebCore {
 
 PassRefPtr<Uint32Array> Uint32Array::create(unsigned length)
 {
-    RefPtr<ArrayBuffer> buffer = ArrayBuffer::create(length, sizeof(unsigned int));
-    return create(buffer, 0, length);
+    return TypedArrayBase<unsigned int>::create<Uint32Array>(length);
 }
 
 PassRefPtr<Uint32Array> Uint32Array::create(unsigned int* array, unsigned length)
 {
-    RefPtr<Uint32Array> a = Uint32Array::create(length);
-    for (unsigned i = 0; i < length; ++i)
-        a->set(i, array[i]);
-    return a;
+    return TypedArrayBase<unsigned int>::create<Uint32Array>(array, length);
 }
 
-PassRefPtr<Uint32Array> Uint32Array::create(PassRefPtr<ArrayBuffer> buffer,
-                                                                unsigned byteOffset,
-                                                                unsigned length)
+PassRefPtr<Uint32Array> Uint32Array::create(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length)
 {
-    RefPtr<ArrayBuffer> buf(buffer);
-    if (!verifySubRange<unsigned int>(buf, byteOffset, length))
-        return 0;
-
-    return adoptRef(new Uint32Array(buf, byteOffset, length));
+    return TypedArrayBase<unsigned int>::create<Uint32Array>(buffer, byteOffset, length);
 }
 
 Uint32Array::Uint32Array(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned length)
-        : ArrayBufferView(buffer, byteOffset)
-        , m_size(length)
+    : IntegralTypedArrayBase<unsigned int>(buffer, byteOffset, length)
 {
 }
 
-unsigned Uint32Array::length() const {
-    return m_size;
-}
-
-unsigned Uint32Array::byteLength() const {
-    return m_size * sizeof(unsigned int);
-}
-
-PassRefPtr<ArrayBufferView> Uint32Array::slice(int start, int end)
+PassRefPtr<Uint32Array> Uint32Array::subarray(int start) const
 {
-    unsigned offset, length;
-    calculateOffsetAndLength(start, end, m_size, &offset, &length);
-    clampOffsetAndNumElements<unsigned int>(buffer(), m_byteOffset, &offset, &length);
-    return create(buffer(), offset, length);
+    return subarray(start, length());
 }
 
-void Uint32Array::set(Uint32Array* array, unsigned offset, ExceptionCode& ec) {
-    setImpl(array, offset * sizeof(unsigned int), ec);
+PassRefPtr<Uint32Array> Uint32Array::subarray(int start, int end) const
+{
+    return subarrayImpl<Uint32Array>(start, end);
 }
 
 }
-
-#endif // ENABLE(3D_CANVAS)

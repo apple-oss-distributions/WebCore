@@ -22,10 +22,12 @@
 
 #include "config.h"
 #include "Event.h"
+#include "EventDispatcher.h"
+#include "EventTarget.h"
 
-#include "AtomicString.h"
 #include "UserGestureIndicator.h"
 #include <wtf/CurrentTime.h>
+#include <wtf/text/AtomicString.h>
 
 namespace WebCore {
 
@@ -39,7 +41,7 @@ Event::Event()
     , m_cancelBubble(false)
     , m_eventPhase(0)
     , m_currentTarget(0)
-    , m_createTime(static_cast<DOMTimeStamp>(currentTime() * 1000.0))
+    , m_createTime(convertSecondsToDOMTimeStamp(currentTime()))
 {
 }
 
@@ -54,7 +56,7 @@ Event::Event(const AtomicString& eventType, bool canBubbleArg, bool cancelableAr
     , m_cancelBubble(false)
     , m_eventPhase(0)
     , m_currentTarget(0)
-    , m_createTime(static_cast<DOMTimeStamp>(currentTime() * 1000.0))
+    , m_createTime(convertSecondsToDOMTimeStamp(currentTime()))
 {
 }
 
@@ -172,6 +174,11 @@ bool Event::isBeforeLoadEvent() const
     return false;
 }
 
+bool Event::isHashChangeEvent() const
+{
+    return false;
+}
+
 #if ENABLE(SVG)
 bool Event::isSVGZoomEvent() const
 {
@@ -186,12 +193,17 @@ bool Event::isStorageEvent() const
 }
 #endif
 
-#if ENABLE(WORKERS)
-bool Event::isErrorEvent() const
+#if ENABLE(INDEXED_DATABASE)
+bool Event::isIDBVersionChangeEvent() const
 {
     return false;
 }
 #endif
+
+bool Event::isErrorEvent() const
+{
+    return false;
+}
 
 bool Event::isTouchEvent() const
 {
@@ -210,6 +222,32 @@ bool Event::isDeviceMotionEvent() const
 }
 
 bool Event::isDeviceOrientationEvent() const
+{
+    return false;
+}
+#endif
+
+#if ENABLE(WEB_AUDIO)
+bool Event::isAudioProcessingEvent() const
+{
+    return false;
+}
+
+bool Event::isOfflineAudioCompletionEvent() const
+{
+    return false;
+}
+#endif
+
+#if ENABLE(INPUT_SPEECH)
+bool Event::isSpeechInputEvent() const
+{
+    return false;
+}
+#endif
+
+#if ENABLE(WEB_SOCKETS)
+bool Event::isCloseEvent() const
 {
     return false;
 }
@@ -250,6 +288,9 @@ void Event::storeResult(const String&)
 
 void Event::setTarget(PassRefPtr<EventTarget> target)
 {
+    if (m_target == target)
+        return;
+
     m_target = target;
     if (m_target)
         receivedTarget();
@@ -268,25 +309,18 @@ void Event::setUnderlyingEvent(PassRefPtr<Event> ue)
     m_underlyingEvent = ue;
 }
 
-const AtomicString& Event::aliasedType() const
+EventDispatchMediator::EventDispatchMediator(PassRefPtr<Event> event)
+    : m_event(event)
 {
-    if (type() == eventNames().focusinEvent)
-        return eventNames().DOMFocusInEvent;
-    if (type() == eventNames().focusoutEvent)
-        return eventNames().DOMFocusOutEvent;
-    if (type() == eventNames().DOMFocusInEvent)
-        return eventNames().focusinEvent;
-    if (type() == eventNames().DOMFocusOutEvent)
-        return eventNames().focusoutEvent;
-    
-    ASSERT_NOT_REACHED();
-    return type();
 }
 
-bool Event::hasAliasedType() const
+EventDispatchMediator::~EventDispatchMediator()
 {
-    return type() == eventNames().focusinEvent || type() == eventNames().focusoutEvent ||
-           type() == eventNames().DOMFocusInEvent || type() == eventNames().DOMFocusOutEvent;
+}
+
+bool EventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) const
+{
+    return dispatcher->dispatchEvent(m_event.get());
 }
 
 } // namespace WebCore

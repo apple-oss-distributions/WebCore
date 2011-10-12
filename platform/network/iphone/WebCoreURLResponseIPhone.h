@@ -39,14 +39,15 @@
 namespace WebCore {
 
     
-inline bool shouldUseQuickLookForMIMEType(const String& mimeType)
+inline bool shouldUseQuickLookForMIMEType(const WTF::String& mimeType)
 {
     if ((   !MIMETypeRegistry::isSupportedNonImageMIMEType(mimeType)    // ignore supported non-image MIME types
          && !MIMETypeRegistry::isSupportedImageMIMEType(mimeType)       // ignore supported image MIME types
          && mimeType != "text/css"                                      // ignore css
          && mimeType != "application/pdf"                               // ignore pdf
          )
-        || mimeType == "text/plain")                                    // but keep text/plain which is too generic and can hide something
+        || mimeType == "text/plain"                                     // but keep text/plain which is too generic and can hide something
+        || (mimeType == "text/xml" || mimeType == "application/xml"))   // and keep XML types for .mobileconfig files
     {
         return true;
     }

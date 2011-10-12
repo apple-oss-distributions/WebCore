@@ -28,6 +28,7 @@
 
 #include "GeolocationManager.h"
 #include "GeolocationService.h"
+#include <wtf/PassOwnPtr.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
 
@@ -35,7 +36,7 @@ namespace WebCore {
 
 class GeolocationServiceCoreLocation : public GeolocationService {
 public:
-    static GeolocationService* create(GeolocationServiceClient*);
+    static PassOwnPtr<GeolocationService> create(GeolocationServiceClient*);
     
     virtual bool startUpdating(PositionOptions*);
     virtual void stopUpdating();

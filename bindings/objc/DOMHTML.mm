@@ -40,6 +40,7 @@
 #import "HTMLCollection.h"
 #import "HTMLDocument.h"
 #import "HTMLInputElement.h"
+#import "HTMLParserIdioms.h"
 #import "HTMLSelectElement.h"
 #import "HTMLTextAreaElement.h"
 #import "Page.h"
@@ -48,6 +49,7 @@
 #import "Settings.h"
 #import "markup.h"
 
+#import "Autocapitalize.h"
 #import "DOMHTMLElementInternal.h"
 #import "RenderLayer.h"
 #import "WAKWindow.h"
@@ -149,7 +151,7 @@ using namespace WebCore;
 
 - (DOMDocumentFragment *)_createDocumentFragmentWithMarkupString:(NSString *)markupString baseURLString:(NSString *)baseURLString
 {
-    NSURL *baseURL = core(self)->completeURL(WebCore::deprecatedParseURL(baseURLString));
+    NSURL *baseURL = core(self)->completeURL(WebCore::stripLeadingAndTrailingHTMLSpaces(baseURLString));
     return [self createDocumentFragmentWithMarkupString:markupString baseURL:baseURL];
 }
 
@@ -160,24 +162,6 @@ using namespace WebCore;
 
 @end
 
-#ifdef BUILDING_ON_TIGER
-@implementation DOMHTMLDocument (DOMHTMLDocumentOverrides)
-
-- (DOMNode *)firstChild
-{
-    WebCore::HTMLDocument* coreHTMLDocument = core(self);
-    if (!coreHTMLDocument->page() || !coreHTMLDocument->page()->settings()->needsTigerMailQuirks())
-        return kit(coreHTMLDocument->firstChild());
-
-    WebCore::Node* child = coreHTMLDocument->firstChild();
-    while (child && child->nodeType() == WebCore::Node::DOCUMENT_TYPE_NODE)
-        child = child->nextSibling();
-    
-    return kit(child);
-}
-
-@end
-#endif
 
 @implementation DOMHTMLInputElement (FormAutoFillTransition)
 
@@ -191,7 +175,7 @@ using namespace WebCore;
 {
     WebCore::HTMLInputElement* inputElement = core(self);
     if (inputElement) {
-        WebCore::String newValue = inputElement->value();
+        WTF::String newValue = inputElement->value();
         newValue.replace(targetRange.location, targetRange.length, replacementString);
         inputElement->setValue(newValue);
         inputElement->setSelectionRange(index, newValue.length());
@@ -248,8 +232,7 @@ using namespace WebCore;
 
 - (BOOL)_isEdited
 {
-    WebCore::RenderObject *renderer = core(self)->renderer();
-    return renderer && [self _isTextField] && static_cast<WebCore::RenderTextControl *>(renderer)->lastChangeWasUserEdit();
+    return core(self)->lastChangeWasUserEdit();
 }
 
 @end
@@ -258,8 +241,27 @@ using namespace WebCore;
 
 - (BOOL)_isEdited
 {
-    WebCore::RenderObject* renderer = core(self)->renderer();
-    return renderer && static_cast<WebCore::RenderTextControl*>(renderer)->lastChangeWasUserEdit();
+    return core(self)->lastChangeWasUserEdit();
+}
+
+@end
+
+@implementation DOMHTMLInputElement (AutocapitalizeAdditions)
+
+- (WebAutocapitalizeType)_autocapitalizeType
+{
+    WebCore::HTMLInputElement* inputElement = core(self);
+    return static_cast<WebAutocapitalizeType>(inputElement->autocapitalizeType());
+}
+
+@end
+
+@implementation DOMHTMLTextAreaElement (AutocapitalizeAdditions)
+
+- (WebAutocapitalizeType)_autocapitalizeType
+{
+    WebCore::HTMLTextAreaElement* textareaElement = core(self);
+    return static_cast<WebAutocapitalizeType>(textareaElement->autocapitalizeType());
 }
 
 @end

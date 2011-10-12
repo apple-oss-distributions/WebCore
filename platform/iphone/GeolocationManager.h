@@ -48,7 +48,8 @@ namespace WebCore {
 class GeolocationServiceCoreLocation;
 class GeolocationLink;
 
-class GeolocationManager : public Noncopyable {
+class GeolocationManager {
+    WTF_MAKE_NONCOPYABLE(GeolocationManager);
 public:
     static GeolocationManager& shared();
 

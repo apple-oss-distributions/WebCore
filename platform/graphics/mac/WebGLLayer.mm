@@ -26,7 +26,7 @@
 #include "config.h"
 
 #if USE(ACCELERATED_COMPOSITING)
-#if ENABLE(3D_CANVAS)
+#if ENABLE(WEBGL)
 
 #import "WebGLLayer.h"
 
@@ -58,7 +58,7 @@ using namespace WebCore;
 {
     m_context->endPaint();
     if (m_layerOwner)
-        m_layerOwner->didDisplay(self);
+        m_layerOwner->layerDidDisplay(self);
 }
 
 @end
@@ -77,5 +77,5 @@ using namespace WebCore;
 
 @end
 
-#endif // ENABLE(3D_CANVAS)
+#endif // ENABLE(WEBGL)
 #endif // USE(ACCELERATED_COMPOSITING)

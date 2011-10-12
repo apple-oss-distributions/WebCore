@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008, 2009, 2010 Apple, Inc.  All rights reserved.
+ * Copyright (C) 2007, 2008, 2009, 2010, 2011 Apple, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,33 +30,39 @@
 
 #include "Cookie.h"
 #include "CookieJar.h"
+#include "DocumentLoader.h"
 #include "Frame.h"
 #include "FrameView.h"
 #include "GraphicsContext.h"
 #include "KURL.h"
 #include "MediaPlayerPrivateTaskTimer.h"
+#include "Page.h"
 #include "QTCFDictionary.h"
+#include "QTDecompressionSession.h"
 #include "QTMovie.h"
 #include "QTMovieTask.h"
 #include "QTMovieVisualContext.h"
 #include "ScrollView.h"
 #include "Settings.h"
 #include "SoftLinking.h"
-#include "StringBuilder.h"
-#include "StringHash.h"
 #include "TimeRanges.h"
 #include "Timer.h"
+#include "WKCAImageQueue.h"
+#include <AssertMacros.h>
+#include <CoreGraphics/CGAffineTransform.h>
 #include <CoreGraphics/CGContext.h>
+#include <QuartzCore/CATransform3D.h>
 #include <Wininet.h>
 #include <wtf/CurrentTime.h>
 #include <wtf/HashSet.h>
 #include <wtf/MainThread.h>
 #include <wtf/MathExtras.h>
 #include <wtf/StdLibExtras.h>
+#include <wtf/text/StringBuilder.h>
+#include <wtf/text/StringHash.h>
 
 #if USE(ACCELERATED_COMPOSITING)
-#include "GraphicsLayerCACF.h"
-#include "WKCACFLayer.h"
+#include "PlatformCALayer.h"
 #include "WKCAImageQueue.h"
 #endif
 
@@ -83,19 +89,53 @@ private:
 };
 
 #if USE(ACCELERATED_COMPOSITING)
-// Interface declaration for MediaPlayerPrivateQuickTimeVisualContext's GraphicsLayerClient aggregate
-class MediaPlayerPrivateQuickTimeVisualContext::LayerClient : public GraphicsLayerClient {
+class MediaPlayerPrivateQuickTimeVisualContext::LayerClient : public PlatformCALayerClient {
 public:
     LayerClient(MediaPlayerPrivateQuickTimeVisualContext* parent) : m_parent(parent) {}
     virtual ~LayerClient() { m_parent = 0; }
-    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip);
-    virtual void notifyAnimationStarted(const GraphicsLayer*, double time) { }
-    virtual void notifySyncRequired(const GraphicsLayer*) { }
-    virtual bool showDebugBorders() const { return false; }
-    virtual bool showRepaintCounter() const { return false; }
+
 private:
+    virtual void platformCALayerLayoutSublayersOfLayer(PlatformCALayer*);
+    virtual bool platformCALayerRespondsToLayoutChanges() const { return true; }
+
+    virtual void platformCALayerAnimationStarted(CFTimeInterval beginTime) { }
+    virtual GraphicsLayer::CompositingCoordinatesOrientation platformCALayerContentsOrientation() const { return GraphicsLayer::CompositingCoordinatesBottomUp; }
+    virtual void platformCALayerPaintContents(GraphicsContext&, const IntRect& inClip) { }
+    virtual bool platformCALayerShowDebugBorders() const { return false; }
+    virtual bool platformCALayerShowRepaintCounter() const { return false; }
+    virtual int platformCALayerIncrementRepaintCount() { return 0; }
+
+    virtual bool platformCALayerContentsOpaque() const { return false; }
+    virtual bool platformCALayerDrawsContent() const { return false; }
+    virtual void platformCALayerLayerDidDisplay(PlatformLayer*) { }
+
     MediaPlayerPrivateQuickTimeVisualContext* m_parent;
 };
+
+void MediaPlayerPrivateQuickTimeVisualContext::LayerClient::platformCALayerLayoutSublayersOfLayer(PlatformCALayer* layer)
+{
+    ASSERT(m_parent);
+    ASSERT(m_parent->m_transformLayer == layer);
+
+    FloatSize parentSize = layer->bounds().size();
+    FloatSize naturalSize = m_parent->naturalSize();
+
+    // Calculate the ratio of these two sizes and use that ratio to scale the qtVideoLayer:
+    FloatSize ratio(parentSize.width() / naturalSize.width(), parentSize.height() / naturalSize.height());
+
+    int videoWidth = 0;
+    int videoHeight = 0;
+    m_parent->m_movie->getNaturalSize(videoWidth, videoHeight);
+    FloatRect videoBounds(0, 0, videoWidth * ratio.width(), videoHeight * ratio.height());
+    FloatPoint3D videoAnchor = m_parent->m_qtVideoLayer->anchorPoint();
+
+    // Calculate the new position based on the parent's size:
+    FloatPoint position(parentSize.width() * 0.5 - videoBounds.width() * (0.5 - videoAnchor.x()),
+        parentSize.height() * 0.5 - videoBounds.height() * (0.5 - videoAnchor.y())); 
+
+    m_parent->m_qtVideoLayer->setBounds(videoBounds);
+    m_parent->m_qtVideoLayer->setPosition(position);
+}
 #endif
 
 class MediaPlayerPrivateQuickTimeVisualContext::VisualContextClient : public QTMovieVisualContextClient {
@@ -108,15 +148,15 @@ private:
     MediaPlayerPrivateQuickTimeVisualContext* m_parent;
 };
 
-MediaPlayerPrivateInterface* MediaPlayerPrivateQuickTimeVisualContext::create(MediaPlayer* player) 
+PassOwnPtr<MediaPlayerPrivateInterface> MediaPlayerPrivateQuickTimeVisualContext::create(MediaPlayer* player)
 { 
-    return new MediaPlayerPrivateQuickTimeVisualContext(player);
+    return adoptPtr(new MediaPlayerPrivateQuickTimeVisualContext(player));
 }
 
 void MediaPlayerPrivateQuickTimeVisualContext::registerMediaEngine(MediaEngineRegistrar registrar)
 {
     if (isAvailable())
-        registrar(create, getSupportedTypes, supportsType);
+        registrar(create, getSupportedTypes, supportsType, 0, 0, 0);
 }
 
 MediaPlayerPrivateQuickTimeVisualContext::MediaPlayerPrivateQuickTimeVisualContext(MediaPlayer* player)
@@ -133,11 +173,15 @@ MediaPlayerPrivateQuickTimeVisualContext::MediaPlayerPrivateQuickTimeVisualConte
     , m_isStreaming(false)
     , m_visible(false)
     , m_newFrameAvailable(false)
-    , m_movieClient(new MediaPlayerPrivateQuickTimeVisualContext::MovieClient(this))
+    , m_movieClient(adoptPtr(new MediaPlayerPrivateQuickTimeVisualContext::MovieClient(this)))
 #if USE(ACCELERATED_COMPOSITING)
-    , m_layerClient(new MediaPlayerPrivateQuickTimeVisualContext::LayerClient(this))
+    , m_layerClient(adoptPtr(new MediaPlayerPrivateQuickTimeVisualContext::LayerClient(this)))
+    , m_movieTransform(CGAffineTransformIdentity)
 #endif
-    , m_visualContextClient(new MediaPlayerPrivateQuickTimeVisualContext::VisualContextClient(this))
+    , m_visualContextClient(adoptPtr(new MediaPlayerPrivateQuickTimeVisualContext::VisualContextClient(this)))
+    , m_delayingLoad(false)
+    , m_privateBrowsing(false)
+    , m_preload(MediaPlayer::Auto)
 {
 }
 
@@ -164,11 +208,11 @@ PlatformMedia MediaPlayerPrivateQuickTimeVisualContext::platformMedia() const
     p.media.qtMovieVisualContext = m_visualContext.get();
     return p;
 }
-
 #if USE(ACCELERATED_COMPOSITING)
+
 PlatformLayer* MediaPlayerPrivateQuickTimeVisualContext::platformLayer() const
 {
-    return m_qtVideoLayer ? m_qtVideoLayer->platformLayer() : 0;
+    return m_transformLayer ? m_transformLayer->platformLayer() : 0;
 }
 #endif
 
@@ -205,7 +249,7 @@ static void addCookieParam(StringBuilder& cookieBuilder, const String& name, con
     // Add parameter name, and value if there is one.
     cookieBuilder.append(name);
     if (!value.isEmpty()) {
-        cookieBuilder.append("=");
+        cookieBuilder.append('=');
         cookieBuilder.append(value);
     }
 }
@@ -215,7 +259,8 @@ void MediaPlayerPrivateQuickTimeVisualContext::setUpCookiesForQuickTime(const St
     // WebCore loaded the page with the movie URL with CFNetwork but QuickTime will 
     // use WinINet to download the movie, so we need to copy any cookies needed to
     // download the movie into WinInet before asking QuickTime to open it.
-    Frame* frame = m_player->frameView() ? m_player->frameView()->frame() : 0;
+    Document* document = m_player->mediaPlayerClient()->mediaPlayerOwningDocument();
+    Frame* frame = document ? document->frame() : 0;
     if (!frame || !frame->page() || !frame->page()->cookieEnabled())
         return;
 
@@ -239,7 +284,7 @@ void MediaPlayerPrivateQuickTimeVisualContext::setUpCookiesForQuickTime(const St
             addCookieParam(cookieBuilder, "expires", rfc2616DateStringFromTime(cookie.expires));
         if (cookie.httpOnly) 
             addCookieParam(cookieBuilder, "httpOnly", String());
-        cookieBuilder.append(";");
+        cookieBuilder.append(';');
 
         String cookieURL;
         if (!cookie.domain.isEmpty()) {
@@ -262,7 +307,45 @@ void MediaPlayerPrivateQuickTimeVisualContext::setUpCookiesForQuickTime(const St
     }
 }
 
+static void disableComponentsOnce()
+{
+    static bool sComponentsDisabled = false;
+    if (sComponentsDisabled)
+        return;
+    sComponentsDisabled = true;
+
+    uint32_t componentsToDisable[][5] = {
+        {'eat ', 'TEXT', 'text', 0, 0},
+        {'eat ', 'TXT ', 'text', 0, 0},    
+        {'eat ', 'utxt', 'text', 0, 0},  
+        {'eat ', 'TEXT', 'tx3g', 0, 0},  
+    };
+
+    for (size_t i = 0; i < WTF_ARRAY_LENGTH(componentsToDisable); ++i) 
+        QTMovie::disableComponent(componentsToDisable[i]);
+}
+
+void MediaPlayerPrivateQuickTimeVisualContext::resumeLoad()
+{
+    m_delayingLoad = false;
+
+    if (!m_movieURL.isEmpty())
+        loadInternal(m_movieURL);
+}
+
 void MediaPlayerPrivateQuickTimeVisualContext::load(const String& url)
+{
+    m_movieURL = url;
+
+    if (m_preload == MediaPlayer::None) {
+        m_delayingLoad = true;
+        return;
+    }
+
+    loadInternal(url);
+}
+
+void MediaPlayerPrivateQuickTimeVisualContext::loadInternal(const String& url)
 {
     if (!QTMovie::initializeQuickTime()) {
         // FIXME: is this the right error to return?
@@ -270,6 +353,8 @@ void MediaPlayerPrivateQuickTimeVisualContext::load(const String& url)
         m_player->networkStateChanged();
         return;
     }
+
+    disableComponentsOnce();
 
     // Initialize the task timer.
     MediaPlayerPrivateTaskTimer::initialize();
@@ -287,8 +372,15 @@ void MediaPlayerPrivateQuickTimeVisualContext::load(const String& url)
     setUpCookiesForQuickTime(url);
 
     m_movie = adoptRef(new QTMovie(m_movieClient.get()));
+
     m_movie->load(url.characters(), url.length(), m_player->preservesPitch());
     m_movie->setVolume(m_player->volume());
+}
+
+void MediaPlayerPrivateQuickTimeVisualContext::prepareToPlay()
+{
+    if (!m_movie || m_delayingLoad)
+        resumeLoad();
 }
 
 void MediaPlayerPrivateQuickTimeVisualContext::play()
@@ -403,7 +495,13 @@ IntSize MediaPlayerPrivateQuickTimeVisualContext::naturalSize() const
     int width;
     int height;
     m_movie->getNaturalSize(width, height);
+#if USE(ACCELERATED_COMPOSITING)
+    CGSize originalSize = {width, height};
+    CGSize transformedSize = CGSizeApplyAffineTransform(originalSize, m_movieTransform);
+    return IntSize(abs(transformedSize.width), abs(transformedSize.height));
+#else
     return IntSize(width, height);
+#endif
 }
 
 bool MediaPlayerPrivateQuickTimeVisualContext::hasVideo() const
@@ -638,12 +736,24 @@ void MediaPlayerPrivateQuickTimeVisualContext::paint(GraphicsContext* p, const I
     if (currentMode == MediaRenderingSoftwareRenderer && !m_visualContext)
         return;
 
-#if USE(ACCELERATED_COMPOSITING)
-    if (m_qtVideoLayer)
-        return;
-#endif
     QTPixelBuffer buffer = m_visualContext->imageForTime(0);
     if (buffer.pixelBufferRef()) {
+#if USE(ACCELERATED_COMPOSITING)
+        if (m_qtVideoLayer) {
+            // We are probably being asked to render the video into a canvas, but 
+            // there's a good chance the QTPixelBuffer is not ARGB and thus can't be
+            // drawn using CG.  If so, fire up an ICMDecompressionSession and convert 
+            // the current frame into something which can be rendered by CG.
+            if (!buffer.pixelFormatIs32ARGB() && !buffer.pixelFormatIs32BGRA()) {
+                // The decompression session will only decompress a specific pixelFormat 
+                // at a specific width and height; if these differ, the session must be
+                // recreated with the new parameters.
+                if (!m_decompressionSession || !m_decompressionSession->canDecompress(buffer))
+                    m_decompressionSession = QTDecompressionSession::create(buffer.pixelFormatType(), buffer.width(), buffer.height());
+                buffer = m_decompressionSession->decompress(buffer);
+            }
+        }
+#endif
         CGImageRef image = CreateCGImageFromPixelBuffer(buffer);
         
         CGContextRef context = p->platformContext();
@@ -762,12 +872,12 @@ void MediaPlayerPrivateQuickTimeVisualContext::retrieveCurrentImage()
         if (!buffer.pixelBufferRef())
             return;
 
-        WKCACFLayer* layer = static_cast<WKCACFLayer*>(m_qtVideoLayer->platformLayer());
+        PlatformCALayer* layer = m_qtVideoLayer.get();
 
         if (!buffer.lockBaseAddress()) {
             if (requiredDllsAvailable()) {
                 if (!m_imageQueue) {
-                    m_imageQueue = new WKCAImageQueue(buffer.width(), buffer.height(), 30);
+                    m_imageQueue = adoptPtr(new WKCAImageQueue(buffer.width(), buffer.height(), 30));
                     m_imageQueue->setFlags(WKCAImageQueue::Fill, WKCAImageQueue::Fill);
                     layer->setContents(m_imageQueue->get());
                 }
@@ -796,7 +906,7 @@ void MediaPlayerPrivateQuickTimeVisualContext::retrieveCurrentImage()
             }
 
             buffer.unlockBaseAddress();
-            layer->rootLayer()->setNeedsRender();
+            layer->setNeedsCommit();
         }
     } else
 #endif
@@ -943,6 +1053,23 @@ bool MediaPlayerPrivateQuickTimeVisualContext::hasSingleSecurityOrigin() const
     return true;
 }
 
+void MediaPlayerPrivateQuickTimeVisualContext::setPreload(MediaPlayer::Preload preload)
+{
+    m_preload = preload;
+    if (m_delayingLoad && m_preload != MediaPlayer::None)
+        resumeLoad();
+}
+
+float MediaPlayerPrivateQuickTimeVisualContext::mediaTimeForTimeValue(float timeValue) const
+{
+    long timeScale;
+    if (m_readyState < MediaPlayer::HaveMetadata || !(timeScale = m_movie->timeScale()))
+        return timeValue;
+
+    long mediaTimeValue = lroundf(timeValue * timeScale);
+    return static_cast<float>(mediaTimeValue) / timeScale;
+}
+
 MediaPlayerPrivateQuickTimeVisualContext::MediaRenderingMode MediaPlayerPrivateQuickTimeVisualContext::currentRenderingMode() const
 {
     if (!m_movie)
@@ -992,7 +1119,7 @@ void MediaPlayerPrivateQuickTimeVisualContext::setUpVideoRendering()
         m_player->mediaPlayerClient()->mediaPlayerRenderingModeChanged(m_player);
 #endif
 
-    QTMovieVisualContext::Type contextType = requiredDllsAvailable() && preferredMode == MediaRenderingMovieLayer ? QTMovieVisualContext::ConfigureForCAImageQueue : QTMovieVisualContext::ConfigureForCGImage;
+    QTPixelBuffer::Type contextType = requiredDllsAvailable() && preferredMode == MediaRenderingMovieLayer ? QTPixelBuffer::ConfigureForCAImageQueue : QTPixelBuffer::ConfigureForCGImage;
     m_visualContext = QTMovieVisualContext::create(m_visualContextClient.get(), contextType);
     m_visualContext->setMovie(m_movie.get());
 }
@@ -1016,6 +1143,40 @@ bool MediaPlayerPrivateQuickTimeVisualContext::hasSetUpVideoRendering() const
 #endif
 }
 
+void MediaPlayerPrivateQuickTimeVisualContext::retrieveAndResetMovieTransform()
+{
+#if USE(ACCELERATED_COMPOSITING)
+    // First things first, reset the total movie transform so that
+    // we can bail out early:
+    m_movieTransform = CGAffineTransformIdentity;
+
+    if (!m_movie || !m_movie->hasVideo())
+        return;
+
+    // This trick will only work on movies with a single video track,
+    // so bail out early if the video contains more than one (or zero)
+    // video tracks.
+    QTTrackArray videoTracks = m_movie->videoTracks();
+    if (videoTracks.size() != 1)
+        return;
+
+    QTTrack* track = videoTracks[0].get();
+    ASSERT(track);
+
+    CGAffineTransform movieTransform = m_movie->getTransform();
+    if (!CGAffineTransformEqualToTransform(movieTransform, CGAffineTransformIdentity))
+        m_movie->resetTransform();
+
+    CGAffineTransform trackTransform = track->getTransform();
+    if (!CGAffineTransformEqualToTransform(trackTransform, CGAffineTransformIdentity))
+        track->resetTransform();
+
+    // Multiply the two transforms together, taking care to 
+    // do so in the correct order, track * movie = final:
+    m_movieTransform = CGAffineTransformConcat(trackTransform, movieTransform);
+#endif
+}
+
 void MediaPlayerPrivateQuickTimeVisualContext::createLayerForMovie()
 {
 #if USE(ACCELERATED_COMPOSITING)
@@ -1024,20 +1185,34 @@ void MediaPlayerPrivateQuickTimeVisualContext::createLayerForMovie()
     if (!m_movie || m_qtVideoLayer)
         return;
 
-    // Create a GraphicsLayer that won't be inserted directly into the render tree, but will used 
-    // as a wrapper for a WKCACFLayer which gets inserted as the content layer of the video 
-    // renderer's GraphicsLayer.
-    m_qtVideoLayer.set(new GraphicsLayerCACF(m_layerClient.get()));
+    // Create a PlatformCALayer which will transform the contents of the video layer
+    // which is in m_qtVideoLayer.
+    m_transformLayer = PlatformCALayer::create(PlatformCALayer::LayerTypeLayer, m_layerClient.get());
+    if (!m_transformLayer)
+        return;
+
+    // Mark the layer as anchored in the top left.
+    m_transformLayer->setAnchorPoint(FloatPoint3D());
+
+    m_qtVideoLayer = PlatformCALayer::create(PlatformCALayer::LayerTypeLayer, 0);
     if (!m_qtVideoLayer)
         return;
 
-    // Mark the layer as drawing itself, anchored in the top left, and bottom-up.
-    m_qtVideoLayer->setDrawsContent(true);
-    m_qtVideoLayer->setAnchorPoint(FloatPoint3D());
-    m_qtVideoLayer->setContentsOrientation(GraphicsLayer::CompositingCoordinatesBottomUp);
+    if (CGAffineTransformEqualToTransform(m_movieTransform, CGAffineTransformIdentity))
+        retrieveAndResetMovieTransform();
+    CGAffineTransform t = m_movieTransform;
+
+    // Remove the translation portion of the transform, since we will always rotate about
+    // the layer's center point.  In our limited use-case (a single video track), this is
+    // safe:
+    t.tx = t.ty = 0;
+    m_qtVideoLayer->setTransform(CATransform3DMakeAffineTransform(t));
+
 #ifndef NDEBUG
     m_qtVideoLayer->setName("Video layer");
 #endif
+    m_transformLayer->appendSublayer(m_qtVideoLayer.get());
+    m_transformLayer->setNeedsLayout();
     // The layer will get hooked up via RenderLayerBacking::updateGraphicsLayerConfiguration().
 #endif
 
@@ -1051,19 +1226,20 @@ void MediaPlayerPrivateQuickTimeVisualContext::createLayerForMovie()
 void MediaPlayerPrivateQuickTimeVisualContext::destroyLayerForMovie()
 {
 #if USE(ACCELERATED_COMPOSITING)
-    if (m_qtVideoLayer)
+    if (m_qtVideoLayer) {
+        m_qtVideoLayer->removeFromSuperlayer();
         m_qtVideoLayer = 0;
+    }
+
+    if (m_transformLayer)
+        m_transformLayer = 0;
 
     if (m_imageQueue)
-        m_imageQueue = 0;
+        m_imageQueue = nullptr;
 #endif
 }
 
 #if USE(ACCELERATED_COMPOSITING)
-void MediaPlayerPrivateQuickTimeVisualContext::LayerClient::paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip)
-{
-}
-
 bool MediaPlayerPrivateQuickTimeVisualContext::supportsAcceleratedRendering() const
 {
     return isReadyForRendering();
@@ -1075,6 +1251,13 @@ void MediaPlayerPrivateQuickTimeVisualContext::acceleratedRenderingStateChanged(
     setUpVideoRendering();
 }
 
+void MediaPlayerPrivateQuickTimeVisualContext::setPrivateBrowsingMode(bool privateBrowsing)
+{
+    m_privateBrowsing = privateBrowsing;
+    if (m_movie)
+        m_movie->setPrivateBrowsingMode(m_privateBrowsing);
+}
+    
 #endif
 
 

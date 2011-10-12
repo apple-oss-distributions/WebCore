@@ -22,13 +22,14 @@
 #ifndef TextBreakIterator_h
 #define TextBreakIterator_h
 
+#include <wtf/text/AtomicString.h>
 #include <wtf/unicode/Unicode.h>
 
 namespace WebCore {
 
     class TextBreakIterator;
 
-    // Note: The returned iterator is good only until you get another iterator.
+    // Note: The returned iterator is good only until you get another iterator, with the exception of acquireLineBreakIterator.
 
     // Iterates over "extended grapheme clusters", as defined in UAX #29.
     // Note that platform implementations may be less sophisticated - e.g. ICU prior to
@@ -43,7 +44,8 @@ namespace WebCore {
     TextBreakIterator* cursorMovementIterator(const UChar*, int length);
 
     TextBreakIterator* wordBreakIterator(const UChar*, int length);
-    TextBreakIterator* lineBreakIterator(const UChar*, int length);
+    TextBreakIterator* acquireLineBreakIterator(const UChar*, int length, const AtomicString& locale);
+    void releaseLineBreakIterator(TextBreakIterator*);
     TextBreakIterator* sentenceBreakIterator(const UChar*, int length);
 
     int textBreakFirst(TextBreakIterator*);
@@ -56,6 +58,50 @@ namespace WebCore {
     bool isTextBreak(TextBreakIterator*, int);
 
     const int TextBreakDone = -1;
+
+class LazyLineBreakIterator {
+public:
+    LazyLineBreakIterator(const UChar* string = 0, int length = 0, const AtomicString& locale = AtomicString())
+        : m_string(string)
+        , m_length(length)
+        , m_locale(locale)
+        , m_iterator(0)
+    {
+    }
+
+    ~LazyLineBreakIterator()
+    {
+        if (m_iterator)
+            releaseLineBreakIterator(m_iterator);
+    }
+
+    const UChar* string() const { return m_string; }
+    int length() const { return m_length; }
+
+    TextBreakIterator* get()
+    {
+        if (!m_iterator)
+            m_iterator = acquireLineBreakIterator(m_string, m_length, m_locale);
+        return m_iterator;
+    }
+
+    void reset(const UChar* string, int length, const AtomicString& locale)
+    {
+        if (m_iterator)
+            releaseLineBreakIterator(m_iterator);
+
+        m_string = string;
+        m_length = length;
+        m_locale = locale;
+        m_iterator = 0;
+    }
+
+private:
+    const UChar* m_string;
+    int m_length;
+    AtomicString m_locale;
+    TextBreakIterator* m_iterator;
+};
 
 }
 

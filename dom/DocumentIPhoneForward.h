@@ -14,6 +14,3 @@
  */
 
     struct EventRegion;
-    class EventTarget;
-    class Touch;
-    class TouchList;

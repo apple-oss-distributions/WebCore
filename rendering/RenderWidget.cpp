@@ -25,9 +25,11 @@
 
 #include "AXObjectCache.h"
 #include "AnimationController.h"
+#include "Frame.h"
 #include "GraphicsContext.h"
 #include "HitTestResult.h"
 #include "RenderCounter.h"
+#include "RenderLayer.h"
 #include "RenderView.h"
 #include "RenderWidgetProtector.h"
 
@@ -106,42 +108,32 @@ RenderWidget::RenderWidget(Node* node)
     view()->addWidget(this);
 }
 
-void RenderWidget::destroy()
+void RenderWidget::willBeDestroyed()
 {
-    // We can't call the base class's destroy because we don't
-    // want to unconditionally delete ourselves (we're ref-counted).
-    // So the code below includes copied and pasted contents of
-    // both RenderBox::destroy() and RenderObject::destroy().
-    // Fix originally made for <rdar://problem/4228818>.
-
-    animation()->cancelAnimations(this);
+    if (hasLayer())
+        layer()->willBeDestroyed();
 
     if (RenderView* v = view())
         v->removeWidget(this);
-
-    if (m_hasCounterNodeMap)
-        RenderCounter::destroyCounterNodes(this);
     
     if (AXObjectCache::accessibilityEnabled()) {
         document()->axObjectCache()->childrenChanged(this->parent());
         document()->axObjectCache()->remove(this);
     }
+
+    if (!documentBeingDestroyed() && parent()) 
+        parent()->dirtyLinesFromChangedChild(this);
+
     remove();
 
     setWidget(0);
 
-    // removes from override size map
-    if (hasOverrideSize())
-        setOverrideSize(-1);
+    RenderReplaced::willBeDestroyed();
+}
 
-    if (style() && (style()->height().isPercent() || style()->minHeight().isPercent() || style()->maxHeight().isPercent()))
-        RenderBlock::removePercentHeightDescendant(this);
-
-    if (hasLayer()) {
-        layer()->clearClipRects();
-        setHasLayer(false);
-        destroyLayer();
-    }
+void RenderWidget::destroy()
+{
+    willBeDestroyed();
 
     // Grab the arena from node()->document()->renderArena() before clearing the node pointer.
     // Clear the node before deref-ing, as this may be deleted when deref is called.
@@ -156,9 +148,8 @@ RenderWidget::~RenderWidget()
     clearWidget();
 }
 
-bool RenderWidget::setWidgetGeometry(const IntRect& frame)
+bool RenderWidget::setWidgetGeometry(const IntRect& frame, const IntSize& boundsSize)
 {
-    ASSERT(!widgetHierarchyUpdateSuspendCount);
     if (!node())
         return false;
 
@@ -174,6 +165,8 @@ bool RenderWidget::setWidgetGeometry(const IntRect& frame)
     RenderWidgetProtector protector(this);
     RefPtr<Node> protectedNode(node());
     m_widget->setFrameRect(frame);
+    if (m_widget) // setFrameRect can run arbitrary script, which might clear m_widget.
+        m_widget->setBoundsSize(boundsSize);
     
 #if USE(ACCELERATED_COMPOSITING)
     if (hasLayer() && layer()->isComposited())
@@ -201,11 +194,13 @@ void RenderWidget::setWidget(PassRefPtr<Widget> widget)
         // style pointer).
         if (style()) {
             if (!needsLayout())
-                setWidgetGeometry(absoluteContentBox());
+                setWidgetGeometry(IntRect(localToAbsoluteQuad(FloatQuad(contentBoxRect())).boundingBox()), contentBoxRect().size());
             if (style()->visibility() != VISIBLE)
                 m_widget->hide();
-            else
+            else {
                 m_widget->show();
+                repaint();
+            }
         }
         moveWidgetToParentSoon(m_widget.get(), m_frameView);
     }
@@ -235,6 +230,12 @@ void RenderWidget::showSubstituteImage(PassRefPtr<Image> prpImage)
     repaint();
 }
 
+void RenderWidget::notifyWidget(WidgetNotification notification)
+{
+    if (m_widget)
+        m_widget->notifyWidget(notification);
+}
+
 void RenderWidget::paint(PaintInfo& paintInfo, int tx, int ty)
 {
     if (!shouldPaint(paintInfo, tx, ty))
@@ -247,7 +248,7 @@ void RenderWidget::paint(PaintInfo& paintInfo, int tx, int ty)
         paintBoxDecorations(paintInfo, tx, ty);
 
     if (paintInfo.phase == PaintPhaseMask) {
-        paintMask(paintInfo, tx, ty);
+        paintMask(paintInfo, IntSize(tx, ty));
         return;
     }
 
@@ -267,11 +268,7 @@ void RenderWidget::paint(PaintInfo& paintInfo, int tx, int ty)
 
         // Push a clip if we have a border radius, since we want to round the foreground content that gets painted.
         paintInfo.context->save();
-        
-        IntSize topLeft, topRight, bottomLeft, bottomRight;
-        style()->getBorderRadiiForRect(borderRect, topLeft, topRight, bottomLeft, bottomRight);
-
-        paintInfo.context->addRoundedRectClip(borderRect, topLeft, topRight, bottomLeft, bottomRight);
+        paintInfo.context->addRoundedRectClip(style()->getRoundedBorderFor(borderRect));
     }
 
     if (m_widget) {
@@ -299,7 +296,7 @@ void RenderWidget::paint(PaintInfo& paintInfo, int tx, int ty)
 
         if (m_widget->isFrameView()) {
             FrameView* frameView = static_cast<FrameView*>(m_widget.get());
-            bool runOverlapTests = !frameView->useSlowRepaintsIfNotOverlapped() || frameView->hasCompositedContent();
+            bool runOverlapTests = !frameView->useSlowRepaintsIfNotOverlapped() || frameView->hasCompositedContentIncludingDescendants();
             if (paintInfo.overlapTestRequests && runOverlapTests) {
                 ASSERT(!paintInfo.overlapTestRequests->contains(this));
                 paintInfo.overlapTestRequests->set(this, m_widget->frameRect());
@@ -335,20 +332,16 @@ void RenderWidget::updateWidgetPosition()
     if (!m_widget || !node()) // Check the node in case destroy() has been called.
         return;
 
-    // FIXME: This doesn't work correctly with transforms.
-    FloatPoint absPos = localToAbsolute();
-    absPos.move(borderLeft() + paddingLeft(), borderTop() + paddingTop());
-
-    int w = width() - borderAndPaddingWidth();
-    int h = height() - borderAndPaddingHeight();
-
-    bool boundsChanged = setWidgetGeometry(IntRect(absPos.x(), absPos.y(), w, h));
+    IntRect contentBox = contentBoxRect();
+    IntRect absoluteContentBox = IntRect(localToAbsoluteQuad(FloatQuad(contentBox)).boundingBox());
+    bool boundsChanged = setWidgetGeometry(absoluteContentBox, contentBox.size());
 
     // if the frame bounds got changed, or if view needs layout (possibly indicating
     // content size is wrong) we have to do a layout to set the right widget size
     if (m_widget && m_widget->isFrameView()) {
         FrameView* frameView = static_cast<FrameView*>(m_widget.get());
-        if (boundsChanged || frameView->needsLayout())
+        // Check the frame's page to make sure that the frame isn't in the process of being destroyed.
+        if ((boundsChanged || frameView->needsLayout()) && frameView->frame()->page())
             frameView->layout();
     }
 }
@@ -387,13 +380,13 @@ RenderWidget* RenderWidget::find(const Widget* widget)
     return widgetRendererMap().get(widget);
 }
 
-bool RenderWidget::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, int x, int y, int tx, int ty, HitTestAction action)
+bool RenderWidget::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const IntPoint& pointInContainer, int tx, int ty, HitTestAction action)
 {
     bool hadResult = result.innerNode();
-    bool inside = RenderReplaced::nodeAtPoint(request, result, x, y, tx, ty, action);
+    bool inside = RenderReplaced::nodeAtPoint(request, result, pointInContainer, tx, ty, action);
     
     // Check to see if we are really over the widget itself (and not just in the border/padding area).
-    if (inside && !hadResult && result.innerNode() == node())
+    if ((inside || result.isRectBasedTest()) && !hadResult && result.innerNode() == node())
         result.setIsOverWidget(contentBoxRect().contains(result.localPoint()));
     return inside;
 }

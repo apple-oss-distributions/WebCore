@@ -5,6 +5,7 @@
  *           (C) 2006 Alexey Proskuryakov (ap@webkit.org)
  * Copyright (C) 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
  * Copyright (C) 2008 Torch Mobile Inc. All rights reserved. (http://www.torchmobile.com/)
+ * Copyright (C) 2010 Nokia Corporation and/or its subsidiary(-ies)
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -26,29 +27,55 @@
 #ifndef ViewportArguments_h
 #define ViewportArguments_h
 
+#include "IntSize.h"
+#include <wtf/Forward.h>
+
 namespace WebCore {
 
 class Document;
-class String;
 
 enum ViewportErrorCode {
-    DeviceWidthShouldBeUsedWarning,
-    DeviceHeightShouldBeUsedWarning,
-    UnrecognizedViewportArgumentError,
-    MaximumScaleTooLargeError
+    UnrecognizedViewportArgumentKeyError,
+    UnrecognizedViewportArgumentValueError,
+    TruncatedViewportArgumentValueError,
+    MaximumScaleTooLargeError,
+    TargetDensityDpiTooSmallOrLargeError
+};
+
+struct ViewportAttributes {
+    IntSize layoutSize;
+
+    float devicePixelRatio;
+
+    float initialScale;
+    float minimumScale;
+    float maximumScale;
+
+    float userScalable;
 };
 
 struct ViewportArguments {
 
-    enum { ValueUndefined = -1 };
+    enum {
+        ValueAuto = -1,
+        // On iOS values -1 and -2 have special meaning when parsed in UIKit.
+        // -1 means Undefined / Auto, and -2 means Default, to use the default
+        // value for the document type being viewed. Here we get lucky, and
+        // we don't actually use Desktop's value of -2. However, if we ever
+        // support ValueDesktopWidth in viewport, then we should get UIKit
+        // to check against these enum values instead of assuming -1 and -2.
+        ValueDefault = -2,
+        ValueDeviceWidth = -3,
+        ValueDeviceHeight = -4,
+    };
 
     ViewportArguments()
-        : initialScale(ValueUndefined)
-        , minimumScale(ValueUndefined)
-        , maximumScale(ValueUndefined)
-        , width(ValueUndefined)
-        , height(ValueUndefined)
-        , userScalable(ValueUndefined)
+        : initialScale(ValueAuto)
+        , minimumScale(ValueAuto)
+        , maximumScale(ValueAuto)
+        , width(ValueAuto)
+        , height(ValueAuto)
+        , userScalable(ValueAuto)
     {
     }
 
@@ -57,17 +84,25 @@ struct ViewportArguments {
     float maximumScale;
     float width;
     float height;
-
     float userScalable;
 
-    bool hasCustomArgument() const
+    bool operator==(const ViewportArguments& other) const
     {
-        return initialScale != ValueUndefined || minimumScale != ValueUndefined || maximumScale != ValueUndefined || width != ValueUndefined || height != ValueUndefined || userScalable != ValueUndefined;
+        return initialScale == other.initialScale
+            && minimumScale == other.minimumScale
+            && maximumScale == other.maximumScale
+            && width == other.width
+            && height == other.height
+            && userScalable == other.userScalable;
     }
 };
 
+ViewportAttributes computeViewportAttributes(ViewportArguments args, int desktopWidth, int deviceWidth, int deviceHeight, int deviceDPI, IntSize visibleViewport);
+
 void setViewportFeature(const String& keyString, const String& valueString, Document*, void* data);
-void reportViewportWarning(Document*, ViewportErrorCode, const String& replacement);
+void reportViewportWarning(Document*, ViewportErrorCode, const String& replacement1, const String& replacement2);
+
+void finializeViewportArguments(ViewportArguments& args);
 
 } // namespace WebCore
 

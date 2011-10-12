@@ -46,7 +46,7 @@ static PassRefPtr<DeviceMotionData::Acceleration> readAccelerationArgument(JSVal
     JSValue xValue = object->get(exec, Identifier(exec, "x"));
     if (exec->hadException())
         return 0;
-    bool canProvideX = !xValue.isUndefined();
+    bool canProvideX = !xValue.isUndefinedOrNull();
     double x = xValue.toNumber(exec);
     if (exec->hadException())
         return 0;
@@ -54,7 +54,7 @@ static PassRefPtr<DeviceMotionData::Acceleration> readAccelerationArgument(JSVal
     JSValue yValue = object->get(exec, Identifier(exec, "y"));
     if (exec->hadException())
         return 0;
-    bool canProvideY = !yValue.isUndefined();
+    bool canProvideY = !yValue.isUndefinedOrNull();
     double y = yValue.toNumber(exec);
     if (exec->hadException())
         return 0;
@@ -62,7 +62,7 @@ static PassRefPtr<DeviceMotionData::Acceleration> readAccelerationArgument(JSVal
     JSValue zValue = object->get(exec, Identifier(exec, "z"));
     if (exec->hadException())
         return 0;
-    bool canProvideZ = !zValue.isUndefined();
+    bool canProvideZ = !zValue.isUndefinedOrNull();
     double z = zValue.toNumber(exec);
     if (exec->hadException())
         return 0;
@@ -84,7 +84,7 @@ static PassRefPtr<DeviceMotionData::RotationRate> readRotationRateArgument(JSVal
     JSValue alphaValue = object->get(exec, Identifier(exec, "alpha"));
     if (exec->hadException())
         return 0;
-    bool canProvideAlpha = !alphaValue.isUndefined();
+    bool canProvideAlpha = !alphaValue.isUndefinedOrNull();
     double alpha = alphaValue.toNumber(exec);
     if (exec->hadException())
         return 0;
@@ -92,7 +92,7 @@ static PassRefPtr<DeviceMotionData::RotationRate> readRotationRateArgument(JSVal
     JSValue betaValue = object->get(exec, Identifier(exec, "beta"));
     if (exec->hadException())
         return 0;
-    bool canProvideBeta = !betaValue.isUndefined();
+    bool canProvideBeta = !betaValue.isUndefinedOrNull();
     double beta = betaValue.toNumber(exec);
     if (exec->hadException())
         return 0;
@@ -100,7 +100,7 @@ static PassRefPtr<DeviceMotionData::RotationRate> readRotationRateArgument(JSVal
     JSValue gammaValue = object->get(exec, Identifier(exec, "gamma"));
     if (exec->hadException())
         return 0;
-    bool canProvideGamma = !gammaValue.isUndefined();
+    bool canProvideGamma = !gammaValue.isUndefinedOrNull();
     double gamma = gammaValue.toNumber(exec);
     if (exec->hadException())
         return 0;
@@ -114,18 +114,18 @@ static PassRefPtr<DeviceMotionData::RotationRate> readRotationRateArgument(JSVal
 static JSObject* createAccelerationObject(const DeviceMotionData::Acceleration* acceleration, ExecState* exec)
 {
     JSObject* object = constructEmptyObject(exec);
-    object->putDirect(Identifier(exec, "x"), acceleration->canProvideX() ? jsNumber(exec, acceleration->x()) : jsNull());
-    object->putDirect(Identifier(exec, "y"), acceleration->canProvideY() ? jsNumber(exec, acceleration->y()) : jsNull());
-    object->putDirect(Identifier(exec, "z"), acceleration->canProvideZ() ? jsNumber(exec, acceleration->z()) : jsNull());
+    object->putDirect(exec->globalData(), Identifier(exec, "x"), acceleration->canProvideX() ? jsNumber(acceleration->x()) : jsNull());
+    object->putDirect(exec->globalData(), Identifier(exec, "y"), acceleration->canProvideY() ? jsNumber(acceleration->y()) : jsNull());
+    object->putDirect(exec->globalData(), Identifier(exec, "z"), acceleration->canProvideZ() ? jsNumber(acceleration->z()) : jsNull());
     return object;
 }
 
 static JSObject* createRotationRateObject(const DeviceMotionData::RotationRate* rotationRate, ExecState* exec)
 {
     JSObject* object = constructEmptyObject(exec);
-    object->putDirect(Identifier(exec, "alpha"), rotationRate->canProvideAlpha() ? jsNumber(exec, rotationRate->alpha()) : jsNull());
-    object->putDirect(Identifier(exec, "beta"),  rotationRate->canProvideBeta()  ? jsNumber(exec, rotationRate->beta())  : jsNull());
-    object->putDirect(Identifier(exec, "gamma"), rotationRate->canProvideGamma() ? jsNumber(exec, rotationRate->gamma()) : jsNull());
+    object->putDirect(exec->globalData(), Identifier(exec, "alpha"), rotationRate->canProvideAlpha() ? jsNumber(rotationRate->alpha()) : jsNull());
+    object->putDirect(exec->globalData(), Identifier(exec, "beta"),  rotationRate->canProvideBeta()  ? jsNumber(rotationRate->beta())  : jsNull());
+    object->putDirect(exec->globalData(), Identifier(exec, "gamma"), rotationRate->canProvideGamma() ? jsNumber(rotationRate->gamma()) : jsNull());
     return object;
 }
 
@@ -153,39 +153,37 @@ JSValue JSDeviceMotionEvent::rotationRate(ExecState* exec) const
     return createRotationRateObject(imp->deviceMotionData()->rotationRate(), exec);
 }
 
-JSValue JSDeviceMotionEvent::interval(ExecState* exec) const
+JSValue JSDeviceMotionEvent::interval(ExecState*) const
 {
     DeviceMotionEvent* imp = static_cast<DeviceMotionEvent*>(impl());
     if (!imp->deviceMotionData()->canProvideInterval())
         return jsNull();
-    return jsNumber(exec, imp->deviceMotionData()->interval());
+    return jsNumber(imp->deviceMotionData()->interval());
 }
 
-JSValue JSDeviceMotionEvent::initDeviceMotionEvent(ExecState* exec, const ArgList& args)
+JSValue JSDeviceMotionEvent::initDeviceMotionEvent(ExecState* exec)
 {
-    const UString& typeArg = args.at(0).toString(exec);
-    bool bubbles = args.at(1).toBoolean(exec);
-    bool cancelable = args.at(2).toBoolean(exec);
+    const UString& typeArg = exec->argument(0).toString(exec);
+    bool bubbles = exec->argument(1).toBoolean(exec);
+    bool cancelable = exec->argument(2).toBoolean(exec);
+
     // If any of the parameters are null or undefined, mark them as not provided.
     // Otherwise, use the standard JavaScript conversion.
-    RefPtr<DeviceMotionData::Acceleration> acceleration = readAccelerationArgument(args.at(3), exec);
+    RefPtr<DeviceMotionData::Acceleration> acceleration = readAccelerationArgument(exec->argument(3), exec);
     if (exec->hadException())
         return jsUndefined();
 
-    RefPtr<DeviceMotionData::Acceleration> accelerationIncludingGravity = readAccelerationArgument(args.at(4), exec);
+    RefPtr<DeviceMotionData::Acceleration> accelerationIncludingGravity = readAccelerationArgument(exec->argument(4), exec);
     if (exec->hadException())
         return jsUndefined();
 
-    RefPtr<DeviceMotionData::RotationRate> rotationRate = readRotationRateArgument(args.at(5), exec);
+    RefPtr<DeviceMotionData::RotationRate> rotationRate = readRotationRateArgument(exec->argument(5), exec);
     if (exec->hadException())
         return jsUndefined();
 
-    bool intervalProvided = !args.at(6).isUndefinedOrNull();
-    double interval = args.at(6).toNumber(exec);
-    RefPtr<DeviceMotionData> deviceMotionData = DeviceMotionData::create(acceleration,
-                                                                         accelerationIncludingGravity,
-                                                                         rotationRate,
-                                                                         intervalProvided, interval);
+    bool intervalProvided = !exec->argument(6).isUndefinedOrNull();
+    double interval = exec->argument(6).toNumber(exec);
+    RefPtr<DeviceMotionData> deviceMotionData = DeviceMotionData::create(acceleration, accelerationIncludingGravity, rotationRate, intervalProvided, interval);
     DeviceMotionEvent* imp = static_cast<DeviceMotionEvent*>(impl());
     imp->initDeviceMotionEvent(ustringToAtomicString(typeArg), bubbles, cancelable, deviceMotionData.get());
     return jsUndefined();

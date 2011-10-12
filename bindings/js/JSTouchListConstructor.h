@@ -22,9 +22,14 @@
 
 namespace WebCore {
 
-class JSTouchListConstructor : public DOMConstructorObject {
+class JSTouchListConstructor : public DOMConstructorWithDocument {
 public:
-    JSTouchListConstructor(JSC::ExecState*, JSDOMGlobalObject*);
+    JSTouchListConstructor(JSC::ExecState*, JSC::Structure*, JSDOMGlobalObject*);
+
+    static JSC::Structure* createStructure(JSC::JSGlobalData& globalData, JSC::JSValue prototype)
+    {
+        return JSC::Structure::create(globalData, prototype, JSC::TypeInfo(JSC::ObjectType, StructureFlags), AnonymousSlotCount, &s_info);
+    }
 
     static const JSC::ClassInfo s_info;
 

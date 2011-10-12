@@ -24,16 +24,15 @@
 #ifndef Event_h
 #define Event_h
 
-#include "AtomicString.h"
-#include "EventTarget.h"
+#include "Clipboard.h"
+#include "DOMTimeStamp.h"
 #include <wtf/RefCounted.h>
+#include <wtf/text/AtomicString.h>
 
 namespace WebCore {
 
-    class Clipboard;
-
-    // FIXME: this should probably defined elsewhere.
-    typedef unsigned long long DOMTimeStamp;
+    class EventTarget;
+    class EventDispatcher;
 
     class Event : public RefCounted<Event> {
     public:
@@ -76,9 +75,6 @@ namespace WebCore {
 
         const AtomicString& type() const { return m_type; }
         
-        const AtomicString& aliasedType() const;
-        bool hasAliasedType() const;
-
         EventTarget* target() const { return m_target.get(); }
         void setTarget(PassRefPtr<EventTarget>);
 
@@ -123,20 +119,32 @@ namespace WebCore {
         virtual bool isWebKitAnimationEvent() const;
         virtual bool isWebKitTransitionEvent() const;
         virtual bool isBeforeLoadEvent() const;
+        virtual bool isHashChangeEvent() const;
 #if ENABLE(SVG)
         virtual bool isSVGZoomEvent() const;
 #endif
 #if ENABLE(DOM_STORAGE)
         virtual bool isStorageEvent() const;
 #endif
-#if ENABLE(WORKERS)
-        virtual bool isErrorEvent() const;
+#if ENABLE(INDEXED_DATABASE)
+        virtual bool isIDBVersionChangeEvent() const;
 #endif
+#if ENABLE(WEB_AUDIO)
+        virtual bool isAudioProcessingEvent() const;
+        virtual bool isOfflineAudioCompletionEvent() const;
+#endif
+        virtual bool isErrorEvent() const;
         virtual bool isTouchEvent() const;
         virtual bool isGestureEvent() const;
 #if ENABLE(DEVICE_ORIENTATION)
         virtual bool isDeviceMotionEvent() const;
         virtual bool isDeviceOrientationEvent() const;
+#endif
+#if ENABLE(INPUT_SPEECH)
+        virtual bool isSpeechInputEvent() const;
+#endif
+#if ENABLE(WEB_SOCKETS)
+        virtual bool isCloseEvent() const;
 #endif
         bool fromUserGesture();
         
@@ -160,6 +168,7 @@ namespace WebCore {
         virtual void storeResult(const String&);
 
         virtual Clipboard* clipboard() const { return 0; }
+
 
     protected:
         Event();
@@ -186,6 +195,37 @@ namespace WebCore {
 
         RefPtr<Event> m_underlyingEvent;
     };
+
+class EventDispatchMediator {
+public:
+    explicit EventDispatchMediator(PassRefPtr<Event>);
+    virtual ~EventDispatchMediator();
+
+    virtual bool dispatchEvent(EventDispatcher*) const;
+
+protected:
+    EventDispatchMediator();
+
+    Event* event() const;
+    void setEvent(PassRefPtr<Event>);
+
+private:
+    RefPtr<Event> m_event;
+};
+
+inline EventDispatchMediator::EventDispatchMediator()
+{
+}
+
+inline Event* EventDispatchMediator::event() const
+{
+    return m_event.get();
+}
+
+inline void EventDispatchMediator::setEvent(PassRefPtr<Event> event)
+{
+    m_event = event;
+}
 
 } // namespace WebCore
 

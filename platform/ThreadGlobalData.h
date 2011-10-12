@@ -27,10 +27,11 @@
 #ifndef ThreadGlobalData_h
 #define ThreadGlobalData_h
 
-#include "StringHash.h"
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
 #include <wtf/Noncopyable.h>
+#include <wtf/OwnPtr.h>
+#include <wtf/text/StringHash.h>
 
 #if ENABLE(WORKERS)
 #include <wtf/ThreadSpecific.h>
@@ -41,11 +42,13 @@ using WTF::ThreadSpecific;
 namespace WebCore {
 
     class EventNames;
-    struct ICUConverterWrapper;
-    struct TECConverterWrapper;
     class ThreadTimers;
 
-    class ThreadGlobalData : public Noncopyable {
+    struct ICUConverterWrapper;
+    struct TECConverterWrapper;
+
+    class ThreadGlobalData {
+        WTF_MAKE_NONCOPYABLE(ThreadGlobalData);
     public:
         ThreadGlobalData();
         ~ThreadGlobalData();
@@ -58,6 +61,10 @@ namespace WebCore {
         ICUConverterWrapper& cachedConverterICU() { return *m_cachedConverterICU; }
 #endif
 
+
+#if ENABLE(WORKERS)
+        void setWebCoreThreadData();
+#endif
 
     private:
         EventNames* m_eventNames;
@@ -74,6 +81,7 @@ namespace WebCore {
 
 #if ENABLE(WORKERS)
         static ThreadSpecific<ThreadGlobalData>* staticData;
+        static ThreadGlobalData* sharedMainThreadStaticData;
 #else
         static ThreadGlobalData* staticData;
 #endif
@@ -86,9 +94,13 @@ inline ThreadGlobalData& threadGlobalData()
     // We need to check for e.g. database objects manipulating strings on secondary threads.
 
 #if ENABLE(WORKERS)
-    // ThreadGlobalData is used on main thread before it could possibly be used on secondary ones, so there is no need for synchronization here.
-    if (!ThreadGlobalData::staticData)
+    if (UNLIKELY(!ThreadGlobalData::staticData)) {
         ThreadGlobalData::staticData = new ThreadSpecific<ThreadGlobalData>;
+        // WebThread and main UI thread need to share the same object. Save it in a static
+        // here, the WebThread will pick it up in setWebCoreThreadData().
+        if (pthread_main_np())
+            ThreadGlobalData::sharedMainThreadStaticData = *ThreadGlobalData::staticData;
+    }
     return **ThreadGlobalData::staticData;
 #else
     if (!ThreadGlobalData::staticData) {

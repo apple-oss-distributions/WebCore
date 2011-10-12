@@ -31,11 +31,13 @@
 #include "ExceptionCode.h"
 #include "Frame.h"
 #include "Page.h"
+#include "SecurityOrigin.h"
 #include "Settings.h"
 #include "StorageAreaSync.h"
 #include "StorageEventDispatcher.h"
 #include "StorageMap.h"
 #include "StorageSyncManager.h"
+#include "StorageTracker.h"
 
 namespace WebCore {
 
@@ -44,12 +46,7 @@ StorageAreaImpl::~StorageAreaImpl()
     ASSERT(isMainThread() || pthread_main_np());
 }
 
-PassRefPtr<StorageAreaImpl> StorageAreaImpl::create(StorageType storageType, PassRefPtr<SecurityOrigin> origin, PassRefPtr<StorageSyncManager> syncManager, unsigned quota)
-{
-    return adoptRef(new StorageAreaImpl(storageType, origin, syncManager, quota));
-}
-
-StorageAreaImpl::StorageAreaImpl(StorageType storageType, PassRefPtr<SecurityOrigin> origin, PassRefPtr<StorageSyncManager> syncManager, unsigned quota)
+inline StorageAreaImpl::StorageAreaImpl(StorageType storageType, PassRefPtr<SecurityOrigin> origin, PassRefPtr<StorageSyncManager> syncManager, unsigned quota)
     : m_storageType(storageType)
     , m_securityOrigin(origin)
     , m_storageMap(StorageMap::create(quota))
@@ -61,13 +58,24 @@ StorageAreaImpl::StorageAreaImpl(StorageType storageType, PassRefPtr<SecurityOri
     ASSERT(isMainThread() || pthread_main_np());
     ASSERT(m_securityOrigin);
     ASSERT(m_storageMap);
+    
+    // Accessing the shared global StorageTracker when a StorageArea is created 
+    // ensures that the tracker is properly initialized before anyone actually needs to use it.
+    StorageTracker::tracker();
+}
+
+PassRefPtr<StorageAreaImpl> StorageAreaImpl::create(StorageType storageType, PassRefPtr<SecurityOrigin> origin, PassRefPtr<StorageSyncManager> syncManager, unsigned quota)
+{
+    RefPtr<StorageAreaImpl> area = adoptRef(new StorageAreaImpl(storageType, origin, syncManager, quota));
 
     // FIXME: If there's no backing storage for LocalStorage, the default WebKit behavior should be that of private browsing,
-    // not silently ignoring it.  https://bugs.webkit.org/show_bug.cgi?id=25894
-    if (m_storageSyncManager) {
-        m_storageAreaSync = StorageAreaSync::create(m_storageSyncManager, this, m_securityOrigin->databaseIdentifier());
-        ASSERT(m_storageAreaSync);
+    // not silently ignoring it. https://bugs.webkit.org/show_bug.cgi?id=25894
+    if (area->m_storageSyncManager) {
+        area->m_storageAreaSync = StorageAreaSync::create(area->m_storageSyncManager, area.get(), area->m_securityOrigin->databaseIdentifier());
+        ASSERT(area->m_storageAreaSync);
     }
+
+    return area.release();
 }
 
 PassRefPtr<StorageAreaImpl> StorageAreaImpl::copy()
@@ -223,6 +231,31 @@ void StorageAreaImpl::close()
 #ifndef NDEBUG
     m_isShutdown = true;
 #endif
+}
+
+void StorageAreaImpl::clearForOriginDeletion()
+{
+    ASSERT(!m_isShutdown);
+    blockUntilImportComplete();
+    
+    if (m_storageMap->length()) {
+        unsigned quota = m_storageMap->quota();
+        m_storageMap = StorageMap::create(quota);
+    }
+
+    if (m_storageAreaSync) {
+        m_storageAreaSync->scheduleClear();
+        m_storageAreaSync->scheduleCloseDatabase();
+    }
+}
+    
+void StorageAreaImpl::sync()
+{
+    ASSERT(!m_isShutdown);
+    blockUntilImportComplete();
+    
+    if (m_storageAreaSync)
+        m_storageAreaSync->scheduleSync();
 }
 
 void StorageAreaImpl::blockUntilImportComplete() const
