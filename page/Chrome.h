@@ -183,8 +183,6 @@ namespace WebCore {
         void showContextMenu();
 #endif
 
-        void willRunModalHTMLDialog(const Frame*) const;
-
         void setDispatchViewportDataDidChangeSuppressed(bool b) { m_isDispatchViewportDataDidChangeSuppressed = b; }
     private:
         Page* m_page;

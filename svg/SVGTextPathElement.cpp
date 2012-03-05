@@ -160,7 +160,12 @@ void SVGTextPathElement::insertedIntoDocument()
     String id = SVGURIReference::getTarget(href());
     Element* targetElement = treeScope()->getElementById(id);
     if (!targetElement) {
+        if (hasPendingResources() || id.isEmpty())
+            return;
+
+        ASSERT(!hasPendingResources());
         document()->accessSVGExtensions()->addPendingResource(id, this);
+        ASSERT(hasPendingResources());
         return;
     }
 }

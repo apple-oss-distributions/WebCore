@@ -82,6 +82,7 @@ class EntityReference;
 class Event;
 class EventListener;
 class EventQueue;
+class FontData;
 class FormAssociatedElement;
 class Frame;
 class FrameView;
@@ -611,6 +612,8 @@ public:
     PassRefPtr<RenderStyle> styleForElementIgnoringPendingStylesheets(Element*);
     PassRefPtr<RenderStyle> styleForPage(int pageIndex);
 
+    void registerCustomFont(FontData*);
+
     // Returns true if page box (margin boxes and page borders) is visible.
     bool isPageBoxVisible(int pageIndex);
 
@@ -915,6 +918,7 @@ public:
     //    inherits its cookieURL but not its URL.
     //
     const KURL& cookieURL() const { return m_cookieURL; }
+    void setCookieURL(const KURL& url) { m_cookieURL = url; }
 
     // The firstPartyForCookies is used to compute whether this document
     // appears in a "third-party" context for the purpose of third-party
@@ -1234,6 +1238,8 @@ private:
 
     void createStyleSelector();
 
+    void deleteCustomFonts();
+
     PassRefPtr<NodeList> handleZeroPadding(const HitTestRequest&, HitTestResult&) const;
 
     void loadEventDelayTimerFired(Timer<Document>*);
@@ -1247,7 +1253,8 @@ private:
     OwnPtr<CSSStyleSelector> m_styleSelector;
     bool m_didCalculateStyleSelector;
     bool m_hasDirtyStyleSelector;
-    
+    Vector<OwnPtr<FontData> > m_customFonts;
+
     mutable RefPtr<CSSPrimitiveValueCache> m_cssPrimitiveValueCache;
 
     Frame* m_frame;

@@ -2289,6 +2289,7 @@ void Editor::updateMarkersForWordsAffectedByEditing(bool doNotRemoveIfSelectionA
     VisiblePosition endOfSelection = frame()->selection()->selection().end();
     if (startOfSelection.isNull())
         return;
+    
     // First word is the word that ends after or on the start of selection.
     VisiblePosition startOfFirstWord = startOfWord(startOfSelection, LeftWordIfOnBoundary);
     VisiblePosition endOfFirstWord = endOfWord(startOfSelection, LeftWordIfOnBoundary);
@@ -2334,6 +2335,13 @@ void Editor::updateMarkersForWordsAffectedByEditing(bool doNotRemoveIfSelectionA
     // we would like to remove the marker from word "avant" and whitespace as well. So we need to get the continous range of
     // of marker that contains the word in question, and remove marker on that whole range.
     Document* document = m_frame->document();
+    if (frame()->selection()->isRange()) {
+        if (startOfFirstWord < startOfSelection)
+            startOfFirstWord = startOfSelection;
+        if (endOfLastWord > endOfSelection)
+            endOfLastWord = endOfSelection;
+    }
+
     RefPtr<Range> wordRange = Range::create(document, startOfFirstWord.deepEquivalent(), endOfLastWord.deepEquivalent());
 
     document->markers()->removeMarkers(wordRange.get(), DocumentMarker::Spelling | DocumentMarker::CorrectionIndicator | DocumentMarker::SpellCheckingExemption | DocumentMarker::DictationPhraseWithAlternatives, DocumentMarkerController::RemovePartiallyOverlappingMarker);

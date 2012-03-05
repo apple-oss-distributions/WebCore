@@ -79,6 +79,8 @@ public:
     void willSendXMLHttpRequest(const String& url);
     void pauseOnNativeEventIfNeeded(const String& categoryType, const String& eventName, bool synchronous);
 
+    void discardAgent();
+
 private:
     InspectorDOMDebuggerAgent(InstrumentingAgents*, InspectorState*, InspectorDOMAgent*, InspectorDebuggerAgent*, InspectorAgent*);
 

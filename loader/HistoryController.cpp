@@ -814,6 +814,10 @@ void HistoryController::pushState(PassRefPtr<SerializedScriptValue> stateObject,
 
     page->backForward()->addItem(topItem.release());
 
+    Settings* settings = m_frame->settings();
+    if (!settings || settings->privateBrowsingEnabled())
+        return;
+
     addVisitedLink(page, KURL(ParsedURLString, urlString));
     m_frame->loader()->client()->updateGlobalHistory();
 
@@ -828,6 +832,10 @@ void HistoryController::replaceState(PassRefPtr<SerializedScriptValue> stateObje
         m_currentItem->setURLString(urlString);
     m_currentItem->setTitle(title);
     m_currentItem->setStateObject(stateObject);
+
+    Settings* settings = m_frame->settings();
+    if (!settings || settings->privateBrowsingEnabled())
+        return;
 
     ASSERT(m_frame->page());
     addVisitedLink(m_frame->page(), KURL(ParsedURLString, urlString));

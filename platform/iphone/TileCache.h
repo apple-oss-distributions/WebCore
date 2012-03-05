@@ -119,6 +119,7 @@ public:
     void prepareToDraw();
     void finishedCreatingTiles(bool createMore);
     FloatRect visibleRectInLayer(CALayer *layer) const;
+    CALayer* hostLayer() const;
     unsigned tileCapacityForGrid(TileGrid*);
 
 private:

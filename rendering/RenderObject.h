@@ -154,19 +154,24 @@ public:
             return children->beforePseudoElementRenderer(this);
         return 0;
     }
+
+    // This function only returns the renderer of the "after" pseudoElement if it is a child of
+    // this renderer. If "continuations" exist, the function returns 0 even if the element that
+    // generated this renderer has an "after" pseudo-element.
     RenderObject* afterPseudoElementRenderer() const
     {
         if (const RenderObjectChildList* children = virtualChildren())
             return children->afterPseudoElementRenderer(this);
         return 0;
     }
+
     virtual RenderObjectChildList* virtualChildren() { return 0; }
     virtual const RenderObjectChildList* virtualChildren() const { return 0; }
 
     RenderObject* nextInPreOrder() const;
-    RenderObject* nextInPreOrder(RenderObject* stayWithin) const;
+    RenderObject* nextInPreOrder(const RenderObject* stayWithin) const;
     RenderObject* nextInPreOrderAfterChildren() const;
-    RenderObject* nextInPreOrderAfterChildren(RenderObject* stayWithin) const;
+    RenderObject* nextInPreOrderAfterChildren(const RenderObject* stayWithin) const;
     RenderObject* previousInPreOrder() const;
     RenderObject* childAt(unsigned) const;
 
@@ -345,11 +350,23 @@ public:
 
     inline bool isBeforeContent() const;
     inline bool isAfterContent() const;
+    inline bool isBeforeOrAfterContent() const;
     static inline bool isBeforeContent(const RenderObject* obj) { return obj && obj->isBeforeContent(); }
     static inline bool isAfterContent(const RenderObject* obj) { return obj && obj->isAfterContent(); }
+    static inline bool isBeforeOrAfterContent(const RenderObject* obj) { return obj && obj->isBeforeOrAfterContent(); }
+
+    inline RenderObject* anonymousContainer(RenderObject* child)
+    {
+         RenderObject* container = child;
+         while (container->parent() != this)
+             container = container->parent();
+
+         ASSERT(container->isAnonymous());
+         return container;
+    }
 
     bool childrenInline() const { return m_childrenInline; }
-    void setChildrenInline(bool b = true) { m_childrenInline = b; }
+    void setChildrenInline(bool b) { m_childrenInline = b; }
     bool hasColumns() const { return m_hasColumns; }
     void setHasColumns(bool b = true) { m_hasColumns = b; }
 
@@ -815,6 +832,7 @@ protected:
     virtual void styleWillChange(StyleDifference, const RenderStyle* newStyle);
     // Overrides should call the superclass at the start
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+    void propagateStyleToAnonymousChildren(bool blockChildrenOnly = false);
 
 // RenderThemeIPhone calls drawLineForBoxSide(). 
 public:
@@ -958,6 +976,11 @@ inline bool RenderObject::isAfterContent() const
     if (isText() && !isBR())
         return false;
     return true;
+}
+
+inline bool RenderObject::isBeforeOrAfterContent() const
+{
+    return isBeforeContent() || isAfterContent();
 }
 
 inline void RenderObject::setNeedsLayout(bool b, bool markParents)

@@ -1466,14 +1466,14 @@ void FrameSelection::selectAll()
         }
     }
 
-    Node* root = 0;
+    RefPtr<Node> root = 0;
     Node* selectStartTarget = 0;
     if (isContentEditable()) {
         root = highestEditableRoot(m_selection.start());
         if (Node* shadowRoot = shadowTreeRootNode())
             selectStartTarget = shadowRoot->shadowHost();
         else
-            selectStartTarget = root;
+            selectStartTarget = root.get();
     } else {
         root = shadowTreeRootNode();
         if (root)
@@ -1489,7 +1489,7 @@ void FrameSelection::selectAll()
     if (selectStartTarget && !selectStartTarget->dispatchEvent(Event::create(eventNames().selectstartEvent, true, true)))
         return;
 
-    VisibleSelection newSelection(VisibleSelection::selectionFromContentsOfNode(root));
+    VisibleSelection newSelection(VisibleSelection::selectionFromContentsOfNode(root.get()));
 
     if (shouldChangeSelection(newSelection))
         setSelection(newSelection);
@@ -1648,7 +1648,9 @@ void FrameSelection::updateAppearance()
     if (!view)
         return;
 
-    VisibleSelection selection = this->selection();
+    // Construct a new VisibleSolution, since m_selection is not necessarily valid, and the following steps
+    // assume a valid selection. See <https://bugs.webkit.org/show_bug.cgi?id=69563> and <rdar://problem/10232866>.
+    VisibleSelection selection(m_selection.visibleStart(), m_selection.visibleEnd());
 
     if (!selection.isRange()) {
         view->clearSelection();

@@ -131,6 +131,16 @@ public:
         return m_transform[0] == 1 && m_transform[1] == 0 && m_transform[2] == 0 && (m_transform[3] == 1 || m_transform[3] == -1);
     }
 
+    bool isIntegralScaleWithTranslation() const
+    {
+        double integralValue;
+        if (modf(m_transform[0], &integralValue))
+            return false;
+        if (modf(m_transform[3], &integralValue))
+            return false;
+        return m_transform[1] == 0 && m_transform[2] == 0;
+    }
+
     bool preservesAxisAlignment() const
     {
         return (m_transform[1] == 0 && m_transform[2] == 0) || (m_transform[0] == 0 && m_transform[3] == 0);

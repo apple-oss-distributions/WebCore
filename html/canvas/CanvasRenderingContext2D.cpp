@@ -74,6 +74,7 @@
 #endif
 
 #include <wtf/ByteArray.h>
+#include <wtf/CheckedArithmetic.h>
 #include <wtf/MathExtras.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/UnusedParam.h>
@@ -1622,6 +1623,12 @@ GraphicsContext* CanvasRenderingContext2D::drawingContext() const
 
 static PassRefPtr<ImageData> createEmptyImageData(const IntSize& size)
 {
+    Checked<int, RecordOverflow> dataSize = 4;
+    dataSize *= size.width();
+    dataSize *= size.height();
+    if (dataSize.hasOverflowed())
+        return 0;
+
     RefPtr<ImageData> data = ImageData::create(size);
     memset(data->data()->data()->data(), 0, data->data()->data()->length());
     return data.release();
@@ -1649,24 +1656,24 @@ PassRefPtr<ImageData> CanvasRenderingContext2D::createImageData(float sw, float 
         return 0;
     }
 
-    FloatSize unscaledSize(fabs(sw), fabs(sh));
+    FloatSize logicalSize(fabs(sw), fabs(sh));
     // If the canvas element was created before Document had a Frame,
     // then no maximumDecodedImageSize was set.
     if (!canvas()->maximumDecodedImageSize()) {
         if (Settings* settings = canvas()->document()->settings())
             canvas()->setMaxiumDecodedImageSize(settings->maximumDecodedImageSize());
     }
-    IntSize scaledSize = canvas()->convertLogicalToDevice(unscaledSize);
-    if (scaledSize.width() < 1)
-        scaledSize.setWidth(1);
-    if (scaledSize.height() < 1)
-        scaledSize.setHeight(1);
-
-    float area = 4.0f * scaledSize.width() * scaledSize.height();
-    if (area > static_cast<float>(std::numeric_limits<int>::max()))
+    FloatSize deviceSize = canvas()->convertLogicalToDevice(logicalSize);
+    if (!deviceSize.isExpressibleAsIntSize())
         return 0;
 
-    return createEmptyImageData(scaledSize);
+    IntSize size(deviceSize.width(), deviceSize.height());
+    if (size.width() < 1)
+        size.setWidth(1);
+    if (size.height() < 1)
+        size.setHeight(1);
+
+    return createEmptyImageData(size);
 }
 
 PassRefPtr<ImageData> CanvasRenderingContext2D::getImageData(float sx, float sy, float sw, float sh, ExceptionCode& ec) const
@@ -1693,27 +1700,31 @@ PassRefPtr<ImageData> CanvasRenderingContext2D::getImageData(float sx, float sy,
         sh = -sh;
     }
     
-    FloatRect unscaledRect(sx, sy, sw, sh);
+    FloatRect logicalRect(sx, sy, sw, sh);
     // If the canvas element was created before Document had a Frame,
     // then no maximumDecodedImageSize was set.
     if (!canvas()->maximumDecodedImageSize()) {
         if (Settings* settings = canvas()->document()->settings())
             canvas()->setMaxiumDecodedImageSize(settings->maximumDecodedImageSize());
     }
-    IntRect scaledRect = canvas()->convertLogicalToDevice(unscaledRect);
-    if (scaledRect.width() < 1)
-        scaledRect.setWidth(1);
-    if (scaledRect.height() < 1)
-        scaledRect.setHeight(1);
+    FloatRect deviceRect = canvas()->convertLogicalToDevice(logicalRect);
+    if (deviceRect.width() < 1)
+        deviceRect.setWidth(1);
+    if (deviceRect.height() < 1)
+        deviceRect.setHeight(1);
+    if (!deviceRect.isExpressibleAsIntRect())
+        return 0;
+
+    IntRect imageDataRect(deviceRect);
     ImageBuffer* buffer = canvas()->buffer();
     if (!buffer)
-        return createEmptyImageData(scaledRect.size());
+        return createEmptyImageData(imageDataRect.size());
 
-    RefPtr<ByteArray> byteArray = buffer->getUnmultipliedImageData(scaledRect);
+    RefPtr<ByteArray> byteArray = buffer->getUnmultipliedImageData(imageDataRect);
     if (!byteArray)
         return 0;
 
-    return ImageData::create(scaledRect.size(), byteArray.release());
+    return ImageData::create(imageDataRect.size(), byteArray.release());
 }
 
 void CanvasRenderingContext2D::putImageData(ImageData* data, float dx, float dy, ExceptionCode& ec)

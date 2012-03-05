@@ -2230,6 +2230,7 @@ __ZN7WebCore17RenderTextControl4textEv
 _wkGetViewportScreenSize
 _wkSetLayerContentsScale
 _wkGetScreenScaleFactor
+_wkIsGB18030ComplianceRequired
 
 # For geolocation
 __ZN7WebCore18GeolocationManager6sharedEv

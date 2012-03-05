@@ -56,7 +56,7 @@ HTMLMediaElement* toParentMediaElement(RenderObject* o)
 {
     Node* node = o->node();
     Node* mediaNode = node ? node->shadowAncestorNode() : 0;
-    if (!mediaNode || (!mediaNode->hasTagName(HTMLNames::videoTag) && !mediaNode->hasTagName(HTMLNames::audioTag)))
+    if (!mediaNode || !mediaNode->isElementNode() || !static_cast<Element*>(mediaNode)->isMediaElement())
         return 0;
 
     return static_cast<HTMLMediaElement*>(mediaNode);
@@ -66,6 +66,15 @@ HTMLMediaElement* toParentMediaElement(RenderObject* o)
 static const float cSeekRepeatDelay = 0.1f;
 static const float cStepTime = 0.07f;
 static const float cSeekTime = 0.2f;
+
+MediaControlElementType mediaControlElementType(Node* node)
+{
+    ASSERT(node->isMediaControlElement());
+    HTMLElement* element = toHTMLElement(node);
+    if (element->hasTagName(inputTag))
+        return static_cast<MediaControlInputElement*>(element)->displayType();
+    return static_cast<MediaControlElement*>(element)->displayType();
+}
 
 // ----------------------------
 

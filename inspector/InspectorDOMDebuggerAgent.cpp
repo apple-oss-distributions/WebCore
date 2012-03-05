@@ -86,7 +86,7 @@ InspectorDOMDebuggerAgent::InspectorDOMDebuggerAgent(InstrumentingAgents* instru
 
 InspectorDOMDebuggerAgent::~InspectorDOMDebuggerAgent()
 {
-    m_debuggerAgent->setListener(0);
+    ASSERT(!m_debuggerAgent);
     ASSERT(!m_instrumentingAgents->inspectorDOMDebuggerAgent());
 }
 
@@ -110,6 +110,12 @@ void InspectorDOMDebuggerAgent::disable()
 void InspectorDOMDebuggerAgent::clearFrontend()
 {
     disable();
+}
+
+void InspectorDOMDebuggerAgent::discardAgent()
+{
+    m_debuggerAgent->setListener(0);
+    m_debuggerAgent = 0;
 }
 
 void InspectorDOMDebuggerAgent::discardBindings()

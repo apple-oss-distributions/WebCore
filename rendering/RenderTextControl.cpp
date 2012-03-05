@@ -258,6 +258,7 @@ bool RenderTextControl::hasVisibleTextArea() const
 void setSelectionRange(Node* node, int start, int end)
 {
     ASSERT(node);
+    // <rdar://problem/9728478>, <rdar://problem/9922944>
     Frame* frame = node->document()->frame();
     VisibleSelection previousSelection;
     if (frame)
@@ -286,12 +287,14 @@ void setSelectionRange(Node* node, int start, int end)
 
     VisibleSelection newSelection = VisibleSelection(startPosition, endPosition);
 
+    // <rdar://problem/9728478>, <rdar://problem/9922944>
     if (frame) {
         VisibleSelection frameSelection = frame->selection()->selection();
         // If the updateLayout() call changed the frame selection, the setSelection() call below will
         // not notify the client.
         bool shouldForceClientResponse = frameSelection != previousSelection && frameSelection == newSelection;
         frame->selection()->setSelection(newSelection);
+        // <rdar://problem/9728478>, <rdar://problem/9922944>
         if (shouldForceClientResponse)
             frame->editor()->respondToChangedSelection(newSelection);
     }

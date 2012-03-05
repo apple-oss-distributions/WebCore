@@ -265,12 +265,33 @@ bool RenderObject::isHTMLMarquee() const
     return node() && node()->renderer() == this && node()->hasTagName(marqueeTag);
 }
 
+static bool isBeforeAfterContentGeneratedByAncestor(RenderObject* renderer, RenderObject* beforeAfterContent)
+{
+    while (renderer) {
+        if (renderer->generatingNode() == beforeAfterContent->generatingNode())
+            return true;
+        renderer = renderer->parent();
+    }
+    return false;
+}
+
 void RenderObject::addChild(RenderObject* newChild, RenderObject* beforeChild)
 {
     RenderObjectChildList* children = virtualChildren();
     ASSERT(children);
     if (!children)
         return;
+
+    RenderObject* beforeContent = 0;
+    bool beforeChildHasBeforeAndAfterContent = false;
+    if (beforeChild && (beforeChild->isTable() || beforeChild->isTableSection() || beforeChild->isTableRow() || beforeChild->isTableCell())) {
+        beforeContent = beforeChild->beforePseudoElementRenderer();
+        RenderObject* afterContent = beforeChild->afterPseudoElementRenderer();
+        if (beforeContent && afterContent && isBeforeAfterContentGeneratedByAncestor(this, beforeContent)) {
+            beforeChildHasBeforeAndAfterContent = true;
+            beforeContent->destroy();
+        }
+    }
 
     bool needsTable = false;
 
@@ -295,7 +316,7 @@ void RenderObject::addChild(RenderObject* newChild, RenderObject* beforeChild)
     if (needsTable) {
         RenderTable* table;
         RenderObject* afterChild = beforeChild ? beforeChild->previousSibling() : children->lastChild();
-        if (afterChild && afterChild->isAnonymous() && afterChild->isTable())
+        if (afterChild && afterChild->isAnonymous() && afterChild->isTable() && !afterChild->isBeforeContent())
             table = toRenderTable(afterChild);
         else {
             table = new (renderArena()) RenderTable(document() /* is anonymous */);
@@ -310,11 +331,15 @@ void RenderObject::addChild(RenderObject* newChild, RenderObject* beforeChild)
         // Just add it...
         children->insertChildNode(this, newChild, beforeChild);
     }
+
     if (newChild->isText() && newChild->style()->textTransform() == CAPITALIZE) {
         RefPtr<StringImpl> textToTransform = toRenderText(newChild)->originalText();
         if (textToTransform)
             toRenderText(newChild)->setText(textToTransform.release(), true);
     }
+
+    if (beforeChildHasBeforeAndAfterContent)
+        children->updateBeforeAfterContent(this, BEFORE);
 }
 
 void RenderObject::removeChild(RenderObject* oldChild)
@@ -355,7 +380,7 @@ RenderObject* RenderObject::nextInPreOrderAfterChildren() const
     return o;
 }
 
-RenderObject* RenderObject::nextInPreOrder(RenderObject* stayWithin) const
+RenderObject* RenderObject::nextInPreOrder(const RenderObject* stayWithin) const
 {
     if (RenderObject* o = firstChild())
         return o;
@@ -363,7 +388,7 @@ RenderObject* RenderObject::nextInPreOrder(RenderObject* stayWithin) const
     return nextInPreOrderAfterChildren(stayWithin);
 }
 
-RenderObject* RenderObject::nextInPreOrderAfterChildren(RenderObject* stayWithin) const
+RenderObject* RenderObject::nextInPreOrderAfterChildren(const RenderObject* stayWithin) const
 {
     if (this == stayWithin)
         return 0;
@@ -1994,6 +2019,33 @@ void RenderObject::styleDidChange(StyleDifference diff, const RenderStyle* oldSt
     }
 }
 
+void RenderObject::propagateStyleToAnonymousChildren(bool blockChildrenOnly)
+{
+    // FIXME: We could save this call when the change only affected non-inherited properties.
+    for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
+        if (!child->isAnonymous() || child->style()->styleType() != NOPSEUDO)
+            continue;
+
+        if (blockChildrenOnly && !child->isRenderBlock())
+            continue;
+
+#if ENABLE(FULLSCREEN_API)
+        if (child->isRenderFullScreen() || child->isRenderFullScreenPlaceholder())
+            continue;
+#endif
+
+        RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyle(style());
+        if (style()->specifiesColumns()) {
+            if (child->style()->specifiesColumns())
+                newStyle->inheritColumnPropertiesFrom(style());
+            if (child->style()->columnSpan())
+                newStyle->setColumnSpan(true);
+        }
+        newStyle->setDisplay(child->style()->display());
+        child->setStyle(newStyle.release());
+    }
+}
+
 void RenderObject::updateFillImages(const FillLayer* oldLayers, const FillLayer* newLayers)
 {
     // Optimize the common case
@@ -2236,6 +2288,10 @@ RenderObject* RenderObject::container(RenderBoxModelObject* repaintContainer, bo
         while (o && o->style()->position() == StaticPosition && !o->isRenderView() && !(o->hasTransform() && o->isRenderBlock())) {
             if (repaintContainerSkipped && o == repaintContainer)
                 *repaintContainerSkipped = true;
+#if ENABLE(SVG)
+            if (o->isSVGForeignObject()) // foreignObject is the containing block for contents inside it
+                break;
+#endif
             o = o->parent();
         }
     }
@@ -2404,10 +2460,13 @@ void RenderObject::scheduleRelayout()
         FrameView* view = toRenderView(this)->frameView();
         if (view)
             view->scheduleRelayout();
-    } else if (parent()) {
-        FrameView* v = view() ? view()->frameView() : 0;
-        if (v)
-            v->scheduleRelayoutOfSubtree(this);
+    } else {
+        if (isRooted()) {
+            if (RenderView* renderView = view()) {
+                if (FrameView* frameView = renderView->frameView())
+                    frameView->scheduleRelayoutOfSubtree(this);
+            }
+        }
     }
 }
 

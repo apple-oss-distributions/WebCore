@@ -196,7 +196,7 @@ FrameLoader::FrameLoader(Frame* frame, FrameLoaderClient* client)
     , m_isExecutingJavaScriptFormAction(false)
     , m_didCallImplicitClose(false)
     , m_wasUnloadEventEmitted(false)
-    , m_pageDismissalEventBeingDispatched(false)
+    , m_pageDismissalEventBeingDispatched(NoDismissal)
     , m_isComplete(false)
     , m_isLoadingMainResource(false)
     , m_needsClear(false)
@@ -404,16 +404,18 @@ void FrameLoader::stopLoading(UnloadEventPolicy unloadEventPolicy)
                 Node* currentFocusedNode = m_frame->document()->focusedNode();
                 if (currentFocusedNode)
                     currentFocusedNode->aboutToUnload();
-                m_pageDismissalEventBeingDispatched = true;
-                if (m_frame->domWindow()) {
-                    if (unloadEventPolicy == UnloadEventPolicyUnloadAndPageHide)
+                if (m_frame->domWindow() && m_pageDismissalEventBeingDispatched == NoDismissal) {
+                    if (unloadEventPolicy == UnloadEventPolicyUnloadAndPageHide) {
+                        m_pageDismissalEventBeingDispatched = PageHideDismissal;
                         m_frame->domWindow()->dispatchEvent(PageTransitionEvent::create(eventNames().pagehideEvent, m_frame->document()->inPageCache()), m_frame->document());
+                    }
                     if (!m_frame->document()->inPageCache()) {
                         RefPtr<Event> unloadEvent(Event::create(eventNames().unloadEvent, false, false));
                         // The DocumentLoader (and thus its DocumentLoadTiming) might get destroyed
                         // while dispatching the event, so protect it to prevent writing the end
                         // time into freed memory.
                         RefPtr<DocumentLoader> documentLoader = m_provisionalDocumentLoader;
+                        m_pageDismissalEventBeingDispatched = UnloadDismissal;
                         if (documentLoader && !documentLoader->timing()->unloadEventStart && !documentLoader->timing()->unloadEventEnd) {
                             DocumentLoadTiming* timing = documentLoader->timing();
                             ASSERT(timing->navigationStart);
@@ -422,7 +424,7 @@ void FrameLoader::stopLoading(UnloadEventPolicy unloadEventPolicy)
                             m_frame->domWindow()->dispatchEvent(unloadEvent, m_frame->domWindow()->document());
                     }
                 }
-                m_pageDismissalEventBeingDispatched = false;
+                m_pageDismissalEventBeingDispatched = NoDismissal;
                 if (m_frame->document())
                     m_frame->document()->updateStyleIfNeeded();
                 m_wasUnloadEventEmitted = true;
@@ -1446,7 +1448,7 @@ void FrameLoader::loadURL(const KURL& newURL, const String& referrer, const Stri
         return;
     }
 
-    if (m_pageDismissalEventBeingDispatched)
+    if (m_pageDismissalEventBeingDispatched != NoDismissal)
         return;
 
     NavigationAction action(newURL, newLoadType, isFormSubmission, event);
@@ -1581,7 +1583,7 @@ void FrameLoader::loadWithDocumentLoader(DocumentLoader* loader, FrameLoadType t
 
     ASSERT(m_frame->view());
 
-    if (m_pageDismissalEventBeingDispatched)
+    if (m_pageDismissalEventBeingDispatched != NoDismissal)
         return;
 
     if (m_frame->document())
@@ -1831,7 +1833,7 @@ void FrameLoader::stopLoadingSubframes(ClearProvisionalItemPolicy clearProvision
 void FrameLoader::stopAllLoaders(ClearProvisionalItemPolicy clearProvisionalItemPolicy)
 {
     ASSERT(!m_frame->document() || !m_frame->document()->inPageCache());
-    if (m_pageDismissalEventBeingDispatched)
+    if (m_pageDismissalEventBeingDispatched != NoDismissal)
         return;
 
     // If this method is called from within this method, infinite recursion can occur (3442218). Avoid this.
@@ -1930,6 +1932,20 @@ void FrameLoader::setDocumentLoader(DocumentLoader* loader)
         m_documentLoader->detachFromFrame();
 
     m_documentLoader = loader;
+
+    // The following abomination is brought to you by the unload event.
+    // The detachChildren() call above may trigger a child frame's unload event,
+    // which could do something obnoxious like call document.write("") on
+    // the main frame, which results in detaching children while detaching children.
+    // This can cause the new m_documentLoader to be detached from its Frame*, but still
+    // be alive. To make matters worse, DocumentLoaders with a null Frame* aren't supposed
+    // to happen when they're still alive (and many places below us on the stack think the
+    // DocumentLoader is still usable). Ergo, we reattach loader to its Frame, and pretend
+    // like nothing ever happened.
+    if (m_documentLoader && !m_documentLoader->frame()) {
+        ASSERT(!m_documentLoader->isLoading());
+        m_documentLoader->setFrame(m_frame);
+    }
 }
 
 void FrameLoader::setPolicyDocumentLoader(DocumentLoader* loader)
@@ -2658,12 +2674,14 @@ void FrameLoader::frameLoadCompleted()
 
 void FrameLoader::detachChildren()
 {
-    // FIXME: Is it really necessary to do this in reverse order?
-    Frame* previous;
-    for (Frame* child = m_frame->tree()->lastChild(); child; child = previous) {
-        previous = child->tree()->previousSibling();
-        child->loader()->detachFromParent();
-    }
+    typedef Vector<RefPtr<Frame> > FrameVector;
+    FrameVector childrenToDetach;
+    childrenToDetach.reserveCapacity(m_frame->tree()->childCount());
+    for (Frame* child = m_frame->tree()->lastChild(); child; child = child->tree()->previousSibling())
+        childrenToDetach.append(child);
+    FrameVector::iterator end = childrenToDetach.end();
+    for (FrameVector::iterator it = childrenToDetach.begin(); it != end; it++)
+        (*it)->loader()->detachFromParent();
 }
 
 void FrameLoader::closeAndRemoveChild(Frame* child)
@@ -2819,7 +2837,7 @@ void FrameLoader::addExtraFieldsToRequest(ResourceRequest& request, FrameLoadTyp
             request.setCachePolicy(UseProtocolCachePolicy);
     } else if (loadType == FrameLoadTypeReload || loadType == FrameLoadTypeReloadFromOrigin || request.isConditional())
         request.setCachePolicy(ReloadIgnoringCacheData);
-    else if (isBackForwardLoadType(loadType) && m_stateMachine.committedFirstRealDocumentLoad() && !request.url().protocolIs("https"))
+    else if (isBackForwardLoadType(loadType) && m_stateMachine.committedFirstRealDocumentLoad())
         request.setCachePolicy(ReturnCacheDataElseLoad);
         
     if (request.cachePolicy() == ReloadIgnoringCacheData) {
@@ -3073,9 +3091,9 @@ bool FrameLoader::fireBeforeUnloadEvent(Chrome* chrome)
         return true;
 
     RefPtr<BeforeUnloadEvent> beforeUnloadEvent = BeforeUnloadEvent::create();
-    m_pageDismissalEventBeingDispatched = true;
+    m_pageDismissalEventBeingDispatched = BeforeUnloadDismissal;
     domWindow->dispatchEvent(beforeUnloadEvent.get(), domWindow->document());
-    m_pageDismissalEventBeingDispatched = false;
+    m_pageDismissalEventBeingDispatched = NoDismissal;
 
     if (!beforeUnloadEvent->defaultPrevented())
         document->defaultEventHandler(beforeUnloadEvent.get());

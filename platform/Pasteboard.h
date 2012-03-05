@@ -116,7 +116,7 @@ private:
 #endif
 
 
-    PassRefPtr<DocumentFragment> documentFragmentForPasteboardItemAtIndex(Frame*, int index);
+    PassRefPtr<DocumentFragment> documentFragmentForPasteboardItemAtIndex(Frame*, int index, bool allowPlainText, bool& chosePlainText);
 #if PLATFORM(WIN)
     HWND m_owner;
 #endif

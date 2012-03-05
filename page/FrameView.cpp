@@ -132,7 +132,6 @@ FrameView::FrameView(Frame* frame)
     , m_fixedObjectCount(0)
     , m_layoutTimer(this, &FrameView::layoutTimerFired)
     , m_layoutRoot(0)
-    , m_hasPendingPostLayoutTasks(false)
     , m_inSynchronousPostLayout(false)
     , m_postLayoutTasksTimer(this, &FrameView::postLayoutTimerFired)
     , m_isTransparent(false)
@@ -183,7 +182,7 @@ PassRefPtr<FrameView> FrameView::create(Frame* frame, const IntSize& initialSize
 
 FrameView::~FrameView()
 {
-    if (m_hasPendingPostLayoutTasks) {
+    if (m_postLayoutTasksTimer.isActive()) {
         m_postLayoutTasksTimer.stop();
         m_actionScheduler->clear();
     }
@@ -228,7 +227,6 @@ void FrameView::reset()
     m_layoutSchedulingEnabled = true;
     m_inLayout = false;
     m_inSynchronousPostLayout = false;
-    m_hasPendingPostLayoutTasks = false;
     m_layoutCount = 0;
     m_nestedLayoutCount = 0;
     m_postLayoutTasksTimer.stop();
@@ -930,11 +928,10 @@ void FrameView::layout(bool allowSubtree)
 
     m_layoutSchedulingEnabled = false;
 
-    if (!m_nestedLayoutCount && !m_inSynchronousPostLayout && m_hasPendingPostLayoutTasks && !inSubframeLayoutWithFrameFlattening) {
+    if (!m_nestedLayoutCount && !m_inSynchronousPostLayout && m_postLayoutTasksTimer.isActive() && !inSubframeLayoutWithFrameFlattening) {
         // This is a new top-level layout. If there are any remaining tasks from the previous
         // layout, finish them now.
         m_inSynchronousPostLayout = true;
-        m_postLayoutTasksTimer.stop();
         performPostLayoutTasks();
         m_inSynchronousPostLayout = false;
     }
@@ -1124,7 +1121,7 @@ void FrameView::layout(bool allowSubtree)
         updateOverflowStatus(layoutWidth() < contentsWidth(),
                              layoutHeight() < contentsHeight());
 
-    if (!m_hasPendingPostLayoutTasks) {
+    if (!m_postLayoutTasksTimer.isActive()) {
         if (!m_inSynchronousPostLayout) {
             if (inSubframeLayoutWithFrameFlattening)
                 m_frame->contentRenderer()->updateWidgetPositions();
@@ -1136,12 +1133,11 @@ void FrameView::layout(bool allowSubtree)
             }
         }
         
-        if (!m_hasPendingPostLayoutTasks && (needsLayout() || m_inSynchronousPostLayout || inSubframeLayoutWithFrameFlattening)) {
+        if (!m_postLayoutTasksTimer.isActive() && (needsLayout() || m_inSynchronousPostLayout || inSubframeLayoutWithFrameFlattening)) {
             // If we need layout or are already in a synchronous call to postLayoutTasks(), 
             // defer widget updates and event dispatch until after we return. postLayoutTasks()
             // can make us need to update again, and we can get stuck in a nasty cycle unless
             // we call it through the timer here.
-            m_hasPendingPostLayoutTasks = true;
             m_postLayoutTasksTimer.startOneShot(0);
             if (needsLayout()) {
                 m_actionScheduler->pause();
@@ -1984,8 +1980,6 @@ void FrameView::setNeedsLayout()
 
 void FrameView::unscheduleRelayout()
 {
-    m_postLayoutTasksTimer.stop();
-
     if (!m_layoutTimer.isActive())
         return;
 
@@ -2115,7 +2109,7 @@ void FrameView::updateWidget(RenderEmbeddedObject* object)
         static_cast<HTMLPlugInImageElement*>(ownerElement)->updateWidget(CreateAnyWidgetType);
     // FIXME: It is not clear that Media elements need or want this updateWidget() call.
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
-    else if (ownerElement->hasTagName(videoTag) || ownerElement->hasTagName(audioTag))
+    else if (ownerElement->isMediaElement())
         static_cast<HTMLMediaElement*>(ownerElement)->updateWidget(CreateAnyWidgetType);
 #endif
     else
@@ -2157,16 +2151,15 @@ bool FrameView::updateWidgets()
 
 void FrameView::flushAnyPendingPostLayoutTasks()
 {
-    if (!m_hasPendingPostLayoutTasks)
+    if (!m_postLayoutTasksTimer.isActive())
         return;
 
-    m_postLayoutTasksTimer.stop();
     performPostLayoutTasks();
 }
 
 void FrameView::performPostLayoutTasks()
 {
-    m_hasPendingPostLayoutTasks = false;
+    m_postLayoutTasksTimer.stop();
 
     m_frame->selection()->setCaretRectNeedsUpdate();
     m_frame->selection()->updateAppearance();

@@ -575,6 +575,8 @@ Document::~Document()
             (*m_pageGroupUserSheets)[i]->clearOwnerNode();
     }
 
+    deleteCustomFonts();
+
     m_weakReference->clear();
 
     if (m_mediaQueryMatcher)
@@ -839,8 +841,13 @@ PassRefPtr<Node> Document::importNode(Node* importedNode, bool deep, ExceptionCo
         return createComment(importedNode->nodeValue());
     case ELEMENT_NODE: {
         Element* oldElement = static_cast<Element*>(importedNode);
-        RefPtr<Element> newElement = createElementNS(oldElement->namespaceURI(), oldElement->tagQName().toString(), ec);
-                    
+        // FIXME: The following check might be unnecessary. Is it possible that
+        // oldElement has mismatched prefix/namespace?
+        if (hasPrefixNamespaceMismatch(oldElement->tagQName())) {
+            ec = NAMESPACE_ERR;
+            return 0;
+        }
+        RefPtr<Element> newElement = createElement(oldElement->tagQName(), ec);
         if (ec)
             return 0;
 
@@ -1699,6 +1706,20 @@ PassRefPtr<RenderStyle> Document::styleForPage(int pageIndex)
 {
     RefPtr<RenderStyle> style = styleSelector()->styleForPage(pageIndex);
     return style.release();
+}
+
+void Document::registerCustomFont(FontData* fontData)
+{
+    m_customFonts.append(adoptPtr(fontData));
+}
+
+void Document::deleteCustomFonts()
+{
+    size_t size = m_customFonts.size();
+    for (size_t i = 0; i < size; ++i)
+        GlyphPageTreeNode::pruneTreeCustomFontData(m_customFonts[i].get());
+
+    m_customFonts.clear();
 }
 
 bool Document::isPageBoxVisible(int pageIndex)
@@ -5585,7 +5606,7 @@ DocumentLoader* Document::loader() const
     if (!m_frame)
         return 0;
     
-    DocumentLoader* loader = m_frame->loader()->activeDocumentLoader();
+    DocumentLoader* loader = m_frame->loader()->documentLoader();
     if (!loader)
         return 0;
     

@@ -57,6 +57,7 @@ public:
     void setHeight(float height) { m_height = height; }
 
     bool isEmpty() const { return m_width <= 0 || m_height <= 0; }
+    bool isExpressibleAsIntSize() const;
 
     float aspectRatio() const { return m_width / m_height; }
 

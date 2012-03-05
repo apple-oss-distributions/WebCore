@@ -60,6 +60,7 @@ public:
     InspectorCSSAgent(InstrumentingAgents*, InspectorDOMAgent*);
     ~InspectorCSSAgent();
 
+    void discardAgent();
     void reset();
     void getStylesForNode(ErrorString*, int nodeId, RefPtr<InspectorObject>* result);
     void getInlineStyleForNode(ErrorString*, int nodeId, RefPtr<InspectorObject>* style);

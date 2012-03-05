@@ -79,7 +79,7 @@ public:
     
     void updateTileOpacity();
     void updateTileBorderVisibility();
-    void updateHostLayerSize(CGSize hostLayerSize);
+    void updateHostLayerSize();
     bool checkDoSingleTileLayout();
     
     bool hasTiles() const { return !m_tiles.isEmpty(); }

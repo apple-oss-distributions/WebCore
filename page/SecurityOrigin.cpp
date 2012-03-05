@@ -147,6 +147,7 @@ SecurityOrigin::SecurityOrigin(const SecurityOrigin* other)
 
 bool SecurityOrigin::isEmpty() const
 {
+    ASSERT(!m_protocol.isEmpty() || m_isUnique);
     return m_protocol.isEmpty();
 }
 
@@ -173,6 +174,7 @@ void SecurityOrigin::setDomainFromDOM(const String& newDomain)
     m_domain = newDomain.lower();
 }
 
+// FIXME: This should move to SchemeRegistry!
 static HashSet<String>& schemesForbiddenFromDomainRelaxation()
 {
     DEFINE_STATIC_LOCAL(HashSet<String>, schemes, ());
@@ -302,13 +304,6 @@ bool SecurityOrigin::canReceiveDragData(const SecurityOrigin* dragInitiator) con
     if (this == dragInitiator)
         return true;
 
-    // FIXME: Currently we treat data URLs as having a unique origin, contrary to the
-    // current (9/19/2009) draft of the HTML5 specification. We still want to allow
-    // drop across data URLs, so we special case data URLs below. If we change to
-    // match HTML5 w.r.t. data URL security, then we can remove this check.
-    if (m_protocol == "data")
-        return true;
-
     return canAccess(dragInitiator);  
 }
 
@@ -373,8 +368,8 @@ bool SecurityOrigin::isLocal() const
 }
 
 bool SecurityOrigin::isSecureTransitionTo(const KURL& url) const
-{ 
-    // New window created by the application
+{
+    // This origin represents a new window created by the application.
     if (isEmpty())
         return true;
 
@@ -384,9 +379,6 @@ bool SecurityOrigin::isSecureTransitionTo(const KURL& url) const
 
 String SecurityOrigin::toString() const
 {
-    if (isEmpty())
-        return "null";
-
     if (isUnique())
         return "null";
 

@@ -78,6 +78,8 @@ static CFCharacterSetRef phoneFallbackCharacterSet()
 
 const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, const UChar* characters, int length)
 {
+    static bool isGB18030ComplianceRequired = wkIsGB18030ComplianceRequired();
+
     // Unlike OS X, our fallback font on iPhone is Arial Unicode, which doesn't have some apple-specific glyphs like F8FF.
     // Fall back to the Apple Fallback font in this case.
     if (length > 0 && requiresCustomFallbackFont(*characters))
@@ -101,7 +103,7 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
         do {
             // This isn't a loop but a way to efficiently check for ranges of characters.
 
-            // The following ranges are Korean Hangul and should be rendered by Apple Gothic
+            // The following ranges are Korean Hangul and should be rendered by AppleSDGothicNeo
             // U+1100 - U+11FF
             // U+3130 - U+318F
             // U+AC00 - U+D7A3
@@ -176,7 +178,14 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
             if ( c < 0xE000)
                 break;
             if ( c < 0xE600) {
-                useEmojiFont = true;
+                if (isGB18030ComplianceRequired)
+                    useCJFont = true;
+                else
+                    useEmojiFont = true;
+                break;
+            }
+            if ( c <= 0xE864 && isGB18030ComplianceRequired) {
+                useCJFont = true;
                 break;
             }
             if (c <= 0xF8FF)
@@ -298,8 +307,9 @@ const SimpleFontData* FontCache::getFontDataForCharacters(const Font& font, cons
         if (useSecondaryFont)
             simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? *cjkBold[secondaryCJKFont] : *cjkPlain[secondaryCJKFont], false, DoNotRetain);
     } else if (useKoreanFont) {
-        DEFINE_STATIC_LOCAL(AtomicString, koreanFont, ("AppleGothic"));
-        simpleFontData = getCachedFontData(font.fontDescription(), koreanFont, false, DoNotRetain);
+        DEFINE_STATIC_LOCAL(AtomicString, koreanPlain, ("AppleSDGothicNeo-Medium"));
+        DEFINE_STATIC_LOCAL(AtomicString, koreanBold, ("AppleSDGothicNeo-Bold"));
+        simpleFontData = getCachedFontData(font.fontDescription(), isGSFontWeightBold(font.fontDescription().weight()) ? koreanBold : koreanPlain, false, DoNotRetain);
     } else if (useCyrillicFont) {
         DEFINE_STATIC_LOCAL(AtomicString, cyrillicPlain, ("HelveticaNeue"));
         DEFINE_STATIC_LOCAL(AtomicString, cyrillicBold, ("HelveticaNeue-Bold"));

@@ -42,6 +42,11 @@ float FloatSize::diagonalLength() const
     return sqrtf(diagonalLengthSquared());
 }
 
+bool FloatSize::isExpressibleAsIntSize() const
+{
+    return isWithinIntRange(m_width) && isWithinIntRange(m_height);
+}
+
 FloatSize FloatSize::narrowPrecision(double width, double height)
 {
     return FloatSize(narrowPrecisionToFloat(width), narrowPrecisionToFloat(height));

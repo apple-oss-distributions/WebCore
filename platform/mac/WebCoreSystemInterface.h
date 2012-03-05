@@ -176,6 +176,7 @@ extern CGImageRef (*wkIOSurfaceContextCreateImage)(CGContextRef context);
 extern CGSize (*wkGetViewportScreenSize)(void);
 extern void (*wkSetLayerContentsScale)(CALayer *);
 extern float (*wkGetScreenScaleFactor)(void);
+extern bool (*wkIsGB18030ComplianceRequired)(void);
 
 typedef const struct __CFURLStorageSession* CFURLStorageSessionRef;
 extern CFURLStorageSessionRef (*wkCreatePrivateStorageSession)(CFStringRef);
