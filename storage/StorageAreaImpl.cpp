@@ -26,17 +26,19 @@
 #include "config.h"
 #include "StorageAreaImpl.h"
 
-#if ENABLE(DOM_STORAGE)
-
+#include "Document.h"
 #include "ExceptionCode.h"
 #include "Frame.h"
 #include "Page.h"
+#include "SchemeRegistry.h"
 #include "SecurityOrigin.h"
 #include "Settings.h"
 #include "StorageAreaSync.h"
 #include "StorageEventDispatcher.h"
 #include "StorageMap.h"
 #include "StorageSyncManager.h"
+#include "StorageTracker.h"
+#include <wtf/MainThread.h>
 
 namespace WebCore {
 
@@ -57,6 +59,10 @@ inline StorageAreaImpl::StorageAreaImpl(StorageType storageType, PassRefPtr<Secu
     ASSERT(isMainThread());
     ASSERT(m_securityOrigin);
     ASSERT(m_storageMap);
+    
+    // Accessing the shared global StorageTracker when a StorageArea is created 
+    // ensures that the tracker is properly initialized before anyone actually needs to use it.
+    StorageTracker::tracker();
 }
 
 PassRefPtr<StorageAreaImpl> StorageAreaImpl::create(StorageType storageType, PassRefPtr<SecurityOrigin> origin, PassRefPtr<StorageSyncManager> syncManager, unsigned quota)
@@ -94,7 +100,7 @@ StorageAreaImpl::StorageAreaImpl(StorageAreaImpl* area)
     ASSERT(!m_isShutdown);
 }
 
-static bool privateBrowsingEnabled(Frame* frame)
+bool StorageAreaImpl::disabledByPrivateBrowsingInFrame(const Frame* frame) const
 {
 #if PLATFORM(CHROMIUM)
     // The frame pointer can be NULL in Chromium since this call is made in a different
@@ -103,11 +109,17 @@ static bool privateBrowsingEnabled(Frame* frame)
     ASSERT(!frame);
     return false;
 #else
-    return frame->page()->settings()->privateBrowsingEnabled();
+    if (!frame->page())
+        return true;
+    if (!frame->page()->settings()->privateBrowsingEnabled())
+        return false;
+    if (m_storageType != LocalStorage)
+        return true;
+    return !SchemeRegistry::allowsLocalStorageAccessInPrivateBrowsing(frame->document()->securityOrigin()->protocol());
 #endif
 }
 
-unsigned StorageAreaImpl::length() const
+unsigned StorageAreaImpl::length(Frame*) const
 {
     ASSERT(!m_isShutdown);
     blockUntilImportComplete();
@@ -115,7 +127,7 @@ unsigned StorageAreaImpl::length() const
     return m_storageMap->length();
 }
 
-String StorageAreaImpl::key(unsigned index) const
+String StorageAreaImpl::key(unsigned index, Frame*) const
 {
     ASSERT(!m_isShutdown);
     blockUntilImportComplete();
@@ -123,7 +135,7 @@ String StorageAreaImpl::key(unsigned index) const
     return m_storageMap->key(index);
 }
 
-String StorageAreaImpl::getItem(const String& key) const
+String StorageAreaImpl::getItem(const String& key, Frame*) const
 {
     ASSERT(!m_isShutdown);
     blockUntilImportComplete();
@@ -137,7 +149,7 @@ String StorageAreaImpl::setItem(const String& key, const String& value, Exceptio
     ASSERT(!value.isNull());
     blockUntilImportComplete();
 
-    if (privateBrowsingEnabled(frame)) {
+    if (disabledByPrivateBrowsingInFrame(frame)) {
         ec = QUOTA_EXCEEDED_ERR;
         return String();
     }
@@ -167,7 +179,7 @@ String StorageAreaImpl::removeItem(const String& key, Frame* frame)
     ASSERT(!m_isShutdown);
     blockUntilImportComplete();
 
-    if (privateBrowsingEnabled(frame))
+    if (disabledByPrivateBrowsingInFrame(frame))
         return String();
 
     String oldValue;
@@ -189,7 +201,7 @@ bool StorageAreaImpl::clear(Frame* frame)
     ASSERT(!m_isShutdown);
     blockUntilImportComplete();
 
-    if (privateBrowsingEnabled(frame))
+    if (disabledByPrivateBrowsingInFrame(frame))
         return false;
 
     if (!m_storageMap->length())
@@ -204,7 +216,7 @@ bool StorageAreaImpl::clear(Frame* frame)
     return true;
 }
 
-bool StorageAreaImpl::contains(const String& key) const
+bool StorageAreaImpl::contains(const String& key, Frame*) const
 {
     ASSERT(!m_isShutdown);
     blockUntilImportComplete();
@@ -260,5 +272,3 @@ void StorageAreaImpl::blockUntilImportComplete() const
 }
 
 }
-
-#endif // ENABLE(DOM_STORAGE)

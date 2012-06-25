@@ -27,7 +27,7 @@
 #include "JSUint32Array.h"
 
 #include "JSArrayBufferViewHelper.h"
-#include "Uint32Array.h"
+#include <wtf/Uint32Array.h>
 
 using namespace JSC;
 
@@ -50,7 +50,7 @@ JSC::JSValue JSUint32Array::set(JSC::ExecState* exec)
 
 EncodedJSValue JSC_HOST_CALL JSUint32ArrayConstructor::constructJSUint32Array(ExecState* exec)
 {
-    JSUint32ArrayConstructor* jsConstructor = static_cast<JSUint32ArrayConstructor*>(exec->callee());
+    JSUint32ArrayConstructor* jsConstructor = jsCast<JSUint32ArrayConstructor*>(exec->callee());
     RefPtr<Uint32Array> array = constructArrayBufferView<Uint32Array, unsigned int>(exec);
     if (!array.get())
         // Exception has already been thrown.

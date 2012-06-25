@@ -27,7 +27,6 @@
 #ifndef JSArrayBufferViewHelper_h
 #define JSArrayBufferViewHelper_h
 
-#include "ArrayBufferView.h"
 #include "ExceptionCode.h"
 #include "JSArrayBuffer.h"
 #include "JSDOMBinding.h"
@@ -36,6 +35,7 @@
 #include <runtime/Error.h>
 #include <runtime/JSObject.h>
 #include <runtime/JSValue.h>
+#include <wtf/ArrayBufferView.h>
 
 namespace WebCore {
 
@@ -51,9 +51,9 @@ JSC::JSValue setWebGLArrayHelper(JSC::ExecState* exec, T* impl, T* (*conversionF
         unsigned offset = 0;
         if (exec->argumentCount() == 2)
             offset = exec->argument(1).toInt32(exec);
-        ExceptionCode ec = 0;
-        impl->set(array, offset, ec);
-        setDOMException(exec, ec);
+        if (!impl->set(array, offset))
+            setDOMException(exec, INDEX_SIZE_ERR);
+
         return JSC::jsUndefined();
     }
 
@@ -93,11 +93,16 @@ PassRefPtr<C> constructArrayBufferViewWithArrayBufferArgument(JSC::ExecState* ex
         return 0;
 
     unsigned offset = (exec->argumentCount() > 1) ? exec->argument(1).toUInt32(exec) : 0;
-    if ((buffer->byteLength() - offset) % sizeof(T))
-        throwError(exec, createRangeError(exec, "ArrayBuffer length minus the byteOffset is not a multiple of the element size."));
-    unsigned int length = (buffer->byteLength() - offset) / sizeof(T);
+    unsigned int length = 0;
     if (exec->argumentCount() > 2)
         length = exec->argument(2).toUInt32(exec);
+    else {
+        if ((buffer->byteLength() - offset) % sizeof(T)) {
+            throwError(exec, createRangeError(exec, "ArrayBuffer length minus the byteOffset is not a multiple of the element size."));
+            return 0;
+        }
+        length = (buffer->byteLength() - offset) / sizeof(T);
+    }
     RefPtr<C> array = C::create(buffer, offset, length);
     if (!array)
         setDOMException(exec, INDEX_SIZE_ERR);

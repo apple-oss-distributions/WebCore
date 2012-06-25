@@ -27,9 +27,11 @@
 #include "HTMLImageLoader.h"
 #include "HTMLNames.h"
 #include "Image.h"
+#include "NodeRenderStyle.h"
 #include "Page.h"
 #include "RenderEmbeddedObject.h"
 #include "RenderImage.h"
+#include "SecurityOrigin.h"
 
 namespace WebCore {
 
@@ -41,7 +43,15 @@ HTMLPlugInImageElement::HTMLPlugInImageElement(const QualifiedName& tagName, Doc
     // the same codepath in this class.
     , m_needsWidgetUpdate(!createdByParser)
     , m_shouldPreferPlugInsForImages(preferPlugInsForImagesOption == ShouldPreferPlugInsForImages)
+    , m_needsDocumentActivationCallbacks(false)
 {
+    setHasCustomWillOrDidRecalcStyle();
+}
+
+HTMLPlugInImageElement::~HTMLPlugInImageElement()
+{
+    if (m_needsDocumentActivationCallbacks)
+        document()->unregisterForPageCacheSuspensionCallbacks(this);
 }
 
 RenderEmbeddedObject* HTMLPlugInImageElement::renderEmbeddedObject() const
@@ -59,7 +69,7 @@ bool HTMLPlugInImageElement::isImageType()
         m_serviceType = mimeTypeFromDataURL(m_url);
 
     if (Frame* frame = document()->frame()) {
-        KURL completedURL = frame->loader()->completeURL(m_url);
+        KURL completedURL = document()->completeURL(m_url);
         return frame->loader()->client()->objectContentType(completedURL, m_serviceType, shouldPreferPlugInsForImages()) == ObjectContentImage;
     }
 
@@ -75,9 +85,14 @@ bool HTMLPlugInImageElement::allowedToLoadFrameURL(const String& url)
     if (document()->frame()->page()->frameCount() >= Page::maxNumberOfFrames)
         return false;
 
+    KURL completeURL = document()->completeURL(url);
+    
+    if (contentFrame() && protocolIsJavaScript(completeURL)
+        && !document()->securityOrigin()->canAccess(contentDocument()->securityOrigin()))
+        return false;
+    
     // We allow one level of self-reference because some sites depend on that.
     // But we don't allow more than one.
-    KURL completeURL = document()->completeURL(url);
     bool foundSelfReference = false;
     for (Frame* frame = document()->frame(); frame; frame = frame->tree()->parent()) {
         if (equalIgnoringFragmentIdentifier(frame->document()->url(), completeURL)) {
@@ -95,12 +110,12 @@ bool HTMLPlugInImageElement::wouldLoadAsNetscapePlugin(const String& url, const 
 {
     ASSERT(document());
     ASSERT(document()->frame());
-    FrameLoader* frameLoader = document()->frame()->loader();
-    ASSERT(frameLoader);
     KURL completedURL;
     if (!url.isEmpty())
-        completedURL = frameLoader->completeURL(url);
+        completedURL = document()->completeURL(url);
 
+    FrameLoader* frameLoader = document()->frame()->loader();
+    ASSERT(frameLoader);
     if (frameLoader->client()->objectContentType(completedURL, serviceType, shouldPreferPlugInsForImages()) == ObjectContentNetscapePlugin)
         return true;
     return false;
@@ -108,6 +123,13 @@ bool HTMLPlugInImageElement::wouldLoadAsNetscapePlugin(const String& url, const 
 
 RenderObject* HTMLPlugInImageElement::createRenderer(RenderArena* arena, RenderStyle* style)
 {
+    // Once a PlugIn Element creates its renderer, it needs to be told when the Document goes
+    // inactive or reactivates so it can clear the renderer before going into the page cache.
+    if (!m_needsDocumentActivationCallbacks) {
+        m_needsDocumentActivationCallbacks = true;
+        document()->registerForPageCacheSuspensionCallbacks(this);
+    }
+    
     // Fallback content breaks the DOM->Renderer class relationship of this
     // class and all superclasses because createObject won't necessarily
     // return a RenderEmbeddedObject, RenderPart or even RenderWidget.
@@ -121,18 +143,18 @@ RenderObject* HTMLPlugInImageElement::createRenderer(RenderArena* arena, RenderS
     return new (arena) RenderEmbeddedObject(this);
 }
 
-void HTMLPlugInImageElement::recalcStyle(StyleChange ch)
+bool HTMLPlugInImageElement::willRecalcStyle(StyleChange)
 {
     // FIXME: Why is this necessary?  Manual re-attach is almost always wrong.
-    if (!useFallbackContent() && needsWidgetUpdate() && renderer() && !isImageType()) {
-        detach();
-        attach();
-    }
-    HTMLPlugInElement::recalcStyle(ch);
+    if (!useFallbackContent() && needsWidgetUpdate() && renderer() && !isImageType())
+        reattach();
+    return true;
 }
 
 void HTMLPlugInImageElement::attach()
 {
+    suspendPostAttachCallbacks();
+
     bool isImage = isImageType();
     
     if (!isImage)
@@ -145,6 +167,8 @@ void HTMLPlugInImageElement::attach()
             m_imageLoader = adoptPtr(new HTMLImageLoader(this));
         m_imageLoader->updateFromElement();
     }
+
+    resumePostAttachCallbacks();
 }
     
 void HTMLPlugInImageElement::detach()
@@ -165,7 +189,7 @@ void HTMLPlugInImageElement::updateWidgetIfNecessary()
     if (!needsWidgetUpdate() || useFallbackContent() || isImageType())
         return;
 
-    if (!renderEmbeddedObject() || renderEmbeddedObject()->pluginCrashedOrWasMissing())
+    if (!renderEmbeddedObject() || renderEmbeddedObject()->showsUnavailablePluginIndicator())
         return;
 
     updateWidget(CreateOnlyNonNetscapePlugins);
@@ -182,14 +206,51 @@ void HTMLPlugInImageElement::finishParsingChildren()
         setNeedsStyleRecalc();    
 }
 
-void HTMLPlugInImageElement::willMoveToNewOwnerDocument()
+void HTMLPlugInImageElement::didMoveToNewDocument(Document* oldDocument)
 {
+    if (m_needsDocumentActivationCallbacks) {
+        if (oldDocument)
+            oldDocument->unregisterForPageCacheSuspensionCallbacks(this);
+        document()->registerForPageCacheSuspensionCallbacks(this);
+    }
+
     if (m_imageLoader)
-        m_imageLoader->elementWillMoveToNewOwnerDocument();
-    HTMLPlugInElement::willMoveToNewOwnerDocument();
+        m_imageLoader->elementDidMoveToNewDocument();
+    HTMLPlugInElement::didMoveToNewDocument(oldDocument);
 }
 
-void HTMLPlugInImageElement::updateWidgetCallback(Node* n)
+void HTMLPlugInImageElement::documentWillSuspendForPageCache()
+{
+    if (RenderStyle* renderStyle = this->renderStyle()) {
+        m_customStyleForPageCache = RenderStyle::clone(renderStyle);
+        m_customStyleForPageCache->setDisplay(NONE);
+        setHasCustomStyleForRenderer();
+
+        recalcStyle(Force);
+    }
+
+    HTMLPlugInElement::documentWillSuspendForPageCache();
+}
+
+void HTMLPlugInImageElement::documentDidResumeFromPageCache()
+{
+    if (m_customStyleForPageCache) {
+        m_customStyleForPageCache = 0;
+        clearHasCustomStyleForRenderer();
+
+        recalcStyle(Force);
+    }
+    
+    HTMLPlugInElement::documentDidResumeFromPageCache();
+}
+
+PassRefPtr<RenderStyle> HTMLPlugInImageElement::customStyleForRenderer()
+{
+    ASSERT(m_customStyleForPageCache);
+    return m_customStyleForPageCache;
+}
+
+void HTMLPlugInImageElement::updateWidgetCallback(Node* n, unsigned)
 {
     static_cast<HTMLPlugInImageElement*>(n)->updateWidgetIfNecessary();
 }

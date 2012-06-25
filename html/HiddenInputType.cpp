@@ -32,17 +32,34 @@
 #include "config.h"
 #include "HiddenInputType.h"
 
+#include "FormDataList.h"
+#include "HTMLInputElement.h"
+#include "HTMLNames.h"
 #include <wtf/PassOwnPtr.h>
 
 namespace WebCore {
+
+using namespace HTMLNames;
 
 PassOwnPtr<InputType> HiddenInputType::create(HTMLInputElement* element)
 {
     return adoptPtr(new HiddenInputType(element));
 }
 
-const AtomicString& HiddenInputType::formControlType() const {
+const AtomicString& HiddenInputType::formControlType() const
+{
     return InputTypeNames::hidden();
+}
+
+bool HiddenInputType::saveFormControlState(String& result) const
+{
+    result = element()->value();
+    return true;
+}
+
+void HiddenInputType::restoreFormControlState(const String& string)
+{
+    element()->setAttribute(valueAttr, string);
 }
 
 bool HiddenInputType::supportsValidation() const
@@ -70,9 +87,23 @@ bool HiddenInputType::storesValueSeparateFromAttribute()
     return false;
 }
 
+void HiddenInputType::setValue(const String& sanitizedValue, bool, TextFieldEventBehavior)
+{
+    element()->setAttribute(valueAttr, sanitizedValue);
+}
+
 bool HiddenInputType::isHiddenType() const
 {
     return true;
+}
+
+bool HiddenInputType::appendFormData(FormDataList& encoding, bool isMultipartForm) const
+{
+    if (equalIgnoringCase(element()->name(), "_charset_")) {
+        encoding.appendData(element()->name(), String(encoding.encoding().name()));
+        return true;
+    }
+    return InputType::appendFormData(encoding, isMultipartForm);
 }
 
 bool HiddenInputType::shouldRespectHeightAndWidthAttributes()

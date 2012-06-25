@@ -27,29 +27,42 @@
 #define RUNTIME_ARRAY_H_
 
 #include "BridgeJSC.h"
+#include "JSDOMBinding.h"
 #include <runtime/ArrayPrototype.h>
 
 namespace JSC {
     
 class RuntimeArray : public JSArray {
 public:
-    typedef Bindings::Array BindingsArray;
-    RuntimeArray(ExecState*, Bindings::Array*);
-    virtual ~RuntimeArray();
+    typedef JSArray Base;
 
-    virtual void getOwnPropertyNames(ExecState*, PropertyNameArray&, EnumerationMode mode = ExcludeDontEnumProperties);
-    virtual bool getOwnPropertySlot(ExecState*, const Identifier&, PropertySlot&);
-    virtual bool getOwnPropertySlot(ExecState*, unsigned, PropertySlot&);
-    virtual bool getOwnPropertyDescriptor(ExecState*, const Identifier&, PropertyDescriptor&);
-    virtual void put(ExecState*, const Identifier& propertyName, JSValue, PutPropertySlot&);
-    virtual void put(ExecState*, unsigned propertyName, JSValue);
+    static RuntimeArray* create(ExecState* exec, Bindings::Array* array)
+    {
+        // FIXME: deprecatedGetDOMStructure uses the prototype off of the wrong global object
+        // We need to pass in the right global object for "array".
+        Structure* domStructure = WebCore::deprecatedGetDOMStructure<RuntimeArray>(exec);
+        RuntimeArray* runtimeArray = new (NotNull, allocateCell<RuntimeArray>(*exec->heap())) RuntimeArray(exec, domStructure);
+        runtimeArray->finishCreation(exec->globalData(), array);
+        return runtimeArray;
+    }
+
+    typedef Bindings::Array BindingsArray;
+    ~RuntimeArray();
+    static void destroy(JSCell*);
+
+    static void getOwnPropertyNames(JSObject*, ExecState*, PropertyNameArray&, EnumerationMode);
+    static bool getOwnPropertySlot(JSCell*, ExecState*, const Identifier&, PropertySlot&);
+    static bool getOwnPropertySlotByIndex(JSCell*, ExecState*, unsigned, PropertySlot&);
+    static bool getOwnPropertyDescriptor(JSObject*, ExecState*, const Identifier&, PropertyDescriptor&);
+    static void put(JSCell*, ExecState*, const Identifier& propertyName, JSValue, PutPropertySlot&);
+    static void putByIndex(JSCell*, ExecState*, unsigned propertyName, JSValue, bool shouldThrow);
     
-    virtual bool deleteProperty(ExecState* exec, const Identifier &propertyName);
-    virtual bool deleteProperty(ExecState* exec, unsigned propertyName);
+    static bool deleteProperty(JSCell*, ExecState*, const Identifier &propertyName);
+    static bool deletePropertyByIndex(JSCell*, ExecState*, unsigned propertyName);
     
-    unsigned getLength() const { return getConcreteArray()->getLength(); }
+    unsigned getLength() const { return m_array->getLength(); }
     
-    Bindings::Array* getConcreteArray() const { return static_cast<BindingsArray*>(subclassData()); }
+    Bindings::Array* getConcreteArray() const { return m_array; }
 
     static const ClassInfo s_info;
 
@@ -58,17 +71,22 @@ public:
         return globalObject->arrayPrototype();
     }
 
-    static Structure* createStructure(JSGlobalData& globalData, JSValue prototype)
+    static Structure* createStructure(JSGlobalData& globalData, JSGlobalObject* globalObject, JSValue prototype)
     {
-        return Structure::create(globalData, prototype, TypeInfo(ObjectType, StructureFlags), AnonymousSlotCount, &s_info);
+        return Structure::create(globalData, globalObject, prototype, TypeInfo(ObjectType, StructureFlags), &s_info);
     }
 
 protected:
+    void finishCreation(JSGlobalData&, Bindings::Array*);
+
     static const unsigned StructureFlags = OverridesGetOwnPropertySlot | OverridesGetPropertyNames | JSArray::StructureFlags;
 
 private:
+    RuntimeArray(ExecState*, Structure*);
     static JSValue lengthGetter(ExecState*, JSValue, const Identifier&);
     static JSValue indexGetter(ExecState*, JSValue, unsigned);
+
+    BindingsArray* m_array;
 };
     
 } // namespace JSC

@@ -25,8 +25,7 @@
 
 namespace JSC {
     class JSObject;
-    class MarkStack;
-    typedef MarkStack SlotVisitor;
+    class SlotVisitor;
 }
 
 namespace WebCore {
@@ -39,7 +38,6 @@ namespace WebCore {
         enum Type {
             JSEventListenerType, 
             ImageEventListenerType, 
-            InspectorDOMAgentType,
             InspectorDOMStorageResourceType,
             ObjCEventListenerType,
             CPPEventListenerType,

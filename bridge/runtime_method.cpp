@@ -41,13 +41,23 @@ using namespace Bindings;
 
 ASSERT_CLASS_FITS_IN_CELL(RuntimeMethod);
 
-const ClassInfo RuntimeMethod::s_info = { "RuntimeMethod", &InternalFunction::s_info, 0, 0 };
+const ClassInfo RuntimeMethod::s_info = { "RuntimeMethod", &InternalFunction::s_info, 0, 0, CREATE_METHOD_TABLE(RuntimeMethod) };
 
-RuntimeMethod::RuntimeMethod(ExecState* exec, JSGlobalObject* globalObject, Structure* structure, const Identifier& ident, Bindings::MethodList& m)
+RuntimeMethod::RuntimeMethod(JSGlobalObject* globalObject, Structure* structure, Bindings::MethodList& m)
     // Callers will need to pass in the right global object corresponding to this native object "m".
-    : InternalFunction(&exec->globalData(), globalObject, structure, ident)
+    : InternalFunction(globalObject, structure)
     , _methodList(adoptPtr(new MethodList(m)))
 {
+}
+
+void RuntimeMethod::destroy(JSCell* cell)
+{
+    jsCast<RuntimeMethod*>(cell)->RuntimeMethod::~RuntimeMethod();
+}
+
+void RuntimeMethod::finishCreation(JSGlobalData& globalData, const Identifier& ident)
+{
+    Base::finishCreation(globalData, ident);
     ASSERT(inherits(&s_info));
 }
 
@@ -64,26 +74,28 @@ JSValue RuntimeMethod::lengthGetter(ExecState*, JSValue slotBase, const Identifi
     return jsNumber(thisObj->_methodList->at(0)->numParameters());
 }
 
-bool RuntimeMethod::getOwnPropertySlot(ExecState* exec, const Identifier& propertyName, PropertySlot &slot)
+bool RuntimeMethod::getOwnPropertySlot(JSCell* cell, ExecState* exec, const Identifier& propertyName, PropertySlot &slot)
 {
+    RuntimeMethod* thisObject = jsCast<RuntimeMethod*>(cell);
     if (propertyName == exec->propertyNames().length) {
-        slot.setCacheableCustom(this, lengthGetter);
+        slot.setCacheableCustom(thisObject, thisObject->lengthGetter);
         return true;
     }
     
-    return InternalFunction::getOwnPropertySlot(exec, propertyName, slot);
+    return InternalFunction::getOwnPropertySlot(thisObject, exec, propertyName, slot);
 }
 
-bool RuntimeMethod::getOwnPropertyDescriptor(ExecState* exec, const Identifier& propertyName, PropertyDescriptor &descriptor)
+bool RuntimeMethod::getOwnPropertyDescriptor(JSObject* object, ExecState* exec, const Identifier& propertyName, PropertyDescriptor &descriptor)
 {
+    RuntimeMethod* thisObject = jsCast<RuntimeMethod*>(object);
     if (propertyName == exec->propertyNames().length) {
         PropertySlot slot;
-        slot.setCustom(this, lengthGetter);
+        slot.setCustom(thisObject, lengthGetter);
         descriptor.setDescriptor(slot.getValue(exec, propertyName), ReadOnly | DontDelete | DontEnum);
         return true;
     }
     
-    return InternalFunction::getOwnPropertyDescriptor(exec, propertyName, descriptor);
+    return InternalFunction::getOwnPropertyDescriptor(thisObject, exec, propertyName, descriptor);
 }
 
 static EncodedJSValue JSC_HOST_CALL callRuntimeMethod(ExecState* exec)
@@ -104,7 +116,7 @@ static EncodedJSValue JSC_HOST_CALL callRuntimeMethod(ExecState* exec)
     } else {
         // Calling a runtime object of a plugin element?
         if (thisValue.inherits(&JSHTMLElement::s_info)) {
-            HTMLElement* element = static_cast<JSHTMLElement*>(asObject(thisValue))->impl();
+            HTMLElement* element = jsCast<JSHTMLElement*>(asObject(thisValue))->impl();
             instance = pluginInstance(element);
         }
         if (!instance)
@@ -118,7 +130,7 @@ static EncodedJSValue JSC_HOST_CALL callRuntimeMethod(ExecState* exec)
     return JSValue::encode(result);
 }
 
-CallType RuntimeMethod::getCallData(CallData& callData)
+CallType RuntimeMethod::getCallData(JSCell*, CallData& callData)
 {
     callData.native.function = callRuntimeMethod;
     return CallTypeHost;

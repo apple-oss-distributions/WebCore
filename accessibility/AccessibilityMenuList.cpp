@@ -62,7 +62,7 @@ void AccessibilityMenuList::addChildren()
         return;
     }
 
-    static_cast<AccessibilityMenuListPopup*>(list)->setMenuList(this);
+    static_cast<AccessibilityMockObject*>(list)->setParent(this);
     m_children.append(list);
 
     list->addChildren();
@@ -80,6 +80,25 @@ void AccessibilityMenuList::childrenChanged()
 bool AccessibilityMenuList::isCollapsed() const
 {
     return !static_cast<RenderMenuList*>(m_renderer)->popupIsVisible();
+}
+
+void AccessibilityMenuList::didUpdateActiveOption(int optionIndex)
+{
+    RefPtr<Document> document = m_renderer->document();
+    AXObjectCache* cache = document->axObjectCache();
+
+    const AccessibilityChildrenVector& childObjects = children();
+    if (!childObjects.isEmpty()) {
+        ASSERT(childObjects.size() == 1);
+        ASSERT(childObjects[0]->isMenuListPopup());
+
+        if (childObjects[0]->isMenuListPopup()) {
+            if (AccessibilityMenuListPopup* popup = static_cast<AccessibilityMenuListPopup*>(childObjects[0].get()))
+                popup->didUpdateActiveOption(optionIndex);
+        }
+    }
+
+    cache->postNotification(this, document.get(), AXObjectCache::AXMenuListValueChanged, true, PostSynchronously);
 }
 
 } // namespace WebCore

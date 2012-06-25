@@ -26,36 +26,58 @@
 
 namespace WebCore {
 
-    class RectBase {
-    public:
-        CSSPrimitiveValue* top() const { return m_top.get(); }
-        CSSPrimitiveValue* right() const { return m_right.get(); }
-        CSSPrimitiveValue* bottom() const { return m_bottom.get(); }
-        CSSPrimitiveValue* left() const { return m_left.get(); }
+class RectBase {
+public:
+    CSSPrimitiveValue* top() const { return m_top.get(); }
+    CSSPrimitiveValue* right() const { return m_right.get(); }
+    CSSPrimitiveValue* bottom() const { return m_bottom.get(); }
+    CSSPrimitiveValue* left() const { return m_left.get(); }
 
-        void setTop(PassRefPtr<CSSPrimitiveValue> top) { m_top = top; }
-        void setRight(PassRefPtr<CSSPrimitiveValue> right) { m_right = right; }
-        void setBottom(PassRefPtr<CSSPrimitiveValue> bottom) { m_bottom = bottom; }
-        void setLeft(PassRefPtr<CSSPrimitiveValue> left) { m_left = left; }
+    void setTop(PassRefPtr<CSSPrimitiveValue> top) { m_top = top; }
+    void setRight(PassRefPtr<CSSPrimitiveValue> right) { m_right = right; }
+    void setBottom(PassRefPtr<CSSPrimitiveValue> bottom) { m_bottom = bottom; }
+    void setLeft(PassRefPtr<CSSPrimitiveValue> left) { m_left = left; }
 
-    protected:
-        RectBase() { }
-        ~RectBase() { }
+protected:
+    RectBase() { }
+    RectBase(const RectBase& cloneFrom)
+        : m_top(cloneFrom.m_top ? cloneFrom.m_top->cloneForCSSOM() : 0)
+        , m_right(cloneFrom.m_right ? cloneFrom.m_right->cloneForCSSOM() : 0)
+        , m_bottom(cloneFrom.m_bottom ? cloneFrom.m_bottom->cloneForCSSOM() : 0)
+        , m_left(cloneFrom.m_left ? cloneFrom.m_left->cloneForCSSOM() : 0)
+    {
+    }
 
-    private:
-        RefPtr<CSSPrimitiveValue> m_top;
-        RefPtr<CSSPrimitiveValue> m_right;
-        RefPtr<CSSPrimitiveValue> m_bottom;
-        RefPtr<CSSPrimitiveValue> m_left;
-    };
+    ~RectBase() { }
 
-    class Rect : public RectBase, public RefCounted<Rect> {
-    public:
-        static PassRefPtr<Rect> create() { return adoptRef(new Rect); }
+private:
+    RefPtr<CSSPrimitiveValue> m_top;
+    RefPtr<CSSPrimitiveValue> m_right;
+    RefPtr<CSSPrimitiveValue> m_bottom;
+    RefPtr<CSSPrimitiveValue> m_left;
+};
 
-    private:
-        Rect() { }
-    };
+class Rect : public RectBase, public RefCounted<Rect> {
+public:
+    static PassRefPtr<Rect> create() { return adoptRef(new Rect); }
+    
+    PassRefPtr<Rect> cloneForCSSOM() const { return adoptRef(new Rect(*this)); }
+
+private:
+    Rect() { }
+    Rect(const Rect& cloneFrom) : RectBase(cloneFrom), RefCounted<Rect>() { }
+};
+
+class Quad : public RectBase, public RefCounted<Quad> {
+public:
+    static PassRefPtr<Quad> create() { return adoptRef(new Quad); }
+    
+    PassRefPtr<Quad> cloneForCSSOM() const { return adoptRef(new Quad(*this)); }
+
+private:
+    Quad() { }
+    Quad(const Quad& cloneFrom) : RectBase(cloneFrom), RefCounted<Quad>() { }
+};
 
 } // namespace WebCore
 

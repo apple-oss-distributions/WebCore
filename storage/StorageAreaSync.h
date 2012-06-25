@@ -26,11 +26,10 @@
 #ifndef StorageAreaSync_h
 #define StorageAreaSync_h
 
-#if ENABLE(DOM_STORAGE)
-
 #include "SQLiteDatabase.h"
 #include "Timer.h"
 #include <wtf/HashMap.h>
+#include <wtf/RefCounted.h>
 #include <wtf/text/StringHash.h>
 
 namespace WebCore {
@@ -102,10 +101,9 @@ namespace WebCore {
         mutable ThreadCondition m_importCondition;
         mutable bool m_importComplete;
         void markImported();
+        void migrateItemTableIfNeeded();
     };
 
 } // namespace WebCore
-
-#endif // ENABLE(DOM_STORAGE)
 
 #endif // StorageAreaSync_h

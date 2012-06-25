@@ -40,11 +40,15 @@ typedef struct CGImage *CGImageRef;
 typedef struct CGColor *CGColorRef;
 typedef struct CGFont *CGFontRef;
 typedef struct CGColorSpace *CGColorSpaceRef;
+typedef struct CGPattern *CGPatternRef;
+typedef struct CGPath *CGMutablePathRef;
 typedef unsigned short CGGlyph;
 typedef struct __CFReadStream * CFReadStreamRef;
 typedef struct __CFRunLoop * CFRunLoopRef;
 typedef struct __CFHTTPMessage *CFHTTPMessageRef;
 typedef struct _CFURLResponse *CFURLResponseRef;
+typedef const struct _CFURLRequest *CFURLRequestRef;
+typedef const struct __CTFont * CTFontRef;
 typedef const struct __CTLine * CTLineRef;
 typedef const struct __CTTypesetter * CTTypesetterRef;
 typedef const struct __AXUIElement *AXUIElementRef;
@@ -66,57 +70,57 @@ typedef struct _NSPoint NSPoint;
 typedef struct _NSRect NSRect;
 #endif
 
-#ifdef __OBJC__
-@class AVAsset;
-@class NSArray;
-@class NSButtonCell;
-@class NSData;
-@class NSDate;
-@class NSEvent;
-@class NSFont;
-@class NSHTTPCookie;
-@class NSImage;
-@class NSMenu;
-@class NSMutableURLRequest;
-@class NSString;
-@class NSTextFieldCell;
-@class NSURL;
-@class NSURLConnection;
-@class NSURLRequest;
-@class NSURLResponse;
-@class NSView;
-@class QTMovie;
-@class QTMovieView;
-#else
-class AVAsset;
-class NSArray;
-class NSButtonCell;
-class NSData;
-class NSDate;
-class NSEvent;
-class NSFont;
-class NSHTTPCookie;
-class NSImage;
-class NSMenu;
-class NSMutableArray;
-class NSMutableURLRequest;
-class NSURL;
-class NSURLRequest;
-class NSString;
-class NSTextFieldCell;
-class NSURLConnection;
-class NSURLResponse;
-class NSView;
-class QTMovie;
-class QTMovieView;
+#if USE(CFNETWORK)
+typedef struct OpaqueCFHTTPCookieStorage*  CFHTTPCookieStorageRef;
+typedef struct _CFURLProtectionSpace* CFURLProtectionSpaceRef;
+typedef struct _CFURLCredential* WKCFURLCredentialRef;
+typedef struct _CFURLRequest* CFMutableURLRequestRef;
+typedef const struct _CFURLRequest* CFURLRequestRef;
 #endif
+
+OBJC_CLASS AVAsset;
+OBJC_CLASS CALayer;
+OBJC_CLASS NSArray;
+OBJC_CLASS NSButtonCell;
+OBJC_CLASS NSControl;
+OBJC_CLASS NSCursor;
+OBJC_CLASS NSData;
+OBJC_CLASS NSDate;
+OBJC_CLASS NSEvent;
+OBJC_CLASS NSFont;
+OBJC_CLASS NSHTTPCookie;
+OBJC_CLASS NSImage;
+OBJC_CLASS NSMenu;
+OBJC_CLASS NSMutableURLRequest;
+OBJC_CLASS NSString;
+OBJC_CLASS NSTextFieldCell;
+OBJC_CLASS NSURL;
+OBJC_CLASS NSURLConnection;
+OBJC_CLASS NSURLRequest;
+OBJC_CLASS NSURLResponse;
+OBJC_CLASS NSView;
+OBJC_CLASS NSWindow;
+OBJC_CLASS QTMovie;
+OBJC_CLASS QTMovieView;
+OBJC_CLASS WebFilterEvaluator;
 
 extern "C" {
 
 // In alphabetical order.
 
 extern void (*wkAdvanceDefaultButtonPulseAnimation)(NSButtonCell *);
+#if !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD)
+extern void (*wkCALayerEnumerateRectsBeingDrawnWithBlock)(CALayer *, CGContextRef, void (^block)(CGRect rect));
+#endif
+
 extern BOOL (*wkCGContextGetShouldSmoothFonts)(CGContextRef);
+typedef enum {
+    wkPatternTilingNoDistortion,
+    wkPatternTilingConstantSpacingMinimalDistortion,
+    wkPatternTilingConstantSpacing
+} wkPatternTiling;
+extern void (*wkCGContextResetClip)(CGContextRef);
+extern CGPatternRef (*wkCGPatternCreateWithImageAndTransform)(CGImageRef, CGAffineTransform, int);
 extern CFReadStreamRef (*wkCreateCustomCFReadStream)(void *(*formCreate)(CFReadStreamRef, void *), 
     void (*formFinalize)(CFReadStreamRef, void *), 
     Boolean (*formOpen)(CFReadStreamRef, CFStreamError *, Boolean *, void *), 
@@ -149,8 +153,25 @@ extern double (*wkGetNSURLResponseCalculatedExpiration)(NSURLResponse *response)
 extern NSDate *(*wkGetNSURLResponseLastModifiedDate)(NSURLResponse *response);
 extern BOOL (*wkGetNSURLResponseMustRevalidate)(NSURLResponse *response);
 extern void (*wkGetWheelEventDeltas)(NSEvent*, float* deltaX, float* deltaY, BOOL* continuous);
+extern UInt8 (*wkGetNSEventKeyChar)(NSEvent *);
 extern BOOL (*wkHitTestMediaUIPart)(int part, int themeStyle, CGRect bounds, CGPoint point);
 extern void (*wkMeasureMediaUIPart)(int part, int themeStyle, CGRect *bounds, CGSize *naturalSize);
+extern NSView *(*wkCreateMediaUIBackgroundView)(void);
+
+typedef enum {
+    wkMediaUIControlTimeline,
+    wkMediaUIControlSlider,
+    wkMediaUIControlPlayPauseButton,
+    wkMediaUIControlExitFullscreenButton,
+    wkMediaUIControlRewindButton,
+    wkMediaUIControlFastForwardButton,
+    wkMediaUIControlVolumeUpButton,
+    wkMediaUIControlVolumeDownButton
+} wkMediaUIControlType;
+extern NSControl *(*wkCreateMediaUIControl)(int);
+
+extern void (*wkWindowSetAlpha)(NSWindow *, float);
+extern void (*wkWindowSetScaledFrame)(NSWindow *, NSRect, NSRect);
 extern BOOL (*wkMediaControllerThemeAvailable)(int themeStyle);
 extern void (*wkPopupMenu)(NSMenu*, NSPoint location, float width, NSView*, int selectedItem, NSFont*);
 extern unsigned (*wkQTIncludeOnlyModernMediaFileTypes)(void);
@@ -173,7 +194,7 @@ extern void (*wkSetCookieStoragePrivateBrowsingEnabled)(BOOL);
 extern void (*wkSetDragImage)(NSImage*, NSPoint offset);
 extern void (*wkSetNSURLConnectionDefersCallbacks)(NSURLConnection *, BOOL);
 extern void (*wkSetNSURLRequestShouldContentSniff)(NSMutableURLRequest *, BOOL);
-extern void (*wkSetPatternBaseCTM)(CGContextRef, CGAffineTransform);
+extern void (*wkSetBaseCTM)(CGContextRef, CGAffineTransform);
 extern void (*wkSetPatternPhaseInUserSpace)(CGContextRef, CGPoint);
 extern CGAffineTransform (*wkGetUserToBaseCTM)(CGContextRef);
 extern void (*wkSetUpFontCache)();
@@ -181,15 +202,16 @@ extern void (*wkSignalCFReadStreamEnd)(CFReadStreamRef stream);
 extern void (*wkSignalCFReadStreamError)(CFReadStreamRef stream, CFStreamError *error);
 extern void (*wkSignalCFReadStreamHasBytes)(CFReadStreamRef stream);
 extern unsigned (*wkInitializeMaximumHTTPConnectionCountPerHost)(unsigned preferredConnectionCount);
-extern int (*wkGetHTTPPipeliningPriority)(NSURLRequest *);
+extern int (*wkGetHTTPPipeliningPriority)(CFURLRequestRef);
 extern void (*wkSetHTTPPipeliningMaximumPriority)(int maximumPriority);
-extern void (*wkSetHTTPPipeliningPriority)(NSMutableURLRequest *, int priority);
+extern void (*wkSetHTTPPipeliningPriority)(CFURLRequestRef, int priority);
 extern void (*wkSetHTTPPipeliningMinimumFastLanePriority)(int priority);
 extern void (*wkSetCONNECTProxyForStream)(CFReadStreamRef, CFStringRef proxyHost, CFNumberRef proxyPort);
 extern void (*wkSetCONNECTProxyAuthorizationForStream)(CFReadStreamRef, CFStringRef proxyAuthorizationString);
 extern CFHTTPMessageRef (*wkCopyCONNECTProxyResponse)(CFReadStreamRef, CFURLRef responseURL);
 
 extern void (*wkGetGlyphsForCharacters)(CGFontRef, const UniChar[], CGGlyph[], size_t);
+extern bool (*wkGetVerticalGlyphsForCharacters)(CTFontRef, const UniChar[], CGGlyph[], size_t);
 
 extern BOOL (*wkUseSharedMediaUI)();
 
@@ -209,65 +231,26 @@ extern int (*wkGetNSEventMomentumPhase)(NSEvent *);
 #endif
 
 extern CTLineRef (*wkCreateCTLineWithUniCharProvider)(const UniChar* (*provide)(CFIndex stringIndex, CFIndex* charCount, CFDictionaryRef* attributes, void*), void (*dispose)(const UniChar* chars, void*), void*);
+
 #if !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD)
+
 extern CTTypesetterRef (*wkCreateCTTypesetterWithUniCharProviderAndOptions)(const UniChar* (*provide)(CFIndex stringIndex, CFIndex* charCount, CFDictionaryRef* attributes, void*), void (*dispose)(const UniChar* chars, void*), void*, CFDictionaryRef options);
 
+#if PLATFORM(MAC) && USE(CA)
 extern CGContextRef (*wkIOSurfaceContextCreate)(IOSurfaceRef surface, unsigned width, unsigned height, CGColorSpaceRef colorSpace);
 extern CGImageRef (*wkIOSurfaceContextCreateImage)(CGContextRef context);
+#endif
 
-typedef struct __WKScrollbarPainter *WKScrollbarPainterRef;
-typedef struct __WKScrollbarPainterController *WKScrollbarPainterControllerRef;
-
-extern WKScrollbarPainterRef (*wkMakeScrollbarPainter)(int controlSize, bool isHorizontal);
-extern WKScrollbarPainterRef (*wkMakeScrollbarReplacementPainter)(WKScrollbarPainterRef oldPainter, int newStyle, int controlSize, bool isHorizontal);
-extern void (*wkScrollbarPainterSetDelegate)(WKScrollbarPainterRef, id scrollbarPainterDelegate);
-extern void (*wkScrollbarPainterPaint)(WKScrollbarPainterRef, bool enabled, double value, CGFloat proportion, CGRect frameRect);
-extern void (*wkScrollbarPainterForceFlashScrollers)(WKScrollbarPainterControllerRef);
-extern int (*wkScrollbarThickness)(int controlSize);
-extern int (*wkScrollbarMinimumThumbLength)(WKScrollbarPainterRef);
-extern int (*wkScrollbarMinimumTotalLengthNeededForThumb)(WKScrollbarPainterRef);
-extern CGFloat (*wkScrollbarPainterKnobAlpha)(WKScrollbarPainterRef);
-extern void (*wkSetScrollbarPainterKnobAlpha)(WKScrollbarPainterRef, CGFloat);
-extern CGFloat (*wkScrollbarPainterTrackAlpha)(WKScrollbarPainterRef);
-extern void (*wkSetScrollbarPainterTrackAlpha)(WKScrollbarPainterRef, CGFloat);
-extern bool (*wkScrollbarPainterIsHorizontal)(WKScrollbarPainterRef);
-extern CGRect (*wkScrollbarPainterKnobRect)(WKScrollbarPainterRef);
-extern void (*wkScrollbarPainterSetOverlayState)(WKScrollbarPainterRef, int overlayScrollerState);
-
-enum {
-    wkScrollerKnobStyleDefault = 0,
-    wkScrollerKnobStyleDark = 1,
-    wkScrollerKnobStyleLight = 2
-};
-typedef uint32 wkScrollerKnobStyle;
-extern void (*wkSetScrollbarPainterKnobStyle)(WKScrollbarPainterRef, wkScrollerKnobStyle);
-    
-extern WKScrollbarPainterControllerRef (*wkMakeScrollbarPainterController)(id painterControllerDelegate);
-extern void (*wkSetPainterForPainterController)(WKScrollbarPainterControllerRef, WKScrollbarPainterRef, bool isHorizontal);
-extern WKScrollbarPainterRef (*wkVerticalScrollbarPainterForController)(WKScrollbarPainterControllerRef);
-extern WKScrollbarPainterRef (*wkHorizontalScrollbarPainterForController)(WKScrollbarPainterControllerRef);
-extern int (*wkScrollbarPainterControllerStyle)(WKScrollbarPainterControllerRef);
-extern void (*wkSetScrollbarPainterControllerStyle)(WKScrollbarPainterControllerRef, int newStyle);
-extern void (*wkContentAreaScrolled)(WKScrollbarPainterControllerRef);
-extern void (*wkContentAreaWillPaint)(WKScrollbarPainterControllerRef);
-extern void (*wkMouseEnteredContentArea)(WKScrollbarPainterControllerRef);
-extern void (*wkMouseExitedContentArea)(WKScrollbarPainterControllerRef);
-extern void (*wkMouseMovedInContentArea)(WKScrollbarPainterControllerRef);
-extern void (*wkWillStartLiveResize)(WKScrollbarPainterControllerRef);
-extern void (*wkContentAreaResized)(WKScrollbarPainterControllerRef);
-extern void (*wkWillEndLiveResize)(WKScrollbarPainterControllerRef);
-extern void (*wkContentAreaDidShow)(WKScrollbarPainterControllerRef);
-extern void (*wkContentAreaDidHide)(WKScrollbarPainterControllerRef);
-extern void (*wkDidBeginScrollGesture)(WKScrollbarPainterControllerRef);
-extern void (*wkDidEndScrollGesture)(WKScrollbarPainterControllerRef);
-
-extern bool (*wkScrollbarPainterUsesOverlayScrollers)(void);
+extern int (*wkRecommendedScrollerStyle)(void);
 
 extern bool (*wkExecutableWasLinkedOnOrBeforeSnowLeopard)(void);
 
 extern CFStringRef (*wkCopyDefaultSearchProviderDisplayName)(void);
 
 extern NSURL *(*wkAVAssetResolvedURL)(AVAsset*);
+
+extern NSCursor *(*wkCursor)(const char*);
+
 #endif
 
 extern void (*wkUnregisterUniqueIdForElement)(id element);
@@ -281,13 +264,18 @@ extern CFTypeRef (*wkCreateAXTextMarker)(const void *bytes, size_t len);
 extern BOOL (*wkGetBytesFromAXTextMarker)(CFTypeRef textMarker, void *bytes, size_t length);
 extern AXUIElementRef (*wkCreateAXUIElementRef)(id element);
 
+#if defined(BUILDING_ON_SNOW_LEOPARD) || defined(BUILDING_ON_LEOPARD)
+typedef struct __CFURLStorageSession* CFURLStorageSessionRef;
+#else
 typedef const struct __CFURLStorageSession* CFURLStorageSessionRef;
+#endif
 extern CFURLStorageSessionRef (*wkCreatePrivateStorageSession)(CFStringRef);
 extern NSURLRequest* (*wkCopyRequestWithStorageSession)(CFURLStorageSessionRef, NSURLRequest*);
 
 typedef struct OpaqueCFHTTPCookieStorage* CFHTTPCookieStorageRef;
 extern CFHTTPCookieStorageRef (*wkCopyHTTPCookieStorage)(CFURLStorageSessionRef);
 extern unsigned (*wkGetHTTPCookieAcceptPolicy)(CFHTTPCookieStorageRef);
+extern void (*wkSetHTTPCookieAcceptPolicy)(CFHTTPCookieStorageRef, unsigned);
 extern NSArray *(*wkHTTPCookiesForURL)(CFHTTPCookieStorageRef, NSURL *);
 extern void (*wkSetHTTPCookiesForURL)(CFHTTPCookieStorageRef, NSArray *, NSURL *, NSURL *);
 extern void (*wkDeleteHTTPCookie)(CFHTTPCookieStorageRef, NSHTTPCookie *);
@@ -297,6 +285,50 @@ extern CFURLRef (*wkGetCFURLResponseURL)(CFURLResponseRef);
 extern CFHTTPMessageRef (*wkGetCFURLResponseHTTPResponse)(CFURLResponseRef);
 extern CFStringRef (*wkCopyCFURLResponseSuggestedFilename)(CFURLResponseRef);
 extern void (*wkSetCFURLResponseMIMEType)(CFURLResponseRef, CFStringRef mimeType);
+
+#if USE(CFNETWORK)
+extern CFHTTPCookieStorageRef (*wkGetDefaultHTTPCookieStorage)();
+extern WKCFURLCredentialRef (*wkCopyCredentialFromCFPersistentStorage)(CFURLProtectionSpaceRef protectionSpace);
+extern void (*wkSetCFURLRequestShouldContentSniff)(CFMutableURLRequestRef, bool);
+extern CFArrayRef (*wkCFURLRequestCopyHTTPRequestBodyParts)(CFURLRequestRef);
+extern void (*wkCFURLRequestSetHTTPRequestBodyParts)(CFMutableURLRequestRef, CFArrayRef bodyParts);
+extern void (*wkSetRequestStorageSession)(CFURLStorageSessionRef, CFMutableURLRequestRef);
+#endif
+extern void (*wkSetMetadataURL)(NSString *urlString, NSString *referrer, NSString *path);
+    
+#if !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD)
+#import <dispatch/dispatch.h>
+
+extern dispatch_source_t (*wkCreateVMPressureDispatchOnMainQueue)(void);
+
+#endif
+
+#if !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION)
+extern NSString *(*wkGetMacOSXVersionString)(void);
+extern bool (*wkExecutableWasLinkedOnOrBeforeLion)(void);
+#endif
+
+#if !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD)
+extern void (*wkCGPathAddRoundedRect)(CGMutablePathRef path, const CGAffineTransform* matrix, CGRect rect, CGFloat cornerWidth, CGFloat cornerHeight);
+#endif
+
+#if !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION) && !PLATFORM(IOS)
+extern BOOL (*wkFilterIsManagedSession)(void);
+extern WebFilterEvaluator *(*wkFilterCreateInstance)(NSURLResponse *);
+extern void (*wkFilterRelease)(WebFilterEvaluator *);
+extern BOOL (*wkFilterWasBlocked)(WebFilterEvaluator *);
+extern const char* (*wkFilterAddData)(WebFilterEvaluator *, const char* data, int* length);
+extern const char* (*wkFilterDataComplete)(WebFilterEvaluator *, int* length);
+
+extern CGFloat (*wkNSElasticDeltaForTimeDelta)(CGFloat initialPosition, CGFloat initialVelocity, CGFloat elapsedTime);
+extern CGFloat (*wkNSElasticDeltaForReboundDelta)(CGFloat delta);
+extern CGFloat (*wkNSReboundDeltaForElasticDelta)(CGFloat delta);
+#endif
+
 }
+
+#if !defined(BUILDING_ON_SNOW_LEOPARD)
+extern void (*wkCFURLRequestAllowAllPostCaching)(CFURLRequestRef);
+#endif
 
 #endif

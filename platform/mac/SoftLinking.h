@@ -33,7 +33,7 @@
     static void* lib##Library() \
     { \
         static void* dylib = dlopen("/usr/lib/" #lib ".dylib", RTLD_NOW); \
-        ASSERT(dylib); \
+        ASSERT_WITH_MESSAGE(dylib, "%s", dlerror()); \
         return dylib; \
     }
 
@@ -41,7 +41,7 @@
     static void* framework##Library() \
     { \
         static void* frameworkLibrary = dlopen("/System/Library/Frameworks/" #framework ".framework/" #framework, RTLD_NOW); \
-        ASSERT(frameworkLibrary); \
+        ASSERT_WITH_MESSAGE(frameworkLibrary, "%s", dlerror()); \
         return frameworkLibrary; \
     }
 
@@ -52,11 +52,23 @@
         return frameworkLibrary; \
     }
 
+#define SOFT_LINK_STAGED_FRAMEWORK_OPTIONAL(framework, unstagedLocation, version) \
+    static void* framework##Library() \
+    { \
+        static void* frameworkLibrary = ^{ \
+            void* result = dlopen("/System/Library/" #unstagedLocation "/" #framework ".framework/Versions/" #version "/" #framework, RTLD_LAZY); \
+            if (!result) \
+                result = dlopen("/System/Library/StagedFrameworks/Safari/" #framework ".framework/Versions/" #version "/" #framework, RTLD_LAZY); \
+            return result; \
+        }(); \
+        return frameworkLibrary; \
+    }
+
 #define SOFT_LINK_FRAMEWORK_IN_CORESERVICES_UMBRELLA(framework) \
     static void* framework##Library() \
     { \
         static void* frameworkLibrary = dlopen("/System/Library/Frameworks/CoreServices.framework/Frameworks/" #framework ".framework/" #framework, RTLD_NOW); \
-        ASSERT(frameworkLibrary); \
+        ASSERT_WITH_MESSAGE(frameworkLibrary, "%s", dlerror()); \
         return frameworkLibrary; \
     }
 
@@ -67,7 +79,7 @@
     static resultType init##functionName parameterDeclarations \
     { \
         softLink##functionName = (resultType (*) parameterDeclarations) dlsym(framework##Library(), #functionName); \
-        ASSERT(softLink##functionName); \
+        ASSERT_WITH_MESSAGE(softLink##functionName, "%s", dlerror()); \
         return softLink##functionName parameterNames; \
     }\
     \
@@ -118,8 +130,27 @@
     static type init##name() \
     { \
         void** pointer = static_cast<void**>(dlsym(framework##Library(), #name)); \
-        ASSERT(pointer); \
+        ASSERT_WITH_MESSAGE(pointer, "%s", dlerror()); \
         pointer##name = static_cast<type>(*pointer); \
+        get##name = name##Function; \
+        return pointer##name; \
+    }
+
+#define SOFT_LINK_POINTER_OPTIONAL(framework, name, type) \
+    static type init##name(); \
+    static type (*get##name)() = init##name; \
+    static type pointer##name; \
+    \
+    static type name##Function() \
+    { \
+        return pointer##name; \
+    }\
+    \
+    static type init##name() \
+    { \
+        void** pointer = static_cast<void**>(dlsym(framework##Library(), #name)); \
+        if (pointer) \
+            pointer##name = static_cast<type>(*pointer); \
         get##name = name##Function; \
         return pointer##name; \
     }
@@ -137,7 +168,7 @@
     static type init##name() \
     { \
         void* constant = dlsym(framework##Library(), #name); \
-        ASSERT(constant); \
+        ASSERT_WITH_MESSAGE(constant, "%s", dlerror()); \
         constant##name = *static_cast<type*>(constant); \
         get##name = name##Function; \
         return constant##name; \

@@ -132,15 +132,16 @@ static inline bool isReachableFromDOM(JSNode* jsNode, Node* node, SlotVisitor& v
 
 bool JSNodeOwner::isReachableFromOpaqueRoots(JSC::Handle<JSC::Unknown> handle, void*, SlotVisitor& visitor)
 {
-    JSNode* jsNode = static_cast<JSNode*>(handle.get().asCell());
+    JSNode* jsNode = jsCast<JSNode*>(handle.get().asCell());
     return isReachableFromDOM(jsNode, jsNode->impl(), visitor);
 }
 
 void JSNodeOwner::finalize(JSC::Handle<JSC::Unknown> handle, void* context)
 {
-    JSNode* jsNode = static_cast<JSNode*>(handle.get().asCell());
+    JSNode* jsNode = jsCast<JSNode*>(handle.get().asCell());
     DOMWrapperWorld* world = static_cast<DOMWrapperWorld*>(context);
     uncacheWrapper(world, jsNode->impl(), jsNode);
+    jsNode->releaseImpl();
 }
 
 JSValue JSNode::insertBefore(ExecState* exec)
@@ -187,19 +188,22 @@ JSValue JSNode::appendChild(ExecState* exec)
     return jsNull();
 }
 
-ScopeChainNode* JSNode::pushEventHandlerScope(ExecState*, ScopeChainNode* node) const
+ScopeChainNode* JSNode::pushEventHandlerScope(ExecState* exec, ScopeChainNode* node) const
 {
+    if (inherits(&JSHTMLElement::s_info))
+        return jsCast<const JSHTMLElement*>(this)->pushEventHandlerScope(exec, node);
     return node;
 }
 
-void JSNode::visitChildren(SlotVisitor& visitor)
+void JSNode::visitChildren(JSCell* cell, SlotVisitor& visitor)
 {
-    ASSERT_GC_OBJECT_INHERITS(this, &s_info);
+    JSNode* thisObject = jsCast<JSNode*>(cell);
+    ASSERT_GC_OBJECT_INHERITS(thisObject, &s_info);
     COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
-    ASSERT(structure()->typeInfo().overridesVisitChildren());
-    Base::visitChildren(visitor);
+    ASSERT(thisObject->structure()->typeInfo().overridesVisitChildren());
+    Base::visitChildren(thisObject, visitor);
 
-    Node* node = m_impl.get();
+    Node* node = thisObject->impl();
     node->visitJSEventListeners(visitor);
 
     visitor.addOpaqueRoot(root(node));
@@ -251,9 +255,6 @@ static ALWAYS_INLINE JSValue createWrapperInline(ExecState* exec, JSDOMGlobalObj
             break;
         case Node::DOCUMENT_FRAGMENT_NODE:
             wrapper = CREATE_DOM_WRAPPER(exec, globalObject, DocumentFragment, node);
-            break;
-        case Node::SHADOW_ROOT_NODE:
-            wrapper = CREATE_DOM_WRAPPER(exec, globalObject, Node, node);
             break;
         case Node::ENTITY_REFERENCE_NODE:
             wrapper = CREATE_DOM_WRAPPER(exec, globalObject, EntityReference, node);

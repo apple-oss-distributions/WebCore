@@ -47,16 +47,16 @@ JSValue JavaArray::convertJObjectToArray(ExecState* exec, jobject anObject, cons
     if (type[0] != '[')
         return jsUndefined();
 
-    return new (exec) RuntimeArray(exec, new JavaArray(anObject, type, rootObject));
+    return RuntimeArray::create(exec, new JavaArray(anObject, type, rootObject));
 }
 
 JavaArray::JavaArray(jobject array, const char* type, PassRefPtr<RootObject> rootObject)
     : Array(rootObject)
 {
-    m_array = new JobjectWrapper(array);
+    m_array = JobjectWrapper::create(array);
     // Java array are fixed length, so we can cache length.
     JNIEnv* env = getJNIEnv();
-    m_length = env->GetArrayLength(static_cast<jarray>(m_array->m_instance));
+    m_length = env->GetArrayLength(static_cast<jarray>(m_array->instance()));
     m_type = strdup(type);
 }
 

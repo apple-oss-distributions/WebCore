@@ -32,12 +32,16 @@
 #include "RenderStyle.h"
 #include <wtf/StdLibExtras.h>
 
+#ifndef NDEBUG
+#include <stdio.h>
+#endif
+
 namespace WebCore {
 
 using namespace HTMLNames;
 
 typedef HashMap<RefPtr<AtomicStringImpl>, RefPtr<CounterNode> > CounterMap;
-typedef HashMap<const RenderObject*, CounterMap*> CounterMaps;
+typedef HashMap<const RenderObject*, OwnPtr<CounterMap> > CounterMaps;
 
 static CounterNode* makeCounterNode(RenderObject*, const AtomicString& identifier, bool alwaysCreateCounter);
 
@@ -45,6 +49,14 @@ static CounterMaps& counterMaps()
 {
     DEFINE_STATIC_LOCAL(CounterMaps, staticCounterMaps, ());
     return staticCounterMaps;
+}
+
+static RenderObject* rendererOfAfterPseudoElement(RenderObject* renderer)
+{
+    RenderObject* lastContinuation = renderer;
+    while (RenderObject* continuation = lastContinuation->virtualContinuation())
+        lastContinuation = continuation;
+    return lastContinuation->afterPseudoElementRenderer();
 }
 
 // This function processes the renderer tree in the order of the DOM tree
@@ -73,7 +85,7 @@ static RenderObject* previousInPreOrder(const RenderObject* object)
     }
     while (sibling) {
         if (RenderObject* renderer = sibling->renderer()) {
-            if (RenderObject* after = renderer->afterPseudoElementRenderer())
+            if (RenderObject* after = rendererOfAfterPseudoElement(renderer))
                 return after;
             parent = sibling;
             sibling = sibling->lastElementChild();
@@ -185,7 +197,7 @@ static RenderObject* nextInPreOrder(const RenderObject* object, const Element* s
                 return result;
             child = child->nextElementSibling();
         }
-        result = self->renderer()->afterPseudoElementRenderer();
+        result = rendererOfAfterPseudoElement(self->renderer());
         if (result)
             return result;
 nextsibling:
@@ -289,7 +301,7 @@ static bool planCounter(RenderObject* object, const AtomicString& identifier, bo
 // reset node.
 // - Non-reset CounterNodes cannot have descendants.
 
-static bool findPlaceForCounter(RenderObject* counterOwner, const AtomicString& identifier, bool isReset, CounterNode*& parent, CounterNode*& previousSibling)
+static bool findPlaceForCounter(RenderObject* counterOwner, const AtomicString& identifier, bool isReset, RefPtr<CounterNode>& parent, RefPtr<CounterNode>& previousSibling)
 {
     // We cannot stop searching for counters with the same identifier before we also
     // check this renderer, because it may affect the positioning in the tree of our counter.
@@ -299,13 +311,15 @@ static bool findPlaceForCounter(RenderObject* counterOwner, const AtomicString& 
     // we are trying to find a place for. This is the next renderer to be checked.
     RenderObject* currentRenderer = previousInPreOrder(counterOwner);
     previousSibling = 0;
+    RefPtr<CounterNode> previousSiblingProtector = 0;
+
     while (currentRenderer) {
         CounterNode* currentCounter = makeCounterNode(currentRenderer, identifier, false);
         if (searchEndRenderer == currentRenderer) {
             // We may be at the end of our search.
             if (currentCounter) {
                 // We have a suitable counter on the EndSearchRenderer.
-                if (previousSibling) { // But we already found another counter that we come after.
+                if (previousSiblingProtector) { // But we already found another counter that we come after.
                     if (currentCounter->actsAsReset()) {
                         // We found a reset counter that is on a renderer that is a sibling of ours or a parent.
                         if (isReset && areRenderersElementsSiblings(currentRenderer, counterOwner)) {
@@ -319,15 +333,24 @@ static bool findPlaceForCounter(RenderObject* counterOwner, const AtomicString& 
                         // We are not a reset node or the previous reset must be on an ancestor of our owner renderer
                         // hence we must be a child of that reset counter.
                         parent = currentCounter;
-                        ASSERT(previousSibling->parent() == currentCounter);
+                        // In some cases renders can be reparented (ex. nodes inside a table but not in a column or row).
+                        // In these cases the identified previousSibling will be invalid as its parent is different from
+                        // our identified parent.
+                        if (previousSiblingProtector->parent() != currentCounter)
+                            previousSiblingProtector = 0;
+
+                        previousSibling = previousSiblingProtector.get();
                         return true;
                     }
                     // CurrentCounter, the counter at the EndSearchRenderer, is not reset.
                     if (!isReset || !areRenderersElementsSiblings(currentRenderer, counterOwner)) {
                         // If the node we are placing is not reset or we have found a counter that is attached
                         // to an ancestor of the placed counter's owner renderer we know we are a sibling of that node.
-                        ASSERT(currentCounter->parent() == previousSibling->parent());
+                        if (currentCounter->parent() != previousSiblingProtector->parent())
+                            return false;
+
                         parent = currentCounter->parent();
+                        previousSibling = previousSiblingProtector.get();
                         return true;
                     }
                 } else { 
@@ -342,6 +365,7 @@ static bool findPlaceForCounter(RenderObject* counterOwner, const AtomicString& 
                             return parent;
                         }
                         parent = currentCounter;
+                        previousSibling = previousSiblingProtector.get();
                         return true;
                     }
                     if (!isReset || !areRenderersElementsSiblings(currentRenderer, counterOwner)) {
@@ -349,7 +373,7 @@ static bool findPlaceForCounter(RenderObject* counterOwner, const AtomicString& 
                         previousSibling = currentCounter;
                         return true;
                     }
-                    previousSibling = currentCounter;
+                    previousSiblingProtector = currentCounter;
                 }
             }
             // We come here if the previous sibling or parent of our owner renderer had no
@@ -362,18 +386,18 @@ static bool findPlaceForCounter(RenderObject* counterOwner, const AtomicString& 
             // counter being placed is attached to.
             if (currentCounter) {
                 // We found a suitable counter.
-                if (previousSibling) {
+                if (previousSiblingProtector) {
                     // Since we had a suitable previous counter before, we should only consider this one as our 
                     // previousSibling if it is a reset counter and hence the current previousSibling is its child.
                     if (currentCounter->actsAsReset()) {
-                        previousSibling = currentCounter;
+                        previousSiblingProtector = currentCounter;
                         // We are no longer interested in previous siblings of the currentRenderer or their children
                         // as counters they may have attached cannot be the previous sibling of the counter we are placing.
                         currentRenderer = parentElement(currentRenderer)->renderer();
                         continue;
                     }
                 } else
-                    previousSibling = currentCounter;
+                    previousSiblingProtector = currentCounter;
                 currentRenderer = previousSiblingOrParent(currentRenderer);
                 continue;
             }
@@ -382,7 +406,7 @@ static bool findPlaceForCounter(RenderObject* counterOwner, const AtomicString& 
         // which may be done twice in some cases. Rearranging the decision points though, to accommodate this 
         // performance improvement would create more code duplication than is worthwhile in my oppinion and may further
         // impede the readability of this already complex algorithm.
-        if (previousSibling)
+        if (previousSiblingProtector)
             currentRenderer = previousSiblingOrParent(currentRenderer);
         else
             currentRenderer = previousInPreOrder(currentRenderer);
@@ -394,7 +418,7 @@ static CounterNode* makeCounterNode(RenderObject* object, const AtomicString& id
 {
     ASSERT(object);
 
-    if (object->m_hasCounterNodeMap) {
+    if (object->hasCounterNodeMap()) {
         if (CounterMap* nodeMap = counterMaps().get(object)) {
             if (CounterNode* node = nodeMap->get(identifier.impl()).get())
                 return node;
@@ -406,18 +430,18 @@ static CounterNode* makeCounterNode(RenderObject* object, const AtomicString& id
     if (!planCounter(object, identifier, isReset, value) && !alwaysCreateCounter)
         return 0;
 
-    CounterNode* newParent = 0;
-    CounterNode* newPreviousSibling = 0;
+    RefPtr<CounterNode> newParent = 0;
+    RefPtr<CounterNode> newPreviousSibling = 0;
     RefPtr<CounterNode> newNode = CounterNode::create(object, isReset, value);
     if (findPlaceForCounter(object, identifier, isReset, newParent, newPreviousSibling))
-        newParent->insertAfter(newNode.get(), newPreviousSibling, identifier);
+        newParent->insertAfter(newNode.get(), newPreviousSibling.get(), identifier);
     CounterMap* nodeMap;
-    if (object->m_hasCounterNodeMap)
+    if (object->hasCounterNodeMap())
         nodeMap = counterMaps().get(object);
     else {
         nodeMap = new CounterMap;
-        counterMaps().set(object, nodeMap);
-        object->m_hasCounterNodeMap = true;
+        counterMaps().set(object, adoptPtr(nodeMap));
+        object->setHasCounterNodeMap(true);
     }
     nodeMap->set(identifier.impl(), newNode);
     if (newNode->parent())
@@ -429,16 +453,14 @@ static CounterNode* makeCounterNode(RenderObject* object, const AtomicString& id
     bool skipDescendants;
     for (RenderObject* currentRenderer = nextInPreOrder(object, stayWithin); currentRenderer; currentRenderer = nextInPreOrder(currentRenderer, stayWithin, skipDescendants)) {
         skipDescendants = false;
-        if (!currentRenderer->m_hasCounterNodeMap)
+        if (!currentRenderer->hasCounterNodeMap())
             continue;
         CounterNode* currentCounter = maps.get(currentRenderer)->get(identifier.impl()).get();
         if (!currentCounter)
             continue;
         skipDescendants = true;
-        if (currentCounter->parent()) {
-            ASSERT(newNode->firstChild());
+        if (currentCounter->parent())
             continue;
-        }
         if (stayWithin == parentElement(currentRenderer) && currentCounter->hasResetType())
             break;
         newNode->insertAfter(currentCounter, newNode->lastChild(), identifier);
@@ -541,15 +563,14 @@ void RenderCounter::destroyCounterNodes(RenderObject* owner)
     CounterMaps::iterator mapsIterator = maps.find(owner);
     if (mapsIterator == maps.end())
         return;
-    CounterMap* map = mapsIterator->second;
+    CounterMap* map = mapsIterator->second.get();
     CounterMap::const_iterator end = map->end();
     for (CounterMap::const_iterator it = map->begin(); it != end; ++it) {
         AtomicString identifier(it->first.get());
         destroyCounterNodeWithoutMapRemoval(identifier, it->second.get());
     }
     maps.remove(mapsIterator);
-    delete map;
-    owner->m_hasCounterNodeMap = false;
+    owner->setHasCounterNodeMap(false);
 }
 
 void RenderCounter::destroyCounterNode(RenderObject* owner, const AtomicString& identifier)
@@ -595,7 +616,7 @@ static void updateCounters(RenderObject* renderer)
     if (!directiveMap)
         return;
     CounterDirectiveMap::const_iterator end = directiveMap->end();
-    if (!renderer->m_hasCounterNodeMap) {
+    if (!renderer->hasCounterNodeMap()) {
         for (CounterDirectiveMap::const_iterator it = directiveMap->begin(); it != end; ++it)
             makeCounterNode(renderer, AtomicString(it->first.get()), false);
         return;
@@ -608,8 +629,8 @@ static void updateCounters(RenderObject* renderer)
             makeCounterNode(renderer, AtomicString(it->first.get()), false);
             continue;
         }
-        CounterNode* newParent = 0;
-        CounterNode* newPreviousSibling;
+        RefPtr<CounterNode> newParent = 0;
+        RefPtr<CounterNode> newPreviousSibling = 0;
         
         findPlaceForCounter(renderer, AtomicString(it->first.get()), node->hasResetType(), newParent, newPreviousSibling);
         if (node != counterMap->get(it->first.get()))
@@ -620,7 +641,7 @@ static void updateCounters(RenderObject* renderer)
         if (parent)
             parent->removeChild(node.get());
         if (newParent)
-            newParent->insertAfter(node.get(), newPreviousSibling, it->first.get());
+            newParent->insertAfter(node.get(), newPreviousSibling.get(), it->first.get());
     }
 }
 
@@ -666,7 +687,7 @@ void RenderCounter::rendererStyleChanged(RenderObject* renderer, const RenderSty
                     RenderCounter::destroyCounterNode(renderer, it->first.get());
             }
         } else {
-            if (renderer->m_hasCounterNodeMap)
+            if (renderer->hasCounterNodeMap())
                 RenderCounter::destroyCounterNodes(renderer);
         }
     } else if (newStyle && (newCounterDirectives = newStyle->counterDirectives())) {
@@ -699,7 +720,7 @@ void showCounterRendererTree(const WebCore::RenderObject* renderer, const char* 
             fprintf(stderr, "    ");
         fprintf(stderr, "%p N:%p P:%p PS:%p NS:%p C:%p\n",
             current, current->node(), current->parent(), current->previousSibling(),
-            current->nextSibling(), current->m_hasCounterNodeMap?
+            current->nextSibling(), current->hasCounterNodeMap() ?
             counterName ? WebCore::counterMaps().get(current)->get(identifier.impl()).get() : (WebCore::CounterNode*)1 : (WebCore::CounterNode*)0);
     }
     fflush(stderr);

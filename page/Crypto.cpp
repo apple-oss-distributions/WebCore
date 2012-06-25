@@ -31,7 +31,7 @@
 #include "Crypto.h"
 
 #include "ExceptionCode.h"
-#include "Uint8Array.h"
+#include <wtf/Uint8Array.h>
 #include <wtf/CryptographicallyRandomNumber.h>
 
 namespace WebCore {
@@ -42,6 +42,7 @@ bool isIntegerArray(ArrayBufferView* array)
 {
     return array->isByteArray()
         || array->isUnsignedByteArray()
+        || array->isUnsignedByteClampedArray()
         || array->isShortArray()
         || array->isUnsignedShortArray()
         || array->isIntArray()

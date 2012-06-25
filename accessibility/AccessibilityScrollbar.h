@@ -29,18 +29,17 @@
 #ifndef AccessibilityScrollbar_h
 #define AccessibilityScrollbar_h
 
-#include "AccessibilityObject.h"
+#include "AccessibilityMockObject.h"
 
 namespace WebCore {
 
 class Scrollbar;
 
-class AccessibilityScrollbar : public AccessibilityObject {
+class AccessibilityScrollbar : public AccessibilityMockObject {
 public:
     static PassRefPtr<AccessibilityScrollbar> create(Scrollbar*);
 
     Scrollbar* scrollbar() const { return m_scrollbar.get(); }
-    void setParent(AccessibilityObject* parent) { m_parent = parent; }
     
 private:
     AccessibilityScrollbar(Scrollbar*);
@@ -50,8 +49,7 @@ private:
     virtual bool canSetNumericValue() const { return true; }
 
     virtual bool isAccessibilityScrollbar() const { return true; }
-    virtual AccessibilityObject* parentObject() const { return m_parent; }
-    virtual IntRect elementRect() const;
+    virtual LayoutRect elementRect() const;
     
     virtual AccessibilityRole roleValue() const { return ScrollBarRole; }
     virtual AccessibilityOrientation orientation() const;
@@ -64,7 +62,6 @@ private:
 
     RefPtr<Scrollbar> m_scrollbar;
     AccessibilityOrientation m_orientation;
-    AccessibilityObject* m_parent;
 };
 
 } // namespace WebCore

@@ -38,7 +38,6 @@ namespace WebCore {
 
 AccessibilityScrollbar::AccessibilityScrollbar(Scrollbar* scrollbar)
     : m_scrollbar(scrollbar)
-    , m_parent(0)
 {
     ASSERT(scrollbar);
 }
@@ -48,10 +47,10 @@ PassRefPtr<AccessibilityScrollbar> AccessibilityScrollbar::create(Scrollbar* scr
     return adoptRef(new AccessibilityScrollbar(scrollbar));
 }
     
-IntRect AccessibilityScrollbar::elementRect() const
+LayoutRect AccessibilityScrollbar::elementRect() const
 {
     if (!m_scrollbar)
-        return IntRect();
+        return LayoutRect();
     
     return m_scrollbar->frameRect();
 }

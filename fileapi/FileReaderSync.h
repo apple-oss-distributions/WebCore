@@ -33,17 +33,17 @@
 
 #if ENABLE(BLOB)
 
-#include "ExceptionCode.h"
 #include <wtf/Forward.h>
 #include <wtf/RefCounted.h>
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
-class ArrayBuffer;
 class Blob;
 class FileReaderLoader;
 class ScriptExecutionContext;
+
+typedef int ExceptionCode;
 
 class FileReaderSync : public RefCounted<FileReaderSync> {
 public:

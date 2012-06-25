@@ -86,7 +86,7 @@ JSValue QtClass::fallbackObject(ExecState* exec, Instance* inst, const Identifie
     if (normal.contains('(') && (index = m_metaObject->indexOfMethod(normal)) != -1) {
         QMetaMethod m = m_metaObject->method(index);
         if (m.access() != QMetaMethod::Private) {
-            QtRuntimeMetaMethod* val = new (exec) QtRuntimeMetaMethod(exec, identifier, static_cast<QtInstance*>(inst), index, normal, false);
+            QtRuntimeMetaMethod* val = QtRuntimeMetaMethod::create(exec, identifier, static_cast<QtInstance*>(inst), index, normal, false);
             qtinst->m_methods.insert(name, WriteBarrier<JSObject>(exec->globalData(), qtinst->createRuntimeObject(exec), val));
             return val;
         }
@@ -99,13 +99,17 @@ JSValue QtClass::fallbackObject(ExecState* exec, Instance* inst, const Identifie
         if (m.access() == QMetaMethod::Private)
             continue;
 
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
         int iter = 0;
         const char* signature = m.signature();
         while (signature[iter] && signature[iter] != '(')
             ++iter;
 
         if (normal == QByteArray::fromRawData(signature, iter)) {
-            QtRuntimeMetaMethod* val = new (exec) QtRuntimeMetaMethod(exec, identifier, static_cast<QtInstance*>(inst), index, normal, false);
+#else
+        if (normal == m.name()) {
+#endif
+            QtRuntimeMetaMethod* val = QtRuntimeMetaMethod::create(exec, identifier, static_cast<QtInstance*>(inst), index, normal, false);
             qtinst->m_methods.insert(name, WriteBarrier<JSObject>(exec->globalData(), qtinst->createRuntimeObject(exec), val));
             return val;
         }

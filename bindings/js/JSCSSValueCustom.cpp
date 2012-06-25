@@ -34,6 +34,11 @@
 #include "JSWebKitCSSTransformValue.h"
 #include "WebKitCSSTransformValue.h"
 
+#if ENABLE(CSS_FILTERS)
+#include "JSWebKitCSSFilterValue.h"
+#include "WebKitCSSFilterValue.h"
+#endif
+
 #if ENABLE(SVG)
 #include "JSSVGColor.h"
 #include "JSSVGPaint.h"
@@ -45,29 +50,37 @@ using namespace JSC;
 
 namespace WebCore {
 
-bool JSCSSValueOwner::isReachableFromOpaqueRoots(JSC::Handle<JSC::Unknown> handle, void* context, MarkStack& markStack)
+bool JSCSSValueOwner::isReachableFromOpaqueRoots(JSC::Handle<JSC::Unknown> handle, void* context, SlotVisitor& visitor)
 {
-    JSCSSValue* jsCSSValue = static_cast<JSCSSValue*>(handle.get().asCell());
+    JSCSSValue* jsCSSValue = jsCast<JSCSSValue*>(handle.get().asCell());
     if (!jsCSSValue->hasCustomProperties())
         return false;
     DOMWrapperWorld* world = static_cast<DOMWrapperWorld*>(context);
     void* root = world->m_cssValueRoots.get(jsCSSValue->impl());
     if (!root)
         return false;
-    return markStack.containsOpaqueRoot(root);
+    return visitor.containsOpaqueRoot(root);
 }
 
 void JSCSSValueOwner::finalize(JSC::Handle<JSC::Unknown> handle, void* context)
 {
-    JSCSSValue* jsCSSValue = static_cast<JSCSSValue*>(handle.get().asCell());
+    JSCSSValue* jsCSSValue = jsCast<JSCSSValue*>(handle.get().asCell());
     DOMWrapperWorld* world = static_cast<DOMWrapperWorld*>(context);
     world->m_cssValueRoots.remove(jsCSSValue->impl());
     uncacheWrapper(world, jsCSSValue->impl(), jsCSSValue);
+    jsCSSValue->releaseImpl();
 }
 
 JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, CSSValue* value)
 {
     if (!value)
+        return jsNull();
+
+    // Scripts should only ever see cloned CSSValues, never the internal ones.
+    ASSERT(value->isCSSOMSafe());
+
+    // If we're here under erroneous circumstances, prefer returning null over a potentially insecure value.
+    if (!value->isCSSOMSafe())
         return jsNull();
 
     JSDOMWrapper* wrapper = getCachedWrapper(currentWorld(exec), value);
@@ -77,6 +90,10 @@ JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, CSSValue* value)
 
     if (value->isWebKitCSSTransformValue())
         wrapper = CREATE_DOM_WRAPPER(exec, globalObject, WebKitCSSTransformValue, value);
+#if ENABLE(CSS_FILTERS)
+    else if (value->isWebKitCSSFilterValue())
+        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, WebKitCSSFilterValue, value);
+#endif
     else if (value->isValueList())
         wrapper = CREATE_DOM_WRAPPER(exec, globalObject, CSSValueList, value);
 #if ENABLE(SVG)

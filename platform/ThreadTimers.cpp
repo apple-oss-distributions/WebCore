@@ -31,6 +31,9 @@
 #include "ThreadGlobalData.h"
 #include "Timer.h"
 #include <wtf/CurrentTime.h>
+#include <wtf/MainThread.h>
+
+using namespace std;
 
 namespace WebCore {
 
@@ -81,7 +84,7 @@ void ThreadTimers::updateSharedTimer()
     if (m_firingTimers || m_timerHeap.isEmpty())
         m_sharedTimer->stop();
     else
-        m_sharedTimer->setFireTime(m_timerHeap.first()->m_nextFireTime);
+        m_sharedTimer->setFireInterval(max(m_timerHeap.first()->m_nextFireTime - monotonicallyIncreasingTime(), 0.0));
 }
 
 void ThreadTimers::sharedTimerFired()
@@ -97,7 +100,7 @@ void ThreadTimers::sharedTimerFiredInternal()
         return;
     m_firingTimers = true;
 
-    double fireTime = currentTime();
+    double fireTime = monotonicallyIncreasingTime();
     double timeToQuit = fireTime + maxDurationOfFiringTimers;
 
     while (!m_timerHeap.isEmpty() && m_timerHeap.first()->m_nextFireTime <= fireTime) {
@@ -112,7 +115,7 @@ void ThreadTimers::sharedTimerFiredInternal()
         timer->fired();
 
         // Catch the case where the timer asked timers to fire in a nested event loop, or we are over time limit.
-        if (!m_firingTimers || timeToQuit < currentTime())
+        if (!m_firingTimers || timeToQuit < monotonicallyIncreasingTime())
             break;
     }
 

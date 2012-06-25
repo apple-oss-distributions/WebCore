@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2006, 2008, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2012 Research In Motion Limited. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,6 +32,7 @@
 #include <wtf/HashMap.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
+#include <wtf/RefCounted.h>
 
 #if PLATFORM(MAC)
 #import <wtf/RetainPtr.h>
@@ -43,8 +45,8 @@ typedef struct objc_object* id;
 #include <QDataStream>
 #endif
 
-#if PLATFORM(ANDROID)
-#include "AndroidWebHistoryBridge.h"
+#if PLATFORM(BLACKBERRY)
+#include "HistoryItemViewState.h"
 #endif
 
 namespace WebCore {
@@ -202,9 +204,8 @@ public:
     QDataStream& saveState(QDataStream& out, int version) const;
 #endif
 
-#if PLATFORM(ANDROID)
-    void setBridge(AndroidWebHistoryBridge* bridge);
-    AndroidWebHistoryBridge* bridge() const;
+#if PLATFORM(BLACKBERRY)
+    HistoryItemViewState& viewState() { return m_viewState; }
 #endif
 
 #ifndef NDEBUG
@@ -295,10 +296,9 @@ private:
     QVariant m_userData;
 #endif
 
-#if PLATFORM(ANDROID)
-    RefPtr<AndroidWebHistoryBridge> m_bridge;
+#if PLATFORM(BLACKBERRY)
+    HistoryItemViewState m_viewState;
 #endif
-
 }; //class HistoryItem
 
 } //namespace WebCore

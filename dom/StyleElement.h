@@ -37,13 +37,15 @@ protected:
     virtual const AtomicString& type() const = 0;
     virtual const AtomicString& media() const = 0;
 
-    StyleSheet* sheet() const { return m_sheet.get(); }
+    CSSStyleSheet* sheet() const { return m_sheet.get(); }
 
     bool isLoading() const;
     bool sheetLoaded(Document*);
+    void startLoadingDynamicSheet(Document*);
 
     void insertedIntoDocument(Document*, Element*);
     void removedFromDocument(Document*, Element*);
+    void clearDocumentData(Document*, Element*);
     void childrenChanged(Element*);
     void finishParsingChildren(Element*);
 
@@ -52,6 +54,7 @@ protected:
 private:
     void createSheet(Element*, int startLineNumber, const String& text = String());
     void process(Element*);
+    void clearSheet();
 
     bool m_createdByParser;
     bool m_loading;

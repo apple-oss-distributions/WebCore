@@ -26,14 +26,15 @@
 #include "InlineBox.h"
 #include "RenderArena.h"
 #include <wtf/RefCountedLeakCounter.h>
+#include <wtf/StdLibExtras.h>
 
 using namespace WTF;
 
 namespace WebCore {
 
-#ifndef NDEBUG
-static RefCountedLeakCounter bidiRunCounter("BidiRun");
+DEFINE_DEBUG_ONLY_GLOBAL(RefCountedLeakCounter, bidiRunCounter, ("BidiRun"));
 
+#ifndef NDEBUG
 static bool inBidiRunDestroy;
 #endif
 
@@ -52,7 +53,7 @@ void BidiRun::destroy()
     renderArena->free(*reinterpret_cast<size_t*>(this), this);
 }
 
-void* BidiRun::operator new(size_t sz, RenderArena* renderArena) throw()
+void* BidiRun::operator new(size_t sz, RenderArena* renderArena)
 {
 #ifndef NDEBUG
     bidiRunCounter.increment();

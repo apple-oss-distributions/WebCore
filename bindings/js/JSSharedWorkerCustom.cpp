@@ -43,28 +43,29 @@ using namespace JSC;
 
 namespace WebCore {
 
-void JSSharedWorker::visitChildren(SlotVisitor& visitor)
+void JSSharedWorker::visitChildren(JSCell* cell, SlotVisitor& visitor)
 {
-    ASSERT_GC_OBJECT_INHERITS(this, &s_info);
+    JSSharedWorker* thisObject = jsCast<JSSharedWorker*>(cell);
+    ASSERT_GC_OBJECT_INHERITS(thisObject, &s_info);
     COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
-    ASSERT(structure()->typeInfo().overridesVisitChildren());
-    Base::visitChildren(visitor);
+    ASSERT(thisObject->structure()->typeInfo().overridesVisitChildren());
+    Base::visitChildren(thisObject, visitor);
 
-    if (MessagePort* port = impl()->port())
+    if (MessagePort* port = thisObject->impl()->port())
         visitor.addOpaqueRoot(port);
 }
 
 EncodedJSValue JSC_HOST_CALL JSSharedWorkerConstructor::constructJSSharedWorker(ExecState* exec)
 {
-    JSSharedWorkerConstructor* jsConstructor = static_cast<JSSharedWorkerConstructor*>(exec->callee());
+    JSSharedWorkerConstructor* jsConstructor = jsCast<JSSharedWorkerConstructor*>(exec->callee());
 
     if (exec->argumentCount() < 1)
-        return throwVMError(exec, createSyntaxError(exec, "Not enough arguments"));
+        return throwVMError(exec, createNotEnoughArgumentsError(exec));
 
-    UString scriptURL = exec->argument(0).toString(exec);
+    UString scriptURL = exec->argument(0).toString(exec)->value(exec);
     UString name;
     if (exec->argumentCount() > 1)
-        name = exec->argument(1).toString(exec);
+        name = exec->argument(1).toString(exec)->value(exec);
 
     if (exec->hadException())
         return JSValue::encode(JSValue());
@@ -72,7 +73,7 @@ EncodedJSValue JSC_HOST_CALL JSSharedWorkerConstructor::constructJSSharedWorker(
     // FIXME: We need to use both the dynamic scope and the lexical scope (dynamic scope for resolving the worker URL)
     DOMWindow* window = asJSDOMWindow(exec->lexicalGlobalObject())->impl();
     ExceptionCode ec = 0;
-    RefPtr<SharedWorker> worker = SharedWorker::create(ustringToString(scriptURL), ustringToString(name), window->document(), ec);
+    RefPtr<SharedWorker> worker = SharedWorker::create(window->document(), ustringToString(scriptURL), ustringToString(name), ec);
     if (ec) {
         setDOMException(exec, ec);
         return JSValue::encode(JSValue());

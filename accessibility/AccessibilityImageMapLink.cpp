@@ -42,7 +42,6 @@ using namespace HTMLNames;
 AccessibilityImageMapLink::AccessibilityImageMapLink()
     : m_areaElement(0)
     , m_mapElement(0)
-    , m_parent(0)
 {
 }
 
@@ -119,11 +118,11 @@ String AccessibilityImageMapLink::title() const
 
     return String();
 }
-    
-IntRect AccessibilityImageMapLink::elementRect() const
+
+LayoutRect AccessibilityImageMapLink::elementRect() const
 {
     if (!m_mapElement.get() || !m_areaElement.get())
-        return IntRect();
+        return LayoutRect();
 
     RenderObject* renderer;
     if (m_parent && m_parent->isAccessibilityRenderObject())
@@ -132,7 +131,7 @@ IntRect AccessibilityImageMapLink::elementRect() const
         renderer = m_mapElement->renderer();
     
     if (!renderer)
-        return IntRect();
+        return LayoutRect();
     
     return m_areaElement->computeRect(renderer);
 }

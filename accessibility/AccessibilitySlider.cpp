@@ -34,6 +34,7 @@
 #include "HTMLNames.h"
 #include "RenderObject.h"
 #include "RenderSlider.h"
+#include "SliderThumbElement.h"
 
 namespace WebCore {
     
@@ -47,13 +48,6 @@ AccessibilitySlider::AccessibilitySlider(RenderObject* renderer)
 PassRefPtr<AccessibilitySlider> AccessibilitySlider::create(RenderObject* renderer)
 {
     return adoptRef(new AccessibilitySlider(renderer));
-}
-
-const AccessibilityObject::AccessibilityChildrenVector& AccessibilitySlider::children()
-{
-    if (!m_haveChildren)
-        addChildren();
-    return m_children;
 }
 
 AccessibilityOrientation AccessibilitySlider::orientation() const
@@ -71,6 +65,7 @@ AccessibilityOrientation AccessibilitySlider::orientation() const
     case SliderThumbHorizontalPart:
     case SliderHorizontalPart:
     case MediaSliderPart:
+    case MediaFullScreenVolumeSliderPart:
         return AccessibilityOrientationHorizontal;
     
     case SliderThumbVerticalPart: 
@@ -92,7 +87,7 @@ void AccessibilitySlider::addChildren()
     AXObjectCache* cache = m_renderer->document()->axObjectCache();
 
     AccessibilitySliderThumb* thumb = static_cast<AccessibilitySliderThumb*>(cache->getOrCreate(SliderThumbRole));
-    thumb->setParentObject(this);
+    thumb->setParent(this);
 
     // Before actually adding the value indicator to the hierarchy,
     // allow the platform to make a final decision about it.
@@ -164,7 +159,6 @@ HTMLInputElement* AccessibilitySlider::element() const
 
 
 AccessibilitySliderThumb::AccessibilitySliderThumb()
-    : m_parentSlider(0)
 {
 }
 
@@ -173,20 +167,15 @@ PassRefPtr<AccessibilitySliderThumb> AccessibilitySliderThumb::create()
     return adoptRef(new AccessibilitySliderThumb());
 }
     
-IntRect AccessibilitySliderThumb::elementRect() const
+LayoutRect AccessibilitySliderThumb::elementRect() const
 {
-    if (!m_parentSlider->renderer())
-        return IntRect();
-
-    IntRect intRect = toRenderSlider(m_parentSlider->renderer())->thumbRect();
-    FloatQuad floatQuad = m_parentSlider->renderer()->localToAbsoluteQuad(FloatRect(intRect));
-
-    return floatQuad.enclosingBoundingBox();
-}
-
-IntSize AccessibilitySliderThumb::size() const
-{
-    return elementRect().size();
+    if (!m_parent)
+        return LayoutRect();
+    
+    RenderObject* sliderRenderer = m_parent->renderer();
+    if (!sliderRenderer || !sliderRenderer->isSlider())
+        return LayoutRect();
+    return sliderThumbElementOf(sliderRenderer->node())->getRect();
 }
 
 bool AccessibilitySliderThumb::accessibilityIsIgnored() const

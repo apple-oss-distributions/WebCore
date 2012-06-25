@@ -35,17 +35,30 @@ class ObjcInstance;
 
 class ObjCRuntimeObject : public RuntimeObject {
 public:
-    ObjCRuntimeObject(ExecState*, JSGlobalObject*, PassRefPtr<ObjcInstance>);
-    virtual ~ObjCRuntimeObject();
+    typedef RuntimeObject Base;
+
+    static ObjCRuntimeObject* create(ExecState* exec, JSGlobalObject* globalObject, PassRefPtr<ObjcInstance> inst)
+    {
+        // FIXME: deprecatedGetDOMStructure uses the prototype off of the wrong global object
+        // We need to pass in the right global object for "i".
+        Structure* structure = WebCore::deprecatedGetDOMStructure<ObjCRuntimeObject>(exec);
+        ObjCRuntimeObject* object = new (NotNull, allocateCell<ObjCRuntimeObject>(*exec->heap())) ObjCRuntimeObject(exec, globalObject, inst, structure);
+        object->finishCreation(globalObject);
+        return object;
+    }
 
     ObjcInstance* getInternalObjCInstance() const;
 
     static const ClassInfo s_info;
 
-    static Structure* createStructure(JSGlobalData& globalData, JSValue prototype)
+    static Structure* createStructure(JSGlobalData& globalData, JSGlobalObject* globalObject, JSValue prototype)
     {
-        return Structure::create(globalData, prototype, TypeInfo(ObjectType, StructureFlags), AnonymousSlotCount, &s_info);
+        return Structure::create(globalData, globalObject, prototype, TypeInfo(ObjectType, StructureFlags), &s_info);
     }
+
+private:
+    ObjCRuntimeObject(ExecState*, JSGlobalObject*, PassRefPtr<ObjcInstance>, Structure*);
+    void finishCreation(JSGlobalObject*);
 };
 
 }

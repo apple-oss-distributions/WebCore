@@ -26,18 +26,18 @@
 #ifndef WebGLBuffer_h
 #define WebGLBuffer_h
 
-#include "ArrayBuffer.h"
-#include "WebGLObject.h"
+#include "WebGLSharedObject.h"
 
+#include <wtf/ArrayBuffer.h>
+#include <wtf/Forward.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
 
 namespace WebCore {
-class ArrayBufferView;
 
-class WebGLBuffer : public WebGLObject {
+class WebGLBuffer : public WebGLSharedObject {
 public:
-    virtual ~WebGLBuffer() { deleteObject(); }
+    virtual ~WebGLBuffer();
 
     static PassRefPtr<WebGLBuffer> create(WebGLRenderingContext*);
 
@@ -64,7 +64,7 @@ public:
 protected:
     WebGLBuffer(WebGLRenderingContext*);
 
-    virtual void deleteObjectImpl(Platform3DObject o);
+    virtual void deleteObjectImpl(GraphicsContext3D*, Platform3DObject);
 
 private:
     virtual bool isBuffer() const { return true; }

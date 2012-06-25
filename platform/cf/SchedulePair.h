@@ -31,14 +31,11 @@
 
 #include "PlatformString.h"
 #include <wtf/HashSet.h>
+#include <wtf/RefCounted.h>
 #include <wtf/RetainPtr.h>
 
 #if PLATFORM(MAC)
-#ifdef __OBJC__
-@class NSRunLoop;
-#else
-class NSRunLoop;
-#endif
+OBJC_CLASS NSRunLoop;
 #endif
 
 namespace WebCore {
