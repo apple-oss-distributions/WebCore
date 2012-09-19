@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003 Apple Computer, Inc.  All rights reserved.
+ * Copyright (C) 2003, 2012 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,6 +27,7 @@
 #define KJS_BINDINGS_OBJC_CLASS_H
 
 #include "objc_runtime.h"
+#include <wtf/text/WTFString.h>
 
 namespace JSC {
 namespace Bindings {
@@ -48,9 +49,12 @@ public:
     ClassStructPtr isa() { return _isa; }
     
 private:
+    typedef HashMap<String, OwnPtr<Method> > MethodCache;
+    typedef HashMap<String, OwnPtr<Field> > FieldCache;
+
     ClassStructPtr _isa;
-    RetainPtr<CFMutableDictionaryRef> _methods;
-    RetainPtr<CFMutableDictionaryRef> _fields;
+    mutable MethodCache m_methodCache;
+    mutable FieldCache m_fieldCache;
 };
 
 } // namespace Bindings

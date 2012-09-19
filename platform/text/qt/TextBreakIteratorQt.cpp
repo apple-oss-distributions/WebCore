@@ -24,6 +24,7 @@
 #include <QtCore/qtextboundaryfinder.h>
 #include <algorithm>
 #include <qdebug.h>
+#include <wtf/Atomics.h>
 
 // #define DEBUG_TEXT_ITERATORS
 #ifdef DEBUG_TEXT_ITERATORS
@@ -32,16 +33,11 @@
 #define DEBUG if (1) {} else qDebug
 #endif
 
+using namespace WTF;
 using namespace std;
 
 namespace WebCore {
 
-#if USE(QT_ICU_TEXT_BREAKING)
-const char* currentTextBreakLocaleID()
-{
-    return QLocale::system().name().toLatin1();
-}
-#else
     class TextBreakIterator : public QTextBoundaryFinder {
     public:
         TextBreakIterator(QTextBoundaryFinder::BoundaryType type, const QString& string)
@@ -72,15 +68,27 @@ const char* currentTextBreakLocaleID()
         return setUpIterator(staticWordBreakIterator, QTextBoundaryFinder::Word, string, length);
     }
 
-    TextBreakIterator* characterBreakIterator(const UChar* string, int length)
+    static TextBreakIterator* nonSharedCharacterBreakIterator;
+
+    NonSharedCharacterBreakIterator::NonSharedCharacterBreakIterator(const UChar* buffer, int length)
     {
-        static TextBreakIterator staticCharacterBreakIterator;
-        return setUpIterator(staticCharacterBreakIterator, QTextBoundaryFinder::Grapheme, string, length);
+        m_iterator = nonSharedCharacterBreakIterator;
+        bool createdIterator = m_iterator && weakCompareAndSwap(reinterpret_cast<void**>(&nonSharedCharacterBreakIterator), m_iterator, 0);
+        if (!createdIterator)
+            m_iterator = new TextBreakIterator();
+        setUpIterator(*m_iterator, QTextBoundaryFinder::Grapheme, buffer, length);
+    }
+
+    NonSharedCharacterBreakIterator::~NonSharedCharacterBreakIterator()
+    {
+        if (!weakCompareAndSwap(reinterpret_cast<void**>(&nonSharedCharacterBreakIterator), 0, m_iterator))
+            delete m_iterator;
     }
 
     TextBreakIterator* cursorMovementIterator(const UChar* string, int length)
     {
-        return characterBreakIterator(string, length);
+        static TextBreakIterator staticCursorMovementIterator;
+        return setUpIterator(staticCursorMovementIterator, QTextBoundaryFinder::Grapheme, string, length);
     }
 
     static TextBreakIterator* staticLineBreakIterator;
@@ -155,6 +163,10 @@ const char* currentTextBreakLocaleID()
     {
         return true;
     }
-#endif
+
+    bool isWordTextBreak(TextBreakIterator*)
+    {
+        return true;
+    }
 
 }

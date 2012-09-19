@@ -28,12 +28,8 @@
 
 #if ENABLE(DISK_IMAGE_CACHE)
 
-#include "FileSystem.h"
+#import "FileSystemIOS.h"
 #include "PlatformString.h"
-
-// FIXME: Move this to a generic place, like FileSystem.h and FileSystemIPhone.mm?
-// These would probably need to be made more robust. However, then they could be
-// used elsewhere, such as QuickLook code where this was pulled from.
 
 namespace WebCore {
 

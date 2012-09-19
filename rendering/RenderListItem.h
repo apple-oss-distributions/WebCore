@@ -49,6 +49,8 @@ public:
 
     void updateListMarkerNumbers();
 
+    static RenderListItem* nextListItem(RenderObject* listRenderer, const RenderListItem* = 0);
+
 private:
     virtual const char* renderName() const { return "RenderListItem"; }
 
@@ -57,7 +59,7 @@ private:
     virtual void willBeDestroyed();
 
     virtual bool isEmpty() const;
-    virtual void paint(PaintInfo&, int tx, int ty);
+    virtual void paint(PaintInfo&, const LayoutPoint&);
 
     virtual void layout();
     virtual void computePreferredLogicalWidths();
@@ -75,8 +77,8 @@ private:
     void updateValueNow() const;
     void explicitValueChanged();
 
-    RenderListMarker* m_marker;
     int m_explicitValue;
+    RenderListMarker* m_marker;
     mutable int m_value;
 
     bool m_hasExplicitValue : 1;

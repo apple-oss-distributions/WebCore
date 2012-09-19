@@ -38,10 +38,18 @@ MemoryPressureHandler& memoryPressureHandler()
 
 MemoryPressureHandler::MemoryPressureHandler() 
     : m_installed(false)
+    , m_lastRespondTime(0)
+    , m_receivedMemoryPressure(0)
+    , m_clearPressureOnMemoryRelease(true)
+    , m_releaseMemoryBlock(0)
 {
 }
 
 void MemoryPressureHandler::install() { }
+
+void MemoryPressureHandler::uninstall() { }
+
+void MemoryPressureHandler::holdOff(unsigned) { }
 
 void MemoryPressureHandler::respondToMemoryPressure() { }
  

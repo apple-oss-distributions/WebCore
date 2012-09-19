@@ -75,9 +75,9 @@ public:
     void removeItem(HistoryItem*);
     HistoryItemVector& entries();
 
-    unsigned current();
-    void setCurrent(unsigned newCurrent);
-    bool clearAllPageCaches();
+    virtual unsigned current() OVERRIDE;
+    virtual void setCurrent(unsigned newCurrent) OVERRIDE;
+    virtual bool clearAllPageCaches() OVERRIDE;
 
 private:
     BackForwardListImpl(Page*);

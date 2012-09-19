@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 Apple Inc.  All rights reserved.
+ * Copyright (C) 2011 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -71,6 +71,11 @@ FloatPoint HitTestingTransformState::mappedPoint() const
 FloatQuad HitTestingTransformState::mappedQuad() const
 {
     return m_accumulatedTransform.inverse().projectQuad(m_lastPlanarQuad);
+}
+
+LayoutRect HitTestingTransformState::boundsOfMappedQuad() const
+{
+    return m_accumulatedTransform.inverse().clampedBoundsOfProjectedQuad(m_lastPlanarQuad);
 }
 
 } // namespace WebCore

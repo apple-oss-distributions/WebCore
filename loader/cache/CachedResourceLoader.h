@@ -1,7 +1,7 @@
 /*
     Copyright (C) 1998 Lars Knoll (knoll@mpi-hd.mpg.de)
     Copyright (C) 2001 Dirk Mueller <mueller@kde.org>
-    Copyright (C) 2004, 2005, 2006 Apple Computer, Inc.
+    Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011 Apple Inc. All rights reserved.
     Copyright (C) 2009 Torch Mobile Inc. http://www.torchmobile.com/
 
     This library is free software; you can redistribute it and/or
@@ -40,10 +40,13 @@
 namespace WebCore {
 
 class CachedCSSStyleSheet;
+class CachedSVGDocument;
 class CachedFont;
 class CachedImage;
-class CachedResourceRequest;
+class CachedRawResource;
 class CachedScript;
+class CachedShader;
+class CachedTextTrack;
 class CachedXSLStyleSheet;
 class Document;
 class Frame;
@@ -60,17 +63,27 @@ public:
     CachedResourceLoader(Document*);
     ~CachedResourceLoader();
 
-    CachedImage* requestImage(const String& url);
-    CachedCSSStyleSheet* requestCSSStyleSheet(const String& url, const String& charset, ResourceLoadPriority priority = ResourceLoadPriorityUnresolved);
-    CachedCSSStyleSheet* requestUserCSSStyleSheet(const String& url, const String& charset);
-    CachedScript* requestScript(const String& url, const String& charset);
-    CachedFont* requestFont(const String& url);
+    CachedResourceHandle<CachedImage> requestImage(ResourceRequest&);
+    CachedResourceHandle<CachedCSSStyleSheet> requestCSSStyleSheet(ResourceRequest&, const String& charset, ResourceLoadPriority = ResourceLoadPriorityUnresolved);
+    CachedResourceHandle<CachedCSSStyleSheet> requestUserCSSStyleSheet(ResourceRequest&, const String& charset);
+    CachedResourceHandle<CachedScript> requestScript(ResourceRequest&, const String& charset);
+    CachedResourceHandle<CachedFont> requestFont(ResourceRequest&);
+    CachedResourceHandle<CachedRawResource> requestRawResource(ResourceRequest&, const ResourceLoaderOptions&);
 
+#if ENABLE(SVG)
+    CachedResourceHandle<CachedSVGDocument> requestSVGDocument(ResourceRequest&);
+#endif
 #if ENABLE(XSLT)
-    CachedXSLStyleSheet* requestXSLStyleSheet(const String& url);
+    CachedResourceHandle<CachedXSLStyleSheet> requestXSLStyleSheet(ResourceRequest&);
 #endif
 #if ENABLE(LINK_PREFETCH)
-    CachedResource* requestLinkResource(const String &url, ResourceLoadPriority priority = ResourceLoadPriorityUnresolved);
+    CachedResourceHandle<CachedResource> requestLinkResource(CachedResource::Type, ResourceRequest&, ResourceLoadPriority = ResourceLoadPriorityUnresolved);
+#endif
+#if ENABLE(VIDEO_TRACK)
+    CachedResourceHandle<CachedTextTrack> requestTextTrack(ResourceRequest&);
+#endif
+#if ENABLE(CSS_SHADERS)
+    CachedResourceHandle<CachedShader> requestShader(ResourceRequest&);
 #endif
 
     // Logs an access denied message to the console for the specified URL.
@@ -91,35 +104,31 @@ public:
     Document* document() const { return m_document; }
 
     void removeCachedResource(CachedResource*) const;
+    void loadDone(bool doPostLoadActionsAsynchronously = false);
 
-    void load(CachedResource*, bool incremental = false, SecurityCheckPolicy = DoSecurityCheck, bool sendResourceLoadCallbacks = true);
-    void loadFinishing() { m_loadFinishing = true; }
-    void loadDone(CachedResourceRequest*, bool doPostLoadActionsAsynchronously = false);
-    void cancelRequests();
-    
     void incrementRequestCount(const CachedResource*);
     void decrementRequestCount(const CachedResource*);
-    int requestCount();
-    
+    int requestCount() const { return m_requestCount; }
+
+    bool isPreloaded(const String& urlString) const;
     void clearPreloads();
     void clearPendingPreloads();
-    void preload(CachedResource::Type, const String& url, const String& charset, bool referencedFromBody);
+    void preload(CachedResource::Type, ResourceRequest&, const String& charset, bool referencedFromBody);
     void checkForPendingPreloads();
     void printPreloadStats();
+    bool canRequest(CachedResource::Type, const KURL&, bool forPreload = false);
     
 private:
-    CachedResource* requestResource(CachedResource::Type, const String& url, const String& charset, ResourceLoadPriority priority = ResourceLoadPriorityUnresolved, bool isPreload = false);
-    CachedResource* revalidateResource(CachedResource*, ResourceLoadPriority priority);
-    CachedResource* loadResource(CachedResource::Type, const KURL&, const String& charset, ResourceLoadPriority priority);
-    void requestPreload(CachedResource::Type, const String& url, const String& charset);
+    CachedResourceHandle<CachedResource> requestResource(CachedResource::Type, ResourceRequest&, const String& charset, const ResourceLoaderOptions&, ResourceLoadPriority = ResourceLoadPriorityUnresolved, bool isPreload = false);
+    CachedResourceHandle<CachedResource> revalidateResource(CachedResource*, ResourceLoadPriority, const ResourceLoaderOptions&);
+    CachedResourceHandle<CachedResource> loadResource(CachedResource::Type, ResourceRequest&, const String& charset, ResourceLoadPriority, const ResourceLoaderOptions&);
+    void requestPreload(CachedResource::Type, ResourceRequest&, const String& charset);
 
     enum RevalidationPolicy { Use, Revalidate, Reload, Load };
-    RevalidationPolicy determineRevalidationPolicy(CachedResource::Type, bool forPreload, CachedResource* existingResource) const;
+    RevalidationPolicy determineRevalidationPolicy(CachedResource::Type, ResourceRequest&, bool forPreload, CachedResource* existingResource) const;
     
     void notifyLoadedFromMemoryCache(CachedResource*);
-    bool canRequest(CachedResource::Type, const KURL&, bool forPreload = false);
-
-    void loadDoneActionTimerFired(Timer<CachedResourceLoader>*);
+    bool checkInsecureContent(CachedResource::Type, const KURL&) const;
 
     void garbageCollectDocumentResourcesTimerFired(Timer<CachedResourceLoader>*);
     void performPostLoadActions();
@@ -127,27 +136,21 @@ private:
     HashSet<String> m_validatedURLs;
     mutable DocumentResourceMap m_documentResources;
     Document* m_document;
-
-    typedef HashSet<RefPtr<CachedResourceRequest> > RequestSet;
-    RequestSet m_requests;
     
     int m_requestCount;
     
     OwnPtr<ListHashSet<CachedResource*> > m_preloads;
     struct PendingPreload {
         CachedResource::Type m_type;
-        String m_url;
+        ResourceRequest m_request;
         String m_charset;
     };
     Deque<PendingPreload> m_pendingPreloads;
 
     Timer<CachedResourceLoader> m_garbageCollectDocumentResourcesTimer;
 
-    Timer<CachedResourceLoader> m_loadDoneActionTimer;
-    
-    //29 bits left
+    // 30 bits left
     bool m_autoLoadImages : 1;
-    bool m_loadFinishing : 1;
     bool m_allowStaleResources : 1;
 };
 

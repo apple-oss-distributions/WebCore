@@ -26,9 +26,9 @@
 #include "config.h"
 #include "JSArrayBuffer.h"
 
-#include "ArrayBuffer.h"
 #include "ExceptionCode.h"
 #include <runtime/Error.h>
+#include <wtf/ArrayBuffer.h>
 
 namespace WebCore {
 
@@ -36,7 +36,7 @@ using namespace JSC;
 
 EncodedJSValue JSC_HOST_CALL JSArrayBufferConstructor::constructJSArrayBuffer(ExecState* exec)
 {
-    JSArrayBufferConstructor* jsConstructor = static_cast<JSArrayBufferConstructor*>(exec->callee());
+    JSArrayBufferConstructor* jsConstructor = jsCast<JSArrayBufferConstructor*>(exec->callee());
 
     int length = 0;
     if (exec->argumentCount() > 0)

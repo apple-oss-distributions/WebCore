@@ -54,7 +54,6 @@ Array::~Array()
 
 Instance::Instance(PassRefPtr<RootObject> rootObject)
     : m_rootObject(rootObject)
-    , m_runtimeObject(*WebCore::JSDOMWindowBase::commonJSGlobalData())
 {
     ASSERT(m_rootObject);
 }
@@ -93,20 +92,20 @@ JSObject* Instance::createRuntimeObject(ExecState* exec)
     if (RuntimeObject* existingObject = m_runtimeObject.get())
         return existingObject;
 
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(exec);
     RuntimeObject* newObject = newRuntimeObject(exec);
-    m_runtimeObject.set(exec->globalData(), newObject, 0);
+    m_runtimeObject = PassWeak<RuntimeObject>(newObject);
     m_rootObject->addRuntimeObject(exec->globalData(), newObject);
     return newObject;
 }
 
 RuntimeObject* Instance::newRuntimeObject(ExecState* exec)
 {
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(exec);
 
     // FIXME: deprecatedGetDOMStructure uses the prototype off of the wrong global object
     // We need to pass in the right global object for "i".
-    return new (exec) RuntimeObject(exec, exec->lexicalGlobalObject(), WebCore::deprecatedGetDOMStructure<RuntimeObject>(exec), this);
+    return RuntimeObject::create(exec, exec->lexicalGlobalObject(), WebCore::deprecatedGetDOMStructure<RuntimeObject>(exec), this);
 }
 
 void Instance::willInvalidateRuntimeObject()

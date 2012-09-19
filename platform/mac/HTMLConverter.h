@@ -23,3 +23,69 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+@class DOMDocument;
+@class DOMRange;
+
+namespace WebCore {
+    class DocumentLoader;
+    class Range;
+}
+
+@interface WebHTMLConverter : NSObject {
+    NSMutableAttributedString *_attrStr;
+    NSURL *_baseURL;
+    DOMDocument *_document;
+    DOMRange *_domRange;
+    NSMutableArray *_domStartAncestors;
+    WebCore::DocumentLoader *_dataSource;
+    NSString *_standardFontFamily;
+    CGFloat _textSizeMultiplier;
+    CGFloat _webViewTextSizeMultiplier;
+    CGFloat _defaultTabInterval;
+    CGFloat _defaultFontSize;
+    CGFloat _minimumFontSize;
+    NSMutableArray *_textLists;
+    NSMutableArray *_textBlocks;
+    NSMutableArray *_textTables;
+    NSMutableDictionary *_textTableFooters;
+    NSMutableArray *_textTableSpacings;
+    NSMutableArray *_textTablePaddings;
+    NSMutableArray *_textTableRows;
+    NSMutableArray *_textTableRowArrays;
+    NSMutableArray *_textTableRowBackgroundColors;
+    NSMutableDictionary *_computedStylesForElements;
+    NSMutableDictionary *_specifiedStylesForElements;
+    NSMutableDictionary *_stringsForNodes;
+    NSMutableDictionary *_floatsForNodes;
+    NSMutableDictionary *_colorsForNodes;
+    NSMutableDictionary *_attributesForElements;
+    NSMutableDictionary *_elementIsBlockLevel;
+    NSMutableDictionary *_fontCache;
+    NSMutableArray *_writingDirectionArray;
+    NSUInteger _domRangeStartIndex;
+    NSInteger _indexingLimit;
+    NSUInteger _thumbnailLimit;
+    NSInteger _errorCode;
+    NSInteger _quoteLevel;
+
+    struct {
+        unsigned int isSoft:1;
+        unsigned int reachedStart:1;
+        unsigned int reachedEnd:1;
+        unsigned int isIndexing:1;
+        unsigned int isTesting:1;
+        unsigned int hasTrailingNewline:1;
+        unsigned int pad:26;
+    } _flags;
+}
+
+#if !defined(BUILDING_ON_LEOPARD)
+- (id)init;
+- (id)initWithDOMRange:(DOMRange *)domRange;
+
+- (NSAttributedString *)attributedString;
+#endif
+
++ (NSAttributedString *)editingAttributedStringFromRange:(WebCore::Range*)range;
+@end
+

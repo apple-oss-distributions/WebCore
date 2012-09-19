@@ -48,6 +48,11 @@ DeviceOrientationController::~DeviceOrientationController()
     m_client->deviceOrientationControllerDestroyed();
 }
 
+PassOwnPtr<DeviceOrientationController> DeviceOrientationController::create(Page* page, DeviceOrientationClient* client)
+{
+    return adoptPtr(new DeviceOrientationController(page, client));
+}
+
 void DeviceOrientationController::timerFired(Timer<DeviceOrientationController>* timer)
 {
     ASSERT_UNUSED(timer, timer == &m_timer);
@@ -84,6 +89,7 @@ void DeviceOrientationController::addListener(DOMWindow* window)
 void DeviceOrientationController::removeListener(DOMWindow* window)
 {
     m_listeners.remove(window);
+    m_suspendedListeners.remove(window);
     m_newListeners.remove(window);
     if (m_listeners.isEmpty())
         m_client->stopUpdating();
@@ -96,6 +102,7 @@ void DeviceOrientationController::removeAllListeners(DOMWindow* window)
         return;
 
     m_listeners.removeAll(window);
+    m_suspendedListeners.removeAll(window);
     m_newListeners.remove(window);
     if (m_listeners.isEmpty())
         m_client->stopUpdating();
@@ -123,6 +130,24 @@ void DeviceOrientationController::didChangeDeviceOrientation(DeviceOrientation* 
     copyToVector(m_listeners, listenersVector);
     for (size_t i = 0; i < listenersVector.size(); ++i)
         listenersVector[i]->dispatchEvent(event);
+}
+
+const AtomicString& DeviceOrientationController::supplementName()
+{
+    DEFINE_STATIC_LOCAL(AtomicString, name, ("DeviceOrientationController"));
+    return name;
+}
+
+bool DeviceOrientationController::isActiveAt(Page* page)
+{
+    if (DeviceOrientationController* self = DeviceOrientationController::from(page))
+        return self->isActive();
+    return false;
+}
+
+void provideDeviceOrientationTo(Page* page, DeviceOrientationClient* client)
+{
+    DeviceOrientationController::provideTo(page, DeviceOrientationController::supplementName(), DeviceOrientationController::create(page, client));
 }
 
 } // namespace WebCore

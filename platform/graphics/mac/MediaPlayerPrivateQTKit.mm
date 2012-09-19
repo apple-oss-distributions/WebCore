@@ -33,6 +33,7 @@
 #import "DocumentLoader.h"
 #import "Frame.h"
 #import "FrameView.h"
+#import "HostWindow.h"
 #import "GraphicsContext.h"
 #import "KURL.h"
 #import "MIMETypeRegistry.h"
@@ -54,7 +55,6 @@
 #import "RenderObject.h"
 #import "RenderStyle.h"
 #endif
-
 
 SOFT_LINK_FRAMEWORK(QTKit)
 
@@ -92,11 +92,12 @@ SOFT_LINK_POINTER(QTKit, QTMovieTimeScaleAttribute, NSString *)
 SOFT_LINK_POINTER(QTKit, QTMovieURLAttribute, NSString *)
 SOFT_LINK_POINTER(QTKit, QTMovieVolumeDidChangeNotification, NSString *)
 SOFT_LINK_POINTER(QTKit, QTSecurityPolicyNoCrossSiteAttribute, NSString *)
-SOFT_LINK_POINTER(QTKit, QTSecurityPolicyNoLocalToRemoteSiteAttribute, NSString *)
-SOFT_LINK_POINTER(QTKit, QTSecurityPolicyNoRemoteToLocalSiteAttribute, NSString *)
 SOFT_LINK_POINTER(QTKit, QTVideoRendererWebKitOnlyNewImageAvailableNotification, NSString *)
 SOFT_LINK_POINTER(QTKit, QTMovieApertureModeClean, NSString *)
 SOFT_LINK_POINTER(QTKit, QTMovieApertureModeAttribute, NSString *)
+
+SOFT_LINK_POINTER_OPTIONAL(QTKit, QTSecurityPolicyNoLocalToRemoteSiteAttribute, NSString *)
+SOFT_LINK_POINTER_OPTIONAL(QTKit, QTSecurityPolicyNoRemoteToLocalSiteAttribute, NSString *)
 
 #define QTMovie getQTMovieClass()
 #define QTMovieView getQTMovieViewClass()
@@ -234,14 +235,21 @@ NSMutableDictionary *MediaPlayerPrivateQTKit::commonMovieAttributes()
     NSMutableDictionary *movieAttributes = [NSMutableDictionary dictionaryWithObjectsAndKeys:
             [NSNumber numberWithBool:m_player->preservesPitch()], QTMovieRateChangesPreservePitchAttribute,
             [NSNumber numberWithBool:YES], QTMoviePreventExternalURLLinksAttribute,
-            [NSNumber numberWithBool:NO], QTSecurityPolicyNoCrossSiteAttribute,
-            [NSNumber numberWithBool:YES], QTSecurityPolicyNoRemoteToLocalSiteAttribute,
-            [NSNumber numberWithBool:YES], QTSecurityPolicyNoLocalToRemoteSiteAttribute,
             [NSNumber numberWithBool:NO], QTMovieAskUnresolvedDataRefsAttribute,
             [NSNumber numberWithBool:NO], QTMovieLoopsAttribute,
             [NSNumber numberWithBool:!m_privateBrowsing], @"QTMovieAllowPersistentCacheAttribute",
             QTMovieApertureModeClean, QTMovieApertureModeAttribute,
             nil];
+
+    // Check to see if QTSecurityPolicyNoRemoteToLocalSiteAttribute is defined, which was added in QTKit 7.6.3.
+    // If not, just set NoCrossSite = YES, which does the same thing as NoRemoteToLocal = YES and 
+    // NoLocalToRemote = YES in QTKit < 7.6.3.
+    if (QTSecurityPolicyNoRemoteToLocalSiteAttribute) {
+        [movieAttributes setValue:[NSNumber numberWithBool:NO] forKey:QTSecurityPolicyNoCrossSiteAttribute];
+        [movieAttributes setValue:[NSNumber numberWithBool:YES] forKey:QTSecurityPolicyNoRemoteToLocalSiteAttribute];
+        [movieAttributes setValue:[NSNumber numberWithBool:YES] forKey:QTSecurityPolicyNoLocalToRemoteSiteAttribute];
+    } else
+        [movieAttributes setValue:[NSNumber numberWithBool:YES] forKey:QTSecurityPolicyNoCrossSiteAttribute];
 
     if (m_preload < MediaPlayer::Auto)
         [movieAttributes setValue:[NSNumber numberWithBool:YES] forKey:@"QTMovieLimitReadAheadAttribute"];
@@ -251,7 +259,8 @@ NSMutableDictionary *MediaPlayerPrivateQTKit::commonMovieAttributes()
 
 void MediaPlayerPrivateQTKit::createQTMovie(const String& url)
 {
-    NSURL *cocoaURL = KURL(ParsedURLString, url);
+    KURL kURL(ParsedURLString, url);
+    NSURL *cocoaURL = kURL;
     NSMutableDictionary *movieAttributes = commonMovieAttributes();    
     [movieAttributes setValue:cocoaURL forKey:QTMovieURLAttribute];
 
@@ -274,9 +283,9 @@ void MediaPlayerPrivateQTKit::createQTMovie(const String& url)
             willUseProxy = NO;
     }
 
-    if (!willUseProxy) {
+    if (!willUseProxy && !kURL.protocolIsData()) {
         // Only pass the QTMovieOpenForPlaybackAttribute flag if there are no proxy servers, due
-        // to rdar://problem/7531776.
+        // to rdar://problem/7531776, or if not loading a data:// url due to rdar://problem/8103801.
         [movieAttributes setObject:[NSNumber numberWithBool:YES] forKey:@"QTMovieOpenForPlaybackAttribute"];
     }
     
@@ -430,8 +439,11 @@ void MediaPlayerPrivateQTKit::createQTMovieView()
 
     m_qtMovieView.adoptNS([[QTMovieView alloc] init]);
     setSize(m_player->size());
-    NSView* parentView = m_player->frameView()->documentView();
+    NSView* parentView = 0;
+#if PLATFORM(MAC)
+    parentView = m_player->frameView()->documentView();
     [parentView addSubview:m_qtMovieView.get()];
+#endif
     [m_qtMovieView.get() setDelegate:m_objcObserver.get()];
     [m_objcObserver.get() setView:m_qtMovieView.get()];
     [m_qtMovieView.get() setMovie:m_qtMovie.get()];
@@ -468,7 +480,7 @@ void MediaPlayerPrivateQTKit::createQTVideoRenderer(QTVideoRendererMode renderer
         return;
     
     // associate our movie with our instance of QTVideoRendererWebKitOnly
-    [(id<WebKitVideoRenderingDetails>)m_qtVideoRenderer.get() setMovie:m_qtMovie.get()];    
+    [(id<WebKitVideoRenderingDetails>)m_qtVideoRenderer.get() setMovie:m_qtMovie.get()];
 
     if (rendererMode == QTVideoRendererModeListensForNewImages) {
         // listen to QTVideoRendererWebKitOnly's QTVideoRendererWebKitOnlyNewImageDidBecomeAvailableNotification
@@ -497,7 +509,7 @@ void MediaPlayerPrivateQTKit::destroyQTVideoRenderer()
 
 void MediaPlayerPrivateQTKit::createQTMovieLayer()
 {
-#if USE(ACCELERATED_COMPOSITING)
+#if USE(ACCELERATED_COMPOSITING) && !(PLATFORM(QT) && USE(QTKIT))
     if (!m_qtMovie)
         return;
 
@@ -548,7 +560,7 @@ MediaPlayerPrivateQTKit::MediaRenderingMode MediaPlayerPrivateQTKit::preferredRe
     if (!m_player->frameView() || !m_qtMovie)
         return MediaRenderingNone;
 
-#if USE(ACCELERATED_COMPOSITING)
+#if USE(ACCELERATED_COMPOSITING) && !(PLATFORM(QT) && USE(QTKIT))
     if (supportsAcceleratedRendering() && m_player->mediaPlayerClient()->mediaPlayerRenderingCanBeAccelerated(m_player))
         return MediaRenderingMovieLayer;
 #endif
@@ -666,7 +678,7 @@ PlatformMedia MediaPlayerPrivateQTKit::platformMedia() const
     return pm;
 }
 
-#if USE(ACCELERATED_COMPOSITING)
+#if USE(ACCELERATED_COMPOSITING) && !(PLATFORM(QT) && USE(QTKIT))
 PlatformLayer* MediaPlayerPrivateQTKit::platformLayer() const
 {
     return m_qtVideoLayer.get();
@@ -1179,7 +1191,7 @@ void MediaPlayerPrivateQTKit::didEnd()
     m_player->timeChanged();
 }
 
-#if USE(ACCELERATED_COMPOSITING)
+#if USE(ACCELERATED_COMPOSITING) && !(PLATFORM(QT) && USE(QTKIT))
 #if defined(BUILDING_ON_SNOW_LEOPARD)
 static bool layerIsDescendentOf(PlatformLayer* child, PlatformLayer* descendent)
 {
@@ -1294,14 +1306,28 @@ void MediaPlayerPrivateQTKit::paint(GraphicsContext* context, const IntRect& r)
 
     [m_objcObserver.get() setDelayCallbacks:YES];
     BEGIN_BLOCK_OBJC_EXCEPTIONS;
+    NSGraphicsContext* newContext;
+    FloatSize scaleFactor(1.0f, -1.0f);
+    IntRect paintRect(IntPoint(0, 0), IntSize(r.width(), r.height()));
+
+#if PLATFORM(QT) && USE(QTKIT)
+    // In Qt, GraphicsContext is a QPainter so every transformations applied on it won't matter because here
+    // the video is rendered by QuickTime not by Qt.
+    CGContextRef cgContext = static_cast<CGContextRef>([[NSGraphicsContext currentContext] graphicsPort]);
+    CGContextSaveGState(cgContext);
+    CGContextSetInterpolationQuality(cgContext, kCGInterpolationLow);
+    CGContextTranslateCTM(cgContext, r.x(), r.y() + r.height());
+    CGContextScaleCTM(cgContext, scaleFactor.width(), scaleFactor.height());
+
+    newContext = [NSGraphicsContext currentContext];
+#else
     GraphicsContextStateSaver stateSaver(*context);
     context->translate(r.x(), r.y() + r.height());
-    context->scale(FloatSize(1.0f, -1.0f));
+    context->scale(scaleFactor);
     context->setImageInterpolationQuality(InterpolationLow);
-    IntRect paintRect(IntPoint(0, 0), IntSize(r.width(), r.height()));
-    
-    NSGraphicsContext* newContext = [NSGraphicsContext graphicsContextWithGraphicsPort:context->platformContext() flipped:NO];
 
+    newContext = [NSGraphicsContext graphicsContextWithGraphicsPort:context->platformContext() flipped:NO];
+#endif
     // draw the current video frame
     if (qtVideoRenderer) {
         [NSGraphicsContext saveGraphicsState];
@@ -1355,7 +1381,9 @@ void MediaPlayerPrivateQTKit::paint(GraphicsContext* context, const IntRect& r)
         }
     }
 #endif
-
+#if PLATFORM(QT) && USE(QTKIT)
+    CGContextRestoreGState(cgContext);
+#endif
     END_BLOCK_OBJC_EXCEPTIONS;
     [m_objcObserver.get() setDelayCallbacks:NO];
 }
@@ -1433,6 +1461,11 @@ MediaPlayer::SupportsType MediaPlayerPrivateQTKit::supportsType(const String& ty
 {
     // Only return "IsSupported" if there is no codecs parameter for now as there is no way to ask QT if it supports an
     // extended MIME type yet.
+
+    // Due to <rdar://problem/10777059>, avoid calling the mime types cache functions if at
+    // all possible:
+    if (!type.startsWith("video/") && !type.startsWith("audio/"))
+        return MediaPlayer::IsNotSupported;
 
     // We check the "modern" type cache first, as it doesn't require QTKitServer to start.
     if (mimeModernTypesCache().contains(type) || mimeCommonTypesCache().contains(type))
@@ -1560,7 +1593,7 @@ void MediaPlayerPrivateQTKit::sawUnsupportedTracks()
     m_player->mediaPlayerClient()->mediaPlayerSawUnsupportedTracks(m_player);
 }
 
-#if USE(ACCELERATED_COMPOSITING)
+#if USE(ACCELERATED_COMPOSITING) && !(PLATFORM(QT) && USE(QTKIT))
 bool MediaPlayerPrivateQTKit::supportsAcceleratedRendering() const
 {
     return isReadyForVideoSetup() && getQTMovieLayerClass() != Nil;
@@ -1714,7 +1747,7 @@ void MediaPlayerPrivateQTKit::setPrivateBrowsingMode(bool privateBrowsing)
 
 - (void)layerHostChanged:(NSNotification *)notification
 {
-#if USE(ACCELERATED_COMPOSITING)
+#if USE(ACCELERATED_COMPOSITING) && !(PLATFORM(QT) && USE(QTKIT))
     CALayer* rootLayer = static_cast<CALayer*>([notification object]);
     m_callback->layerHostChanged(rootLayer);
 #else

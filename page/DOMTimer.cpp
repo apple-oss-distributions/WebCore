@@ -114,6 +114,7 @@ int DOMTimer::install(ScriptExecutionContext* context, PassOwnPtr<ScheduledActio
         }
     }
 
+    timer->suspendIfNeeded();
     InspectorInstrumentation::didInstallTimer(context, timer->m_timeoutId, timeout, singleShot);
 
     return timer->m_timeoutId;
@@ -142,7 +143,7 @@ void DOMTimer::fired()
         ASSERT(!document->frame()->timersPaused());
     }
     timerNestingLevel = m_nestingLevel;
-    
+    ASSERT(!context->activeDOMObjectsAreSuspended());
     UserGestureIndicator gestureIndicator(m_shouldForwardUserGesture ? DefinitelyProcessingUserGesture : PossiblyProcessingUserGesture);
     
     // Only the first execution of a multi-shot timer should get an affirmative user gesture indicator.

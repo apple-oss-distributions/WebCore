@@ -34,7 +34,9 @@
 
 #include "ErrorEvent.h"
 #include "Event.h"
+#include "EventNames.h"
 #include "JSEvent.h"
+#include "JSMainThreadExecState.h"
 #include <runtime/JSLock.h>
 
 using namespace JSC;
@@ -52,7 +54,7 @@ JSErrorHandler::~JSErrorHandler()
 
 void JSErrorHandler::handleEvent(ScriptExecutionContext* scriptExecutionContext, Event* event)
 {
-    if (!event->isErrorEvent())
+    if (!event->hasInterface(eventNames().interfaceForErrorEvent))
         return JSEventListener::handleEvent(scriptExecutionContext, event);
 
     ASSERT(scriptExecutionContext);
@@ -61,7 +63,7 @@ void JSErrorHandler::handleEvent(ScriptExecutionContext* scriptExecutionContext,
 
     ErrorEvent* errorEvent = static_cast<ErrorEvent*>(event);
 
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(scriptExecutionContext->globalData());
 
     JSObject* jsFunction = this->jsFunction(scriptExecutionContext);
     if (!jsFunction)
@@ -74,7 +76,7 @@ void JSErrorHandler::handleEvent(ScriptExecutionContext* scriptExecutionContext,
     ExecState* exec = globalObject->globalExec();
 
     CallData callData;
-    CallType callType = jsFunction->getCallData(callData);
+    CallType callType = jsFunction->methodTable()->getCallData(jsFunction, callData);
 
     if (callType != CallTypeNone) {
         RefPtr<JSErrorHandler> protectedctor(this);
@@ -90,10 +92,12 @@ void JSErrorHandler::handleEvent(ScriptExecutionContext* scriptExecutionContext,
         JSGlobalData& globalData = globalObject->globalData();
         DynamicGlobalObjectScope globalObjectScope(globalData, globalData.dynamicGlobalObject ? globalData.dynamicGlobalObject : globalObject);
 
-        JSValue thisValue = globalObject->toThisObject(exec);
+        JSValue thisValue = globalObject->methodTable()->toThisObject(globalObject, exec);
 
         globalData.timeoutChecker.start();
-        JSValue returnValue = JSC::call(exec, jsFunction, callType, callData, thisValue, args);
+        JSValue returnValue = scriptExecutionContext->isDocument()
+            ? JSMainThreadExecState::call(exec, jsFunction, callType, callData, thisValue, args)
+            : JSC::call(exec, jsFunction, callType, callData, thisValue, args);
         globalData.timeoutChecker.stop();
 
         globalObject->setCurrentEvent(savedEvent);
@@ -101,8 +105,7 @@ void JSErrorHandler::handleEvent(ScriptExecutionContext* scriptExecutionContext,
         if (exec->hadException())
             reportCurrentException(exec);
         else {
-            bool retvalbool;
-            if (returnValue.getBoolean(retvalbool) && !retvalbool)
+            if (returnValue.isTrue())
                 event->preventDefault();
         }
     }

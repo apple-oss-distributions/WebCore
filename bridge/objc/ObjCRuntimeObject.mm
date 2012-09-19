@@ -33,18 +33,17 @@
 namespace JSC {
 namespace Bindings {
 
-const ClassInfo ObjCRuntimeObject::s_info = { "ObjCRuntimeObject", &RuntimeObject::s_info, 0, 0 };
+const ClassInfo ObjCRuntimeObject::s_info = { "ObjCRuntimeObject", &RuntimeObject::s_info, 0, 0, CREATE_METHOD_TABLE(ObjCRuntimeObject) };
 
-ObjCRuntimeObject::ObjCRuntimeObject(ExecState* exec, JSGlobalObject* globalObject, PassRefPtr<ObjcInstance> instance)
-    // FIXME: deprecatedGetDOMStructure uses the prototype off of the wrong global object
-    // We need to pass in the right global object for "i".
-    : RuntimeObject(exec, globalObject, WebCore::deprecatedGetDOMStructure<ObjCRuntimeObject>(exec), instance)
+ObjCRuntimeObject::ObjCRuntimeObject(ExecState* exec, JSGlobalObject* globalObject, PassRefPtr<ObjcInstance> instance, Structure* structure)
+    : RuntimeObject(exec, globalObject, structure, instance)
 {
-    ASSERT(inherits(&s_info));
 }
 
-ObjCRuntimeObject::~ObjCRuntimeObject()
+void ObjCRuntimeObject::finishCreation(JSGlobalObject* globalObject)
 {
+    Base::finishCreation(globalObject);
+    ASSERT(inherits(&s_info));
 }
 
 ObjcInstance* ObjCRuntimeObject::getInternalObjCInstance() const

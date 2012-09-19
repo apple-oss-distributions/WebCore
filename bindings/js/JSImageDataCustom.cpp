@@ -25,11 +25,11 @@
 
 #include "config.h"
 #include "JSImageData.h"
+#include "JSUint8ClampedArray.h"
 
 #include "ImageData.h"
 #include "PlatformString.h"
 
-#include <runtime/JSByteArray.h>
 #include <wtf/StdLibExtras.h>
 
 using namespace JSC;
@@ -47,9 +47,7 @@ JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, ImageData* imageD
     
     wrapper = CREATE_DOM_WRAPPER(exec, globalObject, ImageData, imageData);
     Identifier dataName(exec, "data");
-    static const ClassInfo cpaClassInfo = { "CanvasPixelArray", &JSByteArray::Base::s_info, 0, 0 };
-    DEFINE_STATIC_LOCAL(Strong<Structure>, cpaStructure, (exec->globalData(), JSByteArray::createStructure(exec->globalData(), jsNull(), &cpaClassInfo)));
-    wrapper->putDirect(exec->globalData(), dataName, new (exec) JSByteArray(exec, cpaStructure.get(), imageData->data()->data()), DontDelete | ReadOnly);
+    wrapper->putDirect(exec->globalData(), dataName, toJS(exec, globalObject, imageData->data()), DontDelete | ReadOnly);
     exec->heap()->reportExtraMemoryCost(imageData->data()->length());
     
     return wrapper;

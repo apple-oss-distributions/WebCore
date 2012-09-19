@@ -41,6 +41,7 @@ class CachedCSSStyleSheet;
 class CachedResource;
 class CachedResourceLoader;
 class KURL;
+class ScriptExecutionContext;
 class SecurityOrigin;
 struct SecurityOriginHash;
 
@@ -106,9 +107,7 @@ public:
         TypeStatistic images;
         TypeStatistic cssStyleSheets;
         TypeStatistic scripts;
-#if ENABLE(XSLT)
         TypeStatistic xslStyleSheets;
-#endif
         TypeStatistic fonts;
     };
     
@@ -137,20 +136,8 @@ public:
     void evictResources();
     
     void setPruneEnabled(bool enabled) { m_pruneEnabled = enabled; }
-    void prune()
-    {
-        if (m_liveSize + m_deadSize <= m_capacity && m_maxDeadCapacity && m_deadSize <= m_maxDeadCapacity) // Fast path.
-            return;
-            
-        pruneDeadResources(); // Prune dead first, in case it was "borrowing" capacity from live.
-        pruneLiveResources();
-    }
-
-    void pruneToPercentage(float targetPercentLive)
-    {
-        pruneDeadResourcesToPercentage(targetPercentLive); // Prune dead first, in case it was "borrowing" capacity from live.
-        pruneLiveResourcesToPercentage(targetPercentLive);
-    }
+    void prune();
+    void pruneToPercentage(float targetPercentLive);
 
     void setDeadDecodedDataDeletionInterval(double interval) { m_deadDecodedDataDeletionInterval = interval; }
     double deadDecodedDataDeletionInterval() const { return m_deadDecodedDataDeletionInterval; }
@@ -177,6 +164,7 @@ public:
 #if ENABLE(DISK_IMAGE_CACHE)
     void flushCachedImagesToDisk(); // Flush encoded data from resources still referenced by Web pages.
 #endif
+    static void removeUrlFromCache(ScriptExecutionContext*, const String& urlString);
 
     // Function to collect cache statistics for the caches window in the Safari Debug menu.
     Statistics getStatistics();
@@ -186,6 +174,12 @@ public:
     typedef HashSet<RefPtr<SecurityOrigin>, SecurityOriginHash> SecurityOriginSet;
     void removeResourcesWithOrigin(SecurityOrigin*);
     void getOriginsWithCache(SecurityOriginSet& origins);
+
+    unsigned minDeadCapacity() const { return m_minDeadCapacity; }
+    unsigned maxDeadCapacity() const { return m_maxDeadCapacity; }
+    unsigned capacity() const { return m_capacity; }
+    unsigned liveSize() const { return m_liveSize; }
+    unsigned deadSize() const { return m_deadSize; }
 
 private:
     MemoryCache();
@@ -200,12 +194,7 @@ private:
     unsigned liveCapacity() const;
     unsigned deadCapacity() const;
 
-    bool m_shouldPreloadAggressively;
-
 public:
-    void setAggressivePreloading(bool flag) { m_shouldPreloadAggressively = flag; }
-    bool aggressivePreloading() const { return m_shouldPreloadAggressively; }
-
     bool addImageToCache(NativeImagePtr image, const KURL& url);
     void removeImageFromCache(const KURL& url);
     void pruneDeadResources(); // Flush decoded and encoded data from resources not referenced by Web pages.
@@ -219,9 +208,11 @@ private:
     bool makeResourcePurgeable(CachedResource*);
     void evict(CachedResource*);
 
+    static void removeUrlFromCacheImpl(ScriptExecutionContext*, const String& urlString);
+
     bool m_disabled;  // Whether or not the cache is enabled.
     bool m_pruneEnabled;
-    bool m_inPruneDeadResources;
+    bool m_inPruneResources;
 
     unsigned m_capacity;
     unsigned m_minDeadCapacity;

@@ -102,7 +102,7 @@ JSObject* pluginScriptObject(ExecState* exec, JSHTMLElement* jsHTMLElement)
     
 JSValue runtimeObjectPropertyGetter(ExecState* exec, JSValue slotBase, const Identifier& propertyName)
 {
-    JSHTMLElement* element = static_cast<JSHTMLElement*>(asObject(slotBase));
+    JSHTMLElement* element = jsCast<JSHTMLElement*>(asObject(slotBase));
     JSObject* scriptObject = pluginScriptObject(exec, element);
     if (!scriptObject)
         return jsUndefined();
@@ -145,13 +145,13 @@ bool runtimeObjectCustomPut(ExecState* exec, const Identifier& propertyName, JSV
         return 0;
     if (!scriptObject->hasProperty(exec, propertyName))
         return false;
-    scriptObject->put(exec, propertyName, value, slot);
+    scriptObject->methodTable()->put(scriptObject, exec, propertyName, value, slot);
     return true;
 }
 
 static EncodedJSValue JSC_HOST_CALL callPlugin(ExecState* exec)
 {
-    JSHTMLElement* element = static_cast<JSHTMLElement*>(exec->callee());
+    JSHTMLElement* element = jsCast<JSHTMLElement*>(exec->callee());
 
     // Get the plug-in script object.
     JSObject* scriptObject = pluginScriptObject(exec, element);
@@ -177,7 +177,7 @@ CallType runtimeObjectGetCallData(JSHTMLElement* element, CallData& callData)
     if (JSObject* scriptObject = pluginScriptObjectFromPluginViewBase(element)) {
         CallData scriptObjectCallData;
         
-        if (scriptObject->getCallData(scriptObjectCallData) == CallTypeNone)
+        if (scriptObject->methodTable()->getCallData(scriptObject, scriptObjectCallData) == CallTypeNone)
             return CallTypeNone;
 
         callData.native.function = callPlugin;

@@ -32,21 +32,27 @@ class HTMLIFrameElement : public HTMLFrameElementBase {
 public:
     static PassRefPtr<HTMLIFrameElement> create(const QualifiedName&, Document*);
 
+    bool shouldDisplaySeamlessly() const;
+
 private:
     HTMLIFrameElement(const QualifiedName&, Document*);
 
-    virtual bool isKeyboardFocusable(KeyboardEvent*) const { return false; }
-    
-    virtual bool mapToEntry(const QualifiedName&, MappedAttributeEntry&) const;
-    virtual void parseMappedAttribute(Attribute*);
+    virtual bool isKeyboardFocusable(KeyboardEvent*) const OVERRIDE { return false; }
 
-    virtual void insertedIntoDocument();
-    virtual void removedFromDocument();
+    virtual void parseAttribute(Attribute*) OVERRIDE;
+    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
+    virtual void collectStyleForAttribute(Attribute*, StylePropertySet*) OVERRIDE;
+
+    virtual InsertionNotificationRequest insertedInto(Node*) OVERRIDE;
+    virtual void removedFrom(Node*) OVERRIDE;
     
-    virtual bool rendererIsNeeded(RenderStyle*);
+    virtual bool rendererIsNeeded(const NodeRenderingContext&);
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
-    
-    virtual bool isURLAttribute(Attribute*) const;
+       
+#if ENABLE(MICRODATA)
+    virtual String itemValueText() const OVERRIDE;
+    virtual void setItemValueText(const String&, ExceptionCode&) OVERRIDE;
+#endif
 
     AtomicString m_name;
 };

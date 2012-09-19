@@ -29,10 +29,12 @@
 
 #import "PlatformCALayer.h"
 
+#import "AnimationUtilities.h"
 #import "BlockExceptions.h"
 #import "FloatConversion.h"
 #import "GraphicsContext.h"
 #import "GraphicsLayerCA.h"
+#import "LengthFunctions.h"
 #import "WebLayer.h"
 #import "WebTiledLayer.h"
 #import <objc/objc-auto.h>
@@ -46,6 +48,9 @@
 #import <QuartzCore/CATiledLayerPrivate.h>
 
 #define HAVE_MODERN_QUARTZCORE 1
+
+using std::min;
+using std::max;
 
 using namespace WebCore;
 
@@ -94,6 +99,14 @@ static double mediaTimeToCurrentTime(CFTimeInterval t)
 }
 
 @end
+
+#if !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD)
+@interface CATiledLayer(GraphicsLayerCAPrivate)
+- (void)displayInRect:(CGRect)r levelOfDetail:(int)lod options:(NSDictionary *)dict;
+- (BOOL)canDrawConcurrently;
+- (void)setCanDrawConcurrently:(BOOL)flag;
+@end
+#endif
 
 @interface CALayer(Private)
 - (void)setContentsChanged;
@@ -182,7 +195,7 @@ PlatformCALayer::PlatformCALayer(LayerType layerType, PlatformLayer* layer, Plat
                 layerClass = [WebLayer class];
                 break;
             case LayerTypeTransformLayer:
-                layerClass = NSClassFromString(@"CATransformLayer");
+                layerClass = [CATransformLayer class];
                 break;
             case LayerTypeWebTiledLayer:
                 layerClass = [WebTiledLayer class];
@@ -210,6 +223,7 @@ PlatformCALayer::PlatformCALayer(LayerType layerType, PlatformLayer* layer, Plat
         [tiledLayer setContentsGravity:@"bottomLeft"];
     }
     
+    
     END_BLOCK_OBJC_EXCEPTIONS
 }
 
@@ -222,7 +236,7 @@ PlatformCALayer::~PlatformCALayer()
     setOwner(0);
     
     // Remove the owner pointer from the delegate in case there is a pending animationStarted event.
-    [static_cast<WebAnimationDelegate*>(m_delegate.get()) setOwner:nil];        
+    [static_cast<WebAnimationDelegate*>(m_delegate.get()) setOwner:nil];
 }
 
 PlatformCALayer* PlatformCALayer::platformCALayer(void* platformLayer)
@@ -688,6 +702,36 @@ void PlatformCALayer::setOpacity(float value)
     END_BLOCK_OBJC_EXCEPTIONS
 }
 
+#if ENABLE(CSS_FILTERS)
+
+bool PlatformCALayer::filtersCanBeComposited(const FilterOperations& filters)
+{
+    // Return false if there are no filters to avoid needless work
+    if (!filters.size())
+        return false;
+        
+    for (unsigned i = 0; i < filters.size(); ++i) {
+        const FilterOperation* filterOperation = filters.at(i);
+        switch(filterOperation->getOperationType()) {
+        case FilterOperation::REFERENCE:
+#if ENABLE(CSS_SHADERS)
+        case FilterOperation::CUSTOM:
+#endif
+            return false;
+        case FilterOperation::DROP_SHADOW:
+            // FIXME: For now we can only handle drop-shadow is if it's last in the list
+            if (i < (filters.size() - 1))
+                return false;
+            break;
+        default:
+            break;
+        }
+    }
+    
+    return true;
+}
+#endif
+
 String PlatformCALayer::name() const
 {
     return [m_layer.get() name];
@@ -745,7 +789,8 @@ void PlatformCALayer::setContentsScale(float value)
 {
     BEGIN_BLOCK_OBJC_EXCEPTIONS
     [m_layer.get() setContentsScale:value];
-    
+    [m_layer.get() setRasterizationScale:value];
+  
     if (m_layerType == LayerTypeWebTiledLayer) {
         // This will invalidate all the tiles so we won't end up with stale tiles with the wrong scale in the wrong place,
         // see <rdar://problem/9434765> for more information.
@@ -755,6 +800,28 @@ void PlatformCALayer::setContentsScale(float value)
     
     END_BLOCK_OBJC_EXCEPTIONS
 }
+
+TiledBacking* PlatformCALayer::tiledBacking()
+{
+    return 0;
+}
+
+#if !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD)
+void PlatformCALayer::synchronouslyDisplayTilesInRect(const FloatRect& rect)
+{
+    if (m_layerType != LayerTypeWebTiledLayer)
+        return;
+
+    WebTiledLayer *tiledLayer = static_cast<WebTiledLayer*>(m_layer.get());
+
+    BEGIN_BLOCK_OBJC_EXCEPTIONS
+    BOOL oldCanDrawConcurrently = [tiledLayer canDrawConcurrently];
+    [tiledLayer setCanDrawConcurrently:NO];
+    [tiledLayer displayInRect:rect levelOfDetail:0 options:nil];
+    [tiledLayer setCanDrawConcurrently:oldCanDrawConcurrently];
+    END_BLOCK_OBJC_EXCEPTIONS
+}
+#endif
 
 bool PlatformCALayer::isWebLayer()
 {
@@ -805,6 +872,5 @@ void PlatformCALayer::setTileSize(const IntSize& tileSize)
     [static_cast<WebTiledLayer*>(m_layer.get()) setTileSize:tileSize];
     END_BLOCK_OBJC_EXCEPTIONS
 }
-
 
 #endif // USE(ACCELERATED_COMPOSITING)

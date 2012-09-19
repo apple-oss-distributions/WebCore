@@ -57,15 +57,18 @@ public:
     unsigned short m_count;
     float m_gap;
     BorderValue m_rule;
+    Color m_visitedLinkColumnRuleColor;
 
     bool m_autoWidth : 1;
     bool m_autoCount : 1;
     bool m_normalGap : 1;
-    bool m_columnSpan : 1;
+    unsigned m_columnSpan : 1;
     unsigned m_breakBefore : 2; // EPageBreak
     unsigned m_breakAfter : 2; // EPageBreak
     unsigned m_breakInside : 2; // EPageBreak
-    
+    unsigned m_axis : 2; // ColumnAxis
+    unsigned m_progression : 2; // ColumnProgression
+
 private:
     StyleMultiColData();
     StyleMultiColData(const StyleMultiColData&);

@@ -68,12 +68,12 @@ static String convertUTF8ToUTF16WithLatin1Fallback(const NPUTF8* UTF8Chars, int 
 // Variant value must be released with NPReleaseVariantValue()
 void convertValueToNPVariant(ExecState* exec, JSValue value, NPVariant* result)
 {
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(exec);
 
     VOID_TO_NPVARIANT(*result);
 
     if (value.isString()) {
-        UString ustring = value.toString(exec);
+        UString ustring = value.toString(exec)->value(exec);
         CString cstring = ustring.utf8();
         NPString string = { (const NPUTF8*)cstring.data(), static_cast<uint32_t>(cstring.length()) };
         NPN_InitializeVariantWithStringCopy(result, &string);
@@ -107,7 +107,7 @@ void convertValueToNPVariant(ExecState* exec, JSValue value, NPVariant* result)
 
 JSValue convertNPVariantToValue(ExecState* exec, const NPVariant* variant, RootObject* rootObject)
 {
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(exec);
     
     NPVariantType type = variant->type;
 

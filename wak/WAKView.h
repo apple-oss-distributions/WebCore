@@ -30,6 +30,9 @@ extern NSString *WAKViewDidScrollNotification;
     
     NSMutableSet *subviewReferences;    // This array is only used to keep WAKViews alive.
                                         // The actual subviews are maintained by the WKView.
+
+    BOOL _isHidden;
+    BOOL _drawsOwnDescendants;
 }
 
 + (WAKView *)focusView;
@@ -112,6 +115,8 @@ extern NSString *WAKViewDidScrollNotification;
 - (void)_setDrawsOwnDescendants:(BOOL)draw;
 
 - (void)_appendDescriptionToString:(NSMutableString *)info atLevel:(int)level;
+
++ (void)_setInterpolationQuality:(int)quality;
 
 @end
 

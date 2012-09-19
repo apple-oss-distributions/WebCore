@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 Apple Inc.  All rights reserved.
+ * Copyright (C) 2011 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,20 +30,43 @@
 
 namespace WebCore {
 
-void TransformState::move(int x, int y, TransformAccumulation accumulate)
+TransformState& TransformState::operator=(const TransformState& other)
+{
+    m_mapPoint = other.m_mapPoint;
+    m_mapQuad = other.m_mapQuad;
+    if (m_mapPoint)
+        m_lastPlanarPoint = other.m_lastPlanarPoint;
+    if (m_mapQuad)
+        m_lastPlanarQuad = other.m_lastPlanarQuad;
+    m_accumulatingTransform = other.m_accumulatingTransform;
+    m_direction = other.m_direction;
+    
+    m_accumulatedTransform.clear();
+
+    if (other.m_accumulatedTransform)
+        m_accumulatedTransform = adoptPtr(new TransformationMatrix(*other.m_accumulatedTransform));
+        
+    return *this;
+}
+
+void TransformState::move(LayoutUnit x, LayoutUnit y, TransformAccumulation accumulate)
 {
     if (m_accumulatingTransform && m_accumulatedTransform) {
         // If we're accumulating into an existing transform, apply the translation.
         if (m_direction == ApplyTransformDirection)
             m_accumulatedTransform->translateRight(x, y);
         else
-            m_accumulatedTransform->translate(-x, -y);  // We're unapplying, so negate
+            m_accumulatedTransform->translate(x, y);
         
         // Then flatten if necessary.
         if (accumulate == FlattenTransform)
             flatten();
     } else {
         // Just move the point and, optionally, the quad.
+        if (m_direction == UnapplyInverseTransformDirection) {
+            x = -x;
+            y = -y;
+        }
         if (m_mapPoint)
             m_lastPlanarPoint.move(x, y);
         if (m_mapQuad)

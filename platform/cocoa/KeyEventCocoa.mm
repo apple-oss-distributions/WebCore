@@ -31,7 +31,7 @@
 #import "WindowsKeyboardCodes.h"
 #import <wtf/ASCIICType.h>
 
-#import "KeyEventCodesIPhone.h"
+#import "KeyEventCodesIOS.h"
 
 using namespace WTF;
 

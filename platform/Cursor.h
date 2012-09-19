@@ -43,8 +43,8 @@ typedef HICON HCURSOR;
 #include <QCursor>
 #elif PLATFORM(CHROMIUM)
 #include "PlatformCursor.h"
-#elif PLATFORM(HAIKU)
-#include <app/Cursor.h>
+#elif PLATFORM(BLACKBERRY)
+#include <BlackBerryPlatformCursor.h>
 #endif
 
 
@@ -65,6 +65,7 @@ namespace WebCore {
 
     class Image;
 
+    typedef void* PlatformCursor;
 
     class Cursor {
     public:
@@ -124,57 +125,50 @@ namespace WebCore {
     };
 
     IntPoint determineHotSpot(Image*, const IntPoint& specifiedHotSpot);
-    const char* nameForCursorType(Cursor::Type);
     
-    static Cursor* _cursor = 0;
-    static const Cursor& cursor() {
-        if (_cursor == 0)
-            _cursor = new Cursor();
-        return *_cursor;
-    }
-    inline const Cursor& pointerCursor() { return cursor(); }
-    inline const Cursor& crossCursor() { return cursor(); }
-    inline const Cursor& handCursor() { return cursor(); }
-    inline const Cursor& moveCursor() { return cursor(); }
-    inline const Cursor& iBeamCursor() { return cursor(); }
-    inline const Cursor& waitCursor() { return cursor(); }
-    inline const Cursor& helpCursor() { return cursor(); }
-    inline const Cursor& eastResizeCursor() { return cursor(); }
-    inline const Cursor& northResizeCursor() { return cursor(); }
-    inline const Cursor& northEastResizeCursor() { return cursor(); }
-    inline const Cursor& northWestResizeCursor() { return cursor(); }
-    inline const Cursor& southResizeCursor() { return cursor(); }
-    inline const Cursor& southEastResizeCursor() { return cursor(); }
-    inline const Cursor& southWestResizeCursor() { return cursor(); }
-    inline const Cursor& westResizeCursor() { return cursor(); }
-    inline const Cursor& northSouthResizeCursor() { return cursor(); }
-    inline const Cursor& eastWestResizeCursor() { return cursor(); }
-    inline const Cursor& northEastSouthWestResizeCursor() { return cursor(); }
-    inline const Cursor& northWestSouthEastResizeCursor() { return cursor(); }
-    inline const Cursor& columnResizeCursor() { return cursor(); }
-    inline const Cursor& rowResizeCursor() { return cursor(); }
-    inline const Cursor& middlePanningCursor() { return cursor(); }
-    inline const Cursor& eastPanningCursor() { return cursor(); }
-    inline const Cursor& northPanningCursor() { return cursor(); }
-    inline const Cursor& northEastPanningCursor() { return cursor(); }
-    inline const Cursor& northWestPanningCursor() { return cursor(); }
-    inline const Cursor& southPanningCursor() { return cursor(); }
-    inline const Cursor& southEastPanningCursor() { return cursor(); }
-    inline const Cursor& southWestPanningCursor() { return cursor(); }
-    inline const Cursor& westPanningCursor() { return cursor(); }
-    inline const Cursor& verticalTextCursor() { return cursor(); }
-    inline const Cursor& cellCursor() { return cursor(); }
-    inline const Cursor& contextMenuCursor() { return cursor(); }
-    inline const Cursor& noDropCursor() { return cursor(); }
-    inline const Cursor& notAllowedCursor() { return cursor(); }
-    inline const Cursor& progressCursor() { return cursor(); }
-    inline const Cursor& aliasCursor() { return cursor(); }
-    inline const Cursor& zoomInCursor() { return cursor(); }
-    inline const Cursor& zoomOutCursor() { return cursor(); }
-    inline const Cursor& copyCursor() { return cursor(); }
-    inline const Cursor& noneCursor() { return cursor(); }
-    inline const Cursor& grabCursor() { return cursor(); }
-    inline const Cursor& grabbingCursor() { return cursor(); }
+    const Cursor& pointerCursor();
+    const Cursor& crossCursor();
+    const Cursor& handCursor();
+    const Cursor& moveCursor();
+    const Cursor& iBeamCursor();
+    const Cursor& waitCursor();
+    const Cursor& helpCursor();
+    const Cursor& eastResizeCursor();
+    const Cursor& northResizeCursor();
+    const Cursor& northEastResizeCursor();
+    const Cursor& northWestResizeCursor();
+    const Cursor& southResizeCursor();
+    const Cursor& southEastResizeCursor();
+    const Cursor& southWestResizeCursor();
+    const Cursor& westResizeCursor();
+    const Cursor& northSouthResizeCursor();
+    const Cursor& eastWestResizeCursor();
+    const Cursor& northEastSouthWestResizeCursor();
+    const Cursor& northWestSouthEastResizeCursor();
+    const Cursor& columnResizeCursor();
+    const Cursor& rowResizeCursor();
+    const Cursor& middlePanningCursor();
+    const Cursor& eastPanningCursor();
+    const Cursor& northPanningCursor();
+    const Cursor& northEastPanningCursor();
+    const Cursor& northWestPanningCursor();
+    const Cursor& southPanningCursor();
+    const Cursor& southEastPanningCursor();
+    const Cursor& southWestPanningCursor();
+    const Cursor& westPanningCursor();
+    const Cursor& verticalTextCursor();
+    const Cursor& cellCursor();
+    const Cursor& contextMenuCursor();
+    const Cursor& noDropCursor();
+    const Cursor& notAllowedCursor();
+    const Cursor& progressCursor();
+    const Cursor& aliasCursor();
+    const Cursor& zoomInCursor();
+    const Cursor& zoomOutCursor();
+    const Cursor& copyCursor();
+    const Cursor& noneCursor();
+    const Cursor& grabCursor();
+    const Cursor& grabbingCursor();
 
 } // namespace WebCore
 

@@ -27,18 +27,20 @@
 #include "config.h"
 #include "CachedCSSStyleSheet.h"
 
-#include "MemoryCache.h"
-#include "CachedResourceClient.h"
+#include "CSSStyleSheet.h"
 #include "CachedResourceClientWalker.h"
+#include "CachedStyleSheetClient.h"
 #include "HTTPParsers.h"
-#include "TextResourceDecoder.h"
+#include "MemoryCache.h"
 #include "SharedBuffer.h"
+#include "TextResourceDecoder.h"
+#include <wtf/CurrentTime.h>
 #include <wtf/Vector.h>
 
 namespace WebCore {
 
-CachedCSSStyleSheet::CachedCSSStyleSheet(const String& url, const String& charset)
-    : CachedResource(url, CSSStyleSheet)
+CachedCSSStyleSheet::CachedCSSStyleSheet(const ResourceRequest& resourceRequest, const String& charset)
+    : CachedResource(resourceRequest, CSSStyleSheet)
     , m_decoder(TextResourceDecoder::create("text/css", charset))
 {
     // Prefer text/css but accept any type (dell.com serves a stylesheet
@@ -48,12 +50,15 @@ CachedCSSStyleSheet::CachedCSSStyleSheet(const String& url, const String& charse
 
 CachedCSSStyleSheet::~CachedCSSStyleSheet()
 {
+    if (m_parsedStyleSheetCache)
+        m_parsedStyleSheetCache->removedFromMemoryCache();
 }
 
-void CachedCSSStyleSheet::didAddClient(CachedResourceClient *c)
+void CachedCSSStyleSheet::didAddClient(CachedResourceClient* c)
 {
+    ASSERT(c->resourceClientType() == CachedStyleSheetClient::expectedType());
     if (!isLoading())
-        c->setCSSStyleSheet(m_url, m_response.url(), m_decoder->encoding().name(), this);
+        static_cast<CachedStyleSheetClient*>(c)->setCSSStyleSheet(m_resourceRequest.url(), m_response.url(), m_decoder->encoding().name(), this);
 }
 
 void CachedCSSStyleSheet::allClientsRemoved()
@@ -111,9 +116,9 @@ void CachedCSSStyleSheet::checkNotify()
     if (isLoading())
         return;
 
-    CachedResourceClientWalker w(m_clients);
-    while (CachedResourceClient *c = w.next())
-        c->setCSSStyleSheet(m_url, m_response.url(), m_decoder->encoding().name(), this);
+    CachedResourceClientWalker<CachedStyleSheetClient> w(m_clients);
+    while (CachedStyleSheetClient* c = w.next())
+        c->setCSSStyleSheet(m_resourceRequest.url(), m_response.url(), m_decoder->encoding().name(), this);
 }
 
 void CachedCSSStyleSheet::error(CachedResource::Status status)
@@ -147,5 +152,50 @@ bool CachedCSSStyleSheet::canUseSheet(bool enforceMIMEType, bool* hasValidMIMETy
         return true;
     return typeOK;
 }
- 
+
+void CachedCSSStyleSheet::destroyDecodedData()
+{
+    if (!m_parsedStyleSheetCache)
+        return;
+
+    m_parsedStyleSheetCache->removedFromMemoryCache();
+    m_parsedStyleSheetCache.clear();
+
+    setDecodedSize(0);
+}
+
+PassRefPtr<StyleSheetInternal> CachedCSSStyleSheet::restoreParsedStyleSheet(const CSSParserContext& context)
+{
+    if (!m_parsedStyleSheetCache)
+        return 0;
+    if (m_parsedStyleSheetCache->hasFailedOrCanceledSubresources()) {
+        m_parsedStyleSheetCache->removedFromMemoryCache();
+        m_parsedStyleSheetCache.clear();
+        return 0;
+    }
+
+    ASSERT(m_parsedStyleSheetCache->isCacheable());
+    ASSERT(m_parsedStyleSheetCache->isInMemoryCache());
+
+    // Contexts must be identical so we know we would get the same exact result if we parsed again.
+    if (m_parsedStyleSheetCache->parserContext() != context)
+        return 0;
+
+    didAccessDecodedData(currentTime());
+
+    return m_parsedStyleSheetCache;
+}
+
+void CachedCSSStyleSheet::saveParsedStyleSheet(PassRefPtr<StyleSheetInternal> sheet)
+{
+    ASSERT(sheet && sheet->isCacheable());
+
+    if (m_parsedStyleSheetCache)
+        m_parsedStyleSheetCache->removedFromMemoryCache();
+    m_parsedStyleSheetCache = sheet;
+    m_parsedStyleSheetCache->addedToMemoryCache();
+
+    setDecodedSize(m_parsedStyleSheetCache->estimatedSizeInBytes());
+}
+
 }

@@ -2,6 +2,7 @@
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  * Copyright (C) 2003, 2008, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2011 Google Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,43 +25,26 @@
 #define HTMLLinkElement_h
 
 #include "CSSStyleSheet.h"
-#include "CachedResourceClient.h"
+#include "CachedStyleSheetClient.h"
 #include "CachedResourceHandle.h"
+#include "DOMSettableTokenList.h"
 #include "HTMLElement.h"
 #include "IconURL.h"
+#include "LinkLoader.h"
+#include "LinkLoaderClient.h"
+#include "LinkRelAttribute.h"
 #include "Timer.h"
 
 namespace WebCore {
 
-class CachedCSSStyleSheet;
-class CachedResource;
+class HTMLLinkElement;
 class KURL;
 
-class HTMLLinkElement : public HTMLElement, public CachedResourceClient {
+template<typename T> class EventSender;
+typedef EventSender<HTMLLinkElement> LinkEventSender;
+
+class HTMLLinkElement : public HTMLElement, public CachedStyleSheetClient, public LinkLoaderClient {
 public:
-    struct RelAttribute {
-        bool m_isStyleSheet;
-        IconType m_iconType;
-        bool m_isAlternate;
-        bool m_isDNSPrefetch;
-#if ENABLE(LINK_PREFETCH)
-        bool m_isLinkPrefetch;
-        bool m_isLinkSubresource;
-#endif
-
-        RelAttribute()
-            : m_isStyleSheet(false)
-            , m_iconType(InvalidIcon)
-            , m_isAlternate(false)
-            , m_isDNSPrefetch(false)
-#if ENABLE(LINK_PREFETCH)
-            , m_isLinkPrefetch(false)
-            , m_isLinkSubresource(false)
-#endif
-            { 
-            }
-    };
-
     static PassRefPtr<HTMLLinkElement> create(const QualifiedName&, Document*, bool createdByParser);
     virtual ~HTMLLinkElement();
 
@@ -71,43 +55,43 @@ public:
 
     String type() const;
 
-    StyleSheet* sheet() const;
+    CSSStyleSheet* sheet() const { return m_sheet.get(); }
 
-    bool isLoading() const;
+    bool styleSheetIsLoading() const;
 
     bool isDisabled() const { return m_disabledState == Disabled; }
     bool isEnabledViaScript() const { return m_disabledState == EnabledViaScript; }
-    bool disabled() const;
-    void setDisabled(bool);
+    void setSizes(const String&);
+    DOMSettableTokenList* sizes() const;
+
+    void dispatchPendingEvent(LinkEventSender*);
+    static void dispatchPendingLoadEvents();
 
 private:
-    virtual void parseMappedAttribute(Attribute*);
+    virtual void parseAttribute(Attribute*) OVERRIDE;
 
-#if ENABLE(LINK_PREFETCH)
-    void onloadTimerFired(Timer<HTMLLinkElement>*);
-#endif
-    bool checkBeforeLoadEvent();
+    virtual bool shouldLoadLink();
     void process();
     static void processCallback(Node*);
+    void clearSheet();
 
-    virtual void insertedIntoDocument();
-    virtual void removedFromDocument();
+    virtual InsertionNotificationRequest insertedInto(Node*) OVERRIDE;
+    virtual void removedFrom(Node*) OVERRIDE;
 
     // from CachedResourceClient
     virtual void setCSSStyleSheet(const String& href, const KURL& baseURL, const String& charset, const CachedCSSStyleSheet* sheet);
-#if ENABLE(LINK_PREFETCH)
-    virtual void notifyFinished(CachedResource*);
-#endif
     virtual bool sheetLoaded();
+    virtual void notifyLoadedSheetAndAllCriticalSubresources(bool errorOccurred);
+    virtual void startLoadingDynamicSheet();
+
+    virtual void linkLoaded();
+    virtual void linkLoadingErrored();
 
     bool isAlternate() const { return m_disabledState == Unset && m_relAttribute.m_isAlternate; }
     
-    void setDisabledState(bool _disabled);
+    void setDisabledState(bool);
 
     virtual bool isURLAttribute(Attribute*) const;
-
-public:
-    static void tokenizeRelAttribute(const AtomicString& value, RelAttribute&);
 
 private:
     virtual void addSubresourceAttributeURLs(ListHashSet<KURL>&) const;
@@ -118,30 +102,35 @@ private:
     void addPendingSheet(PendingSheetType);
     void removePendingSheet();
 
+#if ENABLE(MICRODATA)
+    virtual String itemValueText() const OVERRIDE;
+    virtual void setItemValueText(const String&, ExceptionCode&) OVERRIDE;
+#endif
+
 private:
     HTMLLinkElement(const QualifiedName&, Document*, bool createdByParser);
 
+    LinkLoader m_linkLoader;
+    CachedResourceHandle<CachedCSSStyleSheet> m_cachedSheet;
+    RefPtr<CSSStyleSheet> m_sheet;
     enum DisabledState {
         Unset,
         EnabledViaScript,
         Disabled
     };
 
-    CachedResourceHandle<CachedCSSStyleSheet> m_cachedSheet;
-    RefPtr<CSSStyleSheet> m_sheet;
-#if ENABLE(LINK_PREFETCH)
-    CachedResourceHandle<CachedResource> m_cachedLinkResource;
-    Timer<HTMLLinkElement> m_onloadTimer;
-#endif
     KURL m_url;
     String m_type;
     String m_media;
+    RefPtr<DOMSettableTokenList> m_sizes;
     DisabledState m_disabledState;
-    RelAttribute m_relAttribute;
+    LinkRelAttribute m_relAttribute;
     bool m_loading;
     bool m_createdByParser;
     bool m_isInShadowTree;
-    
+    bool m_firedLoad;
+    bool m_loadedSheet;
+
     PendingSheetType m_pendingSheetType;
 };
 

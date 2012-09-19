@@ -34,7 +34,7 @@ namespace WebCore {
 enum TextSpacingCTFeatureSelector { TextSpacingProportional, TextSpacingFullWidth, TextSpacingHalfWidth, TextSpacingThirdWidth, TextSpacingQuarterWidth };
 
 
-FontPlatformData::FontPlatformData(GSFontRef gsFont, float size, bool syntheticBold, bool syntheticOblique, FontOrientation orientation,
+FontPlatformData::FontPlatformData(GSFontRef gsFont, float size, bool isPrinterFont, bool syntheticBold, bool syntheticOblique, FontOrientation orientation,
                                    TextOrientation textOrientation, FontWidthVariant widthVariant)
     : m_syntheticBold(syntheticBold)
     , m_syntheticOblique(syntheticOblique)
@@ -46,6 +46,8 @@ FontPlatformData::FontPlatformData(GSFontRef gsFont, float size, bool syntheticB
     , m_font(gsFont)
     , m_cgFont(GSFontGetCGFont(gsFont))
     , m_isColorBitmapFont(GSFontHasColorGlyphs(gsFont))
+    , m_isCompositeFontReference(false)
+    , m_isPrinterFont(isPrinterFont)
 {
     ASSERT_ARG(gsFont, gsFont);
 
@@ -174,29 +176,46 @@ inline int mapFontWidthVariantToCTFeatureSelector(FontWidthVariant variant)
     return TextSpacingProportional;
 }
 
+
+static CTFontDescriptorRef cascadeToLastResortFontDescriptor()
+{
+    static CTFontDescriptorRef descriptor;
+    if (descriptor)
+        return descriptor;
+
+    const void* keys[] = { kCTFontCascadeListAttribute };
+    const void* descriptors[] = { CTFontDescriptorCreateWithNameAndSize(CFSTR("LastResort"), 0) };
+    const void* values[] = { CFArrayCreate(kCFAllocatorDefault, descriptors, WTF_ARRAY_LENGTH(descriptors), &kCFTypeArrayCallBacks) };
+    RetainPtr<CFDictionaryRef> attributes(AdoptCF, CFDictionaryCreate(kCFAllocatorDefault, keys, values, WTF_ARRAY_LENGTH(keys), &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+
+    descriptor = CTFontDescriptorCreateWithAttributes(attributes.get());
+
+    return descriptor;
+}
+
+
 CTFontRef FontPlatformData::ctFont() const
 {
-    if (m_widthVariant == RegularWidth) {
-        if (!m_CTFont) {
-            // Apple Color Emoji size is adjusted (and then re-adjusted by Core Text) and capped.
-            CGFloat size = !m_isEmoji ? m_size : m_size <= 15 ? 4 * (m_size + 2) / static_cast<CGFloat>(5) : 16;
-            m_CTFont.adoptCF(CTFontCreateWithGraphicsFont(m_cgFont.get(), size, 0, 0));
-        }
+    if (m_CTFont)
         return m_CTFont.get();
-    }
-    
-    if (!m_CTFont) {
+
+    // Apple Color Emoji size is adjusted (and then re-adjusted by Core Text) and capped.
+    CGFloat size = !m_isEmoji ? m_size : m_size <= 15 ? 4 * (m_size + 2) / static_cast<CGFloat>(5) : 16;
+    m_CTFont.adoptCF(CTFontCreateWithGraphicsFont(m_cgFont.get(), size, 0, cascadeToLastResortFontDescriptor()));
+
+    if (m_widthVariant != RegularWidth) {
         int featureTypeValue = kTextSpacingType;
         int featureSelectorValue = mapFontWidthVariantToCTFeatureSelector(m_widthVariant);
-        RetainPtr<CTFontRef> sourceFont(AdoptCF, CTFontCreateWithGraphicsFont(m_cgFont.get(), m_size, 0, 0));
-        RetainPtr<CTFontDescriptorRef> sourceDescriptor(AdoptCF, CTFontCopyFontDescriptor(sourceFont.get()));
+        RetainPtr<CTFontDescriptorRef> sourceDescriptor(AdoptCF, CTFontCopyFontDescriptor(m_CTFont.get()));
         RetainPtr<CFNumberRef> featureType(AdoptCF, CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &featureTypeValue));
         RetainPtr<CFNumberRef> featureSelector(AdoptCF, CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &featureSelectorValue));
         RetainPtr<CTFontDescriptorRef> newDescriptor(AdoptCF, CTFontDescriptorCreateCopyWithFeature(sourceDescriptor.get(), featureType.get(), featureSelector.get()));
         RetainPtr<CTFontRef> newFont(AdoptCF, CTFontCreateWithFontDescriptor(newDescriptor.get(), m_size, 0));
 
-        m_CTFont = newFont.get() ? newFont : sourceFont;
+        if (newFont)
+            m_CTFont = newFont;
     }
+
     return m_CTFont.get();
 }
 

@@ -2,7 +2,7 @@
     Copyright (C) 1998 Lars Knoll (knoll@mpi-hd.mpg.de)
     Copyright (C) 2001 Dirk Mueller <mueller@kde.org>
     Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
-    Copyright (C) 2004, 2005, 2006, 2007 Apple Inc. All rights reserved.
+    Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011 Apple Inc. All rights reserved.
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Library General Public
@@ -27,8 +27,11 @@
 #include "FrameLoaderTypes.h"
 #include "PlatformString.h"
 #include "PurgePriority.h"
+#include "ResourceLoaderOptions.h"
 #include "ResourceLoadPriority.h"
+#include "ResourceRequest.h"
 #include "ResourceResponse.h"
+#include "Timer.h"
 #include <wtf/HashCountedSet.h>
 #include <wtf/HashSet.h>
 #include <wtf/OwnPtr.h>
@@ -46,10 +49,11 @@ class CachedMetadata;
 class CachedResourceClient;
 class CachedResourceHandleBase;
 class CachedResourceLoader;
-class CachedResourceRequest;
 class Frame;
 class InspectorResource;
 class PurgeableBuffer;
+class SecurityOrigin;
+class SubresourceLoader;
 
 // A resource that is held in the cache. Classes who want to use this object should derive
 // from CachedResourceClient, to get the function calls in case the requested data has arrived.
@@ -64,12 +68,24 @@ public:
         ImageResource,
         CSSStyleSheet,
         Script,
-        FontResource
+        FontResource,
+        RawResource
+#if ENABLE(SVG)
+        , SVGDocumentResource
+#endif
 #if ENABLE(XSLT)
         , XSLStyleSheet
 #endif
 #if ENABLE(LINK_PREFETCH)
-        , LinkResource
+        , LinkPrefetch
+        , LinkPrerender
+        , LinkSubresource
+#endif
+#if ENABLE(VIDEO_TRACK)
+        , TextTrackResource
+#endif
+#if ENABLE(CSS_SHADERS)
+        , ShaderResource
 #endif
     };
 
@@ -82,11 +98,10 @@ public:
         DecodeError
     };
 
-    CachedResource(const String& url, Type);
+    CachedResource(const ResourceRequest&, Type);
     virtual ~CachedResource();
-    
-    virtual void load(CachedResourceLoader* cachedResourceLoader)  { load(cachedResourceLoader, false, DoSecurityCheck, true); }
-    void load(CachedResourceLoader*, bool incremental, SecurityCheckPolicy, bool sendResourceLoadCallbacks);
+
+    virtual void load(CachedResourceLoader*, const ResourceLoaderOptions&);
 
     virtual void setEncoding(const String&) { }
     virtual String encoding() const { return String(); }
@@ -95,7 +110,8 @@ public:
 
     virtual bool shouldIgnoreHTTPStatusCodeErrors() const { return false; }
 
-    const String &url() const { return m_url; }
+    ResourceRequest& resourceRequest() { return m_resourceRequest; }
+    const KURL& url() const { return m_resourceRequest.url();}
     Type type() const { return static_cast<Type>(m_type); }
     
     ResourceLoadPriority loadPriority() const { return m_loadPriority; }
@@ -103,7 +119,7 @@ public:
 
     void addClient(CachedResourceClient*);
     void removeClient(CachedResourceClient*);
-    bool hasClients() const { return !m_clients.isEmpty(); }
+    bool hasClients() const { return !m_clients.isEmpty() || !m_clientsAwaitingCallback.isEmpty(); }
     void deleteIfPossible();
 
     enum PreloadResult {
@@ -113,7 +129,6 @@ public:
         PreloadReferencedWhileComplete
     };
     PreloadResult preloadResult() const { return static_cast<PreloadResult>(m_preloadResult); }
-    void setRequestedFromNetworkingLayer() { m_requestedFromNetworkingLayer = true; }
 
     virtual void didAddClient(CachedResourceClient*);
     virtual void allClientsRemoved() { }
@@ -134,13 +149,15 @@ public:
     void setLoading(bool b) { m_loading = b; }
 
     virtual bool isImage() const { return false; }
-    bool isLinkResource() const
+    bool ignoreForRequestCount() const
     {
+        return false
 #if ENABLE(LINK_PREFETCH)
-        return type() == LinkResource;
-#else
-        return false;
+            || type() == LinkPrefetch
+            || type() == LinkPrerender
+            || type() == LinkSubresource
 #endif
+            || type() == RawResource;
     }
 
     unsigned accessCount() const { return m_accessCount; }
@@ -149,6 +166,8 @@ public:
     // Computes the status of an object after loading.  
     // Updates the expire date on the cache entry file
     void finish();
+
+    bool passesAccessControlCheck(SecurityOrigin*);
 
     // Called by the cache if the object has been removed from the cache
     // while still being referenced. This means the object should delete itself
@@ -160,11 +179,12 @@ public:
     void setInLiveDecodedResourcesList(bool b) { m_inLiveDecodedResourcesList = b; }
     bool inLiveDecodedResourcesList() { return m_inLiveDecodedResourcesList; }
     
-    void setRequest(CachedResourceRequest*);
+    void stopLoading();
 
     SharedBuffer* data() const { ASSERT(!m_purgeableData); return m_data.get(); }
 
-    void setResponse(const ResourceResponse&);
+    virtual void willSendRequest(ResourceRequest&, const ResourceResponse&) { m_requestedFromNetworkingLayer = true; }
+    virtual void setResponse(const ResourceResponse&);
     const ResourceResponse& response() const { return m_response; }
 
     // Sets the serialized metadata retrieved from the platform's cache.
@@ -178,7 +198,7 @@ public:
     // Returns cached metadata of the given type associated with this resource.
     CachedMetadata* cachedMetadata(unsigned dataTypeID) const;
 
-    bool canDelete() const { return !hasClients() && !m_request && !m_preloadCount && !m_handleCount && !m_resourceToRevalidate && !m_proxyResource; }
+    bool canDelete() const { return !hasClients() && !m_loader && !m_preloadCount && !m_handleCount && !m_resourceToRevalidate && !m_proxyResource; }
     bool hasOneHandle() const { return m_handleCount == 1; }
 
     bool isExpired() const;
@@ -190,8 +210,9 @@ public:
 
     bool wasCanceled() const { return m_status == Canceled; }
     bool errorOccurred() const { return (m_status == LoadError || m_status == DecodeError); }
+    bool loadFailedOrCanceled() { return m_status == Canceled || m_status == LoadError; }
 
-    bool sendResourceLoadCallbacks() const { return m_sendResourceLoadCallbacks; }
+    bool sendResourceLoadCallbacks() const { return m_options.sendLoadCallbacks == SendCallbacks; }
     
     virtual void destroyDecodedData() { }
 
@@ -205,6 +226,7 @@ public:
     void unregisterHandle(CachedResourceHandleBase* h);
     
     bool canUseCacheValidator() const;
+    void clearLoaderAfterSynchronousCancel();
     virtual bool mustRevalidateDueToCacheHeaders(CachePolicy) const;
     bool isCacheValidator() const { return m_resourceToRevalidate; }
     CachedResource* resourceToRevalidate() const { return m_resourceToRevalidate; }
@@ -222,6 +244,14 @@ public:
     void switchClientsToRevalidatedResource();
     void clearResourceToRevalidate();
     void updateResponseAfterRevalidation(const ResourceResponse& validatingResponse);
+    
+    virtual void didSendData(unsigned long long /* bytesSent */, unsigned long long /* totalBytesToBeSent */) { }
+#if PLATFORM(CHROMIUM)
+    virtual void didDownloadData(int) { }
+#endif
+
+    void setLoadFinishTime(double finishTime) { m_loadFinishTime = finishTime; }
+    double loadFinishTime() const { return m_loadFinishTime; }
 
 #if ENABLE(DISK_IMAGE_CACHE)
     bool isUsingDiskImageCache() const { return m_data && m_data->isAllowedToBeMemoryMapped(); }
@@ -240,9 +270,26 @@ protected:
     
     HashCountedSet<CachedResourceClient*> m_clients;
 
-    String m_url;
+    class CachedResourceCallback {
+    public:
+        static PassOwnPtr<CachedResourceCallback> schedule(CachedResource* resource, CachedResourceClient* client) { return adoptPtr(new CachedResourceCallback(resource, client)); }
+        void cancel();
+    private:
+        CachedResourceCallback(CachedResource*, CachedResourceClient*);
+        void timerFired(Timer<CachedResourceCallback>*);
+
+        CachedResource* m_resource;
+        CachedResourceClient* m_client;
+        Timer<CachedResourceCallback> m_callbackTimer;
+    };
+    HashMap<CachedResourceClient*, OwnPtr<CachedResourceCallback> > m_clientsAwaitingCallback;
+
+    bool hasClient(CachedResourceClient* client) { return m_clients.contains(client) || m_clientsAwaitingCallback.contains(client); }
+
+    ResourceRequest m_resourceRequest;
     String m_accept;
-    CachedResourceRequest* m_request;
+    RefPtr<SubresourceLoader> m_loader;
+    ResourceLoaderOptions m_options;
     ResourceLoadPriority m_loadPriority;
 
     ResourceResponse m_response;
@@ -252,7 +299,7 @@ protected:
     OwnPtr<PurgeableBuffer> m_purgeableData;
 
 private:
-    void addClientToSet(CachedResourceClient*);
+    bool addClientToSet(CachedResourceClient*);
 
     virtual PurgePriority purgePriority() const { return PurgeDefault; }
 
@@ -262,6 +309,7 @@ private:
     RefPtr<CachedMetadata> m_cachedMetadata;
 
     double m_lastDecodedAccessTime; // Used as a "thrash guard" in the cache
+    double m_loadFinishTime;
 
     unsigned m_encodedSize;
     unsigned m_decodedSize;
@@ -273,12 +321,13 @@ private:
 
     bool m_inLiveDecodedResourcesList : 1;
     bool m_requestedFromNetworkingLayer : 1;
-    bool m_sendResourceLoadCallbacks : 1;
 
     bool m_inCache : 1;
     bool m_loading : 1;
 
-    unsigned m_type : 3; // Type
+    bool m_switchingClientsToRevalidatedResource : 1;
+
+    unsigned m_type : 4; // Type
     unsigned m_status : 3; // Status
 
 #ifndef NDEBUG

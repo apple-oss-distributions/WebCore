@@ -9,7 +9,7 @@
 module events {
     interface [
         AppleCopyright,
-        OmitConstructor
+        OmitConstructor,
     ] Touch {
         readonly attribute EventTarget target;
 

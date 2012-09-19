@@ -26,17 +26,16 @@
 #include "config.h"
 #include "ImageSource.h"
 
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-#include "BitmapImage.h"
-#endif
-
 #if USE(CG)
 #include "ImageSourceCG.h"
 
+#include "ImageOrientation.h"
 #include "IntPoint.h"
 #include "IntSize.h"
 #include "MIMETypeRegistry.h"
 #include "SharedBuffer.h"
+#include "RuntimeApplicationChecksIOS.h"
+#include "SystemMemory.h"
 #include <CoreGraphics/CoreGraphics.h>
 #include <CoreGraphics/CGImagePrivate.h>
 #include <ImageIO/ImageIO.h>
@@ -48,11 +47,14 @@ using namespace std;
 namespace WebCore {
 
 const CFStringRef kCGImageSourceShouldPreferRGB32 = CFSTR("kCGImageSourceShouldPreferRGB32");
+const CFStringRef kCGImageSourceSkipMetaData = CFSTR("kCGImageSourceSkipMetaData");
 
 // kCGImagePropertyGIFUnclampedDelayTime is available in the ImageIO framework headers on some versions
 // of SnowLeopard. It's not possible to detect whether the constant is available so we define our own here
 // that won't conflict with ImageIO's version when it is available.
 const CFStringRef WebCoreCGImagePropertyGIFUnclampedDelayTime = CFSTR("UnclampedDelayTime");
+
+bool ImageSource::s_acceleratedImageDecoding;
 
 #if !PLATFORM(MAC)
 size_t sharedBufferGetBytesAtPosition(void* info, void* buffer, off_t position, size_t count)
@@ -72,15 +74,6 @@ void sharedBufferRelease(void* info)
 {
     SharedBuffer* sharedBuffer = static_cast<SharedBuffer*>(info);
     sharedBuffer->deref();
-}
-#endif
-
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-// If the image is rotated in either direction, we need to swap w and h
-// All numbers less than 4 we don't need to swap.
-bool orientationRequiresWidthAndHeightSwapped(int orientation)
-{
-    return orientation > 4;
 }
 #endif
 
@@ -125,7 +118,7 @@ void ImageSource::clear(bool destroyAllFrames, size_t, SharedBuffer* data, bool 
         setData(data, allDataReceived);
 }
 
-CFDictionaryRef ImageSource::imageSourceOptions(int requestedSubsampling) const
+CFDictionaryRef ImageSource::imageSourceOptions(ShouldSkipMetadata skipMetaData, int requestedSubsampling) const
 {
     static CFDictionaryRef options[4] = {NULL, NULL, NULL, NULL};
     int subsampling = std::min(3, m_isProgressive || requestedSubsampling < 0 ? 0 : (requestedSubsampling + m_baseSubsampling));
@@ -133,9 +126,12 @@ CFDictionaryRef ImageSource::imageSourceOptions(int requestedSubsampling) const
     if (!options[subsampling]) {
         int subsampleInt = 1 << subsampling;  // [0..3] => [1, 2, 4, 8]
         CFNumberRef subsampleNumber = CFNumberCreate(NULL,  kCFNumberIntType,  &subsampleInt);
-        const void *keys[3] = { kCGImageSourceShouldCache, kCGImageSourceShouldPreferRGB32, kCGImageSourceSubsampleFactor };
-        const void *values[3] = { kCFBooleanTrue, kCFBooleanTrue, subsampleNumber };
-        options[subsampling] = CFDictionaryCreate(NULL, keys, values, 3,
+        const CFIndex numOptions = 5;
+        const CFBooleanRef imageSourceSkipMetaData = (skipMetaData == ImageSource::SkipMetadata) ? kCFBooleanTrue : kCFBooleanFalse;
+        const CFBooleanRef acceleratedImageDecoding = ImageSource::s_acceleratedImageDecoding ? kCFBooleanTrue : kCFBooleanFalse;
+        const void *keys[numOptions] = { kCGImageSourceShouldCache, kCGImageSourceShouldPreferRGB32, kCGImageSourceSubsampleFactor, kCGImageSourceSkipMetaData, kCGImageSourceUseHardwareAcceleration };
+        const void *values[numOptions] = { kCFBooleanTrue, kCFBooleanTrue, subsampleNumber, imageSourceSkipMetaData, acceleratedImageDecoding };
+        options[subsampling] = CFDictionaryCreate(NULL, keys, values, numOptions,
             &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
         CFRelease(subsampleNumber);
     }
@@ -194,7 +190,7 @@ bool ImageSource::isSizeAvailable()
 
     // Ragnaros yells: TOO SOON! You have awakened me TOO SOON, Executus!
     if (imageSourceStatus >= kCGImageStatusIncomplete) {
-        RetainPtr<CFDictionaryRef> image0Properties(AdoptCF, CGImageSourceCopyPropertiesAtIndex(m_decoder, 0, imageSourceOptions()));
+        RetainPtr<CFDictionaryRef> image0Properties(AdoptCF, CGImageSourceCopyPropertiesAtIndex(m_decoder, 0, imageSourceOptions(SkipMetadata)));
         if (image0Properties) {
             CFNumberRef widthNumber = (CFNumberRef)CFDictionaryGetValue(image0Properties.get(), kCGImagePropertyPixelWidth);
             CFNumberRef heightNumber = (CFNumberRef)CFDictionaryGetValue(image0Properties.get(), kCGImagePropertyPixelHeight);
@@ -205,87 +201,103 @@ bool ImageSource::isSizeAvailable()
     return result;
 }
 
-IntSize ImageSource::frameSizeAtIndex(size_t index) const
+IntSize ImageSource::frameSizeAtIndex(size_t index, RespectImageOrientationEnum shouldRespectOrientation) const
 {
-    IntSize result;
-    RetainPtr<CFDictionaryRef> properties(AdoptCF, CGImageSourceCopyPropertiesAtIndex(m_decoder, index, imageSourceOptions()));
-    if (properties) {
-        int w = 0, h = 0;
-        CFNumberRef num = (CFNumberRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyPixelWidth);
-        if (num)
-            CFNumberGetValue(num, kCFNumberIntType, &w);
-        num = (CFNumberRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyPixelHeight);
-        if (num)
-            CFNumberGetValue(num, kCFNumberIntType, &h);
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-        if (!orientationRequiresWidthAndHeightSwapped(orientationAtIndex(index)))
-            result = IntSize(w, h);
-        else
-            result = IntSize(h, w);
-#else
-        result = IntSize(w, h);
-#endif
+    RetainPtr<CFDictionaryRef> properties(AdoptCF, CGImageSourceCopyPropertiesAtIndex(m_decoder, index, imageSourceOptions(SkipMetadata)));
 
-        if (!m_isProgressive) {
-            CFDictionaryRef jfifProperties = (CFDictionaryRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyJFIFDictionary);
-            if (jfifProperties) {
-                CFBooleanRef isProgCFBool = (CFBooleanRef)CFDictionaryGetValue(jfifProperties, kCGImagePropertyJFIFIsProgressive);
-                if (isProgCFBool)
-                    m_isProgressive = CFBooleanGetValue(isProgCFBool);
-                // 5184655: Hang rendering very large progressive JPEG
-                // Decoding progressive images hangs for a very long time right now
-                // Until this is fixed, don't sub-sample progressive images
-                // This will cause them to fail our large image check and they won't be decoded.
-                // FIXME: remove once underlying issue is fixed (5191418)
-            }
+    if (!properties)
+        return IntSize();
+
+    int w = 0, h = 0;
+    CFNumberRef num = (CFNumberRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyPixelWidth);
+    if (num)
+        CFNumberGetValue(num, kCFNumberIntType, &w);
+    num = (CFNumberRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyPixelHeight);
+    if (num)
+        CFNumberGetValue(num, kCFNumberIntType, &h);
+
+    if (!m_isProgressive) {
+        CFDictionaryRef jfifProperties = (CFDictionaryRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyJFIFDictionary);
+        if (jfifProperties) {
+            CFBooleanRef isProgCFBool = (CFBooleanRef)CFDictionaryGetValue(jfifProperties, kCGImagePropertyJFIFIsProgressive);
+            if (isProgCFBool)
+                m_isProgressive = CFBooleanGetValue(isProgCFBool);
+            // 5184655: Hang rendering very large progressive JPEG
+            // Decoding progressive images hangs for a very long time right now
+            // Until this is fixed, don't sub-sample progressive images
+            // This will cause them to fail our large image check and they won't be decoded.
+            // FIXME: remove once underlying issue is fixed (5191418)
         }
-
-        if ((m_baseSubsampling == 0) && !m_isProgressive) {
-            unsigned maximumImageSizeBeforeSubsampling = ImageSource::maximumImageSizeBeforeSubsampling();
-            while ((m_baseSubsampling < 3) && (static_cast<unsigned>(result.width() * result.height()) > maximumImageSizeBeforeSubsampling)) {
-                // Image is very large and should be sub-sampled.
-                // Increase the base subsampling and ask for the size again. If the image can be subsampled, the size will be
-                // greatly reduced. 4x sub-sampling will make us support up to 32MP images, which should be plenty.
-                // There's no callback from ImageIO when the size is available, so we do the check when we happen
-                // to check the size and its non - zero.
-                // Note: some clients of this class don't call isSizeAvailable() so we can't rely on that.
-                m_baseSubsampling++;
-                result = size();
-            }
-        }    
     }
-    return result;
+
+    if ((m_baseSubsampling == 0) && !m_isProgressive) {
+        IntSize subsampledSize(w, h);
+        while ((m_baseSubsampling < 3) && shouldSubsampleImageWithSize(static_cast<unsigned>(subsampledSize.width() * subsampledSize.height()))) {
+            // We know the size, but the actual image is very large and should be sub-sampled.
+            // Increase the base subsampling and ask for the size again. If the image can be subsampled, the size will be
+            // greatly reduced. 4x sub-sampling will make us support up to 320MP (5MP * 4^3) images, which should be plenty.
+            // There's no callback from ImageIO when the size is available, so we do the check when we happen
+            // to check the size and its non - zero.
+            // Note: some clients of this class don't call isSizeAvailable() so we can't rely on that.
+            m_baseSubsampling++;
+            subsampledSize = frameSizeAtIndex(index, shouldRespectOrientation);
+        }
+        w = subsampledSize.width();
+        h = subsampledSize.height();
+    }
+
+    if ((shouldRespectOrientation == RespectImageOrientation) && orientationAtIndex(index).usesWidthAsHeight())
+        return IntSize(h, w);
+
+    return IntSize(w, h);
 }
 
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-int ImageSource::orientationAtIndex(size_t index) const
+ImageOrientation ImageSource::orientationAtIndex(size_t index) const
 {
-    int orientation = BitmapImage::ImageEXIFOrientationTopLeft;
-    CFDictionaryRef properties = CGImageSourceCopyPropertiesAtIndex(m_decoder, index, imageSourceOptions());
-    if (properties) {
-        // The numbers returned from kCGImagePropertyOrientation match the EXIF specification
-        // so we can just use the value directly.
-        CFNumberRef orientationProperty = (CFNumberRef)CFDictionaryGetValue(properties, kCGImagePropertyOrientation);
-        if (orientationProperty != NULL)
-            CFNumberGetValue(orientationProperty, kCFNumberIntType, &orientation);
-        CFRelease(properties);
-        // Validate the orientation returned, and if it is outside known values, use
-        // the default.
-        if (orientation < BitmapImage::ImageEXIFOrientationTopLeft || orientation > BitmapImage::ImageEXIFOrientationLeftBottom)
-            orientation = BitmapImage::ImageEXIFOrientationTopLeft;
-    }
-    return orientation;
-}
-#endif
+    RetainPtr<CFDictionaryRef> properties(AdoptCF, CGImageSourceCopyPropertiesAtIndex(m_decoder, index, imageSourceOptions(SkipMetadata)));
+    if (!properties)
+        return DefaultImageOrientation;
 
-IntSize ImageSource::size() const
+    CFNumberRef orientationProperty = (CFNumberRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyOrientation);
+    if (!orientationProperty)
+        return DefaultImageOrientation;
+
+    int exifValue;
+    CFNumberGetValue(orientationProperty, kCFNumberIntType, &exifValue);
+    return ImageOrientation::fromEXIFValue(exifValue);
+}
+
+IntSize ImageSource::originalSize(RespectImageOrientationEnum shouldRespectOrientation) const
 {
-    return frameSizeAtIndex(0);
+    frameSizeAtIndex(0, shouldRespectOrientation);
+    RetainPtr<CFDictionaryRef> properties(AdoptCF, CGImageSourceCopyPropertiesAtIndex(m_decoder, 0, imageSourceOptions(SkipMetadata, -1)));
+    
+    if (!properties)
+        return IntSize();
+
+    int width = 0;
+    int height = 0;
+    CFNumberRef number = (CFNumberRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyPixelWidth);
+    if (number)
+        CFNumberGetValue(number, kCFNumberIntType, &width);
+    number = (CFNumberRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyPixelHeight);
+    if (number)
+        CFNumberGetValue(number, kCFNumberIntType, &height);
+
+    if ((shouldRespectOrientation == RespectImageOrientation) && orientationAtIndex(0).usesWidthAsHeight())
+        return IntSize(height, width);
+    
+    return IntSize(width, height);
+}
+
+IntSize ImageSource::size(RespectImageOrientationEnum shouldRespectOrientation) const
+{
+    return frameSizeAtIndex(0, shouldRespectOrientation);
 }
 
 bool ImageSource::getHotSpot(IntPoint& hotSpot) const
 {
-    RetainPtr<CFDictionaryRef> properties(AdoptCF, CGImageSourceCopyPropertiesAtIndex(m_decoder, 0, imageSourceOptions()));
+    RetainPtr<CFDictionaryRef> properties(AdoptCF, CGImageSourceCopyPropertiesAtIndex(m_decoder, 0, imageSourceOptions(SkipMetadata)));
     if (!properties)
         return false;
 
@@ -322,7 +334,7 @@ int ImageSource::repetitionCount()
     if (!initialized())
         return result;
 
-    RetainPtr<CFDictionaryRef> properties(AdoptCF, CGImageSourceCopyProperties(m_decoder, imageSourceOptions()));
+    RetainPtr<CFDictionaryRef> properties(AdoptCF, CGImageSourceCopyProperties(m_decoder, imageSourceOptions(SkipMetadata)));
     if (properties) {
         CFDictionaryRef gifProperties = (CFDictionaryRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyGIFDictionary);
         if (gifProperties) {
@@ -353,7 +365,7 @@ CGImageRef ImageSource::createFrameAtIndex(size_t index, float scaleHint, float*
     // Subsampling can be 0, 1, 2 or 3, which means full-, quarter-, sixteenth- and sixty-fourth-size, respectively.
     // A negative value means no subsampling.
     int subsampling = scaleHint < std::numeric_limits<float>::infinity() ? (int)log2f(1.0f / std::max(0.1f, std::min(1.0f, scaleHint))) : -1;
-    RetainPtr<CGImageRef> image(AdoptCF, CGImageSourceCreateImageAtIndex(m_decoder, index, imageSourceOptions(subsampling)));
+    RetainPtr<CGImageRef> image(AdoptCF, CGImageSourceCreateImageAtIndex(m_decoder, index, imageSourceOptions(SkipMetadata, subsampling)));
 
     /* <rdar://problem/7371198> - CoreGraphics changed the default caching
      * behaviour in iOS 4.0 to kCGImageCachingTransient which caused a perf
@@ -362,24 +374,20 @@ CGImageRef ImageSource::createFrameAtIndex(size_t index, float scaleHint, float*
      * images.
      */
     CGImageSetCachingFlags(image.get(), kCGImageCachingTemporary);
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-    *actualScaleOut = static_cast<float>(CGImageGetWidth(image.get())) / (!orientationRequiresWidthAndHeightSwapped(orientationAtIndex(index)) ? size().width() : size().height());
-#else
-    *actualScaleOut = static_cast<float>(CGImageGetWidth(image.get())) / static_cast<float>(size().width()); // height could be anything while downloading
-#endif
+    *actualScaleOut = static_cast<float>(CGImageGetWidth(image.get())) / size(RespectImageOrientation).width();
     *bytesOut = CGImageGetBytesPerRow(image.get()) * CGImageGetHeight(image.get());
     CFStringRef imageUTI = CGImageSourceGetType(m_decoder);
     static const CFStringRef xbmUTI = CFSTR("public.xbitmap-image");
     if (!imageUTI || !CFEqual(imageUTI, xbmUTI))
-        return image.releaseRef();
+        return image.leakRef();
     
     // If it is an xbm image, mask out all the white areas to render them transparent.
     const CGFloat maskingColors[6] = {255, 255,  255, 255, 255, 255};
     RetainPtr<CGImageRef> maskedImage(AdoptCF, CGImageCreateWithMaskingColors(image.get(), maskingColors));
     if (!maskedImage)
-        return image.releaseRef();
+        return image.leakRef();
 
-    return maskedImage.releaseRef();
+    return maskedImage.leakRef();
 }
 
 bool ImageSource::frameIsCompleteAtIndex(size_t index)
@@ -408,7 +416,7 @@ float ImageSource::frameDurationAtIndex(size_t index)
         return 0;
 
     float duration = 0;
-    RetainPtr<CFDictionaryRef> properties(AdoptCF, CGImageSourceCopyPropertiesAtIndex(m_decoder, index, imageSourceOptions()));
+    RetainPtr<CFDictionaryRef> properties(AdoptCF, CGImageSourceCopyPropertiesAtIndex(m_decoder, index, imageSourceOptions(SkipMetadata)));
     if (properties) {
         CFDictionaryRef typeProperties = (CFDictionaryRef)CFDictionaryGetValue(properties.get(), kCGImagePropertyGIFDictionary);
         if (typeProperties) {
@@ -449,11 +457,42 @@ bool ImageSource::frameHasAlphaAtIndex(size_t)
     return true;
 }
 
-unsigned ImageSource::s_maximumImageSizeBeforeSubsampling = 2 * 1024 * 1024; // 2 MP.
+static unsigned s_maximumImageSizeBeforeSubsampling = 0;
+
+bool ImageSource::shouldSubsampleImageWithSize(unsigned size) const
+{
+    unsigned imageSizeSubsamplingThreshold = maximumImageSizeBeforeSubsampling();
+    bool sizeGreaterThanThreshold = size > imageSizeSubsamplingThreshold;
+
+    // For devices with 512MB or more, use the maximum size threshold.
+    if (systemTotalMemory() >= 512 * 1024 * 1024)
+        return sizeGreaterThanThreshold;
+
+    // Use some heuristics for devices with less than 512MB RAM (i.e. those with 256MB RAM).
+
+    // Always subsample for images larger than our threshold.
+    if (sizeGreaterThanThreshold)
+        return true;
+
+    // No sumbsampling for images smaller than half our threshold.
+    if (size < imageSizeSubsamplingThreshold / 2)
+        return false;
+
+    // For images inbetween, subsample them when memory level is low.
+    return applicationIsMobileSafari() && systemMemoryLevel() < 30;
+}
 
 unsigned ImageSource::maximumImageSizeBeforeSubsampling()
 {
-    return s_maximumImageSizeBeforeSubsampling;
+    if (s_maximumImageSizeBeforeSubsampling)
+        return s_maximumImageSizeBeforeSubsampling;
+
+    if (systemTotalMemory() >= 512 * 1024 * 1024)
+        s_maximumImageSizeBeforeSubsampling = 5 * 1024 * 1024;
+    else
+        s_maximumImageSizeBeforeSubsampling = 2 * 1024 * 1024;
+
+    return s_maximumImageSizeBeforeSubsampling;;
 }
 
 void ImageSource::setMaximumImageSizeBeforeSubsampling(unsigned maximum)

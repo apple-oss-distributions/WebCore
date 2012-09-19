@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Apple, Inc. All rights reserved.
+ * Copyright (C) 2011, 2012 Apple, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -32,42 +32,29 @@
 #define LegacyNumberInputType_h
 
 
-#include "TextFieldInputType.h"
+#include "NumberInputType.h"
 
 namespace WebCore {
 
-class LegacyNumberInputType : public TextFieldInputType {
+class LegacyNumberInputType : public NumberInputType {
 public:
     static PassOwnPtr<InputType> create(HTMLInputElement*);
 
 private:
-    LegacyNumberInputType(HTMLInputElement* element) : TextFieldInputType(element) { }
-    virtual const AtomicString& formControlType() const;
-    virtual bool shouldRespectSpeechAttribute();
-    
-    virtual double valueAsNumber() const;
-    virtual void setValueAsNumber(double, ExceptionCode&) const;
-    virtual bool rangeUnderflow(const String&) const;
-    virtual bool rangeOverflow(const String&) const;
-    virtual bool supportsRangeLimitation() const;
-    virtual double minimum() const;
-    virtual double maximum() const;
-    virtual bool isSteppable() const;
-    virtual bool stepMismatch(const String&, double) const;
-    virtual double stepBase() const;
-    virtual double stepBaseWithDecimalPlaces(unsigned*) const;
-    virtual double defaultStep() const;
-    virtual double stepScaleFactor() const;
-    virtual void handleKeydownEvent(KeyboardEvent*);
-    virtual void handleWheelEvent(WheelEvent*);
-    virtual double parseToDouble(const String&, double) const;
-    virtual double parseToDoubleWithDecimalPlaces(const String&, double, unsigned*) const;
-    virtual String serialize(double) const;
-    virtual double acceptableError(double) const;
-    virtual void handleBlurEvent();
-    virtual bool isNumberField() const;
-    virtual bool isTextType() const;
-    virtual bool supportsPlaceholder() const;
+    LegacyNumberInputType(HTMLInputElement* element) : NumberInputType(element) { }
+
+    // Override InputType method to make this behave like a plain text field.
+    virtual bool isTextType() const OVERRIDE;
+
+    // Override NumberInputType methods to call TextFieldInputType methods.
+    virtual bool typeMismatchFor(const String& value) const OVERRIDE;
+    virtual bool typeMismatch() const OVERRIDE;
+    virtual bool supportsRangeLimitation() const OVERRIDE;
+    virtual String visibleValue() const OVERRIDE;
+    virtual String convertFromVisibleValue(const String&) const OVERRIDE;
+    virtual bool isAcceptableValue(const String&) OVERRIDE;
+    virtual String sanitizeValue(const String&) const OVERRIDE;
+    virtual bool hasUnacceptableValue() OVERRIDE;
 };
 
 } // namespace WebCore

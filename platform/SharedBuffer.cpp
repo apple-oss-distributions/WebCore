@@ -73,6 +73,12 @@ SharedBuffer::SharedBuffer()
 {
 }
 
+SharedBuffer::SharedBuffer(size_t size)
+    : m_size(size)
+    , m_buffer(size)
+{
+}
+
 SharedBuffer::SharedBuffer(const char* data, int size)
     : m_size(0)
     , m_shouldUsePurgeableMemory(false)
@@ -83,6 +89,10 @@ SharedBuffer::SharedBuffer(const char* data, int size)
     , m_notifyMemoryMappedCallbackData(NULL)
 #endif
 {
+    // FIXME: Use unsigned consistently, and check for invalid casts when calling into SharedBuffer from other code.
+    if (size < 0)
+        CRASH();
+
     append(data, size);
 }
 
@@ -96,6 +106,10 @@ SharedBuffer::SharedBuffer(const unsigned char* data, int size)
     , m_notifyMemoryMappedCallbackData(NULL)
 #endif
 {
+    // FIXME: Use unsigned consistently, and check for invalid casts when calling into SharedBuffer from other code.
+    if (size < 0)
+        CRASH();
+
     append(reinterpret_cast<const char*>(data), size);
 }
     
@@ -178,7 +192,7 @@ void SharedBuffer::createPurgeableBuffer() const
         freeSegment(m_segments[i]);
     }
     m_segments.clear();
-#if HAVE(CFNETWORK_DATA_ARRAY_CALLBACK)
+#if HAVE(NETWORK_CFDATA_ARRAY_CALLBACK)
     copyDataArrayAndClear(destination, bytesLeft);
 #endif
 }
@@ -263,6 +277,16 @@ const char* SharedBuffer::data() const
     return buffer().data();
 }
 
+void SharedBuffer::append(SharedBuffer* data)
+{
+    const char* segment;
+    size_t position = 0;
+    while (size_t length = data->getSomeData(segment, position)) {
+        append(segment, length);
+        position += length;
+    }
+}
+
 void SharedBuffer::append(const char* data, unsigned length)
 {
     ASSERT(!m_purgeableBuffer);
@@ -304,6 +328,11 @@ void SharedBuffer::append(const char* data, unsigned length)
     }
 }
 
+void SharedBuffer::append(const Vector<char>& data)
+{
+    append(data.data(), data.size());
+}
+
 void SharedBuffer::clear()
 {
     clearPlatformData();
@@ -316,7 +345,7 @@ void SharedBuffer::clear()
 
     m_buffer.clear();
     m_purgeableBuffer.clear();
-#if HAVE(CFNETWORK_DATA_ARRAY_CALLBACK)
+#if HAVE(NETWORK_CFDATA_ARRAY_CALLBACK)
     m_dataArray.clear();
 #endif
 }
@@ -361,7 +390,7 @@ const Vector<char>& SharedBuffer::buffer() const
             freeSegment(m_segments[i]);
         }
         m_segments.clear();
-#if HAVE(CFNETWORK_DATA_ARRAY_CALLBACK)
+#if HAVE(NETWORK_CFDATA_ARRAY_CALLBACK)
         copyDataArrayAndClear(destination, bytesLeft);
 #endif
     }
@@ -370,6 +399,12 @@ const Vector<char>& SharedBuffer::buffer() const
 
 unsigned SharedBuffer::getSomeData(const char*& someData, unsigned position) const
 {
+    unsigned totalSize = size();
+    if (position >= totalSize) {
+        someData = 0;
+        return 0;
+    }
+
 #if ENABLE(DISK_IMAGE_CACHE)
     ASSERT(position < size());
     if (isMemoryMapped()) {
@@ -381,15 +416,12 @@ unsigned SharedBuffer::getSomeData(const char*& someData, unsigned position) con
 #endif
 
     if (hasPlatformData() || m_purgeableBuffer) {
+        ASSERT(position < size());
         someData = data() + position;
-        return size() - position;
+        return totalSize - position;
     }
 
-    if (position >= m_size) {
-        someData = 0;
-        return 0;
-    }
-
+    ASSERT(position < m_size);
     unsigned consecutiveSize = m_buffer.size();
     if (position < consecutiveSize) {
         someData = m_buffer.data() + position;
@@ -397,14 +429,25 @@ unsigned SharedBuffer::getSomeData(const char*& someData, unsigned position) con
     }
  
     position -= consecutiveSize;
-    unsigned segmentedSize = m_size - consecutiveSize;
     unsigned segments = m_segments.size();
+    unsigned maxSegmentedSize = segments * segmentSize;
     unsigned segment = segmentIndex(position);
-    ASSERT(segment < segments);
+    if (segment < segments) {
+        unsigned bytesLeft = totalSize - consecutiveSize;
+        unsigned segmentedSize = min(maxSegmentedSize, bytesLeft);
 
-    unsigned positionInSegment = offsetInSegment(position);
-    someData = m_segments[segment] + positionInSegment;
-    return segment == segments - 1 ? segmentedSize - position : segmentSize - positionInSegment;
+        unsigned positionInSegment = offsetInSegment(position);
+        someData = m_segments[segment] + positionInSegment;
+        return segment == segments - 1 ? segmentedSize - position : segmentSize - positionInSegment;
+    }
+#if HAVE(NETWORK_CFDATA_ARRAY_CALLBACK)
+    ASSERT(maxSegmentedSize <= position);
+    position -= maxSegmentedSize;
+    return copySomeDataFromDataArray(someData, position);
+#else
+    ASSERT_NOT_REACHED();
+    return 0;
+#endif
 }
 
 #if !USE(CF) || PLATFORM(QT)

@@ -27,37 +27,26 @@
 #ifndef EditorClient_h
 #define EditorClient_h
 
-#include "SpellingCorrectionController.h"
 #include "EditorInsertAction.h"
 #include "FloatRect.h"
 #include "TextAffinity.h"
+#include "TextChecking.h"
+#include "UndoStep.h"
 #include <wtf/Forward.h>
 #include <wtf/Vector.h>
 
 #if PLATFORM(MAC)
-#ifdef __OBJC__
-@class NSArray;
-@class NSAttributedString;
-@class NSDictionary;
-@class NSPasteboard;
-@class NSString;
-@class NSURL;
-#else
-class NSArray;
-class NSAttributedString;
-class NSDictionary;
-class NSPasteboard;
-class NSString;
-class NSURL;
-#endif
+OBJC_CLASS NSAttributedString;
+OBJC_CLASS NSString;
+OBJC_CLASS NSURL;
+OBJC_CLASS NSArray;
+OBJC_CLASS NSDictionary;
 #endif
 
 namespace WebCore {
 
 class ArchiveResource;
-class CSSStyleDeclaration;
 class DocumentFragment;
-class EditCommand;
 class Editor;
 class Element;
 class Frame;
@@ -66,6 +55,7 @@ class KeyboardEvent;
 class Node;
 class Range;
 class SpellChecker;
+class StylePropertySet;
 class TextCheckerClient;
 class VisibleSelection;
 class VisiblePosition;
@@ -93,18 +83,18 @@ public:
     virtual bool shouldInsertText(const String&, Range*, EditorInsertAction) = 0;
     virtual bool shouldChangeSelectedRange(Range* fromRange, Range* toRange, EAffinity, bool stillSelecting) = 0;
     
-    virtual bool shouldApplyStyle(CSSStyleDeclaration*, Range*) = 0;
+    virtual bool shouldApplyStyle(StylePropertySet*, Range*) = 0;
     virtual bool shouldMoveRangeAfterDelete(Range*, Range*) = 0;
 
     virtual void didBeginEditing() = 0;
     virtual void respondToChangedContents() = 0;
-    virtual void respondToChangedSelection() = 0;
+    virtual void respondToChangedSelection(Frame*) = 0;
     virtual void didEndEditing() = 0;
     virtual void didWriteSelectionToPasteboard() = 0;
     virtual void didSetSelectionTypesForPasteboard() = 0;
     
-    virtual void registerCommandForUndo(PassRefPtr<EditCommand>) = 0;
-    virtual void registerCommandForRedo(PassRefPtr<EditCommand>) = 0;
+    virtual void registerUndoStep(PassRefPtr<UndoStep>) = 0;
+    virtual void registerRedoStep(PassRefPtr<UndoStep>) = 0;
     virtual void clearUndoRedoOperations() = 0;
 
     virtual bool canCopyCut(Frame*, bool defaultValue) const = 0;
@@ -140,15 +130,17 @@ public:
 #if PLATFORM(MAC)
     virtual NSString* userVisibleString(NSURL*) = 0;
     virtual DocumentFragment* documentFragmentFromAttributedString(NSAttributedString*, Vector< RefPtr<ArchiveResource> >&) = 0;
-    virtual void setInsertionPasteboard(NSPasteboard*) = 0;
+    virtual void setInsertionPasteboard(const String& pasteboardName) = 0;
     virtual NSURL* canonicalizeURL(NSURL*) = 0;
     virtual NSURL* canonicalizeURLString(NSString*) = 0;
 #endif
 
-#if PLATFORM(MAC) && !defined(BUILDING_ON_LEOPARD)
+#if USE(APPKIT)
     virtual void uppercaseWord() = 0;
     virtual void lowercaseWord() = 0;
     virtual void capitalizeWord() = 0;
+#endif
+#if USE(AUTOMATIC_TEXT_REPLACEMENT)
     virtual void showSubstitutionsPanel(bool show) = 0;
     virtual bool substitutionsPanelIsShowing() = 0;
     virtual void toggleSmartInsertDelete() = 0;
@@ -164,19 +156,11 @@ public:
     virtual void toggleAutomaticSpellingCorrection() = 0;
 #endif
 
-    virtual TextCheckerClient* textChecker() = 0;
-
-    enum AutocorrectionResponseType {
-        AutocorrectionEdited,
-        AutocorrectionReverted
-    };
-
-#if SUPPORT_AUTOCORRECTION_PANEL
-    virtual void showCorrectionPanel(CorrectionPanelInfo::PanelType, const FloatRect& boundingBoxOfReplacedString, const String& replacedString, const String& replacmentString, const Vector<String>& alternativeReplacementStrings) = 0;
-    virtual void dismissCorrectionPanel(ReasonForDismissingCorrectionPanel) = 0;
-    virtual String dismissCorrectionPanelSoon(ReasonForDismissingCorrectionPanel) = 0;
-    virtual void recordAutocorrectionResponse(AutocorrectionResponseType, const String& replacedString, const String& replacementString) = 0;
+#if PLATFORM(GTK)
+    virtual bool shouldShowUnicodeMenu() = 0;
 #endif
+
+    virtual TextCheckerClient* textChecker() = 0;
 
     virtual void updateSpellingUIWithGrammarString(const String&, const GrammarDetail& detail) = 0;
     virtual void updateSpellingUIWithMisspelledWord(const String&) = 0;

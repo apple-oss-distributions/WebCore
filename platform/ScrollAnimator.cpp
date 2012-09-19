@@ -46,7 +46,6 @@ ScrollAnimator::ScrollAnimator(ScrollableArea* scrollableArea)
     : m_scrollableArea(scrollableArea)
     , m_currentPosX(0)
     , m_currentPosY(0)
-    , m_isActive(true)
 {
 }
 
@@ -62,21 +61,19 @@ bool ScrollAnimator::scroll(ScrollbarOrientation orientation, ScrollGranularity,
         return false;
     *currentPos = newPos;
 
-    notityPositionChanged();
+    notifyPositionChanged();
 
     return true;
 }
 
 void ScrollAnimator::scrollToOffsetWithoutAnimation(const FloatPoint& offset)
 {
-    if (m_currentPosX != offset.x() || m_currentPosY != offset.y()) {
-        m_currentPosX = offset.x();
-        m_currentPosY = offset.y();
-        notityPositionChanged();
-    }
+    m_currentPosX = offset.x();
+    m_currentPosY = offset.y();
+    notifyPositionChanged();
 }
 
-void ScrollAnimator::handleWheelEvent(PlatformWheelEvent& e)
+bool ScrollAnimator::handleWheelEvent(const PlatformWheelEvent& e)
 {
     Scrollbar* horizontalScrollbar = m_scrollableArea->horizontalScrollbar();
     Scrollbar* verticalScrollbar = m_scrollableArea->verticalScrollbar();
@@ -86,37 +83,53 @@ void ScrollAnimator::handleWheelEvent(PlatformWheelEvent& e)
     float deltaX = horizontalScrollbar ? e.deltaX() : 0;
     float deltaY = verticalScrollbar ? e.deltaY() : 0;
 
+    bool handled = false;
+
     IntSize maxForwardScrollDelta = m_scrollableArea->maximumScrollPosition() - m_scrollableArea->scrollPosition();
     IntSize maxBackwardScrollDelta = m_scrollableArea->scrollPosition() - m_scrollableArea->minimumScrollPosition();
     if ((deltaX < 0 && maxForwardScrollDelta.width() > 0)
         || (deltaX > 0 && maxBackwardScrollDelta.width() > 0)
         || (deltaY < 0 && maxForwardScrollDelta.height() > 0)
         || (deltaY > 0 && maxBackwardScrollDelta.height() > 0)) {
-        e.accept();
-        if (e.granularity() == ScrollByPageWheelEvent) {
-            ASSERT(!e.deltaX());
-            bool negative = deltaY < 0;
-            deltaY = max(max(static_cast<float>(m_scrollableArea->visibleHeight()) * Scrollbar::minFractionToStepWhenPaging(), static_cast<float>(m_scrollableArea->visibleHeight() - Scrollbar::maxOverlapBetweenPages())), 1.0f);
-            if (negative)
-                deltaY = -deltaY;
+        handled = true;
+        if (e.granularity() == ScrollByPixelVelocityWheelEvent) {
+            scroll(VerticalScrollbar, ScrollByPixelVelocity, 0, -deltaY);
+            scroll(HorizontalScrollbar, ScrollByPixelVelocity, 0, -deltaX);
+            return handled;
         }
 
-        if (deltaY)
+        if (deltaY) {
+            if (e.granularity() == ScrollByPageWheelEvent) {
+                bool negative = deltaY < 0;
+                deltaY = max(max(static_cast<float>(m_scrollableArea->visibleHeight()) * Scrollbar::minFractionToStepWhenPaging(), static_cast<float>(m_scrollableArea->visibleHeight() - Scrollbar::maxOverlapBetweenPages())), 1.0f);
+                if (negative)
+                    deltaY = -deltaY;
+            }
             scroll(VerticalScrollbar, ScrollByPixel, verticalScrollbar->pixelStep(), -deltaY);
-        if (deltaX)
-            scroll(HorizontalScrollbar, ScrollByPixel, horizontalScrollbar->pixelStep(), -deltaX);
-    }
-}
+        }
 
-#if ENABLE(GESTURE_EVENTS)
-void ScrollAnimator::handleGestureEvent(const PlatformGestureEvent&)
-{
+        if (deltaX) {
+            if (e.granularity() == ScrollByPageWheelEvent) {
+                bool negative = deltaX < 0;
+                deltaX = max(max(static_cast<float>(m_scrollableArea->visibleWidth()) * Scrollbar::minFractionToStepWhenPaging(), static_cast<float>(m_scrollableArea->visibleWidth() - Scrollbar::maxOverlapBetweenPages())), 1.0f);
+                if (negative)
+                    deltaX = -deltaX;
+            }
+            scroll(HorizontalScrollbar, ScrollByPixel, horizontalScrollbar->pixelStep(), -deltaX);
+        }
+    }
+    return handled;
 }
-#endif
 
 bool ScrollAnimator::handleTouchEvent(const PlatformTouchEvent&)
 {
     return false;
+}
+
+void ScrollAnimator::setCurrentPosition(const FloatPoint& position)
+{
+    m_currentPosX = position.x();
+    m_currentPosY = position.y();
 }
 
 FloatPoint ScrollAnimator::currentPosition() const
@@ -124,7 +137,7 @@ FloatPoint ScrollAnimator::currentPosition() const
     return FloatPoint(m_currentPosX, m_currentPosY);
 }
 
-void ScrollAnimator::notityPositionChanged()
+void ScrollAnimator::notifyPositionChanged()
 {
     m_scrollableArea->setScrollOffsetFromAnimation(IntPoint(m_currentPosX, m_currentPosY));
 }

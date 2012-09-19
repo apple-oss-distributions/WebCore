@@ -110,3 +110,9 @@ enum { WebMediaQueryOrientationCurrent, WebMediaQueryOrientationPortrait, WebMed
 @interface DOMHTMLTextAreaElement (AutocapitalizeAdditions)
 - (WebAutocapitalizeType)_autocapitalizeType;
 @end
+
+// These are used by Date and Time input types because the generated ObjC methods default to not dispatching events.
+@interface DOMHTMLInputElement (WebInputChangeEventAdditions)
+- (void)setValueWithChangeEvent:(NSString *)newValue;
+- (void)setValueAsNumberWithChangeEvent:(double)newValueAsNumber;
+@end

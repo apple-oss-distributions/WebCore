@@ -24,9 +24,10 @@
  */
 
 #include "config.h"
-#include "JSDeviceMotionEvent.h"
 
 #if ENABLE(DEVICE_ORIENTATION)
+
+#include "JSDeviceMotionEvent.h"
 
 #include "DeviceMotionData.h"
 #include "DeviceMotionEvent.h"
@@ -163,7 +164,7 @@ JSValue JSDeviceMotionEvent::interval(ExecState*) const
 
 JSValue JSDeviceMotionEvent::initDeviceMotionEvent(ExecState* exec)
 {
-    const UString& typeArg = exec->argument(0).toString(exec);
+    const String& type = ustringToString(exec->argument(0).toString(exec)->value(exec));
     bool bubbles = exec->argument(1).toBoolean(exec);
     bool cancelable = exec->argument(2).toBoolean(exec);
 
@@ -185,7 +186,7 @@ JSValue JSDeviceMotionEvent::initDeviceMotionEvent(ExecState* exec)
     double interval = exec->argument(6).toNumber(exec);
     RefPtr<DeviceMotionData> deviceMotionData = DeviceMotionData::create(acceleration, accelerationIncludingGravity, rotationRate, intervalProvided, interval);
     DeviceMotionEvent* imp = static_cast<DeviceMotionEvent*>(impl());
-    imp->initDeviceMotionEvent(ustringToAtomicString(typeArg), bubbles, cancelable, deviceMotionData.get());
+    imp->initDeviceMotionEvent(type, bubbles, cancelable, deviceMotionData.get());
     return jsUndefined();
 }
 

@@ -26,12 +26,10 @@
 #include "config.h"
 #include "StorageTracker.h"
 
-#if ENABLE(DOM_STORAGE)
-
 #include "DatabaseThread.h"
 #include "FileSystem.h"
-#include "LocalStorageTask.h"
-#include "LocalStorageThread.h"
+#include "StorageTask.h"
+#include "StorageThread.h"
 #include "Logging.h"
 #include "PageGroup.h"
 #include "SQLiteFileSystem.h"
@@ -50,10 +48,14 @@ namespace WebCore {
 
 static StorageTracker* storageTracker = 0;
 
+// If there is no document referencing a storage database, close the underlying database
+// after it has been idle for m_StorageDatabaseIdleInterval seconds.
+static const double DefaultStorageDatabaseIdleInterval = 300;
+    
 void StorageTracker::initializeTracker(const String& storagePath, StorageTrackerClient* client)
 {
     ASSERT(isMainThread() || pthread_main_np());
-    ASSERT(!storageTracker);
+    ASSERT(!storageTracker || !storageTracker->m_client);
     
     if (!storageTracker)
         storageTracker = new StorageTracker(storagePath);
@@ -65,9 +67,7 @@ void StorageTracker::initializeTracker(const String& storagePath, StorageTracker
 void StorageTracker::internalInitialize()
 {
     m_needsInitialization = false;
-
-    ASSERT(isMainThread());
-
+    ASSERT(isMainThread() || pthread_main_np());
     // Make sure text encoding maps have been built on the main thread, as the StorageTracker thread might try to do it there instead.
     // FIXME (<rdar://problem/9127819>): Is there a more explicit way of doing this besides accessing the UTF8Encoding?
     UTF8Encoding();
@@ -89,12 +89,39 @@ StorageTracker& StorageTracker::tracker()
 }
 
 StorageTracker::StorageTracker(const String& storagePath)
-    : m_storageDirectoryPath(storagePath.threadsafeCopy())
+    : m_storageDirectoryPath(storagePath.isolatedCopy())
     , m_client(0)
-    , m_thread(LocalStorageThread::create())
+    , m_thread(StorageThread::create())
     , m_isActive(false)
     , m_needsInitialization(false)
+    , m_finishedImportingOriginIdentifiers(false)
+    , m_StorageDatabaseIdleInterval(DefaultStorageDatabaseIdleInterval)
 {
+}
+
+void StorageTracker::setDatabaseDirectoryPath(const String& path)
+{
+    MutexLocker lockStorage(m_databaseGuard);
+
+    if (m_database.isOpen())
+        m_database.close();
+
+    m_storageDirectoryPath = path.isolatedCopy();
+
+    {
+        MutexLocker lockOrigins(m_originSetGuard);
+        m_originSet.clear();
+    }
+
+    if (!m_isActive)
+        return;
+
+    importOriginIdentifiers();
+}
+
+String StorageTracker::databaseDirectoryPath() const
+{
+    return m_storageDirectoryPath.isolatedCopy();
 }
 
 String StorageTracker::trackerDatabasePath()
@@ -142,7 +169,20 @@ void StorageTracker::importOriginIdentifiers()
     ASSERT(isMainThread() || pthread_main_np());
     ASSERT(m_thread);
 
-    m_thread->scheduleTask(LocalStorageTask::createOriginIdentifiersImport());
+    m_thread->scheduleTask(StorageTask::createOriginIdentifiersImport());
+}
+
+void StorageTracker::notifyFinishedImportingOriginIdentifiersOnMainThread(void*)
+{
+    tracker().finishedImportingOriginIdentifiers();
+}
+
+void StorageTracker::finishedImportingOriginIdentifiers()
+{
+    m_finishedImportingOriginIdentifiers = true;
+    MutexLocker lockClient(m_clientGuard);
+    if (m_client)
+        m_client->didFinishLoadingOrigins();
 }
 
 void StorageTracker::syncImportOriginIdentifiers()
@@ -173,7 +213,7 @@ void StorageTracker::syncImportOriginIdentifiers()
             {
                 MutexLocker lockOrigins(m_originSetGuard);
                 while ((result = statement.step()) == SQLResultRow)
-                    m_originSet.add(statement.getColumnText(0).threadsafeCopy());
+                    m_originSet.add(statement.getColumnText(0).isolatedCopy());
             }
             
             if (result != SQLResultDone) {
@@ -194,6 +234,8 @@ void StorageTracker::syncImportOriginIdentifiers()
                 m_client->dispatchDidModifyOrigin(*it);
         }
     }
+
+    callOnMainThread(notifyFinishedImportingOriginIdentifiersOnMainThread, 0);
 }
     
 void StorageTracker::syncFileSystemAndTrackerDatabase()
@@ -205,7 +247,7 @@ void StorageTracker::syncFileSystemAndTrackerDatabase()
     m_databaseGuard.lock();
     DEFINE_STATIC_LOCAL(const String, fileMatchPattern, ("*.localstorage"));
     DEFINE_STATIC_LOCAL(const String, fileExt, (".localstorage"));
-    DEFINE_STATIC_LOCAL(const unsigned, fileExtLength, (fileExt.length()));
+    static const unsigned fileExtLength = fileExt.length();
     m_databaseGuard.unlock();
 
     Vector<String> paths;
@@ -221,7 +263,7 @@ void StorageTracker::syncFileSystemAndTrackerDatabase()
         MutexLocker lock(m_originSetGuard);
         OriginSet::const_iterator end = m_originSet.end();
         for (OriginSet::const_iterator it = m_originSet.begin(); it != end; ++it)
-            originSetCopy.add((*it).threadsafeCopy());
+            originSetCopy.add((*it).isolatedCopy());
     }
     
     // Add missing StorageTracker records.
@@ -243,7 +285,7 @@ void StorageTracker::syncFileSystemAndTrackerDatabase()
     OriginSet::const_iterator setEnd = originSetCopy.end();
     for (OriginSet::const_iterator it = originSetCopy.begin(); it != setEnd; ++it) {
         if (!foundOrigins.contains(*it)) {
-            RefPtr<StringImpl> originIdentifier = (*it).threadsafeCopy().impl();
+            RefPtr<StringImpl> originIdentifier = (*it).isolatedCopy().impl();
             callOnMainThread(deleteOriginOnMainThread, originIdentifier.release().leakRef());
         }
     }
@@ -263,7 +305,7 @@ void StorageTracker::setOriginDetails(const String& originIdentifier, const Stri
         m_originSet.add(originIdentifier);
     }
 
-    OwnPtr<LocalStorageTask> task = LocalStorageTask::createSetOriginDetails(originIdentifier.threadsafeCopy(), databaseFile);
+    OwnPtr<StorageTask> task = StorageTask::createSetOriginDetails(originIdentifier.isolatedCopy(), databaseFile);
 
     if (isMainThread() || pthread_main_np()) {
         ASSERT(m_thread);
@@ -277,7 +319,7 @@ void StorageTracker::scheduleTask(void* taskIn)
     ASSERT(isMainThread() || pthread_main_np());
     ASSERT(StorageTracker::tracker().m_thread);
     
-    OwnPtr<LocalStorageTask> task = adoptPtr(reinterpret_cast<LocalStorageTask*>(taskIn));
+    OwnPtr<StorageTask> task = adoptPtr(reinterpret_cast<StorageTask*>(taskIn));
 
     StorageTracker::tracker().m_thread->scheduleTask(task.release());
 }
@@ -350,7 +392,7 @@ void StorageTracker::deleteAllOrigins()
 
     PageGroup::clearLocalStorageForAllOrigins();
     
-    m_thread->scheduleTask(LocalStorageTask::createDeleteAllOrigins());
+    m_thread->scheduleTask(StorageTask::createDeleteAllOrigins());
 }
     
 void StorageTracker::syncDeleteAllOrigins()
@@ -431,7 +473,7 @@ void StorageTracker::deleteOrigin(SecurityOrigin* origin)
         m_originSet.remove(originId);
     }
     
-    m_thread->scheduleTask(LocalStorageTask::createDeleteOrigin(originId));
+    m_thread->scheduleTask(StorageTask::createDeleteOrigin(originId));
 }
 
 void StorageTracker::syncDeleteOrigin(const String& originIdentifier)
@@ -495,7 +537,7 @@ void StorageTracker::willDeleteAllOrigins()
 
     OriginSet::const_iterator end = m_originSet.end();
     for (OriginSet::const_iterator it = m_originSet.begin(); it != end; ++it)
-        m_originsBeingDeleted.add((*it).threadsafeCopy());
+        m_originsBeingDeleted.add((*it).isolatedCopy());
 }
 
 void StorageTracker::willDeleteOrigin(const String& originIdentifier)
@@ -581,7 +623,5 @@ long long StorageTracker::diskUsageForOrigin(SecurityOrigin* origin)
 
     return SQLiteFileSystem::getDatabaseFileSize(path);
 }
-    
-} // namespace WebCore
 
-#endif // ENABLE(DOM_STORAGE)
+} // namespace WebCore

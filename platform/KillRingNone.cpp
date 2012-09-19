@@ -26,7 +26,6 @@
 #include "config.h"
 #include "KillRing.h"
 
-
 namespace WebCore {
 
 void KillRing::append(const String&)

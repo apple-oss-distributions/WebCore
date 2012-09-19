@@ -26,22 +26,24 @@
 #include "RenderMenuList.h"
 
 #include "AXObjectCache.h"
+#include "AccessibilityMenuList.h"
 #include "CSSFontSelector.h"
-#include "CSSStyleSelector.h"
 #include "Chrome.h"
 #include "FontCache.h"
 #include "Frame.h"
 #include "FrameView.h"
 #include "HTMLNames.h"
+#include "HTMLOptionElement.h"
+#include "HTMLOptGroupElement.h"
+#include "HTMLSelectElement.h"
 #include "NodeRenderStyle.h"
-#include "OptionElement.h"
-#include "OptionGroupElement.h"
 #include "Page.h"
 #include "PopupMenu.h"
 #include "RenderBR.h"
 #include "RenderScrollbar.h"
 #include "RenderTheme.h"
-#include "SelectElement.h"
+#include "Settings.h"
+#include "StyleResolver.h"
 #include "TextRun.h"
 #include <math.h>
 
@@ -54,14 +56,31 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
+static size_t selectedOptionCount(RenderMenuList *renderMenuList)
+{
+    HTMLSelectElement* select = toHTMLSelectElement(renderMenuList->node());
+    const Vector<HTMLElement*>& listItems = select->listItems();
+    size_t itemCount = listItems.size();
+
+    size_t count = 0;
+    for (size_t i = 0; i < itemCount; ++i) {
+        if (listItems[i]->hasTagName(optionTag) && static_cast<HTMLOptionElement*>(listItems[i])->selected())
+            count++;
+    }
+    return count;
+}
+
 RenderMenuList::RenderMenuList(Element* element)
-    : RenderFlexibleBox(element)
+    : RenderDeprecatedFlexibleBox(element)
     , m_buttonText(0)
     , m_innerBlock(0)
     , m_optionsChanged(true)
     , m_optionsWidth(0)
-    , m_lastSelectedIndex(-1)
+    , m_lastActiveIndex(-1)
 {
+    ASSERT(element);
+    ASSERT(element->isHTMLElement());
+    ASSERT(element->hasTagName(HTMLNames::selectTag));
 }
 
 RenderMenuList::~RenderMenuList()
@@ -80,7 +99,7 @@ void RenderMenuList::createInnerBlock()
     ASSERT(!firstChild());
     m_innerBlock = createAnonymousBlock();
     adjustInnerStyle();
-    RenderFlexibleBox::addChild(m_innerBlock);
+    RenderDeprecatedFlexibleBox::addChild(m_innerBlock);
 }
 
 void RenderMenuList::adjustInnerStyle()
@@ -103,7 +122,7 @@ void RenderMenuList::adjustInnerStyle()
         innerStyle->setTextAlign(style()->direction() == LTR ? LEFT : RIGHT);
         TextDirection direction;
         EUnicodeBidi unicodeBidi;
-        if (multiple() && selectedOptionCount() != 1) {
+        if (multiple() && selectedOptionCount(this) != 1) {
             direction = (m_buttonText && m_buttonText->text()->defaultWritingDirection() == WTF::Unicode::RightToLeft) ? RTL : LTR;
             unicodeBidi = UBNormal;
         } else
@@ -130,7 +149,7 @@ void RenderMenuList::addChild(RenderObject* newChild, RenderObject* beforeChild)
 void RenderMenuList::removeChild(RenderObject* oldChild)
 {
     if (oldChild == m_innerBlock || !m_innerBlock) {
-        RenderFlexibleBox::removeChild(oldChild);
+        RenderDeprecatedFlexibleBox::removeChild(oldChild);
         m_innerBlock = 0;
     } else
         m_innerBlock->removeChild(oldChild);
@@ -153,22 +172,22 @@ void RenderMenuList::styleDidChange(StyleDifference diff, const RenderStyle* old
 void RenderMenuList::updateOptionsWidth()
 {
     float maxOptionWidth = 0;
-    const Vector<Element*>& listItems = toSelectElement(static_cast<Element*>(node()))->listItems();
+    const Vector<HTMLElement*>& listItems = toHTMLSelectElement(node())->listItems();
     int size = listItems.size();    
     FontCachePurgePreventer fontCachePurgePreventer;
 
     for (int i = 0; i < size; ++i) {
-        Element* element = listItems[i];
-        OptionElement* optionElement = toOptionElement(element);
-        if (!optionElement)
+        HTMLElement* element = listItems[i];
+        if (!element->hasTagName(optionTag))
             continue;
 
-        String text = optionElement->textIndentedToRespectGroupLabel();
+        String text = toHTMLOptionElement(element)->textIndentedToRespectGroupLabel();
+        applyTextTransform(style(), text, ' ');
         if (theme()->popupOptionSupportsTextIndent()) {
             // Add in the option's text indent.  We can't calculate percentage values for now.
             float optionWidth = 0;
             if (RenderStyle* optionStyle = element->renderStyle())
-                optionWidth += optionStyle->textIndent().calcMinValue(0);
+                optionWidth += minimumValueForLength(optionStyle->textIndent(), 0, view());
             if (!text.isEmpty())
                 optionWidth += style()->font().width(text);
             maxOptionWidth = max(maxOptionWidth, optionWidth);
@@ -192,51 +211,33 @@ void RenderMenuList::updateFromElement()
         m_optionsChanged = false;
     }
 
-        setTextFromOption(toSelectElement(static_cast<Element*>(node()))->selectedIndex());
+        setTextFromOption(toHTMLSelectElement(node())->selectedIndex());
 }
 
 void RenderMenuList::setTextFromOption(int optionIndex)
 {
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    const Vector<Element*>& listItems = select->listItems();
+    HTMLSelectElement* select = toHTMLSelectElement(node());
+    const Vector<HTMLElement*>& listItems = select->listItems();
     int size = listItems.size();
 
     int i = select->optionToListIndex(optionIndex);
     String text = "";
     if (i >= 0 && i < size) {
         Element* element = listItems[i];
-        if (OptionElement* optionElement = toOptionElement(element)) {
-            text = optionElement->textIndentedToRespectGroupLabel();
+        if (element->hasTagName(optionTag)) {
+            text = toHTMLOptionElement(element)->textIndentedToRespectGroupLabel();
             m_optionStyle = element->renderStyle();
         }
     }
 
     if (multiple()) {
-        size_t count = selectedOptionCount();
+        size_t count = selectedOptionCount(this);
         if (count != 1)
             text = htmlSelectMultipleItems(count);
     }
 
     setText(text.stripWhiteSpace());
-}
-
-bool RenderMenuList::multiple() const
-{
-    return toSelectElement(static_cast<Element*>(node()))->multiple();
-}
-
-size_t RenderMenuList::selectedOptionCount() const
-{
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    const Vector<Element*>& listItems = select->listItems();
-    size_t itemCount = listItems.size();
-
-    size_t count = 0;
-    for (size_t i = 0; i < itemCount; ++i) {
-        if (listItems[i]->hasTagName(optionTag) && static_cast<HTMLOptionElement*>(listItems[i])->selected())
-            count++;
-    }
-    return count;
+    didUpdateActiveOption(optionIndex);
 }
 
 void RenderMenuList::setText(const String& s)
@@ -251,7 +252,7 @@ void RenderMenuList::setText(const String& s)
         }
     } else {
         if (m_buttonText && !m_buttonText->isBR())
-            m_buttonText->setText(s.impl());
+            m_buttonText->setText(s.impl(), true);
         else {
             if (m_buttonText)
                 m_buttonText->destroy();
@@ -268,18 +269,18 @@ String RenderMenuList::text() const
     return m_buttonText ? m_buttonText->text() : 0;
 }
 
-IntRect RenderMenuList::controlClipRect(int tx, int ty) const
+LayoutRect RenderMenuList::controlClipRect(const LayoutPoint& additionalOffset) const
 {
     // Clip to the intersection of the content box and the content box for the inner box
     // This will leave room for the arrows which sit in the inner box padding,
     // and if the inner box ever spills out of the outer box, that will get clipped too.
-    IntRect outerBox(tx + borderLeft() + paddingLeft(), 
-                   ty + borderTop() + paddingTop(),
+    LayoutRect outerBox(additionalOffset.x() + borderLeft() + paddingLeft(), 
+                   additionalOffset.y() + borderTop() + paddingTop(),
                    contentWidth(), 
                    contentHeight());
     
-    IntRect innerBox(tx + m_innerBlock->x() + m_innerBlock->paddingLeft(), 
-                   ty + m_innerBlock->y() + m_innerBlock->paddingTop(),
+    LayoutRect innerBox(additionalOffset.x() + m_innerBlock->x() + m_innerBlock->paddingLeft(), 
+                   additionalOffset.y() + m_innerBlock->y() + m_innerBlock->paddingTop(),
                    m_innerBlock->contentWidth(), 
                    m_innerBlock->contentHeight());
 
@@ -304,18 +305,23 @@ void RenderMenuList::computePreferredLogicalWidths()
     else
         m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth;
 
-    if (style()->maxWidth().isFixed() && style()->maxWidth().value() != undefinedLength) {
+    if (style()->maxWidth().isFixed()) {
         m_maxPreferredLogicalWidth = min(m_maxPreferredLogicalWidth, computeContentBoxLogicalWidth(style()->maxWidth().value()));
         m_minPreferredLogicalWidth = min(m_minPreferredLogicalWidth, computeContentBoxLogicalWidth(style()->maxWidth().value()));
     }
 
-    int toAdd = borderAndPaddingWidth();
+    LayoutUnit toAdd = borderAndPaddingWidth();
     m_minPreferredLogicalWidth += toAdd;
     m_maxPreferredLogicalWidth += toAdd;
 
     setPreferredLogicalWidthsDirty(false);
 }
 
+NO_RETURN_DUE_TO_ASSERT
+void RenderMenuList::showPopup()
+{
+    ASSERT_NOT_REACHED();
+}
 
 void RenderMenuList::hidePopup()
 {
@@ -329,48 +335,61 @@ void RenderMenuList::valueChanged(unsigned listIndex, bool fireOnChange)
     if (!doc || doc != doc->frame()->document())
         return;
     
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    select->setSelectedIndexByUser(select->listToOptionIndex(listIndex), true, fireOnChange);
+    HTMLSelectElement* select = toHTMLSelectElement(node());
+    select->optionSelectedByUser(select->listToOptionIndex(listIndex), fireOnChange);
 }
 
-#if ENABLE(NO_LISTBOX_RENDERING)
 void RenderMenuList::listBoxSelectItem(int listIndex, bool allowMultiplySelections, bool shift, bool fireOnChangeNow)
 {
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    select->listBoxSelectItem(listIndex, allowMultiplySelections, shift, fireOnChangeNow);
+    toHTMLSelectElement(node())->listBoxSelectItem(listIndex, allowMultiplySelections, shift, fireOnChangeNow);
 }
 
-bool RenderMenuList::multiple()
+bool RenderMenuList::multiple() const
 {
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    return select->multiple();
+    return toHTMLSelectElement(node())->multiple();
 }
-#endif
 
-void RenderMenuList::didSetSelectedIndex()
+void RenderMenuList::didSetSelectedIndex(int listIndex)
 {
-    int index = selectedIndex();
-    if (m_lastSelectedIndex == index)
+    didUpdateActiveOption(toHTMLSelectElement(node())->listToOptionIndex(listIndex));
+}
+
+void RenderMenuList::didUpdateActiveOption(int optionIndex)
+{
+    if (!AXObjectCache::accessibilityEnabled())
         return;
 
-    m_lastSelectedIndex = index;
+    if (m_lastActiveIndex == optionIndex)
+        return;
+    m_lastActiveIndex = optionIndex;
 
-    if (AXObjectCache::accessibilityEnabled())
-        document()->axObjectCache()->postNotification(this, AXObjectCache::AXMenuListValueChanged, true, PostSynchronously);
+    HTMLSelectElement* select = toHTMLSelectElement(node());
+    int listIndex = select->optionToListIndex(optionIndex);
+    if (listIndex < 0 || listIndex >= static_cast<int>(select->listItems().size()))
+        return;
+
+    ASSERT(select->listItems()[listIndex]);
+
+    if (AccessibilityMenuList* menuList = static_cast<AccessibilityMenuList*>(document()->axObjectCache()->get(this)))
+        menuList->didUpdateActiveOption(optionIndex);
 }
 
 String RenderMenuList::itemText(unsigned listIndex) const
 {
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    const Vector<Element*>& listItems = select->listItems();
+    HTMLSelectElement* select = toHTMLSelectElement(node());
+    const Vector<HTMLElement*>& listItems = select->listItems();
     if (listIndex >= listItems.size())
         return String();
+
+    String itemString;
     Element* element = listItems[listIndex];
-    if (OptionGroupElement* optionGroupElement = toOptionGroupElement(element))
-        return optionGroupElement->groupLabelText();
-    else if (OptionElement* optionElement = toOptionElement(element))
-        return optionElement->textIndentedToRespectGroupLabel();
-    return String();
+    if (element->hasTagName(optgroupTag))
+        itemString = static_cast<const HTMLOptGroupElement*>(element)->groupLabelText();
+    else if (element->hasTagName(optionTag))
+        itemString = toHTMLOptionElement(element)->textIndentedToRespectGroupLabel();
+
+    applyTextTransform(style(), itemString, ' ');
+    return itemString;
 }
 
 String RenderMenuList::itemLabel(unsigned) const
@@ -386,38 +405,33 @@ String RenderMenuList::itemIcon(unsigned) const
 String RenderMenuList::itemAccessibilityText(unsigned listIndex) const
 {
     // Allow the accessible name be changed if necessary.
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    const Vector<Element*>& listItems = select->listItems();
+    const Vector<HTMLElement*>& listItems = toHTMLSelectElement(node())->listItems();
     if (listIndex >= listItems.size())
         return String();
-
-    return listItems[listIndex]->getAttribute(aria_labelAttr);
+    return listItems[listIndex]->fastGetAttribute(aria_labelAttr);
 }
     
 String RenderMenuList::itemToolTip(unsigned listIndex) const
 {
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    const Vector<Element*>& listItems = select->listItems();
+    const Vector<HTMLElement*>& listItems = toHTMLSelectElement(node())->listItems();
     if (listIndex >= listItems.size())
         return String();
-    Element* element = listItems[listIndex];
-    return element->title();
+    return listItems[listIndex]->title();
 }
 
 bool RenderMenuList::itemIsEnabled(unsigned listIndex) const
 {
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    const Vector<Element*>& listItems = select->listItems();
+    const Vector<HTMLElement*>& listItems = toHTMLSelectElement(node())->listItems();
     if (listIndex >= listItems.size())
         return false;
-    Element* element = listItems[listIndex];
-    if (!isOptionElement(element))
+    HTMLElement* element = listItems[listIndex];
+    if (!element->hasTagName(optionTag))
         return false;
 
     bool groupEnabled = true;
     if (Element* parentElement = element->parentElement()) {
-        if (isOptionGroupElement(parentElement))
-            groupEnabled = parentElement->isEnabledFormControl();
+        if (parentElement->hasTagName(optgroupTag))
+            groupEnabled = !static_cast<HTMLOptGroupElement*>(parentElement)->disabled();
     }
     if (!groupEnabled)
         return false;
@@ -427,8 +441,7 @@ bool RenderMenuList::itemIsEnabled(unsigned listIndex) const
 
 PopupMenuStyle RenderMenuList::itemStyle(unsigned listIndex) const
 {
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    const Vector<Element*>& listItems = select->listItems();
+    const Vector<HTMLElement*>& listItems = toHTMLSelectElement(node())->listItems();
     if (listIndex >= listItems.size()) {
         // If we are making an out of bounds access, then we want to use the style
         // of a different option element (index 0). However, if there isn't an option element
@@ -439,19 +452,19 @@ PopupMenuStyle RenderMenuList::itemStyle(unsigned listIndex) const
         // Try to retrieve the style of an option element we know exists (index 0).
         listIndex = 0;
     }
-    Element* element = listItems[listIndex];
+    HTMLElement* element = listItems[listIndex];
     
     RenderStyle* style = element->renderStyle() ? element->renderStyle() : element->computedStyle();
-    return style ? PopupMenuStyle(style->visitedDependentColor(CSSPropertyColor), itemBackgroundColor(listIndex), style->font(), style->visibility() == VISIBLE, style->display() == NONE, style->textIndent(), style->direction(), style->unicodeBidi() == Override) : menuStyle();
+    return style ? PopupMenuStyle(style->visitedDependentColor(CSSPropertyColor), itemBackgroundColor(listIndex), style->font(), style->visibility() == VISIBLE,
+        style->display() == NONE, style->textIndent(), style->direction(), isOverride(style->unicodeBidi())) : menuStyle();
 }
 
 Color RenderMenuList::itemBackgroundColor(unsigned listIndex) const
 {
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    const Vector<Element*>& listItems = select->listItems();
+    const Vector<HTMLElement*>& listItems = toHTMLSelectElement(node())->listItems();
     if (listIndex >= listItems.size())
         return style()->visitedDependentColor(CSSPropertyBackgroundColor);
-    Element* element = listItems[listIndex];
+    HTMLElement* element = listItems[listIndex];
 
     Color backgroundColor;
     if (element->renderStyle())
@@ -472,7 +485,8 @@ Color RenderMenuList::itemBackgroundColor(unsigned listIndex) const
 PopupMenuStyle RenderMenuList::menuStyle() const
 {
     RenderStyle* s = m_innerBlock ? m_innerBlock->style() : style();
-    return PopupMenuStyle(s->visitedDependentColor(CSSPropertyColor), s->visitedDependentColor(CSSPropertyBackgroundColor), s->font(), s->visibility() == VISIBLE, s->display() == NONE, s->textIndent(), style()->direction(), style()->unicodeBidi() == Override);
+    return PopupMenuStyle(s->visitedDependentColor(CSSPropertyColor), s->visitedDependentColor(CSSPropertyBackgroundColor), s->font(), s->visibility() == VISIBLE,
+        s->display() == NONE, s->textIndent(), style()->direction(), isOverride(style()->unicodeBidi()));
 }
 
 HostWindow* RenderMenuList::hostWindow() const
@@ -485,7 +499,7 @@ PassRefPtr<Scrollbar> RenderMenuList::createScrollbar(ScrollableArea* scrollable
     RefPtr<Scrollbar> widget;
     bool hasCustomScrollbarStyle = style()->hasPseudoStyle(SCROLLBAR);
     if (hasCustomScrollbarStyle)
-        widget = RenderScrollbar::createCustomScrollbar(scrollableArea, orientation, this);
+        widget = RenderScrollbar::createCustomScrollbar(scrollableArea, orientation, this->node());
     else
         widget = Scrollbar::createNativeScrollbar(scrollableArea, orientation, controlSize);
     return widget.release();
@@ -501,13 +515,13 @@ int RenderMenuList::clientInsetRight() const
     return 0;
 }
 
-int RenderMenuList::clientPaddingLeft() const
+LayoutUnit RenderMenuList::clientPaddingLeft() const
 {
     return paddingLeft() + m_innerBlock->paddingLeft();
 }
 
 const int endOfLinePadding = 2;
-int RenderMenuList::clientPaddingRight() const
+LayoutUnit RenderMenuList::clientPaddingRight() const
 {
     if (style()->appearance() == MenulistPart || style()->appearance() == MenulistButtonPart) {
         // For these appearance values, the theme applies padding to leave room for the
@@ -524,13 +538,12 @@ int RenderMenuList::clientPaddingRight() const
 
 int RenderMenuList::listSize() const
 {
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    return select->listItems().size();
+    return toHTMLSelectElement(node())->listItems().size();
 }
 
 int RenderMenuList::selectedIndex() const
 {
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
+    HTMLSelectElement* select = toHTMLSelectElement(node());
     return select->optionToListIndex(select->selectedIndex());
 }
 
@@ -540,45 +553,33 @@ void RenderMenuList::popupDidHide()
 
 bool RenderMenuList::itemIsSeparator(unsigned listIndex) const
 {
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    const Vector<Element*>& listItems = select->listItems();
-    if (listIndex >= listItems.size())
-        return false;
-    Element* element = listItems[listIndex];
-    return element->hasTagName(hrTag);
+    const Vector<HTMLElement*>& listItems = toHTMLSelectElement(node())->listItems();
+    return listIndex < listItems.size() && listItems[listIndex]->hasTagName(hrTag);
 }
 
 bool RenderMenuList::itemIsLabel(unsigned listIndex) const
 {
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    const Vector<Element*>& listItems = select->listItems();
-    if (listIndex >= listItems.size())
-        return false;
-    Element* element = listItems[listIndex];
-    return isOptionGroupElement(element);
+    const Vector<HTMLElement*>& listItems = toHTMLSelectElement(node())->listItems();
+    return listIndex < listItems.size() && listItems[listIndex]->hasTagName(optgroupTag);
 }
 
 bool RenderMenuList::itemIsSelected(unsigned listIndex) const
 {
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    const Vector<Element*>& listItems = select->listItems();
+    const Vector<HTMLElement*>& listItems = toHTMLSelectElement(node())->listItems();
     if (listIndex >= listItems.size())
         return false;
-    Element* element = listItems[listIndex];
-    if (OptionElement* optionElement = toOptionElement(element))
-        return optionElement->selected();
-    return false;
+    HTMLElement* element = listItems[listIndex];
+    return element->hasTagName(optionTag) && toHTMLOptionElement(element)->selected();
 }
 
 void RenderMenuList::setTextFromItem(unsigned listIndex)
 {
-    SelectElement* select = toSelectElement(static_cast<Element*>(node()));
-    setTextFromOption(select->listToOptionIndex(listIndex));
+    setTextFromOption(toHTMLSelectElement(node())->listToOptionIndex(listIndex));
 }
 
 FontSelector* RenderMenuList::fontSelector() const
 {
-    return document()->styleSelector()->fontSelector();
+    return document()->styleResolver()->fontSelector();
 }
 
 }

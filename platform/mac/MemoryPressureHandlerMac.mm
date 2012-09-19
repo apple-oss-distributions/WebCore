@@ -30,5 +30,37 @@
 #import <WebCore/FontCache.h>
 #import <WebCore/MemoryCache.h>
 #import <WebCore/PageCache.h>
+#import <wtf/CurrentTime.h>
 #import <wtf/FastMalloc.h>
 
+
+using std::max;
+
+namespace WebCore {
+
+#if !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD)
+
+
+void MemoryPressureHandler::releaseMemory(bool critical)
+{
+    int savedPageCacheCapacity = pageCache()->capacity();
+    pageCache()->setCapacity(critical ? 0 : pageCache()->pageCount() / 2);
+    pageCache()->setCapacity(savedPageCacheCapacity);
+    pageCache()->releaseAutoreleasedPagesNow();
+
+    NSURLCache *nsurlCache = [NSURLCache sharedURLCache];
+    NSUInteger savedNsurlCacheMemoryCapacity = [nsurlCache memoryCapacity];
+    [nsurlCache setMemoryCapacity:critical ? 0 : [nsurlCache currentMemoryUsage] / 2];
+    [nsurlCache setMemoryCapacity:savedNsurlCacheMemoryCapacity];
+
+    fontCache()->purgeInactiveFontData();
+
+    memoryCache()->pruneToPercentage(critical ? 0 : 0.5f);
+
+    gcController().discardAllCompiledCode();
+
+    WTF::releaseFastMallocFreeMemory();
+}
+#endif
+
+} // namespace WebCore

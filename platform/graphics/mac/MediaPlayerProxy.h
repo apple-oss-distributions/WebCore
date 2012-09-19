@@ -26,15 +26,20 @@
 #ifndef MediaPlayerProxy_h
 #define MediaPlayerProxy_h
 
-#ifdef __OBJC__
+#if defined(__OBJC__)
 #import <Foundation/NSGeometry.h>
 #endif
 
+// Needed since this is a WebKit private header on iOS.
+#ifndef OBJC_CLASS
 #ifdef __OBJC__
-@class WebMediaPlayerProxy;
+#define OBJC_CLASS @class
 #else
-class WebMediaPlayerProxy;
+#define OBJC_CLASS class
 #endif
+#endif // !defined(OBJC_CLASS)
+
+OBJC_CLASS WebMediaPlayerProxy;
 
 enum MediaPlayerProxyNotificationType {
 

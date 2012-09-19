@@ -21,20 +21,24 @@
 #define BINDINGS_QT_RUNTIME_H_
 
 #include "BridgeJSC.h"
-#include "Completion.h"
-#include "Strong.h"
+#include "JSDOMBinding.h"
+#include "JavaScript.h"
 #include "Weak.h"
+#include "qt_instance.h"
 #include "runtime_method.h"
+
+#include <QWeakPointer>
 
 #include <qbytearray.h>
 #include <qmetaobject.h>
-#include <qpointer.h>
 #include <qvariant.h>
+
+namespace WebCore {
+class JSDOMGlobalObject;
+}
 
 namespace JSC {
 namespace Bindings {
-
-class QtInstance;
 
 class QtField : public Field {
 public:
@@ -69,29 +73,7 @@ private:
     QtFieldType m_type;
     QByteArray m_dynamicProperty;
     QMetaProperty m_property;
-    QPointer<QObject> m_childObject;
-};
-
-
-class QtMethod : public Method
-{
-public:
-    QtMethod(const QMetaObject *mo, int i, const QByteArray &ident, int numParameters)
-        : m_metaObject(mo),
-          m_index(i),
-          m_identifier(ident),
-          m_nParams(numParameters)
-        { }
-
-    virtual const char* name() const { return m_identifier.constData(); }
-    virtual int numParameters() const { return m_nParams; }
-
-private:
-    friend class QtInstance;
-    const QMetaObject *m_metaObject;
-    int m_index;
-    QByteArray m_identifier;
-    int m_nParams;
+    QWeakPointer<QObject> m_childObject;
 };
 
 
@@ -149,7 +131,10 @@ class QtRuntimeConnectionMethodData : public QtRuntimeMethodData {
 // Common base class (doesn't really do anything interesting)
 class QtRuntimeMethod : public InternalFunction {
 public:
-    virtual ~QtRuntimeMethod();
+    typedef InternalFunction Base;
+
+    ~QtRuntimeMethod();
+    static void destroy(JSCell*);
 
     static const ClassInfo s_info;
 
@@ -158,35 +143,53 @@ public:
         return globalObject->functionPrototype();
     }
 
-    static Structure* createStructure(JSGlobalData& globalData, JSValue prototype)
+    static Structure* createStructure(JSGlobalData& globalData, JSGlobalObject* globalObject, JSValue prototype)
     {
-        return Structure::create(globalData, prototype, TypeInfo(ObjectType,  StructureFlags), AnonymousSlotCount, &s_info);
+        return Structure::create(globalData, globalObject, prototype, TypeInfo(ObjectType,  StructureFlags), &s_info);
     }
 
 protected:
+    void finishCreation(ExecState*, const Identifier&, PassRefPtr<QtInstance>);
     static const unsigned StructureFlags = OverridesGetOwnPropertySlot | OverridesGetPropertyNames | InternalFunction::StructureFlags | OverridesVisitChildren;
 
     QtRuntimeMethodData *d_func() const {return d_ptr;}
-    QtRuntimeMethod(QtRuntimeMethodData *dd, ExecState *exec, const Identifier &n, PassRefPtr<QtInstance> inst);
+    QtRuntimeMethod(QtRuntimeMethodData *dd, ExecState *, Structure*, const Identifier &name);
     QtRuntimeMethodData *d_ptr;
 };
 
-class QtRuntimeMetaMethod : public QtRuntimeMethod
-{
+class QtRuntimeMetaMethod : public QtRuntimeMethod {
 public:
-    QtRuntimeMetaMethod(ExecState *exec, const Identifier &n, PassRefPtr<QtInstance> inst, int index, const QByteArray& signature, bool allowPrivate);
+    typedef QtRuntimeMethod Base;
 
-    virtual bool getOwnPropertySlot(ExecState *, const Identifier&, PropertySlot&);
-    virtual bool getOwnPropertyDescriptor(ExecState*, const Identifier&, PropertyDescriptor&);
-    virtual void getOwnPropertyNames(ExecState*, PropertyNameArray&, EnumerationMode mode = ExcludeDontEnumProperties);
+    static QtRuntimeMetaMethod* create(ExecState* exec, const Identifier& name, PassRefPtr<QtInstance> instance, int index, const QByteArray& signature, bool allowPrivate)
+    {
+        Structure* domStructure = WebCore::deprecatedGetDOMStructure<QtRuntimeMetaMethod>(exec);
+        QtRuntimeMetaMethod* method = new (allocateCell<QtRuntimeMetaMethod>(*exec->heap())) QtRuntimeMetaMethod(exec, domStructure, name);
+        method->finishCreation(exec, name, instance, index, signature, allowPrivate);
+        return method;
+    }
 
-    virtual void visitChildren(SlotVisitor&);
+    static bool getOwnPropertySlot(JSCell*, ExecState *, const Identifier&, PropertySlot&);
+    static bool getOwnPropertyDescriptor(JSObject*, ExecState*, const Identifier&, PropertyDescriptor&);
+    static void getOwnPropertyNames(JSObject*, ExecState*, PropertyNameArray&, EnumerationMode);
+
+    static void visitChildren(JSCell*, SlotVisitor&);
+    
+    static const ClassInfo s_info;
+
+    static Structure* createStructure(JSGlobalData& globalData, JSGlobalObject* globalObject, JSValue prototype)
+    {
+        return Structure::create(globalData, globalObject, prototype, TypeInfo(ObjectType,  StructureFlags), &s_info);
+    }
 
 protected:
     QtRuntimeMetaMethodData* d_func() const {return reinterpret_cast<QtRuntimeMetaMethodData*>(d_ptr);}
 
 private:
-    virtual CallType getCallData(CallData&);
+    QtRuntimeMetaMethod(ExecState*, Structure*, const Identifier&);
+    void finishCreation(ExecState*, const Identifier&, PassRefPtr<QtInstance>, int index, const QByteArray& signature, bool allowPrivate);
+
+    static CallType getCallData(JSCell*, CallData&);
     static EncodedJSValue JSC_HOST_CALL call(ExecState* exec);
     static JSValue lengthGetter(ExecState*, JSValue, const Identifier&);
     static JSValue connectGetter(ExecState*, JSValue, const Identifier&);
@@ -194,49 +197,86 @@ private:
 };
 
 class QtConnectionObject;
-class QtRuntimeConnectionMethod : public QtRuntimeMethod
-{
+class QtRuntimeConnectionMethod : public QtRuntimeMethod {
 public:
-    QtRuntimeConnectionMethod(ExecState *exec, const Identifier &n, bool isConnect, PassRefPtr<QtInstance> inst, int index, const QByteArray& signature );
+    typedef QtRuntimeMethod Base;
 
-    virtual bool getOwnPropertySlot(ExecState *, const Identifier&, PropertySlot&);
-    virtual bool getOwnPropertyDescriptor(ExecState*, const Identifier&, PropertyDescriptor&);
-    virtual void getOwnPropertyNames(ExecState*, PropertyNameArray&, EnumerationMode mode = ExcludeDontEnumProperties);
+    static QtRuntimeConnectionMethod* create(ExecState* exec, const Identifier& name, bool isConnect, PassRefPtr<QtInstance> instance, int index, const QByteArray& signature)
+    {
+        Structure* domStructure = WebCore::deprecatedGetDOMStructure<QtRuntimeConnectionMethod>(exec);
+        QtRuntimeConnectionMethod* method = new (allocateCell<QtRuntimeConnectionMethod>(*exec->heap())) QtRuntimeConnectionMethod(exec, domStructure, name);
+        method->finishCreation(exec, name, isConnect, instance, index, signature);
+        return method;
+    }
+
+    static bool getOwnPropertySlot(JSCell*, ExecState *, const Identifier&, PropertySlot&);
+    static bool getOwnPropertyDescriptor(JSObject*, ExecState*, const Identifier&, PropertyDescriptor&);
+    static void getOwnPropertyNames(JSObject*, ExecState*, PropertyNameArray&, EnumerationMode);
+ 
+    static const ClassInfo s_info;
+
+    static Structure* createStructure(JSGlobalData& globalData, JSGlobalObject* globalObject, JSValue prototype)
+    {
+        return Structure::create(globalData, globalObject, prototype, TypeInfo(ObjectType,  StructureFlags), &s_info);
+    }
 
 protected:
     QtRuntimeConnectionMethodData* d_func() const {return reinterpret_cast<QtRuntimeConnectionMethodData*>(d_ptr);}
 
 private:
-    virtual CallType getCallData(CallData&);
+    QtRuntimeConnectionMethod(ExecState*, Structure*, const Identifier&);
+    void finishCreation(ExecState*, const Identifier&, bool isConnect, PassRefPtr<QtInstance>, int index, const QByteArray& signature);
+
+    static CallType getCallData(JSCell*, CallData&);
     static EncodedJSValue JSC_HOST_CALL call(ExecState* exec);
     static JSValue lengthGetter(ExecState*, JSValue, const Identifier&);
     static QMultiMap<QObject *, QtConnectionObject *> connections;
     friend class QtConnectionObject;
 };
 
-class QtConnectionObject: public QObject
+// A QtConnectionObject represents a connection created inside JS. It will connect its own execute() slot
+// with the appropriate signal of 'sender'. When execute() is called, it will call JS 'receiverFunction'.
+class QtConnectionObject : public QObject
 {
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+    Q_OBJECT_FAKE
+#endif
 public:
-    QtConnectionObject(JSGlobalData&, PassRefPtr<QtInstance> instance, int signalIndex, JSObject* thisObject, JSObject* funcObject);
+    QtConnectionObject(JSContextRef, PassRefPtr<QtInstance> senderInstance, int signalIndex, JSObjectRef receiver, JSObjectRef receiverFunction);
     ~QtConnectionObject();
 
+#if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
+    // Explicitly define these because want a custom qt_metacall(), so we can't use Q_OBJECT macro.
     static const QMetaObject staticMetaObject;
     virtual const QMetaObject *metaObject() const;
     virtual void *qt_metacast(const char *);
     virtual int qt_metacall(QMetaObject::Call, int, void **argv);
+#endif
 
-    bool match(QObject *sender, int signalIndex, JSObject* thisObject, JSObject *funcObject);
-
-    // actual slot:
     void execute(void **argv);
 
+    bool match(JSContextRef, QObject* sender, int signalIndex, JSObjectRef thisObject, JSObjectRef funcObject);
+
+    // Note: for callers using JSC internals, remove once we don't need anymore.
+    static QtConnectionObject* createWithInternalJSC(ExecState*, PassRefPtr<QtInstance> senderInstance, int signalIndex, JSObject* receiver, JSObject* receiverFunction);
+
 private:
-    RefPtr<QtInstance> m_instance;
+    JSContextRef m_context;
+    RefPtr<QtInstance> m_senderInstance;
+
+    // We use this as key in active connections multimap.
+    QObject* m_originalSender;
+
     int m_signalIndex;
-    QObject* m_originalObject; // only used as a key, not dereferenced
-    Strong<JSObject> m_thisObject;
-    Strong<JSObject> m_funcObject;
+    JSObjectRef m_receiver;
+    JSObjectRef m_receiverFunction;
 };
+
+
+typedef QVariant (*ConvertToVariantFunction)(JSObject* object, int *distance, HashSet<JSObject*>* visitedObjects);
+typedef JSValue (*ConvertToJSValueFunction)(ExecState* exec, WebCore::JSDOMGlobalObject* globalObject, const QVariant& variant);
+
+void registerCustomType(int qtMetaTypeId, ConvertToVariantFunction, ConvertToJSValueFunction);
 
 QVariant convertValueToQVariant(ExecState* exec, JSValue value, QMetaType::Type hint, int *distance);
 JSValue convertQVariantToValue(ExecState* exec, PassRefPtr<RootObject> root, const QVariant& variant);

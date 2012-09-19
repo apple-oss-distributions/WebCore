@@ -34,13 +34,12 @@
 #include "EventNames.h"
 #include "Frame.h"
 #include "FrameSelection.h"
-#include "ScopedEventQueue.h"
 #include "VisiblePosition.h"
 #include "htmlediting.h"
 
 namespace WebCore {
 
-EditCommand::EditCommand(Document* document) 
+EditCommand::EditCommand(Document* document)
     : m_document(document)
     , m_parent(0)
 {
@@ -51,123 +50,18 @@ EditCommand::EditCommand(Document* document)
     setEndingSelection(m_startingSelection);
 }
 
+EditCommand::EditCommand(Document* document, const VisibleSelection& startingSelection, const VisibleSelection& endingSelection)
+    : m_document(document)
+    , m_parent(0)
+{
+    ASSERT(m_document);
+    ASSERT(m_document->frame());
+    setStartingSelection(startingSelection);
+    setEndingSelection(endingSelection);
+}
+
 EditCommand::~EditCommand()
 {
-}
-
-void EditCommand::apply()
-{
-    ASSERT(m_document);
-    ASSERT(m_document->frame());
- 
-    Frame* frame = m_document->frame();
-    
-    if (isTopLevelCommand()) {
-        if (!endingSelection().isContentRichlyEditable()) {
-            switch (editingAction()) {
-                case EditActionTyping:
-                case EditActionPaste:
-                case EditActionDrag:
-                case EditActionSetWritingDirection:
-                case EditActionCut:
-                case EditActionUnspecified:
-                case EditActionDelete:
-                case EditActionDictation:
-                    break;
-                default:
-                    ASSERT_NOT_REACHED();
-                    return;
-            }
-        }
-    }
-    
-    // Changes to the document may have been made since the last editing operation that 
-    // require a layout, as in <rdar://problem/5658603>.  Low level operations, like 
-    // RemoveNodeCommand, don't require a layout because the high level operations that 
-    // use them perform one if one is necessary (like for the creation of VisiblePositions).
-    if (isTopLevelCommand())
-        updateLayout();
-
-    {
-        EventQueueScope scope;
-        DeleteButtonController* deleteButtonController = frame->editor()->deleteButtonController();
-        if (deleteButtonController)
-        deleteButtonController->disable();
-        doApply();
-        if (deleteButtonController)
-        deleteButtonController->enable();
-    }
-
-    if (isTopLevelCommand()) {
-        // Only need to call appliedEditing for top-level commands, and TypingCommands do it on their
-        // own (see TypingCommand::typingAddedToOpenCommand).
-        if (!isTypingCommand())
-            frame->editor()->appliedEditing(this);
-    }
-
-    setShouldRetainAutocorrectionIndicator(false);
-}
-
-void EditCommand::unapply()
-{
-    ASSERT(m_document);
-    ASSERT(m_document->frame());
- 
-    Frame* frame = m_document->frame();
-    
-    // Changes to the document may have been made since the last editing operation that 
-    // require a layout, as in <rdar://problem/5658603>.  Low level operations, like 
-    // RemoveNodeCommand, don't require a layout because the high level operations that 
-    // use them perform one if one is necessary (like for the creation of VisiblePositions).
-    if (isTopLevelCommand()) {
-        updateLayout();
-        // FIXME: Where should iPhone code deal with the composition?
-        // Since editing commands don't save/restore the composition, undoing without fixing
-        // up the composition will leave a stale, invalid composition, as in <rdar://problem/6831637>.
-        // Desktop handles this in -[WebHTMLView _updateSelectionForInputManager], but the phone
-        // goes another route.
-        frame->editor()->confirmCompositionWithoutDisturbingSelection();
-    }
-    
-    DeleteButtonController* deleteButtonController = frame->editor()->deleteButtonController();
-    if (deleteButtonController)
-    deleteButtonController->disable();
-    doUnapply();
-    if (deleteButtonController)
-    deleteButtonController->enable();
-
-    if (isTopLevelCommand())
-        frame->editor()->unappliedEditing(this);
-}
-
-void EditCommand::reapply()
-{
-    ASSERT(m_document);
-    ASSERT(m_document->frame());
- 
-    Frame* frame = m_document->frame();
-    
-    // Changes to the document may have been made since the last editing operation that 
-    // require a layout, as in <rdar://problem/5658603>.  Low level operations, like 
-    // RemoveNodeCommand, don't require a layout because the high level operations that 
-    // use them perform one if one is necessary (like for the creation of VisiblePositions).
-    if (isTopLevelCommand())
-        updateLayout();
-
-    DeleteButtonController* deleteButtonController = frame->editor()->deleteButtonController();
-    if (deleteButtonController)
-    deleteButtonController->disable();
-    doReapply();
-    if (deleteButtonController)
-    deleteButtonController->enable();
-
-    if (isTopLevelCommand())
-        frame->editor()->reappliedEditing(this);
-}
-
-void EditCommand::doReapply()
-{
-    doApply();
 }
 
 EditAction EditCommand::editingAction() const
@@ -175,12 +69,21 @@ EditAction EditCommand::editingAction() const
     return EditActionUnspecified;
 }
 
+static inline EditCommandComposition* compositionIfPossible(EditCommand* command)
+{
+    if (!command->isCompositeEditCommand())
+        return 0;
+    return toCompositeEditCommand(command)->composition();
+}
+
 void EditCommand::setStartingSelection(const VisibleSelection& s)
 {
-    Element* root = s.rootEditableElement();
     for (EditCommand* cmd = this; ; cmd = cmd->m_parent) {
+        if (EditCommandComposition* composition = compositionIfPossible(cmd)) {
+            ASSERT(cmd->isTopLevelCommand());
+            composition->setStartingSelection(s);
+        }
         cmd->m_startingSelection = s;
-        cmd->m_startingRootEditableElement = root;
         if (!cmd->m_parent || cmd->m_parent->isFirstCommand(cmd))
             break;
     }
@@ -188,61 +91,37 @@ void EditCommand::setStartingSelection(const VisibleSelection& s)
 
 void EditCommand::setEndingSelection(const VisibleSelection &s)
 {
-    Element* root = s.rootEditableElement();
     for (EditCommand* cmd = this; cmd; cmd = cmd->m_parent) {
+        if (EditCommandComposition* composition = compositionIfPossible(cmd)) {
+            ASSERT(cmd->isTopLevelCommand());
+            composition->setEndingSelection(s);
+        }
         cmd->m_endingSelection = s;
-        cmd->m_endingRootEditableElement = root;
     }
-}
-
-bool EditCommand::preservesTypingStyle() const
-{
-    return false;
-}
-
-bool EditCommand::isInsertTextCommand() const
-{
-    return false;
-}
-
-bool EditCommand::isTypingCommand() const
-{
-    return false;
-}
-
-bool EditCommand::isCreateLinkCommand() const
-{
-    return false;
-}
-
-bool EditCommand::shouldRetainAutocorrectionIndicator() const
-{
-    return false;
-}
-
-void EditCommand::setShouldRetainAutocorrectionIndicator(bool)
-{
-}
-
-void EditCommand::updateLayout() const
-{
-    document()->updateLayoutIgnorePendingStylesheets();
 }
 
 void EditCommand::setParent(CompositeEditCommand* parent)
 {
-    ASSERT(parent);
-    ASSERT(!m_parent);
+    ASSERT((parent && !m_parent) || (!parent && m_parent));
+    ASSERT(!parent || !isCompositeEditCommand() || !toCompositeEditCommand(this)->composition());
     m_parent = parent;
-    m_startingSelection = parent->m_endingSelection;
-    m_endingSelection = parent->m_endingSelection;
-    m_startingRootEditableElement = parent->m_endingRootEditableElement;
-    m_endingRootEditableElement = parent->m_endingRootEditableElement;
+    if (parent) {
+        m_startingSelection = parent->m_endingSelection;
+        m_endingSelection = parent->m_endingSelection;
+    }
 }
 
-void applyCommand(PassRefPtr<EditCommand> command)
+void SimpleEditCommand::doReapply()
 {
-    command->apply();
+    doApply();
 }
+
+#ifndef NDEBUG
+void SimpleEditCommand::addNodeAndDescendants(Node* startNode, HashSet<Node*>& nodes)
+{
+    for (Node* node = startNode; node; node = node->traverseNextNode(startNode))
+        nodes.add(node);
+}
+#endif
 
 } // namespace WebCore

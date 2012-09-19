@@ -32,6 +32,7 @@ namespace WebCore {
 
 class DeviceMotionController;
 class DeviceMotionData;
+class Page;
 
 class DeviceMotionClient {
     WTF_MAKE_NONCOPYABLE(DeviceMotionClient);
@@ -44,6 +45,8 @@ public:
     virtual DeviceMotionData* currentDeviceMotion() const = 0;
     virtual void deviceMotionControllerDestroyed() = 0;
 };
+
+void provideDeviceMotionTo(Page*, DeviceMotionClient*);
 
 } // namespace WebCore
 

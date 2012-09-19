@@ -9,16 +9,14 @@
 #define WAKClipView_h
 
 #import "WAKView.h"
-#import <Foundation/Foundation.h>
 
 @interface WAKClipView : WAKView
-{
-}
-- (void)setDocumentView:(WAKView *)aView;
-- (id)documentView;
-- (BOOL)copiesOnScroll;
-- (void)setCopiesOnScroll:(BOOL)flag;
+
+@property (nonatomic, readonly) WAKView *documentView;
+@property (nonatomic, assign) BOOL copiesOnScroll;
+
 - (CGRect)documentVisibleRect;
+
 @end
 
 #endif // WAKClipView_h

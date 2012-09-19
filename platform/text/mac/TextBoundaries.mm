@@ -36,6 +36,7 @@ using namespace WTF::Unicode;
 #import <unicode/ustring.h>
 #import <unicode/utypes.h>
 #import <wtf/unicode/CharacterNames.h>
+#import <wtf/RetainPtr.h>
 
 namespace WebCore {
 
@@ -86,11 +87,10 @@ static CFStringTokenizerRef tokenizerForString(CFStringRef str)
     
     if (locale == NULL) {
         const char *currentLocaleID = currentTextBreakLocaleID();
-        CFStringRef lang = CFStringCreateWithBytesNoCopy(NULL, reinterpret_cast<const UInt8 *>(currentLocaleID), strlen(currentLocaleID),  kCFStringEncodingASCII, false, kCFAllocatorNull);
-        locale = CFLocaleCreate(NULL, lang);
+        RetainPtr<CFStringRef> lang(AdoptCF, CFStringCreateWithBytesNoCopy(NULL, reinterpret_cast<const UInt8 *>(currentLocaleID), strlen(currentLocaleID),  kCFStringEncodingASCII, false, kCFAllocatorNull));
+        locale = CFLocaleCreate(NULL, lang.get());
         if (!locale)
             return NULL;
-        CFRelease(lang);
     }
 
     CFRange entireRange = CFRangeMake(0, CFStringGetLength(str));    

@@ -43,14 +43,37 @@
 #include <wtf/MainThread.h>
 #include <wtf/StdLibExtras.h>
 
+#include "WebCoreThread.h"
+
 namespace WebCore {
 
 #if !PLATFORM(CHROMIUM)
 BlobRegistry& blobRegistry()
 {
-    ASSERT(isMainThread());
+    ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+
     DEFINE_STATIC_LOCAL(BlobRegistryImpl, instance, ());
     return instance;
+}
+
+static PassRefPtr<ResourceHandle> createResourceHandle(const ResourceRequest& request, ResourceHandleClient* client)
+{
+    return static_cast<BlobRegistryImpl&>(blobRegistry()).createResourceHandle(request, client);
+}
+
+static void registerBlobResourceHandleConstructor()
+{
+    static bool didRegister = false;
+    if (!didRegister) {
+        ResourceHandle::registerBuiltinConstructor("blob", createResourceHandle);
+        didRegister = true;
+    }
+}
+
+#else
+
+static void registerBlobResourceHandleConstructor()
+{
 }
 #endif
 
@@ -124,7 +147,8 @@ void BlobRegistryImpl::appendStorageItems(BlobStorageData* blobStorageData, cons
 
 void BlobRegistryImpl::registerBlobURL(const KURL& url, PassOwnPtr<BlobData> blobData)
 {
-    ASSERT(isMainThread());
+    ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+    registerBlobResourceHandleConstructor();
 
     RefPtr<BlobStorageData> blobStorageData = BlobStorageData::create(blobData->contentType(), blobData->contentDisposition());
 
@@ -153,7 +177,8 @@ void BlobRegistryImpl::registerBlobURL(const KURL& url, PassOwnPtr<BlobData> blo
 
 void BlobRegistryImpl::registerBlobURL(const KURL& url, const KURL& srcURL)
 {
-    ASSERT(isMainThread());
+    ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+    registerBlobResourceHandleConstructor();
 
     RefPtr<BlobStorageData> src = m_blobs.get(srcURL.string());
     ASSERT(src);
@@ -165,13 +190,15 @@ void BlobRegistryImpl::registerBlobURL(const KURL& url, const KURL& srcURL)
 
 void BlobRegistryImpl::unregisterBlobURL(const KURL& url)
 {
-    ASSERT(isMainThread());
+    ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+
     m_blobs.remove(url.string());
 }
 
 PassRefPtr<BlobStorageData> BlobRegistryImpl::getBlobDataFromURL(const KURL& url) const
 {
-    ASSERT(isMainThread());
+    ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+
     return m_blobs.get(url.string());
 }
 

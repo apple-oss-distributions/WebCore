@@ -30,6 +30,7 @@
 
 #include "Image.h"
 #include "Color.h"
+#include "ImageOrientation.h"
 #include "IntSize.h"
 
 #if PLATFORM(MAC)
@@ -40,8 +41,8 @@
 typedef struct HBITMAP__ *HBITMAP;
 #endif
 
-#if PLATFORM(HAIKU)
-class BBitmap;
+#if PLATFORM(WX)
+class wxBitmap;
 #endif
 
 namespace WebCore {
@@ -49,10 +50,9 @@ namespace WebCore {
 }
 
 namespace WTF {
-    // FIXME: This declaration gives FrameData a default constructor that zeroes
-    // all its data members, even though FrameData's default constructor defined
-    // below does not zero all its data members. One of these must be wrong!
-    template<> struct VectorTraits<WebCore::FrameData> : public SimpleClassVectorTraits { };
+    template<> struct VectorTraits<WebCore::FrameData> : public SimpleClassVectorTraits {
+        static const bool canInitializeWithMemset = false; // Not all FrameData members initialize to 0.
+    };
 }
 
 namespace WebCore {
@@ -68,15 +68,13 @@ struct FrameData {
 public:
     FrameData()
         : m_frame(0)
-        , m_haveMetadata(false)
-        , m_isComplete(false)
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-        , m_orientation(0)
-#endif
+        , m_orientation(DefaultImageOrientation)
         , m_bytes(0)
         , m_scale(0.0f)
         , m_haveInfo(false)
         , m_duration(0)
+        , m_haveMetadata(false)
+        , m_isComplete(false)
         , m_hasAlpha(true) 
     {
     }
@@ -91,16 +89,14 @@ public:
     bool clear(bool clearMetadata);
 
     NativeImagePtr m_frame;
-    bool m_haveMetadata;
-    bool m_isComplete;
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-    int m_orientation;
-#endif
+    ImageOrientation m_orientation;
     ssize_t m_bytes;
     float m_scale;
     bool m_haveInfo;
     float m_duration;
-    bool m_hasAlpha;
+    bool m_haveMetadata : 1;
+    bool m_isComplete : 1;
+    bool m_hasAlpha : 1;
 };
 
 // =================================================
@@ -109,6 +105,8 @@ public:
 
 class BitmapImage : public Image {
     friend class GeneratedImage;
+    friend class CrossfadeGeneratedImage;
+    friend class GeneratorGeneratedImage;
     friend class GraphicsContext;
 public:
     static PassRefPtr<BitmapImage> create(NativeImagePtr nativeImage, ImageObserver* observer = 0)
@@ -121,11 +119,14 @@ public:
     }
     ~BitmapImage();
     
-    virtual bool isBitmapImage() const { return true; }
+    virtual bool isBitmapImage() const;
 
-    virtual bool hasSingleSecurityOrigin() const { return true; }
+    virtual bool hasSingleSecurityOrigin() const;
 
     virtual IntSize size() const;
+    IntSize sizeRespectingOrientation() const;
+    virtual IntSize originalSize() const;
+    IntSize originalSizeRespectingOrientation() const;
     IntSize currentFrameSize() const;
     virtual bool getHotSpot(IntPoint&) const;
 
@@ -137,8 +138,8 @@ public:
     // automatically pause once all observers no longer want to render the image anywhere.
     virtual void stopAnimation();
     virtual void resetAnimation();
-    
-    virtual unsigned decodedSize() const { return m_decodedSize; }
+
+    virtual unsigned decodedSize() const;
 
 #if PLATFORM(MAC)
     // Accessors for native image formats.
@@ -154,37 +155,38 @@ public:
 #if PLATFORM(WIN) || (PLATFORM(QT) && OS(WINDOWS))
     static PassRefPtr<BitmapImage> create(HBITMAP);
 #endif
+#if PLATFORM(WX)
+    static PassRefPtr<BitmapImage> create(const wxBitmap& bitmap)
+    {
+        return adoptRef(new BitmapImage(bitmap));
+    }
+#endif
 #if PLATFORM(WIN)
     virtual bool getHBITMAP(HBITMAP);
     virtual bool getHBITMAPOfSize(HBITMAP, LPSIZE);
+#endif
+
+#if USE(CAIRO)
+    static PassRefPtr<BitmapImage> create(cairo_surface_t*);
 #endif
 
 #if PLATFORM(GTK)
     virtual GdkPixbuf* getGdkPixbuf();
 #endif
 
-    virtual NativeImagePtr nativeImageForCurrentFrame() { return frameAtIndex(currentFrame()); }
+    virtual NativeImagePtr nativeImageForCurrentFrame();
     bool frameHasAlphaAtIndex(size_t);
-    bool currentFrameHasAlpha() { return frameHasAlphaAtIndex(currentFrame()); }
+    virtual bool currentFrameHasAlpha();
 
-#if ENABLE(RESPECT_EXIF_ORIENTATION)    
-    // EXIF orientation specified by EXIF spec
-    static const int ImageEXIFOrientationTopLeft = 1;
-    static const int ImageEXIFOrientationTopRight = 2;
-    static const int ImageEXIFOrientationBottomRight = 3;
-    static const int ImageEXIFOrientationBottomLeft = 4;
-    static const int ImageEXIFOrientationLeftTop = 5;
-    static const int ImageEXIFOrientationRightTop = 6;
-    static const int ImageEXIFOrientationRightBottom = 7;
-    static const int ImageEXIFOrientationLeftBottom = 8;
-#endif
+    ImageOrientation currentFrameOrientation();
+    ImageOrientation frameOrientationAtIndex(size_t);
 
 #if !ASSERT_DISABLED
-    bool notSolidColor()
-    {
-        return size().width() != 1 || size().height() != 1 || frameCount() > 1;
-    }
+    virtual bool notSolidColor();
 #endif
+
+private:
+    void updateSize() const;
 
 protected:
     enum RepetitionCountStatus {
@@ -195,19 +197,19 @@ protected:
 
     BitmapImage(NativeImagePtr, ImageObserver* = 0);
     BitmapImage(ImageObserver* = 0);
+#if PLATFORM(WX)
+    BitmapImage(const wxBitmap&);
+#endif
 
 #if PLATFORM(WIN)
     virtual void drawFrameMatchingSourceSize(GraphicsContext*, const FloatRect& dstRect, const IntSize& srcSize, ColorSpace styleColorSpace, CompositeOperator);
 #endif
     virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator);
+    void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator, RespectImageOrientationEnum);
 
 #if (OS(WINCE) && !PLATFORM(QT))
     virtual void drawPattern(GraphicsContext*, const FloatRect& srcRect, const AffineTransform& patternTransform,
                              const FloatPoint& phase, ColorSpace styleColorSpace, CompositeOperator, const FloatRect& destRect);
-#endif
-
-#if PLATFORM(HAIKU)
-    virtual BBitmap* getBBitmap() const;
 #endif
 
     size_t currentFrame() const { return m_currentFrame; }
@@ -217,18 +219,14 @@ protected:
     NativeImagePtr frameAtIndex(size_t);
     bool frameIsCompleteAtIndex(size_t);
     float frameDurationAtIndex(size_t);
-#if ENABLE(RESPECT_EXIF_ORIENTATION)    
-    int frameOrientationAtIndex(size_t);
-#endif
 
     // Decodes and caches a frame. Never accessed except internally.
-    double m_progressiveLoadChunkTime;
-    unsigned m_progressiveLoadChunkCount;
-    
     void cacheFrame(size_t index, float scaleHint);
 
     // Cache frame metadata without decoding image.
     void cacheFrameInfo(size_t index);
+    // Called before accessing m_frames[index] for info without decoding. Returns false on index out of bounds.
+    bool ensureFrameInfoIsCached(size_t index);
     virtual bool canDestroyDecodedDataIfNecessary() const { return true; }
 
     // Called to invalidate cached data.  When |destroyAll| is true, we wipe out
@@ -279,22 +277,15 @@ protected:
     // changed.
     void checkForSolidColor();
     
-    virtual bool mayFillWithSolidColor()
-    {
-        if (!m_checkedForSolidColor && frameCount() > 0) {
-            checkForSolidColor();
-            // WINCE PORT: checkForSolidColor() doesn't set m_checkedForSolidColor until
-            // it gets enough information to make final decision.
-#if !OS(WINCE)
-            ASSERT(m_checkedForSolidColor);
-#endif
-        }
-        return m_isSolidColor && m_currentFrame == 0;
-    }
-    virtual Color solidColor() const { return m_solidColor; }
+    virtual bool mayFillWithSolidColor();
+    virtual Color solidColor() const;
     
     ImageSource m_source;
     mutable IntSize m_size; // The size to use for the overall image (will just be the size of the first image).
+    mutable IntSize m_sizeRespectingOrientation;
+
+    mutable IntSize m_originalSize; // The size of the unsubsampled image.
+    mutable IntSize m_originalSizeRespectingOrientation;
     
     size_t m_currentFrame; // The index of the current frame of animation.
     Vector<FrameData> m_frames; // An array of the cached frames of the animation. We have to ref frames to pin them in the cache.
@@ -310,22 +301,23 @@ protected:
 #endif
 
     Color m_solidColor;  // If we're a 1x1 solid color, this is the color to use to fill.
-    bool m_isSolidColor;  // Whether or not we are a 1x1 solid image.
-    bool m_checkedForSolidColor; // Whether we've checked the frame for solid color.
-
-    bool m_animationFinished;  // Whether or not we've completed the entire animation.
-
-    bool m_allDataReceived;  // Whether or not we've received all our data.
-
-    mutable bool m_haveSize; // Whether or not our |m_size| member variable has the final overall image size yet.
-    bool m_sizeAvailable; // Whether or not we can obtain the size of the first image frame yet from ImageIO.
-    mutable bool m_hasUniformFrameSize;
 
     unsigned m_decodedSize; // The current size of all decoded frames.
     mutable unsigned m_decodedPropertiesSize; // The size of data decoded by the source to determine image properties (e.g. size, frame count, etc).
-
-    mutable bool m_haveFrameCount;
     size_t m_frameCount;
+
+    double m_progressiveLoadChunkTime;
+    uint16_t m_progressiveLoadChunkCount;
+    bool m_isSolidColor : 1; // Whether or not we are a 1x1 solid image.
+    bool m_checkedForSolidColor : 1; // Whether we've checked the frame for solid color.
+
+    bool m_animationFinished : 1; // Whether or not we've completed the entire animation.
+
+    bool m_allDataReceived : 1; // Whether or not we've received all our data.
+    mutable bool m_haveSize : 1; // Whether or not our |m_size| member variable has the final overall image size yet.
+    bool m_sizeAvailable : 1; // Whether or not we can obtain the size of the first image frame yet from ImageIO.
+    mutable bool m_hasUniformFrameSize : 1;
+    mutable bool m_haveFrameCount : 1;
 };
 
 }

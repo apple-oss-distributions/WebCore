@@ -90,6 +90,7 @@ static NSDictionary* dictionaryThatCanCode(NSDictionary* src)
 @end
 
 
+#if USE(CFNETWORK)
 static NSError *NSErrorFromCFError(CFErrorRef cfError, NSURL *url)
 {
     CFIndex errCode = CFErrorGetCode(cfError);
@@ -162,6 +163,7 @@ static NSError *NSErrorFromCFError(CFErrorRef cfError, NSURL *url)
     }
     return (NSError *)cfError;
 }
+#endif // USE(CFNETWORK)
 
 
 namespace WebCore {
@@ -256,9 +258,9 @@ NSError *ResourceError::nsError() const
             [userInfo.get() setValue:m_localizedDescription forKey:NSLocalizedDescriptionKey];
 
         if (!m_failingURL.isEmpty()) {
-            NSURL *cocoaURL = KURL(ParsedURLString, m_failingURL);
+            RetainPtr<NSURL> cocoaURL = adoptNS([[NSURL alloc] initWithString:m_failingURL]);
             [userInfo.get() setValue:m_failingURL forKey:@"NSErrorFailingURLStringKey"];
-            [userInfo.get() setValue:cocoaURL forKey:@"NSErrorFailingURLKey"];
+            [userInfo.get() setValue:cocoaURL.get() forKey:@"NSErrorFailingURLKey"];
         }
 
         m_platformError.adoptNS([[NSError alloc] initWithDomain:m_domain code:m_errorCode userInfo:userInfo.get()]);

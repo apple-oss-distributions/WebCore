@@ -26,8 +26,6 @@
 #include "config.h"
 #include "ApplicationCacheStorage.h"
 
-#if ENABLE(OFFLINE_WEB_APPLICATIONS)
-
 #include "ApplicationCache.h"
 #include "ApplicationCacheGroup.h"
 #include "ApplicationCacheHost.h"
@@ -42,6 +40,7 @@
 #include <wtf/text/CString.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/StringExtras.h>
+#include <wtf/text/StringBuilder.h>
 
 #include "SQLiteDatabaseTracker.h"
 
@@ -49,8 +48,6 @@ using namespace std;
 
 namespace WebCore {
     
-const unsigned maximumCacheDatabaseSize = 256 * 1024 * 1024;
-
 static const char flatFileSubdirectory[] = "ApplicationCache";
 
 template <class T>
@@ -140,11 +137,11 @@ ApplicationCacheGroup* ApplicationCacheStorage::findOrCreateCacheGroup(const KUR
 {
     ASSERT(!manifestURL.hasFragmentIdentifier());
 
-    std::pair<CacheGroupMap::iterator, bool> result = m_cachesInMemory.add(manifestURL, 0);
+    CacheGroupMap::AddResult result = m_cachesInMemory.add(manifestURL, 0);
     
-    if (!result.second) {
-        ASSERT(result.first->second);
-        return result.first->second;
+    if (!result.isNewEntry) {
+        ASSERT(result.iterator->second);
+        return result.iterator->second;
     }
 
     // Look up the group in the database
@@ -156,7 +153,7 @@ ApplicationCacheGroup* ApplicationCacheStorage::findOrCreateCacheGroup(const KUR
         m_cacheHostSet.add(urlHostHash(manifestURL));
     }
     
-    result.first->second = group;
+    result.iterator->second = group;
     
     return group;
 }
@@ -442,7 +439,7 @@ void ApplicationCacheStorage::setDefaultOriginQuota(int64_t quota)
     m_defaultOriginQuota = quota;
 }
 
-bool ApplicationCacheStorage::quotaForOrigin(const SecurityOrigin* origin, int64_t& quota)
+bool ApplicationCacheStorage::calculateQuotaForOrigin(const SecurityOrigin* origin, int64_t& quota)
 {
     SQLiteTransactionInProgressAutoCounter transactionCounter;
     // If an Origin record doesn't exist, then the COUNT will be 0 and quota will be 0.
@@ -466,7 +463,7 @@ bool ApplicationCacheStorage::quotaForOrigin(const SecurityOrigin* origin, int64
     return false;
 }
 
-bool ApplicationCacheStorage::usageForOrigin(const SecurityOrigin* origin, int64_t& usage)
+bool ApplicationCacheStorage::calculateUsageForOrigin(const SecurityOrigin* origin, int64_t& usage)
 {
     SQLiteTransactionInProgressAutoCounter transactionCounter;
     // If an Origins record doesn't exist, then the SUM will be null,
@@ -491,7 +488,7 @@ bool ApplicationCacheStorage::usageForOrigin(const SecurityOrigin* origin, int64
     return false;
 }
 
-bool ApplicationCacheStorage::remainingSizeForOriginExcludingCache(const SecurityOrigin* origin, ApplicationCache* cache, int64_t& remainingSize)
+bool ApplicationCacheStorage::calculateRemainingSizeForOriginExcludingCache(const SecurityOrigin* origin, ApplicationCache* cache, int64_t& remainingSize)
 {
     SQLiteTransactionInProgressAutoCounter transactionCounter;
     openDatabase(false);
@@ -531,7 +528,7 @@ bool ApplicationCacheStorage::remainingSizeForOriginExcludingCache(const Securit
     if (result == SQLResultRow) {
         int64_t numberOfCaches = statement.getColumnInt64(0);
         if (numberOfCaches == 0)
-            quotaForOrigin(origin, remainingSize);
+            calculateQuotaForOrigin(origin, remainingSize);
         else
             remainingSize = statement.getColumnInt64(1);
         return true;
@@ -615,17 +612,8 @@ void ApplicationCacheStorage::openDatabase(bool createIfDoesNotExist)
         return;
 
     m_cacheFile = pathByAppendingComponent(m_cacheDirectory, "ApplicationCache.db");
-    bool exists = fileExists(m_cacheFile);
-    if (!createIfDoesNotExist && !exists)
+    if (!createIfDoesNotExist && !fileExists(m_cacheFile))
         return;
-
-    if (exists) {
-        // The cache has grown too large, wipe it out and start rebuilding. This is not ideal but it is simple and safe.
-        long long fileSize = 0;
-        getFileSize(m_cacheFile, fileSize);
-        if (fileSize > maximumCacheDatabaseSize)
-            deleteFile(m_cacheFile);
-    }
 
     makeAllDirectories(m_cacheDirectory);
     m_database.open(m_cacheFile);
@@ -865,17 +853,17 @@ bool ApplicationCacheStorage::store(ApplicationCacheResource* resource, unsigned
     // Then, insert the resource
     
     // Serialize the headers
-    Vector<UChar> stringBuilder;
+    StringBuilder stringBuilder;
     
     HTTPHeaderMap::const_iterator end = resource->response().httpHeaderFields().end();
     for (HTTPHeaderMap::const_iterator it = resource->response().httpHeaderFields().begin(); it!= end; ++it) {
-        stringBuilder.append(it->first.characters(), it->first.length());
+        stringBuilder.append(it->first);
         stringBuilder.append((UChar)':');
-        stringBuilder.append(it->second.characters(), it->second.length());
+        stringBuilder.append(it->second);
         stringBuilder.append((UChar)'\n');
     }
     
-    String headers = String::adopt(stringBuilder);
+    String headers = stringBuilder.toString();
     
     SQLiteStatement resourceStatement(m_database, "INSERT INTO CacheResources (url, statusCode, responseURL, headers, data, mimeType, textEncodingName) VALUES (?, ?, ?, ?, ?, ?, ?)");
     if (resourceStatement.prepare() != SQLResultOk)
@@ -992,10 +980,10 @@ bool ApplicationCacheStorage::checkOriginQuota(ApplicationCacheGroup* group, App
     // Check if the oldCache with the newCache would reach the per-origin quota.
     int64_t remainingSpaceInOrigin;
     const SecurityOrigin* origin = group->origin();
-    if (remainingSizeForOriginExcludingCache(origin, oldCache, remainingSpaceInOrigin)) {
+    if (calculateRemainingSizeForOriginExcludingCache(origin, oldCache, remainingSpaceInOrigin)) {
         if (remainingSpaceInOrigin < newCache->estimatedSizeInStorage()) {
             int64_t quota;
-            if (quotaForOrigin(origin, quota)) {
+            if (calculateQuotaForOrigin(origin, quota)) {
                 totalSpaceNeeded = quota - remainingSpaceInOrigin + newCache->estimatedSizeInStorage();
                 return false;
             }
@@ -1578,5 +1566,3 @@ ApplicationCacheStorage& cacheStorage()
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(OFFLINE_WEB_APPLICATIONS)

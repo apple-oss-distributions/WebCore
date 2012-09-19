@@ -26,13 +26,12 @@
 #include "config.h"
 #include "StorageNamespaceImpl.h"
 
-#if ENABLE(DOM_STORAGE)
-
 #include "SecurityOriginHash.h"
 #include "StorageAreaImpl.h"
 #include "StorageMap.h"
 #include "StorageSyncManager.h"
 #include "StorageTracker.h"
+#include <wtf/MainThread.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/StringHash.h>
 
@@ -66,7 +65,7 @@ PassRefPtr<StorageNamespace> StorageNamespaceImpl::sessionStorageNamespace(unsig
 
 StorageNamespaceImpl::StorageNamespaceImpl(StorageType storageType, const String& path, unsigned quota)
     : m_storageType(storageType)
-    , m_path(path.crossThreadString())
+    , m_path(path.isolatedCopy())
     , m_syncManager(0)
     , m_quota(quota)
     , m_isShutdown(false)
@@ -140,11 +139,6 @@ void StorageNamespaceImpl::close()
     m_isShutdown = true;
 }
 
-void StorageNamespaceImpl::unlock()
-{
-    // Because there's a single event loop per-process, this is a no-op.
-}
-
 void StorageNamespaceImpl::clearOriginForDeletion(SecurityOrigin* origin)
 {
     ASSERT(isMainThread() || pthread_main_np());
@@ -172,5 +166,3 @@ void StorageNamespaceImpl::sync()
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(DOM_STORAGE)

@@ -36,7 +36,6 @@ bool applicationIsMicrosoftMessenger();
 bool applicationIsMicrosoftMyDay();
 bool applicationIsMicrosoftOutlook();
 bool applicationIsSafari();
-bool applicationIsSolarWalkMac();
 
 } // namespace WebCore
 
@@ -48,6 +47,5 @@ inline bool WebCore::applicationIsMicrosoftMessenger() { return false; }
 inline bool WebCore::applicationIsMicrosoftMyDay() { return false; }
 inline bool WebCore::applicationIsMicrosoftOutlook() { return false; }
 inline bool WebCore::applicationIsSafari() { return false; }
-inline bool WebCore::applicationIsSolarWalkMac() { return false; }
 
 #endif // RuntimeApplicationChecks_h

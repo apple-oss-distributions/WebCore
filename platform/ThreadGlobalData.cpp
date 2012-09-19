@@ -27,8 +27,11 @@
 #include "config.h"
 #include "ThreadGlobalData.h"
 
+#include "DOMImplementation.h"
 #include "EventNames.h"
+#include "InspectorCounters.h"
 #include "ThreadTimers.h"
+#include <wtf/MainThread.h>
 #include <wtf/UnusedParam.h>
 #include <wtf/WTFThreadData.h>
 #include <wtf/text/StringImpl.h>
@@ -57,13 +60,17 @@ ThreadGlobalData* ThreadGlobalData::staticData;
 #endif
 
 ThreadGlobalData::ThreadGlobalData()
-    : m_eventNames(new EventNames)
-    , m_threadTimers(new ThreadTimers)
+    : m_eventNames(adoptPtr(new EventNames))
+    , m_threadTimers(adoptPtr(new ThreadTimers))
+    , m_xmlTypeRegExp(adoptPtr(new XMLMIMETypeRegExp))
 #ifndef NDEBUG
     , m_isMainThread(pthread_main_np() || isMainThread())
 #endif
 #if USE(ICU_UNICODE)
-    , m_cachedConverterICU(new ICUConverterWrapper)
+    , m_cachedConverterICU(adoptPtr(new ICUConverterWrapper))
+#endif
+#if ENABLE(INSPECTOR)
+    , m_inspectorCounters(adoptPtr(new ThreadLocalInspectorCounters()))
 #endif
 {
     // This constructor will have been called on the main thread before being called on
@@ -76,21 +83,22 @@ ThreadGlobalData::ThreadGlobalData()
 
 ThreadGlobalData::~ThreadGlobalData()
 {
-    destroy();
 }
 
 void ThreadGlobalData::destroy()
 {
 
 #if USE(ICU_UNICODE)
-    delete m_cachedConverterICU;
-    m_cachedConverterICU = 0;
+    m_cachedConverterICU.clear();
 #endif
 
-    delete m_eventNames;
-    m_eventNames = 0;
-    delete m_threadTimers;
-    m_threadTimers = 0;
+#if ENABLE(INSPECTOR)
+    m_inspectorCounters.clear();
+#endif
+
+    m_eventNames.clear();
+    m_threadTimers.clear();
+    m_xmlTypeRegExp.clear();
 }
 
 #if ENABLE(WORKERS)

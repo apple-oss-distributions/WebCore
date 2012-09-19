@@ -42,7 +42,9 @@ using WTF::ThreadSpecific;
 namespace WebCore {
 
     class EventNames;
+    class ThreadLocalInspectorCounters;
     class ThreadTimers;
+    class XMLMIMETypeRegExp;
 
     struct ICUConverterWrapper;
     struct TECConverterWrapper;
@@ -56,6 +58,7 @@ namespace WebCore {
 
         EventNames& eventNames() { return *m_eventNames; }
         ThreadTimers& threadTimers() { return *m_threadTimers; }
+        XMLMIMETypeRegExp& xmlTypeRegExp() { return *m_xmlTypeRegExp; }
 
 #if USE(ICU_UNICODE)
         ICUConverterWrapper& cachedConverterICU() { return *m_cachedConverterICU; }
@@ -66,18 +69,27 @@ namespace WebCore {
         void setWebCoreThreadData();
 #endif
 
+#if ENABLE(INSPECTOR)
+        ThreadLocalInspectorCounters& inspectorCounters() { return *m_inspectorCounters; }
+#endif
+
     private:
-        EventNames* m_eventNames;
-        ThreadTimers* m_threadTimers;
+        OwnPtr<EventNames> m_eventNames;
+        OwnPtr<ThreadTimers> m_threadTimers;
+        OwnPtr<XMLMIMETypeRegExp> m_xmlTypeRegExp;
 
 #ifndef NDEBUG
         bool m_isMainThread;
 #endif
 
 #if USE(ICU_UNICODE)
-        ICUConverterWrapper* m_cachedConverterICU;
+        OwnPtr<ICUConverterWrapper> m_cachedConverterICU;
 #endif
 
+
+#if ENABLE(INSPECTOR)
+        OwnPtr<ThreadLocalInspectorCounters> m_inspectorCounters;
+#endif
 
 #if ENABLE(WORKERS)
         static ThreadSpecific<ThreadGlobalData>* staticData;

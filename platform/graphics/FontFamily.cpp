@@ -56,4 +56,19 @@ bool operator==(const FontFamily& a, const FontFamily& b)
     return true;
 }
 
+bool FontFamily::equalForTextAutoSizing(const FontFamily& other) const
+{
+    if (!equalIgnoringCase(family(), other.family()))
+        return false;
+    const FontFamily* ap;
+    const FontFamily* bp;
+    for (ap = next(), bp = other.next(); ap != bp; ap = ap->next(), bp = bp->next()) {
+        if (!ap || !bp)
+            return false;
+        if (!equalIgnoringCase(ap->family(), bp->family()))
+            return false;
+    }
+    return true;
+}
+
 }

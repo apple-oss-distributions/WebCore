@@ -42,7 +42,12 @@ class NSView;
 namespace WebCore {
 
     class ChromeClient;
+#if ENABLE(INPUT_TYPE_COLOR)
+    class ColorChooser;
+    class ColorChooserClient;
+#endif
     class FileChooser;
+    class FileIconLoader;
     class FloatRect;
     class Frame;
     class Geolocation;
@@ -53,9 +58,6 @@ namespace WebCore {
     class Page;
     class PopupMenu;
     class PopupMenuClient;
-#if ENABLE(NOTIFICATIONS)
-    class NotificationPresenter;
-#endif
     class SearchPopupMenu;
 
     struct FrameLoadRequest;
@@ -64,25 +66,28 @@ namespace WebCore {
     
     class Chrome : public HostWindow {
     public:
-        Chrome(Page*, ChromeClient*);
         ~Chrome();
+
+        static PassOwnPtr<Chrome> create(Page*, ChromeClient*);
 
         ChromeClient* client() { return m_client; }
 
         // HostWindow methods.
 
-        virtual void invalidateWindow(const IntRect&, bool);
-        virtual void invalidateContentsAndWindow(const IntRect&, bool);
+        virtual void invalidateRootView(const IntRect&, bool) OVERRIDE;
+        virtual void invalidateContentsAndRootView(const IntRect&, bool) OVERRIDE;
         virtual void invalidateContentsForSlowScroll(const IntRect&, bool);
         virtual void scroll(const IntSize&, const IntRect&, const IntRect&);
-#if ENABLE(TILED_BACKING_STORE)
+#if USE(TILED_BACKING_STORE)
         virtual void delegatedScrollRequested(const IntPoint& scrollPoint);
 #endif
-        virtual IntPoint screenToWindow(const IntPoint&) const;
-        virtual IntRect windowToScreen(const IntRect&) const;
+        virtual IntPoint screenToRootView(const IntPoint&) const OVERRIDE;
+        virtual IntRect rootViewToScreen(const IntRect&) const OVERRIDE;
         virtual PlatformPageClient platformPageClient() const;
         virtual void scrollbarsModeDidChange() const;
         virtual void setCursor(const Cursor&);
+        virtual void setCursorHiddenUntilMouseMoves(bool);
+
 #if ENABLE(REQUEST_ANIMATION_FRAME)
         virtual void scheduleAnimation();
 #endif
@@ -90,14 +95,13 @@ namespace WebCore {
         void scrollRectIntoView(const IntRect&) const;
 
         void contentsSizeChanged(Frame*, const IntSize&) const;
+        void layoutUpdated(Frame*) const;
 
         void setWindowRect(const FloatRect&) const;
         FloatRect windowRect() const;
 
         FloatRect pageRect() const;
         
-        float scaleFactor();
-
         void focus() const;
         void unfocus() const;
 
@@ -151,18 +155,17 @@ namespace WebCore {
 
         void print(Frame*);
 
-        // FIXME: Remove once all ports are using client-based geolocation. https://bugs.webkit.org/show_bug.cgi?id=40373
-        // For client-based geolocation, these two methods have moved to GeolocationClient. https://bugs.webkit.org/show_bug.cgi?id=50061
-        void requestGeolocationPermissionForFrame(Frame*, Geolocation*);
-        void cancelGeolocationPermissionRequestForFrame(Frame*, Geolocation*);
-
-        void runOpenPanel(Frame*, PassRefPtr<FileChooser>);
-        void chooseIconForFiles(const Vector<String>&, FileChooser*);
-#if ENABLE(DIRECTORY_UPLOAD)
-        void enumerateChosenDirectory(const String&, FileChooser*);
+#if ENABLE(INPUT_TYPE_COLOR)
+        PassOwnPtr<ColorChooser> createColorChooser(ColorChooserClient*, const Color& initialColor);
 #endif
 
-        void dispatchViewportDataDidChange(const ViewportArguments&) const;
+        void runOpenPanel(Frame*, PassRefPtr<FileChooser>);
+        void loadIconForFiles(const Vector<String>&, FileIconLoader*);
+#if ENABLE(DIRECTORY_UPLOAD)
+        void enumerateChosenDirectory(FileChooser*);
+#endif
+
+        void dispatchViewportPropertiesDidChange(const ViewportArguments&) const;
 
         bool requiresFullscreenForVideoPlayback();
 
@@ -170,23 +173,17 @@ namespace WebCore {
         void focusNSView(NSView*);
 #endif
 
-#if ENABLE(NOTIFICATIONS)
-        NotificationPresenter* notificationPresenter() const; 
-#endif
-
         bool selectItemWritingDirectionIsNatural();
         bool selectItemAlignmentFollowsMenuWritingDirection();
+        bool hasOpenedPopup() const;
         PassRefPtr<PopupMenu> createPopupMenu(PopupMenuClient*) const;
         PassRefPtr<SearchPopupMenu> createSearchPopupMenu(PopupMenuClient*) const;
 
-#if ENABLE(CONTEXT_MENUS)
-        void showContextMenu();
-#endif
-
-        void willRunModalHTMLDialog(const Frame*) const;
-
         void setDispatchViewportDataDidChangeSuppressed(bool b) { m_isDispatchViewportDataDidChangeSuppressed = b; }
+
     private:
+        Chrome(Page*, ChromeClient*);
+
         Page* m_page;
         ChromeClient* m_client;
         bool m_isDispatchViewportDataDidChangeSuppressed;

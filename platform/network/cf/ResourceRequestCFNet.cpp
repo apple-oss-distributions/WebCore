@@ -32,6 +32,7 @@
 #if USE(CFNETWORK)
 #include "FormDataStreamCFNet.h"
 #include <CFNetwork/CFURLRequestPriv.h>
+#include <CFNetwork/CFNetworkConnectionCachePriv.h>
 #endif
 
 #if PLATFORM(MAC)
@@ -151,9 +152,14 @@ void ResourceRequest::doUpdatePlatformRequest()
 
     if (httpPipeliningEnabled())
         wkSetHTTPPipeliningPriority(cfRequest, toHTTPPipeliningPriority(m_priority));
+#if !PLATFORM(WIN)
+    wkCFURLRequestAllowAllPostCaching(cfRequest);
+#endif
 
     setHeaderFields(cfRequest, httpHeaderFields());
-    WebCore::setHTTPBody(cfRequest, httpBody());
+    RefPtr<FormData> formData = httpBody();
+    if (formData && !formData->isEmpty())
+        WebCore::setHTTPBody(cfRequest, formData);
     CFURLRequestSetShouldHandleHTTPCookies(cfRequest, allowCookies());
 
     unsigned fallbackCount = m_responseContentDispositionEncodingFallbackArray.size();
@@ -289,10 +295,10 @@ unsigned initializeMaximumHTTPConnectionCountPerHost()
         ResourceRequest::setHTTPPipeliningEnabled(true);
 
     if (ResourceRequest::httpPipeliningEnabled()) {
-        wkSetHTTPPipeliningMaximumPriority(ResourceLoadPriorityHighest);
+        wkSetHTTPPipeliningMaximumPriority(toHTTPPipeliningPriority(ResourceLoadPriorityHighest));
 #if !PLATFORM(WIN)
         // FIXME: <rdar://problem/9375609> Implement minimum fast lane priority setting on Windows
-        wkSetHTTPPipeliningMinimumFastLanePriority(ResourceLoadPriorityMedium);
+        wkSetHTTPPipeliningMinimumFastLanePriority(toHTTPPipeliningPriority(ResourceLoadPriorityMedium));
 #endif
         // When pipelining do not rate-limit requests sent from WebCore since CFNetwork handles that.
         return unlimitedConnectionCount;
@@ -308,9 +314,11 @@ void initializeHTTPConnectionSettingsOnStartup()
     // needs to become more forgiving.
     // We can't read settings here as this is called too early for that. All values need to be constants.
     static const unsigned preferredConnectionCount = 6;
+    static const unsigned fastLaneConnectionCount = 1;
     wkInitializeMaximumHTTPConnectionCountPerHost(preferredConnectionCount);
     wkSetHTTPPipeliningMaximumPriority(ResourceLoadPriorityHighest);
     wkSetHTTPPipeliningMinimumFastLanePriority(ResourceLoadPriorityMedium);
+    _CFNetworkHTTPConnectionCacheSetLimit(kHTTPNumFastLanes, fastLaneConnectionCount);
 }
 
 } // namespace WebCore

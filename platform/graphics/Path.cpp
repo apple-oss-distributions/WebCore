@@ -43,7 +43,6 @@ static void pathLengthApplierFunction(void* info, const PathElement* element)
     PathTraversalState& traversalState = *static_cast<PathTraversalState*>(info);
     if (traversalState.m_success)
         return;
-    traversalState.m_previous = traversalState.m_current;
     FloatPoint* points = element->points;
     float segmentLength = 0;
     switch (element->type) {
@@ -64,20 +63,7 @@ static void pathLengthApplierFunction(void* info, const PathElement* element)
             break;
     }
     traversalState.m_totalLength += segmentLength; 
-    if ((traversalState.m_action == PathTraversalState::TraversalPointAtLength || 
-         traversalState.m_action == PathTraversalState::TraversalNormalAngleAtLength) &&
-        (traversalState.m_totalLength >= traversalState.m_desiredLength)) {
-        FloatSize change = traversalState.m_current - traversalState.m_previous;
-        float slope = atan2f(change.height(), change.width());
-
-        if (traversalState.m_action == PathTraversalState::TraversalPointAtLength) {
-            float offset = traversalState.m_desiredLength - traversalState.m_totalLength;
-            traversalState.m_current.move(offset * cosf(slope), offset * sinf(slope));
-        } else
-            traversalState.m_normalAngle = rad2deg(slope);
-
-        traversalState.m_success = true;
-    }
+    traversalState.processSegment();
 }
 
 float Path::length() const
@@ -106,12 +92,12 @@ float Path::normalAngleAtLength(float length, bool& ok) const
 }
 #endif
 
-void Path::addRoundedRect(const RoundedIntRect& r)
+void Path::addRoundedRect(const RoundedRect& r)
 {
     addRoundedRect(r.rect(), r.radii().topLeft(), r.radii().topRight(), r.radii().bottomLeft(), r.radii().bottomRight());
 }
 
-void Path::addRoundedRect(const FloatRect& rect, const FloatSize& roundingRadii)
+void Path::addRoundedRect(const FloatRect& rect, const FloatSize& roundingRadii, RoundedRectStrategy strategy)
 {
     if (rect.isEmpty())
         return;
@@ -129,10 +115,10 @@ void Path::addRoundedRect(const FloatRect& rect, const FloatSize& roundingRadii)
     if (radius.height() > halfSize.height())
         radius.setHeight(halfSize.height());
 
-    addBeziersForRoundedRect(rect, radius, radius, radius, radius);
+    addPathForRoundedRect(rect, radius, radius, radius, radius, strategy);
 }
 
-void Path::addRoundedRect(const FloatRect& rect, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius)
+void Path::addRoundedRect(const FloatRect& rect, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius, RoundedRectStrategy strategy)
 {
     if (rect.isEmpty())
         return;
@@ -146,8 +132,29 @@ void Path::addRoundedRect(const FloatRect& rect, const FloatSize& topLeftRadius,
         return;
     }
 
-    addBeziersForRoundedRect(rect, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius);
+    addPathForRoundedRect(rect, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius, strategy);
 }
 
+void Path::addPathForRoundedRect(const FloatRect& rect, const FloatSize& topLeftRadius, const FloatSize& topRightRadius, const FloatSize& bottomLeftRadius, const FloatSize& bottomRightRadius, RoundedRectStrategy strategy)
+{
+    if (strategy == PreferBezierRoundedRect) {
+        addBeziersForRoundedRect(rect, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius);
+        return;
+    }
+
+#if USE(CG)
+    platformAddPathForRoundedRect(rect, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius);
+#else
+    addBeziersForRoundedRect(rect, topLeftRadius, topRightRadius, bottomLeftRadius, bottomRightRadius);
+#endif
+}
+
+
+#if !USE(CG)
+FloatRect Path::fastBoundingRect() const
+{
+    return boundingRect();
+}
+#endif
 
 }

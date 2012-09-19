@@ -33,6 +33,7 @@
 #include "FloatConversion.h"
 #include "GraphicsContextPlatformPrivateCG.h"
 #include "ImageBuffer.h"
+#include "ImageOrientation.h"
 #include "KURL.h"
 #include "Path.h"
 #include "Pattern.h"
@@ -43,11 +44,6 @@
 #include <wtf/OwnArrayPtr.h>
 #include <wtf/RetainPtr.h>
 #include <wtf/UnusedParam.h>
-
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-#include "BitmapImage.h"
-#include "ImageSourceCG.h"
-#endif
 
 #if PLATFORM(MAC) || PLATFORM(CHROMIUM)
 #include "WebCoreSystemInterface.h"
@@ -71,6 +67,7 @@
 using namespace std;
 
 namespace WebCore {
+   
 
 static void setCGFillColor(CGContextRef context, const Color& color, ColorSpace colorSpace)
 {
@@ -102,7 +99,7 @@ void setStrokeAndFillColor(CGContextRef context, CGColorRef color)
 
 CGColorSpaceRef linearRGBColorSpaceRef()
 {
-    // FIXME: Windows should be able to use kCGColorSpaceGenericRGBLinear, this is tracked by http://webkit.org/b/31363.
+    // FIXME: Windows should be able to use linear sRGB, this is tracked by http://webkit.org/b/80000.
     return deviceRGBColorSpaceRef();
 }
 
@@ -148,21 +145,15 @@ void GraphicsContext::restorePlatformState()
 }
 
 void GraphicsContext::drawNativeImage(NativeImagePtr imagePtr, const FloatSize& imageSize, ColorSpace styleColorSpace, const FloatRect& destRect, const FloatRect& srcRect,
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-    int orientation,
-#endif
     float scale,
-    CompositeOperator op)
+    CompositeOperator op, ImageOrientation orientation)
 {
     RetainPtr<CGImageRef> image(imagePtr);
 
-    float currHeight = CGImageGetHeight(image.get());
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-    if (orientationRequiresWidthAndHeightSwapped(orientation))
-        currHeight = CGImageGetWidth(image.get());
-#endif
+    float currHeight = orientation.usesWidthAsHeight() ? CGImageGetWidth(image.get()) : CGImageGetHeight(image.get());
     // Unapply the scaling since we are getting this from a scaled bitmap.
     currHeight /= scale;
+
     if (currHeight <= srcRect.y())
         return;
 
@@ -223,55 +214,21 @@ void GraphicsContext::drawNativeImage(NativeImagePtr imagePtr, const FloatSize& 
     // Align to pixel boundaries
     adjustedDestRect = roundToDevicePixels(adjustedDestRect);
 
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-    // Rotate the image based on the orientation
-    float w = adjustedDestRect.width();
-    float h = adjustedDestRect.height();
-    CGAffineTransform transform;
-    switch (orientation) {
-        case BitmapImage::ImageEXIFOrientationBottomRight:
-            transform = CGAffineTransformMake(-1,  0,  0, -1,  w, h); 
-            break;
-        case BitmapImage::ImageEXIFOrientationLeftBottom:
-            transform = CGAffineTransformMake( 0,  1, -1,  0,  w, 0);
-            break;
-        case BitmapImage::ImageEXIFOrientationRightTop:
-            transform = CGAffineTransformMake( 0, -1,  1,  0,  0, h); 
-            break;
-        case BitmapImage::ImageEXIFOrientationTopRight:
-            transform = CGAffineTransformMake(-1,  0,  0,  1,  w, 0); 
-            break;
-        case BitmapImage::ImageEXIFOrientationBottomLeft:
-            transform = CGAffineTransformMake( 1,  0,  0, -1,  0, h); 
-            break;
-        case BitmapImage::ImageEXIFOrientationLeftTop:
-            transform = CGAffineTransformMake( 0, -1, -1,  0,  w, h);
-            break;
-        case BitmapImage::ImageEXIFOrientationRightBottom:
-            transform = CGAffineTransformMake( 0,  1,  1,  0,  0, 0); 
-            break;
-        default: 
-            transform = CGAffineTransformIdentity;
-            break;
-    }
-    CGContextTranslateCTM(context, adjustedDestRect.x(), adjustedDestRect.maxY());
-#endif
-
     setPlatformCompositeOperation(op);
 
     // Flip the coords.
+    CGContextTranslateCTM(context, adjustedDestRect.x(), adjustedDestRect.maxY());
     CGContextScaleCTM(context, 1, -1);
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-    CGContextConcatCTM(context, transform);
-    if (orientationRequiresWidthAndHeightSwapped(orientation)) {
-        // The destination rect will have it's width and height already reversed for the orientation of
-        // the image, as it was needed for page layout, so we need to reverse it back here.
-        adjustedDestRect = FloatRect(adjustedDestRect.x(), adjustedDestRect.y(), adjustedDestRect.height(), adjustedDestRect.width());
-    }
     adjustedDestRect.setLocation(FloatPoint());
-#else    
-    adjustedDestRect.setY(-adjustedDestRect.maxY());
-#endif
+
+    if (orientation != DefaultImageOrientation) {
+        CGContextConcatCTM(context, orientation.transformFromDefault(adjustedDestRect.size()));
+        if (orientation.usesWidthAsHeight()) {
+            // The destination rect will have it's width and height already reversed for the orientation of
+            // the image, as it was needed for page layout, so we need to reverse it back here.
+            adjustedDestRect = FloatRect(adjustedDestRect.x(), adjustedDestRect.y(), adjustedDestRect.height(), adjustedDestRect.width());
+        }
+    }
     
     // Adjust the color space.
     image = Image::imageWithColorSpace(image.get(), styleColorSpace);
@@ -636,8 +593,9 @@ void GraphicsContext::clipConvexPolygon(size_t numberOfPoints, const FloatPoint*
 void GraphicsContext::applyStrokePattern()
 {
     CGContextRef cgContext = platformContext();
+    AffineTransform userToBaseCTM = AffineTransform(wkGetUserToBaseCTM(cgContext));
 
-    RetainPtr<CGPatternRef> platformPattern(AdoptCF, m_state.strokePattern->createPlatformPattern(getCTM()));
+    RetainPtr<CGPatternRef> platformPattern(AdoptCF, m_state.strokePattern->createPlatformPattern(userToBaseCTM));
     if (!platformPattern)
         return;
 
@@ -651,8 +609,9 @@ void GraphicsContext::applyStrokePattern()
 void GraphicsContext::applyFillPattern()
 {
     CGContextRef cgContext = platformContext();
+    AffineTransform userToBaseCTM = AffineTransform(wkGetUserToBaseCTM(cgContext));
 
-    RetainPtr<CGPatternRef> platformPattern(AdoptCF, m_state.fillPattern->createPlatformPattern(getCTM()));
+    RetainPtr<CGPatternRef> platformPattern(AdoptCF, m_state.fillPattern->createPlatformPattern(userToBaseCTM));
     if (!platformPattern)
         return;
 
@@ -736,10 +695,13 @@ void GraphicsContext::fillPath(const Path& path)
 
     if (m_state.fillGradient) {
         if (hasShadow()) {
-            FloatRect rect = path.boundingRect();
-            CGLayerRef layer = CGLayerCreateWithContext(context, CGSizeMake(rect.width(), rect.height()), 0);
+            FloatRect rect = path.fastBoundingRect();
+            FloatSize layerSize = getCTM().mapSize(rect.size());
+
+            CGLayerRef layer = CGLayerCreateWithContext(context, layerSize, 0);
             CGContextRef layerContext = CGLayerGetContext(layer);
 
+            CGContextScaleCTM(layerContext, layerSize.width() / rect.width(), layerSize.height() / rect.height());
             CGContextTranslateCTM(layerContext, -rect.x(), -rect.y());
             CGContextBeginPath(layerContext);
             CGContextAddPath(layerContext, path.platformPath());
@@ -751,7 +713,7 @@ void GraphicsContext::fillPath(const Path& path)
                 CGContextClip(layerContext);
 
             m_state.fillGradient->paint(layerContext);
-            CGContextDrawLayerAtPoint(context, CGPointMake(rect.x(), rect.y()), layer);
+            CGContextDrawLayerInRect(context, rect, layer);
             CGLayerRelease(layer);
         } else {
             CGContextBeginPath(context);
@@ -791,13 +753,15 @@ void GraphicsContext::strokePath(const Path& path)
 
     if (m_state.strokeGradient) {
         if (hasShadow()) {
-            FloatRect rect = path.boundingRect();
+            FloatRect rect = path.fastBoundingRect();
             float lineWidth = strokeThickness();
             float doubleLineWidth = lineWidth * 2;
-            float layerWidth = ceilf(rect.width() + doubleLineWidth);
-            float layerHeight = ceilf(rect.height() + doubleLineWidth);
+            float adjustedWidth = ceilf(rect.width() + doubleLineWidth);
+            float adjustedHeight = ceilf(rect.height() + doubleLineWidth);
 
-            CGLayerRef layer = CGLayerCreateWithContext(context, CGSizeMake(layerWidth, layerHeight), 0);
+            FloatSize layerSize = getCTM().mapSize(FloatSize(adjustedWidth, adjustedHeight));
+
+            CGLayerRef layer = CGLayerCreateWithContext(context, layerSize, 0);
             CGContextRef layerContext = CGLayerGetContext(layer);
             CGContextSetLineWidth(layerContext, lineWidth);
 
@@ -806,6 +770,7 @@ void GraphicsContext::strokePath(const Path& path)
             // the layer on the left and top sides.
             float translationX = lineWidth - rect.x();
             float translationY = lineWidth - rect.y();
+            CGContextScaleCTM(layerContext, layerSize.width() / adjustedWidth, layerSize.height() / adjustedHeight);
             CGContextTranslateCTM(layerContext, translationX, translationY);
 
             CGContextAddPath(layerContext, path.platformPath());
@@ -816,7 +781,7 @@ void GraphicsContext::strokePath(const Path& path)
 
             float destinationX = roundf(rect.x() - lineWidth);
             float destinationY = roundf(rect.y() - lineWidth);
-            CGContextDrawLayerAtPoint(context, CGPointMake(destinationX, destinationY), layer);
+            CGContextDrawLayerInRect(context, CGRectMake(destinationX, destinationY, adjustedWidth, adjustedHeight), layer);
             CGLayerRelease(layer);
         } else {
             CGContextSaveGState(context);
@@ -854,16 +819,19 @@ void GraphicsContext::fillRect(const FloatRect& rect)
     if (m_state.fillGradient) {
         CGContextSaveGState(context);
         if (hasShadow()) {
-            CGLayerRef layer = CGLayerCreateWithContext(context, CGSizeMake(rect.width(), rect.height()), 0);
+            FloatSize layerSize = getCTM().mapSize(rect.size());
+
+            CGLayerRef layer = CGLayerCreateWithContext(context, layerSize, 0);
             CGContextRef layerContext = CGLayerGetContext(layer);
 
+            CGContextScaleCTM(layerContext, layerSize.width() / rect.width(), layerSize.height() / rect.height());
             CGContextTranslateCTM(layerContext, -rect.x(), -rect.y());
             CGContextAddRect(layerContext, rect);
             CGContextClip(layerContext);
 
             CGContextConcatCTM(layerContext, m_state.fillGradient->gradientSpaceTransform());
             m_state.fillGradient->paint(layerContext);
-            CGContextDrawLayerAtPoint(context, CGPointMake(rect.x(), rect.y()), layer);
+            CGContextDrawLayerInRect(context, rect, layer);
             CGLayerRelease(layer);
         } else {
             CGContextClipToRect(context, rect);
@@ -885,7 +853,7 @@ void GraphicsContext::fillRect(const FloatRect& rect)
         CGContextSetShadowWithColor(platformContext(), CGSizeZero, 0, 0);
 
         ShadowBlur contextShadow(FloatSize(shadowBlur, shadowBlur), m_state.shadowOffset, m_state.shadowColor, m_state.shadowColorSpace);
-        contextShadow.drawRectShadow(this, rect, RoundedIntRect::Radii());
+        contextShadow.drawRectShadow(this, rect, RoundedRect::Radii());
     }
 
     CGContextFillRect(context, rect);
@@ -914,7 +882,7 @@ void GraphicsContext::fillRect(const FloatRect& rect, const Color& color, ColorS
         CGContextSetShadowWithColor(platformContext(), CGSizeZero, 0, 0);
 
         ShadowBlur contextShadow(FloatSize(shadowBlur, shadowBlur), m_state.shadowOffset, m_state.shadowColor, m_state.shadowColorSpace);
-        contextShadow.drawRectShadow(this, rect, RoundedIntRect::Radii());
+        contextShadow.drawRectShadow(this, rect, RoundedRect::Radii());
     }
 
     CGContextFillRect(context, rect);
@@ -947,12 +915,13 @@ void GraphicsContext::fillRoundedRect(const IntRect& rect, const IntSize& topLef
         CGContextSetShadowWithColor(platformContext(), CGSizeZero, 0, 0);
 
         ShadowBlur contextShadow(FloatSize(shadowBlur, shadowBlur), m_state.shadowOffset, m_state.shadowColor, m_state.shadowColorSpace);
-        contextShadow.drawRectShadow(this, rect, RoundedIntRect::Radii(topLeft, topRight, bottomLeft, bottomRight));
+        contextShadow.drawRectShadow(this, rect, RoundedRect::Radii(topLeft, topRight, bottomLeft, bottomRight));
     }
 
     bool equalWidths = (topLeft.width() == topRight.width() && topRight.width() == bottomLeft.width() && bottomLeft.width() == bottomRight.width());
     bool equalHeights = (topLeft.height() == bottomLeft.height() && bottomLeft.height() == topRight.height() && topRight.height() == bottomRight.height());
-    if (equalWidths && equalHeights && topLeft.width() * 2 == rect.width() && topLeft.height() * 2 == rect.height())
+    bool hasCustomFill = m_state.fillGradient || m_state.fillPattern;
+    if (!hasCustomFill && equalWidths && equalHeights && topLeft.width() * 2 == rect.width() && topLeft.height() * 2 == rect.height())
         CGContextFillEllipseInRect(context, rect);
     else {
         Path path;
@@ -967,7 +936,7 @@ void GraphicsContext::fillRoundedRect(const IntRect& rect, const IntSize& topLef
         setCGFillColor(context, oldFillColor, oldColorSpace);
 }
 
-void GraphicsContext::fillRectWithRoundedHole(const IntRect& rect, const RoundedIntRect& roundedHoleRect, const Color& color, ColorSpace colorSpace)
+void GraphicsContext::fillRectWithRoundedHole(const IntRect& rect, const RoundedRect& roundedHoleRect, const Color& color, ColorSpace colorSpace)
 {
     if (paintingDisabled())
         return;
@@ -1071,7 +1040,7 @@ void GraphicsContext::addInnerRoundedRectClip(const IntRect& rect, int thickness
     CGContextEOClip(context);
 }
 
-void GraphicsContext::beginTransparencyLayer(float opacity)
+void GraphicsContext::beginPlatformTransparencyLayer(float opacity)
 {
     if (paintingDisabled())
         return;
@@ -1081,19 +1050,22 @@ void GraphicsContext::beginTransparencyLayer(float opacity)
     CGContextRef context = platformContext();
     CGContextSetAlpha(context, opacity);
     CGContextBeginTransparencyLayer(context, 0);
-    m_data->beginTransparencyLayer();
     m_data->m_userToDeviceTransformKnownToBeIdentity = false;
 }
 
-void GraphicsContext::endTransparencyLayer()
+void GraphicsContext::endPlatformTransparencyLayer()
 {
     if (paintingDisabled())
         return;
     CGContextRef context = platformContext();
     CGContextEndTransparencyLayer(context);
-    m_data->endTransparencyLayer();
 
     restore();
+}
+
+bool GraphicsContext::supportsTransparencyLayers()
+{
+    return true;
 }
 
 void GraphicsContext::setPlatformShadow(const FloatSize& offset, float blur, const Color& color, ColorSpace colorSpace)
@@ -1129,18 +1101,23 @@ void GraphicsContext::setPlatformShadow(const FloatSize& offset, float blur, con
     // Extreme "blur" values can make text drawing crash or take crazy long times, so clamp
     blurRadius = min(blurRadius, narrowPrecisionToCGFloat(1000.0));
 
-    // Work around <rdar://problem/5539388> by ensuring that the offsets will get truncated
-    // to the desired integer.
-    static const CGFloat extraShadowOffset = narrowPrecisionToCGFloat(1.0 / 128);
-    if (xOffset > 0)
-        xOffset += extraShadowOffset;
-    else if (xOffset < 0)
-        xOffset -= extraShadowOffset;
 
-    if (yOffset > 0)
-        yOffset += extraShadowOffset;
-    else if (yOffset < 0)
-        yOffset -= extraShadowOffset;
+#if defined(BUILDING_ON_SNOW_LEOPARD) || defined(BUILDING_ON_LION)
+    if (!isAcceleratedContext()) {
+        // Work around <rdar://problem/5539388> by ensuring that the offsets will get truncated
+        // to the desired integer. Also see: <rdar://problem/10056277>
+        static const CGFloat extraShadowOffset = narrowPrecisionToCGFloat(1.0 / 128);
+        if (xOffset > 0)
+            xOffset += extraShadowOffset;
+        else if (xOffset < 0)
+            xOffset -= extraShadowOffset;
+
+        if (yOffset > 0)
+            yOffset += extraShadowOffset;
+        else if (yOffset < 0)
+            yOffset -= extraShadowOffset;
+    }
+#endif
 
     // Check for an invalid color, as this means that the color was not set for the shadow
     // and we should therefore just use the default shadow color.
@@ -1188,9 +1165,11 @@ void GraphicsContext::strokeRect(const FloatRect& rect, float lineWidth)
     if (m_state.strokeGradient) {
         if (hasShadow()) {
             const float doubleLineWidth = lineWidth * 2;
-            const float layerWidth = ceilf(rect.width() + doubleLineWidth);
-            const float layerHeight = ceilf(rect.height() + doubleLineWidth);
-            CGLayerRef layer = CGLayerCreateWithContext(context, CGSizeMake(layerWidth, layerHeight), 0);
+            float adjustedWidth = ceilf(rect.width() + doubleLineWidth);
+            float adjustedHeight = ceilf(rect.height() + doubleLineWidth);
+            FloatSize layerSize = getCTM().mapSize(FloatSize(adjustedWidth, adjustedHeight));
+
+            CGLayerRef layer = CGLayerCreateWithContext(context, layerSize, 0);
 
             CGContextRef layerContext = CGLayerGetContext(layer);
             m_state.strokeThickness = lineWidth;
@@ -1201,6 +1180,7 @@ void GraphicsContext::strokeRect(const FloatRect& rect, float lineWidth)
             // the layer on the left and top sides.
             const float translationX = lineWidth - rect.x();
             const float translationY = lineWidth - rect.y();
+            CGContextScaleCTM(layerContext, layerSize.width() / adjustedWidth, layerSize.height() / adjustedHeight);
             CGContextTranslateCTM(layerContext, translationX, translationY);
 
             CGContextAddRect(layerContext, rect);
@@ -1211,7 +1191,7 @@ void GraphicsContext::strokeRect(const FloatRect& rect, float lineWidth)
 
             const float destinationX = roundf(rect.x() - lineWidth);
             const float destinationY = roundf(rect.y() - lineWidth);
-            CGContextDrawLayerAtPoint(context, CGPointMake(destinationX, destinationY), layer);
+            CGContextDrawLayerInRect(context, CGRectMake(destinationX, destinationY, adjustedWidth, adjustedHeight), layer);
             CGLayerRelease(layer);
         } else {
             CGContextSaveGState(context);
@@ -1352,8 +1332,10 @@ void GraphicsContext::setCTM(const AffineTransform& transform)
 
 AffineTransform GraphicsContext::getCTM() const
 {
-    CGAffineTransform t = CGContextGetCTM(platformContext());
-    return AffineTransform(t.a, t.b, t.c, t.d, t.tx, t.ty);
+    if (paintingDisabled())
+        return AffineTransform();
+
+    return AffineTransform(CGContextGetCTM(platformContext()));
 }
 
 FloatRect GraphicsContext::roundToDevicePixels(const FloatRect& rect, RoundingMode roundingMode)
@@ -1367,12 +1349,12 @@ FloatRect GraphicsContext::roundToDevicePixels(const FloatRect& rect, RoundingMo
     // we get the affine transform matrix and extract the scale.
 
     if (m_data->m_userToDeviceTransformKnownToBeIdentity)
-        return rect;
+        return roundedIntRect(rect);
 
     CGAffineTransform deviceMatrix = CGContextGetUserSpaceToDeviceSpaceTransform(platformContext());
     if (CGAffineTransformIsIdentity(deviceMatrix)) {
         m_data->m_userToDeviceTransformKnownToBeIdentity = true;
-        return rect;
+        return roundedIntRect(rect);
     }
 
     float deviceScaleX = sqrtf(deviceMatrix.a * deviceMatrix.a + deviceMatrix.b * deviceMatrix.b);
@@ -1674,14 +1656,52 @@ void GraphicsContext::setPlatformCompositeOperation(CompositeOperator mode)
     case CompositePlusDarker:
         target = kCGBlendModePlusDarker;
         break;
-    case CompositeHighlight:
-        // currently unsupported
-        break;
     case CompositePlusLighter:
         target = kCGBlendModePlusLighter;
         break;
+    case CompositeDifference:
+        target = kCGBlendModeDifference;
+        break;
     }
     CGContextSetBlendMode(platformContext(), target);
+}
+
+void GraphicsContext::platformApplyDeviceScaleFactor(float deviceScaleFactor)
+{
+    // CoreGraphics expects the base CTM of a HiDPI context to have the scale factor applied to it.
+    // Failing to change the base level CTM will cause certain CG features, such as focus rings,
+    // to draw with a scale factor of 1 rather than the actual scale factor.
+    wkSetBaseCTM(platformContext(), CGAffineTransformScale(CGContextGetBaseCTM(platformContext()), deviceScaleFactor, deviceScaleFactor));
+}
+
+void GraphicsContext::platformFillEllipse(const FloatRect& ellipse)
+{
+    if (paintingDisabled())
+        return;
+
+    // CGContextFillEllipseInRect only supports solid colors.
+    if (m_state.fillGradient || m_state.fillPattern) {
+        fillEllipseAsPath(ellipse);
+        return;
+    }
+
+    CGContextRef context = platformContext();
+    CGContextFillEllipseInRect(context, ellipse);
+}
+
+void GraphicsContext::platformStrokeEllipse(const FloatRect& ellipse)
+{
+    if (paintingDisabled())
+        return;
+
+    // CGContextStrokeEllipseInRect only supports solid colors.
+    if (m_state.strokeGradient || m_state.strokePattern) {
+        strokeEllipseAsPath(ellipse);
+        return;
+    }
+
+    CGContextRef context = platformContext();
+    CGContextStrokeEllipseInRect(context, ellipse);
 }
 
 }

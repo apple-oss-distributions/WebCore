@@ -32,7 +32,7 @@ namespace MediaFeatureNames {
 
 #define DEFINE_MEDIAFEATURE_GLOBAL(name, str) \
     DEFINE_GLOBAL(AtomicString, name##MediaFeature, str)
-CSS_MEDIAQUERY_NAMES_FOR_EACH_MEDIAFEATURE(DEFINE_MEDIAFEATURE_GLOBAL)
+    CSS_MEDIAQUERY_NAMES_FOR_EACH_MEDIAFEATURE_IOS(DEFINE_MEDIAFEATURE_GLOBAL)
 #undef DEFINE_MEDIAFEATURE_GLOBAL
 
 void init()
@@ -43,7 +43,7 @@ void init()
 
         AtomicString::init();
         #define INITIALIZE_GLOBAL(name, str) new ((void*)&name##MediaFeature) AtomicString(str);
-        CSS_MEDIAQUERY_NAMES_FOR_EACH_MEDIAFEATURE(INITIALIZE_GLOBAL)
+        CSS_MEDIAQUERY_NAMES_FOR_EACH_MEDIAFEATURE_IOS(INITIALIZE_GLOBAL)
         #undef INITIALIZE_GLOBAL
         initialized = true;
     }

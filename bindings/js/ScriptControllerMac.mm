@@ -111,7 +111,7 @@ WebScriptObject* ScriptController::windowScriptObject()
         return 0;
 
     if (!m_windowScriptObject) {
-        JSC::JSLock lock(JSC::SilenceAssertionsOnly);
+        JSC::JSLockHolder lock(JSDOMWindowBase::commonJSGlobalData());
         JSC::Bindings::RootObject* root = bindingRootObject();
         m_windowScriptObject = [WebScriptObject scriptObjectForJSObject:toRef(windowShell(pluginWorld())) originRootObject:root rootObject:root];
     }
@@ -148,7 +148,7 @@ static void updateStyleIfNeededForBindings(JSC::ExecState*, JSC::JSObject* rootO
     if (!rootObject)
         return;
 
-    JSDOMWindow* window = static_cast<JSDOMWindow*>(rootObject);
+    JSDOMWindow* window = JSC::jsCast<JSDOMWindow*>(rootObject);
     if (!window)
         return;
 

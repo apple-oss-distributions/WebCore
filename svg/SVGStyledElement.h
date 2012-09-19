@@ -22,6 +22,7 @@
 #define SVGStyledElement_h
 
 #if ENABLE(SVG)
+#include "CSSPropertyNames.h"
 #include "SVGAnimatedString.h"
 #include "SVGLocatable.h"
 #include "SVGStylable.h"
@@ -29,7 +30,7 @@
 
 namespace WebCore {
 
-void mapAttributeToCSSProperty(HashMap<AtomicStringImpl*, int>* propertyNameToIdMap, const QualifiedName& attrName);
+void mapAttributeToCSSProperty(HashMap<AtomicStringImpl*, CSSPropertyID>* propertyNameToIdMap, const QualifiedName& attrName);
 
 class SVGStyledElement : public SVGElement,
                          public SVGStylable {
@@ -50,9 +51,10 @@ public:
     void setInstanceUpdatesBlocked(bool);
 
     bool hasPendingResources() const;
-    void setHasPendingResources(bool);
+    void setHasPendingResources();
+    void clearHasPendingResourcesIfPossible();
 
-    AnimatedAttributeType animatedPropertyTypeForCSSProperty(const QualifiedName&);
+    virtual void animatedPropertyTypeForAttribute(const QualifiedName&, Vector<AnimatedPropertyType>&);
     static bool isAnimatableCSSProperty(const QualifiedName&);
 
     virtual AffineTransform localCoordinateSpaceTransform(SVGLocatable::CTMScope) const;
@@ -61,23 +63,20 @@ public:
     virtual bool needsPendingResourceHandling() const { return true; }
 
 protected: 
-    SVGStyledElement(const QualifiedName&, Document*);
+    SVGStyledElement(const QualifiedName&, Document*, ConstructionType = CreateSVGElement);
+    virtual bool rendererIsNeeded(const NodeRenderingContext&);
 
-    virtual bool rendererIsNeeded(RenderStyle*);
-
-    virtual bool mapToEntry(const QualifiedName&, MappedAttributeEntry&) const;
-    virtual void parseMappedAttribute(Attribute*);
+    virtual void parseAttribute(Attribute*) OVERRIDE;
+    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
+    virtual void collectStyleForAttribute(Attribute*, StylePropertySet*) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&);
-    virtual void synchronizeProperty(const QualifiedName&);
-
-    void fillPassedAttributeToPropertyTypeMap(AttributeToPropertyTypeMap&);
 
     virtual void attach();
-    virtual void insertedIntoDocument();
-    virtual void removedFromDocument();
+    virtual InsertionNotificationRequest insertedInto(Node*) OVERRIDE;
+    virtual void removedFrom(Node*) OVERRIDE;
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
-    static int cssPropertyIdForSVGAttributeName(const QualifiedName&);
+    static CSSPropertyID cssPropertyIdForSVGAttributeName(const QualifiedName&);
     void updateRelativeLengthsInformation() { updateRelativeLengthsInformation(selfHasRelativeLengths(), this); }
     void updateRelativeLengthsInformation(bool hasRelativeLengths, SVGStyledElement*);
 
@@ -87,11 +86,23 @@ protected:
 private:
     virtual bool isStyled() const { return true; }
 
+    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
+    virtual bool isMouseFocusable() const;
+
+    void buildPendingResourcesIfNeeded();
+
     HashSet<SVGStyledElement*> m_elementsWithRelativeLengths;
 
-    // Animated property declarations
-    DECLARE_ANIMATED_STRING(ClassName, className)
+    BEGIN_DECLARE_ANIMATED_PROPERTIES(SVGStyledElement)
+        DECLARE_ANIMATED_STRING(ClassName, className)
+    END_DECLARE_ANIMATED_PROPERTIES
 };
+
+inline SVGStyledElement* toSVGStyledElement(Node* node)
+{
+    ASSERT(!node || (node->isStyledElement() && node->isSVGElement()));
+    return static_cast<SVGStyledElement*>(node);
+}
 
 } // namespace WebCore
 

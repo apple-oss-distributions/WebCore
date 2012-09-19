@@ -26,8 +26,6 @@
 #ifndef StorageTracker_h
 #define StorageTracker_h
 
-#if ENABLE(DOM_STORAGE)
-    
 #include "PlatformString.h"
 #include "SQLiteDatabase.h"
 #include <wtf/HashSet.h>
@@ -37,8 +35,8 @@
 
 namespace WebCore {
 
-class LocalStorageTask;
-class LocalStorageThread;
+class StorageTask;
+class StorageThread;
 class SecurityOrigin;
 class StorageTrackerClient;    
 
@@ -49,11 +47,15 @@ public:
     static void initializeTracker(const String& storagePath, StorageTrackerClient*);
     static StorageTracker& tracker();
 
+    void setDatabaseDirectoryPath(const String&);
+    String databaseDirectoryPath() const;
+
     void setOriginDetails(const String& originIdentifier, const String& databaseFile);
     
     void deleteAllOrigins();
     void deleteOrigin(SecurityOrigin*);
     void deleteOrigin(const String& originIdentifier);
+    bool originsLoaded() const { return m_finishedImportingOriginIdentifiers; }
     void origins(Vector<RefPtr<SecurityOrigin> >& result);
     long long diskUsageForOrigin(SecurityOrigin*);
     
@@ -72,6 +74,9 @@ public:
 
     void syncLocalStorage();
 
+    double storageDatabaseIdleInterval() { return m_StorageDatabaseIdleInterval; }
+    void setStorageDatabaseIdleInterval(double interval) { m_StorageDatabaseIdleInterval = interval; }
+
 private:
     StorageTracker(const String& storagePath);
     static void scheduleTask(void*);
@@ -82,6 +87,8 @@ private:
     void openTrackerDatabase(bool createIfDoesNotExist);
 
     void importOriginIdentifiers();
+    static void notifyFinishedImportingOriginIdentifiersOnMainThread(void*);
+    void finishedImportingOriginIdentifiers();
     
     void deleteTrackerFiles();
     String databasePathForOrigin(const String& originIdentifier);
@@ -109,14 +116,14 @@ private:
     OriginSet m_originSet;
     OriginSet m_originsBeingDeleted;
 
-    OwnPtr<LocalStorageThread> m_thread;
+    OwnPtr<StorageThread> m_thread;
     
     bool m_isActive;
     bool m_needsInitialization;
+    bool m_finishedImportingOriginIdentifiers;
+    double m_StorageDatabaseIdleInterval;
 };
     
 } // namespace WebCore
-
-#endif // ENABLE(DOM_STORAGE)
 
 #endif // StorageTracker_h

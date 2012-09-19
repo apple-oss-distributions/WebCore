@@ -39,6 +39,10 @@ public:
     {
         return adoptRef(new HTMLDocument(frame, url));
     }
+    static PassRefPtr<HTMLDocument> createSynthesizedDocument(Frame* frame, const KURL& url)
+    {
+        return adoptRef(new HTMLDocument(frame, url, true));
+    }
     virtual ~HTMLDocument();
 
     int width();
@@ -80,7 +84,7 @@ public:
     bool hasExtraNamedItem(AtomicStringImpl* name);
 
 protected:
-    HTMLDocument(Frame*, const KURL&);
+    HTMLDocument(Frame*, const KURL&, bool isSynthesized = false);
 
 private:
     virtual PassRefPtr<Element> createElement(const AtomicString& tagName, ExceptionCode&);

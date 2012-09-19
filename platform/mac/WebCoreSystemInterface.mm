@@ -28,7 +28,12 @@
 #import <Foundation/Foundation.h>
 
 void (*wkAdvanceDefaultButtonPulseAnimation)(NSButtonCell *);
+#if !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD)
+void (*wkCALayerEnumerateRectsBeingDrawnWithBlock)(CALayer *, CGContextRef context, void (^block)(CGRect rect));
+#endif
 BOOL (*wkCGContextGetShouldSmoothFonts)(CGContextRef);
+void (*wkCGContextResetClip)(CGContextRef);
+CGPatternRef (*wkCGPatternCreateWithImageAndTransform)(CGImageRef, CGAffineTransform, int);
 CFStringRef (*wkCopyCFLocalizationPreferredName)(CFStringRef);
 NSString* (*wkCopyNSURLResponseStatusLine)(NSURLResponse*);
 NSString* (*wkCreateURLPasteboardFlavorTypeName)(void);
@@ -46,6 +51,10 @@ void (*wkDrawMediaSliderTrack)(int themeStyle, CGContextRef context, CGRect rect
 BOOL (*wkHitTestMediaUIPart)(int part, int themeStyle, CGRect bounds, CGPoint point);
 void (*wkDrawMediaUIPart)(int part, int themeStyle, CGContextRef context, CGRect rect, unsigned state);
 void (*wkMeasureMediaUIPart)(int part, int themeStyle, CGRect *bounds, CGSize *naturalSize);
+NSView *(*wkCreateMediaUIBackgroundView)(void);
+NSControl *(*wkCreateMediaUIControl)(int);
+void (*wkWindowSetAlpha)(NSWindow *, float);
+void (*wkWindowSetScaledFrame)(NSWindow *, NSRect, NSRect);
 BOOL (*wkMediaControllerThemeAvailable)(int themeStyle);
 NSString* (*wkGetPreferredExtensionForMIMEType)(NSString*);
 CFStringRef (*wkSignedPublicKeyAndChallengeString)(unsigned keySize, CFStringRef challenge, CFStringRef keyDescription);
@@ -55,6 +64,7 @@ NSTimeInterval (*wkGetNSURLResponseCalculatedExpiration)(NSURLResponse *response
 NSDate *(*wkGetNSURLResponseLastModifiedDate)(NSURLResponse *response);
 BOOL (*wkGetNSURLResponseMustRevalidate)(NSURLResponse *response);
 void (*wkGetWheelEventDeltas)(NSEvent*, float* deltaX, float* deltaY, BOOL* continuous);
+UInt8 (*wkGetNSEventKeyChar)(NSEvent *);
 void (*wkPopupMenu)(NSMenu*, NSPoint location, float width, NSView*, int selectedItem, NSFont*);
 unsigned (*wkQTIncludeOnlyModernMediaFileTypes)(void);
 int (*wkQTMovieDataRate)(QTMovie*);
@@ -75,7 +85,7 @@ void (*wkQTClearMediaDownloadCache)();
 void (*wkSetCGFontRenderingMode)(CGContextRef, NSFont*);
 void (*wkSetCookieStoragePrivateBrowsingEnabled)(BOOL);
 void (*wkSetDragImage)(NSImage*, NSPoint offset);
-void (*wkSetPatternBaseCTM)(CGContextRef, CGAffineTransform);
+void (*wkSetBaseCTM)(CGContextRef, CGAffineTransform);
 void (*wkSetPatternPhaseInUserSpace)(CGContextRef, CGPoint point);
 CGAffineTransform (*wkGetUserToBaseCTM)(CGContextRef);
 void (*wkSetUpFontCache)();
@@ -113,6 +123,7 @@ void (*wkSetRequestStorageSession)(CFURLStorageSessionRef, CFMutableURLRequestRe
 #endif
 
 void (*wkGetGlyphsForCharacters)(CGFontRef, const UniChar[], CGGlyph[], size_t);
+bool (*wkGetVerticalGlyphsForCharacters)(CTFontRef, const UniChar[], CGGlyph[], size_t);
 
 CFIndex (*wkGetHyphenationLocationBeforeIndex)(CFStringRef string, CFIndex index);
 int (*wkGetNSEventMomentumPhase)(NSEvent *);
@@ -124,49 +135,16 @@ CTTypesetterRef (*wkCreateCTTypesetterWithUniCharProviderAndOptions)(const UniCh
 CGContextRef (*wkIOSurfaceContextCreate)(IOSurfaceRef surface, unsigned width, unsigned height, CGColorSpaceRef colorSpace);
 CGImageRef (*wkIOSurfaceContextCreateImage)(CGContextRef context);
 
-WKScrollbarPainterRef (*wkMakeScrollbarPainter)(int controlSize, bool isHorizontal);
-WKScrollbarPainterRef (*wkMakeScrollbarReplacementPainter)(WKScrollbarPainterRef oldPainter, int newStyle, int controlSize, bool isHorizontal);
-void (*wkScrollbarPainterSetDelegate)(WKScrollbarPainterRef, id scrollbarPainterDelegate);
-void (*wkScrollbarPainterPaint)(WKScrollbarPainterRef, bool enabled, double value, CGFloat proportion, CGRect frameRect);
-void (*wkScrollbarPainterForceFlashScrollers)(WKScrollbarPainterControllerRef);
-int (*wkScrollbarThickness)(int controlSize);
-int (*wkScrollbarMinimumThumbLength)(WKScrollbarPainterRef);
-int (*wkScrollbarMinimumTotalLengthNeededForThumb)(WKScrollbarPainterRef);
-CGFloat (*wkScrollbarPainterKnobAlpha)(WKScrollbarPainterRef);
-void (*wkSetScrollbarPainterKnobAlpha)(WKScrollbarPainterRef, CGFloat);
-CGFloat (*wkScrollbarPainterTrackAlpha)(WKScrollbarPainterRef);
-void (*wkSetScrollbarPainterTrackAlpha)(WKScrollbarPainterRef, CGFloat);
-bool (*wkScrollbarPainterIsHorizontal)(WKScrollbarPainterRef);
-CGRect (*wkScrollbarPainterKnobRect)(WKScrollbarPainterRef);
-void (*wkScrollbarPainterSetOverlayState)(WKScrollbarPainterRef, int overlayScrollerState);
-void (*wkSetScrollbarPainterKnobStyle)(WKScrollbarPainterRef, wkScrollerKnobStyle);
-
-WKScrollbarPainterControllerRef (*wkMakeScrollbarPainterController)(id painterControllerDelegate);
-void (*wkSetPainterForPainterController)(WKScrollbarPainterControllerRef, WKScrollbarPainterRef, bool isHorizontal);
-WKScrollbarPainterRef (*wkVerticalScrollbarPainterForController)(WKScrollbarPainterControllerRef);
-WKScrollbarPainterRef (*wkHorizontalScrollbarPainterForController)(WKScrollbarPainterControllerRef);
-int (*wkScrollbarPainterControllerStyle)(WKScrollbarPainterControllerRef);
-void (*wkSetScrollbarPainterControllerStyle)(WKScrollbarPainterControllerRef, int newStyle);
-void (*wkContentAreaScrolled)(WKScrollbarPainterControllerRef);
-void (*wkContentAreaWillPaint)(WKScrollbarPainterControllerRef);
-void (*wkMouseEnteredContentArea)(WKScrollbarPainterControllerRef);
-void (*wkMouseExitedContentArea)(WKScrollbarPainterControllerRef);
-void (*wkMouseMovedInContentArea)(WKScrollbarPainterControllerRef);
-void (*wkWillStartLiveResize)(WKScrollbarPainterControllerRef);
-void (*wkContentAreaResized)(WKScrollbarPainterControllerRef);
-void (*wkWillEndLiveResize)(WKScrollbarPainterControllerRef);
-void (*wkContentAreaDidShow)(WKScrollbarPainterControllerRef);
-void (*wkContentAreaDidHide)(WKScrollbarPainterControllerRef);
-void (*wkDidBeginScrollGesture)(WKScrollbarPainterControllerRef);
-void (*wkDidEndScrollGesture)(WKScrollbarPainterControllerRef);
-
-bool (*wkScrollbarPainterUsesOverlayScrollers)(void);
+int (*wkRecommendedScrollerStyle)(void);
 
 bool (*wkExecutableWasLinkedOnOrBeforeSnowLeopard)(void);
 
 CFStringRef (*wkCopyDefaultSearchProviderDisplayName)(void);
 
 NSURL *(*wkAVAssetResolvedURL)(AVAsset*);
+
+NSCursor *(*wkCursor)(const char*);
+
 #endif
 
 void (*wkUnregisterUniqueIdForElement)(id element);
@@ -184,6 +162,7 @@ CFURLStorageSessionRef (*wkCreatePrivateStorageSession)(CFStringRef);
 NSURLRequest* (*wkCopyRequestWithStorageSession)(CFURLStorageSessionRef, NSURLRequest*);
 CFHTTPCookieStorageRef (*wkCopyHTTPCookieStorage)(CFURLStorageSessionRef);
 unsigned (*wkGetHTTPCookieAcceptPolicy)(CFHTTPCookieStorageRef);
+void (*wkSetHTTPCookieAcceptPolicy)(CFHTTPCookieStorageRef, unsigned);
 NSArray *(*wkHTTPCookiesForURL)(CFHTTPCookieStorageRef, NSURL *);
 void (*wkSetHTTPCookiesForURL)(CFHTTPCookieStorageRef, NSArray *, NSURL *, NSURL *);
 void (*wkDeleteHTTPCookie)(CFHTTPCookieStorageRef, NSHTTPCookie *);
@@ -193,3 +172,22 @@ CFURLRef (*wkGetCFURLResponseURL)(CFURLResponseRef);
 CFHTTPMessageRef (*wkGetCFURLResponseHTTPResponse)(CFURLResponseRef);
 CFStringRef (*wkCopyCFURLResponseSuggestedFilename)(CFURLResponseRef);
 void (*wkSetCFURLResponseMIMEType)(CFURLResponseRef, CFStringRef mimeType);
+
+#if !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD)
+dispatch_source_t (*wkCreateVMPressureDispatchOnMainQueue)(void);
+#endif
+
+#if !defined(BUILDING_ON_SNOW_LEOPARD) && !defined(BUILDING_ON_LION)
+NSString *(*wkGetMacOSXVersionString)(void);
+bool (*wkExecutableWasLinkedOnOrBeforeLion)(void);
+#endif
+
+#if !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOW_LEOPARD)
+void (*wkCGPathAddRoundedRect)(CGMutablePathRef path, const CGAffineTransform* matrix, CGRect rect, CGFloat cornerWidth, CGFloat cornerHeight);
+#endif
+
+#if !defined(BUILDING_ON_SNOW_LEOPARD)
+void (*wkCFURLRequestAllowAllPostCaching)(CFURLRequestRef);
+#endif
+
+

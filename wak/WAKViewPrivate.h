@@ -13,9 +13,9 @@
 - (WKViewRef)_viewRef;
 + (WAKView *)_wrapperForViewRef:(WKViewRef)_viewRef;
 - (id)_initWithViewRef:(WKViewRef)view;
-- (void)_handleEvent:(WebEvent *)event;
 - (BOOL)_handleResponderCall:(WKViewResponderCallbackType)type;
 - (NSMutableSet *)_subviewReferences;
+- (BOOL)_selfHandleEvent:(WebEvent *)event;
 @end
 
 static inline WAKView *WAKViewForWKViewRef(WKViewRef view)

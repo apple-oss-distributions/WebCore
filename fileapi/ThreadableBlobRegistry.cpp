@@ -72,7 +72,7 @@ static void registerBlobURLTask(void* context)
 
 void ThreadableBlobRegistry::registerBlobURL(const KURL& url, PassOwnPtr<BlobData> blobData)
 {
-    if (isMainThread())
+    if (isMainThread() || pthread_main_np())
         blobRegistry().registerBlobURL(url, blobData);
     else {
         OwnPtr<BlobRegistryContext> context = adoptPtr(new BlobRegistryContext(url, blobData));
@@ -88,7 +88,7 @@ static void registerBlobURLFromTask(void* context)
 
 void ThreadableBlobRegistry::registerBlobURL(const KURL& url, const KURL& srcURL)
 {
-    if (isMainThread())
+    if (isMainThread() || pthread_main_np())
         blobRegistry().registerBlobURL(url, srcURL);
     else {
         OwnPtr<BlobRegistryContext> context = adoptPtr(new BlobRegistryContext(url, srcURL));
@@ -104,7 +104,7 @@ static void unregisterBlobURLTask(void* context)
 
 void ThreadableBlobRegistry::unregisterBlobURL(const KURL& url)
 {
-    if (isMainThread())
+    if (isMainThread() || pthread_main_np())
         blobRegistry().unregisterBlobURL(url);
     else {
         OwnPtr<BlobRegistryContext> context = adoptPtr(new BlobRegistryContext(url));

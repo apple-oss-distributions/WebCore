@@ -55,7 +55,7 @@ PassOwnPtr<ScheduledAction> ScheduledAction::create(ExecState* exec, DOMWrapperW
     if (getCallData(v, callData) == CallTypeNone) {
         if (policy && !policy->allowEval())
             return nullptr;
-        UString string = v.toString(exec);
+        UString string = v.toString(exec)->value(exec);
         if (exec->hadException())
             return nullptr;
         return adoptPtr(new ScheduledAction(ustringToString(string), isolatedWorld));
@@ -91,7 +91,7 @@ void ScheduledAction::execute(ScriptExecutionContext* context)
 void ScheduledAction::executeFunctionInContext(JSGlobalObject* globalObject, JSValue thisValue, ScriptExecutionContext* context)
 {
     ASSERT(m_function);
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(context->globalData());
 
     CallData callData;
     CallType callType = getCallData(m_function.get(), callData);
@@ -106,10 +106,14 @@ void ScheduledAction::executeFunctionInContext(JSGlobalObject* globalObject, JSV
         args.append(m_args[i].get());
 
     globalObject->globalData().timeoutChecker.start();
+    InspectorInstrumentationCookie cookie = JSMainThreadExecState::instrumentFunctionCall(context, callType, callData);
+
     if (context->isDocument())
         JSMainThreadExecState::call(exec, m_function.get(), callType, callData, thisValue, args);
     else
         JSC::call(exec, m_function.get(), callType, callData, thisValue, args);
+
+    InspectorInstrumentation::didCallFunction(cookie);
     globalObject->globalData().timeoutChecker.stop();
 
     if (exec->hadException())
@@ -126,15 +130,10 @@ void ScheduledAction::execute(Document* document)
     if (!frame || !frame->script()->canExecuteScripts(AboutToExecuteScript))
         return;
 
-    frame->script()->setProcessingTimerCallback(true);
-
-    if (m_function) {
+    if (m_function)
         executeFunctionInContext(window, window->shell(), document);
-        Document::updateStyleForAllDocuments();
-    } else
+    else
         frame->script()->executeScriptInWorld(m_isolatedWorld.get(), m_code);
-
-    frame->script()->setProcessingTimerCallback(false);
 }
 
 #if ENABLE(WORKERS)

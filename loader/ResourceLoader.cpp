@@ -31,8 +31,8 @@
 #include "ResourceLoader.h"
 
 #include "ApplicationCacheHost.h"
+#include "AsyncFileStream.h"
 #include "DocumentLoader.h"
-#include "FileStreamProxy.h"
 #include "Frame.h"
 #include "FrameLoader.h"
 #include "FrameLoaderClient.h"
@@ -42,6 +42,7 @@
 #include "ResourceError.h"
 #include "ResourceHandle.h"
 #include "ResourceLoadScheduler.h"
+#include "SecurityOrigin.h"
 #include "Settings.h"
 #include "SharedBuffer.h"
 
@@ -49,27 +50,19 @@ namespace WebCore {
 
 PassRefPtr<SharedBuffer> ResourceLoader::resourceData()
 {
-    if (m_resourceData)
-        return m_resourceData;
-
-    if (ResourceHandle::supportsBufferedData() && m_handle)
-        return m_handle->bufferedData();
-    
-    return 0;
+    return m_resourceData;
 }
 
-ResourceLoader::ResourceLoader(Frame* frame, bool sendResourceLoadCallbacks, bool shouldContentSniff)
+ResourceLoader::ResourceLoader(Frame* frame, ResourceLoaderOptions options)
     : m_frame(frame)
     , m_documentLoader(frame->loader()->activeDocumentLoader())
     , m_identifier(0)
     , m_reachedTerminalState(false)
     , m_calledWillCancel(false)
     , m_cancelled(false)
-    , m_calledDidFinishLoad(false)
-    , m_sendResourceLoadCallbacks(sendResourceLoadCallbacks)
-    , m_shouldContentSniff(shouldContentSniff)
-    , m_shouldBufferData(true)
+    , m_notifiedLoadComplete(false)
     , m_defersLoading(frame->page()->defersLoading())
+    , m_options(options)
 {
 }
 
@@ -119,6 +112,18 @@ bool ResourceLoader::init(const ResourceRequest& r)
     ASSERT(!m_documentLoader->isSubstituteLoadPending(this));
     
     ResourceRequest clientRequest(r);
+
+    // If the documentLoader was detached while this ResourceLoader was waiting its turn
+    // in ResourceLoadScheduler queue, don't continue.
+    if (!m_documentLoader->frame())
+        return false;
+    
+    m_defersLoading = m_frame->page()->defersLoading();
+    if (m_options.securityCheck == DoSecurityCheck && !m_frame->document()->securityOrigin()->canDisplay(clientRequest.url())) {
+        FrameLoader::reportLocalLoadFailed(m_frame.get(), clientRequest.url().string());
+        releaseResources();
+        return false;
+    }
     
     // https://bugs.webkit.org/show_bug.cgi?id=26391
     // The various plug-in implementations call directly to ResourceLoader::load() instead of piping requests
@@ -139,11 +144,11 @@ bool ResourceLoader::init(const ResourceRequest& r)
     }
 
     if (clientRequest.isNull()) {
-        didFail(frameLoader()->cancelledError(m_request));
+        cancel();
         return false;
     }
 
-    m_request = clientRequest;
+    m_originalRequest = m_request = clientRequest;
     return true;
 }
 
@@ -153,15 +158,13 @@ void ResourceLoader::start()
     ASSERT(!m_request.isNull());
     ASSERT(m_deferredRequest.isNull());
 
-#if ENABLE(WEB_ARCHIVE)
+#if ENABLE(WEB_ARCHIVE) || ENABLE(MHTML)
     if (m_documentLoader->scheduleArchiveLoad(this, m_request, m_request.url()))
         return;
 #endif
-    
-#if ENABLE(OFFLINE_WEB_APPLICATIONS)
+
     if (m_documentLoader->applicationCacheHost()->maybeLoadResource(this, m_request, m_request.url()))
         return;
-#endif
 
     if (m_defersLoading) {
         m_deferredRequest = m_request;
@@ -169,7 +172,7 @@ void ResourceLoader::start()
     }
 
     if (!m_reachedTerminalState)
-        m_handle = ResourceHandle::create(m_frame->loader()->networkingContext(), m_request, this, m_defersLoading, m_shouldContentSniff);
+        m_handle = ResourceHandle::create(m_frame->loader()->networkingContext(), m_request, this, m_defersLoading, m_options.sniffContent == SniffContent);
 }
 
 void ResourceLoader::setDefersLoading(bool defers)
@@ -191,19 +194,19 @@ FrameLoader* ResourceLoader::frameLoader() const
     return m_frame->loader();
 }
 
-void ResourceLoader::setShouldBufferData(bool shouldBufferData)
+void ResourceLoader::setShouldBufferData(DataBufferingPolicy shouldBufferData)
 { 
-    m_shouldBufferData = shouldBufferData; 
+    m_options.shouldBufferData = shouldBufferData; 
 
     // Reset any already buffered data
-    if (!m_shouldBufferData)
+    if (!shouldBufferData)
         m_resourceData = 0;
 }
     
 
 void ResourceLoader::addData(const char* data, int length, bool allAtOnce)
 {
-    if (!m_shouldBufferData)
+    if (m_options.shouldBufferData == DoNotBufferData)
         return;
 
     if (allAtOnce) {
@@ -211,16 +214,10 @@ void ResourceLoader::addData(const char* data, int length, bool allAtOnce)
         return;
     }
         
-    if (ResourceHandle::supportsBufferedData()) {
-        // Buffer data only if the connection has handed us the data because is has stopped buffering it.
-        if (m_resourceData)
-            m_resourceData->append(data, length);
-    } else {
-        if (!m_resourceData)
-            m_resourceData = SharedBuffer::create(data, length);
-        else
-            m_resourceData->append(data, length);
-    }
+    if (!m_resourceData)
+        m_resourceData = SharedBuffer::create(data, length);
+    else
+        m_resourceData->append(data, length);
 }
 
 void ResourceLoader::clearResourceData()
@@ -236,15 +233,23 @@ void ResourceLoader::willSendRequest(ResourceRequest& request, const ResourceRes
     RefPtr<ResourceLoader> protector(this);
 
     ASSERT(!m_reachedTerminalState);
+    
+    // Ensure an identifier is always set. This ensures that this assetion is not hit:
+    // <rdar://problem/11059794> ASSERTION FAILED: !HashTranslator::equal(KeyTraits::emptyValue(), key) in WebFrameLoaderClient::canAuthenticateAgainstProtectionSpace loading the attached web archive
+    // This is not needed in WebKit2, as it doesn't use m_identifier in WebFrameLoaderClient::canAuthenticateAgainstProtectionSpace
+    if (!m_identifier) {
+        m_identifier = m_frame->page()->progress()->createUniqueIdentifier();
+        frameLoader()->notifier()->assignIdentifierToInitialRequest(m_identifier, documentLoader(), request);
 
-    if (m_sendResourceLoadCallbacks) {
+        // If this ResourceLoader was stopped as a result of assignIdentifierToInitialRequest, bail out
+        if (m_reachedTerminalState)
+            return;
+    }
+
+    if (m_options.sendLoadCallbacks == SendCallbacks) {
         if (!m_identifier) {
             m_identifier = m_frame->page()->progress()->createUniqueIdentifier();
             frameLoader()->notifier()->assignIdentifierToInitialRequest(m_identifier, documentLoader(), request);
-
-            // If this ResourceLoader was stopped as a result of assignIdentifierToInitialRequest, bail out
-            if (m_reachedTerminalState)
-                return;
         }
 
         frameLoader()->notifier()->willSendRequest(this, request, redirectResponse);
@@ -272,7 +277,7 @@ void ResourceLoader::didReceiveResponse(const ResourceResponse& r)
     if (FormData* data = m_request.httpBody())
         data->removeGeneratedFilesIfNeeded();
         
-    if (m_sendResourceLoadCallbacks)
+    if (m_options.sendLoadCallbacks == SendCallbacks)
         frameLoader()->notifier()->didReceiveResponse(this, m_response);
 }
 
@@ -292,13 +297,13 @@ void ResourceLoader::didReceiveData(const char* data, int length, long long enco
     // FIXME: If we get a resource with more than 2B bytes, this code won't do the right thing.
     // However, with today's computers and networking speeds, this won't happen in practice.
     // Could be an issue with a giant local file.
-    if (m_sendResourceLoadCallbacks && m_frame)
+    if (m_options.sendLoadCallbacks == SendCallbacks && m_frame)
         frameLoader()->notifier()->didReceiveData(this, data, length, static_cast<int>(encodedDataLength));
 }
 
 void ResourceLoader::willStopBufferingData(const char* data, int length)
 {
-    if (!m_shouldBufferData)
+    if (m_options.shouldBufferData == DoNotBufferData)
         return;
 
     ASSERT(!m_resourceData);
@@ -307,26 +312,27 @@ void ResourceLoader::willStopBufferingData(const char* data, int length)
 
 void ResourceLoader::didFinishLoading(double finishTime)
 {
-    // If load has been cancelled after finishing (which could happen with a 
-    // JavaScript that changes the window location), do nothing.
+    didFinishLoadingOnePart(finishTime);
+
+    // If the load has been cancelled by a delegate in response to didFinishLoad(), do not release
+    // the resources a second time, they have been released by cancel.
     if (m_cancelled)
         return;
-    ASSERT(!m_reachedTerminalState);
-
-    didFinishLoadingOnePart(finishTime);
     releaseResources();
 }
 
 void ResourceLoader::didFinishLoadingOnePart(double finishTime)
 {
+    // If load has been cancelled after finishing (which could happen with a
+    // JavaScript that changes the window location), do nothing.
     if (m_cancelled)
         return;
     ASSERT(!m_reachedTerminalState);
 
-    if (m_calledDidFinishLoad)
+    if (m_notifiedLoadComplete)
         return;
-    m_calledDidFinishLoad = true;
-    if (m_sendResourceLoadCallbacks)
+    m_notifiedLoadComplete = true;
+    if (m_options.sendLoadCallbacks == SendCallbacks)
         frameLoader()->notifier()->didFinishLoad(this, finishTime);
 }
 
@@ -343,8 +349,11 @@ void ResourceLoader::didFail(const ResourceError& error)
     if (FormData* data = m_request.httpBody())
         data->removeGeneratedFilesIfNeeded();
 
-    if (m_sendResourceLoadCallbacks && !m_calledDidFinishLoad)
-        frameLoader()->notifier()->didFailToLoad(this, error);
+    if (!m_notifiedLoadComplete) {
+        m_notifiedLoadComplete = true;
+        if (m_options.sendLoadCallbacks == SendCallbacks)
+            frameLoader()->notifier()->didFailToLoad(this, error);
+    }
 
     releaseResources();
 }
@@ -391,7 +400,7 @@ void ResourceLoader::cancel(const ResourceError& error)
             m_handle = 0;
         }
 
-        if (m_sendResourceLoadCallbacks && m_identifier && !m_calledDidFinishLoad)
+        if (m_options.sendLoadCallbacks == SendCallbacks && m_identifier && !m_notifiedLoadComplete)
             frameLoader()->notifier()->didFailToLoad(this, nonNullError);
     }
 
@@ -405,11 +414,6 @@ void ResourceLoader::cancel(const ResourceError& error)
     releaseResources();
 }
 
-const ResourceResponse& ResourceLoader::response() const
-{
-    return m_response;
-}
-
 ResourceError ResourceLoader::cancelledError()
 {
     return frameLoader()->cancelledError(m_request);
@@ -417,20 +421,18 @@ ResourceError ResourceLoader::cancelledError()
 
 ResourceError ResourceLoader::blockedError()
 {
-    return frameLoader()->blockedError(m_request);
+    return frameLoader()->client()->blockedError(m_request);
 }
 
 ResourceError ResourceLoader::cannotShowURLError()
 {
-    return frameLoader()->cannotShowURLError(m_request);
+    return frameLoader()->client()->cannotShowURLError(m_request);
 }
 
 void ResourceLoader::willSendRequest(ResourceHandle*, ResourceRequest& request, const ResourceResponse& redirectResponse)
 {
-#if ENABLE(OFFLINE_WEB_APPLICATIONS)
     if (documentLoader()->applicationCacheHost()->maybeLoadFallbackForRedirect(this, request, redirectResponse))
         return;
-#endif
     willSendRequest(request, redirectResponse);
 }
 
@@ -441,10 +443,8 @@ void ResourceLoader::didSendData(ResourceHandle*, unsigned long long bytesSent, 
 
 void ResourceLoader::didReceiveResponse(ResourceHandle*, const ResourceResponse& response)
 {
-#if ENABLE(OFFLINE_WEB_APPLICATIONS)
     if (documentLoader()->applicationCacheHost()->maybeLoadFallbackForResponse(this, response))
         return;
-#endif
     didReceiveResponse(response);
 }
 
@@ -462,10 +462,8 @@ void ResourceLoader::didFinishLoading(ResourceHandle*, double finishTime)
 
 void ResourceLoader::didFail(ResourceHandle*, const ResourceError& error)
 {
-#if ENABLE(OFFLINE_WEB_APPLICATIONS)
     if (documentLoader()->applicationCacheHost()->maybeLoadFallbackForError(this, error))
         return;
-#endif
     didFail(error);
 }
 
@@ -481,16 +479,34 @@ void ResourceLoader::cannotShowURL(ResourceHandle*)
 
 bool ResourceLoader::shouldUseCredentialStorage()
 {
+    if (m_options.allowCredentials == DoNotAllowStoredCredentials)
+        return false;
+    
     RefPtr<ResourceLoader> protector(this);
-    return frameLoader()->shouldUseCredentialStorage(this);
+    return frameLoader()->client()->shouldUseCredentialStorage(documentLoader(), identifier());
 }
 
 void ResourceLoader::didReceiveAuthenticationChallenge(const AuthenticationChallenge& challenge)
 {
+    ASSERT(handle()->hasAuthenticationChallenge());
     // Protect this in this delegate method since the additional processing can do
     // anything including possibly derefing this; one example of this is Radar 3266216.
     RefPtr<ResourceLoader> protector(this);
-    frameLoader()->notifier()->didReceiveAuthenticationChallenge(this, challenge);
+
+    if (m_options.allowCredentials == AllowStoredCredentials) {
+        if (m_options.crossOriginCredentialPolicy == AskClientForCrossOriginCredentials || m_frame->document()->securityOrigin()->canRequest(originalRequest().url())) {
+            frameLoader()->notifier()->didReceiveAuthenticationChallenge(this, challenge);
+            return;
+        }
+    }
+    // Only these platforms provide a way to continue without credentials.
+    // If we can't continue with credentials, we need to cancel the load altogether.
+#if PLATFORM(MAC) || USE(CFNETWORK) || USE(CURL)
+    handle()->receivedRequestToContinueWithoutCredential(challenge);
+    ASSERT(!handle()->hasAuthenticationChallenge());
+#else
+    didFail(blockedError());
+#endif
 }
 
 void ResourceLoader::didCancelAuthenticationChallenge(const AuthenticationChallenge& challenge)
@@ -505,7 +521,7 @@ void ResourceLoader::didCancelAuthenticationChallenge(const AuthenticationChalle
 bool ResourceLoader::canAuthenticateAgainstProtectionSpace(const ProtectionSpace& protectionSpace)
 {
     RefPtr<ResourceLoader> protector(this);
-    return frameLoader()->canAuthenticateAgainstProtectionSpace(this, protectionSpace);
+    return frameLoader()->client()->canAuthenticateAgainstProtectionSpace(documentLoader(), identifier(), protectionSpace);
 }
 #endif
     
@@ -536,8 +552,8 @@ void ResourceLoader::willCacheResponse(ResourceHandle*, CacheStoragePolicy& poli
 #if ENABLE(BLOB)
 AsyncFileStream* ResourceLoader::createAsyncFileStream(FileStreamClient* client)
 {
-    // It is OK to simply return a pointer since FileStreamProxy::create adds an extra ref.
-    return FileStreamProxy::create(m_frame->document()->scriptExecutionContext(), client).get();
+    // It is OK to simply return a pointer since AsyncFileStream::create adds an extra ref.
+    return AsyncFileStream::create(m_frame->document()->scriptExecutionContext(), client).get();
 }
 #endif
 

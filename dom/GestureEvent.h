@@ -50,10 +50,10 @@ namespace WebCore {
             bool ctrlKey, bool altKey, bool shiftKey, bool metaKey,
             EventTarget* target, float scale, float rotation);
 
-        virtual bool isGestureEvent() const { return true; }
-
         float scale() const { return m_scale; }
         float rotation() const { return m_rotation; }
+
+        virtual const AtomicString& interfaceName() const;
 
     private:
         GestureEvent() { }

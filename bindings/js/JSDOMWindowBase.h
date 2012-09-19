@@ -38,12 +38,15 @@ namespace WebCore {
         typedef JSDOMGlobalObject Base;
     protected:
         JSDOMWindowBase(JSC::JSGlobalData&, JSC::Structure*, PassRefPtr<DOMWindow>, JSDOMWindowShell*);
+        void finishCreation(JSC::JSGlobalData&, JSDOMWindowShell*);
+
+        static void destroy(JSCell*);
 
     public:
         void updateDocument();
 
         DOMWindow* impl() const { return m_impl.get(); }
-        virtual ScriptExecutionContext* scriptExecutionContext() const;
+        ScriptExecutionContext* scriptExecutionContext() const;
 
         // Called just before removing this window from the JSDOMWindowShell.
         void willRemoveFromWindowShell();
@@ -52,25 +55,26 @@ namespace WebCore {
 
         static JSC::Structure* createStructure(JSC::JSGlobalData& globalData, JSC::JSValue prototype)
         {
-            return JSC::Structure::create(globalData, prototype, JSC::TypeInfo(JSC::ObjectType, StructureFlags), AnonymousSlotCount, &s_info);
+            return JSC::Structure::create(globalData, 0, prototype, JSC::TypeInfo(JSC::GlobalObjectType, StructureFlags), &s_info);
         }
 
-        virtual JSC::ExecState* globalExec();
-        virtual bool supportsProfiling() const;
-        virtual bool supportsRichSourceInfo() const;
-        virtual bool shouldInterruptScript() const;
-        virtual bool shouldInterruptScriptBeforeTimeout() const;
+        static const JSC::GlobalObjectMethodTable s_globalObjectMethodTable;
 
+        static bool supportsProfiling(const JSC::JSGlobalObject*);
+        static bool supportsRichSourceInfo(const JSC::JSGlobalObject*);
+        static bool shouldInterruptScript(const JSC::JSGlobalObject*);
+        static bool allowsAccessFrom(const JSC::JSGlobalObject*, JSC::ExecState*);
+        static bool shouldInterruptScriptBeforeTimeout(const JSGlobalObject*);
+        
         bool allowsAccessFrom(JSC::ExecState*) const;
         bool allowsAccessFromNoErrorMessage(JSC::ExecState*) const;
         bool allowsAccessFrom(JSC::ExecState*, String& message) const;
         void printErrorMessage(const String&) const;
 
         // Don't call this version of allowsAccessFrom -- it's a slightly incorrect implementation used only by WebScriptObject
-        virtual bool allowsAccessFrom(const JSC::JSGlobalObject*) const;
+        bool allowsAccessFrom(const JSC::JSGlobalObject*) const;
         
-        virtual JSC::JSObject* toThisObject(JSC::ExecState*) const;
-        virtual JSC::JSValue toStrictThisObject(JSC::ExecState*) const;
+        static JSC::JSObject* toThisObject(JSC::JSCell*, JSC::ExecState*);
         JSDOMWindowShell* shell() const;
 
         static JSC::JSGlobalData* commonJSGlobalData();

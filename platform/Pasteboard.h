@@ -29,31 +29,23 @@
 #include <wtf/Forward.h>
 #include <wtf/HashSet.h>
 #include <wtf/Noncopyable.h>
-
+#include <wtf/text/WTFString.h>
 #if PLATFORM(MAC)
 #include <wtf/RetainPtr.h>
 #endif
-
 #if PLATFORM(GTK)
 #include <PasteboardHelper.h>
 #endif
+#include <wtf/Vector.h>
 
 // FIXME: This class is too high-level to be in the platform directory, since it
 // uses the DOM and makes calls to Editor. It should either be divested of its
 // knowledge of the frame and editor or moved into the editing directory.
 
 #if PLATFORM(MAC)
-#ifdef __OBJC__
-@class NSFileWrapper;
-@class NSPasteboard;
-@class NSArray;
-@class NSDictionary;
-#else
-class NSFileWrapper;
-class NSPasteboard;
-class NSArray;
-class NSDictionary;
-#endif
+OBJC_CLASS NSAttributedString;
+OBJC_CLASS NSFileWrapper;
+OBJC_CLASS NSArray;
 #endif
 
 #if PLATFORM(WIN)
@@ -68,30 +60,38 @@ typedef struct HWND__* HWND;
 namespace WebCore {
 
 #if PLATFORM(MAC)
+// FIXME: This is only temporary until Enrica refactors Pasteboard on iOS.
 extern NSString *WebArchivePboardType;
-extern NSString *WebSmartPastePboardType;
-extern NSString *WebURLNamePboardType;
-extern NSString *WebURLPboardType;
-extern NSString *WebURLsWithTitlesPboardType;
+extern const char* WebSmartPastePboardType;
+extern const char* WebURLNamePboardType;
+extern const char* WebURLPboardType;
+extern const char* WebURLsWithTitlesPboardType;
 #endif
 
+    class ArchiveResource;
+class Clipboard;
 class DocumentFragment;
 class Frame;
 class HitTestResult;
 class KURL;
 class Node;
 class Range;
-class ArchiveResource;
+class SharedBuffer;
     
 class Pasteboard {
     WTF_MAKE_NONCOPYABLE(Pasteboard); WTF_MAKE_FAST_ALLOCATED;
 public:
+#if PLATFORM(MAC)
+    static String getStringSelection(Frame*);
+#endif
     
     static Pasteboard* generalPasteboard();
     void writePlainText(const String&);
+    void writeImage(Node*, Frame*);
     void writePlainText(const String&, Frame*);
     static NSArray* supportedPasteboardTypes();
     void writeSelection(Range*, bool canSmartCopyOrDelete, Frame*);
+    void writeClipboard(Clipboard*);
     void clear();
     bool canSmartReplace();
     PassRefPtr<DocumentFragment> documentFragment(Frame*, PassRefPtr<Range>, bool allowPlainText, bool& chosePlainText);
@@ -103,20 +103,15 @@ public:
 #endif
 
 #if PLATFORM(GTK)
-    void setHelper(PasteboardHelper*);
-    PasteboardHelper* helper();
     ~Pasteboard();
 #endif
 
 private:
     Pasteboard();
 
-#if PLATFORM(MAC)
-    PassRefPtr<DocumentFragment> documentFragmentWithImageResource(Frame* frame, PassRefPtr<ArchiveResource> resource);
-#endif
 
+    PassRefPtr<DocumentFragment> documentFragmentForPasteboardItemAtIndex(Frame*, int index, bool allowPlainText, bool& chosePlainText);
 
-    PassRefPtr<DocumentFragment> documentFragmentForPasteboardItemAtIndex(Frame*, int index);
 #if PLATFORM(WIN)
     HWND m_owner;
 #endif
@@ -127,10 +122,6 @@ private:
 
 #if PLATFORM(CHROMIUM)
     PasteboardPrivate p;
-#endif
-
-#if PLATFORM(GTK)
-    PasteboardHelper* m_helper;
 #endif
 };
 

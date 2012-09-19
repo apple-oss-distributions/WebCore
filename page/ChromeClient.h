@@ -25,15 +25,18 @@
 #include "ConsoleTypes.h"
 #include "Cursor.h"
 #include "FocusDirection.h"
+#include "FrameLoader.h"
 #include "GraphicsContext.h"
 #include "HostWindow.h"
 #include "PopupMenu.h"
 #include "PopupMenuClient.h"
+#include "RenderEmbeddedObject.h"
 #include "ScrollTypes.h"
 #include "SearchPopupMenu.h"
 #include "WebCoreKeyboardUIMode.h"
 #include <wtf/Forward.h>
 #include <wtf/PassOwnPtr.h>
+#include <wtf/UnusedParam.h>
 #include <wtf/Vector.h>
 
 #include "Console.h"
@@ -57,18 +60,22 @@ namespace WebCore {
     class AccessibilityObject;
     class Element;
     class FileChooser;
+    class FileIconLoader;
     class FloatRect;
     class Frame;
     class Geolocation;
     class GraphicsLayer;
+    class HTMLInputElement;
     class HitTestResult;
     class IntRect;
     class NavigationAction;
     class Node;
     class Page;
+    class PagePopup;
+    class PagePopupClient;
     class PopupMenuClient;
     class SecurityOrigin;
-    class SharedGraphicsContext3D;
+    class GraphicsContext3D;
     class Widget;
 
     struct FrameLoadRequest;
@@ -79,8 +86,9 @@ namespace WebCore {
     class GraphicsLayer;
 #endif
 
-#if ENABLE(NOTIFICATIONS)
-    class NotificationPresenter;
+#if ENABLE(INPUT_TYPE_COLOR)
+    class ColorChooser;
+    class ColorChooserClient;
 #endif
 
     // Anchor values for fixed position elements.
@@ -102,8 +110,6 @@ namespace WebCore {
         
         virtual FloatRect pageRect() = 0;
         
-        virtual float scaleFactor() = 0;
-    
         virtual void focus() = 0;
         virtual void unfocus() = 0;
 
@@ -162,29 +168,30 @@ namespace WebCore {
         virtual IntRect windowResizerRect() const = 0;
 
         // Methods used by HostWindow.
-        virtual void invalidateWindow(const IntRect&, bool) = 0;
-        virtual void invalidateContentsAndWindow(const IntRect&, bool) = 0;
+        virtual void invalidateRootView(const IntRect&, bool) = 0;
+        virtual void invalidateContentsAndRootView(const IntRect&, bool) = 0;
         virtual void invalidateContentsForSlowScroll(const IntRect&, bool) = 0;
         virtual void scroll(const IntSize&, const IntRect&, const IntRect&) = 0;
-#if ENABLE(TILED_BACKING_STORE)
+#if USE(TILED_BACKING_STORE)
         virtual void delegatedScrollRequested(const IntPoint&) = 0;
 #endif
-        virtual IntPoint screenToWindow(const IntPoint&) const = 0;
-        virtual IntRect windowToScreen(const IntRect&) const = 0;
+        virtual IntPoint screenToRootView(const IntPoint&) const = 0;
+        virtual IntRect rootViewToScreen(const IntRect&) const = 0;
         virtual PlatformPageClient platformPageClient() const = 0;
         virtual void scrollbarsModeDidChange() const = 0;
-#if ENABLE(REQUEST_ANIMATION_FRAME)
+#if ENABLE(REQUEST_ANIMATION_FRAME) && !USE(REQUEST_ANIMATION_FRAME_TIMER)
         virtual void scheduleAnimation() = 0;
 #endif
         // End methods used by HostWindow.
 
-        virtual void dispatchViewportDataDidChange(const ViewportArguments&) const { }
+        virtual void dispatchViewportPropertiesDidChange(const ViewportArguments&) const { }
 
         virtual void contentsSizeChanged(Frame*, const IntSize&) const = 0;
-        virtual void scrollRectIntoView(const IntRect&, const ScrollView*) const = 0; // Currently only Mac has a non empty implementation.
+        virtual void layoutUpdated(Frame*) const { }
+        virtual void scrollRectIntoView(const IntRect&) const { }; // Currently only Mac has a non empty implementation.
        
-        virtual bool shouldMissingPluginMessageBeButton() const { return false; }
-        virtual void missingPluginButtonClicked(Element*) const { }
+        virtual bool shouldUnavailablePluginMessageBeButton(RenderEmbeddedObject::PluginUnavailabilityReason) const { return false; }
+        virtual void unavailablePluginButtonClicked(Element*, RenderEmbeddedObject::PluginUnavailabilityReason) const { }
         virtual void mouseDidMoveOverElement(const HitTestResult&, unsigned modifierFlags) = 0;
 
         virtual void setToolTip(const String&, TextDirection) = 0;
@@ -192,11 +199,10 @@ namespace WebCore {
         virtual void print(Frame*) = 0;
         virtual bool shouldRubberBandInDirection(ScrollDirection) const = 0;
 
-#if ENABLE(DATABASE)
+#if ENABLE(SQL_DATABASE)
         virtual void exceededDatabaseQuota(Frame*, const String& databaseName) = 0;
 #endif
 
-#if ENABLE(OFFLINE_WEB_APPLICATIONS)
         // Callback invoked when the application cache fails to save a cache object
         // because storing it would grow the database file past its defined maximum
         // size or past the amount of free space on the device. 
@@ -213,14 +219,9 @@ namespace WebCore {
         // other existing caches for the origin that would not be replaced by
         // the new cache.
         virtual void reachedApplicationCacheOriginQuota(SecurityOrigin*, int64_t totalSpaceNeeded) = 0;
-#endif
 
 #if ENABLE(DASHBOARD_SUPPORT)
         virtual void dashboardRegionsChanged();
-#endif
-
-#if ENABLE(NOTIFICATIONS)
-        virtual NotificationPresenter* notificationPresenter() const = 0;
 #endif
 
         virtual void populateVisitedLinks();
@@ -231,11 +232,6 @@ namespace WebCore {
             
         virtual bool shouldReplaceWithGeneratedFileForUpload(const String& path, String& generatedFilename);
         virtual String generateReplacementFile(const String& path);
-
-        virtual bool paintCustomScrollbar(GraphicsContext*, const FloatRect&, ScrollbarControlSize, 
-                                          ScrollbarControlState, ScrollbarPart pressedPart, bool vertical,
-                                          float value, float proportion, ScrollbarControlPartMask);
-        virtual bool paintCustomScrollCorner(GraphicsContext*, const FloatRect&);
 
         virtual bool paintCustomOverhangArea(GraphicsContext*, const IntRect&, const IntRect&, const IntRect&);
 
@@ -266,21 +262,22 @@ namespace WebCore {
         virtual void removeFixedPositionLayer(PlatformLayer*, bool insideLayerSync = false) = 0;
         virtual void removeAllFixedPositionLayers() = 0;
 
-        virtual void addOrUpdateScrollingLayer(Node*, PlatformLayer* scrollingLayer, PlatformLayer* contentsLayer, const IntSize& scrollSize) = 0;
+        virtual void addOrUpdateScrollingLayer(Node*, PlatformLayer* scrollingLayer, PlatformLayer* contentsLayer, const IntSize& scrollSize, bool allowHorizontalScrollbar, bool allowVerticalScrollbar) = 0;
         virtual void removeScrollingLayer(Node*, PlatformLayer* scrollingLayer, PlatformLayer* contentsLayer) = 0;
+        
+        virtual void webAppOrientationsUpdated() = 0;
 
-        // This can be either a synchronous or asynchronous call. The ChromeClient can display UI asking the user for permission
-        // to use Geolococation. The ChromeClient must call Geolocation::setShouldClearCache() appropriately.
-        virtual void requestGeolocationPermissionForFrame(Frame*, Geolocation*) = 0;
-        virtual void cancelGeolocationPermissionRequestForFrame(Frame*, Geolocation*) = 0;
+#if ENABLE(INPUT_TYPE_COLOR)
+        virtual PassOwnPtr<ColorChooser> createColorChooser(ColorChooserClient*, const Color&) = 0;
+#endif
 
         virtual void runOpenPanel(Frame*, PassRefPtr<FileChooser>) = 0;
         // Asynchronous request to load an icon for specified filenames.
-        virtual void chooseIconForFiles(const Vector<String>&, FileChooser*) = 0;
+        virtual void loadIconForFiles(const Vector<String>&, FileIconLoader*) = 0;
 
 #if ENABLE(DIRECTORY_UPLOAD)
         // Asychronous request to enumerate all files in a directory chosen by the user.
-        virtual void enumerateChosenDirectory(const String&, FileChooser*) = 0;
+        virtual void enumerateChosenDirectory(FileChooser*) = 0;
 #endif
 
         // Notification that the given form element has changed. This function
@@ -309,6 +306,7 @@ namespace WebCore {
             PluginTrigger = 1 << 2,
             CanvasTrigger = 1 << 3,
             AnimationTrigger = 1 << 4,
+            FilterTrigger = 1 << 5,
             AllTriggers = 0xFFFFFFFF
         };
         typedef unsigned CompositingTriggerFlags;
@@ -330,7 +328,7 @@ namespace WebCore {
         virtual void setRootFullScreenLayer(GraphicsLayer*) { }
 #endif
         
-#if ENABLE(TILED_BACKING_STORE)
+#if USE(TILED_BACKING_STORE)
         virtual IntRect visibleRectForTiledBackingStore() const { return IntRect(); }
 #endif
 
@@ -345,42 +343,55 @@ namespace WebCore {
         virtual void setLastSetCursorToCurrentCursor() = 0;
 #endif
 
+        virtual void needTouchEvents(bool) = 0;
 
         virtual bool selectItemWritingDirectionIsNatural() = 0;
         virtual bool selectItemAlignmentFollowsMenuWritingDirection() = 0;
+        // Checks if there is an opened popup, called by RenderMenuList::showPopup().
+        virtual bool hasOpenedPopup() const = 0;
         virtual PassRefPtr<PopupMenu> createPopupMenu(PopupMenuClient*) const = 0;
         virtual PassRefPtr<SearchPopupMenu> createSearchPopupMenu(PopupMenuClient*) const = 0;
-
-#if ENABLE(CONTEXT_MENUS)
-        virtual void showContextMenu() = 0;
+#if ENABLE(PAGE_POPUP)
+        // Creates a PagePopup object, and shows it beside originBoundsInRootView.
+        // The return value can be 0.
+        virtual PagePopup* openPagePopup(PagePopupClient*, const IntRect& originBoundsInRootView) = 0;
+        virtual void closePagePopup(PagePopup*) = 0;
 #endif
+        // This function is called whenever a text field <input> is
+        // created. The implementation should return true if it wants
+        // to do something in addTextFieldDecorationsTo().
+        // The argument is always non-0.
+        virtual bool willAddTextFieldDecorationsTo(HTMLInputElement*) { return false; }
+        // The argument is always non-0.
+        virtual void addTextFieldDecorationsTo(HTMLInputElement*) { }
 
         virtual void postAccessibilityNotification(AccessibilityObject*, AXObjectCache::AXNotification) { }
-
-        virtual void didStartRubberBandForFrame(Frame*, const IntSize&) const { }
-        virtual void didCompleteRubberBandForFrame(Frame*, const IntSize&) const { }
-        virtual void didStartAnimatedScroll() const { }
-        virtual void didCompleteAnimatedScroll() const { }
         
         virtual void notifyScrollerThumbIsVisibleInRect(const IntRect&) { }
+        virtual void recommendedScrollbarStyleDidChange(int /*newStyle*/) { }
 
         enum DialogType {
             AlertDialog = 0,
             ConfirmDialog = 1,
             PromptDialog = 2,
-            HTMLDialog = 3,
-            NumDialogTypes = 4
+            HTMLDialog = 3
         };
-        virtual void willRunModalDialogDuringPageDismissal(const DialogType&) const { }
+        virtual bool shouldRunModalDialogDuringPageDismissal(const DialogType&, const String& dialogMessage, FrameLoader::PageDismissalType) const { UNUSED_PARAM(dialogMessage); return true; }
 
         virtual void numWheelEventHandlersChanged(unsigned) = 0;
-
-        virtual void setRenderTreeSize(size_t) { }
+        virtual void numTouchEventHandlersChanged(unsigned) = 0;
         
+        virtual bool isSVGImageChromeClient() const { return false; }
+
+#if ENABLE(POINTER_LOCK)
+        virtual bool requestPointerLock() { return false; }
+        virtual void requestPointerUnlock() { }
+        virtual bool isPointerLocked() { return false; }
+#endif
+
     protected:
         virtual ~ChromeClient() { }
     };
 
 }
-
 #endif // ChromeClient_h

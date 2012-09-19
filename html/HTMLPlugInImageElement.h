@@ -22,6 +22,8 @@
 #define HTMLPlugInImageElement_h
 
 #include "HTMLPlugInElement.h"
+
+#include "RenderStyle.h"
 #include <wtf/OwnPtr.h>
 
 namespace WebCore {
@@ -42,6 +44,8 @@ enum PreferPlugInsForImagesOption {
 // Base class for HTMLObjectElement and HTMLEmbedElement
 class HTMLPlugInImageElement : public HTMLPlugInElement {
 public:
+    virtual ~HTMLPlugInImageElement();
+
     RenderEmbeddedObject* renderEmbeddedObject() const;
 
     virtual void updateWidget(PluginCreationOption) = 0;
@@ -49,6 +53,12 @@ public:
     const String& serviceType() const { return m_serviceType; }
     const String& url() const { return m_url; }
     bool shouldPreferPlugInsForImages() const { return m_shouldPreferPlugInsForImages; }
+
+    // Public for FrameView::addWidgetToUpdate()
+    bool needsWidgetUpdate() const { return m_needsWidgetUpdate; }
+    void setNeedsWidgetUpdate(bool needsWidgetUpdate) { m_needsWidgetUpdate = needsWidgetUpdate; }
+    
+    void createShadowIFrameSubtree(const String& src);
 
 protected:
     HTMLPlugInImageElement(const QualifiedName& tagName, Document*, bool createdByParser, PreferPlugInsForImagesOption);
@@ -63,17 +73,19 @@ protected:
     virtual void attach();
     virtual void detach();
 
-    bool needsWidgetUpdate() const { return m_needsWidgetUpdate; }
-    void setNeedsWidgetUpdate(bool needsWidgetUpdate) { m_needsWidgetUpdate = needsWidgetUpdate; }
-
     bool allowedToLoadFrameURL(const String& url);
     bool wouldLoadAsNetscapePlugin(const String& url, const String& serviceType);
 
-    virtual void willMoveToNewOwnerDocument();
+    virtual void didMoveToNewDocument(Document* oldDocument) OVERRIDE;
+    
+    virtual void documentWillSuspendForPageCache() OVERRIDE;
+    virtual void documentDidResumeFromPageCache() OVERRIDE;
+
+    virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
 
 private:
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
-    virtual void recalcStyle(StyleChange);
+    virtual bool willRecalcStyle(StyleChange);
     
     virtual void finishParsingChildren();
 
@@ -82,6 +94,8 @@ private:
     
     bool m_needsWidgetUpdate;
     bool m_shouldPreferPlugInsForImages;
+    bool m_needsDocumentActivationCallbacks;
+    RefPtr<RenderStyle> m_customStyleForPageCache;
 };
 
 } // namespace WebCore

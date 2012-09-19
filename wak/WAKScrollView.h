@@ -17,12 +17,12 @@
 @interface WAKScrollView : WAKView <WebCoreFrameScrollView>
 {
     WAKView *_documentView;  // Only here so the ObjC instance stays around.
+    WAKClipView *_contentView;
     id _delegate;
     NSPoint _scrollOrigin;
 }
 
 - (CGRect)documentVisibleRect;
-- (void)setContentView:(WAKClipView *)aView;
 - (WAKClipView *)contentView;
 - (id)documentView;
 - (void)setDocumentView:(WAKView *)aView;
@@ -44,7 +44,6 @@
 - (void)setActualScrollPosition:(CGPoint)point;
 
 - (BOOL)inProgrammaticScroll;
-
 @end
 
 @interface NSObject (WAKScrollViewDelegate)

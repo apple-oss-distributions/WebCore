@@ -31,6 +31,7 @@
 #include "AutodrainedPool.h"
 #include <CoreFoundation/CoreFoundation.h>
 #include <limits>
+#include <wtf/MainThread.h>
 #include <wtf/Threading.h>
 
 namespace WebCore {
@@ -41,7 +42,7 @@ static void emptyPerform(void*)
 {
 }
 
-static void* runLoaderThread(void*)
+static void runLoaderThread(void*)
 {
     loaderRunLoopObject = CFRunLoopGetCurrent();
 
@@ -55,8 +56,6 @@ static void* runLoaderThread(void*)
         AutodrainedPool pool;
         result = CFRunLoopRunInMode(kCFRunLoopDefaultMode, std::numeric_limits<double>::max(), true);
     } while (result != kCFRunLoopRunStopped && result != kCFRunLoopRunFinished);
-
-    return 0;
 }
 
 CFRunLoopRef loaderRunLoop()

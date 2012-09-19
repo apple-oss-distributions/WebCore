@@ -1,7 +1,7 @@
 //
 //  WAKWindow.h
 //
-//  Copyright (C) 2005, 2006, 2007, 2008, 2009 Apple Inc.  All rights reserved.
+//  Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010, 2011 Apple Inc.  All rights reserved.
 //
 
 #ifndef WAKWindow_h
@@ -43,6 +43,8 @@ typedef enum {
     kWAKTilingDirectionRight,
 } WAKTilingDirection;
 
+extern NSString * const WAKWindowScreenScaleDidChangeNotification;
+
 @interface WAKWindow : WAKResponder
 {
     WKWindowRef _wkWindow;
@@ -50,7 +52,18 @@ typedef enum {
     TileCache* _tileCache;
     CGRect _cachedVisibleRect;
     CALayer *_rootLayer;
+
+    CGSize _screenSize;
+    CGSize _availableScreenSize;
+    CGFloat _screenScale;
+
+    CGRect _frame;
+
+    BOOL _useOrientationDependentFontAntialiasing;
 }
+
+@property (nonatomic, assign) BOOL useOrientationDependentFontAntialiasing;
+
 // Create layer hosted window
 - (id)initWithLayer:(CALayer *)hostLayer;
 // Create unhosted window for manual painting
@@ -61,7 +74,8 @@ typedef enum {
 - (void)setContentView:(WAKView *)aView;
 - (WAKView *)contentView;
 - (void)close;
-- (WAKResponder *)firstResponder;
+- (WAKView *)firstResponder;
+- (BOOL)makeViewFirstResponder:(WAKView *)view;
 - (NSPoint)convertBaseToScreen:(NSPoint)aPoint;
 - (NSPoint)convertScreenToBase:(NSPoint)aPoint;
 - (BOOL)isKeyWindow;
@@ -72,6 +86,7 @@ typedef enum {
 - (WKWindowRef)_windowRef;
 - (void)setFrame:(NSRect)frameRect display:(BOOL)flag;
 - (CGRect)frame;
+- (void)setContentRect:(CGRect)rect;
 - (void)setScreenSize:(CGSize)size;
 - (CGSize)screenSize;
 - (void)setAvailableScreenSize:(CGSize)size;
@@ -81,7 +96,8 @@ typedef enum {
 - (void)setRootLayer:(CALayer *)layer;
 - (CALayer *)rootLayer;
 - (void)sendEvent:(WebEvent *)anEvent;
-- (void)sendEvent:(WebEvent *)anEvent contentChange:(WKContentChange *)aContentChange;
+- (void)sendEventSynchronously:(WebEvent *)anEvent;
+- (void)sendMouseMoveEvent:(WebEvent *)anEvent contentChange:(WKContentChange *)aContentChange;
 
 // Tiling support
 - (void)layoutTiles;
@@ -100,7 +116,7 @@ typedef enum {
 - (void)setTilingDirection:(WAKTilingDirection)tilingDirection;
 - (WAKTilingDirection)tilingDirection;
 - (BOOL)hasPendingDraw;
-- (void)hostLayerSizeChanged;
+- (void)displayRect:(NSRect)rect;
 - (void)setZoomedOutTileScale:(float)scale;
 - (float)zoomedOutTileScale;
 - (void)setCurrentTileScale:(float)scale;
@@ -121,6 +137,8 @@ typedef enum {
 - (void)setUseOrientationDependentFontAntialiasing:(BOOL)aa;
 + (BOOL)hasLandscapeOrientation;
 + (void)setOrientationProvider:(id)provider;
+
++ (WebEvent *)currentEvent;
 
 - (NSString *)recursiveDescription;
 @end

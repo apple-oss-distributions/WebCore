@@ -26,7 +26,10 @@
 #ifndef JSMainThreadExecState_h
 #define JSMainThreadExecState_h
 
+#include "InspectorInstrumentation.h"
 #include "JSDOMBinding.h"
+#include <runtime/Completion.h>
+#include <runtime/Executable.h>
 #ifndef NDEBUG
 #include <wtf/MainThread.h>
 #endif
@@ -35,47 +38,82 @@
 
 namespace WebCore {
 
+class ScriptExecutionContext;
+
 class JSMainThreadExecState {
     WTF_MAKE_NONCOPYABLE(JSMainThreadExecState);
 public:
     static JSC::ExecState* currentState()
     { 
-        ASSERT((WTF::isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+        ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
         return s_mainThreadState;
     };
     
     static JSC::JSValue call(JSC::ExecState* exec, JSC::JSValue functionObject, JSC::CallType callType, const JSC::CallData& callData, JSC::JSValue thisValue, const JSC::ArgList& args)
     {
         JSMainThreadExecState currentState(exec);
+        // Ensure DOM global object is unwrapped to the shell.
+        if (thisValue.isObject())
+            thisValue = thisValue.toThisObject(exec);
         return JSC::call(exec, functionObject, callType, callData, thisValue, args);
     };
 
-    static JSC::Completion evaluate(JSC::ExecState* exec, JSC::ScopeChainNode* chain, const JSC::SourceCode& source, JSC::JSValue thisValue)
+    static inline InspectorInstrumentationCookie instrumentFunctionCall(ScriptExecutionContext* context, JSC::CallType callType, const JSC::CallData& callData)
+    {
+        if (!InspectorInstrumentation::hasFrontends())
+            return InspectorInstrumentationCookie();
+        String resourceName;
+        int lineNumber = 1;
+        if (callType == JSC::CallTypeJS) {
+            resourceName = ustringToString(callData.js.functionExecutable->sourceURL());
+            lineNumber = callData.js.functionExecutable->lineNo();
+        } else
+            resourceName = "undefined";
+        return InspectorInstrumentation::willCallFunction(context, resourceName, lineNumber);
+    }
+
+    static JSC::JSValue evaluate(JSC::ExecState* exec, JSC::ScopeChainNode* chain, const JSC::SourceCode& source, JSC::JSValue thisValue, JSC::JSValue* exception)
     {
         JSMainThreadExecState currentState(exec);
-        return JSC::evaluate(exec, chain, source, thisValue);
+        JSC::JSLockHolder lock(exec);
+        return JSC::evaluate(exec, chain, source, thisValue, exception);
     };
 
 protected:
     explicit JSMainThreadExecState(JSC::ExecState* exec)
         : m_previousState(s_mainThreadState)
     {
-        ASSERT((WTF::isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+        ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
         s_mainThreadState = exec;
     };
-    
+
     ~JSMainThreadExecState()
     {
-        ASSERT((WTF::isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+        ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+
+#if ENABLE(MUTATION_OBSERVERS)
+        bool didExitJavaScript = s_mainThreadState && !m_previousState;
+#endif
+
         s_mainThreadState = m_previousState;
+
+#if ENABLE(MUTATION_OBSERVERS)
+        if (didExitJavaScript)
+            didLeaveScriptContext();
+#endif
     }
 
 private:
     static JSC::ExecState* s_mainThreadState;
     JSC::ExecState* m_previousState;
+
+#if ENABLE(MUTATION_OBSERVERS)
+    static void didLeaveScriptContext();
+#endif
 };
 
 // Null state prevents origin security checks.
+// Used by non-JavaScript bindings (ObjC, GObject).
 class JSMainThreadNullState : private JSMainThreadExecState {
 public:
     explicit JSMainThreadNullState() : JSMainThreadExecState(0) {};

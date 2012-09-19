@@ -33,6 +33,7 @@
 #include "JSDOMGlobalObject.h"
 #include "ScriptExecutionContext.h"
 #include <heap/Strong.h>
+#include <heap/StrongInlines.h>
 #include <runtime/JSObject.h>
 #include <wtf/Threading.h>
 
@@ -63,6 +64,7 @@ public:
     JSDOMGlobalObject* globalObject() { return m_globalObject.get(); }
     
     JSC::JSValue invokeCallback(JSC::MarkedArgumentBuffer&, bool* raisedException = 0);
+    JSC::JSValue invokeCallback(JSC::JSValue thisValue, JSC::MarkedArgumentBuffer&, bool* raisedException = 0);
 
 private:
     JSC::Strong<JSC::JSObject> m_callback;

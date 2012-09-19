@@ -25,7 +25,7 @@
 #define HTMLLabelElement_h
 
 #include "HTMLElement.h"
-#include "HTMLFormControlElement.h"
+#include "LabelableElement.h"
 
 namespace WebCore {
 
@@ -33,14 +33,17 @@ class HTMLLabelElement : public HTMLElement {
 public:
     static PassRefPtr<HTMLLabelElement> create(const QualifiedName&, Document*);
 
-    HTMLFormControlElement* control();
+    LabelableElement* control();
+    HTMLFormElement* form() const;
+
+    virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
 private:
     HTMLLabelElement(const QualifiedName&, Document*);
 
     virtual bool isFocusable() const;
 
-    virtual void accessKeyAction(bool sendToAnyElement);
+    virtual void accessKeyAction(bool sendMouseEvents);
 
     // Overridden to update the hover/active state of the corresponding control.
     virtual void setActive(bool = true, bool pause = false);
@@ -50,8 +53,6 @@ private:
     virtual void defaultEventHandler(Event*);
 
     void focus(bool restorePreviousSelection = true);
-
-    virtual void parseMappedAttribute(Attribute*);
 };
 
 } //namespace

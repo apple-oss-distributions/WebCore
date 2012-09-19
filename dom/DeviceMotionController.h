@@ -27,6 +27,7 @@
 #define DeviceMotionController_h
 
 #include "DOMWindow.h"
+#include "Page.h"
 #include "Timer.h"
 #include <wtf/HashCountedSet.h>
 
@@ -39,18 +40,13 @@ namespace WebCore {
 class DeviceMotionData;
 class DeviceMotionClient;
 
-class DeviceMotionController {
+class DeviceMotionController : public Supplement<Page> {
     WTF_MAKE_NONCOPYABLE(DeviceMotionController);
-
 public:
-    DeviceMotionController(DeviceMotionClient*);
     ~DeviceMotionController();
 
-    static PassOwnPtr<DeviceMotionController> create(DeviceMotionClient* client)
-    {
-        return adoptPtr(new DeviceMotionController(client));
-    }
-    
+    static PassOwnPtr<DeviceMotionController> create(DeviceMotionClient*);
+
     void suspendUpdates();
     void resumeUpdates();
 
@@ -58,16 +54,24 @@ public:
     void removeListener(DOMWindow*);
     void removeAllListeners(DOMWindow*);
 
+
     void didChangeDeviceMotion(DeviceMotionData*);
 
     bool isActive() { return !m_listeners.isEmpty(); }
 
+    static const AtomicString& supplementName();
+    static DeviceMotionController* from(Page* page) { return static_cast<DeviceMotionController*>(Supplement<Page>::from(page, supplementName())); }
+    static bool isActiveAt(Page*);
+
 private:
+    DeviceMotionController(DeviceMotionClient*);
+
     void timerFired(Timer<DeviceMotionController>*);
     
     DeviceMotionClient* m_client;
     typedef HashCountedSet<RefPtr<DOMWindow> > ListenersCountedSet;
     ListenersCountedSet m_listeners;
+    ListenersCountedSet m_suspendedListeners;
     typedef HashSet<RefPtr<DOMWindow> > ListenersSet;
     ListenersSet m_newListeners;
     Timer<DeviceMotionController> m_timer;

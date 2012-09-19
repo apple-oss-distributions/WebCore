@@ -35,9 +35,9 @@
 #include <wtf/ASCIICType.h>
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
+#include <wtf/MainThread.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/StringExtras.h>
-#include <wtf/Threading.h>
 
 #if USE(ICU_UNICODE)
 #include "TextCodecICU.h"
@@ -47,9 +47,6 @@
 #endif
 #if USE(GLIB_UNICODE)
 #include "gtk/TextCodecGtk.h"
-#endif
-#if USE(BREWMP_UNICODE)
-#include "brew/TextCodecBrew.h"
 #endif
 #if OS(WINCE) && !PLATFORM(QT)
 #include "TextCodecWinCE.h"

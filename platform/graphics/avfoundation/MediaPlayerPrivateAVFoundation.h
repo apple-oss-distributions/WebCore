@@ -47,6 +47,7 @@ public:
     virtual void timeChanged(double);
     virtual void seekCompleted(bool);
     virtual void didEnd();
+    virtual void contentsNeedsDisplay() { }
 
     class Notification {
     public:
@@ -67,6 +68,7 @@ public:
             PlayerTimeChanged,
             SeekCompleted,
             DurationChanged,
+            ContentsNeedsDisplay,
         };
         
         Notification()
@@ -153,6 +155,7 @@ protected:
     virtual float mediaTimeForTimeValue(float) const = 0;
 
     virtual bool supportsFullscreen() const;
+    virtual bool supportsScanning() const { return true; }
 
     // Required interfaces for concrete derived classes.
     virtual void createAVAssetForURL(const String&) = 0;
@@ -215,7 +218,7 @@ protected:
     void setHasVideo(bool);
     void setHasAudio(bool);
     void setHasClosedCaptions(bool);
-    void setDelayCallbacks(bool);
+    void setDelayCallbacks(bool) const;
     void setIgnoreLoadStateChanges(bool delay) { m_ignoreLoadStateChanges = delay; }
     void setNaturalSize(IntSize);
     bool isLiveStream() const { return isinf(duration()); }
@@ -238,11 +241,14 @@ protected:
     void invalidateCachedDuration();
 
     const String& assetURL() const { return m_assetURL; }
+
+    MediaPlayer* player() { return m_player; }
+
 private:
     MediaPlayer* m_player;
 
     Vector<Notification> m_queuedNotifications;
-    Mutex m_queueMutex;
+    mutable Mutex m_queueMutex;
 
     mutable RefPtr<TimeRanges> m_cachedLoadedTimeRanges;
 
@@ -251,7 +257,6 @@ private:
 
     String m_assetURL;
     MediaPlayer::Preload m_preload;
-    FloatSize m_scaleFactor;
 
     IntSize m_cachedNaturalSize;
     mutable float m_cachedMaxTimeLoaded;
@@ -261,7 +266,7 @@ private:
 
     float m_seekTo;
     float m_requestedRate;
-    int m_delayCallbacks;
+    mutable int m_delayCallbacks;
     bool m_mainThreadCallPending;
     bool m_assetIsPlayable;
     bool m_visible;
@@ -275,7 +280,8 @@ private:
     bool m_playWhenFramesAvailable;
 };
 
-}
+} // namespace WebCore
 
-#endif
-#endif
+#endif // ENABLE(VIDEO) && USE(AVFOUNDATION)
+
+#endif // MediaPlayerPrivateAVFoundation_h

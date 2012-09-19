@@ -26,6 +26,8 @@
 #ifndef JavaRuntimeObject_h
 #define JavaRuntimeObject_h
 
+#if ENABLE(JAVA_BRIDGE)
+#include "JSDOMBinding.h"
 #include "runtime_object.h"
 
 namespace JSC {
@@ -35,20 +37,35 @@ class JavaInstance;
 
 class JavaRuntimeObject : public RuntimeObject {
 public:
-    JavaRuntimeObject(ExecState*, JSGlobalObject*, PassRefPtr<JavaInstance>);
-    virtual ~JavaRuntimeObject();
+    typedef RuntimeObject Base;
+
+    static JavaRuntimeObject* create(ExecState* exec, JSGlobalObject* globalObject, PassRefPtr<JavaInstance> javaInstance)
+    {
+        // FIXME: deprecatedGetDOMStructure uses the prototype off of the wrong global object
+        // We need to pass in the right global object for "i".
+        Structure* domStructure = WebCore::deprecatedGetDOMStructure<JavaRuntimeObject>(exec);
+        JavaRuntimeObject* object = new (NotNull, allocateCell<JavaRuntimeObject>(*exec->heap())) JavaRuntimeObject(exec, globalObject, domStructure, javaInstance);
+        object->finishCreation(globalObject);
+        return object;
+    }
 
     JavaInstance* getInternalJavaInstance() const;
 
     static const ClassInfo s_info;
 
-    static Structure* createStructure(JSGlobalData& globalData, JSValue prototype)
+    static Structure* createStructure(JSGlobalData& globalData, JSGlobalObject* globalObject, JSValue prototype)
     {
-        return Structure::create(globalData, prototype, TypeInfo(ObjectType, StructureFlags), AnonymousSlotCount, &s_info);
+        return Structure::create(globalData, globalObject, prototype, TypeInfo(ObjectType, StructureFlags), &s_info);
     }
+
+private:
+    JavaRuntimeObject(ExecState*, JSGlobalObject*, Structure*, PassRefPtr<JavaInstance>);
+    void finishCreation(JSGlobalObject*);
 };
 
 }
 }
+
+#endif // ENABLE(JAVA_BRIDGE)
 
 #endif

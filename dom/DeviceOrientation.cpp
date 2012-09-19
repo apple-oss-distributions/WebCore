@@ -42,6 +42,9 @@ DeviceOrientation::DeviceOrientation()
     : m_canProvideAlpha(false)
     , m_canProvideBeta(false)
     , m_canProvideGamma(false)
+    , m_alpha(0)
+    , m_beta(0)
+    , m_gamma(0)
     , m_canProvideCompassHeading(false)
     , m_canProvideCompassAccuracy(false)
 {
@@ -75,6 +78,7 @@ double DeviceOrientation::gamma() const
 {
     return m_gamma;
 }
+
 
 bool DeviceOrientation::canProvideAlpha() const
 {
@@ -110,5 +114,6 @@ bool DeviceOrientation::canProvideCompassAccuracy() const
 {
     return m_canProvideCompassAccuracy;
 }
+
 
 } // namespace WebCore

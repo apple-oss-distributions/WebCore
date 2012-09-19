@@ -31,7 +31,6 @@
 #define NSView WAKView
 #endif
 
-#include "FloatQuad.h"
 #include "IntRect.h"
 #include <wtf/Forward.h>
 #include <wtf/RefCounted.h>
@@ -50,13 +49,8 @@
 #endif
 
 #if PLATFORM(MAC)
-#ifdef __OBJC__
-@class NSView;
-@class NSWindow;
-#else
-class NSView;
-class NSWindow;
-#endif
+OBJC_CLASS NSView;
+OBJC_CLASS NSWindow;
 typedef NSView *PlatformWidget;
 #endif
 
@@ -73,23 +67,18 @@ typedef GtkWidget* PlatformWidget;
 
 #if PLATFORM(QT)
 QT_BEGIN_NAMESPACE
-class QWidget;
+class QObject;
 QT_END_NAMESPACE
-typedef QWidget* PlatformWidget;
+typedef QObject* PlatformWidget;
+#endif
+
+#if PLATFORM(BLACKBERRY)
+typedef void* PlatformWidget;
 #endif
 
 #if PLATFORM(WX)
 class wxWindow;
 typedef wxWindow* PlatformWidget;
-#endif
-
-#if PLATFORM(HAIKU)
-class BView;
-typedef BView* PlatformWidget;
-#endif
-
-#if PLATFORM(BREWMP)
-typedef void* PlatformWidget;
 #endif
 
 #if PLATFORM(EFL)
@@ -99,14 +88,15 @@ typedef struct _Ecore_Evas Ecore_Evas;
 typedef Evas_Object* PlatformWidget;
 #endif
 
-#if PLATFORM(ANDROID)
-class WebCoreViewBridge;
-typedef WebCoreViewBridge* PlatformWidget;
-#endif
-
 #if PLATFORM(QT)
 class QWebPageClient;
 typedef QWebPageClient* PlatformPageClient;
+#elif PLATFORM(BLACKBERRY)
+#include "PageClientBlackBerry.h"
+typedef PageClientBlackBerry* PlatformPageClient;
+#elif PLATFORM(EFL)
+class PageClientEfl;
+typedef PageClientEfl* PlatformPageClient;
 #else
 typedef PlatformWidget PlatformPageClient;
 #endif
@@ -147,14 +137,6 @@ public:
     PlatformWidget platformWidget() const;
     void setPlatformWidget(PlatformWidget);
 
-#if PLATFORM(HAIKU)
-    PlatformWidget topLevelPlatformWidget() const { return m_topLevelPlatformWidget; }
-    void setTopLevelPlatformWidget(PlatformWidget widget)
-    {
-        m_topLevelPlatformWidget = widget;
-    }
-#endif
-
     int x() const { return frameRect().x(); }
     int y() const { return frameRect().y(); }
     int width() const { return frameRect().width(); }
@@ -163,12 +145,11 @@ public:
     IntPoint location() const { return frameRect().location(); }
 
     virtual void setFrameRect(const IntRect&);
-    virtual void setBoundsSize(const IntSize&);
-    virtual IntRect frameRect() const;
+    IntRect frameRect() const;
     IntRect boundsRect() const { return IntRect(0, 0, width(),  height()); }
 
-    void resize(int w, int h) { setFrameRect(IntRect(x(), y(), w, h)); setBoundsSize(IntSize(w, h)); }
-    void resize(const IntSize& s) { setFrameRect(IntRect(location(), s)); setBoundsSize(s); }
+    void resize(int w, int h) { setFrameRect(IntRect(x(), y(), w, h)); }
+    void resize(const IntSize& s) { setFrameRect(IntRect(location(), s)); }
     void move(int x, int y) { setFrameRect(IntRect(x, y, width(), height())); }
     void move(const IntPoint& p) { setFrameRect(IntRect(p, size())); }
 
@@ -205,6 +186,12 @@ public:
 
     virtual void notifyWidget(WidgetNotification) { }
 
+    IntRect convertToRootView(const IntRect&) const;
+    IntRect convertFromRootView(const IntRect&) const;
+
+    IntPoint convertToRootView(const IntPoint&) const;
+    IntPoint convertFromRootView(const IntPoint&) const;
+
     // It is important for cross-platform code to realize that Mac has flipped coordinates.  Therefore any code
     // that tries to convert the location of a rect using the point-based convertFromContainingWindow will end
     // up with an inaccurate rect.  Always make sure to use the rect-based convertFromContainingWindow method
@@ -220,10 +207,11 @@ public:
     // Notifies this widget that other widgets on the page have been repositioned.
     virtual void widgetPositionsUpdated() {}
 
-    NSView* getOuterView() const;
+    // Whether transforms affect the frame rect. FIXME: We get rid of this and have
+    // the frame rects be the same no matter what transforms are applied.
+    virtual bool transformsAffectFrameRect() { return true; }
 
-    static void beforeMouseDown(NSView*, Widget*);
-    static void afterMouseDown(NSView*, Widget*);
+    NSView* getOuterView() const;
 
     void removeFromSuperview();
     void addToSuperview(NSView* superview);
@@ -256,10 +244,6 @@ public:
     virtual IntRect convertFromContainingView(const IntRect&) const;
     virtual IntPoint convertToContainingView(const IntPoint&) const;
     virtual IntPoint convertFromContainingView(const IntPoint&) const;
-
-    // Conversion with FloatQuads, to keep transformed coordinates.
-    virtual FloatQuad convertToContainingView(const FloatQuad&) const;
-    virtual FloatQuad convertToRootContainingView(const FloatQuad&) const;
 
     // A means to access the AX cache when this object can get a pointer to it.
     virtual AXObjectCache* axObjectCache() const { return 0; }
@@ -298,17 +282,11 @@ private:
     void applyCursor();
 #endif
 
-#if PLATFORM(MAC) || PLATFORM(EFL)
-    WidgetPrivate* m_data;
-#endif
 
 #if PLATFORM(QT)
     QWeakPointer<QObject> m_bindingObject;
 #endif
 
-#if PLATFORM(HAIKU)
-    PlatformWidget m_topLevelPlatformWidget;
-#endif
 };
 
 #if !PLATFORM(MAC)

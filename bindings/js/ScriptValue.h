@@ -31,11 +31,11 @@
 #ifndef ScriptValue_h
 #define ScriptValue_h
 
-#include "JSDOMBinding.h"
 #include "PlatformString.h"
 #include "SerializedScriptValue.h"
 #include "ScriptState.h"
 #include <heap/Strong.h>
+#include <heap/StrongInlines.h>
 #include <runtime/JSValue.h>
 #include <wtf/PassRefPtr.h>
 
@@ -64,8 +64,6 @@ public:
 
     PassRefPtr<SerializedScriptValue> serialize(ScriptState*, SerializationErrorMode = Throwing);
     static ScriptValue deserialize(ScriptState*, SerializedScriptValue*, SerializationErrorMode = Throwing);
-
-    static ScriptValue undefined();
 
 #if ENABLE(INSPECTOR)
     PassRefPtr<InspectorValue> toInspectorValue(ScriptState*) const;

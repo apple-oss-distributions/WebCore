@@ -27,6 +27,7 @@
 #import "objc_instance.h"
 
 #import "runtime_method.h"
+#import <runtime/ObjectPrototype.h>
 #import "JSDOMBinding.h"
 #import "ObjCRuntimeObject.h"
 #import "WebScriptObject.h"
@@ -54,6 +55,11 @@ static NSString *s_exception;
 static JSGlobalObject* s_exceptionEnvironment; // No need to protect this value, since we just use it for a pointer comparison.
 static NSMapTable *s_instanceWrapperCache;
 
+#if COMPILER(CLANG)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif    
+
 static NSMapTable *createInstanceWrapperCache()
 {
     // NSMapTable with zeroing weak pointers is the recommended way to build caches like this under garbage collection.
@@ -62,9 +68,13 @@ static NSMapTable *createInstanceWrapperCache()
     return [[NSMapTable alloc] initWithKeyOptions:keyOptions valueOptions:valueOptions capacity:0];
 }
 
+#if COMPILER(CLANG)
+#pragma clang diagnostic pop
+#endif
+
 RuntimeObject* ObjcInstance::newRuntimeObject(ExecState* exec)
 {
-    return new (exec) ObjCRuntimeObject(exec, exec->lexicalGlobalObject(), this);
+    return ObjCRuntimeObject::create(exec, exec->lexicalGlobalObject(), this);
 }
 
 void ObjcInstance::setGlobalException(NSString* exception, JSGlobalObject* exceptionEnvironment)
@@ -84,7 +94,7 @@ void ObjcInstance::moveGlobalExceptionToExecState(ExecState* exec)
     }
 
     if (!s_exceptionEnvironment || s_exceptionEnvironment == exec->dynamicGlobalObject()) {
-        JSLock lock(SilenceAssertionsOnly);
+        JSLockHolder lock(exec);
         throwError(exec, s_exception);
     }
 
@@ -131,13 +141,12 @@ ObjcInstance::~ObjcInstance()
 
 static NSAutoreleasePool* allocateAutoReleasePool()
 {
-#if defined(OBJC_API_VERSION) && OBJC_API_VERSION >= 2
     // If GC is enabled an autorelease pool is unnecessary, and the
     // pool cannot be protected from GC so may be collected leading
     // to a crash when we try to drain the release pool.
     if (objc_collectingEnabled())
         return nil;
-#endif
+
     return [[NSAutoreleasePool alloc] init];
 }
 
@@ -163,7 +172,7 @@ Bindings::Class* ObjcInstance::getClass() const
     if (!_instance)
         return 0;
     if (!_class)
-        _class = ObjcClass::classForIsA(_instance->isa);
+        _class = ObjcClass::classForIsA(object_getClass(_instance.get()));
     return static_cast<Bindings::Class*>(_class);
 }
 
@@ -174,28 +183,44 @@ bool ObjcInstance::supportsInvokeDefaultMethod() const
 
 class ObjCRuntimeMethod : public RuntimeMethod {
 public:
-    ObjCRuntimeMethod(ExecState* exec, JSGlobalObject* globalObject, const Identifier& name, Bindings::MethodList& list)
+    static ObjCRuntimeMethod* create(ExecState* exec, JSGlobalObject* globalObject, const Identifier& name, Bindings::MethodList& list)
+    {
         // FIXME: deprecatedGetDOMStructure uses the prototype off of the wrong global object
         // We need to pass in the right global object for "i".
-        : RuntimeMethod(exec, globalObject, WebCore::deprecatedGetDOMStructure<ObjCRuntimeMethod>(exec), name, list)
-    {
-        ASSERT(inherits(&s_info));
+        Structure* domStructure = WebCore::deprecatedGetDOMStructure<ObjCRuntimeMethod>(exec);
+        ObjCRuntimeMethod* method = new (NotNull, allocateCell<ObjCRuntimeMethod>(*exec->heap())) ObjCRuntimeMethod(globalObject, domStructure, list);
+        method->finishCreation(exec->globalData(), name);
+        return method;
     }
 
-    static Structure* createStructure(JSGlobalData& globalData, JSValue prototype)
+    static Structure* createStructure(JSGlobalData& globalData, JSC::JSGlobalObject* globalObject, JSValue prototype)
     {
-        return Structure::create(globalData, prototype, TypeInfo(ObjectType, StructureFlags), AnonymousSlotCount, &s_info);
+        return Structure::create(globalData, globalObject, prototype, TypeInfo(ObjectType, StructureFlags), &s_info);
     }
 
     static const ClassInfo s_info;
+
+private:
+    typedef RuntimeMethod Base;
+
+    ObjCRuntimeMethod(JSGlobalObject* globalObject, Structure* structure, Bindings::MethodList& list)
+        : RuntimeMethod(globalObject, structure, list)
+    {
+    }
+
+    void finishCreation(JSGlobalData& globalData, const Identifier& name)
+    {
+        Base::finishCreation(globalData, name);
+        ASSERT(inherits(&s_info));
+    }
 };
 
-const ClassInfo ObjCRuntimeMethod::s_info = { "ObjCRuntimeMethod", &RuntimeMethod::s_info, 0, 0 };
+const ClassInfo ObjCRuntimeMethod::s_info = { "ObjCRuntimeMethod", &RuntimeMethod::s_info, 0, 0, CREATE_METHOD_TABLE(ObjCRuntimeMethod) };
 
 JSValue ObjcInstance::getMethod(ExecState* exec, const Identifier& propertyName)
 {
     MethodList methodList = getClass()->methodsNamed(propertyName, this);
-    return new (exec) ObjCRuntimeMethod(exec, exec->lexicalGlobalObject(), propertyName, methodList);
+    return ObjCRuntimeMethod::create(exec, exec->lexicalGlobalObject(), propertyName, methodList);
 }
 
 JSValue ObjcInstance::invokeMethod(ExecState* exec, RuntimeMethod* runtimeMethod)
@@ -216,7 +241,7 @@ JSValue ObjcInstance::invokeObjcMethod(ExecState* exec, ObjcMethod* method)
 {
     JSValue result = jsUndefined();
     
-    JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly); // Can't put this inside the @try scope because it unwinds incorrectly.
+    JSLock::DropAllLocks dropAllLocks(exec); // Can't put this inside the @try scope because it unwinds incorrectly.
 
     setGlobalException(nil);
     
@@ -292,7 +317,7 @@ JSValue ObjcInstance::invokeObjcMethod(ExecState* exec, ObjcMethod* method)
                     // the assert above should have fired in the impossible case
                     // of an invalid type anyway).
                     fprintf(stderr, "%s: invalid type (%d)\n", __PRETTY_FUNCTION__, (int)objcValueType);
-                    ASSERT(false);
+                    ASSERT_NOT_REACHED();
             }
         }
     }
@@ -331,7 +356,7 @@ JSValue ObjcInstance::invokeDefaultMethod(ExecState* exec)
 {
     JSValue result = jsUndefined();
 
-    JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly); // Can't put this inside the @try scope because it unwinds incorrectly.
+    JSLock::DropAllLocks dropAllLocks(exec); // Can't put this inside the @try scope because it unwinds incorrectly.
     setGlobalException(nil);
     
 @try {
@@ -384,7 +409,7 @@ bool ObjcInstance::setValueOfUndefinedField(ExecState* exec, const Identifier& p
     if (![targetObject respondsToSelector:@selector(setValue:forUndefinedKey:)])
         return false;
 
-    JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly); // Can't put this inside the @try scope because it unwinds incorrectly.
+    JSLock::DropAllLocks dropAllLocks(exec); // Can't put this inside the @try scope because it unwinds incorrectly.
 
     // This check is not really necessary because NSObject implements
     // setValue:forUndefinedKey:, and unfortunately the default implementation
@@ -412,7 +437,7 @@ JSValue ObjcInstance::getValueOfUndefinedField(ExecState* exec, const Identifier
     
     id targetObject = getObject();
 
-    JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly); // Can't put this inside the @try scope because it unwinds incorrectly.
+    JSLock::DropAllLocks dropAllLocks(exec); // Can't put this inside the @try scope because it unwinds incorrectly.
 
     // This check is not really necessary because NSObject implements
     // valueForUndefinedKey:, and unfortunately the default implementation

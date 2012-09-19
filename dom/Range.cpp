@@ -3,7 +3,8 @@
  * (C) 2000 Gunnstein Lye (gunnstein@netcom.no)
  * (C) 2000 Frederik Holljen (frederik.holljen@hig.no)
  * (C) 2001 Peter Kelly (pmk@post.com)
- * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2011 Motorola Mobility. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -32,6 +33,8 @@
 #include "Frame.h"
 #include "FrameView.h"
 #include "HTMLElement.h"
+#include "HTMLNames.h"
+#include "Node.h"
 #include "NodeWithIndex.h"
 #include "Page.h"
 #include "ProcessingInstruction.h"
@@ -56,10 +59,9 @@
 namespace WebCore {
 
 using namespace std;
+using namespace HTMLNames;
 
-#ifndef NDEBUG
-static WTF::RefCountedLeakCounter rangeCounter("Range");
-#endif
+DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, rangeCounter, ("Range"));
 
 inline Range::Range(PassRefPtr<Document> ownerDocument)
     : m_ownerDocument(ownerDocument)
@@ -91,11 +93,8 @@ inline Range::Range(PassRefPtr<Document> ownerDocument, PassRefPtr<Node> startCo
 
     // Simply setting the containers and offsets directly would not do any of the checking
     // that setStart and setEnd do, so we call those functions.
-    ExceptionCode ec = 0;
-    setStart(startContainer, startOffset, ec);
-    ASSERT(!ec);
-    setEnd(endContainer, endOffset, ec);
-    ASSERT(!ec);
+    setStart(startContainer, startOffset);
+    setEnd(endContainer, endOffset);
 }
 
 PassRefPtr<Range> Range::create(PassRefPtr<Document> ownerDocument, PassRefPtr<Node> startContainer, int startOffset, PassRefPtr<Node> endContainer, int endOffset)
@@ -285,6 +284,18 @@ void Range::setEnd(PassRefPtr<Node> refNode, int offset, ExceptionCode& ec)
         ASSERT(!ec);
         collapse(false, ec);
     }
+}
+
+void Range::setStart(const Position& start, ExceptionCode& ec)
+{
+    Position parentAnchored = start.parentAnchoredEquivalent();
+    setStart(parentAnchored.containerNode(), parentAnchored.offsetInContainerNode(), ec);
+}
+
+void Range::setEnd(const Position& end, ExceptionCode& ec)
+{
+    Position parentAnchored = end.parentAnchoredEquivalent();
+    setEnd(parentAnchored.containerNode(), parentAnchored.offsetInContainerNode(), ec);
 }
 
 void Range::collapse(bool toStart, ExceptionCode& ec)
@@ -588,14 +599,17 @@ bool Range::intersectsNode(Node* refNode, ExceptionCode& ec)
     // http://developer.mozilla.org/en/docs/DOM:range.intersectsNode
     // Returns a bool if the node intersects the range.
 
+    // Throw exception if the range is already detached.
+    if (!m_start.container()) {
+        ec = INVALID_STATE_ERR;
+        return false;
+    }
     if (!refNode) {
         ec = NOT_FOUND_ERR;
         return false;
     }
-    
-    if ((!m_start.container() && refNode->attached())
-            || (m_start.container() && !refNode->attached())
-            || refNode->document() != m_ownerDocument) {
+
+    if (!refNode->attached() || refNode->document() != m_ownerDocument) {
         // Firefox doesn't throw an exception for these cases; it returns false.
         return false;
     }
@@ -673,7 +687,6 @@ static inline unsigned lengthOfContentsInNode(Node* node)
     case Node::DOCUMENT_FRAGMENT_NODE:
     case Node::NOTATION_NODE:
     case Node::XPATH_NAMESPACE_NODE:
-    case Node::SHADOW_ROOT_NODE:
         return node->childNodeCount();
     }
     ASSERT_NOT_REACHED();
@@ -836,7 +849,6 @@ PassRefPtr<Node> Range::processContentsBetweenOffsets(ActionType action, PassRef
     case Node::DOCUMENT_FRAGMENT_NODE:
     case Node::NOTATION_NODE:
     case Node::XPATH_NAMESPACE_NODE:
-    case Node::SHADOW_ROOT_NODE:
         // FIXME: Should we assert that some nodes never appear here?
         if (action == EXTRACT_CONTENTS || action == CLONE_CONTENTS) {
             if (fragment)
@@ -878,6 +890,8 @@ void Range::processNodes(ActionType action, Vector<RefPtr<Node> >& nodes, PassRe
 
 PassRefPtr<Node> Range::processAncestorsAndTheirSiblings(ActionType action, Node* container, ContentsProcessDirection direction, PassRefPtr<Node> passedClonedContainer, Node* commonRoot, ExceptionCode& ec)
 {
+    typedef Vector<RefPtr<Node> > NodeVector;
+
     RefPtr<Node> clonedContainer = passedClonedContainer;
     Vector<RefPtr<Node> > ancestors;
     for (ContainerNode* n = container->parentNode(); n && n != commonRoot; n = n->parentNode())
@@ -897,9 +911,14 @@ PassRefPtr<Node> Range::processAncestorsAndTheirSiblings(ActionType action, Node
         // FIXME: This assertion may fail if DOM is modified during mutation event
         // FIXME: Share code with Range::processNodes
         ASSERT(!firstChildInAncestorToProcess || firstChildInAncestorToProcess->parentNode() == ancestor);
-        RefPtr<Node> next;
-        for (Node* child = firstChildInAncestorToProcess.get(); child; child = next.get()) {
-            next = direction == ProcessContentsForward ? child->nextSibling() : child->previousSibling();
+        
+        NodeVector nodes;
+        for (Node* child = firstChildInAncestorToProcess.get(); child;
+            child = (direction == ProcessContentsForward) ? child->nextSibling() : child->previousSibling())
+            nodes.append(child);
+
+        for (NodeVector::const_iterator it = nodes.begin(); it != nodes.end(); it++) {
+            Node* child = it->get();
             switch (action) {
             case DELETE_CONTENTS:
                 ancestor->removeChild(child, ec);
@@ -986,7 +1005,7 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionCode& ec)
 
     Node::NodeType newNodeType = newNode->nodeType();
     int numNewChildren;
-    if (newNodeType == Node::DOCUMENT_FRAGMENT_NODE) {
+    if (newNodeType == Node::DOCUMENT_FRAGMENT_NODE && !newNode->isShadowRoot()) {
         // check each child node, not the DocumentFragment itself
         numNewChildren = 0;
         for (Node* c = newNode->firstChild(); c; c = c->nextSibling()) {
@@ -1017,19 +1036,26 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionCode& ec)
     case Node::ENTITY_NODE:
     case Node::NOTATION_NODE:
     case Node::DOCUMENT_NODE:
-    case Node::SHADOW_ROOT_NODE:
         ec = RangeException::INVALID_NODE_TYPE_ERR;
         return;
     default:
+        if (newNode->isShadowRoot()) {
+            ec = RangeException::INVALID_NODE_TYPE_ERR;
+            return;
+        }
         break;
     }
 
     bool collapsed = m_start == m_end;
+    RefPtr<Node> container;
     if (startIsText) {
-        RefPtr<Text> newText = static_cast<Text*>(m_start.container())->splitText(m_start.offset(), ec);
+        container = m_start.container();
+        RefPtr<Text> newText = toText(container.get())->splitText(m_start.offset(), ec);
         if (ec)
             return;
-        m_start.container()->parentNode()->insertBefore(newNode.release(), newText.get(), ec);
+        
+        container = m_start.container();
+        container->parentNode()->insertBefore(newNode.release(), newText.get(), ec);
         if (ec)
             return;
 
@@ -1043,13 +1069,14 @@ void Range::insertNode(PassRefPtr<Node> prpNewNode, ExceptionCode& ec)
             lastChild = (newNodeType == Node::DOCUMENT_FRAGMENT_NODE) ? newNode->lastChild() : newNode;
 
         int startOffset = m_start.offset();
-        m_start.container()->insertBefore(newNode.release(), m_start.container()->childNode(startOffset), ec);
+        container = m_start.container();
+        container->insertBefore(newNode.release(), container->childNode(startOffset), ec);
         if (ec)
             return;
 
         // This special case doesn't seem to match the DOM specification, but it's currently required
         // to pass Acid3. We might later decide to remove this.
-        if (collapsed)
+        if (collapsed && numNewChildren)
             m_end.set(m_start.container(), startOffset + numNewChildren, lastChild.get());
     }
 }
@@ -1094,7 +1121,58 @@ String Range::text() const
     return plainText(this);
 }
 
-PassRefPtr<DocumentFragment> Range::createContextualFragment(const String& markup, ExceptionCode& ec) const
+static inline void removeElementPreservingChildren(PassRefPtr<DocumentFragment> fragment, HTMLElement* element)
+{
+    ExceptionCode ignoredExceptionCode;
+
+    RefPtr<Node> nextChild;
+    for (RefPtr<Node> child = element->firstChild(); child; child = nextChild) {
+        nextChild = child->nextSibling();
+        element->removeChild(child.get(), ignoredExceptionCode);
+        ASSERT(!ignoredExceptionCode);
+        fragment->insertBefore(child, element, ignoredExceptionCode);
+        ASSERT(!ignoredExceptionCode);
+    }
+    fragment->removeChild(element, ignoredExceptionCode);
+    ASSERT(!ignoredExceptionCode);
+}
+
+PassRefPtr<DocumentFragment> Range::createDocumentFragmentForElement(const String& markup, Element* element,  FragmentScriptingPermission scriptingPermission)
+{
+    ASSERT(element);
+    HTMLElement* htmlElement = toHTMLElement(element);
+    if (htmlElement->ieForbidsInsertHTML())
+        return 0;
+
+    if (htmlElement->hasLocalName(colTag) || htmlElement->hasLocalName(colgroupTag) || htmlElement->hasLocalName(framesetTag)
+        || htmlElement->hasLocalName(headTag) || htmlElement->hasLocalName(styleTag) || htmlElement->hasLocalName(titleTag))
+        return 0;
+
+    RefPtr<DocumentFragment> fragment = element->document()->createDocumentFragment();
+
+    if (element->document()->isHTMLDocument())
+        fragment->parseHTML(markup, element, scriptingPermission);
+    else if (!fragment->parseXML(markup, element, scriptingPermission))
+        return 0; // FIXME: We should propagate a syntax error exception out here.
+
+    // We need to pop <html> and <body> elements and remove <head> to
+    // accommodate folks passing complete HTML documents to make the
+    // child of an element.
+
+    RefPtr<Node> nextNode;
+    for (RefPtr<Node> node = fragment->firstChild(); node; node = nextNode) {
+        nextNode = node->nextSibling();
+        if (node->hasTagName(htmlTag) || node->hasTagName(headTag) || node->hasTagName(bodyTag)) {
+            HTMLElement* element = toHTMLElement(node.get());
+            if (Node* firstChild = element->firstChild())
+                nextNode = firstChild;
+            removeElementPreservingChildren(fragment, element);
+        }
+    }
+    return fragment.release();
+}
+
+PassRefPtr<DocumentFragment> Range::createContextualFragment(const String& markup, ExceptionCode& ec, FragmentScriptingPermission scriptingPermission)
 {
     if (!m_start.container()) {
         ec = INVALID_STATE_ERR;
@@ -1107,10 +1185,8 @@ PassRefPtr<DocumentFragment> Range::createContextualFragment(const String& marku
         return 0;
     }
 
-    // Logic from deprecatedCreateContextualFragment should just be moved into
-    // this function.  Range::createContextualFragment semantics do not make
-    // sense for the rest of the DOM implementation to use.
-    RefPtr<DocumentFragment> fragment = toHTMLElement(element)->deprecatedCreateContextualFragment(markup);
+    RefPtr<DocumentFragment> fragment = createDocumentFragmentForElement(markup, toElement(element), scriptingPermission);
+
     if (!fragment) {
         ec = NOT_SUPPORTED_ERR;
         return 0;
@@ -1157,8 +1233,7 @@ Node* Range::checkNodeWOffset(Node* n, int offset, ExceptionCode& ec) const
         case Node::DOCUMENT_NODE:
         case Node::ELEMENT_NODE:
         case Node::ENTITY_REFERENCE_NODE:
-        case Node::XPATH_NAMESPACE_NODE:
-        case Node::SHADOW_ROOT_NODE: {
+        case Node::XPATH_NAMESPACE_NODE: {
             if (!offset)
                 return 0;
             Node* childBefore = n->childNode(offset - 1);
@@ -1183,7 +1258,6 @@ void Range::checkNodeBA(Node* n, ExceptionCode& ec) const
         case Node::DOCUMENT_NODE:
         case Node::ENTITY_NODE:
         case Node::NOTATION_NODE:
-        case Node::SHADOW_ROOT_NODE:
             ec = RangeException::INVALID_NODE_TYPE_ERR;
             return;
         case Node::CDATA_SECTION_NODE:
@@ -1205,7 +1279,6 @@ void Range::checkNodeBA(Node* n, ExceptionCode& ec) const
         case Node::ATTRIBUTE_NODE:
         case Node::DOCUMENT_NODE:
         case Node::DOCUMENT_FRAGMENT_NODE:
-        case Node::SHADOW_ROOT_NODE:
             break;
         case Node::CDATA_SECTION_NODE:
         case Node::COMMENT_NODE:
@@ -1217,12 +1290,6 @@ void Range::checkNodeBA(Node* n, ExceptionCode& ec) const
         case Node::PROCESSING_INSTRUCTION_NODE:
         case Node::TEXT_NODE:
         case Node::XPATH_NAMESPACE_NODE:
-            if (root->isSVGShadowRoot())
-                break;
-            // FIXME: this should be removed when we perform a merge from OpenSource
-            // that will include r87067. Once that happens, root-nodeType will be SHADOW_ROOT_NODE.
-            if (root->isShadowRoot())
-                break;
             ec = RangeException::INVALID_NODE_TYPE_ERR;
             return;
     }
@@ -1341,7 +1408,6 @@ void Range::selectNode(Node* refNode, ExceptionCode& ec)
             case Node::PROCESSING_INSTRUCTION_NODE:
             case Node::TEXT_NODE:
             case Node::XPATH_NAMESPACE_NODE:
-            case Node::SHADOW_ROOT_NODE:
                 break;
             case Node::DOCUMENT_TYPE_NODE:
             case Node::ENTITY_NODE:
@@ -1366,7 +1432,6 @@ void Range::selectNode(Node* refNode, ExceptionCode& ec)
         case Node::DOCUMENT_NODE:
         case Node::ENTITY_NODE:
         case Node::NOTATION_NODE:
-        case Node::SHADOW_ROOT_NODE:
             ec = RangeException::INVALID_NODE_TYPE_ERR;
             return;
     }
@@ -1407,7 +1472,6 @@ void Range::selectNodeContents(Node* refNode, ExceptionCode& ec)
             case Node::PROCESSING_INSTRUCTION_NODE:
             case Node::TEXT_NODE:
             case Node::XPATH_NAMESPACE_NODE:
-            case Node::SHADOW_ROOT_NODE:
                 break;
             case Node::DOCUMENT_TYPE_NODE:
             case Node::ENTITY_NODE:
@@ -1456,7 +1520,6 @@ void Range::surroundContents(PassRefPtr<Node> passNewParent, ExceptionCode& ec)
         case Node::PROCESSING_INSTRUCTION_NODE:
         case Node::TEXT_NODE:
         case Node::XPATH_NAMESPACE_NODE:
-        case Node::SHADOW_ROOT_NODE:
             break;
     }
 
@@ -1598,32 +1661,6 @@ Node* Range::firstNode() const
     return m_start.container()->traverseNextSibling();
 }
 
-Position Range::editingStartPosition() const
-{
-    // This function is used by range style computations to avoid bugs like:
-    // <rdar://problem/4017641> REGRESSION (Mail): you can only bold/unbold a selection starting from end of line once
-    // It is important to skip certain irrelevant content at the start of the selection, so we do not wind up 
-    // with a spurious "mixed" style.
-    
-    VisiblePosition visiblePosition = Position(m_start.container(), m_start.offset(), Position::PositionIsOffsetInAnchor);
-    if (visiblePosition.isNull())
-        return Position();
-
-    ExceptionCode ec = 0;
-    // if the selection is a caret, just return the position, since the style
-    // behind us is relevant
-    if (collapsed(ec))
-        return visiblePosition.deepEquivalent();
-
-    // if the selection starts just before a paragraph break, skip over it
-    if (isEndOfParagraph(visiblePosition))
-        return visiblePosition.next().deepEquivalent().downstream();
-
-    // otherwise, make sure to be at the start of the first selected node,
-    // instead of possibly at the end of the last node before the selection
-    return visiblePosition.deepEquivalent().downstream();
-}
-
 Node* Range::shadowTreeRootNode() const
 {
     return startContainer() ? startContainer()->shadowTreeRootNode() : 0;
@@ -1715,6 +1752,25 @@ void Range::textQuads(Vector<FloatQuad>& quads, bool useSelectionHeight, RangeIn
         *inFixed = allFixed ? EntirelyFixedPosition : (someFixed ? PartiallyFixedPosition : NotFixedPosition);
 }
 
+static bool intervalsSufficientlyOverlap(int startA, int endA, int startB, int endB)
+{
+    if (endA <= startA || endB <= startB)
+        return false;
+
+    const float sufficientOverlap = .75;
+
+    int lengthA = endA - startA;
+    int lengthB = endB - startB;
+
+    int maxStart = max(startA, startB);
+    int minEnd = min(endA, endB);
+
+    if (maxStart > minEnd)
+        return false;
+
+    return minEnd - maxStart >= sufficientOverlap * min(lengthA, lengthB);
+}
+
 // This function is similar in spirit to addLineBoxRects, but annotates the
 // returned rectangles with additional state which helps the iPhone draw
 // selections in its unique way.
@@ -1728,12 +1784,14 @@ void Range::collectSelectionRects(Vector<SelectionRect>& rects)
     int startOffset = m_start.offset();
     int endOffset = m_end.offset();
 
+    bool hasFlippedWritingMode = false;
     Vector<SelectionRect> newRects;
     Node* stopNode = pastLastNode();
     for (Node* node = firstNode(); node && node != stopNode; node = node->traverseNextNode()) {
         RenderObject* r = node->renderer();
         // only ask leaf render objects for their line box rects
-        if (r && !r->firstChild()) {
+        if (r && !r->firstChild() && r->style()->userSelect() != SELECT_NONE) {
+            hasFlippedWritingMode = r->style()->isFlippedBlocksWritingMode();
             bool isStartNode = (r->node() == startContainer);
             bool isEndNode = (r->node() == endContainer);
             // FIXME: Sending 0 for the startOffset is a weird way of telling the renderer that the selection
@@ -1762,78 +1820,82 @@ void Range::collectSelectionRects(Vector<SelectionRect>& rects)
         // Only set the line break bit if the end of the range actually
         // extends all the way to include the <br>. VisiblePosition helps to
         // figure this out.
-        VisiblePosition endPos(Position(endContainer, endOffset), VP_DEFAULT_AFFINITY);
-        VisiblePosition brPos(Position(stopNode, 0), VP_DEFAULT_AFFINITY);
+        VisiblePosition endPos(createLegacyEditingPosition(endContainer, endOffset), VP_DEFAULT_AFFINITY);
+        VisiblePosition brPos(createLegacyEditingPosition(stopNode, 0), VP_DEFAULT_AFFINITY);
         if (endPos == brPos)
             rects.last().setIsLineBreak(true);    
     }
-    
-    // FIXME <rdar://problem/9711665>: When implementing vertical text selection, we need to rework the following code
-    // so we aren't comparing tops between horizontal and vertical SelectionRects when computing how much to stretch the rects.
 
-    // Find line tops.
-    int tops[rects.size()];
-    memset(tops, 0, sizeof(int) * rects.size());
-    int topc = 0;
-    int top = INT32_MIN;
-    for (unsigned i = 0; i < rects.size(); i++) {
-        int t = rects[i].isHorizontal() ? rects[i].rect().y() : rects[i].rect().x();
-        if (top != t) {
-            top = t;
-            tops[topc] = top;   
-            topc++;
-        }
-    }
-
-    // Make sure every rect touches the line below.
-    int tidx = 0;
-    for (unsigned i = 0; i < rects.size(); i++) {
-        IntRect r = rects[i].rect();
-        int t = rects[i].isHorizontal() ? r.y() : r.x();
-        if (t == tops[topc - 1])
-            break;
-        if (t != tops[tidx])
-            tidx++;
-        int n = tops[tidx + 1];
-        if (n > t) {
-            if (rects[i].isHorizontal())
-                r.setHeight(n - t);
-            else
-                r.setWidth(n - t);
-            rects[i].setRect(r);
-        }
-    }
-
-    // Assign line numbers
+    int lineTop = numeric_limits<int>::max();
+    int lineBottom = numeric_limits<int>::min();
+    int lastLineTop = lineTop;
+    int lastLineBottom = lineBottom;
     int lineNumber = 0;
-    int prev = INT32_MIN;
-    for (unsigned i = 0; i < rects.size(); i++) {
-        IntRect r = rects[i].rect();
-        int current = rects[i].isHorizontal() ? r.y() : r.x();
-        if (prev != current) {
+
+    for (size_t i = 0, size = rects.size(); i < size; ++i) {
+        int currentRectTop = rects[i].logicalTop();
+        int currentRectBottom = currentRectTop + rects[i].logicalHeight();
+
+        if (intervalsSufficientlyOverlap(currentRectTop, currentRectBottom, lineTop, lineBottom)) {
+            // Grow the current line bounds.
+            lineTop = min(lineTop, currentRectTop);
+            lineBottom = max(lineBottom, currentRectBottom);
+            // Avoid overlap with the previous line.
+            if (!hasFlippedWritingMode)
+                lineTop = max(lastLineBottom, lineTop);
+            else
+                lineBottom = min(lastLineTop, lineBottom);
+        } else {
+            for (size_t j = i; j > 0; --j) {
+                if (rects[j - 1].lineNumber())
+                    break;
+                rects[j - 1].setLineNumber(lineNumber);
+                rects[j - 1].setLogicalTop(lineTop);
+                rects[j - 1].setLogicalHeight(lineBottom - lineTop);
+            }
+            if (!hasFlippedWritingMode) {
+                lastLineTop = lineTop;
+                if (currentRectBottom >= lastLineTop) {
+                    lastLineBottom = lineBottom;
+                    lineTop = lastLineBottom;
+                } else {
+                    lineTop = currentRectTop;
+                    lastLineBottom = numeric_limits<int>::min();
+                }
+                lineBottom = currentRectBottom;
+            } else {
+                lastLineBottom = lineBottom;
+                if (currentRectTop <= lastLineBottom) {
+                    lastLineTop = lineTop;
+                    lineBottom = lastLineTop;
+                } else {
+                    lastLineTop = numeric_limits<int>::max();
+                    lineBottom = currentRectBottom;
+                }
+                lineTop = currentRectTop;
+            }
             lineNumber++;
-            prev = current;
         }
-        rects[i].setLineNumber(lineNumber);
+    }
+
+    for (size_t j = rects.size(); j > 0; --j) {
+        if (rects[j - 1].lineNumber())
+            break;
+        rects[j - 1].setLineNumber(lineNumber);
+        rects[j - 1].setLogicalTop(lineTop);
+        rects[j - 1].setLogicalHeight(lineBottom - lineTop);
     }
     int maxLineNumber = lineNumber;
 
     // Extend rects out to edges as needed.
     for (unsigned i = 0; i < rects.size(); i++) {
         SelectionRect &s = rects[i];
-        if (!s.isHorizontal() && s.isLastOnLine() && (s.isLineBreak() || s.lineNumber() < maxLineNumber)) {
-            IntRect intRect(s.rect());
-            intRect.setHeight(intRect.height() + (s.maxY() - intRect.maxY()));
-            s.setRect(intRect);
-        } else if (s.direction() == RTL && s.isFirstOnLine() && (s.isLineBreak() || s.lineNumber() < maxLineNumber)) {
-            IntRect intRect(s.rect());
-            intRect.setWidth(intRect.width() + (intRect.x() - s.minX()));
-            intRect.setX(s.minX());
-            s.setRect(intRect);
-        } else if (s.direction() == LTR && s.isLastOnLine() && (s.isLineBreak() || s.lineNumber() < maxLineNumber)) {
-            IntRect intRect(s.rect());
-            intRect.setWidth(intRect.width() + (s.maxX() - intRect.maxX()));
-            s.setRect(intRect);
+        if (s.isLineBreak() || s.lineNumber() < maxLineNumber) {
+            if (s.direction() == RTL && s.isFirstOnLine()) {
+                s.setLogicalWidth(s.logicalWidth() + s.logicalLeft() - s.minX());
+                s.setLogicalLeft(s.minX());
+            } else if (s.direction() == LTR && s.isLastOnLine())
+                s.setLogicalWidth(s.maxX() - s.logicalLeft());
         }
     }
     
@@ -2131,7 +2193,7 @@ void Range::expand(const String& unit, ExceptionCode& ec)
 PassRefPtr<ClientRectList> Range::getClientRects() const
 {
     if (!m_start.container())
-        return 0;
+        return ClientRectList::create();
 
     m_ownerDocument->updateLayoutIgnorePendingStylesheets();
 
@@ -2143,8 +2205,7 @@ PassRefPtr<ClientRectList> Range::getClientRects() const
 
 PassRefPtr<ClientRect> Range::getBoundingClientRect() const
 {
-    FloatRect rect = boundingRect();
-    return rect.isEmpty() ? 0 : ClientRect::create(rect);
+    return ClientRect::create(boundingRect());
 }
 
 static void adjustFloatQuadsForScrollAndAbsoluteZoomAndPageScale(Vector<FloatQuad>& quads, Document* document, RenderObject* renderer)
@@ -2154,12 +2215,10 @@ static void adjustFloatQuadsForScrollAndAbsoluteZoomAndPageScale(Vector<FloatQua
         return;
 
     float pageScale = 1;
-    if (Page* page = document->page()) {
-        if (Frame* frame = page->mainFrame())
-            pageScale = frame->pageScaleFactor();
-    }
+    if (Page* page = document->page())
+        pageScale = page->pageScaleFactor();
 
-    IntRect visibleContentRect = view->actualVisibleContentRect();
+    LayoutRect visibleContentRect = view->actualVisibleContentRect();
     for (size_t i = 0; i < quads.size(); ++i) {
         quads[i].move(-visibleContentRect.x(), -visibleContentRect.y());
         adjustFloatQuadForAbsoluteZoom(quads[i], renderer);
@@ -2192,7 +2251,7 @@ void Range::getBorderAndTextQuads(Vector<FloatQuad>& quads) const
                 }
             }
         } else if (node->isTextNode()) {
-            if (RenderObject* renderer = static_cast<Text*>(node)->renderer()) {
+            if (RenderObject* renderer = toText(node)->renderer()) {
                 RenderText* renderText = toRenderText(renderer);
                 int startOffset = (node == startContainer) ? m_start.offset() : 0;
                 int endOffset = (node == endContainer) ? m_end.offset() : INT_MAX;

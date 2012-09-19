@@ -57,22 +57,12 @@ typedef struct __CFBundle* CFBundleRef;
 typedef const struct __CFData* CFDataRef;
 #endif
 
-#ifdef __OBJC__
-@class NSString;
-#else
-class NSString;
-#endif
-
 #if OS(WINDOWS)
 // These are to avoid including <winbase.h> in a header for Chromium
 typedef void *HANDLE;
 // Assuming STRICT
 typedef struct HINSTANCE__* HINSTANCE;
 typedef HINSTANCE HMODULE;
-#endif
-
-#if PLATFORM(BREWMP)
-typedef struct _IFile IFile;
 #endif
 
 #if PLATFORM(GTK)
@@ -136,9 +126,6 @@ typedef HANDLE PlatformFileHandle;
 // FIXME: -1 is INVALID_HANDLE_VALUE, defined in <winbase.h>. Chromium tries to
 // avoid using Windows headers in headers.  We'd rather move this into the .cpp.
 const PlatformFileHandle invalidPlatformFileHandle = reinterpret_cast<HANDLE>(-1);
-#elif PLATFORM(BREWMP)
-typedef IFile* PlatformFileHandle;
-const PlatformFileHandle invalidPlatformFileHandle = 0;
 #elif PLATFORM(WX)
 typedef wxFile* PlatformFileHandle;
 const PlatformFileHandle invalidPlatformFileHandle = 0;
@@ -207,22 +194,24 @@ String encodeForFileName(const String&);
 RetainPtr<CFURLRef> pathAsURL(const String&);
 #endif
 
-#if PLATFORM(CHROMIUM)
-String pathGetDisplayFileName(const String&);
+#if PLATFORM(MAC)
+void setMetadataURL(String& URLString, const String& referrer, const String& path);
 #endif
 
 #if PLATFORM(GTK)
 String filenameToString(const char*);
 String filenameForDisplay(const String&);
 CString applicationDirectoryPath();
+CString sharedResourcesPath();
+uint64_t getVolumeFreeSizeForPath(const char*);
 #endif
-
-NSString *createTemporaryDirectory(NSString *directoryPrefix);
-NSString *createTemporaryFile(NSString *directoryPath, NSString *filePrefix);
 
 #if PLATFORM(WIN) && !OS(WINCE)
 String localUserSpecificStorageDirectory();
 String roamingUserSpecificStorageDirectory();
+#endif
+
+#if PLATFORM(WIN) && USE(CF)
 bool safeCreateFile(const String&, CFDataRef);
 #endif
 

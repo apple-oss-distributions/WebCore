@@ -28,33 +28,48 @@
 #if ENABLE(WEBGL)
 
 #include "GraphicsContext3D.h"
-#include "GraphicsContext3DIPhone.h"
+#include "GraphicsContext3DIOS.h"
 
 #import "BlockExceptions.h"
 
 #include "ANGLE/ShaderLang.h"
-#include "ArrayBuffer.h"
-#include "ArrayBufferView.h"
 #include "CanvasRenderingContext.h"
 #include <CoreGraphics/CGBitmapContext.h>
 #include "Extensions3DOpenGL.h"
-#include "Float32Array.h"
 #include "GraphicsContext.h"
 #include "HTMLCanvasElement.h"
 #include "ImageBuffer.h"
-#include "Int32Array.h"
 #include "NotImplemented.h"
 #import <OpenGLES/ES2/glext.h>
 #import <OpenGLES/EAGL.h>
 #import <OpenGLES/EAGLDrawable.h>
 #import <QuartzCore/QuartzCore.h>
-#include "Uint8Array.h"
 #include "WebGLLayer.h"
 #include "WebGLObject.h"
+#include <wtf/ArrayBuffer.h>
+#include <wtf/ArrayBufferView.h>
+#include <wtf/Int32Array.h>
+#include <wtf/Float32Array.h>
+#include <wtf/Uint8Array.h>
 #include <wtf/UnusedParam.h>
 #include <wtf/text/CString.h>
 
 namespace WebCore {
+
+// FIXME: This class is currently empty on Mac, but will get populated as 
+// the restructuring in https://bugs.webkit.org/show_bug.cgi?id=66903 is done
+class GraphicsContext3DPrivate {
+public:
+    GraphicsContext3DPrivate(GraphicsContext3D* graphicsContext3D)
+        : m_graphicsContext3D(graphicsContext3D)
+    {
+    }
+    
+    ~GraphicsContext3DPrivate() { }
+
+private:
+    GraphicsContext3D* m_graphicsContext3D; // Weak back-pointer
+};
 
 
 PassRefPtr<GraphicsContext3D> GraphicsContext3D::create(GraphicsContext3D::Attributes attrs, HostWindow* hostWindow, GraphicsContext3D::RenderStyle renderStyle)
@@ -69,7 +84,6 @@ PassRefPtr<GraphicsContext3D> GraphicsContext3D::create(GraphicsContext3D::Attri
 GraphicsContext3D::GraphicsContext3D(GraphicsContext3D::Attributes attrs, HostWindow* hostWindow, bool)
     : m_currentWidth(0)
     , m_currentHeight(0)
-    , m_isResourceSafe(false)
     , m_contextObj(0)
     , m_attrs(attrs)
     , m_texture(0)
@@ -84,6 +98,7 @@ GraphicsContext3D::GraphicsContext3D(GraphicsContext3D::Attributes attrs, HostWi
     , m_multisampleFBO(0)
     , m_multisampleDepthStencilBuffer(0)
     , m_multisampleColorBuffer(0)
+    , m_private(adoptPtr(new GraphicsContext3DPrivate(this)))
 {
     UNUSED_PARAM(hostWindow);
 
@@ -170,13 +185,14 @@ bool GraphicsContext3D::setRenderbufferStorageFromDrawable(GC3Dsizei width, GC3D
     return [m_contextObj renderbufferStorage:GL_RENDERBUFFER fromDrawable:static_cast<NSObject<EAGLDrawable>*>(m_webGLLayer.get())];
 }
 
-void GraphicsContext3D::makeContextCurrent()
+bool GraphicsContext3D::makeContextCurrent()
 {
     if (!m_contextObj)
-        return;
+        return false;
 
     if ([EAGLContext currentContext] != m_contextObj)
-        [EAGLContext setCurrentContext:static_cast<EAGLContext*>(m_contextObj)];
+        return [EAGLContext setCurrentContext:static_cast<EAGLContext*>(m_contextObj)];
+    return true;
 }
 
 void GraphicsContext3D::endPaint()
@@ -194,6 +210,10 @@ bool GraphicsContext3D::isGLES2Compliant() const
 }
 
 void GraphicsContext3D::setContextLostCallback(PassOwnPtr<ContextLostCallback>)
+{
+}
+
+void GraphicsContext3D::setErrorMessageCallback(PassOwnPtr<ErrorMessageCallback>)
 {
 }
 

@@ -27,6 +27,8 @@
 #include "Logging.h"
 #include "PlatformString.h"
 
+#if !LOG_DISABLED
+
 namespace WebCore {
 
 WTFLogChannel LogNotYetImplemented = { 0x00000001, "WebCoreLogLevel", WTFLogChannelOff };
@@ -61,9 +63,14 @@ WTFLogChannel LogProgress =          { 0x08000000, "WebCoreLogLevel", WTFLogChan
 
 WTFLogChannel LogFileAPI =           { 0x10000000, "WebCoreLogLevel", WTFLogChannelOff };
 
+WTFLogChannel LogWebAudio =          { 0x20000000, "WebCoreLogLevel", WTFLogChannelOff };
+WTFLogChannel LogCompositing =       { 0x40000000, "WebCoreLogLevel", WTFLogChannelOff };
+
+
 #if ENABLE(DISK_IMAGE_CACHE)
 WTFLogChannel LogDiskImageCache =    { 0x00000010, "IOSWebCoreLogLevel", WTFLogChannelOff };
 #endif
+WTFLogChannel LogMemoryPressure =    { 0x00000020, "IOSWebCoreLogLevel", WTFLogChannelOff };
 
 WTFLogChannel* getChannelFromName(const String& channelName)
 {
@@ -139,12 +146,22 @@ WTFLogChannel* getChannelFromName(const String& channelName)
     if (equalIgnoringCase(channelName, String("FileAPI")))
         return &LogFileAPI;
 
+    if (equalIgnoringCase(channelName, String("WebAudio")))
+        return &LogWebAudio;
+
+    if (equalIgnoringCase(channelName, String("Compositing")))
+        return &LogCompositing;
+
 #if ENABLE(DISK_IMAGE_CACHE)
     if (equalIgnoringCase(channelName, String("DiskImageCache")))
         return &LogDiskImageCache;
 #endif
+    if (equalIgnoringCase(channelName, String("MemoryPressure")))
+        return &LogMemoryPressure;
 
     return 0;
 }
 
 }
+
+#endif // !LOG_DISABLED

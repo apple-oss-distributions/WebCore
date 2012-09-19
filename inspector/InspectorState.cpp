@@ -27,15 +27,16 @@
  */
 
 #include "config.h"
-#include "InspectorState.h"
 
 #if ENABLE(INSPECTOR)
 
-#include "InspectorClient.h"
+#include "InspectorState.h"
+
+#include "InspectorStateClient.h"
 
 namespace WebCore {
 
-InspectorState::InspectorState(InspectorClient* client)
+InspectorState::InspectorState(InspectorStateClient* client)
     : m_client(client)
     , m_properties(InspectorObject::create())
     , m_isOnMute(false)
@@ -64,7 +65,7 @@ void InspectorState::unmute()
 
 void InspectorState::updateCookie()
 {
-    if (m_client && !m_isOnMute)
+    if (m_client && !m_isOnMute && m_client->supportsInspectorStateUpdates())
         m_client->updateInspectorStateCookie(m_properties->toJSONString());
 }
 
@@ -96,6 +97,15 @@ long InspectorState::getLong(const String& propertyName)
 {
     InspectorObject::iterator it = m_properties->find(propertyName);
     long value = 0;
+    if (it != m_properties->end())
+        it->second->asNumber(&value);
+    return value;
+}
+
+double InspectorState::getDouble(const String& propertyName)
+{
+    InspectorObject::iterator it = m_properties->find(propertyName);
+    double value = 0;
     if (it != m_properties->end())
         it->second->asNumber(&value);
     return value;

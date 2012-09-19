@@ -35,7 +35,7 @@
 #include "SecurityOrigin.h"
 #include "Settings.h"
 #include "WebCoreJSClientData.h"
-#include <wtf/Threading.h>
+#include <wtf/MainThread.h>
 
 #include "ChromeClient.h"
 #include "WebSafeGCActivityCallback.h"
@@ -44,13 +44,22 @@ using namespace JSC;
 
 namespace WebCore {
 
-const ClassInfo JSDOMWindowBase::s_info = { "Window", &JSDOMGlobalObject::s_info, 0, 0 };
+const ClassInfo JSDOMWindowBase::s_info = { "Window", &JSDOMGlobalObject::s_info, 0, 0, CREATE_METHOD_TABLE(JSDOMWindowBase) };
+
+const GlobalObjectMethodTable JSDOMWindowBase::s_globalObjectMethodTable = { &allowsAccessFrom, &supportsProfiling, &supportsRichSourceInfo, &shouldInterruptScript
+    , &shouldInterruptScriptBeforeTimeout
+};
 
 JSDOMWindowBase::JSDOMWindowBase(JSGlobalData& globalData, Structure* structure, PassRefPtr<DOMWindow> window, JSDOMWindowShell* shell)
-    : JSDOMGlobalObject(globalData, structure, shell->world(), shell)
+    : JSDOMGlobalObject(globalData, structure, shell->world(), &s_globalObjectMethodTable)
     , m_impl(window)
     , m_shell(shell)
 {
+}
+
+void JSDOMWindowBase::finishCreation(JSGlobalData& globalData, JSDOMWindowShell* shell)
+{
+    Base::finishCreation(globalData, shell);
     ASSERT(inherits(&s_info));
 
     GlobalPropertyInfo staticGlobals[] = {
@@ -59,6 +68,11 @@ JSDOMWindowBase::JSDOMWindowBase(JSGlobalData& globalData, Structure* structure,
     };
     
     addStaticGlobals(staticGlobals, WTF_ARRAY_LENGTH(staticGlobals));
+}
+
+void JSDOMWindowBase::destroy(JSCell* cell)
+{
+    jsCast<JSDOMWindowBase*>(cell)->JSDOMWindowBase::~JSDOMWindowBase();
 }
 
 void JSDOMWindowBase::updateDocument()
@@ -83,21 +97,38 @@ void JSDOMWindowBase::printErrorMessage(const String& message) const
     printErrorMessageForFrame(impl()->frame(), message);
 }
 
-ExecState* JSDOMWindowBase::globalExec()
+// This method checks whether accesss to *this* global object is permitted from
+// the given context; this differs from allowsAccessFromPrivate, since that
+// method checks whether the given context is permitted to access the current
+// window the shell is referencing (which may come from a different security
+// origin to this global object).
+bool JSDOMWindowBase::allowsAccessFrom(const JSGlobalObject* thisObject, ExecState* exec)
 {
-    // We need to make sure that any script execution happening in this
-    // frame does not destroy it
-    if (Frame *frame = impl()->frame())
-        frame->keepAlive();
-    return Base::globalExec();
+    JSGlobalObject* otherObject = exec->lexicalGlobalObject();
+
+    const JSDOMWindow* originWindow = asJSDOMWindow(otherObject);
+    const JSDOMWindow* targetWindow = asJSDOMWindow(thisObject);
+
+    if (originWindow == targetWindow)
+        return true;
+
+    const SecurityOrigin* originSecurityOrigin = originWindow->impl()->securityOrigin();
+    const SecurityOrigin* targetSecurityOrigin = targetWindow->impl()->securityOrigin();
+
+    if (originSecurityOrigin->canAccess(targetSecurityOrigin))
+        return true;
+
+    targetWindow->printErrorMessage(targetWindow->crossDomainAccessErrorMessage(otherObject));
+    return false;
 }
 
-bool JSDOMWindowBase::supportsProfiling() const
+bool JSDOMWindowBase::supportsProfiling(const JSGlobalObject* object)
 {
 #if !ENABLE(JAVASCRIPT_DEBUGGER) || !ENABLE(INSPECTOR)
     return false;
 #else
-    Frame* frame = impl()->frame();
+    const JSDOMWindowBase* thisObject = static_cast<const JSDOMWindowBase*>(object);
+    Frame* frame = thisObject->impl()->frame();
     if (!frame)
         return false;
 
@@ -113,14 +144,13 @@ bool JSDOMWindowBase::supportsProfiling() const
 #endif
 }
 
-bool JSDOMWindowBase::supportsRichSourceInfo() const
+bool JSDOMWindowBase::supportsRichSourceInfo(const JSGlobalObject* object)
 {
-#if PLATFORM(ANDROID)
-    return true;
-#elif !ENABLE(JAVASCRIPT_DEBUGGER) || !ENABLE(INSPECTOR)
+#if !ENABLE(JAVASCRIPT_DEBUGGER) || !ENABLE(INSPECTOR)
     return false;
 #else
-    Frame* frame = impl()->frame();
+    const JSDOMWindowBase* thisObject = static_cast<const JSDOMWindowBase*>(object);
+    Frame* frame = thisObject->impl()->frame();
     if (!frame)
         return false;
 
@@ -129,16 +159,17 @@ bool JSDOMWindowBase::supportsRichSourceInfo() const
         return false;
 
     bool enabled = page->inspectorController()->enabled();
-    ASSERT(enabled || !debugger());
-    ASSERT(enabled || !supportsProfiling());
+    ASSERT(enabled || !thisObject->debugger());
+    ASSERT(enabled || !supportsProfiling(thisObject));
     return enabled;
 #endif
 }
 
-bool JSDOMWindowBase::shouldInterruptScript() const
+bool JSDOMWindowBase::shouldInterruptScript(const JSGlobalObject* object)
 {
-    ASSERT(impl()->frame());
-    Page* page = impl()->frame()->page();
+    const JSDOMWindowBase* thisObject = static_cast<const JSDOMWindowBase*>(object);
+    ASSERT(thisObject->impl()->frame());
+    Page* page = thisObject->impl()->frame()->page();
 
     // See <rdar://problem/5479443>. We don't think that page can ever be NULL
     // in this case, but if it is, we've gotten into a state where we may have
@@ -153,11 +184,13 @@ bool JSDOMWindowBase::shouldInterruptScript() const
     return page->chrome()->shouldInterruptJavaScript();
 }
 
-bool JSDOMWindowBase::shouldInterruptScriptBeforeTimeout() const
+bool JSDOMWindowBase::shouldInterruptScriptBeforeTimeout(const JSGlobalObject* object)
 {
-    if (impl()->frame() && impl()->frame()->page() && impl()->frame()->page()->chrome()->client()->isStopping())
+    const JSDOMWindowBase* thisObject = static_cast<const JSDOMWindowBase*>(object);
+    DOMWindow* domWindow = thisObject->impl();
+    if (domWindow->frame() && domWindow->frame()->page() && domWindow->frame()->page()->chrome()->client()->isStopping())
         return true;
-    return JSGlobalObject::shouldInterruptScriptBeforeTimeout();
+    return JSGlobalObject::shouldInterruptScriptBeforeTimeout(object);
 }
 
 void JSDOMWindowBase::willRemoveFromWindowShell()
@@ -165,14 +198,9 @@ void JSDOMWindowBase::willRemoveFromWindowShell()
     setCurrentEvent(0);
 }
 
-JSObject* JSDOMWindowBase::toThisObject(ExecState*) const
+JSObject* JSDOMWindowBase::toThisObject(JSCell* cell, ExecState*)
 {
-    return shell();
-}
-
-JSValue JSDOMWindowBase::toStrictThisObject(ExecState*) const
-{
-    return shell();
+    return jsCast<JSDOMWindowBase*>(cell)->shell();
 }
 
 JSDOMWindowShell* JSDOMWindowBase::shell() const
@@ -186,11 +214,10 @@ JSGlobalData* JSDOMWindowBase::commonJSGlobalData()
 
     JSGlobalData*& globalData = commonJSGlobalDataInternal();
     if (!globalData) {
-        globalData = JSGlobalData::createLeaked(ThreadStackTypeLarge).releaseRef();
+        globalData = JSGlobalData::createLeaked(ThreadStackTypeLarge, LargeHeap).leakRef();
         globalData->timeoutChecker.setTimeoutInterval(20000); // 20 seconds
         PassOwnPtr<WebSafeGCActivityCallback> activityCallback = WebSafeGCActivityCallback::create(&globalData->heap);
-        (*activityCallback)();
-        globalData->heap.setActivityCallback(activityCallback);
+        globalData->heap.setActivityCallback(activityCallback.leakPtr());
         globalData->makeUsableFromMultipleThreads();
         globalData->heap.machineThreads().addCurrentThread();
         initNormalWorldClientData(globalData);
@@ -241,9 +268,9 @@ JSDOMWindow* toJSDOMWindow(JSValue value)
         return 0;
     const ClassInfo* classInfo = asObject(value)->classInfo();
     if (classInfo == &JSDOMWindow::s_info)
-        return static_cast<JSDOMWindow*>(asObject(value));
+        return jsCast<JSDOMWindow*>(asObject(value));
     if (classInfo == &JSDOMWindowShell::s_info)
-        return static_cast<JSDOMWindowShell*>(asObject(value))->window();
+        return jsCast<JSDOMWindowShell*>(asObject(value))->window();
     return 0;
 }
 

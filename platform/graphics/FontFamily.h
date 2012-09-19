@@ -49,6 +49,8 @@ public:
     void appendFamily(PassRefPtr<SharedFontFamily>);
     PassRefPtr<SharedFontFamily> releaseNext();
 
+    bool equalForTextAutoSizing(const FontFamily& other) const;
+
 private:
     AtomicString m_family;
     ListRefPtr<SharedFontFamily> m_next;

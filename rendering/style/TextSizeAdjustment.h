@@ -32,8 +32,9 @@ public:
     float percentage() { return m_value; }
     float multiplier() { return m_value / 100; }
 
-    bool isAuto() { return m_value == AutoTextSizeAdjustment; }
-    bool isNone() { return m_value == NoTextSizeAdjustment; }
+    bool isAuto() const { return m_value == AutoTextSizeAdjustment; }
+    bool isNone() const { return m_value == NoTextSizeAdjustment; }
+    bool isPercentage() const { return m_value >= 0; }
 
     bool operator == (const TextSizeAdjustment & anAdjustment) const { return m_value == anAdjustment.m_value; }
     bool operator != (const TextSizeAdjustment & anAdjustment) const { return m_value != anAdjustment.m_value; }

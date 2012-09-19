@@ -26,7 +26,6 @@
 #include "config.h"
 #include "CachedPage.h"
 
-#include "CSSStyleSelector.h"
 #include "Document.h"
 #include "Element.h"
 #include "FocusController.h"
@@ -34,16 +33,16 @@
 #include "FrameView.h"
 #include "Node.h"
 #include "Page.h"
+#include "StyleResolver.h"
 #include <wtf/CurrentTime.h>
 #include <wtf/RefCountedLeakCounter.h>
+#include <wtf/StdLibExtras.h>
 
 using namespace JSC;
 
 namespace WebCore {
 
-#ifndef NDEBUG
-static WTF::RefCountedLeakCounter cachedPageCounter("CachedPage");
-#endif
+DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, cachedPageCounter, ("CachedPage"));
 
 PassRefPtr<CachedPage> CachedPage::create(Page* page)
 {
@@ -54,6 +53,7 @@ CachedPage::CachedPage(Page* page)
     : m_timeStamp(currentTime())
     , m_cachedMainFrame(CachedFrame::create(page->mainFrame()))
     , m_needStyleRecalcForVisitedLinks(false)
+    , m_needsFullStyleRecalc(false)
 {
 #ifndef NDEBUG
     cachedPageCounter.increment();
@@ -92,10 +92,13 @@ void CachedPage::restore(Page* page)
 
     if (m_needStyleRecalcForVisitedLinks) {
         for (Frame* frame = page->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
-            if (CSSStyleSelector* styleSelector = frame->document()->styleSelector())
-                styleSelector->allVisitedStateChanged();
+            if (StyleResolver* styleResolver = frame->document()->styleResolver())
+                styleResolver->allVisitedStateChanged();
         }
     }
+
+    if (m_needsFullStyleRecalc)
+        page->setNeedsRecalcStyleInAllFrames();
 
     clear();
 }
@@ -106,6 +109,7 @@ void CachedPage::clear()
     m_cachedMainFrame->clear();
     m_cachedMainFrame = 0;
     m_needStyleRecalcForVisitedLinks = false;
+    m_needsFullStyleRecalc = false;
 }
 
 void CachedPage::destroy()

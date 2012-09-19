@@ -29,6 +29,8 @@
 #include <wtf/Assertions.h>
 #include <wtf/Forward.h>
 
+#if !LOG_DISABLED
+
 #ifndef LOG_CHANNEL_PREFIX
 #define LOG_CHANNEL_PREFIX Log
 #endif
@@ -59,13 +61,18 @@ namespace WebCore {
     extern WTFLogChannel LogArchives;
     extern WTFLogChannel LogProgress;
     extern WTFLogChannel LogFileAPI;
+    extern WTFLogChannel LogWebAudio;
+    extern WTFLogChannel LogCompositing;
 
 #if ENABLE(DISK_IMAGE_CACHE)
     extern WTFLogChannel LogDiskImageCache;
 #endif
+    extern WTFLogChannel LogMemoryPressure;
 
-    void InitializeLoggingChannelsIfNecessary();
+    void initializeLoggingChannelsIfNecessary();
     WTFLogChannel* getChannelFromName(const String& channelName);
 }
+
+#endif // !LOG_DISABLED
 
 #endif // Logging_h

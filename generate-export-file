@@ -30,7 +30,8 @@ use File::Find;
 use File::Temp qw(tempfile);
 use Getopt::Long;
 
-sub featureDefines();
+sub preprocessorFlags();
+sub preprocessorMacros($\@);
 sub process($$$);
 
 my $showHelp = 0;
@@ -59,34 +60,28 @@ process($inFile, $outFile, $arch);
 
 exit 0;
 
-sub featureDefines()
+sub preprocessorFlags()
 {
-    my @features = grep { m/^ENABLE_/ || () } split(/\s+/, $ENV{FEATURE_DEFINES});
+    my @features = split(/\s+/, $ENV{GCC_PREPROCESSOR_DEFINITIONS});
     return @features;
 }
 
-sub process($$$)
+sub preprocessorMacros($\@)
 {
-    my ($inFile, $outFile, $arch) = @_;
+    my ($cc, $cc_args) = @_;
 
-    if (!exists $ENV{SDKROOT} or !$ENV{SDKROOT}) {
-        die "SDKROOT environment variable not found";
-    }
+    my @args = @$cc_args;
 
-    chomp (my $cc = `xcrun -find cc -sdkroot $ENV{SDKROOT}`);
+    push(@args, map { "-D" . $_ } preprocessorFlags());
 
-    # Run cpp (-E) but don't print the line number info (-P).
-    my @args = qw(-E -P);
-
-    # Provide a default source type since *.in isn't a known file extension.
-    push(@args, qw(-x c++));
-
-    push(@args, qw(-include JavaScriptCore/Platform.h));
+    push(@args, qw(-include wtf/Platform.h -include wtf/Assertions.h));
     # Set framework search paths to find <JavaScriptCore/Platform.h>.  Without these, cc
     # finds /System/Library/Frameworks/JavaScriptCore.framework/PrivateHeaders/Platform.h
     # or complains if you don't have that installed.  We search BUILT_PRODUCTS_DIR first
     # for local developer builds, then the installation path for B&I builds.
     push(@args, "-F" . $ENV{BUILT_PRODUCTS_DIR}) if $ENV{BUILT_PRODUCTS_DIR};
+    push(@args, "-I" . $ENV{BUILT_PRODUCTS_DIR} . "/usr/local/include") if $ENV{BUILT_PRODUCTS_DIR};
+    push(@args, "-I" . $ENV{BUILT_PRODUCTS_DIR} . $ENV{SDKROOT} . "/usr/local/include") if $ENV{BUILT_PRODUCTS_DIR};
     # Xcode 3.1 is required for SDKROOT to be set.
     if (exists $ENV{SYSTEM_LIBRARY_DIR} && $ENV{SYSTEM_LIBRARY_DIR}) {
         my $frameworkSearchPath = $ENV{SDKROOT} . $ENV{SYSTEM_LIBRARY_DIR};
@@ -98,12 +93,43 @@ sub process($$$)
         push(@args, "-F" . $frameworkSearchPath);
     }
 
+    push(@args, "-I" . $ENV{BUILT_PRODUCTS_DIR} . $ENV{SDKROOT} . "/usr/local/include") if $ENV{BUILT_PRODUCTS_DIR};
+    push(@args, "-I" . $ENV{SDKROOT} . "/usr/local/include");
+
+    # Print out #define lines for all macros.
+    push(@args, qw(-dM /dev/null));
+
+    print join(" ", $cc, @args), "\n" if $verbose;
+    local $/ = undef;
+    open(CC, "-|", $cc, @args) or die "$!";
+    my $macros = <CC>;
+    close(CC);
+
+    return $macros;
+}
+
+sub process($$$)
+{
+    my ($inFile, $outFile, $arch) = @_;
+
+    if (!exists $ENV{SDKROOT} or !$ENV{SDKROOT}) {
+        die "SDKROOT environment variable not found";
+    }
+
+    chomp (my $cc = `xcrun -find cc`);
+
+    # Run cpp (-E) but don't print the line number info (-P).
+    my @args = qw(-E -P);
+
+    # Provide a default source type since *.in isn't a known file extension.
+    push(@args, qw(-x c++));
+
     # Make sure cc knows which SDK we're using.
     push(@args, "-isysroot", $ENV{SDKROOT});
 
-    push(@args, map { "-D" . $_ . "=1" } featureDefines());
-
     push(@args, "-arch", $arch);
+
+    my $macros = preprocessorMacros($cc, @args);
 
     push(@args, "-o", $outFile);
     push(@args, "-");
@@ -112,6 +138,7 @@ sub process($$$)
     open(CC, "|-", $cc, @args) or die "$!";
     open(IN, "<", $inFile) or die "$!";
 
+    print CC $macros;
     while (my $line = <IN>) {
         next if ($line =~ /^#/ && $line !~ /^#\s*(if|ifdef|ifndef|else|elif|endif)/);
         print CC $line;

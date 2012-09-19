@@ -51,17 +51,17 @@ static Element* highestVisuallyEquivalentDivBelowRoot(Element* startBlock)
     // We don't want to return a root node (if it happens to be a div, e.g., in a document fragment) because there are no
     // siblings for us to append to.
     while (!curBlock->nextSibling() && curBlock->parentElement()->hasTagName(divTag) && curBlock->parentElement()->parentElement()) {
-        NamedNodeMap* attributes = curBlock->parentElement()->attributes(true);
-        if (attributes && !attributes->isEmpty())
+        if (curBlock->parentElement()->hasAttributes())
             break;
         curBlock = curBlock->parentElement();
     }
     return curBlock;
 }
 
-InsertParagraphSeparatorCommand::InsertParagraphSeparatorCommand(Document *document, bool mustUseDefaultParagraphElement) 
+InsertParagraphSeparatorCommand::InsertParagraphSeparatorCommand(Document *document, bool mustUseDefaultParagraphElement, bool pasteBlockqutoeIntoUnquotedArea) 
     : CompositeEditCommand(document)
     , m_mustUseDefaultParagraphElement(mustUseDefaultParagraphElement)
+    , m_pasteBlockqutoeIntoUnquotedArea(pasteBlockqutoeIntoUnquotedArea)
 {
 }
 
@@ -136,6 +136,8 @@ PassRefPtr<Element> InsertParagraphSeparatorCommand::cloneHierarchyUnderNewBlock
     RefPtr<Element> parent = blockToInsert;
     for (size_t i = ancestors.size(); i != 0; --i) {
         RefPtr<Element> child = ancestors[i - 1]->cloneElementWithoutChildren();
+        // It should always be okay to remove id from the cloned elements, since the originals are not deleted.
+        child->removeAttribute(idAttr);
         appendNode(child, parent);
         parent = child.release();
     }
@@ -162,17 +164,15 @@ void InsertParagraphSeparatorCommand::doApply()
     }
     
     // FIXME: The parentAnchoredEquivalent conversion needs to be moved into enclosingBlock.
-    Node* startBlockNode = enclosingBlock(insertionPosition.parentAnchoredEquivalent().containerNode());
+    RefPtr<Element> startBlock = enclosingBlock(insertionPosition.parentAnchoredEquivalent().containerNode());
     Position canonicalPos = VisiblePosition(insertionPosition).deepEquivalent();
-    Element* startBlock = static_cast<Element*>(startBlockNode);
-    if (!startBlockNode
-            || !startBlockNode->isElementNode()
-            || !startBlock->parentNode()
-            || isTableCell(startBlock)
-            || startBlock->hasTagName(formTag)
-            // FIXME: If the node is hidden, we don't have a canonical position so we will do the wrong thing for tables and <hr>. https://bugs.webkit.org/show_bug.cgi?id=40342
-            || (!canonicalPos.isNull() && canonicalPos.deprecatedNode()->renderer() && canonicalPos.deprecatedNode()->renderer()->isTable())
-            || (!canonicalPos.isNull() && canonicalPos.deprecatedNode()->hasTagName(hrTag))) {
+    if (!startBlock
+        || !startBlock->nonShadowBoundaryParentNode()
+        || isTableCell(startBlock.get())
+        || startBlock->hasTagName(formTag)
+        // FIXME: If the node is hidden, we don't have a canonical position so we will do the wrong thing for tables and <hr>. https://bugs.webkit.org/show_bug.cgi?id=40342
+        || (!canonicalPos.isNull() && canonicalPos.deprecatedNode()->renderer() && canonicalPos.deprecatedNode()->renderer()->isTable())
+        || (!canonicalPos.isNull() && canonicalPos.deprecatedNode()->hasTagName(hrTag))) {
         applyCommandToComposite(InsertLineBreakCommand::create(document()));
         return;
     }
@@ -204,7 +204,7 @@ void InsertParagraphSeparatorCommand::doApply()
     if (startBlock == startBlock->rootEditableElement()) {
         blockToInsert = createDefaultParagraphElement(document());
         nestNewBlock = true;
-    } else if (shouldUseDefaultParagraphElement(startBlock)) 
+    } else if (shouldUseDefaultParagraphElement(startBlock.get())) 
         blockToInsert = createDefaultParagraphElement(document());
     else
         blockToInsert = startBlock->cloneElementWithoutChildren();
@@ -225,26 +225,28 @@ void InsertParagraphSeparatorCommand::doApply()
         } else {
             // We can get here if we pasted a copied portion of a blockquote with a newline at the end and are trying to paste it
             // into an unquoted area. We then don't want the newline within the blockquote or else it will also be quoted.
-            if (Node* highestBlockquote = highestEnclosingNodeOfType(canonicalPos, &isMailBlockquote))
-                startBlock = static_cast<Element*>(highestBlockquote);
+            if (m_pasteBlockqutoeIntoUnquotedArea) {
+                if (Node* highestBlockquote = highestEnclosingNodeOfType(canonicalPos, &isMailBlockquote))
+                    startBlock = static_cast<Element*>(highestBlockquote);
+            }
 
             // Most of the time we want to stay at the nesting level of the startBlock (e.g., when nesting within lists).  However,
             // for div nodes, this can result in nested div tags that are hard to break out of.
-            Element* siblingNode = startBlock;
+            Element* siblingNode = startBlock.get();
             if (blockToInsert->hasTagName(divTag))
-                siblingNode = highestVisuallyEquivalentDivBelowRoot(startBlock);
+                siblingNode = highestVisuallyEquivalentDivBelowRoot(startBlock.get());
             insertNodeAfter(blockToInsert, siblingNode);
         }
 
         // Recreate the same structure in the new paragraph.
         
         Vector<Element*> ancestors;
-        getAncestorsInsideBlock(positionOutsideTabSpan(insertionPosition).deprecatedNode(), startBlock, ancestors);      
+        getAncestorsInsideBlock(positionOutsideTabSpan(insertionPosition).deprecatedNode(), startBlock.get(), ancestors);      
         RefPtr<Element> parent = cloneHierarchyUnderNewBlock(ancestors, blockToInsert);
         
         appendBlockPlaceholder(parent);
 
-        setEndingSelection(VisibleSelection(firstPositionInNode(parent.get()), DOWNSTREAM));
+        setEndingSelection(VisibleSelection(firstPositionInNode(parent.get()), DOWNSTREAM, endingSelection().isDirectional()));
         return;
     }
     
@@ -258,7 +260,12 @@ void InsertParagraphSeparatorCommand::doApply()
         insertionPosition = positionOutsideTabSpan(insertionPosition);
 
         if (isFirstInBlock && !nestNewBlock)
-            refNode = startBlock;
+            refNode = startBlock.get();
+        else if (isFirstInBlock && nestNewBlock) {
+            // startBlock should always have children, otherwise isLastInBlock would be true and it's handled above.
+            ASSERT(startBlock->firstChild());
+            refNode = startBlock->firstChild();
+        }
         else if (insertionPosition.deprecatedNode() == startBlock && nestNewBlock) {
             refNode = startBlock->childNode(insertionPosition.deprecatedEditingOffset());
             ASSERT(refNode); // must be true or we'd be in the end of block case
@@ -273,12 +280,12 @@ void InsertParagraphSeparatorCommand::doApply()
         // Recreate the same structure in the new paragraph.
 
         Vector<Element*> ancestors;
-        getAncestorsInsideBlock(positionAvoidingSpecialElementBoundary(positionOutsideTabSpan(insertionPosition)).deprecatedNode(), startBlock, ancestors);
+        getAncestorsInsideBlock(positionAvoidingSpecialElementBoundary(positionOutsideTabSpan(insertionPosition)).deprecatedNode(), startBlock.get(), ancestors);
         
         appendBlockPlaceholder(cloneHierarchyUnderNewBlock(ancestors, blockToInsert));
         
         // In this case, we need to set the new ending selection.
-        setEndingSelection(VisibleSelection(insertionPosition, DOWNSTREAM));
+        setEndingSelection(VisibleSelection(insertionPosition, DOWNSTREAM, endingSelection().isDirectional()));
         return;
     }
 
@@ -296,7 +303,7 @@ void InsertParagraphSeparatorCommand::doApply()
         // If the insertion point is a break element, there is nothing else
         // we need to do.
         if (visiblePos.deepEquivalent().anchorNode()->renderer()->isBR()) {
-            setEndingSelection(VisibleSelection(insertionPosition, DOWNSTREAM));
+            setEndingSelection(VisibleSelection(insertionPosition, DOWNSTREAM, endingSelection().isDirectional()));
             return;
         }
     }
@@ -316,14 +323,14 @@ void InsertParagraphSeparatorCommand::doApply()
     // FIXME: leadingWhitespacePosition is returning the position before preserved newlines for positions
     // after the preserved newline, causing the newline to be turned into a nbsp.
     if (leadingWhitespace.isNotNull() && leadingWhitespace.deprecatedNode()->isTextNode()) {
-        Text* textNode = static_cast<Text*>(leadingWhitespace.deprecatedNode());
+        Text* textNode = toText(leadingWhitespace.deprecatedNode());
         ASSERT(!textNode->renderer() || textNode->renderer()->style()->collapseWhiteSpace());
         replaceTextInNodePreservingMarkers(textNode, leadingWhitespace.deprecatedEditingOffset(), 1, nonBreakingSpaceString());
     }
     
     // Split at pos if in the middle of a text node.
     if (insertionPosition.deprecatedNode()->isTextNode()) {
-        Text* textNode = static_cast<Text*>(insertionPosition.deprecatedNode());
+        Text* textNode = toText(insertionPosition.deprecatedNode());
         bool atEnd = (unsigned)insertionPosition.deprecatedEditingOffset() >= textNode->length();
         if (insertionPosition.deprecatedEditingOffset() > 0 && !atEnd) {
             splitTextNode(textNode, insertionPosition.deprecatedEditingOffset());
@@ -333,13 +340,17 @@ void InsertParagraphSeparatorCommand::doApply()
         }
     }
 
+    // If we got detached due to mutation events, just bail out.
+    if (!startBlock->parentNode())
+        return;
+
     // Put the added block in the tree.
     if (nestNewBlock)
         appendNode(blockToInsert.get(), startBlock);
     else
         insertNodeAfter(blockToInsert.get(), startBlock);
 
-    updateLayout();
+    document()->updateLayoutIgnorePendingStylesheets();
 
     // If the paragraph separator was inserted at the end of a paragraph, an empty line must be
     // created.  All of the nodes, starting at visiblePos, are about to be added to the new paragraph 
@@ -353,7 +364,11 @@ void InsertParagraphSeparatorCommand::doApply()
         if (insertionPosition.containerNode() == startBlock)
             n = insertionPosition.computeNodeAfterPosition();
         else {
-            splitTreeToNode(insertionPosition.containerNode(), startBlock);
+            Node* splitTo = insertionPosition.containerNode();
+            if (splitTo->isTextNode() && insertionPosition.offsetInContainerNode() >= caretMaxOffset(splitTo))
+              splitTo = splitTo->traverseNextNode(startBlock.get());
+            ASSERT(splitTo);
+            splitTreeToNode(splitTo, startBlock.get());
 
             for (n = startBlock->firstChild(); n; n = n->nextSibling()) {
                 if (comparePositions(VisiblePosition(insertionPosition), positionBeforeNode(n)) <= 0)
@@ -371,7 +386,7 @@ void InsertParagraphSeparatorCommand::doApply()
 
     // Handle whitespace that occurs after the split
     if (splitText) {
-        updateLayout();
+        document()->updateLayoutIgnorePendingStylesheets();
         if (insertionPosition.anchorType() == Position::PositionIsOffsetInAnchor)
             insertionPosition.moveToOffset(0);
         if (!insertionPosition.isRenderedCharacter()) {
@@ -379,12 +394,12 @@ void InsertParagraphSeparatorCommand::doApply()
             ASSERT(!insertionPosition.deprecatedNode()->renderer() || insertionPosition.deprecatedNode()->renderer()->style()->collapseWhiteSpace());
             deleteInsignificantTextDownstream(insertionPosition);
             if (insertionPosition.deprecatedNode()->isTextNode())
-                insertTextIntoNode(static_cast<Text*>(insertionPosition.deprecatedNode()), 0, nonBreakingSpaceString());
+                insertTextIntoNode(toText(insertionPosition.deprecatedNode()), 0, nonBreakingSpaceString());
         }
     }
 
-    setEndingSelection(VisibleSelection(firstPositionInNode(blockToInsert.get()), DOWNSTREAM));
-    applyStyleAfterInsertion(startBlock);
+    setEndingSelection(VisibleSelection(firstPositionInNode(blockToInsert.get()), DOWNSTREAM, endingSelection().isDirectional()));
+    applyStyleAfterInsertion(startBlock.get());
 }
 
 } // namespace WebCore

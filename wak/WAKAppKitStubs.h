@@ -48,13 +48,13 @@ enum {
 #endif
 };
 
-typedef enum _NSWritingDirection {
+typedef enum _WKWritingDirection {
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_4
-    NSWritingDirectionNatural = -1, /* Determines direction using the Unicode Bidi Algorithm rules P2 and P3 */
+    WKWritingDirectionNatural = -1, /* Determines direction using the Unicode Bidi Algorithm rules P2 and P3 */
 #endif /* MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_4 */
-    NSWritingDirectionLeftToRight = 0,	/* Left to right writing direction */
-    NSWritingDirectionRightToLeft	/* Right to left writing direction */
-} NSWritingDirection;
+    WKWritingDirectionLeftToRight = 0,	/* Left to right writing direction */
+    WKWritingDirectionRightToLeft	/* Right to left writing direction */
+} WKWritingDirection;
 
 typedef enum _NSSelectionAffinity {
     NSSelectionAffinityUpstream = 0,
@@ -83,15 +83,6 @@ typedef enum _NSCompositingOperation {
     NSCompositeHighlight	= 12,
     NSCompositePlusLighter	= 13
 } NSCompositingOperation;
-
-typedef enum _NSMultibyteGlyphPacking {
-    NSOneByteGlyphPacking,
-    NSJapaneseEUCGlyphPacking,
-    NSAsciiWithDoubleByteEUCGlyphPacking,
-    NSTwoByteGlyphPacking,
-    NSFourByteGlyphPacking,
-    NSNativeShortGlyphPacking
-} NSMultibyteGlyphPacking;
 
 typedef enum _NSSelectionDirection {
     NSDirectSelection = 0,

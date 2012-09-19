@@ -30,6 +30,7 @@
 
 #include "FileSystem.h"
 #include "Logging.h"
+#include "WebCoreThread.h"
 #include "WebCoreThreadRun.h"
 #include <errno.h>
 #include <sys/mman.h>
@@ -43,9 +44,29 @@ DiskImageCache* diskImageCache()
     return &staticCache;
 }
 
+DiskImageCache::Entry::Entry(SharedBuffer* buffer, disk_cache_id_t id)
+    : m_buffer(buffer)
+    , m_id(id)
+    , m_size(0)
+    , m_mapping(0)
+{
+    ASSERT(WebThreadIsCurrent());
+    ASSERT(WebThreadIsLocked());
+    ASSERT(m_buffer);
+    m_buffer->ref();
+}
+
+DiskImageCache::Entry::~Entry()
+{
+    ASSERT(WebThreadIsCurrent());
+    ASSERT(WebThreadIsLocked());
+    ASSERT(!m_buffer);
+    ASSERT(!m_mapping);
+}
+
 bool DiskImageCache::Entry::mapInternal(const String& path)
 {
-    ASSERT(m_buffer.get());
+    ASSERT(m_buffer);
     ASSERT(!m_mapping);
 
     m_path = path;
@@ -86,25 +107,18 @@ bool DiskImageCache::Entry::mapInternal(const String& path)
 
 void DiskImageCache::Entry::map(const String& path)
 {
-    ASSERT(m_buffer.get());
+    ASSERT(m_buffer);
     ASSERT(!m_mapping);
-
-    // Optimization: Don't map the buffer if we are the only object holding a
-    // reference to the buffer. Just remove our reference and return. When the
-    // buffer deconstructs it will remove itself. The removal is asynchronous,
-    // so we don't need to worry about this entry being deleted immediately,
-    // so our caller is safe to check if the entry was mapped or not.
-    if (m_buffer.get()->hasOneRef()) {
-        m_buffer.clear();
-        return;
-    }
+    DiskImageCache::Entry *thisEntry = this;
 
     bool fileMapped = mapInternal(path);
     if (!fileMapped) {
         // Notify the buffer in the case of a failed mapping.
-        RefPtr<SharedBuffer> localCopyForFailureBlock = m_buffer.release();
         WebThreadRun(^{
-            localCopyForFailureBlock->failedMemoryMap();
+            m_buffer->failedMemoryMap();
+            m_buffer->deref();
+            m_buffer = 0;
+            thisEntry->deref();
         });
         return;
     }
@@ -112,9 +126,11 @@ void DiskImageCache::Entry::map(const String& path)
     // Notify the buffer in the case of a successful mapping.
     // This should happen on the WebThread, because this is being run
     // asynchronously inside a dispatch queue.
-    RefPtr<SharedBuffer> localCopyForBlock = m_buffer.release();
     WebThreadRun(^{
-        localCopyForBlock->markAsMemoryMapped();
+        m_buffer->markAsMemoryMapped();
+        m_buffer->deref();
+        m_buffer = 0;
+        thisEntry->deref();
     });
 }
 
@@ -141,6 +157,14 @@ void DiskImageCache::Entry::removeFile()
         LOG_ERROR("DiskImageCache: Could not delete memory mapped file (%s)", m_path.utf8().data());
 }
 
+void DiskImageCache::Entry::clearDataWithoutMapping()
+{
+    ASSERT(!m_mapping);
+    ASSERT(m_buffer);
+    m_buffer->deref();
+    m_buffer = 0;
+}
+
 
 DiskImageCache::DiskImageCache()
     : m_enabled(false)
@@ -164,7 +188,8 @@ disk_cache_id_t DiskImageCache::writeItem(PassRefPtr<SharedBuffer> item)
 
     // Create an entry.
     disk_cache_id_t id = nextAvailableId();
-    RefPtr<DiskImageCache::Entry> entry = DiskImageCache::Entry::create(item, id);
+    RefPtr<SharedBuffer> buffer = item;
+    RefPtr<DiskImageCache::Entry> entry = DiskImageCache::Entry::create(buffer.get(), id);
     m_table.add(id, entry);
 
     // Create a temporary file path.
@@ -173,17 +198,30 @@ disk_cache_id_t DiskImageCache::writeItem(PassRefPtr<SharedBuffer> item)
     if (path.isNull())
         return DiskImageCache::invalidDiskCacheId;
 
-    // Map to disk asynchronously.
-    dispatch_async(dispatch_get_global_queue(0, 0), ^{
-        // The cache became full since the time we were added to the queue. Don't map.
-        if (diskImageCache()->isFull())
-            return;
+    // The lifetime of the Entry is handled on the WebThread.
+    // So before we send to a dispatch queue we need to ref
+    // so that we are sure the object still exists. This call
+    // is balanced in the WebThreadRun inside of Entry::map.
+    // or the early return in this dispatch.
+    DiskImageCache::Entry *localEntryForBlock = entry.get();
+    localEntryForBlock->ref();
 
-        entry->map(path);
+    // Map to disk asynchronously.
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        // The cache became full since the time we were added to the queue. Don't map.
+        if (diskImageCache()->isFull()) {
+            WebThreadRun(^{
+                localEntryForBlock->clearDataWithoutMapping();
+                localEntryForBlock->deref();
+            });
+            return;
+        }
+
+        localEntryForBlock->map(path);
 
         // Update the size on a successful mapping.
-        if (entry->isMapped())
-            diskImageCache()->updateSize(entry->size());
+        if (localEntryForBlock->isMapped())
+            diskImageCache()->updateSize(localEntryForBlock->size());
     });
 
     return id;
@@ -205,9 +243,12 @@ void DiskImageCache::removeItem(disk_cache_id_t id)
 
     updateSize(-(entry->size()));
 
-    dispatch_async(dispatch_get_global_queue(0, 0), ^{
-        entry->unmap();
-        entry->removeFile();
+    DiskImageCache::Entry *localEntryForBlock = entry.get();
+    localEntryForBlock->ref();
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        localEntryForBlock->unmap();
+        localEntryForBlock->removeFile();
+        WebThreadRun(^{ localEntryForBlock->deref(); });
     });
 }
 

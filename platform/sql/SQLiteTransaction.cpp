@@ -26,8 +26,6 @@
 #include "config.h"
 #include "SQLiteTransaction.h"
 
-#if ENABLE(DATABASE)
-
 #include "SQLiteDatabase.h"
 
 #include "SQLiteDatabaseTracker.h"
@@ -112,4 +110,3 @@ bool SQLiteTransaction::wasRolledBackBySqlite() const
 }
 
 } // namespace WebCore
-#endif // ENABLE(DATABASE)

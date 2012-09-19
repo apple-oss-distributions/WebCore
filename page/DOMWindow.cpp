@@ -34,7 +34,6 @@
 #include "BeforeUnloadEvent.h"
 #include "CSSComputedStyleDeclaration.h"
 #include "CSSRuleList.h"
-#include "CSSStyleSelector.h"
 #include "Chrome.h"
 #include "Console.h"
 #include "Crypto.h"
@@ -45,6 +44,8 @@
 #include "DOMTimer.h"
 #include "DOMTokenList.h"
 #include "DOMURL.h"
+#include "DOMWindowExtension.h"
+#include "DOMWindowNotifications.h"
 #include "Database.h"
 #include "DatabaseCallback.h"
 #include "DeviceMotionController.h"
@@ -60,12 +61,11 @@
 #include "Frame.h"
 #include "FrameLoadRequest.h"
 #include "FrameLoader.h"
+#include "FrameLoaderClient.h"
 #include "FrameTree.h"
 #include "FrameView.h"
 #include "HTMLFrameOwnerElement.h"
 #include "History.h"
-#include "IDBFactory.h"
-#include "IDBFactoryBackendInterface.h"
 #include "InspectorInstrumentation.h"
 #include "KURL.h"
 #include "Location.h"
@@ -73,7 +73,6 @@
 #include "MediaQueryMatcher.h"
 #include "MessageEvent.h"
 #include "Navigator.h"
-#include "NotificationCenter.h"
 #include "Page.h"
 #include "PageGroup.h"
 #include "PageTransitionEvent.h"
@@ -81,6 +80,8 @@
 #include "PlatformScreen.h"
 #include "ScheduledAction.h"
 #include "Screen.h"
+#include "ScriptCallStack.h"
+#include "ScriptCallStackFactory.h"
 #include "SecurityOrigin.h"
 #include "SerializedScriptValue.h"
 #include "Settings.h"
@@ -89,31 +90,22 @@
 #include "StorageInfo.h"
 #include "StorageNamespace.h"
 #include "StyleMedia.h"
+#include "StyleResolver.h"
 #include "SuddenTermination.h"
 #include "WebKitPoint.h"
 #include "WindowFeatures.h"
 #include <algorithm>
 #include <wtf/CurrentTime.h>
+#include <wtf/MainThread.h>
 #include <wtf/MathExtras.h>
 #include <wtf/text/WTFString.h>
-
-#if ENABLE(FILE_SYSTEM)
-#include "AsyncFileSystem.h"
-#include "DOMFileSystem.h"
-#include "DOMFileSystemBase.h"
-#include "EntryCallback.h"
-#include "ErrorCallback.h"
-#include "FileError.h"
-#include "FileSystemCallback.h"
-#include "FileSystemCallbacks.h"
-#include "LocalFileSystem.h"
-#endif
 
 #if ENABLE(REQUEST_ANIMATION_FRAME)
 #include "RequestAnimationFrameCallback.h"
 #endif
 
 #include "ChromeClient.h"
+#include "NavigatorGeolocation.h"
 #include "WKContentObservation.h"
 #include <wtf/UnusedParam.h>
 
@@ -124,13 +116,14 @@ namespace WebCore {
 
 class PostMessageTimer : public TimerBase {
 public:
-    PostMessageTimer(DOMWindow* window, PassRefPtr<SerializedScriptValue> message, const String& sourceOrigin, PassRefPtr<DOMWindow> source, PassOwnPtr<MessagePortChannelArray> channels, SecurityOrigin* targetOrigin)
+    PostMessageTimer(DOMWindow* window, PassRefPtr<SerializedScriptValue> message, const String& sourceOrigin, PassRefPtr<DOMWindow> source, PassOwnPtr<MessagePortChannelArray> channels, SecurityOrigin* targetOrigin, PassRefPtr<ScriptCallStack> stackTrace)
         : m_window(window)
         , m_message(message)
         , m_origin(sourceOrigin)
         , m_source(source)
         , m_channels(channels)
         , m_targetOrigin(targetOrigin)
+        , m_stackTrace(stackTrace)
     {
     }
 
@@ -140,6 +133,7 @@ public:
         return MessageEvent::create(messagePorts.release(), m_message, m_origin, "", m_source);
     }
     SecurityOrigin* targetOrigin() const { return m_targetOrigin.get(); }
+    ScriptCallStack* stackTrace() const { return m_stackTrace.get(); }
 
 private:
     virtual void fired()
@@ -154,6 +148,7 @@ private:
     RefPtr<DOMWindow> m_source;
     OwnPtr<MessagePortChannelArray> m_channels;
     RefPtr<SecurityOrigin> m_targetOrigin;
+    RefPtr<ScriptCallStack> m_stackTrace;
 };
 
 typedef HashCountedSet<DOMWindow*> DOMWindowSet;
@@ -398,8 +393,9 @@ bool DOMWindow::canShowModalDialogNow(const Frame* frame)
 }
 
 DOMWindow::DOMWindow(Frame* frame)
-    : m_shouldPrintWhenFinishedLoading(false)
-    , m_frame(frame)
+    : FrameDestructionObserver(frame)
+    , m_shouldPrintWhenFinishedLoading(false)
+    , m_suspendedForPageCache(false)
     , m_scrollEventListenerCount(0)
     , m_touchEventListenerCount(0)
     , m_pageStatus(PageStatusNone)
@@ -408,16 +404,63 @@ DOMWindow::DOMWindow(Frame* frame)
 
 DOMWindow::~DOMWindow()
 {
-    if (m_frame)
-        m_frame->clearFormerDOMWindow(this);
+#ifndef NDEBUG
+    if (!m_suspendedForPageCache) {
+        ASSERT(!m_screen);
+        ASSERT(!m_selection);
+        ASSERT(!m_history);
+        ASSERT(!m_crypto);
+        ASSERT(!m_locationbar);
+        ASSERT(!m_menubar);
+        ASSERT(!m_personalbar);
+        ASSERT(!m_scrollbars);
+        ASSERT(!m_statusbar);
+        ASSERT(!m_toolbar);
+        ASSERT(!m_console);
+        ASSERT(!m_navigator);
+#if ENABLE(WEB_TIMING)
+        ASSERT(!m_performance);
+#endif
+        ASSERT(!m_location);
+        ASSERT(!m_media);
+        ASSERT(!m_sessionStorage);
+        ASSERT(!m_localStorage);
+        ASSERT(!m_applicationCache);
+#if ENABLE(BLOB)
+        ASSERT(!m_domURL);
+#endif
+#if ENABLE(QUOTA)
+        ASSERT(!m_storageInfo);
+#endif
+    }
+#endif
+
+    if (m_suspendedForPageCache)
+        willDestroyCachedFrame();
+    else
+        willDestroyDocumentInFrame();
+
+    // As the ASSERTs above indicate, this clear should only be necesary if this DOMWindow is suspended for the page cache.
+    // But we don't want to risk any of these objects hanging around after we've been destroyed.
+    clearDOMWindowProperties();
 
     removeAllUnloadEventListeners(this);
     removeAllBeforeUnloadEventListeners(this);
 }
 
+const AtomicString& DOMWindow::interfaceName() const
+{
+    return eventNames().interfaceForDOMWindow;
+}
+
 ScriptExecutionContext* DOMWindow::scriptExecutionContext() const
 {
     return document();
+}
+
+DOMWindow* DOMWindow::toDOMWindow()
+{
+    return this;
 }
 
 PassRefPtr<MediaQueryList> DOMWindow::matchMedia(const String& media)
@@ -430,103 +473,143 @@ void DOMWindow::setSecurityOrigin(SecurityOrigin* securityOrigin)
     m_securityOrigin = securityOrigin;
 }
 
-void DOMWindow::disconnectFrame()
+Page* DOMWindow::page()
 {
-    m_frame = 0;
-    clear();
+    return frame() ? frame()->page() : 0;
+}
+
+void DOMWindow::frameDestroyed()
+{
+    willDestroyDocumentInFrame();
+    FrameDestructionObserver::frameDestroyed();
+    clearDOMWindowProperties();
+}
+
+void DOMWindow::willDetachPage()
+{
+    InspectorInstrumentation::frameWindowDiscarded(m_frame, this);
+}
+
+void DOMWindow::willDestroyCachedFrame()
+{
+    // It is necessary to copy m_properties to a separate vector because the DOMWindowProperties may
+    // unregister themselves from the DOMWindow as a result of the call to willDestroyGlobalObjectInCachedFrame.
+    Vector<DOMWindowProperty*> properties;
+    copyToVector(m_properties, properties);
+    for (size_t i = 0; i < properties.size(); ++i)
+        properties[i]->willDestroyGlobalObjectInCachedFrame();
+}
+
+void DOMWindow::willDestroyDocumentInFrame()
+{
+    // It is necessary to copy m_properties to a separate vector because the DOMWindowProperties may
+    // unregister themselves from the DOMWindow as a result of the call to willDestroyGlobalObjectInFrame.
+    Vector<DOMWindowProperty*> properties;
+    copyToVector(m_properties, properties);
+    for (size_t i = 0; i < properties.size(); ++i)
+        properties[i]->willDestroyGlobalObjectInFrame();
+}
+
+void DOMWindow::willDetachDocumentFromFrame()
+{
+    // It is necessary to copy m_properties to a separate vector because the DOMWindowProperties may
+    // unregister themselves from the DOMWindow as a result of the call to willDetachGlobalObjectFromFrame.
+    Vector<DOMWindowProperty*> properties;
+    copyToVector(m_properties, properties);
+    for (size_t i = 0; i < properties.size(); ++i)
+        properties[i]->willDetachGlobalObjectFromFrame();
+}
+
+void DOMWindow::registerProperty(DOMWindowProperty* property)
+{
+    m_properties.add(property);
+}
+
+void DOMWindow::unregisterProperty(DOMWindowProperty* property)
+{
+    m_properties.remove(property);
 }
 
 void DOMWindow::clear()
 {
-    if (m_console)
-        m_console->disconnectFrame();
-    m_console = 0;
+    // The main frame will always try to clear its DOMWindow when a new load is committed, even if that
+    // DOMWindow is suspended in the page cache.
+    // In those cases we need to make sure we don't actually clear it.
+    if (m_suspendedForPageCache)
+        return;
+    
+    willDestroyDocumentInFrame();
+    clearDOMWindowProperties();
+}
 
-    if (m_screen)
-        m_screen->disconnectFrame();
+void DOMWindow::suspendForPageCache()
+{
+    disconnectDOMWindowProperties();
+    m_suspendedForPageCache = true;
+}
+
+void DOMWindow::resumeFromPageCache()
+{
+    reconnectDOMWindowProperties();
+    m_suspendedForPageCache = false;
+}
+
+void DOMWindow::disconnectDOMWindowProperties()
+{
+    // It is necessary to copy m_properties to a separate vector because the DOMWindowProperties may
+    // unregister themselves from the DOMWindow as a result of the call to disconnectFrameForPageCache.
+    Vector<DOMWindowProperty*> properties;
+    copyToVector(m_properties, properties);
+    for (size_t i = 0; i < properties.size(); ++i)
+        properties[i]->disconnectFrameForPageCache();
+}
+
+void DOMWindow::reconnectDOMWindowProperties()
+{
+    ASSERT(m_suspendedForPageCache);
+    // It is necessary to copy m_properties to a separate vector because the DOMWindowProperties may
+    // unregister themselves from the DOMWindow as a result of the call to reconnectFromPageCache.
+    Vector<DOMWindowProperty*> properties;
+    copyToVector(m_properties, properties);
+    for (size_t i = 0; i < properties.size(); ++i)
+        properties[i]->reconnectFrameFromPageCache(m_frame);
+}
+
+void DOMWindow::clearDOMWindowProperties()
+{
+    m_properties.clear();
+
     m_screen = 0;
-
-    if (m_selection)
-        m_selection->disconnectFrame();
     m_selection = 0;
-
-    if (m_history)
-        m_history->disconnectFrame();
     m_history = 0;
-
     m_crypto = 0;
-
-    if (m_locationbar)
-        m_locationbar->disconnectFrame();
     m_locationbar = 0;
-
-    if (m_menubar)
-        m_menubar->disconnectFrame();
     m_menubar = 0;
-
-    if (m_personalbar)
-        m_personalbar->disconnectFrame();
     m_personalbar = 0;
-
-    if (m_scrollbars)
-        m_scrollbars->disconnectFrame();
     m_scrollbars = 0;
-
-    if (m_statusbar)
-        m_statusbar->disconnectFrame();
     m_statusbar = 0;
-
-    if (m_toolbar)
-        m_toolbar->disconnectFrame();
     m_toolbar = 0;
-
-    if (m_console)
-        m_console->disconnectFrame();
     m_console = 0;
-
-    if (m_navigator)
-        m_navigator->disconnectFrame();
     m_navigator = 0;
-
 #if ENABLE(WEB_TIMING)
-    if (m_performance)
-        m_performance->disconnectFrame();
     m_performance = 0;
 #endif
-
-    if (m_location)
-        m_location->disconnectFrame();
     m_location = 0;
-
-    if (m_media)
-        m_media->disconnectFrame();
     m_media = 0;
-    
-#if ENABLE(DOM_STORAGE)
-    if (m_sessionStorage)
-        m_sessionStorage->disconnectFrame();
     m_sessionStorage = 0;
-
-    if (m_localStorage)
-        m_localStorage->disconnectFrame();
     m_localStorage = 0;
-#endif
-
-#if ENABLE(OFFLINE_WEB_APPLICATIONS)
-    if (m_applicationCache)
-        m_applicationCache->disconnectFrame();
     m_applicationCache = 0;
+#if ENABLE(BLOB)
+    m_domURL = 0;
 #endif
+#if ENABLE(QUOTA)
+    m_storageInfo = 0;
+#endif
+}
 
-#if ENABLE(NOTIFICATIONS)
-    if (m_notifications)
-        m_notifications->disconnectFrame();
-    m_notifications = 0;
-#endif
-
-#if ENABLE(INDEXED_DATABASE)
-    m_idbFactory = 0;
-#endif
+bool DOMWindow::isCurrentlyDisplayedInFrame() const
+{
+    return m_frame && m_frame->domWindow() == this;
 }
 
 #if ENABLE(ORIENTATION_EVENTS)
@@ -534,13 +617,15 @@ int DOMWindow::orientation() const
 {
     if (!m_frame)
         return 0;
-    
+
     return m_frame->orientation();
 }
 #endif
 
 Screen* DOMWindow::screen() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_screen)
         m_screen = Screen::create(m_frame);
     return m_screen.get();
@@ -548,6 +633,8 @@ Screen* DOMWindow::screen() const
 
 History* DOMWindow::history() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_history)
         m_history = History::create(m_frame);
     return m_history.get();
@@ -555,6 +642,8 @@ History* DOMWindow::history() const
 
 Crypto* DOMWindow::crypto() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_crypto)
         m_crypto = Crypto::create();
     return m_crypto.get();
@@ -562,6 +651,8 @@ Crypto* DOMWindow::crypto() const
 
 BarInfo* DOMWindow::locationbar() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_locationbar)
         m_locationbar = BarInfo::create(m_frame, BarInfo::Locationbar);
     return m_locationbar.get();
@@ -569,6 +660,8 @@ BarInfo* DOMWindow::locationbar() const
 
 BarInfo* DOMWindow::menubar() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_menubar)
         m_menubar = BarInfo::create(m_frame, BarInfo::Menubar);
     return m_menubar.get();
@@ -576,6 +669,8 @@ BarInfo* DOMWindow::menubar() const
 
 BarInfo* DOMWindow::personalbar() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_personalbar)
         m_personalbar = BarInfo::create(m_frame, BarInfo::Personalbar);
     return m_personalbar.get();
@@ -583,6 +678,8 @@ BarInfo* DOMWindow::personalbar() const
 
 BarInfo* DOMWindow::scrollbars() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_scrollbars)
         m_scrollbars = BarInfo::create(m_frame, BarInfo::Scrollbars);
     return m_scrollbars.get();
@@ -590,6 +687,8 @@ BarInfo* DOMWindow::scrollbars() const
 
 BarInfo* DOMWindow::statusbar() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_statusbar)
         m_statusbar = BarInfo::create(m_frame, BarInfo::Statusbar);
     return m_statusbar.get();
@@ -597,6 +696,8 @@ BarInfo* DOMWindow::statusbar() const
 
 BarInfo* DOMWindow::toolbar() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_toolbar)
         m_toolbar = BarInfo::create(m_frame, BarInfo::Toolbar);
     return m_toolbar.get();
@@ -604,22 +705,26 @@ BarInfo* DOMWindow::toolbar() const
 
 Console* DOMWindow::console() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_console)
         m_console = Console::create(m_frame);
     return m_console.get();
 }
 
-#if ENABLE(OFFLINE_WEB_APPLICATIONS)
 DOMApplicationCache* DOMWindow::applicationCache() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_applicationCache)
         m_applicationCache = DOMApplicationCache::create(m_frame);
     return m_applicationCache.get();
 }
-#endif
 
 Navigator* DOMWindow::navigator() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_navigator)
         m_navigator = Navigator::create(m_frame);
     return m_navigator.get();
@@ -628,6 +733,8 @@ Navigator* DOMWindow::navigator() const
 #if ENABLE(WEB_TIMING)
 Performance* DOMWindow::performance() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_performance)
         m_performance = Performance::create(m_frame);
     return m_performance.get();
@@ -636,14 +743,17 @@ Performance* DOMWindow::performance() const
 
 Location* DOMWindow::location() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_location)
         m_location = Location::create(m_frame);
     return m_location.get();
 }
 
-#if ENABLE(DOM_STORAGE)
 Storage* DOMWindow::sessionStorage(ExceptionCode& ec) const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (m_sessionStorage)
         return m_sessionStorage.get();
 
@@ -669,6 +779,8 @@ Storage* DOMWindow::sessionStorage(ExceptionCode& ec) const
 
 Storage* DOMWindow::localStorage(ExceptionCode& ec) const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (m_localStorage)
         return m_localStorage.get();
 
@@ -694,118 +806,6 @@ Storage* DOMWindow::localStorage(ExceptionCode& ec) const
     m_localStorage = Storage::create(m_frame, storageArea.release());
     return m_localStorage.get();
 }
-#endif
-
-#if ENABLE(NOTIFICATIONS)
-NotificationCenter* DOMWindow::webkitNotifications() const
-{
-    if (m_notifications)
-        return m_notifications.get();
-
-    Document* document = this->document();
-    if (!document)
-        return 0;
-    
-    Page* page = document->page();
-    if (!page)
-        return 0;
-
-    NotificationPresenter* provider = page->chrome()->notificationPresenter();
-    if (provider) 
-        m_notifications = NotificationCenter::create(document, provider);    
-      
-    return m_notifications.get();
-}
-#endif
-
-void DOMWindow::pageDestroyed()
-{
-#if ENABLE(NOTIFICATIONS)
-    // Clearing Notifications requests involves accessing the client so it must be done
-    // before the frame is detached.
-    if (m_notifications)
-        m_notifications->disconnectFrame();
-    m_notifications = 0;
-#endif
-}
-
-void DOMWindow::resetGeolocation()
-{
-    // Geolocation should cancel activities and permission requests when the page is detached.
-    if (m_navigator)
-        m_navigator->resetGeolocation();
-}
-
-#if ENABLE(INDEXED_DATABASE)
-IDBFactory* DOMWindow::webkitIndexedDB() const
-{
-    Document* document = this->document();
-    if (!document)
-        return 0;
-
-    Page* page = document->page();
-    if (!page)
-        return 0;
-
-    if (!document->securityOrigin()->canAccessDatabase())
-        return 0;
-
-    if (!m_idbFactory)
-        m_idbFactory = IDBFactory::create(page->group().idbFactory());
-    return m_idbFactory.get();
-}
-#endif
-
-#if ENABLE(FILE_SYSTEM)
-void DOMWindow::webkitRequestFileSystem(int type, long long size, PassRefPtr<FileSystemCallback> successCallback, PassRefPtr<ErrorCallback> errorCallback)
-{
-    Document* document = this->document();
-    if (!document)
-        return;
-
-    if (!AsyncFileSystem::isAvailable() || !document->securityOrigin()->canAccessFileSystem()) {
-        DOMFileSystem::scheduleCallback(document, errorCallback, FileError::create(FileError::SECURITY_ERR));
-        return;
-    }
-
-    AsyncFileSystem::Type fileSystemType = static_cast<AsyncFileSystem::Type>(type);
-    if (fileSystemType != AsyncFileSystem::Temporary && fileSystemType != AsyncFileSystem::Persistent && fileSystemType != AsyncFileSystem::External) {
-        DOMFileSystem::scheduleCallback(document, errorCallback, FileError::create(FileError::INVALID_MODIFICATION_ERR));
-        return;
-    }
-
-    LocalFileSystem::localFileSystem().requestFileSystem(document, fileSystemType, size, FileSystemCallbacks::create(successCallback, errorCallback, document), false);
-}
-
-void DOMWindow::webkitResolveLocalFileSystemURL(const String& url, PassRefPtr<EntryCallback> successCallback, PassRefPtr<ErrorCallback> errorCallback)
-{
-    Document* document = this->document();
-    if (!document)
-        return;
-
-    SecurityOrigin* securityOrigin = document->securityOrigin();
-    KURL completedURL = document->completeURL(url);
-    if (!AsyncFileSystem::isAvailable() || !securityOrigin->canAccessFileSystem() || !securityOrigin->canRequest(completedURL)) {
-        DOMFileSystem::scheduleCallback(document, errorCallback, FileError::create(FileError::SECURITY_ERR));
-        return;
-    }
-
-    AsyncFileSystem::Type type;
-    String filePath;
-    if (!completedURL.isValid() || !DOMFileSystemBase::crackFileSystemURL(completedURL, type, filePath)) {
-        DOMFileSystem::scheduleCallback(document, errorCallback, FileError::create(FileError::ENCODING_ERR));
-        return;
-    }
-
-    LocalFileSystem::localFileSystem().readFileSystem(document, type, ResolveURICallbacks::create(successCallback, errorCallback, document, filePath));
-}
-
-COMPILE_ASSERT(static_cast<int>(DOMWindow::EXTERNAL) == static_cast<int>(AsyncFileSystem::External), enum_mismatch);
-
-COMPILE_ASSERT(static_cast<int>(DOMWindow::TEMPORARY) == static_cast<int>(AsyncFileSystem::Temporary), enum_mismatch);
-COMPILE_ASSERT(static_cast<int>(DOMWindow::PERSISTENT) == static_cast<int>(AsyncFileSystem::Persistent), enum_mismatch);
-
-#endif
 
 void DOMWindow::postMessage(PassRefPtr<SerializedScriptValue> message, MessagePort* port, const String& targetOrigin, DOMWindow* source, ExceptionCode& ec)
 {
@@ -817,15 +817,23 @@ void DOMWindow::postMessage(PassRefPtr<SerializedScriptValue> message, MessagePo
 
 void DOMWindow::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, const String& targetOrigin, DOMWindow* source, ExceptionCode& ec)
 {
-    if (!m_frame)
+    if (!isCurrentlyDisplayedInFrame())
         return;
+
+    Document* sourceDocument = source->document();
 
     // Compute the target origin.  We need to do this synchronously in order
     // to generate the SYNTAX_ERR exception correctly.
     RefPtr<SecurityOrigin> target;
-    if (targetOrigin != "*") {
+    if (targetOrigin == "/") {
+        if (!sourceDocument)
+            return;
+        target = sourceDocument->securityOrigin();
+    } else if (targetOrigin != "*") {
         target = SecurityOrigin::createFromString(targetOrigin);
-        if (target->isEmpty()) {
+        // It doesn't make sense target a postMessage at a unique origin
+        // because there's no way to represent a unique origin in a string.
+        if (target->isUnique()) {
             ec = SYNTAX_ERR;
             return;
         }
@@ -837,13 +845,17 @@ void DOMWindow::postMessage(PassRefPtr<SerializedScriptValue> message, const Mes
 
     // Capture the source of the message.  We need to do this synchronously
     // in order to capture the source of the message correctly.
-    Document* sourceDocument = source->document();
     if (!sourceDocument)
         return;
     String sourceOrigin = sourceDocument->securityOrigin()->toString();
 
+    // Capture stack trace only when inspector front-end is loaded as it may be time consuming.
+    RefPtr<ScriptCallStack> stackTrace;
+    if (InspectorInstrumentation::hasFrontends())
+        stackTrace = createScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture, true);
+
     // Schedule the message.
-    PostMessageTimer* timer = new PostMessageTimer(this, message, sourceOrigin, source, channels.release(), target.get());
+    PostMessageTimer* timer = new PostMessageTimer(this, message, sourceOrigin, source, channels.release(), target.get(), stackTrace.release());
     timer->startOneShot(0);
 }
 
@@ -851,24 +863,34 @@ void DOMWindow::postMessageTimerFired(PassOwnPtr<PostMessageTimer> t)
 {
     OwnPtr<PostMessageTimer> timer(t);
 
-    if (!document())
+    if (!document() || !isCurrentlyDisplayedInFrame())
+        return;
+
+    RefPtr<MessageEvent> event = timer->event(document());
+
+    // Give the embedder a chance to intercept this postMessage because this
+    // DOMWindow might be a proxy for another in browsers that support
+    // postMessage calls across WebKit instances.
+    if (m_frame->loader()->client()->willCheckAndDispatchMessageEvent(timer->targetOrigin(), event.get()))
         return;
 
     if (timer->targetOrigin()) {
-        // Check target origin now since the target document may have changed since the simer was scheduled.
+        // Check target origin now since the target document may have changed since the timer was scheduled.
         if (!timer->targetOrigin()->isSameSchemeHostPort(document()->securityOrigin())) {
             String message = "Unable to post message to " + timer->targetOrigin()->toString() +
                              ". Recipient has origin " + document()->securityOrigin()->toString() + ".\n";
-            console()->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, message, 0, String());
+            console()->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, message, timer->stackTrace());
             return;
         }
     }
 
-    dispatchEvent(timer->event(document()));
+    dispatchEvent(event);
 }
 
 DOMSelection* DOMWindow::getSelection()
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_selection)
         m_selection = DOMSelection::create(m_frame);
     return m_selection.get();
@@ -929,12 +951,12 @@ void DOMWindow::close(ScriptExecutionContext* context)
         return;
 
     if (context) {
-        ASSERT(WTF::isMainThread());
-        Frame* activeFrame = static_cast<Document*>(context)->frame();
-        if (!activeFrame)
+        ASSERT(isMainThread());
+        Document* activeDocument = static_cast<Document*>(context);
+        if (!activeDocument)
             return;
 
-        if (!activeFrame->loader()->shouldAllowNavigation(m_frame))
+        if (!activeDocument->canNavigate(m_frame))
             return;
     }
 
@@ -1057,7 +1079,7 @@ String DOMWindow::atob(const String& encodedString, ExceptionCode& ec)
 
 bool DOMWindow::find(const String& string, bool caseSensitive, bool backwards, bool wrap, bool /*wholeWord*/, bool /*searchInFrames*/, bool /*showDialog*/) const
 {
-    if (!m_frame)
+    if (!isCurrentlyDisplayedInFrame())
         return false;
 
     // FIXME (13016): Support wholeWord, searchInFrames and showDialog
@@ -1101,8 +1123,8 @@ int DOMWindow::innerHeight() const
     FrameView* view = m_frame->view();
     if (!view)
         return 0;
-    
-    return static_cast<int>(view->actualVisibleContentRect().height() / m_frame->pageZoomFactor());
+
+    return view->mapFromLayoutToCSSUnits(static_cast<int>(view->actualVisibleContentRect().height()));
 }
 
 int DOMWindow::innerWidth() const
@@ -1114,7 +1136,7 @@ int DOMWindow::innerWidth() const
     if (!view)
         return 0;
 
-    return static_cast<int>(view->actualVisibleContentRect().width() / m_frame->pageZoomFactor());
+    return view->mapFromLayoutToCSSUnits(static_cast<int>(view->actualVisibleContentRect().width()));
 }
 
 int DOMWindow::screenX() const
@@ -1152,7 +1174,7 @@ int DOMWindow::scrollX() const
 
     m_frame->document()->updateLayoutIgnorePendingStylesheets();
 
-    return static_cast<int>(view->actualVisibleContentRect().x() / m_frame->pageZoomFactor());
+    return static_cast<int>(view->actualVisibleContentRect().x() / (m_frame->pageZoomFactor() * m_frame->frameScaleFactor()));
 }
 
 int DOMWindow::scrollY() const
@@ -1166,7 +1188,7 @@ int DOMWindow::scrollY() const
 
     m_frame->document()->updateLayoutIgnorePendingStylesheets();
 
-    return static_cast<int>(view->actualVisibleContentRect().y() / m_frame->pageZoomFactor());
+    return static_cast<int>(view->actualVisibleContentRect().y() / (m_frame->pageZoomFactor() * m_frame->frameScaleFactor()));
 }
 
 bool DOMWindow::closed() const
@@ -1176,10 +1198,10 @@ bool DOMWindow::closed() const
 
 unsigned DOMWindow::length() const
 {
-    if (!m_frame)
+    if (!isCurrentlyDisplayedInFrame())
         return 0;
 
-    return m_frame->tree()->childCount();
+    return m_frame->tree()->scopedChildCount();
 }
 
 String DOMWindow::name() const
@@ -1274,21 +1296,18 @@ DOMWindow* DOMWindow::top() const
 
 Document* DOMWindow::document() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
+
     // FIXME: This function shouldn't need a frame to work.
-    if (!m_frame)
-        return 0;
-
-    // The m_frame pointer is not zeroed out when the window is put into b/f cache, so it can hold an unrelated document/window pair.
-    // FIXME: We should always zero out the frame pointer on navigation to avoid accidentally accessing the new frame content.
-    if (m_frame->domWindow() != this)
-        return 0;
-
     ASSERT(m_frame->document());
     return m_frame->document();
 }
 
 PassRefPtr<StyleMedia> DOMWindow::styleMedia() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_media)
         m_media = StyleMedia::create(m_frame);
     return m_media.get();
@@ -1299,16 +1318,30 @@ PassRefPtr<CSSStyleDeclaration> DOMWindow::getComputedStyle(Element* elt, const 
     if (!elt)
         return 0;
 
-    return computedStyle(elt, false, pseudoElt);
+    return CSSComputedStyleDeclaration::create(elt, false, pseudoElt);
 }
 
-PassRefPtr<CSSRuleList> DOMWindow::getMatchedCSSRules(Element* elt, const String&, bool authorOnly) const
+PassRefPtr<CSSRuleList> DOMWindow::getMatchedCSSRules(Element* element, const String& pseudoElement, bool authorOnly) const
 {
-    if (!m_frame)
+    if (!isCurrentlyDisplayedInFrame())
         return 0;
 
-    Settings* settings = m_frame->settings();
-    return m_frame->document()->styleSelector()->styleRulesForElement(elt, authorOnly, false, settings && settings->crossOriginCheckInGetMatchedCSSRulesDisabled() ? AllCSSRules : SameOriginCSSRulesOnly);
+    unsigned colonStart = pseudoElement[0] == ':' ? (pseudoElement[1] == ':' ? 2 : 1) : 0;
+    CSSSelector::PseudoType pseudoType = CSSSelector::parsePseudoType(AtomicString(pseudoElement.substring(colonStart)));
+    if (pseudoType == CSSSelector::PseudoUnknown && !pseudoElement.isEmpty())
+        return 0;
+
+    unsigned rulesToInclude = StyleResolver::AuthorCSSRules;
+    if (!authorOnly)
+        rulesToInclude |= StyleResolver::UAAndUserCSSRules;
+    if (Settings* settings = m_frame->settings()) {
+        if (settings->crossOriginCheckInGetMatchedCSSRulesDisabled())
+            rulesToInclude |= StyleResolver::CrossOriginCSSRules;
+    }
+
+    PseudoId pseudoId = CSSSelector::pseudoId(pseudoType);
+
+    return m_frame->document()->styleResolver()->pseudoStyleRulesForElement(element, pseudoId, rulesToInclude);
 }
 
 PassRefPtr<WebKitPoint> DOMWindow::webkitConvertPointFromNodeToPage(Node* node, const WebKitPoint* p) const
@@ -1316,7 +1349,10 @@ PassRefPtr<WebKitPoint> DOMWindow::webkitConvertPointFromNodeToPage(Node* node, 
     if (!node || !p)
         return 0;
 
-    m_frame->document()->updateLayoutIgnorePendingStylesheets();
+    if (!document())
+        return 0;
+
+    document()->updateLayoutIgnorePendingStylesheets();
 
     FloatPoint pagePoint(p->x(), p->y());
     pagePoint = node->convertToPage(pagePoint);
@@ -1328,7 +1364,10 @@ PassRefPtr<WebKitPoint> DOMWindow::webkitConvertPointFromPageToNode(Node* node, 
     if (!node || !p)
         return 0;
 
-    m_frame->document()->updateLayoutIgnorePendingStylesheets();
+    if (!document())
+        return 0;
+
+    document()->updateLayoutIgnorePendingStylesheets();
 
     FloatPoint nodePoint(p->x(), p->y());
     nodePoint = node->convertFromPage(nodePoint);
@@ -1344,51 +1383,38 @@ double DOMWindow::devicePixelRatio() const
     if (!page)
         return 0.0;
 
-    return page->chrome()->scaleFactor();
+    return page->deviceScaleFactor();
 }
-
-#if ENABLE(DATABASE)
-PassRefPtr<Database> DOMWindow::openDatabase(const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassRefPtr<DatabaseCallback> creationCallback, ExceptionCode& ec)
-{
-    RefPtr<Database> database = 0;
-    if (m_frame && AbstractDatabase::isAvailable() && m_frame->document()->securityOrigin()->canAccessDatabase())
-        database = Database::openDatabase(m_frame->document(), name, version, displayName, estimatedSize, creationCallback, ec);
-
-    if (!database && !ec)
-        ec = SECURITY_ERR;
-
-    return database;
-}
-#endif
 
 void DOMWindow::scrollBy(int x, int y) const
 {
-    if (!m_frame)
+    if (!isCurrentlyDisplayedInFrame())
         return;
 
-    m_frame->document()->updateLayoutIgnorePendingStylesheets();
+    document()->updateLayoutIgnorePendingStylesheets();
 
     FrameView* view = m_frame->view();
     if (!view)
         return;
 
-    view->setActualScrollPosition(view->actualVisibleContentRect().location() + IntSize(x, y));
+    IntSize scaledOffset(view->mapFromCSSToLayoutUnits(x), view->mapFromCSSToLayoutUnits(y));
+    view->setActualScrollPosition(view->actualVisibleContentRect().location() + scaledOffset);
 }
 
 void DOMWindow::scrollTo(int x, int y) const
 {
-    if (!m_frame)
+    if (!isCurrentlyDisplayedInFrame())
         return;
 
-    m_frame->document()->updateLayoutIgnorePendingStylesheets();
+    document()->updateLayoutIgnorePendingStylesheets();
 
     RefPtr<FrameView> view = m_frame->view();
     if (!view)
         return;
 
-    int zoomedX = static_cast<int>(x * m_frame->pageZoomFactor());
-    int zoomedY = static_cast<int>(y * m_frame->pageZoomFactor());
 
+    int zoomedX = static_cast<int>(x * m_frame->pageZoomFactor() * m_frame->frameScaleFactor());
+    int zoomedY = static_cast<int>(y * m_frame->pageZoomFactor() * m_frame->frameScaleFactor());
     view->setActualScrollPosition(IntPoint(zoomedX, zoomedY));
 }
 
@@ -1522,17 +1548,17 @@ void DOMWindow::clearInterval(int timeoutId)
 }
 
 #if ENABLE(REQUEST_ANIMATION_FRAME)
-int DOMWindow::webkitRequestAnimationFrame(PassRefPtr<RequestAnimationFrameCallback> callback, Element* e)
+int DOMWindow::webkitRequestAnimationFrame(PassRefPtr<RequestAnimationFrameCallback> callback)
 {
     if (Document* d = document())
-        return d->webkitRequestAnimationFrame(callback, e);
+        return d->webkitRequestAnimationFrame(callback);
     return 0;
 }
 
-void DOMWindow::webkitCancelRequestAnimationFrame(int id)
+void DOMWindow::webkitCancelAnimationFrame(int id)
 {
     if (Document* d = document())
-        d->webkitCancelRequestAnimationFrame(id);
+        d->webkitCancelAnimationFrame(id);
 }
 #endif
 
@@ -1541,8 +1567,13 @@ bool DOMWindow::addEventListener(const AtomicString& eventType, PassRefPtr<Event
     if (!EventTarget::addEventListener(eventType, listener, useCapture))
         return false;
 
-    if (Document* document = this->document())
+    if (Document* document = this->document()) {
         document->addListenerTypeIfNeeded(eventType);
+        if (eventType == eventNames().mousewheelEvent)
+            document->didAddWheelEventHandler();
+        else if (eventNames().isTouchEventType(eventType))
+            document->didAddTouchEventHandler();
+    }
 
     if (eventType == eventNames().unloadEvent)
         addUnloadEventListener(this);
@@ -1553,13 +1584,12 @@ bool DOMWindow::addEventListener(const AtomicString& eventType, PassRefPtr<Event
         document()->deviceMotionController()->addListener(this);
     else if (eventType == eventNames().deviceorientationEvent && document())
         document()->deviceOrientationController()->addListener(this);
-#endif
+#endif // ENABLE(DEVICE_ORIENTATION)
     else if (eventType == eventNames().scrollEvent)
         incrementScrollEventListenersCount();
     else if (eventType == eventNames().touchstartEvent || eventType == eventNames().touchmoveEvent || eventType == eventNames().touchendEvent || eventType == eventNames().touchcancelEvent ||
              eventType == eventNames().gesturestartEvent || eventType == eventNames().gesturechangeEvent || eventType == eventNames().gestureendEvent)
         m_touchEventListenerCount++;
-
     return true;
 }
 
@@ -1580,11 +1610,24 @@ void DOMWindow::decrementScrollEventListenersCount()
     }
 }
 
+void DOMWindow::resetAllGeolocationPermission()
+{
+    if (m_navigator)
+        NavigatorGeolocation::from(m_navigator.get())->resetAllGeolocationPermission();
+}
+
 
 bool DOMWindow::removeEventListener(const AtomicString& eventType, EventListener* listener, bool useCapture)
 {
     if (!EventTarget::removeEventListener(eventType, listener, useCapture))
         return false;
+
+    if (Document* document = this->document()) {
+        if (eventType == eventNames().mousewheelEvent)
+            document->didRemoveWheelEventHandler();
+        else if (eventNames().isTouchEventType(eventType))
+            document->didRemoveTouchEventHandler();
+    }
 
     if (eventType == eventNames().unloadEvent)
         removeUnloadEventListener(this);
@@ -1595,7 +1638,7 @@ bool DOMWindow::removeEventListener(const AtomicString& eventType, EventListener
         document()->deviceMotionController()->removeListener(this);
     else if (eventType == eventNames().deviceorientationEvent && document())
         document()->deviceOrientationController()->removeListener(this);
-#endif
+#endif // ENABLE(DEVICE_ORIENTATION)
     else if (eventType == eventNames().scrollEvent)
         decrementScrollEventListenersCount();
     else if (eventType == eventNames().touchstartEvent || eventType == eventNames().touchmoveEvent || eventType == eventNames().touchendEvent || eventType == eventNames().touchcancelEvent ||
@@ -1603,19 +1646,20 @@ bool DOMWindow::removeEventListener(const AtomicString& eventType, EventListener
         ASSERT(m_touchEventListenerCount > 0);
         m_touchEventListenerCount--;
     }
-
     return true;
 }
 
 void DOMWindow::dispatchLoadEvent()
 {
     RefPtr<Event> loadEvent(Event::create(eventNames().loadEvent, false, false));
-    if (m_frame && m_frame->loader()->documentLoader() && !m_frame->loader()->documentLoader()->timing()->loadEventStart) {
+    if (m_frame && m_frame->loader()->documentLoader() && !m_frame->loader()->documentLoader()->timing()->loadEventStart()) {
         // The DocumentLoader (and thus its DocumentLoadTiming) might get destroyed while dispatching
         // the event, so protect it to prevent writing the end time into freed memory.
         RefPtr<DocumentLoader> documentLoader = m_frame->loader()->documentLoader();
         DocumentLoadTiming* timing = documentLoader->timing();
-        dispatchTimedEvent(loadEvent, document(), &timing->loadEventStart, &timing->loadEventEnd);
+        timing->markLoadEventStart();
+        dispatchEvent(loadEvent, document());
+        timing->markLoadEventEnd();
     } else
         dispatchEvent(loadEvent, document());
 
@@ -1626,7 +1670,7 @@ void DOMWindow::dispatchLoadEvent()
     if (ownerElement)
         ownerElement->dispatchEvent(Event::create(eventNames().loadEvent, false, false));
 
-    InspectorInstrumentation::loadEventFired(frame(), url());
+    InspectorInstrumentation::loadEventFired(frame());
 }
 
 bool DOMWindow::dispatchEvent(PassRefPtr<Event> prpEvent, PassRefPtr<EventTarget> prpTarget)
@@ -1641,7 +1685,7 @@ bool DOMWindow::dispatchEvent(PassRefPtr<Event> prpEvent, PassRefPtr<EventTarget
     // Pausing a page may trigger pagehide and pageshow events. WebCore also
     // implicitly fires these events when closing a WebView. Here we keep track
     // of the state of the page to prevent duplicate, unbalanced events.
-    if (event->isPageTransitionEvent()) {
+    if (event->interfaceName() == eventNames().interfaceForPageTransitionEvent) {
         if (event->type() == eventNames().pageshowEvent) {
             switch (m_pageStatus) {
                 case PageStatusShown:
@@ -1674,15 +1718,6 @@ bool DOMWindow::dispatchEvent(PassRefPtr<Event> prpEvent, PassRefPtr<EventTarget
     return result;
 }
 
-void DOMWindow::dispatchTimedEvent(PassRefPtr<Event> event, Document* target, double* startTime, double* endTime)
-{
-    ASSERT(startTime);
-    ASSERT(endTime);
-    *startTime = currentTime();
-    dispatchEvent(event, target);
-    *endTime = currentTime();
-}
-
 void DOMWindow::removeAllEventListeners()
 {
     EventTarget::removeAllEventListeners();
@@ -1692,7 +1727,7 @@ void DOMWindow::removeAllEventListeners()
         document()->deviceMotionController()->removeAllListeners(this);
         document()->deviceOrientationController()->removeAllListeners(this);
     }
-#endif
+#endif // ENABLE(DEVICE_ORIENTATION)
 
     if (m_scrollEventListenerCount) {
         m_scrollEventListenerCount = 1;
@@ -1735,14 +1770,14 @@ EventTargetData* DOMWindow::ensureEventTargetData()
 
 void DOMWindow::setLocation(const String& urlString, DOMWindow* activeWindow, DOMWindow* firstWindow, SetLocationLocking locking)
 {
-    if (!m_frame)
+    if (!isCurrentlyDisplayedInFrame())
         return;
 
-    Frame* activeFrame = activeWindow->frame();
-    if (!activeFrame)
+    Document* activeDocument = activeWindow->document();
+    if (!activeDocument)
         return;
 
-    if (!activeFrame->loader()->shouldAllowNavigation(m_frame))
+    if (!activeDocument->canNavigate(m_frame))
         return;
 
     Frame* firstFrame = firstWindow->frame();
@@ -1757,9 +1792,10 @@ void DOMWindow::setLocation(const String& urlString, DOMWindow* activeWindow, DO
         return;
 
     // We want a new history item if we are processing a user gesture.
-    m_frame->navigationScheduler()->scheduleLocationChange(activeFrame->document()->securityOrigin(),
-        completedURL, activeFrame->loader()->outgoingReferrer(),
-        locking != LockHistoryBasedOnGestureState || !activeFrame->script()->anyPageIsProcessingUserGesture(),
+    m_frame->navigationScheduler()->scheduleLocationChange(activeDocument->securityOrigin(),
+        // FIXME: What if activeDocument()->frame() is 0?
+        completedURL, activeDocument->frame()->loader()->outgoingReferrer(),
+        locking != LockHistoryBasedOnGestureState || !ScriptController::processingUserGesture(),
         locking != LockHistoryBasedOnGestureState);
 }
 
@@ -1775,7 +1811,8 @@ void DOMWindow::printErrorMessage(const String& message)
         return;
 
     // FIXME: Add arguments so that we can provide a correct source URL and line number.
-    console()->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, message, 1, String());
+    RefPtr<ScriptCallStack> stackTrace = createScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture, true);
+    console()->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, message, stackTrace.release());
 }
 
 String DOMWindow::crossDomainAccessErrorMessage(DOMWindow* activeWindow)
@@ -1795,12 +1832,11 @@ bool DOMWindow::isInsecureScriptAccess(DOMWindow* activeWindow, const String& ur
     if (!protocolIsJavaScript(urlString))
         return false;
 
-    // If m_frame->domWindow() != this, then |this| isn't the DOMWindow that's
-    // currently active in the frame and there's no way we should allow the
-    // access.
+    // If this DOMWindow isn't currently active in the Frame, then there's no
+    // way we should allow the access.
     // FIXME: Remove this check if we're able to disconnect DOMWindow from
     // Frame on navigation: https://bugs.webkit.org/show_bug.cgi?id=62054
-    if (m_frame->domWindow() == this) {
+    if (isCurrentlyDisplayedInFrame()) {
         // FIXME: Is there some way to eliminate the need for a separate "activeWindow == this" check?
         if (activeWindow == this)
             return false;
@@ -1823,7 +1859,13 @@ Frame* DOMWindow::createWindow(const String& urlString, const AtomicString& fram
     // For whatever reason, Firefox uses the first frame to determine the outgoingReferrer. We replicate that behavior here.
     String referrer = firstFrame->loader()->outgoingReferrer();
 
-    KURL completedURL = urlString.isEmpty() ? KURL(ParsedURLString, "") : firstFrame->document()->completeURL(urlString);
+    KURL completedURL = urlString.isEmpty() ? KURL(ParsedURLString, emptyString()) : firstFrame->document()->completeURL(urlString);
+    if (!completedURL.isEmpty() && !completedURL.isValid()) {
+        // Don't expose client code to invalid URLs.
+        activeWindow->printErrorMessage("Unable to open a window with invalid URL '" + completedURL.string() + "'.\n");
+        return 0;
+    }
+
     ResourceRequest request(completedURL, referrer);
     FrameLoader::addHTTPOriginIfNeeded(request, firstFrame->loader()->outgoingOrigin());
     FrameLoadRequest frameRequest(activeWindow->securityOrigin(), request, frameName);
@@ -1847,8 +1889,8 @@ Frame* DOMWindow::createWindow(const String& urlString, const AtomicString& fram
     if (created)
         newFrame->loader()->changeLocation(activeWindow->securityOrigin(), completedURL, referrer, false, false);
     else if (!urlString.isEmpty()) {
-        newFrame->navigationScheduler()->scheduleLocationChange(activeWindow->securityOrigin(), completedURL.string(), referrer,
-            !activeFrame->script()->anyPageIsProcessingUserGesture(), false);
+        bool lockHistory = !ScriptController::processingUserGesture();
+        newFrame->navigationScheduler()->scheduleLocationChange(activeWindow->securityOrigin(), completedURL.string(), referrer, lockHistory, false);
     }
 
     return newFrame;
@@ -1857,10 +1899,10 @@ Frame* DOMWindow::createWindow(const String& urlString, const AtomicString& fram
 PassRefPtr<DOMWindow> DOMWindow::open(const String& urlString, const AtomicString& frameName, const String& windowFeaturesString,
     DOMWindow* activeWindow, DOMWindow* firstWindow)
 {
-    if (!m_frame)
+    if (!isCurrentlyDisplayedInFrame())
         return 0;
-    Frame* activeFrame = activeWindow->frame();
-    if (!activeFrame)
+    Document* activeDocument = activeWindow->document();
+    if (!activeDocument)
         return 0;
     Frame* firstFrame = firstWindow->frame();
     if (!firstFrame)
@@ -1885,7 +1927,7 @@ PassRefPtr<DOMWindow> DOMWindow::open(const String& urlString, const AtomicStrin
             targetFrame = m_frame;
     }
     if (targetFrame) {
-        if (!activeFrame->loader()->shouldAllowNavigation(targetFrame))
+        if (!activeDocument->canNavigate(targetFrame))
             return 0;
 
         KURL completedURL = firstFrame->document()->completeURL(urlString);
@@ -1898,11 +1940,13 @@ PassRefPtr<DOMWindow> DOMWindow::open(const String& urlString, const AtomicStrin
 
         // For whatever reason, Firefox uses the first window rather than the active window to
         // determine the outgoing referrer. We replicate that behavior here.
-        targetFrame->navigationScheduler()->scheduleLocationChange(activeFrame->document()->securityOrigin(),
+        bool lockHistory = !ScriptController::processingUserGesture();
+        targetFrame->navigationScheduler()->scheduleLocationChange(
+            activeDocument->securityOrigin(),
             completedURL,
             firstFrame->loader()->outgoingReferrer(),
-            !activeFrame->script()->anyPageIsProcessingUserGesture(), false);
-
+            lockHistory,
+            false);
         return targetFrame->domWindow();
     }
 
@@ -1924,7 +1968,7 @@ PassRefPtr<DOMWindow> DOMWindow::open(const String& urlString, const AtomicStrin
 void DOMWindow::showModalDialog(const String& urlString, const String& dialogFeaturesString,
     DOMWindow* activeWindow, DOMWindow* firstWindow, PrepareDialogFunction function, void* functionContext)
 {
-    if (!m_frame)
+    if (!isCurrentlyDisplayedInFrame())
         return;
     Frame* activeFrame = activeWindow->frame();
     if (!activeFrame)
@@ -1932,9 +1976,6 @@ void DOMWindow::showModalDialog(const String& urlString, const String& dialogFea
     Frame* firstFrame = firstWindow->frame();
     if (!firstFrame)
         return;
-
-    if (m_frame->page())
-        m_frame->page()->chrome()->willRunModalHTMLDialog(m_frame);
 
     if (!canShowModalDialogNow(m_frame) || !firstWindow->allowPopUp())
         return;
@@ -1947,18 +1988,11 @@ void DOMWindow::showModalDialog(const String& urlString, const String& dialogFea
     dialogFrame->page()->chrome()->runModal();
 }
 
-#if ENABLE(BLOB)
-DOMURL* DOMWindow::webkitURL() const
-{
-    if (!m_domURL)
-        m_domURL = DOMURL::create(this->scriptExecutionContext());
-    return m_domURL.get();
-}
-#endif
-
 #if ENABLE(QUOTA)
 StorageInfo* DOMWindow::webkitStorageInfo() const
 {
+    if (!isCurrentlyDisplayedInFrame())
+        return 0;
     if (!m_storageInfo)
         m_storageInfo = StorageInfo::create();
     return m_storageInfo.get();

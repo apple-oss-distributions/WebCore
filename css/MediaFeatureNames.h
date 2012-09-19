@@ -63,9 +63,13 @@ namespace WebCore {
 
 // end of macro
 
+#define CSS_MEDIAQUERY_NAMES_FOR_EACH_MEDIAFEATURE_IOS(macro) \
+    CSS_MEDIAQUERY_NAMES_FOR_EACH_MEDIAFEATURE(macro) \
+    macro(video_playable_inline, "-webkit-video-playable-inline")
+
 #ifndef CSS_MEDIAQUERY_NAMES_HIDE_GLOBALS
     #define CSS_MEDIAQUERY_NAMES_DECLARE(name, str) extern const AtomicString name##MediaFeature;
-    CSS_MEDIAQUERY_NAMES_FOR_EACH_MEDIAFEATURE(CSS_MEDIAQUERY_NAMES_DECLARE)
+    CSS_MEDIAQUERY_NAMES_FOR_EACH_MEDIAFEATURE_IOS(CSS_MEDIAQUERY_NAMES_DECLARE)
     #undef CSS_MEDIAQUERY_NAMES_DECLARE
 #endif
 

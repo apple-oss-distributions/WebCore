@@ -24,12 +24,13 @@
  */
 
 #include "config.h"
-#include "JavaScriptCallFrame.h"
-
-#include "JSDOMBinding.h"
 
 #if ENABLE(JAVASCRIPT_DEBUGGER) && USE(JSC)
 
+#include "JavaScriptCallFrame.h"
+
+#include "JSDOMBinding.h"
+#include "JSDOMWindowBase.h"
 #include "PlatformString.h"
 #include <debugger/DebuggerCallFrame.h>
 #include <runtime/Completion.h>
@@ -42,7 +43,7 @@ using namespace JSC;
 
 namespace WebCore {
     
-JavaScriptCallFrame::JavaScriptCallFrame(const DebuggerCallFrame& debuggerCallFrame, PassRefPtr<JavaScriptCallFrame> caller, intptr_t sourceID, const TextPosition0& textPosition)
+JavaScriptCallFrame::JavaScriptCallFrame(const DebuggerCallFrame& debuggerCallFrame, PassRefPtr<JavaScriptCallFrame> caller, intptr_t sourceID, const TextPosition& textPosition)
     : m_debuggerCallFrame(debuggerCallFrame)
     , m_caller(caller)
     , m_sourceID(sourceID)
@@ -106,7 +107,7 @@ JSValue JavaScriptCallFrame::evaluate(const UString& script, JSValue& exception)
     if (!m_isValid)
         return jsNull();
 
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(JSDOMWindowBase::commonJSGlobalData());
     return m_debuggerCallFrame.evaluate(script, exception);
 }
 

@@ -22,37 +22,45 @@
 #include "config.h"
 #include "CSSFontFaceRule.h"
 
-#include "CSSMutableStyleDeclaration.h"
+#include "StylePropertySet.h"
+#include "StyleRule.h"
 
 namespace WebCore {
 
-CSSFontFaceRule::CSSFontFaceRule(CSSStyleSheet* parent)
-    : CSSRule(parent)
+CSSFontFaceRule::CSSFontFaceRule(StyleRuleFontFace* fontFaceRule, CSSStyleSheet* parent)
+    : CSSRule(parent, CSSRule::FONT_FACE_RULE)
+    , m_fontFaceRule(fontFaceRule)
 {
 }
 
 CSSFontFaceRule::~CSSFontFaceRule()
 {
+    if (m_propertiesCSSOMWrapper)
+        m_propertiesCSSOMWrapper->clearParentRule();
 }
 
-void CSSFontFaceRule::setDeclaration(PassRefPtr<CSSMutableStyleDeclaration> style)
+CSSStyleDeclaration* CSSFontFaceRule::style() const
 {
-    m_style = style;
+    if (!m_propertiesCSSOMWrapper)
+        m_propertiesCSSOMWrapper = StyleRuleCSSStyleDeclaration::create(m_fontFaceRule->properties(), const_cast<CSSFontFaceRule*>(this));
+    return m_propertiesCSSOMWrapper.get();
 }
 
 String CSSFontFaceRule::cssText() const
 {
     String result("@font-face");
     result += " { ";
-    result += m_style->cssText();
+    result += m_fontFaceRule->properties()->asText();
     result += "}";
     return result;
 }
 
-void CSSFontFaceRule::addSubresourceStyleURLs(ListHashSet<KURL>& urls)
+void CSSFontFaceRule::reattach(StyleRuleFontFace* rule)
 {
-    if (m_style)
-        m_style->addSubresourceStyleURLs(urls);
+    ASSERT(rule);
+    m_fontFaceRule = rule;
+    if (m_propertiesCSSOMWrapper)
+        m_propertiesCSSOMWrapper->reattach(m_fontFaceRule->properties());
 }
 
 } // namespace WebCore

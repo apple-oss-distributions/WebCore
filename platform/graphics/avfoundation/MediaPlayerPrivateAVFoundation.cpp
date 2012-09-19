@@ -39,6 +39,7 @@
 #include "SoftLinking.h"
 #include "TimeRanges.h"
 #include <CoreMedia/CoreMedia.h>
+#include <wtf/MainThread.h>
 #include <wtf/UnusedParam.h>
 
 using namespace std;
@@ -52,7 +53,6 @@ MediaPlayerPrivateAVFoundation::MediaPlayerPrivateAVFoundation(MediaPlayer* play
     , m_networkState(MediaPlayer::Empty)
     , m_readyState(MediaPlayer::HaveNothing)
     , m_preload(MediaPlayer::Auto)
-    , m_scaleFactor(1, 1)
     , m_cachedMaxTimeLoaded(0)
     , m_cachedMaxTimeSeekable(0)
     , m_cachedDuration(invalidTime())
@@ -378,7 +378,10 @@ unsigned MediaPlayerPrivateAVFoundation::bytesLoaded() const
 
 bool MediaPlayerPrivateAVFoundation::isReadyForVideoSetup() const
 {
-    return m_isAllowedToRender && m_readyState >= MediaPlayer::HaveMetadata && m_player->visible();
+    // AVFoundation will not return true for firstVideoFrameAvailable until
+    // an AVPlayerLayer has been added to the AVPlayerItem, so allow video setup
+    // here if a video track to trigger allocation of a AVPlayerLayer.
+    return (m_isAllowedToRender || m_cachedHasVideo) && m_readyState >= MediaPlayer::HaveMetadata && m_player->visible();
 }
 
 void MediaPlayerPrivateAVFoundation::prepareForRendering()
@@ -450,10 +453,13 @@ void MediaPlayerPrivateAVFoundation::updateStates()
                 break;
 
             case MediaPlayerAVPlayerItemStatusPlaybackLikelyToKeepUp:
+            case MediaPlayerAVPlayerItemStatusPlaybackBufferFull:
+                // If the status becomes PlaybackBufferFull, loading stops and the status will not
+                // progress to LikelyToKeepUp. Set the readyState to  HAVE_ENOUGH_DATA, on the
+                // presumption that if the playback buffer is full, playback will probably not stall.
                 m_readyState = MediaPlayer::HaveEnoughData;
                 break;
 
-            case MediaPlayerAVPlayerItemStatusPlaybackBufferFull:
             case MediaPlayerAVPlayerItemStatusReadyToPlay:
                 // If the readyState is already HaveEnoughData, don't go lower because of this state change.
                 if (m_readyState == MediaPlayer::HaveEnoughData)
@@ -548,14 +554,14 @@ void MediaPlayerPrivateAVFoundation::seekableTimeRangesChanged()
 
 void MediaPlayerPrivateAVFoundation::timeChanged(double time)
 {
-    UNUSED_PARAM(time);
     LOG(Media, "MediaPlayerPrivateAVFoundation::timeChanged(%p) - time = %f", this, time);
+    UNUSED_PARAM(time);
 }
 
 void MediaPlayerPrivateAVFoundation::seekCompleted(bool finished)
 {
-    UNUSED_PARAM(finished);
     LOG(Media, "MediaPlayerPrivateAVFoundation::seekCompleted(%p) - finished = %d", this, finished);
+    UNUSED_PARAM(finished);
     
     m_seekTo = invalidTime();
     updateStates();
@@ -617,19 +623,20 @@ void MediaPlayerPrivateAVFoundation::setPreload(MediaPlayer::Preload preload)
 
     if (m_preload >= MediaPlayer::MetaData && assetStatus() == MediaPlayerAVAssetStatusDoesNotExist) {
         createAVAssetForURL(m_assetURL);
-        createAVPlayer();
         checkPlayability();
     }
 
-    // Don't force creation of the player item unless we already know that the asset is playable. If we aren't
-    // there yet, or if we already know it is not playable, creating it now won't help.
-    if (m_preload == MediaPlayer::Auto && m_assetIsPlayable)
+    // Don't force creation of the player and player item unless we already know that the asset is playable. If we aren't
+    // there yet, or if we already know it is not playable, creating them now won't help.
+    if (m_preload == MediaPlayer::Auto && m_assetIsPlayable) {
         createAVPlayerItem();
+        createAVPlayer();
+    }
 
     setDelayCallbacks(false);
 }
 
-void MediaPlayerPrivateAVFoundation::setDelayCallbacks(bool delay)
+void MediaPlayerPrivateAVFoundation::setDelayCallbacks(bool delay) const
 {
     MutexLocker lock(m_queueMutex);
     if (delay)
@@ -767,6 +774,9 @@ void MediaPlayerPrivateAVFoundation::dispatchNotification()
         break;
     case Notification::DurationChanged:
         invalidateCachedDuration();
+        break;
+    case Notification::ContentsNeedsDisplay:
+        contentsNeedsDisplay();
         break;
 
     case Notification::None:

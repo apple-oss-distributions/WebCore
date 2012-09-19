@@ -47,25 +47,23 @@ class DiskImageCache {
 private:
 
     // Internal entrys kept in a table.
+    // Lifetime of this Entry and the SharedBuffer it wraps is managed on the WebThread.
     class Entry : public RefCounted<Entry> {
     private:
-        Entry(PassRefPtr<SharedBuffer> buffer, disk_cache_id_t id)
-            : m_buffer(buffer)
-            , m_id(id)
-            , m_size(0)
-            , m_mapping(0)
-        {
-        }
+        Entry(SharedBuffer* buffer, disk_cache_id_t id);
 
     public:
-        static PassRefPtr<DiskImageCache::Entry> create(PassRefPtr<SharedBuffer> buffer, disk_cache_id_t id)
+        static PassRefPtr<DiskImageCache::Entry> create(SharedBuffer* buffer, disk_cache_id_t id)
         {
             return adoptRef(new DiskImageCache::Entry(buffer, id));
         }
 
+        ~Entry();
+
         void map(const String& path);
         void unmap();
         void removeFile();
+        void clearDataWithoutMapping();
 
         disk_cache_id_t id() const { return m_id; }
         unsigned size() const { return m_size; }
@@ -75,7 +73,7 @@ private:
     private:
         bool mapInternal(const String& path);
 
-        RefPtr<SharedBuffer> m_buffer;
+        SharedBuffer* m_buffer;
         disk_cache_id_t m_id;
         unsigned m_size;
         void* m_mapping;

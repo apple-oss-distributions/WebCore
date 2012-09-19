@@ -21,6 +21,7 @@
 #ifndef QuotesData_h
 #define QuotesData_h
 
+#include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
 #include <wtf/text/WTFString.h>
 
@@ -33,8 +34,8 @@ public:
     String* data() { return reinterpret_cast<String*>(this+1); }
     const String* data() const { return reinterpret_cast<const String*>(this+1); }
     int length;
-    bool operator==(const QuotesData&) const;
     void operator delete(void* p) { delete[] static_cast<char*>(p); }
+    static bool equal(const QuotesData*, const QuotesData*);
 private:
     QuotesData(int stringCount) : length(stringCount) {}
 };

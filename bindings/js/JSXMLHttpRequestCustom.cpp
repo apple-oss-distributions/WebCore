@@ -29,7 +29,6 @@
 #include "config.h"
 #include "JSXMLHttpRequest.h"
 
-#include "ArrayBuffer.h"
 #include "Blob.h"
 #include "DOMFormData.h"
 #include "DOMWindow.h"
@@ -49,43 +48,45 @@
 #include "XMLHttpRequest.h"
 #include <runtime/Error.h>
 #include <interpreter/Interpreter.h>
+#include <wtf/ArrayBuffer.h>
 
 using namespace JSC;
 
 namespace WebCore {
 
-void JSXMLHttpRequest::visitChildren(SlotVisitor& visitor)
+void JSXMLHttpRequest::visitChildren(JSCell* cell, SlotVisitor& visitor)
 {
-    ASSERT_GC_OBJECT_INHERITS(this, &s_info);
+    JSXMLHttpRequest* thisObject = jsCast<JSXMLHttpRequest*>(cell);
+    ASSERT_GC_OBJECT_INHERITS(thisObject, &s_info);
     COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
-    ASSERT(structure()->typeInfo().overridesVisitChildren());
-    Base::visitChildren(visitor);
+    ASSERT(thisObject->structure()->typeInfo().overridesVisitChildren());
+    Base::visitChildren(thisObject, visitor);
 
-    if (XMLHttpRequestUpload* upload = m_impl->optionalUpload())
+    if (XMLHttpRequestUpload* upload = thisObject->m_impl->optionalUpload())
         visitor.addOpaqueRoot(upload);
 
-    if (Document* responseDocument = m_impl->optionalResponseXML())
+    if (Document* responseDocument = thisObject->m_impl->optionalResponseXML())
         visitor.addOpaqueRoot(responseDocument);
 
-    if (ArrayBuffer* responseArrayBuffer = m_impl->optionalResponseArrayBuffer())
+    if (ArrayBuffer* responseArrayBuffer = thisObject->m_impl->optionalResponseArrayBuffer())
         visitor.addOpaqueRoot(responseArrayBuffer);
 
 #if ENABLE(XHR_RESPONSE_BLOB)
-    if (Blob* responseBlob = m_impl->optionalResponseBlob())
+    if (Blob* responseBlob = thisObject->m_impl->optionalResponseBlob())
         visitor.addOpaqueRoot(responseBlob);
 #endif
 
-    m_impl->visitJSEventListeners(visitor);
+    thisObject->m_impl->visitJSEventListeners(visitor);
 }
 
 // Custom functions
 JSValue JSXMLHttpRequest::open(ExecState* exec)
 {
     if (exec->argumentCount() < 2)
-        return throwError(exec, createSyntaxError(exec, "Not enough arguments"));
+        return throwError(exec, createNotEnoughArgumentsError(exec));
 
-    const KURL& url = impl()->scriptExecutionContext()->completeURL(ustringToString(exec->argument(1).toString(exec)));
-    String method = ustringToString(exec->argument(0).toString(exec));
+    const KURL& url = impl()->scriptExecutionContext()->completeURL(ustringToString(exec->argument(1).toString(exec)->value(exec)));
+    String method = ustringToString(exec->argument(0).toString(exec)->value(exec));
 
     ExceptionCode ec = 0;
     if (exec->argumentCount() >= 3) {
@@ -128,7 +129,7 @@ JSValue JSXMLHttpRequest::send(ExecState* exec)
         else if (val.inherits(&JSArrayBuffer::s_info))
             impl()->send(toArrayBuffer(val), ec);
         else
-            impl()->send(ustringToString(val.toString(exec)), ec);
+            impl()->send(ustringToString(val.toString(exec)->value(exec)), ec);
     }
 
     int signedLineNumber;
@@ -200,17 +201,6 @@ JSValue JSXMLHttpRequest::response(ExecState* exec) const
     }
 
     return jsUndefined();
-}
-
-EncodedJSValue JSC_HOST_CALL JSXMLHttpRequestConstructor::constructJSXMLHttpRequest(ExecState* exec)
-{
-    JSXMLHttpRequestConstructor* jsConstructor = static_cast<JSXMLHttpRequestConstructor*>(exec->callee());
-    ScriptExecutionContext* context = jsConstructor->scriptExecutionContext();
-    if (!context)
-        return throwVMError(exec, createReferenceError(exec, "XMLHttpRequest constructor associated document is unavailable"));
-
-    RefPtr<XMLHttpRequest> xmlHttpRequest = XMLHttpRequest::create(context);
-    return JSValue::encode(CREATE_DOM_WRAPPER(exec, jsConstructor->globalObject(), XMLHttpRequest, xmlHttpRequest.get()));
 }
 
 } // namespace WebCore

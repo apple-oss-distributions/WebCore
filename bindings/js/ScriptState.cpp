@@ -33,13 +33,17 @@
 
 #include "Frame.h"
 #include "JSDOMWindowBase.h"
-#include "JSWorkerContext.h"
 #include "Node.h"
 #include "Page.h"
 #include "WorkerContext.h"
 #include "WorkerScriptController.h"
+#include <heap/StrongInlines.h>
 #include <interpreter/CallFrame.h>
 #include <runtime/JSGlobalObject.h>
+
+#if ENABLE(WORKERS)
+#include "JSWorkerContext.h"
+#endif
 
 namespace WebCore {
 
@@ -59,6 +63,33 @@ ScriptState* ScriptStateProtectedPtr::get() const
     return 0;
 }
 
+DOMWindow* domWindowFromScriptState(ScriptState* scriptState)
+{
+    JSC::JSGlobalObject* globalObject = scriptState->lexicalGlobalObject();
+    if (!globalObject->inherits(&JSDOMWindowBase::s_info))
+        return 0;
+    return JSC::jsCast<JSDOMWindowBase*>(globalObject)->impl();
+}
+
+ScriptExecutionContext* scriptExecutionContextFromScriptState(ScriptState* scriptState)
+{
+    JSC::JSGlobalObject* globalObject = scriptState->lexicalGlobalObject();
+    if (!globalObject->inherits(&JSDOMGlobalObject::s_info))
+        return 0;
+    return JSC::jsCast<JSDOMGlobalObject*>(globalObject)->scriptExecutionContext();
+}
+
+bool evalEnabled(ScriptState* scriptState)
+{
+    JSC::JSGlobalObject* globalObject = scriptState->lexicalGlobalObject();
+    return globalObject->evalEnabled();
+}
+
+void setEvalEnabled(ScriptState* scriptState, bool enabled)
+{
+    JSC::JSGlobalObject* globalObject = scriptState->lexicalGlobalObject();
+    return globalObject->setEvalEnabled(enabled);
+}
 
 ScriptState* mainWorldScriptState(Frame* frame)
 {

@@ -80,6 +80,8 @@ public:
     float maxGlyphBoundingBoxY() const { return m_maxGlyphBoundingBoxY; }
     
 private:
+    static const SimpleFontData* systemFallbackFontData() { return reinterpret_cast<const SimpleFontData*>(-1); }
+
     class ComplexTextRun : public RefCounted<ComplexTextRun> {
     public:
 #if USE(CORE_TEXT)
@@ -155,9 +157,9 @@ private:
 
     // collectComplexTextRunsForCharacters() is a stub function that calls through to the ATSUI or Core Text variants based
     // on the API in use.
-    void collectComplexTextRunsForCharacters(const UChar*, unsigned length, unsigned stringLocation, const SimpleFontData*, bool checkActualFonts);
+    void collectComplexTextRunsForCharacters(const UChar*, unsigned length, unsigned stringLocation, const SimpleFontData*);
     void collectComplexTextRunsForCharactersATSUI(const UChar*, unsigned length, unsigned stringLocation, const SimpleFontData*);
-    void collectComplexTextRunsForCharactersCoreText(const UChar*, unsigned length, unsigned stringLocation, const SimpleFontData*, bool checkActualFonts);
+    void collectComplexTextRunsForCharactersCoreText(const UChar*, unsigned length, unsigned stringLocation, const SimpleFontData*);
     void adjustGlyphsAndAdvances();
 
     const Font& m_font;

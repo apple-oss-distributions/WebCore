@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2006 Lars Knoll <lars@trolltech.com>
- * Copyright (C) 2007 Apple Inc. All rights reserved.
+ * Copyright (C) 2007, 2011, 2012 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -31,12 +31,6 @@ namespace WebCore {
 
     // Note: The returned iterator is good only until you get another iterator, with the exception of acquireLineBreakIterator.
 
-    // Iterates over "extended grapheme clusters", as defined in UAX #29.
-    // Note that platform implementations may be less sophisticated - e.g. ICU prior to
-    // version 4.0 only supports "legacy grapheme clusters".
-    // Use this for general text processing, e.g. string truncation.
-    TextBreakIterator* characterBreakIterator(const UChar*, int length);
-
     // This is similar to character break iterator in most cases, but is subject to
     // platform UI conventions. One notable example where this can be different
     // from character break iterator is Thai prepend characters, see bug 24342.
@@ -56,6 +50,7 @@ namespace WebCore {
     int textBreakPreceding(TextBreakIterator*, int);
     int textBreakFollowing(TextBreakIterator*, int);
     bool isTextBreak(TextBreakIterator*, int);
+    bool isWordTextBreak(TextBreakIterator*);
 
     const int TextBreakDone = -1;
 
@@ -100,6 +95,23 @@ private:
     const UChar* m_string;
     int m_length;
     AtomicString m_locale;
+    TextBreakIterator* m_iterator;
+};
+
+// Iterates over "extended grapheme clusters", as defined in UAX #29.
+// Note that platform implementations may be less sophisticated - e.g. ICU prior to
+// version 4.0 only supports "legacy grapheme clusters".
+// Use this for general text processing, e.g. string truncation.
+
+class NonSharedCharacterBreakIterator {
+    WTF_MAKE_NONCOPYABLE(NonSharedCharacterBreakIterator);
+public:
+    NonSharedCharacterBreakIterator(const UChar*, int length);
+    ~NonSharedCharacterBreakIterator();
+
+    operator TextBreakIterator*() const { return m_iterator; }
+
+private:
     TextBreakIterator* m_iterator;
 };
 

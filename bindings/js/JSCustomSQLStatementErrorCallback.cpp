@@ -27,9 +27,10 @@
  */
 
 #include "config.h"
-#include "JSSQLStatementErrorCallback.h"
 
-#if ENABLE(DATABASE)
+#if ENABLE(SQL_DATABASE)
+
+#include "JSSQLStatementErrorCallback.h"
 
 #include "JSSQLError.h"
 #include "JSSQLTransaction.h"
@@ -47,7 +48,7 @@ bool JSSQLStatementErrorCallback::handleEvent(SQLTransaction* transaction, SQLEr
 
     RefPtr<JSSQLStatementErrorCallback> protect(this);
 
-    JSC::JSLock lock(SilenceAssertionsOnly);
+    JSC::JSLockHolder lock(m_data->globalObject()->globalData());
 
     ExecState* exec = m_data->globalObject()->globalExec();
     MarkedArgumentBuffer args;
@@ -68,4 +69,4 @@ bool JSSQLStatementErrorCallback::handleEvent(SQLTransaction* transaction, SQLEr
 
 }
 
-#endif // ENABLE(DATABASE)
+#endif // ENABLE(SQL_DATABASE)

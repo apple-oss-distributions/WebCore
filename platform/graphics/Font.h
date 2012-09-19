@@ -36,7 +36,12 @@
 #include <wtf/unicode/CharacterNames.h>
 
 #if PLATFORM(QT)
+#if HAVE(QRAWFONT)
+#include <QRawFont>
+class QTextLayout;
+#else
 #include <QFont>
+#endif
 #endif
 
 namespace WebCore {
@@ -50,7 +55,6 @@ class FontSelector;
 class GlyphBuffer;
 class GlyphPageTreeNode;
 class GraphicsContext;
-class SVGFontElement;
 class TextRun;
 
 struct GlyphData;
@@ -99,7 +103,7 @@ public:
     void drawEmphasisMarks(GraphicsContext*, const TextRun&, const AtomicString& mark, const FloatPoint&, int from = 0, int to = -1) const;
 
     float width(const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
-    float width(const TextRun&, int extraCharsAvailable, int& charsConsumed, String& glyphName) const;
+    float width(const TextRun&, int& charsConsumed, String& glyphName) const;
 
     int offsetForPosition(const TextRun&, float position, bool includePartialGlyphs) const;
     FloatRect selectionRectForText(const TextRun&, const FloatPoint&, int h, int from = 0, int to = -1) const;
@@ -118,7 +122,31 @@ public:
     TypesettingFeatures typesettingFeatures() const
     {
         TextRenderingMode textRenderingMode = m_fontDescription.textRenderingMode();
-        return textRenderingMode == OptimizeLegibility || textRenderingMode == GeometricPrecision ? Kerning | Ligatures : 0;
+        TypesettingFeatures features = textRenderingMode == OptimizeLegibility || textRenderingMode == GeometricPrecision ? Kerning | Ligatures : 0;
+
+        switch (m_fontDescription.kerning()) {
+        case FontDescription::NoneKerning:
+            features &= ~Kerning;
+            break;
+        case FontDescription::NormalKerning:
+            features |= Kerning;
+            break;
+        case FontDescription::AutoKerning:
+            break;
+        }
+
+        switch (m_fontDescription.commonLigaturesState()) {
+        case FontDescription::DisabledLigaturesState:
+            features &= ~Ligatures;
+            break;
+        case FontDescription::EnabledLigaturesState:
+            features |= Ligatures;
+            break;
+        case FontDescription::NormalLigaturesState:
+            break;
+        }
+
+        return features;
     }
 
     FontFamily& firstFamily() { return m_fontDescription.firstFamily(); }
@@ -141,6 +169,10 @@ public:
     const SimpleFontData* primaryFont() const;
     const FontData* fontDataAt(unsigned) const;
     GlyphData glyphDataForCharacter(UChar32, bool mirror, FontDataVariant = AutoVariant) const;
+#if PLATFORM(MAC) || (PLATFORM(CHROMIUM) && OS(DARWIN))
+    const SimpleFontData* fontDataForCombiningCharacterSequence(const UChar*, size_t length, FontDataVariant) const;
+#endif
+    std::pair<GlyphData, GlyphPage*> glyphDataAndPageForCharacter(UChar32, bool mirror, FontDataVariant = AutoVariant) const;
     bool primaryFontHasGlyphForCharacter(UChar32) const;
 
     static bool isCJKIdeograph(UChar32);
@@ -149,23 +181,22 @@ public:
     static unsigned expansionOpportunityCount(const UChar*, size_t length, TextDirection, bool& isAfterExpansion);
 
 #if PLATFORM(QT)
+#if HAVE(QRAWFONT)
+    QRawFont rawFont() const;
+#else
     QFont font() const;
+#endif
+    QFont syntheticFont() const;
 #endif
 
     static void setShouldUseSmoothing(bool);
     static bool shouldUseSmoothing();
 
     enum CodePath { Auto, Simple, Complex, SimpleWithGlyphOverflow };
-
+    CodePath codePath(const TextRun&) const;
+    static CodePath characterRangeCodePath(const UChar*, unsigned len);
+    
 private:
-#if ENABLE(SVG_FONTS)
-    void drawTextUsingSVGFont(GraphicsContext*, const TextRun&, const FloatPoint&, int from, int to) const;
-    float floatWidthUsingSVGFont(const TextRun&) const;
-    float floatWidthUsingSVGFont(const TextRun&, int extraCharsAvailable, int& charsConsumed, String& glyphName) const;
-    FloatRect selectionRectForTextUsingSVGFont(const TextRun&, const FloatPoint&, int h, int from, int to) const;
-    int offsetForPositionForTextUsingSVGFont(const TextRun&, float position, bool includePartialGlyphs) const;
-#endif
-
     enum ForTextEmphasisOrNot { NotForTextEmphasis, ForTextEmphasis };
 
     // Returns the initial in-stream advance.
@@ -173,8 +204,8 @@ private:
     float drawSimpleText(GraphicsContext*, const TextRun&, const FloatPoint&, int from, int to) const;
     void drawEmphasisMarksForSimpleText(GraphicsContext*, const TextRun&, const AtomicString& mark, const FloatPoint&, int from, int to) const;
     void drawGlyphs(GraphicsContext*, const SimpleFontData*, const GlyphBuffer&, int from, int to, const FloatPoint&, bool setColor = true) const;
-    void drawGlyphBuffer(GraphicsContext*, const GlyphBuffer&, FloatPoint&) const;
-    void drawEmphasisMarks(GraphicsContext* context, const GlyphBuffer&, const AtomicString&, const FloatPoint&) const;
+    void drawGlyphBuffer(GraphicsContext*, const TextRun&, const GlyphBuffer&, FloatPoint&) const;
+    void drawEmphasisMarks(GraphicsContext*, const TextRun&, const GlyphBuffer&, const AtomicString&, const FloatPoint&) const;
     float floatWidthForSimpleText(const TextRun&, GlyphBuffer*, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
     int offsetForPositionForSimpleText(const TextRun&, float position, bool includePartialGlyphs) const;
     FloatRect selectionRectForSimpleText(const TextRun&, const FloatPoint&, int h, int from, int to) const;
@@ -183,8 +214,6 @@ private:
 
     static bool canReturnFallbackFontsForComplexText();
     static bool canExpandAroundIdeographsInComplexText();
-
-    CodePath codePath(const TextRun&) const;
 
     // Returns the initial in-stream advance.
     float getGlyphsAndAdvancesForComplexText(const TextRun&, int from, int to, GlyphBuffer&, ForTextEmphasisOrNot = NotForTextEmphasis) const;
@@ -195,6 +224,7 @@ private:
     FloatRect selectionRectForComplexText(const TextRun&, const FloatPoint&, int h, int from, int to) const;
 
     friend struct WidthIterator;
+    friend class SVGTextRunRenderingContext;
 
 public:
     bool equalForTextAutoSizing (const Font &other) const {
@@ -217,7 +247,7 @@ public:
     FontSelector* fontSelector() const;
     static bool treatAsSpace(UChar c) { return c == ' ' || c == '\t' || c == '\n' || c == noBreakSpace; }
     static bool treatAsZeroWidthSpace(UChar c) { return treatAsZeroWidthSpaceInComplexScript(c) || c == 0x200c || c == 0x200d; }
-    static bool treatAsZeroWidthSpaceInComplexScript(UChar c) { return c < 0x20 || (c >= 0x7F && c < 0xA0) || c == softHyphen || (c >= 0x200e && c <= 0x200f) || (c >= 0x202a && c <= 0x202e) || c == zeroWidthNoBreakSpace || c == objectReplacementCharacter; }
+    static bool treatAsZeroWidthSpaceInComplexScript(UChar c) { return c < 0x20 || (c >= 0x7F && c < 0xA0) || c == softHyphen || c == zeroWidthSpace || (c >= 0x200e && c <= 0x200f) || (c >= 0x202a && c <= 0x202e) || c == zeroWidthNoBreakSpace || c == objectReplacementCharacter; }
     static bool canReceiveTextEmphasis(UChar32 c);
 
     static inline UChar normalizeSpaces(UChar character)
@@ -233,18 +263,17 @@ public:
 
     static String normalizeSpaces(const UChar*, unsigned length);
 
-#if ENABLE(SVG_FONTS)
-    bool isSVGFont() const;
-    SVGFontElement* svgFont() const;
-#endif
-
     bool needsTranscoding() const { return m_needsTranscoding; }
+    FontFallbackList* fontList() const { return m_fontList.get(); }
 
 private:
     bool loadingCustomFonts() const
     {
         return m_fontList && m_fontList->loadingCustomFonts();
     }
+#if PLATFORM(QT) && HAVE(QRAWFONT)
+    void initFormatForTextLayout(QTextLayout*) const;
+#endif
 
     FontDescription m_fontDescription;
     mutable RefPtr<FontFallbackList> m_fontList;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2009, 2010, 2011 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -101,19 +101,25 @@ public:
     // for descendants, but its contents usually render into the window (in which case this returns true).
     // This returns false for other layers, and when the document layer actually needs to paint into its backing store
     // for some reason.
-    bool paintingGoesToWindow() const;
+    bool paintsIntoWindow() const;
+    
+    // Returns true for a composited layer that has no backing store of its own, so
+    // paints into some ancestor layer.
+    bool paintsIntoCompositedAncestor() const { return !m_requiresOwnBackingStore; }
+
+    void setRequiresOwnBackingStore(bool);
 
     void setContentsNeedDisplay();
     // r is in the coordinate space of the layer's render object
-    void setContentsNeedDisplayInRect(const IntRect& r);
+    void setContentsNeedDisplayInRect(const IntRect&);
 
     // Notification from the renderer that its content changed.
-    void contentChanged(RenderLayer::ContentChangeType);
+    void contentChanged(ContentChangeType);
 
     // Interface to start, finish, suspend and resume animations and transitions
-    bool startTransition(double timeOffset, int property, const RenderStyle* fromStyle, const RenderStyle* toStyle);
-    void transitionPaused(double timeOffset, int property);
-    void transitionFinished(int property);
+    bool startTransition(double, CSSPropertyID, const RenderStyle* fromStyle, const RenderStyle* toStyle);
+    void transitionPaused(double timeOffset, CSSPropertyID);
+    void transitionFinished(CSSPropertyID);
 
     bool startAnimation(double timeOffset, const Animation* anim, const KeyframeList& keyframes);
     void animationPaused(double timeOffset, const String& name);
@@ -129,20 +135,25 @@ public:
     void updateAfterWidgetResize();
 
     // GraphicsLayerClient interface
+    virtual bool shouldUseTileCache(const GraphicsLayer*) const;
     virtual void notifyAnimationStarted(const GraphicsLayer*, double startTime);
     virtual void notifySyncRequired(const GraphicsLayer*);
 
     virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& clip);
 
-    virtual float backingScaleFactor() const;
+    virtual float deviceScaleFactor() const;
     virtual float pageScaleFactor() const;
     virtual void didCommitChangesForLayer(const GraphicsLayer*) const;
 
-    virtual bool showDebugBorders() const;
-    virtual bool showRepaintCounter() const;
-    virtual void platformLayerChanged(GraphicsLayer*, PlatformLayer* oldPlatformLayer, PlatformLayer* newPlatformLayer);
-    virtual float minimumDocumentScale() const;
-    virtual bool allowCompositingLayerVisualDegradation() const;
+    virtual bool showDebugBorders(const GraphicsLayer*) const;
+    virtual bool showRepaintCounter(const GraphicsLayer*) const;
+    virtual void platformLayerChanged(GraphicsLayer*, PlatformLayer* oldPlatformLayer, PlatformLayer* newPlatformLayer) OVERRIDE;
+    virtual float minimumDocumentScale() const OVERRIDE;
+    virtual bool allowCompositingLayerVisualDegradation() const OVERRIDE;
+
+#ifndef NDEBUG
+    virtual void verifyNotPainting();
+#endif
 
     IntRect contentsBox() const;
     
@@ -153,6 +164,15 @@ public:
     GraphicsLayer* layerForVerticalScrollbar() const { return m_layerForVerticalScrollbar.get(); }
     GraphicsLayer* layerForScrollCorner() const { return m_layerForScrollCorner.get(); }
 
+#if ENABLE(CSS_FILTERS)
+    bool canCompositeFilters() const { return m_canCompositeFilters; }
+#endif
+
+    // Return an estimate of the backing store area (in pixels) allocated by this object's GraphicsLayers.
+    double backingStoreMemoryEstimate() const;
+
+    String nameForLayer() const;
+    
 private:
     void createPrimaryGraphicsLayer();
     void destroyGraphicsLayers();
@@ -182,10 +202,18 @@ private:
 
     void updateLayerOpacity(const RenderStyle*);
     void updateLayerTransform(const RenderStyle*);
+#if ENABLE(CSS_FILTERS)
+    void updateLayerFilters(const RenderStyle*);
+#endif
 
     // Return the opacity value that this layer should use for compositing.
     float compositingOpacity(float rendererOpacity) const;
     
+    bool isMainFrameRenderViewLayer() const;
+    
+    bool paintsBoxDecorations() const;
+    bool paintsChildren() const;
+
     // Returns true if this compositing layer has no visible content.
     bool isSimpleContainerCompositingLayer() const;
     // Returns true if this layer has content that needs to be rendered by painting into the backing store.
@@ -194,22 +222,19 @@ private:
     bool isDirectlyCompositedImage() const;
     void updateImageContents();
 
-    bool rendererHasBackground() const;
-    const Color rendererBackgroundColor() const;
+    Color rendererBackgroundColor() const;
+    void updateBackgroundColor();
 
-    bool hasNonCompositingDescendants() const;
-    
-    void paintIntoLayer(RenderLayer* rootLayer, GraphicsContext*, const IntRect& paintDirtyRect,
-                    PaintBehavior paintBehavior, GraphicsLayerPaintingPhase, RenderObject* paintingRoot);
+    bool containsNonEmptyRenderers() const;
+    bool hasVisibleNonCompositingDescendantLayers() const;
 
-    static int graphicsLayerToCSSProperty(AnimatedPropertyID);
-    static AnimatedPropertyID cssToGraphicsLayerProperty(int);
+    bool shouldClipCompositedBounds() const;
 
-#ifndef NDEBUG
-    String nameForLayer() const;
-#endif
+    void paintIntoLayer(RenderLayer* rootLayer, GraphicsContext*, const IntRect& paintDirtyRect, PaintBehavior, GraphicsLayerPaintingPhase, RenderObject* paintingRoot);
 
-private:
+    static CSSPropertyID graphicsLayerToCSSProperty(AnimatedPropertyID);
+    static AnimatedPropertyID cssToGraphicsLayerProperty(CSSPropertyID);
+
     RenderLayer* m_owningLayer;
 
     OwnPtr<GraphicsLayer> m_ancestorClippingLayer; // only used if we are clipped by an ancestor which is not a stacking context
@@ -228,6 +253,12 @@ private:
     IntRect m_compositedBounds;
 
     bool m_artificiallyInflatedBounds;      // bounds had to be made non-zero to make transform-origin work
+    bool m_isMainFrameRenderViewLayer;
+    bool m_usingTiledCacheLayer;
+    bool m_requiresOwnBackingStore;
+#if ENABLE(CSS_FILTERS)
+    bool m_canCompositeFilters;
+#endif
 };
 
 } // namespace WebCore

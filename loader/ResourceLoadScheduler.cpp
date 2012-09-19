@@ -36,6 +36,7 @@
 #include "ResourceLoader.h"
 #include "ResourceRequest.h"
 #include "SubresourceLoader.h"
+#include <wtf/MainThread.h>
 #include <wtf/text/CString.h>
 
 #define REQUEST_MANAGEMENT_ENABLED 1
@@ -54,7 +55,7 @@ static const unsigned maxRequestsInFlightPerHost = 10000;
 
 ResourceLoadScheduler::HostInformation* ResourceLoadScheduler::hostForURL(const KURL& url, CreateHostPolicy createHostPolicy)
 {
-    if (!url.protocolInHTTPFamily())
+    if (!url.protocolIsInHTTPFamily())
         return m_nonHTTPProtocolHost;
 
     m_hosts.checkConsistency();
@@ -77,7 +78,7 @@ ResourceLoadScheduler* resourceLoadScheduler()
 ResourceLoadScheduler::ResourceLoadScheduler()
     : m_nonHTTPProtocolHost(new HostInformation(String(), maxRequestsInFlightForNonHTTPProtocols))
     , m_requestTimer(this, &ResourceLoadScheduler::requestTimerFired)
-    , m_isSuspendingPendingRequests(false)
+    , m_suspendPendingRequestsCount(0)
     , m_isSerialLoadingEnabled(false)
 {
 #if REQUEST_MANAGEMENT_ENABLED
@@ -85,12 +86,18 @@ ResourceLoadScheduler::ResourceLoadScheduler()
 #endif
 }
 
-PassRefPtr<SubresourceLoader> ResourceLoadScheduler::scheduleSubresourceLoad(Frame* frame, SubresourceLoaderClient* client, const ResourceRequest& request, ResourceLoadPriority priority, SecurityCheckPolicy securityCheck,
-                                                                             bool sendResourceLoadCallbacks, bool shouldContentSniff, const String& optionalOutgoingReferrer, bool shouldBufferData)
+PassRefPtr<SubresourceLoader> ResourceLoadScheduler::scheduleSubresourceLoad(Frame* frame, CachedResource* resource, const ResourceRequest& request, ResourceLoadPriority priority, const ResourceLoaderOptions& options)
 {
-    RefPtr<SubresourceLoader> loader = SubresourceLoader::create(frame, client, request, securityCheck, sendResourceLoadCallbacks, shouldContentSniff, optionalOutgoingReferrer, shouldBufferData);
+    RefPtr<SubresourceLoader> loader = SubresourceLoader::create(frame, resource, request, options);
     if (loader)
         scheduleLoad(loader.get(), priority);
+    // Since we defer loader initialization until scheduling on iOS, the frame
+    // load delegate that would be called in SubresourceLoader::create() on
+    // other ports might be called in scheduleLoad() instead. Our contract to
+    // callers of this method is that a NULL loader is returned if the load was
+    // cancelled by a frame load delegate.
+    if (!loader || loader->reachedTerminalState())
+        return 0;
     return loader.release();
 }
 
@@ -118,23 +125,23 @@ void ResourceLoadScheduler::scheduleLoad(ResourceLoader* resourceLoader, Resourc
     LOG(ResourceLoading, "ResourceLoadScheduler::load resource %p '%s'", resourceLoader, resourceLoader->url().string().latin1().data());
 
     // If there's a web archive resource for this URL, we don't need to schedule the load since it will never touch the network.
-    if (!m_isSuspendingPendingRequests && resourceLoader->documentLoader()->archiveResourceForURL(resourceLoader->originalRequest().url())) {
+    if (!isSuspendingPendingRequests() && resourceLoader->documentLoader()->archiveResourceForURL(resourceLoader->iOSOriginalRequest().url())) {
         resourceLoader->startLoading();
         return;
     }
 
-    HostInformation* host = hostForURL(resourceLoader->originalRequest().url(), CreateIfNotFound);
+    HostInformation* host = hostForURL(resourceLoader->iOSOriginalRequest().url(), CreateIfNotFound);
 
     bool hadRequests = host->hasRequests();
     host->schedule(resourceLoader, priority);
 
-    if (ResourceRequest::httpPipeliningEnabled() && !m_isSuspendingPendingRequests) {
+    if (ResourceRequest::httpPipeliningEnabled() && !isSuspendingPendingRequests()) {
         // Serve all requests at once to keep the pipeline full at the network layer.
         servePendingRequests(host, ResourceLoadPriorityVeryLow);
         return;
     }
 
-    if ((priority > ResourceLoadPriorityLow || !resourceLoader->originalRequest().url().protocolInHTTPFamily() || (priority == ResourceLoadPriorityLow && !hadRequests)) && !m_isSuspendingPendingRequests) {
+    if ((priority > ResourceLoadPriorityLow || !resourceLoader->iOSOriginalRequest().url().protocolIsInHTTPFamily() || (priority == ResourceLoadPriorityLow && !hadRequests)) && !isSuspendingPendingRequests()) {
         // Try to request important resources immediately.
         servePendingRequests(host, priority);
         return;
@@ -154,8 +161,8 @@ void ResourceLoadScheduler::remove(ResourceLoader* resourceLoader)
         host->remove(resourceLoader);
     // ResourceLoader::url() doesn't start returning the correct value until the load starts. If we get canceled before that, we need to look for originalRequest url instead.
     // FIXME: ResourceLoader::url() should be made to return a sensible value at all times.
-    if (!resourceLoader->originalRequest().isNull()) {
-        HostInformation* originalHost = hostForURL(resourceLoader->originalRequest().url());
+    if (!resourceLoader->iOSOriginalRequest().isNull()) {
+        HostInformation* originalHost = hostForURL(resourceLoader->iOSOriginalRequest().url());
         if (originalHost && originalHost != host)
             originalHost->remove(resourceLoader);
     }
@@ -179,8 +186,8 @@ void ResourceLoadScheduler::crossOriginRedirectReceived(ResourceLoader* resource
 
 void ResourceLoadScheduler::servePendingRequests(ResourceLoadPriority minimumPriority)
 {
-    LOG(ResourceLoading, "ResourceLoadScheduler::servePendingRequests. m_isSuspendingPendingRequests=%d", m_isSuspendingPendingRequests); 
-    if (m_isSuspendingPendingRequests)
+    LOG(ResourceLoading, "ResourceLoadScheduler::servePendingRequests. m_suspendPendingRequestsCount=%d", m_suspendPendingRequestsCount); 
+    if (isSuspendingPendingRequests())
         return;
 
     m_requestTimer.stop();
@@ -205,7 +212,6 @@ void ResourceLoadScheduler::servePendingRequests(ResourceLoadPriority minimumPri
 
 void ResourceLoadScheduler::servePendingRequests(HostInformation* host, ResourceLoadPriority minimumPriority)
 {
-    ASSERT(!m_isSuspendingPendingRequests);
     LOG(ResourceLoading, "ResourceLoadScheduler::servePendingRequests HostInformation.m_name='%s'", host->name().latin1().data());
 
     for (int priority = ResourceLoadPriorityHighest; priority >= minimumPriority; --priority) {
@@ -225,20 +231,23 @@ void ResourceLoadScheduler::servePendingRequests(HostInformation* host, Resource
             requestsPending.removeFirst();
             host->addLoadInProgress(resourceLoader.get());
             resourceLoader->startLoading();
+            if (resourceLoader->reachedTerminalState())
+                resourceLoader->clearCachedResourceAfterSynchronousCancel();
         }
     }
 }
 
 void ResourceLoadScheduler::suspendPendingRequests()
 {
-    ASSERT(!m_isSuspendingPendingRequests);
-    m_isSuspendingPendingRequests = true;
+    ++m_suspendPendingRequestsCount;
 }
 
 void ResourceLoadScheduler::resumePendingRequests()
 {
-    ASSERT(m_isSuspendingPendingRequests);
-    m_isSuspendingPendingRequests = false;
+    ASSERT(m_suspendPendingRequestsCount);
+    --m_suspendPendingRequestsCount;
+    if (m_suspendPendingRequestsCount)
+        return;
     if (!m_hosts.isEmpty() || m_nonHTTPProtocolHost->hasRequests())
         scheduleServePendingRequests();
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2009, 2012 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,7 +25,6 @@
 
 namespace WebCore {
 
-class Chrome;
 class HTMLInputElement;
 
 // Each RenderFileUploadControl contains a RenderButton (for opening the file chooser), and
@@ -39,9 +38,6 @@ public:
 
     virtual bool isFileUploadControl() const { return true; }
 
-    void click();
-
-
     String buttonValue();
     String fileTextValue() const;
     
@@ -50,29 +46,17 @@ private:
 
     virtual void updateFromElement();
     virtual void computePreferredLogicalWidths();
-    virtual void paintObject(PaintInfo&, int tx, int ty);
+    virtual void paintObject(PaintInfo&, const LayoutPoint&);
 
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
-    
     virtual bool requiresForcedStyleRecalcPropagation() const { return true; }
 
-    // FileChooserClient methods.
-    void valueChanged();
-    void repaint() { RenderBlock::repaint(); }
-    bool allowsMultipleFiles();
-#if ENABLE(DIRECTORY_UPLOAD)
-    bool allowsDirectoryUpload();
-    void receiveDropForDirectoryUpload(const Vector<String>&);
-#endif
-    String acceptTypes();
-
-    Chrome* chrome() const;
     int maxFilenameWidth() const;
-    PassRefPtr<RenderStyle> createButtonStyle(const RenderStyle* parentStyle) const;
     
-    virtual VisiblePosition positionForPoint(const IntPoint&);
+    virtual VisiblePosition positionForPoint(const LayoutPoint&);
 
-    RefPtr<HTMLInputElement> m_button;
+    HTMLInputElement* uploadButton() const;
+
+    bool m_canReceiveDroppedFiles;
 };
 
 inline RenderFileUploadControl* toRenderFileUploadControl(RenderObject* object)

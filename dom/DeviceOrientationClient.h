@@ -32,6 +32,7 @@ namespace WebCore {
 
 class DeviceOrientation;
 class DeviceOrientationController;
+class Page;
 
 class DeviceOrientationClient {
     WTF_MAKE_NONCOPYABLE(DeviceOrientationClient);
@@ -45,6 +46,8 @@ public:
     virtual DeviceOrientation* lastOrientation() const = 0;
     virtual void deviceOrientationControllerDestroyed() = 0;
 };
+
+void provideDeviceOrientationTo(Page*, DeviceOrientationClient*);
 
 } // namespace WebCore
 

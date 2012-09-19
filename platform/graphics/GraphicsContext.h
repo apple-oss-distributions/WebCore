@@ -32,6 +32,7 @@
 #include "FloatRect.h"
 #include "Gradient.h"
 #include "Image.h"
+#include "ImageOrientation.h"
 #include "Path.h"
 #include "Pattern.h"
 #include <wtf/Noncopyable.h>
@@ -41,7 +42,6 @@
 typedef struct CGContext PlatformGraphicsContext;
 #elif USE(CAIRO)
 namespace WebCore {
-class ContextShadow;
 class PlatformContextCairo;
 }
 typedef WebCore::PlatformContextCairo PlatformGraphicsContext;
@@ -53,7 +53,7 @@ typedef class WebCore::SurfaceOpenVG PlatformGraphicsContext;
 #elif PLATFORM(QT)
 #include <QPainter>
 namespace WebCore {
-class ContextShadow;
+class ShadowBlur;
 }
 typedef QPainter PlatformGraphicsContext;
 #elif PLATFORM(WX)
@@ -78,12 +78,9 @@ class wxWindowDC;
 #elif USE(SKIA)
 namespace WebCore {
 class PlatformContextSkia;
+typedef PlatformContextSkia GraphicsContextPlatformPrivate;
 }
 typedef WebCore::PlatformContextSkia PlatformGraphicsContext;
-#elif PLATFORM(HAIKU)
-class BView;
-typedef BView PlatformGraphicsContext;
-struct pattern;
 #elif OS(WINCE)
 typedef struct HDC__ PlatformGraphicsContext;
 #else
@@ -119,13 +116,16 @@ namespace WebCore {
     class DrawingBuffer;
     class Font;
     class Generator;
+#if !USE(SKIA)
     class GraphicsContextPlatformPrivate;
+#endif
     class ImageBuffer;
     class IntRect;
-    class RoundedIntRect;
+    class RoundedRect;
     class KURL;
-    class SharedGraphicsContext3D;
+    class GraphicsContext3D;
     class TextRun;
+    class TransformationMatrix;
     struct BidiStatus;
 
     enum TextDrawingMode {
@@ -155,9 +155,6 @@ namespace WebCore {
         GraphicsContextState()
             : strokeThickness(0)
             , shadowBlur(0)
-#if USE(CAIRO)
-            , globalAlpha(1)
-#endif
             , textDrawingMode(TextModeFill)
             , strokeColor(Color::black)
             , fillColor(Color::black)
@@ -192,9 +189,6 @@ namespace WebCore {
         float strokeThickness;
         float shadowBlur;
 
-#if USE(CAIRO)
-        float globalAlpha;
-#endif
         TextDrawingModeFlags textDrawingMode;
 
         Color strokeColor;
@@ -274,13 +268,11 @@ namespace WebCore {
         void applyStrokePattern();
         void applyFillPattern();
         void drawPath(const Path&);
-        
-        void drawNativeImage(NativeImagePtr, const FloatSize& imageSize, ColorSpace styleColorSpace, const FloatRect& destRect, const FloatRect& srcRect,
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-        int orientation,
-#endif
-        float scale,
-        CompositeOperator = CompositeSourceOver);
+
+        void drawNativeImage(NativeImagePtr, const FloatSize& selfSize, ColorSpace styleColorSpace, const FloatRect& destRect, const FloatRect& srcRect,
+            float scale,
+            CompositeOperator = CompositeSourceOver, ImageOrientation = DefaultImageOrientation
+        );
 
         // Allow font smoothing (LCD antialiasing). Not part of the graphics state.
         void setAllowsFontSmoothing(bool);
@@ -289,8 +281,8 @@ namespace WebCore {
         bool isCALayerContext() const;
 
         void setIsAcceleratedContext(bool);
-        bool isAcceleratedContext() const;
 #endif
+        bool isAcceleratedContext() const;
 
         void save();
         void restore();
@@ -312,30 +304,34 @@ namespace WebCore {
         void fillPath(const Path&);
         void strokePath(const Path&);
 
+        void fillEllipse(const FloatRect&);
+        void strokeEllipse(const FloatRect&);
+
         // Arc drawing (used by border-radius in CSS) just supports stroking at the moment.
         void strokeArc(const IntRect&, int startAngle, int angleSpan);
 
         void fillRect(const FloatRect&);
         void fillRect(const FloatRect&, const Color&, ColorSpace);
         void fillRect(const FloatRect&, Generator&);
+        void fillRect(const FloatRect&, const Color&, ColorSpace, CompositeOperator);
         void fillRoundedRect(const IntRect&, const IntSize& topLeft, const IntSize& topRight, const IntSize& bottomLeft, const IntSize& bottomRight, const Color&, ColorSpace);
-        void fillRoundedRect(const RoundedIntRect&, const Color&, ColorSpace);
-        void fillRectWithRoundedHole(const IntRect&, const RoundedIntRect& roundedHoleRect, const Color&, ColorSpace);
+        void fillRoundedRect(const RoundedRect&, const Color&, ColorSpace);
+        void fillRectWithRoundedHole(const IntRect&, const RoundedRect& roundedHoleRect, const Color&, ColorSpace);
 
         void clearRect(const FloatRect&);
 
         void strokeRect(const FloatRect&, float lineWidth);
 
-        void drawImage(Image*, ColorSpace styleColorSpace, const IntPoint&, CompositeOperator = CompositeSourceOver);
-        void drawImage(Image*, ColorSpace styleColorSpace, const IntRect&, CompositeOperator = CompositeSourceOver, bool useLowQualityScale = false);
-        void drawImage(Image*, ColorSpace styleColorSpace, const IntPoint& destPoint, const IntRect& srcRect, CompositeOperator = CompositeSourceOver);
-        void drawImage(Image*, ColorSpace styleColorSpace, const IntRect& destRect, const IntRect& srcRect, CompositeOperator = CompositeSourceOver, bool useLowQualityScale = false);
+        void drawImage(Image*, ColorSpace styleColorSpace, const IntPoint&, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation);
+        void drawImage(Image*, ColorSpace styleColorSpace, const IntRect&, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation, bool useLowQualityScale = false);
+        void drawImage(Image*, ColorSpace styleColorSpace, const IntPoint& destPoint, const IntRect& srcRect, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation);
+        void drawImage(Image*, ColorSpace styleColorSpace, const IntRect& destRect, const IntRect& srcRect, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation, bool useLowQualityScale = false);
         void drawImage(Image*, ColorSpace styleColorSpace, const FloatRect& destRect, const FloatRect& srcRect = FloatRect(0, 0, -1, -1),
-                       CompositeOperator = CompositeSourceOver, bool useLowQualityScale = false);
+                       CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation, bool useLowQualityScale = false);
         void drawTiledImage(Image*, ColorSpace styleColorSpace, const IntRect& destRect, const IntPoint& srcPoint, const IntSize& tileSize,
                        CompositeOperator = CompositeSourceOver, bool useLowQualityScale = false);
         void drawTiledImage(Image*, ColorSpace styleColorSpace, const IntRect& destRect, const IntRect& srcRect,
-                            Image::TileRule hRule = Image::StretchTile, Image::TileRule vRule = Image::StretchTile,
+                            const FloatSize& tileScaleFactor, Image::TileRule hRule = Image::StretchTile, Image::TileRule vRule = Image::StretchTile,
                             CompositeOperator = CompositeSourceOver, bool useLowQualityScale = false);
 
         void drawImageBuffer(ImageBuffer*, ColorSpace styleColorSpace, const IntPoint&, CompositeOperator = CompositeSourceOver);
@@ -350,11 +346,11 @@ namespace WebCore {
 
         void clip(const IntRect&);
         void clip(const FloatRect&);
-        void addRoundedRectClip(const RoundedIntRect&);
+        void addRoundedRectClip(const RoundedRect&);
         void addRoundedRectClip(const FloatRect&, const FloatSize& topLeft, const FloatSize& topRight, const FloatSize& bottomLeft, const FloatSize& bottomRight);
         void addInnerRoundedRectClip(const IntRect&, int thickness);
         void clipOut(const IntRect&);
-        void clipOutRoundedRect(const RoundedIntRect&);
+        void clipOutRoundedRect(const RoundedRect&);
         void clipPath(const Path&, WindRule);
         void clipConvexPolygon(size_t numPoints, const FloatPoint*, bool antialias = true);
         void clipToImageBuffer(ImageBuffer*, const FloatRect&);
@@ -379,14 +375,14 @@ namespace WebCore {
         FloatRect roundToDevicePixels(const FloatRect&, RoundingMode = RoundAllSides);
 
         void drawLineForText(const FloatPoint&, float width, bool printing);
-        enum TextCheckingLineStyle {
+        enum DocumentMarkerLineStyle {
             TextCheckingDictationPhraseWithAlternativesLineStyle,
-            TextCheckingSpellingLineStyle,
-            TextCheckingGrammarLineStyle,
-            TextCheckingReplacementLineStyle
-
+            DocumentMarkerSpellingLineStyle,
+            DocumentMarkerGrammarLineStyle,
+            DocumentMarkerAutocorrectionReplacementLineStyle,
+            DocumentMarkerDictationAlternativesLineStyle
         };
-        void drawLineForTextChecking(const FloatPoint&, float width, TextCheckingLineStyle);
+        void drawLineForDocumentMarker(const FloatPoint&, float width, DocumentMarkerLineStyle);
 
         bool paintingDisabled() const;
         void setPaintingDisabled(bool);
@@ -396,6 +392,7 @@ namespace WebCore {
 
         void beginTransparencyLayer(float opacity);
         void endTransparencyLayer();
+        bool isInTransparencyLayer() const;
 
         bool hasShadow() const;
         void setShadow(const FloatSize&, float blur, const Color&, ColorSpace);
@@ -415,9 +412,6 @@ namespace WebCore {
         void setMiterLimit(float);
 
         void setAlpha(float);
-#if USE(CAIRO)
-        float getAlpha();
-#endif
 
         void setCompositeOperation(CompositeOperator);
         CompositeOperator compositeOperation() const;
@@ -441,6 +435,21 @@ namespace WebCore {
         void setCTM(const AffineTransform&);
         AffineTransform getCTM() const;
 
+#if ENABLE(3D_RENDERING) && USE(TEXTURE_MAPPER)
+        // This is needed when using accelerated-compositing in software mode, like in TextureMapper.
+        void concat3DTransform(const TransformationMatrix&);
+        void set3DTransform(const TransformationMatrix&);
+        TransformationMatrix get3DTransform() const;
+#endif
+        // Create an image buffer compatible with this context, with suitable resolution
+        // for drawing into the buffer and then into this context.
+        PassOwnPtr<ImageBuffer> createCompatibleBuffer(const IntSize&) const;
+
+        // This function applies the device scale factor to the context, making the context capable of
+        // acting as a base-level context for a HiDPI environment.
+        void applyDeviceScaleFactor(float);
+        void platformApplyDeviceScaleFactor(float);
+
 #if OS(WINCE) && !PLATFORM(QT)
         void setBitmap(PassRefPtr<SharedBitmap>);
         const AffineTransform& affineTransform() const;
@@ -459,7 +468,6 @@ namespace WebCore {
         void drawRoundCorner(bool newClip, RECT clipRect, RECT rectWin, HDC dc, int width, int height);
 #elif PLATFORM(WIN)
         GraphicsContext(HDC, bool hasAlpha = false); // FIXME: To be removed.
-        bool inTransparencyLayer() const;
         HDC getWindowsContext(const IntRect&, bool supportAlphaBlend = true, bool mayCreateBitmap = true); // The passed in rect is used to create a bitmap for compositing inside transparency layers.
         void releaseWindowsContext(HDC, const IntRect&, bool supportAlphaBlend = true, bool mayCreateBitmap = true);    // The passed in HDC should be the one handed back by getWindowsContext.
 
@@ -506,17 +514,18 @@ namespace WebCore {
 #endif
 
 #if PLATFORM(WX)
-        bool inTransparencyLayer() const { return false; }
+        // This is needed because of a bug whereby getting an HDC from a GDI+ context
+        // loses the scale operations applied to the context.
+        FloatSize currentScale(); 
 #endif
 
 #if PLATFORM(QT)
-        bool inTransparencyLayer() const;
         void pushTransparencyLayerInternal(const QRect &rect, qreal opacity, QPixmap& alphaMask);
         void takeOwnershipOfPlatformContext();
 #endif
 
-#if PLATFORM(QT) || USE(CAIRO)
-        ContextShadow* contextShadow();
+#if PLATFORM(QT)
+        ShadowBlur* shadowBlur();
 #endif
 
 #if USE(CAIRO)
@@ -528,14 +537,6 @@ namespace WebCore {
         GdkWindow* gdkWindow() const;
         GdkEventExpose* gdkExposeEvent() const;
 #endif
-
-#if PLATFORM(HAIKU)
-        pattern getHaikuStrokeStyle();
-#endif
-
-        void setSharedGraphicsContext3D(SharedGraphicsContext3D*, DrawingBuffer*, const IntSize&);
-        void syncSoftwareCanvas();
-        void markDirtyRect(const IntRect&); // Hints that a portion of the backing store is dirty.
 
         static void adjustLineToPixelBoundaries(FloatPoint& p1, FloatPoint& p2, float strokeWidth, StrokeStyle);
 
@@ -556,12 +557,8 @@ namespace WebCore {
         void setPlatformStrokeColor(const Color&, ColorSpace);
         void setPlatformStrokeStyle(StrokeStyle);
         void setPlatformStrokeThickness(float);
-        void setPlatformStrokeGradient(Gradient*);
-        void setPlatformStrokePattern(Pattern*);
 
         void setPlatformFillColor(const Color&, ColorSpace);
-        void setPlatformFillGradient(Gradient*);
-        void setPlatformFillPattern(Pattern*);
 
         void setPlatformShouldAntialias(bool);
         void setPlatformShouldSmoothFonts(bool);
@@ -571,11 +568,22 @@ namespace WebCore {
 
         void setPlatformCompositeOperation(CompositeOperator);
 
+        void beginPlatformTransparencyLayer(float opacity);
+        void endPlatformTransparencyLayer();
+        static bool supportsTransparencyLayers();
+
+        void fillEllipseAsPath(const FloatRect&);
+        void strokeEllipseAsPath(const FloatRect&);
+
+        void platformFillEllipse(const FloatRect&);
+        void platformStrokeEllipse(const FloatRect&);
+
         GraphicsContextPlatformPrivate* m_data;
 
         GraphicsContextState m_state;
         Vector<GraphicsContextState> m_stack;
         bool m_updatingControlTints;
+        unsigned m_transparencyCount;
     };
 
     class GraphicsContextStateSaver {
@@ -608,6 +616,8 @@ namespace WebCore {
             m_saveAndRestore = false;
         }
         
+        GraphicsContext* context() const { return &m_context; }
+
     private:
         GraphicsContext& m_context;
         bool m_saveAndRestore;

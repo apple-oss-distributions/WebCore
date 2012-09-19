@@ -67,7 +67,7 @@ static CGPatternRef createDotPattern(bool& usingDot, const char* resourceName)
 }
 
 // WebKit on Mac is a standard platform component, so it must use the standard platform artwork for underline.
-void GraphicsContext::drawLineForTextChecking(const FloatPoint& point, float width, TextCheckingLineStyle style)
+void GraphicsContext::drawLineForDocumentMarker(const FloatPoint& point, float width, DocumentMarkerLineStyle style)
 {
     if (paintingDisabled())
         return;
@@ -79,7 +79,7 @@ void GraphicsContext::drawLineForTextChecking(const FloatPoint& point, float wid
     bool usingDot;
     CGPatternRef dotPattern;
     switch (style) {
-        case TextCheckingSpellingLineStyle:
+        case DocumentMarkerSpellingLineStyle:
         {
             // Constants for spelling pattern color.
             static bool usingDotForSpelling = false;
@@ -88,7 +88,7 @@ void GraphicsContext::drawLineForTextChecking(const FloatPoint& point, float wid
             usingDot = usingDotForSpelling;
             break;
         }
-        case TextCheckingGrammarLineStyle:
+        case DocumentMarkerGrammarLineStyle:
         {
             ASSERT_NOT_REACHED();
             return;

@@ -35,6 +35,7 @@
 #include "FloatPoint.h"
 #include "HTMLDivElement.h"
 #include "HTMLNames.h"
+#include "RenderBlock.h"
 #include "RenderStyleConstants.h"
 #include <wtf/Forward.h>
 
@@ -51,24 +52,28 @@ class SliderThumbElement : public HTMLDivElement {
 public:
     static PassRefPtr<SliderThumbElement> create(Document*);
 
-    bool inDragMode() const { return m_inDragMode; }
     void setPositionFromValue();
 
-    void dragFrom(const IntPoint&);
+    void dragFrom(const LayoutPoint&);
     virtual void detach();
     virtual const AtomicString& shadowPseudoId() const;
+    HTMLInputElement* hostInput() const;
 
-    virtual void attach();
+    virtual void attach() OVERRIDE;
     void handleTouchEvent(TouchEvent*);
+
+    void disabledAttributeChanged();
 
 private:
     SliderThumbElement(Document*);
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
-    virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren() const;
+    virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren();
+    virtual bool isEnabledFormControl() const;
+    virtual bool isReadOnlyFormControl() const;
+    virtual Node* focusDelegate();
     void startDragging();
     void stopDragging();
-    void setPositionFromPoint(const IntPoint&);
-    HTMLInputElement* hostInput();
+    void setPositionFromPoint(const LayoutPoint&);
 
     unsigned exclusiveTouchIdentifier() const;
     void setExclusiveTouchIdentifier(unsigned);
@@ -78,18 +83,24 @@ private:
     void handleTouchMove(TouchEvent*);
     void handleTouchEndAndCancel(TouchEvent*);
 
+    bool shouldAcceptTouchEvents();
+    void registerForTouchEvents();
+    void unregisterForTouchEvents();
+
     bool m_inDragMode;
 
     // FIXME: Currently it is safe to use 0, but this may need to change
     // if touch identifers change in the future and can be 0.
     static const unsigned NoIdentifier = 0;
     unsigned m_exclusiveTouchIdentifier;
+    bool m_isRegisteredAsTouchEventListener;
 };
 
 inline SliderThumbElement::SliderThumbElement(Document* document)
     : HTMLDivElement(HTMLNames::divTag, document)
     , m_inDragMode(false)
     , m_exclusiveTouchIdentifier(NoIdentifier)
+    , m_isRegisteredAsTouchEventListener(false)
 {
 }
 
@@ -98,7 +109,7 @@ inline PassRefPtr<SliderThumbElement> SliderThumbElement::create(Document* docum
     return adoptRef(new SliderThumbElement(document));
 }
 
-inline PassRefPtr<Element> SliderThumbElement::cloneElementWithoutAttributesAndChildren() const
+inline PassRefPtr<Element> SliderThumbElement::cloneElementWithoutAttributesAndChildren()
 {
     return create(document());
 }
@@ -108,6 +119,50 @@ inline SliderThumbElement* toSliderThumbElement(Node* node)
     ASSERT(!node || node->isHTMLElement());
     return static_cast<SliderThumbElement*>(node);
 }
+
+// This always return a valid pointer.
+// An assertion fails if the specified node is not a range input.
+SliderThumbElement* sliderThumbElementOf(Node*);
+
+// --------------------------------
+
+class RenderSliderThumb : public RenderBlock {
+public:
+    RenderSliderThumb(Node*);
+    void updateAppearance(RenderStyle* parentStyle);
+
+private:
+    virtual bool isSliderThumb() const;
+    virtual void layout();
+};
+
+// --------------------------------
+
+class TrackLimiterElement : public HTMLDivElement {
+public:
+    static PassRefPtr<TrackLimiterElement> create(Document*);
+
+private:
+    TrackLimiterElement(Document*);
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual const AtomicString& shadowPseudoId() const;
+};
+
+// This always return a valid pointer.
+// An assertion fails if the specified node is not a range input.
+TrackLimiterElement* trackLimiterElementOf(Node*);
+
+// --------------------------------
+
+class SliderContainerElement : public HTMLDivElement {
+public:
+    static PassRefPtr<SliderContainerElement> create(Document*);
+
+private:
+    SliderContainerElement(Document*);
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual const AtomicString& shadowPseudoId() const;
+};
 
 }
 

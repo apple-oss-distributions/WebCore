@@ -26,13 +26,12 @@
 #include "config.h"
 #include "JSCustomXPathNSResolver.h"
 
-#if ENABLE(XPATH)
-
 #include "Console.h"
 #include "Document.h"
 #include "ExceptionCode.h"
 #include "Frame.h"
 #include "JSDOMWindowCustom.h"
+#include "JSMainThreadExecState.h"
 #include "SecurityOrigin.h"
 #include <runtime/JSLock.h>
 
@@ -68,7 +67,7 @@ String JSCustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
 {
     ASSERT(m_customResolver);
 
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(JSDOMWindowBase::commonJSGlobalData());
 
     ExecState* exec = m_globalObject->globalExec();
         
@@ -76,10 +75,10 @@ String JSCustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
     CallData callData;
     CallType callType = getCallData(function, callData);
     if (callType == CallTypeNone) {
-        callType = m_customResolver->getCallData(callData);
+        callType = m_customResolver->methodTable()->getCallData(m_customResolver, callData);
         if (callType == CallTypeNone) {
             // FIXME: Pass actual line number and source URL.
-            m_globalObject->impl()->console()->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, "XPathNSResolver does not have a lookupNamespaceURI method.", 0, String());
+            m_globalObject->impl()->console()->addMessage(JSMessageSource, LogMessageType, ErrorMessageLevel, "XPathNSResolver does not have a lookupNamespaceURI method.");
             return String();
         }
         function = m_customResolver;
@@ -91,7 +90,7 @@ String JSCustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
     args.append(jsString(exec, prefix));
 
     m_globalObject->globalData().timeoutChecker.start();
-    JSValue retval = JSC::call(exec, function, callType, callData, m_customResolver, args);
+    JSValue retval = JSMainThreadExecState::call(exec, function, callType, callData, m_customResolver, args);
     m_globalObject->globalData().timeoutChecker.stop();
 
     String result;
@@ -99,7 +98,7 @@ String JSCustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
         reportCurrentException(exec);
     else {
         if (!retval.isUndefinedOrNull())
-            result = ustringToString(retval.toString(exec));
+            result = ustringToString(retval.toString(exec)->value(exec));
     }
 
     Document::updateStyleForAllDocuments();
@@ -108,5 +107,3 @@ String JSCustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(XPATH)

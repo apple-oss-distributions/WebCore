@@ -51,14 +51,22 @@ StyleRareInheritedData::StyleRareInheritedData()
     , textEmphasisMark(TextEmphasisMarkNone)
     , textEmphasisPosition(TextEmphasisPositionOver)
     , m_lineBoxContain(RenderStyle::initialLineBoxContain())
+    , m_imageRendering(RenderStyle::initialImageRendering())
+    , m_lineSnap(RenderStyle::initialLineSnap())
+    , m_lineAlign(RenderStyle::initialLineAlign())
     , touchCalloutEnabled(RenderStyle::initialTouchCalloutEnabled())
     , useTouchOverflowScrolling(RenderStyle::initialUseTouchOverflowScrolling())
-    , tapHighlightColor(RenderStyle::initialTapHighlightColor())
     , compositionFillColor(RenderStyle::initialCompositionFillColor())
     , compositionFrameColor(RenderStyle::initialCompositionFrameColor())
     , textSizeAdjust(RenderStyle::initialTextSizeAdjust())
+#if ENABLE(OVERFLOW_SCROLLING)
+    , useTouchOverflowScrolling(RenderStyle::initialUseTouchOverflowScrolling())
+#endif
     , hyphenationLimitBefore(-1)
     , hyphenationLimitAfter(-1)
+    , hyphenationLimitLines(-1)
+    , m_lineGrid(RenderStyle::initialLineGrid())
+    , tapHighlightColor(RenderStyle::initialTapHighlightColor())
 {
 }
 
@@ -68,6 +76,9 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , textStrokeWidth(o.textStrokeWidth)
     , textFillColor(o.textFillColor)
     , textEmphasisColor(o.textEmphasisColor)
+    , visitedLinkTextStrokeColor(o.visitedLinkTextStrokeColor)
+    , visitedLinkTextFillColor(o.visitedLinkTextFillColor)
+    , visitedLinkTextEmphasisColor(o.visitedLinkTextEmphasisColor)
     , textShadow(o.textShadow ? adoptPtr(new ShadowData(*o.textShadow)) : nullptr)
     , highlight(o.highlight)
     , cursorData(o.cursorData)
@@ -90,17 +101,25 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , textEmphasisMark(o.textEmphasisMark)
     , textEmphasisPosition(o.textEmphasisPosition)
     , m_lineBoxContain(o.m_lineBoxContain)
+    , m_imageRendering(o.m_imageRendering)
+    , m_lineSnap(o.m_lineSnap)
+    , m_lineAlign(o.m_lineAlign)
     , touchCalloutEnabled(o.touchCalloutEnabled)
     , useTouchOverflowScrolling(o.useTouchOverflowScrolling)
-    , tapHighlightColor(o.tapHighlightColor)
     , compositionFillColor(o.compositionFillColor)
     , compositionFrameColor(o.compositionFrameColor)
     , textSizeAdjust(o.textSizeAdjust)
+#if ENABLE(OVERFLOW_SCROLLING)
+    , useTouchOverflowScrolling(o.useTouchOverflowScrolling)
+#endif
     , hyphenationString(o.hyphenationString)
     , hyphenationLimitBefore(o.hyphenationLimitBefore)
     , hyphenationLimitAfter(o.hyphenationLimitAfter)
+    , hyphenationLimitLines(o.hyphenationLimitLines)
     , locale(o.locale)
     , textEmphasisCustomMark(o.textEmphasisCustomMark)
+    , m_lineGrid(o.m_lineGrid)
+    , tapHighlightColor(o.tapHighlightColor)
 {
 }
 
@@ -123,6 +142,10 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && textStrokeWidth == o.textStrokeWidth
         && textFillColor == o.textFillColor
         && textEmphasisColor == o.textEmphasisColor
+        && visitedLinkTextStrokeColor == o.visitedLinkTextStrokeColor
+        && visitedLinkTextFillColor == o.visitedLinkTextFillColor
+        && visitedLinkTextEmphasisColor == o.visitedLinkTextEmphasisColor
+        && tapHighlightColor == o.tapHighlightColor
         && shadowDataEquivalent(o)
         && highlight == o.highlight
         && cursorDataEquivalent(cursorData.get(), o.cursorData.get())
@@ -136,6 +159,9 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && wordWrap == o.wordWrap
         && nbspMode == o.nbspMode
         && khtmlLineBreak == o.khtmlLineBreak
+#if ENABLE(OVERFLOW_SCROLLING)
+        && useTouchOverflowScrolling == o.useTouchOverflowScrolling
+#endif
         && textSizeAdjust == o.textSizeAdjust
         && resize == o.resize
         && userSelect == o.userSelect
@@ -144,11 +170,11 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && hyphens == o.hyphens
         && hyphenationLimitBefore == o.hyphenationLimitBefore
         && hyphenationLimitAfter == o.hyphenationLimitAfter
+        && hyphenationLimitLines == o.hyphenationLimitLines
         && textEmphasisFill == o.textEmphasisFill
         && textEmphasisMark == o.textEmphasisMark
         && textEmphasisPosition == o.textEmphasisPosition
         && m_lineBoxContain == o.m_lineBoxContain
-        && tapHighlightColor == o.tapHighlightColor
         && touchCalloutEnabled == o.touchCalloutEnabled
         && useTouchOverflowScrolling == o.useTouchOverflowScrolling
         && compositionFillColor == o.compositionFillColor
@@ -156,7 +182,11 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && hyphenationString == o.hyphenationString
         && locale == o.locale
         && textEmphasisCustomMark == o.textEmphasisCustomMark
-        && *quotes == *o.quotes;
+        && QuotesData::equal(quotes.get(), o.quotes.get())
+        && m_lineGrid == o.m_lineGrid
+        && m_imageRendering == o.m_imageRendering
+        && m_lineSnap == o.m_lineSnap
+        && m_lineAlign == o.m_lineAlign;
 }
 
 bool StyleRareInheritedData::shadowDataEquivalent(const StyleRareInheritedData& o) const

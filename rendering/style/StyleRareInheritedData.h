@@ -59,6 +59,10 @@ public:
     float textStrokeWidth;
     Color textFillColor;
     Color textEmphasisColor;
+    
+    Color visitedLinkTextStrokeColor;
+    Color visitedLinkTextFillColor;
+    Color visitedLinkTextEmphasisColor;    
 
     OwnPtr<ShadowData> textShadow; // Our text shadow information for shadowed text drawing.
     AtomicString highlight; // Apple-specific extension for custom highlight rendering.
@@ -86,9 +90,16 @@ public:
     unsigned textEmphasisMark : 3; // TextEmphasisMark
     unsigned textEmphasisPosition : 1; // TextEmphasisPosition
     unsigned m_lineBoxContain: 7; // LineBoxContain
+    // CSS Image Values Level 3
+    unsigned m_imageRendering : 2; // EImageRendering
+    unsigned m_lineSnap : 2; // LineSnap
+    unsigned m_lineAlign : 1; // LineAlign
+#if ENABLE(OVERFLOW_SCROLLING)
+    unsigned useTouchOverflowScrolling: 1;
+#endif
+
     unsigned touchCalloutEnabled : 1;
     unsigned useTouchOverflowScrolling: 1;
-    Color tapHighlightColor;
     Color compositionFillColor;
     Color compositionFrameColor;
     TextSizeAdjustment textSizeAdjust; // An Apple extension to an Apple extension.
@@ -96,11 +107,16 @@ public:
     AtomicString hyphenationString;
     short hyphenationLimitBefore;
     short hyphenationLimitAfter;
+    short hyphenationLimitLines;
 
     AtomicString locale;
 
     AtomicString textEmphasisCustomMark;
     RefPtr<QuotesData> quotes;
+    
+    AtomicString m_lineGrid;
+
+    Color tapHighlightColor;
 
 private:
     StyleRareInheritedData();

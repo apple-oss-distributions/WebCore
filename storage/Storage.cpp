@@ -26,8 +26,6 @@
 #include "config.h"
 #include "Storage.h"
 
-#if ENABLE(DOM_STORAGE)
-
 #include "Frame.h"
 #include "Page.h"
 #include "Settings.h"
@@ -43,39 +41,43 @@ PassRefPtr<Storage> Storage::create(Frame* frame, PassRefPtr<StorageArea> storag
 }
 
 Storage::Storage(Frame* frame, PassRefPtr<StorageArea> storageArea)
-    : m_frame(frame)
+    : DOMWindowProperty(frame)
     , m_storageArea(storageArea)
 {
     ASSERT(m_frame);
     ASSERT(m_storageArea);
+    if (m_storageArea)
+        m_storageArea->incrementAccessCount();
 }
 
 Storage::~Storage()
 {
+    if (m_storageArea)
+        m_storageArea->decrementAccessCount();
 }
 
 unsigned Storage::length() const
 {
-    if (!m_frame || !m_frame->page() || m_frame->page()->settings()->privateBrowsingEnabled())
+    if (!m_frame || !m_frame->page() || m_storageArea->disabledByPrivateBrowsingInFrame(m_frame))
         return 0;
 
-    return m_storageArea->length();
+    return m_storageArea->length(m_frame);
 }
 
 String Storage::key(unsigned index) const
 {
-    if (!m_frame || !m_frame->page() || m_frame->page()->settings()->privateBrowsingEnabled())
+    if (!m_frame || !m_frame->page() || m_storageArea->disabledByPrivateBrowsingInFrame(m_frame))
         return String();
 
-    return m_storageArea->key(index);
+    return m_storageArea->key(index, m_frame);
 }
 
 String Storage::getItem(const String& key) const
 {
-    if (!m_frame || !m_frame->page() || m_frame->page()->settings()->privateBrowsingEnabled())
+    if (!m_frame || !m_frame->page() || m_storageArea->disabledByPrivateBrowsingInFrame(m_frame))
         return String();
 
-    return m_storageArea->getItem(key);
+    return m_storageArea->getItem(key, m_frame);
 }
 
 void Storage::setItem(const String& key, const String& value, ExceptionCode& ec)
@@ -105,12 +107,10 @@ void Storage::clear()
 
 bool Storage::contains(const String& key) const
 {
-    if (!m_frame || !m_frame->page() || m_frame->page()->settings()->privateBrowsingEnabled())
+    if (!m_frame || !m_frame->page() || m_storageArea->disabledByPrivateBrowsingInFrame(m_frame))
         return false;
 
-    return m_storageArea->contains(key);
+    return m_storageArea->contains(key, m_frame);
 }
 
 }
-
-#endif // ENABLE(DOM_STORAGE)

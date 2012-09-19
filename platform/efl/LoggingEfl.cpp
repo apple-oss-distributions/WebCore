@@ -23,12 +23,14 @@
 #include "config.h"
 #include "Logging.h"
 
+#if !LOG_DISABLED
+
 #include "PlatformString.h"
 #include <Eina.h>
 
 namespace WebCore {
 
-void InitializeLoggingChannelsIfNecessary()
+void initializeLoggingChannelsIfNecessary()
 {
     static bool didInitializeLoggingChannels = false;
     if (didInitializeLoggingChannels)
@@ -62,3 +64,5 @@ void InitializeLoggingChannelsIfNecessary()
 }
 
 }
+
+#endif // !LOG_DISABLED

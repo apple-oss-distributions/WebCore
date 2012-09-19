@@ -46,7 +46,7 @@
 #endif
 
 #if USE(SOUP)
-#include <GRefPtr.h>
+#include <wtf/gobject/GRefPtr.h>
 #define LIBSOUP_USE_UNSTABLE_REQUEST_API
 #include <libsoup/soup-request.h>
 #include <libsoup/soup.h>
@@ -61,21 +61,12 @@ class QNetworkReplyHandler;
 #endif
 
 #if PLATFORM(MAC)
-#ifdef __OBJC__
-@class NSURLAuthenticationChallenge;
-@class NSURLConnection;
-#else
-class NSURLAuthenticationChallenge;
-class NSURLConnection;
-#endif
+OBJC_CLASS NSURLAuthenticationChallenge;
+OBJC_CLASS NSURLConnection;
 #endif
 
 #ifndef __OBJC__
 class NSObject;
-#endif
-
-#if PLATFORM(ANDROID)
-#include "ResourceLoaderAndroid.h"
 #endif
 
 // The allocations and releases in ResourceHandleInternal are
@@ -120,7 +111,6 @@ namespace WebCore {
             , m_buffer(0)
             , m_bodySize(0)
             , m_bodyDataSent(0)
-            , m_gotChunkHandler(0)
 #endif
 #if PLATFORM(QT)
             , m_job(0)
@@ -198,11 +188,12 @@ namespace WebCore {
         GRefPtr<SoupRequest> m_soupRequest;
         GRefPtr<GInputStream> m_inputStream;
         GRefPtr<GCancellable> m_cancellable;
+        GRefPtr<GAsyncResult> m_deferredResult;
         char* m_buffer;
         unsigned long m_bodySize;
         unsigned long m_bodyDataSent;
         RefPtr<NetworkingContext> m_context;
-        gulong m_gotChunkHandler;
+        SoupSession* soupSession();
 #endif
 #if PLATFORM(QT)
         QNetworkReplyHandler* m_job;
@@ -213,9 +204,6 @@ namespace WebCore {
         // We need to keep a reference to the original challenge to be able to cancel it.
         // It is almost identical to m_currentWebChallenge.nsURLAuthenticationChallenge(), but has a different sender.
         NSURLAuthenticationChallenge *m_currentMacChallenge;
-#endif
-#if PLATFORM(ANDROID)
-        RefPtr<ResourceLoaderAndroid> m_loader;
 #endif
         AuthenticationChallenge m_currentWebChallenge;
 

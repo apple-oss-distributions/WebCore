@@ -33,8 +33,6 @@
 
 #import <Foundation/Foundation.h>
 
-#import "RuntimeApplicationChecksIPhone.h"
-#include <CoreFoundation/CFPriv.h>
 
 @interface NSURLRequest (WebNSURLRequestDetails)
 - (NSArray *)contentDispositionEncodingFallbackArray;
@@ -127,17 +125,6 @@ void ResourceRequest::doUpdateResourceRequest()
             m_httpBody = formData;
 }
 
-static void applyFacebookTouchHDURLQuirkIfNecessary(NSMutableURLRequest *nsRequest)
-{
-    if (!applicationIsFacebookTouchHD() || _CFExecutableLinkedOnOrAfter(CFSystemVersionTelluride))
-        return;
-
-    NSString *urlString = [[nsRequest URL] absoluteString];
-    NSRange range = [urlString rangeOfString:@"http://local//" options:NSAnchoredSearch];
-    if (range.location != NSNotFound)
-        [nsRequest setURL:[NSURL URLWithString:[urlString stringByReplacingCharactersInRange:range withString:@"http://local://"]]];
-}
-
 void ResourceRequest::doUpdatePlatformRequest()
 {
     if (isNull()) {
@@ -152,12 +139,14 @@ void ResourceRequest::doUpdatePlatformRequest()
     else
         nsRequest = [[NSMutableURLRequest alloc] initWithURL:url()];
 
-    applyFacebookTouchHDURLQuirkIfNecessary(nsRequest);
 
     if (ResourceRequest::httpPipeliningEnabled())
         wkSetHTTPPipeliningPriority([nsRequest _CFURLRequest], toHTTPPipeliningPriority(m_priority));
 
     [nsRequest setCachePolicy:(NSURLRequestCachePolicy)cachePolicy()];
+#if !defined(BUILDING_ON_SNOW_LEOPARD)
+    wkCFURLRequestAllowAllPostCaching([nsRequest _CFURLRequest]);
+#endif
 
     double timeoutInterval = ResourceRequestBase::timeoutInterval();
     if (timeoutInterval)
@@ -207,7 +196,7 @@ void ResourceRequest::applyWebArchiveHackForMail()
 
 void ResourceRequest::setStorageSession(CFURLStorageSessionRef storageSession)
 {
-    m_nsRequest = wkCopyRequestWithStorageSession(storageSession, m_nsRequest.get());
+    m_nsRequest.adoptNS(wkCopyRequestWithStorageSession(storageSession, m_nsRequest.get()));
 }
 
 #endif

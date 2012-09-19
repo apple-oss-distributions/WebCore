@@ -107,7 +107,8 @@ namespace WebCore {
         ScrollByLine,
         ScrollByPage,
         ScrollByDocument,
-        ScrollByPixel
+        ScrollByPixel,
+        ScrollByPixelVelocity
     };
 
     enum ScrollElasticity {

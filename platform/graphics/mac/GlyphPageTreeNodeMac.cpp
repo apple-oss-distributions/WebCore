@@ -41,6 +41,8 @@ namespace WebCore {
 
 static bool shouldUseCoreText(UChar* buffer, unsigned bufferLength, const SimpleFontData* fontData)
 {
+    if (fontData->platformData().isCompositeFontReference())
+        return true;
     if (fontData->platformData().widthVariant() != RegularWidth || fontData->hasVerticalGlyphs()) {
         // Ideographs don't have a vertical variant or width variants.
         for (unsigned i = 0; i < bufferLength; ++i) {
@@ -56,8 +58,8 @@ bool GlyphPage::fill(unsigned offset, unsigned length, UChar* buffer, unsigned b
 {
     bool haveGlyphs = false;
 
+    Vector<CGGlyph, 512> glyphs(bufferLength);
     if (!shouldUseCoreText(buffer, bufferLength, fontData)) {
-        Vector<CGGlyph, 512> glyphs(bufferLength);
         // We pass in either 256 or 512  UTF-16 characters
         // 256 for U+FFFF and less
         // 512 (double character surrogates) for U+10000 and above
@@ -76,11 +78,14 @@ bool GlyphPage::fill(unsigned offset, unsigned length, UChar* buffer, unsigned b
     } else {
         Vector<CGGlyph, 512> glyphs(bufferLength);
         CTFontGetVerticalGlyphsForCharacters(fontData->platformData().ctFont(), buffer, glyphs.data(), bufferLength);
+        // When buffer consists of surrogate pairs, CTFontGetVerticalGlyphsForCharacters
+        // places the glyphs at indices corresponding to the first character of each pair.
+        unsigned glyphStep = bufferLength / length;
         for (unsigned i = 0; i < length; ++i) {
-            if (!glyphs[i])
+            if (!glyphs[i * glyphStep])
                 setGlyphDataForIndex(offset + i, 0, 0);
             else {
-                setGlyphDataForIndex(offset + i, glyphs[i], fontData);
+                setGlyphDataForIndex(offset + i, glyphs[i * glyphStep], fontData);
                 haveGlyphs = true;
             }
         }

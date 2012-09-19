@@ -30,9 +30,11 @@
 #import "FileSystem.h"
 
 #import "PlatformString.h"
+//#import "WebCoreNSStringExtras.h"
+#import "WebCoreNSURLExtras.h"
+#import "WebCoreSystemInterface.h"
 #import <wtf/RetainPtr.h>
 #import <wtf/text/CString.h>
-#import <wtf/UnusedParam.h>
 
 namespace WebCore {
 
@@ -66,15 +68,5 @@ String openTemporaryFile(const String& prefix, PlatformFileHandle& platformFileH
     return String::fromUTF8(temporaryFilePath.data());
 }
 
-bool canExcludeFromBackup()
-{
-    return false;
-}
-
-bool excludeFromBackup(const String& path)
-{
-    UNUSED_PARAM(path);
-    return false;
-}
 
 } // namespace WebCore

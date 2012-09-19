@@ -34,6 +34,7 @@
 #include "SubstituteData.h"
 #include <wtf/Forward.h>
 
+
 #if HAVE(RUNLOOP_TIMER)
 #include "RunLoopTimer.h"
 #else
@@ -80,13 +81,13 @@ namespace WebCore {
         bool loadNow(ResourceRequest&);
 
         void handleEmptyLoad(const KURL&, bool forURLScheme);
-        void handleDataLoadSoon(const ResourceRequest& r);
+        void handleSubstituteDataLoadSoon(const ResourceRequest&);
 
         void startDataLoadTimer();
         void handleDataLoad(ResourceRequest&);
 
         void receivedError(const ResourceError&);
-        ResourceError interruptionForPolicyChangeError() const;
+        ResourceError interruptedForPolicyChangeError() const;
         void stopLoadingForPolicyChange();
         bool isPostOrRedirectAfterPost(const ResourceRequest& newRequest, const ResourceResponse& redirectResponse);
 
@@ -109,6 +110,7 @@ namespace WebCore {
         bool m_loadingMultipartContent;
         bool m_waitingForContentPolicy;
         double m_timeOfLastDataReceived;
+
     };
 
 }

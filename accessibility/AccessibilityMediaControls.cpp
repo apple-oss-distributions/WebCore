@@ -35,6 +35,7 @@
 
 #include "AXObjectCache.h"
 #include "HTMLInputElement.h"
+#include "HTMLMediaElement.h"
 #include "HTMLNames.h"
 #include "LocalizedStrings.h"
 #include "MediaControlElements.h"
@@ -53,37 +54,22 @@ AccessibilityMediaControl::AccessibilityMediaControl(RenderObject* renderer)
 
 PassRefPtr<AccessibilityObject> AccessibilityMediaControl::create(RenderObject* renderer)
 {
-    ASSERT(renderer->node() && renderer->node()->isMediaControlElement());
+    ASSERT(renderer->node());
 
-    Node* node = renderer->node();
-    MediaControlElementType controlType;
-
-    if (node->hasTagName(inputTag))
-        controlType = static_cast<MediaControlInputElement*>(node)->displayType();
-    else
-        controlType = static_cast<MediaControlElement*>(node)->displayType();
-
-    PassRefPtr<AccessibilityObject> obj;
-    switch (controlType) {
+    switch (mediaControlElementType(renderer->node())) {
     case MediaSlider:
-        obj = AccessibilityMediaTimeline::create(renderer);
-        break;
+        return AccessibilityMediaTimeline::create(renderer);
 
     case MediaCurrentTimeDisplay:
     case MediaTimeRemainingDisplay:
-        obj = AccessibilityMediaTimeDisplay::create(renderer);
-        break;
+        return AccessibilityMediaTimeDisplay::create(renderer);
 
     case MediaControlsPanel:
-        obj = AccessibilityMediaControlsContainer::create(renderer);
-        break;
+        return AccessibilityMediaControlsContainer::create(renderer);
 
     default:
-        obj = adoptRef(new AccessibilityMediaControl(renderer));
-        break;
+        return adoptRef(new AccessibilityMediaControl(renderer));
     }
-
-    return obj;
 }
 
 MediaControlElementType AccessibilityMediaControl::controlType() const
@@ -91,17 +77,13 @@ MediaControlElementType AccessibilityMediaControl::controlType() const
     if (!renderer() || !renderer()->node())
         return MediaTimelineContainer; // Timeline container is not accessible.
 
-    Node* node = renderer()->node();
-
-    if (node->hasTagName(inputTag))
-        return static_cast<MediaControlInputElement*>(node)->displayType();
-
-    return static_cast<MediaControlElement*>(node)->displayType();
+    return mediaControlElementType(renderer()->node());
 }
 
 String AccessibilityMediaControl::controlTypeName() const
 {
-    DEFINE_STATIC_LOCAL(const String, mediaFullscreenButtonName, ("FullscreenButton"));
+    DEFINE_STATIC_LOCAL(const String, mediaEnterFullscreenButtonName, ("EnterFullscreenButton"));
+    DEFINE_STATIC_LOCAL(const String, mediaExitFullscreenButtonName, ("ExitFullscreenButton"));
     DEFINE_STATIC_LOCAL(const String, mediaMuteButtonName, ("MuteButton"));
     DEFINE_STATIC_LOCAL(const String, mediaPlayButtonName, ("PlayButton"));
     DEFINE_STATIC_LOCAL(const String, mediaSeekBackButtonName, ("SeekBackButton"));
@@ -117,8 +99,10 @@ String AccessibilityMediaControl::controlTypeName() const
     DEFINE_STATIC_LOCAL(const String, mediaHideClosedCaptionsButtonName, ("HideClosedCaptionsButton"));
 
     switch (controlType()) {
-    case MediaFullscreenButton:
-        return mediaFullscreenButtonName;
+    case MediaEnterFullscreenButton:
+        return mediaEnterFullscreenButtonName;
+    case MediaExitFullscreenButton:
+        return mediaExitFullscreenButtonName;
     case MediaMuteButton:
         return mediaMuteButtonName;
     case MediaPlayButton:
@@ -184,7 +168,8 @@ bool AccessibilityMediaControl::accessibilityIsIgnored() const
 AccessibilityRole AccessibilityMediaControl::roleValue() const
 {
     switch (controlType()) {
-    case MediaFullscreenButton:
+    case MediaEnterFullscreenButton:
+    case MediaExitFullscreenButton:
     case MediaMuteButton:
     case MediaPlayButton:
     case MediaSeekBackButton:
@@ -242,7 +227,7 @@ bool AccessibilityMediaControlsContainer::controllingVideoElement() const
 
     MediaControlTimeDisplayElement* element = static_cast<MediaControlTimeDisplayElement*>(m_renderer->node());
 
-    return element->mediaElement()->isVideo();
+    return toParentMediaElement(element)->isVideo();
 }
 
 const String AccessibilityMediaControlsContainer::elementTypeName() const
@@ -271,9 +256,11 @@ PassRefPtr<AccessibilityObject> AccessibilityMediaTimeline::create(RenderObject*
 
 String AccessibilityMediaTimeline::valueDescription() const
 {
-    ASSERT(m_renderer->node()->hasTagName(inputTag));
+    Node* node = m_renderer->node();
+    if (!node->hasTagName(inputTag))
+        return String();
 
-    float time = static_cast<HTMLInputElement*>(m_renderer->node())->value().toFloat();
+    float time = static_cast<HTMLInputElement*>(node)->value().toFloat();
     return localizedMediaTimeDescription(time);
 }
 

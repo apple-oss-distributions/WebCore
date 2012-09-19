@@ -32,12 +32,12 @@
 
 #include "WebKitBlobBuilder.h"
 
-#include "ArrayBuffer.h"
 #include "Blob.h"
 #include "ExceptionCode.h"
 #include "File.h"
 #include "LineEnding.h"
 #include "TextEncoding.h"
+#include <wtf/ArrayBuffer.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/Vector.h>
 #include <wtf/text/AtomicString.h>
@@ -88,6 +88,8 @@ void WebKitBlobBuilder::append(const String& text, ExceptionCode& ec)
 #if ENABLE(BLOB)
 void WebKitBlobBuilder::append(ArrayBuffer* arrayBuffer)
 {
+    if (!arrayBuffer)
+        return;
     Vector<char>& buffer = getBuffer();
     size_t oldSize = buffer.size();
     buffer.append(static_cast<const char*>(arrayBuffer->data()), arrayBuffer->byteLength());
@@ -97,6 +99,8 @@ void WebKitBlobBuilder::append(ArrayBuffer* arrayBuffer)
 
 void WebKitBlobBuilder::append(Blob* blob)
 {
+    if (!blob)
+        return;
     if (blob->isFile()) {
         // If the blob is file that is not snapshoted, capture the snapshot now.
         // FIXME: This involves synchronous file operation. We need to figure out how to make it asynchronous.

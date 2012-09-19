@@ -29,6 +29,7 @@
 #include "CachedScript.h"
 #include "CachedXSLStyleSheet.h"
 #include "CachedResourceLoader.h"
+#include "CrossThreadTask.h"
 #include "Document.h"
 #include "FrameLoader.h"
 #include "FrameLoaderTypes.h"
@@ -38,8 +39,12 @@
 #include "ResourceHandle.h"
 #include "SecurityOrigin.h"
 #include "SecurityOriginHash.h"
+#include "WorkerContext.h"
+#include "WorkerLoaderProxy.h"
+#include "WorkerThread.h"
 #include <stdio.h>
 #include <wtf/CurrentTime.h>
+#include <wtf/TemporaryChange.h>
 #include <wtf/text/CString.h>
 
 #if ENABLE(DISK_IMAGE_CACHE)
@@ -61,13 +66,15 @@ static const double cDefaultDecodedDataDeletionInterval = 0;
 MemoryCache* memoryCache()
 {
     static MemoryCache* staticCache = new MemoryCache;
+    ASSERT(WebThreadIsLockedOrDisabled());
+
     return staticCache;
 }
 
 MemoryCache::MemoryCache()
     : m_disabled(false)
     , m_pruneEnabled(true)
-    , m_inPruneDeadResources(false)
+    , m_inPruneResources(false)
     , m_capacity(cDefaultCacheCapacity)
     , m_minDeadCapacity(0)
     , m_maxDeadCapacity(cDefaultCacheCapacity)
@@ -84,7 +91,7 @@ KURL MemoryCache::removeFragmentIdentifierIfNeeded(const KURL& originalURL)
     // Strip away fragment identifier from HTTP URLs.
     // Data URLs must be unmodified. For file and custom URLs clients may expect resources 
     // to be unique even when they differ by the fragment identifier only.
-    if (!originalURL.protocolInHTTPFamily())
+    if (!originalURL.protocolIsInHTTPFamily())
         return originalURL;
     KURL url = originalURL;
     url.removeFragmentIdentifier();
@@ -95,13 +102,15 @@ bool MemoryCache::add(CachedResource* resource)
 {
     if (disabled())
         return false;
-    
+
+    ASSERT(WebThreadIsLockedOrDisabled());
+
     m_resources.set(resource->url(), resource);
     resource->setInCache(true);
     
     resourceAccessed(resource);
     
-    LOG(ResourceLoading, "MemoryCache::add Added '%s', resource %p\n", resource->url().latin1().data(), resource);
+    LOG(ResourceLoading, "MemoryCache::add Added '%s', resource %p\n", resource->url().string().latin1().data(), resource);
     return true;
 }
 
@@ -112,7 +121,12 @@ void MemoryCache::revalidationSucceeded(CachedResource* revalidatingResource, co
     ASSERT(!resource->inCache());
     ASSERT(resource->isLoaded());
     ASSERT(revalidatingResource->inCache());
-    
+
+    // Calling evict() can potentially delete revalidatingResource, which we use
+    // below. This mustn't be the case since revalidation means it is loaded
+    // and so canDelete() is false.
+    ASSERT(!revalidatingResource->canDelete());
+
     evict(revalidatingResource);
 
     ASSERT(!m_resources.get(resource->url()));
@@ -127,12 +141,14 @@ void MemoryCache::revalidationSucceeded(CachedResource* revalidatingResource, co
         adjustSize(resource->hasClients(), delta);
     
     revalidatingResource->switchClientsToRevalidatedResource();
+    ASSERT(!revalidatingResource->m_deleted);
     // this deletes the revalidating resource
     revalidatingResource->clearResourceToRevalidate();
 }
 
 void MemoryCache::revalidationFailed(CachedResource* revalidatingResource)
 {
+    ASSERT(WebThreadIsLockedOrDisabled());
     LOG(ResourceLoading, "Revalidation failed for %p", revalidatingResource);
     ASSERT(revalidatingResource->resourceToRevalidate());
     revalidatingResource->clearResourceToRevalidate();
@@ -140,6 +156,7 @@ void MemoryCache::revalidationFailed(CachedResource* revalidatingResource)
 
 CachedResource* MemoryCache::resourceForURL(const KURL& resourceURL)
 {
+    ASSERT(WebThreadIsLockedOrDisabled());
     KURL url = removeFragmentIdentifierIfNeeded(resourceURL);
     CachedResource* resource = m_resources.get(url);
     bool wasPurgeable = MemoryCache::shouldMakeResourcePurgeableOnEviction() && resource && resource->isPurgeable();
@@ -240,6 +257,10 @@ void MemoryCache::pruneLiveResourcesToPercentage(float prunePercentage)
 
 void MemoryCache::pruneLiveResourcesToSize(unsigned targetSize, bool critical)
 {
+    if (m_inPruneResources)
+        return;
+    TemporaryChange<bool> reentrancyProtector(m_inPruneResources, true);
+
     double currentTime = FrameView::currentPaintTimeStamp();
     if (!currentTime) // In case prune is called directly, outside of a Frame paint.
         currentTime = WTF::currentTime();
@@ -302,29 +323,30 @@ void MemoryCache::pruneDeadResourcesToPercentage(float prunePercentage)
 }
 
 void MemoryCache::pruneDeadResourcesToSize(unsigned targetSize)
-{ 
+{
+    if (m_inPruneResources)
+        return;
+    TemporaryChange<bool> reentrancyProtector(m_inPruneResources, true);
+
     int size = m_allResources.size();
  
-    if (!m_inPruneDeadResources) {
-        // See if we have any purged resources we can evict.
-        for (int i = 0; i < size; i++) {
-            CachedResource* current = m_allResources[i].m_tail;
-            while (current) {
-                CachedResource* prev = current->m_prevInAllResourcesList;
-                if (current->wasPurged()) {
-                    ASSERT(!current->hasClients());
-                    ASSERT(!current->isPreloaded());
-                    evict(current);
-                }
-                current = prev;
+    // See if we have any purged resources we can evict.
+    for (int i = 0; i < size; i++) {
+        CachedResource* current = m_allResources[i].m_tail;
+        while (current) {
+            CachedResource* prev = current->m_prevInAllResourcesList;
+            if (current->wasPurged()) {
+                ASSERT(!current->hasClients());
+                ASSERT(!current->isPreloaded());
+                evict(current);
             }
+            current = prev;
         }
-        if (targetSize && m_deadSize <= targetSize)
-            return;
     }
-    
+    if (targetSize && m_deadSize <= targetSize)
+        return;
+
     bool canShrinkLRULists = true;
-    m_inPruneDeadResources = true;
     for (int i = size - 1; i >= 0; i--) {
         // Remove from the tail, since this is the least frequently accessed of the objects.
         CachedResource* current = m_allResources[i].m_tail;
@@ -338,10 +360,8 @@ void MemoryCache::pruneDeadResourcesToSize(unsigned targetSize)
                 // LRU list in m_allResources.
                 current->destroyDecodedData();
                 
-                if (targetSize && m_deadSize <= targetSize) {
-                    m_inPruneDeadResources = false;
+                if (targetSize && m_deadSize <= targetSize)
                     return;
-                }
             }
             current = prev;
         }
@@ -354,15 +374,8 @@ void MemoryCache::pruneDeadResourcesToSize(unsigned targetSize)
                 if (!makeResourcePurgeable(current))
                     evict(current);
 
-                // If evict() caused pruneDeadResources() to be re-entered, bail out. This can happen when removing an
-                // SVG CachedImage that has subresources.
-                if (!m_inPruneDeadResources)
+                if (targetSize && m_deadSize <= targetSize)
                     return;
-
-                if (targetSize && m_deadSize <= targetSize) {
-                    m_inPruneDeadResources = false;
-                    return;
-                }
             }
             current = prev;
         }
@@ -374,7 +387,6 @@ void MemoryCache::pruneDeadResourcesToSize(unsigned targetSize)
         else if (canShrinkLRULists)
             m_allResources.resize(i);
     }
-    m_inPruneDeadResources = false;
 }
 
 #if ENABLE(DISK_IMAGE_CACHE)
@@ -449,7 +461,8 @@ bool MemoryCache::makeResourcePurgeable(CachedResource* resource)
 
 void MemoryCache::evict(CachedResource* resource)
 {
-    LOG(ResourceLoading, "Evicting resource %p for '%s' from cache", resource, resource->url().latin1().data());
+    ASSERT(WebThreadIsLockedOrDisabled());
+    LOG(ResourceLoading, "Evicting resource %p for '%s' from cache", resource, resource->url().string().latin1().data());
     // The resource may have already been removed by someone other than our caller,
     // who needed a fresh copy for a reload. See <http://bugs.webkit.org/show_bug.cgi?id=12479#c6>.
     if (resource->inCache()) {
@@ -567,7 +580,7 @@ void MemoryCache::insertInLRUList(CachedResource* resource)
     if (!resource->m_nextInAllResourcesList)
         list->m_tail = resource;
         
-#ifndef NDEBUG
+#if !ASSERT_DISABLED
     // Verify that we are in now in the list like we should be.
     list = lruListFor(resource);
     bool found = false;
@@ -623,7 +636,7 @@ void MemoryCache::getOriginsWithCache(SecurityOriginSet& origins)
 {
     CachedResourceMap::iterator e = m_resources.end();
     for (CachedResourceMap::iterator it = m_resources.begin(); it != e; ++it)
-        origins.add(SecurityOrigin::create(KURL(KURL(), it->second->url())));
+        origins.add(SecurityOrigin::createFromString(it->second->url()));
 }
 
 void MemoryCache::removeFromLiveDecodedResourcesList(CachedResource* resource)
@@ -633,7 +646,7 @@ void MemoryCache::removeFromLiveDecodedResourcesList(CachedResource* resource)
         return;
     resource->m_inLiveDecodedResourcesList = false;
 
-#ifndef NDEBUG
+#if !ASSERT_DISABLED
     // Verify that we are in fact in this list.
     bool found = false;
     for (CachedResource* current = m_liveDecodedResources.m_head; current; current = current->m_nextInLiveResourcesList) {
@@ -679,7 +692,7 @@ void MemoryCache::insertInLiveDecodedResourcesList(CachedResource* resource)
     if (!resource->m_nextInLiveResourcesList)
         m_liveDecodedResources.m_tail = resource;
         
-#ifndef NDEBUG
+#if !ASSERT_DISABLED
     // Verify that we are in now in the list like we should be.
     bool found = false;
     for (CachedResource* current = m_liveDecodedResources.m_head; current; current = current->m_nextInLiveResourcesList) {
@@ -714,6 +727,28 @@ void MemoryCache::adjustSize(bool live, int delta)
         ASSERT(delta >= 0 || ((int)m_deadSize + delta >= 0));
         m_deadSize += delta;
     }
+}
+
+
+void MemoryCache::removeUrlFromCache(ScriptExecutionContext* context, const String& urlString) 
+{
+#if ENABLE(WORKERS)
+    if (context->isWorkerContext()) {
+      WorkerContext* workerContext = static_cast<WorkerContext*>(context);
+      workerContext->thread()->workerLoaderProxy().postTaskToLoader(
+          createCallbackTask(&removeUrlFromCacheImpl, urlString));
+      return;
+    }
+#endif
+    removeUrlFromCacheImpl(context, urlString);
+}
+
+void MemoryCache::removeUrlFromCacheImpl(ScriptExecutionContext*, const String& urlString)
+{
+    KURL url(KURL(), urlString);
+
+    if (CachedResource* resource = memoryCache()->resourceForURL(url))
+        memoryCache()->remove(resource);
 }
 
 void MemoryCache::TypeStatistic::addResource(CachedResource* o)
@@ -786,6 +821,22 @@ void MemoryCache::evictResources()
     setDisabled(true);
     setDisabled(false);
 }
+
+void MemoryCache::prune()
+{
+    if (m_liveSize + m_deadSize <= m_capacity && m_maxDeadCapacity && m_deadSize <= m_maxDeadCapacity) // Fast path.
+        return;
+        
+    pruneDeadResources(); // Prune dead first, in case it was "borrowing" capacity from live.
+    pruneLiveResources();
+}
+
+void MemoryCache::pruneToPercentage(float targetPercentLive)
+{
+    pruneDeadResourcesToPercentage(targetPercentLive); // Prune dead first, in case it was "borrowing" capacity from live.
+    pruneLiveResourcesToPercentage(targetPercentLive);
+}
+
 
 #ifndef NDEBUG
 void MemoryCache::dumpStats()

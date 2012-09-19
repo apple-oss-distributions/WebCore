@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2006 Lars Knoll <lars@trolltech.com>
- * Copyright (C) 2007 Apple Inc. All rights reserved.
+ * Copyright (C) 2007, 2011, 2012 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,9 +24,11 @@
 
 #include "LineBreakIteratorPoolICU.h"
 #include "PlatformString.h"
+#include <wtf/Atomics.h>
 
 #include "WebCoreThread.h"
 
+using namespace WTF;
 using namespace std;
 
 namespace WebCore {
@@ -54,14 +56,6 @@ static TextBreakIterator* setUpIterator(bool& createdIterator, TextBreakIterator
     return iterator;
 }
 
-TextBreakIterator* characterBreakIterator(const UChar* string, int length)
-{
-    static bool createdCharacterBreakIterator = false;
-    static TextBreakIterator* staticCharacterBreakIterator;
-    return setUpIterator(createdCharacterBreakIterator,
-        staticCharacterBreakIterator, UBRK_CHARACTER, string, length);
-}
-
 TextBreakIterator* wordBreakIterator(const UChar* string, int length)
 {
     static bool createdWordBreakIterator = false;
@@ -73,6 +67,8 @@ TextBreakIterator* wordBreakIterator(const UChar* string, int length)
 TextBreakIterator* acquireLineBreakIterator(const UChar* string, int length, const AtomicString& locale)
 {
     UBreakIterator* iterator = LineBreakIteratorPool::sharedPool().take(locale);
+    if (!iterator)
+        return 0;
 
     UErrorCode setTextStatus = U_ZERO_ERROR;
     ubrk_setText(iterator, string, length, &setTextStatus);
@@ -89,6 +85,21 @@ void releaseLineBreakIterator(TextBreakIterator* iterator)
     ASSERT_ARG(iterator, iterator);
 
     LineBreakIteratorPool::sharedPool().put(reinterpret_cast<UBreakIterator*>(iterator));
+}
+
+static TextBreakIterator* nonSharedCharacterBreakIterator;
+
+NonSharedCharacterBreakIterator::NonSharedCharacterBreakIterator(const UChar* buffer, int length)
+{
+    m_iterator = nonSharedCharacterBreakIterator;
+    bool createdIterator = m_iterator && weakCompareAndSwap(reinterpret_cast<void**>(&nonSharedCharacterBreakIterator), m_iterator, 0);
+    m_iterator = setUpIterator(createdIterator, m_iterator, UBRK_CHARACTER, buffer, length);
+}
+
+NonSharedCharacterBreakIterator::~NonSharedCharacterBreakIterator()
+{
+    if (!weakCompareAndSwap(reinterpret_cast<void**>(&nonSharedCharacterBreakIterator), 0, m_iterator))
+        ubrk_close(reinterpret_cast<UBreakIterator*>(m_iterator));
 }
 
 TextBreakIterator* sentenceBreakIterator(const UChar* string, int length)
@@ -137,6 +148,12 @@ int textBreakCurrent(TextBreakIterator* iterator)
 bool isTextBreak(TextBreakIterator* iterator, int position)
 {
     return ubrk_isBoundary(reinterpret_cast<UBreakIterator*>(iterator), position);
+}
+
+bool isWordTextBreak(TextBreakIterator* iterator)
+{
+    int ruleStatus = ubrk_getRuleStatus(reinterpret_cast<UBreakIterator*>(iterator));
+    return ruleStatus != UBRK_WORD_NONE;
 }
 
 

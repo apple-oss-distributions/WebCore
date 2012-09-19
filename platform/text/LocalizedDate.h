@@ -27,6 +27,7 @@
 #define LocalizedDate_h
 
 #include "DateComponents.h"
+#include <wtf/Vector.h>
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
@@ -49,6 +50,22 @@ String formatLocalizedDate(const DateComponents& dateComponents);
 // Maximum width for a formatted date string with a specified font.
 float maximumWidthForDateType(DateComponents::Type, const Font&);
 
+#if ENABLE(CALENDAR_PICKER)
+String localizedDateFormatText();
+
+// Returns a vector of string of which size is 12. The first item is a
+// localized string of January, and the last item is a localized
+// string of December. These strings should not be abbreviations.
+const Vector<String>& monthLabels();
+
+// Returns a vector of string of which size is 7. The first item is a
+// localized short string of Monday, and the last item is a localized
+// short string of Saturday. These strings should be short.
+const Vector<String>& weekDayShortLabels();
+
+// The first day of a week. 0 is Sunday, and 6 is Saturday.
+unsigned firstDayOfWeek();
+#endif
 } // namespace WebCore
 
 #endif // LocalizedDate_h

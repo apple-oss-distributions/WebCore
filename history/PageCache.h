@@ -60,6 +60,10 @@ namespace WebCore {
 
         void markPagesForVistedLinkStyleRecalc();
 
+        // Will mark all cached pages associated with the given page as needing style recalc.
+        void markPagesForFullStyleRecalc(Page*);
+        void pruneToCapacityNow(int capacity);
+
 #if USE(ACCELERATED_COMPOSITING)
         bool shouldClearBackingStores() const { return m_shouldClearBackingStores; }
         void setShouldClearBackingStores(bool flag) { m_shouldClearBackingStores = flag; }
@@ -79,7 +83,7 @@ namespace WebCore {
         void prune();
 
         void autorelease(PassRefPtr<CachedPage>);
-        void releaseAutoreleasedPagesNowOrReschedule(Timer<PageCache>*);
+        void releaseAutoreleasedPagesNowDueToTimer(Timer<PageCache>*);
 
         int m_capacity;
         int m_size;

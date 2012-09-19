@@ -9,6 +9,7 @@
  * Copyright (C) 2005 Alexey Proskuryakov <ap@nypop.com>
  * Copyright (C) 2008 Nokia Corporation and/or its subsidiary(-ies)
  * Copyright (C) 2008 Eric Seidel <eric@webkit.org>
+ * Copyright (C) 2008 Google Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -30,8 +31,8 @@
 #include "Frame.h"
 
 #include "ApplyStyleCommand.h"
+#include "BackForwardController.h"
 #include "CSSComputedStyleDeclaration.h"
-#include "CSSMutableStyleDeclaration.h"
 #include "CSSProperty.h"
 #include "CSSPropertyNames.h"
 #include "CachedCSSStyleSheet.h"
@@ -45,6 +46,7 @@
 #include "EventNames.h"
 #include "FloatQuad.h"
 #include "FocusController.h"
+#include "FrameDestructionObserver.h"
 #include "FrameLoader.h"
 #include "FrameLoaderClient.h"
 #include "FrameView.h"
@@ -57,15 +59,16 @@
 #include "HTMLNames.h"
 #include "HTMLTableCellElement.h"
 #include "HitTestResult.h"
+#include "ImageBuffer.h"
+#include "InspectorInstrumentation.h"
 #include "Logging.h"
 #include "MediaFeatureNames.h"
-#include "MediaStreamFrameController.h"
 #include "Navigator.h"
 #include "NodeList.h"
 #include "Page.h"
+#include "PageCache.h"
 #include "PageGroup.h"
 #include "RegularExpression.h"
-#include "RenderLayer.h"
 #include "RenderPart.h"
 #include "RenderTableCell.h"
 #include "RenderTextControl.h"
@@ -76,10 +79,12 @@
 #include "ScriptSourceCode.h"
 #include "ScriptValue.h"
 #include "Settings.h"
+#include "StylePropertySet.h"
 #include "TextIterator.h"
 #include "TextResourceDecoder.h"
 #include "UserContentURLPattern.h"
 #include "UserTypingGestureIndicator.h"
+#include "WebKitFontFamilyNames.h"
 #include "XMLNSNames.h"
 #include "XMLNames.h"
 #include "htmlediting.h"
@@ -117,7 +122,7 @@
 #include "SVGDocumentExtensions.h"
 #endif
 
-#if ENABLE(TILED_BACKING_STORE)
+#if USE(TILED_BACKING_STORE)
 #include "TiledBackingStore.h"
 #endif
 
@@ -129,9 +134,7 @@ using namespace HTMLNames;
 
 const int SCROLL_FREQUENCY = 1000/60;
 
-#ifndef NDEBUG
-static WTF::RefCountedLeakCounter frameCounter("Frame");
-#endif
+DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, frameCounter, ("Frame"));
 
 static inline Frame* parentFromOwnerElement(HTMLFrameOwnerElement* ownerElement)
 {
@@ -175,19 +178,15 @@ inline Frame::Frame(Page* page, HTMLFrameOwnerElement* ownerElement, FrameLoader
     , m_forcedLayoutCount(0)
     , m_parseDuration(0.0)
     , m_layoutDuration(0.0)
-    , m_lifeSupportTimer(this, &Frame::lifeSupportTimerFired)
     , m_pageZoomFactor(parentPageZoomFactor(this))
     , m_textZoomFactor(parentTextZoomFactor(this))
-    , m_pageScaleFactor(1)
 #if ENABLE(ORIENTATION_EVENTS)
     , m_orientation(0)
 #endif
     , m_inViewSourceMode(false)
     , m_isDisconnected(false)
     , m_excludeFromTextSearch(false)
-#if ENABLE(MEDIA_STREAM)
-    , m_mediaStreamFrameController(RuntimeEnabledFeatures::mediaStreamEnabled() ? adoptPtr(new MediaStreamFrameController(this)) : PassOwnPtr<MediaStreamFrameController>())
-#endif
+    , m_activeDOMObjectsAndAnimationsSuspendedCount(0)
     , m_singleLineSelectionBehavior(false)
     , m_timersPausedCount(0)
 {
@@ -200,9 +199,10 @@ inline Frame::Frame(Page* page, HTMLFrameOwnerElement* ownerElement, FrameLoader
     MathMLNames::init();
     XMLNSNames::init();
     XMLNames::init();
+    WebKitFontFamilyNames::init();
 
     if (!ownerElement) {
-#if ENABLE(TILED_BACKING_STORE)
+#if USE(TILED_BACKING_STORE)
         // Top level frame only for now.
         setTiledBackingStoreEnabled(page->settings()->tiledBackingStoreEnabled());
 #endif
@@ -240,25 +240,11 @@ Frame::~Frame()
 
     // FIXME: We should not be doing all this work inside the destructor
 
-    ASSERT(!m_lifeSupportTimer.isActive());
-
 #ifndef NDEBUG
     frameCounter.decrement();
 #endif
 
     disconnectOwnerElement();
-
-    if (m_domWindow)
-        m_domWindow->disconnectFrame();
-
-#if ENABLE(MEDIA_STREAM)
-    if (m_mediaStreamFrameController)
-        m_mediaStreamFrameController->disconnectFrame();
-#endif
-
-    HashSet<DOMWindow*>::iterator end = m_liveFormerWindows.end();
-    for (HashSet<DOMWindow*>::iterator it = m_liveFormerWindows.begin(); it != end; ++it)
-        (*it)->disconnectFrame();
 
     HashSet<FrameDestructionObserver*>::iterator stop = m_destructionObservers.end();
     for (HashSet<FrameDestructionObserver*>::iterator it = m_destructionObservers.begin(); it != stop; ++it)
@@ -268,8 +254,15 @@ Frame::~Frame()
         m_view->hide();
         m_view->clearFrame();
     }
+}
 
-    ASSERT(!m_lifeSupportTimer.isActive());
+bool Frame::inScope(TreeScope* scope) const
+{
+    ASSERT(scope);
+    HTMLFrameOwnerElement* owner = document()->ownerElement();
+    // Scoping test should be done only for child frames.
+    ASSERT(owner);
+    return owner->treeScope() == scope;
 }
 
 void Frame::addDestructionObserver(FrameDestructionObserver* observer)
@@ -290,12 +283,12 @@ void Frame::setView(PassRefPtr<FrameView> view)
     if (m_view)
         m_view->detachCustomScrollbars();
 
-    // Detach the document now, so any onUnload handlers get run - if
-    // we wait until the view is destroyed, then things won't be
-    // hooked up enough for some JavaScript calls to work.
+    // Prepare for destruction now, so any unload event handlers get run and the DOMWindow is
+    // notified. If we wait until the view is destroyed, then things won't be hooked up enough for
+    // these calls to work.
     if (!view && m_doc && m_doc->attached() && !m_doc->inPageCache()) {
         // FIXME: We don't call willRemove here. Why is that OK?
-        m_doc->detach();
+        m_doc->prepareForDestruction();
     }
     
     if (m_view)
@@ -310,7 +303,7 @@ void Frame::setView(PassRefPtr<FrameView> view)
     // pulled from the back/forward cache, reset this flag.
     loader()->resetMultipleFormSubmissionProtection();
     
-#if ENABLE(TILED_BACKING_STORE)
+#if USE(TILED_BACKING_STORE)
     if (m_view && tiledBackingStore())
         m_view->setPaintsEntireContents(true);
 #endif
@@ -333,10 +326,19 @@ void Frame::setDocument(PassRefPtr<Document> newDoc)
     // Update the cached 'document' property, which is now stale.
     m_script.updateDocument();
 
-    if (m_page) {
-        m_page->updateViewportArguments();
-        if (m_page->mainFrame() == this)
-            notifyChromeClientWheelEventHandlerCountChanged();
+    if (m_doc)
+        m_doc->updateViewportArguments();
+
+    if (m_page && m_page->mainFrame() == this) {
+        notifyChromeClientWheelEventHandlerCountChanged();
+        notifyChromeClientTouchEventHandlerCountChanged();
+    }
+
+    // Suspend document if this frame was created in suspended state.
+    if (m_doc && activeDOMObjectsAndAnimationsSuspended()) {
+        m_doc->suspendScriptedAnimationControllerCallbacks();
+        m_animationController.suspendAnimationsForDocument(m_doc.get());
+        m_doc->suspendActiveDOMObjects(ActiveDOMObject::PageWillBeSuspended);
     }
 }
 
@@ -524,51 +526,11 @@ String Frame::matchLabelsAgainstElement(const Vector<String>& labels, Element* e
     // See 7538330 for one popular site that benefits from the id element check.
     // FIXME: This code is mirrored in FrameMac.mm. It would be nice to make the Mac code call the platform-agnostic
     // code, which would require converting the NSArray of NSStrings to a Vector of Strings somewhere along the way.
-    String resultFromNameAttribute = matchLabelsAgainstString(labels, element->getAttribute(nameAttr));
+    String resultFromNameAttribute = matchLabelsAgainstString(labels, element->getNameAttribute());
     if (!resultFromNameAttribute.isEmpty())
         return resultFromNameAttribute;
     
     return matchLabelsAgainstString(labels, element->getAttribute(idAttr));
-}
-    
-Color Frame::getDocumentBackgroundColor() const
-{
-    // <https://bugs.webkit.org/show_bug.cgi?id=59540> We blend the background color of
-    // the document and the body against the base background color of the frame view.
-    // Background images are unfortunately impractical to include.
-
-    // Return invalid Color objects whenever there is insufficient information.
-    if (!m_doc)
-        return Color();
-
-    Element* htmlElement = m_doc->documentElement();
-    Element* bodyElement = m_doc->body();
-
-    // start as invalid colors
-    Color htmlBackgroundColor;
-    Color bodyBackgroundColor;
-    if (htmlElement && htmlElement->renderer())
-        htmlBackgroundColor = htmlElement->renderer()->style()->visitedDependentColor(CSSPropertyBackgroundColor);
-    if (bodyElement && bodyElement->renderer())
-        bodyBackgroundColor = bodyElement->renderer()->style()->visitedDependentColor(CSSPropertyBackgroundColor);
-    
-    if (!bodyBackgroundColor.isValid()) {
-        if (!htmlBackgroundColor.isValid())
-            return Color();
-        return view()->baseBackgroundColor().blend(htmlBackgroundColor);
-    }
-    
-    if (!htmlBackgroundColor.isValid())
-        return view()->baseBackgroundColor().blend(bodyBackgroundColor);
-    
-    // We take the aggregate of the base background color
-    // the <html> background color, and the <body>
-    // background color to find the document color. The
-    // addition of the base background color is not
-    // technically part of the document background, but it
-    // otherwise poses problems when the aggregate is not
-    // fully opaque.
-    return view()->baseBackgroundColor().blend(htmlBackgroundColor).blend(bodyBackgroundColor);
 }
 
 void Frame::scrollOverflowLayer(RenderLayer *layer, const IntRect &visibleRect, const IntRect &exposeRect)
@@ -714,7 +676,7 @@ int Frame::checkOverflowScroll(OverflowScrollAction action)
         layer->scrollToOffset(layer->scrollXOffset() + deltaX, layer->scrollYOffset() + deltaY);
 
         // handle making selection
-        VisiblePosition visiblePos(renderer->positionForCoordinates(selectionPos.x(), selectionPos.y()));
+        VisiblePosition visiblePos(renderer->positionForPoint(selectionPos));
         if (visiblePos.isNotNull()) {
             VisibleSelection sel = selection()->selection();
             sel.setExtent(visiblePos);
@@ -732,7 +694,7 @@ int Frame::checkOverflowScroll(OverflowScrollAction action)
     return scrollType;
 }
 
-void Frame::setPrinting(bool printing, const FloatSize& pageSize, float maximumShrinkRatio, AdjustViewSizeOrNot shouldAdjustViewSize)
+void Frame::setPrinting(bool printing, const FloatSize& pageSize, const FloatSize& originalPageSize, float maximumShrinkRatio, AdjustViewSizeOrNot shouldAdjustViewSize)
 {
     // In setting printing, we should not validate resources already cached for the document.
     // See https://bugs.webkit.org/show_bug.cgi?id=43704
@@ -741,10 +703,10 @@ void Frame::setPrinting(bool printing, const FloatSize& pageSize, float maximumS
     m_doc->setPrinting(printing);
     view()->adjustMediaTypeForPrinting(printing);
 
-    m_doc->styleSelectorChanged(RecalcStyleImmediately);
-    if (printing)
-        view()->forceLayoutForPagination(pageSize, maximumShrinkRatio, shouldAdjustViewSize);
-    else {
+    m_doc->styleResolverChanged(RecalcStyleImmediately);
+    if (shouldUsePrintingLayout()) {
+        view()->forceLayoutForPagination(pageSize, originalPageSize, maximumShrinkRatio, shouldAdjustViewSize);
+    } else {
         view()->forceLayout();
         if (shouldAdjustViewSize == AdjustViewSize)
             view()->adjustViewSize();
@@ -752,7 +714,34 @@ void Frame::setPrinting(bool printing, const FloatSize& pageSize, float maximumS
 
     // Subframes of the one we're printing don't lay out to the page size.
     for (Frame* child = tree()->firstChild(); child; child = child->tree()->nextSibling())
-        child->setPrinting(printing, IntSize(), 0, shouldAdjustViewSize);
+        child->setPrinting(printing, FloatSize(), FloatSize(), 0, shouldAdjustViewSize);
+}
+
+bool Frame::shouldUsePrintingLayout() const
+{
+    // Only top frame being printed should be fit to page size.
+    // Subframes should be constrained by parents only.
+    return m_doc->printing() && (!tree()->parent() || !tree()->parent()->m_doc->printing());
+}
+
+FloatSize Frame::resizePageRectsKeepingRatio(const FloatSize& originalSize, const FloatSize& expectedSize)
+{
+    FloatSize resultSize;
+    if (!contentRenderer())
+        return FloatSize();
+
+    if (contentRenderer()->style()->isHorizontalWritingMode()) {
+        ASSERT(fabs(originalSize.width()) > numeric_limits<float>::epsilon());
+        float ratio = originalSize.height() / originalSize.width();
+        resultSize.setWidth(floorf(expectedSize.width()));
+        resultSize.setHeight(floorf(resultSize.width() * ratio));
+    } else {
+        ASSERT(fabs(originalSize.height()) > numeric_limits<float>::epsilon());
+        float ratio = originalSize.width() / originalSize.height();
+        resultSize.setHeight(floorf(expectedSize.height()));
+        resultSize.setWidth(floorf(resultSize.height() * ratio));
+    }
+    return resultSize;
 }
 
 void Frame::injectUserScripts(UserScriptInjectionTime injectionTime)
@@ -793,50 +782,10 @@ void Frame::injectUserScriptsForWorld(DOMWrapperWorld* world, const UserScriptVe
     }
 }
 
-#ifndef NDEBUG
-static HashSet<Frame*>& keepAliveSet()
-{
-    DEFINE_STATIC_LOCAL(HashSet<Frame*>, staticKeepAliveSet, ());
-    return staticKeepAliveSet;
-}
-#endif
-
-void Frame::keepAlive()
-{
-    if (m_lifeSupportTimer.isActive())
-        return;
-#ifndef NDEBUG
-    keepAliveSet().add(this);
-#endif
-    ref();
-    m_lifeSupportTimer.startOneShot(0);
-}
-
-#ifndef NDEBUG
-void Frame::cancelAllKeepAlive()
-{
-    HashSet<Frame*>::iterator end = keepAliveSet().end();
-    for (HashSet<Frame*>::iterator it = keepAliveSet().begin(); it != end; ++it) {
-        Frame* frame = *it;
-        frame->m_lifeSupportTimer.stop();
-        frame->deref();
-    }
-    keepAliveSet().clear();
-}
-#endif
-
-void Frame::lifeSupportTimerFired(Timer<Frame>*)
-{
-#ifndef NDEBUG
-    keepAliveSet().remove(this);
-#endif
-    deref();
-}
-
 void Frame::clearDOMWindow()
 {
     if (m_domWindow) {
-        m_liveFormerWindows.add(m_domWindow.get());
+        InspectorInstrumentation::frameWindowDiscarded(this, m_domWindow.get());
         m_domWindow->clear();
     }
     m_domWindow = 0;
@@ -904,7 +853,7 @@ void Frame::clearTimers()
 void Frame::setDOMWindow(DOMWindow* domWindow)
 {
     if (m_domWindow) {
-        m_liveFormerWindows.add(m_domWindow.get());
+        InspectorInstrumentation::frameWindowDiscarded(this, m_domWindow.get());
         m_domWindow->clear();
     }
     m_domWindow = domWindow;
@@ -928,40 +877,25 @@ DOMWindow* Frame::domWindow() const
     return m_domWindow.get();
 }
 
-void Frame::clearFormerDOMWindow(DOMWindow* window)
-{
-    m_liveFormerWindows.remove(window);
-}
-
-void Frame::pageDestroyed()
+void Frame::willDetachPage()
 {
     if (Frame* parent = tree()->parent())
         parent->loader()->checkLoadComplete();
 
-    if (m_domWindow) {
-        m_domWindow->resetGeolocation();
-        m_domWindow->pageDestroyed();
-    }
-
-#if ENABLE(MEDIA_STREAM)
-    if (m_mediaStreamFrameController)
-        m_mediaStreamFrameController->disconnectPage();
-#endif
+    HashSet<FrameDestructionObserver*>::iterator stop = m_destructionObservers.end();
+    for (HashSet<FrameDestructionObserver*>::iterator it = m_destructionObservers.begin(); it != stop; ++it)
+        (*it)->willDetachPage();
 
     // FIXME: It's unclear as to why this is called more than once, but it is,
     // so page() could be NULL.
     if (page() && page()->focusController()->focusedFrame() == this)
         page()->focusController()->setFocusedFrame(0);
 
-    script()->clearWindowShell();
-
     if ((WebThreadCountOfObservedContentModifiers() > 0) && m_page)
         m_page->chrome()->client()->clearContentChangeObservers(this);
 
     script()->clearScriptObjects();
     script()->updatePlatformScriptObjects();
-
-    detachFromPage();
 }
 
 void Frame::disconnectOwnerElement()
@@ -974,63 +908,6 @@ void Frame::disconnectOwnerElement()
             m_page->decrementFrameCount();
     }
     m_ownerElement = 0;
-}
-
-// The frame is moved in DOM, potentially to another page.
-void Frame::transferChildFrameToNewDocument()
-{
-    ASSERT(m_ownerElement);
-    Frame* newParent = m_ownerElement->document()->frame();
-    ASSERT(newParent);
-    bool didTransfer = false;
-
-    // Switch page.
-    Page* newPage = newParent->page();
-    Page* oldPage = m_page;
-    if (m_page != newPage) {
-        if (m_page) {
-            if (m_page->focusController()->focusedFrame() == this)
-                m_page->focusController()->setFocusedFrame(0);
-
-             m_page->decrementFrameCount();
-        }
-
-        // FIXME: We should ideally allow existing Geolocation activities to continue
-        // when the Geolocation's iframe is reparented.
-        // See https://bugs.webkit.org/show_bug.cgi?id=55577
-        // and https://bugs.webkit.org/show_bug.cgi?id=52877
-        if (m_domWindow)
-            m_domWindow->resetGeolocation();
-
-#if ENABLE(MEDIA_STREAM)
-        if (m_mediaStreamFrameController)
-            m_mediaStreamFrameController->transferToNewPage(newPage);
-#endif
-        m_page = newPage;
-
-        if (newPage)
-            newPage->incrementFrameCount();
-
-        didTransfer = true;
-    }
-
-    // Update the frame tree.
-    didTransfer = newParent->tree()->transferChild(this) || didTransfer;
-
-    // Avoid unnecessary calls to client and frame subtree if the frame ended
-    // up on the same page and under the same parent frame.
-    if (didTransfer) {
-        // Let external clients update themselves.
-        loader()->client()->didTransferChildFrameToNewDocument(oldPage);
-
-        // Update resource tracking now that frame could be in a different page.
-        if (oldPage != newPage)
-            loader()->transferLoadingResourcesFromPage(oldPage);
-
-        // Do the same for all the children.
-        for (Frame* child = tree()->firstChild(); child; child = child->tree()->nextSibling())
-            child->transferChildFrameToNewDocument();
-    }
 }
 
 String Frame::documentTypeString() const
@@ -1083,15 +960,14 @@ PassRefPtr<Range> Frame::rangeForPoint(const IntPoint& framePoint)
     VisiblePosition previous = position.previous();
     if (previous.isNotNull()) {
         RefPtr<Range> previousCharacterRange = makeRange(previous, position);
-        IntRect rect = editor()->firstRectForRange(previousCharacterRange.get());
+        LayoutRect rect = editor()->firstRectForRange(previousCharacterRange.get());
         if (rect.contains(framePoint))
             return previousCharacterRange.release();
     }
 
     VisiblePosition next = position.next();
-    if (next.isNotNull()) {
-        RefPtr<Range> nextCharacterRange = makeRange(position, next);
-        IntRect rect = editor()->firstRectForRange(nextCharacterRange.get());
+    if (RefPtr<Range> nextCharacterRange = makeRange(position, next)) {
+        LayoutRect rect = editor()->firstRectForRange(nextCharacterRange.get());
         if (rect.contains(framePoint))
             return nextCharacterRange.release();
     }
@@ -1140,7 +1016,7 @@ void Frame::createView(const IntSize& viewportSize,
         view()->setCanHaveScrollbars(owner->scrollingMode() != ScrollbarAlwaysOff);
 }
 
-#if ENABLE(TILED_BACKING_STORE)
+#if USE(TILED_BACKING_STORE)
 void Frame::setTiledBackingStoreEnabled(bool enabled)
 {
     if (!enabled) {
@@ -1176,7 +1052,7 @@ void Frame::tiledBackingStorePaintEnd(const Vector<IntRect>& paintedArea)
     unsigned size = paintedArea.size();
     // Request repaint from the system
     for (int n = 0; n < size; ++n)
-        m_page->chrome()->invalidateContentsAndWindow(m_view->contentsToWindow(paintedArea[n]), false);
+        m_page->chrome()->invalidateContentsAndRootView(m_view->contentsToRootView(paintedArea[n]), false);
 }
 
 IntRect Frame::tiledBackingStoreContentsRect()
@@ -1246,15 +1122,13 @@ void Frame::setPageAndTextZoomFactors(float pageZoomFactor, float textZoomFactor
     if (document->isSVGDocument()) {
         if (!static_cast<SVGDocument*>(document)->zoomAndPanEnabled())
             return;
-        if (document->renderer())
-            document->renderer()->setNeedsLayout(true);
     }
 #endif
 
     if (m_pageZoomFactor != pageZoomFactor) {
         if (FrameView* view = this->view()) {
             // Update the scroll position when doing a full page zoom, so the content stays in relatively the same position.
-            IntPoint scrollPosition = view->scrollPosition();
+            LayoutPoint scrollPosition = view->scrollPosition();
             float percentDifference = (pageZoomFactor / m_pageZoomFactor);
             view->setScrollPosition(IntPoint(scrollPosition.x() * percentDifference, scrollPosition.y() * percentDifference));
         }
@@ -1272,60 +1146,75 @@ void Frame::setPageAndTextZoomFactors(float pageZoomFactor, float textZoomFactor
         if (document->renderer() && document->renderer()->needsLayout() && view->didFirstLayout())
             view->layout();
     }
+
+    if (page->mainFrame() == this)
+        pageCache()->markPagesForFullStyleRecalc(page);
+}
+
+float Frame::frameScaleFactor() const
+{
+    Page* page = this->page();
+
+    // Main frame is scaled with respect to he container but inner frames are not scaled with respect to the main frame.
+    if (!page || page->mainFrame() != this)
+        return 1;
+    return page->pageScaleFactor();
+}
+
+void Frame::suspendActiveDOMObjectsAndAnimations()
+{
+    bool wasSuspended = activeDOMObjectsAndAnimationsSuspended();
+
+    m_activeDOMObjectsAndAnimationsSuspendedCount++;
+
+    if (wasSuspended)
+        return;
+
+    if (document()) {
+        document()->suspendScriptedAnimationControllerCallbacks();
+        animation()->suspendAnimationsForDocument(document());
+        document()->suspendActiveDOMObjects(ActiveDOMObject::PageWillBeSuspended);
+    }
+}
+
+void Frame::resumeActiveDOMObjectsAndAnimations()
+{
+    ASSERT(activeDOMObjectsAndAnimationsSuspended());
+
+    m_activeDOMObjectsAndAnimationsSuspendedCount--;
+
+    if (activeDOMObjectsAndAnimationsSuspended())
+        return;
+
+    if (document()) {
+        document()->resumeActiveDOMObjects();
+        animation()->resumeAnimationsForDocument(document());
+        document()->resumeScriptedAnimationControllerCallbacks();
+    }
 }
 
 #if USE(ACCELERATED_COMPOSITING)
-void Frame::pageScaleFactorChanged(float scale)
+void Frame::deviceOrPageScaleFactorChanged()
 {
-    // We should never hit this on iOS. Frame::documentScaleChanged() is used instead,
-    // but should eventually go away in favor of this method.
-    ASSERT_NOT_REACHED();
     for (Frame* child = tree()->firstChild(); child; child = child->tree()->nextSibling())
-        child->pageScaleFactorChanged(scale);
+        child->deviceOrPageScaleFactorChanged();
 
     RenderView* root = contentRenderer();
     if (root && root->compositor())
-        root->compositor()->pageScaleFactorChanged();
+        root->compositor()->deviceOrPageScaleFactorChanged();
 }
 #endif
-
-void Frame::scalePage(float scale, const IntPoint& origin)
-{
-    Document* document = this->document();
-    if (!document)
-        return;
-
-    if (scale != m_pageScaleFactor) {
-        m_pageScaleFactor = scale;
-
-        if (document->renderer())
-            document->renderer()->setNeedsLayout(true);
-
-        document->recalcStyle(Node::Force);
-
-#if USE(ACCELERATED_COMPOSITING)
-        pageScaleFactorChanged(scale);
-#endif
-    }
-
-    if (FrameView* view = this->view()) {
-        if (document->renderer() && document->renderer()->needsLayout() && view->didFirstLayout())
-            view->layout();
-        view->setScrollPosition(origin);
-    }
-}
-
 void Frame::notifyChromeClientWheelEventHandlerCountChanged() const
 {
     // Ensure that this method is being called on the main frame of the page.
     ASSERT(m_page && m_page->mainFrame() == this);
-    
+
     unsigned count = 0;
     for (const Frame* frame = this; frame; frame = frame->tree()->traverseNext()) {
         if (frame->document())
             count += frame->document()->wheelEventHandlerCount();
     }
-    
+
     m_page->chrome()->client()->numWheelEventHandlersChanged(count);
 }
 
@@ -1338,5 +1227,20 @@ bool Frame::selectionChangeCallbacksDisabled() const
 {
     return m_selectionChangeCallbacksDisabled;
 }
+
+void Frame::notifyChromeClientTouchEventHandlerCountChanged() const
+{
+    // Ensure that this method is being called on the main frame of the page.
+    ASSERT(m_page && m_page->mainFrame() == this);
+
+    unsigned count = 0;
+    for (const Frame* frame = this; frame; frame = frame->tree()->traverseNext()) {
+        if (frame->document())
+            count += frame->document()->touchEventHandlerCount();
+    }
+
+    m_page->chrome()->client()->numTouchEventHandlersChanged(count);
+}
+
 
 } // namespace WebCore

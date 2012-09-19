@@ -25,6 +25,8 @@
 #define HTMLAnchorElement_h
 
 #include "HTMLElement.h"
+#include "HTMLNames.h"
+#include "LinkHash.h"
 
 namespace WebCore {
 
@@ -56,6 +58,8 @@ public:
     static PassRefPtr<HTMLAnchorElement> create(Document*);
     static PassRefPtr<HTMLAnchorElement> create(const QualifiedName&, Document*);
 
+    virtual ~HTMLAnchorElement();
+
     KURL href() const;
     void setHref(const AtomicString&);
 
@@ -84,22 +88,23 @@ public:
 
     String origin() const;
 
-    String getParameter(const String&) const;
-
-    String text() const;
+    String text();
 
     String toString() const;
 
     bool isLiveLink() const;
-    virtual bool willRespondToMouseClickEvents();
+    virtual bool willRespondToMouseClickEvents() OVERRIDE;
 
     bool hasRel(uint32_t relation) const;
     void setRel(const String&);
+    
+    LinkHash visitedLinkHash() const;
+    void invalidateCachedVisitedLinkHash() { m_cachedVisitedLinkHash = 0; }
 
 protected:
     HTMLAnchorElement(const QualifiedName&, Document*);
 
-    virtual void parseMappedAttribute(Attribute*);
+    virtual void parseAttribute(Attribute*) OVERRIDE;
 
 private:
     virtual bool supportsFocus() const;
@@ -107,7 +112,7 @@ private:
     virtual bool isKeyboardFocusable(KeyboardEvent*) const;
     virtual void defaultEventHandler(Event*);
     virtual void setActive(bool active = true, bool pause = false);
-    virtual void accessKeyAction(bool fullAction);
+    virtual void accessKeyAction(bool sendMouseEvents);
     virtual bool isURLAttribute(Attribute*) const;
     virtual bool canStartSelection() const;
     virtual String target() const;
@@ -115,6 +120,8 @@ private:
     virtual bool draggable() const;
 
     void sendPings(const KURL& destinationURL);
+
+    void handleClick(Event*);
 
     enum EventType {
         MouseEventWithoutShiftKey,
@@ -124,10 +131,27 @@ private:
     static EventType eventType(Event*);
     bool treatLinkAsLiveForEventType(EventType) const;
 
-    RefPtr<Element> m_rootEditableElementForSelectionOnMouseDown;
-    bool m_wasShiftKeyDownOnMouseDown;
-    uint32_t m_linkRelations;
+#if ENABLE(MICRODATA)
+    virtual String itemValueText() const OVERRIDE;
+    virtual void setItemValueText(const String&, ExceptionCode&) OVERRIDE;
+#endif
+
+    Element* rootEditableElementForSelectionOnMouseDown() const;
+    void setRootEditableElementForSelectionOnMouseDown(Element*);
+    void clearRootEditableElementForSelectionOnMouseDown();
+
+    bool m_hasRootEditableElementForSelectionOnMouseDown : 1;
+    bool m_wasShiftKeyDownOnMouseDown : 1;
+    uint32_t m_linkRelations : 30;
+    mutable LinkHash m_cachedVisitedLinkHash;
 };
+
+inline LinkHash HTMLAnchorElement::visitedLinkHash() const
+{
+    if (!m_cachedVisitedLinkHash)
+        m_cachedVisitedLinkHash = WebCore::visitedLinkHash(document()->baseURL(), fastGetAttribute(HTMLNames::hrefAttr));
+    return m_cachedVisitedLinkHash; 
+}
 
 // Functions shared with the other anchor elements (i.e., SVG).
 

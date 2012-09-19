@@ -24,6 +24,7 @@
 #define RenderText_h
 
 #include "RenderObject.h"
+#include "RenderView.h"
 #include <wtf/Forward.h>
 
 #include "SelectionRect.h"
@@ -57,17 +58,17 @@ public:
     InlineTextBox* createInlineTextBox();
     void dirtyLineBoxes(bool fullLayout);
 
-    virtual void absoluteRects(Vector<IntRect>&, int tx, int ty);
+    virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const;
     void absoluteRectsForRange(Vector<IntRect>&, unsigned startOffset = 0, unsigned endOffset = UINT_MAX, bool useSelectionHeight = false, bool* wasFixed = 0);
-    virtual void collectSelectionRects(Vector<SelectionRect>&, unsigned startOffset = 0, unsigned endOffset = UINT_MAX);
+    virtual void collectSelectionRects(Vector<SelectionRect>&, unsigned startOffset = 0, unsigned endOffset = UINT_MAX) OVERRIDE;
 
-    virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed);
+    virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const;
     void absoluteQuadsForRange(Vector<FloatQuad>&, unsigned startOffset = 0, unsigned endOffset = UINT_MAX, bool useSelectionHeight = false, bool* wasFixed = 0);
 
     enum ClippingOption { NoClipping, ClipToEllipsis };
-    void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed = 0, ClippingOption = NoClipping);
+    void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed = 0, ClippingOption = NoClipping) const;
 
-    virtual VisiblePosition positionForPoint(const IntPoint&);
+    virtual VisiblePosition positionForPoint(const LayoutPoint&);
 
     const UChar* characters() const { return m_text.characters(); }
     unsigned textLength() const { return m_text.length(); } // non virtual implementation of length()
@@ -87,31 +88,33 @@ public:
                            float& minW, float& maxW, bool& stripFrontSpaces);
 
     virtual IntRect linesBoundingBox() const;
-    IntRect linesVisualOverflowBoundingBox() const;
+    LayoutRect linesVisualOverflowBoundingBox() const;
 
     FloatPoint firstRunOrigin() const;
     float firstRunX() const;
     float firstRunY() const;
 
-    void setText(PassRefPtr<StringImpl>, bool force = false);
+    virtual void setText(PassRefPtr<StringImpl>, bool force = false);
     void setTextWithOffset(PassRefPtr<StringImpl>, unsigned offset, unsigned len, bool force = false);
+
+    virtual void transformText();
 
     virtual bool canBeSelectionLeaf() const { return true; }
     virtual void setSelectionState(SelectionState s);
-    virtual IntRect selectionRectForRepaint(RenderBoxModelObject* repaintContainer, bool clipToVisibleContent = true);
-    virtual IntRect localCaretRect(InlineBox*, int caretOffset, int* extraWidthToEndOfLine = 0);
+    virtual LayoutRect selectionRectForRepaint(RenderBoxModelObject* repaintContainer, bool clipToVisibleContent = true);
+    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0);
 
-    virtual int marginLeft() const { return style()->marginLeft().calcMinValue(0); }
-    virtual int marginRight() const { return style()->marginRight().calcMinValue(0); }
+    virtual LayoutUnit marginLeft() const { return minimumValueForLength(style()->marginLeft(), 0, view()); }
+    virtual LayoutUnit marginRight() const { return minimumValueForLength(style()->marginRight(), 0, view()); }
 
-    virtual IntRect clippedOverflowRectForRepaint(RenderBoxModelObject* repaintContainer);
+    virtual LayoutRect clippedOverflowRectForRepaint(RenderBoxModelObject* repaintContainer) const;
 
     InlineTextBox* firstTextBox() const { return m_firstTextBox; }
     InlineTextBox* lastTextBox() const { return m_lastTextBox; }
 
     virtual int caretMinOffset() const;
     virtual int caretMaxOffset() const;
-    virtual unsigned caretMaxRenderedOffset() const;
+    virtual unsigned renderedTextLength() const;
 
     virtual int previousOffset(int current) const;
     virtual int previousOffsetForBackwardDeletion(int current) const;
@@ -119,7 +122,7 @@ public:
 
     bool containsReversedText() const { return m_containsReversedText; }
 
-    bool isSecure() { return style()->textSecurity() != TSNONE; }
+    bool isSecure() const { return style()->textSecurity() != TSNONE; }
     void momentarilyRevealLastCharacter();
     void secureLastCharacter();
     void secureLastCharacter(Timer<RenderText> * aTimer);
@@ -132,7 +135,8 @@ public:
 
     virtual void computePreferredLogicalWidths(float leadWidth);
     bool isAllCollapsibleWhitespace();
-    
+
+    bool canUseSimpleFontCodePath() const { return m_canUseSimpleFontCodePath; }
     bool knownToHaveNoOverflowAndNoFallbackFonts() const { return m_knownToHaveNoOverflowAndNoFallbackFonts; }
 
     void removeAndDestroyTextBoxes();
@@ -154,14 +158,16 @@ protected:
 private:
     void computePreferredLogicalWidths(float leadWidth, HashSet<const SimpleFontData*>& fallbackFonts, GlyphOverflow&);
 
+    bool computeCanUseSimpleFontCodePath() const;
+    
     // Make length() private so that callers that have a RenderText*
     // will use the more efficient textLength() instead, while
     // callers with a RenderObject* can continue to use length().
     virtual unsigned length() const { return textLength(); }
 
-    virtual void paint(PaintInfo&, int, int) { ASSERT_NOT_REACHED(); }
+    virtual void paint(PaintInfo&, const LayoutPoint&) { ASSERT_NOT_REACHED(); }
     virtual void layout() { ASSERT_NOT_REACHED(); }
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const IntPoint&, int, int, HitTestAction) { ASSERT_NOT_REACHED(); return false; }
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const LayoutPoint&, const LayoutPoint&, HitTestAction) { ASSERT_NOT_REACHED(); return false; }
 
     void deleteTextBoxes();
     bool containsOnlyWhitespace(unsigned from, unsigned len) const;
@@ -169,19 +175,9 @@ private:
     bool isAllASCII() const { return m_isAllASCII; }
     void updateNeedsTranscoding();
 
-    inline void transformText(String&) const;
+    void secureText(UChar mask);
 
-    float m_minWidth; // here to minimize padding in 64-bit.
-
-    String m_text;
-
-    InlineTextBox* m_firstTextBox;
-    InlineTextBox* m_lastTextBox;
-
-    float m_maxWidth;
-    float m_beginMinWidth;
-    float m_endMinWidth;
-
+    // We put the bitfield first to minimize padding on 64-bit.
     bool m_hasBreakableChar : 1; // Whether or not we can be broken into multiple lines.
     bool m_hasBreak : 1; // Whether or not we have a hard break (e.g., <pre> with '\n').
     bool m_hasTab : 1; // Whether or not we have a variable width tab character (e.g., <pre> with '\t').
@@ -193,6 +189,7 @@ private:
                            // or removed).
     bool m_containsReversedText : 1;
     bool m_isAllASCII : 1;
+    bool m_canUseSimpleFontCodePath : 1;
     mutable bool m_knownToHaveNoOverflowAndNoFallbackFonts : 1;
     bool m_needsTranscoding : 1;
     
@@ -200,6 +197,15 @@ private:
     bool m_hasSecureLastCharacterTimer : 1;
     // FIXME: This should probably be part of the text sizing structures in Document instead. That would save some memory.
     float m_candidateComputedTextSize;
+    float m_minWidth;
+    float m_maxWidth;
+    float m_beginMinWidth;
+    float m_endMinWidth;
+
+    String m_text;
+
+    InlineTextBox* m_firstTextBox;
+    InlineTextBox* m_lastTextBox;
 };
 
 inline RenderText* toRenderText(RenderObject* object)
@@ -222,6 +228,8 @@ inline void RenderText::checkConsistency() const
 {
 }
 #endif
+
+void applyTextTransform(const RenderStyle*, String&, UChar);
 
 } // namespace WebCore
 

@@ -34,7 +34,7 @@
 #include "npruntime_impl.h"
 #include <runtime/ScopeChain.h>
 #include <runtime/Identifier.h>
-#include <runtime/JSLock.h>
+#include <runtime/JSGlobalObject.h>
 #include <runtime/JSObject.h>
 #include <wtf/text/StringHash.h>
 
@@ -47,8 +47,6 @@ CClass::CClass(NPClass* aClass)
 
 CClass::~CClass()
 {
-    JSLock lock(SilenceAssertionsOnly);
-
     deleteAllValues(_methods);
     _methods.clear();
 

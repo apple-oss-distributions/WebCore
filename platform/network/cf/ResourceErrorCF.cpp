@@ -86,6 +86,8 @@ void ResourceError::platformLazyInit()
         m_domain = "NSOSStatusErrorDomain";
     else if (domain == kCFErrorDomainWinSock)
         m_domain = "kCFErrorDomainWinSock";
+    else
+        m_domain = domain;
 
     m_errorCode = CFErrorGetCode(m_platformError.get());
 
@@ -146,7 +148,7 @@ CFErrorRef ResourceError::cfError() const
         if (!m_failingURL.isEmpty()) {
             RetainPtr<CFStringRef> failingURLString(AdoptCF, m_failingURL.createCFString());
             CFDictionarySetValue(userInfo.get(), failingURLStringKey, failingURLString.get());
-            RetainPtr<CFURLRef> url(AdoptCF, KURL(ParsedURLString, m_failingURL).createCFURL());
+            RetainPtr<CFURLRef> url(AdoptCF, CFURLCreateWithString(0, failingURLString.get(), 0));
             CFDictionarySetValue(userInfo.get(), failingURLKey, url.get());
         }
 

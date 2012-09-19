@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 Apple Inc.  All rights reserved.
+ * Copyright (C) 2011 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,15 +30,13 @@
 #include "FloatPoint.h"
 #include "FloatQuad.h"
 #include "IntSize.h"
+#include "LayoutTypes.h"
 #include "TransformationMatrix.h"
-#include <wtf/PassRefPtr.h>
 #include <wtf/OwnPtr.h>
-#include <wtf/RefCounted.h>
 
 namespace WebCore {
 
 class TransformState {
-    WTF_MAKE_NONCOPYABLE(TransformState);
 public:
     enum TransformDirection { ApplyTransformDirection, UnapplyInverseTransformDirection };
     enum TransformAccumulation { FlattenTransform, AccumulateTransform };
@@ -71,14 +69,18 @@ public:
     {
     }
     
+    TransformState(const TransformState& other) { *this = other; }
+
+    TransformState& operator=(const TransformState&);
+    
     void setQuad(const FloatQuad& quad) { m_lastPlanarQuad = quad; }
     
-    void move(const IntSize& s, TransformAccumulation accumulate = FlattenTransform)
+    void move(const LayoutSize& s, TransformAccumulation accumulate = FlattenTransform)
     {
         move(s.width(), s.height(), accumulate);
     }
     
-    void move(int x, int y, TransformAccumulation = FlattenTransform);
+    void move(LayoutUnit x, LayoutUnit y, TransformAccumulation = FlattenTransform);
     void applyTransform(const AffineTransform& transformFromContainer, TransformAccumulation = FlattenTransform);
     void applyTransform(const TransformationMatrix& transformFromContainer, TransformAccumulation = FlattenTransform);
     void flatten();

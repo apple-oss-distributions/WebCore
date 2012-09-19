@@ -26,7 +26,7 @@
 // All public DOM class interfaces, properties and methods need to be in this file.
 // Anything not in the file will be generated into the appropriate private header file.
 
-#include <JavaScriptCore/Platform.h>
+#include <wtf/Platform.h>
 
 #ifndef OBJC_CODE_GENERATION
 #error Do not include this header, instead include the appropriate DOM header.
@@ -139,13 +139,11 @@
 - (DOMTreeWalker *)createTreeWalker:(DOMNode *)root whatToShow:(unsigned)whatToShow filter:(id <DOMNodeFilter>)filter expandEntityReferences:(BOOL)expandEntityReferences AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 - (DOMNodeIterator *)createNodeIterator:(DOMNode *)root :(unsigned)whatToShow :(id <DOMNodeFilter>)filter :(BOOL)expandEntityReferences;
 - (DOMTreeWalker *)createTreeWalker:(DOMNode *)root :(unsigned)whatToShow :(id <DOMNodeFilter>)filter :(BOOL)expandEntityReferences;
-#if ENABLE_XPATH
 - (DOMXPathExpression *)createExpression:(NSString *)expression :(id <DOMXPathNSResolver>)resolver AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER_BUT_DEPRECATED;
 - (DOMXPathExpression *)createExpression:(NSString *)expression resolver:(id <DOMXPathNSResolver>)resolver AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 - (id <DOMXPathNSResolver>)createNSResolver:(DOMNode *)nodeResolver AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 - (DOMXPathResult *)evaluate:(NSString *)expression :(DOMNode *)contextNode :(id <DOMXPathNSResolver>)resolver :(unsigned short)type :(DOMXPathResult *)inResult AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER_BUT_DEPRECATED;
 - (DOMXPathResult *)evaluate:(NSString *)expression contextNode:(DOMNode *)contextNode resolver:(id <DOMXPathNSResolver>)resolver type:(unsigned short)type inResult:(DOMXPathResult *)inResult AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
-#endif
 - (BOOL)execCommand:(NSString *)command userInterface:(BOOL)userInterface value:(NSString *)value AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 - (BOOL)execCommand:(NSString *)command userInterface:(BOOL)userInterface AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 - (BOOL)execCommand:(NSString *)command AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
@@ -221,7 +219,6 @@
 - (BOOL)hasAttributeNS:(NSString *)namespaceURI localName:(NSString *)localName AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 - (void)scrollIntoView:(BOOL)alignWithTop AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 - (void)scrollIntoViewIfNeeded:(BOOL)centerIfNeeded AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
-- (BOOL)contains:(DOMElement *)element AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 - (void)scrollByLines:(int)lines AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 - (void)scrollByPages:(int)pages AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 - (void)focus AVAILABLE_IN_WEBKIT_VERSION_4_0;
@@ -249,10 +246,6 @@
 
 @interface DOMFile : DOMBlob WEBKIT_VERSION_4_0
 @property(readonly, copy) NSString *name;
-
-// FIXME: obsolete properties. To be removed.
-@property(readonly, copy) NSString *fileName;
-@property(readonly) unsigned long long fileSize;
 @end
 
 @interface DOMFileList : DOMObject WEBKIT_VERSION_4_0
@@ -310,6 +303,7 @@
 - (BOOL)isDefaultNamespace:(NSString *)namespaceURI AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 - (NSString *)lookupNamespaceURI:(NSString *)prefix AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 - (unsigned short)compareDocumentPosition:(DOMNode *)other AVAILABLE_IN_WEBKIT_VERSION_4_0;
+- (BOOL)contains:(DOMNode *)other AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 @end
 
 @interface DOMNodeList : DOMObject WEBKIT_VERSION_1_3
@@ -335,7 +329,7 @@
 @end
 
 @interface DOMHTMLAnchorElement : DOMHTMLElement WEBKIT_VERSION_1_3
-@property(copy) NSString *accessKey;
+@property(copy) NSString *accessKey AVAILABLE_WEBKIT_VERSION_1_3_AND_LATER_BUT_DEPRECATED_AFTER_WEBKIT_VERSION_5_1;
 @property(copy) NSString *charset;
 @property(copy) NSString *coords;
 @property(copy) NSString *href;
@@ -372,7 +366,7 @@
 @end
 
 @interface DOMHTMLAreaElement : DOMHTMLElement WEBKIT_VERSION_1_3
-@property(copy) NSString *accessKey;
+@property(copy) NSString *accessKey AVAILABLE_WEBKIT_VERSION_1_3_AND_LATER_BUT_DEPRECATED_AFTER_WEBKIT_VERSION_5_1;
 @property(copy) NSString *alt;
 @property(copy) NSString *coords;
 @property(copy) NSString *href;
@@ -414,8 +408,8 @@
 @end
 
 @interface DOMHTMLButtonElement : DOMHTMLElement WEBKIT_VERSION_1_3
+@property(copy) NSString *accessKey AVAILABLE_WEBKIT_VERSION_1_3_AND_LATER_BUT_DEPRECATED_AFTER_WEBKIT_VERSION_5_1;
 @property(readonly, retain) DOMHTMLFormElement *form;
-@property(copy) NSString *accessKey;
 @property BOOL disabled;
 @property(copy) NSString *name;
 @property(readonly, copy) NSString *type;
@@ -475,6 +469,7 @@
 @end
 
 @interface DOMHTMLElement : DOMElement WEBKIT_VERSION_1_3
+@property(copy) NSString *accessKey AVAILABLE_AFTER_WEBKIT_VERSION_5_1;
 @property(copy) NSString *title;
 @property(copy) NSString *idName;
 @property(copy) NSString *lang;
@@ -489,6 +484,7 @@
 @property(readonly) BOOL isContentEditable;
 @property(readonly, copy) NSString *titleDisplayString AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 @property int tabIndex;
+- (void)click AVAILABLE_AFTER_WEBKIT_VERSION_5_1;
 @end
 
 @interface DOMHTMLEmbedElement : DOMHTMLElement WEBKIT_VERSION_1_3
@@ -607,7 +603,7 @@
 @property BOOL defaultChecked;
 @property(readonly, retain) DOMHTMLFormElement *form;
 @property(copy) NSString *accept;
-@property(copy) NSString *accessKey;
+@property(copy) NSString *accessKey AVAILABLE_WEBKIT_VERSION_1_3_AND_LATER_BUT_DEPRECATED_AFTER_WEBKIT_VERSION_5_1;
 @property(copy) NSString *align;
 @property(copy) NSString *alt;
 @property BOOL checked;
@@ -634,25 +630,20 @@
 - (void)setSelectionRange:(int)start end:(int)end AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 @end
 
-@interface DOMHTMLIsIndexElement : DOMHTMLInputElement WEBKIT_VERSION_1_3
-@property(readonly, retain) DOMHTMLFormElement *form;
-@property(copy) NSString *prompt;
-@end
-
 @interface DOMHTMLLIElement : DOMHTMLElement WEBKIT_VERSION_1_3
 @property(copy) NSString *type;
 @property int value;
 @end
 
 @interface DOMHTMLLabelElement : DOMHTMLElement WEBKIT_VERSION_1_3
+@property(copy) NSString *accessKey AVAILABLE_WEBKIT_VERSION_1_3_AND_LATER_BUT_DEPRECATED_AFTER_WEBKIT_VERSION_5_1;
 @property(readonly, retain) DOMHTMLFormElement *form;
-@property(copy) NSString *accessKey;
 @property(copy) NSString *htmlFor;
 @end
 
 @interface DOMHTMLLegendElement : DOMHTMLElement WEBKIT_VERSION_1_3
+@property(copy) NSString *accessKey AVAILABLE_WEBKIT_VERSION_1_3_AND_LATER_BUT_DEPRECATED_AFTER_WEBKIT_VERSION_5_1;
 @property(readonly, retain) DOMHTMLFormElement *form;
-@property(copy) NSString *accessKey;
 @property(copy) NSString *align;
 @end
 
@@ -888,7 +879,7 @@
 @interface DOMHTMLTextAreaElement : DOMHTMLElement WEBKIT_VERSION_1_3
 @property(copy) NSString *defaultValue;
 @property(readonly, retain) DOMHTMLFormElement *form;
-@property(copy) NSString *accessKey;
+@property(copy) NSString *accessKey AVAILABLE_WEBKIT_VERSION_1_3_AND_LATER_BUT_DEPRECATED_AFTER_WEBKIT_VERSION_5_1;
 @property int cols;
 @property BOOL disabled;
 @property(copy) NSString *name;
@@ -1067,8 +1058,8 @@
 @property(readonly) int detail;
 @property(readonly) int keyCode AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 @property(readonly) int charCode AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
-@property(readonly) int layerX AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
-@property(readonly) int layerY AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
+@property(readonly) int layerX AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER_BUT_DEPRECATED;
+@property(readonly) int layerY AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER_BUT_DEPRECATED;
 @property(readonly) int pageX AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 @property(readonly) int pageY AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
 @property(readonly) int which AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
@@ -1259,4 +1250,4 @@
 - (NSString *)lookupNamespaceURI:(NSString *)prefix;
 @end
 
-#include "PublicDOMInterfacesIPhone.h"
+#include "PublicDOMInterfacesIOS.h"

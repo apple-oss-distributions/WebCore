@@ -35,8 +35,8 @@ SuspendableTimer::SuspendableTimer(ScriptExecutionContext* context)
     : ActiveDOMObject(context, this)
     , m_nextFireInterval(0)
     , m_repeatInterval(0)
-#if !ASSERT_DISABLED
     , m_active(false)
+#if !ASSERT_DISABLED
     , m_suspended(false)
 #endif
 {
@@ -59,7 +59,7 @@ void SuspendableTimer::stop()
 void SuspendableTimer::suspend(ReasonForSuspension)
 {
 #if !ASSERT_DISABLED
-    ASSERT(!m_suspended);
+//    ASSERT(!m_suspended);
     m_suspended = true;
 #endif
     m_active = isActive();

@@ -27,6 +27,7 @@
 #include "CachedPage.h"
 
 #include "CachedFramePlatformData.h"
+#include "DOMWindow.h"
 #include "Document.h"
 #include "DocumentLoader.h"
 #include "ExceptionCode.h"
@@ -141,7 +142,7 @@ void CachedFrameBase::restore()
     m_document->enqueuePopstateEvent(historyItem && historyItem->stateObject() ? historyItem->stateObject() : SerializedScriptValue::nullValue());
     
 
-    m_document->documentDidBecomeActive();
+    m_document->documentDidResumeFromPageCache();
 }
 
 CachedFrame::CachedFrame(Frame* frame)
@@ -160,7 +161,6 @@ CachedFrame::CachedFrame(Frame* frame)
     // Custom scrollbar renderers will get reattached when the document comes out of the page cache
     m_view->detachCustomScrollbars();
 
-    m_document->documentWillBecomeInactive();
     frame->clearTimers();
     m_document->setInPageCache(true);
     frame->loader()->stopLoading(UnloadEventPolicyUnloadAndPageHide);
@@ -173,10 +173,14 @@ CachedFrame::CachedFrame(Frame* frame)
     // but after we've fired the pagehide event, in case that creates more objects.
     // Suspending must also happen after we've recursed over child frames, in case
     // those create more objects.
-    // FIXME: It's still possible to have objects created after suspending in some cases, see http://webkit.org/b/53733 for more details.
+    m_document->documentWillSuspendForPageCache();
     m_document->suspendScriptedAnimationControllerCallbacks();
     m_document->suspendActiveDOMObjects(ActiveDOMObject::DocumentWillBecomeInactive);
     m_cachedFrameScriptData = adoptPtr(new ScriptCachedFrameData(frame));
+
+    m_domWindow = frame->domWindow();
+    ASSERT(m_domWindow);
+    m_domWindow->suspendForPageCache();
 
     frame->loader()->client()->savePlatformDataToCachedFrame(this);
 
@@ -249,6 +253,8 @@ void CachedFrame::destroy()
     ASSERT(m_document->inPageCache());
     ASSERT(m_view);
     ASSERT(m_document->frame() == m_view->frame());
+
+    m_domWindow->willDestroyCachedFrame();
 
     if (!m_isMainFrame) {
         m_view->frame()->detachFromPage();

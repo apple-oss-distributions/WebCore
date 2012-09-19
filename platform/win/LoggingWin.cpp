@@ -26,7 +26,10 @@
 #include "config.h"
 #include "Logging.h"
 
+#if !LOG_DISABLED
+
 #include "PlatformString.h"
+#include <windows.h>
 #include <wtf/OwnArrayPtr.h>
 
 namespace WebCore {
@@ -67,7 +70,7 @@ static inline void initializeWithUserDefault(WTFLogChannel& channel)
         channel.state = WTFLogChannelOff;
 }
 
-void InitializeLoggingChannelsIfNecessary()
+void initializeLoggingChannelsIfNecessary()
 {
     static bool haveInitializedLoggingChannels = false;
     if (haveInitializedLoggingChannels)
@@ -101,3 +104,5 @@ void InitializeLoggingChannelsIfNecessary()
 }
 
 } // namespace WebCore
+
+#endif // !LOG_DISABLED

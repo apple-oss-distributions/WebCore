@@ -28,6 +28,8 @@
 
 #include "BridgeJSC.h"
 #include "runtime_object.h"
+#include <heap/StrongInlines.h>
+#include <heap/Weak.h>
 #include <runtime/JSGlobalObject.h>
 #include <wtf/HashCountedSet.h>
 #include <wtf/HashSet.h>
@@ -134,8 +136,10 @@ void RootObject::gcProtect(JSObject* jsObject)
 {
     ASSERT(m_isValid);
     
-    if (!m_protectCountSet.contains(jsObject))
+    if (!m_protectCountSet.contains(jsObject)) {
+        JSC::JSLockHolder holder(&globalObject()->globalData());
         JSC::gcProtect(jsObject);
+    }
     m_protectCountSet.add(jsObject);
 }
 
@@ -146,8 +150,10 @@ void RootObject::gcUnprotect(JSObject* jsObject)
     if (!jsObject)
         return;
 
-    if (m_protectCountSet.count(jsObject) == 1)
+    if (m_protectCountSet.count(jsObject) == 1) {
+        JSC::JSLockHolder holder(&globalObject()->globalData());
         JSC::gcUnprotect(jsObject);
+    }
     m_protectCountSet.remove(jsObject);
 }
 
@@ -174,12 +180,12 @@ void RootObject::updateGlobalObject(JSGlobalObject* globalObject)
     m_globalObject.set(globalObject->globalData(), globalObject);
 }
 
-void RootObject::addRuntimeObject(JSGlobalData& globalData, RuntimeObject* object)
+void RootObject::addRuntimeObject(JSGlobalData&, RuntimeObject* object)
 {
     ASSERT(m_isValid);
     ASSERT(!m_runtimeObjects.get(object));
 
-    m_runtimeObjects.set(object, JSC::Weak<RuntimeObject>(globalData, object, this));
+    m_runtimeObjects.set(object, JSC::PassWeak<RuntimeObject>(object, this));
 }
 
 void RootObject::removeRuntimeObject(RuntimeObject* object)
@@ -197,6 +203,7 @@ void RootObject::finalize(JSC::Handle<JSC::Unknown> handle, void*)
     RuntimeObject* object = static_cast<RuntimeObject*>(asObject(handle.get()));
     ASSERT(m_runtimeObjects.contains(object));
 
+    RefPtr<RootObject> protect(this);
     object->invalidate();
     m_runtimeObjects.remove(object);
 }

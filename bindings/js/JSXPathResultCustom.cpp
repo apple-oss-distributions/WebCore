@@ -26,8 +26,6 @@
 #include "config.h"
 #include "JSXPathResult.h"
 
-#if ENABLE(XPATH)
-
 #include "JSDOMBinding.h"
 #include "XPathResult.h"
 #include "XPathValue.h"
@@ -36,14 +34,15 @@ using namespace JSC;
 
 namespace WebCore {
 
-void JSXPathResult::visitChildren(SlotVisitor& visitor)
+void JSXPathResult::visitChildren(JSCell* cell, SlotVisitor& visitor)
 {
-    ASSERT_GC_OBJECT_INHERITS(this, &s_info);
+    JSXPathResult* thisObject = jsCast<JSXPathResult*>(cell);
+    ASSERT_GC_OBJECT_INHERITS(thisObject, &s_info);
     COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
-    ASSERT(structure()->typeInfo().overridesVisitChildren());
-    Base::visitChildren(visitor);
+    ASSERT(thisObject->structure()->typeInfo().overridesVisitChildren());
+    Base::visitChildren(thisObject, visitor);
 
-    const XPath::Value& xpathValue = impl()->value();
+    const XPath::Value& xpathValue = thisObject->impl()->value();
     if (xpathValue.isNodeSet()) {
         const XPath::NodeSet& nodesToMark = xpathValue.toNodeSet();
         for (size_t i = 0; i < nodesToMark.size(); ++i) {
@@ -54,5 +53,3 @@ void JSXPathResult::visitChildren(SlotVisitor& visitor)
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(XPATH)

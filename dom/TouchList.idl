@@ -9,7 +9,7 @@
 module events {
     interface [
         AppleCopyright,
-        HasIndexGetter,
+        IndexedGetter,
         OmitConstructor
     ] TouchList  {
         readonly attribute unsigned long    length;

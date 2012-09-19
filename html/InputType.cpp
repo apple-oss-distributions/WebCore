@@ -6,6 +6,7 @@
  *           (C) 2006 Alexey Proskuryakov (ap@nypop.com)
  * Copyright (C) 2007 Samuel Weinig (sam@webkit.org)
  * Copyright (C) 2010 Google Inc. All rights reserved.
+ * Copyright (C) 2012 Samsung Electronics. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -41,21 +42,27 @@
 #include "FormDataList.h"
 #include "HTMLFormElement.h"
 #include "HTMLInputElement.h"
+#include "HTMLNames.h"
+#include "HTMLParserIdioms.h"
+#include "HTMLShadowElement.h"
 #include "HiddenInputType.h"
 #include "ImageInputType.h"
-#include "IsIndexInputType.h"
 #include "KeyboardEvent.h"
 #include "LocalizedStrings.h"
 #include "MonthInputType.h"
 #include "NumberInputType.h"
+#include "Page.h"
 #include "PasswordInputType.h"
 #include "RadioInputType.h"
 #include "RangeInputType.h"
 #include "RegularExpression.h"
 #include "RenderObject.h"
+#include "RenderTheme.h"
 #include "ResetInputType.h"
+#include "RuntimeEnabledFeatures.h"
 #include "SearchInputType.h"
 #include "ShadowRoot.h"
+#include "ShadowTree.h"
 #include "SubmitInputType.h"
 #include "TelephoneInputType.h"
 #include "TextInputType.h"
@@ -72,6 +79,7 @@
 
 namespace WebCore {
 
+using namespace HTMLNames;
 using namespace std;
 
 typedef PassOwnPtr<InputType> (*InputTypeFactoryFunction)(HTMLInputElement*);
@@ -82,16 +90,26 @@ static PassOwnPtr<InputTypeFactoryMap> createInputTypeFactoryMap()
     OwnPtr<InputTypeFactoryMap> map = adoptPtr(new InputTypeFactoryMap);
     map->add(InputTypeNames::button(), ButtonInputType::create);
     map->add(InputTypeNames::checkbox(), CheckboxInputType::create);
+#if ENABLE(INPUT_TYPE_COLOR)
     map->add(InputTypeNames::color(), ColorInputType::create);
-    map->add(InputTypeNames::date(), DateInputType::create);
+#endif
+#if ENABLE(INPUT_TYPE_DATE)
+    if (RuntimeEnabledFeatures::inputTypeDateEnabled())
+        map->add(InputTypeNames::date(), DateInputType::create);
+#endif
+#if ENABLE(INPUT_TYPE_DATETIME)
     map->add(InputTypeNames::datetime(), DateTimeInputType::create);
+#endif
+#if ENABLE(INPUT_TYPE_DATETIMELOCAL)
     map->add(InputTypeNames::datetimelocal(), DateTimeLocalInputType::create);
+#endif
     map->add(InputTypeNames::email(), EmailInputType::create);
     map->add(InputTypeNames::file(), FileInputType::create);
     map->add(InputTypeNames::hidden(), HiddenInputType::create);
     map->add(InputTypeNames::image(), ImageInputType::create);
-    map->add(InputTypeNames::isindex(), IsIndexInputType::create);
+#if ENABLE(INPUT_TYPE_MONTH)
     map->add(InputTypeNames::month(), MonthInputType::create);
+#endif
     map->add(InputTypeNames::number(), NumberInputType::create);
     map->add(InputTypeNames::password(), PasswordInputType::create);
     map->add(InputTypeNames::radio(), RadioInputType::create);
@@ -100,9 +118,13 @@ static PassOwnPtr<InputTypeFactoryMap> createInputTypeFactoryMap()
     map->add(InputTypeNames::search(), SearchInputType::create);
     map->add(InputTypeNames::submit(), SubmitInputType::create);
     map->add(InputTypeNames::telephone(), TelephoneInputType::create);
+#if ENABLE(INPUT_TYPE_TIME)
     map->add(InputTypeNames::time(), TimeInputType::create);
+#endif
     map->add(InputTypeNames::url(), URLInputType::create);
+#if ENABLE(INPUT_TYPE_WEEK)
     map->add(InputTypeNames::week(), WeekInputType::create);
+#endif
     // No need to register "text" because it is the default type.
     return map.release();
 }
@@ -125,6 +147,13 @@ PassOwnPtr<InputType> InputType::createText(HTMLInputElement* element)
 
 InputType::~InputType()
 {
+}
+
+bool InputType::themeSupportsDataListUI(InputType* type)
+{
+    Document* document = type->element()->document();
+    RefPtr<RenderTheme> theme = document->page() ? document->page()->theme() : RenderTheme::defaultTheme();
+    return theme->supportsDataListUI(type->formControlType());
 }
 
 bool InputType::isTextField() const
@@ -151,7 +180,7 @@ bool InputType::saveFormControlState(String& result) const
     return true;
 }
 
-void InputType::restoreFormControlState(const String& state) const
+void InputType::restoreFormControlState(const String& state)
 {
     element()->setValue(state);
 }
@@ -184,7 +213,7 @@ double InputType::valueAsNumber() const
     return numeric_limits<double>::quiet_NaN();
 }
 
-void InputType::setValueAsNumber(double, ExceptionCode& ec) const
+void InputType::setValueAsNumber(double, TextFieldEventBehavior, ExceptionCode& ec) const
 {
     ec = INVALID_STATE_ERR;
 }
@@ -250,6 +279,12 @@ double InputType::maximum() const
 {
     ASSERT_NOT_REACHED();
     return 0;
+}
+
+bool InputType::sizeShouldIncludeDecoration(int, int& preferredSize) const
+{
+    preferredSize = element()->size();
+    return false;
 }
 
 bool InputType::stepMismatch(const String&, double) const
@@ -368,7 +403,20 @@ void InputType::createShadowSubtree()
 
 void InputType::destroyShadowSubtree()
 {
-    element()->removeShadowRoot();
+    if (!element()->hasShadowRoot())
+        return;
+
+    ShadowRoot* root = element()->shadowTree()->oldestShadowRoot();
+    ASSERT(root);
+    root->removeAllChildren();
+
+    // It's ok to clear contents of all other ShadowRoots because they must have
+    // been created by TextFieldDecorationElement, and we don't allow adding
+    // AuthorShadowRoot to HTMLInputElement.
+    while ((root = root->youngerShadowRoot())) {
+        root->removeAllChildren();
+        root->appendChild(HTMLShadowElement::create(shadowTag, element()->document()));
+    }
 }
 
 double InputType::parseToDouble(const String&, double defaultValue) const
@@ -407,6 +455,13 @@ void InputType::dispatchSimulatedClickIfActive(KeyboardEvent* event) const
     event->setDefaultHandled();
 }
 
+Chrome* InputType::chrome() const
+{
+    if (Page* page = element()->document()->page())
+        return page->chrome();
+    return 0;
+}
+
 bool InputType::canSetStringValue() const
 {
     return true;
@@ -422,6 +477,10 @@ bool InputType::shouldUseInputMethod() const
     return false;
 }
 
+void InputType::handleFocusEvent()
+{
+}
+
 void InputType::handleBlurEvent()
 {
 }
@@ -435,15 +494,15 @@ void InputType::attach()
 {
 }
 
+void InputType::detach()
+{
+}
+
 void InputType::altAttributeChanged()
 {
 }
 
 void InputType::srcAttributeChanged()
-{
-}
-
-void InputType::valueChanged()
 {
 }
 
@@ -465,9 +524,18 @@ void InputType::minOrMaxAttributeChanged()
 {
 }
 
+void InputType::stepAttributeChanged()
+{
+}
+
 bool InputType::canBeSuccessfulSubmitButton()
 {
     return false;
+}
+
+HTMLElement* InputType::placeholderElement() const
+{
+    return 0;
 }
 
 bool InputType::rendererIsNeeded()
@@ -485,12 +553,12 @@ bool InputType::getTypeSpecificValue(String&)
     return false;
 }
 
-String InputType::fallbackValue()
+String InputType::fallbackValue() const
 {
     return String();
 }
 
-String InputType::defaultValue()
+String InputType::defaultValue() const
 {
     return String();
 }
@@ -508,6 +576,14 @@ bool InputType::shouldSendChangeEventAfterCheckedChanged()
 bool InputType::storesValueSeparateFromAttribute()
 {
     return true;
+}
+
+void InputType::setValue(const String& sanitizedValue, bool valueChanged, TextFieldEventBehavior eventBehavior)
+{
+    element()->setValueInternal(sanitizedValue, eventBehavior);
+    element()->setNeedsStyleRecalc();
+    if (valueChanged && eventBehavior != DispatchNoEvent)
+        element()->dispatchFormControlChangeEvent();
 }
 
 bool InputType::canSetValue(const String&)
@@ -539,7 +615,7 @@ bool InputType::isAcceptableValue(const String&)
     return true;
 }
 
-String InputType::sanitizeValue(const String& proposedValue)
+String InputType::sanitizeValue(const String& proposedValue) const
 {
     return proposedValue;
 }
@@ -549,9 +625,21 @@ bool InputType::hasUnacceptableValue()
     return false;
 }
 
-void InputType::setFileList(const Vector<String>&)
+void InputType::receiveDroppedFiles(const Vector<String>&)
 {
     ASSERT_NOT_REACHED();
+}
+
+Icon* InputType::icon() const
+{
+    ASSERT_NOT_REACHED();
+    return 0;
+}
+
+String InputType::displayString() const
+{
+    ASSERT_NOT_REACHED();
+    return String();
 }
 
 bool InputType::shouldResetOnDocumentActivation()
@@ -614,6 +702,11 @@ bool InputType::isImageButton() const
     return false;
 }
 
+bool InputType::supportLabels() const
+{
+    return true;
+}
+
 bool InputType::isNumberField() const
 {
     return false;
@@ -649,6 +742,13 @@ bool InputType::isSteppable() const
     return false;
 }
 
+#if ENABLE(INPUT_TYPE_COLOR)
+bool InputType::isColorControl() const
+{
+    return false;
+}
+#endif
+
 bool InputType::shouldRespectHeightAndWidthAttributes()
 {
     return false;
@@ -657,6 +757,52 @@ bool InputType::shouldRespectHeightAndWidthAttributes()
 bool InputType::supportsPlaceholder() const
 {
     return false;
+}
+
+bool InputType::usesFixedPlaceholder() const
+{
+    return false;
+}
+
+String InputType::fixedPlaceholder()
+{
+    return String();
+}
+
+void InputType::updatePlaceholderText()
+{
+}
+
+void InputType::multipleAttributeChanged()
+{
+}
+
+void InputType::disabledAttributeChanged()
+{
+}
+
+void InputType::readonlyAttributeChanged()
+{
+}
+
+String InputType::defaultToolTip() const
+{
+    return String();
+}
+
+bool InputType::supportsIndeterminateAppearance() const
+{
+    return false;
+}
+
+unsigned InputType::height() const
+{
+    return 0;
+}
+
+unsigned InputType::width() const
+{
+    return 0;
 }
 
 namespace InputTypeNames {
@@ -676,11 +822,13 @@ const AtomicString& checkbox()
     return name;
 }
 
+#if ENABLE(INPUT_TYPE_COLOR)
 const AtomicString& color()
 {
     DEFINE_STATIC_LOCAL(AtomicString, name, ("color"));
     return name;
 }
+#endif
 
 const AtomicString& date()
 {
@@ -721,12 +869,6 @@ const AtomicString& hidden()
 const AtomicString& image()
 {
     DEFINE_STATIC_LOCAL(AtomicString, name, ("image"));
-    return name;
-}
-
-const AtomicString& isindex()
-{
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("khtml_isindex"));
     return name;
 }
 
@@ -809,5 +951,4 @@ const AtomicString& week()
 }
 
 } // namespace WebCore::InputTypeNames
-
 } // namespace WebCore

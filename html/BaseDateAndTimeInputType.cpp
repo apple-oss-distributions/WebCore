@@ -65,9 +65,9 @@ double BaseDateAndTimeInputType::valueAsNumber() const
     return parseToDouble(element()->value(), numeric_limits<double>::quiet_NaN());
 }
 
-void BaseDateAndTimeInputType::setValueAsNumber(double newValue, ExceptionCode&) const
+void BaseDateAndTimeInputType::setValueAsNumber(double newValue, TextFieldEventBehavior eventBehavior, ExceptionCode&) const
 {
-    element()->setValue(serialize(newValue));
+    element()->setValue(serialize(newValue), eventBehavior);
 }
 
 bool BaseDateAndTimeInputType::typeMismatchFor(const String& value) const
@@ -132,14 +132,16 @@ double BaseDateAndTimeInputType::stepBase() const
 
 void BaseDateAndTimeInputType::handleKeydownEvent(KeyboardEvent* event)
 {
-    handleKeydownEventForSpinButton(event);
+    if (shouldHaveSpinButton())
+        handleKeydownEventForSpinButton(event);
     if (!event->defaultHandled())
         TextFieldInputType::handleKeydownEvent(event);
 }
 
 void BaseDateAndTimeInputType::handleWheelEvent(WheelEvent* event)
 {
-    handleWheelEventForSpinButton(event);
+    if (shouldHaveSpinButton())
+        handleWheelEventForSpinButton(event);
 }
 
 double BaseDateAndTimeInputType::parseToDouble(const String& src, double defaultValue) const
@@ -212,7 +214,7 @@ String BaseDateAndTimeInputType::convertFromVisibleValue(const String& visibleVa
     return serializeWithMilliseconds(parsedValue);
 }
 
-String BaseDateAndTimeInputType::sanitizeValue(const String& proposedValue)
+String BaseDateAndTimeInputType::sanitizeValue(const String& proposedValue) const
 {
     return typeMismatchFor(proposedValue) ? String() : proposedValue;
 }

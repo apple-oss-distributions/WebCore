@@ -41,7 +41,6 @@
 namespace WebCore {
 
 class AccessibilityTableCell;
-class AccessibilityTableHeaderContainer;
     
 class AccessibilityTable : public AccessibilityRenderObject {
 
@@ -51,7 +50,7 @@ public:
     static PassRefPtr<AccessibilityTable> create(RenderObject*);
     virtual ~AccessibilityTable();
 
-    virtual bool isTable() const { return true; }
+    virtual bool isTable() const OVERRIDE { return true; }
     virtual bool isAccessibilityTable() const;
     virtual bool isDataTable() const;
 
@@ -69,6 +68,7 @@ public:
     virtual bool supportsSelectedRows() { return false; }
     unsigned columnCount();
     unsigned rowCount();
+    virtual int tableLevel() const;
     
     virtual String title() const;
     
@@ -86,13 +86,19 @@ protected:
     AccessibilityChildrenVector m_rows;
     AccessibilityChildrenVector m_columns;
 
-    AccessibilityTableHeaderContainer* m_headerContainer;
+    RefPtr<AccessibilityObject> m_headerContainer;
     mutable bool m_isAccessibilityTable;
 
     bool hasARIARole() const;
     bool isTableExposableThroughAccessibility() const;
 };
-
+    
+inline AccessibilityTable* toAccessibilityTable(AccessibilityObject* object)
+{
+    ASSERT(!object || object->isAccessibilityTable());
+    return static_cast<AccessibilityTable*>(object);
+}
+    
 } // namespace WebCore 
 
 #endif // AccessibilityTable_h

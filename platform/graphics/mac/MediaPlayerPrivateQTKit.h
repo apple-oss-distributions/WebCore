@@ -35,19 +35,17 @@
 
 #ifdef __OBJC__
 #import <QTKit/QTTime.h>
-@class QTMovie;
-@class QTMovieView;
-@class QTMovieLayer;
-@class QTVideoRendererWebKitOnly;
-@class WebCoreMovieObserver;
 #else
-class QTMovie;
-class QTMovieView;
 class QTTime;
-class QTMovieLayer;
-class QTVideoRendererWebKitOnly;
-class WebCoreMovieObserver;
 #endif
+
+OBJC_CLASS NSDictionary;
+OBJC_CLASS NSMutableDictionary;
+OBJC_CLASS QTMovie;
+OBJC_CLASS QTMovieView;
+OBJC_CLASS QTMovieLayer;
+OBJC_CLASS QTVideoRendererWebKitOnly;
+OBJC_CLASS WebCoreMovieObserver;
 
 #ifndef DRAW_FRAME_RATE
 #define DRAW_FRAME_RATE 0
@@ -83,7 +81,7 @@ private:
     static bool isAvailable();
 
     PlatformMedia platformMedia() const;
-#if USE(ACCELERATED_COMPOSITING)
+#if USE(ACCELERATED_COMPOSITING) && !(PLATFORM(QT) && USE(QTKIT))
     PlatformLayer* platformLayer() const;
 #endif
 
@@ -91,6 +89,7 @@ private:
     bool hasVideo() const;
     bool hasAudio() const;
     bool supportsFullscreen() const;
+    virtual bool supportsScanning() const { return true; }
     
     void load(const String& url);
     void cancelLoad();
@@ -135,7 +134,7 @@ private:
     virtual void prepareForRendering();
 
 
-#if USE(ACCELERATED_COMPOSITING)
+#if USE(ACCELERATED_COMPOSITING) && !(PLATFORM(QT) && USE(QTKIT))
     bool supportsAcceleratedRendering() const;
     void acceleratedRenderingStateChanged();
 #endif

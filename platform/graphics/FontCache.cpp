@@ -35,10 +35,13 @@
 #include "FontPlatformData.h"
 #include "FontSelector.h"
 #include "GlyphPageTreeNode.h"
+#include "WebKitFontFamilyNames.h"
 #include <wtf/HashMap.h>
 #include <wtf/ListHashSet.h>
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/StringHash.h>
+
+#include "MemoryPressureHandler.h"
 
 static pthread_mutex_t fontDataLock;
 
@@ -269,7 +272,7 @@ struct FontDataCacheKeyTraits : WTF::GenericHashTraits<FontPlatformData> {
     }
     static void constructDeletedValue(FontPlatformData& slot)
     {
-        new (&slot) FontPlatformData(HashTableDeletedValue);
+        new (NotNull, &slot) FontPlatformData(HashTableDeletedValue);
     }
     static bool isDeletedValue(const FontPlatformData& value)
     {
@@ -281,8 +284,15 @@ typedef HashMap<FontPlatformData, pair<SimpleFontData*, unsigned>, FontDataCache
 
 static FontDataCache* gFontDataCache = 0;
 
-const int cMaxInactiveFontData = 50; // Pretty Low Threshold
-const int cTargetInactiveFontData = 30;
+#if PLATFORM(CHROMIUM) && !OS(ANDROID)
+const int cMaxInactiveFontData = 250;
+const int cTargetInactiveFontData = 200;
+#else
+const int cMaxInactiveFontData = 120;
+const int cTargetInactiveFontData = 100;
+const int cMaxUnderMemoryPressureInactiveFontData = 50;
+const int cTargetUnderMemoryPressureInactiveFontData = 30;
+#endif
 static ListHashSet<const SimpleFontData*>* gInactiveFontData = 0;
 
 SimpleFontData* FontCache::getCachedFontData(const FontDescription& fontDescription, const AtomicString& family, bool checkingAlternateName, ShouldRetain shouldRetain)
@@ -358,8 +368,12 @@ void FontCache::releaseFontData(const SimpleFontData* fontData)
 
 void FontCache::purgeInactiveFontDataIfNeeded()
 {
-    if (gInactiveFontData && !m_purgePreventCount && gInactiveFontData->size() > cMaxInactiveFontData)
-        purgeInactiveFontData(gInactiveFontData->size() - cTargetInactiveFontData);
+    bool underMemoryPressure = memoryPressureHandler().hasReceivedMemoryPressure();
+    int inactiveFontDataLimit = underMemoryPressure ? cMaxUnderMemoryPressureInactiveFontData : cMaxInactiveFontData;
+    int targetFontDataLimit = underMemoryPressure ? cTargetUnderMemoryPressureInactiveFontData : cTargetInactiveFontData;
+
+    if (gInactiveFontData && !m_purgePreventCount && gInactiveFontData->size() > inactiveFontDataLimit)
+        purgeInactiveFontData(gInactiveFontData->size() - targetFontDataLimit);
 }
 
 void FontCache::purgeInactiveFontData(int count)
@@ -381,6 +395,7 @@ void FontCache::purgeInactiveFontData(int count)
     for (int i = 0; i < count && it != end; ++it, ++i) {
         const SimpleFontData* fontData = *it.get();
         gFontDataCache->remove(fontData->platformData());
+        // We should not delete SimpleFontData here because deletion can modify gInactiveFontData. See http://trac.webkit.org/changeset/44011
         fontDataToDelete.append(fontData);
     }
 
@@ -463,7 +478,7 @@ const FontData* FontCache::getFontData(const Font& font, int& familyIndex, FontS
 
         if (fontSelector) {
             // Try the user's preferred standard font.
-            if (FontData* data = fontSelector->getFontData(font.fontDescription(), "-webkit-standard"))
+            if (FontData* data = fontSelector->getFontData(font.fontDescription(), standardFamily))
                 return data;
         }
 
@@ -492,9 +507,9 @@ void FontCache::removeClient(FontSelector* client)
     gClients->remove(client);
 }
 
-static unsigned gGeneration = 0;
+static unsigned short gGeneration = 0;
 
-unsigned FontCache::generation()
+unsigned short FontCache::generation()
 {
     return gGeneration;
 }

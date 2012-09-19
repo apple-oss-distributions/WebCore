@@ -44,8 +44,10 @@
 #include "npruntime_impl.h"
 #include "runtime_root.h"
 #include <debugger/Debugger.h>
+#include <heap/StrongInlines.h>
 #include <runtime/InitializeThreading.h>
 #include <runtime/JSLock.h>
+#include <wtf/text/TextPosition.h>
 #include <wtf/Threading.h>
 
 using namespace JSC;
@@ -60,10 +62,7 @@ void ScriptController::initializeThreading()
 ScriptController::ScriptController(Frame* frame)
     : m_frame(frame)
     , m_sourceURL(0)
-    , m_inExecuteScript(false)
-    , m_processingTimerCallback(false)
     , m_paused(false)
-    , m_allowPopupsFromPlugin(false)
 #if ENABLE(NETSCAPE_PLUGIN_API)
     , m_windowScriptNPObject(0)
 #endif
@@ -107,7 +106,8 @@ void ScriptController::destroyWindowShell(DOMWrapperWorld* world)
 JSDOMWindowShell* ScriptController::createWindowShell(DOMWrapperWorld* world)
 {
     ASSERT(!m_windowShells.contains(world));
-    Strong<JSDOMWindowShell> windowShell(*world->globalData(), new JSDOMWindowShell(m_frame->domWindow(), world));
+    Structure* structure = JSDOMWindowShell::createStructure(*world->globalData(), jsNull());
+    Strong<JSDOMWindowShell> windowShell(*world->globalData(), JSDOMWindowShell::create(m_frame->domWindow(), structure, world));
     Strong<JSDOMWindowShell> windowShell2(windowShell);
     m_windowShells.add(world, windowShell);
     world->didCreateWindowShell(this);
@@ -131,32 +131,28 @@ ScriptValue ScriptController::evaluateInWorld(const ScriptSourceCode& sourceCode
     const String* savedSourceURL = m_sourceURL;
     m_sourceURL = &sourceURL;
 
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(exec);
 
     RefPtr<Frame> protect = m_frame;
 
     InspectorInstrumentationCookie cookie = InspectorInstrumentation::willEvaluateScript(m_frame, sourceURL, sourceCode.startLine());
 
+    JSValue evaluationException;
+
     exec->globalData().timeoutChecker.start();
-    Completion comp = JSMainThreadExecState::evaluate(exec, exec->dynamicGlobalObject()->globalScopeChain(), jsSourceCode, shell);
+    JSValue returnValue = JSMainThreadExecState::evaluate(exec, exec->dynamicGlobalObject()->globalScopeChain(), jsSourceCode, shell, &evaluationException);
     exec->globalData().timeoutChecker.stop();
 
     InspectorInstrumentation::didEvaluateScript(cookie);
 
-    // Evaluating the JavaScript could cause the frame to be deallocated
-    // so we start the keep alive timer here.
-    m_frame->keepAlive();
-
-    if (comp.complType() == JSC::Normal || comp.complType() == ReturnValue) {
+    if (evaluationException) {
+        reportException(exec, evaluationException);
         m_sourceURL = savedSourceURL;
-        return ScriptValue(exec->globalData(), comp.value());
+        return ScriptValue();
     }
 
-    if (comp.complType() == Throw || comp.complType() == Interrupted)
-        reportException(exec, comp.value());
-
     m_sourceURL = savedSourceURL;
-    return ScriptValue();
+    return ScriptValue(exec->globalData(), returnValue);
 }
 
 ScriptValue ScriptController::evaluate(const ScriptSourceCode& sourceCode) 
@@ -169,7 +165,7 @@ PassRefPtr<DOMWrapperWorld> ScriptController::createWorld()
     return DOMWrapperWorld::create(JSDOMWindow::commonJSGlobalData());
 }
 
-void ScriptController::getAllWorlds(Vector<DOMWrapperWorld*>& worlds)
+void ScriptController::getAllWorlds(Vector<RefPtr<DOMWrapperWorld> >& worlds)
 {
     static_cast<WebCoreJSClientData*>(JSDOMWindow::commonJSGlobalData()->clientData)->getAllWorlds(worlds);
 }
@@ -179,7 +175,7 @@ void ScriptController::clearWindowShell(bool goingIntoPageCache)
     if (m_windowShells.isEmpty())
         return;
 
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(JSDOMWindowBase::commonJSGlobalData());
 
     for (ShellMap::iterator iter = m_windowShells.begin(); iter != m_windowShells.end(); ++iter) {
         JSDOMWindowShell* windowShell = iter->second.get();
@@ -211,7 +207,7 @@ JSDOMWindowShell* ScriptController::initScript(DOMWrapperWorld* world)
 {
     ASSERT(!m_windowShells.contains(world));
 
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(world->globalData());
 
     JSDOMWindowShell* windowShell = createWindowShell(world);
 
@@ -227,93 +223,29 @@ JSDOMWindowShell* ScriptController::initScript(DOMWrapperWorld* world)
     return windowShell;
 }
 
-int ScriptController::eventHandlerLineNumber() const
+TextPosition ScriptController::eventHandlerPosition() const
 {
-    // JSC expects 1-based line numbers, so we must add one here to get it right.
     ScriptableDocumentParser* parser = m_frame->document()->scriptableDocumentParser();
     if (parser)
-        return parser->lineNumber() + 1;
-    return 0;
+        return parser->textPosition();
+    return TextPosition::belowRangePosition();
 }
 
 void ScriptController::disableEval()
 {
-    windowShell(mainThreadNormalWorld())->window()->disableEval();
+    windowShell(mainThreadNormalWorld())->window()->setEvalEnabled(false);
 }
 
 bool ScriptController::processingUserGesture()
 {
-    ExecState* exec = JSMainThreadExecState::currentState();
-    Frame* frame = exec ? toDynamicFrame(exec) : 0;
-    // No script is running, so it is user-initiated unless the gesture stack
-    // explicitly says it is not.
-    if (!frame)
-        return UserGestureIndicator::getUserGestureState() != DefinitelyNotProcessingUserGesture;
-
-    // FIXME: We check the plugin popup flag and javascript anchor navigation
-    // from the dynamic frame becuase they should only be initiated on the
-    // dynamic frame in which execution began if they do happen.
-    ScriptController* scriptController = frame->script();
-    ASSERT(scriptController);
-    if (scriptController->allowPopupsFromPlugin() || scriptController->isJavaScriptAnchorNavigation())
-        return true;
-
-    // If a DOM event is being processed, check that it was initiated by the user
-    // and that it is in the whitelist of event types allowed to generate pop-ups.
-    if (JSDOMWindowShell* shell = scriptController->existingWindowShell(currentWorld(exec)))
-        if (Event* event = shell->window()->currentEvent())
-            return event->fromUserGesture();
-
     return UserGestureIndicator::processingUserGesture();
-}
-
-// FIXME: This seems like an insufficient check to verify a click on a javascript: anchor.
-bool ScriptController::isJavaScriptAnchorNavigation() const
-{
-    // This is the <a href="javascript:window.open('...')> case -> we let it through
-    if (m_sourceURL && m_sourceURL->isNull() && !m_processingTimerCallback)
-        return true;
-
-    // This is the <script>window.open(...)</script> case or a timer callback -> block it
-    return false;
-}
-
-bool ScriptController::anyPageIsProcessingUserGesture() const
-{
-    Page* page = m_frame->page();
-    if (!page)
-        return false;
-
-    const HashSet<Page*>& pages = page->group().pages();
-    HashSet<Page*>::const_iterator end = pages.end();
-    for (HashSet<Page*>::const_iterator it = pages.begin(); it != end; ++it) {
-        for (Frame* frame = page->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
-            ScriptController* script = frame->script();
-
-            if (script->m_allowPopupsFromPlugin)
-                return true;
-
-            const ShellMap::const_iterator iterEnd = m_windowShells.end();
-            for (ShellMap::const_iterator iter = m_windowShells.begin(); iter != iterEnd; ++iter) {
-                JSDOMWindowShell* shell = iter->second.get();
-                Event* event = shell->window()->currentEvent();
-                if (event && event->fromUserGesture())
-                    return true;
-            }
-
-            if (isJavaScriptAnchorNavigation())
-                return true;
-        }
-    }
-
-    return false;
 }
 
 bool ScriptController::canAccessFromCurrentOrigin(Frame *frame)
 {
     ExecState* exec = JSMainThreadExecState::currentState();
     if (exec)
-        return allowsAccessFromFrame(exec, frame);
+        return shouldAllowAccessToFrame(exec, frame);
     // If the current state is 0 we're in a call path where the DOM security 
     // check doesn't apply (eg. parser).
     return true;
@@ -342,9 +274,10 @@ void ScriptController::updateDocument()
     if (!m_frame->document())
         return;
 
-    JSLock lock(SilenceAssertionsOnly);
-    for (ShellMap::iterator iter = m_windowShells.begin(); iter != m_windowShells.end(); ++iter)
+    for (ShellMap::iterator iter = m_windowShells.begin(); iter != m_windowShells.end(); ++iter) {
+        JSLockHolder lock(iter->first->globalData());
         iter->second->window()->updateDocument();
+    }
 }
 
 void ScriptController::updateSecurityOrigin()
@@ -358,7 +291,7 @@ Bindings::RootObject* ScriptController::cacheableBindingRootObject()
         return 0;
 
     if (!m_cacheableBindingRootObject) {
-        JSLock lock(SilenceAssertionsOnly);
+        JSLockHolder lock(JSDOMWindowBase::commonJSGlobalData());
         m_cacheableBindingRootObject = Bindings::RootObject::create(0, globalObject(pluginWorld()));
     }
     return m_cacheableBindingRootObject.get();
@@ -370,7 +303,7 @@ Bindings::RootObject* ScriptController::bindingRootObject()
         return 0;
 
     if (!m_bindingRootObject) {
-        JSLock lock(SilenceAssertionsOnly);
+        JSLockHolder lock(JSDOMWindowBase::commonJSGlobalData());
         m_bindingRootObject = Bindings::RootObject::create(0, globalObject(pluginWorld()));
     }
     return m_bindingRootObject.get();
@@ -402,9 +335,9 @@ NPObject* ScriptController::windowScriptNPObject()
         if (canExecuteScripts(NotAboutToExecuteScript)) {
             // JavaScript is enabled, so there is a JavaScript window object.
             // Return an NPObject bound to the window object.
-            JSC::JSLock lock(SilenceAssertionsOnly);
-            JSObject* win = windowShell(pluginWorld())->window();
+            JSDOMWindow* win = windowShell(pluginWorld())->window();
             ASSERT(win);
+            JSC::JSLockHolder lock(win->globalExec());
             Bindings::RootObject* root = bindingRootObject();
             m_windowScriptNPObject = _NPN_CreateScriptObject(0, win, root);
         } else {
@@ -436,8 +369,8 @@ JSObject* ScriptController::jsObjectForPluginElement(HTMLPlugInElement* plugin)
         return 0;
 
     // Create a JSObject bound to this element
-    JSLock lock(SilenceAssertionsOnly);
     JSDOMWindow* globalObj = globalObject(pluginWorld());
+    JSLockHolder lock(globalObj->globalExec());
     // FIXME: is normal okay? - used for NP plugins?
     JSValue jsElementValue = toJS(globalObj->globalExec(), globalObj, plugin);
     if (!jsElementValue || !jsElementValue.isObject())
@@ -471,7 +404,7 @@ void ScriptController::cleanupScriptObjectsForPlugin(void* nativeHandle)
 
 void ScriptController::clearScriptObjects()
 {
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(JSDOMWindowBase::commonJSGlobalData());
 
     RootObjectMap::const_iterator end = m_rootObjects.end();
     for (RootObjectMap::const_iterator it = m_rootObjects.begin(); it != end; ++it)
@@ -497,22 +430,13 @@ void ScriptController::clearScriptObjects()
 
 ScriptValue ScriptController::executeScriptInWorld(DOMWrapperWorld* world, const String& script, bool forceUserGesture)
 {
-    ScriptSourceCode sourceCode(script, forceUserGesture ? KURL() : m_frame->document()->url());
+    UserGestureIndicator gestureIndicator(forceUserGesture ? DefinitelyProcessingUserGesture : PossiblyProcessingUserGesture);
+    ScriptSourceCode sourceCode(script, m_frame->document()->url());
 
     if (!canExecuteScripts(AboutToExecuteScript) || isPaused())
         return ScriptValue();
 
-    bool wasInExecuteScript = m_inExecuteScript;
-    m_inExecuteScript = true;
-
-    ScriptValue result = evaluateInWorld(sourceCode, world);
-
-    if (!wasInExecuteScript) {
-        m_inExecuteScript = false;
-        Document::updateStyleForAllDocuments();
-    }
-
-    return result;
+    return evaluateInWorld(sourceCode, world);
 }
 
 } // namespace WebCore

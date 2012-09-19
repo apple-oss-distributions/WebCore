@@ -26,8 +26,6 @@
 #include "config.h"
 #include "JSStorageCustom.h"
 
-#if ENABLE(DOM_STORAGE)
-
 #include "PlatformString.h"
 #include <runtime/PropertyNameArray.h>
 #include "Storage.h"
@@ -43,34 +41,41 @@ bool JSStorage::canGetItemsForName(ExecState*, Storage* impl, const Identifier& 
 
 JSValue JSStorage::nameGetter(ExecState* exec, JSValue slotBase, const Identifier& propertyName)
 {
-    JSStorage* thisObj = static_cast<JSStorage*>(asObject(slotBase));
+    JSStorage* thisObj = jsCast<JSStorage*>(asObject(slotBase));
+        
+    JSValue prototype = asObject(slotBase)->prototype();
+    if (prototype.isObject() && asObject(prototype)->hasProperty(exec, propertyName))
+        return asObject(prototype)->get(exec, propertyName);
+ 
     return jsStringOrNull(exec, thisObj->impl()->getItem(identifierToString(propertyName)));
 }
 
-bool JSStorage::deleteProperty(ExecState* exec, const Identifier& propertyName)
+bool JSStorage::deleteProperty(JSCell* cell, ExecState* exec, const Identifier& propertyName)
 {
+    JSStorage* thisObject = jsCast<JSStorage*>(cell);
     // Only perform the custom delete if the object doesn't have a native property by this name.
     // Since hasProperty() would end up calling canGetItemsForName() and be fooled, we need to check
     // the native property slots manually.
     PropertySlot slot;
-    if (getStaticValueSlot<JSStorage, Base>(exec, s_info.propHashTable(exec), this, propertyName, slot))
+    if (getStaticValueSlot<JSStorage, Base>(exec, s_info.propHashTable(exec), thisObject, propertyName, slot))
         return false;
         
-    JSValue prototype = this->prototype();
+    JSValue prototype = thisObject->prototype();
     if (prototype.isObject() && asObject(prototype)->hasProperty(exec, propertyName))
         return false;
 
-    m_impl->removeItem(identifierToString(propertyName));
+    thisObject->m_impl->removeItem(identifierToString(propertyName));
     return true;
 }
 
-void JSStorage::getOwnPropertyNames(ExecState* exec, PropertyNameArray& propertyNames, EnumerationMode mode)
+void JSStorage::getOwnPropertyNames(JSObject* object, ExecState* exec, PropertyNameArray& propertyNames, EnumerationMode mode)
 {
-    unsigned length = m_impl->length();
+    JSStorage* thisObject = jsCast<JSStorage*>(object);
+    unsigned length = thisObject->m_impl->length();
     for (unsigned i = 0; i < length; ++i)
-        propertyNames.add(Identifier(exec, stringToUString(m_impl->key(i))));
+        propertyNames.add(Identifier(exec, stringToUString(thisObject->m_impl->key(i))));
         
-    Base::getOwnPropertyNames(exec, propertyNames, mode);
+    Base::getOwnPropertyNames(thisObject, exec, propertyNames, mode);
 }
 
 bool JSStorage::putDelegate(ExecState* exec, const Identifier& propertyName, JSValue value, PutPropertySlot&)
@@ -86,7 +91,7 @@ bool JSStorage::putDelegate(ExecState* exec, const Identifier& propertyName, JSV
     if (prototype.isObject() && asObject(prototype)->hasProperty(exec, propertyName))
         return false;
     
-    String stringValue = ustringToString(value.toString(exec));
+    String stringValue = ustringToString(value.toString(exec)->value(exec));
     if (exec->hadException())
         return true;
     
@@ -98,5 +103,3 @@ bool JSStorage::putDelegate(ExecState* exec, const Identifier& propertyName, JSV
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(DOM_STORAGE)

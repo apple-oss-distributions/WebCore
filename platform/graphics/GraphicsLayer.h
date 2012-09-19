@@ -30,6 +30,9 @@
 
 #include "Animation.h"
 #include "Color.h"
+#if ENABLE(CSS_FILTERS)
+#include "FilterOperations.h"
+#endif
 #include "FloatPoint.h"
 #include "FloatPoint3D.h"
 #include "FloatSize.h"
@@ -53,13 +56,13 @@ class FloatPoint3D;
 class GraphicsContext;
 class Image;
 class TextStream;
+class TiledBacking;
 class TimingFunction;
 
 // Base class for animation values (also used for transitions). Here to
 // represent values for properties being animated via the GraphicsLayer,
 // without pulling in style-related data from outside of the platform directory.
 class AnimationValue {
-    WTF_MAKE_NONCOPYABLE(AnimationValue); WTF_MAKE_FAST_ALLOCATED;
 public:
     AnimationValue(float keyTime, PassRefPtr<TimingFunction> timingFunction = 0)
         : m_keyTime(keyTime)
@@ -72,6 +75,7 @@ public:
 
     float keyTime() const { return m_keyTime; }
     const TimingFunction* timingFunction() const { return m_timingFunction.get(); }
+    virtual AnimationValue* clone() const = 0;
 
 private:
     float m_keyTime;
@@ -86,6 +90,7 @@ public:
         , m_value(value)
     {
     }
+    virtual AnimationValue* clone() const { return new FloatAnimationValue(*this); }
 
     float value() const { return m_value; }
 
@@ -100,31 +105,70 @@ public:
         : AnimationValue(keyTime, timingFunction)
     {
         if (value)
-            m_value = adoptPtr(new TransformOperations(*value));
+            m_value = *value;
     }
+    virtual AnimationValue* clone() const { return new TransformAnimationValue(*this); }
 
-    const TransformOperations* value() const { return m_value.get(); }
+    const TransformOperations* value() const { return &m_value; }
 
 private:
-    OwnPtr<TransformOperations> m_value;
+    TransformOperations m_value;
 };
+
+#if ENABLE(CSS_FILTERS)
+// Used to store one filter value in a keyframe list.
+class FilterAnimationValue : public AnimationValue {
+public:
+    FilterAnimationValue(float keyTime, const FilterOperations* value = 0, PassRefPtr<TimingFunction> timingFunction = 0)
+        : AnimationValue(keyTime, timingFunction)
+    {
+        if (value)
+            m_value = *value;
+    }
+    virtual AnimationValue* clone() const { return new FilterAnimationValue(*this); }
+
+    const FilterOperations* value() const { return &m_value; }
+
+private:
+    FilterOperations m_value;
+};
+#endif
 
 // Used to store a series of values in a keyframe list. Values will all be of the same type,
 // which can be inferred from the property.
 class KeyframeValueList {
-    WTF_MAKE_NONCOPYABLE(KeyframeValueList); WTF_MAKE_FAST_ALLOCATED;
 public:
 
     KeyframeValueList(AnimatedPropertyID property)
         : m_property(property)
     {
     }
-    
+
+    KeyframeValueList(const KeyframeValueList& other)
+        : m_property(other.property())
+    {
+        for (size_t i = 0; i < other.m_values.size(); ++i)
+            m_values.append(other.m_values[i]->clone());
+    }
+
     ~KeyframeValueList()
     {
         deleteAllValues(m_values);
     }
-    
+
+    KeyframeValueList& operator=(const KeyframeValueList& other)
+    {
+        KeyframeValueList copy(other);
+        swap(copy);
+        return *this;
+    }
+
+    void swap(KeyframeValueList& other)
+    {
+        std::swap(m_property, other.m_property);
+        m_values.swap(other.m_values);
+    }
+
     AnimatedPropertyID property() const { return m_property; }
 
     size_t size() const { return m_values.size(); }
@@ -157,7 +201,7 @@ public:
     virtual void setName(const String& name) { m_name = name; }
 
     GraphicsLayer* parent() const { return m_parent; };
-    void setParent(GraphicsLayer* layer) { m_parent = layer; } // Internal use only.
+    void setParent(GraphicsLayer*); // Internal use only.
     
     // Returns true if the layer has the given layer as an ancestor (excluding self).
     bool hasAncestor(GraphicsLayer*) const;
@@ -191,7 +235,8 @@ public:
 
     // Offset is origin of the renderer minus origin of the graphics layer (so either zero or negative).
     IntSize offsetFromRenderer() const { return m_offsetFromRenderer; }
-    void setOffsetFromRenderer(const IntSize& offset) { m_offsetFromRenderer = offset; }
+    void setOffsetFromRenderer(const IntSize&);
+    void setOffsetFromRendererWithoutDisplay(const IntSize& offsetFromRenderer) { m_offsetFromRenderer = offsetFromRenderer; }
 
     // The position of the layer (the location of its top-left corner in its parent)
     const FloatPoint& position() const { return m_position; }
@@ -225,6 +270,9 @@ public:
     bool drawsContent() const { return m_drawsContent; }
     virtual void setDrawsContent(bool b) { m_drawsContent = b; }
 
+    bool contentsAreVisible() const { return m_contentsVisible; }
+    virtual void setContentsVisible(bool b) { m_contentsVisible = b; }
+
     bool acceleratesDrawing() const { return m_acceleratesDrawing; }
     virtual void setAcceleratesDrawing(bool b) { m_acceleratesDrawing = b; }
 
@@ -244,6 +292,13 @@ public:
     float opacity() const { return m_opacity; }
     virtual void setOpacity(float opacity) { m_opacity = opacity; }
 
+#if ENABLE(CSS_FILTERS)
+    const FilterOperations& filters() const { return m_filters; }
+    
+    // Returns true if filter can be rendered by the compositor
+    virtual bool setFilters(const FilterOperations& filters) { m_filters = filters; return true; }
+#endif
+
     // Some GraphicsLayers paint only the foreground or the background content
     GraphicsLayerPaintingPhase paintingPhase() const { return m_paintingPhase; }
     void setPaintingPhase(GraphicsLayerPaintingPhase phase) { m_paintingPhase = phase; }
@@ -251,7 +306,7 @@ public:
     virtual void setNeedsDisplay() = 0;
     // mark the given rect (in layer coords) as needing dispay. Never goes deep.
     virtual void setNeedsDisplayInRect(const FloatRect&) = 0;
-    
+
     virtual void setContentsNeedsDisplay() { };
 
     // Set that the position/size of the contents (image or video).
@@ -275,7 +330,7 @@ public:
     virtual void setContentsToImage(Image*) { }
     virtual void setContentsToMedia(PlatformLayer*) { } // video or plug-in
     virtual PlatformLayer* contentsLayerForMedia() const { return 0; }
-    virtual void setContentsBackgroundColor(const Color&) { }
+    virtual void setContentsToBackgroundColor(const Color&) { }
     virtual void setContentsToCanvas(PlatformLayer*) { }
     virtual bool hasContentsLayer() const { return false; }
 
@@ -298,8 +353,8 @@ public:
     virtual void setContentsOrientation(CompositingCoordinatesOrientation orientation) { m_contentsOrientation = orientation; }
     CompositingCoordinatesOrientation contentsOrientation() const { return m_contentsOrientation; }
 
-    bool showDebugBorders() const { return m_client ? m_client->showDebugBorders() : false; }
-    bool showRepaintCounter() const { return m_client ? m_client->showRepaintCounter() : false; }
+    bool showDebugBorders() const { return m_client ? m_client->showDebugBorders(this) : false; }
+    bool showRepaintCounter() const { return m_client ? m_client->showRepaintCounter(this) : false; }
     
     void updateDebugIndicators();
     
@@ -315,37 +370,64 @@ public:
     virtual void setMaintainsPixelAlignment(bool maintainsAlignment) { m_maintainsPixelAlignment = maintainsAlignment; }
     virtual bool maintainsPixelAlignment() const { return m_maintainsPixelAlignment; }
     virtual FloatSize pixelAlignmentOffset() const { return FloatSize(); }
+    bool hasFlattenedPerspectiveTransform() const { return !preserves3D() && m_childrenTransform.hasPerspective(); }
     
     void setAppliesPageScale(bool appliesScale = true) { m_appliesPageScale = appliesScale; }
     bool appliesPageScale() const { return m_appliesPageScale; }
 
     float pageScaleFactor() const { return m_client ? m_client->pageScaleFactor() : 1; }
-    float backingScaleFactor() const { return m_client ? m_client->backingScaleFactor() : 1; }
+    float deviceScaleFactor() const { return m_client ? m_client->deviceScaleFactor() : 1; }
 
-    virtual void pageScaleFactorChanged() { }
-    void notePageScaleFactorChangedIncludingDescendants();
+    virtual void deviceOrPageScaleFactorChanged() { }
+    void noteDeviceOrPageScaleFactorChangedIncludingDescendants();
 
     // Some compositing systems may do internal batching to synchronize compositing updates
     // with updates drawn into the window. These methods flush internal batched state on this layer
     // and descendant layers, and this layer only.
-    virtual void syncCompositingState() { }
+    virtual void syncCompositingState(const FloatRect& /* clipRect */) { }
     virtual void syncCompositingStateForThisLayerOnly() { }
     
     // Return a string with a human readable form of the layer tree, If debug is true 
     // pointers for the layers and timing data will be included in the returned string.
     String layerTreeAsText(LayerTreeAsTextBehavior = LayerTreeAsTextBehaviorNormal) const;
 
+    // Return an estimate of the backing store memory cost (in bytes). May be incorrect for tiled layers.
+    virtual double backingStoreMemoryEstimate() const;
+
     bool usingTiledLayer() const { return m_usingTiledLayer; }
 
-protected:
+    virtual TiledBacking* tiledBacking() { return 0; }
 
-    typedef Vector<TransformOperation::OperationType> TransformOperationList;
-    // Given a list of TransformAnimationValues, return an array of transform operations.
-    // On return, if hasBigRotation is true, functions contain rotations of >= 180 degrees
-    static void fetchTransformOperationList(const KeyframeValueList&, TransformOperationList&, bool& isValid, bool& hasBigRotation);
+#if PLATFORM(QT) || PLATFORM(GTK)
+    // This allows several alternative GraphicsLayer implementations in the same port,
+    // e.g. if a different GraphicsLayer implementation is needed in WebKit1 vs. WebKit2.
+    typedef PassOwnPtr<GraphicsLayer> GraphicsLayerFactory(GraphicsLayerClient*);
+    static void setGraphicsLayerFactory(GraphicsLayerFactory);
+#endif
+
+protected:
+    // Should be called from derived class destructors. Should call willBeDestroyed() on super.
+    virtual void willBeDestroyed();
+
+#if ENABLE(CSS_FILTERS)
+    // This method is used by platform GraphicsLayer classes to clear the filters
+    // when compositing is not done in hardware. It is not virtual, so the caller
+    // needs to notifiy the change to the platform layer as needed.
+    void clearFilters() { m_filters.clear(); }
+
+    // Given a KeyframeValueList containing filterOperations, return true if the operations are valid.
+    static int validateFilterOperations(const KeyframeValueList&);
+#endif
+
+    // Given a list of TransformAnimationValues, see if all the operations for each keyframe match. If so
+    // return the index of the KeyframeValueList entry that has that list of operations (it may not be
+    // the first entry because some keyframes might have an empty transform and those match any list).
+    // If the lists don't match return -1. On return, if hasBigRotation is true, functions contain 
+    // rotations of >= 180 degrees
+    static int validateTransformOperations(const KeyframeValueList&, bool& hasBigRotation);
 
     virtual void setOpacityInternal(float) { }
-    
+
     // The layer being replicated.
     GraphicsLayer* replicatedLayer() const { return m_replicatedLayer; }
     virtual void setReplicatedLayer(GraphicsLayer* layer) { m_replicatedLayer = layer; }
@@ -372,6 +454,10 @@ protected:
     Color m_backgroundColor;
     float m_opacity;
     float m_zPosition;
+    
+#if ENABLE(CSS_FILTERS)
+    FilterOperations m_filters;
+#endif
 
     bool m_backgroundColorSet : 1;
     bool m_contentsOpaque : 1;
@@ -380,6 +466,7 @@ protected:
     bool m_usingTiledLayer : 1;
     bool m_masksToBounds : 1;
     bool m_drawsContent : 1;
+    bool m_contentsVisible : 1;
     bool m_acceleratesDrawing : 1;
     bool m_maintainsPixelAlignment : 1;
     bool m_appliesPageScale : 1; // Set for the layer which has the page scale applied to it.
@@ -400,6 +487,10 @@ protected:
     IntRect m_contentsRect;
 
     int m_repaintCount;
+
+#if PLATFORM(QT) || PLATFORM(GTK)
+    static GraphicsLayer::GraphicsLayerFactory* s_graphicsLayerFactory;
+#endif
 };
 
 

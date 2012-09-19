@@ -32,7 +32,7 @@
 
 namespace WebCore {
 
-#if (PLATFORM(QT) && USE(QT_BEARER))
+#if (PLATFORM(QT) && !defined(QT_NO_BEARERMANAGEMENT))
 class NetworkStateNotifierPrivate;
 #endif
 
@@ -46,14 +46,14 @@ public:
     
     void setIsOnLine(bool isOnLine);
 
-#if (PLATFORM(QT) && USE(QT_BEARER))
+#if (PLATFORM(QT) && !defined(QT_NO_BEARERMANAGEMENT))
     void setNetworkAccessAllowed(bool);
-#elif PLATFORM(ANDROID) || PLATFORM(CHROMIUM)
+#elif PLATFORM(CHROMIUM) || PLATFORM(EFL)
     void setOnLine(bool);
 #endif
 
-#if PLATFORM(ANDROID)
-    void networkStateChange(bool online) { setOnLine(online); }
+#if PLATFORM(BLACKBERRY)
+    void networkStateChange(bool online);
 #endif
 
 private:
@@ -64,6 +64,17 @@ private:
 
 };
 
+#if !PLATFORM(MAC) && !PLATFORM(WIN) && !(PLATFORM(QT) && !defined(QT_NO_BEARERMANAGEMENT)) && !PLATFORM(BLACKBERRY)
+
+inline NetworkStateNotifier::NetworkStateNotifier()
+    : m_isOnLine(true)
+    , m_networkStateChangedFunction(0)
+{
+}
+
+inline void NetworkStateNotifier::updateState() { }
+
+#endif
 
 NetworkStateNotifier& networkStateNotifier();
 

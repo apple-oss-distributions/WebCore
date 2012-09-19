@@ -35,7 +35,17 @@ namespace JSC {
 
 class RuntimeMethod : public InternalFunction {
 public:
-    RuntimeMethod(ExecState*, JSGlobalObject*, Structure*, const Identifier& name, Bindings::MethodList&);
+    typedef InternalFunction Base;
+
+    static void destroy(JSCell*);
+
+    static RuntimeMethod* create(ExecState* exec, JSGlobalObject* globalObject, Structure* structure, const Identifier& name, Bindings::MethodList& methodList)
+    {
+        RuntimeMethod* method = new (NotNull, allocateCell<RuntimeMethod>(*exec->heap())) RuntimeMethod(globalObject, structure, methodList);
+        method->finishCreation(exec->globalData(), name);
+        return method;
+    }
+
     Bindings::MethodList* methods() const { return _methodList.get(); }
 
     static const ClassInfo s_info;
@@ -45,19 +55,22 @@ public:
         return globalObject->functionPrototype();
     }
 
-    static Structure* createStructure(JSGlobalData& globalData, JSValue prototype)
+    static Structure* createStructure(JSGlobalData& globalData, JSGlobalObject* globalObject, JSValue prototype)
     {
-        return Structure::create(globalData, prototype, TypeInfo(ObjectType, StructureFlags), AnonymousSlotCount, &s_info);
+        return Structure::create(globalData, globalObject, prototype, TypeInfo(ObjectType, StructureFlags), &s_info);
     }
 
 protected:
+    RuntimeMethod(JSGlobalObject*, Structure*, Bindings::MethodList&);
+    void finishCreation(JSGlobalData&, const Identifier&);
     static const unsigned StructureFlags = OverridesGetOwnPropertySlot | InternalFunction::StructureFlags;
+    static CallType getCallData(JSCell*, CallData&);
+
+    static bool getOwnPropertySlot(JSCell*, ExecState*, const Identifier&, PropertySlot&);
+    static bool getOwnPropertyDescriptor(JSObject*, ExecState*, const Identifier&, PropertyDescriptor&);
 
 private:
     static JSValue lengthGetter(ExecState*, JSValue, const Identifier&);
-    virtual bool getOwnPropertySlot(ExecState*, const Identifier&, PropertySlot&);
-    virtual bool getOwnPropertyDescriptor(ExecState*, const Identifier&, PropertyDescriptor&);
-    virtual CallType getCallData(CallData&);
 
     OwnPtr<Bindings::MethodList> _methodList;
 };

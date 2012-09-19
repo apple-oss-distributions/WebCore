@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2010 Apple Computer, Inc.  All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2007, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright 2010, The Android Open Source Project
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,6 +28,7 @@
 #define JavaStringJSC_h
 
 #include "JNIUtility.h"
+#include "JSDOMWindowBase.h"
 #include "JavaInstanceJSC.h"
 
 #include <runtime/JSLock.h>
@@ -37,35 +39,34 @@ namespace JSC {
 
 namespace Bindings {
 
-class JavaStringImpl {
+class JavaString {
 public:
-    ~JavaStringImpl()
+    JavaString(JNIEnv* e, jstring s)
     {
-        JSLock lock(SilenceAssertionsOnly);
-        m_impl = 0;
+        init(e, s);
     }
 
-    void init()
+    JavaString(jstring s)
     {
-        JSLock lock(SilenceAssertionsOnly);
+        init(getJNIEnv(), s);
+    }
+
+    JavaString()
+    {
+        JSLockHolder lock(WebCore::JSDOMWindowBase::commonJSGlobalData());
         m_impl = UString().impl();
     }
 
-    void init(JNIEnv* e, jstring s)
+    ~JavaString()
     {
-        int size = e->GetStringLength(s);
-        const jchar* uc = getUCharactersFromJStringInEnv(e, s);
-        {
-            JSLock lock(SilenceAssertionsOnly);
-            m_impl = UString(reinterpret_cast<const UChar*>(uc), size).impl();
-        }
-        releaseUCharactersForJStringInEnv(e, s, uc);
+        JSLockHolder lock(WebCore::JSDOMWindowBase::commonJSGlobalData());
+        m_impl = 0;
     }
 
     const char* utf8() const
     {
         if (!m_utf8String.data()) {
-            JSLock lock(SilenceAssertionsOnly);
+            JSLockHolder lock(WebCore::JSDOMWindowBase::commonJSGlobalData());
             m_utf8String = UString(m_impl).utf8();
         }
         return m_utf8String.data();
@@ -74,6 +75,17 @@ public:
     StringImpl* impl() const { return m_impl.get(); }
 
 private:
+    void init(JNIEnv* e, jstring s)
+    {
+        int size = e->GetStringLength(s);
+        const jchar* uc = getUCharactersFromJStringInEnv(e, s);
+        {
+            JSLockHolder lock(WebCore::JSDOMWindowBase::commonJSGlobalData());
+            m_impl = UString(reinterpret_cast<const UChar*>(uc), size).impl();
+        }
+        releaseUCharactersForJStringInEnv(e, s, uc);
+    }
+
     RefPtr<StringImpl> m_impl;
     mutable CString m_utf8String;
 };

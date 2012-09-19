@@ -24,6 +24,8 @@
 #define CachedImage_h
 
 #include "CachedResource.h"
+#include "CachedResourceClient.h"
+#include "SVGImageCache.h"
 #include "ImageObserver.h"
 #include "IntRect.h"
 #include "Timer.h"
@@ -32,34 +34,41 @@
 namespace WebCore {
 
 class CachedResourceLoader;
+class FloatSize;
 class MemoryCache;
+class RenderObject;
+struct Length;
 
 class CachedImage : public CachedResource, public ImageObserver {
     friend class MemoryCache;
 
 public:
-    CachedImage(const String& url);
+    CachedImage(const ResourceRequest&);
     CachedImage(Image*);
+    CachedImage(const KURL&, Image*);
     virtual ~CachedImage();
     
-    virtual void load(CachedResourceLoader* cachedResourceLoader);
+    virtual void load(CachedResourceLoader*, const ResourceLoaderOptions&);
 
-    Image* image() const; // Returns the nullImage() if the image is not available yet.
+    Image* image(); // Returns the nullImage() if the image is not available yet.
+    Image* imageForRenderer(const RenderObject*); // Returns the nullImage() if the image is not available yet.
     bool hasImage() const { return m_image.get(); }
 
-    bool canRender(float multiplier) const { return !errorOccurred() && !imageSize(multiplier).isEmpty(); }
+    std::pair<Image*, float> brokenImage(float deviceScaleFactor) const; // Returns an image and the image's resolution scale factor.
+    bool willPaintBrokenImage() const; 
 
-    // These are only used for SVGImage right now
-    void setImageContainerSize(const IntSize&);
+    bool canRender(const RenderObject* renderer, float multiplier) { return !errorOccurred() && !imageSizeForRenderer(renderer, multiplier).isEmpty(); }
+
+    void setContainerSizeForRenderer(const RenderObject*, const IntSize&, float);
     bool usesImageContainerSize() const;
     bool imageHasRelativeWidth() const;
     bool imageHasRelativeHeight() const;
     
-    // Both of these methods take a zoom multiplier that can be used to increase the natural size of the image by the
-    // zoom.
-    IntSize imageSize(float multiplier) const;  // returns the size of the complete image.
-    IntRect imageRect(float multiplier) const;  // The size of the currently decoded portion of the image.
+    // This method takes a zoom multiplier that can be used to increase the natural size of the image by the zoom.
+    IntSize imageSizeForRenderer(const RenderObject*, float multiplier); // returns the size of the complete image.
+    void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio);
 
+    void removeClientForRenderer(RenderObject*);
     virtual void didAddClient(CachedResourceClient*);
     
     virtual void allClientsRemoved();
@@ -67,15 +76,13 @@ public:
 
     virtual void data(PassRefPtr<SharedBuffer> data, bool allDataReceived);
     virtual void error(CachedResource::Status);
+    virtual void setResponse(const ResourceResponse&);
     
     // For compatibility, images keep loading even if there are HTTP errors.
     virtual bool shouldIgnoreHTTPStatusCodeErrors() const { return true; }
 
     virtual bool isImage() const { return true; }
     virtual bool isManual() const { return false; }
-
-    void clear();
-    
     bool stillNeedsLoad() const { return !errorOccurred() && status() == Unknown && !isLoading(); }
     void load();
 
@@ -87,7 +94,7 @@ public:
     virtual void animationAdvanced(const Image*);
     virtual void changedInRect(const Image*, const IntRect&);
 
-    virtual bool shouldDecodeFrame(const Image* image, const IntSize& frameSize);
+    virtual bool shouldDecodeFrame(const Image* image, const IntSize& frameSize) OVERRIDE;
 
 #if ENABLE(DISK_IMAGE_CACHE)
     virtual bool canUseDiskImageCache() const;
@@ -95,7 +102,12 @@ public:
 #endif
 
 private:
+    Image* lookupOrCreateImageForRenderer(const RenderObject*);
+
+    void clear();
+
     void createImage();
+    void clearImage();
     size_t maximumDecodedImageSize();
     // If not null, changeRect is the changed part of the image.
     void notifyObservers(const IntRect* changeRect = 0);
@@ -104,24 +116,43 @@ private:
     void checkShouldPaintBrokenImage();
 
     RefPtr<Image> m_image;
+#if ENABLE(SVG)
+    OwnPtr<SVGImageCache> m_svgImageCache;
+#endif
     Timer<CachedImage> m_decodedDataDeletionTimer;
     bool m_shouldPaintBrokenImage;
+};
+
+class CachedImageClient : public CachedResourceClient {
+public:
+    virtual ~CachedImageClient() { }
+    static CachedResourceClientType expectedType() { return ImageType; }
+    virtual CachedResourceClientType resourceClientType() { return expectedType(); }
+
+    // Called whenever a frame of an image changes, either because we got more data from the network or
+    // because we are animating. If not null, the IntRect is the changed rect of the image.
+    virtual void imageChanged(CachedImage*, const IntRect* = 0) { }
+
+    // Called to find out if this client wants to actually display the image. Used to tell when we
+    // can halt animation. Content nodes that hold image refs for example would not render the image,
+    // but RenderImages would (assuming they have visibility: visible and their render tree isn't hidden
+    // e.g., in the b/f cache or in a background tab).
+    virtual bool willRenderImage(CachedImage*) { return false; }
 };
 
 class CachedImageManual : public CachedImage
 {
 public:
-    CachedImageManual(const String&, Image*);
+    CachedImageManual(const KURL&, Image*);
     virtual ~CachedImageManual();
     void addFakeClient() { addClient(m_fakeClient); }
     void removeFakeClient() { removeClient(m_fakeClient); }
-    virtual bool isManual() const { return true; }
+    virtual bool isManual() const OVERRIDE { return true; }
     virtual bool mustRevalidateDueToCacheHeaders(CachePolicy) const;
 
 private:
     CachedResourceClient* m_fakeClient;
 };
-
 }
 
 #endif

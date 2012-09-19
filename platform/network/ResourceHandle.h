@@ -30,7 +30,6 @@
 #include "AuthenticationClient.h"
 #include "HTTPHeaderMap.h"
 #include "NetworkingContext.h"
-#include "ThreadableLoader.h"
 #include <wtf/OwnPtr.h>
 
 #include "QuickLook.h"
@@ -52,20 +51,16 @@ typedef void* LPVOID;
 typedef LPVOID HINTERNET;
 #endif
 
-#if PLATFORM(MAC)
+#if PLATFORM(MAC) || USE(CFURLSTORAGESESSIONS)
 #include <wtf/RetainPtr.h>
-#ifdef __OBJC__
-@class NSData;
-@class NSDictionary;
-@class NSError;
-@class NSURLConnection;
-@class WebCoreResourceHandleAsDelegate;
-#else
-class NSData;
-class NSDictionary;
-class NSError;
-class NSURLConnection;
-class WebCoreResourceHandleAsDelegate;
+#endif
+
+#if PLATFORM(MAC)
+OBJC_CLASS NSData;
+OBJC_CLASS NSError;
+OBJC_CLASS NSURLConnection;
+OBJC_CLASS WebCoreResourceHandleAsDelegate;
+#ifndef __OBJC__
 typedef struct objc_object *id;
 #endif
 #endif
@@ -76,7 +71,9 @@ typedef int CFHTTPCookieStorageAcceptPolicy;
 typedef struct OpaqueCFHTTPCookieStorage* CFHTTPCookieStorageRef;
 #endif
 
-#if USE(CFURLSTORAGESESSIONS)
+#if USE(CFURLSTORAGESESSIONS) && (defined(BUILDING_ON_SNOW_LEOPARD) || defined(BUILDING_ON_LEOPARD))
+typedef struct __CFURLStorageSession* CFURLStorageSessionRef;
+#elif USE(CFURLSTORAGESESSIONS)
 typedef const struct __CFURLStorageSession* CFURLStorageSessionRef;
 #endif
 
@@ -95,6 +92,11 @@ class ResourceResponse;
 class SchedulePair;
 class SharedBuffer;
 
+enum StoredCredentials {
+    AllowStoredCredentials,
+    DoNotAllowStoredCredentials
+};
+
 template <typename T> class Timer;
 
 class ResourceHandle : public RefCounted<ResourceHandle>
@@ -106,12 +108,8 @@ public:
     static PassRefPtr<ResourceHandle> create(NetworkingContext*, const ResourceRequest&, ResourceHandleClient*, bool defersLoading, bool shouldContentSniff);
     static void loadResourceSynchronously(NetworkingContext*, const ResourceRequest&, StoredCredentials, ResourceError&, ResourceResponse&, Vector<char>& data);
 
-    static void prepareForURL(const KURL&);
     static bool willLoadFromCache(ResourceRequest&, Frame*);
     static void cacheMetadata(const ResourceResponse&, const Vector<char>&);
-#if PLATFORM(MAC)
-    static bool didSendBodyDataDelegateExists();
-#endif
 
     virtual ~ResourceHandle();
 
@@ -159,9 +157,6 @@ public:
     static CFMutableDictionaryRef createSSLPropertiesFromNSURLRequest(const ResourceRequest&);
 #endif
 
-    PassRefPtr<SharedBuffer> bufferedData();
-    static bool supportsBufferedData();
-
     bool shouldContentSniff() const;
     static bool shouldContentSniffURL(const KURL&);
 
@@ -175,7 +170,7 @@ public:
     static void CALLBACK internetStatusCallback(HINTERNET, DWORD_PTR, DWORD, LPVOID, DWORD);
 #endif
 
-#if PLATFORM(QT) || USE(CURL) || USE(SOUP) || PLATFORM(ANDROID)
+#if PLATFORM(QT) || USE(CURL) || USE(SOUP) || PLATFORM(BLACKBERRY)
     ResourceHandleInternal* getInternal() { return d.get(); }
 #endif
 
@@ -195,6 +190,10 @@ public:
     void setClient(ResourceHandleClient*);
 
     void setDefersLoading(bool);
+
+#if PLATFORM(BLACKBERRY)
+    void pauseLoad(bool);
+#endif
       
     ResourceRequest& firstRequest();
     const String& lastHTTPMethod() const;
@@ -202,14 +201,13 @@ public:
     void fireFailure(Timer<ResourceHandle>*);
 
 #if USE(CFURLSTORAGESESSIONS)
-    static void setPrivateBrowsingEnabled(bool);
-    static CFURLStorageSessionRef privateBrowsingStorageSession();
-    static void setPrivateBrowsingStorageSessionIdentifierBase(const String&);
     static CFURLStorageSessionRef currentStorageSession();
-#if PLATFORM(WIN)
     static void setDefaultStorageSession(CFURLStorageSessionRef);
     static CFURLStorageSessionRef defaultStorageSession();
-#endif // PLATFORM(WIN)
+    static void setPrivateBrowsingEnabled(bool);
+
+    static void setPrivateBrowsingStorageSessionIdentifierBase(const String&);
+    static RetainPtr<CFURLStorageSessionRef> createPrivateBrowsingStorageSession(CFStringRef identifier);
 #endif // USE(CFURLSTORAGESESSIONS)
 
     using RefCounted<ResourceHandle>::ref;
@@ -219,9 +217,12 @@ public:
     static CFStringRef synchronousLoadRunLoopMode();
 #endif
 
-#if HAVE(CFNETWORK_DATA_ARRAY_CALLBACK)
+#if HAVE(NETWORK_CFDATA_ARRAY_CALLBACK)
     void handleDataArray(CFArrayRef dataArray);
 #endif
+
+    typedef PassRefPtr<ResourceHandle> (*BuiltinConstructor)(const ResourceRequest& request, ResourceHandleClient* client);
+    static void registerBuiltinConstructor(const AtomicString& protocol, BuiltinConstructor);
 
 protected:
     ResourceHandle(const ResourceRequest&, ResourceHandleClient*, bool defersLoading, bool shouldContentSniff);
@@ -249,8 +250,8 @@ private:
 #endif
 
 #if USE(CFURLSTORAGESESSIONS)
-    static RetainPtr<CFURLStorageSessionRef> createPrivateBrowsingStorageSession(CFStringRef identifier);
     static String privateBrowsingStorageSessionIdentifierDefaultBase();
+    static CFURLStorageSessionRef privateBrowsingStorageSession();
 #endif
 
     friend class ResourceHandleInternal;
@@ -264,11 +265,6 @@ public:
 private:
     OwnPtr<QuickLookHandle> m_quickLook;
 };
-
-ALWAYS_INLINE bool ResourceHandle::supportsBufferedData()
-{
-    return false;
-}
 
 }
 

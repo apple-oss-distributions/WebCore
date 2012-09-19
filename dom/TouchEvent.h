@@ -54,8 +54,6 @@ public:
                         TouchList* touches, TouchList* targetTouches, TouchList* changedTouches,
                         float scale, float rotation);
 
-    virtual bool isTouchEvent() const { return true; }
-
     TouchList* touches() const { return m_touches.get(); }
     TouchList* targetTouches() const { return m_targetTouches.get(); }
     TouchList* changedTouches() const { return m_changedTouches.get(); }
@@ -65,6 +63,8 @@ public:
 
     void setPlatformTouchEvent(const PlatformTouchEvent&);
     const PlatformTouchEvent* platformTouchEvent() const { return m_platformEvent.get(); }
+
+    virtual const AtomicString& interfaceName() const;
 
 private:
     TouchEvent();

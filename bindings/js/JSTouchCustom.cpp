@@ -24,5 +24,4 @@
  */
 
 #include "config.h"
-#include "JSTouch.h"
 

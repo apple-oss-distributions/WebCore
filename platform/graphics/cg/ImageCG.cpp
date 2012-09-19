@@ -33,9 +33,6 @@
 #include "FloatRect.h"
 #include "GraphicsContextCG.h"
 #include "ImageObserver.h"
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-#include "ImageSourceCG.h"
-#endif
 #include "PDFDocumentImage.h"
 #include "PlatformString.h"
 #include <CoreGraphics/CoreGraphics.h>
@@ -57,9 +54,8 @@ bool FrameData::clear(bool clearMetadata)
     if (clearMetadata)
         m_haveMetadata = false;
 
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-    m_orientation = 0;
-#endif
+    m_orientation = DefaultImageOrientation;
+
     m_bytes = 0;
     m_scale = 1.0f;
     m_haveInfo = false;
@@ -84,15 +80,15 @@ BitmapImage::BitmapImage(CGImageRef cgImage, ImageObserver* observer)
     , m_repetitionCount(cAnimationNone)
     , m_repetitionCountStatus(Unknown)
     , m_repetitionsComplete(0)
+    , m_decodedSize(0)
+    , m_frameCount(1)
     , m_isSolidColor(false)
     , m_checkedForSolidColor(false)
     , m_animationFinished(true)
     , m_allDataReceived(true)
     , m_haveSize(true)
     , m_sizeAvailable(true)
-    , m_decodedSize(0)
     , m_haveFrameCount(true)
-    , m_frameCount(1)
 {
     initPlatformData();
     
@@ -101,11 +97,19 @@ BitmapImage::BitmapImage(CGImageRef cgImage, ImageObserver* observer)
     m_decodedSize = width * height * 4;
     m_size = IntSize(width, height);
 
+    // Since we don't have a decoder, we can't figure out the image orientation.
+    // Set m_sizeRespectingOrientation to be the same as m_size so it's not 0x0.
+    m_sizeRespectingOrientation = IntSize(width, height);
+
+    m_originalSize = IntSize(width, height);
+    m_originalSizeRespectingOrientation = IntSize(width, height);
+
     m_frames.grow(1);
     m_frames[0].m_frame = cgImage;
     m_frames[0].m_hasAlpha = true;
     m_frames[0].m_haveMetadata = true;
     m_frames[0].m_scale = 1.0f;
+
     checkForSolidColor();
 }
 
@@ -204,7 +208,12 @@ RetainPtr<CFArrayRef> BitmapImage::getCGImageArray()
     return RetainPtr<CFArrayRef>(AdoptCF, array);
 }
 
-void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& destRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator compositeOp)
+void BitmapImage::draw(GraphicsContext* ctx, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator op)
+{
+    draw(ctx, dstRect, srcRect, styleColorSpace, op, DoNotRespectImageOrientation);
+}
+
+void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& destRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator compositeOp, RespectImageOrientationEnum shouldRespectImageOrientation)
 {
     startAnimation(false);
     
@@ -214,7 +223,7 @@ void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& destRect, const F
     if (CGContextGetType(ctxt->platformContext()) == kCGContextTypePDF)
         image.adoptCF(copyUnscaledFrameAtIndex(m_currentFrame));
     else
-        image = frameAtIndex(m_currentFrame, std::min(1.0f, std::max(transformedDstRect.size.width  / srcRect.width(), transformedDstRect.size.height / srcRect.height())));
+        image = frameAtIndex(m_currentFrame, std::min<float>(1.0f, std::max(transformedDstRect.size.width  / srcRect.width(), transformedDstRect.size.height / srcRect.height())));
     if (!image) // If it's too early we won't have an image yet.
         return;
     
@@ -224,18 +233,16 @@ void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& destRect, const F
     }
 
     float scale = m_frames[m_currentFrame].m_scale;
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-    int orientation = frameOrientationAtIndex(m_currentFrame);
-#endif
     FloatSize selfSize = currentFrameSize();
+    ImageOrientation orientation = DefaultImageOrientation;
+
+    if (shouldRespectImageOrientation == RespectImageOrientation)
+        orientation = frameOrientationAtIndex(m_currentFrame);
 
     ctxt->drawNativeImage(image.get(), selfSize, styleColorSpace, destRect, srcRect,
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-        orientation,
-#endif
         scale,
-        compositeOp);
-
+        compositeOp, orientation
+        );
 
     if (imageObserver())
         imageObserver()->didDraw(this);
@@ -327,7 +334,7 @@ void Image::drawPattern(GraphicsContext* ctxt, const FloatRect& tileRect, const 
     CGContextSetFillColorSpace(context, patternSpace.get());
 
     // FIXME: Really want a public API for this.  It is just CGContextSetBaseCTM(context, CGAffineTransformIdentiy).
-    wkSetPatternBaseCTM(context, CGAffineTransformIdentity);
+    wkSetBaseCTM(context, CGAffineTransformIdentity);
     CGContextSetPatternPhase(context, CGSizeZero);
 
     CGContextSetFillColorWithColor(context, color.get());

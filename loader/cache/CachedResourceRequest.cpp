@@ -3,7 +3,7 @@
     Copyright (C) 2001 Dirk Mueller (mueller@kde.org)
     Copyright (C) 2002 Waldo Bastian (bastian@kde.org)
     Copyright (C) 2006 Samuel Weinig (sam.weinig@gmail.com)
-    Copyright (C) 2004, 2005, 2006, 2007, 2008 Apple Inc. All rights reserved.
+    Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011 Apple Inc. All rights reserved.
 
     This library is free software; you can redistribute it and/or
     modify it under the terms of the GNU Library General Public
@@ -39,6 +39,7 @@
 #include "SharedBuffer.h"
 #include "SubresourceLoader.h"
 #include <wtf/Assertions.h>
+#include <wtf/UnusedParam.h>
 #include <wtf/Vector.h>
 #include <wtf/text/CString.h>
 
@@ -47,12 +48,10 @@
 #include "QuickLook.h"
 
 namespace WebCore {
-    
-static ResourceRequest::TargetType cachedResourceTypeToTargetType(CachedResource::Type type, ResourceLoadPriority priority)
+
+#if PLATFORM(CHROMIUM)
+static ResourceRequest::TargetType cachedResourceTypeToTargetType(CachedResource::Type type)
 {
-#if !ENABLE(LINK_PREFETCH)
-    UNUSED_PARAM(priority);
-#endif
     switch (type) {
     case CachedResource::CSSStyleSheet:
 #if ENABLE(XSLT)
@@ -65,42 +64,56 @@ static ResourceRequest::TargetType cachedResourceTypeToTargetType(CachedResource
         return ResourceRequest::TargetIsFontResource;
     case CachedResource::ImageResource:
         return ResourceRequest::TargetIsImage;
+    case CachedResource::RawResource:
+        return ResourceRequest::TargetIsSubresource;    
 #if ENABLE(LINK_PREFETCH)
-    case CachedResource::LinkResource:
-        if (priority == ResourceLoadPriorityLowest)
-            return ResourceRequest::TargetIsPrefetch;
+    case CachedResource::LinkPrefetch:
+        return ResourceRequest::TargetIsPrefetch;
+    case CachedResource::LinkPrerender:
+        return ResourceRequest::TargetIsPrerender;
+    case CachedResource::LinkSubresource:
         return ResourceRequest::TargetIsSubresource;
+#endif
+#if ENABLE(VIDEO_TRACK)
+    case CachedResource::TextTrackResource:
+        return ResourceRequest::TargetIsTextTrack;
 #endif
     }
     ASSERT_NOT_REACHED();
     return ResourceRequest::TargetIsSubresource;
 }
+#endif
 
-CachedResourceRequest::CachedResourceRequest(CachedResourceLoader* cachedResourceLoader, CachedResource* resource, bool incremental)
+CachedResourceRequest::CachedResourceRequest(CachedResourceLoader* cachedResourceLoader, CachedResource* resource)
     : m_cachedResourceLoader(cachedResourceLoader)
     , m_resource(resource)
-    , m_incremental(incremental)
     , m_multipart(false)
     , m_finishing(false)
 {
-    m_resource->setRequest(this);
 }
 
 CachedResourceRequest::~CachedResourceRequest()
 {
-    m_resource->setRequest(0);
+    if (m_loader)
+        m_loader->clearClient();
 }
 
-PassRefPtr<CachedResourceRequest> CachedResourceRequest::load(CachedResourceLoader* cachedResourceLoader, CachedResource* resource, bool incremental, SecurityCheckPolicy securityCheck, bool sendResourceLoadCallbacks)
+PassOwnPtr<CachedResourceRequest> CachedResourceRequest::load(CachedResourceLoader* cachedResourceLoader, CachedResource* resource, const ResourceLoaderOptions& options)
 {
-    RefPtr<CachedResourceRequest> request = adoptRef(new CachedResourceRequest(cachedResourceLoader, resource, incremental));
+    OwnPtr<CachedResourceRequest> request = adoptPtr(new CachedResourceRequest(cachedResourceLoader, resource));
 
-    // When QuickLook is invoked to convert a document, it returns a unique URL in the
-    // NSURLReponse for the main document.  To make safeQLURLForDocumentURLAndResourceURL()
-    // work, we need to use the QL URL not the original URL.
-    const KURL& documentURL = cachedResourceLoader->frame() ? cachedResourceLoader->frame()->loader()->documentLoader()->response().url() : cachedResourceLoader->document()->url();
-    ResourceRequest resourceRequest(safeQLURLForDocumentURLAndResourceURL(documentURL, resource->url()));
-    resourceRequest.setTargetType(cachedResourceTypeToTargetType(resource->type(), resource->loadPriority()));
+    ResourceRequest resourceRequest = resource->resourceRequest();
+    if (!resourceRequest.isNull() && resourceRequest.url().protocolIs(QLPreviewProtocol())) {
+        // When QuickLook is invoked to convert a document, it returns a unique URL in the
+        // NSURLReponse for the main document.  To make safeQLURLForDocumentURLAndResourceURL()
+        // work, we need to use the QL URL not the original URL.
+        const KURL& documentURL = cachedResourceLoader->frame() ? cachedResourceLoader->frame()->loader()->documentLoader()->response().url() : cachedResourceLoader->document()->url();
+        resourceRequest.setURL(safeQLURLForDocumentURLAndResourceURL(documentURL, resource->url()));
+    }
+#if PLATFORM(CHROMIUM)
+    if (resourceRequest.targetType() == ResourceRequest::TargetIsUnspecified)
+        resourceRequest.setTargetType(cachedResourceTypeToTargetType(resource->type()));
+#endif
 
     if (!resource->accept().isEmpty())
         resourceRequest.setHTTPAccept(resource->accept());
@@ -123,43 +136,61 @@ PassRefPtr<CachedResourceRequest> CachedResourceRequest::load(CachedResourceLoad
     }
     
 #if ENABLE(LINK_PREFETCH)
-    if (resource->type() == CachedResource::LinkResource)
+    if (resource->type() == CachedResource::LinkPrefetch || resource->type() == CachedResource::LinkPrerender || resource->type() == CachedResource::LinkSubresource)
         resourceRequest.setHTTPHeaderField("Purpose", "prefetch");
 #endif
 
     ResourceLoadPriority priority = resource->loadPriority();
     resourceRequest.setPriority(priority);
 
-    RefPtr<SubresourceLoader> loader = resourceLoadScheduler()->scheduleSubresourceLoad(cachedResourceLoader->document()->frame(),
-        request.get(), resourceRequest, priority, securityCheck, sendResourceLoadCallbacks);
+    RefPtr<SubresourceLoader> loader = resourceLoadScheduler()->scheduleSubresourceLoad(cachedResourceLoader->document()->frame(), request.get(), resourceRequest, priority, options);
     if (!loader || loader->reachedTerminalState()) {
         // FIXME: What if resources in other frames were waiting for this revalidation?
-        LOG(ResourceLoading, "Cannot start loading '%s'", resource->url().latin1().data());
-        cachedResourceLoader->decrementRequestCount(resource);
-        cachedResourceLoader->loadFinishing();
+        LOG(ResourceLoading, "Cannot start loading '%s'", resource->url().string().latin1().data());
         if (resource->resourceToRevalidate()) 
             memoryCache()->revalidationFailed(resource); 
         resource->error(CachedResource::LoadError);
-        cachedResourceLoader->loadDone(0);
-        return 0;
+        return PassOwnPtr<CachedResourceRequest>(nullptr);
     }
     request->m_loader = loader;
     return request.release();
 }
 
-void CachedResourceRequest::willSendRequest(SubresourceLoader*, ResourceRequest&, const ResourceResponse&)
+void CachedResourceRequest::willSendRequest(SubresourceLoader* loader, ResourceRequest& req, const ResourceResponse& response)
 {
-    m_resource->setRequestedFromNetworkingLayer();
+    if (!m_cachedResourceLoader->canRequest(m_resource->type(), req.url())) {
+        loader->cancel();
+        return;
+    }
+    m_resource->willSendRequest(req, response);
 }
 
-void CachedResourceRequest::didFinishLoading(SubresourceLoader* loader, double)
+void CachedResourceRequest::cancel()
+{
+    if (m_finishing)
+        return;
+    m_loader->cancel();
+}
+
+unsigned long CachedResourceRequest::identifier() const
+{
+    return m_loader->identifier();
+}
+
+void CachedResourceRequest::setDefersLoading(bool defers)
+{
+    if (m_loader)
+        m_loader->setDefersLoading(defers);
+}
+
+void CachedResourceRequest::didFinishLoading(SubresourceLoader* loader, double finishTime)
 {
     if (m_finishing)
         return;
 
     ASSERT(loader == m_loader.get());
     ASSERT(!m_resource->resourceToRevalidate());
-    LOG(ResourceLoading, "Received '%s'.", m_resource->url().latin1().data());
+    LOG(ResourceLoading, "Received '%s'.", m_resource->url().string().latin1().data());
 
     // Prevent the document from being destroyed before we are done with
     // the cachedResourceLoader that it will delete when the document gets deleted.
@@ -172,26 +203,21 @@ void CachedResourceRequest::didFinishLoading(SubresourceLoader* loader, double)
     // error, so we can't send the successful data() and finish() callbacks.
     if (!m_resource->errorOccurred()) {
         m_cachedResourceLoader->loadFinishing();
+        m_resource->setLoadFinishTime(finishTime);
         m_resource->data(loader->resourceData(), true);
         if (!m_resource->errorOccurred())
             m_resource->finish();
     }
-    m_cachedResourceLoader->loadDone(this);
+    end();
 }
 
-void CachedResourceRequest::didFail(SubresourceLoader*, const ResourceError&)
+void CachedResourceRequest::didFail(SubresourceLoader*, const ResourceError& error)
 {
-    if (!m_loader)
-        return;
-    didFail();
-}
-
-void CachedResourceRequest::didFail(bool cancelled)
-{
-    if (m_finishing)
+    if (m_finishing || !m_loader)
         return;
 
-    LOG(ResourceLoading, "Failed to load '%s' (cancelled=%d).\n", m_resource->url().latin1().data(), cancelled);
+    bool cancelled = error.isCancellation();
+    LOG(ResourceLoading, "Failed to load '%s' (cancelled=%d).\n", m_resource->url().string().latin1().data(), cancelled);
 
     // Prevent the document from being destroyed before we are done with
     // the cachedResourceLoader that it will delete when the document gets deleted.
@@ -212,8 +238,7 @@ void CachedResourceRequest::didFail(bool cancelled)
     if (cancelled || !m_resource->isPreloaded())
         memoryCache()->remove(m_resource);
     
-    // <rdar://problem/9886539> MobileMail crash in WebCore: WebCore::ResourceLoadScheduler::servePendingRequests
-    m_cachedResourceLoader->loadDone(this, /*doPostLoadActionsAsynchronously*/ true);
+    end();
 }
 
 void CachedResourceRequest::didReceiveResponse(SubresourceLoader* loader, const ResourceResponse& response)
@@ -233,14 +258,20 @@ void CachedResourceRequest::didReceiveResponse(SubresourceLoader* loader, const 
             if (m_cachedResourceLoader->frame())
                 m_cachedResourceLoader->frame()->loader()->checkCompleted();
 
-            m_cachedResourceLoader->loadDone(this);
+            end();
             return;
         } 
         // Did not get 304 response, continue as a regular resource load.
         memoryCache()->revalidationFailed(m_resource);
     }
 
+    // setResponse() might cancel the request, so we need to keep ourselves alive. Unfortunately,
+    // we can't protect a CachedResourceRequest, but we can protect m_resource, which has the
+    // power to kill the CachedResourceRequest (and will switch isLoading() to false if it does so).
+    CachedResourceHandle<CachedResource> protect(m_resource);
     m_resource->setResponse(response);
+    if (!protect->isLoading())
+        return;
 
     String encoding = response.textEncodingName();
     if (!encoding.isNull())
@@ -272,19 +303,29 @@ void CachedResourceRequest::didReceiveData(SubresourceLoader* loader, const char
     if (m_resource->errorOccurred())
         return;
 
-    if (m_resource->response().httpStatusCode() >= 400) {
-        if (!m_resource->shouldIgnoreHTTPStatusCodeErrors())
-            m_resource->error(CachedResource::LoadError);
+    if (m_resource->response().httpStatusCode() >= 400 && !m_resource->shouldIgnoreHTTPStatusCodeErrors()) {
+        // Prevent the document from being destroyed before we are done with
+        // the cachedResourceLoader that it will delete when the document gets deleted.
+        RefPtr<Document> protector(m_cachedResourceLoader->document());
+        if (!m_multipart)
+            m_cachedResourceLoader->decrementRequestCount(m_resource);
+        m_finishing = true;
+        m_loader->clearClient();
+        m_resource->error(CachedResource::LoadError);
+        end();
         return;
     }
 
-    // Set the data.
-    if (m_multipart) {
-        // The loader delivers the data in a multipart section all at once, send eof.
-        // The resource data will change as the next part is loaded, so we need to make a copy.
+    // There are two cases where we might need to create our own SharedBuffer instead of copying the one in ResourceLoader.
+    // (1) Multipart content: The loader delivers the data in a multipart section all at once, then sends eof.
+    //     The resource data will change as the next part is loaded, so we need to make a copy.
+    // (2) Our client requested that the data not be buffered at the ResourceLoader level via ResourceLoaderOptions. In this case,
+    //     ResourceLoader::resourceData() will be null. However, unlike the multipart case, we don't want to tell the CachedResource
+    //     that all data has been received yet.
+    if (m_multipart || !loader->resourceData()) {
         RefPtr<SharedBuffer> copiedData = SharedBuffer::create(data, size);
-        m_resource->data(copiedData.release(), true);
-    } else if (m_incremental)
+        m_resource->data(copiedData.release(), m_multipart);
+    } else
         m_resource->data(loader->resourceData(), false);
 }
 
@@ -292,6 +333,18 @@ void CachedResourceRequest::didReceiveCachedMetadata(SubresourceLoader*, const c
 {
     ASSERT(!m_resource->isCacheValidator());
     m_resource->setSerializedCachedMetadata(data, size);
+}
+
+void CachedResourceRequest::didSendData(SubresourceLoader*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent)
+{
+    m_resource->didSendData(bytesSent, totalBytesToBeSent);
+}
+
+void CachedResourceRequest::end()
+{
+    // <rdar://problem/9886539> MobileMail crash in WebCore: WebCore::ResourceLoadScheduler::servePendingRequests
+    m_cachedResourceLoader->loadDone(/*doPostLoadActionsAsynchronously*/ true);
+    m_resource->stopLoading();
 }
 
 } //namespace WebCore

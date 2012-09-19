@@ -53,25 +53,26 @@ using namespace JSC;
 
 namespace WebCore {
 
-void JSWorkerContext::visitChildren(SlotVisitor& visitor)
+void JSWorkerContext::visitChildren(JSCell* cell, SlotVisitor& visitor)
 {
-    ASSERT_GC_OBJECT_INHERITS(this, &s_info);
+    JSWorkerContext* thisObject = jsCast<JSWorkerContext*>(cell);
+    ASSERT_GC_OBJECT_INHERITS(thisObject, &s_info);
     COMPILE_ASSERT(StructureFlags & OverridesVisitChildren, OverridesVisitChildrenWithoutSettingFlag);
-    ASSERT(structure()->typeInfo().overridesVisitChildren());
-    Base::visitChildren(visitor);
+    ASSERT(thisObject->structure()->typeInfo().overridesVisitChildren());
+    Base::visitChildren(thisObject, visitor);
 
-    if (WorkerLocation* location = impl()->optionalLocation())
+    if (WorkerLocation* location = thisObject->impl()->optionalLocation())
         visitor.addOpaqueRoot(location);
-    if (WorkerNavigator* navigator = impl()->optionalNavigator())
+    if (WorkerNavigator* navigator = thisObject->impl()->optionalNavigator())
         visitor.addOpaqueRoot(navigator);
 
-    impl()->visitJSEventListeners(visitor);
+    thisObject->impl()->visitJSEventListeners(visitor);
 }
 
 bool JSWorkerContext::getOwnPropertySlotDelegate(ExecState* exec, const Identifier& propertyName, PropertySlot& slot)
 {
     // Look for overrides before looking at any of our own properties.
-    if (JSGlobalObject::getOwnPropertySlot(exec, propertyName, slot))
+    if (JSGlobalObject::getOwnPropertySlot(this, exec, propertyName, slot))
         return true;
     return false;
 }
@@ -79,17 +80,15 @@ bool JSWorkerContext::getOwnPropertySlotDelegate(ExecState* exec, const Identifi
 bool JSWorkerContext::getOwnPropertyDescriptorDelegate(ExecState* exec, const Identifier& propertyName, PropertyDescriptor& descriptor)
 {
     // Look for overrides before looking at any of our own properties.
-    if (JSGlobalObject::getOwnPropertyDescriptor(exec, propertyName, descriptor))
+    if (JSGlobalObject::getOwnPropertyDescriptor(this, exec, propertyName, descriptor))
         return true;
     return false;
 }
 
-#if ENABLE(EVENTSOURCE)
 JSValue JSWorkerContext::eventSource(ExecState* exec) const
 {
     return getDOMConstructor<JSEventSourceConstructor>(exec, this);
 }
-#endif
 
 JSValue JSWorkerContext::xmlHttpRequest(ExecState* exec) const
 {
@@ -110,7 +109,7 @@ JSValue JSWorkerContext::importScripts(ExecState* exec)
 
     Vector<String> urls;
     for (unsigned i = 0; i < exec->argumentCount(); i++) {
-        urls.append(ustringToString(exec->argument(i).toString(exec)));
+        urls.append(ustringToString(exec->argument(i).toString(exec)->value(exec)));
         if (exec->hadException())
             return jsUndefined();
     }

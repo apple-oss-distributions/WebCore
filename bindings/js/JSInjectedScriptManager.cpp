@@ -31,9 +31,10 @@
  */
 
 #include "config.h"
-#include "InjectedScriptManager.h"
 
 #if ENABLE(INSPECTOR)
+
+#include "InjectedScriptManager.h"
 
 #include "ExceptionCode.h"
 #include "InjectedScript.h"
@@ -50,14 +51,18 @@ namespace WebCore {
 
 ScriptObject InjectedScriptManager::createInjectedScript(const String& source, ScriptState* scriptState, long id)
 {
+    JSLockHolder lock(scriptState);
+
     SourceCode sourceCode = makeSource(stringToUString(source));
-    JSLock lock(SilenceAssertionsOnly);
-    JSDOMGlobalObject* globalObject = static_cast<JSDOMGlobalObject*>(scriptState->lexicalGlobalObject());
+    JSDOMGlobalObject* globalObject = jsCast<JSDOMGlobalObject*>(scriptState->lexicalGlobalObject());
     JSValue globalThisValue = scriptState->globalThisValue();
-    Completion comp = JSMainThreadExecState::evaluate(scriptState, globalObject->globalScopeChain(), sourceCode, globalThisValue);
-    if (comp.complType() != JSC::Normal && comp.complType() != JSC::ReturnValue)
+
+    JSValue evaluationException;
+    JSValue evaluationReturnValue = JSMainThreadExecState::evaluate(scriptState, globalObject->globalScopeChain(), sourceCode, globalThisValue, &evaluationException);
+    if (evaluationException)
         return ScriptObject();
-    JSValue functionValue = comp.value();
+
+    JSValue functionValue = evaluationReturnValue;
     CallData callData;
     CallType callType = getCallData(functionValue, callData);
     if (callType == CallTypeNone)
@@ -75,14 +80,14 @@ ScriptObject InjectedScriptManager::createInjectedScript(const String& source, S
 
 void InjectedScriptManager::discardInjectedScript(ScriptState* scriptState)
 {
-    JSDOMGlobalObject* globalObject = static_cast<JSDOMGlobalObject*>(scriptState->lexicalGlobalObject());
+    JSDOMGlobalObject* globalObject = jsCast<JSDOMGlobalObject*>(scriptState->lexicalGlobalObject());
     globalObject->setInjectedScript(0);
 }
 
 InjectedScript InjectedScriptManager::injectedScriptFor(ScriptState* scriptState)
 {
-    JSLock lock(SilenceAssertionsOnly);
-    JSDOMGlobalObject* globalObject = static_cast<JSDOMGlobalObject*>(scriptState->lexicalGlobalObject());
+    JSLockHolder lock(scriptState);
+    JSDOMGlobalObject* globalObject = jsCast<JSDOMGlobalObject*>(scriptState->lexicalGlobalObject());
     JSObject* injectedScript = globalObject->injectedScript();
     if (injectedScript)
         return InjectedScript(ScriptObject(scriptState, injectedScript), m_inspectedStateAccessCheck);
@@ -99,7 +104,7 @@ InjectedScript InjectedScriptManager::injectedScriptFor(ScriptState* scriptState
 
 bool InjectedScriptManager::canAccessInspectedWindow(ScriptState* scriptState)
 {
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(scriptState);
     JSDOMWindow* inspectedWindow = toJSDOMWindow(scriptState->lexicalGlobalObject());
     if (!inspectedWindow)
         return false;

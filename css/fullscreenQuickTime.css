@@ -25,16 +25,14 @@
 /* alternate media controls - Extend fullscreen.css */
 
 video:-webkit-full-screen::-webkit-media-controls-panel {
-    -webkit-box-align: start;
-    -webkit-box-pack: end;    
-    -webkit-appearance: none;
+    -webkit-box-align: start !important;
+    -webkit-box-pack: end !important;
+    -webkit-appearance: none !important;
 
-    bottom: 50px;
-    left: 50%;
-    margin-left: -220px;
-    padding: 12px 0 0 10px;
-    width: 430px;
-    height: 48px;
+    padding: 12px 0 0 10px !important;
+    width: 430px !important;
+    height: 48px !important;
+    margin: 0 auto 50px auto !important;
     
     background-image: -webkit-gradient(
         linear,
@@ -46,16 +44,16 @@ video:-webkit-full-screen::-webkit-media-controls-panel {
         color-stop(0.366, rgba(25, 25, 25, .97)),
         color-stop(0.366, rgba(12, 12, 12, .97)),
         color-stop(1, rgba(19, 19, 19, .97))
-    );
+    ) !important;
 
     -webkit-box-shadow: 
         inset 0 -1px 1px rgba(0, 0, 0, 0.5),
         inset 0  1px 0 0px   rgba(255, 255, 255, 0.15),
         inset 0 -1px 0 0px   rgba(202, 202, 202, 0.09),
         0  0   0 1px rgba(0, 0, 0, 0.5);
-    -webkit-border-radius: 8px;
+    -webkit-border-radius: 8px !important;
 
-    -webkit-transition: opacity 0.3s linear;
+    -webkit-transition: opacity 0.3s linear !important;
 }
 
 video:-webkit-animating-full-screen-transition::-webkit-media-controls-panel {
@@ -85,17 +83,17 @@ video:-webkit-full-screen::-webkit-media-controls-fullscreen-volume-min-button {
     position: absolute;
     left: 11px;
     top: 15px;
-    width: 14px;
-    height: 12px;
+    width: 17px;
+    height: 14px;
 }
 
 video:-webkit-full-screen::-webkit-media-controls-fullscreen-volume-slider {
-    -webkit-appearance: media-slider;
+    -webkit-appearance: media-fullscreen-volume-slider;
     display: block;
     position: absolute;
     left: 28px;
-    top: 15px;
-    height: 12px;
+    top: 14px;
+    height: 11px;
     width: 50px;
 }
 
@@ -105,8 +103,8 @@ video:-webkit-full-screen::-webkit-media-controls-fullscreen-volume-max-button {
     position: absolute;
     left: 84px;
     top: 15px;
-    width: 14px;
-    height: 12px;
+    width: 17px;
+    height: 14px;
 }
 
 video:-webkit-full-screen::-webkit-media-controls-play-button {
@@ -161,7 +159,7 @@ video:-webkit-full-screen::-webkit-media-controls-timeline-container {
     right: 8px;
 }
 
-video:-webkit-full-screen::video::-webkit-media-controls-status-display {
+video:-webkit-full-screen::-webkit-media-controls-status-display {
     width: 420px;
     position: absolute;
     bottom: 9px;

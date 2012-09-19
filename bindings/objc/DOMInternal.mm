@@ -47,6 +47,11 @@ static Mutex& wrapperCacheLock()
 }
 #endif
 
+#if COMPILER(CLANG)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif    
+
 NSMapTable* createWrapperCache()
 {
     // NSMapTable with zeroing weak pointers is the recommended way to build caches like this under garbage collection.
@@ -54,6 +59,10 @@ NSMapTable* createWrapperCache()
     NSPointerFunctionsOptions valueOptions = NSPointerFunctionsZeroingWeakMemory | NSPointerFunctionsObjectPersonality;
     return [[NSMapTable alloc] initWithKeyOptions:keyOptions valueOptions:valueOptions capacity:0];
 }
+
+#if COMPILER(CLANG)
+#pragma clang diagnostic pop
+#endif
 
 NSObject* getDOMWrapper(DOMObjectInternal* impl)
 {

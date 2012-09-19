@@ -26,25 +26,9 @@
 #include <wtf/Forward.h>
 #include <wtf/Vector.h>
 
-#if PLATFORM(MAC)
+#include "ImageSource.h"
+#include <CoreGraphics/CoreGraphics.h>
 #include <wtf/RetainPtr.h>
-#ifdef __OBJC__
-@class NSImage;
-#else
-class NSImage;
-#endif
-#elif PLATFORM(WIN)
-typedef struct HICON__* HICON;
-#elif PLATFORM(QT)
-#include <QIcon>
-#elif PLATFORM(GTK)
-typedef struct _GdkPixbuf GdkPixbuf;
-#elif PLATFORM(EFL)
-typedef struct _Evas_Object Evas_Object;
-#elif PLATFORM(CHROMIUM)
-#include "Image.h"
-#include "PlatformIcon.h"
-#endif
 
 namespace WebCore {
 
@@ -54,6 +38,7 @@ class IntRect;
 class Icon : public RefCounted<Icon> {
 public:
     static PassRefPtr<Icon> createIconForFiles(const Vector<String>& filenames);
+    static PassRefPtr<Icon> createIconForImage(NativeImagePtr);
 
     ~Icon();
 
@@ -66,6 +51,8 @@ public:
 #endif
 
 private:
+    Icon(CGImageRef);
+    RetainPtr<CGImageRef> m_cgImage;
 };
 
 }

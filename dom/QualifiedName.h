@@ -22,6 +22,7 @@
 #define QualifiedName_h
 
 #include <wtf/HashTraits.h>
+#include <wtf/RefCounted.h>
 #include <wtf/text/AtomicString.h>
 
 namespace WebCore {
@@ -58,7 +59,6 @@ public:
     };
 
     QualifiedName(const AtomicString& prefix, const AtomicString& localName, const AtomicString& namespaceURI);
-    QualifiedName(const AtomicString& prefix, const char* localName, const AtomicString& namespaceURI);
     QualifiedName(WTF::HashTableDeletedValueType) : m_impl(hashTableDeletedValue()) { }
     bool isHashTableDeletedValue() const { return m_impl == hashTableDeletedValue(); }
     ~QualifiedName();
@@ -92,7 +92,6 @@ public:
     static void init();
     
 private:
-    void init(const AtomicString& prefix, const AtomicString& localName, const AtomicString& namespaceURI);
     void ref() const { m_impl->ref(); }
     void deref();
 
@@ -130,6 +129,9 @@ struct QualifiedNameHash {
 
     static const bool safeToCompareToEmptyOrDeleted = false;
 };
+
+void createQualifiedName(void* targetAddress, const char* name, unsigned nameLength);
+void createQualifiedName(void* targetAddress, const char* name, unsigned nameLength, const AtomicString& nameNamespace);
 
 }
 

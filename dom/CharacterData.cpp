@@ -27,8 +27,12 @@
 #include "ExceptionCode.h"
 #include "InspectorInstrumentation.h"
 #include "MutationEvent.h"
+#include "MutationObserverInterestGroup.h"
+#include "MutationRecord.h"
+#include "NodeRenderingContext.h"
 #include "RenderText.h"
 #include "TextBreakIterator.h"
+#include "WebKitMutationObserver.h"
 
 using namespace std;
 
@@ -36,13 +40,15 @@ namespace WebCore {
 
 void CharacterData::setData(const String& data, ExceptionCode&)
 {
-    StringImpl* dataImpl = data.impl() ? data.impl() : StringImpl::empty();
-    if (equal(m_data.get(), dataImpl))
+    const String& nonNullData = !data.isNull() ? data : emptyString();
+    if (m_data == nonNullData)
         return;
+
+    RefPtr<CharacterData> protect = this;
 
     unsigned oldLength = length();
 
-    setDataAndUpdate(dataImpl, 0, oldLength, dataImpl->length());
+    setDataAndUpdate(nonNullData, 0, oldLength, nonNullData.length());
     document()->textRemoved(this, 0, oldLength);
 }
 
@@ -52,12 +58,12 @@ String CharacterData::substringData(unsigned offset, unsigned count, ExceptionCo
     if (ec)
         return String();
 
-    return m_data->substring(offset, count);
+    return m_data.substring(offset, count);
 }
 
 unsigned CharacterData::parserAppendData(const UChar* data, unsigned dataLength, unsigned lengthLimit)
 {
-    unsigned oldLength = m_data->length();
+    unsigned oldLength = m_data.length();
 
     unsigned end = min(dataLength, lengthLimit - oldLength);
 
@@ -66,7 +72,7 @@ unsigned CharacterData::parserAppendData(const UChar* data, unsigned dataLength,
     // see <https://bugs.webkit.org/show_bug.cgi?id=29092>. 
     // We need at least two characters look-ahead to account for UTF-16 surrogates.
     if (end < dataLength) {
-        TextBreakIterator* it = characterBreakIterator(data, (end + 2 > dataLength) ? dataLength : end + 2);
+        NonSharedCharacterBreakIterator it(data, (end + 2 > dataLength) ? dataLength : end + 2);
         if (!isTextBreak(it, end))
             end = textBreakPreceding(it, end);
     }
@@ -74,11 +80,10 @@ unsigned CharacterData::parserAppendData(const UChar* data, unsigned dataLength,
     if (!end)
         return 0;
 
-    String newStr = m_data;
-    newStr.append(data, end);
-    m_data = newStr.impl();
+    m_data.append(data, end);
 
     updateRenderer(oldLength, 0);
+    document()->incDOMTreeVersion();
     // We don't call dispatchModifiedEvent here because we don't want the
     // parser to dispatch DOM mutation events.
     if (parentNode())
@@ -92,7 +97,7 @@ void CharacterData::appendData(const String& data, ExceptionCode&)
     String newStr = m_data;
     newStr.append(data);
 
-    setDataAndUpdate(newStr.impl(), m_data->length(), 0, data.length());
+    setDataAndUpdate(newStr, m_data.length(), 0, data.length());
 
     // FIXME: Should we call textInserted here?
 }
@@ -103,7 +108,7 @@ void CharacterData::insertData(unsigned offset, const String& data, ExceptionCod
     if (ec)
         return;
 
-    bool atEnd = (offset == m_data->length());
+    bool atEnd = (offset == m_data.length());
     RenderText* renderText = toRenderText(renderer());
     ASSERT(!renderer() || renderText);
     LastCharacterBehavior behavior = atEnd && renderer() && renderText->isSecure() && canShowLastCharacterIfSecure ? RevealLastCharacterBehavior : DefaultLastCharacterBehavior;
@@ -111,7 +116,7 @@ void CharacterData::insertData(unsigned offset, const String& data, ExceptionCod
     String newStr = m_data;
     newStr.insert(data, offset);
 
-    setDataAndUpdate(newStr.impl(), offset, 0, data.length(), behavior);
+    setDataAndUpdate(newStr, offset, 0, data.length(), behavior);
 
     document()->textInserted(this, offset, data.length());
 }
@@ -122,7 +127,7 @@ void CharacterData::deleteData(unsigned offset, unsigned count, ExceptionCode& e
     if (ec)
         return;
 
-    bool atEnd = (offset + count == m_data->length());
+    bool atEnd = (offset + count == m_data.length());
     RenderText* renderText = toRenderText(renderer());
     ASSERT(!renderer() || renderText);
     LastCharacterBehavior behavior = atEnd && renderer() && renderText->isSecure() ? SecureLastCharacterBehavior : DefaultLastCharacterBehavior;
@@ -136,7 +141,7 @@ void CharacterData::deleteData(unsigned offset, unsigned count, ExceptionCode& e
     String newStr = m_data;
     newStr.remove(offset, realCount);
 
-    setDataAndUpdate(newStr.impl(), offset, count, 0, behavior);
+    setDataAndUpdate(newStr, offset, count, 0, behavior);
 
     document()->textRemoved(this, offset, realCount);
 }
@@ -157,7 +162,7 @@ void CharacterData::replaceData(unsigned offset, unsigned count, const String& d
     newStr.remove(offset, realCount);
     newStr.insert(data, offset);
 
-    setDataAndUpdate(newStr.impl(), offset, count, data.length());
+    setDataAndUpdate(newStr, offset, count, data.length());
 
     // update the markers for spell checking and grammar checking
     document()->textRemoved(this, offset, realCount);
@@ -171,7 +176,7 @@ String CharacterData::nodeValue() const
 
 bool CharacterData::containsOnlyWhitespace() const
 {
-    return !m_data || m_data->containsOnlyWhitespace();
+    return m_data.containsOnlyWhitespace();
 }
 
 void CharacterData::setNodeValue(const String& nodeValue, ExceptionCode& ec)
@@ -179,22 +184,22 @@ void CharacterData::setNodeValue(const String& nodeValue, ExceptionCode& ec)
     setData(nodeValue, ec);
 }
 
-void CharacterData::setDataAndUpdate(PassRefPtr<StringImpl> newData, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength, LastCharacterBehavior behavior)
+void CharacterData::setDataAndUpdate(const String& newData, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength, LastCharacterBehavior behavior)
 {
     if (document()->frame())
         document()->frame()->selection()->textWillBeReplaced(this, offsetOfReplacedData, oldLength, newLength);
-    RefPtr<StringImpl> oldData = m_data;
+    String oldData = m_data;
     m_data = newData;
     updateRenderer(offsetOfReplacedData, oldLength, behavior);
-    dispatchModifiedEvent(oldData.get());
+    document()->incDOMTreeVersion();
+    dispatchModifiedEvent(oldData);
 }
 
 void CharacterData::updateRenderer(unsigned offsetOfReplacedData, unsigned lengthOfReplacedData, LastCharacterBehavior behavior)
 {
-    if ((!renderer() || !rendererIsNeeded(renderer()->style())) && attached()) {
-        detach();
-        attach();
-    } else if (renderer()) {
+    if ((!renderer() || !rendererIsNeeded(NodeRenderingContext(this, renderer()->style()))) && attached())
+        reattach();
+    else if (renderer()) {
         RenderText *renderText = toRenderText(renderer());
         switch (behavior) {
         case RevealLastCharacterBehavior:
@@ -206,12 +211,16 @@ void CharacterData::updateRenderer(unsigned offsetOfReplacedData, unsigned lengt
         case DefaultLastCharacterBehavior:
             break;
         }
-        renderText->setTextWithOffset(m_data, offsetOfReplacedData, lengthOfReplacedData);
+        renderText->setTextWithOffset(m_data.impl(), offsetOfReplacedData, lengthOfReplacedData);
     }
 }
 
-void CharacterData::dispatchModifiedEvent(StringImpl* oldData)
+void CharacterData::dispatchModifiedEvent(const String& oldData)
 {
+#if ENABLE(MUTATION_OBSERVERS)
+    if (OwnPtr<MutationObserverInterestGroup> mutationRecipients = MutationObserverInterestGroup::createForCharacterDataMutation(this))
+        mutationRecipients->enqueueMutationRecord(MutationRecord::createCharacterData(this, oldData));
+#endif
     if (parentNode())
         parentNode()->childrenChanged();
     if (document()->hasListenerType(Document::DOMCHARACTERDATAMODIFIED_LISTENER))
@@ -239,11 +248,11 @@ int CharacterData::maxCharacterOffset() const
     return static_cast<int>(length());
 }
 
-bool CharacterData::rendererIsNeeded(RenderStyle *style)
+bool CharacterData::rendererIsNeeded(const NodeRenderingContext& context)
 {
     if (!m_data || !length())
         return false;
-    return Node::rendererIsNeeded(style);
+    return Node::rendererIsNeeded(context);
 }
 
 bool CharacterData::offsetInCharacters() const

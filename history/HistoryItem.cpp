@@ -141,10 +141,6 @@ HistoryItem::~HistoryItem()
 {
     ASSERT(!m_cachedPage);
     iconDatabase().releaseIconForPageURL(m_urlString);
-#if PLATFORM(ANDROID)
-    if (m_bridge)
-        m_bridge->detachHistoryItem();
-#endif
 }
 
 inline HistoryItem::HistoryItem(const HistoryItem& item)
@@ -445,9 +441,6 @@ void HistoryItem::setPageScaleFactor(float scaleFactor)
 void HistoryItem::setDocumentState(const Vector<String>& state)
 {
     m_documentState = state;
-#if PLATFORM(ANDROID)
-    notifyHistoryItemChanged(this);
-#endif
 }
 
 const Vector<String>& HistoryItem::documentState() const
@@ -458,9 +451,6 @@ const Vector<String>& HistoryItem::documentState() const
 void HistoryItem::clearDocumentState()
 {
     m_documentState.clear();
-#if PLATFORM(ANDROID)
-    notifyHistoryItemChanged(this);
-#endif
 }
 
 bool HistoryItem::isTargetItem() const
@@ -471,9 +461,6 @@ bool HistoryItem::isTargetItem() const
 void HistoryItem::setIsTargetItem(bool flag)
 {
     m_isTargetItem = flag;
-#if PLATFORM(ANDROID)
-    notifyHistoryItemChanged(this);
-#endif
 }
 
 void HistoryItem::setStateObject(PassRefPtr<SerializedScriptValue> object)
@@ -485,9 +472,6 @@ void HistoryItem::addChildItem(PassRefPtr<HistoryItem> child)
 {
     ASSERT(!childItemWithTarget(child->target()));
     m_children.append(child);
-#if PLATFORM(ANDROID)
-    notifyHistoryItemChanged(this);
-#endif
 }
 
 void HistoryItem::setChildItem(PassRefPtr<HistoryItem> child)
@@ -631,9 +615,6 @@ void HistoryItem::setFormInfoFromRequest(const ResourceRequest& request)
         m_formData = 0;
         m_formContentType = String();
     }
-#if PLATFORM(ANDROID)
-    notifyHistoryItemChanged(this);
-#endif
 }
 
 void HistoryItem::setFormData(PassRefPtr<FormData> formData)

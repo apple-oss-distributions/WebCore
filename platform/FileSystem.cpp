@@ -100,7 +100,10 @@ String encodeForFileName(const String& inputStr)
     return String(buffer.data(), p - buffer.data());
 }
 
-#if !PLATFORM(MAC)
+
+void setMetadataURL(String&, const String&, const String&)
+{
+}
 
 bool canExcludeFromBackup()
 {
@@ -112,6 +115,5 @@ bool excludeFromBackup(const String&)
     return false;
 }
 
-#endif
 
 } // namespace WebCore

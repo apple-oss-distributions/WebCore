@@ -39,7 +39,7 @@ public:
 
     virtual void attach();
 
-private:
+protected:
     PlaceholderDocument(Frame* frame, const KURL& url) : Document(frame, url, false, false) { }
 };
 

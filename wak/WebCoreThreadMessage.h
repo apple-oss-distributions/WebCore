@@ -36,6 +36,7 @@ void WebThreadAdoptAndRelease(id obj);
 
 // Synchronous from web thread to main thread, or main thread to main thread.
 void WebThreadCallDelegate(NSInvocation *invocation);
+void WebThreadRunOnMainThread(void (^)(void));
 
 // Asynchronous from web thread to main thread, but synchronous when called on the main thread.
 void WebThreadCallDelegateAsync(NSInvocation *invocation);

@@ -2,7 +2,7 @@
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2003, 2006, 2007, 2008, 2009, 2010 Apple Inc.
+ * Copyright (C) 2003, 2006, 2007, 2008, 2009, 2010, 2011 Apple Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -33,6 +33,7 @@
 #import "SharedBuffer.h"
 #import "WAKView.h"
 #import "WKGraphics.h"
+#import <CoreFoundation/CFPriv.h>
 #import <CoreText/CoreText.h>
 #import <GraphicsServices/GraphicsServices.h>
 #import <wtf/StdLibExtras.h>
@@ -65,6 +66,7 @@ bool Font::canExpandAroundIdeographsInComplexText()
 // divides by unitsPerEm.
 static bool hasBrokenCTFontGetVerticalTranslationsForGlyphs()
 {
+// Chromium runs the same binary on both Leopard and Snow Leopard, so the check has to happen at runtime.
     return false;
 }
 
@@ -187,13 +189,15 @@ void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, cons
         float y = point.y();
         if (fontSize <= 15) {
             // Undo Core Text's y adjustment.
-            point.setY(floorf(y) - .1f * (fontSize + 2) + 2);
+            static float yAdjustmentFactor = iosExecutableWasLinkedOnOrAfterVersion(wkIOSSystemVersion_6_0) ? .19 : .1;
+            point.setY(floorf(y) - yAdjustmentFactor * (fontSize + 2) + 2);
         } else {
             if (fontSize < 26)
                 y -= .35f * fontSize - 10;
 
             // Undo Core Text's y adjustment.
-            point.setY(floorf(y) - 2);
+            static float yAdjustment = iosExecutableWasLinkedOnOrAfterVersion(wkIOSSystemVersion_6_0) ? 3.8 : 2;
+            point.setY(floorf(y) - yAdjustment);
         }
     }
 
@@ -215,7 +219,16 @@ void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, cons
     ColorSpace fillColorSpace = context->fillColorSpace();
     context->getShadow(shadowOffset, shadowBlur, shadowColor, shadowColorSpace);
 
-    bool hasSimpleShadow = context->textDrawingMode() == TextModeFill && shadowColor.isValid() && !shadowBlur && !platformData.isColorBitmapFont() && (!context->shadowsIgnoreTransforms() || context->getCTM().isIdentityOrTranslationOrFlipped());
+    AffineTransform contextCTM = context->getCTM();
+    float syntheticBoldOffset = font->syntheticBoldOffset();
+    if (syntheticBoldOffset && !contextCTM.isIdentityOrTranslationOrFlipped()) {
+        FloatSize horizontalUnitSizeInDevicePixels = contextCTM.mapSize(FloatSize(1, 0));
+        float horizontalUnitLengthInDevicePixels = sqrtf(horizontalUnitSizeInDevicePixels.width() * horizontalUnitSizeInDevicePixels.width() + horizontalUnitSizeInDevicePixels.height() * horizontalUnitSizeInDevicePixels.height());
+        if (horizontalUnitLengthInDevicePixels)
+            syntheticBoldOffset /= horizontalUnitLengthInDevicePixels;
+    };
+
+    bool hasSimpleShadow = context->textDrawingMode() == TextModeFill && shadowColor.isValid() && !shadowBlur && !platformData.isColorBitmapFont() && (!context->shadowsIgnoreTransforms() || contextCTM.isIdentityOrTranslationOrFlipped()) && !context->isInTransparencyLayer();
     if (hasSimpleShadow) {
         // Paint simple shadows ourselves instead of relying on CG shadows, to avoid losing subpixel antialiasing.
         context->clearShadow();
@@ -226,14 +239,14 @@ void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, cons
         // If shadows are ignoring transforms, then we haven't applied the Y coordinate flip yet, so down is negative.
         float shadowTextY = point.y() + shadowOffset.height() * (context->shadowsIgnoreTransforms() ? -1 : 1);
         showGlyphsWithAdvances(FloatPoint(shadowTextX, shadowTextY), font, cgContext, glyphBuffer.glyphs(from), glyphBuffer.advances(from), numGlyphs);
-        if (font->syntheticBoldOffset() && !platformData.m_isEmoji)
-            showGlyphsWithAdvances(FloatPoint(shadowTextX + font->syntheticBoldOffset(), shadowTextY), font, cgContext, glyphBuffer.glyphs(from), glyphBuffer.advances(from), numGlyphs);
+        if (syntheticBoldOffset && !platformData.m_isEmoji)
+            showGlyphsWithAdvances(FloatPoint(shadowTextX + syntheticBoldOffset, shadowTextY), font, cgContext, glyphBuffer.glyphs(from), glyphBuffer.advances(from), numGlyphs);
         context->setFillColor(fillColor, fillColorSpace);
     }
 
     showGlyphsWithAdvances(point, font, cgContext, glyphBuffer.glyphs(from), glyphBuffer.advances(from), numGlyphs);
-    if (font->syntheticBoldOffset() && !platformData.m_isEmoji)
-        showGlyphsWithAdvances(FloatPoint(point.x() + font->syntheticBoldOffset(), point.y()), font, cgContext, glyphBuffer.glyphs(from), glyphBuffer.advances(from), numGlyphs);
+    if (syntheticBoldOffset && !platformData.m_isEmoji)
+        showGlyphsWithAdvances(FloatPoint(point.x() + syntheticBoldOffset, point.y()), font, cgContext, glyphBuffer.glyphs(from), glyphBuffer.advances(from), numGlyphs);
 
     if (hasSimpleShadow)
         context->setShadow(shadowOffset, shadowBlur, shadowColor, shadowColorSpace);

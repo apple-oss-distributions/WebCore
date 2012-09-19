@@ -69,7 +69,7 @@ static unsigned centerTruncateToBuffer(const String& string, unsigned length, un
     ASSERT(keepCount < STRING_BUFFER_SIZE);
     
     unsigned omitStart = (keepCount + 1) / 2;
-    TextBreakIterator* it = characterBreakIterator(string.characters(), length);
+    NonSharedCharacterBreakIterator it(string.characters(), length);
     unsigned omitEnd = boundedTextBreakFollowing(it, omitStart + (length - keepCount) - 1, length);
     omitStart = textBreakAtOrPreceding(it, omitStart);
 
@@ -114,7 +114,7 @@ static unsigned rightTruncateToBuffer(const String& string, unsigned length, uns
     while (keepCount > 1 && string[keepCount - 1] == SPACE_CHARACTER)
         keepCount--;
     
-    TextBreakIterator* it = characterBreakIterator(string.characters(), length);
+    NonSharedCharacterBreakIterator it(string.characters(), length);
     unsigned keepLength = textBreakAtOrPreceding(it, keepCount);
     unsigned truncatedLength = insertEllipsis ? keepLength + 1 : keepLength;
 
@@ -132,7 +132,7 @@ static unsigned rightClipToCharacterBuffer(const String& string, unsigned length
     ASSERT(keepCount < length);
     ASSERT(keepCount < STRING_BUFFER_SIZE);
     
-    TextBreakIterator* it = characterBreakIterator(string.characters(), length);
+    NonSharedCharacterBreakIterator it(string.characters(), length);
     unsigned keepLength = textBreakAtOrPreceding(it, keepCount);
     memcpy(buffer, string.characters(), sizeof(UChar) * keepLength);
     
@@ -165,7 +165,7 @@ static unsigned leftTruncateToBuffer(const String& string, unsigned length, unsi
     
     unsigned startIndex = length - keepCount;
     
-    TextBreakIterator* it = characterBreakIterator(string.characters(), length);
+    NonSharedCharacterBreakIterator it(string.characters(), length);
     unsigned adjustedStartIndex = startIndex;
     startIndex = boundedTextBreakFollowing(it, startIndex, length - startIndex);
     

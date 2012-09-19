@@ -34,6 +34,14 @@
 EMPTY_PROTOCOL(NSTableViewDataSource)
 EMPTY_PROTOCOL(NSTableViewDelegate)
 EMPTY_PROTOCOL(NSWindowDelegate)
+EMPTY_PROTOCOL(NSAnimationDelegate)
+
+#endif
+
+#if defined(BUILDING_ON_LEOPARD) || defined(BUILDING_ON_SNOW_LEOPARD)
+
+EMPTY_PROTOCOL(NSURLConnectionDelegate)
+EMPTY_PROTOCOL(NSURLDownloadDelegate)
 
 #endif
 

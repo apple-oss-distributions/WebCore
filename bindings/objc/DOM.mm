@@ -50,17 +50,18 @@
 #import "SVGNames.h"
 #endif
 
+#import "FocusController.h"
 #import "HTMLLinkElement.h"
 #import "KeyboardEvent.h"
 #import "KURL.h"
 #import "MediaList.h"
 #import "MediaQueryEvaluator.h"
 #import "NodeRenderStyle.h"
+#import "Page.h"
 #import "RenderView.h"
 #import "Touch.h"
 #import "WAKAppKitStubs.h"
 #import "WAKWindow.h"
-#import "WKWindowPrivate.h"
 #import "WebCoreThreadMessage.h"
 
 using namespace JSC;
@@ -125,7 +126,6 @@ static void createElementClassMap()
     addElementClass(HTMLNames::imgTag, [DOMHTMLImageElement class]);
     addElementClass(HTMLNames::inputTag, [DOMHTMLInputElement class]);
     addElementClass(HTMLNames::insTag, [DOMHTMLModElement class]);
-    addElementClass(HTMLNames::isindexTag, [DOMHTMLIsIndexElement class]);
     addElementClass(HTMLNames::labelTag, [DOMHTMLLabelElement class]);
     addElementClass(HTMLNames::legendTag, [DOMHTMLLegendElement class]);
     addElementClass(HTMLNames::liTag, [DOMHTMLLIElement class]);
@@ -160,13 +160,13 @@ static void createElementClassMap()
 
 #if ENABLE(SVG_DOM_OBJC_BINDINGS)
     addElementClass(SVGNames::aTag, [DOMSVGAElement class]);
+    addElementClass(SVGNames::altGlyphDefTag, [DOMSVGAltGlyphDefElement class]);
     addElementClass(SVGNames::altGlyphTag, [DOMSVGAltGlyphElement class]);
-#if ENABLE(SVG_ANIMATION)
+    addElementClass(SVGNames::altGlyphItemTag, [DOMSVGAltGlyphItemElement class]);
     addElementClass(SVGNames::animateTag, [DOMSVGAnimateElement class]);
     addElementClass(SVGNames::animateColorTag, [DOMSVGAnimateColorElement class]);
     addElementClass(SVGNames::animateTransformTag, [DOMSVGAnimateTransformElement class]);
     addElementClass(SVGNames::setTag, [DOMSVGSetElement class]);
-#endif
     addElementClass(SVGNames::circleTag, [DOMSVGCircleElement class]);
     addElementClass(SVGNames::clipPathTag, [DOMSVGClipPathElement class]);
     addElementClass(SVGNames::cursorTag, [DOMSVGCursorElement class]);
@@ -209,6 +209,7 @@ static void createElementClassMap()
     addElementClass(SVGNames::font_face_srcTag, [DOMSVGFontFaceSrcElement class]);
     addElementClass(SVGNames::font_face_uriTag, [DOMSVGFontFaceUriElement class]);
     addElementClass(SVGNames::glyphTag, [DOMSVGGlyphElement class]);
+    addElementClass(SVGNames::glyphRefTag, [DOMSVGGlyphRefElement class]);
 #endif
     addElementClass(SVGNames::gTag, [DOMSVGGElement class]);
     addElementClass(SVGNames::imageTag, [DOMSVGImageElement class]);
@@ -345,7 +346,7 @@ static inline WKQuad emptyQuad()
 - (NSString *)description
 {
     if (!_internal)
-        return [NSString stringWithFormat:@"<%@: null>", [[self class] description], self];
+        return [NSString stringWithFormat:@"<%@: null>", [[self class] description]];
 
     NSString *value = [self nodeValue];
     if (value)
@@ -408,8 +409,6 @@ Class kitClass(WebCore::Node* impl)
             // FIXME: Create an XPath objective C wrapper
             // See http://bugs.webkit.org/show_bug.cgi?id=8755
             return nil;
-        case WebCore::Node::SHADOW_ROOT_NODE:
-            return [DOMNode class];
     }
     ASSERT_NOT_REACHED();
     return nil;
@@ -422,11 +421,6 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
 
     if (WebCore::Node* node = eventTarget->toNode())
         return kit(node);
-
-#if ENABLE(SVG_DOM_OBJC_BINDINGS)
-    if (WebCore::SVGElementInstance* svgElementInstance = eventTarget->toSVGElementInstance())
-        return kit(svgElementInstance);
-#endif
 
     // We don't have an ObjC binding for XMLHttpRequest.
 
@@ -598,14 +592,24 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
 
 - (DOMNode *)nextFocusNode
 {
+    ASSERT(core(self)->document());
+    Page *page = core(self)->document()->page();
+    if (!page)
+        return nil;
+
     RefPtr<KeyboardEvent> key = KeyboardEvent::create();
-    return kit(core(self)->document()->nextFocusableNode(core(self), key.get()));
+    return kit(page->focusController()->nextFocusableNode(FocusScope::focusScopeOf(core(self)->document()), core(self), key.get()));
 }
 
 - (DOMNode *)previousFocusNode
 {
+    ASSERT(core(self)->document());
+    Page *page = core(self)->document()->page();
+    if (!page)
+        return nil;
+
     RefPtr<KeyboardEvent> key = KeyboardEvent::create();
-    return kit(core(self)->document()->previousFocusableNode(core(self), key.get()));
+    return kit(page->focusController()->previousFocusableNode(FocusScope::focusScopeOf(core(self)->document()), core(self), key.get()));
 }
 
 
@@ -627,6 +631,7 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
     range->textRects(rects);
     return kit(rects);
 }
+
 @end
 
 @implementation DOMRange (DOMRangeExtensions)
@@ -637,6 +642,7 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
     core(self)->ownerDocument()->updateLayoutIgnorePendingStylesheets();
     return core(self)->boundingBox();
 }
+
 
 - (NSArray *)textRects
 {
@@ -726,10 +732,10 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
         return true;
     Document* document = link->document();
 
-    RefPtr<MediaList> mediaList = MediaList::createAllowingDescriptionSyntax(media);
+    RefPtr<MediaQuerySet> mediaQuerySet = MediaQuerySet::createAllowingDescriptionSyntax(media);
     MediaQueryEvaluator screenEval("screen", document->frame(), document->renderer() ? document->renderer()->style() : 0);
 
-    return screenEval.eval(mediaList.get());
+    return screenEval.eval(mediaQuerySet.get());
 }
 @end
 

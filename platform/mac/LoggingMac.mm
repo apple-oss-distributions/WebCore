@@ -27,6 +27,8 @@
 
 #include "Logging.h"
 
+#if !LOG_DISABLED
+
 namespace WebCore {
 
 static inline void initializeWithUserDefault(WTFLogChannel& channel)
@@ -43,7 +45,7 @@ static inline void initializeWithUserDefault(WTFLogChannel& channel)
     }
 }
 
-void InitializeLoggingChannelsIfNecessary()
+void initializeLoggingChannelsIfNecessary()
 {
     static bool haveInitializedLoggingChannels = false;
     if (haveInitializedLoggingChannels)
@@ -72,10 +74,15 @@ void InitializeLoggingChannelsIfNecessary()
     initializeWithUserDefault(LogMedia);
     initializeWithUserDefault(LogPlugins);
     initializeWithUserDefault(LogArchives);
+    initializeWithUserDefault(LogWebAudio);
+    initializeWithUserDefault(LogCompositing);
 
 #if ENABLE(DISK_IMAGE_CACHE)
     initializeWithUserDefault(LogDiskImageCache);
 #endif
+    initializeWithUserDefault(LogMemoryPressure);
 }
 
 }
+
+#endif // !LOG_DISABLED

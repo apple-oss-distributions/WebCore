@@ -26,8 +26,6 @@
 #include "config.h"
 #include "SQLiteStatement.h"
 
-#if ENABLE(DATABASE)
-
 #include "Logging.h"
 #include "SQLValue.h"
 #include <sqlite3.h>
@@ -72,7 +70,8 @@ int SQLiteStatement::prepare()
     const void* tail = 0;
     LOG(SQLDatabase, "SQL - prepare - %s", m_query.ascii().data());
     String strippedQuery = m_query.stripWhiteSpace();
-    int error = sqlite3_prepare16_v2(m_database.sqlite3Handle(), strippedQuery.charactersWithNullTermination(), -1, &m_statement, &tail);
+    const UChar* nullTermed = strippedQuery.charactersWithNullTermination();
+    int error = sqlite3_prepare16_v2(m_database.sqlite3Handle(), nullTermed, -1, &m_statement, &tail);
 
     // Starting with version 3.6.16, sqlite has a patch (http://www.sqlite.org/src/ci/256ec3c6af)
     // that should make sure sqlite3_prepare16_v2 doesn't return a SQLITE_SCHEMA error.
@@ -95,11 +94,10 @@ int SQLiteStatement::prepare()
 
 int SQLiteStatement::step()
 {
-    ASSERT(m_isPrepared);
-
     MutexLocker databaseLock(m_database.databaseMutex());
     if (m_database.isInterrupted())
         return SQLITE_INTERRUPT;
+    //ASSERT(m_isPrepared);
 
     if (!m_statement)
         return SQLITE_OK;
@@ -287,6 +285,17 @@ bool SQLiteStatement::isColumnNull(int col)
     return sqlite3_column_type(m_statement, col) == SQLITE_NULL;
 }
 
+bool SQLiteStatement::isColumnDeclaredAsBlob(int col)
+{
+    ASSERT(col >= 0);
+    if (!m_statement) {
+        if (prepare() != SQLITE_OK)
+            return false;
+    }
+
+    return equalIgnoringCase(String("BLOB"), String(reinterpret_cast<const UChar*>(sqlite3_column_decltype16(m_statement, col))));
+}
+
 String SQLiteStatement::getColumnName(int col)
 {
     ASSERT(col >= 0);
@@ -334,7 +343,7 @@ String SQLiteStatement::getColumnText(int col)
             return String();
     if (columnCount() <= col)
         return String();
-    return String(reinterpret_cast<const UChar*>(sqlite3_column_text16(m_statement, col)));
+    return String(reinterpret_cast<const UChar*>(sqlite3_column_text16(m_statement, col)), sqlite3_column_bytes16(m_statement, col) / sizeof(UChar));
 }
     
 double SQLiteStatement::getColumnDouble(int col)
@@ -534,5 +543,3 @@ bool SQLiteStatement::isExpired()
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(DATABASE)

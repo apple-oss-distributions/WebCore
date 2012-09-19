@@ -34,6 +34,7 @@
 #import "BlobRegistry.h"
 #import "BlockExceptions.h"
 #import "CookieStorage.h"
+#import "CookieStorageCFNet.h"
 #import "CredentialStorage.h"
 #import "CachedResourceLoader.h"
 #import "EmptyProtocolDefinitions.h"
@@ -56,7 +57,7 @@
 
 #import <CFNetwork/CFURLRequest.h>
 
-#import "RuntimeApplicationChecksIPhone.h"
+#import "RuntimeApplicationChecksIOS.h"
 #import "WebCoreThreadRun.h"
 
 @interface NSURLRequest (iOSDetails)
@@ -80,7 +81,6 @@ using namespace WebCore;
 @interface WebCoreNSURLConnectionDelegateProxy : NSObject <NSURLConnectionDelegate>
 - (void)setDelegate:(id<NSURLConnectionDelegate>)delegate;
 @end
-
 
 @interface NSURLConnection (Details)
 -(id)_initWithRequest:(NSURLRequest *)request delegate:(id)delegate usesCache:(BOOL)usesCacheFlag maxContentLength:(long long)maxContentLength startImmediately:(BOOL)startImmediately connectionProperties:(NSDictionary *)connectionProperties;
@@ -142,6 +142,7 @@ static bool isInitializingConnection;
 static void applyBasicAuthorizationHeader(ResourceRequest& request, const Credential& credential)
 {
     String authenticationHeader = "Basic " + base64Encode(String(credential.user() + ":" + credential.password()).utf8());
+    request.clearHTTPAuthorization(); // FIXME: Should addHTTPHeaderField be smart enough to not build comma-separated lists in headers like Authorization?
     request.addHTTPHeaderField("Authorization", authenticationHeader);
 }
 
@@ -173,7 +174,7 @@ static bool synchronousWillSendRequestEnabled()
 void ResourceHandle::createNSURLConnection(id delegate, bool shouldUseCredentialStorage, bool shouldContentSniff, NSDictionary *connectionProperties)
 {
     // Credentials for ftp can only be passed in URL, the connection:didReceiveAuthenticationChallenge: delegate call won't be made.
-    if ((!d->m_user.isEmpty() || !d->m_pass.isEmpty()) && !firstRequest().url().protocolInHTTPFamily()) {
+    if ((!d->m_user.isEmpty() || !d->m_pass.isEmpty()) && !firstRequest().url().protocolIsInHTTPFamily()) {
         KURL urlWithCredentials(firstRequest().url());
         urlWithCredentials.setUser(d->m_user);
         urlWithCredentials.setPass(d->m_pass);
@@ -181,7 +182,7 @@ void ResourceHandle::createNSURLConnection(id delegate, bool shouldUseCredential
     }
 
 
-    if (shouldUseCredentialStorage && firstRequest().url().protocolInHTTPFamily()) {
+    if (shouldUseCredentialStorage && firstRequest().url().protocolIsInHTTPFamily()) {
         if (d->m_user.isEmpty() && d->m_pass.isEmpty()) {
             // <rdar://problem/7174050> - For URLs that match the paths of those previously challenged for HTTP Basic authentication, 
             // try and reuse the credential preemptively, as allowed by RFC 2617.
@@ -201,7 +202,7 @@ void ResourceHandle::createNSURLConnection(id delegate, bool shouldUseCredential
 
     NSURLRequest *nsRequest = firstRequest().nsURLRequest();
     if (!shouldContentSniff) {
-        NSMutableURLRequest *mutableRequest = [[nsRequest copy] autorelease];
+        NSMutableURLRequest *mutableRequest = [[nsRequest mutableCopy] autorelease];
         wkSetNSURLRequestShouldContentSniff(mutableRequest, NO);
         nsRequest = mutableRequest;
     }
@@ -214,7 +215,7 @@ void ResourceHandle::createNSURLConnection(id delegate, bool shouldUseCredential
 #endif
 
 #if USE(CFURLSTORAGESESSIONS)
-    if (CFURLStorageSessionRef storageSession = privateBrowsingStorageSession())
+    if (CFURLStorageSessionRef storageSession = currentStorageSession())
         nsRequest = [wkCopyRequestWithStorageSession(storageSession, nsRequest) autorelease];
 #endif
 
@@ -348,11 +349,6 @@ void ResourceHandle::releaseDelegate()
     d->m_delegate = nil;
 }
 
-PassRefPtr<SharedBuffer> ResourceHandle::bufferedData()
-{
-    return 0;
-}
-
 id ResourceHandle::releaseProxy()
 {
     id proxy = [[d->m_proxy.get() retain] autorelease];
@@ -468,7 +464,7 @@ void ResourceHandle::willSendRequest(ResourceRequest& request, const ResourceRes
     if (!protocolHostAndPortAreEqual(request.url(), redirectResponse.url())) {
         // If the network layer carries over authentication headers from the original request
         // in a cross-origin redirect, we want to clear those headers here.
-        // As of iOS5, CFNetwork no longer does this.
+        // As of Lion, CFNetwork no longer does this.
         request.clearHTTPAuthorization();
     } else {
         // Only consider applying authentication credentials if this is actually a redirect and the redirect
@@ -485,7 +481,7 @@ void ResourceHandle::willSendRequest(ResourceRequest& request, const ResourceRes
     }
 
 #if USE(CFURLSTORAGESESSIONS)
-    if (CFURLStorageSessionRef storageSession = privateBrowsingStorageSession())
+    if (CFURLStorageSessionRef storageSession = currentStorageSession())
         request.setStorageSession(storageSession);
 #endif
 
@@ -507,6 +503,16 @@ void ResourceHandle::didReceiveAuthenticationChallenge(const AuthenticationChall
     // Since NSURLConnection networking relies on keeping a reference to the original NSURLAuthenticationChallenge,
     // we make sure that is actually present
     ASSERT(challenge.nsURLAuthenticationChallenge());
+
+#if !defined(BUILDING_ON_LEOPARD) && !defined(BUILDING_ON_SNOWLEOPARD)
+    // Proxy authentication is handled by CFNetwork internally. We can get here if the user cancels
+    // CFNetwork authentication dialog, and we shouldn't ask the client to display another one in that case.
+    if (challenge.protectionSpace().isProxy()) {
+        // Cannot use receivedRequestToContinueWithoutCredential(), because current challenge is not yet set.
+        [challenge.sender() continueWithoutCredentialForAuthenticationChallenge:challenge.nsURLAuthenticationChallenge()];
+        return;
+    }
+#endif
 
     if (!d->m_user.isNull() && !d->m_pass.isNull()) {
         NSURLCredential *credential = [[NSURLCredential alloc] initWithUser:d->m_user
@@ -536,7 +542,7 @@ void ResourceHandle::didReceiveAuthenticationChallenge(const AuthenticationChall
                 ASSERT(credential.persistence() == CredentialPersistenceNone);
                 if (challenge.failureResponse().httpStatusCode() == 401) {
                     // Store the credential back, possibly adding it as a default for this directory.
-                    CredentialStorage::set(credential, challenge.protectionSpace(), firstRequest().url());
+                    CredentialStorage::set(credential, challenge.protectionSpace(), challenge.failureResponse().url());
                 }
                 [challenge.sender() useCredential:mac(credential) forAuthenticationChallenge:mac(challenge)];
                 return;
@@ -559,6 +565,9 @@ void ResourceHandle::didReceiveAuthenticationChallenge(const AuthenticationChall
     d->m_currentWebChallenge = core(d->m_currentMacChallenge);
     d->m_currentWebChallenge.setAuthenticationClient(this);
 
+    // FIXME: Several concurrent requests can return with the an authentication challenge for the same protection space.
+    // We should avoid making additional client calls for the same protection space when already waiting for the user,
+    // because typing the same credentials several times is annoying.
     if (client())
         client()->didReceiveAuthenticationChallenge(this, d->m_currentWebChallenge);
 }
@@ -602,7 +611,7 @@ void ResourceHandle::receivedCredential(const AuthenticationChallenge& challenge
         Credential webCredential(credential, CredentialPersistenceNone);
         KURL urlToStore;
         if (challenge.failureResponse().httpStatusCode() == 401)
-            urlToStore = firstRequest().url();
+            urlToStore = challenge.failureResponse().url();
         CredentialStorage::set(webCredential, core([d->m_currentMacChallenge protectionSpace]), urlToStore);
         [[d->m_currentMacChallenge sender] useCredential:mac(webCredential) forAuthenticationChallenge:d->m_currentMacChallenge];
     } else
@@ -632,11 +641,6 @@ void ResourceHandle::receivedCancellation(const AuthenticationChallenge& challen
 }
 
 #if USE(CFURLSTORAGESESSIONS)
-
-RetainPtr<CFURLStorageSessionRef> ResourceHandle::createPrivateBrowsingStorageSession(CFStringRef identifier)
-{
-    return RetainPtr<CFURLStorageSessionRef>(AdoptCF, wkCreatePrivateStorageSession(identifier));
-}
 
 String ResourceHandle::privateBrowsingStorageSessionIdentifierDefaultBase()
 {
@@ -739,8 +743,10 @@ String ResourceHandle::privateBrowsingStorageSessionIdentifierDefaultBase()
 
     LOG(Network, "Handle %p delegate connection:%p didReceiveAuthenticationChallenge:%p", m_handle, connection, challenge);
 
-    if (!m_handle)
+    if (!m_handle) {
+        [[challenge sender] cancelAuthenticationChallenge:challenge];
         return;
+    }
     m_handle->didReceiveAuthenticationChallenge(core(challenge));
 }
 
@@ -792,7 +798,7 @@ String ResourceHandle::privateBrowsingStorageSessionIdentifierDefaultBase()
     m_handle->client()->didReceiveResponse(m_handle, r);
 }
 
-#if HAVE(CFNETWORK_DATA_ARRAY_CALLBACK)
+#if HAVE(NETWORK_CFDATA_ARRAY_CALLBACK)
 - (void)connection:(NSURLConnection *)connection didReceiveDataArray:(NSArray *)dataArray
 {
     UNUSED_PARAM(connection);
@@ -912,6 +918,12 @@ String ResourceHandle::privateBrowsingStorageSessionIdentifierDefaultBase()
 #endif
 
     if (!m_handle || !m_handle->client())
+        return nil;
+
+    // Workaround for <rdar://problem/6300990> Caching does not respect Vary HTTP header.
+    // FIXME: WebCore cache has issues with Vary, too (bug 58797, bug 71509).
+    if ([[cachedResponse response] isKindOfClass:[NSHTTPURLResponse class]]
+        && [[(NSHTTPURLResponse *)[cachedResponse response] allHeaderFields] objectForKey:@"Vary"])
         return nil;
 
     NSCachedURLResponse *newResponse = m_handle->client()->willCacheResponse(m_handle, cachedResponse);

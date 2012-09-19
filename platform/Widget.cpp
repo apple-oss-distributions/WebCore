@@ -69,6 +69,42 @@ void Widget::removeFromParent()
         parent()->removeChild(this);
 }
 
+IntRect Widget::convertFromRootView(const IntRect& rootRect) const
+{
+    if (const ScrollView* parentScrollView = parent()) {
+        IntRect parentRect = parentScrollView->convertFromRootView(rootRect);
+        return convertFromContainingView(parentRect);
+    }
+    return rootRect;
+}
+
+IntRect Widget::convertToRootView(const IntRect& localRect) const
+{
+    if (const ScrollView* parentScrollView = parent()) {
+        IntRect parentRect = convertToContainingView(localRect);
+        return parentScrollView->convertToRootView(parentRect);
+    }
+    return localRect;
+}
+
+IntPoint Widget::convertFromRootView(const IntPoint& rootPoint) const
+{
+    if (const ScrollView* parentScrollView = parent()) {
+        IntPoint parentPoint = parentScrollView->convertFromRootView(rootPoint);
+        return convertFromContainingView(parentPoint);
+    }
+    return rootPoint;
+}
+
+IntPoint Widget::convertToRootView(const IntPoint& localPoint) const
+{
+    if (const ScrollView* parentScrollView = parent()) {
+        IntPoint parentPoint = convertToContainingView(localPoint);
+        return parentScrollView->convertToRootView(parentPoint);
+    }
+    return localPoint;
+}
+
 IntRect Widget::convertFromContainingWindow(const IntRect& windowRect) const
 {
     if (const ScrollView* parentScrollView = parent()) {
@@ -106,10 +142,6 @@ IntPoint Widget::convertToContainingWindow(const IntPoint& localPoint) const
 }
 
 #if !PLATFORM(MAC)
-void Widget::setBoundsSize(const IntSize&)
-{
-}
-
 IntRect Widget::convertFromRootToContainingWindow(const Widget*, const IntRect& rect)
 {
     return rect;
@@ -166,23 +198,6 @@ IntPoint Widget::convertFromContainingView(const IntPoint& parentPoint) const
         return parentScrollView->convertSelfToChild(this, parentPoint);
 
     return parentPoint;
-}
-
-FloatQuad Widget::convertToContainingView(const FloatQuad& localQuad) const
-{
-    if (const ScrollView* parentScrollView = parent())
-        return parentScrollView->convertChildToSelf(this, localQuad);
-
-    return localQuad;
-}
-
-FloatQuad Widget::convertToRootContainingView(const FloatQuad& localQuad) const
-{
-    if (!parent())
-        return localQuad;
-
-    FloatQuad containingQuad = convertToContainingView(localQuad);
-    return parent()->convertToRootContainingView(containingQuad);
 }
 
 #if !PLATFORM(EFL)

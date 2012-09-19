@@ -31,19 +31,16 @@
 #ifndef ScrollAnimator_h
 #define ScrollAnimator_h
 
+#include "PlatformWheelEvent.h"
 #include "ScrollTypes.h"
 #include <wtf/Forward.h>
 
 namespace WebCore {
 
 class FloatPoint;
-class PlatformWheelEvent;
 class ScrollableArea;
 class Scrollbar;
 
-#if ENABLE(GESTURE_EVENTS)
-class PlatformGestureEvent;
-#endif
 class PlatformTouchEvent;
 
 class ScrollAnimator {
@@ -62,23 +59,27 @@ public:
 
     ScrollableArea* scrollableArea() const { return m_scrollableArea; }
 
-    virtual void setIsActive(bool active) { m_isActive = active; }
-    bool isActive() const { return m_isActive; }
+    virtual void setIsActive() { }
 
-    virtual void handleWheelEvent(PlatformWheelEvent&);
-#if ENABLE(GESTURE_EVENTS)
-    virtual void handleGestureEvent(const PlatformGestureEvent&);
-#endif
+    virtual bool handleWheelEvent(const PlatformWheelEvent&);
     virtual bool handleTouchEvent(const PlatformTouchEvent&);
 
+#if PLATFORM(MAC) || (PLATFORM(CHROMIUM) && OS(DARWIN))
+    virtual void handleWheelEventPhase(PlatformWheelEventPhase) { }
+#endif
+
+    void setCurrentPosition(const FloatPoint&);
     FloatPoint currentPosition() const;
 
     virtual void cancelAnimations() { }
+    virtual void serviceScrollAnimations() { }
 
     virtual void contentAreaWillPaint() const { }
     virtual void mouseEnteredContentArea() const { }
     virtual void mouseExitedContentArea() const { }
     virtual void mouseMovedInContentArea() const { }
+    virtual void mouseEnteredScrollbar(Scrollbar*) const { }
+    virtual void mouseExitedScrollbar(Scrollbar*) const { }
     virtual void willStartLiveResize() { }
     virtual void contentsResized() const { }
     virtual void willEndLiveResize() { }
@@ -90,15 +91,20 @@ public:
     virtual void didAddHorizontalScrollbar(Scrollbar*) { }
     virtual void willRemoveHorizontalScrollbar(Scrollbar*) { }
 
+    virtual bool shouldScrollbarParticipateInHitTesting(Scrollbar*) { return true; }
+
+    virtual void notifyContentAreaScrolled() { }
+
+    virtual bool isRubberBandInProgress() const { return false; }
+
 protected:
     ScrollAnimator(ScrollableArea*);
 
-    virtual void notityPositionChanged();
+    virtual void notifyPositionChanged();
 
     ScrollableArea* m_scrollableArea;
     float m_currentPosX; // We avoid using a FloatPoint in order to reduce
     float m_currentPosY; // subclass code complexity.
-    bool m_isActive;
 };
 
 } // namespace WebCore

@@ -60,7 +60,7 @@ PassRefPtr<Scrollbar> Scrollbar::createNativeScrollbar(ScrollableArea* scrollabl
 
 int Scrollbar::maxOverlapBetweenPages()
 {
-    static int maxOverlapBetweenPages = ScrollbarTheme::nativeTheme()->maxOverlapBetweenPages();
+    static int maxOverlapBetweenPages = ScrollbarTheme::theme()->maxOverlapBetweenPages();
     return maxOverlapBetweenPages;
 }
 
@@ -88,7 +88,7 @@ Scrollbar::Scrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orient
     , m_suppressInvalidation(false)
 {
     if (!m_theme)
-        m_theme = ScrollbarTheme::nativeTheme();
+        m_theme = ScrollbarTheme::theme();
 
     m_theme->registerScrollbar(this);
 
@@ -97,6 +97,9 @@ Scrollbar::Scrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orient
     // alone when sizing).
     int thickness = m_theme->scrollbarThickness(controlSize);
     Widget::setFrameRect(IntRect(0, 0, thickness, thickness));
+
+    if (m_scrollableArea)
+        m_currentPos = static_cast<float>(m_scrollableArea->scrollPosition(this));
 }
 
 Scrollbar::~Scrollbar()
@@ -107,6 +110,27 @@ Scrollbar::~Scrollbar()
     stopTimerIfNeeded();
     
     m_theme->unregisterScrollbar(this);
+}
+
+ScrollbarOverlayStyle Scrollbar::scrollbarOverlayStyle() const
+{
+    return m_scrollableArea ? ScrollbarOverlayStyleDefault : m_scrollableArea->scrollbarOverlayStyle();
+}
+
+void Scrollbar::getTickmarks(Vector<IntRect>& tickmarks) const
+{
+    if (m_scrollableArea)
+        m_scrollableArea->getTickmarks(tickmarks);
+}
+
+bool Scrollbar::isScrollableAreaActive() const
+{
+    return m_scrollableArea && m_scrollableArea->isActive();
+}
+
+bool Scrollbar::isScrollViewScrollbar() const
+{
+    return parent() && parent()->isFrameView() && static_cast<FrameView*>(parent())->isScrollViewScrollbar(this);
 }
 
 void Scrollbar::offsetDidChange()
@@ -327,18 +351,34 @@ void Scrollbar::setPressedPart(ScrollbarPart part)
 }
 
 
+void Scrollbar::mouseEntered()
+{
+    if (m_scrollableArea)
+        m_scrollableArea->mouseEnteredScrollbar(this);
+}
+
 bool Scrollbar::mouseExited()
 {
+    if (m_scrollableArea)
+        m_scrollableArea->mouseExitedScrollbar(this);
     setHoveredPart(NoPart);
     return true;
 }
 
-bool Scrollbar::mouseUp()
+bool Scrollbar::mouseUp(const PlatformMouseEvent& mouseEvent)
 {
     setPressedPart(NoPart);
     m_pressedPos = 0;
     m_draggingDocument = false;
     stopTimerIfNeeded();
+
+    if (m_scrollableArea) {
+        // m_hoveredPart won't be updated until the next mouseMoved or mouseDown, so we have to hit test
+        // to really know if the mouse has exited the scrollbar on a mouseUp.
+        ScrollbarPart part = theme()->hitTest(this, mouseEvent);
+        if (part == NoPart)
+            m_scrollableArea->mouseExitedScrollbar(this);
+    }
 
     if (parent() && parent()->isFrameView())
         static_cast<FrameView*>(parent())->frame()->eventHandler()->setMousePressed(false);
@@ -353,7 +393,7 @@ bool Scrollbar::mouseDown(const PlatformMouseEvent& evt)
         return true; // FIXME: Handled as context menu by Qt right now.  Should just avoid even calling this method on a right click though.
 
     setPressedPart(theme()->hitTest(this, evt));
-    int pressedPos = (orientation() == HorizontalScrollbar ? convertFromContainingWindow(evt.pos()).x() : convertFromContainingWindow(evt.pos()).y());
+    int pressedPos = (orientation() == HorizontalScrollbar ? convertFromContainingWindow(evt.position()).x() : convertFromContainingWindow(evt.position()).y());
     
     if ((m_pressedPart == BackTrackPart || m_pressedPart == ForwardTrackPart) && theme()->shouldCenterOnThumb(this, evt)) {
         setHoveredPart(ThumbPart);
@@ -377,7 +417,7 @@ bool Scrollbar::mouseDown(const PlatformMouseEvent& evt)
 
 void Scrollbar::setFrameRect(const IntRect& rect)
 {
-    // Get our window resizer rect and see if we overlap.  Adjust to avoid the overlap
+    // Get our window resizer rect and see if we overlap. Adjust to avoid the overlap
     // if necessary.
     IntRect adjustedRect(rect);
     bool overlapsResizer = false;
@@ -421,12 +461,21 @@ void Scrollbar::setEnabled(bool e)
     if (m_enabled == e)
         return;
     m_enabled = e;
+    theme()->updateEnabledState(this);
     invalidate();
 }
 
 bool Scrollbar::isOverlayScrollbar() const
 {
     return m_theme->usesOverlayScrollbars();
+}
+
+bool Scrollbar::shouldParticipateInHitTesting()
+{
+    // Non-overlay scrollbars should always participate in hit testing.
+    if (!isOverlayScrollbar())
+        return true;
+    return m_scrollableArea->scrollAnimator()->shouldScrollbarParticipateInHitTesting(this);
 }
 
 bool Scrollbar::isWindowActive() const

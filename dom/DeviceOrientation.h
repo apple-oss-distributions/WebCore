@@ -39,9 +39,11 @@ public:
     double alpha() const;
     double beta() const;
     double gamma() const;
+    bool absolute() const;
     bool canProvideAlpha() const;
     bool canProvideBeta() const;
     bool canProvideGamma() const;
+    bool canProvideAbsolute() const;
 
     double compassHeading() const;
     double compassAccuracy() const;

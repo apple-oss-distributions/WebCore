@@ -36,6 +36,7 @@
 #include <wtf/CurrentTime.h>
 #include <wtf/Vector.h>
 
+#include "limits.h"
 #include "SystemTime.h"
 
 namespace WebCore {
@@ -47,8 +48,6 @@ static int frameBytes(const IntSize& frameSize)
 
 BitmapImage::BitmapImage(ImageObserver* observer)
     : Image(observer)
-    , m_progressiveLoadChunkTime(0)
-    , m_progressiveLoadChunkCount(0)
     , m_currentFrame(0)
     , m_frames(0)
     , m_frameTimer(0)
@@ -56,6 +55,11 @@ BitmapImage::BitmapImage(ImageObserver* observer)
     , m_repetitionCountStatus(Unknown)
     , m_repetitionsComplete(0)
     , m_desiredFrameStartTime(0)
+    , m_decodedSize(0)
+    , m_decodedPropertiesSize(0)
+    , m_frameCount(0)
+    , m_progressiveLoadChunkTime(0)
+    , m_progressiveLoadChunkCount(0)
     , m_isSolidColor(false)
     , m_checkedForSolidColor(false)
     , m_animationFinished(false)
@@ -63,10 +67,7 @@ BitmapImage::BitmapImage(ImageObserver* observer)
     , m_haveSize(false)
     , m_sizeAvailable(false)
     , m_hasUniformFrameSize(true)
-    , m_decodedSize(0)
-    , m_decodedPropertiesSize(0)
     , m_haveFrameCount(false)
-    , m_frameCount(0)
 {
     initPlatformData();
 }
@@ -76,6 +77,17 @@ BitmapImage::~BitmapImage()
     invalidatePlatformData();
     stopAnimation();
 }
+
+bool BitmapImage::isBitmapImage() const
+{
+    return true;
+}
+
+bool BitmapImage::hasSingleSecurityOrigin() const
+{
+    return true;
+}
+
 
 void BitmapImage::destroyDecodedData(bool destroyAll)
 {
@@ -140,9 +152,7 @@ void BitmapImage::cacheFrame(size_t index, float scaleHint)
     if (numFrames == 1 && m_frames[index].m_frame)
         checkForSolidColor();
 
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
     m_frames[index].m_orientation = m_source.orientationAtIndex(index);
-#endif
     m_frames[index].m_haveMetadata = true;
     m_frames[index].m_isComplete = m_source.frameIsCompleteAtIndex(index);
     if (repetitionCount(false) != cAnimationNone)
@@ -187,7 +197,7 @@ void BitmapImage::didDecodeProperties() const
     if (m_decodedPropertiesSize == updatedSize)
         return;
     int deltaBytes = updatedSize - m_decodedPropertiesSize;
-#ifndef NDEBUG
+#if !ASSERT_DISABLED
     bool overflow = updatedSize > m_decodedPropertiesSize && deltaBytes < 0;
     bool underflow = updatedSize < m_decodedPropertiesSize && deltaBytes > 0;
     ASSERT(!overflow && !underflow);
@@ -197,14 +207,41 @@ void BitmapImage::didDecodeProperties() const
         imageObserver()->decodedSizeChanged(this, deltaBytes);
 }
 
+void BitmapImage::updateSize() const
+{
+    if (!m_sizeAvailable || m_haveSize)
+        return;
+
+    m_size = m_source.size();
+    m_sizeRespectingOrientation = m_source.size(RespectImageOrientation);
+    m_originalSize = m_source.originalSize();
+    m_originalSizeRespectingOrientation = m_source.originalSize(RespectImageOrientation);
+    m_haveSize = true;
+    didDecodeProperties();
+}
+
 IntSize BitmapImage::size() const
 {
-    if (m_sizeAvailable && !m_haveSize) {
-        m_size = m_source.size();
-        m_haveSize = true;
-        didDecodeProperties();
-    }
+    updateSize();
     return m_size;
+}
+
+IntSize BitmapImage::sizeRespectingOrientation() const
+{
+    updateSize();
+    return m_sizeRespectingOrientation;
+}
+
+IntSize BitmapImage::originalSize() const
+{
+    updateSize();
+    return m_originalSize;
+}
+
+IntSize BitmapImage::originalSizeRespectingOrientation() const
+{
+    updateSize();
+    return m_originalSizeRespectingOrientation;
 }
 
 IntSize BitmapImage::currentFrameSize() const
@@ -240,26 +277,21 @@ bool BitmapImage::dataChanged(bool allDataReceived)
     
     // Feed all the data we've seen so far to the image decoder.
     m_allDataReceived = allDataReceived;
-
     static const double chunkLoadIntervals[] = {0.0, 1.0, 3.0, 6.0, 15.0};
-    double interval = chunkLoadIntervals[std::min(m_progressiveLoadChunkCount, 4u)];
+    double interval = chunkLoadIntervals[std::min(m_progressiveLoadChunkCount, static_cast<uint16_t>(4))];
     
     bool needsUpdate = false;
     if (currentTime() - m_progressiveLoadChunkTime > interval) { // the first time through, the chunk time will be 0 and the image will get an update.
         needsUpdate = true;
         m_progressiveLoadChunkTime = currentTime();
+        ASSERT(m_progressiveLoadChunkCount <= std::numeric_limits<uint16_t>::max());
         m_progressiveLoadChunkCount++;
     }
     if (needsUpdate || allDataReceived)
         m_source.setData(data(), allDataReceived);
     
-    // Clear the frame count.
     m_haveFrameCount = false;
-
     m_hasUniformFrameSize = true;
-
-    // Image properties will not be available until the first frame of the file
-    // reaches kCGImageStatusIncomplete.
     return isSizeAvailable();
 }
 
@@ -289,6 +321,16 @@ bool BitmapImage::isSizeAvailable()
     return m_sizeAvailable;
 }
 
+bool BitmapImage::ensureFrameInfoIsCached(size_t index)
+{
+    if (index >= frameCount())
+        return false;
+
+    if (index >= m_frames.size() || !m_frames[index].m_haveInfo)
+        cacheFrameInfo(index);
+    return true;
+}
+
 NativeImagePtr BitmapImage::frameAtIndex(size_t index)
 {
     return frameAtIndex(index, 1.0f);
@@ -313,53 +355,58 @@ NativeImagePtr BitmapImage::frameAtIndex(size_t index, float scaleHint)
 
         cacheFrame(index, scaleHint);
     }
-
     return m_frames[index].m_frame;
 }
 
 bool BitmapImage::frameIsCompleteAtIndex(size_t index)
 {
-    if (index >= frameCount())
-        return true;
-
-    if (index >= m_frames.size() || !m_frames[index].m_haveInfo)
-        cacheFrameInfo(index);
-
+    // FIXME: cacheFrameInfo does not set m_isComplete. Should it?
+    if (!ensureFrameInfoIsCached(index))
+        return true; // Why would an invalid index return true here?
     return m_frames[index].m_isComplete;
 }
 
 float BitmapImage::frameDurationAtIndex(size_t index)
 {
-    if (index >= frameCount())
+    if (!ensureFrameInfoIsCached(index))
         return 0;
-
-    if (index >= m_frames.size() || !m_frames[index].m_haveInfo)
-        cacheFrameInfo(index);
-
     return m_frames[index].m_duration;
+}
+
+NativeImagePtr BitmapImage::nativeImageForCurrentFrame()
+{
+    return frameAtIndex(currentFrame());
 }
 
 bool BitmapImage::frameHasAlphaAtIndex(size_t index)
 {
-    if (index >= frameCount())
-        return true;
-
-    if (index >= m_frames.size() || !m_frames[index].m_haveInfo)
-        cacheFrameInfo(index);
-
+    if (!ensureFrameInfoIsCached(index))
+        return true; // Why would an invalid index return true here?
     return m_frames[index].m_hasAlpha;
 }
 
-#if ENABLE(RESPECT_EXIF_ORIENTATION)
-int BitmapImage::frameOrientationAtIndex(size_t index)
+bool BitmapImage::currentFrameHasAlpha()
 {
-    if (index >= frameCount())
-        return 1;
-        
-    if (index >= m_frames.size() || !m_frames[index].m_haveInfo)
-        cacheFrameInfo(index);
-        
+    return frameHasAlphaAtIndex(currentFrame());
+}
+
+ImageOrientation BitmapImage::currentFrameOrientation()
+{
+    return frameOrientationAtIndex(currentFrame());
+}
+
+ImageOrientation BitmapImage::frameOrientationAtIndex(size_t index)
+{
+    // FIXME: cacheFrameInfo does not set m_orientation. Should it?
+    if (!ensureFrameInfoIsCached(index))
+        return DefaultImageOrientation;
     return m_frames[index].m_orientation;
+}
+
+#if !ASSERT_DISABLED
+bool BitmapImage::notSolidColor()
+{
+    return size().width() != 1 || size().height() != 1 || frameCount() > 1;
 }
 #endif
 
@@ -388,7 +435,7 @@ void BitmapImage::startAnimation(bool catchUpIfNecessary)
         return;
 
     // If we aren't already animating, set now as the animation start time.
-    const double time = currentTime();
+    const double time = monotonicallyIncreasingTime();
     if (!m_desiredFrameStartTime)
         m_desiredFrameStartTime = time;
 
@@ -495,6 +542,13 @@ void BitmapImage::resetAnimation()
     destroyDecodedDataIfNecessary(true);
 }
 
+unsigned BitmapImage::decodedSize() const
+{
+    return m_decodedSize;
+}
+
+
+
 void BitmapImage::advanceAnimation(Timer<BitmapImage>*)
 {
     internalAdvanceAnimation(false);
@@ -538,5 +592,30 @@ bool BitmapImage::internalAdvanceAnimation(bool skippingFrames)
         imageObserver()->animationAdvanced(this);
     return advancedAnimation;
 }
+
+bool BitmapImage::mayFillWithSolidColor()
+{
+    if (!m_checkedForSolidColor && frameCount() > 0) {
+        checkForSolidColor();
+        // WINCE PORT: checkForSolidColor() doesn't set m_checkedForSolidColor until
+        // it gets enough information to make final decision.
+#if !OS(WINCE)
+        ASSERT(m_checkedForSolidColor);
+#endif
+    }
+    return m_isSolidColor && !m_currentFrame;
+}
+
+Color BitmapImage::solidColor() const
+{
+    return m_solidColor;
+}
+
+#if !USE(CG)
+void BitmapImage::draw(GraphicsContext* ctx, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator op, RespectImageOrientationEnum)
+{
+    draw(ctx, dstRect, srcRect, styleColorSpace, op);
+}
+#endif
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2008, 2011 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -32,6 +32,8 @@
 #include "HTMLMediaElement.h"
 #include "HTMLNames.h"
 #include "HTMLParserIdioms.h"
+#include "HTMLPlugInImageElement.h"
+#include "RenderBlock.h"
 #include "RenderImage.h"
 #include "RenderInline.h"
 #include "Scrollbar.h"
@@ -52,10 +54,12 @@ HitTestResult::HitTestResult()
     , m_rightPadding(0)
     , m_bottomPadding(0)
     , m_leftPadding(0)
+    , m_shadowContentFilterPolicy(DoNotAllowShadowContent)
+    , m_region(0)
 {
 }
 
-HitTestResult::HitTestResult(const IntPoint& point)
+HitTestResult::HitTestResult(const LayoutPoint& point)
     : m_point(point)
     , m_isOverWidget(false)
     , m_isRectBased(false)
@@ -63,16 +67,20 @@ HitTestResult::HitTestResult(const IntPoint& point)
     , m_rightPadding(0)
     , m_bottomPadding(0)
     , m_leftPadding(0)
+    , m_shadowContentFilterPolicy(DoNotAllowShadowContent)
+    , m_region(0)
 {
 }
 
-HitTestResult::HitTestResult(const IntPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
+HitTestResult::HitTestResult(const LayoutPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding, ShadowContentFilterPolicy allowShadowContent)
     : m_point(centerPoint)
     , m_isOverWidget(false)
     , m_topPadding(topPadding)
     , m_rightPadding(rightPadding)
     , m_bottomPadding(bottomPadding)
     , m_leftPadding(leftPadding)
+    , m_shadowContentFilterPolicy(allowShadowContent)
+    , m_region(0)
 {
     // If all padding values passed in are zero then it is not a rect based hit test.
     m_isRectBased = topPadding || rightPadding || bottomPadding || leftPadding;
@@ -90,6 +98,8 @@ HitTestResult::HitTestResult(const HitTestResult& other)
     , m_innerURLElement(other.URLElement())
     , m_scrollbar(other.scrollbar())
     , m_isOverWidget(other.isOverWidget())
+    , m_shadowContentFilterPolicy(other.shadowContentFilterPolicy())
+    , m_region(other.region())
 {
     // Only copy the padding and NodeSet in case of rect hit test.
     // Copying the later is rather expensive.
@@ -128,6 +138,10 @@ HitTestResult& HitTestResult::operator=(const HitTestResult& other)
         m_topPadding = m_rightPadding = m_bottomPadding = m_leftPadding = 0;
 
     m_rectBasedTestResult = adoptPtr(other.m_rectBasedTestResult ? new NodeSet(*other.m_rectBasedTestResult) : 0);
+    m_shadowContentFilterPolicy = other.shadowContentFilterPolicy();
+
+    m_region = other.m_region;
+
     return *this;
 }
 
@@ -201,7 +215,7 @@ String HitTestResult::spellingToolTip(TextDirection& dir) const
 
     if (RenderObject* renderer = m_innerNonSharedNode->renderer())
         dir = renderer->style()->direction();
-    return marker->description;
+    return marker->description();
 }
 
 String HitTestResult::replacedString() const
@@ -215,7 +229,7 @@ String HitTestResult::replacedString() const
     if (!marker)
         return String();
     
-    return marker->description;
+    return marker->description();
 }    
     
 String HitTestResult::title(TextDirection& dir) const
@@ -233,6 +247,32 @@ String HitTestResult::title(TextDirection& dir) const
             }
         }
     }
+    return String();
+}
+
+String HitTestResult::innerTextIfTruncated(TextDirection& dir) const
+{
+    for (Node* truncatedNode = m_innerNode.get(); truncatedNode; truncatedNode = truncatedNode->parentNode()) {
+        if (!truncatedNode->isElementNode())
+            continue;
+
+        if (RenderObject* renderer = truncatedNode->renderer()) {
+            if (renderer->isRenderBlock()) {
+                RenderBlock* block = toRenderBlock(renderer);
+                if (block->style()->textOverflow()) {
+                    for (RootInlineBox* line = block->firstRootBox(); line; line = line->nextRootBox()) {
+                        if (line->hasEllipsisBox()) {
+                            dir = block->style()->direction();
+                            return toElement(truncatedNode)->innerText();
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    dir = LTR;
     return String();
 }
 
@@ -270,7 +310,7 @@ Image* HitTestResult::image() const
     if (renderer && renderer->isImage()) {
         RenderImage* image = static_cast<WebCore::RenderImage*>(renderer);
         if (image->cachedImage() && !image->cachedImage()->errorOccurred())
-            return image->cachedImage()->image();
+            return image->cachedImage()->imageForRenderer(image);
     }
 
     return 0;
@@ -308,11 +348,29 @@ KURL HitTestResult::absoluteImageURL() const
     return m_innerNonSharedNode->document()->completeURL(stripLeadingAndTrailingHTMLSpaces(urlString));
 }
 
+KURL HitTestResult::absolutePDFURL() const
+{
+    if (!(m_innerNonSharedNode && m_innerNonSharedNode->document()))
+        return KURL();
+
+    if (!m_innerNonSharedNode->hasTagName(embedTag) && !m_innerNonSharedNode->hasTagName(objectTag))
+        return KURL();
+
+    HTMLPlugInImageElement* element = static_cast<HTMLPlugInImageElement*>(m_innerNonSharedNode.get());
+    KURL url = m_innerNonSharedNode->document()->completeURL(stripLeadingAndTrailingHTMLSpaces(element->url()));
+    if (!url.isValid())
+        return KURL();
+
+    if (element->serviceType() == "application/pdf" || (element->serviceType().isEmpty() && url.path().lower().endsWith(".pdf")))
+        return url;
+    return KURL();
+}
+
 KURL HitTestResult::absoluteMediaURL() const
 {
 #if ENABLE(VIDEO)
     if (HTMLMediaElement* mediaElt = mediaElement())
-        return m_innerNonSharedNode->document()->completeURL(stripLeadingAndTrailingHTMLSpaces(mediaElt->currentSrc()));
+        return mediaElt->currentSrc();
     return KURL();
 #else
     return KURL();
@@ -499,7 +557,7 @@ bool HitTestResult::isContentEditable() const
     if (!m_innerNonSharedNode)
         return false;
 
-    if (m_innerNonSharedNode->hasTagName(textareaTag) || m_innerNonSharedNode->hasTagName(isindexTag))
+    if (m_innerNonSharedNode->hasTagName(textareaTag))
         return true;
 
     if (m_innerNonSharedNode->hasTagName(inputTag))
@@ -508,7 +566,7 @@ bool HitTestResult::isContentEditable() const
     return m_innerNonSharedNode->rendererIsEditable();
 }
 
-bool HitTestResult::addNodeToRectBasedTestResult(Node* node, int x, int y, const IntRect& rect)
+bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const LayoutPoint& pointInContainer, const IntRect& rect)
 {
     // If it is not a rect-based hit test, this method has to be no-op.
     // Return false, so the hit test stops.
@@ -519,7 +577,9 @@ bool HitTestResult::addNodeToRectBasedTestResult(Node* node, int x, int y, const
     if (!node)
         return true;
 
-    node = node->shadowAncestorNode();
+    if (m_shadowContentFilterPolicy == DoNotAllowShadowContent)
+        node = node->shadowAncestorNode();
+
     mutableRectBasedTestResult().add(node);
 
     if (node->renderer()->isInline()) {
@@ -536,10 +596,10 @@ bool HitTestResult::addNodeToRectBasedTestResult(Node* node, int x, int y, const
                 mutableRectBasedTestResult().add(currInline->node()->shadowAncestorNode());
         }
     }
-    return !rect.contains(rectForPoint(x, y));
+    return !rect.contains(rectForPoint(pointInContainer));
 }
 
-bool HitTestResult::addNodeToRectBasedTestResult(Node* node, int x, int y, const FloatRect& rect)
+bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const LayoutPoint& pointInContainer, const FloatRect& rect)
 {
     // If it is not a rect-based hit test, this method has to be no-op.
     // Return false, so the hit test stops.
@@ -550,7 +610,9 @@ bool HitTestResult::addNodeToRectBasedTestResult(Node* node, int x, int y, const
     if (!node)
         return true;
 
-    node = node->shadowAncestorNode();
+    if (m_shadowContentFilterPolicy == DoNotAllowShadowContent)
+        node = node->shadowAncestorNode();
+
     mutableRectBasedTestResult().add(node);
 
     if (node->renderer()->isInline()) {
@@ -567,7 +629,7 @@ bool HitTestResult::addNodeToRectBasedTestResult(Node* node, int x, int y, const
                 mutableRectBasedTestResult().add(currInline->node()->shadowAncestorNode());
         }
     }
-    return !rect.contains(rectForPoint(x, y));
+    return !rect.contains(rectForPoint(pointInContainer));
 }
 
 void HitTestResult::append(const HitTestResult& other)
@@ -590,9 +652,9 @@ void HitTestResult::append(const HitTestResult& other)
     }
 }
 
-IntRect HitTestResult::rectForPoint(const IntPoint& point, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
+IntRect HitTestResult::rectForPoint(const LayoutPoint& point, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
 {
-    IntPoint actualPoint(point);
+    IntPoint actualPoint(roundedIntPoint(point));
     actualPoint -= IntSize(leftPadding, topPadding);
 
     IntSize actualPadding(leftPadding + rightPadding, topPadding + bottomPadding);
