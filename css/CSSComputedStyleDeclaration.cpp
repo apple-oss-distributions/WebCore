@@ -586,7 +586,7 @@ static PassRefPtr<CSSValue> getPositionOffsetValue(RenderStyle* style, CSSProper
             return 0;
     }
 
-    if (style->position() == AbsolutePosition || style->position() == FixedPosition) {
+    if (style->hasOutOfFlowPosition()) {
         if (l.type() == WebCore::Fixed)
             return zoomAdjustedPixelValue(l.value(), style);
         else if (l.isViewportPercentage())
@@ -594,11 +594,12 @@ static PassRefPtr<CSSValue> getPositionOffsetValue(RenderStyle* style, CSSProper
         return cssValuePool().createValue(l);
     }
 
-    if (style->position() == RelativePosition)
+    if (style->hasInFlowPosition()) {
         // FIXME: It's not enough to simply return "auto" values for one offset if the other side is defined.
         // In other words if left is auto and right is not auto, then left's computed value is negative right().
         // So we should get the opposite length unit and see if it is auto.
         return cssValuePool().createValue(l);
+    }
 
     return cssValuePool().createIdentifierValue(CSSValueAuto);
 }
@@ -2333,7 +2334,7 @@ PassRefPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValue(CSSPropert
         case CSSPropertyWebkitTextCombine:
             return cssValuePool().createValue(style->textCombine());
         case CSSPropertyWebkitTextOrientation:
-            return CSSPrimitiveValue::create(style->fontDescription().textOrientation());
+            return CSSPrimitiveValue::create(style->textOrientation());
         case CSSPropertyWebkitLineBoxContain:
             return createLineBoxContainValue(style->lineBoxContain());
         case CSSPropertyContent:

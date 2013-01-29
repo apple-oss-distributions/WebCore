@@ -35,7 +35,6 @@ FontPlatformData::FontPlatformData(const FontPlatformData& source)
     : m_syntheticBold(source.m_syntheticBold)
     , m_syntheticOblique(source.m_syntheticOblique)
     , m_orientation(source.m_orientation)
-    , m_textOrientation(source.m_textOrientation)
     , m_size(source.m_size)
     , m_widthVariant(source.m_widthVariant)
     , m_isColorBitmapFont(source.m_isColorBitmapFont)
@@ -56,7 +55,6 @@ const FontPlatformData& FontPlatformData::operator=(const FontPlatformData& othe
     m_syntheticBold = other.m_syntheticBold;
     m_syntheticOblique = other.m_syntheticOblique;
     m_orientation = other.m_orientation;
-    m_textOrientation = other.m_textOrientation;
     m_size = other.m_size;
     m_widthVariant = other.m_widthVariant;
     m_isColorBitmapFont = other.m_isColorBitmapFont;

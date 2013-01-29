@@ -50,6 +50,7 @@ StyleRareInheritedData::StyleRareInheritedData()
     , textEmphasisFill(TextEmphasisFillFilled)
     , textEmphasisMark(TextEmphasisMarkNone)
     , textEmphasisPosition(TextEmphasisPositionOver)
+    , m_textOrientation(TextOrientationVerticalRight)
     , m_lineBoxContain(RenderStyle::initialLineBoxContain())
     , m_imageRendering(RenderStyle::initialImageRendering())
     , m_lineSnap(RenderStyle::initialLineSnap())
@@ -100,6 +101,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , textEmphasisFill(o.textEmphasisFill)
     , textEmphasisMark(o.textEmphasisMark)
     , textEmphasisPosition(o.textEmphasisPosition)
+    , m_textOrientation(o.m_textOrientation)
     , m_lineBoxContain(o.m_lineBoxContain)
     , m_imageRendering(o.m_imageRendering)
     , m_lineSnap(o.m_lineSnap)
@@ -174,6 +176,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && textEmphasisFill == o.textEmphasisFill
         && textEmphasisMark == o.textEmphasisMark
         && textEmphasisPosition == o.textEmphasisPosition
+        && m_textOrientation == o.m_textOrientation
         && m_lineBoxContain == o.m_lineBoxContain
         && touchCalloutEnabled == o.touchCalloutEnabled
         && useTouchOverflowScrolling == o.useTouchOverflowScrolling

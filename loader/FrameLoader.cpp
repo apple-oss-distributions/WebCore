@@ -550,9 +550,7 @@ void FrameLoader::clear(bool clearWindowProperties, bool clearScriptObjects, boo
         m_frame->document()->cancelParsing();
         m_frame->document()->stopActiveDOMObjects();
         if (m_frame->document()->attached()) {
-            m_frame->document()->willRemove();
             m_frame->document()->prepareForDestruction();
-            
             m_frame->document()->removeFocusedNodeOfSubtree(m_frame->document());
         }
     }
@@ -713,7 +711,7 @@ void FrameLoader::checkCompleted()
     m_shouldCallCheckCompleted = false;
 
     if (m_frame->view())
-        m_frame->view()->checkStopDelayingDeferredRepaints();
+        m_frame->view()->checkFlushDeferredRepaintsAfterLoadComplete();
 
     // Have we completed before?
     if (m_isComplete)
@@ -753,6 +751,9 @@ void FrameLoader::checkCompleted()
     completed();
     if (m_frame->page())
         checkLoadComplete();
+
+    if (m_frame->view())
+        m_frame->view()->checkFlushDeferredRepaintsAfterLoadComplete();
 }
 
 void FrameLoader::checkTimerFired(Timer<FrameLoader>*)
@@ -1527,6 +1528,10 @@ void FrameLoader::stopAllLoaders(ClearProvisionalItemPolicy clearProvisionalItem
     // If this method is called from within this method, infinite recursion can occur (3442218). Avoid this.
     if (m_inStopAllLoaders)
         return;
+    
+    // Calling stopLoading() on the provisional document loader can blow away
+    // the frame from underneath.
+    RefPtr<Frame> protect(m_frame);
 
     m_inStopAllLoaders = true;
 

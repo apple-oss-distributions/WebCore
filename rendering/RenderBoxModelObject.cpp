@@ -37,6 +37,7 @@
 #include "RenderInline.h"
 #include "RenderLayer.h"
 #include "RenderView.h"
+#include "ScrollingConstraints.h"
 #include "Settings.h"
 #include "TransformState.h"
 #include <wtf/CurrentTime.h>
@@ -348,6 +349,15 @@ void RenderBoxModelObject::willBeDestroyed()
     // A continuation of this RenderObject should be destroyed at subclasses.
     ASSERT(!continuation());
 
+    if (isPositioned()) {
+        if (RenderView* view = this->view()) {
+            if (FrameView* frameView = view->frameView()) {
+                if (style()->hasViewportConstrainedPosition())
+                    frameView->removeViewportConstrainedObject(this);
+            }
+        }
+    }
+
     // If this is a first-letter object with a remaining text fragment then the
     // entry needs to be cleared from the map.
     if (firstLetterRemainingText())
@@ -455,6 +465,17 @@ void RenderBoxModelObject::styleDidChange(StyleDifference diff, const RenderStyl
         if (s_hadLayer && layer()->isSelfPaintingLayer() != s_layerWasSelfPainting)
             setChildNeedsLayout(true);
     }
+
+    if (FrameView *frameView = view()->frameView()) {
+        bool newStyleIsViewportConstained = style()->hasViewportConstrainedPosition();
+        bool oldStyleIsViewportConstrained = oldStyle && oldStyle->hasViewportConstrainedPosition();
+        if (newStyleIsViewportConstained != oldStyleIsViewportConstrained) {
+            if (newStyleIsViewportConstained && layer())
+                frameView->addViewportConstrainedObject(this);
+            else
+                frameView->removeViewportConstrainedObject(this);
+        }
+    }
 }
 
 void RenderBoxModelObject::updateBoxModelInfoFromStyle()
@@ -465,51 +486,45 @@ void RenderBoxModelObject::updateBoxModelInfoFromStyle()
     setHasBoxDecorations(hasBackground() || styleToUse->hasBorder() || styleToUse->hasAppearance() || styleToUse->boxShadow());
     setInline(styleToUse->isDisplayInlineType());
     setRelPositioned(styleToUse->position() == RelativePosition);
+    setStickyPositioned(styleToUse->position() == StickyPosition);
     setHorizontalWritingMode(styleToUse->isHorizontalWritingMode());
 }
 
-enum RelPosAxis { RelPosX, RelPosY };
-
-static LayoutUnit accumulateRelativePositionOffsets(const RenderObject* child, RelPosAxis axis)
+static LayoutSize accumulateInFlowPositionOffsets(const RenderObject* child)
 {
-    if (!child->isAnonymousBlock() || !child->isRelPositioned())
-        return 0;
-    LayoutUnit offset = 0;
+    if (!child->isAnonymousBlock() || !child->isInFlowPositioned())
+        return LayoutSize();
+    LayoutSize offset;
     RenderObject* p = toRenderBlock(child)->inlineElementContinuation();
     while (p && p->isRenderInline()) {
-        if (p->isRelPositioned())
-            offset += (axis == RelPosX) ? toRenderInline(p)->relativePositionOffsetX() : toRenderInline(p)->relativePositionOffsetY();
+        if (p->isInFlowPositioned()) {
+            RenderInline* renderInline = toRenderInline(p);
+            offset += renderInline->offsetForInFlowPosition();
+        }
         p = p->parent();
     }
     return offset;
 }
 
-LayoutUnit RenderBoxModelObject::relativePositionOffsetX() const
+LayoutSize RenderBoxModelObject::relativePositionOffset() const
 {
-    LayoutUnit offset = accumulateRelativePositionOffsets(this, RelPosX);
+    LayoutSize offset = accumulateInFlowPositionOffsets(this);
+
+    RenderBlock* containingBlock = this->containingBlock();
 
     // Objects that shrink to avoid floats normally use available line width when computing containing block width.  However
     // in the case of relative positioning using percentages, we can't do this.  The offset should always be resolved using the
     // available width of the containing block.  Therefore we don't use containingBlockLogicalWidthForContent() here, but instead explicitly
     // call availableWidth on our containing block.
     if (!style()->left().isAuto()) {
-        RenderBlock* cb = containingBlock();
-        if (!style()->right().isAuto() && !cb->style()->isLeftToRightDirection())
-            return -valueForLength(style()->right(), cb->availableWidth(), view());
-        return offset + valueForLength(style()->left(), cb->availableWidth(), view());
+        if (!style()->right().isAuto() && !containingBlock->style()->isLeftToRightDirection())
+            offset.setWidth(-valueForLength(style()->right(), containingBlock->availableWidth(), view()));
+        else
+            offset.expand(valueForLength(style()->left(), containingBlock->availableWidth(), view()), 0);
+    } else if (!style()->right().isAuto()) {
+        offset.expand(-valueForLength(style()->right(), containingBlock->availableWidth(), view()), 0);
     }
-    if (!style()->right().isAuto()) {
-        RenderBlock* cb = containingBlock();
-        return offset + -valueForLength(style()->right(), cb->availableWidth(), view());
-    }
-    return offset;
-}
 
-LayoutUnit RenderBoxModelObject::relativePositionOffsetY() const
-{
-    LayoutUnit offset = accumulateRelativePositionOffsets(this, RelPosY);
-    
-    RenderBlock* containingBlock = this->containingBlock();
     // If the containing block of a relatively positioned element does not
     // specify a height, a percentage top or bottom offset should be resolved as
     // auto. An exception to this is if the containing block has the WinIE quirk
@@ -520,82 +535,136 @@ LayoutUnit RenderBoxModelObject::relativePositionOffsetY() const
         && (!containingBlock->style()->height().isAuto()
             || !style()->top().isPercent()
             || containingBlock->stretchesToViewport()))
-        return offset + valueForLength(style()->top(), containingBlock->availableHeight(), view());
+        offset.expand(0, valueForLength(style()->top(), containingBlock->availableHeight(), view()));
 
-    if (!style()->bottom().isAuto()
+    else if (!style()->bottom().isAuto()
         && (!containingBlock->style()->height().isAuto()
             || !style()->bottom().isPercent()
             || containingBlock->stretchesToViewport()))
-        return offset + -valueForLength(style()->bottom(), containingBlock->availableHeight(), view());
+        offset.expand(0, -valueForLength(style()->bottom(), containingBlock->availableHeight(), view()));
 
     return offset;
 }
 
-LayoutUnit RenderBoxModelObject::offsetLeft() const
+LayoutPoint RenderBoxModelObject::adjustedPositionRelativeToOffsetParent(const LayoutPoint& startPoint) const
 {
     // If the element is the HTML body element or does not have an associated box
     // return 0 and stop this algorithm.
     if (isBody())
-        return 0;
+        return LayoutPoint();
     
-    RenderBoxModelObject* offsetPar = offsetParent();
-    LayoutUnit xPos = (isBox() ? toRenderBox(this)->left() : ZERO_LAYOUT_UNIT);
+    LayoutPoint referencePoint = startPoint;
+    referencePoint.move(parent()->offsetForColumns(referencePoint));
     
     // If the offsetParent of the element is null, or is the HTML body element,
     // return the distance between the canvas origin and the left border edge 
     // of the element and stop this algorithm.
-    if (offsetPar) {
-        if (offsetPar->isBox() && !offsetPar->isBody())
-            xPos -= toRenderBox(offsetPar)->borderLeft();
-        if (!isPositioned()) {
+    if (const RenderBoxModelObject* offsetParent = this->offsetParent()) {
+        if (offsetParent->isBox() && !offsetParent->isBody())
+            referencePoint.move(-toRenderBox(offsetParent)->borderLeft(), -toRenderBox(offsetParent)->borderTop());
+        if (!isOutOfFlowPositioned()) {
             if (isRelPositioned())
-                xPos += relativePositionOffsetX();
-            RenderObject* curr = parent();
-            while (curr && curr != offsetPar) {
+                referencePoint.move(relativePositionOffset());
+            else if (isStickyPositioned())
+                referencePoint.move(stickyPositionOffset());
+            const RenderObject* curr = parent();
+            while (curr != offsetParent) {
                 // FIXME: What are we supposed to do inside SVG content?
                 if (curr->isBox() && !curr->isTableRow())
-                    xPos += toRenderBox(curr)->left();
+                    referencePoint.moveBy(toRenderBox(curr)->topLeftLocation());
+                referencePoint.move(curr->parent()->offsetForColumns(referencePoint));
                 curr = curr->parent();
             }
-            if (offsetPar->isBox() && offsetPar->isBody() && !offsetPar->isRelPositioned() && !offsetPar->isPositioned())
-                xPos += toRenderBox(offsetPar)->left();
+            if (offsetParent->isBox() && offsetParent->isBody() && !offsetParent->isPositioned())
+                referencePoint.moveBy(toRenderBox(offsetParent)->topLeftLocation());
         }
     }
 
-    return xPos;
+    return referencePoint;
+}
+
+void RenderBoxModelObject::computeStickyPositionConstraints(StickyPositionViewportConstraints& constraints, const FloatRect& viewportRect) const
+{
+    RenderBlock* containingBlock = this->containingBlock();
+
+    LayoutRect containerContentRect = containingBlock->contentBoxRect();
+
+    LayoutUnit minLeftMargin = minimumValueForLength(style()->marginLeft(), containingBlock->availableLogicalWidth(), view());
+    LayoutUnit minTopMargin = minimumValueForLength(style()->marginTop(), containingBlock->availableLogicalWidth(), view());
+    LayoutUnit minRightMargin = minimumValueForLength(style()->marginRight(), containingBlock->availableLogicalWidth(), view());
+    LayoutUnit minBottomMargin = minimumValueForLength(style()->marginBottom(), containingBlock->availableLogicalWidth(), view());
+
+    // Compute the container-relative area within which the sticky element is allowed to move.
+    containerContentRect.move(minLeftMargin, minTopMargin);
+    containerContentRect.contract(minLeftMargin + minRightMargin, minTopMargin + minBottomMargin);
+    constraints.setAbsoluteContainingBlockRect(containingBlock->localToAbsoluteQuad(FloatRect(containerContentRect)).boundingBox());
+
+    LayoutRect stickyBoxRect = frameRectForStickyPositioning();
+    LayoutRect flippedStickyBoxRect = stickyBoxRect;
+    containingBlock->flipForWritingMode(flippedStickyBoxRect);
+    LayoutPoint stickyLocation = flippedStickyBoxRect.location();
+
+    // FIXME: sucks to call localToAbsolute again, but we can't just offset from the previously computed rect if there are transforms.
+    FloatRect absContainerFrame = containingBlock->localToAbsoluteQuad(FloatRect(FloatPoint(), containingBlock->size())).boundingBox();
+    // We can't call localToAbsolute on |this| because that will recur. FIXME: For now, assume that |this| is not transformed.
+    FloatRect absoluteStickyBoxRect(absContainerFrame.location() + stickyLocation, flippedStickyBoxRect.size());
+    constraints.setAbsoluteStickyBoxRect(absoluteStickyBoxRect);
+
+    if (!style()->left().isAuto()) {
+        constraints.setLeftOffset(valueForLength(style()->left(), viewportRect.width(), view()));
+        constraints.addAnchorEdge(ViewportConstraints::AnchorEdgeLeft);
+    }
+
+    if (!style()->right().isAuto()) {
+        constraints.setRightOffset(valueForLength(style()->right(), viewportRect.width(), view()));
+        constraints.addAnchorEdge(ViewportConstraints::AnchorEdgeRight);
+    }
+
+    if (!style()->top().isAuto()) {
+        constraints.setTopOffset(valueForLength(style()->top(), viewportRect.height(), view()));
+        constraints.addAnchorEdge(ViewportConstraints::AnchorEdgeTop);
+    }
+
+    if (!style()->bottom().isAuto()) {
+        constraints.setBottomOffset(valueForLength(style()->bottom(), viewportRect.height(), view()));
+        constraints.addAnchorEdge(ViewportConstraints::AnchorEdgeBottom);
+    }
+}
+
+LayoutSize RenderBoxModelObject::stickyPositionOffset() const
+{
+    LayoutRect viewportRect = view()->frameView()->actualVisibleContentRect();
+
+    StickyPositionViewportConstraints constraints;
+    computeStickyPositionConstraints(constraints, viewportRect);
+    
+    // The sticky offset is physical, so we can just return the delta computed in absolute coords (though it may be wrong with transforms).
+    return LayoutSize(constraints.computeStickyOffset(viewportRect));
+}
+
+LayoutSize RenderBoxModelObject::offsetForInFlowPosition() const
+{
+    if (isRelPositioned())
+        return relativePositionOffset();
+
+    if (isStickyPositioned())
+        return stickyPositionOffset();
+
+    return LayoutSize();
+}
+
+LayoutUnit RenderBoxModelObject::offsetLeft() const
+{
+    // Note that RenderInline and RenderBox override this to pass a different
+    // startPoint to adjustedPositionRelativeToOffsetParent.
+    return adjustedPositionRelativeToOffsetParent(LayoutPoint()).x();
 }
 
 LayoutUnit RenderBoxModelObject::offsetTop() const
 {
-    // If the element is the HTML body element or does not have an associated box
-    // return 0 and stop this algorithm.
-    if (isBody())
-        return 0;
-    
-    RenderBoxModelObject* offsetPar = offsetParent();
-    LayoutUnit yPos = (isBox() ? toRenderBox(this)->top() : ZERO_LAYOUT_UNIT);
-    
-    // If the offsetParent of the element is null, or is the HTML body element,
-    // return the distance between the canvas origin and the top border edge 
-    // of the element and stop this algorithm.
-    if (offsetPar) {
-        if (offsetPar->isBox() && !offsetPar->isBody())
-            yPos -= toRenderBox(offsetPar)->borderTop();
-        if (!isPositioned()) {
-            if (isRelPositioned())
-                yPos += relativePositionOffsetY();
-            RenderObject* curr = parent();
-            while (curr && curr != offsetPar) {
-                // FIXME: What are we supposed to do inside SVG content?
-                if (curr->isBox() && !curr->isTableRow())
-                    yPos += toRenderBox(curr)->top();
-                curr = curr->parent();
-            }
-            if (offsetPar->isBox() && offsetPar->isBody() && !offsetPar->isRelPositioned() && !offsetPar->isPositioned())
-                yPos += toRenderBox(offsetPar)->top();
-        }
-    }
-    return yPos;
+    // Note that RenderInline and RenderBox override this to pass a different
+    // startPoint to adjustedPositionRelativeToOffsetParent.
+    return adjustedPositionRelativeToOffsetParent(LayoutPoint()).y();
 }
 
 int RenderBoxModelObject::pixelSnappedOffsetWidth() const
@@ -3024,7 +3093,7 @@ void RenderBoxModelObject::mapAbsoluteToLocalPoint(bool fixed, bool useTransform
 
     LayoutSize containerOffset = offsetFromContainer(o, LayoutPoint());
 
-    if (!style()->isPositioned() && o->hasColumns()) {
+    if (!style()->hasOutOfFlowPosition() && o->hasColumns()) {
         RenderBlock* block = static_cast<RenderBlock*>(o);
         LayoutPoint point(roundedLayoutPoint(transformState.mappedPoint()));
         point -= containerOffset;
@@ -3038,6 +3107,43 @@ void RenderBoxModelObject::mapAbsoluteToLocalPoint(bool fixed, bool useTransform
         transformState.applyTransform(t, preserve3D ? TransformState::AccumulateTransform : TransformState::FlattenTransform);
     } else
         transformState.move(containerOffset.width(), containerOffset.height(), preserve3D ? TransformState::AccumulateTransform : TransformState::FlattenTransform);
+}
+
+void RenderBoxModelObject::moveChildTo(RenderBoxModelObject* toBoxModelObject, RenderObject* child, RenderObject* beforeChild, bool fullRemoveInsert)
+{
+    // FIXME: We need a performant way to handle clearing positioned objects from our list that are
+    // in |child|'s subtree so we could just clear them here. Because of this, we assume that callers
+    // have cleared their positioned objects list for child moves (!fullRemoveInsert) to avoid any badness.
+    ASSERT(!fullRemoveInsert || !isRenderBlock() || !toRenderBlock(this)->hasPositionedObjects());
+
+    ASSERT(this == child->parent());
+    ASSERT(!beforeChild || toBoxModelObject == beforeChild->parent());
+    if (fullRemoveInsert && (toBoxModelObject->isRenderBlock() || toBoxModelObject->isRenderInline())) {
+        // Takes care of adding the new child correctly if toBlock and fromBlock
+        // have different kind of children (block vs inline).
+        toBoxModelObject->addChild(virtualChildren()->removeChildNode(this, child), beforeChild);
+    } else
+        toBoxModelObject->virtualChildren()->insertChildNode(toBoxModelObject, virtualChildren()->removeChildNode(this, child, fullRemoveInsert), beforeChild, fullRemoveInsert);
+}
+
+void RenderBoxModelObject::moveChildrenTo(RenderBoxModelObject* toBoxModelObject, RenderObject* startChild, RenderObject* endChild, RenderObject* beforeChild, bool fullRemoveInsert)
+{
+    // This condition is rarely hit since this function is usually called on
+    // anonymous blocks which can no longer carry positioned objects (see r120761)
+    // or when fullRemoveInsert is false.
+    if (fullRemoveInsert && isRenderBlock()) {
+        RenderBlock* block = toRenderBlock(this);
+        if (block->hasPositionedObjects())
+            block->removePositionedObjects(0);
+    }
+
+    ASSERT(!beforeChild || toBoxModelObject == beforeChild->parent());
+    for (RenderObject* child = startChild; child && child != endChild; ) {
+        // Save our next sibling as moveChildTo will clear it.
+        RenderObject* nextSibling = child->nextSibling();
+        moveChildTo(toBoxModelObject, child, beforeChild, fullRemoveInsert);
+        child = nextSibling;
+    }
 }
 
 } // namespace WebCore

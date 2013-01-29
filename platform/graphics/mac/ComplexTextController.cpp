@@ -257,12 +257,8 @@ void ComplexTextController::collectComplexTextRuns()
     nextIsMissingGlyph = false;
 #if !PLATFORM(WX)
     nextFontData = m_font.fontDataForCombiningCharacterSequence(sequenceStart, curr - sequenceStart, nextIsSmallCaps ? SmallCapsVariant : NormalVariant);
-    if (!nextFontData) {
-        if (markCount)
-            nextFontData = systemFallbackFontData();
-        else
-            nextIsMissingGlyph = true;
-    }
+    if (!nextFontData)
+        nextIsMissingGlyph = true;
 #endif
 
     while (curr < end) {
@@ -289,12 +285,8 @@ void ComplexTextController::collectComplexTextRuns()
 #if !PLATFORM(WX)
         else {
             nextFontData = m_font.fontDataForCombiningCharacterSequence(cp + index, curr - cp - index, nextIsSmallCaps ? SmallCapsVariant : NormalVariant);
-            if (!nextFontData) {
-                if (markCount)
-                    nextFontData = systemFallbackFontData();
-                else
-                    nextIsMissingGlyph = true;
-            }
+            if (!nextFontData)
+                nextIsMissingGlyph = true;
         }
 #endif
 

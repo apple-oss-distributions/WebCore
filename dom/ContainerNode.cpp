@@ -270,8 +270,18 @@ bool ContainerNode::replaceChild(PassRefPtr<Node> newChild, Node* oldChild, Exce
     if (next && (next->previousSibling() == newChild || next == newChild)) // nothing to do
         return true;
 
+    // Does this one more time because removeChild() fires a MutationEvent.
+    checkReplaceChild(newChild.get(), oldChild, ec);
+    if (ec)
+        return false;
+
     NodeVector targets;
     collectChildrenAndRemoveFromOldParent(newChild.get(), targets, ec);
+    if (ec)
+        return false;
+
+    // Does this yet another check because collectChildrenAndRemoveFromOldParent() fires a MutationEvent.
+    checkReplaceChild(newChild.get(), oldChild, ec);
     if (ec)
         return false;
 
@@ -307,21 +317,6 @@ bool ContainerNode::replaceChild(PassRefPtr<Node> newChild, Node* oldChild, Exce
     return true;
 }
 
-void ContainerNode::willRemove()
-{
-    RefPtr<Node> protect(this);
-
-    NodeVector children;
-    getChildNodes(this, children);
-    for (size_t i = 0; i < children.size(); ++i) {
-        if (children[i]->parentNode() != this) // Check for child being removed from subtree while removing.
-            continue;
-        children[i]->willRemove();
-    }
-
-    Node::willRemove();
-}
-
 static void willRemoveChild(Node* child)
 {
 #if ENABLE(MUTATION_OBSERVERS)
@@ -332,15 +327,15 @@ static void willRemoveChild(Node* child)
 
     dispatchChildRemovalEvents(child);
     child->document()->nodeWillBeRemoved(child); // e.g. mutation event listener can create a new range.
-    child->willRemove();
+    ChildFrameDisconnector(child).disconnect();
 }
 
 static void willRemoveChildren(ContainerNode* container)
 {
-    container->document()->nodeChildrenWillBeRemoved(container);
-
     NodeVector children;
     getChildNodes(container, children);
+
+    container->document()->nodeChildrenWillBeRemoved(container);
 
 #if ENABLE(MUTATION_OBSERVERS)
     ChildListMutationScope mutation(container);
@@ -356,8 +351,14 @@ static void willRemoveChildren(ContainerNode* container)
 
         // fire removed from document mutation events.
         dispatchChildRemovalEvents(child);
-        child->willRemove();
     }
+
+    ChildFrameDisconnector(container, ChildFrameDisconnector::DoNotIncludeRoot).disconnect();
+}
+
+void ContainerNode::disconnectDescendantFrames()
+{
+    ChildFrameDisconnector(this).disconnect();
 }
 
 bool ContainerNode::removeChild(Node* oldChild, ExceptionCode& ec)
@@ -383,13 +384,6 @@ bool ContainerNode::removeChild(Node* oldChild, ExceptionCode& ec)
     }
 
     RefPtr<Node> child = oldChild;
-    willRemoveChild(child.get());
-
-    // Mutation events might have moved this child into a different parent.
-    if (child->parentNode() != this) {
-        ec = NOT_FOUND_ERR;
-        return false;
-    }
 
     document()->removeFocusedNodeOfSubtree(child.get());
 
@@ -399,6 +393,14 @@ bool ContainerNode::removeChild(Node* oldChild, ExceptionCode& ec)
 
     // Events fired when blurring currently focused node might have moved this
     // child into a different parent.
+    if (child->parentNode() != this) {
+        ec = NOT_FOUND_ERR;
+        return false;
+    }
+
+    willRemoveChild(child.get());
+
+    // Mutation events might have moved this child into a different parent.
     if (child->parentNode() != this) {
         ec = NOT_FOUND_ERR;
         return false;
@@ -469,16 +471,16 @@ void ContainerNode::removeChildren()
     // The container node can be removed from event handlers.
     RefPtr<ContainerNode> protect(this);
 
-    // Do any prep work needed before actually starting to detach
-    // and remove... e.g. stop loading frames, fire unload events.
-    willRemoveChildren(protect.get());
-
     // exclude this node when looking for removed focusedNode since only children will be removed
     document()->removeFocusedNodeOfSubtree(this, true);
 
 #if ENABLE(FULLSCREEN_API)
     document()->removeFullScreenElementOfSubtree(this, true);
 #endif
+
+    // Do any prep work needed before actually starting to detach
+    // and remove... e.g. stop loading frames, fire unload events.
+    willRemoveChildren(protect.get());
 
     forbidEventDispatch();
     Vector<RefPtr<Node>, 10> removedChildren;
@@ -694,22 +696,17 @@ void ContainerNode::childrenChanged(bool changedByParser, Node*, Node*, int chil
 
 void ContainerNode::cloneChildNodes(ContainerNode *clone)
 {
-    // disable the delete button so it's elements are not serialized into the markup
-    bool isEditorEnabled = false;
-    if (document()->frame() && document()->frame()->editor()->canEdit()) {
-        FrameSelection* selection = document()->frame()->selection();
-        Element* root = selection ? selection->rootEditableElement() : 0;
-        isEditorEnabled = root && isDescendantOf(root);
+    HTMLElement* deleteButtonContainerElement = 0;
+    if (Frame* frame = document()->frame())
+        if (document()->frame()->editor()->deleteButtonController())
+            deleteButtonContainerElement = frame->editor()->deleteButtonController()->containerElement();
 
-        if (isEditorEnabled && document()->frame()->editor()->deleteButtonController())
-            document()->frame()->editor()->deleteButtonController()->disable();
-    }
-    
     ExceptionCode ec = 0;
-    for (Node* n = firstChild(); n && !ec; n = n->nextSibling())
+    for (Node* n = firstChild(); n && !ec; n = n->nextSibling()) {
+        if (n == deleteButtonContainerElement)
+            continue;
         clone->appendChild(n->cloneNode(true), ec);
-    if (isEditorEnabled && document()->frame() && document()->frame()->editor()->deleteButtonController())
-        document()->frame()->editor()->deleteButtonController()->enable();
+    }
 }
 
 bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const

@@ -64,6 +64,7 @@ class RenderBlock;
 class RenderFlowThread;
 class RenderGeometryMap;
 class RenderLayer;
+class RenderNamedFlowThread;
 class RenderTable;
 class RenderTheme;
 class TransformState;
@@ -105,6 +106,11 @@ enum BoxSide {
 enum MarkingBehavior {
     MarkOnlyThis,
     MarkContainingBlockChain,
+};
+
+enum PlaceGeneratedRunInFlag {
+    PlaceGeneratedRunIn,
+    DoNotPlaceGeneratedRunIn
 };
 
 const int caretWidth = 3;
@@ -238,6 +244,8 @@ public:
 
     // Function to return our enclosing flow thread if we are contained inside one.
     RenderFlowThread* enclosingRenderFlowThread() const;
+
+    RenderNamedFlowThread* enclosingRenderNamedFlowThread() const;
 
     virtual bool isEmpty() const { return firstChild() == 0; }
 
@@ -513,8 +521,13 @@ public:
     virtual RenderBoxModelObject* virtualContinuation() const { return 0; }
 
     bool isFloating() const { return m_bitfields.floating(); }
-    bool isPositioned() const { return m_bitfields.positioned(); } // absolute or fixed positioning
+
+    bool isOutOfFlowPositioned() const { return m_bitfields.positioned(); } // absolute or fixed positioning
+    bool isInFlowPositioned() const { return m_bitfields.relPositioned() || m_bitfields.stickyPositioned(); } // relative or sticky positioning
     bool isRelPositioned() const { return m_bitfields.relPositioned(); } // relative positioning
+    bool isStickyPositioned() const { return m_bitfields.stickyPositioned(); }
+    bool isPositioned() const { return m_bitfields.positioned() || m_bitfields.relPositioned() || m_bitfields.stickyPositioned(); }
+
     bool isText() const  { return m_bitfields.isText(); }
     bool isBox() const { return m_bitfields.isBox(); }
     bool isInline() const { return m_bitfields.isInline(); } // inline object
@@ -551,7 +564,7 @@ public:
 
     bool isSelectionBorder() const;
 
-    bool hasClip() const { return isPositioned() && style()->hasClip(); }
+    bool hasClip() const { return isOutOfFlowPositioned() && style()->hasClip(); }
     bool hasOverflowClip() const { return m_bitfields.hasOverflowClip(); }
 
     bool hasTransform() const { return m_bitfields.hasTransform(); }
@@ -626,6 +639,7 @@ public:
 
     void setPositioned(bool b = true)  { m_bitfields.setPositioned(b);  }
     void setRelPositioned(bool b = true) { m_bitfields.setRelPositioned(b); }
+    void setStickyPositioned(bool b = true) { m_bitfields.setStickyPositioned(b); }
     void setFloating(bool b = true) { m_bitfields.setFloating(b); }
     void setInline(bool b = true) { m_bitfields.setIsInline(b); }
     void setHasBoxDecorations(bool b = true) { m_bitfields.setPaintBackground(b); }
@@ -797,10 +811,16 @@ public:
     // If multiple-column layout results in applying an offset to the given point, add the same
     // offset to the given size.
     virtual void adjustForColumns(LayoutSize&, const LayoutPoint&) const { }
+    LayoutSize offsetForColumns(const LayoutPoint& point) const
+    {
+        LayoutSize offset;
+        adjustForColumns(offset, point);
+        return offset;
+    }
 
     virtual unsigned int length() const { return 1; }
 
-    bool isFloatingOrPositioned() const { return (isFloating() || isPositioned()); }
+    bool isFloatingOrOutOfFlowPositioned() const { return (isFloating() || isOutOfFlowPositioned()); }
 
     bool isTransparent() const { return style()->opacity() < 1.0f; }
     float opacity() const { return style()->opacity(); }
@@ -949,6 +969,11 @@ protected:
 
     virtual LayoutRect outlineBoundsForRepaint(RenderBoxModelObject* /*repaintContainer*/, LayoutPoint* /*cachedOffsetToRepaintContainer*/ = 0) const { return LayoutRect(); }
 
+    virtual bool canBeReplacedWithInlineRunIn() const;
+
+    virtual void insertedIntoTree();
+    virtual void willBeRemovedFromTree();
+
 private:
     RenderStyle* firstLineStyleSlowCase() const;
     StyleDifference adjustStyleDifference(StyleDifference, unsigned contextSensitiveProperties) const;
@@ -989,6 +1014,7 @@ private:
             , m_floating(false)
             , m_positioned(false)
             , m_relPositioned(false)
+            , m_stickyPositioned(false)
             , m_paintBackground(false)
             , m_isAnonymous(node == node->document())
             , m_isText(false)
@@ -1023,6 +1049,7 @@ private:
 
         ADD_BOOLEAN_BITFIELD(positioned, Positioned);
         ADD_BOOLEAN_BITFIELD(relPositioned, RelPositioned);
+        ADD_BOOLEAN_BITFIELD(stickyPositioned, StickyPositioned);
         ADD_BOOLEAN_BITFIELD(paintBackground, PaintBackground); // if the box has something to paint in the
         // background painting phase (background, border, etc)
 

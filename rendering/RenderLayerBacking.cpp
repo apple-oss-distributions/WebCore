@@ -639,7 +639,7 @@ void RenderLayerBacking::updateGraphicsLayerGeometry()
     updateDrawsContent();
     updateAfterWidgetResize();
 
-    compositor()->updateFixedPositionStatus(m_owningLayer);
+    compositor()->updateViewportConstraintStatus(m_owningLayer);
 }
 
 void RenderLayerBacking::updateInternalHierarchy()

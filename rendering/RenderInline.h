@@ -57,6 +57,7 @@ public:
     InlineFlowBox* createAndAppendInlineFlowBox();
 
     void dirtyLineBoxes(bool fullLayout);
+    void deleteLineBoxTree();
 
     RenderLineBoxList* lineBoxes() { return &m_lineBoxes; }
     const RenderLineBoxList* lineBoxes() const { return &m_lineBoxes; }
@@ -73,7 +74,7 @@ public:
 
     virtual void updateDragState(bool dragOn);
     
-    LayoutSize relativePositionedInlineOffset(const RenderBox* child) const;
+    LayoutSize offsetForInFlowPositionedInline(const RenderBox* child) const;
 
     virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint&);
     void paintOutline(GraphicsContext*, const LayoutPoint&);
@@ -88,7 +89,7 @@ public:
 protected:
     virtual void willBeDestroyed();
 
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle);
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
 
 private:
     virtual RenderObjectChildList* virtualChildren() { return children(); }
@@ -123,7 +124,7 @@ private:
 
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const LayoutPoint& pointInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
 
-    virtual bool requiresLayer() const { return isRelPositioned() || isTransparent() || hasMask() || hasFilter(); }
+    virtual bool requiresLayer() const { return isInFlowPositioned() || isTransparent() || hasMask() || hasFilter(); }
 
     virtual LayoutUnit offsetLeft() const;
     virtual LayoutUnit offsetTop() const;
@@ -138,6 +139,8 @@ private:
     virtual const RenderObject* pushMappingToContainer(const RenderBoxModelObject* ancestorToStopAt, RenderGeometryMap&) const;
 
     virtual VisiblePosition positionForPoint(const LayoutPoint&);
+
+    virtual LayoutRect frameRectForStickyPositioning() const OVERRIDE { return linesBoundingBox(); }
 
     virtual IntRect borderBoundingBox() const
     {

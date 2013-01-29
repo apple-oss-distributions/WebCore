@@ -865,6 +865,8 @@ farthest-corner
 // cover
 
 // -webkit-text-orientation
+sideways
+sideways-right
 upright
 vertical-right
 
@@ -906,6 +908,11 @@ wrap
 
 // -webkit-line-align
 edges
+
+// position
+#if defined(ENABLE_CSS_STICKY_POSITION) && ENABLE_CSS_STICKY_POSITION
+-webkit-sticky
+#endif // CSS_STICKY_POSITION
 
 #if defined(ENABLE_CSS_FILTERS) && ENABLE_CSS_FILTERS
 // -webkit-filter

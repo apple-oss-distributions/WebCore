@@ -42,6 +42,7 @@ class ScrollingCoordinator;
 class RenderVideo;
 #endif
 class ChromeClient;
+class ViewportConstraints;
 
 enum CompositingUpdateType {
     CompositingUpdateAfterStyleChange,
@@ -217,13 +218,13 @@ public:
 
     void documentBackgroundColorDidChange();
 
-    void updateFixedPositionStatus(RenderLayer*);
-    void removeFixedPositionLayer(RenderLayer*);
+    void updateViewportConstraintStatus(RenderLayer*);
+    void removeViewportConstrainedLayer(RenderLayer*);
 
     void platformLayerChanged(RenderLayer*, PlatformLayer* oldLayer, PlatformLayer* newLayer);
 
-    void registerAllFixedPositionLayers();
-    void unregisterAllFixedPositionLayers();
+    void registerAllViewportConstrainedLayers();
+    void unregisterAllViewportConstrainedLayers();
 
     void scrollingLayerAddedOrUpdated(RenderLayer*, PlatformLayer* scrollingLayer, PlatformLayer* contentsLayer, const IntSize& scrollSize);
     void scrollingLayerRemoved(RenderLayer*, PlatformLayer* scrollingLayer, PlatformLayer* contentsLayer);
@@ -315,11 +316,11 @@ private:
     bool requiresCompositingForIndirectReason(RenderObject*, bool hasCompositedDescendants, bool has3DTransformedDescendants, RenderLayer::IndirectCompositingReason&) const;
     bool requiresCompositingForScrolling(RenderObject*) const;
 
-    void addFixedPositionLayer(RenderLayer*);
-    void registerOrUpdateFixedPositionLayer(RenderLayer*);
-    void unregisterFixedPositionLayer(RenderLayer*);
+    void addViewportConstrainedLayer(RenderLayer*);
+    void registerOrUpdateViewportConstrainedLayer(RenderLayer*);
+    void unregisterViewportConstrainedLayer(RenderLayer*);
 
-    void getFixedPositionLayerSizing(RenderLayer*, ScrollingLayerSizing&, FloatRect&, FloatSize&);
+    PassOwnPtr<ViewportConstraints> computeViewportConstraints(RenderLayer*);
 
     ChromeClient* chromeClient() const;
 
@@ -366,9 +367,9 @@ private:
     OwnPtr<GraphicsLayer> m_clipLayer;
     OwnPtr<GraphicsLayer> m_scrollLayer;
 
-    HashSet<RenderLayer*> m_fixedPositionLayers;
+    HashSet<RenderLayer*> m_viewportConstrainedLayers;
     HashSet<RenderLayer*> m_scrollingLayers;
-    HashSet<RenderLayer*> m_fixedPositionLayersNeedingUpdate;
+    HashSet<RenderLayer*> m_viewportConstrainedLayersNeedingUpdate;
 
     // Enclosing layer for overflow controls and the clipping layer
     OwnPtr<GraphicsLayer> m_overflowControlsHostLayer;

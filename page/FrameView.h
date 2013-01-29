@@ -206,9 +206,12 @@ public:
     void removeSlowRepaintObject();
     bool hasSlowRepaintObjects() const { return m_slowRepaintObjectCount; }
 
-    void addFixedObject();
-    void removeFixedObject();
-    bool hasFixedObjects() const { return m_fixedObjectCount > 0; }
+    // Includes fixed- and sticky-position objects.
+    typedef HashSet<RenderObject*> ViewportConstrainedObjectSet;
+    void addViewportConstrainedObject(RenderObject*);
+    void removeViewportConstrainedObject(RenderObject*);
+    const ViewportConstrainedObjectSet* viewportConstrainedObjects() const { return m_viewportConstrainedObjects.get(); }
+    bool hasViewportConstrainedObjects() const { return m_viewportConstrainedObjects && m_viewportConstrainedObjects->size() > 0; }
 
     // Functions for querying the current scrolled position, negating the effects of overhang
     // and adjusting for page scale.
@@ -218,8 +221,8 @@ public:
 
     void beginDeferredRepaints();
     void endDeferredRepaints();
-    void checkStopDelayingDeferredRepaints();
-    void stopDelayingDeferredRepaints();
+    void checkFlushDeferredRepaintsAfterLoadComplete();
+    void flushDeferredRepaints();
     void startDeferredRepaintTimer(double delay);
     void resetDeferredRepaintDelay();
 
@@ -265,7 +268,6 @@ public:
     static double currentPaintTimeStamp() { return sCurrentPaintTimeStamp; } // returns 0 if not painting
     
     void updateLayoutAndStyleIfNeededRecursive();
-    void flushDeferredRepaints();
 
     void incrementVisuallyNonEmptyCharacterCount(unsigned count);
     void incrementVisuallyNonEmptyPixelCount(const IntSize& size);
@@ -418,9 +420,10 @@ private:
 
     virtual bool scrollAnimatorEnabled() const;
 
+    bool shouldUseLoadTimeDeferredRepaintDelay() const;
     void deferredRepaintTimerFired(Timer<FrameView>*);
     void doDeferredRepaints();
-    void updateDeferredRepaintDelay();
+    void updateDeferredRepaintDelayAfterRepaint();
     double adjustedDeferredRepaintDelay() const;
 
     bool updateWidgets();
@@ -436,6 +439,8 @@ private:
 
     bool isInChildFrameWithFrameFlattening();
     bool doLayoutWithFrameFlattening(bool allowSubtree);
+
+    void setViewportConstrainedObjectsNeedLayout();
 
     virtual AXObjectCache* axObjectCache() const;
     void notifyWidgetsInAllFrames(WidgetNotification);
@@ -456,7 +461,6 @@ private:
     bool m_isOverlapped;
     bool m_contentIsOpaque;
     unsigned m_slowRepaintObjectCount;
-    unsigned m_fixedObjectCount;
     int m_borderX;
     int m_borderY;
 
@@ -537,8 +541,9 @@ private:
     IntSize m_maxAutoSize;
 
     OwnPtr<ScrollableAreaSet> m_scrollableAreas;
+    OwnPtr<ViewportConstrainedObjectSet> m_viewportConstrainedObjects;
 
-    static double s_deferredRepaintDelay;
+    static double s_normalDeferredRepaintDelay;
     static double s_initialDeferredRepaintDelayDuringLoading;
     static double s_maxDeferredRepaintDelayDuringLoading;
     static double s_deferredRepaintDelayIncrementDuringLoading;

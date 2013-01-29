@@ -152,6 +152,8 @@ public:
     void setFontDescription(const FontDescription& fontDescription) { m_fontDirty |= style()->setFontDescription(fontDescription); }
     void setZoom(float f) { m_fontDirty |= style()->setZoom(f); }
     void setEffectiveZoom(float f) { m_fontDirty |= style()->setEffectiveZoom(f); }
+    void setWritingMode(WritingMode writingMode) { m_fontDirty |= style()->setWritingMode(writingMode); }
+    void setTextOrientation(TextOrientation textOrientation) { m_fontDirty |= style()->setTextOrientation(textOrientation); }
     bool hasParentNode() const { return m_parentNode; }
     
     void appendAuthorStylesheets(unsigned firstNew, const Vector<RefPtr<StyleSheet> >&);
@@ -467,7 +469,8 @@ private:
 
     RefPtr<StaticCSSRuleList> m_ruleList;
 
-    HashSet<CSSPropertyID> m_pendingImageProperties;
+    typedef HashMap<CSSPropertyID, RefPtr<CSSValue> > PendingImagePropertyMap;
+    PendingImagePropertyMap m_pendingImageProperties;
 
     OwnPtr<MediaQueryEvaluator> m_medium;
     RefPtr<RenderStyle> m_rootDefaultStyle;

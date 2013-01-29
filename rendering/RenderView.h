@@ -182,16 +182,10 @@ public:
 
     enum ContainingBlockCheck { CheckContainingBlock, DontCheckContainingBlock };
     bool hasCustomFixedPosition(const RenderObject*, ContainingBlockCheck = CheckContainingBlock) const;
-    // Returns true if there are fixed position elements.
-    bool setCustomFixedPositionedObjectsNeedLayout();
 
     IntervalArena* intervalArena();
 
     IntSize viewportSize() const { return document()->viewportSize(); }
-
-    void setFixedPositionedObjectsNeedLayout();
-    void insertFixedPositionedObject(RenderBox*);
-    void removeFixedPositionedObject(RenderBox*);
 
 protected:
     virtual void mapLocalToContainer(RenderBoxModelObject* repaintContainer, bool useTransforms, bool fixed, TransformState&, ApplyContainerFlipOrNot = ApplyContainerFlip, bool* wasFixed = 0) const;

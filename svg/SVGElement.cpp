@@ -129,7 +129,7 @@ bool SVGElement::isOutermostSVGSVGElement() const
     // If we're living in a shadow tree, we're a <svg> element that got created as replacement
     // for a <symbol> element or a cloned <svg> element in the referenced tree. In that case
     // we're always an inner <svg> element.
-    if (isInShadowTree())
+    if (isInShadowTree() && parentOrHostElement() && parentOrHostElement()->isSVGElement())
         return false;
 
     // Element may not be in the document, pretend we're outermost for viewport(), getCTM(), etc.
@@ -412,6 +412,22 @@ void SVGElement::sendSVGLoadEventIfPossible(bool sendParentLoadEvents)
         if (!document()->loadEventFinished())
             break;
     }
+}
+
+void SVGElement::sendSVGLoadEventIfPossibleAsynchronously()
+{
+    svgLoadEventTimer()->startOneShot(0);
+}
+
+void SVGElement::svgLoadEventTimerFired(Timer<SVGElement>*)
+{
+    sendSVGLoadEventIfPossible();
+}
+
+Timer<SVGElement>* SVGElement::svgLoadEventTimer()
+{
+    ASSERT_NOT_REACHED();
+    return 0;
 }
 
 void SVGElement::finishParsingChildren()

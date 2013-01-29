@@ -252,30 +252,16 @@ void RenderBox::willBeDestroyed()
 {
     clearOverrideSize();
 
-    RenderStyle* styleToUse = style();
-    if (styleToUse && (styleToUse->logicalHeight().isPercent() || styleToUse->logicalMinHeight().isPercent() || styleToUse->logicalMaxHeight().isPercent()))
-        RenderBlock::removePercentHeightDescendant(this);
-
-    if (styleToUse) {
-        if (RenderView* view = this->view()) {
-            if (FrameView* frameView = view->frameView()) {
-                if (styleToUse->position() == FixedPosition)
-                    frameView->removeFixedObject();
-            }
-        }
-    }
-
-    // If the following assertion fails, logicalHeight()/logicalMinHeight()/
-    // logicalMaxHeight() values are changed from a percent value to a non-percent
-    // value during laying out. It causes a use-after-free bug.
-    ASSERT(!RenderBlock::hasPercentHeightDescendant(this));
-
+    if (style()) {
+        RenderBlock::removePercentHeightDescendantIfNeeded(this);
+	}
     RenderBoxModelObject::willBeDestroyed();
+
 }
 
 void RenderBox::removeFloatingOrPositionedChildFromBlockLists()
 {
-    ASSERT(isFloatingOrPositioned());
+    ASSERT(isFloatingOrOutOfFlowPositioned());
 
     if (documentBeingDestroyed())
         return;
@@ -300,12 +286,8 @@ void RenderBox::removeFloatingOrPositionedChildFromBlockLists()
         }
     }
 
-    if (isPositioned()) {
-        for (RenderObject* curr = parent(); curr; curr = curr->parent()) {
-            if (curr->isRenderBlock())
-                toRenderBlock(curr)->removePositionedObject(this);
-        }
-    }
+    if (isOutOfFlowPositioned())
+        RenderBlock::removePositionedObject(this);
 }
 
 void RenderBox::styleWillChange(StyleDifference diff, const RenderStyle* newStyle)
@@ -326,44 +308,41 @@ void RenderBox::styleWillChange(StyleDifference diff, const RenderStyle* newStyl
             markContainingBlocksForLayout();
             if (oldStyle->position() == StaticPosition)
                 repaint();
-            else if (newStyle->isPositioned())
+            else if (newStyle->hasOutOfFlowPosition())
                 parent()->setChildNeedsLayout(true);
-            if (isFloating() && !isPositioned() && newStyle->isPositioned())
+            if (isFloating() && !isOutOfFlowPositioned() && newStyle->hasOutOfFlowPosition())
                 removeFloatingOrPositionedChildFromBlockLists();
         }
     } else if (newStyle && isBody())
         view()->repaint();
-
-    if (FrameView *frameView = view()->frameView()) {
-        bool newStyleIsFixed = newStyle && newStyle->position() == FixedPosition;
-        bool oldStyleIsFixed = oldStyle && oldStyle->position() == FixedPosition;
-        if (newStyleIsFixed != oldStyleIsFixed) {
-            if (newStyleIsFixed)
-                frameView->addFixedObject();
-            else
-                frameView->removeFixedObject();
-        }
-    }
 
     RenderBoxModelObject::styleWillChange(diff, newStyle);
 }
 
 void RenderBox::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
+    // Horizontal writing mode definition is updated in RenderBoxModelObject::updateBoxModelInfoFromStyle,
+    // (as part of the RenderBoxModelObject::styleDidChange call below). So, we can safely cache the horizontal
+    // writing mode value before style change here.
+    bool oldHorizontalWritingMode = isHorizontalWritingMode();
+
     RenderBoxModelObject::styleDidChange(diff, oldStyle);
 
     RenderStyle* newStyle = style();
     if (needsLayout() && oldStyle) {
-        if (oldStyle && (oldStyle->logicalHeight().isPercent() || oldStyle->logicalMinHeight().isPercent() || oldStyle->logicalMaxHeight().isPercent()))
-            RenderBlock::removePercentHeightDescendant(this);
+        RenderBlock::removePercentHeightDescendantIfNeeded(this);
 
         // Normally we can do optimized positioning layout for absolute/fixed positioned objects. There is one special case, however, which is
         // when the positioned object's margin-before is changed. In this case the parent has to get a layout in order to run margin collapsing
         // to determine the new static position.
-        if (isPositioned() && newStyle->hasStaticBlockPosition(isHorizontalWritingMode()) && oldStyle->marginBefore() != newStyle->marginBefore()
+        if (isOutOfFlowPositioned() && newStyle->hasStaticBlockPosition(isHorizontalWritingMode()) && oldStyle->marginBefore() != newStyle->marginBefore()
             && parent() && !parent()->normalChildNeedsLayout())
             parent()->setChildNeedsLayout(true);
     }
+
+    if (RenderBlock::hasPercentHeightContainerMap() && firstChild()
+        && oldHorizontalWritingMode != isHorizontalWritingMode())
+        RenderBlock::clearPercentHeightDescendantsFrom(this);
 
     // If our zoom factor changes and we have a defined scrollLeft/Top, we need to adjust that value into the
     // new zoomed coordinate space.
@@ -422,8 +401,8 @@ void RenderBox::updateBoxModelInfoFromStyle()
     if (isRootObject || isViewObject)
         setHasBoxDecorations(true);
 
-    setPositioned(styleToUse->isPositioned());
-    setFloating(!isPositioned() && styleToUse->isFloating());
+    setPositioned(styleToUse->hasOutOfFlowPosition());
+    setFloating(!isOutOfFlowPositioned() && styleToUse->isFloating());
 
     // We also handle <body> and <html>, whose overflow applies to the viewport.
     if (styleToUse->overflowX() != OVISIBLE && !isRootObject && (isRenderBlock() || isTableRow() || isTableSection())) {
@@ -1393,8 +1372,8 @@ void RenderBox::mapLocalToContainer(RenderBoxModelObject* repaintContainer, bool
         if (v->layoutStateEnabled() && !repaintContainer) {
             LayoutState* layoutState = v->layoutState();
             LayoutSize offset = layoutState->m_paintOffset + locationOffset();
-            if (style()->position() == RelativePosition && layer())
-                offset += layer()->relativePositionOffset();
+            if (style()->hasInFlowPosition() && layer())
+                offset += layer()->offsetForInFlowPosition();
             transformState.move(offset);
             return;
         }
@@ -1508,11 +1487,11 @@ LayoutSize RenderBox::offsetFromContainer(RenderObject* o, const LayoutPoint& po
     ASSERT(o == container());
 
     LayoutSize offset;    
-    if (isRelPositioned())
-        offset += relativePositionOffset();
+    if (isInFlowPositioned())
+        offset += offsetForInFlowPosition();
 
     if (!isInline() || isReplaced()) {
-        if (!style()->isPositioned() && o->hasColumns()) {
+        if (!style()->hasOutOfFlowPosition() && o->hasColumns()) {
             RenderBlock* block = toRenderBlock(o);
             LayoutRect columnRect(frameRect());
             block->adjustStartEdgeForWritingModeIncludingColumns(columnRect);
@@ -1531,8 +1510,8 @@ LayoutSize RenderBox::offsetFromContainer(RenderObject* o, const LayoutPoint& po
     if (o->hasOverflowClip())
         offset -= toRenderBox(o)->scrolledContentOffset();
 
-    if (style()->position() == AbsolutePosition && o->isRelPositioned() && o->isRenderInline())
-        offset += toRenderInline(o)->relativePositionedInlineOffset(this);
+    if (style()->position() == AbsolutePosition && o->isInFlowPositioned() && o->isRenderInline())
+        offset += toRenderInline(o)->offsetForInFlowPositionedInline(this);
 
     return offset;
 }
@@ -1555,7 +1534,7 @@ void RenderBox::dirtyLineBoxes(bool fullLayout)
 
 void RenderBox::positionLineBox(InlineBox* box)
 {
-    if (isPositioned()) {
+    if (isOutOfFlowPositioned()) {
         // Cache the x position only if we were an INLINE type originally.
         bool wasInline = style()->isOriginalDisplayInlineType();
         if (wasInline) {
@@ -1645,8 +1624,9 @@ void RenderBox::computeRectForRepaint(RenderBoxModelObject* repaintContainer, La
             if (layer() && layer()->transform())
                 rect = layer()->transform()->mapRect(rect);
 
-            if (styleToUse->position() == RelativePosition && layer())
-                rect.move(layer()->relativePositionOffset());
+            // We can't trust the bits on RenderObject, because this might be called while re-resolving style.
+            if (styleToUse->hasInFlowPosition() && layer())
+                rect.move(layer()->offsetForInFlowPosition());
 
             rect.moveBy(location());
             rect.move(layoutState->m_paintOffset);
@@ -1670,7 +1650,7 @@ void RenderBox::computeRectForRepaint(RenderBoxModelObject* repaintContainer, La
     if (!o)
         return;
 
-    if (isWritingModeRoot() && !isPositioned())
+    if (isWritingModeRoot() && !isOutOfFlowPositioned())
         flipForWritingMode(rect);
 
     LayoutPoint topLeft = rect.location();
@@ -1688,14 +1668,14 @@ void RenderBox::computeRectForRepaint(RenderBoxModelObject* repaintContainer, La
     } else if (position == FixedPosition)
         fixed = true;
 
-    if (position == AbsolutePosition && o->isRelPositioned() && o->isRenderInline())
-        topLeft += toRenderInline(o)->relativePositionedInlineOffset(this);
-    else if (position == RelativePosition && layer()) {
+    if (position == AbsolutePosition && o->isInFlowPositioned() && o->isRenderInline())
+        topLeft += toRenderInline(o)->offsetForInFlowPositionedInline(this);
+    else if ((position == RelativePosition || position == StickyPosition) && layer()) {
         // Apply the relative position offset when invalidating a rectangle.  The layer
         // is translated, but the render box isn't, so we need to do this to get the
         // right dirty rect.  Since this is called from RenderObject::setStyle, the relative position
         // flag on the RenderObject has been cleared, so use the one on the style().
-        topLeft += layer()->relativePositionOffset();
+        topLeft += layer()->offsetForInFlowPosition();
     }
     
     if (o->isBlockFlow() && position != AbsolutePosition && position != FixedPosition) {
@@ -1764,7 +1744,7 @@ void RenderBox::computeLogicalWidth()
 
 void RenderBox::computeLogicalWidthInRegion(RenderRegion* region, LayoutUnit offsetFromLogicalTopOfFirstPage)
 {
-    if (isPositioned()) {
+    if (isOutOfFlowPositioned()) {
         // FIXME: This calculation is not patched for block-flow yet.
         // https://bugs.webkit.org/show_bug.cgi?id=46500
         computePositionedLogicalWidth(region, offsetFromLogicalTopOfFirstPage);
@@ -2041,10 +2021,10 @@ RenderBoxRegionInfo* RenderBox::renderBoxRegionInfo(RenderRegion* region, Layout
     LayoutUnit logicalWidthInRegion = logicalWidth();
     LayoutUnit logicalLeftInRegion = logicalLeft();
     LayoutUnit widthDelta = logicalWidthInRegion - oldLogicalWidth;
-    LayoutUnit logicalLeftDelta = isPositioned() ? logicalLeftInRegion - oldLogicalLeft : startMarginDelta;
+    LayoutUnit logicalLeftDelta = isOutOfFlowPositioned() ? logicalLeftInRegion - oldLogicalLeft : startMarginDelta;
     LayoutUnit logicalRightInRegion = containingBlockLogicalWidthInRegion - (logicalLeftInRegion + logicalWidthInRegion);
     LayoutUnit oldLogicalRight = containingBlockLogicalWidth - (oldLogicalLeft + oldLogicalWidth);
-    LayoutUnit logicalRightDelta = isPositioned() ? logicalRightInRegion - oldLogicalRight : startMarginDelta;
+    LayoutUnit logicalRightDelta = isOutOfFlowPositioned() ? logicalRightInRegion - oldLogicalRight : startMarginDelta;
 
     // Set our values back.
     mutableBox->setLogicalWidth(oldLogicalWidth);
@@ -2054,7 +2034,7 @@ RenderBoxRegionInfo* RenderBox::renderBoxRegionInfo(RenderRegion* region, Layout
 
     LayoutUnit logicalLeftOffset = 0;
     
-    if (!isPositioned() && avoidsFloats() && cb->containsFloats()) {
+    if (!isOutOfFlowPositioned() && avoidsFloats() && cb->containsFloats()) {
         LayoutUnit startPositionDelta = cb->computeStartPositionDeltaForChildAvoidingFloats(this, marginStartInRegion, region, offsetFromLogicalTopOfFirstPage);
         if (cb->style()->isLeftToRightDirection())
             logicalLeftDelta += startPositionDelta;
@@ -2085,7 +2065,7 @@ void RenderBox::computeLogicalHeight()
         return;
 
     Length h;
-    if (isPositioned())
+    if (isOutOfFlowPositioned())
         computePositionedLogicalHeight();
     else {
         RenderBlock* cb = containingBlock();
@@ -2217,7 +2197,7 @@ LayoutUnit RenderBox::computePercentageLogicalHeight(const Length& height)
     // only at explicit containers.
     bool skippedAutoHeightContainingBlock = false;
     RenderBlock* cb = containingBlock();
-    while (!cb->isRenderView() && !cb->isBody() && !cb->isTableCell() && !cb->isPositioned() && cb->style()->logicalHeight().isAuto()) {
+    while (!cb->isRenderView() && !cb->isBody() && !cb->isTableCell() && !cb->isOutOfFlowPositioned() && cb->style()->logicalHeight().isAuto()) {
         if (!document()->inQuirksMode() && !cb->isAnonymousBlock())
             break;
         skippedAutoHeightContainingBlock = true;
@@ -2231,7 +2211,7 @@ LayoutUnit RenderBox::computePercentageLogicalHeight(const Length& height)
     // explicitly specified that can be used for any percentage computations.
     // FIXME: We can't just check top/bottom here.
     // https://bugs.webkit.org/show_bug.cgi?id=46500
-    bool isPositionedWithSpecifiedHeight = cb->isPositioned() && (!cbstyle->logicalHeight().isAuto() || (!cbstyle->top().isAuto() && !cbstyle->bottom().isAuto()));
+    bool isOutOfFlowPositionedWithSpecifiedHeight = cb->isOutOfFlowPositioned() && (!cbstyle->logicalHeight().isAuto() || (!cbstyle->top().isAuto() && !cbstyle->bottom().isAuto()));
 
     bool includeBorderPadding = isTable();
 
@@ -2261,19 +2241,19 @@ LayoutUnit RenderBox::computePercentageLogicalHeight(const Length& height)
     // height.
     else if (cbstyle->logicalHeight().isFixed())
         result = cb->computeContentBoxLogicalHeight(cbstyle->logicalHeight().value());
-    else if (cbstyle->logicalHeight().isPercent() && !isPositionedWithSpecifiedHeight) {
+    else if (cbstyle->logicalHeight().isPercent() && !isOutOfFlowPositionedWithSpecifiedHeight) {
         // We need to recur and compute the percentage height for our containing block.
         result = cb->computePercentageLogicalHeight(cbstyle->logicalHeight());
         if (result != -1)
             result = cb->computeContentBoxLogicalHeight(result);
-    } else if (cb->isRenderView() || (cb->isBody() && document()->inQuirksMode()) || isPositionedWithSpecifiedHeight) {
+    } else if (cb->isRenderView() || (cb->isBody() && document()->inQuirksMode()) || isOutOfFlowPositionedWithSpecifiedHeight) {
         // Don't allow this to affect the block' height() member variable, since this
         // can get called while the block is still laying out its kids.
         LayoutUnit oldHeight = cb->logicalHeight();
         cb->computeLogicalHeight();
         result = cb->contentLogicalHeight();
         cb->setLogicalHeight(oldHeight);
-    } else if (cb->isRoot() && isPositioned())
+    } else if (cb->isRoot() && isOutOfFlowPositioned())
         // Match the positioned objects behavior, which is that positioned objects will fill their viewport
         // always.  Note we could only hit this case by recurring into computePercentageLogicalHeight on a positioned containing block.
         result = cb->computeContentBoxLogicalHeight(cb->availableLogicalHeight());
@@ -2317,7 +2297,7 @@ LayoutUnit RenderBox::computeReplacedLogicalWidthUsing(Length logicalWidth) cons
             // FIXME: containingBlockLogicalWidthForContent() is wrong if the replaced element's block-flow is perpendicular to the
             // containing block's block-flow.
             // https://bugs.webkit.org/show_bug.cgi?id=46496
-            const LayoutUnit cw = isPositioned() ? containingBlockLogicalWidthForPositioned(toRenderBoxModelObject(container())) : containingBlockLogicalWidthForContent();
+            const LayoutUnit cw = isOutOfFlowPositioned() ? containingBlockLogicalWidthForPositioned(toRenderBoxModelObject(container())) : containingBlockLogicalWidthForContent();
             if (cw > 0)
                 return computeContentBoxLogicalWidth(minimumValueForLength(logicalWidth, cw));
         }
@@ -2347,7 +2327,7 @@ LayoutUnit RenderBox::computeReplacedLogicalHeightUsing(Length logicalHeight) co
         case Percent:
         case Calculated:
         {
-            RenderObject* cb = isPositioned() ? container() : containingBlock();
+            RenderObject* cb = isOutOfFlowPositioned() ? container() : containingBlock();
             while (cb->isAnonymous()) {
                 cb = cb->containingBlock();
                 toRenderBlock(cb)->addPercentHeightDescendant(const_cast<RenderBox*>(this));
@@ -2355,7 +2335,7 @@ LayoutUnit RenderBox::computeReplacedLogicalHeightUsing(Length logicalHeight) co
 
             // FIXME: This calculation is not patched for block-flow yet.
             // https://bugs.webkit.org/show_bug.cgi?id=46500
-            if (cb->isPositioned() && cb->style()->height().isAuto() && !(cb->style()->top().isAuto() || cb->style()->bottom().isAuto())) {
+            if (cb->isOutOfFlowPositioned() && cb->style()->height().isAuto() && !(cb->style()->top().isAuto() || cb->style()->bottom().isAuto())) {
                 ASSERT(cb->isRenderBlock());
                 RenderBlock* block = toRenderBlock(cb);
                 LayoutUnit oldHeight = block->height();
@@ -2369,7 +2349,7 @@ LayoutUnit RenderBox::computeReplacedLogicalHeightUsing(Length logicalHeight) co
             // containing block's block-flow.
             // https://bugs.webkit.org/show_bug.cgi?id=46496
             LayoutUnit availableHeight;
-            if (isPositioned())
+            if (isOutOfFlowPositioned())
                 availableHeight = containingBlockLogicalHeightForPositioned(toRenderBoxModelObject(cb));
             else {
                 availableHeight =  toRenderBox(cb)->availableLogicalHeight();
@@ -2463,7 +2443,7 @@ LayoutUnit RenderBox::availableLogicalHeightUsing(const Length& h) const
 
     // FIXME: We can't just check top/bottom here.
     // https://bugs.webkit.org/show_bug.cgi?id=46500
-    if (isRenderBlock() && isPositioned() && style()->height().isAuto() && !(style()->top().isAuto() || style()->bottom().isAuto())) {
+    if (isRenderBlock() && isOutOfFlowPositioned() && style()->height().isAuto() && !(style()->top().isAuto() || style()->bottom().isAuto())) {
         RenderBlock* block = const_cast<RenderBlock*>(toRenderBlock(this));
         LayoutUnit oldHeight = block->logicalHeight();
         block->computeLogicalHeight();
@@ -2535,7 +2515,7 @@ LayoutUnit RenderBox::containingBlockLogicalWidthForPositioned(const RenderBoxMo
         return result;
     }
 
-    ASSERT(containingBlock->isRenderInline() && containingBlock->isRelPositioned());
+    ASSERT(containingBlock->isRenderInline() && containingBlock->isInFlowPositioned());
 
     const RenderInline* flow = toRenderInline(containingBlock);
     InlineFlowBox* first = flow->firstLineBox();
@@ -2581,7 +2561,7 @@ LayoutUnit RenderBox::containingBlockLogicalHeightForPositioned(const RenderBoxM
         return result;
     }
         
-    ASSERT(containingBlock->isRenderInline() && containingBlock->isRelPositioned());
+    ASSERT(containingBlock->isRenderInline() && containingBlock->isInFlowPositioned());
 
     const RenderInline* flow = toRenderInline(containingBlock);
     InlineFlowBox* first = flow->firstLineBox();
@@ -3854,7 +3834,7 @@ static bool percentageLogicalHeightIsResolvable(const RenderBox* box)
     // block has an auto height. We still skip anonymous containing blocks in both modes, though, and look
     // only at explicit containers.
     const RenderBlock* cb = box->containingBlock();
-    while (!cb->isRenderView() && !cb->isBody() && !cb->isTableCell() && !cb->isPositioned() && cb->style()->logicalHeight().isAuto()) {
+    while (!cb->isRenderView() && !cb->isBody() && !cb->isTableCell() && !cb->isOutOfFlowPositioned() && cb->style()->logicalHeight().isAuto()) {
         if (!box->document()->inQuirksMode() && !cb->isAnonymousBlock())
             break;
         cb = cb->containingBlock();
@@ -3864,7 +3844,7 @@ static bool percentageLogicalHeightIsResolvable(const RenderBox* box)
     // explicitly specified that can be used for any percentage computations.
     // FIXME: We can't just check top/bottom here.
     // https://bugs.webkit.org/show_bug.cgi?id=46500
-    bool isPositionedWithSpecifiedHeight = cb->isPositioned() && (!cb->style()->logicalHeight().isAuto() || (!cb->style()->top().isAuto() && !cb->style()->bottom().isAuto()));
+    bool isOutOfFlowPositionedWithSpecifiedHeight = cb->isOutOfFlowPositioned() && (!cb->style()->logicalHeight().isAuto() || (!cb->style()->top().isAuto() && !cb->style()->bottom().isAuto()));
 
     // Table cells violate what the CSS spec says to do with heights.  Basically we
     // don't care if the cell specified a height or not.  We just always make ourselves
@@ -3876,11 +3856,11 @@ static bool percentageLogicalHeightIsResolvable(const RenderBox* box)
     // height.
     if (cb->style()->logicalHeight().isFixed())
         return true;
-    if (cb->style()->logicalHeight().isPercent() && !isPositionedWithSpecifiedHeight)
+    if (cb->style()->logicalHeight().isPercent() && !isOutOfFlowPositionedWithSpecifiedHeight)
         return percentageLogicalHeightIsResolvable(cb);
-    if (cb->isRenderView() || (cb->isBody() && box->document()->inQuirksMode()) || isPositionedWithSpecifiedHeight)
+    if (cb->isRenderView() || (cb->isBody() && box->document()->inQuirksMode()) || isOutOfFlowPositionedWithSpecifiedHeight)
         return true;
-    if (cb->isRoot() && box->isPositioned()) {
+    if (cb->isRoot() && box->isOutOfFlowPositioned()) {
         // Match the positioned objects behavior, which is that positioned objects will fill their viewport
         // always.  Note we could only hit this case by recurring into computePercentageLogicalHeight on a positioned containing block.
         return true;
@@ -3984,7 +3964,7 @@ LayoutRect RenderBox::layoutOverflowRectForPropagation(RenderStyle* parentStyle)
         rect.unite(layoutOverflowRect());
 
     bool hasTransform = hasLayer() && layer()->transform();
-    if (isRelPositioned() || (hasTransform && (!document()->settings() || document()->settings()->shouldTransformsAffectOverflow()))) {
+    if (isInFlowPositioned() || (hasTransform && (!document()->settings() || document()->settings()->shouldTransformsAffectOverflow()))) {
         // If we are relatively positioned or if we have a transform, then we have to convert
         // this rectangle into physical coordinates, apply relative positioning and transforms
         // to it, and then convert it back.
@@ -3993,8 +3973,8 @@ LayoutRect RenderBox::layoutOverflowRectForPropagation(RenderStyle* parentStyle)
         if (hasTransform)
             rect = layer()->currentTransform().mapRect(rect);
 
-        if (isRelPositioned())
-            rect.move(relativePositionOffsetX(), relativePositionOffsetY());
+        if (isInFlowPositioned())
+            rect.move(offsetForInFlowPosition());
         
         // Now we need to flip back.
         flipForWritingMode(rect);
@@ -4013,6 +3993,16 @@ LayoutRect RenderBox::layoutOverflowRectForPropagation(RenderStyle* parentStyle)
         rect.setY(height() - rect.maxY());
 
     return rect;
+}
+
+LayoutUnit RenderBox::offsetLeft() const
+{
+    return adjustedPositionRelativeToOffsetParent(topLeftLocation()).x();
+}
+
+LayoutUnit RenderBox::offsetTop() const
+{
+    return adjustedPositionRelativeToOffsetParent(topLeftLocation()).y();
 }
 
 LayoutPoint RenderBox::flipForWritingModeForChild(const RenderBox* child, const LayoutPoint& point) const
@@ -4117,36 +4107,15 @@ bool RenderBox::hasRelativeLogicalHeight() const
             || style()->logicalMaxHeight().isPercent();
 }
 
-void RenderBox::moveChildTo(RenderBox* toBox, RenderObject* child, RenderObject* beforeChild, bool fullRemoveInsert)
-{
-    ASSERT(this == child->parent());
-    ASSERT(!beforeChild || toBox == beforeChild->parent());
-    if (fullRemoveInsert && toBox->isRenderBlock()) {
-        // Takes care of adding the new child correctly if toBlock and fromBlock
-        // have different kind of children (block vs inline).
-        toBox->addChild(virtualChildren()->removeChildNode(this, child), beforeChild);
-    } else
-        toBox->virtualChildren()->insertChildNode(toBox, virtualChildren()->removeChildNode(this, child, fullRemoveInsert), beforeChild, fullRemoveInsert);
-}
-
-void RenderBox::moveChildrenTo(RenderBox* toBox, RenderObject* startChild, RenderObject* endChild, RenderObject* beforeChild, bool fullRemoveInsert)
-{
-    ASSERT(!beforeChild || toBox == beforeChild->parent());
-    for (RenderObject* child = startChild; child && child != endChild; ) {
-        // Save our next sibling as moveChildTo will clear it.
-        RenderObject* nextSibling = child->nextSibling();
-        moveChildTo(toBox, child, beforeChild, fullRemoveInsert);
-        child = nextSibling;
-    }
-}
-
 static void markBoxForRelayoutAfterSplit(RenderBox* box)
 {
     // FIXME: The table code should handle that automatically. If not,
     // we should fix it and remove the table part checks.
-    if (box->isTable())
-        toRenderTable(box)->setNeedsSectionRecalc();
-    else if (box->isTableSection())
+    if (box->isTable()) {
+        // Because we may have added some sections with already computed column structures, we need to
+        // sync the table structure with them now. This avoids crashes when adding new cells to the table.
+        toRenderTable(box)->forceSectionsRecalc();
+    } else if (box->isTableSection())
         toRenderTableSection(box)->setNeedsCellRecalc();
 
     box->setNeedsLayoutAndPrefWidthsRecalc();
@@ -4166,8 +4135,12 @@ RenderObject* RenderBox::splitAnonymousBoxesAroundChild(RenderObject* beforeChil
             RenderBox* postBox = boxToSplit->createAnonymousBoxWithSameTypeAs(this);
             postBox->setChildrenInline(boxToSplit->childrenInline());
             RenderBox* parentBox = toRenderBox(boxToSplit->parent());
+            // We need to invalidate the |parentBox| before inserting the new node
+            // so that the table repainting logic knows the structure is dirty.
+            // See for example RenderTableCell:clippedOverflowRectForRepaint.
+            markBoxForRelayoutAfterSplit(parentBox);
             parentBox->virtualChildren()->insertChildNode(parentBox, postBox, boxToSplit->nextSibling());
-            boxToSplit->moveChildrenTo(postBox, beforeChild, 0, boxToSplit->hasLayer());
+            boxToSplit->moveChildrenTo(postBox, beforeChild, 0, true);
 
             markBoxForRelayoutAfterSplit(boxToSplit);
             markBoxForRelayoutAfterSplit(postBox);

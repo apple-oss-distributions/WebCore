@@ -76,6 +76,20 @@ void RenderListItem::willBeDestroyed()
     RenderBlock::willBeDestroyed();
 }
 
+void RenderListItem::insertedIntoTree()
+{
+    RenderBlock::insertedIntoTree();
+
+    updateListMarkerNumbers();
+}
+
+void RenderListItem::willBeRemovedFromTree()
+{
+    RenderBlock::willBeRemovedFromTree();
+
+    updateListMarkerNumbers();
+}
+
 static bool isList(Node* node)
 {
     return (node->hasTagName(ulTag) || node->hasTagName(olTag));
@@ -189,7 +203,7 @@ static RenderObject* getParentOfFirstLineBox(RenderBlock* curr, RenderObject* ma
         if (currChild->isInline() && (!currChild->isRenderInline() || curr->generatesLineBoxesForInlineChild(currChild)))
             return curr;
 
-        if (currChild->isFloating() || currChild->isPositioned())
+        if (currChild->isFloating() || currChild->isOutOfFlowPositioned())
             continue;
 
         if (currChild->isTable() || !currChild->isRenderBlock() || (currChild->isBox() && toRenderBox(currChild)->isWritingModeRoot()))

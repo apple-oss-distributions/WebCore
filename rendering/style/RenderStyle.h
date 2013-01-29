@@ -61,7 +61,6 @@
 #include "StyleTransformData.h"
 #include "StyleVisualData.h"
 #include "TextDirection.h"
-#include "TextOrientation.h"
 #include "ThemeTypes.h"
 #include "TransformOperations.h"
 #include "UnicodeBidi.h"
@@ -309,7 +308,7 @@ protected:
         unsigned _overflowY : 3; // EOverflow
         unsigned _vertical_align : 4; // EVerticalAlign
         unsigned _clear : 2; // EClear
-        unsigned _position : 2; // EPosition
+        unsigned _position : 3; // EPosition
         unsigned _floating : 2; // EFloat
         unsigned _table_layout : 1; // ETableLayout
 
@@ -336,7 +335,7 @@ protected:
         unsigned _affectedByDrag : 1;
         unsigned _isLink : 1;
         // If you add more style bits here, you will also need to update RenderStyle::copyNonInheritedFrom()
-        // 53 bits
+        // 54 bits
     } noninherited_flags;
 
 // !END SYNC!
@@ -516,7 +515,9 @@ public:
     bool hasStaticBlockPosition(bool horizontal) const { return horizontal ? hasAutoTopAndBottom() : hasAutoLeftAndRight(); }
 
     EPosition position() const { return static_cast<EPosition>(noninherited_flags._position); }
-    bool isPositioned() const { return position() == AbsolutePosition || position() == FixedPosition; }
+    bool hasOutOfFlowPosition() const { return position() == AbsolutePosition || position() == FixedPosition; }
+    bool hasInFlowPosition() const { return position() == RelativePosition || position() == StickyPosition; }
+    bool hasViewportConstrainedPosition() const { return position() == FixedPosition || position() == StickyPosition; }
     EFloat floating() const { return static_cast<EFloat>(noninherited_flags._floating); }
 
     Length width() const { return m_box->width(); }
@@ -899,6 +900,8 @@ public:
     const AtomicString& textEmphasisCustomMark() const { return rareInheritedData->textEmphasisCustomMark; }
     TextEmphasisPosition textEmphasisPosition() const { return static_cast<TextEmphasisPosition>(rareInheritedData->textEmphasisPosition); }
     const AtomicString& textEmphasisMarkString() const;
+
+    TextOrientation textOrientation() const { return static_cast<TextOrientation>(rareInheritedData->m_textOrientation); }
     
     // Return true if any transform related property (currently transform, transformStyle3D or perspective) 
     // indicates that we are transforming
@@ -970,8 +973,11 @@ public:
     ETextSecurity textSecurity() const { return static_cast<ETextSecurity>(rareInheritedData->textSecurity); }
 
     WritingMode writingMode() const { return static_cast<WritingMode>(inherited_flags.m_writingMode); }
+    // Lines have horizontal orientation; modes horizontal-tb or horizontal-bt.
     bool isHorizontalWritingMode() const { return writingMode() == TopToBottomWritingMode || writingMode() == BottomToTopWritingMode; }
+    // Bottom of the line occurs earlier in the block; modes vertical-rl or horizontal-bt.
     bool isFlippedLinesWritingMode() const { return writingMode() == LeftToRightWritingMode || writingMode() == BottomToTopWritingMode; }
+    // Block progression increases in the opposite direction to normal; modes vertical-rl or horizontal-bt.
     bool isFlippedBlocksWritingMode() const { return writingMode() == RightToLeftWritingMode || writingMode() == BottomToTopWritingMode; }
 
     EImageRendering imageRendering() const { return static_cast<EImageRendering>(rareInheritedData->m_imageRendering); }
@@ -1328,6 +1334,7 @@ public:
     void setTextEmphasisMark(TextEmphasisMark mark) { SET_VAR(rareInheritedData, textEmphasisMark, mark); }
     void setTextEmphasisCustomMark(const AtomicString& mark) { SET_VAR(rareInheritedData, textEmphasisCustomMark, mark); }
     void setTextEmphasisPosition(TextEmphasisPosition position) { SET_VAR(rareInheritedData, textEmphasisPosition, position); }
+    bool setTextOrientation(TextOrientation);
 
 #if ENABLE(CSS_FILTERS)
     void setFilter(const FilterOperations& ops) { SET_VAR(rareNonInheritedData.access()->m_filter, m_operations, ops); }
@@ -1494,7 +1501,14 @@ public:
             || originalDisplay() == INLINE_BOX || originalDisplay() == INLINE_TABLE;
     }
 
-    void setWritingMode(WritingMode v) { inherited_flags.m_writingMode = v; }
+    bool setWritingMode(WritingMode v)
+    {
+        if (v == writingMode())
+            return false;
+
+        inherited_flags.m_writingMode = v;
+        return true;
+    }
 
     // To tell if this style matched attribute selectors. This makes it impossible to share.
     bool affectedByUncommonAttributeSelectors() const { return m_bitfields.affectedByUncommonAttributeSelectors(); }
@@ -1821,6 +1835,15 @@ inline bool RenderStyle::setEffectiveZoom(float f)
     return true;
 }
 
+
+inline bool RenderStyle::setTextOrientation(TextOrientation textOrientation)
+{
+    if (compareEqual(rareInheritedData->m_textOrientation, textOrientation))
+        return false;
+
+    rareInheritedData.access()->m_textOrientation = textOrientation;
+    return true;
+}
 
 } // namespace WebCore
 

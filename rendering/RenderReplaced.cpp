@@ -238,7 +238,7 @@ static inline bool hasAutoHeightOrContainingBlockWithAutoHeight(const RenderRepl
     // For percentage heights: The percentage is calculated with respect to the height of the generated box's
     // containing block. If the height of the containing block is not specified explicitly (i.e., it depends
     // on content height), and this element is not absolutely positioned, the value computes to 'auto'.
-    if (!logicalHeightLength.isPercent() || replaced->isPositioned() || replaced->document()->inQuirksMode())
+    if (!logicalHeightLength.isPercent() || replaced->isOutOfFlowPositioned() || replaced->document()->inQuirksMode())
         return false;
 
     for (RenderBlock* cb = replaced->containingBlock(); !cb->isRenderView(); cb = cb->containingBlock()) {
@@ -297,8 +297,11 @@ void RenderReplaced::computeAspectRatioInformationForRenderBox(RenderBox* conten
         }
     } else {
         computeIntrinsicRatioInformation(intrinsicSize, intrinsicRatio, isPercentageIntrinsicSize);
-        if (intrinsicRatio)
+        if (intrinsicRatio) {
             ASSERT(!isPercentageIntrinsicSize);
+            if (!intrinsicSize.isEmpty())
+                m_intrinsicSize = isHorizontalWritingMode() ? flooredIntSize(intrinsicSize) : flooredIntSize(intrinsicSize).transposedSize(); // FIXME: This introduces precision errors. We should convert m_intrinsicSize to be a float.
+        }
     }
 
     // Now constrain the intrinsic size along each axis according to minimum and maximum width/heights along the

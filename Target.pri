@@ -1046,6 +1046,7 @@ SOURCES += \
     page/PerformanceTiming.cpp \
     page/PrintContext.cpp \
     page/Screen.cpp \
+    page/scrolling/ScrollingConstraints.cpp \
     page/scrolling/ScrollingCoordinator.cpp \
     page/scrolling/ScrollingCoordinatorNone.cpp \
     page/SecurityOrigin.cpp \
@@ -2568,7 +2569,6 @@ HEADERS += \
     rendering/svg/SVGInlineFlowBox.h \
     rendering/svg/SVGInlineTextBox.h \
     rendering/svg/SVGMarkerData.h \
-    rendering/svg/SVGMarkerLayoutInfo.h \
     rendering/svg/SVGPathData.h \
     rendering/svg/SVGRenderSupport.h \
     rendering/svg/SVGRenderTreeAsText.h \
@@ -3527,7 +3527,6 @@ contains(DEFINES, ENABLE_SVG=1) {
               rendering/svg/RenderSVGViewportContainer.cpp \
               rendering/svg/SVGInlineFlowBox.cpp \
               rendering/svg/SVGInlineTextBox.cpp \
-              rendering/svg/SVGMarkerLayoutInfo.cpp \
               rendering/svg/SVGPathData.cpp \
               rendering/svg/SVGRenderSupport.cpp \
               rendering/svg/SVGRenderTreeAsText.cpp \

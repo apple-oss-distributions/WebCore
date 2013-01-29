@@ -42,6 +42,51 @@ using namespace std;
 
 namespace WebCore {
 
+static bool shouldIgnoreRotation(UChar32 character)
+{
+    switch (character) {
+    case 0x02018:
+    case 0x02019:
+    case 0x000A7:
+    case 0x000A9:
+    case 0x000AE:
+    case 0x000B6:
+    case 0x000BC:
+    case 0x000BD:
+    case 0x000BE:
+    case 0x002E5:
+    case 0x002E6:
+    case 0x002E7:
+    case 0x002E8:
+    case 0x002E9:
+    case 0x02044:
+    case 0x0210F:
+    case 0x02122:
+    case 0x02126:
+    case 0x02127:
+    case 0x0212E:
+    case 0x02135:
+    case 0x02153:
+    case 0x02154:
+    case 0x02155:
+    case 0x0215B:
+    case 0x0215C:
+    case 0x0215D:
+    case 0x0215E:
+    case 0x02305:
+    case 0x02306:
+    case 0x02318:
+    case 0x02329:
+    case 0x0232A:
+    case 0x025CA:
+    case 0x02702:
+        return true;
+
+    default:
+        return false;
+    }
+}
+
 GlyphData Font::glyphDataForCharacter(UChar32 c, bool mirror, FontDataVariant variant) const
 {
     return glyphDataAndPageForCharacter(c, mirror, variant).first;
@@ -102,21 +147,7 @@ std::pair<GlyphData, GlyphPage*> Font::glyphDataAndPageForCharacter(UChar32 c, b
                             break;
                         }
                     } else {
-                        if (m_fontDescription.textOrientation() == TextOrientationVerticalRight) {
-                            const SimpleFontData* verticalRightFontData = data.fontData->verticalRightOrientationFontData();
-                            GlyphPageTreeNode* verticalRightNode = GlyphPageTreeNode::getRootChild(verticalRightFontData, pageNumber);
-                            GlyphPage* verticalRightPage = verticalRightNode->page();
-                            if (verticalRightPage) {
-                                GlyphData verticalRightData = verticalRightPage->glyphDataForCharacter(c);
-                                // If the glyphs are distinct, we will make the assumption that the font has a vertical-right glyph baked
-                                // into it.
-                                if (data.glyph != verticalRightData.glyph)
-                                    return make_pair(data, page);
-                                // The glyphs are identical, meaning that we should just use the horizontal glyph.
-                                if (verticalRightData.fontData)
-                                    return make_pair(verticalRightData, verticalRightPage);
-                            }
-                        } else if (m_fontDescription.textOrientation() == TextOrientationUpright) {
+                        if (m_fontDescription.nonCJKGlyphOrientation() == NonCJKGlyphOrientationUpright || shouldIgnoreRotation(c)) {
                             const SimpleFontData* uprightFontData = data.fontData->uprightOrientationFontData();
                             GlyphPageTreeNode* uprightNode = GlyphPageTreeNode::getRootChild(uprightFontData, pageNumber);
                             GlyphPage* uprightPage = uprightNode->page();
@@ -129,6 +160,20 @@ std::pair<GlyphData, GlyphPage*> Font::glyphDataAndPageForCharacter(UChar32 c, b
                                 // glyph, so we fall back to the upright data and use the horizontal glyph.
                                 if (uprightData.fontData)
                                     return make_pair(uprightData, uprightPage);
+                            }
+                        } else if (m_fontDescription.nonCJKGlyphOrientation() == NonCJKGlyphOrientationVerticalRight) {
+                            const SimpleFontData* verticalRightFontData = data.fontData->verticalRightOrientationFontData();
+                            GlyphPageTreeNode* verticalRightNode = GlyphPageTreeNode::getRootChild(verticalRightFontData, pageNumber);
+                            GlyphPage* verticalRightPage = verticalRightNode->page();
+                            if (verticalRightPage) {
+                                GlyphData verticalRightData = verticalRightPage->glyphDataForCharacter(c);
+                                // If the glyphs are distinct, we will make the assumption that the font has a vertical-right glyph baked
+                                // into it.
+                                if (data.glyph != verticalRightData.glyph)
+                                    return make_pair(data, page);
+                                // The glyphs are identical, meaning that we should just use the horizontal glyph.
+                                if (verticalRightData.fontData)
+                                    return make_pair(verticalRightData, verticalRightPage);
                             }
                         }
 

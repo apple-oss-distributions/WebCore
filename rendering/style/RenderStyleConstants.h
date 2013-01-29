@@ -94,7 +94,7 @@ enum EBorderPrecedence { BOFF, BTABLE, BCOLGROUP, BCOL, BROWGROUP, BROW, BCELL }
 enum OutlineIsAuto { AUTO_OFF = 0, AUTO_ON };
 
 enum EPosition {
-    StaticPosition, RelativePosition, AbsolutePosition, FixedPosition
+    StaticPosition, RelativePosition, AbsolutePosition, FixedPosition, StickyPosition
 };
 
 enum EFloat {
@@ -447,6 +447,8 @@ enum TextEmphasisFill { TextEmphasisFillFilled, TextEmphasisFillOpen };
 enum TextEmphasisMark { TextEmphasisMarkNone, TextEmphasisMarkAuto, TextEmphasisMarkDot, TextEmphasisMarkCircle, TextEmphasisMarkDoubleCircle, TextEmphasisMarkTriangle, TextEmphasisMarkSesame, TextEmphasisMarkCustom };
 
 enum TextEmphasisPosition { TextEmphasisPositionOver, TextEmphasisPositionUnder };
+
+enum TextOrientation { TextOrientationVerticalRight, TextOrientationUpright, TextOrientationSideways, TextOrientationSidewaysRight };
 
 enum TextOverflow { TextOverflowClip = 0, TextOverflowEllipsis };
 

@@ -441,6 +441,8 @@ void PageCache::markPagesForVistedLinkStyleRecalc()
 void PageCache::markPagesForFullStyleRecalc(Page* page)
 {
     Frame* mainFrame = page->mainFrame();
+    if (!mainFrame)
+        return;
 
     for (HistoryItem* current = m_head; current; current = current->m_next) {
         CachedPage* cachedPage = current->m_cachedPage.get();

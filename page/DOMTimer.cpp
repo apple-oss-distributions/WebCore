@@ -105,12 +105,6 @@ int DOMTimer::install(ScriptExecutionContext* context, PassOwnPtr<ScheduledActio
                 WKSetObservedContentChange(WKContentIndeterminateChange);
                 WebThreadAddObservedContentModifier(timer); // Will only take affect if not already visibility change.
             }
-        } else {
-            // window is in suspended state, we should not fire new timers.
-            // Instead we make sure to suspend the new timer.
-            // FIXME: <rdar://problem/6560725>
-            if (timer)
-                timer->suspend(ActiveDOMObject::DocumentWillBePaused);
         }
     }
 

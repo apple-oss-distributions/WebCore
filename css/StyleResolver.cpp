@@ -830,10 +830,8 @@ void StyleResolver::collectMatchingRules(RuleSet* rules, int& firstRuleIndex, in
         collectMatchingRulesForList(rules->idRules(m_element->idForStyleResolution().impl()), firstRuleIndex, lastRuleIndex, options);
     if (m_element->hasClass()) {
         ASSERT(m_styledElement);
-        const SpaceSplitString& classNames = m_styledElement->classNames();
-        size_t size = classNames.size();
-        for (size_t i = 0; i < size; ++i)
-            collectMatchingRulesForList(rules->classRules(classNames[i].impl()), firstRuleIndex, lastRuleIndex, options);
+        for (size_t i = 0; i < m_styledElement->classNames().size(); ++i)
+            collectMatchingRulesForList(rules->classRules(m_styledElement->classNames()[i].impl()), firstRuleIndex, lastRuleIndex, options);
     }
     const AtomicString& pseudoId = m_element->shadowPseudoId();
     if (!pseudoId.isEmpty()) {
@@ -1509,6 +1507,40 @@ void StyleResolver::matchUARules(MatchResult& result)
     }
 }
 
+static void getFontAndGlyphOrientation(const RenderStyle* style, FontOrientation& fontOrientation, NonCJKGlyphOrientation& glyphOrientation)
+{
+    if (style->isHorizontalWritingMode()) {
+        fontOrientation = Horizontal;
+        glyphOrientation = NonCJKGlyphOrientationVerticalRight;
+        return;
+    }
+
+    switch (style->textOrientation()) {
+    case TextOrientationVerticalRight:
+        fontOrientation = Vertical;
+        glyphOrientation = NonCJKGlyphOrientationVerticalRight;
+        return;
+    case TextOrientationUpright:
+        fontOrientation = Vertical;
+        glyphOrientation = NonCJKGlyphOrientationUpright;
+        return;
+    case TextOrientationSideways:
+        if (style->writingMode() == LeftToRightWritingMode) {
+            // FIXME: This should map to sideways-left, which is not supported yet.
+            fontOrientation = Vertical;
+            glyphOrientation = NonCJKGlyphOrientationVerticalRight;
+            return;
+        }
+        fontOrientation = Horizontal;
+        glyphOrientation = NonCJKGlyphOrientationVerticalRight;
+        return;
+    case TextOrientationSidewaysRight:
+        fontOrientation = Horizontal;
+        glyphOrientation = NonCJKGlyphOrientationVerticalRight;
+        return;
+    }
+}
+
 PassRefPtr<RenderStyle> StyleResolver::styleForDocument(Document* document, CSSFontSelector* fontSelector)
 {
     Frame* frame = document->frame();
@@ -1600,6 +1632,12 @@ PassRefPtr<RenderStyle> StyleResolver::styleForDocument(Document* document, CSSF
         bool useSVGZoomRules = document->isSVGDocument();
         fontDescription.setComputedSize(StyleResolver::getComputedSizeFromSpecifiedSize(document, documentStyle.get(), fontDescription.isAbsoluteSize(), size, useSVGZoomRules));
     }
+
+    FontOrientation fontOrientation;
+    NonCJKGlyphOrientation glyphOrientation;
+    getFontAndGlyphOrientation(documentStyle.get(), fontOrientation, glyphOrientation);
+    fontDescription.setOrientation(fontOrientation);
+    fontDescription.setNonCJKGlyphOrientation(glyphOrientation);
 
     documentStyle->setFontDescription(fontDescription);
     documentStyle->font().update(fontSelector);
@@ -2021,7 +2059,7 @@ void StyleResolver::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
             style->setDisplay(BLOCK);
 
         // Absolute/fixed positioned elements, floating elements and the document element need block-like outside display.
-        if (style->position() == AbsolutePosition || style->position() == FixedPosition || style->isFloating() || (e && e->document()->documentElement() == e))
+        if (style->hasOutOfFlowPosition() || style->isFloating() || (e && e->document()->documentElement() == e))
             style->setDisplay(equivalentBlockDisplay(style->display(), style->isFloating(), m_checker.strictParsing()));
 
         // FIXME: Don't support this mutation for pseudo styles like first-letter or first-line, since it's not completely
@@ -2058,8 +2096,13 @@ void StyleResolver::adjustRenderStyle(RenderStyle* style, RenderStyle* parentSty
     // Auto z-index becomes 0 for the root element and transparent objects. This prevents
     // cases where objects that should be blended as a single unit end up with a non-transparent
     // object wedged in between them. Auto z-index also becomes 0 for objects that specify transforms/masks/reflections.
-    if (style->hasAutoZIndex() && ((e && e->document()->documentElement() == e) || style->opacity() < 1.0f
-        || style->hasTransformRelatedProperty() || style->hasMask() || style->boxReflect() || style->hasFilter()
+    if (style->hasAutoZIndex() && ((e && e->document()->documentElement() == e)
+        || style->opacity() < 1.0f
+        || style->hasTransformRelatedProperty()
+        || style->hasMask()
+        || style->boxReflect()
+        || style->hasFilter()
+        || style->position() == StickyPosition
 #ifdef FIXED_POSITION_CREATES_STACKING_CONTEXT
         || style->position() == FixedPosition
 #endif
@@ -2194,6 +2237,22 @@ bool StyleResolver::checkRegionStyle(Element* regionElement)
     return false;
 }
 
+static void checkForOrientationChange(RenderStyle* style)
+{
+    FontOrientation fontOrientation;
+    NonCJKGlyphOrientation glyphOrientation;
+    getFontAndGlyphOrientation(style, fontOrientation, glyphOrientation);
+
+    const FontDescription& fontDescription = style->fontDescription();
+    if (fontDescription.orientation() == fontOrientation && fontDescription.nonCJKGlyphOrientation() == glyphOrientation)
+        return;
+
+    FontDescription newFontDescription(fontDescription);
+    newFontDescription.setNonCJKGlyphOrientation(glyphOrientation);
+    newFontDescription.setOrientation(fontOrientation);
+    style->setFontDescription(newFontDescription);
+}
+
 void StyleResolver::updateFont()
 {
     if (!m_fontDirty)
@@ -2202,6 +2261,7 @@ void StyleResolver::updateFont()
     checkForTextSizeAdjust();
     checkForGenericFamilyChange(style(), m_parentStyle);
     checkForZoomChange(style(), m_parentStyle);
+    checkForOrientationChange(style());
     m_style->font().update(m_fontSelector);
     m_fontDirty = false;
 }
@@ -3890,13 +3950,24 @@ void StyleResolver::applyProperty(CSSPropertyID id, CSSValue *value)
 
     // CSS Text Layout Module Level 3: Vertical writing support
     case CSSPropertyWebkitWritingMode: {
-        HANDLE_INHERIT_AND_INITIAL_AND_PRIMITIVE(writingMode, WritingMode)
+        HANDLE_INHERIT_AND_INITIAL(writingMode, WritingMode);
+        
+        if (primitiveValue)
+            setWritingMode(*primitiveValue);
+
         // FIXME: It is not ok to modify document state while applying style.
         if (!isInherit && !isInitial && m_element && m_element == m_element->document()->documentElement())
             m_element->document()->setWritingModeSetOnDocumentElement(true);
-        FontDescription fontDescription = m_style->fontDescription();
-        fontDescription.setOrientation(m_style->isHorizontalWritingMode() ? Horizontal : Vertical);
-        setFontDescription(fontDescription);
+
+        return;
+    }
+
+    case CSSPropertyWebkitTextOrientation: {
+        HANDLE_INHERIT_AND_INITIAL(textOrientation, TextOrientation);
+
+        if (primitiveValue)
+            setTextOrientation(*primitiveValue);
+
         return;
     }
 
@@ -4224,7 +4295,6 @@ void StyleResolver::applyProperty(CSSPropertyID id, CSSValue *value)
     case CSSPropertyWebkitTextEmphasisPosition:
     case CSSPropertyWebkitTextEmphasisStyle:
     case CSSPropertyWebkitTextFillColor:
-    case CSSPropertyWebkitTextOrientation:
     case CSSPropertyWebkitTextSecurity:
     case CSSPropertyWebkitTextStrokeColor:
     case CSSPropertyWebkitTransformOrigin:
@@ -4353,14 +4423,14 @@ PassRefPtr<StyleImage> StyleResolver::cachedOrPendingFromValue(CSSPropertyID pro
 {
     RefPtr<StyleImage> image = value->cachedOrPendingImage();
     if (image && image->isPendingImage())
-        m_pendingImageProperties.add(property);
+        m_pendingImageProperties.set(property, value);
     return image.release();
 }
 
 PassRefPtr<StyleImage> StyleResolver::generatedOrPendingFromValue(CSSPropertyID property, CSSImageGeneratorValue* value)
 {
     if (value->isPending()) {
-        m_pendingImageProperties.add(property);
+        m_pendingImageProperties.set(property, value);
         return StylePendingImage::create(value);
     }
     return StyleGeneratedImage::create(value);
@@ -4371,7 +4441,7 @@ PassRefPtr<StyleImage> StyleResolver::setOrPendingFromValue(CSSPropertyID proper
 {
     RefPtr<StyleImage> image = value->cachedOrPendingImageSet(document());
     if (image && image->isPendingImage())
-        m_pendingImageProperties.add(property);
+        m_pendingImageProperties.set(property, value);
     return image.release();
 }
 #endif
@@ -5878,8 +5948,8 @@ void StyleResolver::loadPendingImages()
     if (m_pendingImageProperties.isEmpty())
         return;
 
-    HashSet<CSSPropertyID>::const_iterator end = m_pendingImageProperties.end();
-    for (HashSet<CSSPropertyID>::const_iterator it = m_pendingImageProperties.begin(); it != end; ++it) {
+    PendingImagePropertyMap::const_iterator::Keys end = m_pendingImageProperties.end().keys();
+    for (PendingImagePropertyMap::const_iterator::Keys it = m_pendingImageProperties.begin().keys(); it != end; ++it) {
         CSSPropertyID currentProperty = *it;
 
         switch (currentProperty) {

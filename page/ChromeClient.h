@@ -86,20 +86,12 @@ namespace WebCore {
     class GraphicsLayer;
 #endif
 
+    class ViewportConstraints;
+
 #if ENABLE(INPUT_TYPE_COLOR)
     class ColorChooser;
     class ColorChooserClient;
 #endif
-
-    // Anchor values for fixed position elements.
-    enum ScrollingLayerSizingFlags {
-        ScrollingLayerSizingNone = 0,
-        ScrollingLayerAnchorLeft = 1 << 0,
-        ScrollingLayerAnchorRight = 1 << 1,
-        ScrollingLayerAnchorTop = 1 << 2,
-        ScrollingLayerAnchorBottom = 1 << 3,
-    };
-    typedef unsigned ScrollingLayerSizing;
 
     class ChromeClient {
     public:
@@ -258,9 +250,9 @@ namespace WebCore {
         virtual void willSyncCompositingLayers() = 0;
         virtual void didSyncCompositingLayers() = 0;
         
-        virtual void addOrUpdateFixedPositionLayer(PlatformLayer*, ScrollingLayerSizing, const FloatRect& bounds, const FloatSize& alignmentOffset, bool insideLayerSync = false) = 0;
-        virtual void removeFixedPositionLayer(PlatformLayer*, bool insideLayerSync = false) = 0;
-        virtual void removeAllFixedPositionLayers() = 0;
+        virtual void addOrUpdateViewportConstrainedLayer(PlatformLayer*, PassOwnPtr<ViewportConstraints>, bool insideLayerSync = false) = 0;
+        virtual void removeViewportConstrainedLayer(PlatformLayer*, bool insideLayerSync = false) = 0;
+        virtual void removeAllViewportConstrainedLayers() = 0;
 
         virtual void addOrUpdateScrollingLayer(Node*, PlatformLayer* scrollingLayer, PlatformLayer* contentsLayer, const IntSize& scrollSize, bool allowHorizontalScrollbar, bool allowVerticalScrollbar) = 0;
         virtual void removeScrollingLayer(Node*, PlatformLayer* scrollingLayer, PlatformLayer* contentsLayer) = 0;

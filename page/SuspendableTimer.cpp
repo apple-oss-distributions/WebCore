@@ -59,7 +59,7 @@ void SuspendableTimer::stop()
 void SuspendableTimer::suspend(ReasonForSuspension)
 {
 #if !ASSERT_DISABLED
-//    ASSERT(!m_suspended);
+    ASSERT(!m_suspended);
     m_suspended = true;
 #endif
     m_active = isActive();

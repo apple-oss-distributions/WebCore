@@ -242,9 +242,9 @@ public:
     virtual void willSyncCompositingLayers() OVERRIDE { }
     virtual void didSyncCompositingLayers() OVERRIDE { }
 
-    virtual void addOrUpdateFixedPositionLayer(PlatformLayer*, ScrollingLayerSizing, const FloatRect&, const FloatSize&, bool) OVERRIDE { }
-    virtual void removeFixedPositionLayer(PlatformLayer*, bool) OVERRIDE { }
-    virtual void removeAllFixedPositionLayers() OVERRIDE { }
+    virtual void addOrUpdateViewportConstrainedLayer(PlatformLayer*, PassOwnPtr<ViewportConstraints>, bool) OVERRIDE { }
+    virtual void removeViewportConstrainedLayer(PlatformLayer*, bool) OVERRIDE { }
+    virtual void removeAllViewportConstrainedLayers() OVERRIDE { }
 
     virtual void addOrUpdateScrollingLayer(Node*, PlatformLayer*, PlatformLayer*, const IntSize&, bool, bool) OVERRIDE { }
     virtual void removeScrollingLayer(Node*, PlatformLayer*, PlatformLayer*) OVERRIDE { }

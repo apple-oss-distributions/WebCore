@@ -59,6 +59,7 @@
 
 #include "Region.h"
 #include "RenderScrollbar.h"
+#include "ScrollingConstraints.h"
 
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
 #include "HTMLMediaElement.h"
@@ -324,19 +325,19 @@ void RenderLayerCompositor::flushPendingLayerChanges(bool isFlushRoot)
     if (chromeClient && isFlushRoot)
         chromeClient->didSyncCompositingLayers();
 
-    if (!m_fixedPositionLayersNeedingUpdate.isEmpty()) {
-        HashSet<RenderLayer*>::const_iterator end = m_fixedPositionLayersNeedingUpdate.end();
-        for (HashSet<RenderLayer*>::const_iterator it = m_fixedPositionLayersNeedingUpdate.begin(); it != end; ++it)
-            registerOrUpdateFixedPositionLayer(*it);
+    if (!m_viewportConstrainedLayersNeedingUpdate.isEmpty()) {
+        HashSet<RenderLayer*>::const_iterator end = m_viewportConstrainedLayersNeedingUpdate.end();
+        for (HashSet<RenderLayer*>::const_iterator it = m_viewportConstrainedLayersNeedingUpdate.begin(); it != end; ++it)
+            registerOrUpdateViewportConstrainedLayer(*it);
         
-        m_fixedPositionLayersNeedingUpdate.clear();
+        m_viewportConstrainedLayersNeedingUpdate.clear();
     }
 }
 
 void RenderLayerCompositor::didFlushChangesForLayer(RenderLayer* layer)
 {
-    if (m_fixedPositionLayers.contains(layer))
-        m_fixedPositionLayersNeedingUpdate.add(layer);
+    if (m_viewportConstrainedLayers.contains(layer))
+        m_viewportConstrainedLayersNeedingUpdate.add(layer);
 }
 
 RenderLayerCompositor* RenderLayerCompositor::enclosingCompositorFlushingLayers() const
@@ -426,7 +427,7 @@ void RenderLayerCompositor::updateCompositingLayers(CompositingUpdateType update
 
     if (checkForHierarchyUpdate) {
         if (ChromeClient* chromeClient = this->chromeClient())
-            chromeClient->removeAllFixedPositionLayers();
+            chromeClient->removeAllViewportConstrainedLayers();
         // Go through the layers in presentation order, so that we can compute which RenderLayers need compositing layers.
         // FIXME: we could maybe do this and the hierarchy udpate in one pass, but the parenting logic would be more complex.
         CompositingState compState(updateRoot, m_compositingConsultsOverlap);
@@ -536,7 +537,7 @@ bool RenderLayerCompositor::updateBacking(RenderLayer* layer, CompositingChangeR
         }
 
         // Need to add for every compositing layer, because a composited layer may change from being non-fixed to fixed.
-        updateFixedPositionStatus(layer);
+        updateViewportConstraintStatus(layer);
     } else {
         if (layer->backing()) {
             // If we're removing backing on a reflection, clear the source GraphicsLayer's pointer to
@@ -550,7 +551,7 @@ bool RenderLayerCompositor::updateBacking(RenderLayer* layer, CompositingChangeR
                 }
             }
 
-            removeFixedPositionLayer(layer);
+            removeViewportConstrainedLayer(layer);
             layer->clearBacking();
             layerChanged = true;
 
@@ -656,7 +657,7 @@ void RenderLayerCompositor::layerWillBeRemoved(RenderLayer* parent, RenderLayer*
     if (!child->isComposited() || parent->renderer()->documentBeingDestroyed())
         return;
 
-    removeFixedPositionLayer(child);
+    removeViewportConstrainedLayer(child);
     repaintInCompositedAncestor(child, child->backing()->compositedBounds());
 
     setCompositingParent(child, 0);
@@ -1348,7 +1349,7 @@ void RenderLayerCompositor::didMoveOnscreen()
     RootLayerAttachment attachment = shouldPropagateCompositingToEnclosingFrame() ? RootLayerAttachedViaEnclosingFrame : RootLayerAttachedViaChromeClient;
     attachRootLayer(attachment);
 
-    registerAllFixedPositionLayers();
+    registerAllViewportConstrainedLayers();
     registerAllScrollingLayers();
 }
 
@@ -1358,7 +1359,7 @@ void RenderLayerCompositor::willMoveOffscreen()
         return;
 
     detachRootLayer();
-    unregisterAllFixedPositionLayers();
+    unregisterAllViewportConstrainedLayers();
     unregisterAllScrollingLayers();
 }
 
@@ -1368,7 +1369,7 @@ void RenderLayerCompositor::clearBackingForLayerIncludingDescendants(RenderLayer
         return;
 
     if (layer->isComposited()) {
-        removeFixedPositionLayer(layer);
+        removeViewportConstrainedLayer(layer);
         layer->clearBacking();
     }
     
@@ -1568,8 +1569,12 @@ const char* RenderLayerCompositor::reasonForCompositing(const RenderLayer* layer
     if (requiresCompositingForFilters(renderer))
         return "filters";
 
-    if (requiresCompositingForPosition(renderer, layer))
+    if (requiresCompositingForPosition(renderer, layer)) {
+        if (renderer->isStickyPositioned())
+            return "position: sticky";
+        
         return "position: fixed";
+    }
 
     // This includes layers made composited by requiresCompositingWhenDescendantsAreCompositing().
     if (layer->indirectCompositingReason() == RenderLayer::IndirectCompositingForOverlap)
@@ -1826,8 +1831,19 @@ bool RenderLayerCompositor::requiresCompositingForFilters(RenderObject* renderer
 
 bool RenderLayerCompositor::requiresCompositingForPosition(RenderObject* renderer, const RenderLayer* layer) const
 {
-    if (!m_renderView->hasCustomFixedPosition(renderer, RenderView::CheckContainingBlock))
+    if (renderer->isStickyPositioned())
+        return true;
+
+    // position:fixed elements that create their own stacking context (e.g. have an explicit z-index,
+    // opacity, transform) can get their own composited layer. A stacking context is required otherwise
+    // z-index and clipping will be broken.
+    if (!(renderer->isOutOfFlowPositioned() && renderer->style()->position() == FixedPosition))
         return false;
+
+    if (!m_renderView->hasCustomFixedPosition(renderer, RenderView::CheckContainingBlock)) {
+        m_reevaluateCompositingAfterLayout = true;
+        return false;
+    }
 
     RenderObject* container = renderer->container();
     // If the renderer is not hooked up yet then we have to wait until it is.
@@ -2441,8 +2457,11 @@ void RenderLayerCompositor::deviceOrPageScaleFactorChanged()
         rootLayer->noteDeviceOrPageScaleFactorChangedIncludingDescendants();
 }
 
-static bool isRootmostFixedLayer(RenderLayer* layer, RenderView* view)
+static bool isRootmostFixedOrStickyLayer(RenderLayer* layer, RenderView* view)
 {
+    if (layer->renderer()->isStickyPositioned())
+        return true;
+
     if (!view->hasCustomFixedPosition(layer->renderer()))
         return false;
 
@@ -2455,41 +2474,36 @@ static bool isRootmostFixedLayer(RenderLayer* layer, RenderView* view)
     return true;
 }
 
-void RenderLayerCompositor::updateFixedPositionStatus(RenderLayer* layer)
+void RenderLayerCompositor::updateViewportConstraintStatus(RenderLayer* layer)
 {
-    if (isRootmostFixedLayer(layer, m_renderView))
-        addFixedPositionLayer(layer);
+    if (isRootmostFixedOrStickyLayer(layer, m_renderView))
+        addViewportConstrainedLayer(layer);
     else
-        removeFixedPositionLayer(layer);
+        removeViewportConstrainedLayer(layer);
 }
 
-void RenderLayerCompositor::addFixedPositionLayer(RenderLayer* layer)
+void RenderLayerCompositor::addViewportConstrainedLayer(RenderLayer* layer)
 {
-    m_fixedPositionLayers.add(layer);
-    registerOrUpdateFixedPositionLayer(layer);
+    m_viewportConstrainedLayers.add(layer);
+    registerOrUpdateViewportConstrainedLayer(layer);
 }
 
-void RenderLayerCompositor::removeFixedPositionLayer(RenderLayer* layer)
+void RenderLayerCompositor::removeViewportConstrainedLayer(RenderLayer* layer)
 {
-    if (!m_fixedPositionLayers.contains(layer))
+    if (!m_viewportConstrainedLayers.contains(layer))
         return;
 
-    unregisterFixedPositionLayer(layer);
-    m_fixedPositionLayers.remove(layer);
+    unregisterViewportConstrainedLayer(layer);
+    m_viewportConstrainedLayers.remove(layer);
 }
 
 void RenderLayerCompositor::platformLayerChanged(RenderLayer* renderLayer, PlatformLayer* oldLayer, PlatformLayer* newLayer)
 {
-    if (m_fixedPositionLayers.contains(renderLayer)) {
+    if (m_viewportConstrainedLayers.contains(renderLayer)) {
         if (ChromeClient* chromeClient = this->chromeClient()) {
             bool isFlushing = enclosingCompositorFlushingLayers();
-            chromeClient->removeFixedPositionLayer(oldLayer, isFlushing);
-            
-            ScrollingLayerSizing sizing;
-            FloatRect bounds;
-            FloatSize alignmentOffset;
-            getFixedPositionLayerSizing(renderLayer, sizing, bounds, alignmentOffset);
-            chromeClient->addOrUpdateFixedPositionLayer(newLayer, sizing, bounds, alignmentOffset, isFlushing);
+            chromeClient->removeViewportConstrainedLayer(oldLayer, isFlushing);
+            chromeClient->addOrUpdateViewportConstrainedLayer(newLayer, computeViewportConstraints(renderLayer), isFlushing);
         }
     }
     
@@ -2500,102 +2514,97 @@ void RenderLayerCompositor::platformLayerChanged(RenderLayer* renderLayer, Platf
     }
 }
 
-void RenderLayerCompositor::getFixedPositionLayerSizing(RenderLayer* layer, ScrollingLayerSizing& sizing, FloatRect& bounds, FloatSize& alignmentOffset)
+PassOwnPtr<ViewportConstraints> RenderLayerCompositor::computeViewportConstraints(RenderLayer* layer)
 {
     ASSERT(layer->isComposited());
-
-    GraphicsLayer* graphicsLayer = layer->backing()->graphicsLayer();
-    FloatRect fixedOffsetBounds(graphicsLayer->position(), graphicsLayer->size());
-    alignmentOffset = graphicsLayer->pixelAlignmentOffset();
 
     FrameView* frameView = m_renderView->frameView();
-    IntRect positionedObjectsRect = frameView->customFixedPositionLayoutRect();
-    
-    RenderObject* renderer = layer->renderer();
 
-    Length left = renderer->style()->left();
-    Length right = renderer->style()->right();
+    if (layer->renderer()->isStickyPositioned()) {
+        OwnPtr<StickyPositionViewportConstraints> constraints = adoptPtr(new StickyPositionViewportConstraints);
+        LayoutRect viewportRect = frameView->actualVisibleContentRect();
+        layer->renderer()->computeStickyPositionConstraints(*constraints, viewportRect);
 
-    Length top = renderer->style()->top();
-    Length bottom = renderer->style()->bottom();
+        GraphicsLayer* graphicsLayer = layer->backing()->graphicsLayer();
+        constraints->setAlignmentOffset(graphicsLayer->pixelAlignmentOffset());
+        
+        constraints->setLayerPositionAtLastLayout(graphicsLayer->position());
+        constraints->setStickyOffsetAtLastLayout(layer->renderer()->stickyPositionOffset());
 
-    bounds = FloatRect(FloatPoint(), fixedOffsetBounds.size());
-    sizing = ScrollingLayerSizingNone;
-    if (!left.isAuto()) {
-        sizing |= ScrollingLayerAnchorLeft;
-        bounds.setX(fixedOffsetBounds.x() - positionedObjectsRect.x());
+        return constraints.release();
+    } else {
+        OwnPtr<FixedPositionViewportConstraints> constraints = adoptPtr(new FixedPositionViewportConstraints);
+
+        GraphicsLayer* graphicsLayer = layer->backing()->graphicsLayer();
+        constraints->setAlignmentOffset(graphicsLayer->pixelAlignmentOffset());
+        constraints->setLayerPositionAtLastLayout(graphicsLayer->position());
+
+        IntRect positionedObjectsRect = frameView->customFixedPositionLayoutRect();
+        constraints->setViewportRectAtLastLayout(positionedObjectsRect);
+        
+        RenderStyle* style = layer->renderer()->style();
+        if (!style->left().isAuto())
+            constraints->addAnchorEdge(ViewportConstraints::AnchorEdgeLeft);
+
+        if (!style->right().isAuto())
+            constraints->addAnchorEdge(ViewportConstraints::AnchorEdgeRight);
+
+        if (!style->top().isAuto())
+            constraints->addAnchorEdge(ViewportConstraints::AnchorEdgeTop);
+
+        if (!style->bottom().isAuto())
+            constraints->addAnchorEdge(ViewportConstraints::AnchorEdgeBottom);
+
+        // If left and right are auto, use left.
+        if (style->left().isAuto() && style->right().isAuto())
+            constraints->addAnchorEdge(ViewportConstraints::AnchorEdgeLeft);
+
+        // If top and bottom are auto, use top.
+        if (style->top().isAuto() && style->bottom().isAuto())
+            constraints->addAnchorEdge(ViewportConstraints::AnchorEdgeTop);
+        
+        return constraints.release();
     }
-
-    if (!right.isAuto()) {
-        sizing |= ScrollingLayerAnchorRight;
-        if (!(sizing & ScrollingLayerAnchorLeft))
-            bounds.setX(positionedObjectsRect.maxX() - fixedOffsetBounds.maxX());
-    }
-
-    if (!top.isAuto()) {
-        sizing |= ScrollingLayerAnchorTop;
-        bounds.setY(fixedOffsetBounds.y() - positionedObjectsRect.y());
-    }
-
-    if (!bottom.isAuto()) {
-        sizing |= ScrollingLayerAnchorBottom;
-        if (!(sizing & ScrollingLayerAnchorTop))
-            bounds.setY(positionedObjectsRect.maxY() - fixedOffsetBounds.maxY());
-    }
-    
-    // If left and right are auto, use left.
-    if (!(sizing & (ScrollingLayerAnchorLeft | ScrollingLayerAnchorRight))) {
-        sizing |= ScrollingLayerAnchorLeft;
-        bounds.setX(fixedOffsetBounds.x() - positionedObjectsRect.x());
-    }
-
-    // If top and bottom are auto, use top.
-    if (!(sizing & (ScrollingLayerAnchorTop | ScrollingLayerAnchorBottom))) {
-        sizing |= ScrollingLayerAnchorTop;
-        bounds.setY(fixedOffsetBounds.y() - positionedObjectsRect.y());
-    }
+    return nullptr;
 }
 
-void RenderLayerCompositor::registerOrUpdateFixedPositionLayer(RenderLayer* layer)
+void RenderLayerCompositor::registerOrUpdateViewportConstrainedLayer(RenderLayer* layer)
 {
-    ASSERT(m_renderView->hasCustomFixedPosition(layer->renderer()));
-    ASSERT(m_fixedPositionLayers.contains(layer));
+    ASSERT(layer->renderer()->isStickyPositioned() || m_renderView->hasCustomFixedPosition(layer->renderer()));
+    ASSERT(m_viewportConstrainedLayers.contains(layer));
     ASSERT(layer->isComposited());
+    if (!layer->parent())
+        return;
 
     ChromeClient* chromeClient = this->chromeClient();
     if (!chromeClient)
         return;
 
-    ScrollingLayerSizing sizing;
-     FloatRect bounds;
-    FloatSize alignmentOffset;
-    getFixedPositionLayerSizing(layer, sizing, bounds, alignmentOffset);
-
-    chromeClient->addOrUpdateFixedPositionLayer(layer->backing()->graphicsLayer()->platformLayer(), sizing, bounds, alignmentOffset, enclosingCompositorFlushingLayers());
+    chromeClient->addOrUpdateViewportConstrainedLayer(layer->backing()->graphicsLayer()->platformLayer(), computeViewportConstraints(layer), enclosingCompositorFlushingLayers());
 }
 
-void RenderLayerCompositor::unregisterFixedPositionLayer(RenderLayer* layer)
+void RenderLayerCompositor::unregisterViewportConstrainedLayer(RenderLayer* layer)
 {
-    ASSERT(m_fixedPositionLayers.contains(layer));
+    ASSERT(m_viewportConstrainedLayers.contains(layer));
 
     if (ChromeClient* chromeClient = this->chromeClient()) {
         ASSERT(layer->isComposited());
-        chromeClient->removeFixedPositionLayer(layer->backing()->graphicsLayer()->platformLayer(), enclosingCompositorFlushingLayers());
+        chromeClient->removeViewportConstrainedLayer(layer->backing()->graphicsLayer()->platformLayer(), enclosingCompositorFlushingLayers());
     }
 }
 
-void RenderLayerCompositor::registerAllFixedPositionLayers()
+void RenderLayerCompositor::registerAllViewportConstrainedLayers()
 {
-    HashSet<RenderLayer*>::const_iterator end = m_fixedPositionLayers.end();
-    for (HashSet<RenderLayer*>::const_iterator it = m_fixedPositionLayers.begin(); it != end; ++it)
-        registerOrUpdateFixedPositionLayer(*it);
+    HashSet<RenderLayer*>::const_iterator end = m_viewportConstrainedLayers.end();
+    for (HashSet<RenderLayer*>::const_iterator it = m_viewportConstrainedLayers.begin(); it != end; ++it)
+        registerOrUpdateViewportConstrainedLayer(*it);
 }
 
-void RenderLayerCompositor::unregisterAllFixedPositionLayers()
+void RenderLayerCompositor::unregisterAllViewportConstrainedLayers()
 {
-    HashSet<RenderLayer*>::const_iterator end = m_fixedPositionLayers.end();
-    for (HashSet<RenderLayer*>::const_iterator it = m_fixedPositionLayers.begin(); it != end; ++it)
-        unregisterFixedPositionLayer(*it);
+    HashSet<RenderLayer*>::const_iterator end = m_viewportConstrainedLayers.end();
+    for (HashSet<RenderLayer*>::const_iterator it = m_viewportConstrainedLayers.begin(); it != end; ++it)
+        unregisterViewportConstrainedLayer(*it);
 }
 
 static bool scrollbarHasDisplayNone(Scrollbar* scrollbar)

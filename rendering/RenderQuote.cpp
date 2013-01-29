@@ -63,6 +63,11 @@ RenderQuote::~RenderQuote()
 {
 }
 
+void RenderQuote::willBeRemovedFromTree()
+{
+    RenderText::willBeRemovedFromTree();
+}
+
 const char* RenderQuote::renderName() const
 {
     return "RenderQuote";

@@ -164,7 +164,7 @@ static inline void notifyObserverWillExitObject(Observer* observer, RenderObject
 static inline bool isIteratorTarget(RenderObject* object)
 {
     ASSERT(object); // The iterator will of course return 0, but its not an expected argument to this function.
-    return object->isText() || object->isFloating() || object->isPositioned() || object->isReplaced();
+    return object->isText() || object->isFloating() || object->isOutOfFlowPositioned() || object->isReplaced();
 }
 
 // This enum is only used for bidiNextShared()
@@ -456,7 +456,8 @@ public:
     {
         // We only need to add a fake run for a given isolated span once during each call to createBidiRunsForLine.
         // We'll be called for every span inside the isolated span so we just ignore subsequent calls.
-        if (m_haveAddedFakeRunForRootIsolate)
+        // We also avoid creating a fake run until we hit a child that warrants one, e.g. we skip floats.
+        if (m_haveAddedFakeRunForRootIsolate || RenderBlock::shouldSkipCreatingRunsForObject(obj))
             return;
         m_haveAddedFakeRunForRootIsolate = true;
         // obj and pos together denote a single position in the inline, from which the parsing of the isolate will start.

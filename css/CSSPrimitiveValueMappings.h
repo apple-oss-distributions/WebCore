@@ -43,7 +43,6 @@
 #include "RenderStyleConstants.h"
 #include "SVGRenderStyleDefs.h"
 #include "TextDirection.h"
-#include "TextOrientation.h"
 #include "TextRenderingMode.h"
 #include "ThemeTypes.h"
 #include "UnicodeBidi.h"
@@ -2029,6 +2028,11 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EPosition e)
         case FixedPosition:
             m_value.ident = CSSValueFixed;
             break;
+#if ENABLE(CSS_STICKY_POSITION)
+        case StickyPosition:
+            m_value.ident = CSSValueWebkitSticky;
+            break;
+#endif
     }
 }
 
@@ -2043,6 +2047,10 @@ template<> inline CSSPrimitiveValue::operator EPosition() const
             return AbsolutePosition;
         case CSSValueFixed:
             return FixedPosition;
+#if ENABLE(CSS_STICKY_POSITION)
+        case CSSValueWebkitSticky:
+            return StickyPosition;
+#endif
         default:
             ASSERT_NOT_REACHED();
             return StaticPosition;
@@ -2800,6 +2808,12 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(TextOrientation e)
 {
     m_primitiveUnitType = CSS_IDENT;
     switch (e) {
+    case TextOrientationSideways:
+        m_value.ident = CSSValueSideways;
+        break;
+    case TextOrientationSidewaysRight:
+        m_value.ident = CSSValueSidewaysRight;
+        break;
     case TextOrientationVerticalRight:
         m_value.ident = CSSValueVerticalRight;
         break;
@@ -2812,6 +2826,10 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(TextOrientation e)
 template<> inline CSSPrimitiveValue::operator TextOrientation() const
 {
     switch (m_value.ident) {
+    case CSSValueSideways:
+        return TextOrientationSideways;
+    case CSSValueSidewaysRight:
+        return TextOrientationSidewaysRight;
     case CSSValueVerticalRight:
         return TextOrientationVerticalRight;
     case CSSValueUpright:

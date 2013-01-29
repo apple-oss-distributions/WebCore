@@ -42,7 +42,7 @@ public:
     RenderBox(Node*);
     virtual ~RenderBox();
 
-    virtual bool requiresLayer() const OVERRIDE { return isRoot() || isPositioned() || isRelPositioned() || isTransparent() || hasOverflowClip() || hasTransform() || hasHiddenBackface() || hasMask() || hasReflection() || hasFilter() || style()->specifiesColumns(); }
+    virtual bool requiresLayer() const OVERRIDE { return isRoot() || isPositioned() || isTransparent() || hasOverflowClip() || hasTransform() || hasHiddenBackface() || hasMask() || hasReflection() || hasFilter() || style()->specifiesColumns(); }
 
     // Use this with caution! No type checking is done!
     RenderBox* firstChildBox() const;
@@ -327,7 +327,7 @@ public:
 
     bool stretchesToViewport() const
     {
-        return document()->inQuirksMode() && style()->logicalHeight().isAuto() && !isFloatingOrPositioned() && (isRoot() || isBody());
+        return document()->inQuirksMode() && style()->logicalHeight().isAuto() && !isFloatingOrOutOfFlowPositioned() && (isRoot() || isBody());
     }
 
     virtual IntSize intrinsicSize() const { return IntSize(); }
@@ -428,10 +428,13 @@ public:
 
     bool isWritingModeRoot() const { return !parent() || parent()->style()->writingMode() != style()->writingMode(); }
 
-    bool isDeprecatedFlexItem() const { return !isInline() && !isFloatingOrPositioned() && parent() && parent()->isDeprecatedFlexibleBox(); }
+    bool isDeprecatedFlexItem() const { return !isInline() && !isFloatingOrOutOfFlowPositioned() && parent() && parent()->isDeprecatedFlexibleBox(); }
     
     virtual LayoutUnit lineHeight(bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const;
     virtual LayoutUnit baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const;
+
+    virtual LayoutUnit offsetLeft() const OVERRIDE;
+    virtual LayoutUnit offsetTop() const OVERRIDE;
 
     LayoutPoint flipForWritingModeForChild(const RenderBox* child, const LayoutPoint&) const;
     LayoutUnit flipForWritingMode(LayoutUnit position) const; // The offset is in the block direction (y for horizontal writing modes, x for vertical writing modes).
@@ -522,30 +525,6 @@ protected:
 
     void paintRootBoxFillLayers(const PaintInfo&);
 
-    // These functions are only used internally to manipulate the render tree structure via remove/insert/appendChildNode.
-    // Since they are typically called only to move objects around within anonymous blocks (which only have layers in
-    // the case of column spans), the default for fullRemoveInsert is false rather than true.
-    void moveChildTo(RenderBox* toBox, RenderObject* child, RenderObject* beforeChild, bool fullRemoveInsert = false);
-    void moveChildTo(RenderBox* to, RenderObject* child, bool fullRemoveInsert = false)
-    {
-        moveChildTo(to, child, 0, fullRemoveInsert);
-    }
-    void moveAllChildrenTo(RenderBox* toBox, bool fullRemoveInsert = false)
-    {
-        moveAllChildrenTo(toBox, 0, fullRemoveInsert);
-    }
-    void moveAllChildrenTo(RenderBox* toBox, RenderObject* beforeChild, bool fullRemoveInsert = false)
-    {
-        moveChildrenTo(toBox, firstChild(), 0, beforeChild, fullRemoveInsert);
-    }
-    // Move all of the kids from |startChild| up to but excluding |endChild|. 0 can be passed as the |endChild| to denote
-    // that all the kids from |startChild| onwards should be moved.
-    void moveChildrenTo(RenderBox* toBox, RenderObject* startChild, RenderObject* endChild, bool fullRemoveInsert = false)
-    {
-        moveChildrenTo(toBox, startChild, endChild, 0, fullRemoveInsert);
-    }
-    void moveChildrenTo(RenderBox* toBox, RenderObject* startChild, RenderObject* endChild, RenderObject* beforeChild, bool fullRemoveInsert = false);
-   
     RenderObject* splitAnonymousBoxesAroundChild(RenderObject* beforeChild);
  
 private:
@@ -578,6 +557,8 @@ private:
     // These values are used in shrink-to-fit layout systems.
     // These include tables, positioned objects, floats and flexible boxes.
     virtual void computePreferredLogicalWidths() { setPreferredLogicalWidthsDirty(false); }
+
+    virtual LayoutRect frameRectForStickyPositioning() const OVERRIDE { return frameRect(); }
 
 private:
     // The width/height of the contents + borders + padding.  The x/y location is relative to our container (which is not always our parent).

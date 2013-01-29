@@ -31,7 +31,6 @@
 #include "FontOrientation.h"
 #include "FontRenderingMode.h"
 #include "FontWidthVariant.h"
-#include "TextOrientation.h"
 
 namespace WebCore {
 
@@ -63,7 +62,7 @@ public:
     bool stillNeedsLoad() const { return !m_loadInitiated; }
 
     bool ensureCustomFontData();
-    FontPlatformData platformDataFromCustomData(float size, bool bold, bool italic, FontOrientation = Horizontal, TextOrientation = TextOrientationVerticalRight, FontWidthVariant = RegularWidth, FontRenderingMode = NormalRenderingMode);
+    FontPlatformData platformDataFromCustomData(float size, bool bold, bool italic, FontOrientation = Horizontal, FontWidthVariant = RegularWidth, FontRenderingMode = NormalRenderingMode);
 
 #if ENABLE(SVG_FONTS)
     bool ensureSVGFontData();

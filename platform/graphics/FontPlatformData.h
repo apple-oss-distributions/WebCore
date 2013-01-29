@@ -43,7 +43,6 @@
 #include "FontOrientation.h"
 #include "FontWidthVariant.h"
 #include "GlyphBuffer.h"
-#include "TextOrientation.h"
 
 #if PLATFORM(WIN)
 #include "RefCountedGDIHandle.h"
@@ -102,7 +101,6 @@ public:
         : m_syntheticBold(false)
         , m_syntheticOblique(false)
         , m_orientation(Horizontal)
-        , m_textOrientation(TextOrientationVerticalRight)
         , m_isEmoji(false)
         , m_size(0)
         , m_widthVariant(RegularWidth)
@@ -131,7 +129,6 @@ public:
         : m_syntheticBold(false)
         , m_syntheticOblique(false)
         , m_orientation(Horizontal)
-        , m_textOrientation(TextOrientationVerticalRight)
         , m_isEmoji(false)
         , m_size(0)
         , m_widthVariant(RegularWidth)
@@ -156,12 +153,10 @@ public:
 
     FontPlatformData(const FontPlatformData&);
     FontPlatformData(const FontDescription&, const AtomicString& family);
-    FontPlatformData(float size, bool syntheticBold, bool syntheticOblique, FontOrientation orientation = Horizontal,
-                     TextOrientation textOrientation = TextOrientationVerticalRight, FontWidthVariant widthVariant = RegularWidth)
+    FontPlatformData(float size, bool syntheticBold, bool syntheticOblique, FontOrientation orientation = Horizontal, FontWidthVariant widthVariant = RegularWidth)
         : m_syntheticBold(syntheticBold)
         , m_syntheticOblique(syntheticOblique)
         , m_orientation(orientation)
-        , m_textOrientation(textOrientation)
         , m_isEmoji(false)
         , m_size(size)
         , m_widthVariant(widthVariant)
@@ -186,15 +181,13 @@ public:
 
 #if OS(DARWIN)
     FontPlatformData(GSFontRef, float size, bool isPrinterFont = false, bool syntheticBold = false, bool syntheticOblique = false,
-                     FontOrientation = Horizontal, TextOrientation = TextOrientationVerticalRight, FontWidthVariant = RegularWidth);
+                     FontOrientation = Horizontal, FontWidthVariant = RegularWidth);
 
 #if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
-FontPlatformData(CGFontRef cgFont, float size, bool syntheticBold, bool syntheticOblique, FontOrientation orientation,
-     TextOrientation textOrientation, FontWidthVariant widthVariant)
+FontPlatformData(CGFontRef cgFont, float size, bool syntheticBold, bool syntheticOblique, FontOrientation orientation, FontWidthVariant widthVariant)
 : m_syntheticBold(syntheticBold)
 , m_syntheticOblique(syntheticOblique)
 , m_orientation(orientation)
-, m_textOrientation(textOrientation)
 , m_isEmoji(false)
 , m_size(size)
 , m_widthVariant(widthVariant)
@@ -217,7 +210,7 @@ FontPlatformData(HFONT, CGFontRef, float size, bool syntheticBold, bool syntheti
 FontPlatformData(cairo_font_face_t*, float size, bool bold, bool italic);
 #endif
 
-FontPlatformData(CTFontRef, float size, bool syntheticBold = false, bool syntheticOblique = false, FontOrientation = Horizontal, TextOrientation = TextOrientationVerticalRight, FontWidthVariant = RegularWidth);
+FontPlatformData(CTFontRef, float size, bool syntheticBold = false, bool syntheticOblique = false, FontOrientation = Horizontal, FontWidthVariant = RegularWidth);
 
 ~FontPlatformData();
 
@@ -247,7 +240,6 @@ bool isCompositeFontReference() const { return m_isCompositeFontReference; }
 bool isPrinterFont() const { return m_isPrinterFont; }
 #endif
 FontOrientation orientation() const { return m_orientation; }
-TextOrientation textOrientation() const { return m_textOrientation; }
 FontWidthVariant widthVariant() const { return m_widthVariant; }
 
 void setOrientation(FontOrientation orientation) { m_orientation = orientation; }
@@ -262,7 +254,7 @@ unsigned hash() const
 return m_font ? m_font->hash() : 0;
 #elif OS(DARWIN)
         ASSERT(m_font != 0 || m_cgFont == 0 || m_isEmoji != 0);
-        uintptr_t hashCodes[3] = { (uintptr_t)m_font, m_widthVariant, m_isEmoji << 5 | m_isPrinterFont << 4 | m_textOrientation << 3 | m_orientation << 2 | m_syntheticBold << 1 | m_syntheticOblique };
+        uintptr_t hashCodes[3] = { (uintptr_t)m_font, m_widthVariant, m_isEmoji << 4 | m_isPrinterFont << 3 | m_orientation << 2 | m_syntheticBold << 1 | m_syntheticOblique };
         return StringHasher::hashMemory<sizeof(hashCodes)>(hashCodes);
 #elif USE(CAIRO)
         return PtrHash<cairo_scaled_font_t*>::hash(m_scaledFont);
@@ -283,7 +275,6 @@ return m_font ? m_font->hash() : 0;
             && m_isPrinterFont == other.m_isPrinterFont
 #endif
             && m_orientation == other.m_orientation
-            && m_textOrientation == other.m_textOrientation
             && m_widthVariant == other.m_widthVariant;
     }
 
@@ -320,7 +311,6 @@ public:
     bool m_syntheticBold;
     bool m_syntheticOblique;
     FontOrientation m_orientation;
-    TextOrientation m_textOrientation;
     bool m_isEmoji;
     float m_size;
     FontWidthVariant m_widthVariant;

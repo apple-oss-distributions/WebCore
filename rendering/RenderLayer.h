@@ -418,8 +418,8 @@ public:
 
     void updateTransform();
 
-    void relativePositionOffset(LayoutUnit& relX, LayoutUnit& relY) const { relX += m_relativeOffset.width(); relY += m_relativeOffset.height(); }
-    const LayoutSize& relativePositionOffset() const { return m_relativeOffset; }
+    void offsetForInFlowPosition(LayoutUnit& relX, LayoutUnit& relY) const { relX += m_offsetForInFlowPosition.width(); relY += m_offsetForInFlowPosition.height(); }
+    const LayoutSize& offsetForInFlowPosition() const { return m_offsetForInFlowPosition; }
 
     void clearClipRectsIncludingDescendants(ClipRectsType typeToClear = AllClipRectTypes);
     void clearClipRects(ClipRectsType typeToClear = AllClipRectTypes);
@@ -586,7 +586,7 @@ public:
 
     enum UpdateLayerPositionsAfterScrollFlag {
         NoFlag = 0,
-        HasSeenFixedPositionedAncestor = 1 << 0,
+        HasSeenViewportConstrainedAncestor = 1 << 0,
         HasSeenAncestorWithOverflowClip = 1 << 1
     };
 
@@ -958,7 +958,7 @@ protected:
     LayoutRect m_outlineBox;
 
     // Our current relative position offset.
-    LayoutSize m_relativeOffset;
+    LayoutSize m_offsetForInFlowPosition;
 
     // Our (x,y) coordinates are in our parent layer's coordinate space.
     LayoutPoint m_topLeft;

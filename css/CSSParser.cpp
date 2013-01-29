@@ -144,27 +144,24 @@ namespace WebCore {
 static const unsigned INVALID_NUM_PARSED_PROPERTIES = UINT_MAX;
 static const double MAX_SCALE = 1000000;
 
-static bool equal(const CSSParserString& a, const char* b)
+template <unsigned N>
+static bool equal(const CSSParserString& a, const char (&b)[N])
 {
-    for (int i = 0; i < a.length; ++i) {
-        if (!b[i])
-            return false;
-        if (a.characters[i] != b[i])
-            return false;
-    }
-    return !b[a.length];
+    const int length = N - 1; // Ignore the trailing null character
+    if (a.length != length)
+        return false;
+
+    return WTF::equal(a.characters, reinterpret_cast<const LChar*>(b), length);
 }
 
-static bool equalIgnoringCase(const CSSParserString& a, const char* b)
+template <unsigned N>
+static bool equalIgnoringCase(const CSSParserString& a, const char (&b)[N])
 {
-    for (int i = 0; i < a.length; ++i) {
-        if (!b[i])
-            return false;
-        ASSERT(!isASCIIUpper(b[i]));
-        if (toASCIILower(a.characters[i]) != b[i])
-            return false;
-    }
-    return !b[a.length];
+    const int length = N - 1; // Ignore the trailing null character
+    if (a.length != length)
+        return false;
+
+    return WTF::equalIgnoringCase(b, a.characters, length);
 }
 
 static bool hasPrefix(const char* string, unsigned length, const char* prefix)
@@ -598,8 +595,12 @@ static inline bool isValidKeywordPropertyAndValue(CSSPropertyID propertyId, int 
         if (valueID == CSSValueVisible || valueID == CSSValueNone || valueID == CSSValueAll || valueID == CSSValueAuto || (valueID >= CSSValueVisiblepainted && valueID <= CSSValueStroke))
             return true;
         break;
-    case CSSPropertyPosition: // static | relative | absolute | fixed | inherit
-        if (valueID == CSSValueStatic || valueID == CSSValueRelative || valueID == CSSValueAbsolute || valueID == CSSValueFixed)
+    case CSSPropertyPosition: // static | relative | absolute | fixed | sticky | inherit
+        if (valueID == CSSValueStatic || valueID == CSSValueRelative || valueID == CSSValueAbsolute || valueID == CSSValueFixed
+#if ENABLE(CSS_STICKY_POSITION)
+            || valueID == CSSValueWebkitSticky
+#endif
+            )
             return true;
         break;
     case CSSPropertyResize: // none | both | horizontal | vertical | auto
@@ -2533,8 +2534,8 @@ bool CSSParser::parseValue(CSSPropertyID propId, bool important)
         return parseTextEmphasisStyle(important);
 
     case CSSPropertyWebkitTextOrientation:
-        // FIXME: For now just support upright and vertical-right.
-        if (id == CSSValueVerticalRight || id == CSSValueUpright)
+        // FIXME: For now just support sideways, sideways-right, upright and vertical-right.
+        if (id == CSSValueSideways || id == CSSValueSidewaysRight || id == CSSValueVerticalRight || id == CSSValueUpright)
             validPrimitive = true;
         break;
 

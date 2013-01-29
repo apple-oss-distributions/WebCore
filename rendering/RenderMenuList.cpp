@@ -87,6 +87,11 @@ RenderMenuList::~RenderMenuList()
 {
 }
 
+bool RenderMenuList::canBeReplacedWithInlineRunIn() const
+{
+    return false;
+}
+
 void RenderMenuList::createInnerBlock()
 {
     if (m_innerBlock) {

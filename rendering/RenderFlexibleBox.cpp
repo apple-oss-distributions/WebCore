@@ -170,7 +170,7 @@ void RenderFlexibleBox::computePreferredLogicalWidths()
         m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth = 0;
 
         for (RenderBox* child = firstChildBox(); child; child = child->nextSiblingBox()) {
-            if (child->isPositioned())
+            if (child->isOutOfFlowPositioned())
                 continue;
 
             LayoutUnit margin = marginLogicalWidthForChild(child, style());
@@ -663,7 +663,7 @@ void RenderFlexibleBox::computeMainAxisPreferredSizes(bool relayoutChildren, Fle
     for (RenderBox* child = firstChildBox(); child; child = child->nextSiblingBox()) {
         flexOrderValues.add(child->style()->flexOrder());
 
-        if (child->isPositioned())
+        if (child->isOutOfFlowPositioned())
             continue;
 
         child->clearOverrideSize();
@@ -728,7 +728,7 @@ bool RenderFlexibleBox::computeNextFlexLine(FlexOrderIterator& iterator, Ordered
     LayoutUnit lineBreak = lineBreakLength();
 
     for (RenderBox* child = iterator.currentChild(); child; child = iterator.next()) {
-        if (child->isPositioned()) {
+        if (child->isOutOfFlowPositioned()) {
             orderedChildren.append(child);
             continue;
         }
@@ -773,7 +773,7 @@ bool RenderFlexibleBox::resolveFlexibleLengths(FlexSign flexSign, const OrderedF
     WTF::Vector<Violation> maxViolations;
     for (size_t i = 0; i < children.size(); ++i) {
         RenderBox* child = children[i];
-        if (child->isPositioned()) {
+        if (child->isOutOfFlowPositioned()) {
             childSizes.append(0);
             continue;
         }
@@ -846,7 +846,7 @@ void RenderFlexibleBox::setLogicalOverrideSize(RenderBox* child, LayoutUnit chil
 
 void RenderFlexibleBox::prepareChildForPositionedLayout(RenderBox* child, LayoutUnit mainAxisOffset, LayoutUnit crossAxisOffset)
 {
-    ASSERT(child->isPositioned());
+    ASSERT(child->isOutOfFlowPositioned());
     child->containingBlock()->insertPositionedObject(child);
     RenderLayer* childLayer = child->layer();
     LayoutUnit inlinePosition = isColumnFlow() ? crossAxisOffset : mainAxisOffset;
@@ -892,7 +892,7 @@ void RenderFlexibleBox::layoutAndPlaceChildren(LayoutUnit& crossAxisOffset, cons
     bool shouldFlipMainAxis = !isColumnFlow() && !isLeftToRightFlow();
     for (size_t i = 0; i < children.size(); ++i) {
         RenderBox* child = children[i];
-        if (child->isPositioned()) {
+        if (child->isOutOfFlowPositioned()) {
             prepareChildForPositionedLayout(child, mainAxisOffset, crossAxisOffset);
             mainAxisOffset += packingSpaceBetweenChildren(availableFreeSpace, style()->flexPack(), childSizes.size());
             continue;
@@ -955,7 +955,7 @@ void RenderFlexibleBox::layoutColumnReverse(const OrderedFlexItemList& children,
 
     for (size_t i = 0; i < children.size(); ++i) {
         RenderBox* child = children[i];
-        if (child->isPositioned()) {
+        if (child->isOutOfFlowPositioned()) {
             child->layer()->setStaticBlockPosition(mainAxisOffset);
             mainAxisOffset -= packingSpaceBetweenChildren(availableFreeSpace, style()->flexPack(), childSizes.size());
             continue;

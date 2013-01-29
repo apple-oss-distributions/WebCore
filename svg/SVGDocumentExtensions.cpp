@@ -169,14 +169,20 @@ void SVGDocumentExtensions::removeAnimationElementFromTarget(SVGSMILElement* ani
 void SVGDocumentExtensions::removeAllAnimationElementsFromTarget(SVGElement* targetElement)
 {
     ASSERT(targetElement);
-    HashSet<SVGSMILElement*>* animationElementsForTarget = m_animatedElements.take(targetElement);
-    if (!animationElementsForTarget)
+    HashMap<SVGElement*, HashSet<SVGSMILElement*>* >::iterator it = m_animatedElements.find(targetElement);
+    if (it == m_animatedElements.end())
         return;
-    HashSet<SVGSMILElement*>::iterator it = animationElementsForTarget->begin();
+
+    HashSet<SVGSMILElement*>* animationElementsForTarget = it->second;
+    Vector<SVGSMILElement*> toBeReset;
+
     HashSet<SVGSMILElement*>::iterator end = animationElementsForTarget->end();
-    for (; it != end; ++it)
-        (*it)->resetTargetElement();
-    delete animationElementsForTarget;
+    for (HashSet<SVGSMILElement*>::iterator it = animationElementsForTarget->begin(); it != end; ++it)
+        toBeReset.append(*it);
+
+    Vector<SVGSMILElement*>::iterator vectorEnd = toBeReset.end();
+    for (Vector<SVGSMILElement*>::iterator vectorIt = toBeReset.begin(); vectorIt != vectorEnd; ++vectorIt)
+        (*vectorIt)->resetTargetElement();
 }
 
 // FIXME: Callers should probably use ScriptController::eventHandlerLineNumber()
@@ -410,12 +416,17 @@ void SVGDocumentExtensions::removeAllElementReferencesForTarget(SVGElement* refe
     for (HashSet<SVGElement*>::iterator setIt = referencingElements->begin(); setIt != setEnd; ++setIt)
         toBeNotified.append(*setIt);
 
-    m_elementDependencies.remove(it);
-
     // Force rebuilding the referencingElement so it knows about this change.
     Vector<SVGElement*>::iterator vectorEnd = toBeNotified.end();
-    for (Vector<SVGElement*>::iterator vectorIt = toBeNotified.begin(); vectorIt != vectorEnd; ++vectorIt)
-        (*vectorIt)->svgAttributeChanged(XLinkNames::hrefAttr);
+    for (Vector<SVGElement*>::iterator vectorIt = toBeNotified.begin(); vectorIt != vectorEnd; ++vectorIt) {
+        // Before rebuilding referencingElement ensure it was not removed from under us.
+        if (HashSet<SVGElement*>* referencingElements = setOfElementsReferencingTarget(referencedElement)) {
+            if (referencingElements->contains(*vectorIt))
+                (*vectorIt)->svgAttributeChanged(XLinkNames::hrefAttr);
+        }
+    }
+
+    m_elementDependencies.remove(referencedElement);
 }
 
 #if ENABLE(SVG_FONTS)

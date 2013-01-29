@@ -34,12 +34,10 @@ namespace WebCore {
 enum TextSpacingCTFeatureSelector { TextSpacingProportional, TextSpacingFullWidth, TextSpacingHalfWidth, TextSpacingThirdWidth, TextSpacingQuarterWidth };
 
 
-FontPlatformData::FontPlatformData(GSFontRef gsFont, float size, bool isPrinterFont, bool syntheticBold, bool syntheticOblique, FontOrientation orientation,
-                                   TextOrientation textOrientation, FontWidthVariant widthVariant)
+FontPlatformData::FontPlatformData(GSFontRef gsFont, float size, bool isPrinterFont, bool syntheticBold, bool syntheticOblique, FontOrientation orientation, FontWidthVariant widthVariant)
     : m_syntheticBold(syntheticBold)
     , m_syntheticOblique(syntheticOblique)
     , m_orientation(orientation)
-    , m_textOrientation(textOrientation)
     , m_isEmoji(false)
     , m_size(size)
     , m_widthVariant(widthVariant)
@@ -54,11 +52,10 @@ FontPlatformData::FontPlatformData(GSFontRef gsFont, float size, bool isPrinterF
     CFRetain(gsFont);
 }
 
-FontPlatformData::FontPlatformData(CTFontRef ctFont, float size, bool syntheticBold, bool syntheticOblique, FontOrientation orientation, TextOrientation textOrientation, FontWidthVariant widthVariant)
+FontPlatformData::FontPlatformData(CTFontRef ctFont, float size, bool syntheticBold, bool syntheticOblique, FontOrientation orientation, FontWidthVariant widthVariant)
     : m_syntheticBold(syntheticBold)
     , m_syntheticOblique(syntheticOblique)
     , m_orientation(orientation)
-    , m_textOrientation(textOrientation)
     , m_isEmoji(false)
     , m_size(size)
     , m_widthVariant(widthVariant)
