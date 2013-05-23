@@ -75,7 +75,12 @@ void SVGViewSpec::setViewTargetString(const String& viewTargetString)
 
 SVGElement* SVGViewSpec::viewTarget() const
 {
-    return static_cast<SVGElement*>(m_contextElement->treeScope()->getElementById(m_viewTargetString));
+    if (!m_contextElement)
+        return 0;
+    Element* element = m_contextElement->treeScope()->getElementById(m_viewTargetString);
+    if (!element || !element->isSVGElement())
+        return 0;
+    return static_cast<SVGElement*>(element);
 }
 
 static const UChar svgViewSpec[] = {'s', 'v', 'g', 'V', 'i', 'e', 'w'};
