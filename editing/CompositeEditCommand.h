@@ -104,12 +104,14 @@ protected:
     void deleteSelection(bool smartDelete = false, bool mergeBlocksAfterDelete = true, bool replace = false, bool expandForSpecialElements = true, bool sanitizeMarkup = true);
     void deleteSelection(const VisibleSelection&, bool smartDelete = false, bool mergeBlocksAfterDelete = true, bool replace = false, bool expandForSpecialElements = true, bool sanitizeMarkup = true);
     virtual void deleteTextFromNode(PassRefPtr<Text>, unsigned offset, unsigned count);
+#if PLATFORM(IOS)
     void inputText(const String&, bool selectInsertedText = false);
+#endif
     bool isRemovableBlock(const Node*);
     void insertNodeAfter(PassRefPtr<Node>, PassRefPtr<Node> refChild);
     void insertNodeAt(PassRefPtr<Node>, const Position&);
     void insertNodeAtTabSpanPosition(PassRefPtr<Node>, const Position&);
-    void insertNodeBefore(PassRefPtr<Node>, PassRefPtr<Node> refChild);
+    void insertNodeBefore(PassRefPtr<Node>, PassRefPtr<Node> refChild, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable);
     void insertParagraphSeparator(bool useDefaultParagraphElement = false, bool pasteBlockqutoeIntoUnquotedArea = false);
     void insertLineBreak();
     void insertTextIntoNode(PassRefPtr<Text>, unsigned offset, const String& text);
@@ -123,10 +125,11 @@ protected:
     void removeCSSProperty(PassRefPtr<StyledElement>, CSSPropertyID);
     void removeNodeAttribute(PassRefPtr<Element>, const QualifiedName& attribute);
     void removeChildrenInRange(PassRefPtr<Node>, unsigned from, unsigned to);
-    virtual void removeNode(PassRefPtr<Node>);
+    virtual void removeNode(PassRefPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable);
     HTMLElement* replaceElementWithSpanPreservingChildrenAndAttributes(PassRefPtr<HTMLElement>);
-    void removeNodePreservingChildren(PassRefPtr<Node>);
+    void removeNodePreservingChildren(PassRefPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable);
     void removeNodeAndPruneAncestors(PassRefPtr<Node>);
+    void moveRemainingSiblingsToNewParent(Node*, Node* pastLastNodeToMove, PassRefPtr<Element> prpNewParent);
     void updatePositionForNodeRemovalPreservingChildren(Position&, Node*);
     void prune(PassRefPtr<Node>);
     void replaceTextInNode(PassRefPtr<Text>, unsigned offset, unsigned count, const String& replacementText);

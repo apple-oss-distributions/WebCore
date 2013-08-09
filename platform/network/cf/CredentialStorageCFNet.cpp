@@ -39,17 +39,20 @@
 #include <WebKitSystemInterface/WebKitSystemInterface.h>
 #endif
 
+#if PLATFORM(IOS)
 #include <CFNetwork/CFURLCredentialStorage.h>
+#endif
 
 namespace WebCore {
 
 Credential CredentialStorage::getFromPersistentStorage(const ProtectionSpace& protectionSpace)
 {
-    RetainPtr<CFURLProtectionSpaceRef> protectionSpaceCF(AdoptCF, createCF(protectionSpace));
-    RetainPtr<CFURLCredentialRef> credentialCF(AdoptCF, wkCopyCredentialFromCFPersistentStorage(protectionSpaceCF.get()));
+    RetainPtr<CFURLProtectionSpaceRef> protectionSpaceCF = adoptCF(createCF(protectionSpace));
+    RetainPtr<CFURLCredentialRef> credentialCF = adoptCF(wkCopyCredentialFromCFPersistentStorage(protectionSpaceCF.get()));
     return core(credentialCF.get());
 }
 
+#if PLATFORM(IOS)
 void CredentialStorage::saveToPersistentStorage(const ProtectionSpace& protectionSpace, const Credential& credential)
 {
     RetainPtr<CFURLCredentialStorageRef> storageCF(AdoptCF, CFURLCredentialStorageCreate(0));
@@ -64,6 +67,7 @@ void CredentialStorage::saveToPersistentStorage(const ProtectionSpace& protectio
         CFURLCredentialStorageSetDefaultCredentialForProtectionSpace(storageCF.get(), credentialCF.get(), protectionSpaceCF.get());
     }
 }
+#endif
 
 } // namespace WebCore
 

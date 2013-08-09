@@ -31,10 +31,10 @@
 #define HistoryController_h
 
 #include "FrameLoaderTypes.h"
-#include "PlatformString.h"
 #include "SerializedScriptValue.h"
 #include <wtf/Noncopyable.h>
 #include <wtf/RefPtr.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
@@ -48,10 +48,11 @@ class HistoryController {
 public:
     enum HistoryUpdateType { UpdateAll, UpdateAllExceptBackForwardList };
 
-    HistoryController(Frame*);
+    explicit HistoryController(Frame*);
     ~HistoryController();
 
     void saveScrollPositionAndViewStateToItem(HistoryItem*);
+    void clearScrollPositionAndViewState();
     void restoreScrollPositionAndViewState();
 
     void updateBackForwardListForFragmentScroll();
@@ -85,6 +86,10 @@ public:
     void replaceState(PassRefPtr<SerializedScriptValue>, const String& title, const String& url);
 
     void setDefersLoading(bool);
+
+#if PLATFORM(IOS)
+    void replaceCurrentItem(HistoryItem*);
+#endif
 
 private:
     friend class Page;

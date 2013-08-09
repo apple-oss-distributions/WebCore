@@ -27,9 +27,13 @@
 #include "config.h"
 #include "FloatSize.h"
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM) || (PLATFORM(QT) && USE(QTKIT))
+#if USE(CG)
 
+#if !PLATFORM(IOS)
+#include <ApplicationServices/ApplicationServices.h>
+#else
 #include <CoreGraphics/CoreGraphics.h>
+#endif
 
 namespace WebCore {
 

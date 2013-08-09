@@ -37,17 +37,14 @@
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/StringHash.h>
 
+#if PLATFORM(IOS)
 #include <CFNetwork/CFNetwork.h>
+#endif
 
 #if PLATFORM(WIN)
 #include "LoaderRunLoopCF.h"
 #include <CFNetwork/CFNetwork.h>
 #endif
-
-#if defined(BUILDING_ON_LEOPARD)
-#include <SystemConfiguration/SystemConfiguration.h>
-#endif
-
 
 namespace WebCore {
 
@@ -58,19 +55,15 @@ bool DNSResolveQueue::platformProxyIsEnabledInSystemPreferences()
     // as it doesn't necessarily look up the actual external IP. Also, if DNS returns a fake internal address,
     // local caches may keep it even after re-connecting to another network.
 
-#if !defined(BUILDING_ON_LEOPARD)
-    RetainPtr<CFDictionaryRef> proxySettings(AdoptCF, CFNetworkCopySystemProxySettings());
-#else
-    RetainPtr<CFDictionaryRef> proxySettings(AdoptCF, SCDynamicStoreCopyProxies(0));
-#endif
+    RetainPtr<CFDictionaryRef> proxySettings = adoptCF(CFNetworkCopySystemProxySettings());
     if (!proxySettings)
         return false;
 
-    static CFURLRef httpCFURL = KURL(ParsedURLString, "http://example.com/").createCFURL();
-    static CFURLRef httpsCFURL = KURL(ParsedURLString, "https://example.com/").createCFURL();
+    RetainPtr<CFURLRef> httpCFURL = KURL(ParsedURLString, "http://example.com/").createCFURL();
+    RetainPtr<CFURLRef> httpsCFURL = KURL(ParsedURLString, "https://example.com/").createCFURL();
 
-    RetainPtr<CFArrayRef> httpProxyArray(AdoptCF, CFNetworkCopyProxiesForURL(httpCFURL, proxySettings.get()));
-    RetainPtr<CFArrayRef> httpsProxyArray(AdoptCF, CFNetworkCopyProxiesForURL(httpsCFURL, proxySettings.get()));
+    RetainPtr<CFArrayRef> httpProxyArray = adoptCF(CFNetworkCopyProxiesForURL(httpCFURL.get(), proxySettings.get()));
+    RetainPtr<CFArrayRef> httpsProxyArray = adoptCF(CFNetworkCopyProxiesForURL(httpsCFURL.get(), proxySettings.get()));
 
     CFIndex httpProxyCount = CFArrayGetCount(httpProxyArray.get());
     CFIndex httpsProxyCount = CFArrayGetCount(httpsProxyArray.get());
@@ -90,14 +83,18 @@ static void clientCallback(CFHostRef theHost, CFHostInfoType, const CFStreamErro
 
 void DNSResolveQueue::platformResolve(const String& hostname)
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
 
-    RetainPtr<CFStringRef> hostnameCF(AdoptCF, hostname.createCFString());
-    RetainPtr<CFHostRef> host(AdoptCF, CFHostCreateWithName(0, hostnameCF.get()));
+    RetainPtr<CFHostRef> host = adoptCF(CFHostCreateWithName(0, hostname.createCFString().get()));
     if (!host) {
         decrementRequestCount();
         return;
     }
+
     CFHostClientContext context = { 0, 0, 0, 0, 0 };
     CFHostRef leakedHost = host.leakRef(); // The host will be released from clientCallback().
     Boolean result = CFHostSetClient(leakedHost, clientCallback, &context);
@@ -113,7 +110,11 @@ void DNSResolveQueue::platformResolve(const String& hostname)
 
 void prefetchDNS(const String& hostname)
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
     if (hostname.isEmpty())
         return;
     DNSResolveQueue::shared().add(hostname);

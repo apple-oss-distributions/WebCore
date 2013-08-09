@@ -25,3 +25,26 @@
 
 #include "config.h"
 
+#if !PLATFORM(IOS)
+#if ENABLE(TOUCH_EVENTS)
+
+#include "JSTouchList.h"
+
+#include "TouchList.h"
+
+using namespace JSC;
+
+namespace WebCore {
+
+JSValue toJSNewlyCreated(ExecState* exec, JSDOMGlobalObject* globalObject, TouchList* touchList)
+{
+    if (!touchList)
+        return jsNull();
+
+    return CREATE_DOM_WRAPPER(exec, globalObject, TouchList, touchList);
+}
+
+} // namespace WebCore
+
+#endif // ENABLE(TOUCH_EVENTS)
+#endif // !PLATFORM(IOS)

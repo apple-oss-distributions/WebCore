@@ -13,7 +13,7 @@
 extern "C" {
 #endif    
 
-void _WKViewSetWindow (WKViewRef view, WKWindowRef window);
+void _WKViewSetWindow (WKViewRef view, WAKWindow *window);
 void _WKViewSetSuperview (WKViewRef view, WKViewRef superview);
 void _WKViewWillRemoveSubview(WKViewRef view, WKViewRef subview);
 WKViewRef _WKViewBaseView (WKViewRef view);

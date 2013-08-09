@@ -33,9 +33,9 @@
 #include <wtf/RefPtr.h>
 
 #ifdef __OBJC__
-@class CoreMotionManager;
+@class WebCoreMotionManager;
 #else
-class CoreMotionManager;
+class WebCoreMotionManager;
 #endif
 
 namespace WebCore {
@@ -51,13 +51,13 @@ public:
     virtual void setController(DeviceMotionController*) OVERRIDE;
     virtual void startUpdating() OVERRIDE;
     virtual void stopUpdating() OVERRIDE;
-    virtual DeviceMotionData* currentDeviceMotion() const OVERRIDE;
+    virtual DeviceMotionData* lastMotion() const OVERRIDE;
     virtual void deviceMotionControllerDestroyed() OVERRIDE;
     
     void motionChanged(double, double, double, double, double, double, double, double, double);
 
 private:
-    CoreMotionManager* m_motionManager;
+    WebCoreMotionManager* m_motionManager;
     DeviceMotionController* m_controller;
     RefPtr<DeviceMotionData> m_currentDeviceMotionData;
     bool m_updating;

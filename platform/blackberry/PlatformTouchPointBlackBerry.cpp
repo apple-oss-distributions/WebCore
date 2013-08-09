@@ -21,17 +21,22 @@
 #include "config.h"
 #include "PlatformTouchPoint.h"
 
+#include <BlackBerryPlatformAssert.h>
 #include <BlackBerryPlatformTouchEvent.h>
 
+#if ENABLE(TOUCH_EVENTS)
 
 namespace WebCore {
 
 PlatformTouchPoint::PlatformTouchPoint(const BlackBerry::Platform::TouchPoint& point)
-    : m_id(point.m_id)
-    , m_screenPos(point.m_screenPos)
-    , m_pos(point.m_pos)
+    : m_id(point.id())
+    , m_screenPos(point.screenPosition())
+    // FIXME: We should be calculating a new viewport position from the current scroll
+    // position and the documentContentPosition, in case we scrolled since the platform
+    // event was created.
+    , m_pos(point.documentViewportPosition())
 {
-    switch (point.m_state) {
+    switch (point.state()) {
     case BlackBerry::Platform::TouchPoint::TouchReleased:
         m_state = TouchReleased;
         break;
@@ -44,8 +49,13 @@ PlatformTouchPoint::PlatformTouchPoint(const BlackBerry::Platform::TouchPoint& p
     case BlackBerry::Platform::TouchPoint::TouchStationary:
         m_state = TouchStationary;
         break;
+    default:
+        m_state = TouchStationary; // make sure m_state is initialized
+        BLACKBERRY_ASSERT(false);
+        break;
     }
 }
 
 } // namespace WebCore
 
+#endif // ENABLE(TOUCH_EVENTS)

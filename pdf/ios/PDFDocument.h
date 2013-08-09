@@ -25,6 +25,7 @@
 #ifndef PDFDocument_h
 #define PDFDocument_h
 
+#if PLATFORM(IOS)
 
 #include "PlaceholderDocument.h"
 
@@ -44,5 +45,6 @@ private:
     
 }
 
+#endif // PLATFORM(IOS)
 
 #endif // PDFDocument_h

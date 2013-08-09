@@ -31,8 +31,10 @@
 #ifndef ScrollAnimator_h
 #define ScrollAnimator_h
 
+#include "FloatSize.h"
 #include "PlatformWheelEvent.h"
 #include "ScrollTypes.h"
+#include <wtf/FastAllocBase.h>
 #include <wtf/Forward.h>
 
 namespace WebCore {
@@ -41,9 +43,12 @@ class FloatPoint;
 class ScrollableArea;
 class Scrollbar;
 
+#if ENABLE(TOUCH_EVENTS) && PLATFORM(IOS)
 class PlatformTouchEvent;
+#endif
 
 class ScrollAnimator {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     static PassOwnPtr<ScrollAnimator> create(ScrollableArea*);
 
@@ -62,9 +67,11 @@ public:
     virtual void setIsActive() { }
 
     virtual bool handleWheelEvent(const PlatformWheelEvent&);
+#if ENABLE(TOUCH_EVENTS) && PLATFORM(IOS)
     virtual bool handleTouchEvent(const PlatformTouchEvent&);
+#endif
 
-#if PLATFORM(MAC) || (PLATFORM(CHROMIUM) && OS(DARWIN))
+#if PLATFORM(MAC)
     virtual void handleWheelEventPhase(PlatformWheelEventPhase) { }
 #endif
 
@@ -86,6 +93,8 @@ public:
     virtual void contentAreaDidShow() const { }
     virtual void contentAreaDidHide() const { }
 
+    virtual void finishCurrentScrollAnimations() { }
+
     virtual void didAddVerticalScrollbar(Scrollbar*) { }
     virtual void willRemoveVerticalScrollbar(Scrollbar*) { }
     virtual void didAddHorizontalScrollbar(Scrollbar*) { }
@@ -93,14 +102,14 @@ public:
 
     virtual bool shouldScrollbarParticipateInHitTesting(Scrollbar*) { return true; }
 
-    virtual void notifyContentAreaScrolled() { }
+    virtual void notifyContentAreaScrolled(const FloatSize& delta) { UNUSED_PARAM(delta); }
 
     virtual bool isRubberBandInProgress() const { return false; }
 
 protected:
-    ScrollAnimator(ScrollableArea*);
+    explicit ScrollAnimator(ScrollableArea*);
 
-    virtual void notifyPositionChanged();
+    virtual void notifyPositionChanged(const FloatSize& delta);
 
     ScrollableArea* m_scrollableArea;
     float m_currentPosX; // We avoid using a FloatPoint in order to reduce

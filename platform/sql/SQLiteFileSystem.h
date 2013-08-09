@@ -31,8 +31,8 @@
 #ifndef SQLiteFileSystem_h
 #define SQLiteFileSystem_h
 
-#include "PlatformString.h"
 #include <wtf/Threading.h>
+#include <wtf/text/WTFString.h>
 
 struct sqlite3;
 
@@ -44,9 +44,6 @@ class SQLiteDatabase;
 // by the WebKit database code.
 class SQLiteFileSystem {
 public:
-    // Registers a user-defined SQLite VFS.
-    static void registerSQLiteVFS();
-
     // Opens a database file.
     //
     // fileName - The name of the database file.
@@ -102,10 +99,12 @@ public:
     // fileName - The file name.
     static bool deleteDatabaseFile(const String& fileName);
 
+#if PLATFORM(IOS)
     // Truncates a database file.  Used when MobileSafariSettings deletes a database file,
     // since deleting the file nukes the POSIX file locks which would potentially cause Safari
     // to corrupt the new db if it's running in the background.
     static bool truncateDatabaseFile(sqlite3* database);
+#endif
     
     // Returns the size of the database file.
     //

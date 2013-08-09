@@ -257,19 +257,20 @@ inline void FELighting::platformApplyGeneric(LightingData& data, LightSource::Pa
         // Fill the parameter array
         int job = parallelJobs.numberOfJobs();
         if (job > 1) {
+            // Split the job into "yStep"-sized jobs but there a few jobs that need to be slightly larger since
+            // yStep * jobs < total size. These extras are handled by the remainder "jobsWithExtra".
+            const int yStep = (data.heightDecreasedByOne - 1) / job;
+            const int jobsWithExtra = (data.heightDecreasedByOne - 1) % job;
+
             int yStart = 1;
-            int yStep = (data.heightDecreasedByOne - 1) / job;
             for (--job; job >= 0; --job) {
                 PlatformApplyGenericParameters& params = parallelJobs.parameter(job);
                 params.filter = this;
                 params.data = data;
                 params.paintingData = paintingData;
                 params.yStart = yStart;
-                if (job > 0) {
-                    params.yEnd = yStart + yStep;
-                    yStart += yStep;
-                } else
-                    params.yEnd = data.heightDecreasedByOne;
+                yStart += job < jobsWithExtra ? yStep + 1 : yStep;
+                params.yEnd = yStart;
             }
             parallelJobs.execute();
             return;
@@ -283,7 +284,11 @@ inline void FELighting::platformApplyGeneric(LightingData& data, LightSource::Pa
 inline void FELighting::platformApply(LightingData& data, LightSource::PaintingData& paintingData)
 {
     // The selection here eventually should happen dynamically on some platforms.
+#if CPU(ARM_NEON) && CPU(ARM_TRADITIONAL) && COMPILER(GCC)
+    platformApplyNeon(data, paintingData);
+#else
     platformApplyGeneric(data, paintingData);
+#endif
 }
 
 bool FELighting::drawLighting(Uint8ClampedArray* pixels, int width, int height)
@@ -384,14 +389,14 @@ void FELighting::platformApplySoftware()
 {
     FilterEffect* in = inputEffect(0);
 
-    Uint8ClampedArray* srcPixelArray = createUnmultipliedImageResult();
+    Uint8ClampedArray* srcPixelArray = createPremultipliedImageResult();
     if (!srcPixelArray)
         return;
 
     setIsAlphaImage(false);
 
     IntRect effectDrawingRect = requestedRegionOfInputImageData(in->absolutePaintRect());
-    in->copyUnmultipliedImage(srcPixelArray, effectDrawingRect);
+    in->copyPremultipliedImage(srcPixelArray, effectDrawingRect);
 
     // FIXME: support kernelUnitLengths other than (1,1). The issue here is that the W3
     // standard has no test case for them, and other browsers (like Firefox) has strange

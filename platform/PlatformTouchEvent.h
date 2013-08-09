@@ -24,15 +24,12 @@
 #include "PlatformTouchPoint.h"
 #include <wtf/Vector.h>
 
+#if ENABLE(TOUCH_EVENTS)
 
 #if PLATFORM(QT)
 QT_BEGIN_NAMESPACE
 class QTouchEvent;
 QT_END_NAMESPACE
-#endif
-
-#if PLATFORM(EFL)
-typedef struct _Eina_List Eina_List;
 #endif
 
 #if PLATFORM(BLACKBERRY)
@@ -59,10 +56,8 @@ public:
     {
     }
 
-#if PLATFORM(EFL)
-    PlatformTouchEvent(Eina_List*, const IntPoint, PlatformEvent::Type, int metaState);
-#elif PLATFORM(BLACKBERRY)
-    PlatformTouchEvent(BlackBerry::Platform::TouchEvent*);
+#if PLATFORM(BLACKBERRY)
+    explicit PlatformTouchEvent(BlackBerry::Platform::TouchEvent*);
 #endif
 
     const Vector<PlatformTouchPoint>& touchPoints() const { return m_touchPoints; }
@@ -86,5 +81,6 @@ protected:
 
 }
 
+#endif // ENABLE(TOUCH_EVENTS)
 
 #endif // PlatformTouchEvent_h

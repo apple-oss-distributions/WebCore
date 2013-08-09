@@ -26,6 +26,7 @@
 #ifndef WebSafeGCActivityCallback_h
 #define WebSafeGCActivityCallback_h
 
+#if PLATFORM(IOS)
 
 #include <JavaScriptCore/GCActivityCallback.h>
 
@@ -34,8 +35,8 @@ namespace WebCore {
 class WebSafeGCActivityCallback : public JSC::DefaultGCActivityCallback {
 public:
     static PassOwnPtr<WebSafeGCActivityCallback> create(JSC::Heap*);
-    ~WebSafeGCActivityCallback() { }
-    void synchronize();
+    virtual ~WebSafeGCActivityCallback() { }
+    virtual void synchronize();
 
 private:
     WebSafeGCActivityCallback(JSC::Heap*);
@@ -48,5 +49,6 @@ inline PassOwnPtr<WebSafeGCActivityCallback> WebSafeGCActivityCallback::create(J
 
 }
 
+#endif // PLATFORM(IOS)
 
 #endif // WebSafeGCActivityCallback_h

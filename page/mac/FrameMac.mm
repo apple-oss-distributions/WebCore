@@ -28,67 +28,51 @@
 #import "config.h"
 #import "Frame.h"
 
-#import "BlockExceptions.h"
-#import "ColorMac.h"
-#import "Cursor.h"
-#import "DOMInternal.h"
-#import "Event.h"
+#import "Document.h"
 #import "FrameLoaderClient.h"
+#import "FrameSelection.h"
+#import "FrameSnapshottingMac.h"
 #import "FrameView.h"
-#import "GraphicsContext.h"
-#import "HTMLNames.h"
-#import "HTMLTableCellElement.h"
-#import "HitTestRequest.h"
-#import "HitTestResult.h"
-#import "KeyboardEvent.h"
-#import "Logging.h"
-#import "MouseEventWithHitTestResults.h"
-#import "Page.h"
-#import "PlatformKeyboardEvent.h"
-#import "PlatformWheelEvent.h"
-#import "RegularExpression.h"
-#import "RenderTableCell.h"
-#import "RenderView.h"
-#import "Scrollbar.h"
-#import "SimpleFontData.h"
-#import "visible_units.h"
-#import <wtf/StdLibExtras.h>
+#import "RenderObject.h"
 
+#if PLATFORM(IOS)
 #import "EventListener.h"
 #import <wtf/GetPtr.h>
-#import <wtf/UnusedParam.h>
-
-#ifndef NSView
-#define NSView WAKView
-#endif
-#import "WAKView.h"
- 
-@interface NSView (WebCoreHTMLDocumentView)
-- (void)drawSingleRect:(NSRect)rect;
-@end
- 
-using namespace std;
+#endif // PLATFORM(IOS)
 
 namespace WebCore {
 
-using namespace HTMLNames;
+#if !PLATFORM(IOS)
+DragImageRef Frame::nodeImage(Node* node)
+{
+    m_doc->updateLayout(); // forces style recalc
 
+    RenderObject* renderer = node->renderer();
+    if (!renderer)
+        return nil;
+    LayoutRect topLevelRect;
+    NSRect paintingRect = pixelSnappedIntRect(renderer->paintingRootRect(topLevelRect));
+
+    m_view->setNodeToDraw(node); // invoke special sub-tree drawing mode
+    NSImage* result = imageFromRect(this, paintingRect);
+    m_view->setNodeToDraw(0);
+
+    return result;
+}
+#endif // !PLATFORM(IOS)
 
 DragImageRef Frame::dragImageForSelection()
 {
+#if !PLATFORM(IOS)
+    if (!selection()->isRange())
+        return nil;
+    return selectionImage(this);
+#else
     return nil;
+#endif
 }
 
-#define NSFloatValue(aFloat) [NSNumber numberWithFloat:aFloat]
-
-NSDictionary* Frame::dictionaryForViewportArguments(const ViewportArguments& arguments) const
-{
-    return [NSDictionary dictionaryWithObjects:[NSArray arrayWithObjects:NSFloatValue(arguments.initialScale), NSFloatValue(arguments.minimumScale), 
-                                                NSFloatValue(arguments.maximumScale), NSFloatValue(arguments.userScalable), 
-                                                NSFloatValue(arguments.width), NSFloatValue(arguments.height), nil] 
-                                       forKeys:[NSArray arrayWithObjects:@"initial-scale", @"minimum-scale", @"maximum-scale", @"user-scalable", @"width", @"height", nil]];
-}
-
+#if PLATFORM(IOS)
 const ViewportArguments& Frame::viewportArguments() const
 {
     return m_viewportArguments;
@@ -98,45 +82,6 @@ void Frame::setViewportArguments(const ViewportArguments& arguments)
 {
     m_viewportArguments = arguments;
 }
-
-static int sAllLayouts = 0;
-
-void Frame::didParse(double duration)
-{
-    m_parseCount++;
-    m_parseDuration += duration;
-}
-
-void Frame::didLayout(bool /*firstLayout*/, double duration)
-{
-    sAllLayouts++;
-    m_layoutCount++;
-    m_layoutDuration += duration;
-}
-
-void Frame::didForcedLayout()
-{
-    m_forcedLayoutCount++;
-}
-
-void Frame::getPPTStats(unsigned& parseCount, unsigned& layoutCount, unsigned& forcedLayoutCount, CFTimeInterval& parseDuration, CFTimeInterval& layoutDuration)
-{
-    parseCount = m_parseCount;
-    layoutCount = m_layoutCount;
-    forcedLayoutCount = m_forcedLayoutCount;
-    parseDuration = m_parseDuration;
-    layoutDuration = m_layoutDuration;
-
-//fprintf(stderr, "All Layouts: %d\n", sAllLayouts);    
-}
-
-void Frame::clearPPTStats()
-{
-    m_parseCount = 0;
-    m_layoutCount = 0;
-    m_forcedLayoutCount = 0;
-    m_parseDuration = 0.0;
-    m_layoutDuration = 0.0;
-}
+#endif
 
 } // namespace WebCore

@@ -33,10 +33,15 @@
 #include "FrameView.h"
 #include "Node.h"
 #include "Page.h"
-#include "StyleResolver.h"
+#include "Settings.h"
+#include "VisitedLinkState.h"
 #include <wtf/CurrentTime.h>
 #include <wtf/RefCountedLeakCounter.h>
 #include <wtf/StdLibExtras.h>
+
+#if PLATFORM(IOS)
+#include "FrameSelection.h"
+#endif
 
 using namespace JSC;
 
@@ -51,9 +56,12 @@ PassRefPtr<CachedPage> CachedPage::create(Page* page)
 
 CachedPage::CachedPage(Page* page)
     : m_timeStamp(currentTime())
+    , m_expirationTime(m_timeStamp + page->settings()->backForwardCacheExpirationInterval())
     , m_cachedMainFrame(CachedFrame::create(page->mainFrame()))
     , m_needStyleRecalcForVisitedLinks(false)
     , m_needsFullStyleRecalc(false)
+    , m_needsCaptionPreferencesChanged(false)
+    , m_needsDeviceScaleChanged(false)
 {
 #ifndef NDEBUG
     cachedPageCounter.increment();
@@ -74,31 +82,46 @@ void CachedPage::restore(Page* page)
 {
     ASSERT(m_cachedMainFrame);
     ASSERT(page && page->mainFrame() && page->mainFrame() == m_cachedMainFrame->view()->frame());
-    ASSERT(!page->frameCount());
+    ASSERT(!page->subframeCount());
 
     m_cachedMainFrame->open();
     
     // Restore the focus appearance for the focused element.
     // FIXME: Right now we don't support pages w/ frames in the b/f cache.  This may need to be tweaked when we add support for that.
     Document* focusedDocument = page->focusController()->focusedOrMainFrame()->document();
-    if (Node* node = focusedDocument->focusedNode()) {
+
+#if !PLATFORM(IOS)
+    if (Element* element = focusedDocument->focusedElement())
+        element->updateFocusAppearance(true);
+#else
+    if (Element* element = focusedDocument->focusedElement()) {
         // We don't want focused nodes changing scroll position when restoring from the cache
         // as it can cause ugly jumps before we manage to restore the cached position.
         page->mainFrame()->selection()->suppressScrolling();
-        if (node->isElementNode())
-            static_cast<Element*>(node)->updateFocusAppearance(true);
+        element->updateFocusAppearance(true);
         page->mainFrame()->selection()->restoreScrolling();
     }
+#endif
 
     if (m_needStyleRecalcForVisitedLinks) {
-        for (Frame* frame = page->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
-            if (StyleResolver* styleResolver = frame->document()->styleResolver())
-                styleResolver->allVisitedStateChanged();
-        }
+        for (Frame* frame = page->mainFrame(); frame; frame = frame->tree()->traverseNext())
+            frame->document()->visitedLinkState()->invalidateStyleForAllLinks();
     }
+
+#if USE(ACCELERATED_COMPOSITING)
+    if (m_needsDeviceScaleChanged) {
+        if (Frame* frame = page->mainFrame())
+            frame->deviceOrPageScaleFactorChanged();
+    }
+#endif
 
     if (m_needsFullStyleRecalc)
         page->setNeedsRecalcStyleInAllFrames();
+
+#if ENABLE(VIDEO_TRACK)
+    if (m_needsCaptionPreferencesChanged)
+        page->captionPreferencesChanged();
+#endif
 
     clear();
 }
@@ -118,6 +141,11 @@ void CachedPage::destroy()
         m_cachedMainFrame->destroy();
 
     m_cachedMainFrame = 0;
+}
+
+bool CachedPage::hasExpired() const
+{
+    return currentTime() > m_expirationTime;
 }
 
 } // namespace WebCore

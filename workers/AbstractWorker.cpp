@@ -47,23 +47,16 @@
 namespace WebCore {
 
 AbstractWorker::AbstractWorker(ScriptExecutionContext* context)
-    : ActiveDOMObject(context, this)
+    : ActiveDOMObject(context)
 {
 }
 
 AbstractWorker::~AbstractWorker()
 {
-    onDestroyWorker();
-}
-
-void AbstractWorker::onDestroyWorker()
-{
-    InspectorInstrumentation::didDestroyWorker(scriptExecutionContext(), asID());
 }
 
 void AbstractWorker::contextDestroyed()
 {
-    onDestroyWorker();
     ActiveDOMObject::contextDestroyed(); 
 }
 

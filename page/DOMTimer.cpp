@@ -30,15 +30,17 @@
 #include "InspectorInstrumentation.h"
 #include "ScheduledAction.h"
 #include "ScriptExecutionContext.h"
-#include "UserGestureIndicator.h"
+#include <wtf/CurrentTime.h>
 #include <wtf/HashSet.h>
 #include <wtf/StdLibExtras.h>
 
+#if PLATFORM(IOS)
 #include "Chrome.h"
 #include "ChromeClient.h"
 #include "Frame.h"
 #include "Page.h"
 #include "WKContentObservation.h"
+#endif
 
 using namespace std;
 
@@ -47,19 +49,8 @@ namespace WebCore {
 static const int maxIntervalForUserGestureForwarding = 1000; // One second matches Gecko.
 static const int maxTimerNestingLevel = 5;
 static const double oneMillisecond = 0.001;
-double DOMTimer::s_minDefaultTimerInterval = 0.010; // 10 milliseconds
 
 static int timerNestingLevel = 0;
-    
-static int timeoutId()
-{
-    static int lastUsedTimeoutId = 0;
-    ++lastUsedTimeoutId;
-    // Avoid wraparound going negative on us.
-    if (lastUsedTimeoutId <= 0)
-        lastUsedTimeoutId = 1;
-    return lastUsedTimeoutId;
-}
     
 static inline bool shouldForwardUserGesture(int interval, int nestingLevel)
 {
@@ -70,13 +61,17 @@ static inline bool shouldForwardUserGesture(int interval, int nestingLevel)
 
 DOMTimer::DOMTimer(ScriptExecutionContext* context, PassOwnPtr<ScheduledAction> action, int interval, bool singleShot)
     : SuspendableTimer(context)
-    , m_timeoutId(timeoutId())
     , m_nestingLevel(timerNestingLevel + 1)
     , m_action(action)
     , m_originalInterval(interval)
-    , m_shouldForwardUserGesture(shouldForwardUserGesture(interval, m_nestingLevel))
 {
-    scriptExecutionContext()->addTimeout(m_timeoutId, this);
+    if (shouldForwardUserGesture(interval, m_nestingLevel))
+        m_userGestureToken = UserGestureIndicator::currentToken();
+
+    // Keep asking for the next id until we're given one that we don't already have.
+    do {
+        m_timeoutId = context->circularSequentialID();
+    } while (!context->addTimeout(m_timeoutId, this));
 
     double intervalMilliseconds = intervalClampedToMinimum(interval, context->minimumTimerInterval());
     if (singleShot)
@@ -97,6 +92,7 @@ int DOMTimer::install(ScriptExecutionContext* context, PassOwnPtr<ScheduledActio
     // The timer is deleted when context is deleted (DOMTimer::contextDestroyed) or explicitly via DOMTimer::removeById(),
     // or if it is a one-time timer and it has fired (DOMTimer::fired).
     DOMTimer* timer = new DOMTimer(context, action, timeout, singleShot);
+#if PLATFORM(IOS)
     if (context->isDocument()) {
         Document* document = static_cast<Document*>(context);
         bool deferTimeout = (document->frame() && document->frame()->timersPaused());
@@ -105,14 +101,9 @@ int DOMTimer::install(ScriptExecutionContext* context, PassOwnPtr<ScheduledActio
                 WKSetObservedContentChange(WKContentIndeterminateChange);
                 WebThreadAddObservedContentModifier(timer); // Will only take affect if not already visibility change.
             }
-        } else {
-            // window is in suspended state, we should not fire new timers.
-            // Instead we make sure to suspend the new timer.
-            // FIXME: <rdar://problem/6560725>
-            if (timer)
-                timer->suspend(ActiveDOMObject::DocumentWillBePaused);
         }
     }
+#endif
 
     timer->suspendIfNeeded();
     InspectorInstrumentation::didInstallTimer(context, timer->m_timeoutId, timeout, singleShot);
@@ -136,18 +127,19 @@ void DOMTimer::removeById(ScriptExecutionContext* context, int timeoutId)
 void DOMTimer::fired()
 {
     ScriptExecutionContext* context = scriptExecutionContext();
+#if PLATFORM(IOS)
     ASSERT(context);
     Document* document = NULL;
     if (context->isDocument()) {
         document = static_cast<Document*>(context);
         ASSERT(!document->frame()->timersPaused());
     }
+#endif
     timerNestingLevel = m_nestingLevel;
+    ASSERT(!isSuspended());
     ASSERT(!context->activeDOMObjectsAreSuspended());
-    UserGestureIndicator gestureIndicator(m_shouldForwardUserGesture ? DefinitelyProcessingUserGesture : PossiblyProcessingUserGesture);
-    
     // Only the first execution of a multi-shot timer should get an affirmative user gesture indicator.
-    m_shouldForwardUserGesture = false;
+    UserGestureIndicator gestureIndicator(m_userGestureToken.release());
 
     InspectorInstrumentationCookie cookie = InspectorInstrumentation::willFireTimer(context, m_timeoutId);
 
@@ -174,6 +166,7 @@ void DOMTimer::fired()
     // No access to member variables after this point.
     delete this;
     
+#if PLATFORM(IOS)
     bool shouldReportLackOfChanges = false;
     bool shouldBeginObservingChanges = false;
     if (document) {
@@ -185,16 +178,19 @@ void DOMTimer::fired()
         WKBeginObservingContentChanges(false);
         WebThreadRemoveObservedContentModifier(this);
     }
+#endif    
 
     action->execute(context);
 
+#if PLATFORM(IOS)
     if (shouldBeginObservingChanges) {
         WKStopObservingContentChanges();
 
         if (WKObservedContentChange() == WKContentVisibilityChange || shouldReportLackOfChanges)
             if (document && document->page())
-                document->page()->chrome()->client()->observedContentChange(document->frame());
+                document->page()->chrome().client()->observedContentChange(document->frame());
     }
+#endif
 
     InspectorInstrumentation::didFireTimer(cookie);
 
@@ -207,9 +203,8 @@ void DOMTimer::contextDestroyed()
     delete this;
 }
 
-void DOMTimer::stop()
+void DOMTimer::didStop()
 {
-    SuspendableTimer::stop();
     // Need to release JS objects potentially protected by ScheduledAction
     // because they can form circular references back to the ScriptExecutionContext
     // which will cause a memory leak.
@@ -240,6 +235,21 @@ double DOMTimer::intervalClampedToMinimum(int timeout, double minimumTimerInterv
     if (intervalMilliseconds < minimumTimerInterval && m_nestingLevel >= maxTimerNestingLevel)
         intervalMilliseconds = minimumTimerInterval;
     return intervalMilliseconds;
+}
+
+double DOMTimer::alignedFireTime(double fireTime) const
+{
+    double alignmentInterval = scriptExecutionContext()->timerAlignmentInterval();
+    if (alignmentInterval) {
+        double currentTime = monotonicallyIncreasingTime();
+        if (fireTime <= currentTime)
+            return fireTime;
+
+        double alignedTime = ceil(fireTime / alignmentInterval) * alignmentInterval;
+        return alignedTime;
+    }
+
+    return fireTime;
 }
 
 } // namespace WebCore

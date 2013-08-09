@@ -42,18 +42,20 @@ using namespace MathMLNames;
     
 enum Braces { OpeningBraceChar = 0x28, ClosingBraceChar = 0x29 };
     
-static const float gOperatorPadding = 0.1f;
+static const float gSeparatorMarginEndEms = 0.25f;
+static const float gFenceMarginEms = 0.1f;
 
 RenderMathMLFenced::RenderMathMLFenced(Element* element)
     : RenderMathMLRow(element)
     , m_open(OpeningBraceChar)
     , m_close(ClosingBraceChar)
+    , m_closeFenceRenderer(0)
 {
 }
 
 void RenderMathMLFenced::updateFromElement()
 {
-    Element* fenced = static_cast<Element*>(node());
+    Element* fenced = toElement(node());
  
     // FIXME: Handle open/close values with more than one character (they should be treated like text).
     AtomicString openValue = fenced->getAttribute(MathMLNames::openAttr);
@@ -80,63 +82,89 @@ void RenderMathMLFenced::updateFromElement()
         makeFences();
 }
 
-PassRefPtr<RenderStyle> RenderMathMLFenced::createOperatorStyle()
+RenderMathMLOperator* RenderMathMLFenced::createMathMLOperator(UChar uChar, RenderMathMLOperator::OperatorType operatorType)
 {
-    RefPtr<RenderStyle> newStyle = RenderStyle::create();
-    newStyle->inheritFrom(style());
-    newStyle->setDisplay(INLINE_BLOCK);
-    newStyle->setPaddingRight(Length(static_cast<int>(gOperatorPadding * style()->fontSize()), Fixed));
-    return newStyle.release();
+    RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(style(), FLEX);
+    newStyle->setFlexDirection(FlowColumn);
+    newStyle->setMarginEnd(Length((operatorType == RenderMathMLOperator::Fence ? gFenceMarginEms : gSeparatorMarginEndEms) * style()->fontSize(), Fixed));
+    if (operatorType == RenderMathMLOperator::Fence)
+        newStyle->setMarginStart(Length(gFenceMarginEms * style()->fontSize(), Fixed));
+    RenderMathMLOperator* newOperator = new (renderArena()) RenderMathMLOperator(toElement(node()), uChar);
+    newOperator->setOperatorType(operatorType);
+    newOperator->setStyle(newStyle.release());
+    return newOperator;
 }
 
 void RenderMathMLFenced::makeFences()
 {
-    RenderObject* openFence = new (renderArena()) RenderMathMLOperator(node(), m_open);
-    openFence->setStyle(createOperatorStyle());
-    RenderBlock::addChild(openFence, firstChild());
-    RenderObject* closeFence = new (renderArena()) RenderMathMLOperator(node(), m_close);
-    closeFence->setStyle(createOperatorStyle());
-    RenderBlock::addChild(closeFence);
+    RenderMathMLRow::addChild(createMathMLOperator(m_open, RenderMathMLOperator::Fence), firstChild());
+    m_closeFenceRenderer = createMathMLOperator(m_close, RenderMathMLOperator::Fence);
+    RenderMathMLRow::addChild(m_closeFenceRenderer);
 }
 
-void RenderMathMLFenced::addChild(RenderObject* child, RenderObject*)
+void RenderMathMLFenced::addChild(RenderObject* child, RenderObject* beforeChild)
 {
     // make the fences if the render object is empty
     if (isEmpty())
         updateFromElement();
     
+    // FIXME: Adding or removing a child should possibly cause all later separators to shift places if they're different,
+    // as later child positions change by +1 or -1.
+    
+    RenderObject* separatorRenderer = 0;
     if (m_separators.get()) {
         unsigned int count = 0;
         for (Node* position = child->node(); position; position = position->previousSibling()) {
-            if (position->nodeType() == Node::ELEMENT_NODE)
+            if (position->isElementNode())
                 count++;
         }
-                
-        if (count > 1) {
+        if (!beforeChild) {
+            // We're adding at the end (before the closing fence), so a new separator would go before the new child, not after it.
+            --count;
+        }
+        // |count| is now the number of element children that will be before our new separator, i.e. it's the 1-based index of the separator.
+        
+        if (count > 0) {
             UChar separator;
             
             // Use the last separator if we've run out of specified separators.
-            if ((count - 1) >= m_separators.get()->length())
+            if (count > m_separators.get()->length())
                 separator = (*m_separators.get())[m_separators.get()->length() - 1];
             else
-                separator = (*m_separators.get())[count - 2];
+                separator = (*m_separators.get())[count - 1];
                 
-            RenderObject* separatorObj = new (renderArena()) RenderMathMLOperator(node(), separator);
-            separatorObj->setStyle(createOperatorStyle());
-            RenderBlock::addChild(separatorObj, lastChild());
+            separatorRenderer = createMathMLOperator(separator, RenderMathMLOperator::Separator);
         }
     }
     
-    // If we have a block, we'll wrap it in an inline-block.
-    if (child->isBlockFlow() && child->style()->display() != INLINE_BLOCK) {
-        // Block objects wrapper.
+    if (beforeChild) {
+        // Adding |x| before an existing |y| e.g. in element (y) - first insert our new child |x|, then its separator, to get (x, y).
+        RenderMathMLRow::addChild(child, beforeChild);
+        if (separatorRenderer)
+            RenderMathMLRow::addChild(separatorRenderer, beforeChild);
+    } else {
+        // Adding |y| at the end of an existing element e.g. (x) - insert the separator first before the closing fence, then |y|, to get (x, y).
+        if (separatorRenderer)
+            RenderMathMLRow::addChild(separatorRenderer, m_closeFenceRenderer);
+        RenderMathMLRow::addChild(child, m_closeFenceRenderer);
+    }
+}
 
-        RenderBlock* block = createAlmostAnonymousBlock(INLINE_BLOCK);
-        
-        RenderBlock::addChild(block, lastChild());
-        block->addChild(child);    
-    } else
-        RenderBlock::addChild(child, lastChild());
+// FIXME: Change createMathMLOperator() above to create an isAnonymous() operator, and remove this styleDidChange() function.
+void RenderMathMLFenced::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
+{
+    RenderMathMLBlock::styleDidChange(diff, oldStyle);
+    
+    for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
+        if (child->node() == node()) {
+            ASSERT(child->style()->refCount() == 1);
+            child->style()->inheritFrom(style());
+            bool isFence = child == firstChild() || child == lastChild();
+            child->style()->setMarginEnd(Length((isFence ? gFenceMarginEms : gSeparatorMarginEndEms) * style()->fontSize(), Fixed));
+            if (isFence)
+                child->style()->setMarginStart(Length(gFenceMarginEms * style()->fontSize(), Fixed));
+        }
+    }
 }
 
 }    

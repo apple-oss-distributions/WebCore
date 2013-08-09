@@ -74,16 +74,20 @@ bool DisplayRefreshMonitor::requestRefreshCallback()
 
 void DisplayRefreshMonitor::displayLinkFired()
 {
-    MutexLocker lock(m_mutex);
-
-    if (!m_scheduled || !m_previousFrameDone)
+    if (!m_mutex.tryLock())
         return;
+
+    if (!m_previousFrameDone) {
+        m_mutex.unlock();
+        return;
+    }
 
     m_previousFrameDone = false;
 
-    m_timestamp = currentTime();
+    m_monotonicAnimationStartTime = monotonicallyIncreasingTime();
 
     callOnMainThread(handleDisplayRefreshedNotificationOnMainThread, this);
+    m_mutex.unlock();
 }
 
 }

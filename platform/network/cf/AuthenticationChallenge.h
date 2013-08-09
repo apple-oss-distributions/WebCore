@@ -49,12 +49,12 @@ namespace WebCore {
 class AuthenticationChallenge : public AuthenticationChallengeBase {
 public:
     AuthenticationChallenge() {}
-    AuthenticationChallenge(const ProtectionSpace& protectionSpace, const Credential& proposedCredential, unsigned previousFailureCount, const ResourceResponse& response, const ResourceError& error);
+    AuthenticationChallenge(const ProtectionSpace&, const Credential& proposedCredential, unsigned previousFailureCount, const ResourceResponse&, const ResourceError&);
 #if USE(CFNETWORK)
     AuthenticationChallenge(CFURLAuthChallengeRef, AuthenticationClient*);
 
     AuthenticationClient* authenticationClient() const;
-    void setAuthenticationClient(AuthenticationClient* client) { m_authenticationClient = client; }
+    void setAuthenticationClient(AuthenticationClient*);
 
     CFURLAuthChallengeRef cfURLAuthChallengeRef() const { return m_cfChallenge.get(); }
 #else
@@ -71,11 +71,12 @@ private:
     friend class AuthenticationChallengeBase;
     static bool platformCompare(const AuthenticationChallenge& a, const AuthenticationChallenge& b);
 
+    // Platform challenge may be null. If it's non-null, it's always up to date with other fields.
 #if USE(CFNETWORK)
     RefPtr<AuthenticationClient> m_authenticationClient;
     RetainPtr<CFURLAuthChallengeRef> m_cfChallenge;
 #else
-    RetainPtr<id> m_sender; // Always the same as [m_macChallenge.get() sender], cached here for performance.
+    RetainPtr<id> m_sender;
     RetainPtr<NSURLAuthenticationChallenge *> m_nsChallenge;
 #endif
 };

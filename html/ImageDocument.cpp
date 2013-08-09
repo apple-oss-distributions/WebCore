@@ -29,7 +29,9 @@
 #include "DocumentLoader.h"
 #include "EventListener.h"
 #include "EventNames.h"
+#include "ExceptionCodePlaceholder.h"
 #include "Frame.h"
+#include "FrameLoader.h"
 #include "FrameLoaderClient.h"
 #include "FrameView.h"
 #include "HTMLHtmlElement.h"
@@ -40,6 +42,7 @@
 #include "NotImplemented.h"
 #include "Page.h"
 #include "RawDataDocumentParser.h"
+#include "ResourceBuffer.h"
 #include "Settings.h"
 
 using std::min;
@@ -81,7 +84,7 @@ public:
 
     ImageDocument* document() const
     {
-        return static_cast<ImageDocument*>(RawDataDocumentParser::document());
+        return toImageDocument(RawDataDocumentParser::document());
     }
     
 private:
@@ -94,7 +97,7 @@ private:
     virtual void finish();
 };
 
-class ImageDocumentElement : public HTMLImageElement {
+class ImageDocumentElement FINAL : public HTMLImageElement {
 public:
     static PassRefPtr<ImageDocumentElement> create(ImageDocument*);
 
@@ -132,7 +135,8 @@ void ImageDocumentParser::appendBytes(DocumentWriter*, const char*, size_t)
         return;
 
     CachedImage* cachedImage = document()->cachedImage();
-    cachedImage->data(frame->loader()->documentLoader()->mainResourceData(), false);
+    RefPtr<ResourceBuffer> resourceData = frame->loader()->documentLoader()->mainResourceData();
+    cachedImage->addDataBuffer(resourceData.get());
 
     document()->imageUpdated();
 }
@@ -141,21 +145,21 @@ void ImageDocumentParser::finish()
 {
     if (!isStopped() && document()->imageElement()) {
         CachedImage* cachedImage = document()->cachedImage();
-        RefPtr<SharedBuffer> data = document()->frame()->loader()->documentLoader()->mainResourceData();
+        RefPtr<ResourceBuffer> data = document()->frame()->loader()->documentLoader()->mainResourceData();
 
         // If this is a multipart image, make a copy of the current part, since the resource data
         // will be overwritten by the next part.
         if (document()->frame()->loader()->documentLoader()->isLoadingMultipartContent())
             data = data->copy();
 
-        cachedImage->data(data.release(), true);
+        cachedImage->finishLoading(data.get());
         cachedImage->finish();
 
         cachedImage->setResponse(document()->frame()->loader()->documentLoader()->response());
 
-        // Report the natural image size in the page title, regardless of zoom
-        // level.
-        IntSize size = cachedImage->imageSizeForRenderer(document()->imageElement()->renderer(), 1.0f);
+        // Report the natural image size in the page title, regardless of zoom level.
+        // At a zoom level of 1 the image is guaranteed to have an integer size.
+        IntSize size = flooredIntSize(cachedImage->imageSizeForRenderer(document()->imageElement()->renderer(), 1.0f));
         if (size.width()) {
             // Compute the title, we use the decoded filename of the resource, falling
             // back on the (decoded) hostname if there is no path.
@@ -174,7 +178,7 @@ void ImageDocumentParser::finish()
 // --------
 
 ImageDocument::ImageDocument(Frame* frame, const KURL& url)
-    : HTMLDocument(frame, url)
+    : HTMLDocument(frame, url, ImageDocumentClass)
     , m_imageElement(0)
     , m_imageSizeIsKnown(false)
     , m_didShrinkImage(false)
@@ -191,10 +195,8 @@ PassRefPtr<DocumentParser> ImageDocument::createParser()
 
 void ImageDocument::createDocumentStructure()
 {
-    ExceptionCode ec;
-    
     RefPtr<Element> rootElement = Document::createElement(htmlTag, false);
-    appendChild(rootElement, ec);
+    appendChild(rootElement, IGNORE_EXCEPTION);
     static_cast<HTMLHtmlElement*>(rootElement.get())->insertedByParser();
 
     if (frame() && frame()->loader())
@@ -203,7 +205,7 @@ void ImageDocument::createDocumentStructure()
     RefPtr<Element> body = Document::createElement(bodyTag, false);
     body->setAttribute(styleAttr, "margin: 0px;");
     
-    rootElement->appendChild(body, ec);
+    rootElement->appendChild(body, IGNORE_EXCEPTION);
     
     RefPtr<ImageDocumentElement> imageElement = ImageDocumentElement::create(this);
     
@@ -211,7 +213,7 @@ void ImageDocument::createDocumentStructure()
     imageElement->setLoadManually(true);
     imageElement->setSrc(url().string());
     
-    body->appendChild(imageElement, ec);
+    body->appendChild(imageElement, IGNORE_EXCEPTION);
     
     if (shouldShrinkToFit()) {
         // Add event listeners
@@ -219,8 +221,10 @@ void ImageDocument::createDocumentStructure()
         if (DOMWindow* domWindow = this->domWindow())
             domWindow->addEventListener("resize", listener, false);
         imageElement->addEventListener("click", listener.release(), false);
+#if PLATFORM(IOS)
         // Set the viewport to be in device pixels (rather than the default of 980)
-        processViewport("width=device-width");
+        processViewport("width=device-width", ViewportArguments::ImageDocument);
+#endif
     }
 
     m_imageElement = imageElement.get();
@@ -228,8 +232,10 @@ void ImageDocument::createDocumentStructure()
 
 float ImageDocument::scale() const
 {
+#if PLATFORM(IOS)
     // on iPhone big images are subsampled to make them smaller - don't resize them.
     return 1.0f;
+#endif    
 
     if (!m_imageElement)
         return 1.0f;
@@ -249,8 +255,10 @@ float ImageDocument::scale() const
 
 void ImageDocument::resizeImageToFit()
 {
+#if PLATFORM(IOS)
     // on iPhone big images are subsampled to make them smaller - don't resize them.
     return;
+#endif
     if (!m_imageElement)
         return;
 
@@ -265,8 +273,10 @@ void ImageDocument::resizeImageToFit()
 
 void ImageDocument::imageClicked(int x, int y)
 {
+#if PLATFORM(IOS)
     // on iPhone big images are subsampled to make them smaller - don't resize them.
     return;
+#endif
     if (!m_imageSizeIsKnown || imageFitsInWindow())
         return;
 
@@ -333,9 +343,15 @@ bool ImageDocument::imageFitsInWindow() const
         return true;
 
     LayoutSize imageSize = m_imageElement->cachedImage()->imageSizeForRenderer(m_imageElement->renderer(), pageZoomFactor(this));
+#if PLATFORM(IOS)
     LayoutRect windowRect = view->contentsToScreen(view->actualVisibleContentRect());
 
     return imageSize.width() <= windowRect.width() && imageSize.height() <= windowRect.height();
+#else
+    LayoutSize windowSize = LayoutSize(view->width(), view->height());
+    
+    return imageSize.width() <= windowSize.width() && imageSize.height() <= windowSize.height();    
+#endif
 }
 
 void ImageDocument::windowSizeChanged()
@@ -345,6 +361,7 @@ void ImageDocument::windowSizeChanged()
 
     bool fitsInWindow = imageFitsInWindow();
     
+#if PLATFORM(IOS)
     if (fitsInWindow)
         return;
     
@@ -354,11 +371,12 @@ void ImageDocument::windowSizeChanged()
     float widthScale = static_cast<float>(visibleScreenSize.width()) / imageSize.width();
     float heightScale = static_cast<float>(visibleScreenSize.height()) / imageSize.height();
     if (widthScale < heightScale)
-        processViewport(String::format("width=%d", imageSize.width()));
+        processViewport(String::format("width=%d", imageSize.width().toInt()), ViewportArguments::ImageDocument);
     else
-        processViewport(String::format("width=%d", static_cast<int>(1.0f + (1.0f - heightScale)) * imageSize.width()));
+        processViewport(String::format("width=%d", static_cast<int>(1.0f + (1.0f - heightScale)) * imageSize.width().toInt()), ViewportArguments::ImageDocument);
         
     return;
+#endif
     
     // If the image has been explicitly zoomed in, restore the cursor if the image fits
     // and set it to a zoom out cursor if the image doesn't fit

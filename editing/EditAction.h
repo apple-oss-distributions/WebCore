@@ -55,10 +55,12 @@ namespace WebCore {
         EditActionUnscript,
         EditActionDrag,
         EditActionCut,
-        EditActionDelete,
-        EditActionDictation,
         EditActionBold,
         EditActionItalics,
+#if PLATFORM(IOS)
+        EditActionDelete,
+        EditActionDictation,
+#endif
         EditActionPaste,
         EditActionPasteFont,
         EditActionPasteRuler,

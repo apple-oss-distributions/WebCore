@@ -31,12 +31,17 @@
 #include "GraphicsContextCG.h"
 #include <wtf/Assertions.h>
 #include <wtf/RetainPtr.h>
+#if !PLATFORM(IOS)
+#include <ApplicationServices/ApplicationServices.h>
+#else
 #include <CoreGraphics/CoreGraphics.h>
 #include <CoreGraphics/CGColorTransform.h>
 #include <wtf/StdLibExtras.h>
+#endif // !PLATFORM(IOS)
 
 namespace WebCore {
 
+#if PLATFORM(IOS)
 
 CGColorRef createCGColorWithDeviceWhite(CGFloat w, CGFloat a)
 {
@@ -58,6 +63,7 @@ static CGColorRef createCGColorWithDeviceRGBA(CGColorRef sourceColor)
     return CGColorTransformConvertColor(colorTransform.get(), sourceColor, kCGRenderingIntentDefault);
 }
 
+#endif // PLATFORM(IOS)
 
 Color::Color(CGColorRef color)
 {
@@ -67,12 +73,17 @@ Color::Color(CGColorRef color)
         return;
     }
 
+#if !PLATFORM(IOS)
+    size_t numComponents = CGColorGetNumberOfComponents(color);
+    const CGFloat* components = CGColorGetComponents(color);
+#else
     RetainPtr<CGColorRef> correctedColor(AdoptCF, createCGColorWithDeviceRGBA(color));
     if (!correctedColor)
         correctedColor = color;
 
     size_t numComponents = CGColorGetNumberOfComponents(correctedColor.get());
     const CGFloat* components = CGColorGetComponents(correctedColor.get());
+#endif // !PLATFORM(IOS)
 
     float r = 0;
     float g = 0;
@@ -151,7 +162,7 @@ template<ColorSpace colorSpace> static CGColorRef cachedCGColor(const Color& col
 
     static size_t cursor;
     cachedRGBAValues[cursor] = color.rgb();
-    cachedCGColors[cursor].adoptCF(newCGColor);
+    cachedCGColors[cursor] = adoptCF(newCGColor);
     if (++cursor == cacheSize)
         cursor = 0;
 

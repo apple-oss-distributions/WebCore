@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2004, 2005, 2006, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2003, 2004, 2005, 2006, 2009, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,8 +28,7 @@
 
 #include "BidiResolver.h"
 #include "BitmapImage.h"
-#include "Font.h"
-#include "Generator.h"
+#include "Gradient.h"
 #include "ImageBuffer.h"
 #include "IntRect.h"
 #include "RoundedRect.h"
@@ -79,12 +78,21 @@ private:
     int m_offset;
 };
 
+#if !PLATFORM(IOS)
+GraphicsContext::GraphicsContext(PlatformGraphicsContext* platformGraphicsContext)
+    : m_updatingControlTints(false)
+    , m_transparencyCount(0)
+{
+    platformInit(platformGraphicsContext);
+}
+#else
 GraphicsContext::GraphicsContext(PlatformGraphicsContext* platformGraphicsContext, bool setContextColors)
     : m_updatingControlTints(false)
     , m_transparencyCount(0)
 {
     platformInit(platformGraphicsContext, setContextColors);
 }
+#endif // !PLATFORM(IOS)
 
 GraphicsContext::~GraphicsContext()
 {
@@ -118,6 +126,7 @@ void GraphicsContext::restore()
     restorePlatformState();
 }
 
+#if PLATFORM(IOS)
 void GraphicsContext::drawRaisedEllipse(const FloatRect& rect, const Color& ellipseColor, ColorSpace ellipseColorSpace, const Color& shadowColor, ColorSpace shadowColorSpace)
 {
     if (paintingDisabled())
@@ -137,6 +146,7 @@ void GraphicsContext::drawRaisedEllipse(const FloatRect& rect, const Color& elli
     
     restore();
 }
+#endif
 
 void GraphicsContext::setStrokeThickness(float thickness)
 {
@@ -204,6 +214,29 @@ bool GraphicsContext::getShadow(FloatSize& offset, float& blur, Color& color, Co
 
     return hasShadow();
 }
+
+bool GraphicsContext::hasBlurredShadow() const
+{
+    return m_state.shadowColor.isValid() && m_state.shadowColor.alpha() && m_state.shadowBlur;
+}
+
+#if PLATFORM(QT) || USE(CAIRO)
+bool GraphicsContext::mustUseShadowBlur() const
+{
+    // We can't avoid ShadowBlur if the shadow has blur.
+    if (hasBlurredShadow())
+        return true;
+    // We can avoid ShadowBlur and optimize, since we're not drawing on a
+    // canvas and box shadows are affected by the transformation matrix.
+    if (!m_state.shadowsIgnoreTransforms)
+        return false;
+    // We can avoid ShadowBlur, since there are no transformations to apply to the canvas.
+    if (getCTM().isIdentity())
+        return false;
+    // Otherwise, no chance avoiding ShadowBlur.
+    return true;
+}
+#endif
 
 float GraphicsContext::strokeThickness() const
 {
@@ -274,6 +307,16 @@ void GraphicsContext::setShouldSmoothFonts(bool b)
 bool GraphicsContext::shouldSmoothFonts() const
 {
     return m_state.shouldSmoothFonts;
+}
+
+void GraphicsContext::setShouldSubpixelQuantizeFonts(bool b)
+{
+    m_state.shouldSubpixelQuantizeFonts = b;
+}
+
+bool GraphicsContext::shouldSubpixelQuantizeFonts() const
+{
+    return m_state.shouldSubpixelQuantizeFonts;
 }
 
 const GraphicsContextState& GraphicsContext::state() const
@@ -396,6 +439,17 @@ bool GraphicsContext::paintingDisabled() const
     return m_state.paintingDisabled;
 }
 
+#if !PLATFORM(IOS)
+#if !USE(WINGDI)
+void GraphicsContext::drawText(const Font& font, const TextRun& run, const FloatPoint& point, int from, int to)
+{
+    if (paintingDisabled())
+        return;
+
+    font.drawText(this, run, point, from, to);
+}
+#endif
+#else
 float GraphicsContext::drawText(const Font& font, const TextRun& run, const FloatPoint& point, int from, int to)
 {
     if (paintingDisabled())
@@ -403,6 +457,7 @@ float GraphicsContext::drawText(const Font& font, const TextRun& run, const Floa
 
     return font.drawText(this, run, point, from, to);
 }
+#endif // !PLATFORM(IOS)
 
 void GraphicsContext::drawEmphasisMarks(const Font& font, const TextRun& run, const AtomicString& mark, const FloatPoint& point, int from, int to)
 {
@@ -412,42 +467,74 @@ void GraphicsContext::drawEmphasisMarks(const Font& font, const TextRun& run, co
     font.drawEmphasisMarks(this, run, mark, point, from, to);
 }
 
-float GraphicsContext::drawBidiText(const Font& font, const TextRun& run, const FloatPoint& point, BidiStatus* status, int length)
+#if !PLATFORM(IOS)
+void GraphicsContext::drawBidiText(const Font& font, const TextRun& run, const FloatPoint& point, Font::CustomFontNotReadyAction customFontNotReadyAction)
+#else
+float GraphicsContext::drawBidiText(const Font& font, const TextRun& run, const FloatPoint& point, Font::CustomFontNotReadyAction customFontNotReadyAction, BidiStatus* status, int length)
+#endif
 {
     if (paintingDisabled())
+#if !PLATFORM(IOS)
+        return;
+#else
         return 0.f;
+#endif
 
     BidiResolver<TextRunIterator, BidiCharacterRun> bidiResolver;
+#if !PLATFORM(IOS)
+    bidiResolver.setStatus(BidiStatus(run.direction(), run.directionalOverride()));
+#else
     bidiResolver.setStatus(status ? *status : BidiStatus(run.direction(), run.directionalOverride()));
+#endif
     bidiResolver.setPositionIgnoringNestedIsolates(TextRunIterator(&run, 0));
 
     // FIXME: This ownership should be reversed. We should pass BidiRunList
     // to BidiResolver in createBidiRunsForLine.
     BidiRunList<BidiCharacterRun>& bidiRuns = bidiResolver.runs();
+#if !PLATFORM(IOS)
+    bidiResolver.createBidiRunsForLine(TextRunIterator(&run, run.length()));
+#else
     bidiResolver.createBidiRunsForLine(TextRunIterator(&run, length < 0 ? run.length() : length));
+#endif    
     if (!bidiRuns.runCount())
+#if !PLATFORM(IOS)
+        return;
+#else
         return 0.f;
+#endif
 
     FloatPoint currPoint = point;
     BidiCharacterRun* bidiRun = bidiRuns.firstRun();
     while (bidiRun) {
-        TextRun subrun = run;
-        subrun.setText(run.data(bidiRun->start()), bidiRun->stop() - bidiRun->start());
+        TextRun subrun = run.subRun(bidiRun->start(), bidiRun->stop() - bidiRun->start());
         bool isRTL = bidiRun->level() % 2;
         subrun.setDirection(isRTL ? RTL : LTR);
         subrun.setDirectionalOverride(bidiRun->dirOverride(false));
 
-        float width = font.drawText(this, subrun, currPoint);
+#if !PLATFORM(IOS)
+        font.drawText(this, subrun, currPoint, 0, -1, customFontNotReadyAction);
+
+        bidiRun = bidiRun->next();
+        // FIXME: Have Font::drawText return the width of what it drew so that we don't have to re-measure here.
+        if (bidiRun)
+            currPoint.move(font.width(subrun), 0);
+#else
+        float width = font.drawText(this, subrun, currPoint, 0, -1, customFontNotReadyAction);
         currPoint.move(width, 0);
 
         bidiRun = bidiRun->next();
+#endif
     }
 
+#if PLATFORM(IOS)
     if (status)
         *status = bidiResolver.status();
+#endif
     bidiRuns.deleteRuns();
 
+#if PLATFORM(IOS)
     return currPoint.x() - static_cast<float>(point.x());
+#endif
 }
 
 void GraphicsContext::drawHighlightForText(const Font& font, const TextRun& run, const FloatPoint& point, int h, const Color& backgroundColor, ColorSpace colorSpace, int from, int to)
@@ -460,43 +547,38 @@ void GraphicsContext::drawHighlightForText(const Font& font, const TextRun& run,
 
 void GraphicsContext::drawImage(Image* image, ColorSpace styleColorSpace, const IntPoint& p, CompositeOperator op, RespectImageOrientationEnum shouldRespectImageOrientation)
 {
-    drawImage(image, styleColorSpace, p, IntRect(0, 0, -1, -1), op, shouldRespectImageOrientation);
+    if (!image)
+        return;
+    drawImage(image, styleColorSpace, FloatRect(IntRect(p, image->size())), FloatRect(FloatPoint(), FloatSize(image->size())), op, shouldRespectImageOrientation);
 }
 
 void GraphicsContext::drawImage(Image* image, ColorSpace styleColorSpace, const IntRect& r, CompositeOperator op, RespectImageOrientationEnum shouldRespectImageOrientation, bool useLowQualityScale)
 {
-    drawImage(image, styleColorSpace, r, IntRect(0, 0, -1, -1), op, shouldRespectImageOrientation, useLowQualityScale);
+    if (!image)
+        return;
+    drawImage(image, styleColorSpace, FloatRect(r), FloatRect(FloatPoint(), FloatSize(image->size())), op, shouldRespectImageOrientation, useLowQualityScale);
 }
 
 void GraphicsContext::drawImage(Image* image, ColorSpace styleColorSpace, const IntPoint& dest, const IntRect& srcRect, CompositeOperator op, RespectImageOrientationEnum shouldRespectImageOrientation)
 {
-    drawImage(image, styleColorSpace, IntRect(dest, srcRect.size()), srcRect, op, shouldRespectImageOrientation);
-}
-
-void GraphicsContext::drawImage(Image* image, ColorSpace styleColorSpace, const IntRect& dest, const IntRect& srcRect, CompositeOperator op, RespectImageOrientationEnum shouldRespectImageOrientation, bool useLowQualityScale)
-{
-    drawImage(image, styleColorSpace, FloatRect(dest), srcRect, op, shouldRespectImageOrientation, useLowQualityScale);
+    drawImage(image, styleColorSpace, FloatRect(IntRect(dest, srcRect.size())), FloatRect(srcRect), op, shouldRespectImageOrientation);
 }
 
 void GraphicsContext::drawImage(Image* image, ColorSpace styleColorSpace, const FloatRect& dest, const FloatRect& src, CompositeOperator op, RespectImageOrientationEnum shouldRespectImageOrientation, bool useLowQualityScale)
 {
-    if (paintingDisabled() || !image)
+    drawImage(image, styleColorSpace, dest, src, op, BlendModeNormal, shouldRespectImageOrientation, useLowQualityScale);
+}
+
+void GraphicsContext::drawImage(Image* image, ColorSpace styleColorSpace, const FloatRect& dest)
+{
+    if (!image)
         return;
+    drawImage(image, styleColorSpace, dest, FloatRect(IntRect(IntPoint(), image->size())));
+}
 
-    float tsw = src.width();
-    float tsh = src.height();
-    float tw = dest.width();
-    float th = dest.height();
-
-    if (tsw == -1)
-        tsw = image->width();
-    if (tsh == -1)
-        tsh = image->height();
-
-    if (tw == -1)
-        tw = image->width();
-    if (th == -1)
-        th = image->height();
+void GraphicsContext::drawImage(Image* image, ColorSpace styleColorSpace, const FloatRect& dest, const FloatRect& src, CompositeOperator op, BlendMode blendMode, RespectImageOrientationEnum shouldRespectImageOrientation, bool useLowQualityScale)
+{    if (paintingDisabled() || !image)
+        return;
 
     InterpolationQuality previousInterpolationQuality = InterpolationDefault;
 
@@ -506,16 +588,13 @@ void GraphicsContext::drawImage(Image* image, ColorSpace styleColorSpace, const 
         setImageInterpolationQuality(InterpolationNone);
     }
 
-    if (image->isBitmapImage())
-        static_cast<BitmapImage*>(image)->draw(this, FloatRect(dest.location(), FloatSize(tw, th)), FloatRect(src.location(), FloatSize(tsw, tsh)), styleColorSpace, op, shouldRespectImageOrientation);
-    else
-        image->draw(this, FloatRect(dest.location(), FloatSize(tw, th)), FloatRect(src.location(), FloatSize(tsw, tsh)), styleColorSpace, op);
+    image->draw(this, dest, src, styleColorSpace, op, blendMode, shouldRespectImageOrientation);
 
     if (useLowQualityScale)
         setImageInterpolationQuality(previousInterpolationQuality);
 }
 
-void GraphicsContext::drawTiledImage(Image* image, ColorSpace styleColorSpace, const IntRect& destRect, const IntPoint& srcPoint, const IntSize& tileSize, CompositeOperator op, bool useLowQualityScale)
+void GraphicsContext::drawTiledImage(Image* image, ColorSpace styleColorSpace, const IntRect& destRect, const IntPoint& srcPoint, const IntSize& tileSize, CompositeOperator op, bool useLowQualityScale, BlendMode blendMode)
 {
     if (paintingDisabled() || !image)
         return;
@@ -523,10 +602,10 @@ void GraphicsContext::drawTiledImage(Image* image, ColorSpace styleColorSpace, c
     if (useLowQualityScale) {
         InterpolationQuality previousInterpolationQuality = imageInterpolationQuality();
         setImageInterpolationQuality(InterpolationLow);
-        image->drawTiled(this, destRect, srcPoint, tileSize, styleColorSpace, op);
+        image->drawTiled(this, destRect, srcPoint, tileSize, styleColorSpace, op, blendMode);
         setImageInterpolationQuality(previousInterpolationQuality);
     } else
-        image->drawTiled(this, destRect, srcPoint, tileSize, styleColorSpace, op);
+        image->drawTiled(this, destRect, srcPoint, tileSize, styleColorSpace, op, blendMode);
 }
 
 void GraphicsContext::drawTiledImage(Image* image, ColorSpace styleColorSpace, const IntRect& dest, const IntRect& srcRect,
@@ -550,54 +629,50 @@ void GraphicsContext::drawTiledImage(Image* image, ColorSpace styleColorSpace, c
         image->drawTiled(this, dest, srcRect, tileScaleFactor, hRule, vRule, styleColorSpace, op);
 }
 
-void GraphicsContext::drawImageBuffer(ImageBuffer* image, ColorSpace styleColorSpace, const IntPoint& p, CompositeOperator op)
+void GraphicsContext::drawImageBuffer(ImageBuffer* image, ColorSpace styleColorSpace, const IntPoint& p, CompositeOperator op, BlendMode blendMode)
 {
-    drawImageBuffer(image, styleColorSpace, p, IntRect(0, 0, -1, -1), op);
+    if (!image)
+        return;
+    drawImageBuffer(image, styleColorSpace, FloatRect(IntRect(p, image->logicalSize())), FloatRect(FloatPoint(), FloatSize(image->logicalSize())), op, blendMode);
 }
 
-void GraphicsContext::drawImageBuffer(ImageBuffer* image, ColorSpace styleColorSpace, const IntRect& r, CompositeOperator op, bool useLowQualityScale)
+void GraphicsContext::drawImageBuffer(ImageBuffer* image, ColorSpace styleColorSpace, const IntRect& r, CompositeOperator op, BlendMode blendMode, bool useLowQualityScale)
 {
-    drawImageBuffer(image, styleColorSpace, r, IntRect(0, 0, -1, -1), op, useLowQualityScale);
+    if (!image)
+        return;
+    drawImageBuffer(image, styleColorSpace, FloatRect(r), FloatRect(FloatPoint(), FloatSize(image->logicalSize())), op, blendMode, useLowQualityScale);
 }
 
-void GraphicsContext::drawImageBuffer(ImageBuffer* image, ColorSpace styleColorSpace, const IntPoint& dest, const IntRect& srcRect, CompositeOperator op)
+void GraphicsContext::drawImageBuffer(ImageBuffer* image, ColorSpace styleColorSpace, const IntPoint& dest, const IntRect& srcRect, CompositeOperator op, BlendMode blendMode)
 {
-    drawImageBuffer(image, styleColorSpace, IntRect(dest, srcRect.size()), srcRect, op);
+    drawImageBuffer(image, styleColorSpace, FloatRect(IntRect(dest, srcRect.size())), FloatRect(srcRect), op, blendMode);
 }
 
-void GraphicsContext::drawImageBuffer(ImageBuffer* image, ColorSpace styleColorSpace, const IntRect& dest, const IntRect& srcRect, CompositeOperator op, bool useLowQualityScale)
+void GraphicsContext::drawImageBuffer(ImageBuffer* image, ColorSpace styleColorSpace, const IntRect& dest, const IntRect& srcRect, CompositeOperator op, BlendMode blendMode, bool useLowQualityScale)
 {
-    drawImageBuffer(image, styleColorSpace, FloatRect(dest), srcRect, op, useLowQualityScale);
+    drawImageBuffer(image, styleColorSpace, FloatRect(dest), FloatRect(srcRect), op, blendMode, useLowQualityScale);
 }
 
-void GraphicsContext::drawImageBuffer(ImageBuffer* image, ColorSpace styleColorSpace, const FloatRect& dest, const FloatRect& src, CompositeOperator op, bool useLowQualityScale)
+void GraphicsContext::drawImageBuffer(ImageBuffer* image, ColorSpace styleColorSpace, const FloatRect& dest)
+{
+    if (!image)
+        return;
+    drawImageBuffer(image, styleColorSpace, dest, FloatRect(IntRect(IntPoint(), image->logicalSize())));
+}
+
+void GraphicsContext::drawImageBuffer(ImageBuffer* image, ColorSpace styleColorSpace, const FloatRect& dest, const FloatRect& src, CompositeOperator op, BlendMode blendMode, bool useLowQualityScale)
 {
     if (paintingDisabled() || !image)
         return;
-
-    float tsw = src.width();
-    float tsh = src.height();
-    float tw = dest.width();
-    float th = dest.height();
-
-    if (tsw == -1)
-        tsw = image->logicalSize().width();
-    if (tsh == -1)
-        tsh = image->logicalSize().height();
-
-    if (tw == -1)
-        tw = image->logicalSize().width();
-    if (th == -1)
-        th = image->logicalSize().height();
 
     if (useLowQualityScale) {
         InterpolationQuality previousInterpolationQuality = imageInterpolationQuality();
         // FIXME (49002): Should be InterpolationLow
         setImageInterpolationQuality(InterpolationNone);
-        image->draw(this, styleColorSpace, FloatRect(dest.location(), FloatSize(tw, th)), FloatRect(src.location(), FloatSize(tsw, tsh)), op, useLowQualityScale);
+        image->draw(this, styleColorSpace, dest, src, op, blendMode, useLowQualityScale);
         setImageInterpolationQuality(previousInterpolationQuality);
     } else
-        image->draw(this, styleColorSpace, FloatRect(dest.location(), FloatSize(tw, th)), FloatRect(src.location(), FloatSize(tsw, tsh)), op, useLowQualityScale);
+        image->draw(this, styleColorSpace, dest, src, op, blendMode, useLowQualityScale);
 }
 
 #if !PLATFORM(QT)
@@ -607,17 +682,23 @@ void GraphicsContext::clip(const IntRect& rect)
 }
 #endif
 
-void GraphicsContext::addRoundedRectClip(const RoundedRect& rect)
+void GraphicsContext::clipRoundedRect(const RoundedRect& rect)
 {
     if (paintingDisabled())
         return;
+
+    if (!rect.isRounded()) {
+        clip(rect.rect());
+        return;
+    }
 
     Path path;
     path.addRoundedRect(rect);
     clip(path);
 }
 
-void GraphicsContext::addRoundedRectClip(const FloatRect& rect, const FloatSize& topLeft, const FloatSize& topRight,
+#if PLATFORM(IOS)
+void GraphicsContext::clipRoundedRect(const FloatRect& rect, const FloatSize& topLeft, const FloatSize& topRight,
     const FloatSize& bottomLeft, const FloatSize& bottomRight)
 {
     if (paintingDisabled())
@@ -627,11 +708,17 @@ void GraphicsContext::addRoundedRectClip(const FloatRect& rect, const FloatSize&
     path.addRoundedRect(rect, topLeft, topRight, bottomLeft, bottomRight);
     clip(path);
 }
+#endif
 
 void GraphicsContext::clipOutRoundedRect(const RoundedRect& rect)
 {
     if (paintingDisabled())
         return;
+
+    if (!rect.isRounded()) {
+        clipOut(rect.rect());
+        return;
+    }
 
     Path path;
     path.addRoundedRect(rect);
@@ -666,30 +753,36 @@ void GraphicsContext::setTextDrawingMode(TextDrawingModeFlags mode)
     setPlatformTextDrawingMode(mode);
 }
 
-void GraphicsContext::fillRect(const FloatRect& rect, Generator& generator)
+void GraphicsContext::fillRect(const FloatRect& rect, Gradient& gradient)
 {
     if (paintingDisabled())
         return;
-    generator.fill(this, rect);
+    gradient.fill(this, rect);
 }
 
-void GraphicsContext::fillRect(const FloatRect& rect, const Color& color, ColorSpace styleColorSpace, CompositeOperator op)
+void GraphicsContext::fillRect(const FloatRect& rect, const Color& color, ColorSpace styleColorSpace, CompositeOperator op, BlendMode blendMode)
 {
     if (paintingDisabled())
         return;
 
     CompositeOperator previousOperator = compositeOperation();
-    setCompositeOperation(op);
+    setCompositeOperation(op, blendMode);
     fillRect(rect, color, styleColorSpace);
     setCompositeOperation(previousOperator);
 }
 
-void GraphicsContext::fillRoundedRect(const RoundedRect& rect, const Color& color, ColorSpace colorSpace)
+void GraphicsContext::fillRoundedRect(const RoundedRect& rect, const Color& color, ColorSpace colorSpace, BlendMode blendMode)
 {
-    fillRoundedRect(rect.rect(), rect.radii().topLeft(), rect.radii().topRight(), rect.radii().bottomLeft(), rect.radii().bottomRight(), color, colorSpace);
+
+    if (rect.isRounded()) {
+        setCompositeOperation(compositeOperation(), blendMode);
+        fillRoundedRect(rect.rect(), rect.radii().topLeft(), rect.radii().topRight(), rect.radii().bottomLeft(), rect.radii().bottomRight(), color, colorSpace);
+        setCompositeOperation(compositeOperation());
+    } else
+        fillRect(rect.rect(), color, colorSpace, compositeOperation(), blendMode);
 }
 
-#if !USE(CG)
+#if !USE(CG) && !PLATFORM(QT)
 void GraphicsContext::fillRectWithRoundedHole(const IntRect& rect, const RoundedRect& roundedHoleRect, const Color& color, ColorSpace colorSpace)
 {
     if (paintingDisabled())
@@ -717,10 +810,11 @@ void GraphicsContext::fillRectWithRoundedHole(const IntRect& rect, const Rounded
 }
 #endif
 
-void GraphicsContext::setCompositeOperation(CompositeOperator compositeOperation)
+void GraphicsContext::setCompositeOperation(CompositeOperator compositeOperation, BlendMode blendMode)
 {
     m_state.compositeOperator = compositeOperation;
-    setPlatformCompositeOperation(compositeOperation);
+    m_state.blendMode = blendMode;
+    setPlatformCompositeOperation(compositeOperation, blendMode);
 }
 
 CompositeOperator GraphicsContext::compositeOperation() const
@@ -728,6 +822,12 @@ CompositeOperator GraphicsContext::compositeOperation() const
     return m_state.compositeOperator;
 }
 
+BlendMode GraphicsContext::blendModeOperation() const
+{
+    return m_state.blendMode;
+}
+
+#if PLATFORM(IOS)
 bool GraphicsContext::emojiDrawingEnabled()
 {
     return m_state.emojiDrawingEnabled;
@@ -737,16 +837,17 @@ void GraphicsContext::setEmojiDrawingEnabled(bool emojiDrawingEnabled)
 {
     m_state.emojiDrawingEnabled = emojiDrawingEnabled;
 }
+#endif
 
-#if !USE(CG) && !USE(SKIA)
+#if !USE(CG)
 // Implement this if you want to go ahead and push the drawing mode into your native context
 // immediately.
-void GraphicsContext::setPlatformTextDrawingMode(TextDrawingModeFlags mode)
+void GraphicsContext::setPlatformTextDrawingMode(TextDrawingModeFlags)
 {
 }
 #endif
 
-#if !PLATFORM(QT) && !USE(CAIRO) && !USE(SKIA) && !PLATFORM(OPENVG)
+#if !PLATFORM(QT) && !USE(CAIRO)
 void GraphicsContext::setPlatformStrokeStyle(StrokeStyle)
 {
 }
@@ -758,7 +859,7 @@ void GraphicsContext::setPlatformShouldSmoothFonts(bool)
 }
 #endif
 
-#if !USE(SKIA) && !USE(CG)
+#if !USE(CG) && !USE(CAIRO)
 bool GraphicsContext::isAcceleratedContext() const
 {
     return false;
@@ -794,16 +895,21 @@ void GraphicsContext::adjustLineToPixelBoundaries(FloatPoint& p1, FloatPoint& p2
     }
 }
 
-PassOwnPtr<ImageBuffer> GraphicsContext::createCompatibleBuffer(const IntSize& size) const
+static bool scalesMatch(AffineTransform a, AffineTransform b)
+{
+    return a.xScale() == b.xScale() && a.yScale() == b.yScale();
+}
+
+PassOwnPtr<ImageBuffer> GraphicsContext::createCompatibleBuffer(const IntSize& size, bool hasAlpha) const
 {
     // Make the buffer larger if the context's transform is scaling it so we need a higher
     // resolution than one pixel per unit. Also set up a corresponding scale factor on the
     // graphics context.
 
-    AffineTransform transform = getCTM();
+    AffineTransform transform = getCTM(DefinitelyIncludeDeviceScale);
     IntSize scaledSize(static_cast<int>(ceil(size.width() * transform.xScale())), static_cast<int>(ceil(size.height() * transform.yScale())));
 
-    OwnPtr<ImageBuffer> buffer = ImageBuffer::create(scaledSize, 1, ColorSpaceDeviceRGB, isAcceleratedContext() ? Accelerated : Unaccelerated);
+    OwnPtr<ImageBuffer> buffer = ImageBuffer::createCompatibleBuffer(scaledSize, 1, ColorSpaceDeviceRGB, this, hasAlpha);
     if (!buffer)
         return nullptr;
 
@@ -811,6 +917,13 @@ PassOwnPtr<ImageBuffer> GraphicsContext::createCompatibleBuffer(const IntSize& s
         static_cast<float>(scaledSize.height()) / size.height()));
 
     return buffer.release();
+}
+
+bool GraphicsContext::isCompatibleWithBuffer(ImageBuffer* buffer) const
+{
+    GraphicsContext* bufferContext = buffer->context();
+
+    return scalesMatch(getCTM(), bufferContext->getCTM()) && isAcceleratedContext() == bufferContext->isAcceleratedContext();
 }
 
 #if !USE(CG)
@@ -849,7 +962,7 @@ void GraphicsContext::strokeEllipseAsPath(const FloatRect& ellipse)
     strokePath(path);
 }
 
-#if !USE(CG) && !USE(SKIA) // append && !USE(MYPLATFORM) here to optimize ellipses on your platform.
+#if !USE(CG)
 void GraphicsContext::platformFillEllipse(const FloatRect& ellipse)
 {
     if (paintingDisabled())

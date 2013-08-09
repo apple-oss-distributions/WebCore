@@ -40,12 +40,13 @@
 #import "Event.h"
 #import "EventNames.h"
 
-#if ENABLE(SVG_DOM_OBJC_BINDINGS)
-#import "DOMSVGZoomEvent.h"
+#if ENABLE(TOUCH_EVENTS)
+#import "DOMTouchEvent.h"
 #endif
 
+#if ENABLE(IOS_GESTURE_EVENTS)
 #import "DOMGestureEvent.h"
-#import "DOMTouchEvent.h"
+#endif
 
 using WebCore::eventNames;
 
@@ -60,14 +61,14 @@ Class kitClass(WebCore::Event* impl)
             return [DOMTextEvent class];
         if (impl->hasInterface(eventNames().interfaceForWheelEvent))
             return [DOMWheelEvent class];        
-#if ENABLE(SVG_DOM_OBJC_BINDINGS)
-        if (impl->hasInterface(eventNames().interfaceForSVGZoomEvent))
-            return [DOMSVGZoomEvent class];
-#endif
+#if ENABLE(TOUCH_EVENTS)
         if (impl->hasInterface(eventNames().interfaceForTouchEvent))
             return [DOMTouchEvent class];
+#endif
+#if ENABLE(IOS_GESTURE_EVENTS)
         if (impl->hasInterface(eventNames().interfaceForGestureEvent))
             return [DOMGestureEvent class];
+#endif
         return [DOMUIEvent class];
     }
     if (impl->hasInterface(eventNames().interfaceForMutationEvent))

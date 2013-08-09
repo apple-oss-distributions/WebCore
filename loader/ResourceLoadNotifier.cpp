@@ -39,9 +39,10 @@
 #include "Page.h"
 #include "ProgressTracker.h"
 #include "ResourceLoader.h"
-#include <wtf/UnusedParam.h>
 
+#if USE(QUICK_LOOK)
 #include "QuickLook.h"
+#endif
 
 namespace WebCore {
 
@@ -74,7 +75,7 @@ void ResourceLoadNotifier::didReceiveResponse(ResourceLoader* loader, const Reso
     if (Page* page = m_frame->page())
         page->progress()->incrementProgress(loader->identifier(), r);
 
-    dispatchDidReceiveResponse(loader->documentLoader(), loader->identifier(), r);
+    dispatchDidReceiveResponse(loader->documentLoader(), loader->identifier(), r, loader);
 }
 
 void ResourceLoadNotifier::didReceiveData(ResourceLoader* loader, const char* data, int dataLength, int encodedDataLength)
@@ -110,9 +111,11 @@ void ResourceLoadNotifier::assignIdentifierToInitialRequest(unsigned long identi
 
 void ResourceLoadNotifier::dispatchWillSendRequest(DocumentLoader* loader, unsigned long identifier, ResourceRequest& request, const ResourceResponse& redirectResponse)
 {
+#if USE(QUICK_LOOK)
     // Always allow QuickLook-generated URLs based on the protocol scheme.
     if (!request.isNull() && request.url().protocolIs(QLPreviewProtocol()))
         return;
+#endif
 
     String oldRequestURL = request.url().string();
     m_frame->loader()->documentLoader()->didTellClientAboutLoad(request.url());
@@ -128,13 +131,17 @@ void ResourceLoadNotifier::dispatchWillSendRequest(DocumentLoader* loader, unsig
     // Report WebTiming for all frames.
     if (loader && !request.isNull() && request.url() == loader->requestURL())
         request.setReportLoadTiming(true);
+
+#if ENABLE(RESOURCE_TIMING)
+    request.setReportLoadTiming(true);
+#endif
 }
 
-void ResourceLoadNotifier::dispatchDidReceiveResponse(DocumentLoader* loader, unsigned long identifier, const ResourceResponse& r)
+void ResourceLoadNotifier::dispatchDidReceiveResponse(DocumentLoader* loader, unsigned long identifier, const ResourceResponse& r, ResourceLoader* resourceLoader)
 {
     InspectorInstrumentationCookie cookie = InspectorInstrumentation::willReceiveResourceResponse(m_frame, identifier, r);
     m_frame->loader()->client()->dispatchDidReceiveResponse(loader, identifier, r);
-    InspectorInstrumentation::didReceiveResourceResponse(cookie, identifier, loader, r);
+    InspectorInstrumentation::didReceiveResourceResponse(cookie, identifier, loader, r, resourceLoader);
 }
 
 void ResourceLoadNotifier::dispatchDidReceiveData(DocumentLoader* loader, unsigned long identifier, const char* data, int dataLength, int encodedDataLength)
@@ -151,8 +158,23 @@ void ResourceLoadNotifier::dispatchDidFinishLoading(DocumentLoader* loader, unsi
     InspectorInstrumentation::didFinishLoading(m_frame, loader, identifier, finishTime);
 }
 
-void ResourceLoadNotifier::sendRemainingDelegateMessages(DocumentLoader* loader, unsigned long identifier, const ResourceResponse& response, const char* data, int dataLength, int encodedDataLength, const ResourceError& error)
+void ResourceLoadNotifier::dispatchDidFailLoading(DocumentLoader* loader, unsigned long identifier, const ResourceError& error)
 {
+    m_frame->loader()->client()->dispatchDidFailLoading(loader, identifier, error);
+
+    InspectorInstrumentation::didFailLoading(m_frame, loader, identifier, error);
+}
+
+void ResourceLoadNotifier::sendRemainingDelegateMessages(DocumentLoader* loader, unsigned long identifier, const ResourceRequest& request, const ResourceResponse& response, const char* data, int dataLength, int encodedDataLength, const ResourceError& error)
+{
+    // If the request is null, willSendRequest cancelled the load. We should
+    // only dispatch didFailLoading in this case.
+    if (request.isNull()) {
+        ASSERT(error.isCancellation());
+        dispatchDidFailLoading(loader, identifier, error);
+        return;
+    }
+
     if (!response.isNull())
         dispatchDidReceiveResponse(loader, identifier, response);
 
@@ -162,7 +184,7 @@ void ResourceLoadNotifier::sendRemainingDelegateMessages(DocumentLoader* loader,
     if (error.isNull())
         dispatchDidFinishLoading(loader, identifier, 0);
     else
-        m_frame->loader()->client()->dispatchDidFailLoading(loader, identifier, error);
+        dispatchDidFailLoading(loader, identifier, error);
 }
 
 } // namespace WebCore

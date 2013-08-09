@@ -54,8 +54,8 @@ inline bool shouldExpandFrame(LayoutUnit width, LayoutUnit height, bool hasFixed
 
 void RenderFrameBase::layoutWithFlattening(bool hasFixedWidth, bool hasFixedHeight)
 {
-    FrameView* childFrameView = static_cast<FrameView*>(widget());
-    RenderView* childRoot = childFrameView ? static_cast<RenderView*>(childFrameView->frame()->contentRenderer()) : 0;
+    FrameView* childFrameView = toFrameView(widget());
+    RenderView* childRoot = childFrameView ? childFrameView->frame()->contentRenderer() : 0;
 
     if (!childRoot || !shouldExpandFrame(width(), height(), hasFixedWidth, hasFixedHeight)) {
         updateWidgetPosition();
@@ -65,10 +65,10 @@ void RenderFrameBase::layoutWithFlattening(bool hasFixedWidth, bool hasFixedHeig
         return;
     }
 
+    childFrameView->setResizeEventAllowed(false);
+
     // need to update to calculate min/max correctly
     updateWidgetPosition();
-    if (childRoot->preferredLogicalWidthsDirty())
-        childRoot->computePreferredLogicalWidths();
 
     // if scrollbars are off, and the width or height are fixed
     // we obey them and do not expand. With frame flattening
@@ -96,6 +96,7 @@ void RenderFrameBase::layoutWithFlattening(bool hasFixedWidth, bool hasFixedHeig
         setWidth(max<LayoutUnit>(width(), childFrameView->contentsWidth() + hBorder));
 
     updateWidgetPosition();
+    childFrameView->setResizeEventAllowed(true);
 
     ASSERT(!childFrameView->layoutPending());
     ASSERT(!childRoot->needsLayout());

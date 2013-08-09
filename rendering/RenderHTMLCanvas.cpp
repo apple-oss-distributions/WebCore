@@ -44,7 +44,8 @@ using namespace HTMLNames;
 RenderHTMLCanvas::RenderHTMLCanvas(HTMLCanvasElement* element)
     : RenderReplaced(element, element->size())
 {
-    view()->frameView()->setIsVisuallyNonEmpty();
+    // Actual size is not known yet, report the default intrinsic size.
+    view()->frameView()->incrementVisuallyNonEmptyPixelCount(roundedIntSize(intrinsicSize()));
 }
 
 bool RenderHTMLCanvas::requiresLayer() const
@@ -68,14 +69,14 @@ void RenderHTMLCanvas::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& pa
         }
     }
 
-    bool useLowQualityScale = style()->imageRendering() == ImageRenderingOptimizeContrast;
+    bool useLowQualityScale = style()->imageRendering() == ImageRenderingCrispEdges || style()->imageRendering() == ImageRenderingOptimizeSpeed;
     static_cast<HTMLCanvasElement*>(node())->paint(paintInfo.context, rect, useLowQualityScale);
 }
 
 void RenderHTMLCanvas::canvasSizeChanged()
 {
     IntSize canvasSize = static_cast<HTMLCanvasElement*>(node())->size();
-    IntSize zoomedSize(canvasSize.width() * style()->effectiveZoom(), canvasSize.height() * style()->effectiveZoom());
+    LayoutSize zoomedSize(canvasSize.width() * style()->effectiveZoom(), canvasSize.height() * style()->effectiveZoom());
 
     if (zoomedSize == intrinsicSize())
         return;
@@ -89,8 +90,8 @@ void RenderHTMLCanvas::canvasSizeChanged()
         setPreferredLogicalWidthsDirty(true);
 
     LayoutSize oldSize = size();
-    computeLogicalWidth();
-    computeLogicalHeight();
+    updateLogicalWidth();
+    updateLogicalHeight();
     if (oldSize == size())
         return;
 

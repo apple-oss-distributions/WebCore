@@ -37,7 +37,9 @@
 #include <wtf/PassOwnPtr.h>
 #include <wtf/text/StringHash.h>
 
+#if PLATFORM(IOS)
 #include <wtf/MainThread.h>
+#endif
 
 namespace WebCore {
 
@@ -127,7 +129,11 @@ bool SecurityPolicy::isAccessToURLWhiteListed(const SecurityOrigin* activeOrigin
 
 void SecurityPolicy::addOriginAccessWhitelistEntry(const SecurityOrigin& sourceOrigin, const String& destinationProtocol, const String& destinationDomain, bool allowDestinationSubdomains)
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif
     ASSERT(!sourceOrigin.isUnique());
     if (sourceOrigin.isUnique())
         return;
@@ -135,9 +141,9 @@ void SecurityPolicy::addOriginAccessWhitelistEntry(const SecurityOrigin& sourceO
     String sourceString = sourceOrigin.toString();
     OriginAccessMap::AddResult result = originAccessMap().add(sourceString, nullptr);
     if (result.isNewEntry)
-        result.iterator->second = adoptPtr(new OriginAccessWhiteList);
+        result.iterator->value = adoptPtr(new OriginAccessWhiteList);
 
-    OriginAccessWhiteList* list = result.iterator->second.get();
+    OriginAccessWhiteList* list = result.iterator->value.get();
     list->append(OriginAccessEntry(destinationProtocol, destinationDomain, allowDestinationSubdomains ? OriginAccessEntry::AllowSubdomains : OriginAccessEntry::DisallowSubdomains));
 }
 
@@ -154,7 +160,7 @@ void SecurityPolicy::removeOriginAccessWhitelistEntry(const SecurityOrigin& sour
     if (it == map.end())
         return;
 
-    OriginAccessWhiteList* list = it->second.get();
+    OriginAccessWhiteList* list = it->value.get();
     size_t index = list->find(OriginAccessEntry(destinationProtocol, destinationDomain, allowDestinationSubdomains ? OriginAccessEntry::AllowSubdomains : OriginAccessEntry::DisallowSubdomains));
     if (index == notFound)
         return;
@@ -167,7 +173,11 @@ void SecurityPolicy::removeOriginAccessWhitelistEntry(const SecurityOrigin& sour
 
 void SecurityPolicy::resetOriginAccessWhitelists()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
     originAccessMap().clear();
 }
 

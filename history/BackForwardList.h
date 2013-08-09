@@ -55,9 +55,11 @@ public:
 
     virtual void close() = 0;
 
+#if PLATFORM(IOS)
     virtual unsigned current() = 0;
     virtual void setCurrent(unsigned newCurrent) = 0;
     virtual bool clearAllPageCaches() = 0;
+#endif
 
     // FIXME: Delete these once all callers are using BackForwardController
     // instead of calling this directly.

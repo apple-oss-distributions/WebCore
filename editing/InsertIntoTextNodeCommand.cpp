@@ -28,10 +28,13 @@
 
 #include "AXObjectCache.h"
 #include "Document.h"
+#include "ExceptionCodePlaceholder.h"
 #include "RenderText.h"
 #include "Settings.h"
 #include "Text.h"
+#if PLATFORM(IOS)
 #include "RenderText.h"
+#endif
 
 namespace WebCore {
 
@@ -48,22 +51,32 @@ InsertIntoTextNodeCommand::InsertIntoTextNodeCommand(PassRefPtr<Text> node, unsi
 
 void InsertIntoTextNodeCommand::doApply()
 {
+    bool passwordEchoEnabled = document()->settings() && document()->settings()->passwordEchoEnabled();
+    if (passwordEchoEnabled)
+        document()->updateLayoutIgnorePendingStylesheets();
+
     if (!m_node->rendererIsEditable())
         return;
 
+    if (passwordEchoEnabled) {
+        RenderText* renderText = toRenderText(m_node->renderer());
+        if (renderText && renderText->isSecure())
+            renderText->momentarilyRevealLastTypedCharacter(m_offset + m_text.length() - 1);
+    }
 
-    ExceptionCode ec;
-    m_node->insertData(m_offset, m_text, ec);
+    m_node->insertData(m_offset, m_text, IGNORE_EXCEPTION);
 
-    if (AXObjectCache::accessibilityEnabled())
-        document()->axObjectCache()->nodeTextChangeNotification(m_node->renderer(), AXObjectCache::AXTextInserted, m_offset, m_text);
+    if (AXObjectCache* cache = document()->existingAXObjectCache())
+        cache->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextInserted, m_offset, m_text);
 }
 
+#if PLATFORM(IOS)
 void InsertIntoTextNodeCommand::doReapply()
 {
     ExceptionCode ec;
-    m_node->insertData(m_offset, m_text, ec, false);
+    m_node->insertData(m_offset, m_text, ec);
 }
+#endif
     
 void InsertIntoTextNodeCommand::doUnapply()
 {
@@ -71,11 +84,10 @@ void InsertIntoTextNodeCommand::doUnapply()
         return;
         
     // Need to notify this before actually deleting the text
-    if (AXObjectCache::accessibilityEnabled())
-        document()->axObjectCache()->nodeTextChangeNotification(m_node->renderer(), AXObjectCache::AXTextDeleted, m_offset, m_text);
+    if (AXObjectCache* cache = document()->existingAXObjectCache())
+        cache->nodeTextChangeNotification(m_node.get(), AXObjectCache::AXTextDeleted, m_offset, m_text);
 
-    ExceptionCode ec;
-    m_node->deleteData(m_offset, m_text.length(), ec);
+    m_node->deleteData(m_offset, m_text.length(), IGNORE_EXCEPTION);
 }
 
 #ifndef NDEBUG

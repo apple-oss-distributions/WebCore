@@ -19,6 +19,7 @@
 #ifndef TileLayer_h
 #define TileLayer_h
 
+#if PLATFORM(IOS)
 
 #include <QuartzCore/CALayer.h>
 
@@ -32,7 +33,8 @@ class TileGrid;
     unsigned _paintCount;
 }
 @property (nonatomic) unsigned paintCount;
-- (void)setTileGrid:(WebCore::TileGrid*)tileGrid;
+@property (nonatomic) WebCore::TileGrid* tileGrid;
++ (TileLayer *)layerBeingPainted;
 @end
 
 @interface TileHostLayer : CALayer
@@ -42,4 +44,5 @@ class TileGrid;
 - (id)initWithTileGrid:(WebCore::TileGrid*)tileGrid;
 @end
 
+#endif
 #endif

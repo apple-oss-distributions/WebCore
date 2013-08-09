@@ -18,6 +18,7 @@
 
 #include <wtf/Platform.h>
 
+#if ENABLE(TOUCH_EVENTS)
 
 #include <wtf/RefCounted.h>
 #include <wtf/PassRefPtr.h>
@@ -49,5 +50,6 @@ private:
 
 } // namespace WebCore
 
+#endif // ENABLE(TOUCH_EVENTS)
 
 #endif /* TouchList_h */

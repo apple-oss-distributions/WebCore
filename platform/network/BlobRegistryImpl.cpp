@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2010 Google Inc. All rights reserved.
+ * Copyright (C) 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -29,31 +30,27 @@
  */
 
 #include "config.h"
+#include "BlobRegistryImpl.h"
 
 #if ENABLE(BLOB)
 
-#include "BlobRegistryImpl.h"
-
 #include "BlobResourceHandle.h"
+#include "BlobStorageData.h"
 #include "ResourceError.h"
 #include "ResourceHandle.h"
-#include "ResourceLoader.h"
 #include "ResourceRequest.h"
 #include "ResourceResponse.h"
 #include <wtf/MainThread.h>
 #include <wtf/StdLibExtras.h>
 
+#if PLATFORM(IOS)
 #include "WebCoreThread.h"
+#endif
 
 namespace WebCore {
 
-#if !PLATFORM(CHROMIUM)
-BlobRegistry& blobRegistry()
+BlobRegistryImpl::~BlobRegistryImpl()
 {
-    ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
-
-    DEFINE_STATIC_LOCAL(BlobRegistryImpl, instance, ());
-    return instance;
 }
 
 static PassRefPtr<ResourceHandle> createResourceHandle(const ResourceRequest& request, ResourceHandleClient* client)
@@ -61,48 +58,30 @@ static PassRefPtr<ResourceHandle> createResourceHandle(const ResourceRequest& re
     return static_cast<BlobRegistryImpl&>(blobRegistry()).createResourceHandle(request, client);
 }
 
+static void loadResourceSynchronously(NetworkingContext*, const ResourceRequest& request, StoredCredentials, ResourceError& error, ResourceResponse& response, Vector<char>& data)
+{
+    BlobStorageData* blobData = static_cast<BlobRegistryImpl&>(blobRegistry()).getBlobDataFromURL(request.url());
+    BlobResourceHandle::loadResourceSynchronously(blobData, request, error, response, data);
+}
+
 static void registerBlobResourceHandleConstructor()
 {
     static bool didRegister = false;
     if (!didRegister) {
         ResourceHandle::registerBuiltinConstructor("blob", createResourceHandle);
+        ResourceHandle::registerBuiltinSynchronousLoader("blob", loadResourceSynchronously);
         didRegister = true;
     }
 }
 
-#else
-
-static void registerBlobResourceHandleConstructor()
-{
-}
-#endif
-
-bool BlobRegistryImpl::shouldLoadResource(const ResourceRequest& request) const
-{
-    // If the resource is not fetched using the GET method, bail out.
-    if (!equalIgnoringCase(request.httpMethod(), "GET"))
-        return false;
-
-    return true;
-}
-
 PassRefPtr<ResourceHandle> BlobRegistryImpl::createResourceHandle(const ResourceRequest& request, ResourceHandleClient* client)
 {
-    if (!shouldLoadResource(request))
+    RefPtr<BlobResourceHandle> handle = BlobResourceHandle::createAsync(getBlobDataFromURL(request.url()), request, client);
+    if (!handle)
         return 0;
 
-    RefPtr<BlobResourceHandle> handle = BlobResourceHandle::create(m_blobs.get(request.url().string()), request, client);
     handle->start();
     return handle.release();
-}
-
-bool BlobRegistryImpl::loadResourceSynchronously(const ResourceRequest& request, ResourceError& error, ResourceResponse& response, Vector<char>& data)
-{
-    if (!shouldLoadResource(request))
-        return false;
-
-    BlobResourceHandle::loadResourceSynchronously(m_blobs.get(request.url().string()), request, error, response, data);
-    return true;
 }
 
 void BlobRegistryImpl::appendStorageItems(BlobStorageData* blobStorageData, const BlobDataItemList& items)
@@ -110,6 +89,10 @@ void BlobRegistryImpl::appendStorageItems(BlobStorageData* blobStorageData, cons
     for (BlobDataItemList::const_iterator iter = items.begin(); iter != items.end(); ++iter) {
         if (iter->type == BlobDataItem::Data)
             blobStorageData->m_data.appendData(iter->data, iter->offset, iter->length);
+#if ENABLE(FILE_SYSTEM)
+        else if (iter->type == BlobDataItem::URL)
+            blobStorageData->m_data.appendURL(iter->url, iter->offset, iter->length, iter->expectedModificationTime);
+#endif
         else {
             ASSERT(iter->type == BlobDataItem::File);
             blobStorageData->m_data.appendFile(iter->path, iter->offset, iter->length, iter->expectedModificationTime);
@@ -136,6 +119,10 @@ void BlobRegistryImpl::appendStorageItems(BlobStorageData* blobStorageData, cons
         long long newLength = currentLength > length ? length : currentLength;
         if (iter->type == BlobDataItem::Data)
             blobStorageData->m_data.appendData(iter->data, iter->offset + offset, newLength);
+#if ENABLE(FILE_SYSTEM)
+        else if (iter->type == BlobDataItem::URL)
+            blobStorageData->m_data.appendURL(iter->url, iter->offset + offset, newLength, iter->expectedModificationTime);
+#endif
         else {
             ASSERT(iter->type == BlobDataItem::File);
             blobStorageData->m_data.appendFile(iter->path, iter->offset + offset, newLength, iter->expectedModificationTime);
@@ -147,7 +134,11 @@ void BlobRegistryImpl::appendStorageItems(BlobStorageData* blobStorageData, cons
 
 void BlobRegistryImpl::registerBlobURL(const KURL& url, PassOwnPtr<BlobData> blobData)
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+#endif // !PLATFORM(IOS)
     registerBlobResourceHandleConstructor();
 
     RefPtr<BlobStorageData> blobStorageData = BlobStorageData::create(blobData->contentType(), blobData->contentDisposition());
@@ -155,6 +146,7 @@ void BlobRegistryImpl::registerBlobURL(const KURL& url, PassOwnPtr<BlobData> blo
     // The blob data is stored in the "canonical" way. That is, it only contains a list of Data and File items.
     // 1) The Data item is denoted by the raw data and the range.
     // 2) The File item is denoted by the file path, the range and the expected modification time.
+    // 3) The URL item is denoted by the URL, the range and the expected modification time.
     // All the Blob items in the passing blob data are resolved and expanded into a set of Data and File items.
 
     for (BlobDataItemList::const_iterator iter = blobData->items().begin(); iter != blobData->items().end(); ++iter) {
@@ -165,6 +157,11 @@ void BlobRegistryImpl::registerBlobURL(const KURL& url, PassOwnPtr<BlobData> blo
         case BlobDataItem::File:
             blobStorageData->m_data.appendFile(iter->path, iter->offset, iter->length, iter->expectedModificationTime);
             break;
+#if ENABLE(FILE_SYSTEM)
+        case BlobDataItem::URL:
+            blobStorageData->m_data.appendURL(iter->url, iter->offset, iter->length, iter->expectedModificationTime);
+            break;
+#endif
         case BlobDataItem::Blob:
             if (m_blobs.contains(iter->url.string()))
                 appendStorageItems(blobStorageData.get(), m_blobs.get(iter->url.string())->items(), iter->offset, iter->length);
@@ -177,7 +174,11 @@ void BlobRegistryImpl::registerBlobURL(const KURL& url, PassOwnPtr<BlobData> blo
 
 void BlobRegistryImpl::registerBlobURL(const KURL& url, const KURL& srcURL)
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+#endif // !PLATFORM(IOS)
     registerBlobResourceHandleConstructor();
 
     RefPtr<BlobStorageData> src = m_blobs.get(srcURL.string());
@@ -190,18 +191,26 @@ void BlobRegistryImpl::registerBlobURL(const KURL& url, const KURL& srcURL)
 
 void BlobRegistryImpl::unregisterBlobURL(const KURL& url)
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+#endif // !PLATFORM(IOS)
 
     m_blobs.remove(url.string());
 }
 
-PassRefPtr<BlobStorageData> BlobRegistryImpl::getBlobDataFromURL(const KURL& url) const
+BlobStorageData* BlobRegistryImpl::getBlobDataFromURL(const KURL& url) const
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+#endif // !PLATFORM(IOS)
 
     return m_blobs.get(url.string());
 }
 
 } // namespace WebCore
 
-#endif // ENABLE(BLOB)
+#endif

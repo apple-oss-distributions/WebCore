@@ -18,8 +18,9 @@ namespace WebCore {
 class SelectionRect {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    explicit SelectionRect(const IntRect &, bool isHorizontal);
-    SelectionRect(const IntRect &, TextDirection, int, int, int, int, bool, bool, bool, bool, bool, bool, bool);
+    explicit SelectionRect(const IntRect &, bool isHorizontal, int columnNumber);
+    SelectionRect(const IntRect &, TextDirection, int, int, int, int, bool, bool, bool, bool, bool, bool, bool, bool, int);
+    SelectionRect();
     ~SelectionRect() { }
 
     IntRect rect() const { return m_rect; }
@@ -41,6 +42,8 @@ public:
     bool containsEnd() const { return m_containsEnd; }
     bool isHorizontal() const { return m_isHorizontal; }
     bool isInFixedPosition() const { return m_isInFixedPosition; }
+    bool isRubyText() const { return m_isRubyText; }
+    int columnNumber() const { return m_columnNumber; }
 
     void setRect(const IntRect &r) { m_rect = r; }
 
@@ -102,6 +105,8 @@ private:
     bool m_containsEnd;
     bool m_isHorizontal;
     bool m_isInFixedPosition;
+    bool m_isRubyText;
+    int m_columnNumber;
 };
 
 }

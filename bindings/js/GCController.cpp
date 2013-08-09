@@ -27,7 +27,7 @@
 #include "GCController.h"
 
 #include "JSDOMWindow.h"
-#include <runtime/JSGlobalData.h>
+#include <runtime/VM.h>
 #include <runtime/JSLock.h>
 #include <heap/Heap.h>
 #include <wtf/StdLibExtras.h>
@@ -38,8 +38,8 @@ namespace WebCore {
 
 static void collect(void*)
 {
-    JSLockHolder lock(JSDOMWindow::commonJSGlobalData());
-    JSDOMWindow::commonJSGlobalData()->heap.collectAllGarbage();
+    JSLockHolder lock(JSDOMWindow::commonVM());
+    JSDOMWindow::commonVM()->heap.collectAllGarbage();
 }
 
 GCController& gcController()
@@ -49,7 +49,7 @@ GCController& gcController()
 }
 
 GCController::GCController()
-#if !USE(CF)
+#if !USE(CF) && !PLATFORM(BLACKBERRY) && !PLATFORM(QT)
     : m_GCTimer(this, &GCController::gcTimerFired)
 #endif
 {
@@ -62,16 +62,16 @@ void GCController::garbageCollectSoon()
     // systems with CoreFoundation. If and when the notion of a run loop is pushed 
     // down into WTF so that more platforms can take advantage of it, we will be 
     // able to use reportAbandonedObjectGraph on more platforms.
-#if USE(CF)
-    JSLockHolder lock(JSDOMWindow::commonJSGlobalData());
-    JSDOMWindow::commonJSGlobalData()->heap.reportAbandonedObjectGraph();
+#if USE(CF) || PLATFORM(BLACKBERRY) || PLATFORM(QT)
+    JSLockHolder lock(JSDOMWindow::commonVM());
+    JSDOMWindow::commonVM()->heap.reportAbandonedObjectGraph();
 #else
     if (!m_GCTimer.isActive())
         m_GCTimer.startOneShot(0);
 #endif
 }
 
-#if !USE(CF)
+#if !USE(CF) && !PLATFORM(BLACKBERRY) && !PLATFORM(QT)
 void GCController::gcTimerFired(Timer<GCController>*)
 {
     collect(0);
@@ -80,13 +80,15 @@ void GCController::gcTimerFired(Timer<GCController>*)
 
 void GCController::garbageCollectNow()
 {
-    JSLockHolder lock(JSDOMWindow::commonJSGlobalData());
+    JSLockHolder lock(JSDOMWindow::commonVM());
+#if PLATFORM(IOS)
     // If JavaScript was never run in this process, there's no need to call GC which will
-    // end up creating a JSGlobalData unnecessarily.
-    if (!JSDOMWindow::commonJSGlobalDataExists())
+    // end up creating a VM unnecessarily.
+    if (!JSDOMWindow::commonVMExists())
         return;
-    if (!JSDOMWindow::commonJSGlobalData()->heap.isBusy())
-        JSDOMWindow::commonJSGlobalData()->heap.collectAllGarbage();
+#endif
+    if (!JSDOMWindow::commonVM()->heap.isBusy())
+        JSDOMWindow::commonVM()->heap.collectAllGarbage();
 }
 
 void GCController::garbageCollectOnAlternateThreadForDebugging(bool waitUntilDone)
@@ -101,28 +103,35 @@ void GCController::garbageCollectOnAlternateThreadForDebugging(bool waitUntilDon
     detachThread(threadID);
 }
 
+#if PLATFORM(IOS)
 void GCController::releaseExecutableMemory()
 {
-    JSLockHolder lock(JSDOMWindow::commonJSGlobalData());
+    JSLockHolder lock(JSDOMWindow::commonVM());
 
-    if (!JSDOMWindow::commonJSGlobalDataExists())
+    if (!JSDOMWindow::commonVMExists())
         return;
 
     // We shouldn't have any javascript running on our stack when this function is called. The
     // following line asserts that.
-    ASSERT(!JSDOMWindow::commonJSGlobalData()->dynamicGlobalObject);
+    ASSERT(!JSDOMWindow::commonVM()->dynamicGlobalObject);
 
     // But be safe in release builds just in case...
-    if (JSDOMWindow::commonJSGlobalData()->dynamicGlobalObject)
+    if (JSDOMWindow::commonVM()->dynamicGlobalObject)
         return;
 
-    JSDOMWindow::commonJSGlobalData()->releaseExecutableMemory();
+    JSDOMWindow::commonVM()->releaseExecutableMemory();
+}
+#endif
+
+void GCController::setJavaScriptGarbageCollectorTimerEnabled(bool enable)
+{
+    JSDOMWindow::commonVM()->heap.setGarbageCollectionTimerEnabled(enable);
 }
 
 void GCController::discardAllCompiledCode()
 {
-    JSLockHolder lock(JSDOMWindow::commonJSGlobalData());
-    JSDOMWindow::commonJSGlobalData()->heap.discardAllCompiledCode();
+    JSLockHolder lock(JSDOMWindow::commonVM());
+    JSDOMWindow::commonVM()->discardAllCode();
 }
 
 } // namespace WebCore

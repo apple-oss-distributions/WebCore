@@ -19,11 +19,13 @@
 #ifndef TileGrid_h
 #define TileGrid_h
 
+#if PLATFORM(IOS)
 
 #include "IntPoint.h"
 #include "IntPointHash.h"
 #include "IntRect.h"
 #include "IntSize.h"
+#include "TileCache.h"
 #include <wtf/HashMap.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/OwnPtr.h>
@@ -38,7 +40,6 @@
 
 namespace WebCore {
 
-class TileCache;
 class TileGridTile;
 
 class TileGrid {
@@ -61,7 +62,7 @@ public:
     
     IntRect visibleRect() const;
     
-    void createTiles();
+    void createTiles(TileCache::SynchronousTileCreationMode);
 
     void dropAllTiles();
     void dropInvalidTiles();
@@ -101,6 +102,7 @@ private:
     TileIndex tileIndexForPoint(const IntPoint& point) const;
     
     IntRect adjustCoverRectForPageBounds(const IntRect& rect) const;
+    bool shouldUseMinimalTileCoverage() const;
 
 private:        
     TileGrid(TileCache*, const IntSize&);
@@ -131,4 +133,5 @@ static inline IntPoint bottomRight(const IntRect& rect)
 
 }
 
+#endif
 #endif

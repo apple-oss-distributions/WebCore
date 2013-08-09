@@ -39,6 +39,7 @@ Credential CredentialStorage::getFromPersistentStorage(const ProtectionSpace& pr
     return credential ? core(credential) : Credential();
 }
 
+#if PLATFORM(IOS)
 void CredentialStorage::saveToPersistentStorage(const ProtectionSpace& protectionSpace, const Credential& credential)
 {
     if (credential.persistence() == CredentialPersistenceNone) {
@@ -47,6 +48,7 @@ void CredentialStorage::saveToPersistentStorage(const ProtectionSpace& protectio
     } else
         [[NSURLCredentialStorage sharedCredentialStorage] setDefaultCredential:mac(credential) forProtectionSpace:mac(protectionSpace)];
 }
+#endif
 
 } // namespace WebCore
 

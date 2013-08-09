@@ -27,15 +27,18 @@
 #include "HTMLNames.h"
 #include "RenderTextFragment.h"
 #include "RenderTheme.h"
+#include "StyleInheritedData.h"
 
+#if PLATFORM(IOS)
 #include "RenderThemeIOS.h"
+#endif
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-RenderButton::RenderButton(Node* node)
-    : RenderDeprecatedFlexibleBox(node)
+RenderButton::RenderButton(Element* element)
+    : RenderFlexibleBox(element)
     , m_buttonText(0)
     , m_inner(0)
     , m_default(false)
@@ -53,7 +56,7 @@ void RenderButton::addChild(RenderObject* newChild, RenderObject* beforeChild)
         ASSERT(!firstChild());
         m_inner = createAnonymousBlock(style()->display());
         setupInnerStyle(m_inner->style());
-        RenderDeprecatedFlexibleBox::addChild(m_inner);
+        RenderFlexibleBox::addChild(m_inner);
     }
     
     m_inner->addChild(newChild, beforeChild);
@@ -61,8 +64,12 @@ void RenderButton::addChild(RenderObject* newChild, RenderObject* beforeChild)
 
 void RenderButton::removeChild(RenderObject* oldChild)
 {
-    if (oldChild == m_inner || !m_inner) {
-        RenderDeprecatedFlexibleBox::removeChild(oldChild);
+    // m_inner should be the only child, but checking for direct children who
+    // are not m_inner prevents security problems when that assumption is
+    // violated.
+    if (oldChild == m_inner || !m_inner || oldChild->parent() == this) {
+        ASSERT(oldChild == m_inner || !m_inner);
+        RenderFlexibleBox::removeChild(oldChild);
         m_inner = 0;
     } else
         m_inner->removeChild(oldChild);
@@ -72,10 +79,13 @@ void RenderButton::styleWillChange(StyleDifference diff, const RenderStyle* newS
 {
     if (m_inner) {
         // RenderBlock::setStyle is going to apply a new style to the inner block, which
-        // will have the initial box flex value, 0. The current value is 1, because we set
+        // will have the initial flex value, 0. The current value is 1, because we set
         // it right below. Here we change it back to 0 to avoid getting a spurious layout hint
-        // because of the difference.
-        m_inner->style()->setBoxFlex(0);
+        // because of the difference. Same goes for the other properties.
+        // FIXME: Make this hack unnecessary.
+        m_inner->style()->setFlexGrow(newStyle->initialFlexGrow());
+        m_inner->style()->setMarginTop(newStyle->initialMargin());
+        m_inner->style()->setMarginBottom(newStyle->initialMargin());
     }
     RenderBlock::styleWillChange(diff, newStyle);
 }
@@ -105,8 +115,12 @@ void RenderButton::setupInnerStyle(RenderStyle* innerStyle)
     ASSERT(innerStyle->refCount() == 1);
     // RenderBlock::createAnonymousBlock creates a new RenderStyle, so this is
     // safe to modify.
-    innerStyle->setBoxFlex(1.0f);
-    innerStyle->setBoxOrient(style()->boxOrient());
+    innerStyle->setFlexGrow(1.0f);
+    // Use margin:auto instead of align-items:center to get safe centering, i.e.
+    // when the content overflows, treat it the same as align-items: flex-start.
+    innerStyle->setMarginTop(Length());
+    innerStyle->setMarginBottom(Length());
+    innerStyle->setFlexDirection(style()->flexDirection());
 }
 
 void RenderButton::updateFromElement()
@@ -150,14 +164,6 @@ bool RenderButton::canHaveGeneratedChildren() const
     return !node()->hasTagName(inputTag);
 }
 
-void RenderButton::updateBeforeAfterContent(PseudoId type)
-{
-    if (m_inner)
-        m_inner->children()->updateBeforeAfterContent(m_inner, type, this);
-    else
-        children()->updateBeforeAfterContent(this, type);
-}
-
 LayoutRect RenderButton::controlClipRect(const LayoutPoint& additionalOffset) const
 {
     // Clip to the padding box to at least give content the extra padding space.
@@ -176,12 +182,14 @@ void RenderButton::timerFired(Timer<RenderButton>*)
     repaint();
 }
 
+#if PLATFORM(IOS)
 void RenderButton::layout()
 {
-    RenderDeprecatedFlexibleBox::layout();
+    RenderFlexibleBox::layout();
     
     // FIXME: We should not be adjusting styles during layout. <rdar://problem/7675493>
     RenderThemeIOS::adjustRoundBorderRadius(style(), this);
 }
+#endif
 
 } // namespace WebCore

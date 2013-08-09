@@ -1,5 +1,6 @@
 /*
  * Copyright 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2012 Samsung Electronics. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,7 +27,10 @@
 #ifndef DeviceMotionClient_h
 #define DeviceMotionClient_h
 
+#if PLATFORM(IOS)
 #include <wtf/Noncopyable.h>
+#endif
+#include "DeviceClient.h"
 
 namespace WebCore {
 
@@ -34,15 +38,17 @@ class DeviceMotionController;
 class DeviceMotionData;
 class Page;
 
-class DeviceMotionClient {
+class DeviceMotionClient : public DeviceClient {
+#if PLATFORM(IOS)
     WTF_MAKE_NONCOPYABLE(DeviceMotionClient);
+#endif
 public:
+#if PLATFORM(IOS)
     DeviceMotionClient() {}
+#endif
     virtual ~DeviceMotionClient() {}
     virtual void setController(DeviceMotionController*) = 0;
-    virtual void startUpdating() = 0;
-    virtual void stopUpdating() = 0;
-    virtual DeviceMotionData* currentDeviceMotion() const = 0;
+    virtual DeviceMotionData* lastMotion() const = 0;
     virtual void deviceMotionControllerDestroyed() = 0;
 };
 

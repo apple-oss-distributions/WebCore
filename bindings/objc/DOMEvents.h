@@ -37,8 +37,14 @@
 #import <WebCore/DOMMouseEvent.h>
 #import <WebCore/DOMMutationEvent.h>
 #import <WebCore/DOMOverflowEvent.h>
+#import <WebCore/DOMProgressEvent.h>
 #import <WebCore/DOMUIEvent.h>
 #import <WebCore/DOMWheelEvent.h>
 
+#if ENABLE(TOUCH_EVENTS)
 #import <WebCore/DOMTouchEvent.h>
+#endif
+
+#if ENABLE(IOS_GESTURE_EVENTS)
 #import <WebCore/DOMGestureEvent.h>
+#endif

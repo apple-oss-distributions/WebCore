@@ -26,17 +26,31 @@
 #ifndef IntSize_h
 #define IntSize_h
 
+#if PLATFORM(IOS)
 #include <CoreGraphics/CoreGraphics.h>
+#endif
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
+#if USE(CG)
 typedef struct CGSize CGSize;
 #endif
 
+#if !PLATFORM(IOS)
+
+#if PLATFORM(MAC)
+#ifdef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
+typedef struct CGSize NSSize;
+#else
+typedef struct _NSSize NSSize;
+#endif
+#endif
+
+#else
 
 #ifndef NSSize
 #define NSSize CGSize
 #endif
 
+#endif
 
 #if PLATFORM(WIN)
 typedef struct tagSIZE SIZE;
@@ -51,10 +65,6 @@ namespace Platform {
 class IntSize;
 }
 }
-#endif
-
-#if PLATFORM(WX)
-class wxSize;
 #endif
 
 namespace WebCore {
@@ -132,11 +142,17 @@ public:
         return IntSize(m_height, m_width);
     }
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
+#if USE(CG)
     explicit IntSize(const CGSize&); // don't do this implicitly since it's lossy
     operator CGSize() const;
 #endif
 
+#if !PLATFORM(IOS)    
+#if PLATFORM(MAC) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
+    explicit IntSize(const NSSize &); // don't do this implicitly since it's lossy
+    operator NSSize() const;
+#endif
+#endif // !PLATFORM(IOS)
 
 #if PLATFORM(WIN)
     IntSize(const SIZE&);
@@ -146,11 +162,6 @@ public:
 #if PLATFORM(QT)
     IntSize(const QSize&);
     operator QSize() const;
-#endif
-
-#if PLATFORM(WX)
-    IntSize(const wxSize&);
-    operator wxSize() const;
 #endif
 
 #if PLATFORM(BLACKBERRY)

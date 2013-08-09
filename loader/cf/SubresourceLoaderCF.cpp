@@ -25,9 +25,11 @@
 #include "config.h"
 #include "SubresourceLoader.h"
 
+#include "CachedResource.h"
+
 namespace WebCore {
 
-#if HAVE(NETWORK_CFDATA_ARRAY_CALLBACK)
+#if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
 void SubresourceLoader::didReceiveDataArray(CFArrayRef dataArray)
 {
     // Reference the object in this method since the additional processing can do
@@ -36,7 +38,7 @@ void SubresourceLoader::didReceiveDataArray(CFArrayRef dataArray)
 
     ResourceLoader::didReceiveDataArray(dataArray);
 
-    if (errorLoadingResource())
+    if (checkForHTTPStatusCodeError())
         return;
 
     // A subresource loader does not load multipart sections progressively.
@@ -44,8 +46,21 @@ void SubresourceLoader::didReceiveDataArray(CFArrayRef dataArray)
     if (!m_loadingMultipartContent) {
         CFIndex arrayCount = CFArrayGetCount(dataArray);
         for (CFIndex i = 0; i < arrayCount; ++i)  {
-            CFDataRef data = reinterpret_cast<CFDataRef>(CFArrayGetValueAtIndex(dataArray, i));
-            sendDataToResource(reinterpret_cast<const char *>(CFDataGetBytePtr(data)), static_cast<int>(CFDataGetLength(data)));
+#if PLATFORM(IOS)
+            // A previous iteration of this loop might have resulted in the load
+            // being cancelled. Bail out if we no longer have a cached resource.
+            if (!m_resource)
+                return;
+#endif
+            if (ResourceBuffer* resourceData = this->resourceData())
+                m_resource->addDataBuffer(resourceData);
+            else {
+                CFDataRef cfData = reinterpret_cast<CFDataRef>(CFArrayGetValueAtIndex(dataArray, i));
+                const char* data = reinterpret_cast<const char *>(CFDataGetBytePtr(cfData));
+                CFIndex length = CFDataGetLength(cfData);
+                ASSERT(length <= std::numeric_limits<CFIndex>::max());
+                m_resource->addData(data, static_cast<unsigned>(length));
+            }
         }
     }
 }

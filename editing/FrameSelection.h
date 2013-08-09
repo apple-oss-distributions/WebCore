@@ -28,14 +28,16 @@
 
 #include "EditingStyle.h"
 #include "IntRect.h"
-#include "LayoutTypes.h"
+#include "LayoutRect.h"
 #include "Range.h"
 #include "ScrollBehavior.h"
 #include "Timer.h"
 #include "VisibleSelection.h"
 #include <wtf/Noncopyable.h>
 
+#if PLATFORM(IOS)
 #include "Color.h"
+#endif
 
 namespace WebCore {
 
@@ -43,13 +45,18 @@ class CharacterData;
 class Frame;
 class GraphicsContext;
 class HTMLFormElement;
+class MutableStylePropertySet;
 class RenderObject;
 class RenderView;
 class Settings;
-class StylePropertySet;
 class VisiblePosition;
 
 enum EUserTriggered { NotUserTriggered = 0, UserTriggered = 1 };
+
+enum RevealExtentOption {
+    RevealExtent,
+    DoNotRevealExtent
+};
 
 class CaretBase {
     WTF_MAKE_NONCOPYABLE(CaretBase);
@@ -62,10 +69,8 @@ protected:
     void clearCaretRect();
     bool updateCaretRect(Document*, const VisiblePosition& caretPosition);
     IntRect absoluteBoundsForLocalRect(Node*, const LayoutRect&) const;
-    IntRect caretRepaintRect(Node*) const;
     bool shouldRepaintCaret(const RenderView*, bool isContentEditable) const;
     void paintCaret(Node*, GraphicsContext*, const LayoutPoint&, const LayoutRect& clipRect) const;
-    RenderObject* caretRenderer(Node*) const;
 
     const LayoutRect& localCaretRectWithoutUpdate() const { return m_caretLocalRect; }
 
@@ -120,6 +125,8 @@ public:
         ClearTypingStyle = 1 << 2,
         SpellCorrectionTriggered = 1 << 3,
         DoNotSetFocus = 1 << 4,
+        DictationTriggered = 1 << 5,
+        DoNotUpdateAppearance = 1 << 6,
     };
     typedef unsigned SetSelectionOptions; // Union of values in SetSelectionOption and EUserTriggered
     static inline EUserTriggered selectionOptionsToUserTriggered(SetSelectionOptions options)
@@ -127,10 +134,14 @@ public:
         return static_cast<EUserTriggered>(options & UserTriggered);
     }
 
-    FrameSelection(Frame* = 0);
+    explicit FrameSelection(Frame* = 0);
 
     Element* rootEditableElement() const { return m_selection.rootEditableElement(); }
     Element* rootEditableElementOrDocumentElement() const;
+    Node* rootEditableElementOrTreeScopeRootNode() const;
+    Element* rootEditableElementRespectingShadowTree() const;
+
+    bool rendererIsEditable() const { return m_selection.rendererIsEditable(); }
     bool isContentEditable() const { return m_selection.isContentEditable(); }
     bool isContentRichlyEditable() const { return m_selection.isContentRichlyEditable(); }
      
@@ -146,7 +157,8 @@ public:
     bool setSelectedRange(Range*, EAffinity, bool closeTyping);
     void selectAll();
     void clear();
-    
+    void prepareForDestruction();
+
     // Call this after doing user-triggered selections to make it easy to delete the frame you entirely selected.
     void selectFrameElementInParentIfFullySelected();
 
@@ -199,10 +211,9 @@ public:
     void debugRenderer(RenderObject*, bool selected) const;
 
     void nodeWillBeRemoved(Node*);
-    void textWillBeReplaced(CharacterData*, unsigned offset, unsigned oldLength, unsigned newLength);
+    void textWasReplaced(CharacterData*, unsigned offset, unsigned oldLength, unsigned newLength);
 
     void setCaretVisible(bool caretIsVisible) { setCaretVisibility(caretIsVisible ? Visible : Hidden); }
-    void clearCaretRectIfNeeded();
     bool recomputeCaretRect();
     void invalidateCaretRect();
     void paintCaret(GraphicsContext*, const LayoutPoint&, const LayoutRect& clipRect);
@@ -220,13 +231,12 @@ public:
     // Painting.
     void updateAppearance();
 
-    void updateSecureKeyboardEntryIfActive();
-
 #ifndef NDEBUG
     void formatForDebugger(char* buffer, unsigned length) const;
     void showTreeForThis() const;
 #endif
     
+#if PLATFORM(IOS)
 public:
     void expandSelectionToElementContainingCaretSelection();
     PassRefPtr<Range> elementRangeContainingCaretSelection() const;
@@ -257,18 +267,18 @@ private:
     bool _selectionAtSentenceStart(const VisibleSelection& sel) const;
     PassRefPtr<Range> _rangeByAlteringCurrentSelection(EAlteration alteration, int amount) const;
 public:
+#endif
 
     bool shouldChangeSelection(const VisibleSelection&) const;
     bool shouldDeleteSelection(const VisibleSelection&) const;
     enum EndPointsAdjustmentMode { AdjustEndpointsAtBidiBoundary, DoNotAdjsutEndpoints };
     void setNonDirectionalSelectionIfNeeded(const VisibleSelection&, TextGranularity, EndPointsAdjustmentMode = DoNotAdjsutEndpoints);
-    void setFocusedNodeIfNeeded();
     void notifyRendererOfSelectionChange(EUserTriggered);
 
     void paintDragCaret(GraphicsContext*, const LayoutPoint&, const LayoutRect& clipRect) const;
 
     EditingStyle* typingStyle() const;
-    PassRefPtr<StylePropertySet> copyTypingStyle() const;
+    PassRefPtr<MutableStylePropertySet> copyTypingStyle() const;
     void setTypingStyle(PassRefPtr<EditingStyle>);
     void clearTypingStyle();
 
@@ -278,8 +288,11 @@ public:
 
     HTMLFormElement* currentForm() const;
 
-    void revealSelection(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded, bool revealExtent = false);
+    void revealSelection(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded, RevealExtentOption = DoNotRevealExtent);
     void setSelectionFromNone();
+
+    bool shouldShowBlockCursor() const { return m_shouldShowBlockCursor; }
+    void setShouldShowBlockCursor(bool);
 
 private:
     enum EPositionType { START, END, BASE, EXTENT };
@@ -291,6 +304,7 @@ private:
     VisiblePosition positionForPlatform(bool isGetStart) const;
     VisiblePosition startForPlatform() const;
     VisiblePosition endForPlatform() const;
+    VisiblePosition nextWordPositionForPlatform(const VisiblePosition&);
 
     VisiblePosition modifyExtendingRight(TextGranularity);
     VisiblePosition modifyExtendingForward(TextGranularity);
@@ -302,14 +316,15 @@ private:
     VisiblePosition modifyMovingBackward(TextGranularity);
 
     LayoutUnit lineDirectionPointForBlockDirectionNavigation(EPositionType);
-    
-    void notifyAccessibilityForSelectionChange();
 
+#if HAVE(ACCESSIBILITY)
+    void notifyAccessibilityForSelectionChange();
+#endif
+
+    void setFocusedElementIfNeeded();
     void focusedOrActiveStateChanged();
 
     void caretBlinkTimerFired(Timer<FrameSelection>*);
-
-    void setUseSecureKeyboardEntry(bool);
 
     void setCaretVisibility(CaretVisibility);
 
@@ -325,23 +340,26 @@ private:
     VisiblePosition m_originalBase; // Used to store base before the adjustment at bidi boundary
     TextGranularity m_granularity;
 
+    RefPtr<Node> m_previousCaretNode; // The last node which painted the caret. Retained for clearing the old caret when it moves.
+
     RefPtr<EditingStyle> m_typingStyle;
 
     Timer<FrameSelection> m_caretBlinkTimer;
     // The painted bounds of the caret in absolute coordinates
     IntRect m_absCaretBounds;
-    // Similar to above, but inflated to ensure proper repaint (see https://bugs.webkit.org/show_bug.cgi?id=19086)
-    IntRect m_absoluteCaretRepaintBounds;
     bool m_absCaretBoundsDirty : 1;
     bool m_caretPaint : 1;
     bool m_isCaretBlinkingSuspended : 1;
     bool m_focused : 1;
+    bool m_shouldShowBlockCursor : 1;
 
+#if PLATFORM(IOS)
     bool m_updateAppearanceEnabled : 1;
     bool m_caretBlinks : 1;
     Color m_caretColor;
     int m_closeTypingSuppressions;
     int m_scrollingSuppressCount;
+#endif
 };
 
 inline EditingStyle* FrameSelection::typingStyle() const
@@ -359,10 +377,12 @@ inline void FrameSelection::setTypingStyle(PassRefPtr<EditingStyle> style)
     m_typingStyle = style;
 }
 
-#if !(PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(CHROMIUM))
+#if !(PLATFORM(MAC) || PLATFORM(GTK) || PLATFORM(EFL))
+#if HAVE(ACCESSIBILITY)
 inline void FrameSelection::notifyAccessibilityForSelectionChange()
 {
 }
+#endif
 #endif
 
 } // namespace WebCore

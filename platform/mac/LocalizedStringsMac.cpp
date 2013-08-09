@@ -38,12 +38,17 @@ String localizedString(const char* key)
 {
     static CFBundleRef bundle = CFBundleGetBundleWithIdentifier(CFSTR("com.apple.WebCore"));
 
+#if !PLATFORM(IOS)
+    // Can be called on a dispatch queue when initializing strings on iOS.
+    // See LoadWebLocalizedStrings and <rdar://problem/7902473>.
+    ASSERT(isMainThread());
+#endif
 
-    RetainPtr<CFStringRef> keyString(AdoptCF, CFStringCreateWithCStringNoCopy(0, key, kCFStringEncodingUTF8, kCFAllocatorNull));
+    RetainPtr<CFStringRef> keyString = adoptCF(CFStringCreateWithCStringNoCopy(0, key, kCFStringEncodingUTF8, kCFAllocatorNull));
     CFStringRef notFound = CFSTR("localized string not found");
     RetainPtr<CFStringRef> result;
     if (bundle) {
-        result.adoptCF(CFBundleCopyLocalizedString(bundle, keyString.get(), notFound, 0));
+        result = adoptCF(CFBundleCopyLocalizedString(bundle, keyString.get(), notFound, 0));
         ASSERT_WITH_MESSAGE(result.get() != notFound, "could not find localizable string %s in bundle", key);
     } else
         result = notFound;

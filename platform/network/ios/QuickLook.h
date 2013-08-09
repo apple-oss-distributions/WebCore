@@ -8,6 +8,7 @@
 #ifndef QuickLook_h
 #define QuickLook_h
 
+#if USE(QUICK_LOOK)
 
 #import "ResourceRequest.h"
 #import <objc/objc-runtime.h>
@@ -61,7 +62,7 @@ namespace WebCore {
     NSString *qlPreviewConverterUTIForURL(NSURL *);
     void removeQLPreviewConverterForURL(NSURL *);
 
-    PassOwnPtr<ResourceRequest> registerQLPreviewConverterIfNeeded(const KURL& url, const String& mimeType, const SubstituteData& data);
+    PassOwnPtr<ResourceRequest> registerQLPreviewConverterIfNeeded(NSURL *, NSString *mimeType, NSData *);
 
     const KURL safeQLURLForDocumentURLAndResourceURL(const KURL& documentURL, const String& resourceURL);
 
@@ -104,5 +105,6 @@ namespace WebCore {
 
 } // namespace WebCore
 
+#endif // USE(QUICK_LOOK)
 
 #endif // QuickLook_h

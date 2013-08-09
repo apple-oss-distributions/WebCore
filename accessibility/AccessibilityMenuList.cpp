@@ -37,9 +37,23 @@ AccessibilityMenuList::AccessibilityMenuList(RenderMenuList* renderer)
 {
 }
 
+PassRefPtr<AccessibilityMenuList> AccessibilityMenuList::create(RenderMenuList* renderer)
+{
+    return adoptRef(new AccessibilityMenuList(renderer));
+}
+
 bool AccessibilityMenuList::press() const
 {
+#if !PLATFORM(IOS)
+    RenderMenuList* menuList = static_cast<RenderMenuList*>(m_renderer);
+    if (menuList->popupIsVisible())
+        menuList->hidePopup();
+    else
+        menuList->showPopup();
+    return true;
+#else
     return false;
+#endif
 }
 
 void AccessibilityMenuList::addChildren()
@@ -52,12 +66,12 @@ void AccessibilityMenuList::addChildren()
     if (!list)
         return;
 
-    if (list->accessibilityPlatformIncludesObject() == IgnoreObject) {
+    static_cast<AccessibilityMockObject*>(list)->setParent(this);
+    if (list->accessibilityIsIgnored()) {
         cache->remove(list->axObjectID());
         return;
     }
 
-    static_cast<AccessibilityMockObject*>(list)->setParent(this);
     m_children.append(list);
 
     list->addChildren();
@@ -74,7 +88,19 @@ void AccessibilityMenuList::childrenChanged()
 
 bool AccessibilityMenuList::isCollapsed() const
 {
+#if !PLATFORM(IOS)
+    return !static_cast<RenderMenuList*>(m_renderer)->popupIsVisible();
+#else
     return true;
+#endif
+}
+
+bool AccessibilityMenuList::canSetFocusAttribute() const
+{
+    if (!node())
+        return false;
+
+    return !toElement(node())->isDisabledFormControl();
 }
 
 void AccessibilityMenuList::didUpdateActiveOption(int optionIndex)

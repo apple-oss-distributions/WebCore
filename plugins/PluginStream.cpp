@@ -121,6 +121,15 @@ void PluginStream::stop()
     m_client = 0;
 }
 
+static uint32_t lastModifiedDate(const ResourceResponse& response)
+{
+    double lastModified = response.lastModified();
+    if (!std::isfinite(lastModified))
+        return 0;
+
+    return lastModified * 1000;
+}
+
 void PluginStream::startStream()
 {
     ASSERT(m_streamState == StreamBeforeStarted);
@@ -140,16 +149,16 @@ void PluginStream::startStream()
 
     if (m_resourceResponse.isHTTP()) {
         StringBuilder stringBuilder;
-        String separator(": ");
+        String separator = ASCIILiteral(": ");
 
         String statusLine = "HTTP " + String::number(m_resourceResponse.httpStatusCode()) + " OK\n";
         stringBuilder.append(statusLine);
 
         HTTPHeaderMap::const_iterator end = m_resourceResponse.httpHeaderFields().end();
         for (HTTPHeaderMap::const_iterator it = m_resourceResponse.httpHeaderFields().begin(); it != end; ++it) {
-            stringBuilder.append(it->first);
+            stringBuilder.append(it->key);
             stringBuilder.append(separator);
-            stringBuilder.append(it->second);
+            stringBuilder.append(it->value);
             stringBuilder.append('\n');
         }
 
@@ -167,7 +176,7 @@ void PluginStream::startStream()
     m_stream.pdata = 0;
     m_stream.ndata = this;
     m_stream.end = max(expectedContentLength, 0LL);
-    m_stream.lastmodified = m_resourceResponse.lastModifiedDate();
+    m_stream.lastmodified = lastModifiedDate(m_resourceResponse);
     m_stream.notifyData = m_notifyData;
 
     m_transferMode = NP_NORMAL;
@@ -312,7 +321,7 @@ void PluginStream::destroyStream()
 
 void PluginStream::delayDeliveryTimerFired(Timer<PluginStream>* timer)
 {
-    ASSERT(timer == &m_delayDeliveryTimer);
+    ASSERT_UNUSED(timer, timer == &m_delayDeliveryTimer);
 
     deliverData();
 }
@@ -396,7 +405,7 @@ void PluginStream::sendJavaScriptStream(const KURL& requestURL, const CString& r
 
 void PluginStream::didReceiveResponse(NetscapePlugInStreamLoader* loader, const ResourceResponse& response)
 {
-    ASSERT(loader == m_loader);
+    ASSERT_UNUSED(loader, loader == m_loader);
     ASSERT(m_streamState == StreamBeforeStarted);
 
     m_resourceResponse = response;
@@ -406,7 +415,7 @@ void PluginStream::didReceiveResponse(NetscapePlugInStreamLoader* loader, const 
 
 void PluginStream::didReceiveData(NetscapePlugInStreamLoader* loader, const char* data, int length)
 {
-    ASSERT(loader == m_loader);
+    ASSERT_UNUSED(loader, loader == m_loader);
     ASSERT(m_streamState == StreamStarted);
 
     // If the plug-in cancels the stream in deliverData it could be deleted, 
@@ -433,7 +442,7 @@ void PluginStream::didReceiveData(NetscapePlugInStreamLoader* loader, const char
 
 void PluginStream::didFail(NetscapePlugInStreamLoader* loader, const ResourceError&)
 {
-    ASSERT(loader == m_loader);
+    ASSERT_UNUSED(loader, loader == m_loader);
 
     LOG_PLUGIN_NET_ERROR();
 
@@ -447,7 +456,7 @@ void PluginStream::didFail(NetscapePlugInStreamLoader* loader, const ResourceErr
 
 void PluginStream::didFinishLoading(NetscapePlugInStreamLoader* loader)
 {
-    ASSERT(loader == m_loader);
+    ASSERT_UNUSED(loader, loader == m_loader);
     ASSERT(m_streamState == StreamStarted);
 
     // destroyStream can result in our being deleted

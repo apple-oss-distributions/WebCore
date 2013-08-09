@@ -28,6 +28,7 @@
 
 using namespace WTF::Unicode;
 
+#if PLATFORM(IOS)
 #import "TextBreakIteratorInternalICU.h"
 #import <CoreFoundation/CFStringTokenizer.h>
 #import <Foundation/Foundation.h>
@@ -37,9 +38,11 @@ using namespace WTF::Unicode;
 #import <unicode/utypes.h>
 #import <wtf/unicode/CharacterNames.h>
 #import <wtf/RetainPtr.h>
+#endif
 
 namespace WebCore {
 
+#if PLATFORM(IOS)
 
 static bool isSkipCharacter(UChar32 c)
 {
@@ -192,9 +195,20 @@ static void findComplexWordBoundary(const UChar* chars, int len, int position, i
 
     CFRelease(charString);
 }
+#endif
 
 void findWordBoundary(const UChar* chars, int len, int position, int* start, int* end)
 {
+#if !PLATFORM(IOS)
+    NSString* string = [[NSString alloc] initWithCharactersNoCopy:const_cast<unichar*>(chars)
+        length:len freeWhenDone:NO];
+    NSAttributedString* attr = [[NSAttributedString alloc] initWithString:string];
+    NSRange range = [attr doubleClickAtIndex:(position >= len) ? len - 1 : position];
+    [attr release];
+    [string release];
+    *start = range.location;
+    *end = range.location + range.length;
+#else
     int pos = position;
     if ( position == len && position != 0)
         pos--;
@@ -231,10 +245,20 @@ void findWordBoundary(const UChar* chars, int len, int position, int* start, int
     CFRelease(uniString);
 #endif
     
+#endif
 }
 
 int findNextWordFromIndex(const UChar* chars, int len, int position, bool forward)
 {   
+#if !PLATFORM(IOS)
+    NSString* string = [[NSString alloc] initWithCharactersNoCopy:const_cast<unichar*>(chars)
+        length:len freeWhenDone:NO];
+    NSAttributedString* attr = [[NSAttributedString alloc] initWithString:string];
+    int result = [attr nextWordFromIndex:position forward:forward];
+    [attr release];
+    [string release];
+    return result;
+#else
     // This very likely won't behave exactly like the non-iPhone version, but it works
     // for the contexts in which it is used on iPhone, and in the future will be
     // tuned to improve the iPhone-specific behavior for the keyboard and text editing.
@@ -262,6 +286,7 @@ int findNextWordFromIndex(const UChar* chars, int len, int position, bool forwar
         ubrk_close(boundary);
     }
     return pos;
+#endif // !PLATFORM(IOS)
 }
 
 }

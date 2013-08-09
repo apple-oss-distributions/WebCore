@@ -24,7 +24,7 @@
  */
 
 #include "config.h"
-
+#include "InitializeLogging.h"
 #include "Logging.h"
 
 #if !LOG_DISABLED
@@ -67,6 +67,7 @@ void initializeLoggingChannelsIfNecessary()
     initializeWithUserDefault(LogPageCache);
     initializeWithUserDefault(LogPlatformLeaks);
     initializeWithUserDefault(LogResourceLoading);
+    initializeWithUserDefault(LogAnimations);
     initializeWithUserDefault(LogNetwork);
     initializeWithUserDefault(LogFTP);
     initializeWithUserDefault(LogThreading);
@@ -77,10 +78,12 @@ void initializeLoggingChannelsIfNecessary()
     initializeWithUserDefault(LogWebAudio);
     initializeWithUserDefault(LogCompositing);
 
+#if PLATFORM(IOS)
 #if ENABLE(DISK_IMAGE_CACHE)
     initializeWithUserDefault(LogDiskImageCache);
 #endif
     initializeWithUserDefault(LogMemoryPressure);
+#endif
 }
 
 }

@@ -30,14 +30,16 @@
 #ifndef FileChooser_h
 #define FileChooser_h
 
-#include "PlatformString.h"
 #include <wtf/RefCounted.h>
 #include <wtf/Vector.h>
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
 class FileChooser;
+#if PLATFORM(IOS)
 class Icon;
+#endif
 
 struct FileChooserFileInfo {
     FileChooserFileInfo(const String& path, const String& displayName = String())
@@ -56,22 +58,24 @@ struct FileChooserSettings {
     bool allowsDirectoryUpload;
 #endif
     Vector<String> acceptMIMETypes;
+    Vector<String> acceptFileExtensions;
     Vector<String> selectedFiles;
+#if ENABLE(MEDIA_CAPTURE)
+    String capture;
+#endif
+
+    // Returns a combined vector of acceptMIMETypes and acceptFileExtensions.
+    Vector<String> acceptTypes() const;
 };
 
 class FileChooserClient {
 public:
+    virtual ~FileChooserClient() { }
+
     virtual void filesChosen(const Vector<FileChooserFileInfo>&) = 0;
+#if PLATFORM(IOS)
     virtual void filesChosen(const Vector<FileChooserFileInfo>&, const String& displayString, Icon*) = 0;
-    virtual ~FileChooserClient();
-
-protected:
-    FileChooser* newFileChooser(const FileChooserSettings&);
-
-private:
-    void discardChooser();
-
-    RefPtr<FileChooser> m_chooser;
+#endif
 };
 
 class FileChooser : public RefCounted<FileChooser> {
@@ -79,11 +83,13 @@ public:
     static PassRefPtr<FileChooser> create(FileChooserClient*, const FileChooserSettings&);
     ~FileChooser();
 
-    void disconnectClient() { m_client = 0; }
+    void invalidate();
 
     void chooseFile(const String& path);
     void chooseFiles(const Vector<String>& paths);
+#if PLATFORM(IOS)
     void chooseMediaFiles(const Vector<String>& paths, const String& displayString, Icon*);
+#endif    
 
     // FIXME: We should probably just pass file paths that could be virtual paths with proper display names rather than passing structs.
     void chooseFiles(const Vector<FileChooserFileInfo>& files);

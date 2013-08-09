@@ -43,13 +43,16 @@
 #import <WebCore/DOMRGBColor.h>
 #import <WebCore/DOMRange.h>
 
+#if PLATFORM(IOS)
 #import <CoreGraphics/CoreGraphics.h>
+#endif
 
 @class NSArray;
 @class NSImage;
 @class NSURL;
 
 
+#if PLATFORM(IOS)
 @interface DOMHTMLElement (DOMHTMLElementExtensions)
 - (int)scrollXOffset;
 - (int)scrollYOffset;
@@ -57,7 +60,9 @@
 - (void)setScrollXOffset:(int)x scrollYOffset:(int)y adjustForPurpleCaret:(BOOL)adjustForPurpleCaret;
 - (void)absolutePosition:(int *)x :(int *)y :(int *)w :(int *)h;
 @end
+#endif
 
+#if PLATFORM(IOS)
 typedef struct _WKQuad {
     CGPoint p1;
     CGPoint p2;
@@ -74,11 +79,17 @@ typedef struct _WKQuad {
 - (WKQuad)quad;
 - (CGRect)boundingBox;
 @end
+#endif
 
 @interface DOMNode (DOMNodeExtensions)
+#if PLATFORM(IOS)
 - (CGRect)boundingBox;
+#else
+- (NSRect)boundingBox WEBKIT_OBJC_METHOD_ANNOTATION(AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER);
+#endif
 - (NSArray *)lineBoxRects WEBKIT_OBJC_METHOD_ANNOTATION(AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER);
 
+#if PLATFORM(IOS)
 - (CGRect)boundingBoxUsingTransforms; // takes transforms into account
 
 - (WKQuad)absoluteQuad;
@@ -95,9 +106,13 @@ typedef struct _WKQuad {
 - (float)computedFontSize;
 - (DOMNode *)nextFocusNode;
 - (DOMNode *)previousFocusNode;
+#endif
 @end
 
 @interface DOMElement (DOMElementAppKitExtensions)
+#if !PLATFORM(IOS)
+- (NSImage *)image WEBKIT_OBJC_METHOD_ANNOTATION(AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER);
+#endif
 @end
 
 @interface DOMHTMLDocument (DOMHTMLDocumentExtensions)
@@ -105,6 +120,7 @@ typedef struct _WKQuad {
 - (DOMDocumentFragment *)createDocumentFragmentWithText:(NSString *)text WEBKIT_OBJC_METHOD_ANNOTATION(AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER);
 @end
 
+#if PLATFORM(IOS)
 @interface DOMHTMLAreaElement (DOMHTMLAreaElementExtensions)
 - (CGRect)boundingFrameForOwner:(DOMNode *)anOwner;
 @end
@@ -112,3 +128,4 @@ typedef struct _WKQuad {
 @interface DOMHTMLSelectElement (DOMHTMLSelectElementExtensions)
 - (DOMNode *)listItemAtIndex:(int)anIndex;
 @end
+#endif

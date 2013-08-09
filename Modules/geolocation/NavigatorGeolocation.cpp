@@ -42,22 +42,28 @@ NavigatorGeolocation::~NavigatorGeolocation()
 {
 }
 
+const char* NavigatorGeolocation::supplementName()
+{
+    return "NavigatorGeolocation";
+}
+
 NavigatorGeolocation* NavigatorGeolocation::from(Navigator* navigator)
 {
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("NavigatorGeolocation"));
-    NavigatorGeolocation* supplement = static_cast<NavigatorGeolocation*>(Supplement<Navigator>::from(navigator, name));
+    NavigatorGeolocation* supplement = static_cast<NavigatorGeolocation*>(Supplement<Navigator>::from(navigator, supplementName()));
     if (!supplement) {
         supplement = new NavigatorGeolocation(navigator->frame());
-        provideTo(navigator, name, adoptPtr(supplement));
+        provideTo(navigator, supplementName(), adoptPtr(supplement));
     }
     return supplement;
 }
 
+#if PLATFORM(IOS)
 void NavigatorGeolocation::resetAllGeolocationPermission()
 {
     if (m_geolocation)
         m_geolocation->resetAllGeolocationPermission();
 }
+#endif // PLATFORM(IOS)
 
 Geolocation* NavigatorGeolocation::geolocation(Navigator* navigator)
 {

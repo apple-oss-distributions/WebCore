@@ -30,11 +30,14 @@
 #include "AffineTransform.h"
 #include "BitmapImage.h"
 #include "GraphicsContext.h"
+#include "ImageObserver.h"
 #include "IntRect.h"
 #include "Length.h"
 #include "MIMETypeRegistry.h"
 #include "SharedBuffer.h"
+#if PLATFORM(IOS)
 #include "WKGraphics.h"
+#endif
 #include <math.h>
 #include <wtf/MainThread.h>
 #include <wtf/StdLibExtras.h>
@@ -56,7 +59,11 @@ Image::~Image()
 
 Image* Image::nullImage()
 {
+#if PLATFORM(IOS)
     ASSERT(isMainThread() || pthread_main_np());
+#else
+    ASSERT(isMainThread());
+#endif
     DEFINE_STATIC_LOCAL(RefPtr<Image>, nullImage, (BitmapImage::create()));;
     return nullImage.get();
 }
@@ -68,11 +75,11 @@ bool Image::supportsType(const String& type)
 
 bool Image::setData(PassRefPtr<SharedBuffer> data, bool allDataReceived)
 {
-    m_data = data;
-    if (!m_data.get())
+    m_encodedImageData = data;
+    if (!m_encodedImageData.get())
         return true;
 
-    int length = m_data->size();
+    int length = m_encodedImageData->size();
     if (!length)
         return true;
     
@@ -81,7 +88,7 @@ bool Image::setData(PassRefPtr<SharedBuffer> data, bool allDataReceived)
 
 void Image::fillWithSolidColor(GraphicsContext* ctxt, const FloatRect& dstRect, const Color& color, ColorSpace styleColorSpace, CompositeOperator op)
 {
-    if (color.alpha() <= 0)
+    if (!color.alpha())
         return;
     
     CompositeOperator previousOperator = ctxt->compositeOperation();
@@ -90,17 +97,19 @@ void Image::fillWithSolidColor(GraphicsContext* ctxt, const FloatRect& dstRect, 
     ctxt->setCompositeOperation(previousOperator);
 }
 
-void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& scaledTileSize, ColorSpace styleColorSpace, CompositeOperator op)
+void Image::draw(GraphicsContext* ctx, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace styleColorSpace, CompositeOperator op, BlendMode blendMode, RespectImageOrientationEnum)
+{
+    draw(ctx, dstRect, srcRect, styleColorSpace, op, blendMode);
+}
+
+void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& scaledTileSize, ColorSpace styleColorSpace, CompositeOperator op, BlendMode blendMode)
 {    
     if (mayFillWithSolidColor()) {
         fillWithSolidColor(ctxt, destRect, solidColor(), styleColorSpace, op);
         return;
     }
 
-    // See <https://webkit.org/b/59043>.
-#if !PLATFORM(WX)
     ASSERT(!isBitmapImage() || notSolidColor());
-#endif
 
     FloatSize intrinsicTileSize = size();
     if (hasRelativeWidth())
@@ -123,10 +132,11 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
         visibleSrcRect.setY((destRect.y() - oneTileRect.y()) / scale.height());
         visibleSrcRect.setWidth(destRect.width() / scale.width());
         visibleSrcRect.setHeight(destRect.height() / scale.height());
-        draw(ctxt, destRect, visibleSrcRect, styleColorSpace, op);
+        draw(ctxt, destRect, visibleSrcRect, styleColorSpace, op, blendMode);
         return;
     }
 
+#if PLATFORM(IOS)
     // When using accelerated drawing on iOS, it's faster to stretch an image than to tile it.
     if (ctxt->isAcceleratedContext()) {
         if (size().width() == 1 && intersection(oneTileRect, destRect).height() == destRect.height()) {
@@ -135,7 +145,7 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
             visibleSrcRect.setY((destRect.y() - oneTileRect.y()) / scale.height());
             visibleSrcRect.setWidth(1);
             visibleSrcRect.setHeight(destRect.height() / scale.height());
-            draw(ctxt, destRect, visibleSrcRect, styleColorSpace, op);
+            draw(ctxt, destRect, visibleSrcRect, styleColorSpace, op, BlendModeNormal);
             return;
         }
         if (size().height() == 1 && intersection(oneTileRect, destRect).width() == destRect.width()) {
@@ -144,11 +154,13 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
             visibleSrcRect.setY(0);
             visibleSrcRect.setWidth(destRect.width() / scale.width());
             visibleSrcRect.setHeight(1);
-            draw(ctxt, destRect, visibleSrcRect, styleColorSpace, op);
+            draw(ctxt, destRect, visibleSrcRect, styleColorSpace, op, BlendModeNormal);
             return;
         }
     }
+#endif
 
+#if PLATFORM(IOS)
     // CGPattern uses lots of memory got caching when the tile size is large (4691859, 6239505).
     // Memory consumption depends on the transformed tile size which can get larger than the original
     // tile if user zooms in enough.
@@ -164,7 +176,7 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
             while (toX < CGRectGetMaxX(destRect)) {
                 CGRect toRect = CGRectIntersection(destRect, CGRectMake(toX, toY, oneTileRect.width(), oneTileRect.height()));
                 CGRect fromRect = CGRectMake(fromX, fromY, toRect.size.width / scale.width(), toRect.size.height / scale.height());
-                draw(ctxt, toRect, fromRect, styleColorSpace, op);
+                draw(ctxt, toRect, fromRect, styleColorSpace, op, BlendModeNormal);
                 toX += oneTileRect.width();
                 fromX = 0;
             }
@@ -173,12 +185,17 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
         }
         return;
     }
+#endif    
 
     AffineTransform patternTransform = AffineTransform().scaleNonUniform(scale.width(), scale.height());
     FloatRect tileRect(FloatPoint(), intrinsicTileSize);    
-    drawPattern(ctxt, tileRect, patternTransform, oneTileRect.location(), styleColorSpace, op, destRect);
+    drawPattern(ctxt, tileRect, patternTransform, oneTileRect.location(), styleColorSpace, op, destRect, blendMode);
     
+#if PLATFORM(IOS)
     startAnimation(false);
+#else
+    startAnimation();
+#endif
 }
 
 // FIXME: Merge with the other drawTiled eventually, since we need a combination of both for some things.
@@ -212,8 +229,29 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const Flo
     
     drawPattern(ctxt, srcRect, patternTransform, patternPhase, styleColorSpace, op, dstRect);
 
+#if PLATFORM(IOS)
     startAnimation(false);
+#else
+    startAnimation();
+#endif
 }
+
+#if ENABLE(IMAGE_DECODER_DOWN_SAMPLING)
+FloatRect Image::adjustSourceRectForDownSampling(const FloatRect& srcRect, const IntSize& scaledSize) const
+{
+    const IntSize unscaledSize = size();
+    if (unscaledSize == scaledSize)
+        return srcRect;
+
+    // Image has been down-sampled.
+    float xscale = static_cast<float>(scaledSize.width()) / unscaledSize.width();
+    float yscale = static_cast<float>(scaledSize.height()) / unscaledSize.height();
+    FloatRect scaledSrcRect = srcRect;
+    scaledSrcRect.scale(xscale, yscale);
+
+    return scaledSrcRect;
+}
+#endif
 
 void Image::computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio)
 {

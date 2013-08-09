@@ -29,10 +29,13 @@
 #import "DOMNodeInternal.h"
 #import "Frame.h"
 #import "JSNode.h"
+#import "ScriptController.h"
 #import "WebScriptObjectPrivate.h"
 #import "runtime_root.h"
 
+#if PLATFORM(IOS)
 #define NEEDS_WRAPPER_CACHE_LOCK 1
+#endif
 
 //------------------------------------------------------------------------------------------
 // Wrapping WebCore implementation objects

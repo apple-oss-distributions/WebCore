@@ -27,7 +27,6 @@
 #define VisiblePosition_h
 
 #include "EditingBoundary.h"
-#include "Node.h"
 #include "Position.h"
 #include "TextDirection.h"
 
@@ -47,6 +46,7 @@ namespace WebCore {
 #define VP_UPSTREAM_IF_POSSIBLE UPSTREAM
 
 class InlineBox;
+class Node;
 
 class VisiblePosition {
 public:
@@ -128,6 +128,7 @@ inline bool operator!=(const VisiblePosition& a, const VisiblePosition& b)
     return !(a == b);
 }
     
+#if PLATFORM(IOS)
 inline bool operator<(const VisiblePosition& a, const VisiblePosition& b)
 {
     return a.deepEquivalent() < b.deepEquivalent();
@@ -147,6 +148,7 @@ inline bool operator>=(const VisiblePosition& a, const VisiblePosition& b)
 {
     return a.deepEquivalent() >= b.deepEquivalent();
 }    
+#endif
 
 PassRefPtr<Range> makeRange(const VisiblePosition&, const VisiblePosition&);
 bool setStart(Range*, const VisiblePosition&);

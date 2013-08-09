@@ -27,9 +27,6 @@
 #include "RenderView.h"
 #include <wtf/Forward.h>
 
-#include "SelectionRect.h"
-#include "Timer.h"
-
 namespace WebCore {
 
 class InlineTextBox;
@@ -60,7 +57,9 @@ public:
 
     virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const;
     void absoluteRectsForRange(Vector<IntRect>&, unsigned startOffset = 0, unsigned endOffset = UINT_MAX, bool useSelectionHeight = false, bool* wasFixed = 0);
+#if PLATFORM(IOS)
     virtual void collectSelectionRects(Vector<SelectionRect>&, unsigned startOffset = 0, unsigned endOffset = UINT_MAX) OVERRIDE;
+#endif
 
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const;
     void absoluteQuadsForRange(Vector<FloatQuad>&, unsigned startOffset = 0, unsigned endOffset = UINT_MAX, bool useSelectionHeight = false, bool* wasFixed = 0);
@@ -70,7 +69,12 @@ public:
 
     virtual VisiblePosition positionForPoint(const LayoutPoint&);
 
+    bool is8Bit() const { return m_text.is8Bit(); }
+    const LChar* characters8() const { return m_text.impl()->characters8(); }
+    const UChar* characters16() const { return m_text.impl()->characters16(); }
     const UChar* characters() const { return m_text.characters(); }
+    UChar characterAt(unsigned i) const { return is8Bit() ? characters8()[i] : characters16()[i]; }
+    UChar operator[](unsigned i) const { return characterAt(i); }
     unsigned textLength() const { return m_text.length(); } // non virtual implementation of length()
     void positionLineBox(InlineBox*);
 
@@ -101,13 +105,13 @@ public:
 
     virtual bool canBeSelectionLeaf() const { return true; }
     virtual void setSelectionState(SelectionState s);
-    virtual LayoutRect selectionRectForRepaint(RenderBoxModelObject* repaintContainer, bool clipToVisibleContent = true);
+    virtual LayoutRect selectionRectForRepaint(const RenderLayerModelObject* repaintContainer, bool clipToVisibleContent = true) OVERRIDE;
     virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0);
 
     virtual LayoutUnit marginLeft() const { return minimumValueForLength(style()->marginLeft(), 0, view()); }
     virtual LayoutUnit marginRight() const { return minimumValueForLength(style()->marginRight(), 0, view()); }
 
-    virtual LayoutRect clippedOverflowRectForRepaint(RenderBoxModelObject* repaintContainer) const;
+    virtual LayoutRect clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const OVERRIDE;
 
     InlineTextBox* firstTextBox() const { return m_firstTextBox; }
     InlineTextBox* lastTextBox() const { return m_lastTextBox; }
@@ -123,28 +127,26 @@ public:
     bool containsReversedText() const { return m_containsReversedText; }
 
     bool isSecure() const { return style()->textSecurity() != TSNONE; }
-    void momentarilyRevealLastCharacter();
-    void secureLastCharacter();
-    void secureLastCharacter(Timer<RenderText> * aTimer);
+    void momentarilyRevealLastTypedCharacter(unsigned lastTypedCharacterOffset);
 
     InlineTextBox* findNextInlineTextBox(int offset, int& pos) const;
 
-    bool allowTabs() const { return !style()->collapseWhiteSpace(); }
-
     void checkConsistency() const;
 
-    virtual void computePreferredLogicalWidths(float leadWidth);
-    bool isAllCollapsibleWhitespace();
+    bool isAllCollapsibleWhitespace() const;
 
     bool canUseSimpleFontCodePath() const { return m_canUseSimpleFontCodePath; }
     bool knownToHaveNoOverflowAndNoFallbackFonts() const { return m_knownToHaveNoOverflowAndNoFallbackFonts; }
 
     void removeAndDestroyTextBoxes();
 
+#if ENABLE(IOS_TEXT_AUTOSIZING)
     float candidateComputedTextSize() const { return m_candidateComputedTextSize; }
     void setCandidateComputedTextSize(float s) { m_candidateComputedTextSize = s; }
+#endif
 
 protected:
+    virtual void computePreferredLogicalWidths(float leadWidth);
     virtual void willBeDestroyed();
 
     virtual void styleWillChange(StyleDifference, const RenderStyle*) { }
@@ -167,7 +169,7 @@ private:
 
     virtual void paint(PaintInfo&, const LayoutPoint&) { ASSERT_NOT_REACHED(); }
     virtual void layout() { ASSERT_NOT_REACHED(); }
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const LayoutPoint&, const LayoutPoint&, HitTestAction) { ASSERT_NOT_REACHED(); return false; }
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation&, const LayoutPoint&, HitTestAction) OVERRIDE { ASSERT_NOT_REACHED(); return false; }
 
     void deleteTextBoxes();
     bool containsOnlyWhitespace(unsigned from, unsigned len) const;
@@ -193,10 +195,10 @@ private:
     mutable bool m_knownToHaveNoOverflowAndNoFallbackFonts : 1;
     bool m_needsTranscoding : 1;
     
-    bool m_shouldSecureLastCharacter : 1;
-    bool m_hasSecureLastCharacterTimer : 1;
+#if ENABLE(IOS_TEXT_AUTOSIZING)
     // FIXME: This should probably be part of the text sizing structures in Document instead. That would save some memory.
     float m_candidateComputedTextSize;
+#endif
     float m_minWidth;
     float m_maxWidth;
     float m_beginMinWidth;
@@ -210,13 +212,13 @@ private:
 
 inline RenderText* toRenderText(RenderObject* object)
 { 
-    ASSERT(!object || object->isText());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isText());
     return static_cast<RenderText*>(object);
 }
 
 inline const RenderText* toRenderText(const RenderObject* object)
 { 
-    ASSERT(!object || object->isText());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isText());
     return static_cast<const RenderText*>(object);
 }
 

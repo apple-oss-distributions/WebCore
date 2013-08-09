@@ -39,18 +39,27 @@ MemoryPressureHandler& memoryPressureHandler()
 MemoryPressureHandler::MemoryPressureHandler() 
     : m_installed(false)
     , m_lastRespondTime(0)
+    , m_lowMemoryHandler(releaseMemory)
+#if PLATFORM(IOS)
     , m_receivedMemoryPressure(0)
+    , m_memoryPressureReason(MemoryPressureReasonNone)
     , m_clearPressureOnMemoryRelease(true)
     , m_releaseMemoryBlock(0)
+    , m_observer(0)
+#endif
 {
 }
 
+#if !PLATFORM(MAC) || PLATFORM(IOS) || __MAC_OS_X_VERSION_MIN_REQUIRED == 1060
+
 void MemoryPressureHandler::install() { }
-
 void MemoryPressureHandler::uninstall() { }
-
 void MemoryPressureHandler::holdOff(unsigned) { }
-
 void MemoryPressureHandler::respondToMemoryPressure() { }
+#if !PLATFORM(IOS)
+void MemoryPressureHandler::releaseMemory(bool) { }
+#endif // !PLATFORM(IOS)
+
+#endif
  
 } // namespace WebCore

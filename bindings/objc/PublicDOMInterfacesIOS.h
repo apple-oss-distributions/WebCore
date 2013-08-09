@@ -13,6 +13,7 @@
  * or to any functionality that is invoked by calling any API.
  */
 
+#if defined(ENABLE_TOUCH_EVENTS)
 @interface DOMTouch : DOMObject
 @property(readonly, retain) id <DOMEventTarget> target;
 @property(readonly) unsigned identifier;
@@ -37,7 +38,9 @@
 
 - (void)initTouchEvent:(NSString *)type canBubble:(BOOL)canBubble cancelable:(BOOL)cancelable view:(DOMAbstractView *)view detail:(int)detail screenX:(int)screenX screenY:(int)screenY clientX:(int)clientX clientY:(int)clientY ctrlKey:(BOOL)ctrlKey altKey:(BOOL)altKey shiftKey:(BOOL)shiftKey metaKey:(BOOL)metaKey touches:(DOMTouchList *)touches targetTouches:(DOMTouchList *)targetTouches changedTouches:(DOMTouchList *)changedTouches scale:(float)scale rotation:(float)rotation;
 @end
+#endif // ENABLE(TOUCH_EVENTS)
 
+#if defined(ENABLE_IOS_GESTURE_EVENTS)
 @interface DOMGestureEvent : DOMUIEvent
 @property(readonly, retain) id <DOMEventTarget> target;
 @property(readonly) float scale;
@@ -49,3 +52,4 @@
 
 - (void)initGestureEvent:(NSString *)type canBubble:(BOOL)canBubble cancelable:(BOOL)cancelable view:(DOMAbstractView *)view detail:(int)detail screenX:(int)screenX screenY:(int)screenY clientX:(int)clientX clientY:(int)clientY ctrlKey:(BOOL)ctrlKey altKey:(BOOL)altKey shiftKey:(BOOL)shiftKey metaKey:(BOOL)metaKey target:(id <DOMEventTarget>)target scale:(float)scale rotation:(float)rotation;
 @end
+#endif // ENABLE(ENABLE_IOS_GESTURE_EVENTS)

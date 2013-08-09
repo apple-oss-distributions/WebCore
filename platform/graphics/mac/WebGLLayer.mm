@@ -32,9 +32,12 @@
 
 #import "GraphicsContext3D.h"
 #import "GraphicsLayer.h"
+#if !PLATFORM(IOS)
+#import <OpenGL/OpenGL.h>
+#import <OpenGL/gl.h>
+#endif
 #import <wtf/FastMalloc.h>
 #import <wtf/RetainPtr.h>
-#import <wtf/UnusedParam.h>
 
 using namespace WebCore;
 
@@ -47,16 +50,112 @@ using namespace WebCore;
     return self;
 }
 
+#if !PLATFORM(IOS)
+-(CGLPixelFormatObj)copyCGLPixelFormatForDisplayMask:(uint32_t)mask
+{
+    // FIXME: The mask param tells you which display (on a multi-display system)
+    // is to be used. But since we are now getting the pixel format from the 
+    // Canvas CGL context, we don't use it. This seems to do the right thing on
+    // one multi-display system. But there may be cases where this is not the case.
+    // If needed we will have to set the display mask in the Canvas CGLContext and
+    // make sure it matches.
+    UNUSED_PARAM(mask);
+    return CGLRetainPixelFormat(CGLGetPixelFormat(m_context->platformGraphicsContext3D()));
+}
+
+-(CGLContextObj)copyCGLContextForPixelFormat:(CGLPixelFormatObj)pixelFormat
+{
+    CGLContextObj contextObj;
+    CGLCreateContext(pixelFormat, m_context->platformGraphicsContext3D(), &contextObj);
+    return contextObj;
+}
+
+-(void)drawInCGLContext:(CGLContextObj)glContext pixelFormat:(CGLPixelFormatObj)pixelFormat forLayerTime:(CFTimeInterval)timeInterval displayTime:(const CVTimeStamp *)timeStamp
+{
+    m_context->prepareTexture();
+
+    CGLSetCurrentContext(glContext);
+
+    CGRect frame = [self frame];
+        
+    // draw the FBO into the layer
+    glViewport(0, 0, frame.size.width, frame.size.height);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(-1, 1, -1, 1, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, m_context->platformTexture());
+    
+    glBegin(GL_TRIANGLE_FAN);
+        glTexCoord2f(0, 0);
+        glVertex2f(-1, -1);
+        glTexCoord2f(1, 0);
+        glVertex2f(1, -1);
+        glTexCoord2f(1, 1);
+        glVertex2f(1, 1);
+        glTexCoord2f(0, 1);
+        glVertex2f(-1, 1);
+    glEnd();
+    
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_TEXTURE_2D);
+
+    // Call super to finalize the drawing. By default all it does is call glFlush().
+    [super drawInCGLContext:glContext pixelFormat:pixelFormat forLayerTime:timeInterval displayTime:timeStamp];
+}
+
+static void freeData(void *, const void *data, size_t /* size */)
+{
+    fastFree(const_cast<void *>(data));
+}
+#endif
 
 -(CGImageRef)copyImageSnapshotWithColorSpace:(CGColorSpaceRef)colorSpace
 {
+#if PLATFORM(IOS)
     UNUSED_PARAM(colorSpace);
     return 0;
+#else
+    CGLSetCurrentContext(m_context->platformGraphicsContext3D());
+
+    RetainPtr<CGColorSpaceRef> imageColorSpace = colorSpace;
+    if (!imageColorSpace)
+        imageColorSpace = adoptCF(CGColorSpaceCreateDeviceRGB());
+
+    CGRect layerBounds = CGRectIntegral([self bounds]);
+    
+    size_t width = layerBounds.size.width;
+    size_t height = layerBounds.size.height;
+
+    size_t rowBytes = (width * 4 + 15) & ~15;
+    size_t dataSize = rowBytes * height;
+    void* data = fastMalloc(dataSize);
+    if (!data)
+        return 0;
+
+    glPixelStorei(GL_PACK_ROW_LENGTH, rowBytes / 4);
+    glReadPixels(0, 0, width, height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, data);
+
+    CGDataProviderRef provider = CGDataProviderCreateWithData(0, data, dataSize, freeData);
+    CGImageRef image = CGImageCreate(width, height, 8, 32, rowBytes, imageColorSpace.get(),
+                                                 kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host,
+                                                 provider, 0, true,
+                                                 kCGRenderingIntentDefault);
+    CGDataProviderRelease(provider);
+    return image;
+#endif
 }
 
 - (void)display
 {
+#if PLATFORM(IOS)
     m_context->endPaint();
+#else
+    [super display];
+#endif
     if (m_layerOwner)
         m_layerOwner->layerDidDisplay(self);
 }

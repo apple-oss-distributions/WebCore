@@ -18,6 +18,7 @@
 
 #include <wtf/Platform.h>
 
+#if ENABLE(IOS_GESTURE_EVENTS)
 
 #include <wtf/RefPtr.h>
 #include "MouseRelatedEvent.h"
@@ -68,5 +69,6 @@ namespace WebCore {
 
 } // namespace WebCore
 
+#endif // ENABLE(IOS_GESTURE_EVENTS)
 
 #endif // GestureEvent_h

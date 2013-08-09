@@ -19,6 +19,7 @@
 #ifndef TileLayerPool_h
 #define TileLayerPool_h
 
+#if PLATFORM(IOS)
 
 #include "IntSize.h"
 #include "IntSizeHash.h"
@@ -75,4 +76,5 @@ private:
 
 }
 
+#endif
 #endif

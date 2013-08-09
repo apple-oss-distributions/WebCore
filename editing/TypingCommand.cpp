@@ -40,8 +40,8 @@
 #include "RenderObject.h"
 #include "TextIterator.h"
 #include "VisiblePosition.h"
+#include "VisibleUnits.h"
 #include "htmlediting.h"
-#include "visible_units.h"
 
 namespace WebCore {
 
@@ -161,7 +161,7 @@ void TypingCommand::insertText(Document* document, const String& text, Options o
     ASSERT(frame);
 
     if (!text.isEmpty())
-        document->frame()->editor()->updateMarkersForWordsAffectedByEditing(isSpaceOrNewline(text.characters()[0]));
+        document->frame()->editor().updateMarkersForWordsAffectedByEditing(isSpaceOrNewline(text.characters()[0]));
     
     insertText(document, text, frame->selection()->selection(), options, composition);
 }
@@ -237,7 +237,7 @@ PassRefPtr<TypingCommand> TypingCommand::lastTypingCommandIfStillOpenForTyping(F
 {
     ASSERT(frame);
 
-    RefPtr<CompositeEditCommand> lastEditCommand = frame->editor()->lastEditCommand();
+    RefPtr<CompositeEditCommand> lastEditCommand = frame->editor().lastEditCommand();
     if (!lastEditCommand || !lastEditCommand->isTypingCommand() || !static_cast<TypingCommand*>(lastEditCommand.get())->isOpenForMoreTyping())
         return 0;
 
@@ -250,6 +250,7 @@ void TypingCommand::closeTyping(Frame* frame)
         lastTypingCommand->closeTyping();
 }
 
+#if PLATFORM(IOS)
 void TypingCommand::ensureLastEditCommandHasCurrentSelectionIfOpenForMoreTyping(Frame* frame, const VisibleSelection& newSelection)
 {
     if (RefPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame)) {
@@ -257,6 +258,7 @@ void TypingCommand::ensureLastEditCommandHasCurrentSelectionIfOpenForMoreTyping(
         lastTypingCommand->setEndingSelectionOnLastInsertCommand(newSelection);
     }
 }
+#endif
 
 void TypingCommand::doApply()
 {
@@ -305,8 +307,17 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
     if (!frame)
         return;
 
-    if (!frame->editor()->isContinuousSpellCheckingEnabled())
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+    if (!frame->editor().isContinuousSpellCheckingEnabled()
+        && !frame->editor().isAutomaticQuoteSubstitutionEnabled()
+        && !frame->editor().isAutomaticLinkDetectionEnabled()
+        && !frame->editor().isAutomaticDashSubstitutionEnabled()
+        && !frame->editor().isAutomaticTextReplacementEnabled())
+            return;
+#else
+    if (!frame->editor().isContinuousSpellCheckingEnabled())
         return;
+#endif
     // Take a look at the selection that results after typing and determine whether we need to spellcheck. 
     // Since the word containing the current selection is never marked, this does a check to
     // see if typing made a new word that is not in the current selection. Basically, you
@@ -314,7 +325,21 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
     VisiblePosition start(endingSelection().start(), endingSelection().affinity());
     VisiblePosition previous = start.previous();
     if (previous.isNotNull()) {
+#if !PLATFORM(IOS)
+        VisiblePosition p1 = startOfWord(previous, LeftWordIfOnBoundary);
+        VisiblePosition p2 = startOfWord(start, LeftWordIfOnBoundary);
+        if (p1 != p2) {
+            RefPtr<Range> range = makeRange(p1, p2);
+            String strippedPreviousWord;
+            if (range && (commandType == TypingCommand::InsertText || commandType == TypingCommand::InsertLineBreak || commandType == TypingCommand::InsertParagraphSeparator || commandType == TypingCommand::InsertParagraphSeparatorInQuotedContent))
+                strippedPreviousWord = plainText(range.get()).stripWhiteSpace();
+            frame->editor().markMisspellingsAfterTypingToWord(p1, endingSelection(), !strippedPreviousWord.isEmpty());
+        } else if (commandType == TypingCommand::InsertText)
+            frame->editor().startAlternativeTextUITimer();
+#else
         UNUSED_PARAM(commandType);
+        // If this bug gets fixed, this PLATFORM(IOS) code could be removed:
+        // <rdar://problem/7259611> Word boundary code on iPhone gives different results than desktop
         EWordSide startWordSide = LeftWordIfOnBoundary;
         UChar32 c = previous.characterAfter();
         // FIXME: VisiblePosition::characterAfter() and characterBefore() do not emit newlines the same
@@ -325,7 +350,8 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
         VisiblePosition p1 = startOfWord(previous, startWordSide);
         VisiblePosition p2 = startOfWord(start, startWordSide);
         if (p1 != p2)
-            document()->frame()->editor()->markMisspellingsAfterTypingToWord(p1, endingSelection(), false);
+            document()->frame()->editor().markMisspellingsAfterTypingToWord(p1, endingSelection(), false);
+#endif // !PLATFORM(IOS)
     }
 }
 
@@ -337,15 +363,15 @@ void TypingCommand::typingAddedToOpenCommand(ETypingCommand commandTypeForAddedT
 
     updatePreservesTypingStyle(commandTypeForAddedTyping);
 
-#if PLATFORM(MAC) && !defined(BUILDING_ON_LEOPARD)
-    frame->editor()->appliedEditing(this);
+#if PLATFORM(MAC)
+    frame->editor().appliedEditing(this);
     // Since the spellchecking code may also perform corrections and other replacements, it should happen after the typing changes.
     if (!m_shouldPreventSpellChecking)
         markMisspellingsAfterTyping(commandTypeForAddedTyping);
 #else
     // The old spellchecking code requires that checking be done first, to prevent issues like that in 6864072, where <doesn't> is marked as misspelled.
     markMisspellingsAfterTyping(commandTypeForAddedTyping);
-    frame->editor()->appliedEditing(this);
+    frame->editor().appliedEditing(this);
 #endif
 }
 
@@ -428,7 +454,7 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
     if (!frame)
         return;
 
-    frame->editor()->updateMarkersForWordsAffectedByEditing(false);
+    frame->editor().updateMarkersForWordsAffectedByEditing(false);
 
     VisibleSelection selectionToDelete;
     VisibleSelection selectionAfterUndo;
@@ -466,8 +492,9 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
         }
 
         VisiblePosition visibleStart(endingSelection().visibleStart());
-        // If we have a caret selection on an empty cell, we have nothing to do.
-        if (isEmptyTableCell(visibleStart.deepEquivalent().containerNode()))
+        // If we have a caret selection at the beginning of a cell, we have nothing to do.
+        Node* enclosingTableCell = enclosingNodeOfType(visibleStart.deepEquivalent(), &isTableCell);
+        if (enclosingTableCell && visibleStart == firstPositionInNode(enclosingTableCell))
             return;
 
         // If the caret is at the start of a paragraph after a table, move content into the last table cell.
@@ -508,10 +535,12 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
     
     ASSERT(!selectionToDelete.isNone());
     if (selectionToDelete.isNone()) {
+#if PLATFORM(IOS)
         // Workaround for this bug:
         // <rdar://problem/4653755> UIKit text widgets should use WebKit editing API to manipulate text
         setEndingSelection(document()->frame()->selection()->selection());
         closeTyping(document()->frame());
+#endif
         return;
     }
     
@@ -519,7 +548,7 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
         return;
     
     if (killRing)
-        frame->editor()->addToKillRing(selectionToDelete.toNormalizedRange().get(), false);
+        frame->editor().addToKillRing(selectionToDelete.toNormalizedRange().get(), false);
     // Make undo select everything that has been deleted, unless an undo will undo more than just this deletion.
     // FIXME: This behaves like TextEdit except for the case where you open with text insertion and then delete
     // more text than you insert.  In that case all of the text that was around originally should be selected.
@@ -536,7 +565,7 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
     if (!frame)
         return;
 
-    frame->editor()->updateMarkersForWordsAffectedByEditing(false);
+    frame->editor().updateMarkersForWordsAffectedByEditing(false);
 
     VisibleSelection selectionToDelete;
     VisibleSelection selectionAfterUndo;
@@ -560,6 +589,9 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
 
         Position downstreamEnd = endingSelection().end().downstream();
         VisiblePosition visibleEnd = endingSelection().visibleEnd();
+        Node* enclosingTableCell = enclosingNodeOfType(visibleEnd.deepEquivalent(), &isTableCell);
+        if (enclosingTableCell && visibleEnd == lastPositionInNode(enclosingTableCell))
+            return;
         if (visibleEnd == endOfParagraph(visibleEnd))
             downstreamEnd = visibleEnd.next(CannotCrossEditingBoundary).deepEquivalent().downstream();
         // When deleting tables: Select the table first, then perform the deletion
@@ -603,10 +635,12 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
     
     ASSERT(!selectionToDelete.isNone());
     if (selectionToDelete.isNone()) {
+#if PLATFORM(IOS)
         // Workaround for this bug:
         // <rdar://problem/4653755> UIKit text widgets should use WebKit editing API to manipulate text
         setEndingSelection(document()->frame()->selection()->selection());
         closeTyping(document()->frame());
+#endif
         return;
     }
     
@@ -614,7 +648,7 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
         return;
         
     if (killRing)
-        frame->editor()->addToKillRing(selectionToDelete.toNormalizedRange().get(), false);
+        frame->editor().addToKillRing(selectionToDelete.toNormalizedRange().get(), false);
     // make undo select what was deleted
     setStartingSelection(selectionAfterUndo);
     CompositeEditCommand::deleteSelection(selectionToDelete, m_smartDelete);
@@ -628,6 +662,7 @@ void TypingCommand::deleteSelection(bool smartDelete)
     typingAddedToOpenCommand(DeleteSelection);
 }
 
+#if PLATFORM(IOS)
 class FriendlyEditCommand : public EditCommand {
 public:
     void setEndingSelection(const VisibleSelection& selection)
@@ -644,6 +679,7 @@ void TypingCommand::setEndingSelectionOnLastInsertCommand(const VisibleSelection
             static_cast<FriendlyEditCommand*>(lastCommand)->setEndingSelection(selection);
     }
 }
+#endif
 
 void TypingCommand::updatePreservesTypingStyle(ETypingCommand commandType)
 {

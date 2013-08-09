@@ -24,41 +24,84 @@
 #import "config.h"
 #import "FontPlatformData.h"
 
-#import "PlatformString.h"
 #import "WebCoreSystemInterface.h"
+#if !PLATFORM(IOS)
+#import <AppKit/NSFont.h>
+#else
 #import <CoreText/CoreText.h>
+#endif
+
+#import <wtf/text/WTFString.h>
 
 namespace WebCore {
 
 // These CoreText Text Spacing feature selectors are not defined in CoreText.
 enum TextSpacingCTFeatureSelector { TextSpacingProportional, TextSpacingFullWidth, TextSpacingHalfWidth, TextSpacingThirdWidth, TextSpacingQuarterWidth };
 
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+void FontPlatformData::loadFont(NSFont* nsFont, float, NSFont*& outNSFont, CGFontRef& cgFont)
+{
+    outNSFont = nsFont;
+    cgFont = CTFontCopyGraphicsFont(toCTFontRef(nsFont), 0);
+}
+#endif  // PLATFORM(MAC) && !PLATFORM(IOS)
 
-FontPlatformData::FontPlatformData(GSFontRef gsFont, float size, bool isPrinterFont, bool syntheticBold, bool syntheticOblique, FontOrientation orientation,
-                                   TextOrientation textOrientation, FontWidthVariant widthVariant)
+#if !PLATFORM(IOS)
+FontPlatformData::FontPlatformData(NSFont *nsFont, float size, bool isPrinterFont, bool syntheticBold, bool syntheticOblique, FontOrientation orientation, FontWidthVariant widthVariant)
     : m_syntheticBold(syntheticBold)
     , m_syntheticOblique(syntheticOblique)
     , m_orientation(orientation)
-    , m_textOrientation(textOrientation)
+    , m_size(size)
+    , m_widthVariant(widthVariant)
+    , m_font(nsFont)
+    , m_isColorBitmapFont(false)
+#else // PLATFORM(IOS)
+FontPlatformData::FontPlatformData(GSFontRef gsFont, float size, bool isPrinterFont, bool syntheticBold, bool syntheticOblique, FontOrientation orientation, FontWidthVariant widthVariant)
+    : m_syntheticBold(syntheticBold)
+    , m_syntheticOblique(syntheticOblique)
+    , m_orientation(orientation)
     , m_isEmoji(false)
     , m_size(size)
     , m_widthVariant(widthVariant)
     , m_font(gsFont)
     , m_cgFont(GSFontGetCGFont(gsFont))
     , m_isColorBitmapFont(GSFontHasColorGlyphs(gsFont))
+#endif
     , m_isCompositeFontReference(false)
     , m_isPrinterFont(isPrinterFont)
 {
+#if !PLATFORM(IOS)
+    ASSERT_ARG(nsFont, nsFont);
+
+    CGFontRef cgFont = 0;
+    loadFont(nsFont, size, m_font, cgFont);
+    
+#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
+    {
+        CTFontSymbolicTraits traits = CTFontGetSymbolicTraits(toCTFontRef(m_font));
+        m_isColorBitmapFont = traits & kCTFontColorGlyphsTrait;
+#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
+        m_isCompositeFontReference = traits & kCTFontCompositeTrait;
+#endif
+    }
+#endif
+
+    if (m_font)
+        CFRetain(m_font);
+
+    m_cgFont = adoptCF(cgFont);
+#else // PLATFORM(IOS)
     ASSERT_ARG(gsFont, gsFont);
 
     CFRetain(gsFont);
+#endif // PLATFORM(IOS)
 }
 
-FontPlatformData::FontPlatformData(CTFontRef ctFont, float size, bool syntheticBold, bool syntheticOblique, FontOrientation orientation, TextOrientation textOrientation, FontWidthVariant widthVariant)
+#if PLATFORM(IOS)
+FontPlatformData::FontPlatformData(CTFontRef ctFont, float size, bool syntheticBold, bool syntheticOblique, FontOrientation orientation, FontWidthVariant widthVariant)
     : m_syntheticBold(syntheticBold)
     , m_syntheticOblique(syntheticOblique)
     , m_orientation(orientation)
-    , m_textOrientation(textOrientation)
     , m_isEmoji(false)
     , m_size(size)
     , m_widthVariant(widthVariant)
@@ -75,60 +118,116 @@ FontPlatformData::FontPlatformData(CTFontRef ctFont, float size, bool syntheticB
     m_isColorBitmapFont = GSFontHasColorGlyphs(m_font);
     m_isEmoji = !strcmp("AppleColorEmoji", postScriptName);
 }
+#endif // PLATFORM(IOS)
 
 FontPlatformData:: ~FontPlatformData()
 {
+#if !PLATFORM(IOS)
+    if (m_font && m_font != reinterpret_cast<NSFont *>(-1))
+        CFRelease(m_font);
+#else
     if (m_font && m_font != reinterpret_cast<GSFontRef>(-1))
         CFRelease(m_font);
+#endif
 }
 
 void FontPlatformData::platformDataInit(const FontPlatformData& f)
 {
+#if !PLATFORM(IOS)
+    m_font = f.m_font && f.m_font != reinterpret_cast<NSFont *>(-1) ? const_cast<NSFont *>(static_cast<const NSFont *>(CFRetain(f.m_font))) : f.m_font;
+#else
     m_font = f.m_font && f.m_font != reinterpret_cast<GSFontRef>(-1) ? static_cast<GSFontRef>(const_cast<void *>(CFRetain(f.m_font))) : f.m_font;
+#endif
 
+#if PLATFORM(IOS)
     m_isEmoji = f.m_isEmoji;
+#endif
     m_cgFont = f.m_cgFont;
     m_CTFont = f.m_CTFont;
-
-#if PLATFORM(CHROMIUM) && OS(DARWIN)
-    m_inMemoryFont = f.m_inMemoryFont;
-#endif
 }
 
 const FontPlatformData& FontPlatformData::platformDataAssign(const FontPlatformData& f)
 {
     m_cgFont = f.m_cgFont;
+#if PLATFORM(IOS)
     m_isEmoji = f.m_isEmoji;
+#endif
+#if !PLATFORM(IOS)
     if (m_font == f.m_font)
+        return *this;
+    if (f.m_font && f.m_font != reinterpret_cast<NSFont *>(-1))
+        CFRetain(f.m_font);
+    if (m_font && m_font != reinterpret_cast<NSFont *>(-1))
+        CFRelease(m_font);
+#else
+    if (m_font && m_font != reinterpret_cast<GSFontRef>(-1) && f.m_font && f.m_font != reinterpret_cast<GSFontRef>(-1) && CFEqual(m_font, f.m_font))
         return *this;
     if (f.m_font && f.m_font != reinterpret_cast<GSFontRef>(-1))
         CFRetain(f.m_font);
     if (m_font && m_font != reinterpret_cast<GSFontRef>(-1))
         CFRelease(m_font);
+#endif
     m_font = f.m_font;
     m_CTFont = f.m_CTFont;
-#if PLATFORM(CHROMIUM) && OS(DARWIN)
-    m_inMemoryFont = f.m_inMemoryFont;
-#endif
     return *this;
 }
 
 bool FontPlatformData::platformIsEqual(const FontPlatformData& other) const
 {
+    bool result = false;
     if (m_font || other.m_font) {
-#ifndef NDEBUG
-        if (m_font == other.m_font)
+#if PLATFORM(IOS)
+        result = m_font && m_font != reinterpret_cast<GSFontRef>(-1) && other.m_font && other.m_font != reinterpret_cast<GSFontRef>(-1) && CFEqual(m_font, other.m_font);
+#if !ASSERT_DISABLED
+        if (result)
             ASSERT(m_isEmoji == other.m_isEmoji);
 #endif
-        return m_font == other.m_font;
+#else
+        result = m_font == other.m_font;
+#endif // PLATFORM(IOS)
+        return result;
     }
-#ifndef NDEBUG
+#if PLATFORM(IOS)
+#if !ASSERT_DISABLED
     if (m_cgFont == other.m_cgFont)
         ASSERT(m_isEmoji == other.m_isEmoji);
 #endif
+#endif // PLATFORM(IOS)
     return m_cgFont == other.m_cgFont;
 }
 
+#if !PLATFORM(IOS)
+void FontPlatformData::setFont(NSFont *font)
+{
+    ASSERT_ARG(font, font);
+    ASSERT(m_font != reinterpret_cast<NSFont *>(-1));
+
+    if (m_font == font)
+        return;
+
+    CFRetain(font);
+    if (m_font)
+        CFRelease(m_font);
+    m_font = font;
+    m_size = [font pointSize];
+    
+    CGFontRef cgFont = 0;
+    NSFont* loadedFont = 0;
+    loadFont(m_font, m_size, loadedFont, cgFont);
+
+    m_cgFont = adoptCF(cgFont);
+#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
+    {
+        CTFontSymbolicTraits traits = CTFontGetSymbolicTraits(toCTFontRef(m_font));
+        m_isColorBitmapFont = traits & kCTFontColorGlyphsTrait;
+#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
+        m_isCompositeFontReference = traits & kCTFontCompositeTrait;
+#endif
+    }
+#endif
+    m_CTFont = 0;
+}
+#else
 void FontPlatformData::setFont(GSFontRef font)
 {
     ASSERT_ARG(font, font);
@@ -145,15 +244,26 @@ void FontPlatformData::setFont(GSFontRef font)
     m_cgFont = GSFontGetCGFont(font);
     m_isColorBitmapFont = GSFontHasColorGlyphs(font);
 }
+#endif
 
+#if !PLATFORM(IOS)
+bool FontPlatformData::roundsGlyphAdvances() const
+{
+    return [m_font renderingMode] == NSFontAntialiasedIntegerAdvancementsRenderingMode;
+}
+#endif
 
 bool FontPlatformData::allowsLigatures() const
 {
+#if !PLATFORM(IOS)
+    return ![[m_font coveredCharacterSet] characterIsMember:'a'];
+#else
     if (!m_font)
         return false;
 
     RetainPtr<CFCharacterSetRef> characterSet(AdoptCF, CTFontCopyCharacterSet(ctFont()));
     return !(characterSet.get() && CFCharacterSetIsCharacterMember(characterSet.get(), 'a'));
+#endif // !PLATFORM(IOS)
 }
 
 inline int mapFontWidthVariantToCTFeatureSelector(FontWidthVariant variant)
@@ -176,6 +286,16 @@ inline int mapFontWidthVariantToCTFeatureSelector(FontWidthVariant variant)
     return TextSpacingProportional;
 }
 
+static CFDictionaryRef createFeatureSettingDictionary(int featureTypeIdentifier, int featureSelectorIdentifier)
+{
+    RetainPtr<CFNumberRef> featureTypeIdentifierNumber = adoptCF(CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &featureTypeIdentifier));
+    RetainPtr<CFNumberRef> featureSelectorIdentifierNumber = adoptCF(CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &featureSelectorIdentifier));
+
+    const void* settingKeys[] = { kCTFontFeatureTypeIdentifierKey, kCTFontFeatureSelectorIdentifierKey };
+    const void* settingValues[] = { featureTypeIdentifierNumber.get(), featureSelectorIdentifierNumber.get() };
+
+    return CFDictionaryCreate(kCFAllocatorDefault, settingKeys, settingValues, WTF_ARRAY_LENGTH(settingKeys), &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+}
 
 static CTFontDescriptorRef cascadeToLastResortFontDescriptor()
 {
@@ -186,31 +306,72 @@ static CTFontDescriptorRef cascadeToLastResortFontDescriptor()
     const void* keys[] = { kCTFontCascadeListAttribute };
     const void* descriptors[] = { CTFontDescriptorCreateWithNameAndSize(CFSTR("LastResort"), 0) };
     const void* values[] = { CFArrayCreate(kCFAllocatorDefault, descriptors, WTF_ARRAY_LENGTH(descriptors), &kCFTypeArrayCallBacks) };
-    RetainPtr<CFDictionaryRef> attributes(AdoptCF, CFDictionaryCreate(kCFAllocatorDefault, keys, values, WTF_ARRAY_LENGTH(keys), &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+    RetainPtr<CFDictionaryRef> attributes = adoptCF(CFDictionaryCreate(kCFAllocatorDefault, keys, values, WTF_ARRAY_LENGTH(keys), &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
 
     descriptor = CTFontDescriptorCreateWithAttributes(attributes.get());
 
     return descriptor;
 }
 
+static CTFontDescriptorRef cascadeToLastResortAndDisableSwashesFontDescriptor()
+{
+    static CTFontDescriptorRef descriptor;
+    if (descriptor)
+        return descriptor;
+
+    RetainPtr<CFDictionaryRef> lineInitialSwashesOffSetting = adoptCF(createFeatureSettingDictionary(kSmartSwashType, kLineInitialSwashesOffSelector));
+    RetainPtr<CFDictionaryRef> lineFinalSwashesOffSetting = adoptCF(createFeatureSettingDictionary(kSmartSwashType, kLineFinalSwashesOffSelector));
+
+    const void* settingDictionaries[] = { lineInitialSwashesOffSetting.get(), lineFinalSwashesOffSetting.get() };
+    RetainPtr<CFArrayRef> featureSettings = adoptCF(CFArrayCreate(kCFAllocatorDefault, settingDictionaries, WTF_ARRAY_LENGTH(settingDictionaries), &kCFTypeArrayCallBacks));
+
+    const void* keys[] = { kCTFontFeatureSettingsAttribute };
+    const void* values[] = { featureSettings.get() };
+    RetainPtr<CFDictionaryRef> attributes = adoptCF(CFDictionaryCreate(kCFAllocatorDefault, keys, values, WTF_ARRAY_LENGTH(keys), &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+
+    descriptor = CTFontDescriptorCreateCopyWithAttributes(cascadeToLastResortFontDescriptor(), attributes.get());
+
+    return descriptor;
+}
 
 CTFontRef FontPlatformData::ctFont() const
 {
     if (m_CTFont)
         return m_CTFont.get();
 
+#if !PLATFORM(IOS)
+    m_CTFont = toCTFontRef(m_font);
+    if (m_CTFont) {
+        CTFontDescriptorRef fontDescriptor;
+        RetainPtr<CFStringRef> postScriptName = adoptCF(CTFontCopyPostScriptName(m_CTFont.get()));
+        // Hoefler Text Italic has line-initial and -final swashes enabled by default, so disable them.
+        if (CFEqual(postScriptName.get(), CFSTR("HoeflerText-Italic")) || CFEqual(postScriptName.get(), CFSTR("HoeflerText-BlackItalic")))
+            fontDescriptor = cascadeToLastResortAndDisableSwashesFontDescriptor();
+        else
+            fontDescriptor = cascadeToLastResortFontDescriptor();
+        m_CTFont = adoptCF(CTFontCreateCopyWithAttributes(m_CTFont.get(), m_size, 0, fontDescriptor));
+    } else
+        m_CTFont = adoptCF(CTFontCreateWithGraphicsFont(m_cgFont.get(), m_size, 0, cascadeToLastResortFontDescriptor()));
+#else
     // Apple Color Emoji size is adjusted (and then re-adjusted by Core Text) and capped.
     CGFloat size = !m_isEmoji ? m_size : m_size <= 15 ? 4 * (m_size + 2) / static_cast<CGFloat>(5) : 16;
-    m_CTFont.adoptCF(CTFontCreateWithGraphicsFont(m_cgFont.get(), size, 0, cascadeToLastResortFontDescriptor()));
+    CTFontDescriptorRef fontDescriptor;
+    const char* postScriptName = CGFontGetPostScriptName(m_cgFont.get());
+    if (postScriptName && (!strcmp(postScriptName, "HoeflerText-Italic") || !strcmp(postScriptName, "HoeflerText-BlackItalic")))
+        fontDescriptor = cascadeToLastResortAndDisableSwashesFontDescriptor();
+    else
+        fontDescriptor = cascadeToLastResortFontDescriptor();
+    m_CTFont = adoptCF(CTFontCreateWithGraphicsFont(m_cgFont.get(), size, 0, fontDescriptor));
+#endif // !PLATFORM(IOS)
 
     if (m_widthVariant != RegularWidth) {
         int featureTypeValue = kTextSpacingType;
         int featureSelectorValue = mapFontWidthVariantToCTFeatureSelector(m_widthVariant);
-        RetainPtr<CTFontDescriptorRef> sourceDescriptor(AdoptCF, CTFontCopyFontDescriptor(m_CTFont.get()));
-        RetainPtr<CFNumberRef> featureType(AdoptCF, CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &featureTypeValue));
-        RetainPtr<CFNumberRef> featureSelector(AdoptCF, CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &featureSelectorValue));
-        RetainPtr<CTFontDescriptorRef> newDescriptor(AdoptCF, CTFontDescriptorCreateCopyWithFeature(sourceDescriptor.get(), featureType.get(), featureSelector.get()));
-        RetainPtr<CTFontRef> newFont(AdoptCF, CTFontCreateWithFontDescriptor(newDescriptor.get(), m_size, 0));
+        RetainPtr<CTFontDescriptorRef> sourceDescriptor = adoptCF(CTFontCopyFontDescriptor(m_CTFont.get()));
+        RetainPtr<CFNumberRef> featureType = adoptCF(CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &featureTypeValue));
+        RetainPtr<CFNumberRef> featureSelector = adoptCF(CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &featureSelectorValue));
+        RetainPtr<CTFontDescriptorRef> newDescriptor = adoptCF(CTFontDescriptorCreateCopyWithFeature(sourceDescriptor.get(), featureType.get(), featureSelector.get()));
+        RetainPtr<CTFontRef> newFont = adoptCF(CTFontCreateWithFontDescriptor(newDescriptor.get(), m_size, 0));
 
         if (newFont)
             m_CTFont = newFont;
@@ -222,7 +383,7 @@ CTFontRef FontPlatformData::ctFont() const
 #ifndef NDEBUG
 String FontPlatformData::description() const
 {
-    RetainPtr<CFStringRef> cgFontDescription(AdoptCF, CFCopyDescription(cgFont()));
+    RetainPtr<CFStringRef> cgFontDescription = adoptCF(CFCopyDescription(cgFont()));
     return String(cgFontDescription.get()) + " " + String::number(m_size)
             + (m_syntheticBold ? " synthetic bold" : "") + (m_syntheticOblique ? " synthetic oblique" : "") + (m_orientation ? " vertical orientation" : "");
 }

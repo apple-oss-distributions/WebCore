@@ -22,9 +22,14 @@
 #include "CSSProperty.h"
 
 #include "CSSValueList.h"
-#include "PlatformString.h"
 #include "RenderStyleConstants.h"
 #include "StylePropertyShorthand.h"
+
+#if ENABLE(CSS_VARIABLES)
+#include "CSSVariableValue.h"
+#endif
+
+#include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
 
@@ -34,11 +39,6 @@ struct SameSizeAsCSSProperty {
 };
 
 COMPILE_ASSERT(sizeof(CSSProperty) == sizeof(SameSizeAsCSSProperty), CSSProperty_should_stay_small);
-
-String CSSProperty::cssText() const
-{
-    return String(getPropertyName(id())) + ": " + m_value->cssText() + (isImportant() ? " !important" : "") + "; ";
-}
 
 void CSSProperty::wrapValueInCommaSeparatedList()
 {
@@ -267,7 +267,13 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyFontStyle:
     case CSSPropertyFontVariant:
     case CSSPropertyFontWeight:
+#if ENABLE(CSS_IMAGE_ORIENTATION)
+    case CSSPropertyImageOrientation:
+#endif
     case CSSPropertyImageRendering:
+#if ENABLE(CSS_IMAGE_RESOLUTION)
+    case CSSPropertyImageResolution:
+#endif
     case CSSPropertyLetterSpacing:
     case CSSPropertyLineHeight:
     case CSSPropertyListStyle:
@@ -279,18 +285,25 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyQuotes:
     case CSSPropertyResize:
     case CSSPropertySpeak:
+    case CSSPropertyTabSize:
     case CSSPropertyTextAlign:
     case CSSPropertyTextDecoration:
     case CSSPropertyTextIndent:
     case CSSPropertyTextRendering:
     case CSSPropertyTextShadow:
     case CSSPropertyTextTransform:
+#if ENABLE(CSS_VARIABLES)
+    case CSSPropertyVariable:
+#endif
     case CSSPropertyVisibility:
     case CSSPropertyWebkitAspectRatio:
     case CSSPropertyWebkitBorderHorizontalSpacing:
     case CSSPropertyWebkitBorderVerticalSpacing:
     case CSSPropertyWebkitBoxDirection:
     case CSSPropertyWebkitColorCorrection:
+#if ENABLE(CURSOR_VISIBILITY)
+    case CSSPropertyWebkitCursorVisibility:
+#endif
     case CSSPropertyWebkitFontFeatureSettings:
     case CSSPropertyWebkitFontKerning:
     case CSSPropertyWebkitFontSmoothing:
@@ -308,12 +321,19 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitLineGrid:
     case CSSPropertyWebkitLineSnap:
     case CSSPropertyWebkitNbspMode:
-#if ENABLE(OVERFLOW_SCROLLING)
+#if ENABLE(ACCELERATED_OVERFLOW_SCROLLING)
     case CSSPropertyWebkitOverflowScrolling:
 #endif
     case CSSPropertyWebkitPrintColorAdjust:
     case CSSPropertyWebkitRtlOrdering:
+    case CSSPropertyWebkitRubyPosition:
     case CSSPropertyWebkitTextCombine:
+#if ENABLE(CSS3_TEXT)
+    case CSSPropertyWebkitTextDecorationLine:
+    case CSSPropertyWebkitTextAlignLast:
+    case CSSPropertyWebkitTextJustify:
+    case CSSPropertyWebkitTextUnderlinePosition:
+#endif // CSS3_TEXT
     case CSSPropertyWebkitTextDecorationsInEffect:
     case CSSPropertyWebkitTextEmphasis:
     case CSSPropertyWebkitTextEmphasisColor:
@@ -322,7 +342,9 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitTextFillColor:
     case CSSPropertyWebkitTextOrientation:
     case CSSPropertyWebkitTextSecurity:
+#if ENABLE(IOS_TEXT_AUTOSIZING)
     case CSSPropertyWebkitTextSizeAdjust:
+#endif
     case CSSPropertyWebkitTextStroke:
     case CSSPropertyWebkitTextStrokeColor:
     case CSSPropertyWebkitTextStrokeWidth:
@@ -361,11 +383,14 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyTextAnchor:
     case CSSPropertyWritingMode:
 #endif
+#if ENABLE(TOUCH_EVENTS)
     case CSSPropertyWebkitTapHighlightColor:
+#endif
+#if PLATFORM(IOS)
     case CSSPropertyWebkitTouchCallout:
     case CSSPropertyWebkitCompositionFillColor:
-    case CSSPropertyWebkitCompositionFrameColor:
     case CSSPropertyWebkitOverflowScrolling:
+#endif
         return true;
     case CSSPropertyDisplay:
     case CSSPropertyZoom:
@@ -423,6 +448,9 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyCounterReset:
     case CSSPropertyFloat:
     case CSSPropertyFontStretch:
+#if ENABLE(CSS_SHADERS)
+    case CSSPropertyGeometry:
+#endif
     case CSSPropertyHeight:
     case CSSPropertyLeft:
     case CSSPropertyMargin:
@@ -441,6 +469,7 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyOutlineStyle:
     case CSSPropertyOutlineWidth:
     case CSSPropertyOverflow:
+    case CSSPropertyOverflowWrap:
     case CSSPropertyOverflowX:
     case CSSPropertyOverflowY:
     case CSSPropertyPadding:
@@ -474,6 +503,11 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyTextUnderlineStyle:
     case CSSPropertyTextUnderlineWidth:
     case CSSPropertyTop:
+    case CSSPropertyTransition:
+    case CSSPropertyTransitionDelay:
+    case CSSPropertyTransitionDuration:
+    case CSSPropertyTransitionProperty:
+    case CSSPropertyTransitionTimingFunction:
     case CSSPropertyUnicodeBidi:
     case CSSPropertyUnicodeRange:
     case CSSPropertyVerticalAlign:
@@ -514,6 +548,9 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitBorderStartStyle:
     case CSSPropertyWebkitBorderStartWidth:
     case CSSPropertyWebkitBoxAlign:
+#if ENABLE(CSS_BOX_DECORATION_BREAK)
+    case CSSPropertyWebkitBoxDecorationBreak:
+#endif
     case CSSPropertyWebkitBoxFlex:
     case CSSPropertyWebkitBoxFlexGroup:
     case CSSPropertyWebkitBoxLines:
@@ -522,6 +559,7 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitBoxPack:
     case CSSPropertyWebkitBoxReflect:
     case CSSPropertyWebkitBoxShadow:
+    case CSSPropertyWebkitClipPath:
     case CSSPropertyWebkitColumnAxis:
     case CSSPropertyWebkitColumnBreakAfter:
     case CSSPropertyWebkitColumnBreakBefore:
@@ -539,25 +577,34 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
 #if ENABLE(CSS_FILTERS)
     case CSSPropertyWebkitFilter:
 #endif
-#if ENABLE(CSS3_FLEXBOX)
+#if ENABLE(CSS_COMPOSITING)
+    case CSSPropertyWebkitBlendMode:
+    case CSSPropertyWebkitBackgroundBlendMode:
+#endif
+    case CSSPropertyWebkitAlignContent:
+    case CSSPropertyWebkitAlignItems:
+    case CSSPropertyWebkitAlignSelf:
     case CSSPropertyWebkitFlex:
-    case CSSPropertyWebkitFlexOrder:
-    case CSSPropertyWebkitFlexPack:
-    case CSSPropertyWebkitFlexAlign:
-    case CSSPropertyWebkitFlexItemAlign:
+    case CSSPropertyWebkitFlexBasis:
     case CSSPropertyWebkitFlexDirection:
     case CSSPropertyWebkitFlexFlow:
-    case CSSPropertyWebkitFlexLinePack:
+    case CSSPropertyWebkitFlexGrow:
+    case CSSPropertyWebkitFlexShrink:
     case CSSPropertyWebkitFlexWrap:
-#endif
+    case CSSPropertyWebkitJustifyContent:
+    case CSSPropertyWebkitOrder:
     case CSSPropertyWebkitFontSizeDelta:
-#if ENABLE(CSS_GRID_LAYOUT)
+    case CSSPropertyWebkitGridAutoColumns:
+    case CSSPropertyWebkitGridAutoFlow:
+    case CSSPropertyWebkitGridAutoRows:
     case CSSPropertyWebkitGridColumns:
     case CSSPropertyWebkitGridRows:
-
+    case CSSPropertyWebkitGridStart:
+    case CSSPropertyWebkitGridEnd:
+    case CSSPropertyWebkitGridBefore:
+    case CSSPropertyWebkitGridAfter:
     case CSSPropertyWebkitGridColumn:
     case CSSPropertyWebkitGridRow:
-#endif
     case CSSPropertyWebkitLineClamp:
     case CSSPropertyWebkitLogicalWidth:
     case CSSPropertyWebkitLogicalHeight:
@@ -577,7 +624,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitMarqueeSpeed:
     case CSSPropertyWebkitMarqueeStyle:
     case CSSPropertyWebkitMask:
-    case CSSPropertyWebkitMaskAttachment:
     case CSSPropertyWebkitMaskBoxImage:
     case CSSPropertyWebkitMaskBoxImageOutset:
     case CSSPropertyWebkitMaskBoxImageRepeat:
@@ -595,7 +641,6 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitMaskRepeatX:
     case CSSPropertyWebkitMaskRepeatY:
     case CSSPropertyWebkitMaskSize:
-    case CSSPropertyWebkitMatchNearestMailBlockquoteColor:
     case CSSPropertyWebkitMaxLogicalWidth:
     case CSSPropertyWebkitMaxLogicalHeight:
     case CSSPropertyWebkitMinLogicalWidth:
@@ -608,6 +653,10 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyWebkitPerspectiveOrigin:
     case CSSPropertyWebkitPerspectiveOriginX:
     case CSSPropertyWebkitPerspectiveOriginY:
+#if ENABLE(CSS3_TEXT)
+    case CSSPropertyWebkitTextDecorationStyle:
+    case CSSPropertyWebkitTextDecorationColor:
+#endif // CSS3_TEXT
     case CSSPropertyWebkitTransform:
     case CSSPropertyWebkitTransformOrigin:
     case CSSPropertyWebkitTransformOriginX:
@@ -623,23 +672,29 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
 #if ENABLE(CSS_REGIONS)
     case CSSPropertyWebkitFlowInto:
     case CSSPropertyWebkitFlowFrom:
-    case CSSPropertyWebkitRegionOverflow:
     case CSSPropertyWebkitRegionBreakAfter:
     case CSSPropertyWebkitRegionBreakBefore:
     case CSSPropertyWebkitRegionBreakInside:
+    case CSSPropertyWebkitRegionFragment:
 #endif
 #if ENABLE(CSS_EXCLUSIONS)
-    case CSSPropertyWebkitWrap:
     case CSSPropertyWebkitWrapFlow:
-    case CSSPropertyWebkitWrapMargin:
-    case CSSPropertyWebkitWrapPadding:
+    case CSSPropertyWebkitWrapThrough:
+#endif
+#if ENABLE(CSS_SHAPES)
+    case CSSPropertyWebkitShapeMargin:
+    case CSSPropertyWebkitShapePadding:
     case CSSPropertyWebkitShapeInside:
     case CSSPropertyWebkitShapeOutside:
-    case CSSPropertyWebkitWrapThrough:
+#endif
+#if ENABLE(CSS_SHADERS)
+    case CSSPropertyMix:
+    case CSSPropertyParameters:
 #endif
 #if ENABLE(SVG)
     case CSSPropertyClipPath:
     case CSSPropertyMask:
+    case CSSPropertyMaskType:
     case CSSPropertyEnableBackground:
     case CSSPropertyFilter:
     case CSSPropertyFloodColor:
@@ -652,10 +707,20 @@ bool CSSProperty::isInheritedProperty(CSSPropertyID propertyID)
     case CSSPropertyBaselineShift:
     case CSSPropertyDominantBaseline:
     case CSSPropertyVectorEffect:
+    case CSSPropertyBufferedRendering:
     case CSSPropertyWebkitSvgShadow:
 #endif
 #if ENABLE(DASHBOARD_SUPPORT)
     case CSSPropertyWebkitDashboardRegion:
+#endif
+#if ENABLE(DRAGGABLE_REGION)
+    case CSSPropertyWebkitAppRegion:
+#endif
+#if ENABLE(CSS_DEVICE_ADAPTATION)
+    case CSSPropertyMaxZoom:
+    case CSSPropertyMinZoom:
+    case CSSPropertyOrientation:
+    case CSSPropertyUserZoom:
 #endif
         return false;
     case CSSPropertyInvalid:

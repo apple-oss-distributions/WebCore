@@ -28,7 +28,6 @@
 #include "FloatRect.h"
 
 #include "FloatConversion.h"
-#include "FractionalLayoutRect.h"
 #include "IntRect.h"
 #include <algorithm>
 #include <math.h>
@@ -40,10 +39,6 @@ using std::min;
 namespace WebCore {
 
 FloatRect::FloatRect(const IntRect& r) : m_location(r.location()), m_size(r.size())
-{
-}
-
-FloatRect::FloatRect(const FractionalLayoutRect& r) : m_location(r.location()), m_size(r.size())
 {
 }
 
@@ -132,6 +127,16 @@ void FloatRect::uniteIfNonZero(const FloatRect& other)
     }
 
     uniteEvenIfEmpty(other);
+}
+
+void FloatRect::extend(const FloatPoint& p)
+{
+    float minX = min(x(), p.x());
+    float minY = min(y(), p.y());
+    float maxX = max(this->maxX(), p.x());
+    float maxY = max(this->maxY(), p.y());
+
+    setLocationAndSizeFromEdges(minX, minY, maxX, maxY);
 }
 
 void FloatRect::scale(float sx, float sy)
@@ -226,26 +231,20 @@ static inline int safeFloatToInt(float x)
 
 IntRect enclosingIntRect(const FloatRect& rect)
 {
-    float left = floorf(rect.x());
-    float top = floorf(rect.y());
-    float width = ceilf(rect.maxX()) - left;
-    float height = ceilf(rect.maxY()) - top;
-    
-    return IntRect(safeFloatToInt(left), safeFloatToInt(top), 
-                   safeFloatToInt(width), safeFloatToInt(height));
+    IntPoint location = flooredIntPoint(rect.minXMinYCorner());
+    IntPoint maxPoint = ceiledIntPoint(rect.maxXMaxYCorner());
+
+    return IntRect(location, maxPoint - location);
 }
 
 IntRect enclosedIntRect(const FloatRect& rect)
 {
-    int x = clampToInteger(ceilf(rect.x()));
-    int y = clampToInteger(ceilf(rect.y()));
-    float maxX = clampToInteger(floorf(rect.maxX()));
-    float maxY = clampToInteger(floorf(rect.maxY()));
-    // A rect of width 0 should not become a rect of width -1 due to ceil/floor.
-    int width = max(clampToInteger(maxX - x), 0);
-    int height = max(clampToInteger(maxY - y), 0);
+    IntPoint location = ceiledIntPoint(rect.minXMinYCorner());
+    IntPoint maxPoint = flooredIntPoint(rect.maxXMaxYCorner());
+    IntSize size = maxPoint - location;
+    size.clampNegativeToZero();
 
-    return IntRect(x, y, width, height);
+    return IntRect(location, size);
 }
 
 IntRect roundedIntRect(const FloatRect& rect)

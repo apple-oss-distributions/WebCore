@@ -44,6 +44,9 @@ BOOL hasCaseInsensitiveSuffix(NSString *, NSString *suffix);
 BOOL hasCaseInsensitivePrefix(NSString *, NSString *prefix);
 BOOL hasCaseInsensitiveSubstring(NSString *, NSString *substring);
 NSString *filenameByFixingIllegalCharacters(NSString *);
+#if !PLATFORM(IOS)
+CFStringEncoding stringEncodingForResource(Handle resource);
+#endif
 
 #ifdef __cplusplus
 }

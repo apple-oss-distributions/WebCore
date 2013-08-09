@@ -26,30 +26,37 @@
 #include "config.h"
 #include "CachedPage.h"
 
+#include "AnimationController.h"
 #include "CachedFramePlatformData.h"
 #include "DOMWindow.h"
 #include "Document.h"
 #include "DocumentLoader.h"
-#include "ExceptionCode.h"
+#include "EventHandler.h"
 #include "EventNames.h"
+#include "ExceptionCode.h"
 #include "FocusController.h"
 #include "Frame.h"
+#include "FrameLoader.h"
 #include "FrameLoaderClient.h"
 #include "FrameView.h"
+#include "HistoryController.h"
 #include "HistoryItem.h"
 #include "Logging.h"
 #include "Page.h"
 #include "PageTransitionEvent.h"
+#include "ScriptController.h"
 #include "SerializedScriptValue.h"
-#include <wtf/text/CString.h>
 #include <wtf/RefCountedLeakCounter.h>
+#include <wtf/text/CString.h>
 
 #if ENABLE(SVG)
 #include "SVGDocumentExtensions.h"
 #endif
 
+#if ENABLE(TOUCH_EVENTS)
 #include "Chrome.h"
 #include "ChromeClient.h"
+#endif
 
 #if USE(ACCELERATED_COMPOSITING)
 #include "PageCache.h"
@@ -104,7 +111,7 @@ void CachedFrameBase::restore()
 
     frame->animation()->resumeAnimationsForDocument(m_document.get());
     frame->eventHandler()->setMousePressNode(m_mousePressNode.get());
-    m_document->resumeActiveDOMObjects();
+    m_document->resumeActiveDOMObjects(ActiveDOMObject::DocumentWillBecomeInactive);
     m_document->resumeScriptedAnimationControllerCallbacks();
 
     // It is necessary to update any platform script objects after restoring the
@@ -126,21 +133,32 @@ void CachedFrameBase::restore()
     for (unsigned i = 0; i < m_childFrames.size(); ++i)
         m_childFrames[i]->open();
 
+#if PLATFORM(IOS)
     if (m_isMainFrame) {
         frame->loader()->client()->didRestoreFrameHierarchyForCachedFrame();
 
         if (DOMWindow* domWindow = m_document->domWindow()) {
             // FIXME: add SCROLL_LISTENER to the list of event types on Document, and use m_document->hasListenerType() <rdar://problem/9615482>
             if (domWindow->scrollEventListenerCount() > 0 && frame->page())
-                frame->page()->chrome()->client()->setNeedsScrollNotifications(frame, true);
+                frame->page()->chrome().client()->setNeedsScrollNotifications(frame, true);
         }
     }
+#endif
+
+    // FIXME: update Page Visibility state here.
+    // https://bugs.webkit.org/show_bug.cgi?id=116770
 
     m_document->enqueuePageshowEvent(PageshowEventPersisted);
     
     HistoryItem* historyItem = frame->loader()->history()->currentItem();
     m_document->enqueuePopstateEvent(historyItem && historyItem->stateObject() ? historyItem->stateObject() : SerializedScriptValue::nullValue());
     
+#if !PLATFORM(IOS)
+#if ENABLE(TOUCH_EVENTS)
+    if (m_document->hasTouchEventHandlers())
+        m_document->page()->chrome().client()->needTouchEvents(true);
+#endif
+#endif // !PLATFORM(IOS)
 
     m_document->documentDidResumeFromPageCache();
 }
@@ -161,7 +179,6 @@ CachedFrame::CachedFrame(Frame* frame)
     // Custom scrollbar renderers will get reattached when the document comes out of the page cache
     m_view->detachCustomScrollbars();
 
-    frame->clearTimers();
     m_document->setInPageCache(true);
     frame->loader()->stopLoading(UnloadEventPolicyUnloadAndPageHide);
 
@@ -178,9 +195,7 @@ CachedFrame::CachedFrame(Frame* frame)
     m_document->suspendActiveDOMObjects(ActiveDOMObject::DocumentWillBecomeInactive);
     m_cachedFrameScriptData = adoptPtr(new ScriptCachedFrameData(frame));
 
-    m_domWindow = frame->domWindow();
-    ASSERT(m_domWindow);
-    m_domWindow->suspendForPageCache();
+    m_document->domWindow()->suspendForPageCache();
 
     frame->loader()->client()->savePlatformDataToCachedFrame(this);
 
@@ -188,6 +203,9 @@ CachedFrame::CachedFrame(Frame* frame)
     if (m_isComposited && pageCache()->shouldClearBackingStores())
         frame->view()->clearBackingStores();
 #endif
+
+    // documentWillSuspendForPageCache() can set up a layout timer on the FrameView, so clear timers after that.
+    frame->clearTimers();
 
     // Deconstruct the FrameTree, to restore it later.
     // We do this for two reasons:
@@ -197,7 +215,7 @@ CachedFrame::CachedFrame(Frame* frame)
         frame->tree()->removeChild(m_childFrames[i]->view()->frame());
 
     if (!m_isMainFrame)
-        frame->page()->decrementFrameCount();
+        frame->page()->decrementSubframeCount();
 
     frame->loader()->client()->didSaveToPageCache();
 
@@ -216,7 +234,7 @@ void CachedFrame::open()
     m_view->frame()->loader()->open(*this);
 
     if (!m_isMainFrame)
-        m_view->frame()->page()->incrementFrameCount();
+        m_view->frame()->page()->incrementSubframeCount();
 }
 
 void CachedFrame::clear()
@@ -254,7 +272,7 @@ void CachedFrame::destroy()
     ASSERT(m_view);
     ASSERT(m_document->frame() == m_view->frame());
 
-    m_domWindow->willDestroyCachedFrame();
+    m_document->domWindow()->willDestroyCachedFrame();
 
     if (!m_isMainFrame) {
         m_view->frame()->detachFromPage();

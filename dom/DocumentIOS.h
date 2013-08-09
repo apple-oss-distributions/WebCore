@@ -13,6 +13,7 @@
  * or to any functionality that is invoked by calling any API.
  */
 
+#if ENABLE(TOUCH_EVENTS)
 public:
     PassRefPtr<Touch> createTouch(DOMWindow* view, EventTarget* target, long identifier, long pageX, long pageY, long screenX, long screenY, ExceptionCode&);
     PassRefPtr<TouchList> createTouchList(ExceptionCode&);
@@ -43,3 +44,4 @@ private:
     Mutex m_touchEventsRectMutex;
     Timer<Document> m_touchEventsChangedTimer;
 public:
+#endif

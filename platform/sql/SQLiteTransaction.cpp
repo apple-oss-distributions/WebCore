@@ -28,7 +28,9 @@
 
 #include "SQLiteDatabase.h"
 
+#if PLATFORM(IOS)
 #include "SQLiteDatabaseTracker.h"
+#endif
 
 namespace WebCore {
 
@@ -56,14 +58,18 @@ void SQLiteTransaction::begin()
         // any statements. If that happens, this transaction will fail.
         // http://www.sqlite.org/lang_transaction.html
         // http://www.sqlite.org/lockingv3.html#locking
-        SQLiteDatabaseTracker::tracker().incrementTransactionInProgressCount();
+#if PLATFORM(IOS)
+        SQLiteDatabaseTracker::incrementTransactionInProgressCount();
+#endif
         if (m_readOnly)
             m_inProgress = m_db.executeCommand("BEGIN");
         else
             m_inProgress = m_db.executeCommand("BEGIN IMMEDIATE");
         m_db.m_transactionInProgress = m_inProgress;
+#if PLATFORM(IOS)
         if (!m_inProgress)
-            SQLiteDatabaseTracker::tracker().decrementTransactionInProgressCount();
+            SQLiteDatabaseTracker::decrementTransactionInProgressCount();
+#endif
     }
 }
 
@@ -73,8 +79,10 @@ void SQLiteTransaction::commit()
         ASSERT(m_db.m_transactionInProgress);
         m_inProgress = !m_db.executeCommand("COMMIT");
         m_db.m_transactionInProgress = m_inProgress;
+#if PLATFORM(IOS)
         if (!m_inProgress)
-            SQLiteDatabaseTracker::tracker().decrementTransactionInProgressCount();
+            SQLiteDatabaseTracker::decrementTransactionInProgressCount();
+#endif
     }
 }
 
@@ -89,7 +97,9 @@ void SQLiteTransaction::rollback()
         m_db.executeCommand("ROLLBACK");
         m_inProgress = false;
         m_db.m_transactionInProgress = false;
-        SQLiteDatabaseTracker::tracker().decrementTransactionInProgressCount();
+#if PLATFORM(IOS)
+        SQLiteDatabaseTracker::decrementTransactionInProgressCount();
+#endif
     }
 }
 
@@ -98,7 +108,9 @@ void SQLiteTransaction::stop()
     if (m_inProgress) {
         m_inProgress = false;
         m_db.m_transactionInProgress = false;
-        SQLiteDatabaseTracker::tracker().decrementTransactionInProgressCount();
+#if PLATFORM(IOS)
+        SQLiteDatabaseTracker::decrementTransactionInProgressCount();
+#endif
     }
 }
 

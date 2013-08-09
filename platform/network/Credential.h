@@ -25,9 +25,9 @@
 #ifndef Credential_h
 #define Credential_h
 
-#include "PlatformString.h"
+#include <wtf/text/WTFString.h>
 
-#define CERTIFICATE_CREDENTIALS_SUPPORTED 1
+#define CERTIFICATE_CREDENTIALS_SUPPORTED (PLATFORM(IOS) || PLATFORM(MAC))
 
 #if CERTIFICATE_CREDENTIALS_SUPPORTED
 #include <Security/SecBase.h>

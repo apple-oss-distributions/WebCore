@@ -44,6 +44,11 @@ namespace WebCore {
         ReturnCacheDataDontLoad  // results of a post - allow stale data and only use cache
     };
 
+    enum HTTPBodyUpdatePolicy {
+        DoNotUpdateHTTPBody,
+        UpdateHTTPBody
+    };
+
     class ResourceRequest;
     struct CrossThreadResourceRequestData;
 
@@ -106,6 +111,7 @@ namespace WebCore {
         void setHTTPAccept(const String& httpAccept) { setHTTPHeaderField("Accept", httpAccept); }
         void clearHTTPAccept();
 
+        const Vector<String>& responseContentDispositionEncodingFallbackArray() const { return m_responseContentDispositionEncodingFallbackArray; }
         void setResponseContentDispositionEncodingFallbackArray(const String& encoding1, const String& encoding2 = String(), const String& encoding3 = String());
 
         FormData* httpBody() const;
@@ -118,6 +124,7 @@ namespace WebCore {
         void setPriority(ResourceLoadPriority);
 
         bool isConditional() const;
+        void makeUnconditional();
 
         // Whether the associated ResourceHandleClient needs to be notified of
         // upload progress made for that resource.
@@ -135,8 +142,10 @@ namespace WebCore {
         static double defaultTimeoutInterval(); // May return 0 when using platform default.
         static void setDefaultTimeoutInterval(double);
 
+#if PLATFORM(IOS)
         static bool defaultAllowCookies();
         static void setDefaultAllowCookies(bool);
+#endif
 
         static bool compare(const ResourceRequest&, const ResourceRequest&);
 
@@ -145,6 +154,8 @@ namespace WebCore {
         ResourceRequestBase()
             : m_resourceRequestUpdated(false)
             , m_platformRequestUpdated(true)
+            , m_resourceRequestBodyUpdated(false)
+            , m_platformRequestBodyUpdated(true)
             , m_reportUploadProgress(false)
             , m_reportLoadTiming(false)
             , m_reportRawHeaders(false)
@@ -157,9 +168,15 @@ namespace WebCore {
             , m_cachePolicy(policy)
             , m_timeoutInterval(s_defaultTimeoutInterval)
             , m_httpMethod("GET")
+#if !PLATFORM(IOS)
+            , m_allowCookies(true)
+#else
             , m_allowCookies(ResourceRequestBase::defaultAllowCookies())
+#endif
             , m_resourceRequestUpdated(true)
             , m_platformRequestUpdated(false)
+            , m_resourceRequestBodyUpdated(true)
+            , m_platformRequestBodyUpdated(false)
             , m_reportUploadProgress(false)
             , m_reportLoadTiming(false)
             , m_reportRawHeaders(false)
@@ -167,8 +184,8 @@ namespace WebCore {
         {
         }
 
-        void updatePlatformRequest() const; 
-        void updateResourceRequest() const; 
+        void updatePlatformRequest(HTTPBodyUpdatePolicy = DoNotUpdateHTTPBody) const;
+        void updateResourceRequest(HTTPBodyUpdatePolicy = DoNotUpdateHTTPBody) const;
 
         // The ResourceRequest subclass may "shadow" this method to compare platform specific fields
         static bool platformCompare(const ResourceRequest&, const ResourceRequest&) { return true; }
@@ -185,6 +202,8 @@ namespace WebCore {
         bool m_allowCookies : 1;
         mutable bool m_resourceRequestUpdated : 1;
         mutable bool m_platformRequestUpdated : 1;
+        mutable bool m_resourceRequestBodyUpdated : 1;
+        mutable bool m_platformRequestBodyUpdated : 1;
         bool m_reportUploadProgress : 1;
         bool m_reportLoadTiming : 1;
         bool m_reportRawHeaders : 1;
@@ -194,7 +213,9 @@ namespace WebCore {
         const ResourceRequest& asResourceRequest() const;
 
         static double s_defaultTimeoutInterval;
+#if PLATFORM(IOS)
         static bool s_defaultAllowCookies;
+#endif
     };
 
     bool equalIgnoringHeaderFields(const ResourceRequestBase&, const ResourceRequestBase&);
@@ -221,7 +242,9 @@ namespace WebCore {
     };
     
     unsigned initializeMaximumHTTPConnectionCountPerHost();
+#if PLATFORM(IOS)
     void initializeHTTPConnectionSettingsOnStartup();
+#endif
 } // namespace WebCore
 
 #endif // ResourceRequestBase_h

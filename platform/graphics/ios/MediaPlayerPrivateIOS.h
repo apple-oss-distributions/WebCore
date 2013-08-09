@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2009, 2010, 2011, 2012, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,28 +26,27 @@
 #ifndef MediaPlayerPrivateIOS_h
 #define MediaPlayerPrivateIOS_h
 
-#if ENABLE(VIDEO)
+#if ENABLE(VIDEO) && PLATFORM(IOS)
 
+#include "InbandTextTrackPrivateAVF.h"
 #include "MediaPlayer.h"
-#include "MediaPlayerProxy.h"
-
 #include "MediaPlayerPrivate.h"
+#include "MediaPlayerProxy.h"
+#include <objc/runtime.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/RetainPtr.h>
 
-#ifdef __OBJC__
-@class NSObject;
-@class WebCoreMediaPlayerNotificationHelper;
-#else
-class NSObject;
-class WebCoreMediaPlayerNotificationHelper;
-#endif
-
-class MediaPlayerMobileInterface;
+OBJC_CLASS NSDictionary;
+OBJC_CLASS NSMutableDictionary;
+OBJC_CLASS NSNumber;
+OBJC_CLASS NSObject;
+OBJC_CLASS WebCoreMediaPlayerNotificationHelper;
 
 namespace WebCore {
 
-class MediaPlayerPrivateIOS : public MediaPlayerPrivateInterface {
+class InbandTextTrackPrivateAVFIOS;
+
+class MediaPlayerPrivateIOS : public MediaPlayerPrivateInterface, public AVFInbandTrackParent {
 public:
 
     static void registerMediaEngine(MediaEngineRegistrar);
@@ -58,13 +57,19 @@ public:
     virtual void prepareToPlay() OVERRIDE;
     void processDeferredRequests();
 
+#if ENABLE(VIDEO_TRACK)
+    void inbandTextTracksChanged(NSArray *);
+    void processInbandTextTrackCue(NSArray *, double);
+    void textTrackWasSelectedByPlugin(NSDictionary *);
+#endif
+
 private:
     MediaPlayerPrivateIOS(MediaPlayer *player);
 
     // engine support
     static PassOwnPtr<MediaPlayerPrivateInterface> create(MediaPlayer* player);
     static void getSupportedTypes(HashSet<String>& types);
-    static MediaPlayer::SupportsType supportsType(const String& type, const String& codecs);
+    static MediaPlayer::SupportsType supportsType(const String& type, const String& codecs, const KURL&);
     static bool isAvailable();
 
     virtual IntSize naturalSize() const OVERRIDE;
@@ -77,7 +82,7 @@ private:
 
     virtual void setControls(bool) OVERRIDE;
 
-    virtual bool enterFullscreen() const OVERRIDE;
+    virtual void enterFullscreen() OVERRIDE;
     virtual void exitFullscreen() OVERRIDE;
 
     virtual bool hasClosedCaptions() const OVERRIDE;
@@ -113,7 +118,7 @@ private:
     virtual float maxTimeSeekable() const OVERRIDE;
     virtual PassRefPtr<TimeRanges> buffered() const OVERRIDE;
 
-    virtual unsigned bytesLoaded() const OVERRIDE;
+    virtual bool didLoadingProgress() const OVERRIDE;
     bool totalBytesKnown() const;
     unsigned totalBytes() const;
 
@@ -121,6 +126,18 @@ private:
     virtual void setSize(const IntSize&) OVERRIDE;
     
     virtual void paint(GraphicsContext* context, const IntRect& r) OVERRIDE;
+
+#if ENABLE(IOS_AIRPLAY)
+    virtual bool isCurrentPlaybackTargetWireless() const OVERRIDE;
+    virtual void showPlaybackTargetPicker() OVERRIDE;
+
+    virtual bool hasWirelessPlaybackTargets() const OVERRIDE;
+
+    virtual bool wirelessVideoPlaybackDisabled() const OVERRIDE;
+    virtual void setWirelessVideoPlaybackDisabled(bool) OVERRIDE;
+
+    virtual void setHasPlaybackTargetAvailabilityListeners(bool) OVERRIDE;
+#endif
 
 #if USE(ACCELERATED_COMPOSITING)
     virtual bool supportsAcceleratedRendering() const OVERRIDE;
@@ -136,10 +153,51 @@ private:
     
     void addDeferredRequest(NSString *name, id value);
 
+    virtual String engineDescription() const { return "iOS"; }
+
     virtual void attributeChanged(const String& name, const String& value) OVERRIDE;
     virtual bool readyForPlayback() const OVERRIDE;
 
+#if ENABLE(VIDEO_TRACK)
+    virtual bool requiresTextTrackRepresentation() const;
+    virtual void setTextTrackRepresentation(TextTrackRepresentation*);
+
+    void clearTextTracks();
+    void setSelectedTextTrack(NSNumber *);
+    virtual void trackModeChanged() OVERRIDE;
+    void setOutOfBandTextTracks(NSArray *);
+
+    virtual bool implementsTextTrackControls() const { return true; }
+    virtual PassRefPtr<PlatformTextTrackMenuInterface> textTrackMenu();
+
+    void outOfBandTextTracksChanged();
+    void textTrackWasSelectedByMediaElement(PassRefPtr<PlatformTextTrack>);
+#endif
+
 private:
+
+    class PlatformTextTrackMenuInterfaceIOS  : public PlatformTextTrackMenuInterface {
+    public:
+        static PassRefPtr<PlatformTextTrackMenuInterfaceIOS> create(MediaPlayerPrivateIOS* owner)
+        {
+            return adoptRef(new PlatformTextTrackMenuInterfaceIOS(owner));
+        }
+
+        virtual ~PlatformTextTrackMenuInterfaceIOS();
+        
+        virtual void tracksDidChange() OVERRIDE { if (m_owner) m_owner->outOfBandTextTracksChanged(); }
+        virtual void trackWasSelected(PassRefPtr<PlatformTextTrack> track) OVERRIDE { if (m_owner) m_owner->textTrackWasSelectedByMediaElement(track); }
+        
+        virtual void setClient(PlatformTextTrackMenuClient* client) OVERRIDE { m_client = client; }
+        PlatformTextTrackMenuClient* client() { return m_client; }
+            
+    private:
+        PlatformTextTrackMenuInterfaceIOS(MediaPlayerPrivateIOS*);
+
+        PlatformTextTrackMenuClient* m_client;
+        MediaPlayerPrivateIOS* m_owner;
+    };
+
     MediaPlayer* m_mediaPlayer;
     RetainPtr<NSObject> m_mediaPlayerHelper;    // this is the MediaPlayerProxy.
     RetainPtr<WebCoreMediaPlayerNotificationHelper> m_objcHelper;
@@ -150,8 +208,15 @@ private:
     
     enum BufferingState { Empty, UnlikeleyToKeepUp, LikeleyToKeepUp, Full };
 
+#if ENABLE(VIDEO_TRACK)
+    InbandTextTrackPrivateAVFIOS* m_currentTrack;
+    Vector<RefPtr<InbandTextTrackPrivateAVFIOS> > m_textTracks;
+    RefPtr<PlatformTextTrackMenuInterfaceIOS> m_menuInterface;
+#endif
+
     int m_delayCallbacks;
     int m_changingVolume;
+    mutable unsigned m_bytesLoadedAtLastDidLoadingProgress;
     float m_requestedRate;
     BufferingState m_bufferingState;
     bool m_visible : 1;

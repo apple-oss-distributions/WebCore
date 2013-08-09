@@ -77,10 +77,8 @@ static bool parseAccessControlAllowList(const String& string, HashSet<String, Ha
     unsigned start = 0;
     size_t end;
     while ((end = string.find(',', start)) != notFound) {
-        if (start == end)
-            return false;
-
-        addToAccessControlAllowList(string, start, end - 1, set);
+        if (start != end)
+            addToAccessControlAllowList(string, start, end - 1, set);
         start = end + 1;
     }
     if (start != string.length())
@@ -127,8 +125,8 @@ bool CrossOriginPreflightResultCacheItem::allowsCrossOriginHeaders(const HTTPHea
 {
     HTTPHeaderMap::const_iterator end = requestHeaders.end();
     for (HTTPHeaderMap::const_iterator it = requestHeaders.begin(); it != end; ++it) {
-        if (!m_headers.contains(it->first) && !isOnAccessControlSimpleRequestHeaderWhitelist(it->first, it->second)) {
-            errorDescription = "Request header field " + it->first.string() + " is not allowed by Access-Control-Allow-Headers.";
+        if (!m_headers.contains(it->key) && !isOnAccessControlSimpleRequestHeaderWhitelist(it->key, it->value)) {
+            errorDescription = "Request header field " + it->key.string() + " is not allowed by Access-Control-Allow-Headers.";
             return false;
         }
     }
@@ -152,24 +150,36 @@ bool CrossOriginPreflightResultCacheItem::allowsRequest(StoredCredentials includ
 CrossOriginPreflightResultCache& CrossOriginPreflightResultCache::shared()
 {
     DEFINE_STATIC_LOCAL(CrossOriginPreflightResultCache, cache, ());
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
     return cache;
 }
 
 void CrossOriginPreflightResultCache::appendEntry(const String& origin, const KURL& url, PassOwnPtr<CrossOriginPreflightResultCacheItem> preflightResult)
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
     m_preflightHashMap.set(make_pair(origin, url), preflightResult);
 }
 
 bool CrossOriginPreflightResultCache::canSkipPreflight(const String& origin, const KURL& url, StoredCredentials includeCredentials, const String& method, const HTTPHeaderMap& requestHeaders)
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
     CrossOriginPreflightResultHashMap::iterator cacheIt = m_preflightHashMap.find(make_pair(origin, url));
     if (cacheIt == m_preflightHashMap.end())
         return false;
 
-    if (cacheIt->second->allowsRequest(includeCredentials, method, requestHeaders))
+    if (cacheIt->value->allowsRequest(includeCredentials, method, requestHeaders))
         return true;
 
     m_preflightHashMap.remove(cacheIt);
@@ -178,7 +188,11 @@ bool CrossOriginPreflightResultCache::canSkipPreflight(const String& origin, con
 
 void CrossOriginPreflightResultCache::empty()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
     m_preflightHashMap.clear();
 }
 

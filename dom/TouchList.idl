@@ -6,13 +6,11 @@
  * secrets or other rights.
  */
 
-module events {
-    interface [
-        AppleCopyright,
-        IndexedGetter,
-        OmitConstructor
-    ] TouchList  {
-        readonly attribute unsigned long    length;
-        Touch           item(in unsigned long index);
-    };
-}
+[
+    AppleCopyright,
+    Conditional=TOUCH_EVENTS,
+    NoInterfaceObject
+] interface TouchList {
+    readonly attribute unsigned long length;
+    getter Touch item(unsigned long index);
+};

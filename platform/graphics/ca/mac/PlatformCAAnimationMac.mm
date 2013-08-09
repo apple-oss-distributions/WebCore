@@ -30,13 +30,10 @@
 #import "PlatformCAAnimation.h"
 
 #import "FloatConversion.h"
-#import "LengthFunctions.h"
-#import "PlatformString.h"
+#import "PlatformCAFilters.h"
 #import "TimingFunction.h"
 #import <QuartzCore/QuartzCore.h>
-#import <wtf/UnusedParam.h>
-
-#define HAVE_MODERN_QUARTZCORE (!defined(BUILDING_ON_LEOPARD))
+#import <wtf/text/WTFString.h>
 
 using namespace WebCore;
 
@@ -75,7 +72,6 @@ static PlatformCAAnimation::FillModeType fromCAFillModeType(NSString* string)
     return PlatformCAAnimation::Forwards;
 }
 
-#if HAVE_MODERN_QUARTZCORE
 static NSString* toCAValueFunctionType(PlatformCAAnimation::ValueFunctionType type)
 {
     switch (type) {
@@ -132,7 +128,6 @@ static PlatformCAAnimation::ValueFunctionType fromCAValueFunctionType(NSString* 
 
     return PlatformCAAnimation::NoValueFunction;
 }
-#endif
 
 static CAMediaTimingFunction* toCAMediaTimingFunction(const TimingFunction* timingFunction, bool reverse)
 {
@@ -166,9 +161,9 @@ PlatformCAAnimation::PlatformCAAnimation(AnimationType type, const String& keyPa
     : m_type(type)
 {
     if (type == Basic)
-        m_animation.adoptNS([[CABasicAnimation animationWithKeyPath:keyPath] retain]);
+        m_animation = [CABasicAnimation animationWithKeyPath:keyPath];
     else
-        m_animation.adoptNS([[CAKeyframeAnimation animationWithKeyPath:keyPath] retain]);
+        m_animation = [CAKeyframeAnimation animationWithKeyPath:keyPath];
 }
 
 PlatformCAAnimation::PlatformCAAnimation(PlatformAnimationRef animation)
@@ -344,21 +339,13 @@ void PlatformCAAnimation::setAdditive(bool value)
 
 PlatformCAAnimation::ValueFunctionType PlatformCAAnimation::valueFunction() const
 {
-#if HAVE_MODERN_QUARTZCORE
     CAValueFunction* vf = [m_animation.get() valueFunction];
     return fromCAValueFunctionType([vf name]);
-#else
-    return NoValueFunction;
-#endif
 }
 
 void PlatformCAAnimation::setValueFunction(ValueFunctionType value)
 {
-#if HAVE_MODERN_QUARTZCORE
     [m_animation.get() setValueFunction:[CAValueFunction functionWithName:toCAValueFunctionType(value)]];
-#else
-    UNUSED_PARAM(value);
-#endif
 }
 
 void PlatformCAAnimation::setFromValue(float value)
@@ -404,6 +391,11 @@ void PlatformCAAnimation::setFromValue(const WebCore::Color& value)
 }
 
 #if ENABLE(CSS_FILTERS)
+void PlatformCAAnimation::setFromValue(const FilterOperation* operation, int internalFilterPropertyIndex)
+{
+    RetainPtr<id> value = PlatformCAFilters::filterValueForOperation(operation, internalFilterPropertyIndex);
+    [static_cast<CABasicAnimation*>(m_animation.get()) setFromValue:value.get()];
+}
 #endif
 
 void PlatformCAAnimation::copyFromValueFrom(const PlatformCAAnimation* value)
@@ -458,6 +450,11 @@ void PlatformCAAnimation::setToValue(const WebCore::Color& value)
 }
 
 #if ENABLE(CSS_FILTERS)
+void PlatformCAAnimation::setToValue(const FilterOperation* operation, int internalFilterPropertyIndex)
+{
+    RetainPtr<id> value = PlatformCAFilters::filterValueForOperation(operation, internalFilterPropertyIndex);
+    [static_cast<CABasicAnimation*>(m_animation.get()) setToValue:value.get()];
+}
 #endif
 
 void PlatformCAAnimation::copyToValueFrom(const PlatformCAAnimation* value)
@@ -533,6 +530,19 @@ void PlatformCAAnimation::setValues(const Vector<WebCore::Color>& value)
 }
 
 #if ENABLE(CSS_FILTERS)
+void PlatformCAAnimation::setValues(const Vector<RefPtr<FilterOperation> >& values, int internalFilterPropertyIndex)
+{
+    if (animationType() != Keyframe)
+        return;
+        
+    NSMutableArray* array = [NSMutableArray array];
+
+    for (size_t i = 0; i < values.size(); ++i) {
+        RetainPtr<id> value = PlatformCAFilters::filterValueForOperation(values[i].get(), internalFilterPropertyIndex);
+        [array addObject:value.get()];
+    }
+    [static_cast<CAKeyframeAnimation*>(m_animation.get()) setValues:array];
+}
 #endif
 
 void PlatformCAAnimation::copyValuesFrom(const PlatformCAAnimation* value)
@@ -575,8 +585,5 @@ void PlatformCAAnimation::copyTimingFunctionsFrom(const PlatformCAAnimation* val
     CAKeyframeAnimation* other = static_cast<CAKeyframeAnimation*>(value->m_animation.get());
     [static_cast<CAKeyframeAnimation*>(m_animation.get()) setTimingFunctions:[other timingFunctions]];
 }
-
-#if ENABLE(CSS_FILTERS)
-#endif
 
 #endif // USE(ACCELERATED_COMPOSITING)

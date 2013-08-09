@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2006, 2009, 2011 Apple Inc.  All rights reserved.
+ * Copyright (C) 2003, 2006, 2009, 2011, 2012, 2013 Apple Inc.  All rights reserved.
  * Copyright (C) 2010 Igalia S.L
  *
  * Redistribution and use in source and binary forms, with or without
@@ -49,6 +49,9 @@ namespace WebCore {
 
 #if ENABLE(CONTEXT_MENUS)
     String contextMenuItemTagOpenLinkInNewWindow();
+#if PLATFORM(QT)
+    String contextMenuItemTagOpenLinkInThisWindow();
+#endif
     String contextMenuItemTagDownloadLinkToDisk();
     String contextMenuItemTagCopyLinkToClipboard();
     String contextMenuItemTagOpenImageInNewWindow();
@@ -129,21 +132,64 @@ namespace WebCore {
 #endif
     String contextMenuItemTagOpenVideoInNewWindow();
     String contextMenuItemTagOpenAudioInNewWindow();
+    String contextMenuItemTagDownloadVideoToDisk();
+    String contextMenuItemTagDownloadAudioToDisk();
     String contextMenuItemTagCopyVideoLinkToClipboard();
     String contextMenuItemTagCopyAudioLinkToClipboard();
     String contextMenuItemTagToggleMediaControls();
+    String contextMenuItemTagShowMediaControls();
+    String contextMenuItemTagHideMediaControls();
     String contextMenuItemTagToggleMediaLoop();
     String contextMenuItemTagEnterVideoFullscreen();
+    String contextMenuItemTagExitVideoFullscreen();
     String contextMenuItemTagMediaPlay();
     String contextMenuItemTagMediaPause();
     String contextMenuItemTagMediaMute();
     String contextMenuItemTagInspectElement();
 #endif // ENABLE(CONTEXT_MENUS)
 
+#if !PLATFORM(IOS)
+    String searchMenuNoRecentSearchesText();
+    String searchMenuRecentSearchesText();
+    String searchMenuClearRecentSearchesText();
+
+    String AXWebAreaText();
+    String AXLinkText();
+    String AXListMarkerText();
+    String AXImageMapText();
+    String AXHeadingText();
+    String AXDefinitionText();
+    String AXDescriptionListText();
+    String AXDescriptionListTermText();
+    String AXDescriptionListDetailText();
+    String AXFooterRoleDescriptionText();
+    String AXFileUploadButtonText();
+    
+    String AXButtonActionVerb();
+    String AXRadioButtonActionVerb();
+    String AXTextFieldActionVerb();
+    String AXCheckedCheckBoxActionVerb();
+    String AXUncheckedCheckBoxActionVerb();
+    String AXMenuListActionVerb();
+    String AXMenuListPopupActionVerb();
+    String AXLinkActionVerb();
+    String AXListItemActionVerb();
+#endif
+
+#if ENABLE(INPUT_TYPE_WEEK)
+    // weekFormatInLDML() returns week and year format in LDML, Unicode
+    // technical standard 35, Locale Data Markup Language, e.g. "'Week' ww, yyyy"
+    String weekFormatInLDML();
+#endif
+#if PLATFORM(MAC) || PLATFORM(IOS)
+    String AXARIAContentGroupText(const String& ariaType);
+#endif
 
     String missingPluginText();
     String crashedPluginText();
+    String blockedPluginByContentSecurityPolicyText();
     String insecurePluginVersionText();
+
     String multipleFileUploadText(unsigned numberOfFiles);
     String unknownFileSizeText();
 
@@ -155,17 +201,20 @@ namespace WebCore {
 #if PLATFORM(MAC)
     String builtInPDFPluginName();
     String pdfDocumentTypeDescription();
+    String postScriptDocumentTypeDescription();
     String keygenMenuItem512();
     String keygenMenuItem1024();
     String keygenMenuItem2048();
     String keygenKeychainItemName(const String& host);
 #endif
 
+#if PLATFORM(IOS)
     String htmlSelectMultipleItems(size_t num);
     String fileButtonChooseMediaFileLabel();
     String fileButtonChooseMultipleMediaFilesLabel();
     String fileButtonNoMediaFileSelectedLabel();
     String fileButtonNoMediaFilesSelectedLabel();
+#endif
 
     String imageTitle(const String& filename, const IntSize& size);
 
@@ -190,20 +239,34 @@ namespace WebCore {
     String validationMessageRangeUnderflowText(const String& minimum);
     String validationMessageRangeOverflowText(const String& maximum);
     String validationMessageStepMismatchText(const String& base, const String& step);
-#if ENABLE(CALENDAR_PICKER)
-    String calendarTodayText();
-    String calendarClearText();
-    String dateFormatYearText();
-    String dateFormatMonthText();
-    String dateFormatDayInMonthText();
+    String validationMessageBadInputForNumberText();
+#if USE(SOUP)
+    String unacceptableTLSCertificate();
 #endif
 
-#if !PLATFORM(CHROMIUM)
+    String clickToExitFullScreenText();
+
+#if ENABLE(VIDEO_TRACK)
+    String textTrackSubtitlesText();
+    String textTrackOffMenuItemText();
+    String textTrackAutomaticMenuItemText();
+    String textTrackNoLabelText();
+#if PLATFORM(MAC) || PLATFORM(WIN)
+    String textTrackCountryAndLanguageMenuItemText(const String& title, const String& country, const String& language);
+    String textTrackLanguageMenuItemText(const String& title, const String& language);
+    String closedCaptionTrackMenuItemText(const String&);
+    String sdhTrackMenuItemText(const String&);
+    String easyReaderTrackMenuItemText(const String&);
+#endif
+#endif
+
+    String snapshottedPlugInLabelTitle();
+    String snapshottedPlugInLabelSubtitle();
+
 #define WEB_UI_STRING(string, description) WebCore::localizedString(string)
 #define WEB_UI_STRING_KEY(string, key, description) WebCore::localizedString(key)
 
     String localizedString(const char* key);
-#endif
 
 } // namespace WebCore
 

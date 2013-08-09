@@ -21,6 +21,7 @@
 #ifndef QualifiedName_h
 #define QualifiedName_h
 
+#include <wtf/Forward.h>
 #include <wtf/HashTraits.h>
 #include <wtf/RefCounted.h>
 #include <wtf/text/AtomicString.h>
@@ -43,6 +44,11 @@ public:
             return adoptRef(new QualifiedNameImpl(prefix, localName, namespaceURI));
         }
 
+        ~QualifiedNameImpl();
+
+        unsigned computeHash() const;
+
+        mutable unsigned m_existingHash;
         const AtomicString m_prefix;
         const AtomicString m_localName;
         const AtomicString m_namespace;
@@ -50,7 +56,8 @@ public:
 
     private:
         QualifiedNameImpl(const AtomicString& prefix, const AtomicString& localName, const AtomicString& namespaceURI)
-            : m_prefix(prefix)
+            : m_existingHash(0)
+            , m_prefix(prefix)
             , m_localName(localName)
             , m_namespace(namespaceURI)
         {
@@ -90,7 +97,7 @@ public:
     
     // Init routine for globals
     static void init();
-    
+
 private:
     void ref() const { m_impl->ref(); }
     void deref();
@@ -104,6 +111,8 @@ private:
 extern const QualifiedName anyName;
 inline const QualifiedName& anyQName() { return anyName; }
 #endif
+
+const QualifiedName& nullQName();
 
 inline bool operator==(const AtomicString& a, const QualifiedName& q) { return a == q.localName(); }
 inline bool operator!=(const AtomicString& a, const QualifiedName& q) { return a != q.localName(); }
@@ -120,8 +129,9 @@ struct QualifiedNameHash {
 
     static unsigned hash(const QualifiedName::QualifiedNameImpl* name) 
     {
-        QualifiedNameComponents c = { name->m_prefix.impl(), name->m_localName.impl(), name->m_namespace.impl() };
-        return hashComponents(c);
+        if (!name->m_existingHash)
+            name->m_existingHash = name->computeHash();
+        return name->m_existingHash;
     }
 
     static bool equal(const QualifiedName& a, const QualifiedName& b) { return a == b; }
@@ -130,8 +140,8 @@ struct QualifiedNameHash {
     static const bool safeToCompareToEmptyOrDeleted = false;
 };
 
-void createQualifiedName(void* targetAddress, const char* name, unsigned nameLength);
-void createQualifiedName(void* targetAddress, const char* name, unsigned nameLength, const AtomicString& nameNamespace);
+void createQualifiedName(void* targetAddress, StringImpl* name);
+void createQualifiedName(void* targetAddress, StringImpl* name, const AtomicString& nameNamespace);
 
 }
 
@@ -145,7 +155,7 @@ namespace WTF {
     
     template<> struct HashTraits<WebCore::QualifiedName> : SimpleClassHashTraits<WebCore::QualifiedName> {
         static const bool emptyValueIsZero = false;
-        static WebCore::QualifiedName emptyValue() { return WebCore::QualifiedName(nullAtom, nullAtom, nullAtom); }
+        static WebCore::QualifiedName emptyValue() { return WebCore::nullQName(); }
     };
 }
 

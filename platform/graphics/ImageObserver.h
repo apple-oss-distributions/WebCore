@@ -28,7 +28,9 @@
 
 namespace WebCore {
 
+#if PLATFORM(IOS)
 class IntSize;
+#endif
 class Image;
 class IntRect;
 
@@ -46,7 +48,9 @@ public:
 
     virtual void changedInRect(const Image*, const IntRect&) = 0;
     
+#if PLATFORM(IOS)
     virtual bool shouldDecodeFrame(const Image* image, const IntSize& frameSize) = 0;
+#endif
 };
 
 }

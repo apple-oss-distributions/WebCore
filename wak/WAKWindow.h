@@ -1,7 +1,7 @@
 //
 //  WAKWindow.h
 //
-//  Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010, 2011 Apple Inc.  All rights reserved.
+//  Copyright (C) 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012 Apple Inc.  All rights reserved.
 //
 
 #ifndef WAKWindow_h
@@ -11,7 +11,6 @@
 #import "WAKResponder.h"
 #import "WAKView.h"
 #import "WKContentObservation.h"
-#import "WKWindow.h"
 #import <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
 
@@ -44,13 +43,13 @@ typedef enum {
 } WAKTilingDirection;
 
 extern NSString * const WAKWindowScreenScaleDidChangeNotification;
+extern NSString * const WAKWindowVisibilityDidChangeNotification;
 
 @interface WAKWindow : WAKResponder
 {
-    WKWindowRef _wkWindow;
     CALayer* _hostLayer;
     TileCache* _tileCache;
-    CGRect _cachedVisibleRect;
+    CGRect _frozenVisibleRect;
     CALayer *_rootLayer;
 
     CGSize _screenSize;
@@ -59,10 +58,18 @@ extern NSString * const WAKWindowScreenScaleDidChangeNotification;
 
     CGRect _frame;
 
+    WAKView *_contentView;
+    WAKView *_responderView;
+    WAKView *_nextResponder;
+
+    BOOL _visible;
     BOOL _useOrientationDependentFontAntialiasing;
 }
 
 @property (nonatomic, assign) BOOL useOrientationDependentFontAntialiasing;
+
+// If non-NULL, contentReplacementImage will draw into tiles instead of web content.
+@property (nonatomic) CGImageRef contentReplacementImage;
 
 // Create layer hosted window
 - (id)initWithLayer:(CALayer *)hostLayer;
@@ -75,15 +82,16 @@ extern NSString * const WAKWindowScreenScaleDidChangeNotification;
 - (WAKView *)contentView;
 - (void)close;
 - (WAKView *)firstResponder;
-- (BOOL)makeViewFirstResponder:(WAKView *)view;
+
 - (NSPoint)convertBaseToScreen:(NSPoint)aPoint;
 - (NSPoint)convertScreenToBase:(NSPoint)aPoint;
 - (BOOL)isKeyWindow;
 - (void)makeKeyWindow;
+- (BOOL)isVisible;
+- (void)setVisible:(BOOL)visible;
 - (NSSelectionDirection)keyViewSelectionDirection;
 - (BOOL)makeFirstResponder:(NSResponder *)aResponder;
 - (WAKView *)_newFirstResponderAfterResigning;
-- (WKWindowRef)_windowRef;
 - (void)setFrame:(NSRect)frameRect display:(BOOL)flag;
 - (CGRect)frame;
 - (void)setContentRect:(CGRect)rect;
@@ -99,6 +107,11 @@ extern NSString * const WAKWindowScreenScaleDidChangeNotification;
 - (void)sendEventSynchronously:(WebEvent *)anEvent;
 - (void)sendMouseMoveEvent:(WebEvent *)anEvent contentChange:(WKContentChange *)aContentChange;
 
+// Thread safe way of providing the "usable" rect of the WAKWindow in the viewport/scrollview.
+- (CGRect)exposedScrollViewRect;
+// setExposedScrollViewRect should only ever be called from UIKit.
+- (void)setExposedScrollViewRect:(CGRect)exposedScrollViewRect;
+
 // Tiling support
 - (void)layoutTiles;
 - (void)layoutTilesNow;
@@ -108,6 +121,9 @@ extern NSString * const WAKWindowScreenScaleDidChangeNotification;
 - (BOOL)tilesOpaque;
 - (void)setTilesOpaque:(BOOL)opaque;
 - (CGRect)visibleRect;
+// The extended visible rect includes the area outside superviews with
+// masksToBounds set to NO.
+- (CGRect)extendedVisibleRect;
 - (void)removeAllNonVisibleTiles;
 - (void)removeAllTiles;
 - (void)removeForegroundTiles;
@@ -123,6 +139,7 @@ extern NSString * const WAKWindowScreenScaleDidChangeNotification;
 - (float)currentTileScale;
 - (void)setKeepsZoomedOutTiles:(BOOL)keepsZoomedOutTiles;
 - (BOOL)keepsZoomedOutTiles;
+- (TileCache *)tileCache;
 
 - (void)dumpTiles;
 
@@ -130,6 +147,8 @@ extern NSString * const WAKWindowScreenScaleDidChangeNotification;
 - (void)setTilePaintCountsVisible:(BOOL)visible;
 - (void)setAcceleratedDrawingEnabled:(BOOL)enabled;
 
+- (void)freezeVisibleRect;
+- (void)unfreezeVisibleRect;
 - (void)willRotate;
 - (void)didRotate;
 

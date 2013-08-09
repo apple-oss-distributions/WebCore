@@ -40,7 +40,9 @@ public:
     static PlatformMouseEvent createPlatformMouseEvent(WebEvent *);
     static PlatformWheelEvent createPlatformWheelEvent(WebEvent *);
     static PlatformKeyboardEvent createPlatformKeyboardEvent(WebEvent *);
+#if ENABLE(TOUCH_EVENTS)
     static PlatformTouchEvent createPlatformTouchEvent(WebEvent *);
+#endif
 };
 
 } // namespace WebCore

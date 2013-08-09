@@ -29,6 +29,10 @@
 #import <wtf/Assertions.h>
 #import <dlfcn.h>
 
+#if PLATFORM(IOS)
+#import <objc/runtime.h>
+#endif
+
 #define SOFT_LINK_LIBRARY(lib) \
     static void* lib##Library() \
     { \
@@ -52,6 +56,7 @@
         return frameworkLibrary; \
     }
 
+#if PLATFORM(IOS)
 #define SOFT_LINK_PRIVATE_FRAMEWORK(framework) \
     static void* framework##Library() \
     { \
@@ -66,8 +71,9 @@
         static void* frameworkLibrary = dlopen("/System/Library/PrivateFrameworks/" #framework ".framework/" #framework, RTLD_NOW); \
         return frameworkLibrary; \
     }
+#endif // PLATFORM(IOS)
 
-#define SOFT_LINK_STAGED_FRAMEWORK_OPTIONAL(framework, unstagedLocation, version) \
+#define SOFT_LINK_STAGED_FRAMEWORK(framework, unstagedLocation, version) \
     static void* framework##Library() \
     { \
         static void* frameworkLibrary = ^{ \
@@ -76,6 +82,7 @@
                 result = dlopen("/System/Library/StagedFrameworks/Safari/" #framework ".framework/Versions/" #version "/" #framework, RTLD_LAZY); \
             return result; \
         }(); \
+        ASSERT_WITH_MESSAGE(frameworkLibrary, "%s", dlerror()); \
         return frameworkLibrary; \
     }
 
@@ -103,6 +110,7 @@
         return softLink##functionName parameterNames; \
     }
 
+#if PLATFORM(IOS)
 #define SOFT_LINK_MAY_FAIL(framework, functionName, resultType, parameterDeclarations, parameterNames) \
     static resultType (*softLink##functionName) parameterDeclarations = 0; \
     \
@@ -124,6 +132,7 @@
         ASSERT(softLink##functionName); \
         return softLink##functionName parameterNames; \
     }
+#endif
 
 /* callingConvention is unused on Mac but is here to keep the macro prototype the same between Mac and Windows. */
 #define SOFT_LINK_OPTIONAL(framework, functionName, resultType, callingConvention, parameterDeclarations) \
@@ -211,6 +220,7 @@
         return constant##name; \
     }
 
+#if PLATFORM(IOS)
 #define SOFT_LINK_CONSTANT_MAY_FAIL(framework, name, type) \
     static bool init##name(); \
     static type (*get##name)() = 0; \
@@ -237,3 +247,4 @@
         get##name = name##Function; \
         return true; \
     }
+#endif

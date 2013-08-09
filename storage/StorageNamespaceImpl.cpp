@@ -26,7 +26,11 @@
 #include "config.h"
 #include "StorageNamespaceImpl.h"
 
+#include "GroupSettings.h"
+#include "Page.h"
+#include "PageGroup.h"
 #include "SecurityOriginHash.h"
+#include "Settings.h"
 #include "StorageAreaImpl.h"
 #include "StorageMap.h"
 #include "StorageSyncManager.h"
@@ -45,22 +49,37 @@ static LocalStorageNamespaceMap& localStorageNamespaceMap()
     return localStorageNamespaceMap;
 }
 
-PassRefPtr<StorageNamespace> StorageNamespaceImpl::localStorageNamespace(const String& path, unsigned quota)
+PassRefPtr<StorageNamespace> StorageNamespaceImpl::localStorageNamespace(PageGroup* pageGroup)
 {
-    const String lookupPath = path.isNull() ? String("") : path;
-    LocalStorageNamespaceMap::iterator it = localStorageNamespaceMap().find(lookupPath);
-    if (it == localStorageNamespaceMap().end()) {
-        RefPtr<StorageNamespace> storageNamespace = adoptRef(new StorageNamespaceImpl(LocalStorage, lookupPath, quota));
-        localStorageNamespaceMap().set(lookupPath, storageNamespace.get());
-        return storageNamespace.release();
-    }
+    // Need a page in this page group to query the settings for the local storage database path.
+    // Having these parameters attached to the page settings is unfortunate since these settings are
+    // not per-page (and, in fact, we simply grab the settings from some page at random), but
+    // at this point we're stuck with it.
+    Page* page = *pageGroup->pages().begin();
+    const String& path = page->settings()->localStorageDatabasePath();
+    unsigned quota = pageGroup->groupSettings()->localStorageQuotaBytes();
+    const String lookupPath = path.isNull() ? emptyString() : path;
 
-    return it->second;
+    LocalStorageNamespaceMap::AddResult result = localStorageNamespaceMap().add(lookupPath, 0);
+    if (!result.isNewEntry)
+        return result.iterator->value;
+
+    RefPtr<StorageNamespace> storageNamespace = adoptRef(new StorageNamespaceImpl(LocalStorage, lookupPath, quota));
+
+    result.iterator->value = storageNamespace.get();
+    return storageNamespace.release();
 }
 
-PassRefPtr<StorageNamespace> StorageNamespaceImpl::sessionStorageNamespace(unsigned quota)
+PassRefPtr<StorageNamespace> StorageNamespaceImpl::sessionStorageNamespace(Page* page)
 {
-    return adoptRef(new StorageNamespaceImpl(SessionStorage, String(), quota));
+    return adoptRef(new StorageNamespaceImpl(SessionStorage, String(), page->settings()->sessionStorageQuota()));
+}
+
+PassRefPtr<StorageNamespace> StorageNamespaceImpl::transientLocalStorageNamespace(PageGroup* pageGroup, SecurityOrigin*)
+{
+    // FIXME: A smarter implementation would create a special namespace type instead of just piggy-backing off
+    // SessionStorageNamespace here.
+    return StorageNamespaceImpl::sessionStorageNamespace(*pageGroup->pages().begin());
 }
 
 StorageNamespaceImpl::StorageNamespaceImpl(StorageType storageType, const String& path, unsigned quota)
@@ -76,7 +95,11 @@ StorageNamespaceImpl::StorageNamespaceImpl(StorageType storageType, const String
 
 StorageNamespaceImpl::~StorageNamespaceImpl()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
 
     if (m_storageType == LocalStorage) {
         ASSERT(localStorageNamespaceMap().get(m_path) == this);
@@ -87,9 +110,13 @@ StorageNamespaceImpl::~StorageNamespaceImpl()
         close();
 }
 
-PassRefPtr<StorageNamespace> StorageNamespaceImpl::copy()
+PassRefPtr<StorageNamespace> StorageNamespaceImpl::copy(Page*)
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
     ASSERT(!m_isShutdown);
     ASSERT(m_storageType == SessionStorage);
 
@@ -97,13 +124,17 @@ PassRefPtr<StorageNamespace> StorageNamespaceImpl::copy()
 
     StorageAreaMap::iterator end = m_storageAreaMap.end();
     for (StorageAreaMap::iterator i = m_storageAreaMap.begin(); i != end; ++i)
-        newNamespace->m_storageAreaMap.set(i->first, i->second->copy());
+        newNamespace->m_storageAreaMap.set(i->key, i->value->copy());
     return newNamespace.release();
 }
 
 PassRefPtr<StorageArea> StorageNamespaceImpl::storageArea(PassRefPtr<SecurityOrigin> prpOrigin)
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
     ASSERT(!m_isShutdown);
 
     RefPtr<SecurityOrigin> origin = prpOrigin;
@@ -118,7 +149,11 @@ PassRefPtr<StorageArea> StorageNamespaceImpl::storageArea(PassRefPtr<SecurityOri
 
 void StorageNamespaceImpl::close()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
 
     if (m_isShutdown)
         return;
@@ -131,7 +166,7 @@ void StorageNamespaceImpl::close()
 
     StorageAreaMap::iterator end = m_storageAreaMap.end();
     for (StorageAreaMap::iterator it = m_storageAreaMap.begin(); it != end; ++it)
-        it->second->close();
+        it->value->close();
 
     if (m_syncManager)
         m_syncManager->close();
@@ -141,7 +176,11 @@ void StorageNamespaceImpl::close()
 
 void StorageNamespaceImpl::clearOriginForDeletion(SecurityOrigin* origin)
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
 
     RefPtr<StorageAreaImpl> storageArea = m_storageAreaMap.get(origin);
     if (storageArea)
@@ -150,19 +189,35 @@ void StorageNamespaceImpl::clearOriginForDeletion(SecurityOrigin* origin)
 
 void StorageNamespaceImpl::clearAllOriginsForDeletion()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
 
     StorageAreaMap::iterator end = m_storageAreaMap.end();
     for (StorageAreaMap::iterator it = m_storageAreaMap.begin(); it != end; ++it)
-        it->second->clearForOriginDeletion();
+        it->value->clearForOriginDeletion();
 }
     
 void StorageNamespaceImpl::sync()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
     StorageAreaMap::iterator end = m_storageAreaMap.end();
     for (StorageAreaMap::iterator it = m_storageAreaMap.begin(); it != end; ++it)
-        it->second->sync();
+        it->value->sync();
+}
+
+void StorageNamespaceImpl::closeIdleLocalStorageDatabases()
+{
+    ASSERT(isMainThread());
+    StorageAreaMap::iterator end = m_storageAreaMap.end();
+    for (StorageAreaMap::iterator it = m_storageAreaMap.begin(); it != end; ++it)
+        it->value->closeDatabaseIfIdle();
 }
 
 } // namespace WebCore

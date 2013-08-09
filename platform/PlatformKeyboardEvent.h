@@ -28,6 +28,9 @@
 #define PlatformKeyboardEvent_h
 
 #include "PlatformEvent.h"
+#if OS(WINDOWS)
+#include "WindowsExtras.h"
+#endif
 #include <wtf/text/WTFString.h>
 
 #if PLATFORM(MAC)
@@ -35,17 +38,13 @@
 OBJC_CLASS NSEvent;
 #endif
 
-#if PLATFORM(WIN)
-typedef struct HWND__ *HWND;
-typedef unsigned WPARAM;
-typedef long LPARAM;
-#endif
-
+#if PLATFORM(IOS)
 #include <wtf/RetainPtr.h>
 #ifdef __OBJC__
 @class WebEvent;
 #else
 class WebEvent;
+#endif
 #endif
 
 #if PLATFORM(GTK)
@@ -57,10 +56,6 @@ typedef struct _GdkEventKey GdkEventKey;
 QT_BEGIN_NAMESPACE
 class QKeyEvent;
 QT_END_NAMESPACE
-#endif
-
-#if PLATFORM(WX)
-class wxKeyEvent;
 #endif
 
 #if PLATFORM(BLACKBERRY)
@@ -79,6 +74,7 @@ typedef struct _Evas_Event_Key_Up Evas_Event_Key_Up;
 namespace WebCore {
 
     class PlatformKeyboardEvent : public PlatformEvent {
+        WTF_MAKE_FAST_ALLOCATED;
     public:
         PlatformKeyboardEvent()
             : PlatformEvent(PlatformEvent::KeyDown)
@@ -147,11 +143,15 @@ namespace WebCore {
         static void getCurrentModifierState(bool& shiftKey, bool& ctrlKey, bool& altKey, bool& metaKey);
 
 #if PLATFORM(BLACKBERRY)
-        unsigned short unmodifiedCharacter() const { return m_unmodifiedCharacter; }
+        unsigned unmodifiedCharacter() const { return m_unmodifiedCharacter; }
 #endif
 
 #if PLATFORM(MAC)
+#if !PLATFORM(IOS)
+        NSEvent* macEvent() const { return m_macEvent.get(); }
+#else
         WebEvent *event() const { return m_Event.get(); }
+#endif
 #endif
 
 #if PLATFORM(WIN)
@@ -176,17 +176,13 @@ namespace WebCore {
         uint32_t nativeScanCode() const;
 #endif
 
-#if PLATFORM(WX)
-        PlatformKeyboardEvent(wxKeyEvent&);
-#endif
-
 #if PLATFORM(BLACKBERRY)
         PlatformKeyboardEvent(const BlackBerry::Platform::KeyboardEvent&);
 #endif
 
 #if PLATFORM(EFL)
-        PlatformKeyboardEvent(const Evas_Event_Key_Down*);
-        PlatformKeyboardEvent(const Evas_Event_Key_Up*);
+        explicit PlatformKeyboardEvent(const Evas_Event_Key_Down*);
+        explicit PlatformKeyboardEvent(const Evas_Event_Key_Up*);
 #endif
 
     protected:
@@ -201,11 +197,15 @@ namespace WebCore {
         bool m_isSystemKey;
 
 #if PLATFORM(BLACKBERRY)
-        unsigned short m_unmodifiedCharacter;
+        unsigned m_unmodifiedCharacter;
 #endif
 
 #if PLATFORM(MAC)
+#if !PLATFORM(IOS)
+        RetainPtr<NSEvent> m_macEvent;
+#else
         RetainPtr<WebEvent> m_Event;
+#endif
 #endif
 #if PLATFORM(GTK)
         GdkEventKey* m_gdkEventKey;

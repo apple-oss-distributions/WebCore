@@ -25,7 +25,8 @@
 
 #include "config.h"
 #include "Logging.h"
-#include "PlatformString.h"
+
+#include <wtf/text/WTFString.h>
 
 #if !LOG_DISABLED
 
@@ -50,6 +51,7 @@ WTFLogChannel LogPageCache =         { 0x00008000, "WebCoreLogLevel", WTFLogChan
 
 WTFLogChannel LogPlatformLeaks =     { 0x00010000, "WebCoreLogLevel", WTFLogChannelOff };
 WTFLogChannel LogResourceLoading =   { 0x00020000, "WebCoreLogLevel", WTFLogChannelOff };
+WTFLogChannel LogAnimations =        { 0x00040000, "WebCoreLogLevel", WTFLogChannelOff };
 
 WTFLogChannel LogNetwork =           { 0x00100000, "WebCoreLogLevel", WTFLogChannelOff };
 WTFLogChannel LogFTP =               { 0x00200000, "WebCoreLogLevel", WTFLogChannelOff };
@@ -65,12 +67,15 @@ WTFLogChannel LogFileAPI =           { 0x10000000, "WebCoreLogLevel", WTFLogChan
 
 WTFLogChannel LogWebAudio =          { 0x20000000, "WebCoreLogLevel", WTFLogChannelOff };
 WTFLogChannel LogCompositing =       { 0x40000000, "WebCoreLogLevel", WTFLogChannelOff };
+WTFLogChannel LogGamepad =           { 0x80000000, "WebCoreLogLevel", WTFLogChannelOff };
 
 
+#if PLATFORM(IOS)
 #if ENABLE(DISK_IMAGE_CACHE)
 WTFLogChannel LogDiskImageCache =    { 0x00000010, "IOSWebCoreLogLevel", WTFLogChannelOff };
 #endif
 WTFLogChannel LogMemoryPressure =    { 0x00000020, "IOSWebCoreLogLevel", WTFLogChannelOff };
+#endif
 
 WTFLogChannel* getChannelFromName(const String& channelName)
 {
@@ -119,6 +124,9 @@ WTFLogChannel* getChannelFromName(const String& channelName)
     if (equalIgnoringCase(channelName, String("ResourceLoading")))
         return &LogResourceLoading;
 
+    if (equalIgnoringCase(channelName, String("Animations")))
+        return &LogAnimations;
+
     if (equalIgnoringCase(channelName, String("Plugins")))
         return &LogPlugins;
 
@@ -152,12 +160,17 @@ WTFLogChannel* getChannelFromName(const String& channelName)
     if (equalIgnoringCase(channelName, String("Compositing")))
         return &LogCompositing;
 
+    if (equalIgnoringCase(channelName, String("Gamepad")))
+        return &LogGamepad;
+
+#if PLATFORM(IOS)
 #if ENABLE(DISK_IMAGE_CACHE)
     if (equalIgnoringCase(channelName, String("DiskImageCache")))
         return &LogDiskImageCache;
 #endif
     if (equalIgnoringCase(channelName, String("MemoryPressure")))
         return &LogMemoryPressure;
+#endif
 
     return 0;
 }

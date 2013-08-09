@@ -40,7 +40,7 @@ public:
         , m_parent(0)
         , m_renderer(obj)
         , m_logicalWidth(0)
-#ifndef NDEBUG
+#if !ASSERT_DISABLED
         , m_hasBadParent(false)
 #endif
     {
@@ -55,7 +55,7 @@ public:
         , m_topLeft(topLeft)
         , m_logicalWidth(logicalWidth)
         , m_bitfields(firstLine, constructed, dirty, extracted, isHorizontal)
-#ifndef NDEBUG
+#if !ASSERT_DISABLED
         , m_hasBadParent(false)
 #endif
     {
@@ -95,7 +95,7 @@ public:
     }
 
     virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom);
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const LayoutPoint& pointInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom);
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom);
 
     // Overloaded new operator.
     void* operator new(size_t, RenderArena*);
@@ -207,7 +207,7 @@ public:
 
     float width() const { return isHorizontal() ? logicalWidth() : logicalHeight(); }
     float height() const { return isHorizontal() ? logicalHeight() : logicalWidth(); }
-    FloatSize size() const { return IntSize(width(), height()); }
+    FloatSize size() const { return FloatSize(width(), height()); }
     float right() const { return left() + width(); }
     float bottom() const { return top() + height(); }
 
@@ -246,7 +246,7 @@ public:
 
     FloatRect logicalFrameRect() const { return isHorizontal() ? FloatRect(m_topLeft.x(), m_topLeft.y(), m_logicalWidth, logicalHeight()) : FloatRect(m_topLeft.y(), m_topLeft.x(), m_logicalWidth, logicalHeight()); }
 
-    virtual LayoutUnit baselinePosition(FontBaseline baselineType) const;
+    virtual int baselinePosition(FontBaseline baselineType) const;
     virtual LayoutUnit lineHeight() const;
 
     virtual int caretMinOffset() const;
@@ -262,7 +262,7 @@ public:
     virtual void clearTruncation() { }
 
     bool isDirty() const { return m_bitfields.dirty(); }
-    void markDirty(bool dirty = true) { m_bitfields.setDirty(dirty); }
+    virtual void markDirty(bool dirty = true) { m_bitfields.setDirty(dirty); }
 
     virtual void dirtyLineBoxes();
     
@@ -272,7 +272,9 @@ public:
     // visibleLeftEdge, visibleRightEdge are in the parent's coordinate system.
     virtual float placeEllipsisBox(bool ltr, float visibleLeftEdge, float visibleRightEdge, float ellipsisWidth, float &truncatedWidth, bool&);
 
+#if !ASSERT_DISABLED
     void setHasBadParent();
+#endif
 
     int expansion() const { return m_bitfields.expansion(); }
 
@@ -413,24 +415,24 @@ protected:
     // For InlineFlowBox and InlineTextBox
     bool extracted() const { return m_bitfields.extracted(); }
 
-#ifndef NDEBUG
+#if !ASSERT_DISABLED
 private:
     bool m_hasBadParent;
 #endif
 };
 
-#ifdef NDEBUG
+#if ASSERT_DISABLED
 inline InlineBox::~InlineBox()
 {
 }
 #endif
 
+#if !ASSERT_DISABLED
 inline void InlineBox::setHasBadParent()
 {
-#ifndef NDEBUG
     m_hasBadParent = true;
-#endif
 }
+#endif
 
 } // namespace WebCore
 

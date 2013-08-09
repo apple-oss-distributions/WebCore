@@ -23,6 +23,7 @@
 #include "config.h"
 #include "JSDOMWindowBase.h"
 
+#include "BindingSecurity.h"
 #include "Chrome.h"
 #include "Console.h"
 #include "DOMWindow.h"
@@ -32,39 +33,50 @@
 #include "JSNode.h"
 #include "Logging.h"
 #include "Page.h"
+#include "ScriptController.h"
 #include "SecurityOrigin.h"
 #include "Settings.h"
 #include "WebCoreJSClientData.h"
 #include <wtf/MainThread.h>
 
+#if PLATFORM(IOS)
 #include "ChromeClient.h"
 #include "WebSafeGCActivityCallback.h"
+#include "WebSafeIncrementalSweeper.h"
+#endif
 
 using namespace JSC;
 
 namespace WebCore {
 
+static bool shouldAllowAccessFrom(const JSGlobalObject* thisObject, ExecState* exec)
+{
+    return BindingSecurity::shouldAllowAccessToDOMWindow(exec, asJSDOMWindow(thisObject)->impl());
+}
+
 const ClassInfo JSDOMWindowBase::s_info = { "Window", &JSDOMGlobalObject::s_info, 0, 0, CREATE_METHOD_TABLE(JSDOMWindowBase) };
 
-const GlobalObjectMethodTable JSDOMWindowBase::s_globalObjectMethodTable = { &allowsAccessFrom, &supportsProfiling, &supportsRichSourceInfo, &shouldInterruptScript
+const GlobalObjectMethodTable JSDOMWindowBase::s_globalObjectMethodTable = { &shouldAllowAccessFrom, &supportsProfiling, &supportsRichSourceInfo, &shouldInterruptScript, &javaScriptExperimentsEnabled
+#if PLATFORM(IOS)
     , &shouldInterruptScriptBeforeTimeout
+#endif
 };
 
-JSDOMWindowBase::JSDOMWindowBase(JSGlobalData& globalData, Structure* structure, PassRefPtr<DOMWindow> window, JSDOMWindowShell* shell)
-    : JSDOMGlobalObject(globalData, structure, shell->world(), &s_globalObjectMethodTable)
+JSDOMWindowBase::JSDOMWindowBase(VM& vm, Structure* structure, PassRefPtr<DOMWindow> window, JSDOMWindowShell* shell)
+    : JSDOMGlobalObject(vm, structure, shell->world(), &s_globalObjectMethodTable)
     , m_impl(window)
     , m_shell(shell)
 {
 }
 
-void JSDOMWindowBase::finishCreation(JSGlobalData& globalData, JSDOMWindowShell* shell)
+void JSDOMWindowBase::finishCreation(VM& vm, JSDOMWindowShell* shell)
 {
-    Base::finishCreation(globalData, shell);
+    Base::finishCreation(vm, shell);
     ASSERT(inherits(&s_info));
 
     GlobalPropertyInfo staticGlobals[] = {
-        GlobalPropertyInfo(Identifier(globalExec(), "document"), jsNull(), DontDelete | ReadOnly),
-        GlobalPropertyInfo(Identifier(globalExec(), "window"), m_shell, DontDelete | ReadOnly)
+        GlobalPropertyInfo(vm.propertyNames->document, jsNull(), DontDelete | ReadOnly),
+        GlobalPropertyInfo(vm.propertyNames->window, m_shell, DontDelete | ReadOnly)
     };
     
     addStaticGlobals(staticGlobals, WTF_ARRAY_LENGTH(staticGlobals));
@@ -72,14 +84,14 @@ void JSDOMWindowBase::finishCreation(JSGlobalData& globalData, JSDOMWindowShell*
 
 void JSDOMWindowBase::destroy(JSCell* cell)
 {
-    jsCast<JSDOMWindowBase*>(cell)->JSDOMWindowBase::~JSDOMWindowBase();
+    static_cast<JSDOMWindowBase*>(cell)->JSDOMWindowBase::~JSDOMWindowBase();
 }
 
 void JSDOMWindowBase::updateDocument()
 {
     ASSERT(m_impl->document());
     ExecState* exec = globalExec();
-    symbolTablePutWithAttributes(exec->globalData(), Identifier(exec, "document"), toJS(exec, this, m_impl->document()), DontDelete | ReadOnly);
+    symbolTablePutWithAttributes(this, exec->vm(), exec->vm().propertyNames->document, toJS(exec, this, m_impl->document()), DontDelete | ReadOnly);
 }
 
 ScriptExecutionContext* JSDOMWindowBase::scriptExecutionContext() const
@@ -87,44 +99,15 @@ ScriptExecutionContext* JSDOMWindowBase::scriptExecutionContext() const
     return m_impl->document();
 }
 
-String JSDOMWindowBase::crossDomainAccessErrorMessage(const JSGlobalObject* other) const
-{
-    return m_shell->window()->impl()->crossDomainAccessErrorMessage(asJSDOMWindow(other)->impl());
-}
-
 void JSDOMWindowBase::printErrorMessage(const String& message) const
 {
     printErrorMessageForFrame(impl()->frame(), message);
 }
 
-// This method checks whether accesss to *this* global object is permitted from
-// the given context; this differs from allowsAccessFromPrivate, since that
-// method checks whether the given context is permitted to access the current
-// window the shell is referencing (which may come from a different security
-// origin to this global object).
-bool JSDOMWindowBase::allowsAccessFrom(const JSGlobalObject* thisObject, ExecState* exec)
-{
-    JSGlobalObject* otherObject = exec->lexicalGlobalObject();
-
-    const JSDOMWindow* originWindow = asJSDOMWindow(otherObject);
-    const JSDOMWindow* targetWindow = asJSDOMWindow(thisObject);
-
-    if (originWindow == targetWindow)
-        return true;
-
-    const SecurityOrigin* originSecurityOrigin = originWindow->impl()->securityOrigin();
-    const SecurityOrigin* targetSecurityOrigin = targetWindow->impl()->securityOrigin();
-
-    if (originSecurityOrigin->canAccess(targetSecurityOrigin))
-        return true;
-
-    targetWindow->printErrorMessage(targetWindow->crossDomainAccessErrorMessage(otherObject));
-    return false;
-}
-
 bool JSDOMWindowBase::supportsProfiling(const JSGlobalObject* object)
 {
 #if !ENABLE(JAVASCRIPT_DEBUGGER) || !ENABLE(INSPECTOR)
+    UNUSED_PARAM(object);
     return false;
 #else
     const JSDOMWindowBase* thisObject = static_cast<const JSDOMWindowBase*>(object);
@@ -147,6 +130,7 @@ bool JSDOMWindowBase::supportsProfiling(const JSGlobalObject* object)
 bool JSDOMWindowBase::supportsRichSourceInfo(const JSGlobalObject* object)
 {
 #if !ENABLE(JAVASCRIPT_DEBUGGER) || !ENABLE(INSPECTOR)
+    UNUSED_PARAM(object);
     return false;
 #else
     const JSDOMWindowBase* thisObject = static_cast<const JSDOMWindowBase*>(object);
@@ -181,16 +165,30 @@ bool JSDOMWindowBase::shouldInterruptScript(const JSGlobalObject* object)
     if (!page)
         return true;
 
-    return page->chrome()->shouldInterruptJavaScript();
+    return page->chrome().shouldInterruptJavaScript();
 }
 
+#if PLATFORM(IOS)
 bool JSDOMWindowBase::shouldInterruptScriptBeforeTimeout(const JSGlobalObject* object)
 {
     const JSDOMWindowBase* thisObject = static_cast<const JSDOMWindowBase*>(object);
     DOMWindow* domWindow = thisObject->impl();
-    if (domWindow->frame() && domWindow->frame()->page() && domWindow->frame()->page()->chrome()->client()->isStopping())
+    if (domWindow->frame() && domWindow->frame()->page() && domWindow->frame()->page()->chrome().client()->isStopping())
         return true;
     return JSGlobalObject::shouldInterruptScriptBeforeTimeout(object);
+}
+#endif
+
+bool JSDOMWindowBase::javaScriptExperimentsEnabled(const JSGlobalObject* object)
+{
+    const JSDOMWindowBase* thisObject = static_cast<const JSDOMWindowBase*>(object);
+    Frame* frame = thisObject->impl()->frame();
+    if (!frame)
+        return false;
+    Settings* settings = frame->settings();
+    if (!settings)
+        return false;
+    return settings->javaScriptExperimentsEnabled();
 }
 
 void JSDOMWindowBase::willRemoveFromWindowShell()
@@ -198,45 +196,58 @@ void JSDOMWindowBase::willRemoveFromWindowShell()
     setCurrentEvent(0);
 }
 
-JSObject* JSDOMWindowBase::toThisObject(JSCell* cell, ExecState*)
-{
-    return jsCast<JSDOMWindowBase*>(cell)->shell();
-}
-
 JSDOMWindowShell* JSDOMWindowBase::shell() const
 {
     return m_shell;
 }
 
-JSGlobalData* JSDOMWindowBase::commonJSGlobalData()
+VM* JSDOMWindowBase::commonVM()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
 
-    JSGlobalData*& globalData = commonJSGlobalDataInternal();
-    if (!globalData) {
-        globalData = JSGlobalData::createLeaked(ThreadStackTypeLarge, LargeHeap).leakRef();
-        globalData->timeoutChecker.setTimeoutInterval(20000); // 20 seconds
-        PassOwnPtr<WebSafeGCActivityCallback> activityCallback = WebSafeGCActivityCallback::create(&globalData->heap);
-        globalData->heap.setActivityCallback(activityCallback.leakPtr());
-        globalData->makeUsableFromMultipleThreads();
-        globalData->heap.machineThreads().addCurrentThread();
-        initNormalWorldClientData(globalData);
+#if !PLATFORM(IOS)
+    static VM* vm = 0;
+#else
+    VM*& vm = commonVMInternal();
+#endif
+    if (!vm) {
+        ScriptController::initializeThreading();
+        vm = VM::createLeaked(LargeHeap).leakRef();
+#if PLATFORM(IOS)
+        PassOwnPtr<WebSafeGCActivityCallback> activityCallback = WebSafeGCActivityCallback::create(&vm->heap);
+        vm->heap.setActivityCallback(activityCallback);
+        PassOwnPtr<WebSafeIncrementalSweeper> incrementalSweeper = WebSafeIncrementalSweeper::create(&vm->heap);
+        vm->heap.setIncrementalSweeper(incrementalSweeper);
+        vm->makeUsableFromMultipleThreads();
+        vm->heap.machineThreads().addCurrentThread();
+#else
+#ifndef NDEBUG
+        vm->exclusiveThread = currentThread();
+#endif
+#endif // !PLATFORM(IOS)
+        initNormalWorldClientData(vm);
     }
 
-    return globalData;
+    return vm;
 }
 
-bool JSDOMWindowBase::commonJSGlobalDataExists()
+#if PLATFORM(IOS)
+bool JSDOMWindowBase::commonVMExists()
 {
-    return commonJSGlobalDataInternal();
+    return commonVMInternal();
 }
 
-JSGlobalData*& JSDOMWindowBase::commonJSGlobalDataInternal()
+VM*& JSDOMWindowBase::commonVMInternal()
 {
     ASSERT(isMainThread() || pthread_main_np());
-    static JSGlobalData* commonJSGlobalData;
-    return commonJSGlobalData;
+    static VM* commonVM;
+    return commonVM;
 }
+#endif
 
 // JSDOMGlobalObject* is ignored, accessing a window in any context will
 // use that DOMWindow's prototype chain.

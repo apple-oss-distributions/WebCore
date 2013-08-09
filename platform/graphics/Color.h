@@ -34,7 +34,9 @@
 #if USE(CG)
 #include "ColorSpace.h"
 typedef struct CGColor* CGColorRef;
+#if PLATFORM(IOS)
 typedef struct CGColorSpace* CGColorSpaceRef;
+#endif // PLATFORM(IOS)
 #endif
 
 #if PLATFORM(QT)
@@ -49,10 +51,6 @@ typedef struct _GdkColor GdkColor;
 #ifndef GTK_API_VERSION_2
 typedef struct _GdkRGBA GdkRGBA;
 #endif
-#endif
-
-#if PLATFORM(WX)
-class wxColour;
 #endif
 
 namespace WebCore {
@@ -90,6 +88,17 @@ public:
     explicit Color(const String&);
     explicit Color(const char*);
 
+    static Color createUnchecked(int r, int g, int b)
+    {
+        RGBA32 color = 0xFF000000 | r << 16 | g << 8 | b;
+        return Color(color);
+    }
+    static Color createUnchecked(int r, int g, int b, int a)
+    {
+        RGBA32 color = a << 24 | r << 16 | g << 8 | b;
+        return Color(color);
+    }
+
     // Returns the color serialized according to HTML5
     // - http://www.whatwg.org/specs/web-apps/current-work/#serialization-of-a-color
     String serialized() const;
@@ -119,7 +128,9 @@ public:
     Color light() const;
     Color dark() const;
 
+#if PLATFORM(IOS)
     bool isDark() const;
+#endif
 
     // This is an implementation of Porter-Duff's "source-over" equation
     Color blend(const Color&) const;
@@ -139,17 +150,13 @@ public:
 #endif
 #endif
 
-#if PLATFORM(WX)
-    Color(const wxColour&);
-    operator wxColour() const;
-#endif
-
 #if USE(CG)
     Color(CGColorRef);
 #endif
 
-    static bool parseHexColor(const String& name, RGBA32& rgb);
-    static bool parseHexColor(const UChar* name, unsigned length, RGBA32& rgb);
+    static bool parseHexColor(const String&, RGBA32&);
+    static bool parseHexColor(const LChar*, unsigned, RGBA32&);
+    static bool parseHexColor(const UChar*, unsigned, RGBA32&);
 
     static const RGBA32 black = 0xFF000000;
     static const RGBA32 white = 0xFFFFFFFF;
@@ -157,10 +164,11 @@ public:
     static const RGBA32 gray = 0xFFA0A0A0;
     static const RGBA32 lightGray = 0xFFC0C0C0;
     static const RGBA32 transparent = 0x00000000;
+#if PLATFORM(IOS)
     static const RGBA32 tap = 0x4D1A1A1A;
     static const RGBA32 compositionFill = 0x3CAFC0E3;
-    static const RGBA32 compositionFrame = 0x3C4D80B4;
     static const RGBA32 cyan = 0xFF00FFFF;
+#endif
 
 private:
     RGBA32 m_color;
@@ -177,8 +185,8 @@ inline bool operator!=(const Color& a, const Color& b)
     return !(a == b);
 }
 
-Color colorFromPremultipliedARGB(unsigned);
-unsigned premultipliedARGBFromColor(const Color&);
+Color colorFromPremultipliedARGB(RGBA32);
+RGBA32 premultipliedARGBFromColor(const Color&);
 
 inline Color blend(const Color& from, const Color& to, double progress, bool blendPremultiplied = true)
 {
@@ -206,9 +214,19 @@ inline Color blend(const Color& from, const Color& to, double progress, bool ble
                  blend(from.alpha(), to.alpha(), progress));
 }
 
+inline uint16_t fastDivideBy255(uint16_t value)
+{
+    // This is an approximate algorithm for division by 255, but it gives accurate results for 16bit values.
+    uint16_t approximation = value >> 8;
+    uint16_t remainder = value - (approximation * 255) + 1;
+    return approximation + (remainder >> 8);
+}
+
 #if USE(CG)
 CGColorRef cachedCGColor(const Color&, ColorSpace);
+#if PLATFORM(IOS)
 CGColorRef createCGColorWithDeviceWhite(CGFloat w, CGFloat a);
+#endif // PLATFORM(IOS)
 #endif
 
 } // namespace WebCore

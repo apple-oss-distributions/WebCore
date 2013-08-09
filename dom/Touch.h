@@ -18,12 +18,14 @@
 
 #include <wtf/Platform.h>
 
+#if ENABLE(TOUCH_EVENTS)
 
-#include <wtf/RefCounted.h>
-#include <wtf/PassRefPtr.h>
-#include <wtf/RefPtr.h>
-#include "EventTarget.h"
 #include "DOMWindow.h"
+#include "EventTarget.h"
+#include "LayoutPoint.h"
+#include <wtf/PassRefPtr.h>
+#include <wtf/RefCounted.h>
+#include <wtf/RefPtr.h>
 
 namespace WebCore {
 
@@ -52,7 +54,11 @@ public:
     int pageY() const { return m_pageY; }
     int screenX() const { return m_screenX; }
     int screenY() const { return m_screenY; }
-    
+
+#if !PLATFORM(IOS)
+    const LayoutPoint& absoluteLocation() const { return m_absoluteLocation; }
+#endif
+
 private:
     Touch() { }
     Touch(DOMWindow* view, EventTarget* target, unsigned identifier, int pageX, int pageY, int screenX, int screenY);
@@ -69,9 +75,13 @@ private:
     int m_pageY;
     int m_screenX;
     int m_screenY;
+#if !PLATFORM(IOS)
+    LayoutPoint m_absoluteLocation;
+#endif
 };
 
 } // namespace WebCore
 
+#endif // ENABLE(TOUCH_EVENTS)
 
 #endif /* Touch_h */

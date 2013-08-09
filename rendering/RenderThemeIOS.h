@@ -5,6 +5,7 @@
 #ifndef RenderThemeIOS_h
 #define RenderThemeIOS_h
 
+#if PLATFORM(IOS)
 
 #include "RenderTheme.h"
 
@@ -20,9 +21,10 @@ public:
     virtual int popupInternalPaddingRight(RenderStyle*) const OVERRIDE;
     
     static void adjustRoundBorderRadius(RenderStyle*, RenderBox*);
+    virtual void systemFont(int cssValueId, FontDescription&) const OVERRIDE;
+    static CFStringRef contentSizeCategory();
 
 protected:
-
     virtual int baselinePosition(const RenderObject* o) const OVERRIDE;
 
     virtual bool isControlStyled(const RenderStyle* style, const BorderData& border, const FillLayer& background, const Color& backgroundColor) const OVERRIDE;
@@ -50,8 +52,22 @@ protected:
     virtual void adjustSliderTrackStyle(StyleResolver*, RenderStyle*, Element*) const OVERRIDE;
     virtual bool paintSliderTrack(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
 
-    virtual void adjustSliderThumbSize(RenderStyle*) const OVERRIDE;
+    virtual void adjustSliderThumbSize(RenderStyle*, Element*) const OVERRIDE;
     virtual bool paintSliderThumbDecorations(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
+
+#if ENABLE(PROGRESS_ELEMENT)
+    // Returns the repeat interval of the animation for the progress bar.
+    virtual double animationRepeatIntervalForProgressBar(RenderProgress*) const OVERRIDE;
+    // Returns the duration of the animation for the progress bar.
+    virtual double animationDurationForProgressBar(RenderProgress*) const OVERRIDE;
+
+    virtual bool paintProgressBar(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
+#endif
+
+#if ENABLE(DATALIST_ELEMENT)
+    virtual IntSize sliderTickSize() const OVERRIDE;
+    virtual int sliderTickOffsetFromTrackCenter() const OVERRIDE;
+#endif
 
     virtual void adjustSearchFieldStyle(StyleResolver*, RenderStyle*, Element*) const OVERRIDE;
     virtual bool paintSearchFieldDecorations(RenderObject*, const PaintInfo&, const IntRect&) OVERRIDE;
@@ -59,13 +75,19 @@ protected:
     virtual Color platformActiveSelectionBackgroundColor() const OVERRIDE;
     virtual Color platformInactiveSelectionBackgroundColor() const OVERRIDE;
 
+#if ENABLE(TOUCH_EVENTS)
     virtual Color platformTapHighlightColor() const OVERRIDE { return 0x4D1A1A1A; }
+#endif
 
     virtual bool shouldShowPlaceholderWhenFocused() const OVERRIDE;
     virtual bool shouldHaveSpinButton(HTMLInputElement*) const OVERRIDE;
 
+#if ENABLE(VIDEO)
+    virtual String extraMediaControlsStyleSheet();
+#endif
+
 private:
-    RenderThemeIOS() { }
+    RenderThemeIOS();
     virtual ~RenderThemeIOS() { }
 
     const Color& shadowColor() const;
@@ -74,6 +96,7 @@ private:
     
 }
 
+#endif // PLATFORM(IOS)
 
 #endif // RenderThemeIOS_h
 

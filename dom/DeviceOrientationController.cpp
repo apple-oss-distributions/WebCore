@@ -1,5 +1,6 @@
 /*
  * Copyright 2010, The Android Open Source Project
+ * Copyright (C) 2012 Samsung Electronics. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,26 +27,26 @@
 #include "config.h"
 #include "DeviceOrientationController.h"
 
-#include "DeviceOrientation.h"
 #include "DeviceOrientationClient.h"
+#include "DeviceOrientationData.h"
 #include "DeviceOrientationEvent.h"
+#include "InspectorInstrumentation.h"
 
 namespace WebCore {
 
 DeviceOrientationController::DeviceOrientationController(Page* page, DeviceOrientationClient* client)
-    : m_page(page)
-    , m_client(client)
-    , m_timer(this, &DeviceOrientationController::timerFired)
+    : DeviceController(client)
+    , m_page(page)
 {
+#if PLATFORM(IOS)
     // Temporarily avoid asserting while Open Source is using a different
     // design. This should be able to handle a null client.
     if (m_client)
-        m_client->setController(this);
-}
-
-DeviceOrientationController::~DeviceOrientationController()
-{
-    m_client->deviceOrientationControllerDestroyed();
+        deviceOrientationClient()->setController(this);
+#else
+    ASSERT(m_client);
+    deviceOrientationClient()->setController(this);
+#endif
 }
 
 PassOwnPtr<DeviceOrientationController> DeviceOrientationController::create(Page* page, DeviceOrientationClient* client)
@@ -53,61 +54,18 @@ PassOwnPtr<DeviceOrientationController> DeviceOrientationController::create(Page
     return adoptPtr(new DeviceOrientationController(page, client));
 }
 
-void DeviceOrientationController::timerFired(Timer<DeviceOrientationController>* timer)
+void DeviceOrientationController::didChangeDeviceOrientation(DeviceOrientationData* orientation)
 {
-    ASSERT_UNUSED(timer, timer == &m_timer);
-    ASSERT(m_client->lastOrientation());
-
-    RefPtr<DeviceOrientation> orientation = m_client->lastOrientation();
-    RefPtr<DeviceOrientationEvent> event = DeviceOrientationEvent::create(eventNames().deviceorientationEvent, orientation.get());
-
-    Vector<RefPtr<DOMWindow> > listenersVector;
-    copyToVector(m_newListeners, listenersVector);
-    m_newListeners.clear();
-    for (size_t i = 0; i < listenersVector.size(); ++i)
-        listenersVector[i]->dispatchEvent(event);
+    orientation = InspectorInstrumentation::overrideDeviceOrientation(m_page, orientation);
+    dispatchDeviceEvent(DeviceOrientationEvent::create(eventNames().deviceorientationEvent, orientation));
 }
 
-void DeviceOrientationController::addListener(DOMWindow* window)
+DeviceOrientationClient* DeviceOrientationController::deviceOrientationClient()
 {
-    // If the client already has an orientation, we should fire an event with that
-    // orientation. The event is fired asynchronously, but without
-    // waiting for the client to get a new orientation.
-    if (m_client->lastOrientation()) {
-        m_newListeners.add(window);
-        if (!m_timer.isActive())
-            m_timer.startOneShot(0);
-    }
-
-    // The client must not call back synchronously.
-    bool wasEmpty = m_listeners.isEmpty();
-    m_listeners.add(window);
-    if (wasEmpty)
-        m_client->startUpdating();
+    return static_cast<DeviceOrientationClient*>(m_client);
 }
 
-void DeviceOrientationController::removeListener(DOMWindow* window)
-{
-    m_listeners.remove(window);
-    m_suspendedListeners.remove(window);
-    m_newListeners.remove(window);
-    if (m_listeners.isEmpty())
-        m_client->stopUpdating();
-}
-
-void DeviceOrientationController::removeAllListeners(DOMWindow* window)
-{
-    // May be called with a DOMWindow that's not a listener.
-    if (!m_listeners.contains(window))
-        return;
-
-    m_listeners.removeAll(window);
-    m_suspendedListeners.removeAll(window);
-    m_newListeners.remove(window);
-    if (m_listeners.isEmpty())
-        m_client->stopUpdating();
-}
-
+#if PLATFORM(IOS)
 void DeviceOrientationController::suspendUpdates()
 {
     // If we have a client, tell it to stop updating
@@ -122,20 +80,26 @@ void DeviceOrientationController::resumeUpdates()
     if (m_client && !m_listeners.isEmpty())
         m_client->startUpdating();
 }
-
-void DeviceOrientationController::didChangeDeviceOrientation(DeviceOrientation* orientation)
+#else
+bool DeviceOrientationController::hasLastData()
 {
-    RefPtr<DeviceOrientationEvent> event = DeviceOrientationEvent::create(eventNames().deviceorientationEvent, orientation);
-    Vector<RefPtr<DOMWindow> > listenersVector;
-    copyToVector(m_listeners, listenersVector);
-    for (size_t i = 0; i < listenersVector.size(); ++i)
-        listenersVector[i]->dispatchEvent(event);
+    return deviceOrientationClient()->lastOrientation();
 }
 
-const AtomicString& DeviceOrientationController::supplementName()
+PassRefPtr<Event> DeviceOrientationController::getLastEvent()
 {
-    DEFINE_STATIC_LOCAL(AtomicString, name, ("DeviceOrientationController"));
-    return name;
+    return DeviceOrientationEvent::create(eventNames().deviceorientationEvent, deviceOrientationClient()->lastOrientation());
+}
+#endif // PLATFORM(IOS)
+
+const char* DeviceOrientationController::supplementName()
+{
+    return "DeviceOrientationController";
+}
+
+DeviceOrientationController* DeviceOrientationController::from(Page* page)
+{
+    return static_cast<DeviceOrientationController*>(Supplement<Page>::from(page, supplementName()));
 }
 
 bool DeviceOrientationController::isActiveAt(Page* page)

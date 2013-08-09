@@ -31,15 +31,24 @@
 #include "config.h"
 #include "PolicyChecker.h"
 
+#include "ContentSecurityPolicy.h"
+#include "DOMWindow.h"
 #include "DocumentLoader.h"
 #include "FormState.h"
 #include "Frame.h"
 #include "FrameLoader.h"
 #include "FrameLoaderClient.h"
 #include "HTMLFormElement.h"
+#include "HTMLFrameOwnerElement.h"
 #include "SecurityOrigin.h"
 
+#if USE(QUICK_LOOK)
 #include "QuickLook.h"
+#endif
+
+#if PLATFORM(IOS) && USE(CONTENT_FILTERING)
+#include "ContentFilter.h"
+#endif
 
 namespace WebCore {
 
@@ -72,7 +81,7 @@ void PolicyChecker::checkNavigationPolicy(const ResourceRequest& request, Docume
         loader->setLastCheckedRequest(request);
         return;
     }
-    
+
     // We are always willing to show alternate content for unreachable URLs;
     // treat it like a reload so it maintains the right state for b/f list.
     if (loader->substituteData().isValid() && !loader->substituteData().failingURL().isEmpty()) {
@@ -81,16 +90,34 @@ void PolicyChecker::checkNavigationPolicy(const ResourceRequest& request, Docume
         function(argument, request, 0, true);
         return;
     }
-    
+
+    // If we're loading content into a subframe, check against the parent's Content Security Policy
+    // and kill the load if that check fails.
+    if (m_frame->ownerElement() && !m_frame->ownerElement()->document()->contentSecurityPolicy()->allowChildFrameFromSource(request.url())) {
+        function(argument, request, 0, false);
+        return;
+    }
+
     loader->setLastCheckedRequest(request);
 
     m_callback.set(request, formState.get(), function, argument);
 
+#if USE(QUICK_LOOK)
     // Always allow QuickLook-generated URLs based on the protocol scheme.
     if (!request.isNull() && request.url().protocolIs(QLPreviewProtocol())) {
         continueAfterNavigationPolicy(PolicyUse);
         return;
     }
+#endif
+
+#if PLATFORM(IOS) && USE(CONTENT_FILTERING)
+    if (DocumentLoader* documentLoader = m_frame->loader()->documentLoader()) {
+        if (documentLoader->handleContentFilterRequest(request)) {
+            continueAfterNavigationPolicy(PolicyIgnore);
+            return;
+        }
+    }
+#endif
 
     m_delegateIsDecidingNavigationPolicy = true;
     m_frame->loader()->client()->dispatchDecidePolicyForNavigationAction(&PolicyChecker::continueAfterNavigationPolicy,
@@ -102,6 +129,9 @@ void PolicyChecker::checkNewWindowPolicy(const NavigationAction& action, NewWind
     const ResourceRequest& request, PassRefPtr<FormState> formState, const String& frameName, void* argument)
 {
     if (m_frame->document() && m_frame->document()->isSandboxed(SandboxPopups))
+        return continueAfterNavigationPolicy(PolicyIgnore);
+
+    if (!DOMWindow::allowPopUp(m_frame))
         return continueAfterNavigationPolicy(PolicyIgnore);
 
     m_callback.set(request, formState, frameName, action, function, argument);

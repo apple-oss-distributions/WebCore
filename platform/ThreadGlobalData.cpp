@@ -27,12 +27,11 @@
 #include "config.h"
 #include "ThreadGlobalData.h"
 
-#include "DOMImplementation.h"
+#include "CachedResourceRequestInitiators.h"
 #include "EventNames.h"
 #include "InspectorCounters.h"
 #include "ThreadTimers.h"
 #include <wtf/MainThread.h>
-#include <wtf/UnusedParam.h>
 #include <wtf/WTFThreadData.h>
 #include <wtf/text/StringImpl.h>
 
@@ -54,20 +53,29 @@ namespace WebCore {
 
 #if ENABLE(WORKERS)
 ThreadSpecific<ThreadGlobalData>* ThreadGlobalData::staticData;
+#if PLATFORM(IOS)
 ThreadGlobalData* ThreadGlobalData::sharedMainThreadStaticData;
+#endif
 #else
 ThreadGlobalData* ThreadGlobalData::staticData;
 #endif
 
 ThreadGlobalData::ThreadGlobalData()
-    : m_eventNames(adoptPtr(new EventNames))
+    : m_cachedResourceRequestInitiators(adoptPtr(new CachedResourceRequestInitiators))
+    , m_eventNames(adoptPtr(new EventNames))
     , m_threadTimers(adoptPtr(new ThreadTimers))
-    , m_xmlTypeRegExp(adoptPtr(new XMLMIMETypeRegExp))
 #ifndef NDEBUG
+#if PLATFORM(IOS)
     , m_isMainThread(pthread_main_np() || isMainThread())
+#else
+    , m_isMainThread(isMainThread())
+#endif // PLATFORM(IOS)
 #endif
 #if USE(ICU_UNICODE)
     , m_cachedConverterICU(adoptPtr(new ICUConverterWrapper))
+#endif
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+    , m_cachedConverterTEC(adoptPtr(new TECConverterWrapper))
 #endif
 #if ENABLE(INSPECTOR)
     , m_inspectorCounters(adoptPtr(new ThreadLocalInspectorCounters()))
@@ -87,6 +95,9 @@ ThreadGlobalData::~ThreadGlobalData()
 
 void ThreadGlobalData::destroy()
 {
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+    m_cachedConverterTEC.clear();
+#endif
 
 #if USE(ICU_UNICODE)
     m_cachedConverterICU.clear();
@@ -98,10 +109,9 @@ void ThreadGlobalData::destroy()
 
     m_eventNames.clear();
     m_threadTimers.clear();
-    m_xmlTypeRegExp.clear();
 }
 
-#if ENABLE(WORKERS)
+#if ENABLE(WORKERS) && PLATFORM(IOS)
 void ThreadGlobalData::setWebCoreThreadData()
 {
     ASSERT(isWebThread());

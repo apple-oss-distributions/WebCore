@@ -30,7 +30,7 @@
 #include "AffineTransform.h"
 #include "FloatRect.h"
 #include "RenderSVGModelObject.h"
-#include "SVGMarkerLayoutInfo.h"
+#include "SVGMarkerData.h"
 #include "StrokeStyleApplier.h"
 #include <wtf/OwnPtr.h>
 #include <wtf/Vector.h>
@@ -72,11 +72,12 @@ public:
 
     void setNeedsShapeUpdate() { m_needsShapeUpdate = true; }
     virtual void setNeedsBoundariesUpdate() { m_needsBoundariesUpdate = true; }
+    virtual bool needsBoundariesUpdate() OVERRIDE { return m_needsBoundariesUpdate; }
     virtual void setNeedsTransformUpdate() { m_needsTransformUpdate = true; }
     virtual void fillShape(GraphicsContext*) const;
     virtual void strokeShape(GraphicsContext*) const;
-    bool isPaintingFallback() const { return m_fillFallback; }
 
+    bool hasPath() const { return m_path.get(); }
     Path& path() const
     {
         ASSERT(m_path);
@@ -84,19 +85,19 @@ public:
     }
 
 protected:
-    virtual void createShape();
+    virtual void updateShapeFromElement();
     virtual bool isEmpty() const;
-    virtual FloatRect objectBoundingBox() const;
-    virtual FloatRect strokeBoundingBox() const { return m_strokeAndMarkerBoundingBox; }
-    void setStrokeAndMarkerBoundingBox(FloatRect rect) { m_strokeAndMarkerBoundingBox = rect; }
-    virtual bool shapeDependentStrokeContains(const FloatPoint&) const;
+    virtual bool shapeDependentStrokeContains(const FloatPoint&);
     virtual bool shapeDependentFillContains(const FloatPoint&, const WindRule) const;
     float strokeWidth() const;
-    void setIsPaintingFallback(bool isFallback) { m_fillFallback = isFallback; }
-    FloatRect calculateMarkerBoundsIfNeeded();
-    void processZeroLengthSubpaths();
+    bool hasSmoothStroke() const;
 
-    bool hasPath() const { return m_path.get(); }
+    bool hasNonScalingStroke() const { return style()->svgStyle()->vectorEffect() == VE_NON_SCALING_STROKE; }
+    AffineTransform nonScalingStrokeTransform() const;
+    Path* nonScalingStrokePath(const Path*, const AffineTransform&) const;
+
+    FloatRect m_fillBoundingBox;
+    FloatRect m_strokeBoundingBox;
 
 private:
     // Hit-detection separated for the fill and the stroke
@@ -104,12 +105,12 @@ private:
     bool strokeContains(const FloatPoint&, bool requiresStroke = true);
 
     virtual FloatRect repaintRectInLocalCoordinates() const { return m_repaintBoundingBox; }
+    virtual FloatRect repaintRectInLocalCoordinatesExcludingSVGShadow() const OVERRIDE { return m_repaintBoundingBoxExcludingShadow; }
     virtual const AffineTransform& localToParentTransform() const { return m_localTransform; }
     virtual AffineTransform localTransform() const { return m_localTransform; }
 
     virtual bool isSVGShape() const { return true; }
     virtual const char* renderName() const { return "RenderSVGShape"; }
-    virtual bool isRoundedRect() { return false; }
 
     virtual void layout();
     virtual void paint(PaintInfo&, const LayoutPoint&);
@@ -117,44 +118,44 @@ private:
 
     virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction);
 
-    void updateCachedBoundaries();
+    virtual FloatRect objectBoundingBox() const { return m_fillBoundingBox; }
+    virtual FloatRect strokeBoundingBox() const { return m_strokeBoundingBox; }
+    FloatRect calculateObjectBoundingBox() const;
+    FloatRect calculateStrokeBoundingBox() const;
+    void updateRepaintBoundingBox();
 
-    Path* zeroLengthLinecapPath(const FloatPoint&);
-    bool setupNonScalingStrokeTransform(AffineTransform&, GraphicsContextStateSaver&);
-    Path* nonScalingStrokePath(const Path*, const AffineTransform&);
-    bool shouldStrokeZeroLengthSubpath() const;
-    FloatRect zeroLengthSubpathRect(const FloatPoint&, float) const;
+    bool setupNonScalingStrokeContext(AffineTransform&, GraphicsContextStateSaver&);
 
-    void fillShape(RenderStyle*, GraphicsContext*, Path*, RenderSVGShape*);
-    void strokePath(RenderStyle*, GraphicsContext*, Path*, RenderSVGResource*,
-                    const Color&, bool, const AffineTransform&, int);
-    void fillAndStrokePath(GraphicsContext*);
-    void inflateWithStrokeAndMarkerBounds();
+    bool shouldGenerateMarkerPositions() const;
+    FloatRect markerRect(float strokeWidth) const;
+    void processMarkerPositions();
+
+    void fillShape(RenderStyle*, GraphicsContext*);
+    void strokeShape(RenderStyle*, GraphicsContext*);
+    void fillAndStrokeShape(GraphicsContext*);
+    void drawMarkers(PaintInfo&);
 
 private:
-    FloatRect m_fillBoundingBox;
-    FloatRect m_strokeAndMarkerBoundingBox;
     FloatRect m_repaintBoundingBox;
-    SVGMarkerLayoutInfo m_markerLayoutInfo;
+    FloatRect m_repaintBoundingBoxExcludingShadow;
     AffineTransform m_localTransform;
     OwnPtr<Path> m_path;
-    Vector<FloatPoint> m_zeroLengthLinecapLocations;
+    Vector<MarkerPosition> m_markerPositions;
 
     bool m_needsBoundariesUpdate : 1;
     bool m_needsShapeUpdate : 1;
     bool m_needsTransformUpdate : 1;
-    bool m_fillFallback : 1;
 };
 
 inline RenderSVGShape* toRenderSVGShape(RenderObject* object)
 {
-    ASSERT(!object || object->isSVGShape());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGShape());
     return static_cast<RenderSVGShape*>(object);
 }
 
 inline const RenderSVGShape* toRenderSVGShape(const RenderObject* object)
 {
-    ASSERT(!object || object->isSVGShape());
+    ASSERT_WITH_SECURITY_IMPLICATION(!object || object->isSVGShape());
     return static_cast<const RenderSVGShape*>(object);
 }
 

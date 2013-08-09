@@ -33,19 +33,34 @@
 #include <wtf/text/StringHash.h>
 #include <wtf/HashMap.h>
 #include <wtf/HashSet.h>
+#include <wtf/MainThread.h>
 #include <wtf/StdLibExtras.h>
+
+#if PLATFORM(IOS)
+#include "WebCoreThread.h"
+#endif
 
 namespace WebCore {
 
 typedef HashMap<ProtectionSpace, Credential> ProtectionSpaceToCredentialMap;
 static ProtectionSpaceToCredentialMap& protectionSpaceToCredentialMap()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
+    ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+#endif // !PLATFORM(IOS)
     DEFINE_STATIC_LOCAL(ProtectionSpaceToCredentialMap, map, ());
     return map;
 }
 
 static HashSet<String>& originsWithCredentials()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
+    ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+#endif // !PLATFORM(IOS)
     DEFINE_STATIC_LOCAL(HashSet<String>, set, ());
     return set;
 }
@@ -53,6 +68,11 @@ static HashSet<String>& originsWithCredentials()
 typedef HashMap<String, ProtectionSpace> PathToDefaultProtectionSpaceMap;
 static PathToDefaultProtectionSpaceMap& pathToDefaultProtectionSpaceMap()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
+    ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+#endif // !PLATFORM(IOS)
     DEFINE_STATIC_LOCAL(PathToDefaultProtectionSpaceMap, map, ());
     return map;
 }
@@ -90,7 +110,9 @@ void CredentialStorage::set(const Credential& credential, const ProtectionSpace&
 
     protectionSpaceToCredentialMap().set(protectionSpace, credential);
 
+#if PLATFORM(IOS)
     saveToPersistentStorage(protectionSpace, credential);
+#endif
 
     if (!protectionSpace.isProxy()) {
         originsWithCredentials().add(originStringFromURL(url));
@@ -150,7 +172,7 @@ bool CredentialStorage::set(const Credential& credential, const KURL& url)
     if (iter == pathToDefaultProtectionSpaceMap().end())
         return false;
     ASSERT(originsWithCredentials().contains(originStringFromURL(url)));
-    protectionSpaceToCredentialMap().set(iter->second, credential);
+    protectionSpaceToCredentialMap().set(iter->value, credential);
     return true;
 }
 
@@ -159,13 +181,22 @@ Credential CredentialStorage::get(const KURL& url)
     PathToDefaultProtectionSpaceMap::iterator iter = findDefaultProtectionSpaceForURL(url);
     if (iter == pathToDefaultProtectionSpaceMap().end())
         return Credential();
-    return protectionSpaceToCredentialMap().get(iter->second);
+    return protectionSpaceToCredentialMap().get(iter->value);
 }
 
+#if PLATFORM(IOS)
 void CredentialStorage::clearCredentials()
 {
     pathToDefaultProtectionSpaceMap().clear();
     originsWithCredentials().clear();
     protectionSpaceToCredentialMap().clear();
 }
+#endif
+
+void CredentialStorage::setPrivateMode(bool mode)
+{
+    if (!mode)
+        protectionSpaceToCredentialMap().clear();
+}
+
 } // namespace WebCore

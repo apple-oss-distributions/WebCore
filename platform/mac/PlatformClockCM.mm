@@ -29,13 +29,20 @@
 
 #import "PlatformClockCM.h"
 
-#import "FloatConversion.h"
 #import "SoftLinking.h"
+#if PLATFORM(IOS)
 #import <CoreMedia/CMAudioClock.h>
+#else
+#import <CoreMedia/CMAudioDeviceClock.h>
+#endif
 
 SOFT_LINK_FRAMEWORK_OPTIONAL(CoreMedia)
 
+#if PLATFORM(IOS)
 SOFT_LINK(CoreMedia, CMAudioClockCreate, OSStatus, (CFAllocatorRef allocator, CMClockRef *clockOut), (allocator, clockOut))
+#else
+SOFT_LINK(CoreMedia, CMAudioDeviceClockCreate, OSStatus, (CFAllocatorRef allocator, CFStringRef deviceUID, CMClockRef *clockOut), (allocator, deviceUID, clockOut))
+#endif
 SOFT_LINK(CoreMedia, CMTimebaseCreateWithMasterClock, OSStatus, (CFAllocatorRef allocator, CMClockRef masterClock, CMTimebaseRef *timebaseOut), (allocator, masterClock, timebaseOut))
 SOFT_LINK(CoreMedia, CMTimebaseSetTime, OSStatus, (CMTimebaseRef timebase, CMTime time), (timebase, time))
 SOFT_LINK(CoreMedia, CMTimebaseGetTime, CMTime, (CMTimebaseRef timebase), (timebase))
@@ -54,8 +61,12 @@ PlatformClockCM::PlatformClockCM()
     , m_running(false)
 {
     CMClockRef rawClockPtr = 0;
+#if PLATFORM(IOS)
     CMAudioClockCreate(kCFAllocatorDefault, &rawClockPtr);
-    RetainPtr<CMClockRef> clock(AdoptCF, rawClockPtr);
+#else
+    CMAudioDeviceClockCreate(kCFAllocatorDefault, NULL, &rawClockPtr);
+#endif
+    RetainPtr<CMClockRef> clock = adoptCF(rawClockPtr);
     initializeWithTimingSource(clock.get());
 }
 
@@ -70,22 +81,22 @@ void PlatformClockCM::initializeWithTimingSource(CMClockRef clock)
 {
     CMTimebaseRef rawTimebasePtr = 0;
     CMTimebaseCreateWithMasterClock(kCFAllocatorDefault, clock, &rawTimebasePtr);
-    m_timebase.adoptCF(rawTimebasePtr);
+    m_timebase = adoptCF(rawTimebasePtr);
 }
 
-void PlatformClockCM::setCurrentTime(float time)
+void PlatformClockCM::setCurrentTime(double time)
 {
     CMTime cmTime = CMTimeMakeWithSeconds(time, DefaultTimeScale);
     CMTimebaseSetTime(m_timebase.get(), cmTime);
 }
 
-float PlatformClockCM::currentTime() const
+double PlatformClockCM::currentTime() const
 {
     CMTime cmTime = CMTimebaseGetTime(m_timebase.get());
-    return narrowPrecisionToFloat(CMTimeGetSeconds(cmTime));
+    return CMTimeGetSeconds(cmTime);
 }
 
-void PlatformClockCM::setPlayRate(float rate)
+void PlatformClockCM::setPlayRate(double rate)
 {
     if (m_rate == rate)
         return;

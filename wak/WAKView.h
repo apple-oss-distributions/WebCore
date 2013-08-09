@@ -57,6 +57,7 @@ extern NSString *WAKViewDidScrollNotification;
 - (void)willRemoveSubview:(WAKView *)subview;
 - (void)removeFromSuperview;
 - (BOOL)isDescendantOf:(WAKView *)aView;
+- (BOOL)isHiddenOrHasHiddenAncestor;
 - (WAKView *)lastScrollableAncestor;
 
 - (void)viewDidMoveToWindow;

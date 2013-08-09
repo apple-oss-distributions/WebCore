@@ -46,4 +46,9 @@ inline bool iosExecutableWasLinkedOnOrAfterVersion(wkIOSSystemVersion version)
     return wkExecutableWasLinkedOnOrAfterIOSVersion(version);
 }
 
+OBJC_CLASS NSError;
+OBJC_CLASS WebFilterEvaluator;
+typedef void (^wkFilterUnblockCompletionBlock)(BOOL unblocked, NSError *);
+extern void (*wkFilterUnblockWithCompletion)(WebFilterEvaluator *, wkFilterUnblockCompletionBlock);
+
 #endif // WebCoreSystemInterfaceIOS_h

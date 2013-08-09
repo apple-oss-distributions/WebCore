@@ -31,27 +31,27 @@
 #include "FrameLoader.h"
 #include "InspectorInstrumentation.h"
 #include "KURL.h"
+#include "LoaderStrategy.h"
 #include "Logging.h"
 #include "NetscapePlugInStreamLoader.h"
+#include "PlatformStrategies.h"
 #include "ResourceLoader.h"
 #include "ResourceRequest.h"
 #include "SubresourceLoader.h"
 #include <wtf/MainThread.h>
+#include <wtf/TemporaryChange.h>
 #include <wtf/text/CString.h>
-
-#define REQUEST_MANAGEMENT_ENABLED 1
 
 namespace WebCore {
 
-#if REQUEST_MANAGEMENT_ENABLED
 // Match the parallel connection count used by the networking layer.
 static unsigned maxRequestsInFlightPerHost;
+#if !PLATFORM(IOS)
+static const unsigned maxRequestsInFlightForNonHTTPProtocols = 20;
+#else
 // Limiting this seems to regress performance in some local cases so let's just make it large.
 static const unsigned maxRequestsInFlightForNonHTTPProtocols = 10000;
-#else
-static const unsigned maxRequestsInFlightForNonHTTPProtocols = 10000;
-static const unsigned maxRequestsInFlightPerHost = 10000;
-#endif
+#endif // !PLATFORM(IOS)
 
 ResourceLoadScheduler::HostInformation* ResourceLoadScheduler::hostForURL(const KURL& url, CreateHostPolicy createHostPolicy)
 {
@@ -70,9 +70,29 @@ ResourceLoadScheduler::HostInformation* ResourceLoadScheduler::hostForURL(const 
 
 ResourceLoadScheduler* resourceLoadScheduler()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
-    DEFINE_STATIC_LOCAL(ResourceLoadScheduler, resourceLoadScheduler, ());
-    return &resourceLoadScheduler;
+#endif
+    static ResourceLoadScheduler* globalScheduler = 0;
+    
+    if (!globalScheduler) {
+        static bool isCallingOutToStrategy = false;
+        
+        // If we're re-entering resourceLoadScheduler() while calling out to the LoaderStrategy,
+        // then the LoaderStrategy is trying to use the default resourceLoadScheduler.
+        // So we'll create it here and start using it.
+        if (isCallingOutToStrategy) {
+            globalScheduler = new ResourceLoadScheduler;
+            return globalScheduler;
+        }
+        
+        TemporaryChange<bool> recursionGuard(isCallingOutToStrategy, true);
+        globalScheduler = platformStrategies()->loaderStrategy()->resourceLoadScheduler();
+    }
+
+    return globalScheduler;
 }
 
 ResourceLoadScheduler::ResourceLoadScheduler()
@@ -81,9 +101,11 @@ ResourceLoadScheduler::ResourceLoadScheduler()
     , m_suspendPendingRequestsCount(0)
     , m_isSerialLoadingEnabled(false)
 {
-#if REQUEST_MANAGEMENT_ENABLED
     maxRequestsInFlightPerHost = initializeMaximumHTTPConnectionCountPerHost();
-#endif
+}
+
+ResourceLoadScheduler::~ResourceLoadScheduler()
+{
 }
 
 PassRefPtr<SubresourceLoader> ResourceLoadScheduler::scheduleSubresourceLoad(Frame* frame, CachedResource* resource, const ResourceRequest& request, ResourceLoadPriority priority, const ResourceLoaderOptions& options)
@@ -91,6 +113,7 @@ PassRefPtr<SubresourceLoader> ResourceLoadScheduler::scheduleSubresourceLoad(Fra
     RefPtr<SubresourceLoader> loader = SubresourceLoader::create(frame, resource, request, options);
     if (loader)
         scheduleLoad(loader.get(), priority);
+#if PLATFORM(IOS)
     // Since we defer loader initialization until scheduling on iOS, the frame
     // load delegate that would be called in SubresourceLoader::create() on
     // other ports might be called in scheduleLoad() instead. Our contract to
@@ -98,6 +121,7 @@ PassRefPtr<SubresourceLoader> ResourceLoadScheduler::scheduleSubresourceLoad(Fra
     // cancelled by a frame load delegate.
     if (!loader || loader->reachedTerminalState())
         return 0;
+#endif
     return loader.release();
 }
 
@@ -109,47 +133,67 @@ PassRefPtr<NetscapePlugInStreamLoader> ResourceLoadScheduler::schedulePluginStre
     return loader;
 }
 
-void ResourceLoadScheduler::addMainResourceLoad(ResourceLoader* resourceLoader)
-{
-    hostForURL(resourceLoader->url(), CreateIfNotFound)->addLoadInProgress(resourceLoader);
-}
-
 void ResourceLoadScheduler::scheduleLoad(ResourceLoader* resourceLoader, ResourceLoadPriority priority)
 {
     ASSERT(resourceLoader);
     ASSERT(priority != ResourceLoadPriorityUnresolved);
-#if !REQUEST_MANAGEMENT_ENABLED
-    priority = ResourceLoadPriorityHighest;
-#endif
 
     LOG(ResourceLoading, "ResourceLoadScheduler::load resource %p '%s'", resourceLoader, resourceLoader->url().string().latin1().data());
 
+#if PLATFORM(IOS)
     // If there's a web archive resource for this URL, we don't need to schedule the load since it will never touch the network.
     if (!isSuspendingPendingRequests() && resourceLoader->documentLoader()->archiveResourceForURL(resourceLoader->iOSOriginalRequest().url())) {
         resourceLoader->startLoading();
         return;
     }
+#else
+    if (resourceLoader->documentLoader()->archiveResourceForURL(resourceLoader->request().url())) {
+        resourceLoader->start();
+        return;
+    }
+#endif
 
+#if PLATFORM(IOS)
     HostInformation* host = hostForURL(resourceLoader->iOSOriginalRequest().url(), CreateIfNotFound);
+#else
+    HostInformation* host = hostForURL(resourceLoader->url(), CreateIfNotFound);
+#endif
 
     bool hadRequests = host->hasRequests();
     host->schedule(resourceLoader, priority);
 
+#if PLATFORM(IOS)
     if (ResourceRequest::httpPipeliningEnabled() && !isSuspendingPendingRequests()) {
         // Serve all requests at once to keep the pipeline full at the network layer.
         servePendingRequests(host, ResourceLoadPriorityVeryLow);
         return;
     }
+#endif
 
+#if PLATFORM(IOS)
     if ((priority > ResourceLoadPriorityLow || !resourceLoader->iOSOriginalRequest().url().protocolIsInHTTPFamily() || (priority == ResourceLoadPriorityLow && !hadRequests)) && !isSuspendingPendingRequests()) {
         // Try to request important resources immediately.
         servePendingRequests(host, priority);
         return;
     }
+#else
+    if (priority > ResourceLoadPriorityLow || !resourceLoader->url().protocolIsInHTTPFamily() || (priority == ResourceLoadPriorityLow && !hadRequests)) {
+        // Try to request important resources immediately.
+        servePendingRequests(host, priority);
+        return;
+    }
+#endif
 
-    // Handle asynchronously so early low priority requests don't get scheduled before later high priority ones.
-    InspectorInstrumentation::didScheduleResourceRequest(resourceLoader->frameLoader() ? resourceLoader->frameLoader()->frame()->document() : 0, resourceLoader->url());
+    notifyDidScheduleResourceRequest(resourceLoader);
+
+    // Handle asynchronously so early low priority requests don't
+    // get scheduled before later high priority ones.
     scheduleServePendingRequests();
+}
+
+void ResourceLoadScheduler::notifyDidScheduleResourceRequest(ResourceLoader* loader)
+{
+    InspectorInstrumentation::didScheduleResourceRequest(loader->frameLoader() ? loader->frameLoader()->frame()->document() : 0, loader->url());
 }
 
 void ResourceLoadScheduler::remove(ResourceLoader* resourceLoader)
@@ -159,6 +203,7 @@ void ResourceLoadScheduler::remove(ResourceLoader* resourceLoader)
     HostInformation* host = hostForURL(resourceLoader->url());
     if (host)
         host->remove(resourceLoader);
+#if PLATFORM(IOS)
     // ResourceLoader::url() doesn't start returning the correct value until the load starts. If we get canceled before that, we need to look for originalRequest url instead.
     // FIXME: ResourceLoader::url() should be made to return a sensible value at all times.
     if (!resourceLoader->iOSOriginalRequest().isNull()) {
@@ -166,14 +211,17 @@ void ResourceLoadScheduler::remove(ResourceLoader* resourceLoader)
         if (originalHost && originalHost != host)
             originalHost->remove(resourceLoader);
     }
+#endif
     scheduleServePendingRequests();
 }
 
 void ResourceLoadScheduler::crossOriginRedirectReceived(ResourceLoader* resourceLoader, const KURL& redirectURL)
 {
     HostInformation* oldHost = hostForURL(resourceLoader->url());
+#if PLATFORM(IOS)
     if (!oldHost)
         return;
+#endif
     ASSERT(oldHost);
     HostInformation* newHost = hostForURL(redirectURL, CreateIfNotFound);
 
@@ -198,7 +246,7 @@ void ResourceLoadScheduler::servePendingRequests(ResourceLoadPriority minimumPri
     m_hosts.checkConsistency();
     HostMap::iterator end = m_hosts.end();
     for (HostMap::iterator iter = m_hosts.begin(); iter != end; ++iter)
-        hostsToServe.append(iter->second);
+        hostsToServe.append(iter->value);
 
     int size = hostsToServe.size();
     for (int i = 0; i < size; ++i) {
@@ -230,9 +278,11 @@ void ResourceLoadScheduler::servePendingRequests(HostInformation* host, Resource
 
             requestsPending.removeFirst();
             host->addLoadInProgress(resourceLoader.get());
+#if PLATFORM(IOS)
             resourceLoader->startLoading();
-            if (resourceLoader->reachedTerminalState())
-                resourceLoader->clearCachedResourceAfterSynchronousCancel();
+#else
+            resourceLoader->start();
+#endif
         }
     }
 }

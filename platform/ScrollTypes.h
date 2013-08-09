@@ -26,6 +26,7 @@
 #ifndef ScrollTypes_h
 #define ScrollTypes_h
 
+// WTF_PLATFORM_IOS
 #ifdef __cplusplus
 
 namespace WebCore {
@@ -108,7 +109,7 @@ namespace WebCore {
         ScrollByPage,
         ScrollByDocument,
         ScrollByPixel,
-        ScrollByPixelVelocity
+        ScrollByPrecisePixel
     };
 
     enum ScrollElasticity {
@@ -161,6 +162,11 @@ namespace WebCore {
     
     typedef unsigned ScrollbarControlPartMask;
 
+    enum ScrollPinningBehavior {
+        DoNotPin,
+        PinToTop,
+        PinToBottom
+    };
 }
 
 #endif // __cplusplus

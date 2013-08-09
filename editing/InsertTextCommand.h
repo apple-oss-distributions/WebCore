@@ -68,12 +68,16 @@ private:
 
     virtual void doApply();
 
+#if PLATFORM(IOS)
     virtual bool isInsertTextCommand() const OVERRIDE { return true; }
+#endif
 
     Position positionInsideTextNode(const Position&);
     Position insertTab(const Position&);
     
     bool performTrivialReplace(const String&, bool selectInsertedText);
+    bool performOverwrite(const String&, bool selectInsertedText);
+    void setEndingSelectionWithoutValidation(const Position& startPosition, const Position& endPosition);
 
     friend class TypingCommand;
 

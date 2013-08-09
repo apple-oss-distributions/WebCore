@@ -23,18 +23,14 @@
  */
 
 // FIXME: This is temporary until all ports switch to using this file.
-#if (PLATFORM(CHROMIUM) && !OS(DARWIN)) || PLATFORM(BLACKBERRY)
-#include "chromium/FontPlatformData.h"
+#if PLATFORM(BLACKBERRY)
+#include "harfbuzz/FontPlatformDataHarfBuzz.h"
 #elif PLATFORM(QT)
 #include "qt/FontPlatformData.h"
-#elif PLATFORM(WIN) && OS(WINCE)
+#elif USE(WINGDI)
 #include "wince/FontPlatformData.h"
-#elif PLATFORM(WX)
-#include "wx/FontPlatformData.h"
-#elif (PLATFORM(EFL) || PLATFORM(GTK)) && USE(FREETYPE)
+#elif PLATFORM(EFL) || PLATFORM(GTK)
 #include "freetype/FontPlatformData.h"
-#elif (PLATFORM(EFL) || PLATFORM(GTK)) && USE(PANGO)
-#include "pango/FontPlatformData.h"
 #else
 
 #ifndef FontPlatformData_h
@@ -42,8 +38,6 @@
 
 #include "FontOrientation.h"
 #include "FontWidthVariant.h"
-#include "GlyphBuffer.h"
-#include "TextOrientation.h"
 
 #if PLATFORM(WIN)
 #include "RefCountedGDIHandle.h"
@@ -57,13 +51,12 @@
 #if OS(DARWIN)
 OBJC_CLASS NSFont;
 
+#if PLATFORM(IOS)
 #import <GraphicsServices/GraphicsServices.h>
+#endif
 
 typedef struct CGFont* CGFontRef;
 typedef const struct __CTFont* CTFontRef;
-
-#include <CoreFoundation/CFBase.h>
-#include <objc/objc-auto.h>
 #endif
 
 #include <wtf/Forward.h>
@@ -72,15 +65,11 @@ typedef const struct __CTFont* CTFontRef;
 #include <wtf/RetainPtr.h>
 #include <wtf/text/StringImpl.h>
 
-#if PLATFORM(CHROMIUM) && OS(DARWIN)
-#include "CrossProcessFontLoading.h"  
-#endif
-
 #if PLATFORM(WIN)
 typedef struct HFONT__* HFONT;
 #endif
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
+#if USE(CG)
 typedef struct CGFont* CGFontRef;
 #if OS(DARWIN)
 typedef const struct __CTFont* CTFontRef;
@@ -95,116 +84,31 @@ namespace WebCore {
 class FontDescription;
 class SharedBuffer;
 
+#if !PLATFORM(IOS)
+#if OS(DARWIN)
+inline CTFontRef toCTFontRef(NSFont *nsFont) { return reinterpret_cast<CTFontRef>(nsFont); }
+#endif
+#endif // !PLATFORM(IOS)
 
 class FontPlatformData {
 public:
-    FontPlatformData(WTF::HashTableDeletedValueType)
-        : m_syntheticBold(false)
-        , m_syntheticOblique(false)
-        , m_orientation(Horizontal)
-        , m_textOrientation(TextOrientationVerticalRight)
-        , m_isEmoji(false)
-        , m_size(0)
-        , m_widthVariant(RegularWidth)
-#if PLATFORM(WIN)
-        , m_font(WTF::HashTableDeletedValue)
-#elif OS(DARWIN)
-        , m_font(hashTableDeletedFontValue())
-#endif
-#if USE(CG) && PLATFORM(WIN)
-        , m_cgFont(0)
-#elif USE(CAIRO)
-        , m_scaledFont(hashTableDeletedFontValue())
-#endif
-        , m_isColorBitmapFont(false)
-        , m_isCompositeFontReference(false)
-#if OS(DARWIN)
-        , m_isPrinterFont(false)
-#endif
-#if PLATFORM(WIN)
-        , m_useGDI(false)
-#endif
-        {
-        }
-
-    FontPlatformData()
-        : m_syntheticBold(false)
-        , m_syntheticOblique(false)
-        , m_orientation(Horizontal)
-        , m_textOrientation(TextOrientationVerticalRight)
-        , m_isEmoji(false)
-        , m_size(0)
-        , m_widthVariant(RegularWidth)
-#if OS(DARWIN)
-        , m_font(0)
-#endif
-#if USE(CG) && PLATFORM(WIN)
-        , m_cgFont(0)
-#elif USE(CAIRO)
-        , m_scaledFont(0)
-#endif
-        , m_isColorBitmapFont(false)
-        , m_isCompositeFontReference(false)
-#if OS(DARWIN)
-        , m_isPrinterFont(false)
-#endif
-#if PLATFORM(WIN)
-        , m_useGDI(false)
-#endif
-    {
-    }
-
+    FontPlatformData(WTF::HashTableDeletedValueType);
+    FontPlatformData();
     FontPlatformData(const FontPlatformData&);
     FontPlatformData(const FontDescription&, const AtomicString& family);
-    FontPlatformData(float size, bool syntheticBold, bool syntheticOblique, FontOrientation orientation = Horizontal,
-                     TextOrientation textOrientation = TextOrientationVerticalRight, FontWidthVariant widthVariant = RegularWidth)
-        : m_syntheticBold(syntheticBold)
-        , m_syntheticOblique(syntheticOblique)
-        , m_orientation(orientation)
-        , m_textOrientation(textOrientation)
-        , m_isEmoji(false)
-        , m_size(size)
-        , m_widthVariant(widthVariant)
-#if OS(DARWIN)
-        , m_font(0)
-#endif
-#if USE(CG) && PLATFORM(WIN)
-        , m_cgFont(0)
-#elif USE(CAIRO)
-        , m_scaledFont(0)
-#endif
-        , m_isColorBitmapFont(false)
-        , m_isCompositeFontReference(false)
-#if OS(DARWIN)
-        , m_isPrinterFont(false)
-#endif
-#if PLATFORM(WIN)
-        , m_useGDI(false)
-#endif
-    {
-    }
+    FontPlatformData(float size, bool syntheticBold, bool syntheticOblique, FontOrientation = Horizontal, FontWidthVariant = RegularWidth);
 
 #if OS(DARWIN)
+#if !PLATFORM(IOS)
+    FontPlatformData(NSFont*, float size, bool isPrinterFont = false, bool syntheticBold = false, bool syntheticOblique = false,
+                     FontOrientation = Horizontal, FontWidthVariant = RegularWidth);
+#else
     FontPlatformData(GSFontRef, float size, bool isPrinterFont = false, bool syntheticBold = false, bool syntheticOblique = false,
-                     FontOrientation = Horizontal, TextOrientation = TextOrientationVerticalRight, FontWidthVariant = RegularWidth);
+                     FontOrientation = Horizontal, FontWidthVariant = RegularWidth);
+#endif // !PLATFORM(IOS)
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
-FontPlatformData(CGFontRef cgFont, float size, bool syntheticBold, bool syntheticOblique, FontOrientation orientation,
-     TextOrientation textOrientation, FontWidthVariant widthVariant)
-: m_syntheticBold(syntheticBold)
-, m_syntheticOblique(syntheticOblique)
-, m_orientation(orientation)
-, m_textOrientation(textOrientation)
-, m_isEmoji(false)
-, m_size(size)
-, m_widthVariant(widthVariant)
-, m_font(0)
-, m_cgFont(cgFont)
-, m_isColorBitmapFont(false)
-, m_isCompositeFontReference(false)
-, m_isPrinterFont(false)
-{
-}
+#if USE(CG)
+    FontPlatformData(CGFontRef, float size, bool syntheticBold, bool syntheticOblique, FontOrientation, FontWidthVariant);
 #endif
 #endif
 #if PLATFORM(WIN)
@@ -217,19 +121,33 @@ FontPlatformData(HFONT, CGFontRef, float size, bool syntheticBold, bool syntheti
 FontPlatformData(cairo_font_face_t*, float size, bool bold, bool italic);
 #endif
 
-FontPlatformData(CTFontRef, float size, bool syntheticBold = false, bool syntheticOblique = false, FontOrientation = Horizontal, TextOrientation = TextOrientationVerticalRight, FontWidthVariant = RegularWidth);
+#if PLATFORM(IOS)
+FontPlatformData(CTFontRef, float size, bool syntheticBold = false, bool syntheticOblique = false, FontOrientation = Horizontal, FontWidthVariant = RegularWidth);
+#endif
 
 ~FontPlatformData();
 
+#if PLATFORM(WIN)
+HFONT hfont() const { return m_font ? m_font->handle() : 0; }
+bool useGDI() const { return m_useGDI; }
+#elif PLATFORM(IOS)
 GSFontRef font() const { return m_font; }
 void setFont(GSFontRef font);
+#elif OS(DARWIN)
+NSFont* font() const { return m_font; }
+void setFont(NSFont*);
+#endif
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
+#if USE(CG)
 #if OS(DARWIN)
 CGFontRef cgFont() const { return m_cgFont.get(); }
 CTFontRef ctFont() const;
 
+#if !PLATFORM(IOS)
+bool roundsGlyphAdvances() const;
+#else
 bool roundsGlyphAdvances() const { return false; }
+#endif // !PLATFORM(IOS)
 bool allowsLigatures() const;
 #else
 CGFontRef cgFont() const { return m_cgFont.get(); }
@@ -246,9 +164,8 @@ bool isCompositeFontReference() const { return m_isCompositeFontReference; }
 #if OS(DARWIN)
 bool isPrinterFont() const { return m_isPrinterFont; }
 #endif
-FontOrientation orientation() const { return m_orientation; }
-TextOrientation textOrientation() const { return m_textOrientation; }
-FontWidthVariant widthVariant() const { return m_widthVariant; }
+    FontOrientation orientation() const { return m_orientation; }
+    FontWidthVariant widthVariant() const { return m_widthVariant; }
 
 void setOrientation(FontOrientation orientation) { m_orientation = orientation; }
 
@@ -256,13 +173,20 @@ void setOrientation(FontOrientation orientation) { m_orientation = orientation; 
 cairo_scaled_font_t* scaledFont() const { return m_scaledFont; }
 #endif
 
-unsigned hash() const
-{
+    unsigned hash() const
+    {
 #if PLATFORM(WIN) && !USE(CAIRO)
 return m_font ? m_font->hash() : 0;
 #elif OS(DARWIN)
+#if !PLATFORM(IOS)
+#if USE(CG)
+        ASSERT(m_font || !m_cgFont);
+#endif
+        uintptr_t hashCodes[3] = { (uintptr_t)m_font, m_widthVariant, static_cast<uintptr_t>(m_isPrinterFont << 3 | m_orientation << 2 | m_syntheticBold << 1 | m_syntheticOblique) };
+#else
         ASSERT(m_font != 0 || m_cgFont == 0 || m_isEmoji != 0);
-        uintptr_t hashCodes[3] = { (uintptr_t)m_font, m_widthVariant, m_isEmoji << 5 | m_isPrinterFont << 4 | m_textOrientation << 3 | m_orientation << 2 | m_syntheticBold << 1 | m_syntheticOblique };
+        uintptr_t hashCodes[3] = { (uintptr_t)CFHash(m_font), m_widthVariant, static_cast<uintptr_t>(m_isEmoji << 4 | m_isPrinterFont << 3 | m_orientation << 2 | m_syntheticBold << 1 | m_syntheticOblique) };
+#endif // !PLATFORM(IOS)
         return StringHasher::hashMemory<sizeof(hashCodes)>(hashCodes);
 #elif USE(CAIRO)
         return PtrHash<cairo_scaled_font_t*>::hash(m_scaledFont);
@@ -283,7 +207,6 @@ return m_font ? m_font->hash() : 0;
             && m_isPrinterFont == other.m_isPrinterFont
 #endif
             && m_orientation == other.m_orientation
-            && m_textOrientation == other.m_textOrientation
             && m_widthVariant == other.m_widthVariant;
     }
 
@@ -310,7 +233,15 @@ private:
     bool platformIsEqual(const FontPlatformData&) const;
     void platformDataInit(const FontPlatformData&);
     const FontPlatformData& platformDataAssign(const FontPlatformData&);
+#if PLATFORM(IOS)
     static GSFontRef hashTableDeletedFontValue() { return reinterpret_cast<GSFontRef>(-1); }
+#elif OS(DARWIN)
+    // Load various data about the font specified by |nsFont| with the size fontSize into the following output paramters:
+    void loadFont(NSFont*, float fontSize, NSFont*& outNSFont, CGFontRef&);
+    static NSFont* hashTableDeletedFontValue() { return reinterpret_cast<NSFont *>(-1); }
+#elif PLATFORM(WIN)
+    void platformDataInit(HFONT, float size, HDC, WCHAR* faceName);
+#endif
 
 #if USE(CAIRO)
     static cairo_scaled_font_t* hashTableDeletedFontValue() { return reinterpret_cast<cairo_scaled_font_t*>(-1); }
@@ -320,15 +251,22 @@ public:
     bool m_syntheticBold;
     bool m_syntheticOblique;
     FontOrientation m_orientation;
-    TextOrientation m_textOrientation;
+#if PLATFORM(IOS)
     bool m_isEmoji;
+#endif
     float m_size;
     FontWidthVariant m_widthVariant;
 
 private:
+#if PLATFORM(IOS)
     GSFontRef m_font;
+#elif OS(DARWIN)
+    NSFont* m_font;
+#elif PLATFORM(WIN)
+    RefPtr<RefCountedGDIHandle<HFONT> > m_font;
+#endif
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
+#if USE(CG)
 #if PLATFORM(WIN)
     RetainPtr<CGFontRef> m_cgFont;
 #else
@@ -339,10 +277,6 @@ private:
 
 #if USE(CAIRO)
     cairo_scaled_font_t* m_scaledFont;
-#endif
-
-#if PLATFORM(CHROMIUM) && OS(DARWIN)
-    RefPtr<MemoryActivatedFont> m_inMemoryFont;
 #endif
 
     bool m_isColorBitmapFont;

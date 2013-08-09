@@ -37,10 +37,13 @@
 #include "StorageSyncManager.h"
 #include "StorageTracker.h"
 #include "SuddenTermination.h"
+#include <wtf/Functional.h>
 #include <wtf/MainThread.h>
 #include <wtf/text/CString.h>
 
+#if PLATFORM(IOS)
 #include "SQLiteDatabaseTracker.h"
+#endif
 
 namespace WebCore {
 
@@ -66,33 +69,44 @@ inline StorageAreaSync::StorageAreaSync(PassRefPtr<StorageSyncManager> storageSy
     , m_syncCloseDatabase(false)
     , m_importComplete(false)
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
     ASSERT(m_storageArea);
     ASSERT(m_syncManager);
+
+    // FIXME: If it can't import, then the default WebKit behavior should be that of private browsing,
+    // not silently ignoring it. https://bugs.webkit.org/show_bug.cgi?id=25894
+    m_syncManager->dispatch(bind(&StorageAreaSync::performImport, this));
 }
 
 PassRefPtr<StorageAreaSync> StorageAreaSync::create(PassRefPtr<StorageSyncManager> storageSyncManager, PassRefPtr<StorageAreaImpl> storageArea, const String& databaseIdentifier)
 {
     RefPtr<StorageAreaSync> area = adoptRef(new StorageAreaSync(storageSyncManager, storageArea, databaseIdentifier));
 
-    // FIXME: If it can't import, then the default WebKit behavior should be that of private browsing,
-    // not silently ignoring it. https://bugs.webkit.org/show_bug.cgi?id=25894
-    if (!area->m_syncManager->scheduleImport(area.get()))
-        area->m_importComplete = true;
-
     return area.release();
 }
 
 StorageAreaSync::~StorageAreaSync()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
     ASSERT(!m_syncTimer.isActive());
     ASSERT(m_finalSyncScheduled);
 }
 
 void StorageAreaSync::scheduleFinalSync()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
     // FIXME: We do this to avoid races, but it'd be better to make things safe without blocking.
     blockUntilImportComplete();
     m_storageArea = 0;  // This is done in blockUntilImportComplete() but this is here as a form of documentation that we must be absolutely sure the ref count cycle is broken.
@@ -108,12 +122,17 @@ void StorageAreaSync::scheduleFinalSync()
     // we should do it safely.
     m_finalSyncScheduled = true;
     syncTimerFired(&m_syncTimer);
-    m_syncManager->scheduleDeleteEmptyDatabase(this);
+
+    m_syncManager->dispatch(bind(&StorageAreaSync::deleteEmptyDatabase, this));
 }
 
 void StorageAreaSync::scheduleItemForSync(const String& key, const String& value)
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
     ASSERT(!m_finalSyncScheduled);
 
     m_changedItems.set(key, value);
@@ -128,7 +147,11 @@ void StorageAreaSync::scheduleItemForSync(const String& key, const String& value
 
 void StorageAreaSync::scheduleClear()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
     ASSERT(!m_finalSyncScheduled);
 
     m_changedItems.clear();
@@ -163,7 +186,11 @@ void StorageAreaSync::scheduleCloseDatabase()
 
 void StorageAreaSync::syncTimerFired(Timer<StorageAreaSync>*)
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
 
     bool partialSync = false;
     {
@@ -190,7 +217,7 @@ void StorageAreaSync::syncTimerFired(Timer<StorageAreaSync>*)
                 partialSync = true;
                 break;
             }
-            m_itemsPendingSync.set(changed_it->first.isolatedCopy(), changed_it->second.isolatedCopy());
+            m_itemsPendingSync.set(changed_it->key.isolatedCopy(), changed_it->value.isolatedCopy());
         }
 
         if (partialSync) {
@@ -200,7 +227,7 @@ void StorageAreaSync::syncTimerFired(Timer<StorageAreaSync>*)
             HashMap<String, String>::iterator pending_it = m_itemsPendingSync.begin();
             HashMap<String, String>::iterator pending_end = m_itemsPendingSync.end();
             for (; pending_it != pending_end; ++pending_it)
-                m_changedItems.remove(pending_it->first);
+                m_changedItems.remove(pending_it->key);
         }
 
         if (!m_syncScheduled) {
@@ -210,7 +237,7 @@ void StorageAreaSync::syncTimerFired(Timer<StorageAreaSync>*)
             // performSync function.
             disableSuddenTermination();
 
-            m_syncManager->scheduleSync(this);
+            m_syncManager->dispatch(bind(&StorageAreaSync::performSync, this));
         }
     }
 
@@ -229,11 +256,17 @@ void StorageAreaSync::syncTimerFired(Timer<StorageAreaSync>*)
 
 void StorageAreaSync::openDatabase(OpenDatabaseParamType openingStrategy)
 {
+#if !PLATFORM(IOS)
+    ASSERT(!isMainThread());
+#else
     ASSERT(!(isMainThread() || pthread_main_np()));
+#endif
     ASSERT(!m_database.isOpen());
     ASSERT(!m_databaseOpenFailed);
 
+#if PLATFORM(IOS)
     SQLiteTransactionInProgressAutoCounter transactionCounter;
+#endif
     String databaseFilename = m_syncManager->fullDatabaseFilename(m_databaseIdentifier);
 
     if (!fileExists(databaseFilename) && openingStrategy == SkipIfNonExistent)
@@ -344,11 +377,7 @@ void StorageAreaSync::performImport()
         return;
     }
 
-    HashMap<String, String>::iterator it = itemMap.begin();
-    HashMap<String, String>::iterator end = itemMap.end();
-
-    for (; it != end; ++it)
-        m_storageArea->importItem(it->first, it->second);
+    m_storageArea->importItems(itemMap);
 
     markImported();
 }
@@ -369,7 +398,11 @@ void StorageAreaSync::markImported()
 // job first.
 void StorageAreaSync::blockUntilImportComplete()
 {
+#if !PLATFORM(IOS)
+    ASSERT(isMainThread());
+#else
     ASSERT(isMainThread() || pthread_main_np());
+#endif // !PLATFORM(IOS)
 
     // Fast path.  We set m_storageArea to 0 only after m_importComplete being true.
     if (!m_storageArea)
@@ -383,7 +416,11 @@ void StorageAreaSync::blockUntilImportComplete()
 
 void StorageAreaSync::sync(bool clearItems, const HashMap<String, String>& items)
 {
+#if !PLATFORM(IOS)
+    ASSERT(!isMainThread());
+#else
     ASSERT(!(isMainThread() || pthread_main_np()));
+#endif
 
     if (items.isEmpty() && !clearItems && !m_syncCloseDatabase)
         return;
@@ -409,7 +446,9 @@ void StorageAreaSync::sync(bool clearItems, const HashMap<String, String>& items
         return;
     }
     
+#if PLATFORM(IOS)
     SQLiteTransactionInProgressAutoCounter transactionCounter;
+#endif
     // If the clear flag is set, then we clear all items out before we write any new ones in.
     if (clearItems) {
         SQLiteStatement clear(m_database, "DELETE FROM ItemTable");
@@ -443,13 +482,13 @@ void StorageAreaSync::sync(bool clearItems, const HashMap<String, String>& items
     transaction.begin();
     for (HashMap<String, String>::const_iterator it = items.begin(); it != end; ++it) {
         // Based on the null-ness of the second argument, decide whether this is an insert or a delete.
-        SQLiteStatement& query = it->second.isNull() ? remove : insert;
+        SQLiteStatement& query = it->value.isNull() ? remove : insert;
 
-        query.bindText(1, it->first);
+        query.bindText(1, it->key);
 
         // If the second argument is non-null, we're doing an insert, so bind it as the value.
-        if (!it->second.isNull())
-            query.bindBlob(2, it->second);
+        if (!it->value.isNull())
+            query.bindBlob(2, it->value);
 
         int result = query.step();
         if (result != SQLResultDone) {
@@ -464,7 +503,11 @@ void StorageAreaSync::sync(bool clearItems, const HashMap<String, String>& items
 
 void StorageAreaSync::performSync()
 {
+#if !PLATFORM(IOS)
+    ASSERT(!isMainThread());
+#else
     ASSERT(!(isMainThread() || pthread_main_np()));
+#endif
 
     bool clearItems;
     HashMap<String, String> items;
@@ -516,7 +559,7 @@ void StorageAreaSync::deleteEmptyDatabase()
         query.finalize();
         m_database.close();
         if (StorageTracker::tracker().isActive())
-            StorageTracker::tracker().deleteOrigin(m_databaseIdentifier);
+            StorageTracker::tracker().deleteOriginWithIdentifier(m_databaseIdentifier);
         else {
             String databaseFilename = m_syncManager->fullDatabaseFilename(m_databaseIdentifier);
             if (!SQLiteFileSystem::deleteDatabaseFile(databaseFilename))

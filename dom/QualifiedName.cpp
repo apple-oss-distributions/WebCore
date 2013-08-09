@@ -101,10 +101,12 @@ void QualifiedName::deref()
         return;
 #endif
     ASSERT(!isHashTableDeletedValue());
-
-    if (m_impl->hasOneRef())
-        gNameCache->remove(m_impl);
     m_impl->deref();
+}
+
+QualifiedName::QualifiedNameImpl::~QualifiedNameImpl()
+{
+    gNameCache->remove(this);
 }
 
 String QualifiedName::toString() const
@@ -129,9 +131,15 @@ void QualifiedName::init()
         // Use placement new to initialize the globals.
         
         AtomicString::init();
-        new ((void*)&anyName) QualifiedName(nullAtom, starAtom, starAtom);
+        new (NotNull, (void*)&anyName) QualifiedName(nullAtom, starAtom, starAtom);
         initialized = true;
     }
+}
+
+const QualifiedName& nullQName()
+{
+    DEFINE_STATIC_LOCAL(QualifiedName, nullName, (nullAtom, nullAtom, nullAtom));
+    return nullName;
 }
 
 const AtomicString& QualifiedName::localNameUpper() const
@@ -141,16 +149,20 @@ const AtomicString& QualifiedName::localNameUpper() const
     return m_impl->m_localNameUpper;
 }
 
-void createQualifiedName(void* targetAddress, const char* name, unsigned nameLength, const AtomicString& nameNamespace)
+unsigned QualifiedName::QualifiedNameImpl::computeHash() const
 {
-    AtomicString atomicName(name, nameLength, AtomicString::ConstructFromLiteral);
-    new (reinterpret_cast<void*>(targetAddress)) QualifiedName(nullAtom, atomicName, nameNamespace);
+    QualifiedNameComponents components = { m_prefix.impl(), m_localName.impl(), m_namespace.impl() };
+    return hashComponents(components);
 }
 
-void createQualifiedName(void* targetAddress, const char* name, unsigned nameLength)
+void createQualifiedName(void* targetAddress, StringImpl* name, const AtomicString& nameNamespace)
 {
-    AtomicString atomicName(name, nameLength, AtomicString::ConstructFromLiteral);
-    new (reinterpret_cast<void*>(targetAddress)) QualifiedName(nullAtom, atomicName, nullAtom);
+    new (NotNull, reinterpret_cast<void*>(targetAddress)) QualifiedName(nullAtom, AtomicString(name), nameNamespace);
+}
+
+void createQualifiedName(void* targetAddress, StringImpl* name)
+{
+    new (NotNull, reinterpret_cast<void*>(targetAddress)) QualifiedName(nullAtom, AtomicString(name), nullAtom);
 }
 
 }

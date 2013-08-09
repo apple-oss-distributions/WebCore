@@ -26,3 +26,45 @@
 #import "config.h"
 #import "Hyphenation.h"
 
+#if !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED == 1060
+
+#import "AtomicStringKeyedMRUCache.h"
+#import "TextBreakIteratorInternalICU.h"
+#import "WebCoreSystemInterface.h"
+#import <wtf/RetainPtr.h>
+
+namespace WebCore {
+
+template<>
+bool AtomicStringKeyedMRUCache<bool>::createValueForNullKey()
+{
+    return !strcmp(currentSearchLocaleID(), "en");
+}
+
+template<>
+bool AtomicStringKeyedMRUCache<bool>::createValueForKey(const AtomicString& localeIdentifier)
+{
+    RetainPtr<CFStringRef> cfLocaleIdentifier = adoptCF(localeIdentifier.createCFString());
+    RetainPtr<CFDictionaryRef> components = adoptCF(CFLocaleCreateComponentsFromLocaleIdentifier(kCFAllocatorDefault, cfLocaleIdentifier.get()));
+    CFStringRef language = reinterpret_cast<CFStringRef>(CFDictionaryGetValue(components.get(), kCFLocaleLanguageCode));
+    static CFStringRef englishLanguage = CFSTR("en");
+    return language && CFEqual(language, englishLanguage);
+}
+
+bool canHyphenate(const AtomicString& localeIdentifier)
+{
+    DEFINE_STATIC_LOCAL(AtomicStringKeyedMRUCache<bool>, isEnglishCache, ());
+    return isEnglishCache.get(localeIdentifier);
+}
+
+size_t lastHyphenLocation(const UChar* characters, size_t length, size_t beforeIndex, const AtomicString& localeIdentifier)
+{
+    ASSERT_UNUSED(localeIdentifier, canHyphenate(localeIdentifier));
+
+    RetainPtr<CFStringRef> string = adoptCF(CFStringCreateWithCharactersNoCopy(kCFAllocatorDefault, characters, length, kCFAllocatorNull));
+    return wkGetHyphenationLocationBeforeIndex(string.get(), beforeIndex);
+}
+
+} // namespace WebCore
+
+#endif // !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED == 1060

@@ -26,6 +26,7 @@
 #import "config.h"
 #import "PlatformKeyboardEvent.h"
 
+#if PLATFORM(IOS)
 
 #import "NotImplemented.h"
 
@@ -75,3 +76,4 @@ void PlatformKeyboardEvent::getCurrentModifierState(bool& shiftKey, bool& ctrlKe
 
 }
 
+#endif // PLATFORM(IOS)

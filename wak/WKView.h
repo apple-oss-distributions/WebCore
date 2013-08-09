@@ -14,6 +14,8 @@
 extern "C" {
 #endif
 
+@class WAKWindow;
+
 enum {
     NSViewNotSizable = 0,
     NSViewMinXMargin = 1,
@@ -56,7 +58,7 @@ struct WKView {
     
     WKViewContext *context;
     
-    WKWindowRef window;
+    __unsafe_unretained WAKWindow *window;
 
     WKViewRef superview;
     CFMutableArrayRef subviews;
@@ -93,7 +95,7 @@ void WKViewSetScale (WKViewRef view, float scale);
 float WKViewGetScale (WKViewRef view);
 CGAffineTransform _WKViewGetTransform(WKViewRef view);
 
-WKWindowRef WKViewGetWindow (WKViewRef view);
+WAKWindow *WKViewGetWindow (WKViewRef view);
 
 CFArrayRef WKViewGetSubviews (WKViewRef view);
 

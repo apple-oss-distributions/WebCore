@@ -23,6 +23,7 @@
 #include "IntPoint.h"
 #include <wtf/Vector.h>
 
+#if ENABLE(TOUCH_EVENTS)
 
 #if PLATFORM(QT)
 #include <QTouchEvent>
@@ -61,9 +62,7 @@ public:
     {
     }
 
-#if PLATFORM(EFL)
-    PlatformTouchPoint(unsigned id, const IntPoint& windowPos, State);
-#elif PLATFORM(BLACKBERRY)
+#if PLATFORM(BLACKBERRY)
     PlatformTouchPoint(const BlackBerry::Platform::TouchPoint&);
 #endif
 
@@ -89,5 +88,6 @@ protected:
 
 }
 
+#endif // ENABLE(TOUCH_EVENTS)
 
 #endif // PlatformTouchPoint_h

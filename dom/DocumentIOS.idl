@@ -6,13 +6,7 @@
  * secrets or other rights.
  */
 
-        [AppleCopyright] Touch               createTouch(in DOMWindow view,
-                                        in EventTarget target,
-                                        in long identifier,
-                                        in long pageX,
-                                        in long pageY,
-                                        in long screenX,
-                                        in long screenY)
-            raises (DOMException);
-        [AppleCopyright, Custom] TouchList           createTouchList()
-            raises (DOMException);
+#if defined(ENABLE_TOUCH_EVENTS) && ENABLE_TOUCH_EVENTS
+    [AppleCopyright, RaisesException] Touch createTouch(DOMWindow view, EventTarget target, long identifier, long pageX, long pageY, long screenX, long screenY);
+    [AppleCopyright, Custom, RaisesException] TouchList createTouchList();
+#endif

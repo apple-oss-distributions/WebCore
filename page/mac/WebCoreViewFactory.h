@@ -28,6 +28,23 @@
 
 @protocol WebCoreViewFactory
 
+#if !PLATFORM(IOS)
+- (BOOL)objectIsTextMarker:(id)object;
+- (BOOL)objectIsTextMarkerRange:(id)object;
+
+- (WebCoreTextMarker *)textMarkerWithBytes:(const void *)bytes length:(size_t)length;
+- (BOOL)getBytes:(void *)bytes fromTextMarker:(WebCoreTextMarker *)textMarker length:(size_t)length;
+
+- (WebCoreTextMarkerRange *)textMarkerRangeWithStart:(WebCoreTextMarker *)start end:(WebCoreTextMarker *)end;
+- (WebCoreTextMarker *)startOfTextMarkerRange:(WebCoreTextMarkerRange *)range;
+- (WebCoreTextMarker *)endOfTextMarkerRange:(WebCoreTextMarkerRange *)range;
+
+- (void)accessibilityHandleFocusChanged;
+- (CGRect)accessibilityConvertScreenRect:(CGRect)bounds;
+
+- (AXUIElementRef)AXUIElementForElement:(id)element;
+- (void)unregisterUniqueIdForUIElement:(id)element;
+#endif // !PLATFORM(IOS)
 @end
 
 @interface WebCoreViewFactory : NSObject

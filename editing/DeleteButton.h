@@ -34,8 +34,12 @@ class DeleteButton : public HTMLImageElement {
 public:
     static PassRefPtr<DeleteButton> create(Document*);
 
+#if !PLATFORM(IOS)
+    virtual bool willRespondToMouseClickEvents() OVERRIDE { return true; }
+#endif // !PLATFORM(IOS)
+
 private:
-    DeleteButton(Document*);
+    explicit DeleteButton(Document*);
 
     virtual void defaultEventHandler(Event*);
 };

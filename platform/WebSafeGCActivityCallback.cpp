@@ -26,6 +26,7 @@
 #include "config.h"
 #include "WebSafeGCActivityCallback.h"
 
+#if PLATFORM(IOS)
 
 #include "WebCoreThread.h"
 
@@ -42,3 +43,4 @@ void WebSafeGCActivityCallback::synchronize()
 
 }
 
+#endif // PLATFORM(IOS)

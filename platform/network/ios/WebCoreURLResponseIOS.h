@@ -34,10 +34,11 @@
 #endif
 
 #include "MIMETypeRegistry.h"
-#include "PlatformString.h"
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
+#if USE(QUICK_LOOK)
     
 inline bool shouldUseQuickLookForMIMEType(const WTF::String& mimeType)
 {
@@ -55,6 +56,7 @@ inline bool shouldUseQuickLookForMIMEType(const WTF::String& mimeType)
     return false;
 }
 
+#endif // USE(QUICK_LOOK)
 
 } // namespace WebCore
 

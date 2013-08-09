@@ -28,6 +28,7 @@
 
 #include "BitmapInfo.h"
 #include "Frame.h"
+#include "FrameSelection.h"
 #include "FrameView.h"
 #include "GraphicsContextCG.h"
 #include "RenderObject.h"
@@ -93,14 +94,14 @@ HBITMAP imageFromSelection(Frame* frame, bool forceBlackText)
 
 DragImageRef Frame::nodeImage(Node* node)
 {
+    document()->updateLayout();
+
     RenderObject* renderer = node->renderer();
     if (!renderer)
         return 0;
 
     LayoutRect topLevelRect;
     IntRect paintingRect = pixelSnappedIntRect(renderer->paintingRootRect(topLevelRect));
-
-    document()->updateLayout();
 
     m_view->setNodeToDraw(node); // invoke special sub-tree drawing mode
     HBITMAP result = imageFromRect(this, paintingRect);

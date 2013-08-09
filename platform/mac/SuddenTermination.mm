@@ -26,16 +26,18 @@
 #import "config.h"
 #import "SuddenTermination.h"
 
-#ifndef BUILDING_ON_LEOPARD
+#if !PLATFORM(IOS)
 
 namespace WebCore {
 
 void disableSuddenTermination()
 {
+    [[NSProcessInfo processInfo] disableSuddenTermination];
 }
 
 void enableSuddenTermination()
 {
+    [[NSProcessInfo processInfo] enableSuddenTermination];
 }
 
 } // namespace WebCore

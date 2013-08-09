@@ -29,12 +29,13 @@
 
 #include "ContextDestructionObserver.h"
 #include <wtf/Assertions.h>
+#include <wtf/Forward.h>
 
 namespace WebCore {
 
 class ActiveDOMObject : public ContextDestructionObserver {
 public:
-    ActiveDOMObject(ScriptExecutionContext*, void* upcastPointer);
+    ActiveDOMObject(ScriptExecutionContext*);
 
     // suspendIfNeeded() should be called exactly once after object construction to synchronize
     // the suspend state with that in ScriptExecutionContext.
@@ -55,8 +56,12 @@ public:
         JavaScriptDebuggerPaused,
         WillDeferLoading,
         DocumentWillBecomeInactive,
+#if !PLATFORM(IOS)
+        PageWillBeSuspended
+#else
         PageWillBeSuspended,
         DocumentWillBePaused
+#endif
     };
     virtual bool canSuspend() const;
     virtual void suspend(ReasonForSuspension);

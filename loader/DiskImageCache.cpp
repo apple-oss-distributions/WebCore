@@ -28,7 +28,6 @@
 
 #if ENABLE(DISK_IMAGE_CACHE)
 
-#include "FileSystem.h"
 #include "Logging.h"
 #include "WebCoreThread.h"
 #include "WebCoreThreadRun.h"
@@ -78,7 +77,7 @@ bool DiskImageCache::Entry::mapInternal(const String& path)
         return false;
 
     // Write the data to the file.
-    if (writeToFile(handle, m_buffer->data(), m_size) == -1) {
+    if (writeToFileInternal(handle) == -1) {
         closeFile(handle);
         deleteFile(m_path);
         return false;
@@ -163,6 +162,25 @@ void DiskImageCache::Entry::clearDataWithoutMapping()
     ASSERT(m_buffer);
     m_buffer->deref();
     m_buffer = 0;
+}
+
+int DiskImageCache::Entry::writeToFileInternal(PlatformFileHandle handle)
+{
+    ASSERT(m_buffer);
+    int totalBytesWritten = 0;
+
+    const char* segment = NULL;
+    unsigned position = 0;
+    while (unsigned length = m_buffer->getSomeData(segment, position)) {
+        int bytesWritten = writeToFile(handle, segment, length);
+        if (bytesWritten == -1)
+            return -1;
+
+        totalBytesWritten += bytesWritten;
+        position += length;
+    }
+
+    return totalBytesWritten;
 }
 
 

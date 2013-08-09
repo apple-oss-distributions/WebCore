@@ -29,6 +29,28 @@
 #include <wtf/FastAllocBase.h>
 #include <wtf/Noncopyable.h>
 
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+
+#include <wtf/RetainPtr.h>
+#include "Timer.h"
+
+typedef const struct __CFArray * CFArrayRef;
+typedef const struct __SCDynamicStore * SCDynamicStoreRef;
+
+#elif PLATFORM(WIN)
+
+#include <windows.h>
+
+#elif PLATFORM(QT)
+
+#include <QtCore/qglobal.h>
+
+#elif PLATFORM(EFL)
+
+typedef struct _Ecore_Fd_Handler Ecore_Fd_Handler;
+typedef unsigned char Eina_Bool;
+
+#endif
 
 namespace WebCore {
 
@@ -40,16 +62,19 @@ class NetworkStateNotifier {
     WTF_MAKE_NONCOPYABLE(NetworkStateNotifier); WTF_MAKE_FAST_ALLOCATED;
 public:
     NetworkStateNotifier();
+#if PLATFORM(EFL)
+    ~NetworkStateNotifier();
+#endif
     void setNetworkStateChangedFunction(void (*)());
 
     bool onLine() const { return m_isOnLine; }
     
+#if PLATFORM(IOS)
     void setIsOnLine(bool isOnLine);
+#endif
 
 #if (PLATFORM(QT) && !defined(QT_NO_BEARERMANAGEMENT))
     void setNetworkAccessAllowed(bool);
-#elif PLATFORM(CHROMIUM) || PLATFORM(EFL)
-    void setOnLine(bool);
 #endif
 
 #if PLATFORM(BLACKBERRY)
@@ -62,9 +87,37 @@ private:
 
     void updateState();
 
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+    void networkStateChangeTimerFired(Timer<NetworkStateNotifier>*);
+
+    static void dynamicStoreCallback(SCDynamicStoreRef, CFArrayRef changedKeys, void *info); 
+
+    RetainPtr<SCDynamicStoreRef> m_store;
+    Timer<NetworkStateNotifier> m_networkStateChangeTimer;
+
+#elif PLATFORM(WIN)
+    static void CALLBACK addrChangeCallback(void*, BOOLEAN timedOut);
+    static void callAddressChanged(void*);
+    void addressChanged();
+
+    void registerForAddressChange();
+    HANDLE m_waitHandle;
+    OVERLAPPED m_overlapped;
+
+#elif PLATFORM(EFL)
+    void networkInterfaceChanged();
+    static Eina_Bool readSocketCallback(void* userData, Ecore_Fd_Handler*);
+
+    int m_netlinkSocket;
+    Ecore_Fd_Handler* m_fdHandler;
+
+#elif (PLATFORM(QT) && !defined(QT_NO_BEARERMANAGEMENT))
+    friend class NetworkStateNotifierPrivate;
+    NetworkStateNotifierPrivate* p;
+#endif
 };
 
-#if !PLATFORM(MAC) && !PLATFORM(WIN) && !(PLATFORM(QT) && !defined(QT_NO_BEARERMANAGEMENT)) && !PLATFORM(BLACKBERRY)
+#if !PLATFORM(MAC) && !PLATFORM(WIN) && !(PLATFORM(QT) && !defined(QT_NO_BEARERMANAGEMENT)) && !PLATFORM(BLACKBERRY) && !PLATFORM(EFL)
 
 inline NetworkStateNotifier::NetworkStateNotifier()
     : m_isOnLine(true)

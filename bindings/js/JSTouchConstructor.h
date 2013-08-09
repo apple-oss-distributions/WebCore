@@ -18,6 +18,7 @@
 
 #include <wtf/Platform.h>
 
+#if ENABLE(TOUCH_EVENTS)
 
 #include "JSDOMBinding.h"
 #include "JSDocument.h"
@@ -35,9 +36,9 @@ public:
         return constructor;
     }
 
-    static JSC::Structure* createStructure(JSC::JSGlobalData& globalData, JSC::JSGlobalObject* globalObject, JSC::JSValue prototype)
+    static JSC::Structure* createStructure(JSC::VM& vm, JSC::JSGlobalObject* globalObject, JSC::JSValue prototype)
     {
-        return JSC::Structure::create(globalData, globalObject, prototype, JSC::TypeInfo(JSC::ObjectType, StructureFlags), &s_info);
+        return JSC::Structure::create(vm, globalObject, prototype, JSC::TypeInfo(JSC::ObjectType, StructureFlags), &s_info);
     }
 
     static const JSC::ClassInfo s_info;
@@ -50,5 +51,6 @@ private:
 
 }
 
+#endif // ENABLE(TOUCH_EVENTS)
 
 #endif // JSTouchConstructor_h

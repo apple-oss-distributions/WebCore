@@ -45,10 +45,6 @@ SQLiteFileSystem::SQLiteFileSystem()
 {
 }
 
-void SQLiteFileSystem::registerSQLiteVFS()
-{
-}
-
 int SQLiteFileSystem::openDatabase(const String& fileName, sqlite3** database, bool)
 {
     // SQLite expects a null terminator on its UTF-16 strings.
@@ -76,10 +72,10 @@ String SQLiteFileSystem::getFileNameForNewDatabase(const String& dbDir, const St
     String fileName;
     do {
         ++seq;
-        fileName = pathByAppendingComponent(dbDir, String::format("%016"PRIx64".db", seq));
+        fileName = pathByAppendingComponent(dbDir, String::format("%016" PRIx64 ".db", seq));
     } while (fileExists(fileName));
 
-    return String::format("%016"PRIx64".db", seq);
+    return String::format("%016" PRIx64 ".db", seq);
 }
 
 String SQLiteFileSystem::appendDatabaseFileNameToPath(const String& path, const String& fileName)
@@ -117,10 +113,12 @@ bool SQLiteFileSystem::deleteDatabaseFile(const String& fileName)
     return deleteFile(fileName);
 }
 
+#if PLATFORM(IOS)
 bool SQLiteFileSystem::truncateDatabaseFile(sqlite3* database)
 {
     return sqlite3_file_control(database, 0, SQLITE_TRUNCATE_DATABASE, 0) == SQLITE_OK;
 }
+#endif
     
 long long SQLiteFileSystem::getDatabaseFileSize(const String& fileName)
 {        

@@ -38,7 +38,9 @@ namespace WebCore {
 
 SharedBuffer::SharedBuffer(CFDataRef cfData)
     : m_size(0)
+#if PLATFORM(IOS)
     , m_shouldUsePurgeableMemory(false)
+#endif
 #if ENABLE(DISK_IMAGE_CACHE)
     , m_isMemoryMapped(false)
     , m_diskImageCacheId(DiskImageCache::invalidDiskCacheId)
@@ -51,7 +53,7 @@ SharedBuffer::SharedBuffer(CFDataRef cfData)
 
 // Mac is a CF platform but has an even more efficient version of this method,
 // so only use this version for non-Mac
-#if !PLATFORM(MAC) && !(PLATFORM(QT) && USE(QTKIT))
+#if !PLATFORM(MAC)
 CFDataRef SharedBuffer::createCFData()
 {
     if (m_cfData) {
@@ -77,7 +79,7 @@ bool SharedBuffer::hasPlatformData() const
 
 const char* SharedBuffer::platformData() const
 {
-    return (const char*)CFDataGetBytePtr(m_cfData.get());
+    return reinterpret_cast<const char*>(CFDataGetBytePtr(m_cfData.get()));
 }
 
 unsigned SharedBuffer::platformDataSize() const
@@ -91,10 +93,12 @@ void SharedBuffer::maybeTransferPlatformData()
         return;
     
     ASSERT(!m_size);
-        
-    append((const char*)CFDataGetBytePtr(m_cfData.get()), CFDataGetLength(m_cfData.get()));
-        
-    m_cfData = 0;
+    
+    // Hang on to the m_cfData pointer in a local pointer as append() will re-enter maybeTransferPlatformData()
+    // and we need to make sure to early return when it does.
+    RetainPtr<CFDataRef> cfData = adoptCF(m_cfData.leakRef());
+
+    append(reinterpret_cast<const char*>(CFDataGetBytePtr(cfData.get())), CFDataGetLength(cfData.get()));
 }
 
 void SharedBuffer::clearPlatformData()
@@ -102,7 +106,16 @@ void SharedBuffer::clearPlatformData()
     m_cfData = 0;
 }
 
-#if HAVE(NETWORK_CFDATA_ARRAY_CALLBACK)
+void SharedBuffer::tryReplaceContentsWithPlatformBuffer(SharedBuffer* newContents)
+{
+    if (!newContents->m_cfData)
+        return;
+
+    clear();
+    m_cfData = newContents->m_cfData;
+}
+
+#if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
 void SharedBuffer::append(CFDataRef data)
 {
     ASSERT(data);
@@ -142,6 +155,19 @@ unsigned SharedBuffer::copySomeDataFromDataArray(const char*& someData, unsigned
         totalOffset += dataLen;
     }
     return 0;
+}
+
+const char *SharedBuffer::singleDataArrayBuffer() const
+{
+    // If we had previously copied data into m_buffer in copyDataArrayAndClear() or some other
+    // function, then we can't return a pointer to the CFDataRef buffer.
+    if (m_buffer.size())
+        return 0;
+
+    if (m_dataArray.size() != 1)
+        return 0;
+
+    return reinterpret_cast<const char*>(CFDataGetBytePtr(m_dataArray.at(0).get()));
 }
 #endif
 

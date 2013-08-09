@@ -32,15 +32,17 @@
 
 #include "AudioBus.h"
 #include "AudioDestination.h"
+#include "AudioSessionListener.h"
 #include <AudioUnit/AudioUnit.h>
+#include <wtf/RefPtr.h>
 
 namespace WebCore {
 
 // An AudioDestination using CoreAudio's default output AudioUnit
 
-class AudioDestinationIOS : public AudioDestination {
+class AudioDestinationIOS : public AudioDestination, public AudioSessionListener {
 public:
-    AudioDestinationIOS(AudioSourceProvider&, double sampleRate);
+    AudioDestinationIOS(AudioIOCallback&, double sampleRate);
     virtual ~AudioDestinationIOS();
 
     virtual void start();
@@ -49,13 +51,12 @@ public:
 
     float sampleRate() const { return m_sampleRate; }
 
-
 private:
     void configure();
     static void initializeAudioSession();
     static void audioDestinationInterruptionListener(void *userData, UInt32 interruptionState);
-    void beganAudioInterruption();
-    void endedAudioInterruption();
+    virtual void beganAudioInterruption() OVERRIDE;
+    virtual void endedAudioInterruption() OVERRIDE;
 
     // DefaultOutputUnit callback
     static OSStatus inputProc(void* userData, AudioUnitRenderActionFlags*, const AudioTimeStamp*, UInt32 busNumber, UInt32 numberOfFrames, AudioBufferList* ioData);
@@ -66,8 +67,8 @@ private:
     OSStatus render(UInt32 numberOfFrames, AudioBufferList* ioData);
 
     AudioUnit m_outputUnit;
-    AudioSourceProvider& m_provider;
-    AudioBus m_renderBus;
+    AudioIOCallback& m_callback;
+    RefPtr<AudioBus> m_renderBus;
 
     double m_sampleRate;
     bool m_isPlaying;

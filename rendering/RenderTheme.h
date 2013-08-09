@@ -35,20 +35,23 @@
 
 namespace WebCore {
 
+class CSSStyleSheet;
 class Element;
 class FileList;
 class HTMLInputElement;
 class PopupMenu;
 class RenderMenuList;
-#if ENABLE(METER_TAG)
+#if ENABLE(METER_ELEMENT)
 class RenderMeter;
 #endif
-#if ENABLE(PROGRESS_TAG)
+#if ENABLE(PROGRESS_ELEMENT)
 class RenderProgress;
 #endif
-class CSSStyleSheet;
+class RenderSnapshottedPlugIn;
 
+#if PLATFORM(IOS)
 class Icon;
+#endif
 
 class RenderTheme : public RefCounted<RenderTheme> {
 protected:
@@ -87,23 +90,21 @@ public:
     // RenderThemeMac.cpp for Mac OS X.
 
     // These methods return the theme's extra style sheets rules, to let each platform
-    // adjust the default CSS rules in html.css, quirks.css, or mediaControls.css
+    // adjust the default CSS rules in html.css, quirks.css, mediaControls.css, or plugIns.css
     virtual String extraDefaultStyleSheet() { return String(); }
     virtual String extraQuirksStyleSheet() { return String(); }
+    virtual String extraPlugInsStyleSheet() { return String(); }
 #if ENABLE(VIDEO)
-    virtual String extraMediaControlsStyleSheet() { return String(); };
+    virtual String extraMediaControlsStyleSheet() { return String(); }
 #endif
 #if ENABLE(FULLSCREEN_API)
-    virtual String extraFullScreenStyleSheet() { return String(); };
-#endif
-#if ENABLE(CALENDAR_PICKER)
-    virtual CString extraCalendarPickerStyleSheet();
+    virtual String extraFullScreenStyleSheet() { return String(); }
 #endif
 
     // A method to obtain the baseline position for a "leaf" control.  This will only be used if a baseline
     // position cannot be determined by examining child content. Checkboxes and radio buttons are examples of
     // controls that need to do this.
-    virtual LayoutUnit baselinePosition(const RenderObject*) const;
+    virtual int baselinePosition(const RenderObject*) const;
 
     // A method for asking if a control is a container or not.  Leaf controls have to have some special behavior (like
     // the baseline position API above).
@@ -160,18 +161,21 @@ public:
     static Color focusRingColor();
     virtual Color platformFocusRingColor() const { return Color(0, 0, 0); }
     static void setCustomFocusRingColor(const Color&);
+#if ENABLE(TOUCH_EVENTS)
     static Color tapHighlightColor();
     virtual Color platformTapHighlightColor() const { return RenderTheme::defaultTapHighlightColor; }
+#endif
     virtual void platformColorsDidChange();
 
     virtual double caretBlinkInterval() const { return 0.5; }
 
     // System fonts and colors for CSS.
+    virtual void systemFont(int cssValueId, FontDescription&) const = 0;
     virtual Color systemColor(int cssValueId) const;
 
     virtual int minimumMenuListSize(RenderStyle*) const { return 0; }
 
-    virtual void adjustSliderThumbSize(RenderStyle*) const;
+    virtual void adjustSliderThumbSize(RenderStyle*, Element*) const;
 
     virtual int popupInternalPaddingLeft(RenderStyle*) const { return 0; }
     virtual int popupInternalPaddingRight(RenderStyle*) const { return 0; }
@@ -184,13 +188,16 @@ public:
     // Method for painting the caps lock indicator
     virtual bool paintCapsLockIndicator(RenderObject*, const PaintInfo&, const IntRect&) { return 0; };
 
-#if ENABLE(PROGRESS_TAG)
+#if ENABLE(PROGRESS_ELEMENT)
     // Returns the repeat interval of the animation for the progress bar.
     virtual double animationRepeatIntervalForProgressBar(RenderProgress*) const;
     // Returns the duration of the animation for the progress bar.
     virtual double animationDurationForProgressBar(RenderProgress*) const;
 #endif
 
+#if PLATFORM(IOS)
+// FIXME: These should NOT be PLATFORM(IOS), they should really migrate back to TOT
+// FIXME: MIGRATE
     virtual bool paintCheckboxDecorations(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintRadioDecorations(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintButtonDecorations(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
@@ -205,6 +212,7 @@ public:
 
     enum FileUploadDecorations { SingleFile, MultipleFiles };
     virtual bool paintFileUploadIconDecorations(RenderObject* /*inputRenderer*/, RenderObject* /*buttonRenderer*/, const PaintInfo&, const IntRect&, Icon*, FileUploadDecorations) { return true; }
+#endif
 
 #if ENABLE(VIDEO)
     // Media controls
@@ -212,6 +220,7 @@ public:
     virtual bool hasOwnDisabledStateHandlingFor(ControlPart) const { return false; }
     virtual bool usesMediaControlStatusDisplay() { return false; }
     virtual bool usesMediaControlVolumeSlider() const { return true; }
+    virtual bool usesVerticalVolumeSlider() const { return true; }
     virtual double mediaControlsFadeInDuration() { return 0.1; }
     virtual double mediaControlsFadeOutDuration() { return 0.3; }
     virtual String formatMediaControlsTime(float time) const;
@@ -222,11 +231,22 @@ public:
     virtual IntPoint volumeSliderOffsetFromMuteButton(RenderBox*, const IntSize&) const;
 #endif
 
-#if ENABLE(METER_TAG)
+#if ENABLE(METER_ELEMENT)
     virtual IntSize meterSizeForBounds(const RenderMeter*, const IntRect&) const;
     virtual bool supportsMeter(ControlPart) const;
 #endif
-    
+
+#if ENABLE(DATALIST_ELEMENT)
+    // Returns the threshold distance for snapping to a slider tick mark.
+    virtual LayoutUnit sliderTickSnappingThreshold() const;
+    // Returns size of one slider tick mark for a horizontal track.
+    // For vertical tracks we rotate it and use it. i.e. Width is always length along the track.
+    virtual IntSize sliderTickSize() const = 0;
+    // Returns the distance of slider tick origin from the slider track center.
+    virtual int sliderTickOffsetFromTrackCenter() const = 0;
+    void paintSliderTicks(RenderObject*, const PaintInfo&, const IntRect&);
+#endif
+
     virtual bool shouldShowPlaceholderWhenFocused() const { return false; }
     virtual bool shouldHaveSpinButton(HTMLInputElement*) const;
 
@@ -237,6 +257,8 @@ public:
 
     virtual String fileListDefaultLabel(bool multipleFilesAllowed) const;
     virtual String fileListNameForWidth(const FileList*, const Font&, int width, bool multipleFilesAllowed) const;
+
+    virtual bool shouldOpenPickerWithF4Key() const;
 
 protected:
     // The platform selection color.
@@ -283,12 +305,12 @@ protected:
     virtual void adjustMenuListButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
     virtual bool paintMenuListButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
 
-#if ENABLE(METER_TAG)
+#if ENABLE(METER_ELEMENT)
     virtual void adjustMeterStyle(StyleResolver*, RenderStyle*, Element*) const;
     virtual bool paintMeter(RenderObject*, const PaintInfo&, const IntRect&);
 #endif
 
-#if ENABLE(PROGRESS_TAG)
+#if ENABLE(PROGRESS_ELEMENT)
     virtual void adjustProgressBarStyle(StyleResolver*, RenderStyle*, Element*) const;
     virtual bool paintProgressBar(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
 #endif
@@ -319,8 +341,10 @@ protected:
     virtual void adjustSearchFieldResultsButtonStyle(StyleResolver*, RenderStyle*, Element*) const;
     virtual bool paintSearchFieldResultsButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
 
+    virtual void adjustMediaControlStyle(StyleResolver*, RenderStyle*, Element*) const;
     virtual bool paintMediaFullscreenButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaPlayButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
+    virtual bool paintMediaOverlayPlayButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaMuteButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaSeekBackButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaSeekForwardButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
@@ -337,6 +361,8 @@ protected:
     virtual bool paintMediaTimeRemaining(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaFullScreenVolumeSliderTrack(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaFullScreenVolumeSliderThumb(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
+
+    virtual bool paintSnapshottedPluginOverlay(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
 
 public:
     // Methods for state querying
@@ -364,7 +390,11 @@ private:
     mutable Color m_activeListBoxSelectionForegroundColor;
     mutable Color m_inactiveListBoxSelectionForegroundColor;
 
-    static const RGBA32 defaultTapHighlightColor = 0x33000000;
+#if ENABLE(TOUCH_EVENTS)
+    // This color is expected to be drawn on a semi-transparent overlay,
+    // making it more transparent than its alpha value indicates.
+    static const RGBA32 defaultTapHighlightColor = 0x66000000;
+#endif
 
 #if USE(NEW_THEME)
     Theme* m_theme; // The platform-specific theme.

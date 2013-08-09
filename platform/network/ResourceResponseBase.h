@@ -29,7 +29,6 @@
 
 #include "HTTPHeaderMap.h"
 #include "KURL.h"
-#include "ResourceLoadInfo.h"
 #include "ResourceLoadTiming.h"
 
 #include <wtf/PassOwnPtr.h>
@@ -68,7 +67,8 @@ public:
     const String& textEncodingName() const;
     void setTextEncodingName(const String& name);
 
-    // FIXME should compute this on the fly
+    // FIXME: Should compute this on the fly.
+    // There should not be a setter exposed, as suggested file name is determined based on other headers in a manner that WebCore does not necessarily know about.
     const String& suggestedFilename() const;
     void setSuggestedFilename(const String&);
 
@@ -81,17 +81,13 @@ public:
     String httpHeaderField(const AtomicString& name) const;
     String httpHeaderField(const char* name) const;
     void setHTTPHeaderField(const AtomicString& name, const String& value);
+    void addHTTPHeaderField(const AtomicString& name, const String& value);
     const HTTPHeaderMap& httpHeaderFields() const;
 
     bool isMultipart() const { return mimeType() == "multipart/x-mixed-replace"; }
 
     bool isAttachment() const;
     
-    // FIXME: These are used by PluginStream on some platforms. Calculations may differ from just returning plain Last-odified header.
-    // Leaving it for now but this should go away in favor of generic solution.
-    void setLastModifiedDate(time_t);
-    time_t lastModifiedDate() const; 
-
     // These functions return parsed values of the corresponding response headers.
     // NaN means that the header was not present or had invalid value.
     bool cacheControlContainsNoCache() const;
@@ -115,9 +111,6 @@ public:
 
     ResourceLoadTiming* resourceLoadTiming() const;
     void setResourceLoadTiming(PassRefPtr<ResourceLoadTiming>);
-
-    PassRefPtr<ResourceLoadInfo> resourceLoadInfo() const;
-    void setResourceLoadInfo(PassRefPtr<ResourceLoadInfo>);
 
     // The ResourceResponse subclass may "shadow" this method to provide platform-specific memory usage information
     unsigned memoryUsage() const
@@ -155,18 +148,17 @@ protected:
     int m_httpStatusCode;
     String m_httpStatusText;
     HTTPHeaderMap m_httpHeaderFields;
-    time_t m_lastModifiedDate;
     bool m_wasCached : 1;
     unsigned m_connectionID;
     bool m_connectionReused : 1;
     RefPtr<ResourceLoadTiming> m_resourceLoadTiming;
-    RefPtr<ResourceLoadInfo> m_resourceLoadInfo;
 
     bool m_isNull : 1;
     
 private:
     const ResourceResponse& asResourceResponse() const;
     void parseCacheControlDirectives() const;
+    void updateHeaderParsedState(const AtomicString& name);
 
     mutable bool m_haveParsedCacheControlHeader : 1;
     mutable bool m_haveParsedAgeHeader : 1;
@@ -189,7 +181,7 @@ inline bool operator==(const ResourceResponse& a, const ResourceResponse& b) { r
 inline bool operator!=(const ResourceResponse& a, const ResourceResponse& b) { return !(a == b); }
 
 struct CrossThreadResourceResponseDataBase {
-    WTF_MAKE_NONCOPYABLE(CrossThreadResourceResponseDataBase);
+    WTF_MAKE_NONCOPYABLE(CrossThreadResourceResponseDataBase); WTF_MAKE_FAST_ALLOCATED;
 public:
     CrossThreadResourceResponseDataBase() { }
     KURL m_url;
@@ -200,7 +192,6 @@ public:
     int m_httpStatusCode;
     String m_httpStatusText;
     OwnPtr<CrossThreadHTTPHeaderMapData> m_httpHeaders;
-    time_t m_lastModifiedDate;
     RefPtr<ResourceLoadTiming> m_resourceLoadTiming;
 };
 

@@ -28,18 +28,35 @@
 #include "NavigatorBase.h"
 
 #include "NetworkStateNotifier.h"
-#include "PlatformString.h"
+#include <wtf/text/WTFString.h>
+
 #if OS(LINUX)
 #include "sys/utsname.h"
 #include <wtf/StdLibExtras.h>
 #endif
 
+#if PLATFORM(IOS)
 extern "C" {
 #include <GraphicsServices/GraphicsServices.h>
+#include <MobileGestalt.h>
 }
+#include <wtf/RetainPtr.h>
+#endif
 
 #ifndef WEBCORE_NAVIGATOR_PLATFORM
-#define WEBCORE_NAVIGATOR_PLATFORM (String(GSGetDeviceName()))
+#if PLATFORM(IOS)
+#define WEBCORE_NAVIGATOR_PLATFORM ""
+#elif OS(MAC_OS_X) && (CPU(PPC) || CPU(PPC64))
+#define WEBCORE_NAVIGATOR_PLATFORM "MacPPC"
+#elif OS(MAC_OS_X) && (CPU(X86) || CPU(X86_64))
+#define WEBCORE_NAVIGATOR_PLATFORM "MacIntel"
+#elif OS(WINDOWS)
+#define WEBCORE_NAVIGATOR_PLATFORM "Win32"
+#elif PLATFORM(BLACKBERRY)
+#define WEBCORE_NAVIGATOR_PLATFORM "BlackBerry"
+#else
+#define WEBCORE_NAVIGATOR_PLATFORM ""
+#endif
 #endif // ifndef WEBCORE_NAVIGATOR_PLATFORM
 
 #ifndef WEBCORE_NAVIGATOR_PRODUCT
@@ -84,6 +101,9 @@ String NavigatorBase::platform() const
         return WEBCORE_NAVIGATOR_PLATFORM;
     struct utsname osname;
     DEFINE_STATIC_LOCAL(String, platformName, (uname(&osname) >= 0 ? String(osname.sysname) + String(" ") + String(osname.machine) : emptyString()));
+    return platformName;
+#elif PLATFORM(IOS)
+    DEFINE_STATIC_LOCAL(String, platformName, (RetainPtr<CFStringRef>(AdoptCF,(CFStringRef)MGCopyAnswer(kMGQDeviceName, NULL)).get()));
     return platformName;
 #else
     return WEBCORE_NAVIGATOR_PLATFORM;

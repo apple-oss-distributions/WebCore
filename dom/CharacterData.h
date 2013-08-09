@@ -35,7 +35,7 @@ public:
     unsigned length() const { return m_data.length(); }
     String substringData(unsigned offset, unsigned count, ExceptionCode&);
     void appendData(const String&, ExceptionCode&);
-    void insertData(unsigned offset, const String&, ExceptionCode&, bool canShowLastCharacterIfSecure = true);
+    void insertData(unsigned offset, const String&, ExceptionCode&);
     void deleteData(unsigned offset, unsigned count, ExceptionCode&);
     void replaceData(unsigned offset, unsigned count, const String&, ExceptionCode&);
 
@@ -45,17 +45,15 @@ public:
 
     // Like appendData, but optimized for the parser (e.g., no mutation events).
     // Returns how much could be added before length limit was met.
-    unsigned parserAppendData(const UChar*, unsigned dataLength, unsigned lengthLimit);
+    unsigned parserAppendData(const String& string, unsigned offset, unsigned lengthLimit);
 
 protected:
     CharacterData(Document* document, const String& text, ConstructionType type)
         : Node(document, type)
         , m_data(!text.isNull() ? text : emptyString())
     {
-        ASSERT(type == CreateOther || type == CreateText);
+        ASSERT(type == CreateOther || type == CreateText || type == CreateEditingText);
     }
-
-    virtual bool rendererIsNeeded(const NodeRenderingContext&);
 
     void setDataWithoutUpdate(const String& data)
     {
@@ -65,18 +63,12 @@ protected:
     void dispatchModifiedEvent(const String& oldValue);
 
 private:
-    virtual String nodeValue() const;
-    virtual void setNodeValue(const String&, ExceptionCode&);
-    virtual bool isCharacterDataNode() const { return true; }
-    virtual int maxCharacterOffset() const;
-    virtual bool offsetInCharacters() const;
-    enum LastCharacterBehavior {
-        DefaultLastCharacterBehavior,
-        RevealLastCharacterBehavior,
-        SecureLastCharacterBehavior,
-    };
-    void setDataAndUpdate(const String&, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength, LastCharacterBehavior = DefaultLastCharacterBehavior);
-    void updateRenderer(unsigned offsetOfReplacedData, unsigned lengthOfReplacedData, LastCharacterBehavior = DefaultLastCharacterBehavior);
+    virtual String nodeValue() const OVERRIDE FINAL;
+    virtual void setNodeValue(const String&, ExceptionCode&) OVERRIDE FINAL;
+    virtual bool isCharacterDataNode() const OVERRIDE FINAL { return true; }
+    virtual int maxCharacterOffset() const OVERRIDE FINAL;
+    virtual bool offsetInCharacters() const OVERRIDE FINAL;
+    void setDataAndUpdate(const String&, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength);
     void checkCharDataOperation(unsigned offset, ExceptionCode&);
 
     String m_data;

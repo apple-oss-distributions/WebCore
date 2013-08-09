@@ -36,17 +36,21 @@
 #include <wtf/Vector.h>
 #include <wtf/unicode/CharacterNames.h>
 
-#include <wtf/UnusedParam.h>
-
 namespace WebCore {
 
 #define STRING_BUFFER_SIZE 2048
 
+#if PLATFORM(IOS)
 #define ELLIPSIS_CHARACTER 0x2026
 #define SPACE_CHARACTER 0x0020
+#endif
 
     
+#if PLATFORM(IOS)
 typedef unsigned TruncationFunction(const String&, unsigned length, unsigned keepCount, UChar* buffer, bool insertEllipsis);
+#else
+typedef unsigned TruncationFunction(const String&, unsigned length, unsigned keepCount, UChar* buffer);
+#endif
     
 static inline int textBreakAtOrPreceding(TextBreakIterator* it, int offset)
 {
@@ -63,7 +67,11 @@ static inline int boundedTextBreakFollowing(TextBreakIterator* it, int offset, i
     return result == TextBreakDone ? length : result;
 }
     
+#if PLATFORM(IOS)
 static unsigned centerTruncateToBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer, bool insertEllipsis)
+#else
+static unsigned centerTruncateToBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer)
+#endif
 {
     ASSERT(keepCount < length);
     ASSERT(keepCount < STRING_BUFFER_SIZE);
@@ -73,6 +81,7 @@ static unsigned centerTruncateToBuffer(const String& string, unsigned length, un
     unsigned omitEnd = boundedTextBreakFollowing(it, omitStart + (length - keepCount) - 1, length);
     omitStart = textBreakAtOrPreceding(it, omitStart);
 
+#if PLATFORM(IOS)
     // Strip single character before ellipsis character, when that character is preceded by a space
     if (omitStart > 1 && string[omitStart - 1] != SPACE_CHARACTER &&
         omitStart > 2 && string[omitStart - 2] == SPACE_CHARACTER)
@@ -86,10 +95,16 @@ static unsigned centerTruncateToBuffer(const String& string, unsigned length, un
         omitEnd++;
     while ((length - omitEnd) > 1 && string[omitEnd] == SPACE_CHARACTER)
         omitEnd++;
+#endif
 
+#if PLATFORM(IOS)
     unsigned truncatedLength = insertEllipsis ? omitStart + 1 + (length - omitEnd) : length - (omitEnd - omitStart);
+#else
+    unsigned truncatedLength = omitStart + 1 + (length - omitEnd);
+#endif
     ASSERT(truncatedLength <= length);
 
+#if PLATFORM(IOS)
     memcpy(buffer, string.characters(), sizeof(UChar) * omitStart);
     if (insertEllipsis) {
         buffer[omitStart] = horizontalEllipsis;
@@ -97,15 +112,25 @@ static unsigned centerTruncateToBuffer(const String& string, unsigned length, un
     } else {
         memcpy(&buffer[omitStart], &string.characters()[omitEnd], sizeof(UChar) * (length - omitEnd));
     }
+#else
+    memcpy(buffer, string.characters(), sizeof(UChar) * omitStart);
+    buffer[omitStart] = horizontalEllipsis;
+    memcpy(&buffer[omitStart + 1], &string.characters()[omitEnd], sizeof(UChar) * (length - omitEnd));
+#endif
     
     return truncatedLength;
 }
 
+#if PLATFORM(IOS)
 static unsigned rightTruncateToBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer, bool insertEllipsis)
+#else    
+static unsigned rightTruncateToBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer)
+#endif
 {
     ASSERT(keepCount < length);
     ASSERT(keepCount < STRING_BUFFER_SIZE);
 
+#if PLATFORM(IOS)
     // Strip single character before ellipsis character, when that character is preceded by a space
     if (keepCount > 1 && string[keepCount - 1] != SPACE_CHARACTER &&
         keepCount > 2 && string[keepCount - 2] == SPACE_CHARACTER)
@@ -113,18 +138,28 @@ static unsigned rightTruncateToBuffer(const String& string, unsigned length, uns
     // Strip whitespace before the ellipsis character
     while (keepCount > 1 && string[keepCount - 1] == SPACE_CHARACTER)
         keepCount--;
+#endif
     
     NonSharedCharacterBreakIterator it(string.characters(), length);
     unsigned keepLength = textBreakAtOrPreceding(it, keepCount);
+#if PLATFORM(IOS)
     unsigned truncatedLength = insertEllipsis ? keepLength + 1 : keepLength;
+#else
+    unsigned truncatedLength = keepLength + 1;
+#endif
 
     memcpy(buffer, string.characters(), sizeof(UChar) * keepLength);
+#if PLATFORM(IOS)
     if (insertEllipsis)
         buffer[keepLength] = horizontalEllipsis;
+#else
+    buffer[keepLength] = horizontalEllipsis;
+#endif
     
     return truncatedLength;
 }
     
+#if PLATFORM(IOS)
 static unsigned rightClipToCharacterBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer, bool insertEllipsis)
 {
     UNUSED_PARAM(insertEllipsis);
@@ -150,14 +185,18 @@ static unsigned rightClipToWordBuffer(const String& string, unsigned length, uns
     unsigned keepLength = textBreakAtOrPreceding(it, keepCount);
     memcpy(buffer, string.characters(), sizeof(UChar) * keepLength);
     
+#if PLATFORM(IOS) 
     // Motivated by rdar://problem/7439327> truncation should not include a trailing space
     while ((keepLength > 0) && (string[keepLength - 1] == SPACE_CHARACTER))
         keepLength--;
+#endif
     return keepLength;
 }
     
 
+#endif
 
+#if PLATFORM(IOS)
 static unsigned leftTruncateToBuffer(const String& string, unsigned length, unsigned keepCount, UChar* buffer, bool insertEllipsis)
 {
     ASSERT(keepCount < length);
@@ -188,6 +227,7 @@ static unsigned leftTruncateToBuffer(const String& string, unsigned length, unsi
         return length - adjustedStartIndex;
     }    
 }
+#endif
 
 static float stringWidth(const Font& renderer, const UChar* characters, unsigned length, bool disableRoundingHacks)
 {
@@ -197,17 +237,27 @@ static float stringWidth(const Font& renderer, const UChar* characters, unsigned
     return renderer.width(run);
 }
 
+#if !PLATFORM(IOS)
+static String truncateString(const String& string, float maxWidth, const Font& font, TruncationFunction truncateToBuffer, bool disableRoundingHacks)
+#else
 static String truncateString(const String& string, float maxWidth, const Font& font, TruncationFunction truncateToBuffer, bool disableRoundingHacks, float *resultWidth, bool insertEllipsis = true,  float customTruncationElementWidth = 0, bool alwaysTruncate = false)
+#endif
 {
     if (string.isEmpty())
         return string;
 
+#if PLATFORM(IOS)
     if (resultWidth)
         *resultWidth = 0;
+#endif
 
     ASSERT(maxWidth >= 0);
     
+#if PLATFORM(IOS)
     float currentEllipsisWidth = insertEllipsis ? stringWidth(font, &horizontalEllipsis, 1, disableRoundingHacks) : customTruncationElementWidth;
+#else
+    float currentEllipsisWidth = stringWidth(font, &horizontalEllipsis, 1, disableRoundingHacks);
+#endif    
     
     UChar stringBuffer[STRING_BUFFER_SIZE];
     unsigned truncatedLength;
@@ -215,9 +265,16 @@ static String truncateString(const String& string, float maxWidth, const Font& f
     unsigned length = string.length();
 
     if (length > STRING_BUFFER_SIZE) {            
+#if PLATFORM(IOS)
         if (insertEllipsis)
             keepCount = STRING_BUFFER_SIZE - 1; // need 1 character for the ellipsis
+        else
+            keepCount = 0;
         truncatedLength = centerTruncateToBuffer(string, length, keepCount, stringBuffer, insertEllipsis);
+#else
+        keepCount = STRING_BUFFER_SIZE - 1; // need 1 character for the ellipsis
+        truncatedLength = centerTruncateToBuffer(string, length, keepCount, stringBuffer);
+#endif
     } else {
         keepCount = length;
         memcpy(stringBuffer, string.characters(), sizeof(UChar) * length);
@@ -225,6 +282,7 @@ static String truncateString(const String& string, float maxWidth, const Font& f
     }
 
     float width = stringWidth(font, stringBuffer, truncatedLength, disableRoundingHacks);
+#if PLATFORM(IOS)
     if (!insertEllipsis && alwaysTruncate)
         width += customTruncationElementWidth;
     if ((width - maxWidth) < 0.0001) {  // Ignore rounding errors.
@@ -232,6 +290,10 @@ static String truncateString(const String& string, float maxWidth, const Font& f
             *resultWidth = width;
         return string;
     }
+#else
+    if (width <= maxWidth)
+        return string;
+#endif
 
     unsigned keepCountForLargestKnownToFit = 0;
     float widthForLargestKnownToFit = currentEllipsisWidth;
@@ -263,16 +325,24 @@ static String truncateString(const String& string, float maxWidth, const Font& f
         ASSERT(keepCount < keepCountForSmallestKnownToNotFit);
         ASSERT(keepCount > keepCountForLargestKnownToFit);
         
+#if PLATFORM(IOS)
         truncatedLength = truncateToBuffer(string, length, keepCount, stringBuffer, insertEllipsis);
+#else
+        truncatedLength = truncateToBuffer(string, length, keepCount, stringBuffer);
+#endif
 
         width = stringWidth(font, stringBuffer, truncatedLength, disableRoundingHacks);
+#if PLATFORM(IOS)
         if (!insertEllipsis)
             width += customTruncationElementWidth;
+#endif        
         if (width <= maxWidth) {
             keepCountForLargestKnownToFit = keepCount;
             widthForLargestKnownToFit = width;
+#if PLATFORM(IOS)
             if (resultWidth)
                 *resultWidth = width;
+#endif
         } else {
             keepCountForSmallestKnownToNotFit = keepCount;
             widthForSmallestKnownToNotFit = width;
@@ -285,7 +355,11 @@ static String truncateString(const String& string, float maxWidth, const Font& f
     
     if (keepCount != keepCountForLargestKnownToFit) {
         keepCount = keepCountForLargestKnownToFit;
+#if PLATFORM(IOS)
         truncatedLength = truncateToBuffer(string, length, keepCount, stringBuffer, insertEllipsis);
+#else
+        truncatedLength = truncateToBuffer(string, length, keepCount, stringBuffer);
+#endif
     }
     
     return String(stringBuffer, truncatedLength);
@@ -293,12 +367,20 @@ static String truncateString(const String& string, float maxWidth, const Font& f
 
 String StringTruncator::centerTruncate(const String& string, float maxWidth, const Font& font, EnableRoundingHacksOrNot enableRoundingHacks)
 {
+#if !PLATFORM(IOS)
+    return truncateString(string, maxWidth, font, centerTruncateToBuffer, !enableRoundingHacks);
+#else
     return truncateString(string, maxWidth, font, centerTruncateToBuffer, !enableRoundingHacks, 0);
+#endif
 }
 
 String StringTruncator::rightTruncate(const String& string, float maxWidth, const Font& font, EnableRoundingHacksOrNot enableRoundingHacks)
 {
+#if !PLATFORM(IOS)
+    return truncateString(string, maxWidth, font, rightTruncateToBuffer, !enableRoundingHacks);
+#else
     return truncateString(string, maxWidth, font, rightTruncateToBuffer, !enableRoundingHacks, 0);
+#endif
 }
 
 float StringTruncator::width(const String& string, const Font& font, EnableRoundingHacksOrNot enableRoundingHacks)
@@ -307,6 +389,7 @@ float StringTruncator::width(const String& string, const Font& font, EnableRound
 }
 
 
+#if PLATFORM(IOS)
 String StringTruncator::centerTruncate(const String& string, float maxWidth, const Font& font, EnableRoundingHacksOrNot enableRoundingHacks, float& resultWidth, bool insertEllipsis, float customTruncationElementWidth)
 {
     return truncateString(string, maxWidth, font, centerTruncateToBuffer, !enableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth);
@@ -332,6 +415,7 @@ String StringTruncator::rightClipToWord(const String& string, float maxWidth, co
     return truncateString(string, maxWidth, font, rightClipToWordBuffer, !enableRoundingHacks, &resultWidth, insertEllipsis, customTruncationElementWidth, alwaysTruncate);
 }
     
+#endif
 
 
 } // namespace WebCore

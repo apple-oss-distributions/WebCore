@@ -230,6 +230,7 @@ HistoryItemVector& BackForwardListImpl::entries()
     return m_entries;
 }
 
+#if PLATFORM(IOS)
 unsigned BackForwardListImpl::current()
 {
     return m_current;
@@ -239,6 +240,7 @@ void BackForwardListImpl::setCurrent(unsigned newCurrent)
 {
     m_current = newCurrent;
 }
+#endif
 
 void BackForwardListImpl::close()
 {
@@ -278,6 +280,7 @@ void BackForwardListImpl::removeItem(HistoryItem* item)
         }
 }
 
+#if PLATFORM(IOS)
 bool BackForwardListImpl::clearAllPageCaches()
 {
     bool removedOne = false;
@@ -292,6 +295,7 @@ bool BackForwardListImpl::clearAllPageCaches()
     
     return removedOne;
 }
+#endif // PLATFORM(IOS)
 
 bool BackForwardListImpl::containsItem(HistoryItem* entry)
 {

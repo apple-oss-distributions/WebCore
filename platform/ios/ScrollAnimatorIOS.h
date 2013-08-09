@@ -39,7 +39,9 @@ public:
     ScrollAnimatorIOS(ScrollableArea*);
     virtual ~ScrollAnimatorIOS();
 
+#if ENABLE(TOUCH_EVENTS)
     virtual bool handleTouchEvent(const PlatformTouchEvent&) OVERRIDE;
+#endif
 
 private:
     void determineScrollableAreaForTouchSequence(const IntSize& touchDelta);

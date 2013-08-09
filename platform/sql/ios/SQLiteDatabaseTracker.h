@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Apple Inc. All Rights Reserved.
+ * Copyright (C) 2010, 2012 Apple Inc. All Rights Reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,20 +31,17 @@
 
 namespace WebCore {
 
-class SQLiteDatabaseTracker {
-    WTF_MAKE_NONCOPYABLE(SQLiteDatabaseTracker);
-public:
-    static SQLiteDatabaseTracker& tracker();
-    static void decrementTransactionInProgressCount();
-    static void incrementTransactionInProgressCount();
-    static unsigned transactionInProgressCount();
+namespace SQLiteDatabaseTracker {
 
-    void setClient(SQLiteDatabaseTrackerClient*);
+void decrementTransactionInProgressCount();
+void incrementTransactionInProgressCount();
 
-private:
-    SQLiteDatabaseTracker();
+void setClient(SQLiteDatabaseTrackerClient*);
 
-    SQLiteDatabaseTrackerClient* m_client;
+#if !ASSERT_DISABLED
+bool hasTransactionInProgress();
+#endif // !ASSERT_DISABLED
+
 };
 
 class SQLiteTransactionInProgressAutoCounter {

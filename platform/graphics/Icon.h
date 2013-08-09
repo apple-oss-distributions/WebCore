@@ -26,9 +26,20 @@
 #include <wtf/Forward.h>
 #include <wtf/Vector.h>
 
+#if PLATFORM(IOS)
 #include "ImageSource.h"
 #include <CoreGraphics/CoreGraphics.h>
 #include <wtf/RetainPtr.h>
+#elif PLATFORM(MAC)
+#include <wtf/RetainPtr.h>
+OBJC_CLASS NSImage;
+#elif PLATFORM(WIN)
+typedef struct HICON__* HICON;
+#elif PLATFORM(QT)
+#include <QIcon>
+#elif PLATFORM(GTK)
+typedef struct _GdkPixbuf GdkPixbuf;
+#endif
 
 namespace WebCore {
 
@@ -38,7 +49,9 @@ class IntRect;
 class Icon : public RefCounted<Icon> {
 public:
     static PassRefPtr<Icon> createIconForFiles(const Vector<String>& filenames);
+#if PLATFORM(IOS)
     static PassRefPtr<Icon> createIconForImage(NativeImagePtr);
+#endif
 
     ~Icon();
 
@@ -46,13 +59,28 @@ public:
 
 #if PLATFORM(WIN)
     static PassRefPtr<Icon> create(HICON hIcon) { return adoptRef(new Icon(hIcon)); }
-#elif PLATFORM(CHROMIUM)
-    static PassRefPtr<Icon> create(PassRefPtr<PlatformIcon> icon) { return adoptRef(new Icon(icon)); }
 #endif
 
 private:
+#if PLATFORM(IOS)
     Icon(CGImageRef);
     RetainPtr<CGImageRef> m_cgImage;
+#elif PLATFORM(MAC)
+    Icon(NSImage*);
+    RetainPtr<NSImage> m_nsImage;
+#elif PLATFORM(WIN)
+    Icon(HICON);
+    HICON m_hIcon;
+#elif PLATFORM(QT)
+    Icon();
+    QIcon m_icon;
+#elif PLATFORM(GTK)
+    Icon();
+    GdkPixbuf* m_icon;
+#elif PLATFORM(EFL)
+    Icon();
+    Evas_Object* m_icon;
+#endif
 };
 
 }

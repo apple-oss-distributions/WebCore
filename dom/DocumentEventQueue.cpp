@@ -37,21 +37,24 @@
 
 namespace WebCore {
     
-static inline bool shouldDispatchScrollEventSynchronously(Document* document)
-{
-    ASSERT_ARG(document, document);
-    return applicationIsSafari() && (document->url().protocolIs("feed") || document->url().protocolIs("feeds"));
-}
-
-class DocumentEventQueueTimer : public SuspendableTimer {
-    WTF_MAKE_NONCOPYABLE(DocumentEventQueueTimer);
+class DocumentEventQueueTimer FINAL : public SuspendableTimer {
 public:
+    static PassOwnPtr<DocumentEventQueueTimer> create(DocumentEventQueue* eventQueue, ScriptExecutionContext* context)
+    {
+        return adoptPtr(new DocumentEventQueueTimer(eventQueue, context));
+    }
+
+private:
     DocumentEventQueueTimer(DocumentEventQueue* eventQueue, ScriptExecutionContext* context)
         : SuspendableTimer(context)
         , m_eventQueue(eventQueue) { }
 
-private:
-    virtual void fired() { m_eventQueue->pendingEventTimerFired(); }
+    virtual void fired() OVERRIDE
+    {
+        ASSERT(!isSuspended());
+        m_eventQueue->pendingEventTimerFired();
+    }
+
     DocumentEventQueue* m_eventQueue;
 };
 
@@ -61,7 +64,7 @@ PassRefPtr<DocumentEventQueue> DocumentEventQueue::create(ScriptExecutionContext
 }
 
 DocumentEventQueue::DocumentEventQueue(ScriptExecutionContext* context)
-    : m_pendingEventTimer(adoptPtr(new DocumentEventQueueTimer(this, context)))
+    : m_pendingEventTimer(DocumentEventQueueTimer::create(this, context))
     , m_isClosed(false)
 {
     m_pendingEventTimer->suspendIfNeeded();
@@ -95,11 +98,6 @@ void DocumentEventQueue::enqueueOrDispatchScrollEvent(PassRefPtr<Node> target, S
     bool canBubble = targetType == ScrollEventDocumentTarget;
     RefPtr<Event> scrollEvent = Event::create(eventNames().scrollEvent, canBubble, false /* non cancelleable */);
      
-    if (shouldDispatchScrollEventSynchronously(target->document())) {
-        target->dispatchEvent(scrollEvent.release());
-        return;
-    }
-
     if (!m_nodesWithQueuedScrollEvents.add(target.get()).isNewEntry)
         return;
 
@@ -109,23 +107,20 @@ void DocumentEventQueue::enqueueOrDispatchScrollEvent(PassRefPtr<Node> target, S
 
 bool DocumentEventQueue::cancelEvent(Event* event)
 {
-    bool found = m_queuedEvents.contains(event);
-    m_queuedEvents.remove(event);
+    ListHashSet<RefPtr<Event>, 16>::iterator it = m_queuedEvents.find(event);
+    bool found = it != m_queuedEvents.end();
+    if (found)
+        m_queuedEvents.remove(it);
     if (m_queuedEvents.isEmpty())
-        m_pendingEventTimer->stop();
+        m_pendingEventTimer->cancel();
     return found;
 }
 
 void DocumentEventQueue::close()
 {
     m_isClosed = true;
-    m_pendingEventTimer->stop();
+    m_pendingEventTimer->cancel();
     m_queuedEvents.clear();
-}
-
-void DocumentEventQueue::suspendPendingEventTimer()
-{
-    m_pendingEventTimer->suspend(ActiveDOMObject::DocumentWillBePaused);
 }
 
 void DocumentEventQueue::pendingEventTimerFired()
@@ -143,7 +138,7 @@ void DocumentEventQueue::pendingEventTimerFired()
     RefPtr<DocumentEventQueue> protector(this);
 
     while (!m_queuedEvents.isEmpty()) {
-        ListHashSet<RefPtr<Event> >::iterator iter = m_queuedEvents.begin();
+        ListHashSet<RefPtr<Event>, 16>::iterator iter = m_queuedEvents.begin();
         RefPtr<Event> event = *iter;
         m_queuedEvents.remove(iter);
         if (!event)

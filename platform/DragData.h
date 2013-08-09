@@ -34,7 +34,38 @@
 #include <wtf/HashMap.h>
 #include <wtf/Vector.h>
 
+#if PLATFORM(IOS)
 typedef void* DragDataRef;
+#else
+#if PLATFORM(MAC)
+#include <wtf/RetainPtr.h>
+#include <wtf/text/WTFString.h>
+
+#ifdef __OBJC__ 
+#import <Foundation/Foundation.h>
+#import <AppKit/NSDragging.h>
+typedef id <NSDraggingInfo> DragDataRef;
+#else
+typedef void* DragDataRef;
+#endif
+
+#elif PLATFORM(QT)
+QT_BEGIN_NAMESPACE
+class QMimeData;
+QT_END_NAMESPACE
+typedef const QMimeData* DragDataRef;
+#elif PLATFORM(WIN)
+typedef struct IDataObject* DragDataRef;
+#include <wtf/text/WTFString.h>
+#elif PLATFORM(GTK)
+namespace WebCore {
+class DataObjectGtk;
+}
+typedef WebCore::DataObjectGtk* DragDataRef;
+#elif PLATFORM(EFL) || PLATFORM(BLACKBERRY)
+typedef void* DragDataRef;
+#endif
+#endif // PLATFORM(IOS)
 
 namespace WebCore {
 
@@ -86,6 +117,14 @@ public:
     bool containsColor() const;
     bool containsFiles() const;
     unsigned numberOfFiles() const;
+    int modifierKeyState() const;
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+    const String& pasteboardName() const { return m_pasteboardName; }
+#endif
+
+#if ENABLE(FILE_SYSTEM)
+    String droppedFileSystemId() const;
+#endif
 
 #if PLATFORM(QT) || PLATFORM(GTK)
     // This constructor should used only by WebKit2 IPC because DragData
@@ -109,6 +148,9 @@ private:
     DragDataRef m_platformDragData;
     DragOperation m_draggingSourceOperationMask;
     DragApplicationFlags m_applicationFlags;
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+    String m_pasteboardName;
+#endif
 #if PLATFORM(WIN)
     DragDataMap m_dragDataMap;
 #endif
@@ -117,4 +159,3 @@ private:
 }
 
 #endif // !DragData_h
-

@@ -28,16 +28,37 @@
 #import "Logging.h"
 #import "SimpleFontData.h"
 #import "WebCoreSystemInterface.h"
+#if !PLATFORM(IOS)
+#import <AppKit/AppKit.h>
+#endif
+#import <wtf/MathExtras.h>
 
+#if PLATFORM(IOS)
 #import "BitmapImage.h"
 #import "SharedBuffer.h"
+#import "SoftLinking.h"
 #import "WAKView.h"
 #import "WKGraphics.h"
 #import <CoreFoundation/CFPriv.h>
 #import <CoreText/CoreText.h>
 #import <GraphicsServices/GraphicsServices.h>
+#import <objc/runtime.h>
 #import <wtf/StdLibExtras.h>
 #import <wtf/Threading.h>
+
+#if ENABLE(LETTERPRESS)
+#import <CoreUI/CUICatalog.h>
+#import <CoreUI/CUIStyleEffectConfiguration.h>
+
+SOFT_LINK_PRIVATE_FRAMEWORK(CoreUI)
+SOFT_LINK_CLASS(CoreUI, CUICatalog)
+SOFT_LINK_CLASS(CoreUI, CUIStyleEffectConfiguration)
+
+SOFT_LINK_FRAMEWORK(UIKit)
+SOFT_LINK(UIKit, _UIKitGetTextEffectsCatalog, CUICatalog *, (void), ())
+#endif
+
+#endif // PLATFORM(IOS)
 
 #define SYNTHETIC_OBLIQUE_ANGLE 14
 
@@ -66,56 +87,60 @@ bool Font::canExpandAroundIdeographsInComplexText()
 // divides by unitsPerEm.
 static bool hasBrokenCTFontGetVerticalTranslationsForGlyphs()
 {
-// Chromium runs the same binary on both Leopard and Snow Leopard, so the check has to happen at runtime.
+#if !PLATFORM(IOS) && __MAC_OS_X_VERSION_MIN_REQUIRED == 1060
+    return true;
+#else
     return false;
+#endif
 }
+
+#if PLATFORM(IOS) && ENABLE(LETTERPRESS)
+static void showLetterpressedGlyphsWithAdvances(const FloatPoint& point, const SimpleFontData* font, CGContextRef context, const CGGlyph* glyphs, const CGSize* advances, size_t count)
+{
+    if (!count)
+        return;
+
+    const FontPlatformData& platformData = font->platformData();
+
+    if (platformData.orientation() == Vertical)
+        return;
+
+    CGContextSetTextPosition(context, point.x(), point.y());
+    Vector<CGPoint, 256> positions(count);
+    CGAffineTransform matrix = CGAffineTransformInvert(CGContextGetTextMatrix(context));
+    positions[0] = CGPointZero;
+    for (size_t i = 1; i < count; ++i) {
+        CGSize advance = CGSizeApplyAffineTransform(advances[i - 1], matrix);
+        positions[i].x = positions[i - 1].x + advance.width;
+        positions[i].y = positions[i - 1].y + advance.height;
+    }
+
+    CTFontRef ctFont = platformData.ctFont();
+    CGContextSetFontSize(context, CTFontGetSize(ctFont));
+
+    static CUICatalog *catalog = _UIKitGetTextEffectsCatalog();
+    if (!catalog)
+        return;
+
+    static CUIStyleEffectConfiguration *styleConfiguration;
+    if (!styleConfiguration) {
+        styleConfiguration = [[getCUIStyleEffectConfigurationClass() alloc] init];
+        styleConfiguration.useSimplifiedEffect = YES;
+    }
+
+    [catalog drawGlyphs:glyphs atPositions:positions.data() inContext:context withFont:ctFont count:count stylePresetName:@"_UIKitNewLetterpressStyle" styleConfiguration:styleConfiguration foregroundColor:CGContextGetFillColorAsColor(context)];
+}
+#endif
 
 static void showGlyphsWithAdvances(const FloatPoint& point, const SimpleFontData* font, CGContextRef context, const CGGlyph* glyphs, const CGSize* advances, size_t count)
 {
+    if (!count)
+        return;
     CGContextSetTextPosition(context, point.x(), point.y());
 
     const FontPlatformData& platformData = font->platformData();
-    if (!platformData.isColorBitmapFont()) {
-        CGAffineTransform savedMatrix;
-        bool isVertical = font->platformData().orientation() == Vertical;
-        if (isVertical) {
-            CGAffineTransform rotateLeftTransform = CGAffineTransformMake(0, -1, 1, 0, 0, 0);
-            savedMatrix = CGContextGetTextMatrix(context);
-            CGAffineTransform runMatrix = CGAffineTransformConcat(savedMatrix, rotateLeftTransform);
-            CGContextSetTextMatrix(context, runMatrix);
-            
-            CGAffineTransform translationsTransform;
-            if (hasBrokenCTFontGetVerticalTranslationsForGlyphs()) {
-                translationsTransform = CGAffineTransformMake(platformData.m_size, 0, 0, platformData.m_size, 0, 0);
-                translationsTransform = CGAffineTransformConcat(translationsTransform, rotateLeftTransform);
-                CGFloat unitsPerEm = CGFontGetUnitsPerEm(platformData.cgFont());
-                translationsTransform = CGAffineTransformConcat(translationsTransform, CGAffineTransformMakeScale(1 / unitsPerEm, 1 / unitsPerEm));
-            } else {
-                translationsTransform = rotateLeftTransform;
-            }
-            Vector<CGSize, 256> translations(count);
-            CTFontGetVerticalTranslationsForGlyphs(platformData.ctFont(), glyphs, translations.data(), count);
-            
-            CGAffineTransform transform = CGAffineTransformInvert(CGContextGetTextMatrix(context));
-
-            CGPoint position = FloatPoint(point.x(), point.y() + font->fontMetrics().floatAscent(IdeographicBaseline) - font->fontMetrics().floatAscent());
-            Vector<CGPoint, 256> positions(count);
-            for (size_t i = 0; i < count; ++i) {
-                CGSize translation = CGSizeApplyAffineTransform(translations[i], translationsTransform);
-                positions[i] = CGPointApplyAffineTransform(CGPointMake(position.x - translation.width, position.y + translation.height), transform);
-                position.x += advances[i].width;
-                position.y += advances[i].height;
-            }
-            CGContextShowGlyphsAtPositions(context, glyphs, positions.data(), count);
-            CGContextSetTextMatrix(context, savedMatrix);
-        } else
-            CGContextShowGlyphsWithAdvances(context, glyphs, advances, count);
-    }
-    else {
-        if (!count)
-            return;
-
-        Vector<CGPoint, 256> positions(count);
+    Vector<CGPoint, 256> positions(count);
+    if (platformData.isColorBitmapFont()) {
         CGAffineTransform matrix = CGAffineTransformInvert(CGContextGetTextMatrix(context));
         positions[0] = CGPointZero;
         for (size_t i = 1; i < count; ++i) {
@@ -123,12 +148,65 @@ static void showGlyphsWithAdvances(const FloatPoint& point, const SimpleFontData
             positions[i].x = positions[i - 1].x + advance.width;
             positions[i].y = positions[i - 1].y + advance.height;
         }
-        CTFontDrawGlyphs(platformData.ctFont(), glyphs, positions.data(), count, context);
+    }
+    bool isVertical = font->platformData().orientation() == Vertical;
+    if (isVertical) {
+        CGAffineTransform savedMatrix;
+        CGAffineTransform rotateLeftTransform = CGAffineTransformMake(0, -1, 1, 0, 0, 0);
+        savedMatrix = CGContextGetTextMatrix(context);
+        CGAffineTransform runMatrix = CGAffineTransformConcat(savedMatrix, rotateLeftTransform);
+        CGContextSetTextMatrix(context, runMatrix);
+
+        CGAffineTransform translationsTransform;
+        if (hasBrokenCTFontGetVerticalTranslationsForGlyphs()) {
+            translationsTransform = CGAffineTransformMake(platformData.m_size, 0, 0, platformData.m_size, 0, 0);
+            translationsTransform = CGAffineTransformConcat(translationsTransform, rotateLeftTransform);
+            CGFloat unitsPerEm = CGFontGetUnitsPerEm(platformData.cgFont());
+            translationsTransform = CGAffineTransformConcat(translationsTransform, CGAffineTransformMakeScale(1 / unitsPerEm, 1 / unitsPerEm));
+        } else
+            translationsTransform = rotateLeftTransform;
+
+        Vector<CGSize, 256> translations(count);
+        CTFontGetVerticalTranslationsForGlyphs(platformData.ctFont(), glyphs, translations.data(), count);
+
+        CGAffineTransform transform = CGAffineTransformInvert(CGContextGetTextMatrix(context));
+
+        CGPoint position = FloatPoint(point.x(), point.y() + font->fontMetrics().floatAscent(IdeographicBaseline) - font->fontMetrics().floatAscent());
+        for (size_t i = 0; i < count; ++i) {
+            CGSize translation = CGSizeApplyAffineTransform(translations[i], translationsTransform);
+            positions[i] = CGPointApplyAffineTransform(CGPointMake(position.x - translation.width, position.y + translation.height), transform);
+            position.x += advances[i].width;
+            position.y += advances[i].height;
+        }
+        if (!platformData.isColorBitmapFont())
+            CGContextShowGlyphsAtPositions(context, glyphs, positions.data(), count);
+#if PLATFORM(IOS) || __MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
+        else
+            CTFontDrawGlyphs(platformData.ctFont(), glyphs, positions.data(), count, context);
+#endif
+        CGContextSetTextMatrix(context, savedMatrix);
+    } else {
+        if (!platformData.isColorBitmapFont())
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            CGContextShowGlyphsWithAdvances(context, glyphs, advances, count);
+#pragma clang diagnostic pop
+#if PLATFORM(IOS) || __MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
+        else
+            CTFontDrawGlyphs(platformData.ctFont(), glyphs, positions.data(), count, context);
+#endif
     }
 }
 
+#if !PLATFORM(IOS)
+void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, const GlyphBuffer& glyphBuffer, int from, int numGlyphs, const FloatPoint& point) const
+#else
 void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, const GlyphBuffer& glyphBuffer, int from, int numGlyphs, const FloatPoint& anchorPoint, bool /*setColor*/) const
+#endif
 {
+    if (!font->platformData().size())
+        return;
+
     CGContextRef cgContext = context->platformContext();
 
     bool shouldSmoothFonts = true;
@@ -166,10 +244,37 @@ void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, cons
         changeFontSmoothing = true;
     }
 
+#if !PLATFORM(IOS)
+    bool originalShouldUseFontSmoothing = false;
+    if (changeFontSmoothing) {
+        originalShouldUseFontSmoothing = wkCGContextGetShouldSmoothFonts(cgContext);
+        CGContextSetShouldSmoothFonts(cgContext, shouldSmoothFonts);
+    }
+#endif
 
     const FontPlatformData& platformData = font->platformData();
+#if !PLATFORM(IOS)
+    NSFont* drawFont;
+    if (!isPrinterFont()) {
+        drawFont = [platformData.font() screenFont];
+        if (drawFont != platformData.font())
+            // We are getting this in too many places (3406411); use ERROR so it only prints on debug versions for now. (We should debug this also, eventually).
+            LOG_ERROR("Attempting to set non-screen font (%@) when drawing to screen.  Using screen font anyway, may result in incorrect metrics.",
+                [[[platformData.font() fontDescriptor] fontAttributes] objectForKey:NSFontNameAttribute]);
+    } else {
+        drawFont = [platformData.font() printerFont];
+        if (drawFont != platformData.font())
+            NSLog(@"Attempting to set non-printer font (%@) when printing.  Using printer font anyway, may result in incorrect metrics.",
+                [[[platformData.font() fontDescriptor] fontAttributes] objectForKey:NSFontNameAttribute]);
+    }
+#endif
 
     CGContextSetFont(cgContext, platformData.cgFont());
+#if !PLATFORM(IOS)
+    CGAffineTransform matrix = CGAffineTransformIdentity;
+    if (drawFont && !platformData.isColorBitmapFont())
+        memcpy(&matrix, [drawFont matrix], sizeof(matrix));
+#else
     FloatPoint point = anchorPoint;
     float fontSize = platformData.size();
     if (platformData.m_isEmoji) {
@@ -190,26 +295,53 @@ void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, cons
         if (fontSize <= 15) {
             // Undo Core Text's y adjustment.
             static float yAdjustmentFactor = iosExecutableWasLinkedOnOrAfterVersion(wkIOSSystemVersion_6_0) ? .19 : .1;
-            point.setY(floorf(y) - yAdjustmentFactor * (fontSize + 2) + 2);
+            point.setY(floorf(y - yAdjustmentFactor * (fontSize + 2) + 2));
         } else {
             if (fontSize < 26)
                 y -= .35f * fontSize - 10;
 
             // Undo Core Text's y adjustment.
             static float yAdjustment = iosExecutableWasLinkedOnOrAfterVersion(wkIOSSystemVersion_6_0) ? 3.8 : 2;
-            point.setY(floorf(y) - yAdjustment);
+            point.setY(floorf(y - yAdjustment));
         }
     }
 
+#if ENABLE(LETTERPRESS)
+    bool isLetterpress = (context->textDrawingMode() & TextModeLetterpress);
+    CGAffineTransform matrix = (isLetterpress || platformData.isColorBitmapFont()) ? CGAffineTransformIdentity : CGAffineTransformMakeScale(fontSize, fontSize);
+#else
     CGAffineTransform matrix = platformData.isColorBitmapFont() ? CGAffineTransformIdentity : CGAffineTransformMakeScale(fontSize, fontSize);
+#endif
+#endif
     matrix.b = -matrix.b;
     matrix.d = -matrix.d;
 
-    if (platformData.m_syntheticOblique)
-        matrix = CGAffineTransformConcat(matrix, CGAffineTransformMake(1, 0, -tanf(SYNTHETIC_OBLIQUE_ANGLE * acosf(0) / 90), 1, 0, 0)); 
+#if !PLATFORM(IOS) || !ENABLE(LETTERPRESS)
+    if (platformData.m_syntheticOblique) {
+#else
+    if (platformData.m_syntheticOblique && !isLetterpress) {
+#endif
+        static float obliqueSkew = tanf(SYNTHETIC_OBLIQUE_ANGLE * piFloat / 180);
+        if (font->platformData().orientation() == Vertical)
+            matrix = CGAffineTransformConcat(matrix, CGAffineTransformMake(1, obliqueSkew, 0, 1, 0, 0));
+        else
+            matrix = CGAffineTransformConcat(matrix, CGAffineTransformMake(1, 0, -obliqueSkew, 1, 0, 0));
+    }
     CGContextSetTextMatrix(cgContext, matrix);
 
+#if !PLATFORM(IOS)
+#if PLATFORM(MAC)
+    wkSetCGFontRenderingMode(cgContext, drawFont, context->shouldSubpixelQuantizeFonts());
+#else
+    wkSetCGFontRenderingMode(cgContext, drawFont);
+#endif
+    if (drawFont)
+        CGContextSetFontSize(cgContext, 1.0f);
+    else
+        CGContextSetFontSize(cgContext, platformData.m_size);
+#else
     CGContextSetFontSize(cgContext, 1.0f);
+#endif
 
 
     FloatSize shadowOffset;
@@ -238,19 +370,36 @@ void Font::drawGlyphs(GraphicsContext* context, const SimpleFontData* font, cons
         float shadowTextX = point.x() + shadowOffset.width();
         // If shadows are ignoring transforms, then we haven't applied the Y coordinate flip yet, so down is negative.
         float shadowTextY = point.y() + shadowOffset.height() * (context->shadowsIgnoreTransforms() ? -1 : 1);
-        showGlyphsWithAdvances(FloatPoint(shadowTextX, shadowTextY), font, cgContext, glyphBuffer.glyphs(from), glyphBuffer.advances(from), numGlyphs);
+        showGlyphsWithAdvances(FloatPoint(shadowTextX, shadowTextY), font, cgContext, glyphBuffer.glyphs(from), static_cast<const CGSize*>(glyphBuffer.advances(from)), numGlyphs);
+#if !PLATFORM(IOS)
+        if (syntheticBoldOffset)
+#else
         if (syntheticBoldOffset && !platformData.m_isEmoji)
-            showGlyphsWithAdvances(FloatPoint(shadowTextX + syntheticBoldOffset, shadowTextY), font, cgContext, glyphBuffer.glyphs(from), glyphBuffer.advances(from), numGlyphs);
+#endif
+            showGlyphsWithAdvances(FloatPoint(shadowTextX + syntheticBoldOffset, shadowTextY), font, cgContext, glyphBuffer.glyphs(from), static_cast<const CGSize*>(glyphBuffer.advances(from)), numGlyphs);
         context->setFillColor(fillColor, fillColorSpace);
     }
 
-    showGlyphsWithAdvances(point, font, cgContext, glyphBuffer.glyphs(from), glyphBuffer.advances(from), numGlyphs);
+#if PLATFORM(IOS) && ENABLE(LETTERPRESS)
+    if (isLetterpress)
+        showLetterpressedGlyphsWithAdvances(point, font, cgContext, glyphBuffer.glyphs(from), static_cast<const CGSize*>(glyphBuffer.advances(from)), numGlyphs);
+    else
+#endif
+    showGlyphsWithAdvances(point, font, cgContext, glyphBuffer.glyphs(from), static_cast<const CGSize*>(glyphBuffer.advances(from)), numGlyphs);
+#if !PLATFORM(IOS)
+    if (syntheticBoldOffset)
+#else
     if (syntheticBoldOffset && !platformData.m_isEmoji)
-        showGlyphsWithAdvances(FloatPoint(point.x() + syntheticBoldOffset, point.y()), font, cgContext, glyphBuffer.glyphs(from), glyphBuffer.advances(from), numGlyphs);
+#endif
+        showGlyphsWithAdvances(FloatPoint(point.x() + syntheticBoldOffset, point.y()), font, cgContext, glyphBuffer.glyphs(from), static_cast<const CGSize*>(glyphBuffer.advances(from)), numGlyphs);
 
     if (hasSimpleShadow)
         context->setShadow(shadowOffset, shadowBlur, shadowColor, shadowColorSpace);
 
+#if !PLATFORM(IOS)
+    if (changeFontSmoothing)
+        CGContextSetShouldSmoothFonts(cgContext, originalShouldUseFontSmoothing);
+#endif
 }
 
 }

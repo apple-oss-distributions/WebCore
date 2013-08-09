@@ -28,8 +28,8 @@
 
 #import "FloatRect.h"
 #import "GraphicsContext.h"
-#import "PlatformString.h"
 #import "SharedBuffer.h"
+#import <wtf/text/WTFString.h>
 
 @interface WebCoreBundleFinder : NSObject
 @end
@@ -37,20 +37,28 @@
 @implementation WebCoreBundleFinder
 @end
 
+#if PLATFORM(IOS)
+#include "SoftLinking.h"
+
 #include <CoreGraphics/CoreGraphics.h>
 #include <ImageIO/ImageIO.h>
+#import <MobileCoreServices/MobileCoreServices.h>
+
+SOFT_LINK_FRAMEWORK(MobileCoreServices)
+SOFT_LINK_CONSTANT(MobileCoreServices, kUTTypeTIFF, CFStringRef)
+#define kUTTypeTIFF getkUTTypeTIFF()
+#endif // PLATFORM(IOS)
 
 namespace WebCore {
-
-void BitmapImage::initPlatformData()
-{
-}
 
 void BitmapImage::invalidatePlatformData()
 {
     if (m_frames.size() != 1)
         return;
 
+#if !PLATFORM(IOS)
+    m_nsImage = 0;
+#endif
     m_tiffRep = 0;
 }
 
@@ -94,9 +102,8 @@ CFDataRef BitmapImage::getTIFFRepresentation()
 
     unsigned numValidFrames = images.size();
     
-    RetainPtr<CFMutableDataRef> data(AdoptCF, CFDataCreateMutable(0, 0));
-    // FIXME:  Use type kCGImageTypeIdentifierTIFF constant once is becomes available in the API
-    RetainPtr<CGImageDestinationRef> destination(AdoptCF, CGImageDestinationCreateWithData(data.get(), CFSTR("public.tiff"), numValidFrames, 0));
+    RetainPtr<CFMutableDataRef> data = adoptCF(CFDataCreateMutable(0, 0));
+    RetainPtr<CGImageDestinationRef> destination = adoptCF(CGImageDestinationCreateWithData(data.get(), kUTTypeTIFF, numValidFrames, 0));
 
     if (!destination)
         return 0;
@@ -110,5 +117,19 @@ CFDataRef BitmapImage::getTIFFRepresentation()
     return m_tiffRep.get();
 }
 
+#if !PLATFORM(IOS)
+NSImage* BitmapImage::getNSImage()
+{
+    if (m_nsImage)
+        return m_nsImage.get();
+
+    CFDataRef data = getTIFFRepresentation();
+    if (!data)
+        return 0;
+    
+    m_nsImage = adoptNS([[NSImage alloc] initWithData:(NSData*)data]);
+    return m_nsImage.get();
+}
+#endif
 
 }

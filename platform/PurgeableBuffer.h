@@ -31,16 +31,24 @@
 #include <wtf/Vector.h>
 
 namespace WebCore {
-    
+
     class PurgeableBuffer {
         WTF_MAKE_NONCOPYABLE(PurgeableBuffer);
     public:
+#if PLATFORM(IOS)
         static PassOwnPtr<PurgeableBuffer> create(size_t);
+#else
+        static PassOwnPtr<PurgeableBuffer> create(const char* data, size_t);
+#endif
         
         ~PurgeableBuffer();
 
         // Call makePurgeable(false) and check the return value before accessing the data.
+#if PLATFORM(IOS)
         char* data() const;
+#else
+        const char* data() const;
+#endif
         size_t size() const { return m_size; }
         
         PurgePriority purgePriority() const { return m_purgePriority; }
@@ -50,7 +58,7 @@ namespace WebCore {
         bool wasPurged() const;
 
         bool makePurgeable(bool purgeable);
-        
+
     private:
         PurgeableBuffer(char* data, size_t);
     
@@ -63,9 +71,17 @@ namespace WebCore {
     };
 
 #if !ENABLE(PURGEABLE_MEMORY)
+#if PLATFORM(IOS)
     inline PassOwnPtr<PurgeableBuffer> PurgeableBuffer::create(size_t) { return nullptr; }
+#else
+    inline PassOwnPtr<PurgeableBuffer> PurgeableBuffer::create(const char*, size_t) { return nullptr; }
+#endif
     inline PurgeableBuffer::~PurgeableBuffer() { }
+#if PLATFORM(IOS)
     inline char* PurgeableBuffer::data() const { return 0; }
+#else
+    inline const char* PurgeableBuffer::data() const { return 0; }
+#endif
     inline bool PurgeableBuffer::wasPurged() const { return false; }
     inline bool PurgeableBuffer::makePurgeable(bool) { return false; }
 #endif

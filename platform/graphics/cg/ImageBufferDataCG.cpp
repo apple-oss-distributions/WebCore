@@ -36,8 +36,10 @@
 #if USE(IOSURFACE_CANVAS_BACKING_STORE)
 #include <IOSurface/IOSurface.h>
 #include <dispatch/dispatch.h>
+#if PLATFORM(IOS)
 #include <IOSurface/IOSurfacePrivate.h>
 #include "WKGraphics.h"
+#endif // PLATFORM(IOS)
 #endif
 
 using namespace std;
@@ -53,7 +55,7 @@ struct ScanlineData {
 #endif
 
 // CA uses ARGB32 for textures and ARGB32 -> ARGB32 resampling is optimized.
-#define USE_ARGB32 1
+#define USE_ARGB32 PLATFORM(IOS)
 
 namespace WebCore {
 
@@ -67,15 +69,17 @@ ImageBufferData::ImageBufferData(const IntSize&)
 
 #if USE(ACCELERATE)
 
-#ifndef TARGETING_SNOW_LEOPARD
+#if PLATFORM(IOS) || __MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
 static bool haveVImageRoundingErrorFix() { return true; }
 #else
 // The vImage unpremultiply routine had a rounding bug before 10.6.7 <rdar://problem/8631548>
 static bool haveVImageRoundingErrorFix()
 {
-    return true;
+    SInt32 version;
+    static bool result = (Gestalt(gestaltSystemVersion, &version) == noErr && version > 0x1066);
+    return result;
 }
-#endif // TARGETING_SNOW_LEOPARD
+#endif // __MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
 
 #if USE_ARGB32 || USE(IOSURFACE_CANVAS_BACKING_STORE)
 static void convertScanline(void* data, size_t tileNumber, bool premultiply)
@@ -139,13 +143,13 @@ PassRefPtr<Uint8ClampedArray> ImageBufferData::getData(const IntRect& rect, cons
     
     int originx = rect.x();
     int destx = 0;
-    int destw = rect.width();
+    Checked<int> destw = rect.width();
     if (originx < 0) {
         destw += originx;
         destx = -originx;
         originx = 0;
     }
-    destw = min<int>(destw, ceilf(size.width() / resolutionScale) - originx);
+    destw = min<int>(destw.unsafeGet(), ceilf(size.width() / resolutionScale) - originx);
     originx *= resolutionScale;
     if (endx.unsafeGet() > size.width())
         endx = size.width();
@@ -153,13 +157,13 @@ PassRefPtr<Uint8ClampedArray> ImageBufferData::getData(const IntRect& rect, cons
     
     int originy = rect.y();
     int desty = 0;
-    int desth = rect.height();
+    Checked<int> desth = rect.height();
     if (originy < 0) {
         desth += originy;
         desty = -originy;
         originy = 0;
     }
-    desth = min<int>(desth, ceilf(size.height() / resolutionScale) - originy);
+    desth = min<int>(desth.unsafeGet(), ceilf(size.height() / resolutionScale) - originy);
     originy *= resolutionScale;
     if (endy.unsafeGet() > size.height())
         endy = size.height();
@@ -182,13 +186,13 @@ PassRefPtr<Uint8ClampedArray> ImageBufferData::getData(const IntRect& rect, cons
         if (unmultiplied && haveVImageRoundingErrorFix()) {
 #if USE_ARGB32
             ScanlineData scanlineData;
-            scanlineData.scanlineWidth = width.unsafeGet();
+            scanlineData.scanlineWidth = destw.unsafeGet();
             scanlineData.srcData = srcRows;
             scanlineData.srcRowBytes = srcBytesPerRow;
             scanlineData.destData = destRows;
             scanlineData.destRowBytes = destBytesPerRow;
 
-            dispatch_apply_f(height.unsafeGet(), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), &scanlineData, unpremultitplyScanline);
+            dispatch_apply_f(desth.unsafeGet(), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), &scanlineData, unpremultitplyScanline);
 #else
             vImage_Buffer src;
             src.height = height.unsafeGet();
@@ -197,8 +201,8 @@ PassRefPtr<Uint8ClampedArray> ImageBufferData::getData(const IntRect& rect, cons
             src.data = srcRows;
             
             vImage_Buffer dst;
-            dst.height = desth;
-            dst.width = destw;
+            dst.height = desth.unsafeGet();
+            dst.width = destw.unsafeGet();
             dst.rowBytes = destBytesPerRow;
             dst.data = destRows;
 
@@ -216,9 +220,9 @@ PassRefPtr<Uint8ClampedArray> ImageBufferData::getData(const IntRect& rect, cons
         }
 #endif
         if (resolutionScale != 1) {
-            RetainPtr<CGContextRef> sourceContext(AdoptCF, CGBitmapContextCreate(srcRows, width.unsafeGet(), height.unsafeGet(), 8, srcBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
-            RetainPtr<CGImageRef> sourceImage(AdoptCF, CGBitmapContextCreateImage(sourceContext.get()));
-            RetainPtr<CGContextRef> destinationContext(AdoptCF, CGBitmapContextCreate(destRows, destw, desth, 8, destBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
+            RetainPtr<CGContextRef> sourceContext = adoptCF(CGBitmapContextCreate(srcRows, width.unsafeGet(), height.unsafeGet(), 8, srcBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
+            RetainPtr<CGImageRef> sourceImage = adoptCF(CGBitmapContextCreateImage(sourceContext.get()));
+            RetainPtr<CGContextRef> destinationContext = adoptCF(CGBitmapContextCreate(destRows, destw.unsafeGet(), desth.unsafeGet(), 8, destBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
             CGContextSetBlendMode(destinationContext.get(), kCGBlendModeCopy);
             CGContextDrawImage(destinationContext.get(), CGRectMake(0, 0, width.unsafeGet() / resolutionScale, height.unsafeGet() / resolutionScale), sourceImage.get()); // FIXME: Add subpixel translation.
             if (!unmultiplied)
@@ -295,8 +299,8 @@ PassRefPtr<Uint8ClampedArray> ImageBufferData::getData(const IntRect& rect, cons
         src.data = srcRows;
 
         vImage_Buffer dest;
-        dest.height = desth;
-        dest.width = destw;
+        dest.height = desth.unsafeGet();
+        dest.width = destw.unsafeGet();
         dest.rowBytes = destBytesPerRow;
         dest.data = destRows;
 
@@ -316,13 +320,13 @@ PassRefPtr<Uint8ClampedArray> ImageBufferData::getData(const IntRect& rect, cons
 
         if (unmultiplied) {
             ScanlineData scanlineData;
-            scanlineData.scanlineWidth = width.unsafeGet();
+            scanlineData.scanlineWidth = destw.unsafeGet();
             scanlineData.srcData = srcRows;
             scanlineData.srcRowBytes = srcBytesPerRow;
             scanlineData.destData = destRows;
             scanlineData.destRowBytes = destBytesPerRow;
 
-            dispatch_apply_f(height.unsafeGet(), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), &scanlineData, unpremultitplyScanline);
+            dispatch_apply_f(desth.unsafeGet(), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), &scanlineData, unpremultitplyScanline);
         } else {
             // Swap pixel channels from BGRA to RGBA.
             const uint8_t map[4] = { 2, 1, 0, 3 };
@@ -330,9 +334,9 @@ PassRefPtr<Uint8ClampedArray> ImageBufferData::getData(const IntRect& rect, cons
         }
 #else
         if (resolutionScale != 1) {
-            RetainPtr<CGContextRef> sourceContext(AdoptCF, CGBitmapContextCreate(srcRows, width.unsafeGet(), height.unsafeGet(), 8, srcBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
-            RetainPtr<CGImageRef> sourceImage(AdoptCF, CGBitmapContextCreateImage(sourceContext.get()));
-            RetainPtr<CGContextRef> destinationContext(AdoptCF, CGBitmapContextCreate(destRows, destw, desth, 8, destBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
+            RetainPtr<CGContextRef> sourceContext = adoptCF(CGBitmapContextCreate(srcRows, width.unsafeGet(), height.unsafeGet(), 8, srcBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
+            RetainPtr<CGImageRef> sourceImage = adoptCF(CGBitmapContextCreateImage(sourceContext.get()));
+            RetainPtr<CGContextRef> destinationContext = adoptCF(CGBitmapContextCreate(destRows, destw.unsafeGet(), desth.unsafeGet(), 8, destBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
             CGContextSetBlendMode(destinationContext.get(), kCGBlendModeCopy);
             CGContextDrawImage(destinationContext.get(), CGRectMake(0, 0, width.unsafeGet() / resolutionScale, height.unsafeGet() / resolutionScale), sourceImage.get()); // FIXME: Add subpixel translation.
 
@@ -475,9 +479,9 @@ void ImageBufferData::putData(Uint8ClampedArray*& source, const IntSize& sourceS
         }
 #endif
         if (resolutionScale != 1) {
-            RetainPtr<CGContextRef> sourceContext(AdoptCF, CGBitmapContextCreate(srcRows, width.unsafeGet(), height.unsafeGet(), 8, srcBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
-            RetainPtr<CGImageRef> sourceImage(AdoptCF, CGBitmapContextCreateImage(sourceContext.get()));
-            RetainPtr<CGContextRef> destinationContext(AdoptCF, CGBitmapContextCreate(destRows, destw.unsafeGet(), desth.unsafeGet(), 8, destBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
+            RetainPtr<CGContextRef> sourceContext = adoptCF(CGBitmapContextCreate(srcRows, width.unsafeGet(), height.unsafeGet(), 8, srcBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
+            RetainPtr<CGImageRef> sourceImage = adoptCF(CGBitmapContextCreateImage(sourceContext.get()));
+            RetainPtr<CGContextRef> destinationContext = adoptCF(CGBitmapContextCreate(destRows, destw.unsafeGet(), desth.unsafeGet(), 8, destBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
             CGContextSetBlendMode(destinationContext.get(), kCGBlendModeCopy);
             CGContextDrawImage(destinationContext.get(), CGRectMake(0, 0, width.unsafeGet() / resolutionScale, height.unsafeGet() / resolutionScale), sourceImage.get()); // FIXME: Add subpixel translation.
             if (!unmultiplied)
@@ -569,9 +573,9 @@ void ImageBufferData::putData(Uint8ClampedArray*& source, const IntSize& sourceS
         }
 #else
         if (resolutionScale != 1) {
-            RetainPtr<CGContextRef> sourceContext(AdoptCF, CGBitmapContextCreate(srcRows, width.unsafeGet(), height.unsafeGet(), 8, srcBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
-            RetainPtr<CGImageRef> sourceImage(AdoptCF, CGBitmapContextCreateImage(sourceContext.get()));
-            RetainPtr<CGContextRef> destinationContext(AdoptCF, CGBitmapContextCreate(destRows, destw.unsafeGet(), desth.unsafeGet(), 8, destBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
+            RetainPtr<CGContextRef> sourceContext = adoptCF(CGBitmapContextCreate(srcRows, width.unsafeGet(), height.unsafeGet(), 8, srcBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
+            RetainPtr<CGImageRef> sourceImage = adoptCF(CGBitmapContextCreateImage(sourceContext.get()));
+            RetainPtr<CGContextRef> destinationContext = adoptCF(CGBitmapContextCreate(destRows, destw.unsafeGet(), desth.unsafeGet(), 8, destBytesPerRow, m_colorSpace, kCGImageAlphaPremultipliedLast));
             CGContextSetBlendMode(destinationContext.get(), kCGBlendModeCopy);
             CGContextDrawImage(destinationContext.get(), CGRectMake(0, 0, width.unsafeGet() / resolutionScale, height.unsafeGet() / resolutionScale), sourceImage.get()); // FIXME: Add subpixel translation.
 

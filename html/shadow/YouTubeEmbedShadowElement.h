@@ -16,6 +16,7 @@
 #ifndef YouTubeEmbedShadowElement_h
 #define YouTubeEmbedShadowElement_h
 
+#if PLATFORM(IOS)
 
 #include "HTMLDivElement.h"
 #include <wtf/Forward.h>
@@ -37,5 +38,6 @@ private:
 
 }
 
+#endif // PLATFORM(IOS)
 
 #endif

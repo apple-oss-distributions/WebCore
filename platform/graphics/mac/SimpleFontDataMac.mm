@@ -35,29 +35,33 @@
 #import "FontDescription.h"
 #import "SharedBuffer.h"
 #import "WebCoreSystemInterface.h"
+#if !PLATFORM(IOS)
+#import <AppKit/AppKit.h>
+#import <ApplicationServices/ApplicationServices.h>
+#else
 #import <CoreText/CoreText.h>
+#endif
 #import <float.h>
 #import <unicode/uchar.h>
 #import <wtf/Assertions.h>
 #import <wtf/StdLibExtras.h>
 #import <wtf/RetainPtr.h>
-#import <wtf/UnusedParam.h>
 
-#include <wtf/UnusedParam.h>
-
-
-using namespace std;
+#if !PLATFORM(IOS)
+@interface NSFont (WebAppKitSecretAPI)
+- (BOOL)_isFakeFixedPitch;
+@end
+#endif
 
 using namespace std;
 
 namespace WebCore {
   
-const float smallCapsFontSizeMultiplier = 0.7f;
-
+#if !PLATFORM(IOS)
 static bool fontHasVerticalGlyphs(CTFontRef ctFont)
 {
     // The check doesn't look neat but this is what AppKit does for vertical writing...
-    RetainPtr<CFArrayRef> tableTags(AdoptCF, CTFontCopyAvailableTables(ctFont, kCTFontTableOptionNoOptions));
+    RetainPtr<CFArrayRef> tableTags = adoptCF(CTFontCopyAvailableTables(ctFont, kCTFontTableOptionNoOptions));
     CFIndex numTables = CFArrayGetCount(tableTags.get());
     for (CFIndex index = 0; index < numTables; ++index) {
         CTFontTableTag tag = (CTFontTableTag)(uintptr_t)CFArrayGetValueAtIndex(tableTags.get(), index);
@@ -67,162 +71,284 @@ static bool fontHasVerticalGlyphs(CTFontRef ctFont)
     return false;
 }
 
+static bool initFontData(SimpleFontData* fontData)
+{
+    if (!fontData->platformData().cgFont())
+        return false;
+
+    return true;
+}
+
+static NSString *webFallbackFontFamily(void)
+{
+    DEFINE_STATIC_LOCAL(RetainPtr<NSString>, webFallbackFontFamily, ([[NSFont systemFontOfSize:16.0f] familyName]));
+    return webFallbackFontFamily.get();
+}
+
+const SimpleFontData* SimpleFontData::getCompositeFontReferenceFontData(NSFont *key) const
+{
+    if (key && !CFEqual(adoptCF(CTFontCopyPostScriptName(CTFontRef(key))).get(), CFSTR("LastResort"))) {
+        if (!m_derivedFontData)
+            m_derivedFontData = DerivedFontData::create(isCustomFont());
+        if (!m_derivedFontData->compositeFontReferences)
+            m_derivedFontData->compositeFontReferences = adoptCF(CFDictionaryCreateMutable(kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks, NULL));
+        else {
+            const SimpleFontData* found = static_cast<const SimpleFontData*>(CFDictionaryGetValue(m_derivedFontData->compositeFontReferences.get(), static_cast<const void *>(key)));
+            if (found)
+                return found;
+        }
+        if (CFMutableDictionaryRef dictionary = m_derivedFontData->compositeFontReferences.get()) {
+            bool isUsingPrinterFont = platformData().isPrinterFont();
+            NSFont *substituteFont = isUsingPrinterFont ? [key printerFont] : [key screenFont];
+
+            CTFontSymbolicTraits traits = CTFontGetSymbolicTraits(toCTFontRef(substituteFont));
+            bool syntheticBold = platformData().syntheticBold() && !(traits & kCTFontBoldTrait);
+            bool syntheticOblique = platformData().syntheticOblique() && !(traits & kCTFontItalicTrait);
+
+            FontPlatformData substitutePlatform(substituteFont, platformData().size(), isUsingPrinterFont, syntheticBold, syntheticOblique, platformData().orientation(), platformData().widthVariant());
+            if (RefPtr<SimpleFontData> value = adoptRef(new SimpleFontData(substitutePlatform, isCustomFont()))) {
+                SimpleFontData* valuePtr = value.get();
+                CFDictionaryAddValue(dictionary, key, value.release().leakRef());
+                return valuePtr;
+            }
+        }
+    }
+    return 0;
+}
+
 void SimpleFontData::platformInit()
 {
-    m_syntheticBoldOffset = m_platformData.m_syntheticBold ? ceilf(m_platformData.size()  / 24.0f) : 0.f;
-    m_spaceGlyph = 0;
-    m_spaceWidth = 0;
-    unsigned unitsPerEm;
-    float ascent;
-    float descent;
-    float lineGap;
-    float lineSpacing;
-    float xHeight;
-    if (GSFontRef gsFont = m_platformData.font()) {
-        ascent = ceilf(GSFontGetAscent(gsFont));
-        descent = ceilf(-GSFontGetDescent(gsFont));
-        lineSpacing = GSFontGetLineSpacing(gsFont);
-        lineGap = GSFontGetLineGap(gsFont);
-        xHeight = GSFontGetXHeight(gsFont);
-        unitsPerEm = GSFontGetUnitsPerEm(gsFont);
-    } else {
-        CGFontRef cgFont = m_platformData.cgFont();
+    m_syntheticBoldOffset = m_platformData.m_syntheticBold ? 1.0f : 0.f;
 
-        unitsPerEm = CGFontGetUnitsPerEm(cgFont);
+    bool failedSetup = false;
+    if (!initFontData(this)) {
+        // Ack! Something very bad happened, like a corrupt font.
+        // Try looking for an alternate 'base' font for this renderer.
 
-        float pointSize = m_platformData.size();
-        ascent = lroundf(scaleEmToUnits(CGFontGetAscent(cgFont), unitsPerEm) * pointSize);
-        descent = lroundf(-scaleEmToUnits(-abs(CGFontGetDescent(cgFont)), unitsPerEm) * pointSize);
-        lineGap = lroundf(scaleEmToUnits(CGFontGetLeading(cgFont), unitsPerEm) * pointSize);
-        xHeight = scaleEmToUnits(CGFontGetXHeight(cgFont), unitsPerEm) * pointSize;
+        // Special case hack to use "Times New Roman" in place of "Times".
+        // "Times RO" is a common font whose family name is "Times".
+        // It overrides the normal "Times" family font.
+        // It also appears to have a corrupt regular variant.
+        NSString *fallbackFontFamily;
+        if ([[m_platformData.font() familyName] isEqual:@"Times"])
+            fallbackFontFamily = @"Times New Roman";
+        else
+            fallbackFontFamily = webFallbackFontFamily();
+        
+        // Try setting up the alternate font.
+        // This is a last ditch effort to use a substitute font when something has gone wrong.
+#if !ERROR_DISABLED
+        RetainPtr<NSFont> initialFont = m_platformData.font();
+#endif
+        if (m_platformData.font())
+            m_platformData.setFont([[NSFontManager sharedFontManager] convertFont:m_platformData.font() toFamily:fallbackFontFamily]);
+        else
+            m_platformData.setFont([NSFont fontWithName:fallbackFontFamily size:m_platformData.size()]);
+        if (!initFontData(this)) {
+            if ([fallbackFontFamily isEqual:@"Times New Roman"]) {
+                // OK, couldn't setup Times New Roman as an alternate to Times, fallback
+                // on the system font.  If this fails we have no alternative left.
+                m_platformData.setFont([[NSFontManager sharedFontManager] convertFont:m_platformData.font() toFamily:webFallbackFontFamily()]);
+                if (!initFontData(this)) {
+                    // We tried, Times, Times New Roman, and the system font. No joy. We have to give up.
+                    LOG_ERROR("unable to initialize with font %@", initialFont.get());
+                    failedSetup = true;
+                }
+            } else {
+                // We tried the requested font and the system font. No joy. We have to give up.
+                LOG_ERROR("unable to initialize with font %@", initialFont.get());
+                failedSetup = true;
+            }
+        }
 
-        lineSpacing = ascent + descent + lineGap;
+        // Report the problem.
+        LOG_ERROR("Corrupt font detected, using %@ in place of %@.",
+            [m_platformData.font() familyName], [initialFont.get() familyName]);
     }
+
+    // If all else fails, try to set up using the system font.
+    // This is probably because Times and Times New Roman are both unavailable.
+    if (failedSetup) {
+        m_platformData.setFont([NSFont systemFontOfSize:[m_platformData.font() pointSize]]);
+        LOG_ERROR("failed to set up font, using system font %s", m_platformData.font());
+        initFontData(this);
+    }
+    
+    int iAscent;
+    int iDescent;
+    int iLineGap;
+    unsigned unitsPerEm;
+    iAscent = CGFontGetAscent(m_platformData.cgFont());
+    // Some fonts erroneously specify a positive descender value. We follow Core Text in assuming that
+    // such fonts meant the same distance, but in the reverse direction.
+    iDescent = -abs(CGFontGetDescent(m_platformData.cgFont()));
+    iLineGap = CGFontGetLeading(m_platformData.cgFont());
+    unitsPerEm = CGFontGetUnitsPerEm(m_platformData.cgFont());
+
+    float pointSize = m_platformData.m_size;
+    float ascent = scaleEmToUnits(iAscent, unitsPerEm) * pointSize;
+    float descent = -scaleEmToUnits(iDescent, unitsPerEm) * pointSize;
+    float lineGap = scaleEmToUnits(iLineGap, unitsPerEm) * pointSize;
+
+    // We need to adjust Times, Helvetica, and Courier to closely match the
+    // vertical metrics of their Microsoft counterparts that are the de facto
+    // web standard. The AppKit adjustment of 20% is too big and is
+    // incorrectly added to line spacing, so we use a 15% adjustment instead
+    // and add it to the ascent.
+    NSString *familyName = [m_platformData.font() familyName];
+    if ([familyName isEqualToString:@"Times"] || [familyName isEqualToString:@"Helvetica"] || [familyName isEqualToString:@"Courier"])
+        ascent += floorf(((ascent + descent) * 0.15f) + 0.5f);
+
+    // Compute and store line spacing, before the line metrics hacks are applied.
+    m_fontMetrics.setLineSpacing(lroundf(ascent) + lroundf(descent) + lroundf(lineGap));
+
+    // Hack Hiragino line metrics to allow room for marked text underlines.
+    // <rdar://problem/5386183>
+    if (descent < 3 && lineGap >= 3 && [familyName hasPrefix:@"Hiragino"]) {
+        lineGap -= 3 - descent;
+        descent = 3;
+    }
+    
+    if (platformData().orientation() == Vertical && !isTextOrientationFallback())
+        m_hasVerticalGlyphs = fontHasVerticalGlyphs(m_platformData.ctFont());
+
+    float xHeight;
+
+    if (platformData().orientation() == Horizontal) {
+        // Measure the actual character "x", since it's possible for it to extend below the baseline, and we need the
+        // reported x-height to only include the portion of the glyph that is above the baseline.
+        GlyphPage* glyphPageZero = GlyphPageTreeNode::getRootChild(this, 0)->page();
+        NSGlyph xGlyph = glyphPageZero ? glyphPageZero->glyphDataForCharacter('x').glyph : 0;
+        if (xGlyph)
+            xHeight = -CGRectGetMinY(platformBoundsForGlyph(xGlyph));
+        else
+            xHeight = scaleEmToUnits(CGFontGetXHeight(m_platformData.cgFont()), unitsPerEm) * pointSize;
+    } else
+        xHeight = verticalRightOrientationFontData()->fontMetrics().xHeight();
 
     m_fontMetrics.setUnitsPerEm(unitsPerEm);
     m_fontMetrics.setAscent(ascent);
     m_fontMetrics.setDescent(descent);
     m_fontMetrics.setLineGap(lineGap);
-    m_fontMetrics.setLineSpacing(lineSpacing);
     m_fontMetrics.setXHeight(xHeight);
-
-    if (platformData().orientation() == Vertical && !isTextOrientationFallback())
-        m_hasVerticalGlyphs = fontHasVerticalGlyphs(m_platformData.ctFont());
-
-    if (!m_platformData.m_isEmoji)
-        return;
-
-    int thirdOfSize = m_platformData.size() / 3;
-    m_fontMetrics.setAscent(thirdOfSize);
-    m_fontMetrics.setDescent(thirdOfSize);
-    m_fontMetrics.setLineGap(thirdOfSize);
-    m_fontMetrics.setLineSpacing(0);
 }
 
+static CFDataRef copyFontTableForTag(FontPlatformData& platformData, FourCharCode tableName)
+{
+    return CGFontCopyTableForTag(platformData.cgFont(), tableName);
+}
 
 void SimpleFontData::platformCharWidthInit()
 {
     m_avgCharWidth = 0;
     m_maxCharWidth = 0;
     
+    RetainPtr<CFDataRef> os2Table = adoptCF(copyFontTableForTag(m_platformData, 'OS/2'));
+    if (os2Table && CFDataGetLength(os2Table.get()) >= 4) {
+        const UInt8* os2 = CFDataGetBytePtr(os2Table.get());
+        SInt16 os2AvgCharWidth = os2[2] * 256 + os2[3];
+        m_avgCharWidth = scaleEmToUnits(os2AvgCharWidth, m_fontMetrics.unitsPerEm()) * m_platformData.m_size;
+    }
+
+    RetainPtr<CFDataRef> headTable = adoptCF(copyFontTableForTag(m_platformData, 'head'));
+    if (headTable && CFDataGetLength(headTable.get()) >= 42) {
+        const UInt8* head = CFDataGetBytePtr(headTable.get());
+        ushort uxMin = head[36] * 256 + head[37];
+        ushort uxMax = head[40] * 256 + head[41];
+        SInt16 xMin = static_cast<SInt16>(uxMin);
+        SInt16 xMax = static_cast<SInt16>(uxMax);
+        float diff = static_cast<float>(xMax - xMin);
+        m_maxCharWidth = scaleEmToUnits(diff, m_fontMetrics.unitsPerEm()) * m_platformData.m_size;
+    }
 
     // Fallback to a cross-platform estimate, which will populate these values if they are non-positive.
     initCharWidths();
 }
+#endif // !PLATFORM(IOS)
 
 void SimpleFontData::platformDestroy()
 {
     if (!isCustomFont() && m_derivedFontData) {
         // These come from the cache.
         if (m_derivedFontData->smallCaps)
-            fontCache()->releaseFontData(m_derivedFontData->smallCaps.leakPtr());
+            fontCache()->releaseFontData(m_derivedFontData->smallCaps.get());
 
         if (m_derivedFontData->emphasisMark)
-            fontCache()->releaseFontData(m_derivedFontData->emphasisMark.leakPtr());
+            fontCache()->releaseFontData(m_derivedFontData->emphasisMark.get());
     }
-
-#if USE(ATSUI)
-    HashMap<unsigned, ATSUStyle>::iterator end = m_ATSUStyleMap.end();
-    for (HashMap<unsigned, ATSUStyle>::iterator it = m_ATSUStyleMap.begin(); it != end; ++it)
-        ATSUDisposeStyle(it->second);
-#endif
 }
 
-PassOwnPtr<SimpleFontData> SimpleFontData::createScaledFontData(const FontDescription& fontDescription, float scaleFactor) const
+#if !PLATFORM(IOS)
+PassRefPtr<SimpleFontData> SimpleFontData::platformCreateScaledFontData(const FontDescription& fontDescription, float scaleFactor) const
 {
     if (isCustomFont()) {
         FontPlatformData scaledFontData(m_platformData);
         scaledFontData.m_size = scaledFontData.m_size * scaleFactor;
-        return adoptPtr(new SimpleFontData(scaledFontData, true, false));
+        return SimpleFontData::create(scaledFontData, true, false);
     }
 
     BEGIN_BLOCK_OBJC_EXCEPTIONS;
     float size = m_platformData.size() * scaleFactor;
-    GSFontTraitMask fontTraits = GSFontGetTraits(m_platformData.font());
-    RetainPtr<GSFontRef> gsFont(AdoptCF, GSFontCreateWithName(GSFontGetFamilyName(m_platformData.font()), fontTraits, size));
-    FontPlatformData scaledFontData(gsFont.get(), size, m_platformData.isPrinterFont(), false, false, m_platformData.orientation());
+    FontPlatformData scaledFontData([[NSFontManager sharedFontManager] convertFont:m_platformData.font() toSize:size], size, m_platformData.isPrinterFont(), false, false, m_platformData.orientation());
 
     // AppKit resets the type information (screen/printer) when you convert a font to a different size.
     // We have to fix up the font that we're handed back.
-    UNUSED_PARAM(fontDescription);
+    scaledFontData.setFont(fontDescription.usePrinterFont() ? [scaledFontData.font() printerFont] : [scaledFontData.font() screenFont]);
 
     if (scaledFontData.font()) {
+        NSFontManager *fontManager = [NSFontManager sharedFontManager];
+        NSFontTraitMask fontTraits = [fontManager traitsOfFont:m_platformData.font()];
+
         if (m_platformData.m_syntheticBold)
-            fontTraits |= GSBoldFontMask;
+            fontTraits |= NSBoldFontMask;
         if (m_platformData.m_syntheticOblique)
-            fontTraits |= GSItalicFontMask;
+            fontTraits |= NSItalicFontMask;
 
-        GSFontTraitMask scaledFontTraits = GSFontGetTraits(scaledFontData.font());
-        scaledFontData.m_syntheticBold = (fontTraits & GSBoldFontMask) && !(scaledFontTraits & GSBoldFontMask);
-        scaledFontData.m_syntheticOblique = (fontTraits & GSItalicFontMask) && !(scaledFontTraits & GSItalicFontMask);
+        NSFontTraitMask scaledFontTraits = [fontManager traitsOfFont:scaledFontData.font()];
+        scaledFontData.m_syntheticBold = (fontTraits & NSBoldFontMask) && !(scaledFontTraits & NSBoldFontMask);
+        scaledFontData.m_syntheticOblique = (fontTraits & NSItalicFontMask) && !(scaledFontTraits & NSItalicFontMask);
 
-        return adoptPtr(fontCache()->getCachedFontData(&scaledFontData));
+        // SimpleFontData::platformDestroy() takes care of not deleting the cached font data twice.
+        return fontCache()->getCachedFontData(&scaledFontData);
     }
     END_BLOCK_OBJC_EXCEPTIONS;
 
-    return nullptr;
+    return 0;
 }
+#endif // !PLATFORM(IOS)
 
-SimpleFontData* SimpleFontData::smallCapsFontData(const FontDescription& fontDescription) const
-{
-    if (!m_derivedFontData)
-        m_derivedFontData = DerivedFontData::create(isCustomFont());
-    if (!m_derivedFontData->smallCaps)
-        m_derivedFontData->smallCaps = createScaledFontData(fontDescription, smallCapsFontSizeMultiplier);
-
-    return m_derivedFontData->smallCaps.get();
-}
-
-SimpleFontData* SimpleFontData::emphasisMarkFontData(const FontDescription& fontDescription) const
-{
-    if (!m_derivedFontData)
-        m_derivedFontData = DerivedFontData::create(isCustomFont());
-    if (!m_derivedFontData->emphasisMark)
-        m_derivedFontData->emphasisMark = createScaledFontData(fontDescription, .5f);
-
-    return m_derivedFontData->emphasisMark.get();
-}
-
+#if !PLATFORM(IOS)
 bool SimpleFontData::containsCharacters(const UChar* characters, int length) const
 {
-    UNUSED_PARAM(characters);
-    UNUSED_PARAM(length);
-    return 0;
+    NSString *string = [[NSString alloc] initWithCharactersNoCopy:const_cast<unichar*>(characters) length:length freeWhenDone:NO];
+    NSCharacterSet *set = [[m_platformData.font() coveredCharacterSet] invertedSet];
+    bool result = set && [string rangeOfCharacterFromSet:set].location == NSNotFound;
+    [string release];
+    return result;
 }
 
 void SimpleFontData::determinePitch()
 {
-    GSFontRef f = m_platformData.font();
-    m_treatAsFixedPitch = false;
-    // GSFont is null in the case of SVG fonts for example.
-    if (f) {
-        const char *fullName = GSFontGetFullName(f);
-        const char *familyName = GSFontGetFamilyName(f);
-        m_treatAsFixedPitch = (GSFontIsFixedPitch(f) || (fullName && (strcasecmp(fullName, "Osaka-Mono") == 0 || strcasecmp(fullName, "MS-PGothic") == 0)));        
-        if (familyName && strcasecmp(familyName, "Courier New") == 0) // Special case Courier New to not be treated as fixed pitch, as this will make use of a hacked space width which is undesireable for iPhone (see rdar://6269783)
-            m_treatAsFixedPitch = false;
-    }
+    NSFont* f = m_platformData.font();
+    // Special case Osaka-Mono.
+    // According to <rdar://problem/3999467>, we should treat Osaka-Mono as fixed pitch.
+    // Note that the AppKit does not report Osaka-Mono as fixed pitch.
+
+    // Special case MS-PGothic.
+    // According to <rdar://problem/4032938>, we should not treat MS-PGothic as fixed pitch.
+    // Note that AppKit does report MS-PGothic as fixed pitch.
+
+    // Special case MonotypeCorsiva
+    // According to <rdar://problem/5454704>, we should not treat MonotypeCorsiva as fixed pitch.
+    // Note that AppKit does report MonotypeCorsiva as fixed pitch.
+
+    NSString *name = [f fontName];
+    m_treatAsFixedPitch = ([f isFixedPitch] || [f _isFakeFixedPitch] ||
+           [name caseInsensitiveCompare:@"Osaka-Mono"] == NSOrderedSame) &&
+           [name caseInsensitiveCompare:@"MS-PGothic"] != NSOrderedSame &&
+           [name caseInsensitiveCompare:@"MonotypeCorsiva"] != NSOrderedSame;
 }
+#endif // !PLATFORM(IOS)
 
 FloatRect SimpleFontData::platformBoundsForGlyph(Glyph glyph) const
 {
@@ -235,20 +361,19 @@ FloatRect SimpleFontData::platformBoundsForGlyph(Glyph glyph) const
     return boundingBox;
 }
 
+#if !PLATFORM(IOS)
 float SimpleFontData::platformWidthForGlyph(Glyph glyph) const
 {
     CGSize advance = CGSizeZero;
     if (platformData().orientation() == Horizontal || m_isBrokenIdeographFallback) {
-        if (platformData().m_isEmoji) {
-            // returns the proper scaled advance for the image size - see Font::drawGlyphs
-            return std::min(platformData().m_size + (platformData().m_size <= 15.0f ? 4.0f : 6.0f), 22.0f);
-        } else {
+        NSFont *font = platformData().font();
+        if (font && platformData().isColorBitmapFont())
+            advance = NSSizeToCGSize([font advancementForGlyph:glyph]);
+        else {
             float pointSize = platformData().m_size;
             CGAffineTransform m = CGAffineTransformMakeScale(pointSize, pointSize);
-            static const CGFontRenderingStyle renderingStyle = kCGFontRenderingStyleAntialiasing | kCGFontRenderingStyleSubpixelPositioning | kCGFontRenderingStyleSubpixelQuantization | kCGFontAntialiasingStyleUnfiltered;
-            if (!CGFontGetGlyphAdvancesForStyle(platformData().cgFont(), &m, renderingStyle, &glyph, 1, &advance)) {
-                RetainPtr<CFStringRef> fullName(AdoptCF, CGFontCopyFullName(platformData().cgFont()));
-                LOG_ERROR("Unable to cache glyph widths for %@ %f", fullName.get(), pointSize);
+            if (!wkGetGlyphTransformedAdvances(platformData().cgFont(), font, &m, &glyph, &advance)) {
+                LOG_ERROR("Unable to cache glyph widths for %@ %f", [font displayName], pointSize);
                 advance.width = 0;
             }
         }
@@ -257,6 +382,7 @@ float SimpleFontData::platformWidthForGlyph(Glyph glyph) const
 
     return advance.width + m_syntheticBoldOffset;
 }
+#endif // !PLATFORM(IOS)
 
 struct ProviderInfo {
     const UChar* characters;
@@ -277,19 +403,23 @@ static const UniChar* provideStringAndAttributes(CFIndex stringIndex, CFIndex* c
 
 bool SimpleFontData::canRenderCombiningCharacterSequence(const UChar* characters, size_t length) const
 {
+#if PLATFORM(IOS)
     ASSERT(isMainThread() || pthread_main_np());
+#else
+    ASSERT(isMainThread());
+#endif
 
     if (!m_combiningCharacterSequenceSupport)
         m_combiningCharacterSequenceSupport = adoptPtr(new HashMap<String, bool>);
 
     WTF::HashMap<String, bool>::AddResult addResult = m_combiningCharacterSequenceSupport->add(String(characters, length), false);
     if (!addResult.isNewEntry)
-        return addResult.iterator->second;
+        return addResult.iterator->value;
 
-    RetainPtr<CGFontRef> cgFont(AdoptCF, CTFontCopyGraphicsFont(platformData().ctFont(), 0));
+    RetainPtr<CGFontRef> cgFont = adoptCF(CTFontCopyGraphicsFont(platformData().ctFont(), 0));
 
     ProviderInfo info = { characters, length, getCFStringAttributes(0, platformData().orientation()) };
-    RetainPtr<CTLineRef> line(AdoptCF, wkCreateCTLineWithUniCharProvider(&provideStringAndAttributes, 0, &info));
+    RetainPtr<CTLineRef> line = adoptCF(wkCreateCTLineWithUniCharProvider(&provideStringAndAttributes, 0, &info));
 
     CFArrayRef runArray = CTLineGetGlyphRuns(line.get());
     CFIndex runCount = CFArrayGetCount(runArray);
@@ -299,12 +429,12 @@ bool SimpleFontData::canRenderCombiningCharacterSequence(const UChar* characters
         ASSERT(CFGetTypeID(ctRun) == CTRunGetTypeID());
         CFDictionaryRef runAttributes = CTRunGetAttributes(ctRun);
         CTFontRef runFont = static_cast<CTFontRef>(CFDictionaryGetValue(runAttributes, kCTFontAttributeName));
-        RetainPtr<CGFontRef> runCGFont(AdoptCF, CTFontCopyGraphicsFont(runFont, 0));
+        RetainPtr<CGFontRef> runCGFont = adoptCF(CTFontCopyGraphicsFont(runFont, 0));
         if (!CFEqual(runCGFont.get(), cgFont.get()))
             return false;
     }
 
-    addResult.iterator->second = true;
+    addResult.iterator->value = true;
     return true;
 }
 

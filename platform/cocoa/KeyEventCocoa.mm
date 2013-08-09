@@ -27,11 +27,13 @@
 #import "KeyEventCocoa.h"
 
 #import "Logging.h"
-#import "PlatformString.h"
 #import "WindowsKeyboardCodes.h"
 #import <wtf/ASCIICType.h>
+#import <wtf/text/WTFString.h>
 
+#if PLATFORM(IOS)
 #import "KeyEventCodesIOS.h"
+#endif
 
 using namespace WTF;
 
@@ -386,13 +388,13 @@ int windowsKeyCodeForKeyCode(uint16_t keyCode)
         /* 0x35 */ VK_ESCAPE,
         /* 0x36 */ VK_APPS, // Right Command
         /* 0x37 */ VK_LWIN, // Left Command
-        /* 0x38 */ VK_SHIFT, // Left Shift
+        /* 0x38 */ VK_LSHIFT, // Left Shift
         /* 0x39 */ VK_CAPITAL, // Caps Lock
-        /* 0x3A */ VK_MENU, // Left Option
-        /* 0x3B */ VK_CONTROL, // Left Ctrl
-        /* 0x3C */ VK_SHIFT, // Right Shift
-        /* 0x3D */ VK_MENU, // Right Option
-        /* 0x3E */ VK_CONTROL, // Right Ctrl
+        /* 0x3A */ VK_LMENU, // Left Option
+        /* 0x3B */ VK_LCONTROL, // Left Ctrl
+        /* 0x3C */ VK_RSHIFT, // Right Shift
+        /* 0x3D */ VK_RMENU, // Right Option
+        /* 0x3E */ VK_RCONTROL, // Right Ctrl
         /* 0x3F */ 0, // fn
         /* 0x40 */ VK_F17,
         /* 0x41 */ VK_DECIMAL, // Num Pad .
@@ -469,6 +471,7 @@ int windowsKeyCodeForKeyCode(uint16_t keyCode)
 int windowsKeyCodeForCharCode(unichar charCode)
 {
     switch (charCode) {
+#if PLATFORM(IOS)
         case 8: case 0x7F: return VK_BACK;
         case 9: return VK_TAB;
         case 0xD: case 3: return VK_RETURN;
@@ -494,6 +497,7 @@ int windowsKeyCodeForCharCode(unichar charCode)
         case '7': case '&': return VK_7;
         case '8': case '*': return VK_8;
         case '9': case '(': return VK_9;
+#endif
         case 'a': case 'A': return VK_A; 
         case 'b': case 'B': return VK_B; 
         case 'c': case 'C': return VK_C; 
@@ -527,6 +531,7 @@ int windowsKeyCodeForCharCode(unichar charCode)
         case NSPrintFunctionKey: return VK_PRINT;
         case NSExecuteFunctionKey: return VK_EXECUTE;
         case NSPrintScreenFunctionKey: return VK_SNAPSHOT;
+#if PLATFORM(IOS)
         case NSInsertFunctionKey: case NSHelpFunctionKey: return VK_INSERT;
 
         case NSF1FunctionKey: return VK_F1;
@@ -549,6 +554,9 @@ int windowsKeyCodeForCharCode(unichar charCode)
         case NSF18FunctionKey: return VK_F18;
         case NSF19FunctionKey: return VK_F19;
         case NSF20FunctionKey: return VK_F20;
+#else
+        case NSInsertFunctionKey: return VK_INSERT;
+#endif
         case NSF21FunctionKey: return VK_F21;
         case NSF22FunctionKey: return VK_F22;
         case NSF23FunctionKey: return VK_F23;

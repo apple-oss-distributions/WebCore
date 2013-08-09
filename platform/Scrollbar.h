@@ -41,6 +41,10 @@ class PlatformMouseEvent;
 class ScrollableArea;
 class ScrollbarTheme;
 
+#if ENABLE(GESTURE_EVENTS)
+class PlatformGestureEvent;
+#endif
+
 class Scrollbar : public Widget,
                   public ScrollbarThemeClient {
 
@@ -123,9 +127,16 @@ public:
 
     bool isWindowActive() const;
 
+#if ENABLE(GESTURE_EVENTS)
+    bool gestureEvent(const PlatformGestureEvent&);
+#endif
+
     // These methods are used for platform scrollbars to give :hover feedback.  They will not get called
     // when the mouse went down in a scrollbar, since it is assumed the scrollbar will start
     // grabbing all events in that case anyway.
+#if !PLATFORM(IOS)
+    bool mouseMoved(const PlatformMouseEvent&);
+#endif
     void mouseEntered();
     bool mouseExited();
 
@@ -149,6 +160,9 @@ public:
 
     void moveThumb(int pos, bool draggingDocument = false);
 
+    virtual bool isAlphaLocked() const { return m_isAlphaLocked; }
+    virtual void setIsAlphaLocked(bool flag) { m_isAlphaLocked = flag; }
+
 protected:
     Scrollbar(ScrollableArea*, ScrollbarOrientation, ScrollbarControlSize, ScrollbarTheme* = 0);
 
@@ -162,7 +176,7 @@ protected:
     void autoscrollPressedPart(double delay);
     ScrollDirection pressedPartScrollDirection();
     ScrollGranularity pressedPartScrollGranularity();
-    
+
     ScrollableArea* m_scrollableArea;
     ScrollbarOrientation m_orientation;
     ScrollbarControlSize m_controlSize;
@@ -179,6 +193,7 @@ protected:
     ScrollbarPart m_hoveredPart;
     ScrollbarPart m_pressedPart;
     int m_pressedPos;
+    float m_scrollPos;
     bool m_draggingDocument;
     int m_documentDragPos;
 
@@ -189,9 +204,10 @@ protected:
 
     bool m_suppressInvalidation;
 
+    bool m_isAlphaLocked;
+
 private:
     virtual bool isScrollbar() const { return true; }
-    virtual AXObjectCache* axObjectCache() const;
 };
 
 } // namespace WebCore

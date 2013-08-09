@@ -55,12 +55,14 @@ LayoutRect AccessibilityTableHeaderContainer::elementRect() const
     return m_headerRect;
 }
 
-bool AccessibilityTableHeaderContainer::accessibilityIsIgnored() const
+bool AccessibilityTableHeaderContainer::computeAccessibilityIsIgnored() const
 {
     if (!m_parent)
         return true;
     
+#if PLATFORM(IOS) || PLATFORM(GTK)
     return true;
+#endif
 
     return m_parent->accessibilityIsIgnored();
 }

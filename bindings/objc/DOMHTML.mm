@@ -49,6 +49,7 @@
 #import "Settings.h"
 #import "markup.h"
 
+#if PLATFORM(IOS)
 #import "Autocapitalize.h"
 #import "DOMHTMLElementInternal.h"
 #import "HTMLTextFormControlElement.h"
@@ -56,7 +57,9 @@
 #import "RenderLayer.h"
 #import "WAKWindow.h"
 #import "WebCoreThreadMessage.h"
+#endif
 
+#if PLATFORM(IOS)
 
 using namespace WebCore;
 
@@ -113,7 +116,7 @@ using namespace WebCore;
     RenderLayer *layer = renderBox->layer();
     if (adjustForPurpleCaret)
         layer->setAdjustForPurpleCaretWhenScrolling(true);
-    layer->scrollToOffset(x, y);
+    layer->scrollToOffset(IntSize(x, y));
     if (adjustForPurpleCaret)
         layer->setAdjustForPurpleCaretWhenScrolling(false);
 }
@@ -137,6 +140,7 @@ using namespace WebCore;
 
 @end
 
+#endif // PLATFORM(IOS)
 
 //------------------------------------------------------------------------------------------
 // DOMHTMLDocument
@@ -179,6 +183,20 @@ using namespace WebCore;
     return core(self)->isTextField();
 }
 
+#if !PLATFORM(IOS)
+- (NSRect)_rectOnScreen
+{
+    // Returns bounding rect of text field, in screen coordinates.
+    NSRect result = [self boundingBox];
+    if (!core(self)->document()->view())
+        return result;
+
+    NSView* view = core(self)->document()->view()->documentView();
+    result = [view convertRect:result toView:nil];
+    result.origin = [[view window] convertBaseToScreen:result.origin];
+    return result;
+}
+#endif
 
 - (void)_replaceCharactersInRange:(NSRange)targetRange withString:(NSString *)replacementString selectingFromIndex:(int)index
 {
@@ -255,6 +273,7 @@ using namespace WebCore;
 
 @end
 
+#if PLATFORM(IOS)
 @implementation DOMHTMLInputElement (AutocapitalizeAdditions)
 
 - (WebAutocapitalizeType)_autocapitalizeType
@@ -291,6 +310,7 @@ using namespace WebCore;
 }
 
 @end
+#endif
 
 Class kitClass(WebCore::HTMLCollection* collection)
 {

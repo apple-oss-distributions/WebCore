@@ -41,20 +41,17 @@ public:
     // Return the cached ObjC of the specified name.
     static ObjcClass *classForIsA(ClassStructPtr);
     
-    virtual MethodList methodsNamed(const Identifier&, Instance *instance) const;
-    virtual Field *fieldNamed(const Identifier&, Instance *instance) const;
+    virtual Method* methodNamed(PropertyName, Instance*) const;
+    virtual Field *fieldNamed(PropertyName, Instance*) const;
 
-    virtual JSValue fallbackObject(ExecState *exec, Instance *instance, const Identifier &propertyName);
+    virtual JSValue fallbackObject(ExecState*, Instance*, PropertyName);
     
     ClassStructPtr isa() { return _isa; }
     
 private:
-    typedef HashMap<String, OwnPtr<Method> > MethodCache;
-    typedef HashMap<String, OwnPtr<Field> > FieldCache;
-
     ClassStructPtr _isa;
-    mutable MethodCache m_methodCache;
-    mutable FieldCache m_fieldCache;
+    mutable HashMap<String, OwnPtr<Method> > m_methodCache;
+    mutable HashMap<String, OwnPtr<Field> > m_fieldCache;
 };
 
 } // namespace Bindings

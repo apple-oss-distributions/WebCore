@@ -52,6 +52,7 @@ PurgeableBuffer::~PurgeableBuffer()
     vm_deallocate(mach_task_self(), reinterpret_cast<vm_address_t>(m_data), m_size);
 }
 
+#if PLATFORM(IOS)
 PassOwnPtr<PurgeableBuffer> PurgeableBuffer::create(size_t size)
 {
     if (size < minPurgeableBufferSize)
@@ -66,6 +67,24 @@ PassOwnPtr<PurgeableBuffer> PurgeableBuffer::create(size_t size)
 
     return adoptPtr(new PurgeableBuffer(reinterpret_cast<char*>(buffer), size));
 }
+#else
+PassOwnPtr<PurgeableBuffer> PurgeableBuffer::create(const char* data, size_t size)
+{
+    if (size < minPurgeableBufferSize)
+        return nullptr;
+
+    vm_address_t buffer = 0;
+    kern_return_t ret = vm_allocate(mach_task_self(), &buffer, size, VM_FLAGS_PURGABLE | VM_FLAGS_ANYWHERE | VM_TAG_FOR_WEBCORE_PURGEABLE_MEMORY);
+
+    ASSERT(ret == KERN_SUCCESS);
+    if (ret != KERN_SUCCESS)
+        return nullptr;
+
+    memcpy(reinterpret_cast<char*>(buffer), data, size);
+
+    return adoptPtr(new PurgeableBuffer(reinterpret_cast<char*>(buffer), size));
+}
+#endif
 
 bool PurgeableBuffer::makePurgeable(bool purgeable)
 {
@@ -137,7 +156,11 @@ bool PurgeableBuffer::wasPurged() const
     return false;
 }
 
+#if PLATFORM(IOS)
 char* PurgeableBuffer::data() const
+#else
+const char* PurgeableBuffer::data() const
+#endif
 {
     ASSERT(m_state == NonVolatile);
     return m_data;

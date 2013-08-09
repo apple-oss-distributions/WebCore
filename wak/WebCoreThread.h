@@ -68,8 +68,6 @@ NSRunLoop* WebThreadNSRunLoop(void);
 WebThreadContext *WebThreadCurrentContext(void);
 bool WebThreadContextIsCurrent(void);
 
-void WebThreadPrepareForDrawing(void);
-
 void WebThreadSetDelegateSourceRunLoopMode(CFStringRef mode);
 
 #if defined(__cplusplus)

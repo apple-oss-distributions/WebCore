@@ -39,10 +39,12 @@ public:
     {
         return adoptRef(new HTMLDocument(frame, url));
     }
+#if PLATFORM(IOS)
     static PassRefPtr<HTMLDocument> createSynthesizedDocument(Frame* frame, const KURL& url)
     {
         return adoptRef(new HTMLDocument(frame, url, true));
     }
+#endif
     virtual ~HTMLDocument();
 
     int width();
@@ -53,8 +55,6 @@ public:
 
     String designMode() const;
     void setDesignMode(const String&);
-
-    virtual void setCompatibilityModeFromDoctype();
 
     Element* activeElement();
     bool hasFocus();
@@ -75,16 +75,17 @@ public:
     void captureEvents();
     void releaseEvents();
 
-    void addNamedItem(const AtomicString& name);
-    void removeNamedItem(const AtomicString& name);
-    bool hasNamedItem(AtomicStringImpl* name);
+    DocumentOrderedMap& documentNamedItemMap() { return m_documentNamedItem; }
+    DocumentOrderedMap& windowNamedItemMap() { return m_windowNamedItem; }
 
-    void addExtraNamedItem(const AtomicString& name);
-    void removeExtraNamedItem(const AtomicString& name);
-    bool hasExtraNamedItem(AtomicStringImpl* name);
+    static bool isCaseSensitiveAttribute(const QualifiedName&);
 
 protected:
-    HTMLDocument(Frame*, const KURL&, bool isSynthesized = false);
+#if PLATFORM(IOS)
+    HTMLDocument(Frame*, const KURL&, DocumentClassFlags = 0, bool isSynthesized = false);
+#else
+    HTMLDocument(Frame*, const KURL&, DocumentClassFlags = 0);
+#endif
 
 private:
     virtual PassRefPtr<Element> createElement(const AtomicString& tagName, ExceptionCode&);
@@ -92,24 +93,24 @@ private:
     virtual bool isFrameSet() const;
     virtual PassRefPtr<DocumentParser> createParser();
 
-    void addItemToMap(HashCountedSet<AtomicStringImpl*>&, const AtomicString&);
-    void removeItemFromMap(HashCountedSet<AtomicStringImpl*>&, const AtomicString&);
-
-    HashCountedSet<AtomicStringImpl*> m_namedItemCounts;
-    HashCountedSet<AtomicStringImpl*> m_extraNamedItemCounts;
+    DocumentOrderedMap m_documentNamedItem;
+    DocumentOrderedMap m_windowNamedItem;
 };
 
-inline bool HTMLDocument::hasNamedItem(AtomicStringImpl* name)
+inline HTMLDocument* toHTMLDocument(Document* document)
 {
-    ASSERT(name);
-    return m_namedItemCounts.contains(name);
+    ASSERT_WITH_SECURITY_IMPLICATION(!document || document->isHTMLDocument());
+    return static_cast<HTMLDocument*>(document);
 }
 
-inline bool HTMLDocument::hasExtraNamedItem(AtomicStringImpl* name)
+inline const HTMLDocument* toHTMLDocument(const Document* document)
 {
-    ASSERT(name);
-    return m_extraNamedItemCounts.contains(name);
+    ASSERT_WITH_SECURITY_IMPLICATION(!document || document->isHTMLDocument());
+    return static_cast<const HTMLDocument*>(document);
 }
+
+// This will catch anyone doing an unnecessary cast.
+void toHTMLDocument(const HTMLDocument*);
 
 } // namespace WebCore
 

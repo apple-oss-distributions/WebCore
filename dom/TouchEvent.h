@@ -18,6 +18,7 @@
 
 #include <wtf/Platform.h>
 
+#if ENABLE(TOUCH_EVENTS)
 
 #include <wtf/RefPtr.h>
 #include "MouseRelatedEvent.h"
@@ -25,7 +26,9 @@
 
 namespace WebCore {
 
+#if PLATFORM(IOS)
 class PlatformTouchEvent;
+#endif
 
 class TouchEvent : public MouseRelatedEvent {
 public:
@@ -61,8 +64,11 @@ public:
     float scale() const { return m_scale; }
     float rotation() const { return m_rotation; }
 
+#if PLATFORM(IOS)
     void setPlatformTouchEvent(const PlatformTouchEvent&);
     const PlatformTouchEvent* platformTouchEvent() const { return m_platformEvent.get(); }
+#endif
+    virtual bool isTouchEvent() const OVERRIDE;
 
     virtual const AtomicString& interfaceName() const;
 
@@ -74,7 +80,9 @@ private:
                TouchList* touches, TouchList* targetTouches, TouchList* changedTouches,
                float scale, float rotation, bool isSimulated = false);
 
+#if PLATFORM(IOS)
     OwnPtr<PlatformTouchEvent> m_platformEvent;
+#endif
     RefPtr<TouchList> m_touches;
     RefPtr<TouchList> m_targetTouches;
     RefPtr<TouchList> m_changedTouches;
@@ -84,5 +92,6 @@ private:
 
 } // namespace WebCore
 
+#endif // ENABLE(TOUCH_EVENTS)
 
 #endif // TouchEvent_h

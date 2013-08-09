@@ -26,10 +26,10 @@
 #include "config.h"
 #include "DiskImageCache.h"
 
-#if ENABLE(DISK_IMAGE_CACHE)
+#if PLATFORM(IOS) && ENABLE(DISK_IMAGE_CACHE)
 
 #import "FileSystemIOS.h"
-#include "PlatformString.h"
+#include <wtf/text/WTFString.h>
 
 namespace WebCore {
 

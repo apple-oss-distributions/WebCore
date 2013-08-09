@@ -39,50 +39,58 @@ namespace WebCore {
 class CachedResource;
 class CachedResourceLoader;
 class Document;
+class PageActivityAssertionToken;
 class ResourceRequest;
 
 class SubresourceLoader : public ResourceLoader {
 public:
     static PassRefPtr<SubresourceLoader> create(Frame*, CachedResource*, const ResourceRequest&, const ResourceLoaderOptions&);
 
-    void cancelIfNotFinishing();
+    virtual ~SubresourceLoader();
 
-    virtual void clearCachedResourceAfterSynchronousCancel() OVERRIDE;
+    void cancelIfNotFinishing();
+    virtual bool isSubresourceLoader();
+    CachedResource* cachedResource();
+
+#if PLATFORM(IOS)
     virtual bool startLoading() OVERRIDE;
     virtual const ResourceRequest& iOSOriginalRequest() const OVERRIDE { return m_iOSOriginalRequest; }
+#endif
 
 private:
     SubresourceLoader(Frame*, CachedResource*, const ResourceLoaderOptions&);
-    virtual ~SubresourceLoader();
 
-    virtual bool init(const ResourceRequest&);
+    virtual bool init(const ResourceRequest&) OVERRIDE;
 
-    virtual void willSendRequest(ResourceRequest&, const ResourceResponse& redirectResponse);
-    virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent);
-    virtual void didReceiveResponse(const ResourceResponse&);
-    virtual void didReceiveData(const char*, int, long long encodedDataLength, bool allAtOnce);
-    virtual void didReceiveCachedMetadata(const char*, int);
-    virtual void didFinishLoading(double finishTime);
-    virtual void didFail(const ResourceError&);
-    virtual void willCancel(const ResourceError&);
-    virtual void didCancel(const ResourceError&) { }
+    virtual void willSendRequest(ResourceRequest&, const ResourceResponse& redirectResponse) OVERRIDE;
+    virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) OVERRIDE;
+    virtual void didReceiveResponse(const ResourceResponse&) OVERRIDE;
+    virtual void didReceiveData(const char*, int, long long encodedDataLength, DataPayloadType) OVERRIDE;
+    virtual void didReceiveBuffer(PassRefPtr<SharedBuffer>, long long encodedDataLength, DataPayloadType) OVERRIDE;
+    virtual void didFinishLoading(double finishTime) OVERRIDE;
+    virtual void didFail(const ResourceError&) OVERRIDE;
+    virtual void willCancel(const ResourceError&) OVERRIDE;
+    virtual void didCancel(const ResourceError&) OVERRIDE;
 
-#if HAVE(NETWORK_CFDATA_ARRAY_CALLBACK)
-    virtual bool supportsDataArray() { return true; }
-    virtual void didReceiveDataArray(CFArrayRef);
+#if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
+    virtual bool supportsDataArray() OVERRIDE { return true; }
+    virtual void didReceiveDataArray(CFArrayRef) OVERRIDE;
 #endif
-#if PLATFORM(CHROMIUM)
-    virtual void didDownloadData(int);
-#endif
-    virtual void releaseResources();
+    virtual void releaseResources() OVERRIDE;
 
-    bool errorLoadingResource();
-    void sendDataToResource(const char*, int);
+    bool checkForHTTPStatusCodeError();
+
+    void didReceiveDataOrBuffer(const char*, int, PassRefPtr<SharedBuffer>, long long encodedDataLength, DataPayloadType);
+
+    void notifyDone();
 
     enum SubresourceLoaderState {
         Uninitialized,
         Initialized,
-        Finishing
+        Finishing,
+#if PLATFORM(IOS)
+        CancelledWhileInitializing
+#endif
     };
 
     class RequestCountTracker {
@@ -94,12 +102,14 @@ private:
         CachedResource* m_resource;
     };
 
+#if PLATFORM(IOS)
     ResourceRequest m_iOSOriginalRequest;
+#endif
     CachedResource* m_resource;
-    RefPtr<Document> m_document;
     bool m_loadingMultipartContent;
     SubresourceLoaderState m_state;
     OwnPtr<RequestCountTracker> m_requestCountTracker;
+    OwnPtr<PageActivityAssertionToken> m_activityAssertion;
 };
 
 }

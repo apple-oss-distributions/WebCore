@@ -27,42 +27,71 @@
 #define MemoryPressureHandler_h
 
 #include <time.h>
-#include <wtf/Platform.h>
+#include <wtf/FastAllocBase.h>
+#if PLATFORM(IOS)
+#include <wtf/ThreadingPrimitives.h>
+#endif
 
 namespace WebCore {
 
+#if PLATFORM(IOS)
+    enum MemoryPressureReason
+    {
+        MemoryPressureReasonNone        = 0,
+        MemoryPressureReasonVMPressure  = 0x1,
+        MemoryPressureReasonVMStatus    = 0x2
+    };
+#endif
+
+typedef void (*LowMemoryHandler)(bool critical);
+
 class MemoryPressureHandler {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     friend MemoryPressureHandler& memoryPressureHandler();
 
     void install();
+
+    void setLowMemoryHandler(LowMemoryHandler handler)
+    {
+        ASSERT(!m_installed);
+        m_lowMemoryHandler = handler;
+    }
+
+private:
     void uninstall();
 
     void holdOff(unsigned);
 
-private:
     MemoryPressureHandler();
     ~MemoryPressureHandler();
 
     void respondToMemoryPressure();
-    void releaseMemory(bool critical);
+    static void releaseMemory(bool critical);
 
     bool m_installed;
     time_t m_lastRespondTime;
+    LowMemoryHandler m_lowMemoryHandler;
 
+#if PLATFORM(IOS)
 public:
     void installMemoryReleaseBlock(void (^releaseMemoryBlock)(), bool clearPressureOnMemoryRelease = true);
-    void setReceivedMemoryPressure();
+    void setReceivedMemoryPressure(MemoryPressureReason reason);
     bool hasReceivedMemoryPressure();
     void clearMemoryPressure();
+    bool shouldWaitForMemoryClearMessage();
     void respondToMemoryPressureIfNeeded();
 
 private:
     uint32_t m_receivedMemoryPressure;
+    uint32_t m_memoryPressureReason;
     bool m_clearPressureOnMemoryRelease;
     void (^m_releaseMemoryBlock)();
-}; 
-
+    CFRunLoopObserverRef m_observer;
+    Mutex m_observerMutex;
+#endif
+};
+ 
 // Function to obtain the global memory pressure object.
 MemoryPressureHandler& memoryPressureHandler();
 

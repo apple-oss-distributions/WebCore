@@ -41,11 +41,13 @@ namespace WebCore {
 
         static String centerTruncate(const String&, float maxWidth, const Font&, EnableRoundingHacksOrNot = DisableRoundingHacks);
         static String rightTruncate(const String&, float maxWidth, const Font&, EnableRoundingHacksOrNot = DisableRoundingHacks);
+#if PLATFORM(IOS)
         static String centerTruncate(const String&, float maxWidth, const Font&, EnableRoundingHacksOrNot, float& resultWidth, bool insertEllipsis = true, float customTruncationElementWidth = 0);
         static String rightTruncate(const String&, float maxWidth, const Font&, EnableRoundingHacksOrNot, float& resultWidth, bool insertEllipsis = true, float customTruncationElementWidth = 0);
         static String leftTruncate(const String&, float maxWidth, const Font&, EnableRoundingHacksOrNot, float& resultWidth, bool insertEllipsis = true, float customTruncationElementWidth = 0);
         static String rightClipToCharacter(const String&, float maxWidth, const Font&, EnableRoundingHacksOrNot, float& resultWidth, bool insertEllipsis = true, float customTruncationElementWidth = 0);
         static String rightClipToWord(const String& string, float maxWidth, const Font& font, EnableRoundingHacksOrNot, float& resultWidth, bool insertEllipsis = true, float customTruncationElementWidth = 0, bool alwaysTruncate = false);
+#endif
         static float width(const String&, const Font&, EnableRoundingHacksOrNot = DisableRoundingHacks);
     };
     

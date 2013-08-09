@@ -28,7 +28,7 @@
 
 #if ENABLE(DISK_IMAGE_CACHE)
 
-#include "PlatformString.h"
+#include <wtf/text/WTFString.h>
 #include <wtf/RefCounted.h>
 
 namespace WebCore {

@@ -43,9 +43,15 @@ public:
         return adoptRef(new DeleteSelectionCommand(selection, smartDelete, mergeBlocksAfterDelete, replace, expandForSpecialElements, sanitizeMarkup));
     }
 
+#if !PLATFORM(IOS)
+private:
+#else
 protected:
     DeleteSelectionCommand(Document*, bool smartDelete, bool mergeBlocksAfterDelete, bool replace, bool expandForSpecialElements, bool santizeMarkup);
+#endif
+#if PLATFORM(IOS)
 private:
+#endif
     DeleteSelectionCommand(const VisibleSelection&, bool smartDelete, bool mergeBlocksAfterDelete, bool replace, bool expandForSpecialElements, bool sanitizeMarkup);
 
     virtual void doApply();
@@ -66,7 +72,8 @@ private:
     void calculateEndingPosition();
     void calculateTypingStyleAfterDelete();
     void clearTransientState();
-    virtual void removeNode(PassRefPtr<Node>);
+    void makeStylingElementsDirectChildrenOfEditableRootToPreventStyleLoss();
+    virtual void removeNode(PassRefPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable);
     virtual void deleteTextFromNode(PassRefPtr<Text>, unsigned, unsigned);
     void removeRedundantBlocks();
 

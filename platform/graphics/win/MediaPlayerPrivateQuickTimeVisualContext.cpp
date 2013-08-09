@@ -30,6 +30,7 @@
 
 #include "Cookie.h"
 #include "CookieJar.h"
+#include "Document.h"
 #include "DocumentLoader.h"
 #include "Frame.h"
 #include "FrameView.h"
@@ -102,7 +103,7 @@ private:
     virtual GraphicsLayer::CompositingCoordinatesOrientation platformCALayerContentsOrientation() const { return GraphicsLayer::CompositingCoordinatesBottomUp; }
     virtual void platformCALayerPaintContents(GraphicsContext&, const IntRect& inClip) { }
     virtual bool platformCALayerShowDebugBorders() const { return false; }
-    virtual bool platformCALayerShowRepaintCounter() const { return false; }
+    virtual bool platformCALayerShowRepaintCounter(PlatformCALayer*) const { return false; }
     virtual int platformCALayerIncrementRepaintCount() { return 0; }
 
     virtual bool platformCALayerContentsOpaque() const { return false; }
@@ -184,6 +185,7 @@ MediaPlayerPrivateQuickTimeVisualContext::MediaPlayerPrivateQuickTimeVisualConte
     , m_delayingLoad(false)
     , m_privateBrowsing(false)
     , m_preload(MediaPlayer::Auto)
+    , m_maxTimeLoadedAtLastDidLoadingProgress(0)
 {
 }
 
@@ -234,7 +236,7 @@ String MediaPlayerPrivateQuickTimeVisualContext::rfc2616DateStringFromTime(CFAbs
     time = CFGregorianDateGetAbsoluteTime(dateValue, gmtTimeZone);
     SInt32 day = CFAbsoluteTimeGetDayOfWeek(time, 0);
 
-    RetainPtr<CFStringRef> dateCFString(AdoptCF, CFStringCreateWithFormat(0, 0, dateFormatString, dayStrings[day - 1], dateValue.day, 
+    RetainPtr<CFStringRef> dateCFString = adoptCF(CFStringCreateWithFormat(0, 0, dateFormatString, dayStrings[day - 1], dateValue.day, 
         monthStrings[dateValue.month - 1], dateValue.year, dateValue.hour, dateValue.minute, (int)dateValue.second));
     return dateCFString.get();
 }
@@ -263,7 +265,7 @@ void MediaPlayerPrivateQuickTimeVisualContext::setUpCookiesForQuickTime(const St
     // download the movie into WinInet before asking QuickTime to open it.
     Document* document = m_player->mediaPlayerClient()->mediaPlayerOwningDocument();
     Frame* frame = document ? document->frame() : 0;
-    if (!frame || !frame->page() || !frame->page()->cookieEnabled())
+    if (!frame || !frame->page() || !frame->page()->settings()->cookieEnabled())
         return;
 
     KURL movieURL = KURL(KURL(), url);
@@ -574,7 +576,7 @@ PassRefPtr<TimeRanges> MediaPlayerPrivateQuickTimeVisualContext::buffered() cons
 float MediaPlayerPrivateQuickTimeVisualContext::maxTimeSeekable() const
 {
     // infinite duration means live stream
-    return !isfinite(duration()) ? 0 : maxTimeLoaded();
+    return !std::isfinite(duration()) ? 0 : maxTimeLoaded();
 }
 
 float MediaPlayerPrivateQuickTimeVisualContext::maxTimeLoaded() const
@@ -584,15 +586,14 @@ float MediaPlayerPrivateQuickTimeVisualContext::maxTimeLoaded() const
     return m_movie->maxTimeLoaded(); 
 }
 
-unsigned MediaPlayerPrivateQuickTimeVisualContext::bytesLoaded() const
+bool MediaPlayerPrivateQuickTimeVisualContext::didLoadingProgress() const
 {
-    if (!m_movie)
-        return 0;
-    float dur = duration();
-    float maxTime = maxTimeLoaded();
-    if (!dur)
-        return 0;
-    return totalBytes() * maxTime / dur;
+    if (!m_movie || !duration())
+        return false;
+    float currentMaxTimeLoaded = maxTimeLoaded();
+    bool didLoadingProgress = currentMaxTimeLoaded != m_maxTimeLoadedAtLastDidLoadingProgress;
+    m_maxTimeLoadedAtLastDidLoadingProgress = currentMaxTimeLoaded;
+    return didLoadingProgress;
 }
 
 unsigned MediaPlayerPrivateQuickTimeVisualContext::totalBytes() const
@@ -799,7 +800,7 @@ void MediaPlayerPrivateQuickTimeVisualContext::visualContextTimerFired(Timer<Med
 
 static CFDictionaryRef QTCFDictionaryCreateWithDataCallback(CFAllocatorRef allocator, const UInt8* bytes, CFIndex length)
 {
-    RetainPtr<CFDataRef> data(AdoptCF, CFDataCreateWithBytesNoCopy(allocator, bytes, length, kCFAllocatorNull));
+    RetainPtr<CFDataRef> data = adoptCF(CFDataCreateWithBytesNoCopy(allocator, bytes, length, kCFAllocatorNull));
     if (!data)
         return 0;
 
@@ -890,7 +891,7 @@ void MediaPlayerPrivateQuickTimeVisualContext::retrieveCurrentImage()
                 // CAImageQueue without being converted to a non-Debug CFDictionary.  Additionally,
                 // old versions of QuickTime used a non-AAS CoreFoundation, so the types are not 
                 // interchangable even in the release case.
-                RetainPtr<CFDictionaryRef> attachments(AdoptCF, QTCFDictionaryCreateCopyWithDataCallback(kCFAllocatorDefault, buffer.attachments(), &QTCFDictionaryCreateWithDataCallback));
+                RetainPtr<CFDictionaryRef> attachments = adoptCF(QTCFDictionaryCreateCopyWithDataCallback(kCFAllocatorDefault, buffer.attachments(), &QTCFDictionaryCreateWithDataCallback));
                 CFTimeInterval imageTime = QTMovieVisualContext::currentHostTime();
 
                 m_imageQueue->collect();
@@ -1012,7 +1013,7 @@ bool MediaPlayerPrivateQuickTimeVisualContext::isAvailable()
     return QTMovie::initializeQuickTime();
 }
 
-MediaPlayer::SupportsType MediaPlayerPrivateQuickTimeVisualContext::supportsType(const String& type, const String& codecs)
+MediaPlayer::SupportsType MediaPlayerPrivateQuickTimeVisualContext::supportsType(const String& type, const String& codecs, const KURL&)
 {
     // only return "IsSupported" if there is no codecs parameter for now as there is no way to ask QT if it supports an
     //  extended MIME type

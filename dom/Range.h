@@ -29,14 +29,10 @@
 #include "FloatRect.h"
 #include "FragmentScriptingPermission.h"
 #include "IntRect.h"
-#include "Node.h"
 #include "RangeBoundaryPoint.h"
 #include <wtf/Forward.h>
 #include <wtf/RefCounted.h>
 #include <wtf/Vector.h>
-
-#include "SelectionRect.h"
-#include "VisiblePosition.h"
 
 namespace WebCore {
 
@@ -46,15 +42,22 @@ class ContainerNode;
 class Document;
 class DocumentFragment;
 class FloatQuad;
+class Node;
 class NodeWithIndex;
 class Text;
+#if PLATFORM(IOS)
+class SelectionRect;
+class VisiblePosition;
+#endif
 
 class Range : public RefCounted<Range> {
 public:
     static PassRefPtr<Range> create(PassRefPtr<Document>);
     static PassRefPtr<Range> create(PassRefPtr<Document>, PassRefPtr<Node> startContainer, int startOffset, PassRefPtr<Node> endContainer, int endOffset);
     static PassRefPtr<Range> create(PassRefPtr<Document>, const Position&, const Position&);
+#if PLATFORM(IOS)
     static PassRefPtr<Range> create(PassRefPtr<Document>, const VisiblePosition &, const VisiblePosition &);
+#endif
     ~Range();
 
     Document* ownerDocument() const { return m_ownerDocument.get(); }
@@ -67,7 +70,7 @@ public:
     int startOffset(ExceptionCode&) const;
     Node* endContainer(ExceptionCode&) const;
     int endOffset(ExceptionCode&) const;
-    bool collapsed(ExceptionCode& = ASSERT_NO_EXCEPTION) const;
+    bool collapsed(ExceptionCode&) const;
 
     Node* commonAncestorContainer(ExceptionCode&) const;
     static Node* commonAncestorContainer(Node* containerA, Node* containerB);
@@ -93,8 +96,7 @@ public:
     String toHTML() const;
     String text() const;
 
-    PassRefPtr<DocumentFragment> createContextualFragment(const String& html, ExceptionCode&, FragmentScriptingPermission = FragmentScriptingAllowed);
-    static PassRefPtr<DocumentFragment> createDocumentFragmentForElement(const String& markup, Element*,  FragmentScriptingPermission = FragmentScriptingAllowed);
+    PassRefPtr<DocumentFragment> createContextualFragment(const String& html, ExceptionCode&);
 
     void detach(ExceptionCode&);
     PassRefPtr<Range> cloneRange(ExceptionCode&) const;
@@ -115,23 +117,25 @@ public:
     Node* firstNode() const;
     Node* pastLastNode() const;
 
-    Node* shadowTreeRootNode() const;
+    ShadowRoot* shadowRoot() const;
 
-    IntRect boundingBox();
-    
     enum RangeInFixedPosition {
         NotFixedPosition,
         PartiallyFixedPosition,
         EntirelyFixedPosition
     };
-    
+
     // Not transform-friendly
-    void textRects(Vector<IntRect>&, bool useSelectionHeight = false, RangeInFixedPosition* = 0);
+    void textRects(Vector<IntRect>&, bool useSelectionHeight = false, RangeInFixedPosition* = 0) const;
+    IntRect boundingBox() const;
+
     // Transform-friendly
     void textQuads(Vector<FloatQuad>&, bool useSelectionHeight = false, RangeInFixedPosition* = 0) const;
     void getBorderAndTextQuads(Vector<FloatQuad>&) const;
     FloatRect boundingRect() const;
+#if PLATFORM(IOS)
     void collectSelectionRects(Vector<SelectionRect>&);
+#endif
 
     void nodeChildrenChanged(ContainerNode*);
     void nodeChildrenWillBeRemoved(ContainerNode*);
@@ -154,10 +158,12 @@ public:
     void formatForDebugger(char* buffer, unsigned length) const;
 #endif
 
+#if PLATFORM(IOS)
     Document* document() const { return m_ownerDocument.get(); }
+#endif
 
 private:
-    Range(PassRefPtr<Document>);
+    explicit Range(PassRefPtr<Document>);
     Range(PassRefPtr<Document>, PassRefPtr<Node> startContainer, int startOffset, PassRefPtr<Node> endContainer, int endOffset);
 
     void setDocument(Document*);

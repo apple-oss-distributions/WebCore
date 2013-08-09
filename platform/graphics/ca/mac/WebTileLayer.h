@@ -26,17 +26,23 @@
 #ifndef WebTileLayer_h
 #define WebTileLayer_h
 
+#if PLATFORM(IOS) // FIXME
+#import <QuartzCore/QuartzCore.h>
+#endif
+
 namespace WebCore {
-    class TileCache;
+class TileController;
 }
 
 @interface WebTileLayer : CALayer {
-    WebCore::TileCache* _tileCache;
-    unsigned _repaintCount;
+    WebCore::TileController* _tileController;
+    unsigned _paintCount;
 }
 
-- (void)setTileCache:(WebCore::TileCache*)tileCache;
-- (unsigned)incrementRepaintCount;
+- (void)setTileController:(WebCore::TileController*)tileController;
+- (void)resetPaintCount;
+- (unsigned)incrementPaintCount;
+- (unsigned)paintCount;
 @end
 
 

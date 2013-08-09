@@ -39,10 +39,19 @@ class FloatPoint;
 }
 #endif
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
+#if USE(CG)
 typedef struct CGPoint CGPoint;
 #endif
 
+#if !PLATFORM(IOS)
+#if PLATFORM(MAC)
+#ifdef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
+typedef struct CGPoint NSPoint;
+#else
+typedef struct _NSPoint NSPoint;
+#endif
+#endif
+#endif // !PLATFORM(IOS)
 
 #if PLATFORM(QT)
 #include "qglobal.h"
@@ -51,25 +60,19 @@ class QPointF;
 QT_END_NAMESPACE
 #endif
 
-#if USE(SKIA)
-struct SkPoint;
-#endif
-
 namespace WebCore {
 
 class AffineTransform;
 class TransformationMatrix;
 class IntPoint;
 class IntSize;
-class FractionalLayoutPoint;
-class FractionalLayoutSize;
 
 class FloatPoint {
 public:
     FloatPoint() : m_x(0), m_y(0) { }
     FloatPoint(float x, float y) : m_x(x), m_y(y) { }
     FloatPoint(const IntPoint&);
-    FloatPoint(const FractionalLayoutPoint&);
+    explicit FloatPoint(const FloatSize& size) : m_x(size.width()), m_y(size.height()) { }
 
     static FloatPoint zero() { return FloatPoint(); }
 
@@ -95,7 +98,6 @@ public:
         m_x += a.width();
         m_y += a.height();
     }
-    void move(const FractionalLayoutSize&);
     void move(const FloatSize& a)
     {
         m_x += a.width();
@@ -106,7 +108,6 @@ public:
         m_x += a.x();
         m_y += a.y();
     }
-    void moveBy(const FractionalLayoutPoint&);
     void moveBy(const FloatPoint& a)
     {
         m_x += a.x();
@@ -125,6 +126,7 @@ public:
         return m_x * a.x() + m_y * a.y();
     }
 
+    float slopeAngleRadians() const;
     float length() const;
     float lengthSquared() const
     {
@@ -141,11 +143,17 @@ public:
         return FloatPoint(m_y, m_x);
     }
 
-#if USE(CG) || USE(SKIA_ON_MAC_CHROMIUM)
+#if USE(CG)
     FloatPoint(const CGPoint&);
     operator CGPoint() const;
 #endif
 
+#if !PLATFORM(IOS)
+#if PLATFORM(MAC) && !defined(NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES)
+    FloatPoint(const NSPoint&);
+    operator NSPoint() const;
+#endif
+#endif // !PLATFORM(IOS)
 
 #if PLATFORM(QT)
     FloatPoint(const QPointF&);
@@ -155,11 +163,6 @@ public:
 #if PLATFORM(BLACKBERRY)
     FloatPoint(const BlackBerry::Platform::FloatPoint&);
     operator BlackBerry::Platform::FloatPoint() const;
-#endif
-
-#if USE(SKIA)
-    operator SkPoint() const;
-    FloatPoint(const SkPoint&);
 #endif
 
     FloatPoint matrixTransform(const TransformationMatrix&) const;
@@ -231,17 +234,27 @@ inline float operator*(const FloatPoint& a, const FloatPoint& b)
 
 inline IntPoint roundedIntPoint(const FloatPoint& p)
 {
-    return IntPoint(static_cast<int>(roundf(p.x())), static_cast<int>(roundf(p.y())));
+    return IntPoint(clampToInteger(roundf(p.x())), clampToInteger(roundf(p.y())));
 }
 
 inline IntPoint flooredIntPoint(const FloatPoint& p)
 {
-    return IntPoint(static_cast<int>(p.x()), static_cast<int>(p.y()));
+    return IntPoint(clampToInteger(floorf(p.x())), clampToInteger(floorf(p.y())));
+}
+
+inline IntPoint ceiledIntPoint(const FloatPoint& p)
+{
+    return IntPoint(clampToInteger(ceilf(p.x())), clampToInteger(ceilf(p.y())));
 }
 
 inline IntSize flooredIntSize(const FloatPoint& p)
 {
-    return IntSize(static_cast<int>(p.x()), static_cast<int>(p.y()));
+    return IntSize(clampToInteger(floorf(p.x())), clampToInteger(floorf(p.y())));
+}
+
+inline FloatSize toFloatSize(const FloatPoint& a)
+{
+    return FloatSize(a.x(), a.y());
 }
 
 float findSlope(const FloatPoint& p1, const FloatPoint& p2, float& c);

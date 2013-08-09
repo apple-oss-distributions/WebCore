@@ -29,16 +29,27 @@
 
 #include "LayerFlushScheduler.h"
 
-#include "AutodrainedPool.h"
+#include <wtf/AutodrainedPool.h>
 
+#if PLATFORM(IOS)
 #include <CoreFoundation/CFBundle.h>
 #include <WebCore/WebCoreThread.h>
+#endif
 
 namespace WebCore {
 
+#if !PLATFORM(IOS)
+    // Run after AppKit does its window update. If we do any painting, we'll commit
+    // layer changes from FrameView::paintContents(), otherwise we'll commit via
+    // _syncCompositingChanges when this observer fires.
+    // Also leave a slot for the requestAnimationFrameRunLoopObserver, if it's enabled
+    static const CFIndex LayerFlushRunLoopOrder = NSDisplayWindowRunLoopOrdering + 2;
+#else
     static const CFIndex CoreAnimationRunLoopOrder = 2000000;
     static const CFIndex LayerFlushRunLoopOrder = CoreAnimationRunLoopOrder - 1;
+#endif
 
+#if PLATFORM(IOS)
 static bool layerSyncRunLoopObserverMustBeOnWebThread()
 {
     // A race condition during WebView deallocation can lead to a crash if the layer sync run loop
@@ -49,6 +60,7 @@ static bool layerSyncRunLoopObserverMustBeOnWebThread()
     static bool mustBeOnWebThread = CFStringCompare(CFBundleGetIdentifier(CFBundleGetMainBundle()), CFSTR("com.apple.iBooks"), 0) == kCFCompareEqualTo;
     return mustBeOnWebThread;
 }
+#endif
 
 LayerFlushScheduler::LayerFlushScheduler(LayerFlushSchedulerClient* client)
     : m_isSuspended(false)
@@ -82,7 +94,11 @@ void LayerFlushScheduler::schedule()
     if (m_isSuspended)
         return;
 
+#if !PLATFORM(IOS)
+    CFRunLoopRef currentRunLoop = CFRunLoopGetCurrent();
+#else
     CFRunLoopRef currentRunLoop = layerSyncRunLoopObserverMustBeOnWebThread() ? WebThreadRunLoop() : CFRunLoopGetCurrent();
+#endif
 
     // Make sure we wake up the loop or the observer could be delayed until some other source fires.
     CFRunLoopWakeUp(currentRunLoop);
@@ -91,7 +107,7 @@ void LayerFlushScheduler::schedule()
         return;
 
     CFRunLoopObserverContext context = { 0, this, 0, 0, 0 };
-    m_runLoopObserver.adoptCF(CFRunLoopObserverCreate(0, kCFRunLoopBeforeWaiting | kCFRunLoopExit, true, LayerFlushRunLoopOrder, runLoopObserverCallback, &context));
+    m_runLoopObserver = adoptCF(CFRunLoopObserverCreate(0, kCFRunLoopBeforeWaiting | kCFRunLoopExit, true, LayerFlushRunLoopOrder, runLoopObserverCallback, &context));
 
     CFRunLoopAddObserver(currentRunLoop, m_runLoopObserver.get(), kCFRunLoopCommonModes);
 }

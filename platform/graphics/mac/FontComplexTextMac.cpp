@@ -26,7 +26,7 @@
 #include "Font.h"
 
 #include "ComplexTextController.h"
-#include "FontFallbackList.h"
+#include "FontGlyphs.h"
 #include "GlyphBuffer.h"
 #include "GraphicsContext.h"
 #include "IntRect.h"
@@ -72,15 +72,18 @@ float Font::getGlyphsAndAdvancesForComplexText(const TextRun& run, int from, int
 
     if (run.rtl()) {
         initialAdvance = controller.totalWidth() + controller.finalRoundingWidth() - afterWidth;
-        for (int i = 0, end = glyphBuffer.size() - 1; i < glyphBuffer.size() / 2; ++i, --end)
-            glyphBuffer.swap(i, end);
+        glyphBuffer.reverse(0, glyphBuffer.size());
     } else
         initialAdvance = beforeWidth;
 
     return initialAdvance;
 }
 
+#if !PLATFORM(IOS)
+void Font::drawComplexText(GraphicsContext* context, const TextRun& run, const FloatPoint& point, int from, int to) const
+#else
 float Font::drawComplexText(GraphicsContext* context, const TextRun& run, const FloatPoint& point, int from, int to) const
+#endif
 {
     // This glyph buffer holds our glyphs + advances + font data for each glyph.
     GlyphBuffer glyphBuffer;
@@ -89,13 +92,19 @@ float Font::drawComplexText(GraphicsContext* context, const TextRun& run, const 
 
     // We couldn't generate any glyphs for the run.  Give up.
     if (glyphBuffer.isEmpty())
+#if !PLATFORM(IOS)
+        return;
+#else
         return 0.0f;
+#endif
 
     // Draw the glyph buffer now at the starting point returned in startX.
     FloatPoint startPoint(startX, point.y());
     drawGlyphBuffer(context, run, glyphBuffer, startPoint);
 
+#if PLATFORM(IOS)
     return startPoint.x() - startX;
+#endif
 }
 
 void Font::drawEmphasisMarksForComplexText(GraphicsContext* context, const TextRun& run, const AtomicString& mark, const FloatPoint& point, int from, int to) const
@@ -135,20 +144,42 @@ const SimpleFontData* Font::fontDataForCombiningCharacterSequence(const UChar* c
 
     GlyphData baseCharacterGlyphData = glyphDataForCharacter(baseCharacter, false, variant);
 
+    if (!baseCharacterGlyphData.glyph)
+        return 0;
+
     if (length == baseCharacterLength)
-        return baseCharacterGlyphData.glyph ? baseCharacterGlyphData.fontData : 0;
+        return baseCharacterGlyphData.fontData;
 
     bool triedBaseCharacterFontData = false;
 
+#if PLATFORM(IOS)
     // In iOS, glyphDataForCharacter() always returns the system fallback font for characters in the
     // range U+0600..U+06FF (see forceFallback in glyphDataAndPageForCharacter()), because other
     // fonts may not shape correctly. Therefore, this function should only return that font or 0.
     if (baseCharacter < 0x0600 || baseCharacter > 0x06FF) {
+#endif
     unsigned i = 0;
     for (const FontData* fontData = fontDataAt(0); fontData; fontData = fontDataAt(++i)) {
         const SimpleFontData* simpleFontData = fontData->fontDataForCharacter(baseCharacter);
-        if (variant != NormalVariant) {
-            if (const SimpleFontData* variantFontData = simpleFontData->variantFontData(m_fontDescription, variant))
+        if (variant == NormalVariant) {
+            if (simpleFontData->platformData().orientation() == Vertical) {
+                if (isCJKIdeographOrSymbol(baseCharacter) && !simpleFontData->hasVerticalGlyphs()) {
+                    variant = BrokenIdeographVariant;
+                    simpleFontData = simpleFontData->brokenIdeographFontData().get();
+                } else if (m_fontDescription.nonCJKGlyphOrientation() == NonCJKGlyphOrientationVerticalRight) {
+                    SimpleFontData* verticalRightFontData = simpleFontData->verticalRightOrientationFontData().get();
+                    Glyph verticalRightGlyph = verticalRightFontData->glyphForCharacter(baseCharacter);
+                    if (verticalRightGlyph == baseCharacterGlyphData.glyph)
+                        simpleFontData = verticalRightFontData;
+                } else {
+                    SimpleFontData* uprightFontData = simpleFontData->uprightOrientationFontData().get();
+                    Glyph uprightGlyph = uprightFontData->glyphForCharacter(baseCharacter);
+                    if (uprightGlyph != baseCharacterGlyphData.glyph)
+                        simpleFontData = uprightFontData;
+                }
+            }
+        } else {
+            if (const SimpleFontData* variantFontData = simpleFontData->variantFontData(m_fontDescription, variant).get())
                 simpleFontData = variantFontData;
         }
 
@@ -158,11 +189,13 @@ const SimpleFontData* Font::fontDataForCombiningCharacterSequence(const UChar* c
         if (simpleFontData->canRenderCombiningCharacterSequence(characters, length))
             return simpleFontData;
     }
+#if PLATFORM(IOS)
     }
+#endif
     if (!triedBaseCharacterFontData && baseCharacterGlyphData.fontData && baseCharacterGlyphData.fontData->canRenderCombiningCharacterSequence(characters, length))
         return baseCharacterGlyphData.fontData;
 
-    return 0;
+    return SimpleFontData::systemFallback();
 }
 
 } // namespace WebCore

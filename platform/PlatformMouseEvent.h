@@ -28,6 +28,9 @@
 
 #include "IntPoint.h"
 #include "PlatformEvent.h"
+#if OS(WINDOWS)
+#include "WindowsExtras.h"
+#endif
 
 #if PLATFORM(GTK)
 typedef struct _GdkEventButton GdkEventButton;
@@ -38,17 +41,6 @@ typedef struct _GdkEventMotion GdkEventMotion;
 typedef struct _Evas_Event_Mouse_Down Evas_Event_Mouse_Down;
 typedef struct _Evas_Event_Mouse_Up Evas_Event_Mouse_Up;
 typedef struct _Evas_Event_Mouse_Move Evas_Event_Mouse_Move;
-#endif
-
-#if PLATFORM(WIN)
-typedef struct HWND__* HWND;
-typedef unsigned UINT;
-typedef unsigned WPARAM;
-typedef long LPARAM;
-#endif
-
-#if PLATFORM(WX)
-class wxMouseEvent;
 #endif
 
 namespace WebCore {
@@ -67,6 +59,11 @@ namespace WebCore {
             , m_button(NoButton)
             , m_clickCount(0)
             , m_modifierFlags(0)
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+            , m_eventNumber(0)
+#elif PLATFORM(WIN)
+            , m_didActivateWebView(false)
+#endif
         {
         }
 
@@ -78,6 +75,11 @@ namespace WebCore {
             , m_button(button)
             , m_clickCount(clickCount)
             , m_modifierFlags(0)
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+            , m_eventNumber(0)
+#elif PLATFORM(WIN)
+            , m_didActivateWebView(false)
+#endif
         {
         }
 
@@ -93,8 +95,8 @@ namespace WebCore {
         
 
 #if PLATFORM(GTK) 
-        PlatformMouseEvent(GdkEventButton*);
-        PlatformMouseEvent(GdkEventMotion*);
+        explicit PlatformMouseEvent(GdkEventButton*);
+        explicit PlatformMouseEvent(GdkEventMotion*);
         void setClickCount(int count) { m_clickCount = count; }
 #endif
 
@@ -105,6 +107,9 @@ namespace WebCore {
         PlatformMouseEvent(const Evas_Event_Mouse_Move*, IntPoint);
 #endif
 
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+        int eventNumber() const { return m_eventNumber; }
+#endif
 
 #if PLATFORM(WIN)
         PlatformMouseEvent(HWND, UINT, WPARAM, LPARAM, bool didActivateWebView = false);
@@ -112,12 +117,8 @@ namespace WebCore {
         bool didActivateWebView() const { return m_didActivateWebView; }
 #endif
 
-#if PLATFORM(WX)
-        PlatformMouseEvent(const wxMouseEvent&, const wxPoint& globalPoint, int clickCount);
-#endif
-
 #if PLATFORM(BLACKBERRY)
-        PlatformMouseEvent(const IntPoint& eventPosition, const IntPoint& globalPosition, const PlatformEvent::Type, int clickCount, MouseButton, MouseInputMethod = PointingDevice);
+        PlatformMouseEvent(const IntPoint& eventPosition, const IntPoint& globalPosition, const PlatformEvent::Type, int clickCount, MouseButton, bool shiftKey, bool ctrlKey, bool altKey, MouseInputMethod = PointingDevice);
         MouseInputMethod inputMethod() const { return m_inputMethod; }
 #endif
     protected:
@@ -130,6 +131,13 @@ namespace WebCore {
         int m_clickCount;
         unsigned m_modifierFlags;
 
+#if PLATFORM(MAC) && !PLATFORM(IOS)
+        int m_eventNumber;
+#elif PLATFORM(WIN)
+        bool m_didActivateWebView;
+#elif PLATFORM(BLACKBERRY)
+        MouseInputMethod m_inputMethod;
+#endif
     };
 
 } // namespace WebCore

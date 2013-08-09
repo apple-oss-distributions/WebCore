@@ -28,14 +28,14 @@
 
 #include "DeviceOrientationClient.h"
 #include "DeviceOrientationController.h"
-#include "DeviceOrientation.h"
+#include "DeviceOrientationData.h"
 #include <wtf/PassOwnPtr.h>
 #include <wtf/RefPtr.h>
 
 #ifdef __OBJC__
-@class CoreMotionManager;
+@class WebCoreMotionManager;
 #else
-class CoreMotionManager;
+class WebCoreMotionManager;
 #endif
 
 namespace WebCore {
@@ -51,15 +51,15 @@ public:
     virtual void setController(DeviceOrientationController*) OVERRIDE;
     virtual void startUpdating() OVERRIDE;
     virtual void stopUpdating() OVERRIDE;
-    virtual DeviceOrientation* lastOrientation() const OVERRIDE;
+    virtual DeviceOrientationData* lastOrientation() const OVERRIDE;
     virtual void deviceOrientationControllerDestroyed() OVERRIDE;
 
     void orientationChanged(double, double, double, double, double);
 
 private:
-    CoreMotionManager* m_motionManager;
+    WebCoreMotionManager* m_motionManager;
     DeviceOrientationController* m_controller;
-    RefPtr<DeviceOrientation> m_currentDeviceOrientation;
+    RefPtr<DeviceOrientationData> m_currentDeviceOrientation;
     bool m_updating;
 };
 

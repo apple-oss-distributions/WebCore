@@ -18,3 +18,68 @@
  *
  */
 
+#if !PLATFORM(IOS)
+
+#import "config.h"
+#import "Icon.h"
+
+#import "GraphicsContext.h"
+#import "LocalCurrentGraphicsContext.h"
+#import <wtf/PassRefPtr.h>
+#include <wtf/text/WTFString.h>
+
+namespace WebCore {
+
+Icon::Icon(NSImage *image)
+    : m_nsImage(image)
+{
+    // Need this because WebCore uses AppKit's flipped coordinate system exclusively.
+    [image setFlipped:YES];
+}
+
+Icon::~Icon()
+{
+}
+
+// FIXME: Move the code to ChromeClient::iconForFiles().
+PassRefPtr<Icon> Icon::createIconForFiles(const Vector<String>& filenames)
+{
+    if (filenames.isEmpty())
+        return 0;
+
+    bool useIconFromFirstFile;
+    useIconFromFirstFile = filenames.size() == 1;
+    if (useIconFromFirstFile) {
+        // Don't pass relative filenames -- we don't want a result that depends on the current directory.
+        // Need 0U here to disambiguate String::operator[] from operator(NSString*, int)[]
+        if (filenames[0].isEmpty() || filenames[0][0U] != '/')
+            return 0;
+
+        NSImage* image = [[NSWorkspace sharedWorkspace] iconForFile:filenames[0]];
+        if (!image)
+            return 0;
+
+        return adoptRef(new Icon(image));
+    }
+    NSImage* image = [NSImage imageNamed:NSImageNameMultipleDocuments];
+    if (!image)
+        return 0;
+
+    return adoptRef(new Icon(image));
+}
+
+void Icon::paint(GraphicsContext* context, const IntRect& rect)
+{
+    if (context->paintingDisabled())
+        return;
+
+    LocalCurrentGraphicsContext localCurrentGC(context);
+
+    [m_nsImage.get() drawInRect:rect
+        fromRect:NSMakeRect(0, 0, [m_nsImage.get() size].width, [m_nsImage.get() size].height)
+        operation:NSCompositeSourceOver fraction:1.0f];
+}
+
+}
+
+#endif

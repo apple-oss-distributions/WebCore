@@ -19,6 +19,7 @@
 #ifndef TileGridTile_h
 #define TileGridTile_h
 
+#if PLATFORM(IOS)
 
 #include "IntRect.h"
 #include <wtf/RefCounted.h>
@@ -53,4 +54,5 @@ private:
 
 }
 
+#endif
 #endif

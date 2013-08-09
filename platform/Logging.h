@@ -52,6 +52,7 @@ namespace WebCore {
     extern WTFLogChannel LogPageCache;
     extern WTFLogChannel LogPlatformLeaks;
     extern WTFLogChannel LogResourceLoading;
+    extern WTFLogChannel LogAnimations;
     extern WTFLogChannel LogNetwork;
     extern WTFLogChannel LogFTP;
     extern WTFLogChannel LogThreading;
@@ -63,13 +64,15 @@ namespace WebCore {
     extern WTFLogChannel LogFileAPI;
     extern WTFLogChannel LogWebAudio;
     extern WTFLogChannel LogCompositing;
+    extern WTFLogChannel LogGamepad;
 
+#if PLATFORM(IOS)
 #if ENABLE(DISK_IMAGE_CACHE)
     extern WTFLogChannel LogDiskImageCache;
 #endif
     extern WTFLogChannel LogMemoryPressure;
+#endif
 
-    void initializeLoggingChannelsIfNecessary();
     WTFLogChannel* getChannelFromName(const String& channelName);
 }
 

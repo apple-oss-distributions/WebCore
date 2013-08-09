@@ -10,6 +10,7 @@ accesskey
 action
 align
 alink
+allowfullscreen
 alt
 archive
 aria-activedescendant
@@ -36,11 +37,13 @@ aria-multiline
 aria-multiselectable
 aria-orientation
 aria-owns
+aria-posinset
 aria-pressed
 aria-readonly
 aria-relevant
 aria-required
 aria-selected
+aria-setsize
 aria-sort
 aria-valuemax
 aria-valuemin
@@ -58,6 +61,7 @@ bgcolor
 bgproperties
 border
 bordercolor
+capture
 cellpadding
 cellspacing
 char
@@ -92,6 +96,7 @@ dir
 direction
 dirname
 disabled
+disposition
 download
 draggable
 webkitdropzone
@@ -121,6 +126,7 @@ http_equiv
 id
 incremental
 indeterminate
+is
 ismap
 itemid
 itemprop
@@ -156,6 +162,7 @@ multiple
 muted
 name
 nohref
+nonce
 noresize
 noshade
 novalidate
@@ -201,6 +208,8 @@ onloadeddata
 onloadedmetadata
 onloadstart
 onmousedown
+onmouseenter
+onmouseleave
 onmousemove
 onmouseout
 onmouseover
@@ -240,6 +249,7 @@ ontouchcancel
 ongesturestart
 ongesturechange
 ongestureend
+ontransitionend
 onunload
 onvolumechange
 onwaiting
@@ -254,6 +264,9 @@ onwebkitkeyadded
 onwebkitkeyerror
 onwebkitkeymessage
 onwebkitneedkey
+onwebkitsourceclose
+onwebkitsourceended
+onwebkitsourceopen
 onwebkittransitionend
 open
 optimum
@@ -269,9 +282,11 @@ primary
 profile
 progress
 prompt
+pseudo
 readonly
 rel
 required
+reset-style-inheritance
 results
 rev
 reversed
@@ -328,8 +343,12 @@ webkitallowfullscreen
 webkitdirectory
 width
 wrap
+
 autocorrect
 autocapitalize
 data-youtube-id
+onwebkitcurrentplaybacktargetiswirelesschanged
+onwebkitplaybacktargetavailabilitychanged
 webkit-playsinline
 x-webkit-airplay
+x-webkit-wirelessvideoplaybackdisabled

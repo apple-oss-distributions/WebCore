@@ -26,6 +26,7 @@
 #import "config.h"
 #import "UTIUtilities.h"
 
+#if PLATFORM(IOS)
 #import "SoftLinking.h"
 #import <MobileCoreServices/MobileCoreServices.h>
 
@@ -39,18 +40,19 @@ SOFT_LINK_CONSTANT(MobileCoreServices, kUTTagClassMIMEType, CFStringRef)
 
 #define kUTTagClassMIMEType getkUTTagClassMIMEType()
 #define kUTTypeConformsToKey getkUTTypeConformsToKey()
+#endif
 
 namespace WebCore {
 
 RetainPtr<CFStringRef> mimeTypeFromUTITree(CFStringRef uti)
 {
     // Check if this UTI has a MIME type.
-    RetainPtr<CFStringRef> mimeType(AdoptCF, UTTypeCopyPreferredTagWithClass(uti, kUTTagClassMIMEType));
+    RetainPtr<CFStringRef> mimeType = adoptCF(UTTypeCopyPreferredTagWithClass(uti, kUTTagClassMIMEType));
     if (mimeType)
         return mimeType.get();
 
     // If not, walk the ancestory of this UTI via its "ConformsTo" tags and return the first MIME type we find.
-    RetainPtr<CFDictionaryRef> decl(AdoptCF, UTTypeCopyDeclaration(uti));
+    RetainPtr<CFDictionaryRef> decl = adoptCF(UTTypeCopyDeclaration(uti));
     if (!decl)
         return nil;
     CFTypeRef value = CFDictionaryGetValue(decl.get(), kUTTypeConformsToKey);
@@ -75,6 +77,12 @@ RetainPtr<CFStringRef> mimeTypeFromUTITree(CFStringRef uti)
     }
 
     return nil;
+}
+
+RetainPtr<CFStringRef> UTIFromMIMEType(CFStringRef mime)
+{
+    RetainPtr<CFStringRef> uti = adoptCF(UTTypeCreatePreferredIdentifierForTag(kUTTagClassMIMEType, mime, 0));
+    return uti;
 }
 
 }

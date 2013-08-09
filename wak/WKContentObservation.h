@@ -9,6 +9,7 @@
 #ifndef WKContentObservation_h
 #define WKContentObservation_h
 
+#if PLATFORM(IOS)
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,5 +41,6 @@ void WebThreadRemoveObservedContentModifier(void * aContentModifier);
 }
 #endif
 
+#endif // PLATFORM(IOS)
 
 #endif // WKContentObservation_h

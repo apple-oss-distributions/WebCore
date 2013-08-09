@@ -5,6 +5,7 @@
 //  Copyright (C) 2007, 2008, Apple Inc.  All rights reserved.
 //
 
+#if PLATFORM(IOS)
 
 #import <WebCore/DOMElement.h>
 #import <WebCore/DOMExtensions.h>
@@ -66,3 +67,4 @@ typedef enum {
 - (int)structuralComplexityContribution; // Does not include children.
 @end
 
+#endif

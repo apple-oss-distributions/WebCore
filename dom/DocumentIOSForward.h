@@ -13,4 +13,6 @@
  * or to any functionality that is invoked by calling any API.
  */
 
+#if ENABLE(TOUCH_EVENTS)
     struct EventRegion;
+#endif

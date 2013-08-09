@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2011, 2012 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,6 +32,7 @@
 #include "MediaPlayerPrivateAVFoundationCF.h"
 
 #include "ApplicationCacheResource.h"
+#include "COMPtr.h"
 #include "FloatConversion.h"
 #include "FrameView.h"
 #include "GraphicsContext.h"
@@ -44,12 +45,11 @@
 #include <AVFoundationCF/AVCFPlayerLayer.h>
 #include <AVFoundationCF/AVFoundationCF.h>
 #include <CoreMedia/CoreMedia.h>
-
 #include <delayimp.h>
 #include <dispatch/dispatch.h>
+#include <WebKitQuartzCoreAdditions/WKCACFTypes.h>
 #include <wtf/HashMap.h>
 #include <wtf/Threading.h>
-#include <wtf/UnusedParam.h>
 
 // The softlink header files must be included after the AVCF and CoreMedia header files.
 #include "AVFoundationCFSoftLinking.h"
@@ -87,7 +87,7 @@ public:
     void createAssetForURL(const String& url);
     void setAsset(AVCFURLAssetRef);
     
-    void createPlayer();
+    void createPlayer(IDirect3DDevice9*);
     void createPlayerItem();
     
     void checkPlayability();
@@ -137,6 +137,7 @@ private:
     RefPtr<PlatformCALayer> m_videoLayerWrapper;
 
     OwnPtr<LayerClient> m_layerClient;
+    COMPtr<IDirect3DDevice9Ex> m_d3dDevice;
 };
 
 uintptr_t AVFWrapper::s_nextAVFWrapperObjectID;
@@ -154,7 +155,7 @@ private:
     virtual GraphicsLayer::CompositingCoordinatesOrientation platformCALayerContentsOrientation() const { return GraphicsLayer::CompositingCoordinatesBottomUp; }
     virtual void platformCALayerPaintContents(GraphicsContext&, const IntRect& inClip) { }
     virtual bool platformCALayerShowDebugBorders() const { return false; }
-    virtual bool platformCALayerShowRepaintCounter() const { return false; }
+    virtual bool platformCALayerShowRepaintCounter(PlatformCALayer*) const { return false; }
     virtual int platformCALayerIncrementRepaintCount() { return 0; }
 
     virtual bool platformCALayerContentsOpaque() const { return false; }
@@ -339,7 +340,7 @@ void MediaPlayerPrivateAVFoundationCF::createAVPlayer()
     ASSERT(m_avfWrapper);
     
     setDelayCallbacks(true);
-    m_avfWrapper->createPlayer();
+    m_avfWrapper->createPlayer(reinterpret_cast<IDirect3DDevice9*>(player()->graphicsDeviceAdapter()));
     setDelayCallbacks(false);
 }
 
@@ -355,8 +356,9 @@ void MediaPlayerPrivateAVFoundationCF::createAVPlayerItem()
 void MediaPlayerPrivateAVFoundationCF::createAVAssetForURL(const String& url)
 {
     ASSERT(!m_avfWrapper);
-    
+
     setDelayCallbacks(true);
+
     m_avfWrapper = new AVFWrapper(this);
     m_avfWrapper->createAssetForURL(url);
     setDelayCallbacks(false);
@@ -486,7 +488,7 @@ float MediaPlayerPrivateAVFoundationCF::currentTime() const
     return 0;
 }
 
-void MediaPlayerPrivateAVFoundationCF::seekToTime(float time)
+void MediaPlayerPrivateAVFoundationCF::seekToTime(double time)
 {
     if (!m_avfWrapper)
         return;
@@ -545,7 +547,7 @@ PassRefPtr<TimeRanges> MediaPlayerPrivateAVFoundationCF::platformBufferedTimeRan
     if (!avPlayerItem(m_avfWrapper))
         return timeRanges.release();
 
-    RetainPtr<CFArrayRef> loadedRanges(AdoptCF, AVCFPlayerItemCopyLoadedTimeRanges(avPlayerItem(m_avfWrapper)));
+    RetainPtr<CFArrayRef> loadedRanges = adoptCF(AVCFPlayerItemCopyLoadedTimeRanges(avPlayerItem(m_avfWrapper)));
     if (!loadedRanges)
         return timeRanges.release();
 
@@ -565,16 +567,40 @@ PassRefPtr<TimeRanges> MediaPlayerPrivateAVFoundationCF::platformBufferedTimeRan
     return timeRanges.release();
 }
 
-float MediaPlayerPrivateAVFoundationCF::platformMaxTimeSeekable() const
+double MediaPlayerPrivateAVFoundationCF::platformMinTimeSeekable() const 
+{ 
+    RetainPtr<CFArrayRef> seekableRanges = adoptCF(AVCFPlayerItemCopySeekableTimeRanges(avPlayerItem(m_avfWrapper)));
+    if (!seekableRanges) 
+        return 0; 
+
+    double minTimeSeekable = std::numeric_limits<double>::infinity(); 
+    bool hasValidRange = false; 
+    CFIndex rangeCount = CFArrayGetCount(seekableRanges.get());
+    for (CFIndex i = 0; i < rangeCount; i++) {
+        CFDictionaryRef range = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(seekableRanges.get(), i));
+        CMTime start = CMTimeMakeFromDictionary(static_cast<CFDictionaryRef>(CFDictionaryGetValue(range, CMTimeRangeStartKey())));
+        CMTime duration = CMTimeMakeFromDictionary(static_cast<CFDictionaryRef>(CFDictionaryGetValue(range, CMTimeRangeDurationKey())));
+        if (!timeRangeIsValidAndNotEmpty(start, duration))
+            continue;
+
+        hasValidRange = true; 
+        double startOfRange = CMTimeGetSeconds(start); 
+        if (minTimeSeekable > startOfRange) 
+            minTimeSeekable = startOfRange; 
+    } 
+    return hasValidRange ? minTimeSeekable : 0; 
+} 
+
+double MediaPlayerPrivateAVFoundationCF::platformMaxTimeSeekable() const
 {
     if (!avPlayerItem(m_avfWrapper))
         return 0;
 
-    RetainPtr<CFArrayRef> seekableRanges(AdoptCF, AVCFPlayerItemCopySeekableTimeRanges(avPlayerItem(m_avfWrapper)));
+    RetainPtr<CFArrayRef> seekableRanges = adoptCF(AVCFPlayerItemCopySeekableTimeRanges(avPlayerItem(m_avfWrapper)));
     if (!seekableRanges)
         return 0;
 
-    float maxTimeSeekable = 0;
+    double maxTimeSeekable = 0;
     CFIndex rangeCount = CFArrayGetCount(seekableRanges.get());
     for (CFIndex i = 0; i < rangeCount; i++) {
         CFDictionaryRef range = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(seekableRanges.get(), i));
@@ -583,7 +609,7 @@ float MediaPlayerPrivateAVFoundationCF::platformMaxTimeSeekable() const
         if (!timeRangeIsValidAndNotEmpty(start, duration))
             continue;
         
-        float endOfRange = narrowPrecisionToFloat(CMTimeGetSeconds(CMTimeAdd(start, duration)));
+        double endOfRange = CMTimeGetSeconds(CMTimeAdd(start, duration));
         if (maxTimeSeekable < endOfRange)
             maxTimeSeekable = endOfRange;
     }
@@ -596,7 +622,7 @@ float MediaPlayerPrivateAVFoundationCF::platformMaxTimeLoaded() const
     if (!avPlayerItem(m_avfWrapper))
         return 0;
 
-    RetainPtr<CFArrayRef> loadedRanges(AdoptCF, AVCFPlayerItemCopyLoadedTimeRanges(avPlayerItem(m_avfWrapper)));
+    RetainPtr<CFArrayRef> loadedRanges = adoptCF(AVCFPlayerItemCopyLoadedTimeRanges(avPlayerItem(m_avfWrapper)));
     if (!loadedRanges)
         return 0;
 
@@ -623,7 +649,7 @@ unsigned MediaPlayerPrivateAVFoundationCF::totalBytes() const
         return 0;
 
     int64_t totalMediaSize = 0;
-    RetainPtr<CFArrayRef> tracks(AdoptCF, AVCFAssetCopyAssetTracks(avAsset(m_avfWrapper)));
+    RetainPtr<CFArrayRef> tracks = adoptCF(AVCFAssetCopyAssetTracks(avAsset(m_avfWrapper)));
     CFIndex trackCount = CFArrayGetCount(tracks.get());
     for (CFIndex i = 0; i < trackCount; i++) {
         AVCFAssetTrackRef assetTrack = (AVCFAssetTrackRef)CFArrayGetValueAtIndex(tracks.get(), i);
@@ -707,7 +733,7 @@ static HashSet<String> mimeTypeCache()
         return cache;
     typeListInitialized = true;
     
-    RetainPtr<CFArrayRef> supportedTypes(AdoptCF, AVCFURLAssetCopyAudiovisualMIMETypes());
+    RetainPtr<CFArrayRef> supportedTypes = adoptCF(AVCFURLAssetCopyAudiovisualMIMETypes());
     
     ASSERT(supportedTypes);
     if (!supportedTypes)
@@ -725,7 +751,7 @@ void MediaPlayerPrivateAVFoundationCF::getSupportedTypes(HashSet<String>& suppor
     supportedTypes = mimeTypeCache();
 } 
 
-MediaPlayer::SupportsType MediaPlayerPrivateAVFoundationCF::supportsType(const String& type, const String& codecs)
+MediaPlayer::SupportsType MediaPlayerPrivateAVFoundationCF::supportsType(const String& type, const String& codecs, const KURL&)
 {
     // Only return "IsSupported" if there is no codecs parameter for now as there is no way to ask if it supports an
     // extended MIME type until rdar://8721715 is fixed.
@@ -760,27 +786,27 @@ void MediaPlayerPrivateAVFoundationCF::tracksChanged()
     if (!avPlayerItem(m_avfWrapper)) {
         // We don't have a player item yet, so check with the asset because some assets support inspection
         // prior to becoming ready to play.
-        RetainPtr<CFArrayRef> visualTracks(AdoptCF, AVCFAssetCopyTracksWithMediaCharacteristic(avAsset(m_avfWrapper), AVCFMediaCharacteristicVisual));
+        RetainPtr<CFArrayRef> visualTracks = adoptCF(AVCFAssetCopyTracksWithMediaCharacteristic(avAsset(m_avfWrapper), AVCFMediaCharacteristicVisual));
         setHasVideo(CFArrayGetCount(visualTracks.get()));
 
-        RetainPtr<CFArrayRef> audioTracks(AdoptCF, AVCFAssetCopyTracksWithMediaCharacteristic(avAsset(m_avfWrapper), AVCFMediaCharacteristicAudible));
+        RetainPtr<CFArrayRef> audioTracks = adoptCF(AVCFAssetCopyTracksWithMediaCharacteristic(avAsset(m_avfWrapper), AVCFMediaCharacteristicAudible));
         setHasAudio(CFArrayGetCount(audioTracks.get()));
 
-        RetainPtr<CFArrayRef> captionTracks(AdoptCF, AVCFAssetCopyTracksWithMediaType(avAsset(m_avfWrapper), AVCFMediaTypeClosedCaption));
+        RetainPtr<CFArrayRef> captionTracks = adoptCF(AVCFAssetCopyTracksWithMediaType(avAsset(m_avfWrapper), AVCFMediaTypeClosedCaption));
         setHasAudio(CFArrayGetCount(captionTracks.get()));
     } else {
         bool hasVideo = false;
         bool hasAudio = false;
         bool hasCaptions = false;
 
-        RetainPtr<CFArrayRef> tracks(AdoptCF, AVCFPlayerItemCopyTracks(avPlayerItem(m_avfWrapper)));
+        RetainPtr<CFArrayRef> tracks = adoptCF(AVCFPlayerItemCopyTracks(avPlayerItem(m_avfWrapper)));
 
         CFIndex trackCount = CFArrayGetCount(tracks.get());
         for (CFIndex i = 0; i < trackCount; i++) {
             AVCFPlayerItemTrackRef track = (AVCFPlayerItemTrackRef)(CFArrayGetValueAtIndex(tracks.get(), i));
             
             if (AVCFPlayerItemTrackIsEnabled(track)) {
-                RetainPtr<AVCFAssetTrackRef> assetTrack(AdoptCF, AVCFPlayerItemTrackCopyAssetTrack(track));
+                RetainPtr<AVCFAssetTrackRef> assetTrack = adoptCF(AVCFPlayerItemTrackCopyAssetTrack(track));
                 CFStringRef mediaType = AVCFAssetTrackGetMediaType(assetTrack.get());
                 if (!mediaType)
                     continue;
@@ -813,7 +839,7 @@ void MediaPlayerPrivateAVFoundationCF::sizeChanged()
     // AVAsset's 'naturalSize' property only considers the movie's first video track, so we need to compute
     // the union of all visual track rects.
     CGRect trackRectUnion = CGRectZero;
-    RetainPtr<CFArrayRef> tracks(AdoptCF, AVCFAssetCopyTracksWithMediaType(avAsset(m_avfWrapper), AVCFMediaCharacteristicVisual));
+    RetainPtr<CFArrayRef> tracks = adoptCF(AVCFAssetCopyTracksWithMediaType(avAsset(m_avfWrapper), AVCFMediaCharacteristicVisual));
     CFIndex trackCount = CFArrayGetCount(tracks.get());
     for (CFIndex i = 0; i < trackCount; i++) {
         AVCFAssetTrackRef assetTrack = (AVCFAssetTrackRef)(CFArrayGetValueAtIndex(tracks.get(), i));
@@ -912,7 +938,7 @@ AVFWrapper* AVFWrapper::avfWrapperForCallbackContext(void* context)
     if (it == map().end())
         return 0;
 
-    return it->second;
+    return it->value;
 }
 
 void AVFWrapper::scheduleDisconnectAndDelete()
@@ -955,19 +981,35 @@ void AVFWrapper::disconnectAndDeleteAVFWrapper(void* context)
 void AVFWrapper::createAssetForURL(const String& url)
 {
     ASSERT(!avAsset());
-    
-    RetainPtr<CFURLRef> urlRef(AdoptCF, KURL(ParsedURLString, url).createCFURL());
+
+    RetainPtr<CFURLRef> urlRef = KURL(ParsedURLString, url).createCFURL();
+
     AVCFURLAssetRef assetRef = AVCFURLAssetCreateWithURLAndOptions(kCFAllocatorDefault, urlRef.get(), 0, m_notificationQueue);
-    m_avAsset.adoptCF(assetRef);
+    m_avAsset = adoptCF(assetRef);
 }
 
-void AVFWrapper::createPlayer()
+void AVFWrapper::createPlayer(IDirect3DDevice9* d3dDevice)
 {
     ASSERT(!avPlayer() && avPlayerItem());
 
+    RetainPtr<CFMutableDictionaryRef> optionsRef = adoptCF(CFDictionaryCreateMutable(kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
+
+    if (d3dDevice) {
+        // QI for an IDirect3DDevice9Ex interface, it is required to do HW video decoding.
+        COMPtr<IDirect3DDevice9Ex> d3dEx(Query, d3dDevice);
+        m_d3dDevice = d3dEx;
+    } else
+        m_d3dDevice = 0;
+
+    if (m_d3dDevice && AVCFPlayerEnableHardwareAcceleratedVideoDecoderKey)
+        CFDictionarySetValue(optionsRef.get(), AVCFPlayerEnableHardwareAcceleratedVideoDecoderKey, kCFBooleanTrue);
+
     // FIXME: We need a way to create a AVPlayer without an AVPlayerItem, see <rdar://problem/9877730>.
-    AVCFPlayerRef playerRef = AVCFPlayerCreateWithPlayerItemAndOptions(kCFAllocatorDefault, avPlayerItem(), 0, m_notificationQueue);
-    m_avPlayer.adoptCF(playerRef);
+    AVCFPlayerRef playerRef = AVCFPlayerCreateWithPlayerItemAndOptions(kCFAllocatorDefault, avPlayerItem(), optionsRef.get(), m_notificationQueue);
+    m_avPlayer = adoptCF(playerRef);
+
+    if (m_d3dDevice && AVCFPlayerSetDirect3DDevicePtr())
+        AVCFPlayerSetDirect3DDevicePtr()(playerRef, m_d3dDevice.get());
 
     CFNotificationCenterRef center = CFNotificationCenterGetLocalCenter();
     ASSERT(center);
@@ -977,7 +1019,7 @@ void AVFWrapper::createPlayer()
     // Add a time observer, ask to be called infrequently because we don't really want periodic callbacks but
     // our observer will also be called whenever a seek happens.
     const double veryLongInterval = 60*60*60*24*30;
-    m_timeObserver.adoptCF(AVCFPlayerCreatePeriodicTimeObserverForInterval(playerRef, CMTimeMake(veryLongInterval, 10), m_notificationQueue, &periodicTimeObserverCallback, callbackContext()));
+    m_timeObserver = adoptCF(AVCFPlayerCreatePeriodicTimeObserverForInterval(playerRef, CMTimeMake(veryLongInterval, 10), m_notificationQueue, &periodicTimeObserverCallback, callbackContext()));
 }
 
 void AVFWrapper::createPlayerItem()
@@ -986,7 +1028,7 @@ void AVFWrapper::createPlayerItem()
 
     // Create the player item so we begin loading media data.
     AVCFPlayerItemRef itemRef = AVCFPlayerItemCreateWithAsset(kCFAllocatorDefault, avAsset(), m_notificationQueue);
-    m_avPlayerItem.adoptCF(itemRef);
+    m_avPlayerItem = adoptCF(itemRef);
 
     CFNotificationCenterRef center = CFNotificationCenterGetLocalCenter();
     ASSERT(center);
@@ -1135,7 +1177,7 @@ void AVFWrapper::setAsset(AVCFURLAssetRef asset)
         return;
 
     AVCFAssetCancelLoading(avAsset());
-    m_avAsset.adoptCF(asset);
+    m_avAsset = adoptCF(asset);
 }
 
 PlatformLayer* AVFWrapper::platformLayer()
@@ -1156,7 +1198,7 @@ PlatformLayer* AVFWrapper::platformLayer()
         return 0;
 
     CACFLayerRef layerRef = AVCFPlayerLayerCopyCACFLayer(m_avCFVideoLayer.get());
-    m_caVideoLayer.adoptCF(layerRef);
+    m_caVideoLayer = adoptCF(layerRef);
 
     CACFLayerInsertSublayer(m_videoLayerWrapper->platformLayer(), m_caVideoLayer.get(), 0);
     m_videoLayerWrapper->setAnchorPoint(FloatPoint3D());
@@ -1171,7 +1213,7 @@ void AVFWrapper::createAVCFVideoLayer()
         return;
 
     // The layer will get hooked up via RenderLayerBacking::updateGraphicsLayerConfiguration().
-    m_avCFVideoLayer.adoptCF(AVCFPlayerLayerCreateWithAVCFPlayer(kCFAllocatorDefault, avPlayer(), m_notificationQueue));
+    m_avCFVideoLayer = adoptCF(AVCFPlayerLayerCreateWithAVCFPlayer(kCFAllocatorDefault, avPlayer(), m_notificationQueue));
     LOG(Media, "AVFWrapper::createAVCFVideoLayer(%p) - returning %p", this, videoLayer());
 }
 
@@ -1205,7 +1247,7 @@ void AVFWrapper::createImageGenerator()
     if (!avAsset() || m_imageGenerator)
         return;
 
-    m_imageGenerator.adoptCF(AVCFAssetImageGeneratorCreateWithAsset(kCFAllocatorDefault, avAsset()));
+    m_imageGenerator = adoptCF(AVCFAssetImageGeneratorCreateWithAsset(kCFAllocatorDefault, avAsset()));
 
     AVCFAssetImageGeneratorSetApertureMode(m_imageGenerator.get(), AVCFAssetImageGeneratorApertureModeCleanAperture);
     AVCFAssetImageGeneratorSetRequestedTimeToleranceBefore(m_imageGenerator.get(), kCMTimeZero);
@@ -1259,7 +1301,7 @@ void LayerClient::platformCALayerLayoutSublayersOfLayer(PlatformCALayer* wrapper
 #else
 // AVFoundation should always be enabled for Apple production builds.
 #if __PRODUCTION__ && !USE(AVFOUNDATION)
-#error AVFoundation is not enabled!
+// #error AVFoundation is not enabled!
 #endif // __PRODUCTION__ && !USE(AVFOUNDATION)
 #endif // USE(AVFOUNDATION)
 #endif // PLATFORM(WIN) && ENABLE(VIDEO)

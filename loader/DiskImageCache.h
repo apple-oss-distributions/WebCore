@@ -29,13 +29,14 @@
 #if ENABLE(DISK_IMAGE_CACHE)
 
 #include "DiskImageCacheClient.h"
-#include "PlatformString.h"
+#include "FileSystem.h"
 #include "SharedBuffer.h"
 #include <wtf/HashMap.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
 #include <wtf/Threading.h>
+#include <wtf/text/WTFString.h>
 
 typedef unsigned disk_cache_id_t;
 
@@ -72,6 +73,7 @@ private:
 
     private:
         bool mapInternal(const String& path);
+        int writeToFileInternal(PlatformFileHandle handle);
 
         SharedBuffer* m_buffer;
         disk_cache_id_t m_id;

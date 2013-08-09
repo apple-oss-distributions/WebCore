@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008, Apple Inc. All rights reserved.
+ * Copyright (C) 2008, 2012 Apple Inc. All rights reserved.
  *
  * Permission is granted by Apple to use this file to the extent
  * necessary to relink with LGPL WebKit files.
@@ -21,27 +21,23 @@
 #include <wtf/CurrentTime.h>
 #include <wtf/Platform.h>
 
+#if ENABLE(TOUCH_EVENTS)
 
 #include <wtf/Vector.h>
 #include "IntPoint.h"
+#include "PlatformTouchPointIOS.h"
 
 namespace WebCore {
-
-enum TouchPhaseType { TouchPhaseBegan, TouchPhaseMoved, TouchPhaseStationary, TouchPhaseEnded, TouchPhaseCancelled };
 
 class PlatformTouchEvent : public PlatformEvent {
 public:
     PlatformTouchEvent()
-        : m_touchCount(0)
     {
     }
 
     PlatformTouchEvent(const PlatformTouchEvent& other)
         : PlatformEvent(other.type(), other.shiftKey(), other.ctrlKey(), other.altKey(), other.metaKey(), currentTime())
-        , m_touchCount(other.m_touchCount)
-        , m_touchLocations(other.m_touchLocations)
-        , m_touchIdentifiers(other.m_touchIdentifiers)
-        , m_touchPhases(other.m_touchPhases)
+        , m_touchPoints(other.m_touchPoints)
         , m_gestureScale(other.m_gestureScale)
         , m_gestureRotation(other.m_gestureRotation)
         , m_isGesture(other.m_isGesture)
@@ -50,10 +46,10 @@ public:
     {
     }
 
-    unsigned touchCount() const { return m_touchCount; }
-    IntPoint touchLocationAtIndex(unsigned i) const { return m_touchLocations[i]; }
-    unsigned touchIdentifierAtIndex(unsigned i) const { return m_touchIdentifiers[i]; }
-    TouchPhaseType touchPhaseAtIndex(unsigned i) const { return m_touchPhases[i]; }
+    unsigned touchCount() const { return m_touchPoints.size(); }
+    IntPoint touchLocationAtIndex(unsigned i) const { return m_touchPoints[i].location(); }
+    unsigned touchIdentifierAtIndex(unsigned i) const { return m_touchPoints[i].identifier(); }
+    PlatformTouchPoint::TouchPhaseType touchPhaseAtIndex(unsigned i) const { return m_touchPoints[i].phase(); }
 
     bool isGesture() const { return m_isGesture; }
 
@@ -67,10 +63,8 @@ public:
     int globalY() const { return m_globalPosition.y(); }
 
 protected:
-    unsigned m_touchCount;
-    Vector<IntPoint> m_touchLocations;
-    Vector<unsigned> m_touchIdentifiers;
-    Vector<TouchPhaseType> m_touchPhases;
+    Vector<PlatformTouchPoint> m_touchPoints;
+
     float m_gestureScale;
     float m_gestureRotation;
     bool m_isGesture;
@@ -80,5 +74,6 @@ protected:
 
 } // namespace WebCore
 
+#endif // ENABLE(TOUCH_EVENTS)
 
 #endif // PlatformTouchEventIOS_h

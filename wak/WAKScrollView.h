@@ -43,6 +43,8 @@
 - (CGRect)actualDocumentVisibleRect;
 - (void)setActualScrollPosition:(CGPoint)point;
 
+- (CGRect)documentVisibleExtent; // Like actualDocumentVisibleRect, but includes areas possibly covered by translucent UI.
+
 - (BOOL)inProgrammaticScroll;
 @end
 

@@ -75,12 +75,14 @@ public:
     void removeItem(HistoryItem*);
     HistoryItemVector& entries();
 
+#if PLATFORM(IOS)
     virtual unsigned current() OVERRIDE;
     virtual void setCurrent(unsigned newCurrent) OVERRIDE;
     virtual bool clearAllPageCaches() OVERRIDE;
+#endif
 
 private:
-    BackForwardListImpl(Page*);
+    explicit BackForwardListImpl(Page*);
 
     virtual bool isActive() { return enabled() && capacity(); }
 

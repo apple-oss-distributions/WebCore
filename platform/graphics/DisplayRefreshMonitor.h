@@ -35,7 +35,7 @@
 #include <wtf/RefPtr.h>
 #include <wtf/Threading.h>
 #if PLATFORM(BLACKBERRY)
-#include <BlackBerryPlatformAnimation.h>
+#include <BlackBerryPlatformAnimationFrameRateController.h>
 #endif
 
 #if PLATFORM(MAC)
@@ -121,7 +121,7 @@ private:
     void displayDidRefresh();
     static void handleDisplayRefreshedNotificationOnMainThread(void* data);
 
-    double m_timestamp;
+    double m_monotonicAnimationStartTime;
     bool m_active;
     bool m_scheduled;
     bool m_previousFrameDone;
@@ -140,10 +140,17 @@ private:
     void stopAnimationClient();
 #endif
 #if PLATFORM(MAC)
+#if PLATFORM(IOS)
 public:
     void displayLinkFired(double nowSeconds);
 private:
     void* m_displayLink;
+#else
+public:
+    void displayLinkFired(double nowSeconds, double outputTimeSeconds);
+private:
+    CVDisplayLinkRef m_displayLink;
+#endif
 #endif
 };
 

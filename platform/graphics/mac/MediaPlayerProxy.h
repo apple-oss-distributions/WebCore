@@ -26,6 +26,7 @@
 #ifndef MediaPlayerProxy_h
 #define MediaPlayerProxy_h
 
+#if PLATFORM(IOS)
 #if defined(__OBJC__)
 #import <Foundation/NSGeometry.h>
 #endif
@@ -38,8 +39,10 @@
 #define OBJC_CLASS class
 #endif
 #endif // !defined(OBJC_CLASS)
+#endif // PLATFORM(IOS)
 
 OBJC_CLASS WebMediaPlayerProxy;
+OBJC_CLASS CALayer;
 
 enum MediaPlayerProxyNotificationType {
 
@@ -70,6 +73,11 @@ enum MediaPlayerProxyNotificationType {
     MediaPlayerNotificationLoseFocus,
     MediaPlayerRequestBeginPlayback,
     MediaPlayerRequestPausePlayback,
+
+#if ENABLE(IOS_AIRPLAY)
+    MediaPlayerNotificationCurrentPlaybackTargetIsWirelessChanged,
+    MediaPlayerNotificationPlaybackTargetAvailabilityChanged,
+#endif
 };
 
 #ifdef __OBJC__
@@ -89,6 +97,18 @@ enum MediaPlayerProxyNotificationType {
 
 - (void)_enterFullScreen;
 - (void)_exitFullScreen;
+
+#if ENABLE(IOS_AIRPLAY)
+- (BOOL)_isCurrentPlaybackTargetWireless;
+- (void)_showPlaybackTargetPicker;
+
+- (BOOL)_hasWirelessPlaybackTargets;
+
+- (BOOL)_wirelessVideoPlaybackDisabled;
+- (void)_setWirelessVideoPlaybackDisabled:(BOOL)disabled;
+
+- (void)_setHasPlaybackTargetAvailabilityListeners:(BOOL)hasListeners;
+#endif
 
 - (void)_prepareForPlayback;
 - (void)_play;
@@ -130,6 +150,12 @@ enum MediaPlayerProxyNotificationType {
 - (unsigned)_bytesLoaded;
 
 - (NSArray *)_mimeTypes;
+
+- (void)_setTextTrackRepresentation:(CALayer*)representation;
+
+- (void)_setDelegate:(id)delegate;
+- (void)_setOutOfBandTextTracks:(NSArray *)textTracks;
+- (void)_setSelectedTextTrack:(NSNumber *)textTrack;
 
 @end
 #endif

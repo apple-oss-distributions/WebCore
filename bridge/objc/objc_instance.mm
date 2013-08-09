@@ -37,7 +37,9 @@
 #import "runtime/FunctionPrototype.h"
 #import <wtf/Assertions.h>
 
+#if PLATFORM(IOS)
 #import <Foundation/NSMapTable.h>
+#endif // PLATFORM(IOS)
 
 #ifdef NDEBUG
 #define OBJC_LOG(formatAndArgs...) ((void)0)
@@ -183,19 +185,19 @@ bool ObjcInstance::supportsInvokeDefaultMethod() const
 
 class ObjCRuntimeMethod : public RuntimeMethod {
 public:
-    static ObjCRuntimeMethod* create(ExecState* exec, JSGlobalObject* globalObject, const Identifier& name, Bindings::MethodList& list)
+    static ObjCRuntimeMethod* create(ExecState* exec, JSGlobalObject* globalObject, const String& name, Bindings::Method* method)
     {
         // FIXME: deprecatedGetDOMStructure uses the prototype off of the wrong global object
         // We need to pass in the right global object for "i".
         Structure* domStructure = WebCore::deprecatedGetDOMStructure<ObjCRuntimeMethod>(exec);
-        ObjCRuntimeMethod* method = new (NotNull, allocateCell<ObjCRuntimeMethod>(*exec->heap())) ObjCRuntimeMethod(globalObject, domStructure, list);
-        method->finishCreation(exec->globalData(), name);
-        return method;
+        ObjCRuntimeMethod* runtimeMethod = new (NotNull, allocateCell<ObjCRuntimeMethod>(*exec->heap())) ObjCRuntimeMethod(globalObject, domStructure, method);
+        runtimeMethod->finishCreation(exec->vm(), name);
+        return runtimeMethod;
     }
 
-    static Structure* createStructure(JSGlobalData& globalData, JSC::JSGlobalObject* globalObject, JSValue prototype)
+    static Structure* createStructure(VM& vm, JSC::JSGlobalObject* globalObject, JSValue prototype)
     {
-        return Structure::create(globalData, globalObject, prototype, TypeInfo(ObjectType, StructureFlags), &s_info);
+        return Structure::create(vm, globalObject, prototype, TypeInfo(ObjectType, StructureFlags), &s_info);
     }
 
     static const ClassInfo s_info;
@@ -203,24 +205,24 @@ public:
 private:
     typedef RuntimeMethod Base;
 
-    ObjCRuntimeMethod(JSGlobalObject* globalObject, Structure* structure, Bindings::MethodList& list)
-        : RuntimeMethod(globalObject, structure, list)
+    ObjCRuntimeMethod(JSGlobalObject* globalObject, Structure* structure, Bindings::Method* method)
+        : RuntimeMethod(globalObject, structure, method)
     {
     }
 
-    void finishCreation(JSGlobalData& globalData, const Identifier& name)
+    void finishCreation(VM& vm, const String& name)
     {
-        Base::finishCreation(globalData, name);
+        Base::finishCreation(vm, name);
         ASSERT(inherits(&s_info));
     }
 };
 
 const ClassInfo ObjCRuntimeMethod::s_info = { "ObjCRuntimeMethod", &RuntimeMethod::s_info, 0, 0, CREATE_METHOD_TABLE(ObjCRuntimeMethod) };
 
-JSValue ObjcInstance::getMethod(ExecState* exec, const Identifier& propertyName)
+JSValue ObjcInstance::getMethod(ExecState* exec, PropertyName propertyName)
 {
-    MethodList methodList = getClass()->methodsNamed(propertyName, this);
-    return ObjCRuntimeMethod::create(exec, exec->lexicalGlobalObject(), propertyName, methodList);
+    Method* method = getClass()->methodNamed(propertyName, this);
+    return ObjCRuntimeMethod::create(exec, exec->lexicalGlobalObject(), propertyName.publicName(), method);
 }
 
 JSValue ObjcInstance::invokeMethod(ExecState* exec, RuntimeMethod* runtimeMethod)
@@ -228,13 +230,10 @@ JSValue ObjcInstance::invokeMethod(ExecState* exec, RuntimeMethod* runtimeMethod
     if (!asObject(runtimeMethod)->inherits(&ObjCRuntimeMethod::s_info))
         return throwError(exec, createTypeError(exec, "Attempt to invoke non-plug-in method on plug-in object."));
 
-    const MethodList& methodList = *runtimeMethod->methods();
+    ObjcMethod *method = static_cast<ObjcMethod*>(runtimeMethod->method());
+    ASSERT(method);
 
-    // Overloading methods is not allowed in ObjectiveC.  Should only be one
-    // name match for a particular method.
-    ASSERT(methodList.size() == 1);
-
-    return invokeObjcMethod(exec, static_cast<ObjcMethod*>(methodList[0]));
+    return invokeObjcMethod(exec, method);
 }
 
 JSValue ObjcInstance::invokeObjcMethod(ExecState* exec, ObjcMethod* method)
@@ -293,6 +292,9 @@ JSValue ObjcInstance::invokeObjcMethod(ExecState* exec, ObjcMethod* method)
                 case ObjcShortType:
                 case ObjcUnsignedShortType:
                     [invocation setArgument:&value.shortValue atIndex:i];
+                    break;
+                case ObjcBoolType:
+                    [invocation setArgument:&value.booleanValue atIndex:i];
                     break;
                 case ObjcIntType:
                 case ObjcUnsignedIntType:
@@ -403,8 +405,12 @@ JSValue ObjcInstance::invokeDefaultMethod(ExecState* exec)
     return const_cast<JSValue&>(result);
 }
 
-bool ObjcInstance::setValueOfUndefinedField(ExecState* exec, const Identifier& property, JSValue aValue)
+bool ObjcInstance::setValueOfUndefinedField(ExecState* exec, PropertyName propertyName, JSValue aValue)
 {
+    String name(propertyName.publicName());
+    if (name.isNull())
+        return false;
+
     id targetObject = getObject();
     if (![targetObject respondsToSelector:@selector(setValue:forUndefinedKey:)])
         return false;
@@ -420,7 +426,7 @@ bool ObjcInstance::setValueOfUndefinedField(ExecState* exec, const Identifier& p
         ObjcValue objcValue = convertValueToObjcValue(exec, aValue, ObjcObjectType);
 
         @try {
-            [targetObject setValue:objcValue.objectValue forUndefinedKey:[NSString stringWithCString:property.ascii().data() encoding:NSASCIIStringEncoding]];
+            [targetObject setValue:objcValue.objectValue forUndefinedKey:[NSString stringWithCString:name.ascii().data() encoding:NSASCIIStringEncoding]];
         } @catch(NSException* localException) {
             // Do nothing.  Class did not override valueForUndefinedKey:.
         }
@@ -431,8 +437,12 @@ bool ObjcInstance::setValueOfUndefinedField(ExecState* exec, const Identifier& p
     return true;
 }
 
-JSValue ObjcInstance::getValueOfUndefinedField(ExecState* exec, const Identifier& property) const
+JSValue ObjcInstance::getValueOfUndefinedField(ExecState* exec, PropertyName propertyName) const
 {
+    String name(propertyName.publicName());
+    if (name.isNull())
+        return jsUndefined();
+
     JSValue result = jsUndefined();
     
     id targetObject = getObject();
@@ -446,7 +456,7 @@ JSValue ObjcInstance::getValueOfUndefinedField(ExecState* exec, const Identifier
         setGlobalException(nil);
     
         @try {
-            id objcValue = [targetObject valueForUndefinedKey:[NSString stringWithCString:property.ascii().data() encoding:NSASCIIStringEncoding]];
+            id objcValue = [targetObject valueForUndefinedKey:[NSString stringWithCString:name.ascii().data() encoding:NSASCIIStringEncoding]];
             result = convertObjcValueToValue(exec, &objcValue, ObjcObjectType, m_rootObject.get());
         } @catch(NSException* localException) {
             // Do nothing.  Class did not override valueForUndefinedKey:.

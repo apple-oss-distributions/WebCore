@@ -23,8 +23,10 @@
 #import "BlockExceptions.h"
 #import "ChromeClient.h"
 
+#if PLATFORM(IOS)
 #include "WAKResponder.h"
 #include "WAKView.h"
+#endif
 
 namespace WebCore {
 

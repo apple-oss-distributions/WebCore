@@ -31,7 +31,7 @@
 #include "MemoryCache.h"
 #include "CachedPage.h"
 #include "DOMWindow.h"
-#include "DatabaseContext.h"
+#include "DatabaseManager.h"
 #include "DeviceMotionController.h"
 #include "DeviceOrientationController.h"
 #include "Document.h"
@@ -42,23 +42,29 @@
 #include "FrameLoaderStateMachine.h"
 #include "FrameView.h"
 #include "HistogramSupport.h"
+#include "HistoryController.h"
 #include "HistoryItem.h"
 #include "Logging.h"
 #include "Page.h"
 #include "Settings.h"
 #include "SharedWorkerRepository.h"
-#include "SystemTime.h"
 #include <wtf/CurrentTime.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/StringConcatenate.h>
 
+#if ENABLE(PROXIMITY_EVENTS)
+#include "DeviceProximityController.h"
+#endif
+
+#if PLATFORM(IOS)
 #include "MemoryPressureHandler.h"
+#endif
 
 using namespace std;
 
 namespace WebCore {
 
-#if PLATFORM(CHROMIUM) || !defined(NDEBUG)
+#if !defined(NDEBUG)
 
 #define PCLOG(...) LOG(PageCache, "%*s%s", indentLevel*4, "", makeString(__VA_ARGS__).utf8().data())
     
@@ -84,29 +90,8 @@ enum ReasonFrameCannotBeInPageCache {
 };
 COMPILE_ASSERT(NumberOfReasonsFramesCannotBeInPageCache <= sizeof(unsigned)*8, ReasonFrameCannotBeInPageCacheDoesNotFitInBitmap);
 
-#if PLATFORM(CHROMIUM)
-static int indexOfSingleBit(int32_t v)
-{
-    int index = 0;
-    if (v & 0xFFFF0000)
-        index = 16;
-    if (v & 0xFF00FF00)
-        index += 8;
-    if (v & 0xF0F0F0F0)
-        index += 4;
-    if (v & 0xCCCCCCCC)
-        index += 2;
-    if (v & 0xAAAAAAAA)
-        index += 1;
-    return index;
-}
-#endif // PLATFORM(CHROMIUM)
-
 static unsigned logCanCacheFrameDecision(Frame* frame, int indentLevel)
 {
-#ifdef NDEBUG
-    UNUSED_PARAM(indentLevel);
-#endif
     PCLOG("+---");
     if (!frame->loader()->documentLoader()) {
         PCLOG("   -There is no DocumentLoader object");
@@ -123,10 +108,14 @@ static unsigned logCanCacheFrameDecision(Frame* frame, int indentLevel)
     unsigned rejectReasons = 0;
     if (!frame->loader()->documentLoader()->mainDocumentError().isNull()) {
         PCLOG("   -Main document has an error");
+#if !PLATFORM(IOS)
+        rejectReasons |= 1 << MainDocumentError;
+#else
         if (frame->loader()->documentLoader()->mainDocumentError().isCancellation() && frame->loader()->documentLoader()->subresourceLoadersArePageCacheAcceptable())
             PCLOG("    -But, it was a cancellation and all loaders during the cancel were loading images.");
         else
             rejectReasons |= 1 << MainDocumentError;
+#endif
     }
     if (frame->loader()->documentLoader()->substituteData().isValid() && frame->loader()->documentLoader()->substituteData().failingURL().isEmpty()) {
         PCLOG("   -Frame is an error page");
@@ -142,13 +131,17 @@ static unsigned logCanCacheFrameDecision(Frame* frame, int indentLevel)
         PCLOG("   -Frame is HTTPS, and cache control prohibits caching or storing");
         rejectReasons |= 1 << IsHttpsAndCacheControlled;
     }
-    if (frame->domWindow() && frame->domWindow()->hasEventListeners(eventNames().unloadEvent)) {
+    if (frame->document()->domWindow() && frame->document()->domWindow()->hasEventListeners(eventNames().unloadEvent)) {
         PCLOG("   -Frame has an unload event listener");
+#if !PLATFORM(IOS)
+        rejectReasons |= 1 << HasUnloadListener;
+#else
         // iOS allows pages with unload event listeners to enter the page cache.
         PCLOG("    -BUT iOS allows these pages to be cached.");
+#endif
     }
 #if ENABLE(SQL_DATABASE)
-    if (DatabaseContext::hasOpenDatabases(frame->document())) {
+    if (DatabaseManager::manager().hasOpenDatabases(frame->document())) {
         PCLOG("   -Frame has open database handles");
         rejectReasons |= 1 << HasDatabaseHandles;
     }
@@ -248,13 +241,21 @@ static void logCanCachePageDecision(Page* page)
         rejectReasons |= 1 << DisabledPageCache;
     }
 #if ENABLE(DEVICE_ORIENTATION)
-    if (page->mainFrame()->document()->deviceMotionController() && page->mainFrame()->document()->deviceMotionController()->isActive()) {
+#if !PLATFORM(IOS)
+    if (DeviceMotionController::isActiveAt(page)) {
         PCLOG("   -Page is using DeviceMotion");
         rejectReasons |= 1 << UsesDeviceMotion;
     }
-    if (page->mainFrame()->document()->deviceOrientationController() && page->mainFrame()->document()->deviceOrientationController()->isActive()) {
+    if (DeviceOrientationController::isActiveAt(page)) {
         PCLOG("   -Page is using DeviceOrientation");
         rejectReasons |= 1 << UsesDeviceOrientation;
+    }
+#endif // !PLATFORM(IOS)
+#endif
+#if ENABLE(PROXIMITY_EVENTS)
+    if (DeviceProximityController::isActiveAt(page)) {
+        PCLOG("   -Page is using DeviceProximity");
+        rejectReasons |= 1 << UsesDeviceMotion;
     }
 #endif
     FrameLoadType loadType = page->mainFrame()->loader()->loadType();
@@ -295,24 +296,11 @@ static void logCanCachePageDecision(Page* page)
             HistogramSupport::histogramEnumeration("PageCache.FrameRejectReasonByPage", i, NumberOfReasonsFramesCannotBeInPageCache);
         }
     }
-#if PLATFORM(CHROMIUM)
-    // This strangely specific histogram is particular to chromium: as of 2012-03-16, the FrameClientImpl always denies caching, so
-    // of particular interest are solitary reasons other than the frameRejectReasons. If we didn't get to the ClientDeniesCaching, we
-    // took the early exit for the boring reason NoDocumentLoader, so we should have only one reason, and not two.
-    // FIXME: remove this histogram after data is gathered.
-    if (frameReasonCount == 2) {
-        ASSERT(frameRejectReasons & (1 << ClientDeniesCaching));
-        const unsigned singleReasonForRejectingFrameOtherThanClientDeniesCaching = frameRejectReasons & ~(1 << ClientDeniesCaching);
-        COMPILE_ASSERT(NumberOfReasonsPagesCannotBeInPageCache <= 32, ReasonPageCannotBeInPageCacheDoesNotFitInInt32);
-        const int index = indexOfSingleBit(static_cast<int32_t>(singleReasonForRejectingFrameOtherThanClientDeniesCaching));
-        HistogramSupport::histogramEnumeration("PageCache.FrameRejectReasonByPageWhenSingleExcludingFrameClient", index, NumberOfReasonsPagesCannotBeInPageCache);
-    }
-#endif
 
     HistogramSupport::histogramEnumeration("PageCache.FrameRejectReasonCountByPage", frameReasonCount, 1 + NumberOfReasonsFramesCannotBeInPageCache);
 }
 
-#endif 
+#endif // !defined(NDEBUG)
 
 PageCache* pageCache()
 {
@@ -325,7 +313,6 @@ PageCache::PageCache()
     , m_size(0)
     , m_head(0)
     , m_tail(0)
-    , m_autoreleaseTimer(this, &PageCache::releaseAutoreleasedPagesNowDueToTimer)
 #if USE(ACCELERATED_COMPOSITING)
     , m_shouldClearBackingStores(false)
 #endif
@@ -344,14 +331,21 @@ bool PageCache::canCachePageContainingThisFrame(Frame* frame)
     Document* document = frame->document();
     
     return documentLoader
+#if !PLATFORM(IOS)
+        && documentLoader->mainDocumentError().isNull()
+#else
         && (documentLoader->mainDocumentError().isNull()
            || (documentLoader->mainDocumentError().isCancellation() && documentLoader->subresourceLoadersArePageCacheAcceptable()))
+#endif
         // Do not cache error pages (these can be recognized as pages with substitute data or unreachable URLs).
         && !(documentLoader->substituteData().isValid() && !documentLoader->substituteData().failingURL().isEmpty())
         && (!frameLoader->subframeLoader()->containsPlugins() || frame->page()->settings()->pageCacheSupportsPlugins())
         && (!document->url().protocolIs("https") || (!documentLoader->response().cacheControlContainsNoCache() && !documentLoader->response().cacheControlContainsNoStore()))
+#if !PLATFORM(IOS)
+        && (!document->domWindow() || !document->domWindow()->hasEventListeners(eventNames().unloadEvent))
+#endif // !PLATFORM(IOS)
 #if ENABLE(SQL_DATABASE)
-        && !DatabaseContext::hasOpenDatabases(document)
+        && !DatabaseManager::manager().hasOpenDatabases(document)
 #endif
 #if ENABLE(SHARED_WORKERS)
         && !SharedWorkerRepository::hasSharedWorkers(document)
@@ -367,17 +361,19 @@ bool PageCache::canCachePageContainingThisFrame(Frame* frame)
         && frameLoader->client()->canCachePage();
 }
     
-bool PageCache::canCache(Page* page)
+bool PageCache::canCache(Page* page) const
 {
     if (!page)
         return false;
     
-#if PLATFORM(CHROMIUM) || !defined(NDEBUG)
+#if !defined(NDEBUG)
     logCanCachePageDecision(page);
 #endif
 
+#if PLATFORM(IOS)
     if (memoryPressureHandler().hasReceivedMemoryPressure())
         return false;
+#endif
 
     // Cache the page, if possible.
     // Don't write to the cache if in the middle of a redirect, since we will want to
@@ -386,26 +382,34 @@ bool PageCache::canCache(Page* page)
     // over it again when we leave that page.
     FrameLoadType loadType = page->mainFrame()->loader()->loadType();
     
-    return canCachePageContainingThisFrame(page->mainFrame())
+    return m_capacity > 0
+        && canCachePageContainingThisFrame(page->mainFrame())
         && page->backForward()->isActive()
         && page->settings()->usesPageCache()
 #if ENABLE(DEVICE_ORIENTATION)
-        && !(page->mainFrame()->document()->deviceMotionController() && page->mainFrame()->document()->deviceMotionController()->isActive())
-        && !(page->mainFrame()->document()->deviceOrientationController() && page->mainFrame()->document()->deviceOrientationController()->isActive())
+#if !PLATFORM(IOS)
+        && !DeviceMotionController::isActiveAt(page)
+        && !DeviceOrientationController::isActiveAt(page)
+#endif // !PLATFORM(IOS)
 #endif
-        && loadType != FrameLoadTypeReload
-        && loadType != FrameLoadTypeReloadFromOrigin
-        && loadType != FrameLoadTypeSame;
+#if ENABLE(PROXIMITY_EVENTS)
+        && !DeviceProximityController::isActiveAt(page)
+#endif
+        && (loadType == FrameLoadTypeStandard
+            || loadType == FrameLoadTypeBack
+            || loadType == FrameLoadTypeForward
+            || loadType == FrameLoadTypeIndexedBackForward);
 }
     
+#if PLATFORM(IOS)
 void PageCache::pruneToCapacityNow(int capacity)
 {
     // Memory is low, prune some cached pages.
     int savedCapacity = m_capacity;
     setCapacity(capacity);
-    releaseAutoreleasedPagesNow();
     setCapacity(savedCapacity);
 }
+#endif
 
 void PageCache::setCapacity(int capacity)
 {
@@ -427,11 +431,6 @@ int PageCache::frameCount() const
     return frameCount;
 }
 
-int PageCache::autoreleasedPageCount() const
-{
-    return m_autoreleaseSet.size();
-}
-
 void PageCache::markPagesForVistedLinkStyleRecalc()
 {
     for (HistoryItem* current = m_head; current; current = current->m_next)
@@ -448,6 +447,28 @@ void PageCache::markPagesForFullStyleRecalc(Page* page)
             cachedPage->markForFullStyleRecalc();
     }
 }
+
+
+#if USE(ACCELERATED_COMPOSITING)
+void PageCache::markPagesForDeviceScaleChanged(Page* page)
+{
+    Frame* mainFrame = page->mainFrame();
+
+    for (HistoryItem* current = m_head; current; current = current->m_next) {
+        CachedPage* cachedPage = current->m_cachedPage.get();
+        if (cachedPage->cachedMainFrame()->view()->frame() == mainFrame)
+            cachedPage->markForDeviceScaleChanged();
+    }
+}
+#endif
+
+#if ENABLE(VIDEO_TRACK)
+void PageCache::markPagesForCaptionPreferencesChanged()
+{
+    for (HistoryItem* current = m_head; current; current = current->m_next)
+        current->m_cachedPage->markForCaptionPreferencesChanged();
+}
+#endif
 
 void PageCache::add(PassRefPtr<HistoryItem> prpItem, Page* page)
 {
@@ -474,10 +495,7 @@ CachedPage* PageCache::get(HistoryItem* item)
         return 0;
 
     if (CachedPage* cachedPage = item->m_cachedPage.get()) {
-        // FIXME: 1800 should not be hardcoded, it should come from
-        // WebKitBackForwardCacheExpirationIntervalKey in WebKit.
-        // Or we should remove WebKitBackForwardCacheExpirationIntervalKey.
-        if (currentTime() - cachedPage->timeStamp() <= 1800)
+        if (!cachedPage->hasExpired())
             return cachedPage;
         
         LOG(PageCache, "Not restoring page for %s from back/forward cache because cache entry has expired", item->url().string().ascii().data());
@@ -492,7 +510,7 @@ void PageCache::remove(HistoryItem* item)
     if (!item || !item->m_cachedPage)
         return;
 
-    autorelease(item->m_cachedPage.release());
+    item->m_cachedPage.clear();
     removeFromLRUList(item);
     --m_size;
 
@@ -540,40 +558,6 @@ void PageCache::removeFromLRUList(HistoryItem* item)
         ASSERT(item != m_head);
         item->m_prev->m_next = item->m_next;
     }
-}
-
-void PageCache::releaseAutoreleasedPagesNowDueToTimer(Timer<PageCache>*)
-{
-    LOG(PageCache, "WebCorePageCache: Releasing page caches - %i objects pending release", m_autoreleaseSet.size());
-    releaseAutoreleasedPagesNow();
-}
-
-void PageCache::releaseAutoreleasedPagesNow()
-{
-    m_autoreleaseTimer.stop();
-
-    // Postpone dead pruning until all our resources have gone dead.
-    memoryCache()->setPruneEnabled(false);
-
-    CachedPageSet tmp;
-    tmp.swap(m_autoreleaseSet);
-
-    CachedPageSet::iterator end = tmp.end();
-    for (CachedPageSet::iterator it = tmp.begin(); it != end; ++it)
-        (*it)->destroy();
-
-    // Now do the prune.
-    memoryCache()->setPruneEnabled(true);
-    memoryCache()->prune();
-}
-
-void PageCache::autorelease(PassRefPtr<CachedPage> page)
-{
-    ASSERT(page);
-    ASSERT(!m_autoreleaseSet.contains(page.get()));
-    m_autoreleaseSet.add(page);
-    if (!m_autoreleaseTimer.isActive())
-        m_autoreleaseTimer.startOneShot(0);
 }
 
 } // namespace WebCore

@@ -30,10 +30,17 @@
 
 namespace WebCore {
 
+#if PLATFORM(IOS)
     inline bool requiresContextForWordBoundary(UChar32 ch)
     {
         return WTF::Unicode::hasLineBreakingPropertyComplexContextOrIdeographic(ch);
     }
+#else
+    inline bool requiresContextForWordBoundary(UChar32 ch)
+    {
+        return WTF::Unicode::hasLineBreakingPropertyComplexContext(ch);
+    }
+#endif
 
     int endOfFirstWordBoundaryContext(const UChar* characters, int length);
     int startOfLastWordBoundaryContext(const UChar* characters, int length);

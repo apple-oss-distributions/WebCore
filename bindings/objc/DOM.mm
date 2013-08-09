@@ -29,27 +29,31 @@
 #import "DOMInternal.h" // import first to make the private/public trick work
 #import "DOM.h"
 
+#import "CachedImage.h"
 #import "DOMElementInternal.h"
 #import "DOMHTMLCanvasElement.h"
+#import "DOMHTMLTableCellElementInternal.h"
 #import "DOMNodeInternal.h"
 #import "DOMPrivate.h"
 #import "DOMRangeInternal.h"
+#import "Font.h"
 #import "Frame.h"
+#import "FrameSnapshottingMac.h"
 #import "HTMLElement.h"
 #import "HTMLNames.h"
 #import "HTMLParserIdioms.h"
+#import "HTMLTableCellElement.h"
 #import "Image.h"
+#import "JSNode.h"
 #import "NodeFilter.h"
+#import "Range.h"
 #import "RenderImage.h"
+#import "ScriptController.h"
 #import "WebScriptObjectPrivate.h"
+#import <JavaScriptCore/APICast.h>
 #import <wtf/HashMap.h>
 
-#if ENABLE(SVG_DOM_OBJC_BINDINGS)
-#import "DOMSVG.h"
-#import "SVGElementInstance.h"
-#import "SVGNames.h"
-#endif
-
+#if PLATFORM(IOS)
 #import "FocusController.h"
 #import "HTMLLinkElement.h"
 #import "KeyboardEvent.h"
@@ -63,6 +67,7 @@
 #import "WAKAppKitStubs.h"
 #import "WAKWindow.h"
 #import "WebCoreThreadMessage.h"
+#endif
 
 using namespace JSC;
 using namespace WebCore;
@@ -157,90 +162,6 @@ static void createElementClassMap()
     addElementClass(HTMLNames::trTag, [DOMHTMLTableRowElement class]);
     addElementClass(HTMLNames::ulTag, [DOMHTMLUListElement class]);
     addElementClass(HTMLNames::xmpTag, [DOMHTMLPreElement class]);
-
-#if ENABLE(SVG_DOM_OBJC_BINDINGS)
-    addElementClass(SVGNames::aTag, [DOMSVGAElement class]);
-    addElementClass(SVGNames::altGlyphDefTag, [DOMSVGAltGlyphDefElement class]);
-    addElementClass(SVGNames::altGlyphTag, [DOMSVGAltGlyphElement class]);
-    addElementClass(SVGNames::altGlyphItemTag, [DOMSVGAltGlyphItemElement class]);
-    addElementClass(SVGNames::animateTag, [DOMSVGAnimateElement class]);
-    addElementClass(SVGNames::animateColorTag, [DOMSVGAnimateColorElement class]);
-    addElementClass(SVGNames::animateTransformTag, [DOMSVGAnimateTransformElement class]);
-    addElementClass(SVGNames::setTag, [DOMSVGSetElement class]);
-    addElementClass(SVGNames::circleTag, [DOMSVGCircleElement class]);
-    addElementClass(SVGNames::clipPathTag, [DOMSVGClipPathElement class]);
-    addElementClass(SVGNames::cursorTag, [DOMSVGCursorElement class]);
-    addElementClass(SVGNames::defsTag, [DOMSVGDefsElement class]);
-    addElementClass(SVGNames::descTag, [DOMSVGDescElement class]);
-    addElementClass(SVGNames::ellipseTag, [DOMSVGEllipseElement class]);
-#if ENABLE(FILTERS)
-    addElementClass(SVGNames::feBlendTag, [DOMSVGFEBlendElement class]);
-    addElementClass(SVGNames::feColorMatrixTag, [DOMSVGFEColorMatrixElement class]);
-    addElementClass(SVGNames::feComponentTransferTag, [DOMSVGFEComponentTransferElement class]);
-    addElementClass(SVGNames::feCompositeTag, [DOMSVGFECompositeElement class]);
-    addElementClass(SVGNames::feConvolveMatrixTag, [DOMSVGFEConvolveMatrixElement class]);
-    addElementClass(SVGNames::feDiffuseLightingTag, [DOMSVGFEDiffuseLightingElement class]);
-    addElementClass(SVGNames::feDisplacementMapTag, [DOMSVGFEDisplacementMapElement class]);
-    addElementClass(SVGNames::feDistantLightTag, [DOMSVGFEDistantLightElement class]);
-    addElementClass(SVGNames::feDropShadowTag, [DOMSVGFEDropShadowElement class]);
-    addElementClass(SVGNames::feFloodTag, [DOMSVGFEFloodElement class]);
-    addElementClass(SVGNames::feFuncATag, [DOMSVGFEFuncAElement class]);
-    addElementClass(SVGNames::feFuncBTag, [DOMSVGFEFuncBElement class]);
-    addElementClass(SVGNames::feFuncGTag, [DOMSVGFEFuncGElement class]);
-    addElementClass(SVGNames::feFuncRTag, [DOMSVGFEFuncRElement class]);
-    addElementClass(SVGNames::feGaussianBlurTag, [DOMSVGFEGaussianBlurElement class]);
-    addElementClass(SVGNames::feImageTag, [DOMSVGFEImageElement class]);
-    addElementClass(SVGNames::feMergeTag, [DOMSVGFEMergeElement class]);
-    addElementClass(SVGNames::feMergeNodeTag, [DOMSVGFEMergeNodeElement class]);
-    addElementClass(SVGNames::feMorphologyTag, [DOMSVGFEMorphologyElement class]);
-    addElementClass(SVGNames::feOffsetTag, [DOMSVGFEOffsetElement class]);
-    addElementClass(SVGNames::fePointLightTag, [DOMSVGFEPointLightElement class]);
-    addElementClass(SVGNames::feSpecularLightingTag, [DOMSVGFESpecularLightingElement class]);
-    addElementClass(SVGNames::feSpotLightTag, [DOMSVGFESpotLightElement class]);
-    addElementClass(SVGNames::feTileTag, [DOMSVGFETileElement class]);
-    addElementClass(SVGNames::feTurbulenceTag, [DOMSVGFETurbulenceElement class]);
-    addElementClass(SVGNames::filterTag, [DOMSVGFilterElement class]);
-#endif
-#if ENABLE(SVG_FONTS)
-    addElementClass(SVGNames::fontTag, [DOMSVGFontElement class]);
-    addElementClass(SVGNames::font_faceTag, [DOMSVGFontFaceElement class]);
-    addElementClass(SVGNames::font_face_formatTag, [DOMSVGFontFaceFormatElement class]);
-    addElementClass(SVGNames::font_face_nameTag, [DOMSVGFontFaceNameElement class]);
-    addElementClass(SVGNames::font_face_srcTag, [DOMSVGFontFaceSrcElement class]);
-    addElementClass(SVGNames::font_face_uriTag, [DOMSVGFontFaceUriElement class]);
-    addElementClass(SVGNames::glyphTag, [DOMSVGGlyphElement class]);
-    addElementClass(SVGNames::glyphRefTag, [DOMSVGGlyphRefElement class]);
-#endif
-    addElementClass(SVGNames::gTag, [DOMSVGGElement class]);
-    addElementClass(SVGNames::imageTag, [DOMSVGImageElement class]);
-    addElementClass(SVGNames::lineTag, [DOMSVGLineElement class]);
-    addElementClass(SVGNames::linearGradientTag, [DOMSVGLinearGradientElement class]);
-    addElementClass(SVGNames::markerTag, [DOMSVGMarkerElement class]);
-    addElementClass(SVGNames::maskTag, [DOMSVGMaskElement class]);
-    addElementClass(SVGNames::metadataTag, [DOMSVGMetadataElement class]);
-#if ENABLE(SVG_FONTS)
-    addElementClass(SVGNames::missing_glyphTag, [DOMSVGMissingGlyphElement class]);
-#endif
-    addElementClass(SVGNames::pathTag, [DOMSVGPathElement class]);
-    addElementClass(SVGNames::patternTag, [DOMSVGPatternElement class]);
-    addElementClass(SVGNames::polygonTag, [DOMSVGPolygonElement class]);
-    addElementClass(SVGNames::polylineTag, [DOMSVGPolylineElement class]);
-    addElementClass(SVGNames::radialGradientTag, [DOMSVGRadialGradientElement class]);
-    addElementClass(SVGNames::rectTag, [DOMSVGRectElement class]);
-    addElementClass(SVGNames::scriptTag, [DOMSVGScriptElement class]);
-    addElementClass(SVGNames::stopTag, [DOMSVGStopElement class]);
-    addElementClass(SVGNames::styleTag, [DOMSVGStyleElement class]);
-    addElementClass(SVGNames::svgTag, [DOMSVGSVGElement class]);
-    addElementClass(SVGNames::switchTag, [DOMSVGSwitchElement class]);
-    addElementClass(SVGNames::symbolTag, [DOMSVGSymbolElement class]);
-    addElementClass(SVGNames::textTag, [DOMSVGTextElement class]);
-    addElementClass(SVGNames::titleTag, [DOMSVGTitleElement class]);
-    addElementClass(SVGNames::trefTag, [DOMSVGTRefElement class]);
-    addElementClass(SVGNames::tspanTag, [DOMSVGTSpanElement class]);
-    addElementClass(SVGNames::textPathTag, [DOMSVGTextPathElement class]);
-    addElementClass(SVGNames::useTag, [DOMSVGUseElement class]);
-    addElementClass(SVGNames::viewTag, [DOMSVGViewElement class]);
-#endif
 }
 
 static Class lookupElementClass(const QualifiedName& tag)
@@ -271,6 +192,7 @@ static NSArray *kit(const Vector<IntRect>& rects)
     return array;
 }
 
+#if PLATFORM(IOS)
 static WKQuad wkQuadFromFloatQuad(const FloatQuad& inQuad)
 {
     WKQuad  theQuad;
@@ -309,9 +231,11 @@ static inline WKQuad emptyQuad()
     WKQuad zeroQuad = { CGPointZero, CGPointZero, CGPointZero, CGPointZero };
     return zeroQuad;
 }
+#endif
 
 } // namespace WebCore
 
+#if PLATFORM(IOS)
 @implementation WKQuadObject
 
 - (id)initWithQuad:(WKQuad)quad
@@ -340,6 +264,7 @@ static inline WKQuad emptyQuad()
 }
 
 @end
+#endif
 
 @implementation DOMNode (WebCoreInternal)
 
@@ -371,11 +296,7 @@ Class kitClass(WebCore::Node* impl)
     switch (impl->nodeType()) {
         case WebCore::Node::ELEMENT_NODE:
             if (impl->isHTMLElement())
-                return WebCore::elementClass(static_cast<WebCore::HTMLElement*>(impl)->tagQName(), [DOMHTMLElement class]);
-#if ENABLE(SVG_DOM_OBJC_BINDINGS)
-            if (impl->isSVGElement())
-                return WebCore::elementClass(static_cast<WebCore::SVGElement*>(impl)->tagQName(), [DOMSVGElement class]);
-#endif
+                return WebCore::elementClass(toHTMLElement(impl)->tagQName(), [DOMHTMLElement class]);
             return [DOMElement class];
         case WebCore::Node::ATTRIBUTE_NODE:
             return [DOMAttr class];
@@ -394,10 +315,6 @@ Class kitClass(WebCore::Node* impl)
         case WebCore::Node::DOCUMENT_NODE:
             if (static_cast<WebCore::Document*>(impl)->isHTMLDocument())
                 return [DOMHTMLDocument class];
-#if ENABLE(SVG_DOM_OBJC_BINDINGS)
-            if (static_cast<WebCore::Document*>(impl)->isSVGDocument())
-                return [DOMSVGDocument class];
-#endif
             return [DOMDocument class];
         case WebCore::Node::DOCUMENT_TYPE_NODE:
             return [DOMDocumentType class];
@@ -429,13 +346,21 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
 
 @implementation DOMNode (DOMNodeExtensions)
 
+#if PLATFORM(IOS)
 - (CGRect)boundingBox
+#else
+- (NSRect)boundingBox
+#endif
 {
     // FIXME: Could we move this function to WebCore::Node and autogenerate?
     core(self)->document()->updateLayoutIgnorePendingStylesheets();
     WebCore::RenderObject* renderer = core(self)->renderer();
     if (!renderer)
+#if PLATFORM(IOS)
         return CGRectZero;
+#else
+        return NSZeroRect;
+#endif
     return renderer->absoluteBoundingBoxRect();
 }
 
@@ -444,6 +369,7 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
     return [self textRects];
 }
 
+#if PLATFORM(IOS)
 // quad in page coordinates, taking transforms into account. c.f. - (NSRect)boundingBox;
 - (WKQuad)absoluteQuad
 {
@@ -598,7 +524,7 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
         return nil;
 
     RefPtr<KeyboardEvent> key = KeyboardEvent::create();
-    return kit(page->focusController()->nextFocusableNode(FocusScope::focusScopeOf(core(self)->document()), core(self), key.get()));
+    return kit(page->focusController()->nextFocusableElement(FocusNavigationScope::focusNavigationScopeOf(core(self)->document()), core(self), key.get()));
 }
 
 - (DOMNode *)previousFocusNode
@@ -609,40 +535,80 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
         return nil;
 
     RefPtr<KeyboardEvent> key = KeyboardEvent::create();
-    return kit(page->focusController()->previousFocusableNode(FocusScope::focusScopeOf(core(self)->document()), core(self), key.get()));
+    return kit(page->focusController()->previousFocusableElement(FocusNavigationScope::focusNavigationScopeOf(core(self)->document()), core(self), key.get()));
 }
 
+#endif // PLATFORM(IOS)
 
 @end
 
 @implementation DOMNode (DOMNodeExtensionsPendingPublic)
 
+#if !PLATFORM(IOS)
+- (NSImage *)renderedImage
+{
+    // FIXME: Could we move this function to WebCore::Node and autogenerate?
+    WebCore::Node* node = core(self);
+    WebCore::Frame* frame = node->document()->frame();
+    if (!frame)
+        return nil;
+    return frame->nodeImage(node).get();
+}
+#endif
 
 - (NSArray *)textRects
 {
-    // FIXME: Could we move this function to WebCore::Node and autogenerate?
     core(self)->document()->updateLayoutIgnorePendingStylesheets();
     if (!core(self)->renderer())
         return nil;
-    RefPtr<Range> range = Range::create(core(self)->document());
-    WebCore::ExceptionCode ec = 0;
-    range->selectNodeContents(core(self), ec);
     Vector<WebCore::IntRect> rects;
-    range->textRects(rects);
+    core(self)->textRects(rects);
     return kit(rects);
+}
+
+@end
+
+@implementation DOMNode (WebPrivate)
+
++ (id)_nodeFromJSWrapper:(JSObjectRef)jsWrapper
+{
+    JSObject* object = toJS(jsWrapper);
+
+    if (!object->inherits(&JSNode::s_info))
+        return nil;
+
+    WebCore::Node* node = jsCast<JSNode*>(object)->impl();
+    return kit(node);
 }
 
 @end
 
 @implementation DOMRange (DOMRangeExtensions)
 
+#if PLATFORM(IOS)
 - (CGRect)boundingBox
+#else
+- (NSRect)boundingBox
+#endif
 {
     // FIXME: The call to updateLayoutIgnorePendingStylesheets should be moved into WebCore::Range.
     core(self)->ownerDocument()->updateLayoutIgnorePendingStylesheets();
     return core(self)->boundingBox();
 }
 
+#if !PLATFORM(IOS)
+- (NSImage *)renderedImageForcingBlackText:(BOOL)forceBlackText
+#else
+- (CGImageRef)renderedImageForcingBlackText:(BOOL)forceBlackText
+#endif
+{
+    WebCore::Range* range = core(self);
+    WebCore::Frame* frame = range->ownerDocument()->frame();
+    if (!frame)
+        return nil;
+
+    return WebCore::rangeImage(frame, range, forceBlackText);
+}
 
 - (NSArray *)textRects
 {
@@ -666,11 +632,34 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
 
 @implementation DOMElement (DOMElementAppKitExtensions)
 
+#if !PLATFORM(IOS)
+- (NSImage*)image
+{
+    // FIXME: Could we move this function to WebCore::Node and autogenerate?
+    WebCore::RenderObject* renderer = core(self)->renderer();
+    if (!renderer || !renderer->isImage())
+        return nil;
+    WebCore::CachedImage* cachedImage = static_cast<WebCore::RenderImage*>(renderer)->cachedImage();
+    if (!cachedImage || cachedImage->errorOccurred())
+        return nil;
+    return cachedImage->imageForRenderer(renderer)->getNSImage();
+}
+#endif
 
 @end
 
 @implementation DOMElement (WebPrivate)
 
+#if !PLATFORM(IOS)
+- (NSFont *)_font
+{
+    // FIXME: Could we move this function to WebCore::Element and autogenerate?
+    WebCore::RenderObject* renderer = core(self)->renderer();
+    if (!renderer)
+        return nil;
+    return renderer->style()->font().primaryFont()->getNSFont();
+}
+#else
 - (GSFontRef)_font
 {
     RenderObject* renderer = core(self)->renderer();
@@ -678,7 +667,21 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
         return nil;
     return renderer->style()->font().primaryFont()->getGSFont();
 }
+#endif
 
+#if !PLATFORM(IOS)
+- (NSData *)_imageTIFFRepresentation
+{
+    // FIXME: Could we move this function to WebCore::Element and autogenerate?
+    WebCore::RenderObject* renderer = core(self)->renderer();
+    if (!renderer || !renderer->isImage())
+        return nil;
+    WebCore::CachedImage* cachedImage = static_cast<WebCore::RenderImage*>(renderer)->cachedImage();
+    if (!cachedImage || cachedImage->errorOccurred())
+        return nil;
+    return (NSData *)cachedImage->imageForRenderer(renderer)->getTIFFRepresentation();
+}
+#endif
 
 - (NSURL *)_getURLAttribute:(NSString *)name
 {
@@ -693,11 +696,12 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
 {
     // FIXME: Could we move this function to WebCore::Element and autogenerate?
     WebCore::Element* element = core(self);
-    return element->document()->focusedNode() == element;
+    return element->document()->focusedElement() == element;
 }
 
 @end
 
+#if PLATFORM(IOS)
 @implementation DOMHTMLLinkElement (WebPrivate)
 - (BOOL)_mediaQueryMatchesForOrientation:(int)orientation
 {
@@ -738,6 +742,7 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
     return screenEval.eval(mediaQuerySet.get());
 }
 @end
+#endif
 
 //------------------------------------------------------------------------------------------
 // DOMRange
@@ -766,9 +771,26 @@ id <DOMEventTarget> kit(WebCore::EventTarget* eventTarget)
 
 @implementation DOMRGBColor (WebPrivate)
 
+#if !PLATFORM(IOS)
+// FIXME: This should be removed as soon as all internal Apple uses of it have been replaced with
+// calls to the public method - (NSColor *)color.
+- (NSColor *)_color
+{
+    return [self color];
+}
+#endif
 
 @end
 
+
+@implementation DOMHTMLTableCellElement (WebPrivate)
+
+- (DOMHTMLTableCellElement *)_cellAbove
+{
+    return kit(core(self)->cellAbove());
+}
+
+@end
 
 //------------------------------------------------------------------------------------------
 // DOMNodeFilter

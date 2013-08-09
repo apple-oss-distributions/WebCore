@@ -48,8 +48,8 @@ public:
     static void deleteData(void*);
 
     JSCallbackData(JSC::JSObject* callback, JSDOMGlobalObject* globalObject)
-        : m_callback(globalObject->globalData(), callback)
-        , m_globalObject(globalObject->globalData(), globalObject)
+        : m_callback(globalObject->vm(), callback)
+        , m_globalObject(globalObject->vm(), globalObject)
 #ifndef NDEBUG
         , m_thread(currentThread())
 #endif
@@ -58,6 +58,9 @@ public:
     
     ~JSCallbackData()
     {
+#if !PLATFORM(IOS)
+        ASSERT(m_thread == currentThread());
+#endif
     }
 
     JSC::JSObject* callback() { return m_callback.get(); }

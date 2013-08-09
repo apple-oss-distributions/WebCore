@@ -27,3 +27,23 @@
 #include "config.h"
 #include "FloatPoint.h"
 
+#if !PLATFORM(IOS)
+
+namespace WebCore {
+
+#ifndef NSGEOMETRY_TYPES_SAME_AS_CGGEOMETRY_TYPES
+
+FloatPoint::FloatPoint(const NSPoint& p) : m_x(p.x), m_y(p.y)
+{
+}
+
+FloatPoint::operator NSPoint() const
+{
+    return NSMakePoint(m_x, m_y);
+}
+
+#endif
+
+}
+
+#endif

@@ -19,13 +19,14 @@
 #ifndef TileCache_h
 #define TileCache_h
 
+#if PLATFORM(IOS)
 
+#include "Color.h"
 #include "FloatRect.h"
 #include "IntPoint.h"
 #include "IntRect.h"
 #include "IntSize.h"
 #include "Timer.h"
-#include "WAKWindow.h"
 #include <wtf/Deque.h>
 #include <wtf/HashMap.h>
 #include <wtf/Noncopyable.h>
@@ -38,11 +39,15 @@
 #include <wtf/Vector.h>
 
 #ifdef __OBJC__
+@class CALayer;
 @class TileCacheTombstone;
 @class TileLayer;
+@class WAKWindow;
 #else
+class CALayer;
 class TileCacheTombstone;
 class TileLayer;
+class WAKWindow;
 #endif
 
 namespace WebCore {
@@ -66,6 +71,12 @@ public:
     void removeAllNonVisibleTiles();
     void removeAllTiles();
     void removeForegroundTiles();
+
+    // If 'contentReplacementImage' is not NULL, drawLayer() draws
+    // contentReplacementImage instead of the page content.  We assume the
+    // image is to be drawn at the origin and scaled to match device pixels.
+    void setContentReplacementImage(RetainPtr<CGImageRef>);
+    RetainPtr<CGImageRef> contentReplacementImage() const;
     
     void setTileBordersVisible(bool);
     bool tileBordersVisible() const { return m_tileBordersVisible; }
@@ -99,8 +110,14 @@ public:
     TilingMode tilingMode() const { return m_tilingMode; }
     void setTilingMode(TilingMode);
 
-    void setTilingDirection(WAKTilingDirection);
-    WAKTilingDirection tilingDirection() const;
+    typedef enum {
+        TilingDirectionUp,
+        TilingDirectionDown,
+        TilingDirectionLeft,
+        TilingDirectionRight,
+    } TilingDirection;
+    void setTilingDirection(TilingDirection);
+    TilingDirection tilingDirection() const;
 
     bool hasPendingDraw() const;
     
@@ -116,10 +133,18 @@ public:
     void doLayoutTiles();
     void drawLayer(TileLayer* layer, CGContextRef context);
     void prepareToDraw();
-    void finishedCreatingTiles(bool createMore);
+    void finishedCreatingTiles(bool didCreateTiles, bool createMore);
     FloatRect visibleRectInLayer(CALayer *layer) const;
     CALayer* hostLayer() const;
     unsigned tileCapacityForGrid(TileGrid*);
+    Color colorForGridTileBorder(TileGrid*) const;
+
+    void doPendingRepaints();
+
+    bool isSpeculativeTileCreationEnabled() const { return m_isSpeculativeTileCreationEnabled; }
+    void setSpeculativeTileCreationEnabled(bool);
+    
+    enum SynchronousTileCreationMode { CoverVisibleOnly, CoverSpeculative };
 
 private:
     TileGrid* activeTileGrid() const;
@@ -135,11 +160,17 @@ private:
     void bringActiveTileGridToFront();
     void adjustTileGridTransforms();
     void removeAllNonVisibleTilesInternal();
-    void createTilesInActiveGrid();
+    void createTilesInActiveGrid(SynchronousTileCreationMode);
+    void scheduleLayerFlushForPendingRepaint();
 
     void tileCreationTimerFired(Timer<TileCache>*);
-    
+
+    void drawReplacementImage(TileLayer*, CGContextRef, CGImageRef);
+    void drawWindowContent(TileLayer*, CGContextRef, CGRect dirtyRect);
+
     WAKWindow* m_window;
+
+    RetainPtr<CGImageRef> m_contentReplacementImage;
 
     bool m_keepsZoomedOutTiles;
     
@@ -149,7 +180,7 @@ private:
     RetainPtr<TileCacheTombstone> m_tombstone;
     
     TilingMode m_tilingMode;
-    WAKTilingDirection m_tilingDirection;
+    TilingDirection m_tilingDirection;
     
     IntSize m_tileSize;
     bool m_tilesOpaque;
@@ -157,6 +188,7 @@ private:
     bool m_tileBordersVisible;
     bool m_tilePaintCountersVisible;
     bool m_acceleratedDrawingEnabled;
+    bool m_isSpeculativeTileCreationEnabled;
 
     bool m_didCallWillStartScrollingOrZooming;
     OwnPtr<TileGrid> m_zoomedOutTileGrid;
@@ -173,10 +205,12 @@ private:
 
     mutable Mutex m_tileMutex;
     mutable Mutex m_savedDisplayRectMutex;
+    mutable Mutex m_contentReplacementImageMutex;
 };
 
 }
 
+#endif // PLATFORM(IOS)
 
 #endif // TileCache_h
 

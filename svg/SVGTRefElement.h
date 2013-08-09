@@ -27,35 +27,31 @@
 
 namespace WebCore {
 
-class TargetListener;
+class SVGTRefTargetEventListener;
 
-class SVGTRefElement : public SVGTextPositioningElement,
-                       public SVGURIReference {
+class SVGTRefElement FINAL : public SVGTextPositioningElement,
+                             public SVGURIReference {
 public:
     static PassRefPtr<SVGTRefElement> create(const QualifiedName&, Document*);
 
 private:
-    friend class TargetListener;
+    friend class SVGTRefTargetEventListener;
 
     SVGTRefElement(const QualifiedName&, Document*);
     virtual ~SVGTRefElement();
 
-    void createShadowSubtree();
-
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(Attribute*) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&);
 
     virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
     virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const;
     virtual bool rendererIsNeeded(const NodeRenderingContext&);
 
-    virtual InsertionNotificationRequest insertedInto(Node*) OVERRIDE;
-    virtual void removedFrom(Node*) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual void removedFrom(ContainerNode*) OVERRIDE;
 
-    void clearEventListener();
-
-    void updateReferencedText();
+    void updateReferencedText(Element*);
 
     void detachTarget();
 
@@ -65,7 +61,7 @@ private:
         DECLARE_ANIMATED_STRING(Href, href)
     END_DECLARE_ANIMATED_PROPERTIES
 
-    RefPtr<TargetListener> m_eventListener;
+    RefPtr<SVGTRefTargetEventListener> m_targetListener;
 };
 
 } // namespace WebCore

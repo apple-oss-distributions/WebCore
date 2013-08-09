@@ -14,7 +14,6 @@ extern "C" {
 typedef struct _WKObject WKObject;
 typedef struct _WKObject *WKObjectRef;
 typedef struct WKControl* WKControlRef;
-typedef struct WKWindow* WKWindowRef;
 typedef struct WKView* WKViewRef;
 
 #ifdef __cplusplus

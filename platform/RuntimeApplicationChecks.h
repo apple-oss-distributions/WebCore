@@ -36,9 +36,13 @@ bool applicationIsMicrosoftMessenger();
 bool applicationIsMicrosoftMyDay();
 bool applicationIsMicrosoftOutlook();
 bool applicationIsSafari();
+bool applicationIsSolidStateNetworksDownloader();
+bool applicationIsVersions();
+bool applicationIsHRBlock();
 
 } // namespace WebCore
 
+#if !PLATFORM(MAC) || PLATFORM(IOS)
 inline bool WebCore::applicationIsAOLInstantMessenger() { return false; }
 inline bool WebCore::applicationIsAdobeInstaller() { return false; }
 inline bool WebCore::applicationIsAperture() { return false; }
@@ -47,5 +51,7 @@ inline bool WebCore::applicationIsMicrosoftMessenger() { return false; }
 inline bool WebCore::applicationIsMicrosoftMyDay() { return false; }
 inline bool WebCore::applicationIsMicrosoftOutlook() { return false; }
 inline bool WebCore::applicationIsSafari() { return false; }
+inline bool WebCore::applicationIsSolidStateNetworksDownloader() { return false; }
+#endif // !PLATFORM(MAC) || PLATFORM(IOS)
 
 #endif // RuntimeApplicationChecks_h
