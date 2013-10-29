@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2011, 2012 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -38,6 +38,8 @@ class WKCACFViewLayerTreeHost : public CACFLayerTreeHost {
 public:
     static PassRefPtr<WKCACFViewLayerTreeHost> create();
 
+    virtual bool createRenderer();
+
 private:
     WKCACFViewLayerTreeHost();
 
@@ -46,7 +48,6 @@ private:
 
     virtual void initializeContext(void* userData, PlatformCALayer*);
     virtual void resize();
-    virtual bool createRenderer();
     virtual void destroyRenderer();
     virtual void flushContext();
     virtual void contextDidChange();
@@ -54,6 +55,9 @@ private:
     virtual void render(const Vector<CGRect>& dirtyRects = Vector<CGRect>());
     virtual CFTimeInterval lastCommitTime() const;
     virtual void setShouldInvertColors(bool);
+#if USE(AVFOUNDATION)
+    virtual GraphicsDeviceAdapter* graphicsDeviceAdapter() const OVERRIDE;
+#endif
 
     RetainPtr<WKCACFViewRef> m_view;
     bool m_viewNeedsUpdate;

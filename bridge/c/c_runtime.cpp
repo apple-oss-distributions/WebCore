@@ -32,7 +32,6 @@
 #include "c_instance.h"
 #include "c_utility.h"
 #include "npruntime_impl.h"
-#include <runtime/ScopeChain.h>
 #include <runtime/JSLock.h>
 #include <runtime/JSObject.h>
 
@@ -49,7 +48,7 @@ JSValue CField::valueFromInstance(ExecState* exec, const Instance* inst) const
 
         bool result;
         {
-            JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly);
+            JSLock::DropAllLocks dropAllLocks(exec);
             result = obj->_class->getProperty(obj, _fieldIdentifier, &property);
             CInstance::moveGlobalExceptionToExecState(exec);
         }
@@ -71,7 +70,7 @@ void CField::setValueToInstance(ExecState *exec, const Instance *inst, JSValue a
         convertValueToNPVariant(exec, aValue, &variant);
 
         {
-            JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly);
+            JSLock::DropAllLocks dropAllLocks(exec);
             obj->_class->setProperty(obj, _fieldIdentifier, &variant);
             CInstance::moveGlobalExceptionToExecState(exec);
         }

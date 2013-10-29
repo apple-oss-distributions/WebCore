@@ -1,7 +1,7 @@
 /*
  * (C) 1999-2003 Lars Knoll (knoll@kde.org)
  * (C) 2002-2003 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2002, 2005, 2006, 2007 Apple Inc. All rights reserved.
+ * Copyright (C) 2002, 2005, 2006, 2007, 2012 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -22,99 +22,38 @@
 #include "config.h"
 #include "CSSRule.h"
 
-#include "CSSCharsetRule.h"
-#include "CSSFontFaceRule.h"
-#include "CSSImportRule.h"
-#include "CSSMediaRule.h"
-#include "CSSPageRule.h"
-#include "CSSStyleRule.h"
-#include "CSSUnknownRule.h"
-#include "WebKitCSSKeyframeRule.h"
-#include "WebKitCSSKeyframesRule.h"
-#include "WebKitCSSRegionRule.h"
+#include "CSSStyleSheet.h"
 #include "NotImplemented.h"
+#include "StyleRule.h"
+#include "StyleSheetContents.h"
 
 namespace WebCore {
 
 struct SameSizeAsCSSRule : public RefCounted<SameSizeAsCSSRule> {
-    unsigned bitfields;
+    virtual ~SameSizeAsCSSRule();
+    unsigned char bitfields;
     void* pointerUnion;
 };
 
 COMPILE_ASSERT(sizeof(CSSRule) == sizeof(SameSizeAsCSSRule), CSSRule_should_stay_small);
+
+#if ENABLE(CSS_REGIONS)
+COMPILE_ASSERT(StyleRuleBase::Region == static_cast<StyleRuleBase::Type>(CSSRule::WEBKIT_REGION_RULE), enums_should_match);
+#endif
+
+#if ENABLE(CSS_DEVICE_ADAPTATION)
+COMPILE_ASSERT(StyleRuleBase::Viewport == static_cast<StyleRuleBase::Type>(CSSRule::WEBKIT_VIEWPORT_RULE), enums_should_match);
+#endif
 
 void CSSRule::setCssText(const String& /*cssText*/, ExceptionCode& /*ec*/)
 {
     notImplemented();
 }
 
-String CSSRule::cssText() const
+const CSSParserContext& CSSRule::parserContext() const
 {
-    switch (type()) {
-    case UNKNOWN_RULE:
-        return String();
-    case STYLE_RULE:
-        return static_cast<const CSSStyleRule*>(this)->cssText();
-    case PAGE_RULE:
-        return static_cast<const CSSPageRule*>(this)->cssText();
-    case CHARSET_RULE:
-        return static_cast<const CSSCharsetRule*>(this)->cssText();
-    case IMPORT_RULE:
-        return static_cast<const CSSImportRule*>(this)->cssText();
-    case MEDIA_RULE:
-        return static_cast<const CSSMediaRule*>(this)->cssText();
-    case FONT_FACE_RULE:
-        return static_cast<const CSSFontFaceRule*>(this)->cssText();
-    case WEBKIT_KEYFRAMES_RULE:
-        return static_cast<const WebKitCSSKeyframesRule*>(this)->cssText();
-    case WEBKIT_KEYFRAME_RULE:
-        return static_cast<const WebKitCSSKeyframeRule*>(this)->cssText();
-#if ENABLE(CSS_REGIONS)
-    case WEBKIT_REGION_RULE:
-        return static_cast<const WebKitCSSRegionRule*>(this)->cssText();
-#endif
-    }
-    ASSERT_NOT_REACHED();
-    return String();
-}
-
-void CSSRule::destroy()
-{
-    switch (type()) {
-    case UNKNOWN_RULE:
-        delete static_cast<CSSUnknownRule*>(this);
-        return;
-    case STYLE_RULE:
-        delete static_cast<CSSStyleRule*>(this);
-        return;
-    case PAGE_RULE:
-        delete static_cast<CSSPageRule*>(this);
-        return;
-    case CHARSET_RULE:
-        delete static_cast<CSSCharsetRule*>(this);
-        return;
-    case IMPORT_RULE:
-        delete static_cast<CSSImportRule*>(this);
-        return;
-    case MEDIA_RULE:
-        delete static_cast<CSSMediaRule*>(this);
-        return;
-    case FONT_FACE_RULE:
-        delete static_cast<CSSFontFaceRule*>(this);
-        return;
-    case WEBKIT_KEYFRAMES_RULE:
-        delete static_cast<WebKitCSSKeyframesRule*>(this);
-        return;
-    case WEBKIT_KEYFRAME_RULE:
-        delete static_cast<WebKitCSSKeyframeRule*>(this);
-        return;
-#if ENABLE(CSS_REGIONS)
-    case WEBKIT_REGION_RULE:
-        delete static_cast<WebKitCSSRegionRule*>(this);
-        return;
-#endif
-    }
-    ASSERT_NOT_REACHED();
+    CSSStyleSheet* styleSheet = parentStyleSheet();
+    return styleSheet ? styleSheet->contents()->parserContext() : strictCSSParserContext();
 }
 
 } // namespace WebCore

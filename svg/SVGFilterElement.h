@@ -36,10 +36,10 @@
 
 namespace WebCore {
 
-class SVGFilterElement : public SVGStyledElement,
-                         public SVGURIReference,
-                         public SVGLangSpace,
-                         public SVGExternalResourcesRequired {
+class SVGFilterElement FINAL : public SVGStyledElement,
+                               public SVGURIReference,
+                               public SVGLangSpace,
+                               public SVGExternalResourcesRequired {
 public:
     static PassRefPtr<SVGFilterElement> create(const QualifiedName&, Document*);
 
@@ -51,11 +51,12 @@ private:
     virtual bool needsPendingResourceHandling() const { return false; }
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(Attribute*) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual void svgAttributeChanged(const QualifiedName&);
     virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0);
 
-    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*);
+    virtual RenderObject* createRenderer(RenderArena*, RenderStyle*) OVERRIDE;
+    virtual bool childShouldCreateRenderer(const NodeRenderingContext&) const OVERRIDE;
 
     virtual bool selfHasRelativeLengths() const;
 

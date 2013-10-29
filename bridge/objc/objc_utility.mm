@@ -86,7 +86,7 @@ ObjcValue convertValueToObjcValue(ExecState* exec, JSValue value, ObjcValueType 
 
     switch (type) {
         case ObjcObjectType: {
-            JSLock lock(SilenceAssertionsOnly);
+            JSLockHolder lock(exec);
             
             JSGlobalObject *originGlobalObject = exec->dynamicGlobalObject();
             RootObject* originRootObject = findRootObject(originGlobalObject);
@@ -112,6 +112,9 @@ ObjcValue convertValueToObjcValue(ExecState* exec, JSValue value, ObjcValueType 
         case ObjcShortType:
         case ObjcUnsignedShortType:
             result.shortValue = (short)d;
+            break;
+        case ObjcBoolType:
+            result.booleanValue = (bool)d;
             break;
         case ObjcIntType:
         case ObjcUnsignedIntType:
@@ -146,15 +149,8 @@ ObjcValue convertValueToObjcValue(ExecState* exec, JSValue value, ObjcValueType 
 
 JSValue convertNSStringToString(ExecState* exec, NSString *nsstring)
 {
-    JSLock lock(SilenceAssertionsOnly);
-    
-    unichar *chars;
-    unsigned int length = [nsstring length];
-    chars = (unichar *)malloc(sizeof(unichar)*length);
-    [nsstring getCharacters:chars];
-    UString u((const UChar*)chars, length);
-    JSValue aValue = jsString(exec, u);
-    free((void *)chars);
+    JSLockHolder lock(exec);
+    JSValue aValue = jsString(exec, String(nsstring));
     return aValue;
 }
 
@@ -178,7 +174,7 @@ JSValue convertNSStringToString(ExecState* exec, NSString *nsstring)
 */
 JSValue convertObjcValueToValue(ExecState* exec, void* buffer, ObjcValueType type, RootObject* rootObject)
 {
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(exec);
     
     switch (type) {
         case ObjcObjectType: {
@@ -213,6 +209,8 @@ JSValue convertObjcValueToValue(ExecState* exec, void* buffer, ObjcValueType typ
             return jsNumber(*(short*)buffer);
         case ObjcUnsignedShortType:
             return jsNumber(*(unsigned short*)buffer);
+        case ObjcBoolType:
+            return jsBoolean(*(bool*)buffer);
         case ObjcIntType:
             return jsNumber(*(int*)buffer);
         case ObjcUnsignedIntType:
@@ -268,6 +266,9 @@ ObjcValueType objcValueTypeForType(const char *type)
             case _C_USHT:
                 objcValueType = ObjcUnsignedShortType;
                 break;
+            case _C_BOOL:
+                objcValueType = ObjcBoolType;
+                break;
             case _C_INT:
                 objcValueType = ObjcIntType;
                 break;
@@ -298,7 +299,8 @@ ObjcValueType objcValueTypeForType(const char *type)
             default:
                 // Unhandled type. We don't handle C structs, unions, etc.
                 // FIXME: throw an exception?
-                ASSERT_NOT_REACHED();
+                WTFLogAlways("Unhandled ObjC type specifier: \"%c\" used in ObjC bridge.", typeChar);
+                RELEASE_ASSERT_NOT_REACHED();
         }
 
         if (objcValueType != ObjcInvalidType)
@@ -311,11 +313,7 @@ ObjcValueType objcValueTypeForType(const char *type)
 JSObject *throwError(ExecState *exec, NSString *message)
 {
     ASSERT(message);
-    size_t length = [message length];
-    unichar *buffer = new unichar[length];
-    [message getCharacters:buffer];
-    JSObject *error = JSC::throwError(exec, JSC::createError(exec, UString(buffer, length)));
-    delete [] buffer;
+    JSObject *error = JSC::throwError(exec, JSC::createError(exec, String(message)));
     return error;
 }
 

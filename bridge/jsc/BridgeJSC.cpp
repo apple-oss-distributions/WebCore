@@ -63,18 +63,6 @@ Instance::~Instance()
     ASSERT(!m_runtimeObject);
 }
 
-static KJSDidExecuteFunctionPtr s_didExecuteFunction;
-
-void Instance::setDidExecuteFunction(KJSDidExecuteFunctionPtr func)
-{
-    s_didExecuteFunction = func;
-}
-
-KJSDidExecuteFunctionPtr Instance::didExecuteFunction()
-{
-    return s_didExecuteFunction;
-}
-
 void Instance::begin()
 {
     virtualBegin();
@@ -92,16 +80,16 @@ JSObject* Instance::createRuntimeObject(ExecState* exec)
     if (RuntimeObject* existingObject = m_runtimeObject.get())
         return existingObject;
 
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(exec);
     RuntimeObject* newObject = newRuntimeObject(exec);
     m_runtimeObject = PassWeak<RuntimeObject>(newObject);
-    m_rootObject->addRuntimeObject(exec->globalData(), newObject);
+    m_rootObject->addRuntimeObject(exec->vm(), newObject);
     return newObject;
 }
 
 RuntimeObject* Instance::newRuntimeObject(ExecState* exec)
 {
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(exec);
 
     // FIXME: deprecatedGetDOMStructure uses the prototype off of the wrong global object
     // We need to pass in the right global object for "i".

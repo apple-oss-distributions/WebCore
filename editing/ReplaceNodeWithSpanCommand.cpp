@@ -51,23 +51,17 @@ ReplaceNodeWithSpanCommand::ReplaceNodeWithSpanCommand(PassRefPtr<HTMLElement> e
 static void swapInNodePreservingAttributesAndChildren(HTMLElement* newNode, HTMLElement* nodeToReplace)
 {
     ASSERT(nodeToReplace->inDocument());
-    ExceptionCode ec = 0;
     RefPtr<ContainerNode> parentNode = nodeToReplace->parentNode();
-    parentNode->insertBefore(newNode, nodeToReplace, ec);
-    ASSERT(!ec);
-
-    RefPtr<Node> nextChild;
-    for (Node* child = nodeToReplace->firstChild(); child; child = nextChild.get()) {
-        nextChild = child->nextSibling();
-        newNode->appendChild(child, ec);
-        ASSERT(!ec);
-    }
 
     // FIXME: Fix this to send the proper MutationRecords when MutationObservers are present.
-    newNode->setAttributesFromElement(*nodeToReplace);
+    newNode->cloneDataFromElement(*nodeToReplace);
+    NodeVector children;
+    getChildNodes(nodeToReplace, children);
+    for (size_t i = 0; i < children.size(); ++i)
+        newNode->appendChild(children[i], ASSERT_NO_EXCEPTION);
 
-    parentNode->removeChild(nodeToReplace, ec);
-    ASSERT(!ec);
+    parentNode->insertBefore(newNode, nodeToReplace, ASSERT_NO_EXCEPTION);
+    parentNode->removeChild(nodeToReplace, ASSERT_NO_EXCEPTION);
 }
 
 void ReplaceNodeWithSpanCommand::doApply()

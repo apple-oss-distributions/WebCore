@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2007, 2008, 2012, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,6 +28,7 @@
 
 #include "CSSParser.h"
 #include "CSSRuleList.h"
+#include "CSSStyleSheet.h"
 #include "StylePropertySet.h"
 #include "StyleSheet.h"
 #include "WebKitCSSKeyframeRule.h"
@@ -72,9 +73,9 @@ int StyleRuleKeyframes::findKeyframeIndex(const String& key) const
 {
     String percentageString;
     if (equalIgnoringCase(key, "from"))
-        percentageString = "0%";
+        percentageString = ASCIILiteral("0%");
     else if (equalIgnoringCase(key, "to"))
-        percentageString = "100%";
+        percentageString = ASCIILiteral("100%");
     else
         percentageString = key;
     
@@ -86,7 +87,7 @@ int StyleRuleKeyframes::findKeyframeIndex(const String& key) const
 }
 
 WebKitCSSKeyframesRule::WebKitCSSKeyframesRule(StyleRuleKeyframes* keyframesRule, CSSStyleSheet* parent)
-    : CSSRule(parent, CSSRule::WEBKIT_KEYFRAMES_RULE)
+    : CSSRule(parent)
     , m_keyframesRule(keyframesRule)
     , m_childRuleCSSOMWrappers(keyframesRule->keyframes().size())
 {
@@ -104,12 +105,9 @@ WebKitCSSKeyframesRule::~WebKitCSSKeyframesRule()
 
 void WebKitCSSKeyframesRule::setName(const String& name)
 {
-    m_keyframesRule->setName(name);
+    CSSStyleSheet::RuleMutationScope mutationScope(this);
 
-    // Since the name is used in the keyframe map list in StyleResolver, we need
-    // to recompute the style sheet to get the updated name.
-    if (CSSStyleSheet* styleSheet = parentStyleSheet())
-        styleSheet->styleSheetChanged();
+    m_keyframesRule->setName(name);
 }
 
 void WebKitCSSKeyframesRule::insertRule(const String& ruleText)
@@ -118,9 +116,11 @@ void WebKitCSSKeyframesRule::insertRule(const String& ruleText)
 
     CSSParser parser(parserContext());
     CSSStyleSheet* styleSheet = parentStyleSheet();
-    RefPtr<StyleKeyframe> keyframe = parser.parseKeyframeRule(styleSheet ? styleSheet->internal() : 0, ruleText);
+    RefPtr<StyleKeyframe> keyframe = parser.parseKeyframeRule(styleSheet ? styleSheet->contents() : 0, ruleText);
     if (!keyframe)
         return;
+
+    CSSStyleSheet::RuleMutationScope mutationScope(this);
 
     m_keyframesRule->wrapperAppendKeyframe(keyframe);
 
@@ -134,6 +134,8 @@ void WebKitCSSKeyframesRule::deleteRule(const String& s)
     int i = m_keyframesRule->findKeyframeIndex(s);
     if (i < 0)
         return;
+
+    CSSStyleSheet::RuleMutationScope mutationScope(this);
 
     m_keyframesRule->wrapperRemoveKeyframe(i);
 
@@ -151,17 +153,17 @@ WebKitCSSKeyframeRule* WebKitCSSKeyframesRule::findRule(const String& s)
 String WebKitCSSKeyframesRule::cssText() const
 {
     StringBuilder result;
-    result.append("@-webkit-keyframes ");
+    result.appendLiteral("@-webkit-keyframes ");
     result.append(name());
-    result.append(" { \n");
+    result.appendLiteral(" { \n");
 
     unsigned size = length();
     for (unsigned i = 0; i < size; ++i) {
-        result.append("  ");
+        result.appendLiteral("  ");
         result.append(m_keyframesRule->keyframes()[i]->cssText());
-        result.append("\n");
+        result.append('\n');
     }
-    result.append("}");
+    result.append('}');
     return result.toString();
 }
 
@@ -188,6 +190,13 @@ CSSRuleList* WebKitCSSKeyframesRule::cssRules()
     if (!m_ruleListCSSOMWrapper)
         m_ruleListCSSOMWrapper = adoptPtr(new LiveCSSRuleList<WebKitCSSKeyframesRule>(this));
     return m_ruleListCSSOMWrapper.get();
+}
+
+void WebKitCSSKeyframesRule::reattach(StyleRuleBase* rule)
+{
+    ASSERT(rule);
+    ASSERT_WITH_SECURITY_IMPLICATION(rule->isKeyframesRule());
+    m_keyframesRule = static_cast<StyleRuleKeyframes*>(rule);
 }
 
 } // namespace WebCore

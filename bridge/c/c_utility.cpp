@@ -37,12 +37,12 @@
 #include "c_instance.h"
 #include <runtime/JSGlobalObject.h>
 #include <runtime/JSLock.h>
-#include "PlatformString.h"
 #include "npruntime_impl.h"
 #include "npruntime_priv.h"
 #include "runtime_object.h"
 #include "runtime_root.h"
 #include <wtf/Assertions.h>
+#include <wtf/text/WTFString.h>
 
 namespace JSC { namespace Bindings {
 
@@ -68,12 +68,12 @@ static String convertUTF8ToUTF16WithLatin1Fallback(const NPUTF8* UTF8Chars, int 
 // Variant value must be released with NPReleaseVariantValue()
 void convertValueToNPVariant(ExecState* exec, JSValue value, NPVariant* result)
 {
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(exec);
 
     VOID_TO_NPVARIANT(*result);
 
     if (value.isString()) {
-        UString ustring = value.toString(exec)->value(exec);
+        String ustring = value.toString(exec)->value(exec);
         CString cstring = ustring.utf8();
         NPString string = { (const NPUTF8*)cstring.data(), static_cast<uint32_t>(cstring.length()) };
         NPN_InitializeVariantWithStringCopy(result, &string);
@@ -107,7 +107,7 @@ void convertValueToNPVariant(ExecState* exec, JSValue value, NPVariant* result)
 
 JSValue convertNPVariantToValue(ExecState* exec, const NPVariant* variant, RootObject* rootObject)
 {
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(exec);
     
     NPVariantType type = variant->type;
 
@@ -122,7 +122,7 @@ JSValue convertNPVariantToValue(ExecState* exec, const NPVariant* variant, RootO
     if (type == NPVariantType_Double)
         return jsNumber(NPVARIANT_TO_DOUBLE(*variant));
     if (type == NPVariantType_String)
-        return WebCore::jsString(exec, convertNPStringToUTF16(&variant->value.stringValue));
+        return WebCore::jsStringWithCache(exec, convertNPStringToUTF16(&variant->value.stringValue));
     if (type == NPVariantType_Object) {
         NPObject* obj = variant->value.objectValue;
         
@@ -144,7 +144,7 @@ String convertNPStringToUTF16(const NPString* string)
 
 Identifier identifierFromNPIdentifier(ExecState* exec, const NPUTF8* name)
 {
-    return Identifier(exec, WebCore::stringToUString(convertUTF8ToUTF16WithLatin1Fallback(name, -1)));
+    return Identifier(exec, convertUTF8ToUTF16WithLatin1Fallback(name, -1));
 }
 
 } }

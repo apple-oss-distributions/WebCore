@@ -24,16 +24,18 @@
 
 #include "CSSParser.h"
 #include "CSSSelector.h"
+#include "CSSStyleSheet.h"
 #include "Document.h"
 #include "PropertySetCSSStyleDeclaration.h"
 #include "StylePropertySet.h"
 #include "StyleRule.h"
 #include <wtf/Vector.h>
+#include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
 
 CSSPageRule::CSSPageRule(StyleRulePage* pageRule, CSSStyleSheet* parent)
-    : CSSRule(parent, CSSRule::PAGE_RULE)
+    : CSSRule(parent)
     , m_pageRule(pageRule)
 {
 }
@@ -44,54 +46,61 @@ CSSPageRule::~CSSPageRule()
         m_propertiesCSSOMWrapper->clearParentRule();
 }
 
-CSSStyleDeclaration* CSSPageRule::style() const
+CSSStyleDeclaration* CSSPageRule::style()
 {
     if (!m_propertiesCSSOMWrapper)
-        m_propertiesCSSOMWrapper = StyleRuleCSSStyleDeclaration::create(m_pageRule->properties(), const_cast<CSSPageRule*>(this));
+        m_propertiesCSSOMWrapper = StyleRuleCSSStyleDeclaration::create(m_pageRule->mutableProperties(), this);
     return m_propertiesCSSOMWrapper.get();
 }
 
 String CSSPageRule::selectorText() const
 {
-    String text = "@page";
+    StringBuilder text;
+    text.appendLiteral("@page");
     const CSSSelector* selector = m_pageRule->selector();
     if (selector) {
         String pageSpecification = selector->selectorText();
-        if (!pageSpecification.isEmpty() && pageSpecification != starAtom)
-            text += " " + pageSpecification;
+        if (!pageSpecification.isEmpty() && pageSpecification != starAtom) {
+            text.append(' ');
+            text.append(pageSpecification);
+        }
     }
-    return text;
+    return text.toString();
 }
 
 void CSSPageRule::setSelectorText(const String& selectorText)
 {
-    Document* doc = 0;
-    if (CSSStyleSheet* styleSheet = parentStyleSheet())
-        doc = styleSheet->ownerDocument();
-    if (!doc)
-        return;
-    
     CSSParser parser(parserContext());
     CSSSelectorList selectorList;
     parser.parseSelector(selectorText, selectorList);
-    if (!selectorList.first())
+    if (!selectorList.isValid())
         return;
-    
-    String oldSelectorText = this->selectorText();
+
+    CSSStyleSheet::RuleMutationScope mutationScope(this);
+
     m_pageRule->wrapperAdoptSelectorList(selectorList);
-    
-    if (this->selectorText() == oldSelectorText)
-        return;
-    doc->styleResolverChanged(DeferRecalcStyle);
 }
 
 String CSSPageRule::cssText() const
 {
-    String result = selectorText();
-    result += " { ";
-    result += m_pageRule->properties()->asText();
-    result += "}";
-    return result;
+    StringBuilder result;
+    result.append(selectorText());
+    result.appendLiteral(" { ");
+    String decls = m_pageRule->properties()->asText();
+    result.append(decls);
+    if (!decls.isEmpty())
+        result.append(' ');
+    result.append('}');
+    return result.toString();
+}
+
+void CSSPageRule::reattach(StyleRuleBase* rule)
+{
+    ASSERT(rule);
+    ASSERT_WITH_SECURITY_IMPLICATION(rule->isPageRule());
+    m_pageRule = static_cast<StyleRulePage*>(rule);
+    if (m_propertiesCSSOMWrapper)
+        m_propertiesCSSOMWrapper->reattach(m_pageRule->mutableProperties());
 }
 
 } // namespace WebCore

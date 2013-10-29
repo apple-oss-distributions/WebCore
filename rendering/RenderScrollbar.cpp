@@ -31,19 +31,23 @@
 #include "RenderPart.h"
 #include "RenderScrollbarPart.h"
 #include "RenderScrollbarTheme.h"
+#include "StyleInheritedData.h"
+#include "StyleResolver.h"
 
 namespace WebCore {
 
-PassRefPtr<Scrollbar> RenderScrollbar::createCustomScrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, RenderBox* renderer, Frame* owningFrame)
+PassRefPtr<Scrollbar> RenderScrollbar::createCustomScrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, Node* ownerNode, Frame* owningFrame)
 {
-    return adoptRef(new RenderScrollbar(scrollableArea, orientation, renderer, owningFrame));
+    return adoptRef(new RenderScrollbar(scrollableArea, orientation, ownerNode, owningFrame));
 }
 
-RenderScrollbar::RenderScrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, RenderBox* renderer, Frame* owningFrame)
+RenderScrollbar::RenderScrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, Node* ownerNode, Frame* owningFrame)
     : Scrollbar(scrollableArea, orientation, RegularScrollbar, RenderScrollbarTheme::renderScrollbarTheme())
-    , m_owner(renderer)
+    , m_owner(ownerNode)
     , m_owningFrame(owningFrame)
 {
+    ASSERT(ownerNode || owningFrame);
+
     // FIXME: We need to do this because RenderScrollbar::styleChanged is called as soon as the scrollbar is created.
     
     // Update the scrollbar size.
@@ -81,7 +85,7 @@ RenderBox* RenderScrollbar::owningRenderer() const
         RenderBox* currentRenderer = m_owningFrame->ownerRenderer();
         return currentRenderer;
     }
-    return m_owner;
+    return m_owner && m_owner->renderer() ? m_owner->renderer()->enclosingBox() : 0;
 }
 
 void RenderScrollbar::setParent(ScrollView* parent)
@@ -142,30 +146,12 @@ void RenderScrollbar::setPressedPart(ScrollbarPart part)
     updateScrollbarPart(TrackBGPart);
 }
 
-static ScrollbarPart s_styleResolvePart;
-static RenderScrollbar* s_styleResolveScrollbar;
-
-RenderScrollbar* RenderScrollbar::scrollbarForStyleResolve()
-{
-    return s_styleResolveScrollbar;
-}
-
-ScrollbarPart RenderScrollbar::partForStyleResolve()
-{
-    return s_styleResolvePart;
-}
-
 PassRefPtr<RenderStyle> RenderScrollbar::getScrollbarPseudoStyle(ScrollbarPart partType, PseudoId pseudoId)
 {
     if (!owningRenderer())
         return 0;
 
-    s_styleResolvePart = partType;
-    s_styleResolveScrollbar = this;
-    RefPtr<RenderStyle> result = owningRenderer()->getUncachedPseudoStyle(pseudoId, owningRenderer()->style());
-    s_styleResolvePart = NoPart;
-    s_styleResolveScrollbar = 0;
-
+    RefPtr<RenderStyle> result = owningRenderer()->getUncachedPseudoStyle(PseudoStyleRequest(pseudoId, this, partType), owningRenderer()->style());
     // Scrollbars for root frames should always have background color 
     // unless explicitly specified as transparent. So we force it.
     // This is because WebKit assumes scrollbar to be always painted and missing background
@@ -267,7 +253,7 @@ void RenderScrollbar::updateScrollbarPart(ScrollbarPart partType, bool destroy)
     
     RenderScrollbarPart* partRenderer = m_parts.get(partType);
     if (!partRenderer && needRenderer) {
-        partRenderer = new (owningRenderer()->renderArena()) RenderScrollbarPart(owningRenderer()->document(), this, partType);
+        partRenderer = RenderScrollbarPart::createAnonymous(owningRenderer()->document(), this, partType);
         m_parts.set(partType, partRenderer);
     } else if (partRenderer && !needRenderer) {
         m_parts.remove(partType);

@@ -31,16 +31,14 @@ namespace WebCore {
 
 using namespace JSC;
 
-ASSERT_CLASS_FITS_IN_CELL(JSNodeFilterCondition);
-
-JSNodeFilterCondition::JSNodeFilterCondition(JSGlobalData&, NodeFilter* owner, JSValue filter)
-    : m_filter(filter.isObject() ? PassWeak<JSObject>(jsCast<JSObject*>(filter), &m_weakOwner, owner) : 0)
+JSNodeFilterCondition::JSNodeFilterCondition(VM&, NodeFilter* owner, JSValue filter)
+    : m_filter(filter.isObject() ? PassWeak<JSObject>(jsCast<JSObject*>(filter), &m_weakOwner, owner) : nullptr)
 {
 }
 
 short JSNodeFilterCondition::acceptNode(JSC::ExecState* exec, Node* filterNode) const
 {
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(exec);
 
     if (!m_filter)
         return NodeFilter::FILTER_ACCEPT;

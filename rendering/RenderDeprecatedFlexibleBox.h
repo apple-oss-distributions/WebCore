@@ -31,40 +31,41 @@ class FlexBoxIterator;
 
 class RenderDeprecatedFlexibleBox : public RenderBlock {
 public:
-    RenderDeprecatedFlexibleBox(Node*);
+    RenderDeprecatedFlexibleBox(Element*);
     virtual ~RenderDeprecatedFlexibleBox();
+
+    static RenderDeprecatedFlexibleBox* createAnonymous(Document*);
 
     virtual const char* renderName() const;
 
-    virtual void computePreferredLogicalWidths();
-    void calcHorizontalPrefWidths();
-    void calcVerticalPrefWidths();
+    virtual void styleWillChange(StyleDifference, const RenderStyle* newStyle) OVERRIDE;
 
     virtual void layoutBlock(bool relayoutChildren, LayoutUnit pageHeight = 0);
     void layoutHorizontalBox(bool relayoutChildren);
     void layoutVerticalBox(bool relayoutChildren);
 
     virtual bool avoidsFloats() const { return true; }
-
     virtual bool isDeprecatedFlexibleBox() const { return true; }
-    virtual bool isFlexingChildren() const { return m_flexingChildren; }
     virtual bool isStretchingChildren() const { return m_stretchingChildren; }
-    virtual bool canHaveGeneratedChildren() const { return true; }
+    virtual bool canCollapseAnonymousBlockChild() const OVERRIDE { return false; }
 
-    void placeChild(RenderBox* child, const LayoutPoint& location);
+    void placeChild(RenderBox* child, const LayoutPoint& location, LayoutSize* childLayoutDelta = 0);
 
 protected:
+    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
+    virtual void computePreferredLogicalWidths() OVERRIDE;
+
     LayoutUnit allowedChildFlex(RenderBox* child, bool expanding, unsigned group);
 
     bool hasMultipleLines() const { return style()->boxLines() == MULTIPLE; }
     bool isVertical() const { return style()->boxOrient() == VERTICAL; }
     bool isHorizontal() const { return style()->boxOrient() == HORIZONTAL; }
 
-    bool m_flexingChildren : 1;
-    bool m_stretchingChildren : 1;
+    bool m_stretchingChildren;
 
 private:
     void applyLineClamp(FlexBoxIterator&, bool relayoutChildren);
+    void clearLineClamp();
 };
 
 } // namespace WebCore

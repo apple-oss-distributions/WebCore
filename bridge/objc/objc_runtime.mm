@@ -76,7 +76,7 @@ NSMethodSignature* ObjcMethod::getMethodSignature() const
 
 ObjcField::ObjcField(Ivar ivar) 
     : _ivar(ivar)
-    , _name(AdoptCF, CFStringCreateWithCString(0, ivar_getName(_ivar), kCFStringEncodingASCII))
+    , _name(adoptCF(CFStringCreateWithCString(0, ivar_getName(_ivar), kCFStringEncodingASCII)))
 {
 }
 
@@ -92,19 +92,18 @@ JSValue ObjcField::valueFromInstance(ExecState* exec, const Instance* instance) 
     
     id targetObject = (static_cast<const ObjcInstance*>(instance))->getObject();
 
-    JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly); // Can't put this inside the @try scope because it unwinds incorrectly.
+    JSLock::DropAllLocks dropAllLocks(exec); // Can't put this inside the @try scope because it unwinds incorrectly.
 
     @try {
         if (id objcValue = [targetObject valueForKey:(NSString *)_name.get()])
             result = convertObjcValueToValue(exec, &objcValue, ObjcObjectType, instance->rootObject());
         {
-            JSLock lock(SilenceAssertionsOnly);
+            JSLockHolder lock(exec);
             ObjcInstance::moveGlobalExceptionToExecState(exec);
         }
     } @catch(NSException* localException) {
-        JSLock::lock(SilenceAssertionsOnly);
+        JSLockHolder lock(exec);
         throwError(exec, [localException reason]);
-        JSLock::unlock(SilenceAssertionsOnly);
     }
 
     // Work around problem in some versions of GCC where result gets marked volatile and
@@ -125,18 +124,17 @@ void ObjcField::setValueToInstance(ExecState* exec, const Instance* instance, JS
     id targetObject = (static_cast<const ObjcInstance*>(instance))->getObject();
     id value = convertValueToObjcObject(exec, aValue);
 
-    JSLock::DropAllLocks dropAllLocks(SilenceAssertionsOnly); // Can't put this inside the @try scope because it unwinds incorrectly.
+    JSLock::DropAllLocks dropAllLocks(exec); // Can't put this inside the @try scope because it unwinds incorrectly.
 
     @try {
         [targetObject setValue:value forKey:(NSString *)_name.get()];
         {
-            JSLock lock(SilenceAssertionsOnly);
+            JSLockHolder lock(exec);
             ObjcInstance::moveGlobalExceptionToExecState(exec);
         }
     } @catch(NSException* localException) {
-        JSLock::lock(SilenceAssertionsOnly);
+        JSLockHolder lock(exec);
         throwError(exec, [localException reason]);
-        JSLock::unlock(SilenceAssertionsOnly);
     }
 }
 
@@ -190,41 +188,41 @@ unsigned int ObjcArray::getLength() const
     return [_array.get() count];
 }
 
-const ClassInfo ObjcFallbackObjectImp::s_info = { "ObjcFallbackObject", &JSNonFinalObject::s_info, 0, 0, CREATE_METHOD_TABLE(ObjcFallbackObjectImp) };
+const ClassInfo ObjcFallbackObjectImp::s_info = { "ObjcFallbackObject", &Base::s_info, 0, 0, CREATE_METHOD_TABLE(ObjcFallbackObjectImp) };
 
-ObjcFallbackObjectImp::ObjcFallbackObjectImp(JSGlobalObject* globalObject, Structure* structure, ObjcInstance* i, const Identifier& propertyName)
-    : JSNonFinalObject(globalObject->globalData(), structure)
+ObjcFallbackObjectImp::ObjcFallbackObjectImp(JSGlobalObject* globalObject, Structure* structure, ObjcInstance* i, const String& propertyName)
+    : JSDestructibleObject(globalObject->vm(), structure)
     , _instance(i)
-    , _item(propertyName)
+    , m_item(propertyName)
 {
 }
 
 void ObjcFallbackObjectImp::destroy(JSCell* cell)
 {
-    jsCast<ObjcFallbackObjectImp*>(cell)->ObjcFallbackObjectImp::~ObjcFallbackObjectImp();
+    static_cast<ObjcFallbackObjectImp*>(cell)->ObjcFallbackObjectImp::~ObjcFallbackObjectImp();
 }
 
 void ObjcFallbackObjectImp::finishCreation(JSGlobalObject* globalObject)
 {
-    Base::finishCreation(globalObject->globalData());
+    Base::finishCreation(globalObject->vm());
     ASSERT(inherits(&s_info));
 }
 
-bool ObjcFallbackObjectImp::getOwnPropertySlot(JSCell*, ExecState*, const Identifier&, PropertySlot& slot)
+bool ObjcFallbackObjectImp::getOwnPropertySlot(JSCell*, ExecState*, PropertyName, PropertySlot& slot)
 {
     // keep the prototype from getting called instead of just returning false
     slot.setUndefined();
     return true;
 }
 
-bool ObjcFallbackObjectImp::getOwnPropertyDescriptor(JSObject*, ExecState*, const Identifier&, PropertyDescriptor& descriptor)
+bool ObjcFallbackObjectImp::getOwnPropertyDescriptor(JSObject*, ExecState*, PropertyName, PropertyDescriptor& descriptor)
 {
     // keep the prototype from getting called instead of just returning false
     descriptor.setUndefined();
     return true;
 }
 
-void ObjcFallbackObjectImp::put(JSCell*, ExecState*, const Identifier&, JSValue, PutPropertySlot&)
+void ObjcFallbackObjectImp::put(JSCell*, ExecState*, PropertyName, JSValue, PutPropertySlot&)
 {
 }
 
@@ -249,9 +247,8 @@ static EncodedJSValue JSC_HOST_CALL callObjCFallbackObject(ExecState* exec)
     if ([targetObject respondsToSelector:@selector(invokeUndefinedMethodFromWebScript:withArguments:)]){
         ObjcClass* objcClass = static_cast<ObjcClass*>(objcInstance->getClass());
         OwnPtr<ObjcMethod> fallbackMethod(adoptPtr(new ObjcMethod(objcClass->isa(), @selector(invokeUndefinedMethodFromWebScript:withArguments:))));
-        const Identifier& nameIdentifier = static_cast<ObjcFallbackObjectImp*>(exec->callee())->propertyName();
-        RetainPtr<CFStringRef> name(AdoptCF, CFStringCreateWithCharacters(0, nameIdentifier.characters(), nameIdentifier.length()));
-        fallbackMethod->setJavaScriptName(name.get());
+        const String& nameIdentifier = static_cast<ObjcFallbackObjectImp*>(exec->callee())->propertyName();
+        fallbackMethod->setJavaScriptName(nameIdentifier.createCFString().get());
         result = objcInstance->invokeObjcMethod(exec, fallbackMethod.get());
     }
             
@@ -270,7 +267,7 @@ CallType ObjcFallbackObjectImp::getCallData(JSCell* cell, CallData& callData)
     return CallTypeHost;
 }
 
-bool ObjcFallbackObjectImp::deleteProperty(JSCell*, ExecState*, const Identifier&)
+bool ObjcFallbackObjectImp::deleteProperty(JSCell*, ExecState*, PropertyName)
 {
     return false;
 }
@@ -278,7 +275,7 @@ bool ObjcFallbackObjectImp::deleteProperty(JSCell*, ExecState*, const Identifier
 JSValue ObjcFallbackObjectImp::defaultValue(const JSObject* object, ExecState* exec, PreferredPrimitiveType)
 {
     const ObjcFallbackObjectImp* thisObject = jsCast<const ObjcFallbackObjectImp*>(object);
-    return thisObject->_instance->getValueOfUndefinedField(exec, thisObject->_item);
+    return thisObject->_instance->getValueOfUndefinedField(exec, Identifier(exec, thisObject->m_item));
 }
 
 bool ObjcFallbackObjectImp::toBoolean(ExecState *) const

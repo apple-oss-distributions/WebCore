@@ -27,23 +27,26 @@
 #define PropertySetCSSStyleDeclaration_h
 
 #include "CSSStyleDeclaration.h"
+#include <wtf/HashMap.h>
+#include <wtf/OwnPtr.h>
+#include <wtf/RefPtr.h>
 
 namespace WebCore {
 
 class CSSRule;
 class CSSProperty;
 class CSSValue;
-class StylePropertySet;
-class StyleSheetInternal;
+class MutableStylePropertySet;
+class StyleSheetContents;
 class StyledElement;
 
 class PropertySetCSSStyleDeclaration : public CSSStyleDeclaration {
 public:
-    PropertySetCSSStyleDeclaration(StylePropertySet* propertySet) : m_propertySet(propertySet) { }
+    PropertySetCSSStyleDeclaration(MutableStylePropertySet* propertySet) : m_propertySet(propertySet) { }
     
     virtual StyledElement* parentElement() const { return 0; }
     virtual void clearParentElement() { ASSERT_NOT_REACHED(); }
-    StyleSheetInternal* contextStyleSheet() const;
+    StyleSheetContents* contextStyleSheet() const;
     
     virtual void ref() OVERRIDE;
     virtual void deref() OVERRIDE;
@@ -65,41 +68,45 @@ private:
     virtual String getPropertyValueInternal(CSSPropertyID) OVERRIDE;
     virtual void setPropertyInternal(CSSPropertyID, const String& value, bool important, ExceptionCode&) OVERRIDE;
     
-    virtual bool cssPropertyMatches(const CSSProperty*) const OVERRIDE;
-    virtual PassRefPtr<StylePropertySet> copy() const OVERRIDE;
-    virtual PassRefPtr<StylePropertySet> makeMutable() OVERRIDE;
-    virtual void setNeedsStyleRecalc() { }
-    
-    void didMutate();
+    virtual PassRefPtr<MutableStylePropertySet> copyProperties() const OVERRIDE;
+
     CSSValue* cloneAndCacheForCSSOM(CSSValue*);
     
 protected:
-    StylePropertySet* m_propertySet;
+    enum MutationType { NoChanges, PropertyChanged };
+    virtual void willMutate() { }
+    virtual void didMutate(MutationType) { }
+
+    MutableStylePropertySet* m_propertySet;
     OwnPtr<HashMap<CSSValue*, RefPtr<CSSValue> > > m_cssomCSSValueClones;
 };
 
 class StyleRuleCSSStyleDeclaration : public PropertySetCSSStyleDeclaration
 {
 public:
-    static PassRefPtr<StyleRuleCSSStyleDeclaration> create(StylePropertySet* propertySet, CSSRule* parentRule)
+    static PassRefPtr<StyleRuleCSSStyleDeclaration> create(MutableStylePropertySet* propertySet, CSSRule* parentRule)
     {
         return adoptRef(new StyleRuleCSSStyleDeclaration(propertySet, parentRule));
     }
+    virtual ~StyleRuleCSSStyleDeclaration();
 
     void clearParentRule() { m_parentRule = 0; }
     
     virtual void ref() OVERRIDE;
     virtual void deref() OVERRIDE;
 
+    void reattach(MutableStylePropertySet*);
+
 private:
-    StyleRuleCSSStyleDeclaration(StylePropertySet*, CSSRule*);
-    virtual ~StyleRuleCSSStyleDeclaration();
+    StyleRuleCSSStyleDeclaration(MutableStylePropertySet*, CSSRule*);
 
     virtual CSSStyleSheet* parentStyleSheet() const OVERRIDE;
 
     virtual CSSRule* parentRule() const OVERRIDE { return m_parentRule;  }
-    virtual void setNeedsStyleRecalc() OVERRIDE;
-    
+
+    virtual void willMutate() OVERRIDE;
+    virtual void didMutate(MutationType) OVERRIDE;
+
     unsigned m_refCount;
     CSSRule* m_parentRule;
 };
@@ -107,7 +114,7 @@ private:
 class InlineCSSStyleDeclaration : public PropertySetCSSStyleDeclaration
 {
 public:
-    InlineCSSStyleDeclaration(StylePropertySet* propertySet, StyledElement* parentElement)
+    InlineCSSStyleDeclaration(MutableStylePropertySet* propertySet, StyledElement* parentElement)
         : PropertySetCSSStyleDeclaration(propertySet)
         , m_parentElement(parentElement) 
     {
@@ -117,8 +124,9 @@ private:
     virtual CSSStyleSheet* parentStyleSheet() const OVERRIDE;
     virtual StyledElement* parentElement() const OVERRIDE { return m_parentElement; }
     virtual void clearParentElement() OVERRIDE { m_parentElement = 0; }
-    virtual void setNeedsStyleRecalc() OVERRIDE;
-    
+
+    virtual void didMutate(MutationType) OVERRIDE;
+
     StyledElement* m_parentElement;
 };
 

@@ -27,6 +27,7 @@
 #include "SVGFilterElement.h"
 
 #include "Attr.h"
+#include "NodeRenderingContext.h"
 #include "RenderSVGResourceFilter.h"
 #include "SVGElementInstance.h"
 #include "SVGFilterBuilder.h"
@@ -83,13 +84,13 @@ PassRefPtr<SVGFilterElement> SVGFilterElement::create(const QualifiedName& tagNa
 
 const AtomicString& SVGFilterElement::filterResXIdentifier()
 {
-    DEFINE_STATIC_LOCAL(AtomicString, s_identifier, ("SVGFilterResX"));
+    DEFINE_STATIC_LOCAL(AtomicString, s_identifier, ("SVGFilterResX", AtomicString::ConstructFromLiteral));
     return s_identifier;
 }
 
 const AtomicString& SVGFilterElement::filterResYIdentifier()
 {
-    DEFINE_STATIC_LOCAL(AtomicString, s_identifier, ("SVGFilterResY"));
+    DEFINE_STATIC_LOCAL(AtomicString, s_identifier, ("SVGFilterResY", AtomicString::ConstructFromLiteral));
     return s_identifier;
 }
 
@@ -120,42 +121,41 @@ bool SVGFilterElement::isSupportedAttribute(const QualifiedName& attrName)
     return supportedAttributes.contains<QualifiedName, SVGAttributeHashTranslator>(attrName);
 }
 
-void SVGFilterElement::parseAttribute(Attribute* attr)
+void SVGFilterElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     SVGParsingError parseError = NoError;
-    const AtomicString& value = attr->value();
 
-    if (!isSupportedAttribute(attr->name()))
-        SVGStyledElement::parseAttribute(attr);
-    else if (attr->name() == SVGNames::filterUnitsAttr) {
+    if (!isSupportedAttribute(name))
+        SVGStyledElement::parseAttribute(name, value);
+    else if (name == SVGNames::filterUnitsAttr) {
         SVGUnitTypes::SVGUnitType propertyValue = SVGPropertyTraits<SVGUnitTypes::SVGUnitType>::fromString(value);
         if (propertyValue > 0)
             setFilterUnitsBaseValue(propertyValue);
-    } else if (attr->name() == SVGNames::primitiveUnitsAttr) {
+    } else if (name == SVGNames::primitiveUnitsAttr) {
         SVGUnitTypes::SVGUnitType propertyValue = SVGPropertyTraits<SVGUnitTypes::SVGUnitType>::fromString(value);
         if (propertyValue > 0)
             setPrimitiveUnitsBaseValue(propertyValue);
-    } else if (attr->name() == SVGNames::xAttr)
+    } else if (name == SVGNames::xAttr)
         setXBaseValue(SVGLength::construct(LengthModeWidth, value, parseError));
-    else if (attr->name() == SVGNames::yAttr)
+    else if (name == SVGNames::yAttr)
         setYBaseValue(SVGLength::construct(LengthModeHeight, value, parseError));
-    else if (attr->name() == SVGNames::widthAttr)
+    else if (name == SVGNames::widthAttr)
         setWidthBaseValue(SVGLength::construct(LengthModeWidth, value, parseError));
-    else if (attr->name() == SVGNames::heightAttr)
+    else if (name == SVGNames::heightAttr)
         setHeightBaseValue(SVGLength::construct(LengthModeHeight, value, parseError));
-    else if (attr->name() == SVGNames::filterResAttr) {
+    else if (name == SVGNames::filterResAttr) {
         float x, y;
         if (parseNumberOptionalNumber(value, x, y)) {
             setFilterResXBaseValue(x);
             setFilterResYBaseValue(y);
         }
-    } else if (SVGURIReference::parseAttribute(attr)
-             || SVGLangSpace::parseAttribute(attr)
-             || SVGExternalResourcesRequired::parseAttribute(attr)) {
+    } else if (SVGURIReference::parseAttribute(name, value)
+             || SVGLangSpace::parseAttribute(name, value)
+             || SVGExternalResourcesRequired::parseAttribute(name, value)) {
     } else
         ASSERT_NOT_REACHED();
 
-    reportAttributeParsingError(parseError, attr);
+    reportAttributeParsingError(parseError, name, value);
 }
 
 void SVGFilterElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -191,6 +191,45 @@ void SVGFilterElement::childrenChanged(bool changedByParser, Node* beforeChange,
 RenderObject* SVGFilterElement::createRenderer(RenderArena* arena, RenderStyle*)
 {
     return new (arena) RenderSVGResourceFilter(this);
+}
+
+bool SVGFilterElement::childShouldCreateRenderer(const NodeRenderingContext& childContext) const
+{
+    if (!childContext.node()->isSVGElement())
+        return false;
+
+    SVGElement* svgElement = toSVGElement(childContext.node());
+
+    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, allowedChildElementTags, ());
+    if (allowedChildElementTags.isEmpty()) {
+        allowedChildElementTags.add(SVGNames::feBlendTag);
+        allowedChildElementTags.add(SVGNames::feColorMatrixTag);
+        allowedChildElementTags.add(SVGNames::feComponentTransferTag);
+        allowedChildElementTags.add(SVGNames::feCompositeTag);
+        allowedChildElementTags.add(SVGNames::feConvolveMatrixTag);
+        allowedChildElementTags.add(SVGNames::feDiffuseLightingTag);
+        allowedChildElementTags.add(SVGNames::feDisplacementMapTag);
+        allowedChildElementTags.add(SVGNames::feDistantLightTag);
+        allowedChildElementTags.add(SVGNames::feDropShadowTag);
+        allowedChildElementTags.add(SVGNames::feFloodTag);
+        allowedChildElementTags.add(SVGNames::feFuncATag);
+        allowedChildElementTags.add(SVGNames::feFuncBTag);
+        allowedChildElementTags.add(SVGNames::feFuncGTag);
+        allowedChildElementTags.add(SVGNames::feFuncRTag);
+        allowedChildElementTags.add(SVGNames::feGaussianBlurTag);
+        allowedChildElementTags.add(SVGNames::feImageTag);
+        allowedChildElementTags.add(SVGNames::feMergeTag);
+        allowedChildElementTags.add(SVGNames::feMergeNodeTag);
+        allowedChildElementTags.add(SVGNames::feMorphologyTag);
+        allowedChildElementTags.add(SVGNames::feOffsetTag);
+        allowedChildElementTags.add(SVGNames::fePointLightTag);
+        allowedChildElementTags.add(SVGNames::feSpecularLightingTag);
+        allowedChildElementTags.add(SVGNames::feSpotLightTag);
+        allowedChildElementTags.add(SVGNames::feTileTag);
+        allowedChildElementTags.add(SVGNames::feTurbulenceTag);
+    }
+
+    return allowedChildElementTags.contains<QualifiedName, SVGAttributeHashTranslator>(svgElement->tagQName());
 }
 
 bool SVGFilterElement::selfHasRelativeLengths() const

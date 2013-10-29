@@ -28,11 +28,12 @@
 #define HistoryItem_h
 
 #include "IntPoint.h"
-#include "PlatformString.h"
+#include "SerializedScriptValue.h"
 #include <wtf/HashMap.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/PassOwnPtr.h>
 #include <wtf/RefCounted.h>
+#include <wtf/text/WTFString.h>
 
 #if PLATFORM(MAC)
 #import <wtf/RetainPtr.h>
@@ -58,7 +59,6 @@ class HistoryItem;
 class Image;
 class KURL;
 class ResourceRequest;
-class SerializedScriptValue;
 
 typedef Vector<RefPtr<HistoryItem> > HistoryItemVector;
 
@@ -102,6 +102,7 @@ public:
     const String& title() const;
     
     bool isInPageCache() const { return m_cachedPage; }
+    bool hasCachedPageExpired() const;
     
     double lastVisitedTime() const;
     
@@ -145,7 +146,7 @@ public:
     void setIsTargetItem(bool);
     
     void setStateObject(PassRefPtr<SerializedScriptValue> object);
-    SerializedScriptValue* stateObject() const { return m_stateObject.get(); }
+    PassRefPtr<SerializedScriptValue> stateObject() const { return m_stateObject; }
 
     void setItemSequenceNumber(long long number) { m_itemSequenceNumber = number; }
     long long itemSequenceNumber() const { return m_itemSequenceNumber; }
@@ -171,6 +172,7 @@ public:
     const HistoryItemVector& children() const;
     bool hasChildren() const;
     void clearChildren();
+    bool isAncestorOf(const HistoryItem*) const;
     
     bool shouldDoSameDocumentNavigationTo(HistoryItem* otherItem) const;
     bool hasSameFrames(HistoryItem* otherItem) const;
@@ -200,7 +202,7 @@ public:
     QVariant userData() const { return m_userData; }
     void setUserData(const QVariant& userData) { m_userData = userData; }
 
-    bool restoreState(QDataStream& buffer, int version);
+    static PassRefPtr<HistoryItem> restoreState(QDataStream& buffer, int version);
     QDataStream& saveState(QDataStream& out, int version) const;
 #endif
 
@@ -223,7 +225,7 @@ private:
     HistoryItem(const String& urlString, const String& title, const String& alternateTitle, double lastVisited);
     HistoryItem(const KURL& url, const String& frameName, const String& parent, const String& title);
 
-    HistoryItem(const HistoryItem&);
+    explicit HistoryItem(const HistoryItem&);
 
     void padDailyCountsForNewVisit(double time);
     void collapseDailyVisitsToWeekly();

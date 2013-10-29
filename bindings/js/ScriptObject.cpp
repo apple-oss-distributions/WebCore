@@ -45,7 +45,13 @@ using namespace JSC;
 namespace WebCore {
 
 ScriptObject::ScriptObject(ScriptState* scriptState, JSObject* object)
-    : ScriptValue(scriptState->globalData(), object)
+    : ScriptValue(scriptState->vm(), object)
+    , m_scriptState(scriptState)
+{
+}
+
+ScriptObject::ScriptObject(ScriptState* scriptState, const ScriptValue& scriptValue)
+    : ScriptValue(scriptState->vm(), scriptValue.jsValue())
     , m_scriptState(scriptState)
 {
 }
@@ -61,32 +67,32 @@ static bool handleException(ScriptState* scriptState)
 
 bool ScriptGlobalObject::set(ScriptState* scriptState, const char* name, const ScriptObject& value)
 {
-    JSLock lock(SilenceAssertionsOnly);
-    scriptState->lexicalGlobalObject()->putDirect(scriptState->globalData(), Identifier(scriptState, name), value.jsObject());
+    JSLockHolder lock(scriptState);
+    scriptState->lexicalGlobalObject()->putDirect(scriptState->vm(), Identifier(scriptState, name), value.jsObject());
     return handleException(scriptState);
 }
 
 #if ENABLE(INSPECTOR)
 bool ScriptGlobalObject::set(ScriptState* scriptState, const char* name, InspectorFrontendHost* value)
 {
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(scriptState);
     JSDOMGlobalObject* globalObject = jsCast<JSDOMGlobalObject*>(scriptState->lexicalGlobalObject());
-    globalObject->putDirect(scriptState->globalData(), Identifier(scriptState, name), toJS(scriptState, globalObject, value));
+    globalObject->putDirect(scriptState->vm(), Identifier(scriptState, name), toJS(scriptState, globalObject, value));
     return handleException(scriptState);
 }
 
 bool ScriptGlobalObject::set(ScriptState* scriptState, const char* name, InjectedScriptHost* value)
 {
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(scriptState);
     JSDOMGlobalObject* globalObject = jsCast<JSDOMGlobalObject*>(scriptState->lexicalGlobalObject());
-    globalObject->putDirect(scriptState->globalData(), Identifier(scriptState, name), toJS(scriptState, globalObject, value));
+    globalObject->putDirect(scriptState->vm(), Identifier(scriptState, name), toJS(scriptState, globalObject, value));
     return handleException(scriptState);
 }
 #endif // ENABLE(INSPECTOR)
 
 bool ScriptGlobalObject::get(ScriptState* scriptState, const char* name, ScriptObject& value)
 {
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(scriptState);
     JSValue jsValue = scriptState->lexicalGlobalObject()->get(scriptState, Identifier(scriptState, name));
     if (!jsValue)
         return false;
@@ -100,7 +106,7 @@ bool ScriptGlobalObject::get(ScriptState* scriptState, const char* name, ScriptO
 
 bool ScriptGlobalObject::remove(ScriptState* scriptState, const char* name)
 {
-    JSLock lock(SilenceAssertionsOnly);
+    JSLockHolder lock(scriptState);
     scriptState->lexicalGlobalObject()->methodTable()->deleteProperty(scriptState->lexicalGlobalObject(), scriptState, Identifier(scriptState, name));
     return handleException(scriptState);
 }
