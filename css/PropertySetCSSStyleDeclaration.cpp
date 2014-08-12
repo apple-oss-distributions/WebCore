@@ -28,10 +28,8 @@
 #include "InspectorInstrumentation.h"
 #include "MutationObserverInterestGroup.h"
 #include "MutationRecord.h"
-#include "StylePropertySet.h"
+#include "StyleProperties.h"
 #include "StyledElement.h"
-
-using namespace std;
 
 namespace WebCore {
 
@@ -57,7 +55,7 @@ public:
 
         bool shouldReadOldValue = false;
 
-        m_mutationRecipients = MutationObserverInterestGroup::createForAttributesMutation(s_currentDecl->parentElement(), HTMLNames::styleAttr);
+        m_mutationRecipients = MutationObserverInterestGroup::createForAttributesMutation(*s_currentDecl->parentElement(), HTMLNames::styleAttr);
         if (m_mutationRecipients && m_mutationRecipients->isOldValueRequested())
             shouldReadOldValue = true;
 
@@ -67,7 +65,7 @@ public:
 
         if (m_mutationRecipients) {
             AtomicString requestedOldValue = m_mutationRecipients->isOldValueRequested() ? oldValue : nullAtom;
-            m_mutation = MutationRecord::createAttributes(s_currentDecl->parentElement(), HTMLNames::styleAttr, requestedOldValue);
+            m_mutation = MutationRecord::createAttributes(*s_currentDecl->parentElement(), HTMLNames::styleAttr, requestedOldValue);
         }
     }
 
@@ -89,8 +87,8 @@ public:
         PropertySetCSSStyleDeclaration* localCopyStyleDecl = s_currentDecl;
         s_currentDecl = 0;
         s_shouldNotifyInspector = false;
-        if (localCopyStyleDecl->parentElement() && localCopyStyleDecl->parentElement()->document())
-            InspectorInstrumentation::didInvalidateStyleAttr(localCopyStyleDecl->parentElement()->document(), localCopyStyleDecl->parentElement());
+        if (localCopyStyleDecl->parentElement())
+            InspectorInstrumentation::didInvalidateStyleAttr(&localCopyStyleDecl->parentElement()->document(), localCopyStyleDecl->parentElement());
     }
 
     void enqueueMutationRecord()
@@ -109,7 +107,7 @@ private:
     static bool s_shouldNotifyInspector;
     static bool s_shouldDeliver;
 
-    OwnPtr<MutationObserverInterestGroup> m_mutationRecipients;
+    std::unique_ptr<MutationObserverInterestGroup> m_mutationRecipients;
     RefPtr<MutationRecord> m_mutation;
 };
 
@@ -150,7 +148,8 @@ String PropertySetCSSStyleDeclaration::cssText() const
 void PropertySetCSSStyleDeclaration::setCssText(const String& text, ExceptionCode& ec)
 {
     StyleAttributeMutationScope mutationScope(this);
-    willMutate();
+    if (!willMutate())
+        return;
 
     ec = 0;
     // FIXME: Detect syntax errors and set ec.
@@ -208,9 +207,10 @@ void PropertySetCSSStyleDeclaration::setProperty(const String& propertyName, con
     if (!propertyID)
         return;
 
-    bool important = priority.find("important", 0, false) != notFound;
+    if (!willMutate())
+        return;
 
-    willMutate();
+    bool important = priority.find("important", 0, false) != notFound;
 
     ec = 0;
     bool changed = m_propertySet->setProperty(propertyID, value, important, contextStyleSheet());
@@ -231,7 +231,8 @@ String PropertySetCSSStyleDeclaration::removeProperty(const String& propertyName
     if (!propertyID)
         return String();
 
-    willMutate();
+    if (!willMutate())
+        return String();
 
     ec = 0;
     String result;
@@ -257,7 +258,8 @@ String PropertySetCSSStyleDeclaration::getPropertyValueInternal(CSSPropertyID pr
 void PropertySetCSSStyleDeclaration::setPropertyInternal(CSSPropertyID propertyID, const String& value, bool important, ExceptionCode& ec)
 { 
     StyleAttributeMutationScope mutationScope(this);
-    willMutate();
+    if (!willMutate())
+        return;
 
     ec = 0;
     bool changed = m_propertySet->setProperty(propertyID, value, important, contextStyleSheet());
@@ -276,7 +278,7 @@ CSSValue* PropertySetCSSStyleDeclaration::cloneAndCacheForCSSOM(CSSValue* intern
     // The map is here to maintain the object identity of the CSSValues over multiple invocations.
     // FIXME: It is likely that the identity is not important for web compatibility and this code should be removed.
     if (!m_cssomCSSValueClones)
-        m_cssomCSSValueClones = adoptPtr(new HashMap<CSSValue*, RefPtr<CSSValue> >);
+        m_cssomCSSValueClones = std::make_unique<HashMap<CSSValue*, RefPtr<CSSValue>>>();
     
     RefPtr<CSSValue>& clonedValue = m_cssomCSSValueClones->add(internalValue, RefPtr<CSSValue>()).iterator->value;
     if (!clonedValue)
@@ -287,18 +289,18 @@ CSSValue* PropertySetCSSStyleDeclaration::cloneAndCacheForCSSOM(CSSValue* intern
 StyleSheetContents* PropertySetCSSStyleDeclaration::contextStyleSheet() const
 { 
     CSSStyleSheet* cssStyleSheet = parentStyleSheet();
-    return cssStyleSheet ? cssStyleSheet->contents() : 0;
+    return cssStyleSheet ? &cssStyleSheet->contents() : 0;
 }
 
-PassRefPtr<MutableStylePropertySet> PropertySetCSSStyleDeclaration::copyProperties() const
+PassRef<MutableStyleProperties> PropertySetCSSStyleDeclaration::copyProperties() const
 {
     return m_propertySet->mutableCopy();
 }
     
-StyleRuleCSSStyleDeclaration::StyleRuleCSSStyleDeclaration(MutableStylePropertySet* propertySet, CSSRule* parentRule)
-    : PropertySetCSSStyleDeclaration(propertySet)
+StyleRuleCSSStyleDeclaration::StyleRuleCSSStyleDeclaration(MutableStyleProperties& propertySet, CSSRule& parentRule)
+    : PropertySetCSSStyleDeclaration(&propertySet)
     , m_refCount(1)
-    , m_parentRule(parentRule) 
+    , m_parentRule(&parentRule)
 {
     m_propertySet->ref();
 }
@@ -320,20 +322,24 @@ void StyleRuleCSSStyleDeclaration::deref()
         delete this;
 }
 
-void StyleRuleCSSStyleDeclaration::willMutate()
+bool StyleRuleCSSStyleDeclaration::willMutate()
 {
-    if (m_parentRule && m_parentRule->parentStyleSheet())
-        m_parentRule->parentStyleSheet()->willMutateRules();
+    if (!m_parentRule || !m_parentRule->parentStyleSheet())
+        return false;
+    m_parentRule->parentStyleSheet()->willMutateRules();
+    return true;
 }
 
 void StyleRuleCSSStyleDeclaration::didMutate(MutationType type)
 {
-    if (type == PropertyChanged)
-        m_cssomCSSValueClones.clear();
+    ASSERT(m_parentRule);
+    ASSERT(m_parentRule->parentStyleSheet());
 
-    // Style sheet mutation needs to be signaled even if the change failed. willMutateRules/didMutateRules must pair.
-    if (m_parentRule && m_parentRule->parentStyleSheet())
-        m_parentRule->parentStyleSheet()->didMutateRules();
+    if (type == PropertyChanged)
+        m_cssomCSSValueClones = nullptr;
+
+    // Style sheet mutation needs to be signaled even if the change failed. willMutate*/didMutate* must pair.
+    m_parentRule->parentStyleSheet()->didMutateRuleFromCSSStyleDeclaration();
 }
 
 CSSStyleSheet* StyleRuleCSSStyleDeclaration::parentStyleSheet() const
@@ -341,11 +347,10 @@ CSSStyleSheet* StyleRuleCSSStyleDeclaration::parentStyleSheet() const
     return m_parentRule ? m_parentRule->parentStyleSheet() : 0;
 }
 
-void StyleRuleCSSStyleDeclaration::reattach(MutableStylePropertySet* propertySet)
+void StyleRuleCSSStyleDeclaration::reattach(MutableStyleProperties& propertySet)
 {
-    ASSERT(propertySet);
     m_propertySet->deref();
-    m_propertySet = propertySet;
+    m_propertySet = &propertySet;
     m_propertySet->ref();
 }
 
@@ -354,7 +359,7 @@ void InlineCSSStyleDeclaration::didMutate(MutationType type)
     if (type == NoChanges)
         return;
 
-    m_cssomCSSValueClones.clear();
+    m_cssomCSSValueClones = nullptr;
 
     if (!m_parentElement)
         return;
@@ -366,7 +371,7 @@ void InlineCSSStyleDeclaration::didMutate(MutationType type)
 
 CSSStyleSheet* InlineCSSStyleDeclaration::parentStyleSheet() const
 {
-    return m_parentElement ? m_parentElement->document()->elementSheet() : 0;
+    return m_parentElement ? &m_parentElement->document().elementSheet() : 0;
 }
 
 } // namespace WebCore

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2009 Dirk Schulze <krit@webkit.org>
+ * Copyright (C) 2013 Google Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,7 +21,7 @@
 #ifndef SVGFilter_h
 #define SVGFilter_h
 
-#if ENABLE(SVG) && ENABLE(FILTERS)
+#if ENABLE(FILTERS)
 #include "AffineTransform.h"
 #include "Filter.h"
 #include "FilterEffect.h"
@@ -38,21 +39,19 @@ public:
     static PassRefPtr<SVGFilter> create(const AffineTransform&, const FloatRect&, const FloatRect&, const FloatRect&, bool);
 
     FloatRect filterRegionInUserSpace() const { return m_filterRegion; }
-    virtual FloatRect filterRegion() const { return m_absoluteFilterRegion; }
+    virtual FloatRect filterRegion() const override { return m_absoluteFilterRegion; }
 
-    virtual FloatPoint mapAbsolutePointToLocalPoint(const FloatPoint& point) const { return m_absoluteTransform.inverse().mapPoint(point); }
-    const AffineTransform& absoluteTransform() const { return m_absoluteTransform; }
+    virtual float applyHorizontalScale(float value) const override;
+    virtual float applyVerticalScale(float value) const override;
 
-    virtual float applyHorizontalScale(float value) const;
-    virtual float applyVerticalScale(float value) const;
-
-    virtual FloatRect sourceImageRect() const { return m_absoluteSourceDrawingRegion; }
+    virtual FloatRect sourceImageRect() const override { return m_absoluteSourceDrawingRegion; }
     FloatRect targetBoundingBox() const { return m_targetBoundingBox; }
+
+    virtual bool isSVGFilter() const override final { return true; }
 
 private:
     SVGFilter(const AffineTransform& absoluteTransform, const FloatRect& absoluteSourceDrawingRegion, const FloatRect& targetBoundingBox, const FloatRect& filterRegion, bool effectBBoxMode);
 
-    AffineTransform m_absoluteTransform;
     FloatRect m_absoluteSourceDrawingRegion;
     FloatRect m_targetBoundingBox;
     FloatRect m_absoluteFilterRegion;
@@ -60,8 +59,10 @@ private:
     bool m_effectBBoxMode;
 };
 
+FILTER_TYPE_CASTS(SVGFilter, isSVGFilter())
+
 } // namespace WebCore
 
-#endif // ENABLE(SVG) && ENABLE(FILTERS)
+#endif // ENABLE(FILTERS)
 
 #endif // SVGFilter_h

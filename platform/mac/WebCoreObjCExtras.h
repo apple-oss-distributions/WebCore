@@ -10,7 +10,7 @@
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
  *     documentation and/or other materials provided with the distribution. 
- * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
+ * 3.  Neither the name of Apple Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
  *     from this software without specific prior written permission. 
  *
@@ -32,18 +32,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-// Use WebCFAutorelease to return an object made by a CoreFoundation
-// "create" or "copy" function as an autoreleased and garbage collected
-// object. CF objects need to be "made collectable" for autorelease to work
-// properly under GC.
-static inline id WebCoreCFAutorelease(CFTypeRef obj)
-{
-    if (obj)
-        CFMakeCollectable(obj);
-    [(id)obj autorelease];
-    return (id)obj;
-}
 
 void WebCoreObjCFinalizeOnMainThread(Class cls);
 

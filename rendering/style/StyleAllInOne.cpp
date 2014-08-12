@@ -38,12 +38,11 @@
 #include "StyleBackgroundData.cpp"
 #include "StyleBoxData.cpp"
 #include "StyleCachedImage.cpp"
+#include "StyleCachedImageSet.cpp"
 #include "StyleDeprecatedFlexibleBoxData.cpp"
 #include "StyleFilterData.cpp"
 #include "StyleFlexibleBoxData.cpp"
 #include "StyleGeneratedImage.cpp"
-#include "StyleGridData.cpp"
-#include "StyleGridItemData.cpp"
 #include "StyleInheritedData.cpp"
 #include "StyleMarqueeData.cpp"
 #include "StyleMultiColData.cpp"
@@ -52,3 +51,8 @@
 #include "StyleSurroundData.cpp"
 #include "StyleTransformData.cpp"
 #include "StyleVisualData.cpp"
+
+#if ENABLE(CSS_GRID_LAYOUT)
+#include "StyleGridData.cpp"
+#include "StyleGridItemData.cpp"
+#endif

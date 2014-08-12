@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011, 2012 Apple Inc. All rights reserved.
+ * Copyright (C) 2011, 2012, 2014 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -10,10 +10,10 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY APPLE COMPUTER, INC. ``AS IS'' AND ANY
+ * THIS SOFTWARE IS PROVIDED BY APPLE INC. ``AS IS'' AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL APPLE COMPUTER, INC. OR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL APPLE INC. OR
  * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
  * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
  * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
@@ -25,11 +25,20 @@
 
 #include "SoftLinking.h"
 
+#if HAVE(AVFOUNDATION_LEGIBLE_OUTPUT_SUPPORT)
+#include <AVFoundationCF/AVCFPlayerItemLegibleOutput.h>
+#endif
+
+#if HAVE(AVFOUNDATION_LOADER_DELEGATE)
+#include <AVFoundationCF/AVCFAssetResourceLoader.h>
+#endif
+
+#include <d3d9.h>
+
 // Soft-link against AVFoundationCF functions and variables required by MediaPlayerPrivateAVFoundationCF.cpp.
 
 #ifdef DEBUG_ALL
-// FIXME: <rdar://problem/9898937> AVFoundationCF doesn't currently deliver a debug library.
-SOFT_LINK_LIBRARY(AVFoundationCF)
+SOFT_LINK_DEBUG_LIBRARY(AVFoundationCF)
 #else
 SOFT_LINK_LIBRARY(AVFoundationCF)
 #endif
@@ -150,6 +159,9 @@ SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFPlayerItemGetCurrentTime, CMTime, __cde
 SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFPlayerItemGetDuration, CMTime, __cdecl, (AVCFPlayerItemRef playerItem), (playerItem))
 #define AVCFPlayerItemGetDuration softLink_AVCFPlayerItemGetDuration
 
+SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFPlayerItemGetPresentationSize, CGSize, __cdecl, (AVCFPlayerItemRef playerItem), (playerItem))
+#define AVCFPlayerItemGetPresentationSize softLink_AVCFPlayerItemGetPresentationSize
+
 SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFPlayerItemGetStatus, AVCFPlayerItemStatus, __cdecl, (AVCFPlayerItemRef playerItem, CFErrorRef *errorOut), (playerItem, errorOut))
 #define AVCFPlayerItemGetStatus softLink_AVCFPlayerItemGetStatus
 
@@ -164,9 +176,6 @@ SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFPlayerItemIsPlaybackLikelyToKeepUp, Boo
 
 SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFPlayerItemLegibleOutputGetTypeID, CFTypeID, __cdecl, (), ())
 #define AVCFPlayerItemLegibleOutputGetTypeID softLink_AVCFPlayerItemLegibleOutputGetTypeID
-
-SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFPlayerItemRemoveOutput, void, __cdecl, (AVCFPlayerItemRef playerItem, AVCFPlayerItemOutputRef output), (playerItem, output))
-#define AVCFPlayerItemRemoveOutput softLink_AVCFPlayerItemRemoveOutput
 
 SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFPlayerItemSeekToTimeWithToleranceAndCompletionCallback, AVCFAssetRef, __cdecl, (AVCFPlayerItemRef playerItem, CMTime time, CMTime toleranceBefore, CMTime toleranceAfter, AVCFPlayerItemSeekCompletionCallback completionCallback, void *context), (playerItem, time, toleranceBefore, toleranceAfter, completionCallback, context))
 #define AVCFPlayerItemSeekToTimeWithToleranceAndCompletionCallback softLink_AVCFPlayerItemSeekToTimeWithToleranceAndCompletionCallback
@@ -217,10 +226,11 @@ SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFURLAssetCreateWithURLAndOptions, AVCFUR
 #define AVCFURLAssetCreateWithURLAndOptions softLink_AVCFURLAssetCreateWithURLAndOptions
 
 SOFT_LINK_DLL_IMPORT_OPTIONAL(AVFoundationCF, AVCFPlayerSetDirect3DDevice, void, __cdecl, (AVCFPlayerRef player, IDirect3DDevice9* d3dDevice))
+#define AVCFPlayerSetDirect3DDevice softLink_AVCFPlayerSetDirect3DDevice
 
 #if HAVE(AVFOUNDATION_MEDIA_SELECTION_GROUP) && HAVE(AVFOUNDATION_LEGIBLE_OUTPUT_SUPPORT)
 
-SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFAssetGetSelectionGroupForMediaCharacteristic , AVCFMediaSelectionGroupRef, __cdecl, (AVCFAssetRef asset, CFStringRef mediaCharacteristic), (asset, mediaCharacteristic))
+SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFAssetGetSelectionGroupForMediaCharacteristic, AVCFMediaSelectionGroupRef, __cdecl, (AVCFAssetRef asset, CFStringRef mediaCharacteristic), (asset, mediaCharacteristic))
 #define AVCFAssetGetSelectionGroupForMediaCharacteristic  softLink_AVCFAssetGetSelectionGroupForMediaCharacteristic 
 
 SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFMediaSelectionCopyPlayableOptionsFromArray, CFArrayRef, __cdecl, (CFArrayRef selectionOptions), (selectionOptions))
@@ -265,8 +275,32 @@ SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFPlayerItemLegibleOutputSetTextStylingRe
 SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFPlayerItemOutputSetSuppressPlayerRendering, void, __cdecl, (AVCFPlayerItemOutputRef output, Boolean suppressed), (output, suppressed))
 #define AVCFPlayerItemOutputSetSuppressPlayerRendering softLink_AVCFPlayerItemOutputSetSuppressPlayerRendering
 
+SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFPlayerItemRemoveOutput, void, __cdecl, (AVCFPlayerItemRef playerItem, AVCFPlayerItemOutputRef output), (playerItem, output))
+#define AVCFPlayerItemRemoveOutput softLink_AVCFPlayerItemRemoveOutput
+
 SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFPlayerItemSelectMediaOptionInMediaSelectionGroup, void, __cdecl, (AVCFPlayerItemRef playerItem, AVCFMediaSelectionOptionRef selectionOption, AVCFMediaSelectionGroupRef selectionGroup), (playerItem, selectionOption, selectionGroup))
 #define AVCFPlayerItemSelectMediaOptionInMediaSelectionGroup softLink_AVCFPlayerItemSelectMediaOptionInMediaSelectionGroup
+
+SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFURLAssetCopyURL, CFURLRef, __cdecl, (AVCFURLAssetRef asset), (asset))
+#define AVCFURLAssetCopyURL softLink_AVCFURLAssetCopyURL
+
+#endif
+
+#if HAVE(AVFOUNDATION_LOADER_DELEGATE)
+SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFURLAssetGetResourceLoader, AVCFAssetResourceLoaderRef, __cdecl, (AVCFURLAssetRef asset), (asset))
+#define AVCFURLAssetGetResourceLoader softLink_AVCFURLAssetGetResourceLoader
+
+SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFAssetResourceLoaderSetCallbacks, void, __cdecl, (AVCFAssetResourceLoaderRef resourceLoader, const AVCFAssetResourceLoaderCallbacks *callbacks, dispatch_queue_t callbackQueue), (resourceLoader, callbacks, callbackQueue))
+#define AVCFAssetResourceLoaderSetCallbacks  softLink_AVCFAssetResourceLoaderSetCallbacks 
+
+SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFAssetResourceLoadingRequestCreateStreamingContentKeyRequestDataForApp, CFDataRef, __cdecl, (AVCFAssetResourceLoadingRequestRef loadingRequest, CFDataRef appIdentifier, CFDataRef contentIdentifier, CFDictionaryRef options, CFErrorRef *outError), (loadingRequest, appIdentifier, contentIdentifier, options, outError))
+#define AVCFAssetResourceLoadingRequestCreateStreamingContentKeyRequestDataForApp  softLink_AVCFAssetResourceLoadingRequestCreateStreamingContentKeyRequestDataForApp 
+
+SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFAssetResourceLoadingRequestFinishLoadingWithError, void, __cdecl, (AVCFAssetResourceLoadingRequestRef loadingRequest, CFErrorRef error), (loadingRequest, error))
+#define AVCFAssetResourceLoadingRequestFinishLoadingWithError  softLink_AVCFAssetResourceLoadingRequestFinishLoadingWithError 
+
+SOFT_LINK_DLL_IMPORT(AVFoundationCF, AVCFAssetResourceLoadingRequestGetURLRequest, CFURLRequestRef, __cdecl, (AVCFAssetResourceLoadingRequestRef loadingRequest), (loadingRequest))
+#define AVCFAssetResourceLoadingRequestGetURLRequest  softLink_AVCFAssetResourceLoadingRequestGetURLRequest 
 
 #endif
 
@@ -354,6 +388,9 @@ SOFT_LINK_VARIABLE_DLL_IMPORT_OPTIONAL(AVFoundationCF, AVCFPlayerEnableHardwareA
 
 SOFT_LINK_VARIABLE_DLL_IMPORT(AVFoundationCF, AVCFAssetPropertyAvailableMediaCharacteristicsWithMediaSelectionOptions, const CFStringRef);
 #define AVCFAssetPropertyAvailableMediaCharacteristicsWithMediaSelectionOptions  getAVCFAssetPropertyAvailableMediaCharacteristicsWithMediaSelectionOptions()
+
+SOFT_LINK_VARIABLE_DLL_IMPORT(AVFoundationCF, AVCFURLAssetInheritURIQueryComponentFromReferencingURIKey, const CFStringRef);
+#define AVCFURLAssetInheritURIQueryComponentFromReferencingURIKey  getAVCFURLAssetInheritURIQueryComponentFromReferencingURIKey()
 
 SOFT_LINK_VARIABLE_DLL_IMPORT(AVFoundationCF, AVCFMediaCharacteristicEasyToRead, const CFStringRef);
 #define AVCFMediaCharacteristicEasyToRead getAVCFMediaCharacteristicEasyToRead()

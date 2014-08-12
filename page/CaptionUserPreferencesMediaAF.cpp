@@ -29,22 +29,22 @@
 
 #include "CaptionUserPreferencesMediaAF.h"
 
+#if HAVE(MEDIA_ACCESSIBILITY_FRAMEWORK)
 #include "CoreText/CoreText.h"
-#include "DOMWrapperWorld.h"
+#endif
 #include "FloatConversion.h"
 #include "HTMLMediaElement.h"
-#include "KURL.h"
+#include "URL.h"
 #include "Language.h"
 #include "LocalizedStrings.h"
 #include "Logging.h"
 #include "MediaControlElements.h"
-#include "PageGroup.h"
 #include "SoftLinking.h"
-#include "TextTrackCue.h"
 #include "TextTrackList.h"
 #include "UserStyleSheetTypes.h"
-#include <wtf/NonCopyingSort.h>
+#include "VTTCue.h"
 #include <wtf/RetainPtr.h>
+#include <wtf/text/CString.h>
 #include <wtf/text/StringBuilder.h>
 
 #if PLATFORM(IOS)
@@ -52,7 +52,7 @@
 #endif
 
 #if HAVE(MEDIA_ACCESSIBILITY_FRAMEWORK)
-#include "MediaAccessibility/MediaAccessibility.h"
+#include <MediaAccessibility/MediaAccessibility.h>
 #endif
 
 #if HAVE(MEDIA_ACCESSIBILITY_FRAMEWORK)
@@ -63,7 +63,13 @@
 #define SOFT_LINK_AVF_POINTER(Lib, Name, Type) SOFT_LINK_POINTER_OPTIONAL(Lib, Name, Type)
 #define SOFT_LINK_AVF_FRAMEWORK_IMPORT(Lib, Fun, ReturnType, Arguments, Signature) SOFT_LINK(Lib, Fun, ReturnType, Arguments, Signature)
 #else
+
+#ifdef DEBUG_ALL
+#define SOFT_LINK_AVF_FRAMEWORK(Lib) SOFT_LINK_DEBUG_LIBRARY(Lib)
+#else
 #define SOFT_LINK_AVF_FRAMEWORK(Lib) SOFT_LINK_LIBRARY(Lib)
+#endif
+
 #define SOFT_LINK_AVF(Lib, Name, Type) SOFT_LINK_DLL_IMPORT(Lib, Name, Type)
 #define SOFT_LINK_AVF_POINTER(Lib, Name, Type) SOFT_LINK_VARIABLE_DLL_IMPORT_OPTIONAL(Lib, Name, Type)
 #define SOFT_LINK_AVF_FRAMEWORK_IMPORT(Lib, Fun, ReturnType, Arguments, Signature) SOFT_LINK_DLL_IMPORT(Lib, Fun, ReturnType, __cdecl, Arguments, Signature)
@@ -117,8 +123,6 @@ SOFT_LINK_AVF_POINTER(CoreText, kCTFontNameAttribute, CFStringRef)
 #define kCTFontNameAttribute getkCTFontNameAttribute()
 #endif
 
-using namespace std;
-
 namespace WebCore {
 
 #if HAVE(MEDIA_ACCESSIBILITY_FRAMEWORK)
@@ -134,7 +138,7 @@ static void userCaptionPreferencesChangedNotificationCallback(CFNotificationCent
 }
 #endif
 
-CaptionUserPreferencesMediaAF::CaptionUserPreferencesMediaAF(PageGroup* group)
+CaptionUserPreferencesMediaAF::CaptionUserPreferencesMediaAF(PageGroup& group)
     : CaptionUserPreferences(group)
 #if HAVE(MEDIA_ACCESSIBILITY_FRAMEWORK)
     , m_listeningForPreferenceChanges(false)
@@ -161,15 +165,12 @@ CaptionUserPreferences::CaptionDisplayMode CaptionUserPreferencesMediaAF::captio
     switch (displayType) {
     case kMACaptionAppearanceDisplayTypeForcedOnly:
         return ForcedOnly;
-        break;
 
     case kMACaptionAppearanceDisplayTypeAutomatic:
         return Automatic;
-        break;
 
     case kMACaptionAppearanceDisplayTypeAlwaysOn:
         return AlwaysOn;
-        break;
     }
 
     ASSERT_NOT_REACHED();
@@ -233,8 +234,9 @@ void CaptionUserPreferencesMediaAF::setInterestedInCaptionPreferenceChanges()
     if (!m_listeningForPreferenceChanges) {
         m_listeningForPreferenceChanges = true;
         CFNotificationCenterAddObserver(CFNotificationCenterGetLocalCenter(), this, userCaptionPreferencesChangedNotificationCallback, kMAXCaptionAppearanceSettingsChangedNotification, 0, CFNotificationSuspensionBehaviorCoalesce);
-        updateCaptionStyleSheetOveride();
     }
+
+    updateCaptionStyleSheetOveride();
 }
 
 void CaptionUserPreferencesMediaAF::captionPreferencesChanged()
@@ -275,7 +277,7 @@ String CaptionUserPreferencesMediaAF::captionsBackgroundCSS() const
 {
     // This default value must be the same as the one specified in mediaControls.css for -webkit-media-text-track-past-nodes
     // and webkit-media-text-track-future-nodes.
-    DEFINE_STATIC_LOCAL(Color, defaultBackgroundColor, (Color(0, 0, 0, 0.8 * 255)));
+    DEPRECATED_DEFINE_STATIC_LOCAL(Color, defaultBackgroundColor, (Color(0, 0, 0, 0.8 * 255)));
 
     MACaptionAppearanceBehavior behavior;
 
@@ -378,10 +380,10 @@ String CaptionUserPreferencesMediaAF::colorPropertyCSS(CSSPropertyID id, const C
 
 String CaptionUserPreferencesMediaAF::captionsTextEdgeCSS() const
 {
-    DEFINE_STATIC_LOCAL(const String, edgeStyleRaised, (" -.05em -.05em 0 ", String::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const String, edgeStyleDepressed, (" .05em .05em 0 ", String::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const String, edgeStyleDropShadow, (" .075em .075em 0 ", String::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(const String, edgeStyleUniform, (" .03em ", String::ConstructFromLiteral));
+    DEPRECATED_DEFINE_STATIC_LOCAL(const String, edgeStyleRaised, (" -.05em -.05em 0 ", String::ConstructFromLiteral));
+    DEPRECATED_DEFINE_STATIC_LOCAL(const String, edgeStyleDepressed, (" .05em .05em 0 ", String::ConstructFromLiteral));
+    DEPRECATED_DEFINE_STATIC_LOCAL(const String, edgeStyleDropShadow, (" .075em .075em 0 ", String::ConstructFromLiteral));
+    DEPRECATED_DEFINE_STATIC_LOCAL(const String, edgeStyleUniform, (" .03em ", String::ConstructFromLiteral));
 
     bool unused;
     Color color = captionsTextColor(unused);
@@ -539,13 +541,14 @@ String CaptionUserPreferencesMediaAF::captionsStyleSheetOverride() const
     String windowCornerRadius = windowRoundedCornerRadiusCSS();
     if (!windowColor.isEmpty() || !windowCornerRadius.isEmpty()) {
         captionsOverrideStyleSheet.append(" video::");
-        captionsOverrideStyleSheet.append(TextTrackCueBox::textTrackCueBoxShadowPseudoId());
+        captionsOverrideStyleSheet.append(VTTCue::cueBackdropShadowPseudoId());
         captionsOverrideStyleSheet.append('{');
         
         if (!windowColor.isEmpty())
             captionsOverrideStyleSheet.append(windowColor);
-        if (!windowCornerRadius.isEmpty())
+        if (!windowCornerRadius.isEmpty()) {
             captionsOverrideStyleSheet.append(windowCornerRadius);
+        }
         
         captionsOverrideStyleSheet.append('}');
     }
@@ -607,7 +610,7 @@ static String trackDisplayName(TextTrack* track)
             }
         }
     } else {
-        String languageAndLocale = CFLocaleCopyDisplayNameForPropertyValue(currentLocale.get(), kCFLocaleIdentifier, trackLanguageIdentifier.createCFString().get());
+        String languageAndLocale = adoptCF(CFLocaleCopyDisplayNameForPropertyValue(currentLocale.get(), kCFLocaleIdentifier, trackLanguageIdentifier.createCFString().get())).get();
         if (!languageAndLocale.isEmpty())
             displayName.append(languageAndLocale);
         else if (!language.isEmpty())
@@ -756,11 +759,11 @@ static bool textTrackCompare(const RefPtr<TextTrack>& a, const RefPtr<TextTrack>
     return codePointCompare(trackDisplayName(a.get()), trackDisplayName(b.get())) < 0;
 }
 
-Vector<RefPtr<TextTrack> > CaptionUserPreferencesMediaAF::sortedTrackListForMenu(TextTrackList* trackList)
+Vector<RefPtr<TextTrack>> CaptionUserPreferencesMediaAF::sortedTrackListForMenu(TextTrackList* trackList)
 {
     ASSERT(trackList);
 
-    Vector<RefPtr<TextTrack> > tracksForMenu;
+    Vector<RefPtr<TextTrack>> tracksForMenu;
     HashSet<String> languagesIncluded;
     bool prefersAccessibilityTracks = userPrefersCaptions();
     bool filterTrackList = shouldFilterTrackMenu();
@@ -768,6 +771,10 @@ Vector<RefPtr<TextTrack> > CaptionUserPreferencesMediaAF::sortedTrackListForMenu
     for (unsigned i = 0, length = trackList->length(); i < length; ++i) {
         TextTrack* track = trackList->item(i);
         String language = displayNameForLanguageLocale(track->language());
+
+        const AtomicString& kind = track->kind();
+        if (kind != TextTrack::captionsKeyword() && kind != TextTrack::descriptionsKeyword() && kind != TextTrack::subtitlesKeyword())
+            continue;
 
         if (track->containsOnlyForcedSubtitles()) {
             LOG(Media, "CaptionUserPreferencesMac::sortedTrackListForMenu - skipping '%s' track with language '%s' because it contains only forced subtitles", track->kind().string().utf8().data(), language.utf8().data());
@@ -823,6 +830,10 @@ Vector<RefPtr<TextTrack> > CaptionUserPreferencesMediaAF::sortedTrackListForMenu
         TextTrack* track = trackList->item(i);
         String language = displayNameForLanguageLocale(track->language());
 
+        const AtomicString& kind = track->kind();
+        if (kind != TextTrack::captionsKeyword() && kind != TextTrack::descriptionsKeyword() && kind != TextTrack::subtitlesKeyword())
+            continue;
+
         // All candidates with no languge were added the first time through.
         if (language.isEmpty())
             continue;
@@ -837,7 +848,7 @@ Vector<RefPtr<TextTrack> > CaptionUserPreferencesMediaAF::sortedTrackListForMenu
         }
     }
 
-    nonCopyingSort(tracksForMenu.begin(), tracksForMenu.end(), textTrackCompare);
+    std::sort(tracksForMenu.begin(), tracksForMenu.end(), textTrackCompare);
 
     tracksForMenu.insert(0, TextTrack::captionMenuOffItem());
     tracksForMenu.insert(1, TextTrack::captionMenuAutomaticItem());

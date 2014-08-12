@@ -10,7 +10,7 @@
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
  *     documentation and/or other materials provided with the distribution.
- * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
+ * 3.  Neither the name of Apple Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
  *     from this software without specific prior written permission.
  *
@@ -35,8 +35,8 @@ namespace WebCore {
 
 class ArchiveResource : public SubstituteResource {
 public:
-    static PassRefPtr<ArchiveResource> create(PassRefPtr<SharedBuffer>, const KURL&, const ResourceResponse&);
-    static PassRefPtr<ArchiveResource> create(PassRefPtr<SharedBuffer>, const KURL&,
+    static PassRefPtr<ArchiveResource> create(PassRefPtr<SharedBuffer>, const URL&, const ResourceResponse&);
+    static PassRefPtr<ArchiveResource> create(PassRefPtr<SharedBuffer>, const URL&,
         const String& mimeType, const String& textEncoding, const String& frameName,
         const ResourceResponse& = ResourceResponse());
 
@@ -47,14 +47,18 @@ public:
     void ignoreWhenUnarchiving() { m_shouldIgnoreWhenUnarchiving = true; }
     bool shouldIgnoreWhenUnarchiving() const { return m_shouldIgnoreWhenUnarchiving; }
 
+    void setShouldLoadImmediately(bool shouldLoadImmediately) { m_shouldLoadImmediately = shouldLoadImmediately; }
+    bool shouldLoadImmediately() const { return m_shouldLoadImmediately; }
+
 private:
-    ArchiveResource(PassRefPtr<SharedBuffer>, const KURL&, const String& mimeType, const String& textEncoding, const String& frameName, const ResourceResponse&);
+    ArchiveResource(PassRefPtr<SharedBuffer>, const URL&, const String& mimeType, const String& textEncoding, const String& frameName, const ResourceResponse&);
 
     String m_mimeType;
     String m_textEncoding;
     String m_frameName;
 
     bool m_shouldIgnoreWhenUnarchiving;
+    bool m_shouldLoadImmediately;
 };
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2011, 2013 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -13,7 +13,7 @@
  * THIS SOFTWARE IS PROVIDED BY APPLE INC. ``AS IS'' AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL APPLE COMPUTER, INC. OR
+ * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL APPLE INC. OR
  * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
  * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
  * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
@@ -26,10 +26,8 @@
 #include "config.h"
 #include "LayerChangesFlusher.h"
 
-#if USE(ACCELERATED_COMPOSITING)
-
 #include "AbstractCACFLayerTreeHost.h"
-#include "StructuredExceptionHandlerSupressor.h"
+#include "StructuredExceptionHandlerSuppressor.h"
 #include <wtf/StdLibExtras.h>
 #include <wtf/Vector.h>
 
@@ -37,7 +35,7 @@ namespace WebCore {
 
 LayerChangesFlusher& LayerChangesFlusher::shared()
 {
-    DEFINE_STATIC_LOCAL(LayerChangesFlusher, flusher, ());
+    DEPRECATED_DEFINE_STATIC_LOCAL(LayerChangesFlusher, flusher, ());
     return flusher;
 }
 
@@ -74,7 +72,8 @@ LRESULT LayerChangesFlusher::hookCallback(int code, WPARAM wParam, LPARAM lParam
 {
     // Supress the exception handler Windows puts around all hook calls so we can 
     // crash for debugging purposes if an exception is hit. 
-    StructuredExceptionHandlerSupressor supressor; 
+    ExceptionRegistration registrationStruct; // Note: must be stack allocated.
+    StructuredExceptionHandlerSuppressor supressor(registrationStruct);
     return shared().hookFired(code, wParam, lParam);
 }
 
@@ -130,5 +129,3 @@ void LayerChangesFlusher::removeHook()
 }
 
 } // namespace WebCore
-
-#endif // USE(ACCELERATED_COMPOSITING)

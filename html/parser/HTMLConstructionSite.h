@@ -30,7 +30,6 @@
 #include "FragmentScriptingPermission.h"
 #include "HTMLElementStack.h"
 #include "HTMLFormattingElementList.h"
-#include "NotImplemented.h"
 #include <wtf/Noncopyable.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefPtr.h>
@@ -39,11 +38,28 @@
 namespace WebCore {
 
 struct HTMLConstructionSiteTask {
-    HTMLConstructionSiteTask()
-        : selfClosing(false)
+    enum Operation {
+        Insert,
+        InsertAlreadyParsedChild,
+        Reparent,
+        TakeAllChildren,
+    };
+
+    explicit HTMLConstructionSiteTask(Operation op)
+        : operation(op)
+        , selfClosing(false)
     {
     }
 
+    ContainerNode* oldParent()
+    {
+        // It's sort of ugly, but we store the |oldParent| in the |child| field
+        // of the task so that we don't bloat the HTMLConstructionSiteTask
+        // object in the common case of the Insert operation.
+        return toContainerNode(child.get());
+    }
+
+    Operation operation;
     RefPtr<ContainerNode> parent;
     RefPtr<Node> nextChild;
     RefPtr<Node> child;
@@ -72,8 +88,8 @@ class HTMLFormElement;
 class HTMLConstructionSite {
     WTF_MAKE_NONCOPYABLE(HTMLConstructionSite);
 public:
-    HTMLConstructionSite(Document*, ParserContentPolicy, unsigned maximumDOMTreeDepth);
-    HTMLConstructionSite(DocumentFragment*, ParserContentPolicy, unsigned maximumDOMTreeDepth);
+    HTMLConstructionSite(Document&, ParserContentPolicy, unsigned maximumDOMTreeDepth);
+    HTMLConstructionSite(DocumentFragment&, ParserContentPolicy, unsigned maximumDOMTreeDepth);
     ~HTMLConstructionSite();
 
     void detach();
@@ -100,6 +116,14 @@ public:
     void insertHTMLHtmlStartTagInBody(AtomicHTMLToken*);
     void insertHTMLBodyStartTagInBody(AtomicHTMLToken*);
 
+    void reparent(HTMLElementStack::ElementRecord& newParent, HTMLElementStack::ElementRecord& child);
+    void reparent(HTMLElementStack::ElementRecord& newParent, HTMLStackItem& child);
+    // insertAlreadyParsedChild assumes that |child| has already been parsed (i.e., we're just
+    // moving it around in the tree rather than parsing it for the first time). That means
+    // this function doesn't call beginParsingChildren / finishParsingChildren.
+    void insertAlreadyParsedChild(HTMLStackItem& newParent, HTMLElementStack::ElementRecord& child);
+    void takeAllChildren(HTMLStackItem& newParent, HTMLElementStack::ElementRecord& oldParent);
+
     PassRefPtr<HTMLStackItem> createElementFromSavedToken(HTMLStackItem*);
 
     bool shouldFosterParent() const;
@@ -119,7 +143,8 @@ public:
     ContainerNode* currentNode() const { return m_openElements.topNode(); }
     HTMLStackItem* currentStackItem() const { return m_openElements.topStackItem(); }
     HTMLStackItem* oneBelowTop() const { return m_openElements.oneBelowTop(); }
-    Document* ownerDocumentForCurrentNode();
+    Document& ownerDocumentForCurrentNode();
+    bool insideTemplateElement();
     HTMLElementStack* openElements() const { return &m_openElements; }
     HTMLFormattingElementList* activeFormattingElements() const { return &m_activeFormattingElements; }
     bool currentIsRootNode() { return m_openElements.topNode() == m_openElements.rootNode(); }
@@ -132,6 +157,10 @@ public:
     PassRefPtr<HTMLFormElement> takeForm();
 
     ParserContentPolicy parserContentPolicy() { return m_parserContentPolicy; }
+
+#if ENABLE(TELEPHONE_NUMBER_DETECTION)
+    bool isTelephoneNumberParsingEnabled() { return m_document->isTelephoneNumberParsingEnabled(); }
+#endif
 
     class RedirectToFosterParentGuard {
         WTF_MAKE_NONCOPYABLE(RedirectToFosterParentGuard);
@@ -156,9 +185,9 @@ public:
 private:
     // In the common case, this queue will have only one task because most
     // tokens produce only one DOM mutation.
-    typedef Vector<HTMLConstructionSiteTask, 1> AttachmentQueue;
+    typedef Vector<HTMLConstructionSiteTask, 1> TaskQueue;
 
-    void setCompatibilityMode(Document::CompatibilityMode);
+    void setCompatibilityMode(DocumentCompatibilityMode);
     void setCompatibilityModeFromDoctype(const String& name, const String& publicId, const String& systemId);
 
     void attachLater(ContainerNode* parent, PassRefPtr<Node> child, bool selfClosing = false);
@@ -183,7 +212,7 @@ private:
     mutable HTMLElementStack m_openElements;
     mutable HTMLFormattingElementList m_activeFormattingElements;
 
-    AttachmentQueue m_attachmentQueue;
+    TaskQueue m_taskQueue;
 
     ParserContentPolicy m_parserContentPolicy;
     bool m_isParsingFragment;

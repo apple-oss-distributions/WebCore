@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2005, 2007, 2012 Apple, Inc.  All rights reserved.
+ * Copyright (C) 2005, 2007, 2012, 2014 Apple, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -10,7 +10,7 @@
  * 2.  Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
  *     documentation and/or other materials provided with the distribution. 
- * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
+ * 3.  Neither the name of Apple Inc. ("Apple") nor the names of
  *     its contributors may be used to endorse or promote products derived
  *     from this software without specific prior written permission. 
  *
@@ -26,20 +26,14 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <objc/objc.h>
-
-#ifdef __OBJC__
 @class NSString;
 @class NSURL;
-#else
-OBJC_CLASS(NSString);
-OBJC_CLASS(NSURL);
-#endif
 
 namespace WebCore {
 
 NSString *userVisibleString(NSURL *);
-NSURL *URLWithUserTypedString(NSString *, NSURL *);
+NSURL *URLByCanonicalizingURL(NSURL *);
+NSURL *URLWithUserTypedString(NSString *, NSURL *baseURL);
 NSURL *URLByRemovingUserInfo(NSURL *);
 BOOL hostNameNeedsDecodingWithRange(NSString *, NSRange);
 BOOL hostNameNeedsEncodingWithRange(NSString *, NSRange);
@@ -47,10 +41,13 @@ NSString *decodeHostNameWithRange(NSString *, NSRange);
 NSString *encodeHostNameWithRange(NSString *, NSRange);
 NSString *decodeHostName(NSString *);
 NSString *encodeHostName(NSString *);
-NSURL *URLByTruncatingOneCharacterBeforeComponent(NSURL *, CFIndex);
+NSURL *URLByTruncatingOneCharacterBeforeComponent(NSURL *, CFURLComponentType);
 NSURL *URLWithData(NSData *, NSURL *baseURL);
 NSData *originalURLData(NSURL *);
-NSData *dataForURLComponentType(NSURL *, CFIndex);
+NSData *dataForURLComponentType(NSURL *, CFURLComponentType);
+
+NSRange rangeOfURLScheme(NSString *);
 BOOL isUserVisibleURL(NSString *);
-    
+BOOL looksLikeAbsoluteURL(NSString *);
+
 } // namespace WebCore

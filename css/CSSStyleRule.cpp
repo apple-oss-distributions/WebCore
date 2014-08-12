@@ -28,8 +28,9 @@
 #include "Document.h"
 #include "PropertySetCSSStyleDeclaration.h"
 #include "RuleSet.h"
-#include "StylePropertySet.h"
+#include "StyleProperties.h"
 #include "StyleRule.h"
+#include <wtf/NeverDestroyed.h>
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
@@ -37,7 +38,7 @@ namespace WebCore {
 typedef HashMap<const CSSStyleRule*, String> SelectorTextCache;
 static SelectorTextCache& selectorTextCache()
 {
-    DEFINE_STATIC_LOCAL(SelectorTextCache, cache, ());
+    static NeverDestroyed<SelectorTextCache> cache;
     return cache;
 }
 
@@ -61,7 +62,7 @@ CSSStyleRule::~CSSStyleRule()
 CSSStyleDeclaration* CSSStyleRule::style()
 {
     if (!m_propertiesCSSOMWrapper) {
-        m_propertiesCSSOMWrapper = StyleRuleCSSStyleDeclaration::create(m_styleRule->mutableProperties(), this);
+        m_propertiesCSSOMWrapper = StyleRuleCSSStyleDeclaration::create(m_styleRule->mutableProperties(), *this);
     }
     return m_propertiesCSSOMWrapper.get();
 }
@@ -93,6 +94,11 @@ String CSSStyleRule::selectorText() const
 
 void CSSStyleRule::setSelectorText(const String& selectorText)
 {
+    // FIXME: getMatchedCSSRules can return CSSStyleRules that are missing parent stylesheet pointer while
+    // referencing StyleRules that are part of stylesheet. Disallow mutations in this case.
+    if (!parentStyleSheet())
+        return;
+
     CSSParser p(parserContext());
     CSSSelectorList selectorList;
     p.parseSelector(selectorText, selectorList);
@@ -118,7 +124,7 @@ String CSSStyleRule::cssText() const
     StringBuilder result;
     result.append(selectorText());
     result.appendLiteral(" { ");
-    String decls = m_styleRule->properties()->asText();
+    String decls = m_styleRule->properties().asText();
     result.append(decls);
     if (!decls.isEmpty())
         result.append(' ');

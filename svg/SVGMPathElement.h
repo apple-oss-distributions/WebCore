@@ -20,22 +20,22 @@
 #ifndef SVGMPathElement_h
 #define SVGMPathElement_h
 
-#if ENABLE(SVG)
 #include "SVGAnimatedBoolean.h"
 #include "SVGAnimatedString.h"
-#include "SVGDocumentExtensions.h"
+#include "SVGElement.h"
 #include "SVGExternalResourcesRequired.h"
+#include "SVGNames.h"
 #include "SVGURIReference.h"
 
 namespace WebCore {
     
 class SVGPathElement;
 
-class SVGMPathElement FINAL : public SVGElement,
+class SVGMPathElement final : public SVGElement,
                               public SVGURIReference,
                               public SVGExternalResourcesRequired {
 public:
-    static PassRefPtr<SVGMPathElement> create(const QualifiedName&, Document*);
+    static PassRefPtr<SVGMPathElement> create(const QualifiedName&, Document&);
 
     virtual ~SVGMPathElement();
 
@@ -43,17 +43,22 @@ public:
 
     void targetPathChanged();
 
-private:
-    SVGMPathElement(const QualifiedName&, Document*);
+protected:
+    virtual void didNotifySubtreeInsertions(ContainerNode*) override;
 
-    void buildPendingResource();
+private:
+    SVGMPathElement(const QualifiedName&, Document&);
+
+    void buildPendingResource() override;
     void clearResourceReferences();
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    void removedFrom(ContainerNode*);
+    virtual InsertionNotificationRequest insertedInto(ContainerNode&) override;
+    virtual void removedFrom(ContainerNode&) override;
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+
+    virtual bool rendererIsNeeded(const RenderStyle&) override { return false; }
 
     void notifyParentOfPathChange(ContainerNode*);
 
@@ -63,7 +68,8 @@ private:
     END_DECLARE_ANIMATED_PROPERTIES
 };
 
+NODE_TYPE_CASTS(SVGMPathElement)
+
 } // namespace WebCore
 
-#endif // ENABLE(SVG)
 #endif // SVGMPathElement_h

@@ -26,7 +26,7 @@
 #import "config.h"
 #import "WebCoreAVFResourceLoader.h"
 
-#if ENABLE(VIDEO) && USE(AVFOUNDATION) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
+#if ENABLE(VIDEO) && USE(AVFOUNDATION) && HAVE(AVFOUNDATION_LOADER_DELEGATE)
 
 #import "CachedRawResource.h"
 #import "CachedResourceLoader.h"
@@ -63,12 +63,12 @@ WebCoreAVFResourceLoader::~WebCoreAVFResourceLoader()
 
 void WebCoreAVFResourceLoader::startLoading()
 {
-    if (m_resource)
+    if (m_resource || !m_parent)
         return;
 
-    KURL requestURL = [[m_avRequest.get() request] URL];
+    URL requestURL = [[m_avRequest.get() request] URL];
 
-    CachedResourceRequest request(ResourceRequest(requestURL), ResourceLoaderOptions(SendCallbacks, DoNotSniffContent, BufferData, DoNotAllowStoredCredentials, DoNotAskClientForCrossOriginCredentials, DoSecurityCheck));
+    CachedResourceRequest request(ResourceRequest(requestURL), ResourceLoaderOptions(SendCallbacks, DoNotSniffContent, BufferData, DoNotAllowStoredCredentials, DoNotAskClientForCrossOriginCredentials, DoSecurityCheck, UseDefaultOriginRestrictionsForType));
 
     request.mutableResourceRequest().setPriority(ResourceLoadPriorityLow);
     CachedResourceLoader* loader = m_parent->player()->cachedResourceLoader();
@@ -89,7 +89,14 @@ void WebCoreAVFResourceLoader::stopLoading()
     m_resource->removeClient(this);
     m_resource = 0;
 
-    m_parent->didStopLoadingRequest(m_avRequest.get());
+    if (m_parent)
+        m_parent->didStopLoadingRequest(m_avRequest.get());
+}
+
+void WebCoreAVFResourceLoader::invalidate()
+{
+    m_parent = nullptr;
+    stopLoading();
 }
 
 void WebCoreAVFResourceLoader::responseReceived(CachedResource* resource, const ResourceResponse& response)

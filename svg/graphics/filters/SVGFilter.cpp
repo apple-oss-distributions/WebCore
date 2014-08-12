@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2009 Dirk Schulze <krit@webkit.org>
  * Copyright (C) Research In Motion Limited 2010. All rights reserved.
+ * Copyright (C) 2013 Google Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -20,14 +21,13 @@
 
 #include "config.h"
 
-#if ENABLE(SVG) && ENABLE(FILTERS)
+#if ENABLE(FILTERS)
 #include "SVGFilter.h"
 
 namespace WebCore {
 
 SVGFilter::SVGFilter(const AffineTransform& absoluteTransform, const FloatRect& absoluteSourceDrawingRegion, const FloatRect& targetBoundingBox, const FloatRect& filterRegion, bool effectBBoxMode)
-    : Filter()
-    , m_absoluteTransform(absoluteTransform)
+    : Filter(absoluteTransform)
     , m_absoluteSourceDrawingRegion(absoluteSourceDrawingRegion)
     , m_targetBoundingBox(targetBoundingBox)
     , m_filterRegion(filterRegion)
@@ -57,4 +57,4 @@ PassRefPtr<SVGFilter> SVGFilter::create(const AffineTransform& absoluteTransform
 
 } // namespace WebCore
 
-#endif // ENABLE(SVG) && ENABLE(FILTERS)
+#endif // ENABLE(FILTERS)

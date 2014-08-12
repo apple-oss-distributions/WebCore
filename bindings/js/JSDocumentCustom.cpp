@@ -31,17 +31,14 @@
 #include "JSDOMWindowCustom.h"
 #include "JSHTMLDocument.h"
 #include "JSLocation.h"
+#include "JSSVGDocument.h"
 #include "JSTouch.h"
 #include "JSTouchList.h"
 #include "Location.h"
 #include "NodeTraversal.h"
 #include "ScriptController.h"
-#include "TouchList.h"
-
-#if ENABLE(SVG)
-#include "JSSVGDocument.h"
 #include "SVGDocument.h"
-#endif
+#include "TouchList.h"
 
 #include <wtf/GetPtr.h>
 
@@ -51,30 +48,30 @@ namespace WebCore {
 
 JSValue JSDocument::location(ExecState* exec) const
 {
-    Frame* frame = static_cast<Document*>(impl())->frame();
+    RefPtr<Frame> frame = impl().frame();
     if (!frame)
         return jsNull();
 
-    Location* location = frame->document()->domWindow()->location();
-    if (JSDOMWrapper* wrapper = getCachedWrapper(currentWorld(exec), location))
+    RefPtr<Location> location = frame->document()->domWindow()->location();
+    if (JSObject* wrapper = getCachedWrapper(globalObject()->world(), location.get()))
         return wrapper;
 
-    JSLocation* jsLocation = JSLocation::create(getDOMStructure<JSLocation>(exec, globalObject()), globalObject(), location);
-    cacheWrapper(currentWorld(exec), location, jsLocation);
+    JSLocation* jsLocation = JSLocation::create(getDOMStructure<JSLocation>(exec->vm(), globalObject()), globalObject(), location.get());
+    cacheWrapper(globalObject()->world(), location.get(), jsLocation);
     return jsLocation;
 }
 
 void JSDocument::setLocation(ExecState* exec, JSValue value)
 {
-    Frame* frame = static_cast<Document*>(impl())->frame();
-    if (!frame)
-        return;
-
     String locationString = value.toString(exec)->value(exec);
     if (exec->hadException())
         return;
 
-    if (Location* location = frame->document()->domWindow()->location())
+    RefPtr<Frame> frame = impl().frame();
+    if (!frame)
+        return;
+
+    if (RefPtr<Location> location = frame->document()->domWindow()->location())
         location->setHref(locationString, activeDOMWindow(exec), firstDOMWindow(exec));
 }
 
@@ -83,26 +80,24 @@ JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, Document* documen
     if (!document)
         return jsNull();
 
-    JSDOMWrapper* wrapper = getCachedWrapper(currentWorld(exec), document);
+    JSObject* wrapper = getCachedWrapper(globalObject->world(), document);
     if (wrapper)
         return wrapper;
 
     if (DOMWindow* domWindow = document->domWindow()) {
         globalObject = toJSDOMWindow(toJS(exec, domWindow));
         // Creating a wrapper for domWindow might have created a wrapper for document as well.
-        wrapper = getCachedWrapper(currentWorld(exec), document);
+        wrapper = getCachedWrapper(globalObject->world(), document);
         if (wrapper)
             return wrapper;
     }
 
     if (document->isHTMLDocument())
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, HTMLDocument, document);
-#if ENABLE(SVG)
+        wrapper = CREATE_DOM_WRAPPER(globalObject, HTMLDocument, document);
     else if (document->isSVGDocument())
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, SVGDocument, document);
-#endif
+        wrapper = CREATE_DOM_WRAPPER(globalObject, SVGDocument, document);
     else
-        wrapper = CREATE_DOM_WRAPPER(exec, globalObject, Document, document);
+        wrapper = CREATE_DOM_WRAPPER(globalObject, Document, document);
 
     // Make sure the document is kept around by the window object, and works right with the
     // back/forward cache.
