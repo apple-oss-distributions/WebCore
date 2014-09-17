@@ -165,7 +165,6 @@ public:
         AXFocusedUIElementChanged,
         AXLayoutComplete,
         AXLoadComplete,
-        AXNewDocumentLoadComplete,
         AXSelectedChildrenChanged,
         AXSelectedTextChanged,
         AXValueChanged,

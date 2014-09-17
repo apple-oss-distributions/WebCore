@@ -31,6 +31,7 @@
 #include "CursorList.h"
 #include "EventHandler.h"
 #include "Frame.h"
+#include "FrameSelection.h"
 #include "HTMLElement.h"
 #include "HTMLNames.h"
 #include "FlowThreadController.h"
@@ -69,7 +70,7 @@ namespace WebCore {
 
 bool RenderElement::s_affectsParentBlock = false;
 bool RenderElement::s_noLongerAffectsParentBlock = false;
-
+    
 static HashMap<const RenderObject*, ControlStates*>& controlStatesRendererMap()
 {
     static NeverDestroyed<HashMap<const RenderObject*, ControlStates*>> map;
@@ -272,7 +273,7 @@ StyleDifference RenderElement::adjustStyleDifference(StyleDifference diff, unsig
         else if (diff < StyleDifferenceRecompositeLayer)
             diff = StyleDifferenceRecompositeLayer;
     }
-
+    
 #if ENABLE(CSS_FILTERS)
     if ((contextSensitiveProperties & ContextSensitivePropertyFilter) && hasLayer()) {
         RenderLayer* layer = toRenderLayerModelObject(this)->layer();
@@ -282,7 +283,7 @@ StyleDifference RenderElement::adjustStyleDifference(StyleDifference diff, unsig
             diff = StyleDifferenceRecompositeLayer;
     }
 #endif
-
+    
     // The answer to requiresLayer() for plugins, iframes, and canvas can change without the actual
     // style changing, since it depends on whether we decide to composite these elements. When the
     // layer status of one of these elements changes, we need to force a layout.
@@ -319,7 +320,7 @@ void RenderElement::updateFillImages(const FillLayer* oldLayers, const FillLayer
     // Optimize the common case
     if (oldLayers && !oldLayers->next() && newLayers && !newLayers->next() && (oldLayers->image() == newLayers->image()))
         return;
-
+    
     // Go through the new layers and addClients first, to avoid removing all clients of an image.
     for (const FillLayer* currNew = newLayers; currNew; currNew = currNew->next()) {
         if (currNew->image())
@@ -442,7 +443,7 @@ void RenderElement::setStyle(PassRef<RenderStyle> style)
     // Now that the layer (if any) has been updated, we need to adjust the diff again,
     // check whether we should layout now, and decide if we need to repaint.
     StyleDifference updatedDiff = adjustStyleDifference(diff, contextSensitiveProperties);
-
+    
     if (diff <= StyleDifferenceLayoutPositionedMovementOnly) {
         if (updatedDiff == StyleDifferenceLayout)
             setNeedsLayoutAndPrefWidthsRecalc();
@@ -577,8 +578,6 @@ void RenderElement::insertChildInternal(RenderObject* newChild, RenderObject* be
 
     if (AXObjectCache* cache = document().axObjectCache())
         cache->childrenChanged(this, newChild);
-    if (this->isRenderBlockFlow())
-        toRenderBlockFlow(*this).invalidateLineLayoutPath();
 }
 
 RenderObject* RenderElement::removeChildInternal(RenderObject& oldChild, NotifyChildrenType notifyChildren)
@@ -609,10 +608,8 @@ RenderObject* RenderElement::removeChildInternal(RenderObject& oldChild, NotifyC
 
     // If oldChild is the start or end of the selection, then clear the selection to
     // avoid problems of invalid pointers.
-    // FIXME: The FrameSelection should be responsible for this when it
-    // is notified of DOM mutations.
     if (!documentBeingDestroyed() && oldChild.isSelectionBorder())
-        view().clearSelection();
+        frame().selection().setNeedsSelectionUpdate();
 
     if (!documentBeingDestroyed() && notifyChildren == NotifyChildren)
         oldChild.willBeRemovedFromTree();
@@ -620,7 +617,7 @@ RenderObject* RenderElement::removeChildInternal(RenderObject& oldChild, NotifyC
     // WARNING: There should be no code running between willBeRemovedFromTree and the actual removal below.
     // This is needed to avoid race conditions where willBeRemovedFromTree would dirty the tree's structure
     // and the code running here would force an untimely rebuilding, leaving |oldChild| dangling.
-
+    
     RenderObject* nextSibling = oldChild.nextSibling();
 
     if (oldChild.previousSibling())
@@ -644,7 +641,7 @@ RenderObject* RenderElement::removeChildInternal(RenderObject& oldChild, NotifyC
 
     if (AXObjectCache* cache = document().existingAXObjectCache())
         cache->childrenChanged(this);
-
+    
     return nextSibling;
 }
 
@@ -752,7 +749,7 @@ bool RenderElement::layerCreationAllowedForSubtree() const
             return false;
         parentRenderer = parentRenderer->parent();
     }
-
+    
     return true;
 }
 
@@ -921,7 +918,7 @@ void RenderElement::styleDidChange(StyleDifference diff, const RenderStyle* oldS
 
     if (!m_parent)
         return;
-
+    
     if (diff == StyleDifferenceLayout || diff == StyleDifferenceSimplifiedLayout) {
         RenderCounter::rendererStyleChanged(this, oldStyle, &m_style.get());
 
@@ -1031,7 +1028,7 @@ void RenderElement::setNeedsPositionedMovementLayout(const RenderStyle* oldStyle
     setNeedsPositionedMovementLayoutBit(true);
     markContainingBlocksForLayout();
     if (hasLayer()) {
-        if (oldStyle && style().diffRequiresRepaint(oldStyle))
+        if (oldStyle && style().diffRequiresLayerRepaint(*oldStyle, toRenderLayerModelObject(this)->layer()->isComposited()))
             setLayerNeedsFullRepaint();
         else
             setLayerNeedsFullRepaintForPositionedMovementLayout();
@@ -1300,22 +1297,7 @@ static bool shouldRepaintForImageAnimation(const RenderElement& renderer, const 
         return false;
     if (renderer.style().visibility() != VISIBLE)
         return false;
-    if (renderer.view().frameView().isOffscreen())
-        return false;
-
-    // Use background rect if we are the root or if we are the body and the background is propagated to the root.
-    // FIXME: This is overly conservative as the image may not be a background-image, in which case it will not
-    // be propagated to the root. At this point, we unfortunately don't have access to the image anymore so we
-    // can no longer check if it is a background image.
-    bool backgroundIsPaintedByRoot = renderer.isRoot();
-    if (renderer.isBody()) {
-        // FIXME: Should share body background propagation code.
-        RenderElement* rootObject = renderer.document().documentElement() ? renderer.document().documentElement()->renderer() : nullptr;
-        backgroundIsPaintedByRoot = &rootObject->rendererForRootBackground() == &renderer;
-
-    }
-    LayoutRect backgroundPaintingRect = backgroundIsPaintedByRoot ? renderer.view().backgroundRect(&renderer.view()) : renderer.absoluteClippedOverflowRect();
-    if (!visibleRect.intersects(enclosingIntRect(backgroundPaintingRect)))
+    if (!visibleRect.intersects(renderer.absoluteBoundingBoxRect()))
         return false;
 
     return true;
@@ -1326,9 +1308,6 @@ void RenderElement::newImageAnimationFrameAvailable(CachedImage& image)
     auto& frameView = view().frameView();
     auto visibleRect = frameView.windowToContents(frameView.windowClipRect());
     if (!shouldRepaintForImageAnimation(*this, visibleRect)) {
-        // FIXME: It would be better to pass the image along with the renderer
-        // so that we can be smarter about detecting if the image is inside the
-        // viewport in repaintForPausedImageAnimationsIfNeeded().
         view().addRendererWithPausedImageAnimations(*this);
         return;
     }
@@ -1374,147 +1353,6 @@ void RenderElement::removeControlStatesForRenderer(const RenderObject* o)
 void RenderElement::addControlStatesForRenderer(const RenderObject* o, ControlStates* states)
 {
     controlStatesRendererMap().add(o, states);
-}
-
-bool RenderElement::getLeadingCorner(FloatPoint& point) const
-{
-    if (!isInline() || isReplaced()) {
-        point = localToAbsolute(FloatPoint(), UseTransforms);
-        return true;
-    }
-
-    // find the next text/image child, to get a position
-    const RenderObject* o = this;
-    while (o) {
-        const RenderObject* p = o;
-        if (RenderObject* child = o->firstChildSlow())
-            o = child;
-        else if (o->nextSibling())
-            o = o->nextSibling();
-        else {
-            RenderObject* next = 0;
-            while (!next && o->parent()) {
-                o = o->parent();
-                next = o->nextSibling();
-            }
-            o = next;
-
-            if (!o)
-                break;
-        }
-        ASSERT(o);
-
-        if (!o->isInline() || o->isReplaced()) {
-            point = o->localToAbsolute(FloatPoint(), UseTransforms);
-            return true;
-        }
-
-        if (p->node() && p->node() == element() && o->isText() && !toRenderText(*o).firstTextBox()) {
-            // do nothing - skip unrendered whitespace that is a child or next sibling of the anchor
-        } else if (o->isText() || o->isReplaced()) {
-            point = FloatPoint();
-            if (o->isText() && toRenderText(*o).firstTextBox())
-                point.move(toRenderText(*o).linesBoundingBox().x(), toRenderText(*o).topOfFirstText());
-            else if (o->isBox())
-                point.moveBy(toRenderBox(*o).location());
-            point = o->container()->localToAbsolute(point, UseTransforms);
-            return true;
-        }
-    }
-
-    // If the target doesn't have any children or siblings that could be used to calculate the scroll position, we must be
-    // at the end of the document. Scroll to the bottom. FIXME: who said anything about scrolling?
-    if (!o && document().view()) {
-        point = FloatPoint(0, document().view()->contentsHeight());
-        return true;
-    }
-    return false;
-}
-
-bool RenderElement::getTrailingCorner(FloatPoint& point) const
-{
-    if (!isInline() || isReplaced()) {
-        point = localToAbsolute(LayoutPoint(toRenderBox(*this).size()), UseTransforms);
-        return true;
-    }
-
-    // find the last text/image child, to get a position
-    const RenderObject* o = this;
-    while (o) {
-        if (RenderObject* child = o->lastChildSlow())
-            o = child;
-        else if (o->previousSibling())
-            o = o->previousSibling();
-        else {
-            RenderObject* prev = 0;
-            while (!prev) {
-                o = o->parent();
-                if (!o)
-                    return false;
-                prev = o->previousSibling();
-            }
-            o = prev;
-        }
-        ASSERT(o);
-        if (o->isText() || o->isReplaced()) {
-            point = FloatPoint();
-            if (o->isText()) {
-                IntRect linesBox = toRenderText(*o).linesBoundingBox();
-                if (!linesBox.maxX() && !linesBox.maxY())
-                    continue;
-                point.moveBy(linesBox.maxXMaxYCorner());
-            } else
-                point.moveBy(toRenderBox(*o).frameRect().maxXMaxYCorner());
-            point = o->container()->localToAbsolute(point, UseTransforms);
-            return true;
-        }
-    }
-    return true;
-}
-
-LayoutRect RenderElement::anchorRect() const
-{
-    FloatPoint leading, trailing;
-    bool foundLeading = getLeadingCorner(leading);
-    bool foundTrailing = getTrailingCorner(trailing);
-
-    // If we've found one corner, but not the other,
-    // then we should just return a point at the corner that we did find.
-    if (foundLeading != foundTrailing) {
-        if (foundLeading)
-            foundTrailing = foundLeading;
-        else
-            foundLeading = foundTrailing;
-    }
-
-    FloatPoint upperLeft = leading;
-    FloatPoint lowerRight = trailing;
-
-    // Vertical writing modes might mean the leading point is not in the top left
-    if (!isInline() || isReplaced()) {
-        upperLeft = FloatPoint(std::min(leading.x(), trailing.x()), std::min(leading.y(), trailing.y()));
-        lowerRight = FloatPoint(std::max(leading.x(), trailing.x()), std::max(leading.y(), trailing.y()));
-    } // Otherwise, it's not obvious what to do.
-
-    return enclosingLayoutRect(FloatRect(upperLeft, lowerRight.expandedTo(upperLeft) - upperLeft));
-}
-
-const RenderElement* RenderElement::enclosingRendererWithTextDecoration(TextDecoration textDecoration, bool firstLine) const
-{
-    const RenderElement* current = this;
-    do {
-        if (current->isRenderBlock())
-            return current;
-        if (!current->isRenderInline() || current->isRubyText())
-            return nullptr;
-
-        const RenderStyle& styleToUse = firstLine ? current->firstLineStyle() : current->style();
-        if (styleToUse.textDecoration() & textDecoration)
-            return current;
-        current = current->parent();
-    } while (current && (!current->element() || (!isHTMLAnchorElement(*current->element()) && !current->element()->hasTagName(HTMLNames::fontTag))));
-
-    return current;
 }
 
 }

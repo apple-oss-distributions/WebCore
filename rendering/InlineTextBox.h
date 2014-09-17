@@ -133,6 +133,13 @@ private:
 public:
     virtual bool isLineBreak() const override final;
 
+    void setExpansion(int newExpansion)
+    {
+        m_logicalWidth -= expansion();
+        InlineBox::setExpansion(newExpansion);
+        m_logicalWidth += newExpansion;
+    }
+
 private:
     virtual bool isInlineTextBox() const override final { return true; }
 
@@ -166,7 +173,7 @@ private:
     TextRun::ExpansionBehavior expansionBehavior() const
     {
         return (canHaveLeadingExpansion() ? TextRun::AllowLeadingExpansion : TextRun::ForbidLeadingExpansion)
-            | (renderer().contentIsKnownToFollow() || (expansion() && nextLeafChild() && !nextLeafChild()->isLineBreak()) ? TextRun::AllowTrailingExpansion : TextRun::ForbidTrailingExpansion);
+            | (expansion() && nextLeafChild() && !nextLeafChild()->isLineBreak() ? TextRun::AllowTrailingExpansion : TextRun::ForbidTrailingExpansion);
     }
 
     void behavesLikeText() const = delete;

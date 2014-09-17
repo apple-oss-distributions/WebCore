@@ -69,7 +69,7 @@ public:
 
     bool hasFailedOrCanceledSubresources() const;
 
-    CachedFont* cachedFont(Document*, bool isInitiatingElementInUserAgentShadowTree);
+    CachedFont* cachedFont(Document*);
 
     bool equals(const CSSFontFaceSrcValue&) const;
 

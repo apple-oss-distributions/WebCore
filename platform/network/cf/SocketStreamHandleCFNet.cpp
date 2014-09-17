@@ -35,7 +35,6 @@
 #include "Credential.h"
 #include "CredentialStorage.h"
 #include "Logging.h"
-#include "NetworkingContext.h"
 #include "ProtectionSpace.h"
 #include "SocketStreamError.h"
 #include "SocketStreamHandleClient.h"
@@ -62,12 +61,11 @@ extern "C" const CFStringRef _kCFStreamSocketSetNoDelay;
 
 namespace WebCore {
 
-SocketStreamHandle::SocketStreamHandle(const URL& url, SocketStreamHandleClient* client, NetworkingContext& networkingContext)
+SocketStreamHandle::SocketStreamHandle(const URL& url, SocketStreamHandleClient* client)
     : SocketStreamHandleBase(url, client)
     , m_connectingSubstate(New)
     , m_connectionType(Unknown)
     , m_sentStoredCredentials(false)
-    , m_networkingContext(networkingContext)
 {
     LOG(Network, "SocketStreamHandle %p new client %p", this, m_client);
 
@@ -333,14 +331,14 @@ void SocketStreamHandle::createStreams()
     }
 }
 
-bool SocketStreamHandle::getStoredCONNECTProxyCredentials(const ProtectionSpace& protectionSpace, String& login, String& password)
+static bool getStoredCONNECTProxyCredentials(const ProtectionSpace& protectionSpace, String& login, String& password)
 {
     // FIXME (<rdar://problem/10416495>): Proxy credentials should be retrieved from AuthBrokerAgent.
 
     // Try system credential storage first, matching HTTP behavior (CFNetwork only asks the client for password if it couldn't find it in Keychain).
-    Credential storedCredential = m_networkingContext->storageSession().credentialStorage().getFromPersistentStorage(protectionSpace);
+    Credential storedCredential = CredentialStorage::getFromPersistentStorage(protectionSpace);
     if (storedCredential.isEmpty())
-        storedCredential = m_networkingContext->storageSession().credentialStorage().get(protectionSpace);
+        storedCredential = CredentialStorage::get(protectionSpace);
 
     if (storedCredential.isEmpty())
         return false;
@@ -426,6 +424,10 @@ void SocketStreamHandle::readStreamCallback(CFReadStreamRef stream, CFStreamEven
 {
     SocketStreamHandle* handle = static_cast<SocketStreamHandle*>(clientCallBackInfo);
     ASSERT_UNUSED(stream, stream == handle->m_readStream.get());
+    // Workaround for <rdar://problem/17727073>. Keeping this below the assertion as we'd like better steps to reproduce this.
+    if (!handle->m_readStream)
+        return;
+
 #if PLATFORM(WIN)
     callOnMainThreadAndWait([&] {
         handle->readStreamCallback(type);
@@ -440,6 +442,10 @@ void SocketStreamHandle::writeStreamCallback(CFWriteStreamRef stream, CFStreamEv
 {
     SocketStreamHandle* handle = static_cast<SocketStreamHandle*>(clientCallBackInfo);
     ASSERT_UNUSED(stream, stream == handle->m_writeStream.get());
+    // This wasn't seen happening in practice, yet it seems like it could, due to symmetry with read stream callback.
+    if (!handle->m_writeStream)
+        return;
+
 #if PLATFORM(WIN)
     callOnMainThreadAndWait([&] {
         handle->writeStreamCallback(type);

@@ -53,7 +53,6 @@ class HistoryItem;
 class Image;
 class ResourceRequest;
 class URL;
-enum class PruningReason;
 
 typedef Vector<RefPtr<HistoryItem>> HistoryItemVector;
 
@@ -259,7 +258,6 @@ private:
     HistoryItem* m_next;
     HistoryItem* m_prev;
     std::unique_ptr<CachedPage> m_cachedPage;
-    PruningReason m_pruningReason;
 
 #if PLATFORM(IOS)
     FloatRect m_exposedContentRect;

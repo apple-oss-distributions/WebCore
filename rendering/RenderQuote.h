@@ -47,11 +47,11 @@ private:
     void updateText();
     void updateDepth();
 
-    const QuoteType m_type;
-    int m_depth { -1 };
-    RenderQuote* m_next { nullptr };
-    RenderQuote* m_previous { nullptr };
-    bool m_isAttached { false };
+    QuoteType m_type;
+    int m_depth;
+    RenderQuote* m_next;
+    RenderQuote* m_previous;
+    bool m_isAttached;
     String m_text;
 };
 

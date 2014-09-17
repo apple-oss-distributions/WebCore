@@ -5,30 +5,16 @@ function createControls(root, video, host)
 
 function ControllerIOS(root, video, host)
 {
-    this.doingSetup = true;
     this.hasWirelessPlaybackTargets = false;
     this._pageScaleFactor = 1;
-    this.isListeningForPlaybackTargetAvailabilityEvent = false;
-
-    this.timelineContextName = "_webkit-media-controls-timeline-" + ControllerIOS.gLastTimelineId++;
-
     Controller.call(this, root, video, host);
 
     this.updateWirelessTargetAvailable();
     this.updateWirelessPlaybackStatus();
     this.setNeedsTimelineMetricsUpdate();
 
-    this._timelineIsHidden = false;
-    this._currentDisplayWidth = 0;
-    this.scheduleUpdateLayoutForDisplayedWidth();
-
     host.controlsDependOnPageScaleFactor = true;
-    this.doingSetup = false;
 };
-
-/* Constants */
-ControllerIOS.MinimumTimelineWidth = 220;
-ControllerIOS.ButtonWidth = 48;
 
 /* Enums */
 ControllerIOS.StartPlaybackControls = 2;
@@ -36,7 +22,6 @@ ControllerIOS.StartPlaybackControls = 2;
 /* Globals */
 ControllerIOS.gWirelessImage = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 245"><g fill="#1060FE"><path d="M193.6,6.3v121.6H6.4V6.3H193.6 M199.1,0.7H0.9v132.7h198.2V0.7L199.1,0.7z"/><path d="M43.5,139.3c15.8,8,35.3,12.7,56.5,12.7s40.7-4.7,56.5-12.7H43.5z"/></g><g text-anchor="middle" font-family="Helvetica Neue"><text x="100" y="204" fill="white" font-size="24">##DEVICE_TYPE##</text><text x="100" y="234" fill="#5C5C5C" font-size="21">##DEVICE_NAME##</text></g></svg>';
 ControllerIOS.gSimulateWirelessPlaybackTarget = false; // Used for testing when there are no wireless targets.
-ControllerIOS.gLastTimelineId = 0;
 
 ControllerIOS.prototype = {
     addVideoListeners: function() {
@@ -44,7 +29,11 @@ ControllerIOS.prototype = {
 
         this.listenFor(this.video, 'webkitbeginfullscreen', this.handleFullscreenChange);
         this.listenFor(this.video, 'webkitendfullscreen', this.handleFullscreenChange);
-        this.listenFor(this.video, 'webkitcurrentplaybacktargetiswirelesschanged', this.handleWirelessPlaybackChange);
+
+        if (window.WebKitPlaybackTargetAvailabilityEvent) {
+            this.listenFor(this.video, 'webkitcurrentplaybacktargetiswirelesschanged', this.handleWirelessPlaybackChange);
+            this.listenFor(this.video, 'webkitplaybacktargetavailabilitychanged', this.handleWirelessTargetAvailableChange);
+        }
     },
 
     removeVideoListeners: function() {
@@ -52,9 +41,11 @@ ControllerIOS.prototype = {
 
         this.stopListeningFor(this.video, 'webkitbeginfullscreen', this.handleFullscreenChange);
         this.stopListeningFor(this.video, 'webkitendfullscreen', this.handleFullscreenChange);
-        this.stopListeningFor(this.video, 'webkitcurrentplaybacktargetiswirelesschanged', this.handleWirelessPlaybackChange);
 
-        this.setShouldListenForPlaybackTargetAvailabilityEvent(false);
+        if (window.WebKitPlaybackTargetAvailabilityEvent) {
+            this.stopListeningFor(this.video, 'webkitcurrentplaybacktargetiswirelesschanged', this.handleWirelessPlaybackChange);
+            this.stopListeningFor(this.video, 'webkitplaybacktargetavailabilitychanged', this.handleWirelessTargetAvailableChange);
+        }
     },
 
     createBase: function() {
@@ -70,21 +61,13 @@ ControllerIOS.prototype = {
         this.listenFor(this.base, 'touchstart', this.handleWrapperTouchStart);
         this.stopListeningFor(this.base, 'mousemove', this.handleWrapperMouseMove);
         this.stopListeningFor(this.base, 'mouseout', this.handleWrapperMouseOut);
-
-        this.listenFor(document, 'visibilitychange', this.handleVisibilityChange);
     },
 
     shouldHaveStartPlaybackButton: function() {
         var allowsInline = this.host.mediaPlaybackAllowsInline;
 
-        if (this.isPlaying || (this.hasPlayed && allowsInline))
-            return false;
-
         if (this.isAudio() && allowsInline)
             return false;
-
-        if (this.doingSetup)
-            return true;
 
         if (this.isFullScreen())
             return false;
@@ -97,6 +80,9 @@ ControllerIOS.prototype = {
 
         if (this.video.currentSrc && this.video.error)
             return true;
+
+        if (!this.host.userGestureRequired && allowsInline)
+            return false;
 
         return true;
     },
@@ -124,11 +110,8 @@ ControllerIOS.prototype = {
             var deviceType = "";
             var type = this.host.externalDeviceType;
             if (type == "airplay") {
-                var externalDeviceDisplayName = this.host.externalDeviceDisplayName;
-                if (!externalDeviceDisplayName || externalDeviceDisplayName == "")
-                    externalDeviceDisplayName = "Apple TV";
                 deviceType = this.UIString('##WIRELESS_PLAYBACK_DEVICE_TYPE##');
-                deviceName = this.UIString('##WIRELESS_PLAYBACK_DEVICE_NAME##', '##DEVICE_NAME##', externalDeviceDisplayName);
+                deviceName = this.UIString('##WIRELESS_PLAYBACK_DEVICE_NAME##', '##DEVICE_NAME##', this.host.externalDeviceDisplayName || "Apple TV");
             } else if (type == "tvout") {
                 deviceType = this.UIString('##TVOUT_DEVICE_TYPE##');
                 deviceName = this.UIString('##TVOUT_DEVICE_NAME##');
@@ -141,10 +124,10 @@ ControllerIOS.prototype = {
             this.controls.wirelessPlaybackStatus.setAttribute('aria-label', deviceType + ", " + deviceName);
 
             this.controls.wirelessPlaybackStatus.classList.remove(this.ClassNames.hidden);
-            this.controls.wirelessTargetPicker.classList.add(this.ClassNames.playing);
+            this.controls.wirelessTargetPicker.classList.add(this.ClassNames.active);
         } else {
             this.controls.wirelessPlaybackStatus.classList.add(this.ClassNames.hidden);
-            this.controls.wirelessTargetPicker.classList.remove(this.ClassNames.playing);
+            this.controls.wirelessTargetPicker.classList.remove(this.ClassNames.active);
         }
     },
 
@@ -161,13 +144,6 @@ ControllerIOS.prototype = {
         var wirelessPlaybackStatus = this.controls.wirelessPlaybackStatus = document.createElement('div');
         wirelessPlaybackStatus.setAttribute('pseudo', '-webkit-media-controls-wireless-playback-status');
         wirelessPlaybackStatus.classList.add(this.ClassNames.hidden);
-
-        var panelCompositedParent = this.controls.panelCompositedParent = document.createElement('div');
-        panelCompositedParent.setAttribute('pseudo', '-webkit-media-controls-panel-composited-parent');
-
-        var spacer = this.controls.spacer = document.createElement('div');
-        spacer.setAttribute('pseudo', '-webkit-media-controls-spacer');
-        spacer.classList.add(this.ClassNames.hidden);
 
         var wirelessTargetPicker = this.controls.wirelessTargetPicker = document.createElement('button');
         wirelessTargetPicker.setAttribute('pseudo', '-webkit-media-controls-wireless-playback-picker-button');
@@ -193,8 +169,6 @@ ControllerIOS.prototype = {
         this.listenFor(this.controls.fullscreenButton, 'touchend', this.handleFullscreenTouchEnd);
         this.listenFor(this.controls.fullscreenButton, 'touchcancel', this.handleFullscreenTouchCancel);
         this.stopListeningFor(this.controls.playButton, 'click', this.handlePlayButtonClicked);
-
-        this.controls.timeline.style.backgroundImage = '-webkit-canvas(' + this.timelineContextName + ')';
     },
 
     setControlsType: function(type) {
@@ -206,8 +180,6 @@ ControllerIOS.prototype = {
             this.addStartPlaybackControls();
         else
             this.removeStartPlaybackControls();
-
-        this.updateShouldListenForPlaybackTargetAvailabilityEvent();
     },
 
     addStartPlaybackControls: function() {
@@ -219,20 +191,11 @@ ControllerIOS.prototype = {
             this.controls.startPlaybackButton.parentNode.removeChild(this.controls.startPlaybackButton);
     },
 
-    reconnectControls: function()
-    {
-        Controller.prototype.reconnectControls.call(this);
-
-        if (this.controlsType === ControllerIOS.StartPlaybackControls)
-            this.addStartPlaybackControls();
-    },
-
     configureInlineControls: function() {
         this.base.appendChild(this.controls.wirelessPlaybackStatus);
 
         this.controls.panel.appendChild(this.controls.playButton);
         this.controls.panel.appendChild(this.controls.statusDisplay);
-        this.controls.panel.appendChild(this.controls.spacer);
         this.controls.panel.appendChild(this.controls.timelineBox);
         this.controls.panel.appendChild(this.controls.wirelessTargetPicker);
         if (!this.isLive) {
@@ -240,109 +203,49 @@ ControllerIOS.prototype = {
             this.controls.timelineBox.appendChild(this.controls.timeline);
             this.controls.timelineBox.appendChild(this.controls.remainingTime);
         }
-        if (this.isAudio()) {
-            // Hide the scrubber on audio until the user starts playing.
-            this.controls.timelineBox.classList.add(this.ClassNames.hidden);
-        } else {
+        if (!this.isAudio())
             this.controls.panel.appendChild(this.controls.fullscreenButton);
-        }
     },
 
     configureFullScreenControls: function() {
-        // Explicitly do nothing to override base-class behavior.
-    },
-
-    hideControls: function() {
-        Controller.prototype.hideControls.call(this);
-        this.updateShouldListenForPlaybackTargetAvailabilityEvent();
-    },
-
-    showControls: function() {
-        this.updateLayoutForDisplayedWidth();
-        this.updateTime(true);
-        this.updateProgress(true);
-        Controller.prototype.showControls.call(this);
-        this.updateShouldListenForPlaybackTargetAvailabilityEvent();
-    },
-
-    addControls: function() {
-        this.base.appendChild(this.controls.panelCompositedParent);
-        this.controls.panelCompositedParent.appendChild(this.controls.panel);
-        this.setNeedsTimelineMetricsUpdate();
+        // Do nothing
     },
 
     updateControls: function() {
         if (this.shouldHaveStartPlaybackButton())
             this.setControlsType(ControllerIOS.StartPlaybackControls);
+        else if (this.isFullScreen())
+            this.setControlsType(Controller.FullScreenControls);
         else
             this.setControlsType(Controller.InlineControls);
 
-        this.updateLayoutForDisplayedWidth();
         this.setNeedsTimelineMetricsUpdate();
     },
 
-    updateTime: function(forceUpdate) {
-        Controller.prototype.updateTime.call(this, forceUpdate);
+    updateTime: function() {
+        Controller.prototype.updateTime.call(this);
         this.updateProgress();
     },
 
-    addRoundedRect: function(ctx, x, y, width, height, radius) {
-        ctx.moveTo(x + radius, y);
-        ctx.arcTo(x + width, y, x + width, y + radius, radius);
-        ctx.lineTo(x + width, y + height - radius);
-        ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
-        ctx.lineTo(x + radius, y + height);
-        ctx.arcTo(x, y + height, x, y + height - radius, radius);
-        ctx.lineTo(x, y + radius);
-        ctx.arcTo(x, y, x + radius, y, radius);
+    progressFillStyle: function() {
+        return 'rgba(0, 0, 0, 0.5)';
     },
 
-    drawTimelineBackground: function() {
-        var width = this.timelineWidth * window.devicePixelRatio;
-        var height = this.timelineHeight * window.devicePixelRatio;
+    updateProgress: function() {
+        Controller.prototype.updateProgress.call(this);
 
-        if (!width || !height)
-            return;
+        var width = this.timelineWidth;
+        var height = this.timelineHeight;
 
-        var played = this.video.currentTime / this.video.duration;
-        var buffered = 0;
-        for (var i = 0, end = this.video.buffered.length; i < end; ++i)
-            buffered = Math.max(this.video.buffered.end(i), buffered);
+        // Magic number, matching the value for ::-webkit-media-controls-timeline::-webkit-slider-thumb
+        // in mediaControlsiOS.css. Since we cannot ask the thumb for its offsetWidth as it's in its own
+        // shadow dom, just hard-code the value.
+        var thumbWidth = 16;
+        var endX = thumbWidth / 2 + (width - thumbWidth) * this.video.currentTime / this.video.duration;
 
-        buffered /= this.video.duration;
-
-        var ctx = this.video.ownerDocument.getCSSCanvasContext('2d', this.timelineContextName, width, height);
-
-        ctx.clearRect(0, 0, width, height);
-
-        var midY = height / 2;
-
-        // 1. Draw the outline with a clip path that subtracts the
-        // middle of a lozenge. This produces a better result than
-        // stroking when we come to filling the parts below.
-        ctx.save();
-        ctx.beginPath();
-        this.addRoundedRect(ctx, 1, midY - 3, width - 2, 6, 3);
-        this.addRoundedRect(ctx, 2, midY - 2, width - 4, 4, 2);
-        ctx.closePath();
-        ctx.clip("evenodd");
-        ctx.fillStyle = "black";
-        ctx.fillRect(0, 0, width, height);
-        ctx.restore();
-
-        // 2. Draw the buffered part and played parts, using
-        // solid rectangles that are clipped to the outside of
-        // the lozenge.
-        ctx.save();
-        ctx.beginPath();
-        this.addRoundedRect(ctx, 1, midY - 3, width - 2, 6, 3);
-        ctx.closePath();
-        ctx.clip();
-        ctx.fillStyle = "black";
-        ctx.fillRect(0, 0, Math.round(width * buffered) + 2, height);
-        ctx.fillStyle = "white";
-        ctx.fillRect(0, 0, Math.round(width * played) + 2, height);
-        ctx.restore();
+        var context = document.getCSSCanvasContext('2d', 'timeline-' + this.timelineID, width, height);
+        context.fillStyle = 'white';
+        context.fillRect(0, 0, endX, height);
     },
 
     formatTime: function(time) {
@@ -355,9 +258,9 @@ ControllerIOS.prototype = {
         var sign = time < 0 ? '-' : String();
 
         if (intHours > 0)
-             return sign + intHours + ':' + String('0' + intMinutes).slice(-2) + ":" + String('0' + intSeconds).slice(-2);
+            return sign + intHours + ':' + String('00' + intMinutes).slice(-2) + ":" + String('00' + intSeconds).slice(-2);
 
-        return sign + String('0' + intMinutes).slice(intMinutes >= 10 ? -2 : -1) + ":" + String('0' + intSeconds).slice(-2);
+        return sign + String('00' + intMinutes).slice(intMinutes >= 10 ? -2 : -1) + ":" + String('00' + intSeconds).slice(-2);
     },
 
     handleTimelineChange: function(event) {
@@ -398,10 +301,6 @@ ControllerIOS.prototype = {
         if (!this.video.controls || this.isAudio() || this.isFullScreen() || this.gestureStartTime === undefined || this.controlsType == ControllerIOS.StartPlaybackControls)
             return;
 
-        var scaleDetectionThreshold = 0.2;
-        if (event.scale > 1 + scaleDetectionThreshold || event.scale < 1 - scaleDetectionThreshold)
-            delete this.lastDoubleTouchTime;
-
         if (this.mostRecentNumberOfTargettedTouches == 2 && event.scale >= 1.0)
             event.preventDefault();
 
@@ -412,9 +311,7 @@ ControllerIOS.prototype = {
 
         var velocity = Math.abs(event.scale - 1) / duration;
 
-        var pinchOutVelocityThreshold = 2;
-        var pinchOutGestureScaleThreshold = 1.25;
-        if (velocity < pinchOutVelocityThreshold || event.scale < pinchOutGestureScaleThreshold)
+        if (event.scale < 1.25 || velocity < 2)
             return;
 
         delete this.gestureStartTime;
@@ -452,10 +349,6 @@ ControllerIOS.prototype = {
         this.video.style.removeProperty('-webkit-user-select');
     },
 
-    handleVisibilityChange: function(event) {
-        this.updateShouldListenForPlaybackTargetAvailabilityEvent();
-    },
-
     isFullScreen: function()
     {
         return this.video.webkitDisplayingFullscreen;
@@ -486,22 +379,21 @@ ControllerIOS.prototype = {
     },
 
     handleStartPlaybackButtonTouchStart: function(event) {
-        this.controls.startPlaybackButton.classList.add('active');
+        this.controls.fullscreenButton.classList.add('active');
     },
 
     handleStartPlaybackButtonTouchEnd: function(event) {
-        this.controls.startPlaybackButton.classList.remove('active');
+        this.controls.fullscreenButton.classList.remove('active');
         if (this.video.error)
             return true;
 
         this.video.play();
-        this.updateControls();
 
         return true;
     },
 
     handleStartPlaybackButtonTouchCancel: function(event) {
-        this.controls.startPlaybackButton.classList.remove('active');
+        this.controls.fullscreenButton.classList.remove('active');
         return true;
     },
 
@@ -541,66 +433,23 @@ ControllerIOS.prototype = {
         return true;
     },
 
-    updateShouldListenForPlaybackTargetAvailabilityEvent: function() {
-        var shouldListen = true;
-        if (this.video.error)
-            shouldListen = false;
-        if (this.controlsType === ControllerIOS.StartPlaybackControls)
-            shouldListen = false;
-        if (!this.isAudio() && !this.video.paused && this.controlsAreHidden())
-            shouldListen = false;
-        if (document.hidden)
-            shouldListen = false;
-
-        this.setShouldListenForPlaybackTargetAvailabilityEvent(shouldListen);
-    },
-
     updateStatusDisplay: function(event)
     {
-        this.updateShouldListenForPlaybackTargetAvailabilityEvent();
         this.controls.startPlaybackButton.classList.toggle(this.ClassNames.failed, this.video.error !== null);
         Controller.prototype.updateStatusDisplay.call(this, event);
     },
 
     setPlaying: function(isPlaying)
     {
-        Controller.prototype.setPlaying.call(this, isPlaying);
-
         this.updateControls();
-
-        if (isPlaying && this.isAudio() && !this._timelineIsHidden) {
-            this.controls.timelineBox.classList.remove(this.ClassNames.hidden);
-            this.controls.spacer.classList.add(this.ClassNames.hidden);
-        }
-
-        if (isPlaying)
-            this.hasPlayed = true;
-        else
-            this.showControls();
+        Controller.prototype.setPlaying.call(this, isPlaying);
     },
 
-    setShouldListenForPlaybackTargetAvailabilityEvent: function(shouldListen)
-    {
-        if (!window.WebKitPlaybackTargetAvailabilityEvent || this.isListeningForPlaybackTargetAvailabilityEvent == shouldListen)
-            return;
-
-        if (shouldListen && (this.shouldHaveStartPlaybackButton() || this.video.error))
-            return;
-
-        this.isListeningForPlaybackTargetAvailabilityEvent = shouldListen;
-        if (shouldListen)
-            this.listenFor(this.video, 'webkitplaybacktargetavailabilitychanged', this.handleWirelessTargetAvailableChange);
-        else
-            this.stopListeningFor(this.video, 'webkitplaybacktargetavailabilitychanged', this.handleWirelessTargetAvailableChange);
-    },
-
-    get pageScaleFactor()
-    {
+    get pageScaleFactor() {
         return this._pageScaleFactor;
     },
 
-    set pageScaleFactor(newScaleFactor)
-    {
+    set pageScaleFactor(newScaleFactor) {
         if (this._pageScaleFactor === newScaleFactor)
             return;
 
@@ -619,66 +468,9 @@ ControllerIOS.prototype = {
                 this.controls.panel.style.webkitTransform = scaleTransform;
                 this.setNeedsTimelineMetricsUpdate();
                 this.updateProgress();
-                this.scheduleUpdateLayoutForDisplayedWidth();
             }
         }
-    },
-
-    scheduleUpdateLayoutForDisplayedWidth: function ()
-    {
-        setTimeout(function () {
-            this.updateLayoutForDisplayedWidth();
-        }.bind(this), 0);
-    },
-
-    updateLayoutForDisplayedWidth: function()
-    {
-        if (!this.controls || !this.controls.panel)
-            return;
-
-        var visibleWidth = this.controls.panel.getBoundingClientRect().width * this._pageScaleFactor;
-        if (visibleWidth <= 0 || visibleWidth == this._currentDisplayWidth)
-            return;
-
-        this._currentDisplayWidth = visibleWidth;
-
-        // We need to work out how many right-hand side buttons are available.
-        this.updateWirelessTargetAvailable();
-        this.updateFullscreenButton();
-
-        var visibleButtonWidth = ControllerIOS.ButtonWidth; // We always try to show the fullscreen button.
-
-        if (!this.controls.wirelessTargetPicker.classList.contains(this.ClassNames.hidden))
-            visibleButtonWidth += ControllerIOS.ButtonWidth;
-
-        // Check if there is enough room for the scrubber.
-        if ((visibleWidth - visibleButtonWidth) < ControllerIOS.MinimumTimelineWidth) {
-            this.controls.timelineBox.classList.add(this.ClassNames.hidden);
-            this.controls.spacer.classList.remove(this.ClassNames.hidden);
-            this._timelineIsHidden = true;
-        } else {
-            if (!this.isAudio() || this.hasPlayed) {
-                this.controls.timelineBox.classList.remove(this.ClassNames.hidden);
-                this.controls.spacer.classList.add(this.ClassNames.hidden);
-                this._timelineIsHidden = false;
-            } else
-                this.controls.spacer.classList.remove(this.ClassNames.hidden);
-        }
-
-        // Drop the airplay button if there isn't enough space.
-        if (visibleWidth < visibleButtonWidth) {
-            this.controls.wirelessTargetPicker.classList.add(this.ClassNames.hidden);
-            visibleButtonWidth -= ControllerIOS.ButtonWidth;
-        }
-
-        // And finally, drop the fullscreen button as a last resort.
-        if (visibleWidth < visibleButtonWidth) {
-            this.controls.fullscreenButton.classList.add(this.ClassNames.hidden);
-            visibleButtonWidth -= ControllerIOS.ButtonWidth;
-        } else
-            this.controls.fullscreenButton.classList.remove(this.ClassNames.hidden);
-    },
-
+    }
 };
 
 Object.create(Controller.prototype).extend(ControllerIOS.prototype);

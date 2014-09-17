@@ -178,10 +178,7 @@ void ImageLoader::updateFromElement()
     // an empty string.
     CachedResourceHandle<CachedImage> newImage = 0;
     if (!attr.isNull() && !stripLeadingAndTrailingHTMLSpaces(attr).isEmpty()) {
-        ResourceLoaderOptions options = CachedResourceLoader::defaultCachedResourceOptions();
-        options.setContentSecurityPolicyImposition(element().isInUserAgentShadowTree() ? ContentSecurityPolicyImposition::SkipPolicyCheck : ContentSecurityPolicyImposition::DoPolicyCheck);
-
-        CachedResourceRequest request(ResourceRequest(document.completeURL(sourceURI(attr))), options);
+        CachedResourceRequest request(ResourceRequest(document.completeURL(sourceURI(attr))));
         request.setInitiator(&element());
 
         String crossOriginMode = element().fastGetAttribute(HTMLNames::crossoriginAttr);
@@ -287,7 +284,10 @@ void ImageLoader::notifyFinished(CachedResource* resource)
     if (!m_hasPendingLoadEvent)
         return;
 
-    if (element().fastHasAttribute(HTMLNames::crossoriginAttr) && !resource->passesSameOriginPolicyCheck(*element().document().securityOrigin())) {
+    if (element().fastHasAttribute(HTMLNames::crossoriginAttr)
+        && !element().document().securityOrigin()->canRequest(image()->response().url())
+        && !resource->passesAccessControlCheck(element().document().securityOrigin())) {
+
         setImageWithoutConsideringPendingLoadEvent(0);
 
         m_hasPendingErrorEvent = true;

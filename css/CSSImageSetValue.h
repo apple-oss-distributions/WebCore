@@ -48,6 +48,7 @@ public:
     ~CSSImageSetValue();
 
     StyleCachedImageSet* cachedImageSet(CachedResourceLoader*, const ResourceLoaderOptions&);
+    StyleCachedImageSet* cachedImageSet(CachedResourceLoader*);
 
     // Returns a StyleCachedImageSet if the best fit image has been cached already, otherwise a StylePendingImage.
     StyleImage* cachedOrPendingImageSet(Document&);

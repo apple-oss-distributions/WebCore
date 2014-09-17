@@ -143,10 +143,6 @@ void ResourceHandle::createNSURLConnection(id delegate, bool shouldUseCredential
 void ResourceHandle::createNSURLConnection(id delegate, bool shouldUseCredentialStorage, bool shouldContentSniff, SchedulingBehavior schedulingBehavior, NSDictionary *connectionProperties)
 #endif
 {
-#if ENABLE(WEB_TIMING)
-    setCollectsTimingData();
-#endif
-
     // Credentials for ftp can only be passed in URL, the connection:didReceiveAuthenticationChallenge: delegate call won't be made.
     if ((!d->m_user.isEmpty() || !d->m_pass.isEmpty()) && !firstRequest().url().protocolIsInHTTPFamily()) {
         URL urlWithCredentials(firstRequest().url());
@@ -159,12 +155,12 @@ void ResourceHandle::createNSURLConnection(id delegate, bool shouldUseCredential
         if (d->m_user.isEmpty() && d->m_pass.isEmpty()) {
             // <rdar://problem/7174050> - For URLs that match the paths of those previously challenged for HTTP Basic authentication, 
             // try and reuse the credential preemptively, as allowed by RFC 2617.
-            d->m_initialCredential = d->m_context->storageSession().credentialStorage().get(firstRequest().url());
+            d->m_initialCredential = CredentialStorage::get(firstRequest().url());
         } else {
             // If there is already a protection space known for the URL, update stored credentials before sending a request.
             // This makes it possible to implement logout by sending an XMLHttpRequest with known incorrect credentials, and aborting it immediately
             // (so that an authentication dialog doesn't pop up).
-            d->m_context->storageSession().credentialStorage().set(Credential(d->m_user, d->m_pass, CredentialPersistenceNone), firstRequest().url());
+            CredentialStorage::set(Credential(d->m_user, d->m_pass, CredentialPersistenceNone), firstRequest().url());
         }
     }
         
@@ -224,6 +220,9 @@ void ResourceHandle::createNSURLConnection(id delegate, bool shouldUseCredential
     const bool usesCache = true;
 #endif
     d->m_connection = adoptNS([[NSURLConnection alloc] _initWithRequest:nsRequest delegate:delegate usesCache:usesCache maxContentLength:0 startImmediately:NO connectionProperties:propertyDictionary]);
+#if ENABLE(WEB_TIMING)
+    [NSURLConnection _setCollectsTimingData:YES];
+#endif
 }
 
 bool ResourceHandle::start()
@@ -472,15 +471,15 @@ void ResourceHandle::willSendRequest(ResourceRequest& request, const ResourceRes
     request.removeCredentials();
 
     if (!protocolHostAndPortAreEqual(request.url(), redirectResponse.url())) {
-        // The network layer might carry over some headers from the original request that
-        // we want to strip here because the redirect is cross-origin.
+        // If the network layer carries over authentication headers from the original request
+        // in a cross-origin redirect, we want to clear those headers here.
+        // As of Lion, CFNetwork no longer does this.
         request.clearHTTPAuthorization();
-        request.clearHTTPOrigin();
     } else {
         // Only consider applying authentication credentials if this is actually a redirect and the redirect
         // URL didn't include credentials of its own.
         if (d->m_user.isEmpty() && d->m_pass.isEmpty() && !redirectResponse.isNull()) {
-            Credential credential = d->m_context->storageSession().credentialStorage().get(request.url());
+            Credential credential = CredentialStorage::get(request.url());
             if (!credential.isEmpty()) {
                 d->m_initialCredential = credential;
                 
@@ -564,16 +563,16 @@ void ResourceHandle::didReceiveAuthenticationChallenge(const AuthenticationChall
             // The stored credential wasn't accepted, stop using it.
             // There is a race condition here, since a different credential might have already been stored by another ResourceHandle,
             // but the observable effect should be very minor, if any.
-            d->m_context->storageSession().credentialStorage().remove(challenge.protectionSpace());
+            CredentialStorage::remove(challenge.protectionSpace());
         }
 
         if (!challenge.previousFailureCount()) {
-            Credential credential = d->m_context->storageSession().credentialStorage().get(challenge.protectionSpace());
+            Credential credential = CredentialStorage::get(challenge.protectionSpace());
             if (!credential.isEmpty() && credential != d->m_initialCredential) {
                 ASSERT(credential.persistence() == CredentialPersistenceNone);
                 if (challenge.failureResponse().httpStatusCode() == 401) {
                     // Store the credential back, possibly adding it as a default for this directory.
-                    d->m_context->storageSession().credentialStorage().set(credential, challenge.protectionSpace(), challenge.failureResponse().url());
+                    CredentialStorage::set(credential, challenge.protectionSpace(), challenge.failureResponse().url());
                 }
                 [challenge.sender() useCredential:mac(credential) forAuthenticationChallenge:mac(challenge)];
                 return;
@@ -659,7 +658,7 @@ void ResourceHandle::receivedCredential(const AuthenticationChallenge& challenge
         URL urlToStore;
         if (challenge.failureResponse().httpStatusCode() == 401)
             urlToStore = challenge.failureResponse().url();
-        d->m_context->storageSession().credentialStorage().set(webCredential, ProtectionSpace([d->m_currentMacChallenge protectionSpace]), urlToStore);
+        CredentialStorage::set(webCredential, ProtectionSpace([d->m_currentMacChallenge protectionSpace]), urlToStore);
         [[d->m_currentMacChallenge sender] useCredential:mac(webCredential) forAuthenticationChallenge:d->m_currentMacChallenge];
     } else
         [[d->m_currentMacChallenge sender] useCredential:mac(credential) forAuthenticationChallenge:d->m_currentMacChallenge];
@@ -754,16 +753,13 @@ void ResourceHandle::getConnectionTimingData(NSDictionary *timingData, ResourceL
     timing.requestStart = requestStart <= 0 ? 0 : (requestStart - referenceStart) * 1000;
     timing.responseStart = responseStart <= 0 ? 0 : (responseStart - referenceStart) * 1000;
 }
-
+    
+#if USE(CFNETWORK)
+    
 void ResourceHandle::setCollectsTimingData()
 {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        [NSURLConnection _setCollectsTimingData:YES];
-    });
+    [NSURLConnection _setCollectsTimingData:YES];
 }
-
-#if USE(CFNETWORK)
     
 void ResourceHandle::getConnectionTimingData(CFURLConnectionRef connection, ResourceLoadTiming& timing)
 {

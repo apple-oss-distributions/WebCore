@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2006-2014 Apple Inc. All rights reserved.
  *
  * Portions are Copyright (C) 1998 Netscape Communications Corporation.
  *
@@ -298,8 +298,7 @@ RenderLayerCompositor& RenderLayer::compositor() const
 
 void RenderLayer::contentChanged(ContentChangeType changeType)
 {
-    // This can get called when video becomes accelerated, so the layers may change.
-    if ((changeType == CanvasChanged || changeType == VideoChanged || changeType == FullScreenChanged) && compositor().updateLayerCompositingState(*this))
+    if ((changeType == CanvasChanged || changeType == VideoChanged || changeType == FullScreenChanged || changeType == ImageChanged) && compositor().updateLayerCompositingState(*this))
         compositor().setCompositingLayersNeedRebuild();
 
     if (m_backing)
@@ -1148,6 +1147,21 @@ void RenderLayer::updateDescendantDependentFlags(HashSet<const RenderObject*>* o
         }    
         m_visibleContentStatusDirty = false; 
     }
+}
+
+// Return true if the new clipping behaviour requires layer update.
+bool RenderLayer::checkIfDescendantClippingContextNeedsUpdate(bool isClipping)
+{
+    for (RenderLayer* child = firstChild(); child; child = child->nextSibling()) {
+        RenderLayerBacking* backing = child->backing();
+        // Layer subtree needs update when new clipping is added or existing clipping is removed.
+        if (backing && (isClipping || backing->hasAncestorClippingLayer()))
+            return true;
+
+        if (child->checkIfDescendantClippingContextNeedsUpdate(isClipping))
+            return true;
+    }
+    return false;
 }
 
 void RenderLayer::dirty3DTransformedDescendantStatus()
@@ -2715,12 +2729,12 @@ IntRect RenderLayer::convertFromScrollbarToContainingView(const Scrollbar* scrol
     IntRect rect = scrollbarRect;
     rect.move(scrollbarOffset(scrollbar));
 
-    return renderer().view().frameView().convertFromRenderer(&renderer(), rect);
+    return renderer().view().frameView().convertFromRendererToContainingView(&renderer(), rect);
 }
 
 IntRect RenderLayer::convertFromContainingViewToScrollbar(const Scrollbar* scrollbar, const IntRect& parentRect) const
 {
-    IntRect rect = renderer().view().frameView().convertToRenderer(&renderer(), parentRect);
+    IntRect rect = renderer().view().frameView().convertFromContainingViewToRenderer(&renderer(), parentRect);
     rect.move(-scrollbarOffset(scrollbar));
     return rect;
 }
@@ -2729,12 +2743,12 @@ IntPoint RenderLayer::convertFromScrollbarToContainingView(const Scrollbar* scro
 {
     IntPoint point = scrollbarPoint;
     point.move(scrollbarOffset(scrollbar));
-    return renderer().view().frameView().convertFromRenderer(&renderer(), point);
+    return renderer().view().frameView().convertFromRendererToContainingView(&renderer(), point);
 }
 
 IntPoint RenderLayer::convertFromContainingViewToScrollbar(const Scrollbar* scrollbar, const IntPoint& parentPoint) const
 {
-    IntPoint point = renderer().view().frameView().convertToRenderer(&renderer(), parentPoint);
+    IntPoint point = renderer().view().frameView().convertFromContainingViewToRenderer(&renderer(), parentPoint);
     point.move(-scrollbarOffset(scrollbar));
     return point;
 }
@@ -3230,13 +3244,13 @@ void RenderLayer::updateScrollbarsAfterLayout()
         int clientWidth = box->pixelSnappedClientWidth();
         int pageStep = std::max(std::max<int>(clientWidth * Scrollbar::minFractionToStepWhenPaging(), clientWidth - Scrollbar::maxOverlapBetweenPages()), 1);
         m_hBar->setSteps(Scrollbar::pixelsPerLineStep(), pageStep);
-        m_hBar->setProportion(clientWidth, m_scrollSize.width());
+        m_hBar->setProportion(clientWidth, m_scrollSize.width().round());
     }
     if (m_vBar) {
         int clientHeight = box->pixelSnappedClientHeight();
         int pageStep = std::max(std::max<int>(clientHeight * Scrollbar::minFractionToStepWhenPaging(), clientHeight - Scrollbar::maxOverlapBetweenPages()), 1);
         m_vBar->setSteps(Scrollbar::pixelsPerLineStep(), pageStep);
-        m_vBar->setProportion(clientHeight, m_scrollSize.height());
+        m_vBar->setProportion(clientHeight, m_scrollSize.height().round());
     }
 
     updateScrollableAreaSet(hasScrollableHorizontalOverflow() || hasScrollableVerticalOverflow());
@@ -3868,35 +3882,23 @@ bool RenderLayer::setupClipPath(GraphicsContext* context, const LayerPaintingInf
 
 #if ENABLE(CSS_FILTERS)
 
-bool RenderLayer::hasFilterThatIsPainting(GraphicsContext* context, PaintLayerFlags paintFlags) const
-{
-    if (context->paintingDisabled())
-        return false;
-
-    if (paintFlags & PaintLayerPaintingOverlayScrollbars)
-        return false;
-
-    FilterInfo* filterInfo = FilterInfo::getIfExists(*this);
-    bool hasPaintedFilter = filterInfo && filterInfo->renderer() && paintsWithFilters();
-    if (!hasPaintedFilter)
-        return false;
-
-    auto filterPainter = std::make_unique<FilterEffectRendererHelper>(hasPaintedFilter);
-    if (!filterPainter->haveFilterEffect())
-        return false;
-
-    return true;
-}
-
 std::unique_ptr<FilterEffectRendererHelper> RenderLayer::setupFilters(GraphicsContext* context, LayerPaintingInfo& paintingInfo, PaintLayerFlags paintFlags, const LayoutSize& offsetFromRoot, LayoutRect& rootRelativeBounds, bool& rootRelativeBoundsComputed)
 {
-    if (!hasFilterThatIsPainting(context, paintFlags))
+    if (context->paintingDisabled())
+        return nullptr;
+
+    if (paintFlags & PaintLayerPaintingOverlayScrollbars)
         return nullptr;
 
     FilterInfo* filterInfo = FilterInfo::getIfExists(*this);
     bool hasPaintedFilter = filterInfo && filterInfo->renderer() && paintsWithFilters();
-    auto filterPainter = std::make_unique<FilterEffectRendererHelper>(hasPaintedFilter);
+    if (!hasPaintedFilter)
+        return nullptr;
 
+    auto filterPainter = std::make_unique<FilterEffectRendererHelper>(hasPaintedFilter);
+    if (!filterPainter->haveFilterEffect())
+        return nullptr;
+    
     LayoutRect filterRepaintRect = filterInfo->dirtySourceRect();
     filterRepaintRect.move(offsetFromRoot);
 
@@ -4017,16 +4019,13 @@ void RenderLayer::paintLayerContents(GraphicsContext* context, const LayerPainti
     bool needToAdjustSubpixelQuantization = setupFontSubpixelQuantization(context, didQuantizeFonts);
 
     // Apply clip-path to context.
-    LayoutSize columnAwareOffsetFromRoot = offsetFromRoot;
-    if (renderer().flowThreadContainingBlock() && (renderer().hasClipPath() || hasFilterThatIsPainting(context, paintFlags)))
-        columnAwareOffsetFromRoot = toLayoutSize(convertToLayerCoords(paintingInfo.rootLayer, LayoutPoint(), AdjustForColumns));
-    bool hasClipPath = setupClipPath(context, paintingInfo, columnAwareOffsetFromRoot, rootRelativeBounds, rootRelativeBoundsComputed);
+    bool hasClipPath = setupClipPath(context, paintingInfo, offsetFromRoot, rootRelativeBounds, rootRelativeBoundsComputed);
 
     LayerPaintingInfo localPaintingInfo(paintingInfo);
 
     GraphicsContext* transparencyLayerContext = context;
 #if ENABLE(CSS_FILTERS)
-    std::unique_ptr<FilterEffectRendererHelper> filterPainter = setupFilters(context, localPaintingInfo, paintFlags, columnAwareOffsetFromRoot, rootRelativeBounds, rootRelativeBoundsComputed);
+    std::unique_ptr<FilterEffectRendererHelper> filterPainter = setupFilters(context, localPaintingInfo, paintFlags, offsetFromRoot, rootRelativeBounds, rootRelativeBoundsComputed);
     if (filterPainter) {
         context = filterPainter->filterContext();
         if (context != transparencyLayerContext && haveTransparency) {
@@ -5363,8 +5362,7 @@ void RenderLayer::calculateRects(const ClipRectsContext& clipRectsContext, const
         // This layer establishes a clip of some kind.
         if (renderer().hasOverflowClip() && (this != clipRectsContext.rootLayer || clipRectsContext.respectOverflowClip == RespectOverflowClip)) {
             foregroundRect.intersect(toRenderBox(renderer()).overflowClipRect(toLayoutPoint(offsetFromRootLocal), namedFlowFragment, clipRectsContext.overlayScrollbarSizeRelevancy));
-            if (renderer().style().hasBorderRadius())
-                foregroundRect.setHasRadius(true);
+            foregroundRect.setHasRadius(renderer().style().hasBorderRadius());
         }
 
         if (renderer().hasClip()) {
@@ -6374,6 +6372,18 @@ void RenderLayer::updateOutOfFlowPositioned(const RenderStyle* oldStyle)
     }
 }
 
+inline bool RenderLayer::needsCompositingLayersRebuiltForClip(const RenderStyle* oldStyle, const RenderStyle* newStyle) const
+{
+    ASSERT(newStyle);
+    return oldStyle && (oldStyle->clip() != newStyle->clip() || oldStyle->hasClip() != newStyle->hasClip());
+}
+
+inline bool RenderLayer::needsCompositingLayersRebuiltForOverflow(const RenderStyle* oldStyle, const RenderStyle* newStyle) const
+{
+    ASSERT(newStyle);
+    return !isComposited() && oldStyle && (oldStyle->overflowX() != newStyle->overflowX()) && stackingContainer()->hasCompositingDescendant();
+}
+
 void RenderLayer::styleChanged(StyleDifference diff, const RenderStyle* oldStyle)
 {
     bool isNormalFlowOnly = shouldBeNormalFlowOnly();
@@ -6430,15 +6440,44 @@ void RenderLayer::styleChanged(StyleDifference diff, const RenderStyle* oldStyle
 
     updateNeedsCompositedScrolling();
 
-    compositor().layerStyleChanged(*this, oldStyle);
+    const RenderStyle& newStyle = renderer().style();
+    if (compositor().updateLayerCompositingState(*this)
+        || needsCompositingLayersRebuiltForClip(oldStyle, &newStyle)
+        || needsCompositingLayersRebuiltForOverflow(oldStyle, &newStyle))
+        compositor().setCompositingLayersNeedRebuild();
+    else if (isComposited()) {
+        // FIXME: updating geometry here is potentially harmful, because layout is not up-to-date.
+        backing()->updateGeometry();
+        backing()->updateAfterDescendents();
+    }
 
-    updateOrRemoveFilterEffectRenderer();
+    if (oldStyle) {
+        // Compositing layers keep track of whether they are clipped by any of the ancestors.
+        // When the current layer's clipping behaviour changes, we need to propagate it to the descendants.
+        const RenderStyle& style = renderer().style();
+        bool wasClipping = oldStyle->hasClip() || oldStyle->overflowX() != OVISIBLE || oldStyle->overflowY() != OVISIBLE;
+        bool isClipping = style.hasClip() || style.overflowX() != OVISIBLE || style.overflowY() != OVISIBLE;
+        if (isClipping != wasClipping) {
+            if (checkIfDescendantClippingContextNeedsUpdate(isClipping))
+                compositor().setCompositingLayersNeedRebuild();
+        }
+    }
 
 #if PLATFORM(IOS) && ENABLE(TOUCH_EVENTS)
     if (diff == StyleDifferenceRecompositeLayer || diff >= StyleDifferenceLayoutPositionedMovementOnly)
         renderer().document().dirtyTouchEventRects();
 #else
     UNUSED_PARAM(diff);
+#endif
+
+#if ENABLE(CSS_FILTERS)
+    updateOrRemoveFilterEffectRenderer();
+    bool backingDidCompositeLayers = isComposited() && backing()->canCompositeFilters();
+    if (isComposited() && backingDidCompositeLayers && !backing()->canCompositeFilters()) {
+        // The filters used to be drawn by platform code, but now the platform cannot draw them anymore.
+        // Fallback to drawing them in software.
+        setBackingNeedsRepaint();
+    }
 #endif
 }
 
@@ -6592,7 +6631,7 @@ void RenderLayer::updateOrRemoveFilterEffectRenderer()
         // Don't delete the whole filter info here, because we might use it
         // for loading SVG reference filter files.
         if (FilterInfo* filterInfo = FilterInfo::getIfExists(*this))
-            filterInfo->setRenderer(nullptr);
+            filterInfo->setRenderer(0);
 
         // Early-return only if we *don't* have reference filters.
         // For reference filters, we still want the FilterEffect graph built
@@ -6619,7 +6658,7 @@ void RenderLayer::updateOrRemoveFilterEffectRenderer()
     // If the filter fails to build, remove it from the layer. It will still attempt to
     // go through regular processing (e.g. compositing), but never apply anything.
     if (!filterInfo.renderer()->build(&renderer(), renderer().style().filter(), FilterProperty))
-        filterInfo.setRenderer(nullptr);
+        filterInfo.setRenderer(0);
 }
 
 void RenderLayer::filterNeedsRepaint()

@@ -35,13 +35,10 @@
 #include "CachedResourceRequest.h"
 #include "CachedScript.h"
 #include "CachedXSLStyleSheet.h"
-#include "Chrome.h"
-#include "ChromeClient.h"
 #include "ContentSecurityPolicy.h"
 #include "DOMWindow.h"
 #include "Document.h"
 #include "DocumentLoader.h"
-#include "FeatureCounter.h"
 #include "Frame.h"
 #include "FrameLoader.h"
 #include "FrameLoaderClient.h"
@@ -214,7 +211,7 @@ CachedResourceHandle<CachedCSSStyleSheet> CachedResourceLoader::requestUserCSSSt
     memoryCache()->add(userSheet.get());
     // FIXME: loadResource calls setOwningCachedResourceLoader() if the resource couldn't be added to cache. Does this function need to call it, too?
 
-    userSheet->load(this, ResourceLoaderOptions(DoNotSendCallbacks, SniffContent, BufferData, AllowStoredCredentials, AskClientForAllCredentials, SkipSecurityCheck, UseDefaultOriginRestrictionsForType, ContentSecurityPolicyImposition::SkipPolicyCheck));
+    userSheet->load(this, ResourceLoaderOptions(DoNotSendCallbacks, SniffContent, BufferData, AllowStoredCredentials, AskClientForAllCredentials, SkipSecurityCheck, UseDefaultOriginRestrictionsForType));
     
     return userSheet;
 }
@@ -304,7 +301,8 @@ bool CachedResourceLoader::canRequest(CachedResource::Type type, const URL& url,
         return 0;
     }
 
-    bool skipContentSecurityPolicyCheck = options.contentSecurityPolicyImposition() == ContentSecurityPolicyImposition::SkipPolicyCheck;
+    // FIXME: Convert this to check the isolated world's Content Security Policy once webkit.org/b/104520 is solved.
+    bool shouldBypassMainWorldContentSecurityPolicy = (frame() && frame()->script().shouldBypassMainWorldContentSecurityPolicy());
 
     // Some types of resources can be loaded only from the same origin.  Other
     // types of resources, like Images, Scripts, and CSS, can be loaded from
@@ -342,27 +340,27 @@ bool CachedResourceLoader::canRequest(CachedResource::Type type, const URL& url,
     switch (type) {
 #if ENABLE(XSLT)
     case CachedResource::XSLStyleSheet:
-        if (!m_document->contentSecurityPolicy()->allowScriptFromSource(url, skipContentSecurityPolicyCheck))
+        if (!shouldBypassMainWorldContentSecurityPolicy && !m_document->contentSecurityPolicy()->allowScriptFromSource(url))
             return false;
         break;
 #endif
     case CachedResource::Script:
-        if (!m_document->contentSecurityPolicy()->allowScriptFromSource(url, skipContentSecurityPolicyCheck))
+        if (!shouldBypassMainWorldContentSecurityPolicy && !m_document->contentSecurityPolicy()->allowScriptFromSource(url))
             return false;
         if (frame() && !frame()->settings().isScriptEnabled())
             return false;
         break;
     case CachedResource::CSSStyleSheet:
-        if (!m_document->contentSecurityPolicy()->allowStyleFromSource(url, skipContentSecurityPolicyCheck))
+        if (!shouldBypassMainWorldContentSecurityPolicy && !m_document->contentSecurityPolicy()->allowStyleFromSource(url))
             return false;
         break;
     case CachedResource::SVGDocumentResource:
     case CachedResource::ImageResource:
-        if (!m_document->contentSecurityPolicy()->allowImageFromSource(url, skipContentSecurityPolicyCheck))
+        if (!shouldBypassMainWorldContentSecurityPolicy && !m_document->contentSecurityPolicy()->allowImageFromSource(url))
             return false;
         break;
     case CachedResource::FontResource: {
-        if (!m_document->contentSecurityPolicy()->allowFontFromSource(url, skipContentSecurityPolicyCheck))
+        if (!shouldBypassMainWorldContentSecurityPolicy && !m_document->contentSecurityPolicy()->allowFontFromSource(url))
             return false;
         break;
     }
@@ -375,16 +373,10 @@ bool CachedResourceLoader::canRequest(CachedResource::Type type, const URL& url,
         break;
 #if ENABLE(VIDEO_TRACK)
     case CachedResource::TextTrackResource:
-        if (!m_document->contentSecurityPolicy()->allowMediaFromSource(url, skipContentSecurityPolicyCheck))
+        if (!shouldBypassMainWorldContentSecurityPolicy && !m_document->contentSecurityPolicy()->allowMediaFromSource(url))
             return false;
         break;
 #endif
-    }
-
-    // SVG Images have unique security rules that prevent all subresource requests except for data urls.
-    if (type != CachedResource::MainResource && frame() && frame()->page()) {
-        if (frame()->page()->chrome().client().isSVGImageChromeClient() && !url.protocolIsData())
-            return false;
     }
 
     // Last of all, check for insecure content. We do this last so that when
@@ -452,28 +444,20 @@ CachedResourceHandle<CachedResource> CachedResourceLoader::requestResource(Cache
 
     resource = memoryCache()->resourceForRequest(request.resourceRequest(), sessionID());
 
-    Page* page = frame() ? frame()->page() : nullptr;
-    FEATURE_COUNTER_INCREMENT_KEY(page, resource ? FeatureCounterResourceRequestInMemoryCacheKey : FeatureCounterResourceRequestNotInMemoryCacheKey);
-
     const RevalidationPolicy policy = determineRevalidationPolicy(type, request.mutableResourceRequest(), request.forPreload(), resource.get(), request.defer());
     switch (policy) {
     case Reload:
         memoryCache()->remove(resource.get());
         FALLTHROUGH;
     case Load:
-        if (resource)
-            FEATURE_COUNTER_INCREMENT_KEY(page, FeatureCounterResourceRequestInMemoryCacheUnusedKey);
         resource = loadResource(type, request);
         break;
     case Revalidate:
-        if (resource)
-            FEATURE_COUNTER_INCREMENT_KEY(page, FeatureCounterResourceRequestInMemoryCacheRevalidatingKey);
         resource = revalidateResource(request, resource.get());
         break;
     case Use:
         if (!shouldContinueAfterNotifyingLoadedFromMemoryCache(request, resource.get()))
             return 0;
-        FEATURE_COUNTER_INCREMENT_KEY(page, FeatureCounterResourceRequestInMemoryCacheUsedKey);
         memoryCache()->resourceAccessed(resource.get());
         break;
     }
@@ -575,12 +559,9 @@ CachedResourceLoader::RevalidationPolicy CachedResourceLoader::determineRevalida
     if (forPreload && existingResource->isPreloaded())
         return Use;
 
-    Page* page = frame() ? frame()->page() : nullptr;
-
     // If the same URL has been loaded as a different type, we need to reload.
     if (existingResource->type() != type) {
         LOG(ResourceLoading, "CachedResourceLoader::determineRevalidationPolicy reloading due to type mismatch.");
-        FEATURE_COUNTER_INCREMENT_KEY(page, FeatureCounterResourceRequestInMemoryCacheUnusedReasonTypeMismatchKey);
         return Reload;
     }
 
@@ -610,7 +591,6 @@ CachedResourceLoader::RevalidationPolicy CachedResourceLoader::determineRevalida
     // Don't reuse resources with Cache-control: no-store.
     if (existingResource->response().cacheControlContainsNoStore()) {
         LOG(ResourceLoading, "CachedResourceLoader::determineRevalidationPolicy reloading due to Cache-control: no-store.");
-        FEATURE_COUNTER_INCREMENT_KEY(page, FeatureCounterResourceRequestInMemoryCacheUnusedReasonNoStoreKey);
         return Reload;
     }
 
@@ -622,7 +602,6 @@ CachedResourceLoader::RevalidationPolicy CachedResourceLoader::determineRevalida
     // client's requests are made without CORS and some with.
     if (existingResource->resourceRequest().allowCookies() != request.allowCookies()) {
         LOG(ResourceLoading, "CachedResourceLoader::determineRevalidationPolicy reloading due to difference in credentials settings.");
-        FEATURE_COUNTER_INCREMENT_KEY(page, FeatureCounterResourceRequestInMemoryCacheUnusedReasonCredentialSettingsKey);
         return Reload;
     }
 
@@ -633,14 +612,12 @@ CachedResourceLoader::RevalidationPolicy CachedResourceLoader::determineRevalida
     // CachePolicyReload always reloads
     if (cachePolicy(type) == CachePolicyReload) {
         LOG(ResourceLoading, "CachedResourceLoader::determineRevalidationPolicy reloading due to CachePolicyReload.");
-        FEATURE_COUNTER_INCREMENT_KEY(page, FeatureCounterResourceRequestInMemoryCacheUnusedReasonReloadKey);
         return Reload;
     }
     
     // We'll try to reload the resource if it failed last time.
     if (existingResource->errorOccurred()) {
         LOG(ResourceLoading, "CachedResourceLoader::determineRevalidationPolicye reloading due to resource being in the error state");
-        FEATURE_COUNTER_INCREMENT_KEY(page, FeatureCounterResourceRequestInMemoryCacheUnusedReasonErrorKey);
         return Reload;
     }
     
@@ -649,14 +626,13 @@ CachedResourceLoader::RevalidationPolicy CachedResourceLoader::determineRevalida
         return Use;
 
     // Check if the cache headers requires us to revalidate (cache expiration for example).
-    if (existingResource->mustRevalidateDueToCacheHeaders(*this, cachePolicy(type))) {
+    if (existingResource->mustRevalidateDueToCacheHeaders(cachePolicy(type))) {
         // See if the resource has usable ETag or Last-modified headers.
         if (existingResource->canUseCacheValidator())
             return Revalidate;
         
         // No, must reload.
-        LOG(ResourceLoading, "CachedResourceLoader::determineRevalidationPolicy reloading due to missing cache validators.");
-        FEATURE_COUNTER_INCREMENT_KEY(page, FeatureCounterResourceRequestInMemoryCacheUnusedReasonMustRevalidateNoValidatorKey);
+        LOG(ResourceLoading, "CachedResourceLoader::determineRevalidationPolicy reloading due to missing cache validators.");            
         return Reload;
     }
 
@@ -992,7 +968,7 @@ void CachedResourceLoader::printPreloadStats()
 
 const ResourceLoaderOptions& CachedResourceLoader::defaultCachedResourceOptions()
 {
-    static ResourceLoaderOptions options(SendCallbacks, SniffContent, BufferData, AllowStoredCredentials, AskClientForAllCredentials, DoSecurityCheck, UseDefaultOriginRestrictionsForType, ContentSecurityPolicyImposition::DoPolicyCheck);
+    static ResourceLoaderOptions options(SendCallbacks, SniffContent, BufferData, AllowStoredCredentials, AskClientForAllCredentials, DoSecurityCheck, UseDefaultOriginRestrictionsForType);
     return options;
 }
 

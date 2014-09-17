@@ -63,15 +63,6 @@ bool ResourceHandleCFURLConnectionDelegateWithOperationQueue::hasHandle() const
     return !!m_handle;
 }
 
-void ResourceHandleCFURLConnectionDelegateWithOperationQueue::releaseHandle()
-{
-    ResourceHandleCFURLConnectionDelegate::releaseHandle();
-    m_requestResult = nullptr;
-    m_cachedResponseResult = nullptr;
-    m_boolResult = false;
-    dispatch_semaphore_signal(m_semaphore);
-}
-
 void ResourceHandleCFURLConnectionDelegateWithOperationQueue::setupRequest(CFMutableURLRequestRef request)
 {
 #if PLATFORM(IOS)
@@ -101,8 +92,6 @@ CFURLRequestRef ResourceHandleCFURLConnectionDelegateWithOperationQueue::willSen
 
     ASSERT(!isMainThread());
 
-    // FIXME: The block implicitly copies protector object, which is wasteful. We should just call ref(),
-    // capture "this" by pointer value, and use a C++ lambda to prevent other unintentional capturing.
     RefPtr<ResourceHandleCFURLConnectionDelegateWithOperationQueue> protector(this);
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -127,8 +116,6 @@ CFURLRequestRef ResourceHandleCFURLConnectionDelegateWithOperationQueue::willSen
 
 void ResourceHandleCFURLConnectionDelegateWithOperationQueue::didReceiveResponse(CFURLConnectionRef connection, CFURLResponseRef cfResponse)
 {
-    // FIXME: The block implicitly copies protector object, which is wasteful. We should just call ref(),
-    // capture "this" by pointer value, and use a C++ lambda to prevent other unintentional capturing.
     RefPtr<ResourceHandleCFURLConnectionDelegateWithOperationQueue> protector(this);
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -165,8 +152,6 @@ void ResourceHandleCFURLConnectionDelegateWithOperationQueue::didReceiveResponse
 
 void ResourceHandleCFURLConnectionDelegateWithOperationQueue::didReceiveData(CFDataRef data, CFIndex originalLength)
 {
-    // FIXME: The block implicitly copies protector object, which is wasteful. We should just call ref(),
-    // capture "this" by pointer value, and use a C++ lambda to prevent other unintentional capturing.
     RefPtr<ResourceHandleCFURLConnectionDelegateWithOperationQueue> protector(this);
     CFRetain(data);
 
@@ -183,8 +168,6 @@ void ResourceHandleCFURLConnectionDelegateWithOperationQueue::didReceiveData(CFD
 
 void ResourceHandleCFURLConnectionDelegateWithOperationQueue::didFinishLoading()
 {
-    // FIXME: The block implicitly copies protector object, which is wasteful. We should just call ref(),
-    // capture "this" by pointer value, and use a C++ lambda to prevent other unintentional capturing.
     RefPtr<ResourceHandleCFURLConnectionDelegateWithOperationQueue> protector(this);
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!protector->hasHandle())
@@ -198,8 +181,6 @@ void ResourceHandleCFURLConnectionDelegateWithOperationQueue::didFinishLoading()
 
 void ResourceHandleCFURLConnectionDelegateWithOperationQueue::didFail(CFErrorRef error)
 {
-    // FIXME: The block implicitly copies protector object, which is wasteful. We should just call ref(),
-    // capture "this" by pointer value, and use a C++ lambda to prevent other unintentional capturing.
     RefPtr<ResourceHandleCFURLConnectionDelegateWithOperationQueue> protector(this);
     CFRetain(error);
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -215,8 +196,6 @@ void ResourceHandleCFURLConnectionDelegateWithOperationQueue::didFail(CFErrorRef
 
 CFCachedURLResponseRef ResourceHandleCFURLConnectionDelegateWithOperationQueue::willCacheResponse(CFCachedURLResponseRef cachedResponse)
 {
-    // FIXME: The block implicitly copies protector object, which is wasteful. We should just call ref(),
-    // capture "this" by pointer value, and use a C++ lambda to prevent other unintentional capturing.
     RefPtr<ResourceHandleCFURLConnectionDelegateWithOperationQueue> protector(this);
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -235,8 +214,6 @@ CFCachedURLResponseRef ResourceHandleCFURLConnectionDelegateWithOperationQueue::
 
 void ResourceHandleCFURLConnectionDelegateWithOperationQueue::didReceiveChallenge(CFURLAuthChallengeRef challenge)
 {
-    // FIXME: The block implicitly copies protector object, which is wasteful. We should just call ref(),
-    // capture "this" by pointer value, and use a C++ lambda to prevent other unintentional capturing.
     RefPtr<ResourceHandleCFURLConnectionDelegateWithOperationQueue> protector(this);
     CFRetain(challenge);
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -252,8 +229,6 @@ void ResourceHandleCFURLConnectionDelegateWithOperationQueue::didReceiveChalleng
 
 void ResourceHandleCFURLConnectionDelegateWithOperationQueue::didSendBodyData(CFIndex totalBytesWritten, CFIndex totalBytesExpectedToWrite)
 {
-    // FIXME: The block implicitly copies protector object, which is wasteful. We should just call ref(),
-    // capture "this" by pointer value, and use a C++ lambda to prevent other unintentional capturing.
     RefPtr<ResourceHandleCFURLConnectionDelegateWithOperationQueue> protector(this);
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!protector->hasHandle())
@@ -273,8 +248,6 @@ Boolean ResourceHandleCFURLConnectionDelegateWithOperationQueue::shouldUseCreden
 #if USE(PROTECTION_SPACE_AUTH_CALLBACK)
 Boolean ResourceHandleCFURLConnectionDelegateWithOperationQueue::canRespondToProtectionSpace(CFURLProtectionSpaceRef protectionSpace)
 {
-    // FIXME: The block implicitly copies protector object, which is wasteful. We should just call ref(),
-    // capture "this" by pointer value, and use a C++ lambda to prevent other unintentional capturing.
     RefPtr<ResourceHandleCFURLConnectionDelegateWithOperationQueue> protector(this);
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -303,8 +276,6 @@ Boolean ResourceHandleCFURLConnectionDelegateWithOperationQueue::canRespondToPro
 #if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
 void ResourceHandleCFURLConnectionDelegateWithOperationQueue::didReceiveDataArray(CFArrayRef dataArray)
 {
-    // FIXME: The block implicitly copies protector object, which is wasteful. We should just call ref(),
-    // capture "this" by pointer value, and use a C++ lambda to prevent other unintentional capturing.
     RefPtr<ResourceHandleCFURLConnectionDelegateWithOperationQueue> protector(this);
     CFRetain(dataArray);
     dispatch_async(dispatch_get_main_queue(), ^{

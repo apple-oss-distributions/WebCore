@@ -104,15 +104,6 @@ bool EventHandler::wheelEvent(WebEvent *event)
 }
 
 #if ENABLE(IOS_TOUCH_EVENTS)
-
-bool EventHandler::dispatchSimulatedTouchEvent(IntPoint location)
-{
-    bool handled = handleTouchEvent(PlatformEventFactory::createPlatformSimulatedTouchEvent(PlatformEvent::TouchStart, location));
-    if (handled)
-        handleTouchEvent(PlatformEventFactory::createPlatformSimulatedTouchEvent(PlatformEvent::TouchEnd, location));
-    return handled;
-}
-    
 void EventHandler::touchEvent(WebEvent *event)
 {
     CurrentEventScope scope(event);

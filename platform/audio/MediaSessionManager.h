@@ -75,8 +75,7 @@ public:
         InlineVideoPlaybackRestricted = 1 << 1,
         MetadataPreloadingNotPermitted = 1 << 2,
         AutoPreloadingNotPermitted = 1 << 3,
-        BackgroundProcessPlaybackRestricted = 1 << 4,
-        BackgroundTabPlaybackRestricted = 1 << 5,
+        BackgroundPlaybackNotPermitted = 1 << 4,
     };
     typedef unsigned SessionRestrictions;
     

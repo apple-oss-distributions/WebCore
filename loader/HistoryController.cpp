@@ -234,10 +234,10 @@ void HistoryController::restoreDocumentState()
 void HistoryController::invalidateCurrentItemCachedPage()
 {
     // When we are pre-commit, the currentItem is where any page cache data resides.
-    if (!pageCache()->get(currentItem(), m_frame.page()))
+    if (!pageCache()->get(currentItem()))
         return;
 
-    std::unique_ptr<CachedPage> cachedPage = pageCache()->take(currentItem(), m_frame.page());
+    std::unique_ptr<CachedPage> cachedPage = pageCache()->take(currentItem());
 
     // FIXME: This is a grotesque hack to fix <rdar://problem/4059059> Crash in RenderFlow::detach
     // Somehow the PageState object is not properly updated, and is holding onto a stale document.
@@ -595,6 +595,13 @@ bool HistoryController::currentItemShouldBeReplaced() const
     //   and that was the about:blank Document created when the browsing context
     //   was created, then the navigation must be done with replacement enabled."
     return m_currentItem && !m_previousItem && equalIgnoringCase(m_currentItem->urlString(), blankURL());
+}
+
+void HistoryController::clearPreviousItem()
+{
+    m_previousItem = nullptr;
+    for (Frame* child = m_frame.tree().firstChild(); child; child = child->tree().nextSibling())
+        child->loader().history().clearPreviousItem();
 }
 
 void HistoryController::setProvisionalItem(HistoryItem* item)

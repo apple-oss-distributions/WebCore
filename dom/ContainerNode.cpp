@@ -335,11 +335,6 @@ void ContainerNode::insertBeforeCommon(Node& nextChild, Node& newChild)
 
 void ContainerNode::notifyChildInserted(Node& child, ChildChangeSource source)
 {
-    ChildListMutationScope(*this).childAdded(child);
-
-    NodeVector postInsertionNotificationTargets;
-    ChildNodeInsertionNotifier(*this).notify(child, postInsertionNotificationTargets);
-
     ChildChange change;
     change.type = child.isElementNode() ? ElementInserted : child.isTextNode() ? TextInserted : NonContentsChildChanged;
     change.previousSiblingElement = ElementTraversal::previousSibling(&child);
@@ -347,15 +342,10 @@ void ContainerNode::notifyChildInserted(Node& child, ChildChangeSource source)
     change.source = source;
 
     childrenChanged(change);
-
-    for (auto& target : postInsertionNotificationTargets)
-        target->didNotifySubtreeInsertions(this);
 }
 
 void ContainerNode::notifyChildRemoved(Node& child, Node* previousSibling, Node* nextSibling, ChildChangeSource source)
 {
-    ChildNodeRemovalNotifier(*this).notify(child);
-
     ChildChange change;
     change.type = child.isElementNode() ? ElementRemoved : child.isTextNode() ? TextRemoved : NonContentsChildChanged;
     change.previousSiblingElement = (!previousSibling || previousSibling->isElementNode()) ? toElement(previousSibling) : ElementTraversal::previousSibling(previousSibling);
@@ -385,7 +375,11 @@ void ContainerNode::parserInsertBefore(PassRefPtr<Node> newChild, Node* nextChil
 
     newChild->updateAncestorConnectedSubframeCountForInsertion();
 
+    ChildListMutationScope(*this).childAdded(*newChild);
+
     notifyChildInserted(*newChild, ChildChangeSourceParser);
+
+    ChildNodeInsertionNotifier(*this).notify(*newChild);
 
     newChild->setNeedsStyleRecalc(ReconstructRenderTree);
 }
@@ -571,6 +565,8 @@ bool ContainerNode::removeChild(Node* oldChild, ExceptionCode& ec)
         removeBetween(prev, next, child.get());
 
         notifyChildRemoved(child.get(), prev, next, ChildChangeSourceAPI);
+
+        ChildNodeRemovalNotifier(*this).notify(child.get());
     }
 
 
@@ -627,6 +623,8 @@ void ContainerNode::parserRemoveChild(Node& oldChild)
     removeBetween(prev, next, oldChild);
 
     notifyChildRemoved(oldChild, prev, next, ChildChangeSourceParser);
+
+    ChildNodeRemovalNotifier(*this).notify(oldChild);
 }
 
 // this differs from other remove functions because it forcibly removes all the children,
@@ -650,18 +648,23 @@ void ContainerNode::removeChildren()
     // and remove... e.g. stop loading frames, fire unload events.
     willRemoveChildren(*this);
 
+    NodeVector removedChildren;
     {
         WidgetHierarchyUpdatesSuspensionScope suspendWidgetHierarchyUpdates;
         {
             NoEventDispatchAssertion assertNoEventDispatch;
+            removedChildren.reserveInitialCapacity(childNodeCount());
             while (RefPtr<Node> n = m_firstChild) {
+                removedChildren.append(*m_firstChild);
                 removeBetween(0, m_firstChild->nextSibling(), *m_firstChild);
-                ChildNodeRemovalNotifier(*this).notify(*n);
             }
         }
 
         ChildChange change = { AllChildrenRemoved, nullptr, nullptr, ChildChangeSourceAPI };
         childrenChanged(change);
+        
+        for (size_t i = 0; i < removedChildren.size(); ++i)
+            ChildNodeRemovalNotifier(*this).notify(removedChildren[i].get());
     }
 
     if (document().svgExtensions()) {
@@ -751,7 +754,11 @@ void ContainerNode::parserAppendChild(PassRefPtr<Node> newChild)
 
     newChild->updateAncestorConnectedSubframeCountForInsertion();
 
+    ChildListMutationScope(*this).childAdded(*newChild);
+
     notifyChildInserted(*newChild, ChildChangeSourceParser);
+
+    ChildNodeInsertionNotifier(*this).notify(*newChild);
 
     newChild->setNeedsStyleRecalc(ReconstructRenderTree);
 }
@@ -794,6 +801,134 @@ void ContainerNode::cloneChildNodes(ContainerNode *clone)
 #else
     cloneChildNodesAvoidingDeleteButton(this, clone, 0);
 #endif
+}
+
+bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
+{
+    if (!renderer())
+        return false;
+    // What is this code really trying to do?
+    RenderObject* o = renderer();
+    RenderObject* p = o;
+
+    if (!o->isInline() || o->isReplaced()) {
+        point = o->localToAbsolute(FloatPoint(), UseTransforms);
+        return true;
+    }
+
+    // find the next text/image child, to get a position
+    while (o) {
+        p = o;
+        if (RenderObject* child = o->firstChildSlow())
+            o = child;
+        else if (o->nextSibling())
+            o = o->nextSibling();
+        else {
+            RenderObject* next = 0;
+            while (!next && o->parent()) {
+                o = o->parent();
+                next = o->nextSibling();
+            }
+            o = next;
+
+            if (!o)
+                break;
+        }
+        ASSERT(o);
+
+        if (!o->isInline() || o->isReplaced()) {
+            point = o->localToAbsolute(FloatPoint(), UseTransforms);
+            return true;
+        }
+
+        if (p->node() && p->node() == this && o->isText() && !toRenderText(o)->firstTextBox()) {
+            // do nothing - skip unrendered whitespace that is a child or next sibling of the anchor
+        } else if (o->isText() || o->isReplaced()) {
+            point = FloatPoint();
+            if (o->isText() && toRenderText(o)->firstTextBox()) {
+                point.move(toRenderText(o)->linesBoundingBox().x(), toRenderText(o)->firstTextBox()->root().lineTop());
+            } else if (o->isBox()) {
+                RenderBox* box = toRenderBox(o);
+                point.moveBy(box->location());
+            }
+            point = o->container()->localToAbsolute(point, UseTransforms);
+            return true;
+        }
+    }
+    
+    // If the target doesn't have any children or siblings that could be used to calculate the scroll position, we must be
+    // at the end of the document. Scroll to the bottom. FIXME: who said anything about scrolling?
+    if (!o && document().view()) {
+        point = FloatPoint(0, document().view()->contentsHeight());
+        return true;
+    }
+    return false;
+}
+
+bool ContainerNode::getLowerRightCorner(FloatPoint& point) const
+{
+    if (!renderer())
+        return false;
+
+    RenderObject* o = renderer();
+    if (!o->isInline() || o->isReplaced()) {
+        RenderBox* box = toRenderBox(o);
+        point = o->localToAbsolute(LayoutPoint(box->size()), UseTransforms);
+        return true;
+    }
+
+    // find the last text/image child, to get a position
+    while (o) {
+        if (RenderObject* child = o->lastChildSlow())
+            o = child;
+        else if (o->previousSibling())
+            o = o->previousSibling();
+        else {
+            RenderObject* prev = 0;
+            while (!prev) {
+                o = o->parent();
+                if (!o)
+                    return false;
+                prev = o->previousSibling();
+            }
+            o = prev;
+        }
+        ASSERT(o);
+        if (o->isText() || o->isReplaced()) {
+            point = FloatPoint();
+            if (o->isText()) {
+                RenderText* text = toRenderText(o);
+                IntRect linesBox = text->linesBoundingBox();
+                if (!linesBox.maxX() && !linesBox.maxY())
+                    continue;
+                point.moveBy(linesBox.maxXMaxYCorner());
+            } else {
+                RenderBox* box = toRenderBox(o);
+                point.moveBy(box->frameRect().maxXMaxYCorner());
+            }
+            point = o->container()->localToAbsolute(point, UseTransforms);
+            return true;
+        }
+    }
+    return true;
+}
+
+LayoutRect ContainerNode::boundingBox() const
+{
+    FloatPoint upperLeft, lowerRight;
+    bool foundUpperLeft = getUpperLeftCorner(upperLeft);
+    bool foundLowerRight = getLowerRightCorner(lowerRight);
+    
+    // If we've found one corner, but not the other,
+    // then we should just return a point at the corner that we did find.
+    if (foundUpperLeft != foundLowerRight) {
+        if (foundUpperLeft)
+            lowerRight = upperLeft;
+        else
+            upperLeft = lowerRight;
+    } 
+
+    return enclosingLayoutRect(FloatRect(upperLeft, lowerRight.expandedTo(upperLeft) - upperLeft));
 }
 
 unsigned ContainerNode::childNodeCount() const
@@ -864,7 +999,11 @@ void ContainerNode::updateTreeAfterInsertion(Node& child)
 {
     ASSERT(child.refCount());
 
+    ChildListMutationScope(*this).childAdded(child);
+
     notifyChildInserted(child, ChildChangeSourceAPI);
+
+    ChildNodeInsertionNotifier(*this).notify(child);
 
     child.setNeedsStyleRecalc(ReconstructRenderTree);
 

@@ -425,11 +425,6 @@ static id<OrientationProvider> gOrientationProvider;
     _tileCache->setTilesOpaque(opaque);
 }
 
-- (void)setEntireWindowVisibleForTesting:(BOOL)entireWindowVisible
-{
-    _entireWindowVisibleForTesting = entireWindowVisible;
-}
-
 - (CGRect)_visibleRectRespectingMasksToBounds:(BOOL)respectsMasksToBounds
 {
     if (!CGRectIsNull(_frozenVisibleRect))
@@ -437,8 +432,6 @@ static id<OrientationProvider> gOrientationProvider;
 
     CALayer* layer = _hostLayer;
     CGRect bounds = [layer bounds];
-    if (_entireWindowVisibleForTesting)
-        return bounds;
     CGRect rect = bounds;
     CALayer* superlayer = [layer superlayer];
 

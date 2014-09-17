@@ -47,7 +47,6 @@
 #include "Element.h"
 #include "EventHandler.h"
 #include "ExceptionCode.h"
-#include "FontCache.h"
 #include "FormController.h"
 #include "FrameLoader.h"
 #include "FrameView.h"
@@ -76,12 +75,10 @@
 #include "MemoryCache.h"
 #include "MemoryInfo.h"
 #include "Page.h"
-#include "PageCache.h"
 #include "PrintContext.h"
 #include "PseudoElement.h"
 #include "Range.h"
 #include "RenderEmbeddedObject.h"
-#include "RenderLayerCompositor.h"
 #include "RenderMenuList.h"
 #include "RenderTreeAsText.h"
 #include "RenderView.h"
@@ -370,16 +367,6 @@ bool Internals::isLoadingFromMemoryCache(const String& url)
 }
 
 
-void Internals::clearPageCache()
-{
-    pageCache()->pruneToCapacityNow(0, PruningReason::None);
-}
-
-unsigned Internals::pageCacheSize() const
-{
-    return pageCache()->pageCount();
-}
-
 Node* Internals::treeScopeRootNode(Node* node, ExceptionCode& ec)
 {
     if (!node) {
@@ -537,15 +524,6 @@ String Internals::elementRenderTreeAsText(Element* element, ExceptionCode& ec)
     return representation;
 }
 
-bool Internals::hasPausedImageAnimations(Element* element, ExceptionCode& ec)
-{
-    if (!element) {
-        ec = INVALID_ACCESS_ERR;
-        return false;
-    }
-    return element->renderer() && element->renderer()->hasPausedImageAnimations();
-}
-
 PassRefPtr<CSSComputedStyleDeclaration> Internals::computedStyleIncludingVisitedInfo(Node* node, ExceptionCode& ec) const
 {
     if (!node) {
@@ -568,15 +546,6 @@ Node* Internals::ensureShadowRoot(Element* host, ExceptionCode& ec)
         return shadowRoot;
 
     return host->createShadowRoot(ec).get();
-}
-
-Node* Internals::ensureUserAgentShadowRoot(Element* host, ExceptionCode& ec)
-{
-    if (!host) {
-        ec = INVALID_ACCESS_ERR;
-        return nullptr;
-    }
-    return &host->ensureUserAgentShadowRoot();
 }
 
 Node* Internals::createShadowRoot(Element* host, ExceptionCode& ec)
@@ -842,11 +811,6 @@ void Internals::setMarkedTextMatchesAreHighlighted(bool flag, ExceptionCode& ec)
         return;
     }
     document->frame()->editor().setMarkedTextMatchesAreHighlighted(flag);
-}
-
-void Internals::invalidateFontCache()
-{
-    fontCache().invalidate();
 }
 
 void Internals::setScrollViewPosition(long x, long y, ExceptionCode& ec)
@@ -1954,28 +1918,6 @@ void Internals::stopTrackingRepaints(ExceptionCode& ec)
     frameView->setTracksRepaints(false);
 }
 
-void Internals::startTrackingLayerFlushes(ExceptionCode& ec)
-{
-    Document* document = contextDocument();
-    if (!document || !document->renderView()) {
-        ec = INVALID_ACCESS_ERR;
-        return;
-    }
-
-    document->renderView()->compositor().startTrackingLayerFlushes();
-}
-
-unsigned long Internals::layerFlushCount(ExceptionCode& ec)
-{
-    Document* document = contextDocument();
-    if (!document || !document->renderView()) {
-        ec = INVALID_ACCESS_ERR;
-        return 0;
-    }
-
-    return document->renderView()->compositor().layerFlushCount();
-}
-
 void Internals::updateLayoutIgnorePendingStylesheetsAndRunPostLayoutTasks(ExceptionCode& ec)
 {
     updateLayoutIgnorePendingStylesheetsAndRunPostLayoutTasks(nullptr, ec);
@@ -2377,10 +2319,8 @@ void Internals::setMediaSessionRestrictions(const String& mediaTypeString, const
         restrictions += MediaSessionManager::MetadataPreloadingNotPermitted;
     if (equalIgnoringCase(restrictionsString, "AutoPreloadingNotPermitted"))
         restrictions += MediaSessionManager::AutoPreloadingNotPermitted;
-    if (equalIgnoringCase(restrictionsString, "BackgroundProcessPlaybackRestricted"))
-        restrictions += MediaSessionManager::BackgroundProcessPlaybackRestricted;
-    if (equalIgnoringCase(restrictionsString, "BackgroundTabPlaybackRestricted"))
-        restrictions += MediaSessionManager::BackgroundTabPlaybackRestricted;
+    if (equalIgnoringCase(restrictionsString, "BackgroundPlaybackNotPermitted"))
+        restrictions += MediaSessionManager::BackgroundPlaybackNotPermitted;
 
     MediaSessionManager::sharedManager().addRestriction(mediaType, restrictions);
 }

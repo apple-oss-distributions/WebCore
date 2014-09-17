@@ -215,7 +215,6 @@ void ProcessingInstruction::setXSLStyleSheet(const String& href, const URL& base
 {
     ASSERT(m_isXSL);
     m_sheet = XSLStyleSheet::create(this, href, baseURL);
-    Ref<Document> protect(document());
     parseStyleSheet(sheet);
 }
 #endif

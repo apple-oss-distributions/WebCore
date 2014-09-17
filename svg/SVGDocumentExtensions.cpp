@@ -379,10 +379,6 @@ void SVGDocumentExtensions::rebuildAllElementReferencesForTarget(SVGElement& ref
 void SVGDocumentExtensions::removeAllElementReferencesForTarget(SVGElement* referencedElement)
 {
     m_elementDependencies.remove(referencedElement);
-
-    size_t position = m_rebuildElements.find(referencedElement);
-    if (position != notFound)
-        m_rebuildElements.remove(position);
 }
 
 #if ENABLE(SVG_FONTS)

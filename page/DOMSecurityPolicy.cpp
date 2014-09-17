@@ -47,17 +47,16 @@ bool isPolicyActiveInContext(ScriptExecutionContext* context)
     return context->contentSecurityPolicy()->isActive();
 }
 
-template<bool (ContentSecurityPolicy::*allowWithType)(const String&, const String&, const URL&, bool overrideContentSecurityPolicy, ContentSecurityPolicy::ReportingStatus) const>
+template<bool (ContentSecurityPolicy::*allowWithType)(const String&, const String&, const URL&, ContentSecurityPolicy::ReportingStatus) const>
 bool isAllowedWithType(ScriptExecutionContext* context, const String& type)
 {
     if (!isPolicyActiveInContext(context))
         return true;
 
-    bool overrideContentSecurityPolicy = false;
-    return (context->contentSecurityPolicy()->*allowWithType)(type, type, URL(), overrideContentSecurityPolicy, ContentSecurityPolicy::SuppressReport);
+    return (context->contentSecurityPolicy()->*allowWithType)(type, type, URL(), ContentSecurityPolicy::SuppressReport);
 }
 
-template<bool (ContentSecurityPolicy::*allowWithURL)(const URL&, bool overrideContentSecurityPolicy, ContentSecurityPolicy::ReportingStatus) const>
+template<bool (ContentSecurityPolicy::*allowWithURL)(const URL&, ContentSecurityPolicy::ReportingStatus) const>
 bool isAllowedWithURL(ScriptExecutionContext* context, const String& url)
 {
     if (!isPolicyActiveInContext(context))
@@ -67,18 +66,16 @@ bool isAllowedWithURL(ScriptExecutionContext* context, const String& url)
     if (!parsedURL.isValid())
         return false; // FIXME: Figure out how to throw a JavaScript error.
 
-    bool overrideContentSecurityPolicy = false;
-    return (context->contentSecurityPolicy()->*allowWithURL)(parsedURL, overrideContentSecurityPolicy, ContentSecurityPolicy::SuppressReport);
+    return (context->contentSecurityPolicy()->*allowWithURL)(parsedURL, ContentSecurityPolicy::SuppressReport);
 }
 
-template<bool (ContentSecurityPolicy::*allowWithContext)(const String&, const WTF::OrdinalNumber&, bool overrideContentSecurityPolicy, ContentSecurityPolicy::ReportingStatus) const>
+template<bool (ContentSecurityPolicy::*allowWithContext)(const String&, const WTF::OrdinalNumber&, ContentSecurityPolicy::ReportingStatus) const>
 bool isAllowed(ScriptExecutionContext* context)
 {
     if (!isPolicyActiveInContext(context))
         return true;
 
-    bool overrideContentSecurityPolicy = false;
-    return (context->contentSecurityPolicy()->*allowWithContext)(String(), WTF::OrdinalNumber::beforeFirst(), overrideContentSecurityPolicy, ContentSecurityPolicy::SuppressReport);
+    return (context->contentSecurityPolicy()->*allowWithContext)(String(), WTF::OrdinalNumber::beforeFirst(), ContentSecurityPolicy::SuppressReport);
 }
 
 } // namespace
@@ -122,7 +119,7 @@ bool DOMSecurityPolicy::allowsEval() const
     if (!isActive())
         return true;
 
-    return scriptExecutionContext()->contentSecurityPolicy()->allowEval(0, false, ContentSecurityPolicy::SuppressReport);
+    return scriptExecutionContext()->contentSecurityPolicy()->allowEval(0, ContentSecurityPolicy::SuppressReport);
 }
 
 

@@ -391,10 +391,9 @@ void RenderTableSection::layout()
     m_grid.shrinkToFit();
 
     LayoutStateMaintainer statePusher(view(), *this, locationOffset(), hasTransform() || hasReflection() || style().isFlippedBlocksWritingMode());
-    bool paginated = view().layoutState()->isPaginated();
-    
+
     const Vector<int>& columnPos = table()->columnPositions();
-    
+
     for (unsigned r = 0; r < m_grid.size(); ++r) {
         Row& row = m_grid[r].row;
         unsigned cols = row.size();
@@ -417,12 +416,8 @@ void RenderTableSection::layout()
             cell->setCellLogicalWidth(tableLayoutLogicalWidth);
         }
 
-        if (RenderTableRow* rowRenderer = m_grid[r].rowRenderer) {
-            if (!rowRenderer->needsLayout() && paginated && view().layoutState()->pageLogicalHeightChanged())
-                rowRenderer->setChildNeedsLayout(MarkOnlyThis);
-
+        if (RenderTableRow* rowRenderer = m_grid[r].rowRenderer)
             rowRenderer->layoutIfNeeded();
-        }
     }
 
     statePusher.pop();

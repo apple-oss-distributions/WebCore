@@ -26,9 +26,15 @@
 #include "config.h"
 #include "CredentialStorage.h"
 
-#include "NetworkStorageSession.h"
+#include "Credential.h"
 #include "URL.h"
-#include <wtf/NeverDestroyed.h>
+#include "ProtectionSpaceHash.h"
+#include <wtf/text/WTFString.h>
+#include <wtf/text/StringHash.h>
+#include <wtf/HashMap.h>
+#include <wtf/HashSet.h>
+#include <wtf/MainThread.h>
+#include <wtf/StdLibExtras.h>
 
 #if PLATFORM(IOS)
 #include "WebCoreThread.h"
@@ -36,9 +42,27 @@
 
 namespace WebCore {
 
-CredentialStorage& CredentialStorage::defaultCredentialStorage()
+typedef HashMap<ProtectionSpace, Credential> ProtectionSpaceToCredentialMap;
+static ProtectionSpaceToCredentialMap& protectionSpaceToCredentialMap()
 {
-    return NetworkStorageSession::defaultStorageSession().credentialStorage();
+    ASSERT(isMainThread());
+    DEPRECATED_DEFINE_STATIC_LOCAL(ProtectionSpaceToCredentialMap, map, ());
+    return map;
+}
+
+static HashSet<String>& originsWithCredentials()
+{
+    ASSERT(isMainThread());
+    DEPRECATED_DEFINE_STATIC_LOCAL(HashSet<String>, set, ());
+    return set;
+}
+
+typedef HashMap<String, ProtectionSpace> PathToDefaultProtectionSpaceMap;
+static PathToDefaultProtectionSpaceMap& pathToDefaultProtectionSpaceMap()
+{
+    ASSERT(isMainThread());
+    DEPRECATED_DEFINE_STATIC_LOCAL(PathToDefaultProtectionSpaceMap, map, ());
+    return map;
 }
 
 static String originStringFromURL(const URL& url)
@@ -72,51 +96,53 @@ void CredentialStorage::set(const Credential& credential, const ProtectionSpace&
     ASSERT(protectionSpace.isProxy() || url.protocolIsInHTTPFamily());
     ASSERT(protectionSpace.isProxy() || url.isValid());
 
-    m_protectionSpaceToCredentialMap.set(protectionSpace, credential);
+    protectionSpaceToCredentialMap().set(protectionSpace, credential);
 
 #if PLATFORM(IOS)
     saveToPersistentStorage(protectionSpace, credential);
 #endif
 
     if (!protectionSpace.isProxy()) {
-        m_originsWithCredentials.add(originStringFromURL(url));
+        originsWithCredentials().add(originStringFromURL(url));
 
         ProtectionSpaceAuthenticationScheme scheme = protectionSpace.authenticationScheme();
         if (scheme == ProtectionSpaceAuthenticationSchemeHTTPBasic || scheme == ProtectionSpaceAuthenticationSchemeDefault) {
             // The map can contain both a path and its subpath - while redundant, this makes lookups faster.
-            m_pathToDefaultProtectionSpaceMap.set(protectionSpaceMapKeyFromURL(url), protectionSpace);
+            pathToDefaultProtectionSpaceMap().set(protectionSpaceMapKeyFromURL(url), protectionSpace);
         }
     }
 }
 
 Credential CredentialStorage::get(const ProtectionSpace& protectionSpace)
 {
-    return m_protectionSpaceToCredentialMap.get(protectionSpace);
+    return protectionSpaceToCredentialMap().get(protectionSpace);
 }
 
 void CredentialStorage::remove(const ProtectionSpace& protectionSpace)
 {
-    m_protectionSpaceToCredentialMap.remove(protectionSpace);
+    protectionSpaceToCredentialMap().remove(protectionSpace);
 }
 
-HashMap<String, ProtectionSpace>::iterator CredentialStorage::findDefaultProtectionSpaceForURL(const URL& url)
+static PathToDefaultProtectionSpaceMap::iterator findDefaultProtectionSpaceForURL(const URL& url)
 {
     ASSERT(url.protocolIsInHTTPFamily());
     ASSERT(url.isValid());
 
+    PathToDefaultProtectionSpaceMap& map = pathToDefaultProtectionSpaceMap();
+
     // Don't spend time iterating the path for origins that don't have any credentials.
-    if (!m_originsWithCredentials.contains(originStringFromURL(url)))
-        return m_pathToDefaultProtectionSpaceMap.end();
+    if (!originsWithCredentials().contains(originStringFromURL(url)))
+        return map.end();
 
     String directoryURL = protectionSpaceMapKeyFromURL(url);
     unsigned directoryURLPathStart = url.pathStart();
     while (true) {
-        PathToDefaultProtectionSpaceMap::iterator iter = m_pathToDefaultProtectionSpaceMap.find(directoryURL);
-        if (iter != m_pathToDefaultProtectionSpaceMap.end())
+        PathToDefaultProtectionSpaceMap::iterator iter = map.find(directoryURL);
+        if (iter != map.end())
             return iter;
 
         if (directoryURL.length() == directoryURLPathStart + 1)  // path is "/" already, cannot shorten it any more
-            return m_pathToDefaultProtectionSpaceMap.end();
+            return map.end();
 
         size_t index = directoryURL.reverseFind('/', directoryURL.length() - 2);
         ASSERT(index != notFound);
@@ -131,26 +157,34 @@ bool CredentialStorage::set(const Credential& credential, const URL& url)
     ASSERT(url.protocolIsInHTTPFamily());
     ASSERT(url.isValid());
     PathToDefaultProtectionSpaceMap::iterator iter = findDefaultProtectionSpaceForURL(url);
-    if (iter == m_pathToDefaultProtectionSpaceMap.end())
+    if (iter == pathToDefaultProtectionSpaceMap().end())
         return false;
-    ASSERT(m_originsWithCredentials.contains(originStringFromURL(url)));
-    m_protectionSpaceToCredentialMap.set(iter->value, credential);
+    ASSERT(originsWithCredentials().contains(originStringFromURL(url)));
+    protectionSpaceToCredentialMap().set(iter->value, credential);
     return true;
 }
 
 Credential CredentialStorage::get(const URL& url)
 {
     PathToDefaultProtectionSpaceMap::iterator iter = findDefaultProtectionSpaceForURL(url);
-    if (iter == m_pathToDefaultProtectionSpaceMap.end())
+    if (iter == pathToDefaultProtectionSpaceMap().end())
         return Credential();
-    return m_protectionSpaceToCredentialMap.get(iter->value);
+    return protectionSpaceToCredentialMap().get(iter->value);
 }
 
+#if PLATFORM(IOS)
 void CredentialStorage::clearCredentials()
 {
-    m_protectionSpaceToCredentialMap.clear();
-    m_originsWithCredentials.clear();
-    m_pathToDefaultProtectionSpaceMap.clear();
+    pathToDefaultProtectionSpaceMap().clear();
+    originsWithCredentials().clear();
+    protectionSpaceToCredentialMap().clear();
+}
+#endif
+
+void CredentialStorage::setPrivateMode(bool mode)
+{
+    if (!mode)
+        protectionSpaceToCredentialMap().clear();
 }
 
 } // namespace WebCore

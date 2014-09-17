@@ -93,13 +93,10 @@ bool CSSFontFaceSrcValue::hasFailedOrCanceledSubresources() const
     return m_cachedFont->loadFailedOrCanceled();
 }
 
-CachedFont* CSSFontFaceSrcValue::cachedFont(Document* document, bool isInitiatingElementInUserAgentShadowTree)
+CachedFont* CSSFontFaceSrcValue::cachedFont(Document* document)
 {
     if (!m_cachedFont) {
-        ResourceLoaderOptions options = CachedResourceLoader::defaultCachedResourceOptions();
-        options.setContentSecurityPolicyImposition(isInitiatingElementInUserAgentShadowTree ? ContentSecurityPolicyImposition::SkipPolicyCheck : ContentSecurityPolicyImposition::DoPolicyCheck);
-
-        CachedResourceRequest request(ResourceRequest(document->completeURL(m_resource)), options);
+        CachedResourceRequest request(ResourceRequest(document->completeURL(m_resource)));
         request.setInitiator(cachedResourceRequestInitiators().css);
         m_cachedFont = document->cachedResourceLoader()->requestFont(request);
     }

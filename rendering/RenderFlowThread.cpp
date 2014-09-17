@@ -251,12 +251,7 @@ RenderNamedFlowFragment* RenderFlowThread::regionForCompositedLayer(RenderLayer&
 
 RenderNamedFlowFragment* RenderFlowThread::cachedRegionForCompositedLayer(RenderLayer& childLayer) const
 {
-    if (!m_layerToRegionMap) {
-        ASSERT(needsLayout());
-        ASSERT(m_layersToRegionMappingsDirty);
-        return nullptr;
-    }
-
+    ASSERT(m_layerToRegionMap);
     RenderNamedFlowFragment* namedFlowFragment = m_layerToRegionMap->get(&childLayer);
     ASSERT(!namedFlowFragment || m_regionList.contains(namedFlowFragment));
     return namedFlowFragment;

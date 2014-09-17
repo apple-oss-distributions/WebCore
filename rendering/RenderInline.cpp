@@ -25,6 +25,7 @@
 
 #include "Chrome.h"
 #include "FloatQuad.h"
+#include "FrameSelection.h"
 #include "GraphicsContext.h"
 #include "HitTestResult.h"
 #include "InlineElementBox.h"
@@ -93,10 +94,8 @@ void RenderInline::willBeDestroyed()
         if (firstLineBox()) {
             // We can't wait for RenderBoxModelObject::destroy to clear the selection,
             // because by then we will have nuked the line boxes.
-            // FIXME: The FrameSelection should be responsible for this when it
-            // is notified of DOM mutations.
             if (isSelectionBorder())
-                view().clearSelection();
+                frame().selection().setNeedsSelectionUpdate();
 
             // If line boxes are contained inside a root, that means we're an inline.
             // In that case, we need to remove all the line boxes so that the parent
@@ -147,10 +146,9 @@ static RenderElement* inFlowPositionedInlineAncestor(RenderElement* p)
     return 0;
 }
 
-static void updateStyleOfAnonymousBlockContinuations(const RenderBlock& block, const RenderStyle* newStyle, const RenderStyle* oldStyle)
+static void updateStyleOfAnonymousBlockContinuations(RenderBox* box, const RenderStyle* newStyle, const RenderStyle* oldStyle)
 {
-    // If any descendant blocks exist then they will be in the next anonymous block and its siblings.
-    for (RenderBox* box = block.nextSiblingBox(); box && box->isAnonymousBlock(); box = box->nextSiblingBox()) {
+    for (;box && box->isAnonymousBlock(); box = box->nextSiblingBox()) {
         if (box->style().position() == newStyle->position())
             continue;
         
@@ -184,18 +182,21 @@ void RenderInline::styleDidChange(StyleDifference diff, const RenderStyle* oldSt
     // need to pass its style on to anyone else.
     RenderStyle& newStyle = style();
     RenderInline* continuation = inlineElementContinuation();
-    if (continuation) {
-        for (RenderInline* currCont = continuation; currCont; currCont = currCont->inlineElementContinuation()) {
-            RenderBoxModelObject* nextCont = currCont->continuation();
-            currCont->setContinuation(nullptr);
-            currCont->setStyle(newStyle);
-            currCont->setContinuation(nextCont);
-        }
-        // If an inline's in-flow positioning has changed and it is part of an active continuation as a descendant of an anonymous containing block,
-        // then any descendant blocks will need to change their in-flow positioning accordingly.
-        // Do this by updating the position of the descendant blocks' containing anonymous blocks - there may be more than one.
-        if (containingBlock()->isAnonymousBlock() && oldStyle && newStyle.position() != oldStyle->position() && (newStyle.hasInFlowPosition() || oldStyle->hasInFlowPosition()))
-            updateStyleOfAnonymousBlockContinuations(*containingBlock(), &newStyle, oldStyle);
+    for (RenderInline* currCont = continuation; currCont; currCont = currCont->inlineElementContinuation()) {
+        RenderBoxModelObject* nextCont = currCont->continuation();
+        currCont->setContinuation(0);
+        currCont->setStyle(newStyle);
+        currCont->setContinuation(nextCont);
+    }
+
+    // If an inline's in-flow positioning has changed then any descendant blocks will need to change their in-flow positioning accordingly.
+    // Do this by updating the position of the descendant blocks' containing anonymous blocks - there may be more than one.
+    if (continuation && oldStyle && newStyle.position() != oldStyle->position()
+        && (newStyle.hasInFlowPosition() || oldStyle->hasInFlowPosition())) {
+        // If any descendant blocks exist then they will be in the next anonymous block and its siblings.
+        RenderObject* block = containingBlock()->nextSibling();
+        ASSERT(block && block->isAnonymousBlock());
+        updateStyleOfAnonymousBlockContinuations(toRenderBlock(block), &newStyle, oldStyle);
     }
 
     if (!alwaysCreateLineBoxes()) {
@@ -926,11 +927,9 @@ InlineBox* RenderInline::culledInlineFirstLineBox() const
             
         // We want to get the margin box in the inline direction, and then use our font ascent/descent in the block
         // direction (aligned to the root box's baseline).
-        if (curr->isBox()) {
-            const RenderBox* renderBox = toRenderBox(curr);
-            if (renderBox->inlineBoxWrapper())
-                return renderBox->inlineBoxWrapper();
-        } else if (curr->isLineBreak()) {
+        if (curr->isBox())
+            return toRenderBox(curr)->inlineBoxWrapper();
+        if (curr->isLineBreak()) {
             RenderLineBreak* renderBR = toRenderLineBreak(curr);
             if (renderBR->inlineBoxWrapper())
                 return renderBR->inlineBoxWrapper();
@@ -956,11 +955,9 @@ InlineBox* RenderInline::culledInlineLastLineBox() const
             
         // We want to get the margin box in the inline direction, and then use our font ascent/descent in the block
         // direction (aligned to the root box's baseline).
-        if (curr->isBox()) {
-            const RenderBox* renderBox = toRenderBox(curr);
-            if (renderBox->inlineBoxWrapper())
-                return renderBox->inlineBoxWrapper();
-        } else if (curr->isLineBreak()) {
+        if (curr->isBox())
+            return toRenderBox(curr)->inlineBoxWrapper();
+        if (curr->isLineBreak()) {
             RenderLineBreak* renderBR = toRenderLineBreak(curr);
             if (renderBR->inlineBoxWrapper())
                 return renderBR->inlineBoxWrapper();

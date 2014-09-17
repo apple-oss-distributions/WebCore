@@ -26,7 +26,6 @@
 #include "RenderText.h"
 
 #include "AXObjectCache.h"
-#include "CharacterProperties.h"
 #include "EllipsisBox.h"
 #include "FloatQuad.h"
 #include "Frame.h"
@@ -164,7 +163,6 @@ inline RenderText::RenderText(Node& node, const String& text)
     , m_knownToHaveNoOverflowAndNoFallbackFonts(false)
     , m_useBackslashAsYenSymbol(false)
     , m_originalTextDiffersFromRendered(false)
-    , m_contentIsKnownToFollow(false)
 #if ENABLE(IOS_TEXT_AUTOSIZING)
     , m_candidateComputedTextSize(0)
 #endif
@@ -598,22 +596,6 @@ float RenderText::maxLogicalWidth() const
     return m_maxWidth;
 }
 
-LineBreakIteratorMode mapLineBreakToIteratorMode(LineBreak lineBreak)
-{
-    switch (lineBreak) {
-    case LineBreakAuto:
-    case LineBreakAfterWhiteSpace:
-        return LineBreakIteratorModeUAX14;
-    case LineBreakLoose:
-        return LineBreakIteratorModeUAX14Loose;
-    case LineBreakNormal:
-        return LineBreakIteratorModeUAX14Normal;
-    case LineBreakStrict:
-        return LineBreakIteratorModeUAX14Strict;
-    }
-    return LineBreakIteratorModeUAX14;
-}
-
 void RenderText::computePreferredLogicalWidths(float leadWidth)
 {
     HashSet<const SimpleFontData*> fallbackFonts;
@@ -690,7 +672,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
     const Font& font = style.font(); // FIXME: This ignores first-line.
     float wordSpacing = font.wordSpacing();
     int len = textLength();
-    LazyLineBreakIterator breakIterator(m_text, style.locale(), mapLineBreakToIteratorMode(style.lineBreak()));
+    LazyLineBreakIterator breakIterator(m_text, style.locale());
     bool needsWordSpacing = false;
     bool ignoringSpaces = false;
     bool isSpace = false;
@@ -725,7 +707,6 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
 
     bool breakNBSP = style.autoWrap() && style.nbspMode() == SPACE;
     bool breakAll = (style.wordBreak() == BreakAllWordBreak || style.wordBreak() == BreakWordBreak) && style.autoWrap();
-    bool isLooseCJKMode = breakIterator.isLooseCJKMode();
 
     for (int i = 0; i < len; i++) {
         UChar c = uncheckedCharacterAt(i);
@@ -773,7 +754,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             continue;
         }
 
-        bool hasBreak = breakAll || isBreakable(breakIterator, i, nextBreakable, breakNBSP, isLooseCJKMode);
+        bool hasBreak = breakAll || isBreakable(breakIterator, i, nextBreakable, breakNBSP);
         bool betweenWords = true;
         int j = i;
         while (c != '\n' && !isSpaceAccordingToStyle(c, style) && c != '\t' && (c != softHyphen || style.hyphens() == HyphensNone)) {
@@ -781,7 +762,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             if (j == len)
                 break;
             c = uncheckedCharacterAt(j);
-            if (isBreakable(breakIterator, j, nextBreakable, breakNBSP, isLooseCJKMode) && characterAt(j - 1) != softHyphen)
+            if (isBreakable(breakIterator, j, nextBreakable, breakNBSP) && characterAt(j - 1) != softHyphen)
                 break;
             if (breakAll) {
                 betweenWords = false;
@@ -1004,11 +985,6 @@ UChar RenderText::previousCharacter() const
         if (StringImpl* previousString = toRenderText(previousText)->text())
             prev = (*previousString)[previousString->length() - 1];
     return prev;
-}
-
-LayoutUnit RenderText::topOfFirstText() const
-{
-    return firstTextBox()->root().lineTop();
 }
 
 void applyTextTransform(const RenderStyle& style, String& text, UChar previousCharacter)
@@ -1398,21 +1374,21 @@ enum HangulState {
     HangulStateBreak
 };
 
-static inline bool isHangulLVT(UChar32 character)
+inline bool isHangulLVT(UChar32 character)
 {
     return (character - HANGUL_SYLLABLE_START) % HANGUL_JONGSEONG_COUNT;
 }
 
-static inline bool isMark(UChar32 character)
+inline bool isMark(UChar32 c)
 {
-    int8_t charType = u_charType(character);
+    int8_t charType = u_charType(c);
     return charType == U_NON_SPACING_MARK || charType == U_ENCLOSING_MARK || charType == U_COMBINING_SPACING_MARK;
 }
 
-static inline bool isRegionalIndicator(UChar32 character)
+inline bool isRegionalIndicator(UChar32 c)
 {
     // National flag emoji each consists of a pair of regional indicator symbols.
-    return 0x1F1E6 <= character && character <= 0x1F1FF;
+    return 0x1F1E6 <= c && c <= 0x1F1FF;
 }
 
 #endif
@@ -1424,9 +1400,6 @@ int RenderText::previousOffsetForBackwardDeletion(int current) const
     StringImpl& text = *m_text.impl();
     UChar32 character;
     bool sawRegionalIndicator = false;
-    bool sawEmojiGroupCandidate = false;
-    bool sawEmojiModifier = false;
-    
     while (current > 0) {
         if (U16_IS_TRAIL(text[--current]))
             --current;
@@ -1434,22 +1407,6 @@ int RenderText::previousOffsetForBackwardDeletion(int current) const
             break;
 
         UChar32 character = text.characterStartingAt(current);
-
-        if (sawEmojiGroupCandidate) {
-            sawEmojiGroupCandidate = false;
-            if (character == zeroWidthJoiner)
-                continue;
-            // We could have two emoji group candidates without a joiner in between.
-            // Those should not be treated as a group.
-            U16_FWD_1_UNSAFE(text, current);
-            break;
-        }
-
-        if (sawEmojiModifier) {
-            if (isEmojiModifier(character))
-                U16_FWD_1_UNSAFE(text, current);
-            break;
-        }
 
         if (sawRegionalIndicator) {
             // We don't check if the pair of regional indicator symbols before current position can actually be combined
@@ -1467,16 +1424,6 @@ int RenderText::previousOffsetForBackwardDeletion(int current) const
 
         if (isRegionalIndicator(character)) {
             sawRegionalIndicator = true;
-            continue;
-        }
-        
-        if (isEmojiModifier(character)) {
-            sawEmojiModifier = true;
-            continue;
-        }
-
-        if (isEmojiGroupCandidate(character)) {
-            sawEmojiGroupCandidate = true;
             continue;
         }
 
@@ -1576,20 +1523,6 @@ void RenderText::momentarilyRevealLastTypedCharacter(unsigned lastTypedCharacter
         gSecureTextTimers->add(this, secureTextTimer);
     }
     secureTextTimer->restartWithNewText(lastTypedCharacterOffset);
-}
-
-StringView RenderText::stringView(int start, int stop) const
-{
-    if (stop == -1)
-        stop = textLength();
-    ASSERT(static_cast<unsigned>(start) <= length());
-    ASSERT(static_cast<unsigned>(stop) <= length());
-    ASSERT(start <= stop);
-    ASSERT(start >= 0);
-    ASSERT(stop >= 0);
-    if (is8Bit())
-        return StringView(characters8() + start, stop - start);
-    return StringView(characters16() + start, stop - start);
 }
 
 } // namespace WebCore

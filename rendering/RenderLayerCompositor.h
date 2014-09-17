@@ -169,8 +169,6 @@ public:
     void layerWasAdded(RenderLayer& parent, RenderLayer& child);
     void layerWillBeRemoved(RenderLayer& parent, RenderLayer& child);
 
-    void layerStyleChanged(RenderLayer&, const RenderStyle* oldStyle);
-
     // Get the nearest ancestor layer that has overflow or clip, but is not a stacking context
     RenderLayer* enclosingNonStackingClippingLayer(const RenderLayer&) const;
 
@@ -303,10 +301,6 @@ public:
     void setRootExtendedBackgroundColor(const Color&);
     Color rootExtendedBackgroundColor() const { return m_rootExtendedBackgroundColor; }
 
-    // For testing.
-    void startTrackingLayerFlushes();
-    unsigned layerFlushCount() const;
-
 private:
     class OverlapMap;
 
@@ -318,7 +312,7 @@ private:
     virtual bool isTrackingRepaints() const override;
     
     // GraphicsLayerUpdaterClient implementation
-    virtual void flushLayersSoon(GraphicsLayerUpdater&) override;
+    virtual void flushLayersSoon(GraphicsLayerUpdater*) override;
 
     // Whether the given RL needs a compositing layer.
     bool needsToBeComposited(const RenderLayer&, RenderLayer::ViewportConstrainedNotCompositedReason* = 0) const;
@@ -336,7 +330,7 @@ private:
     // Repaint this and its child layers.
     void recursiveRepaintLayer(RenderLayer&);
 
-    void addToOverlapMap(OverlapMap&, RenderLayer&, LayoutRect& layerBounds, bool& boundsComputed);
+    void addToOverlapMap(OverlapMap&, RenderLayer&, IntRect& layerBounds, bool& boundsComputed);
     void addToOverlapMapRecursive(OverlapMap&, RenderLayer&, RenderLayer* ancestorLayer = nullptr);
 
     void updateCompositingLayersTimerFired(Timer<RenderLayerCompositor>&);
@@ -396,7 +390,7 @@ private:
     ScrollingCoordinator* scrollingCoordinator() const;
 
 #if USE(REQUEST_ANIMATION_FRAME_DISPLAY_MONITOR)
-    RefPtr<DisplayRefreshMonitor> createDisplayRefreshMonitor(PlatformDisplayID) const override;
+    PassRefPtr<DisplayRefreshMonitor> createDisplayRefreshMonitor(PlatformDisplayID) const;
 #endif
 
     bool requiresCompositingForAnimation(RenderLayerModelObject&) const;
@@ -476,6 +470,7 @@ private:
     bool m_hasAcceleratedCompositing;
     ChromeClient::CompositingTriggerFlags m_compositingTriggers;
 
+    int m_compositedLayerCount;
     bool m_showDebugBorders;
     bool m_showRepaintCounter;
     bool m_acceleratedDrawingEnabled;
@@ -494,9 +489,7 @@ private:
 
     bool m_isTrackingRepaints; // Used for testing.
 
-    int m_compositedLayerCount { 0 };
-    unsigned m_layersWithTiledBackingCount { 0 };
-    unsigned m_layerFlushCount { 0 };
+    unsigned m_layersWithTiledBackingCount;
 
     RootLayerAttachment m_rootLayerAttachment;
 
@@ -537,11 +530,11 @@ private:
     Timer<RenderLayerCompositor> m_paintRelatedMilestonesTimer;
 
 #if !LOG_DISABLED
-    int m_rootLayerUpdateCount { 0 };
-    int m_obligateCompositedLayerCount { 0 }; // count of layer that have to be composited.
-    int m_secondaryCompositedLayerCount { 0 }; // count of layers that have to be composited because of stacking or overlap.
-    double m_obligatoryBackingStoreBytes { 0 };
-    double m_secondaryBackingStoreBytes { 0 };
+    int m_rootLayerUpdateCount;
+    int m_obligateCompositedLayerCount; // count of layer that have to be composited.
+    int m_secondaryCompositedLayerCount; // count of layers that have to be composited because of stacking or overlap.
+    double m_obligatoryBackingStoreBytes;
+    double m_secondaryBackingStoreBytes;
 #endif
 
     Color m_rootExtendedBackgroundColor;

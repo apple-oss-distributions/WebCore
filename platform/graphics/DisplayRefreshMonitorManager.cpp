@@ -44,84 +44,72 @@ DisplayRefreshMonitorManager& DisplayRefreshMonitorManager::sharedManager()
     return manager.get();
 }
 
-DisplayRefreshMonitor* DisplayRefreshMonitorManager::createMonitorForClient(DisplayRefreshMonitorClient& client)
+DisplayRefreshMonitor* DisplayRefreshMonitorManager::ensureMonitorForClient(DisplayRefreshMonitorClient* client)
 {
-    PlatformDisplayID clientDisplayID = client.displayID();
-    for (const RefPtr<DisplayRefreshMonitor>& monitor : m_monitors) {
-        if (monitor->displayID() != clientDisplayID)
-            continue;
+    DisplayRefreshMonitorMap::iterator it = m_monitors.find(client->displayID());
+    if (it == m_monitors.end()) {
+        RefPtr<DisplayRefreshMonitor> monitor = DisplayRefreshMonitor::create(client);
         monitor->addClient(client);
-        return monitor.get();
+        DisplayRefreshMonitor* result = monitor.get();
+        m_monitors.add(client->displayID(), monitor.release());
+        return result;
     }
-
-    RefPtr<DisplayRefreshMonitor> monitor = DisplayRefreshMonitor::create(client);
-    if (!monitor)
-        return nullptr;
-
-    monitor->addClient(client);
-    DisplayRefreshMonitor* result = monitor.get();
-    m_monitors.append(monitor.release());
-    return result;
+    it->value->addClient(client);
+    return it->value.get();
 }
 
-void DisplayRefreshMonitorManager::registerClient(DisplayRefreshMonitorClient& client)
+void DisplayRefreshMonitorManager::registerClient(DisplayRefreshMonitorClient* client)
 {
-    if (!client.hasDisplayID())
+    if (!client->hasDisplayID())
         return;
 
-    createMonitorForClient(client);
+    ensureMonitorForClient(client);
 }
 
-void DisplayRefreshMonitorManager::unregisterClient(DisplayRefreshMonitorClient& client)
+void DisplayRefreshMonitorManager::unregisterClient(DisplayRefreshMonitorClient* client)
 {
-    if (!client.hasDisplayID())
+    if (!client->hasDisplayID())
         return;
 
-    PlatformDisplayID clientDisplayID = client.displayID();
-    for (size_t i = 0; i < m_monitors.size(); ++i) {
-        RefPtr<DisplayRefreshMonitor> monitor = m_monitors[i];
-        if (monitor->displayID() != clientDisplayID)
-            continue;
-        if (monitor->removeClient(client)) {
-            if (!monitor->hasClients())
-                m_monitors.remove(i);
-        }
+    DisplayRefreshMonitorMap::iterator it = m_monitors.find(client->displayID());
+    if (it == m_monitors.end())
         return;
+
+    DisplayRefreshMonitor* monitor = it->value.get();
+    if (monitor->removeClient(client)) {
+        if (!monitor->hasClients())
+            m_monitors.remove(it);
     }
 }
 
-bool DisplayRefreshMonitorManager::scheduleAnimation(DisplayRefreshMonitorClient& client)
+bool DisplayRefreshMonitorManager::scheduleAnimation(DisplayRefreshMonitorClient* client)
 {
-    if (!client.hasDisplayID())
+    if (!client->hasDisplayID())
         return false;
 
-    DisplayRefreshMonitor* monitor = createMonitorForClient(client);
-    if (!monitor)
-        return false;
+    DisplayRefreshMonitor* monitor = ensureMonitorForClient(client);
 
-    client.setIsScheduled(true);
+    client->setIsScheduled(true);
     return monitor->requestRefreshCallback();
 }
 
-void DisplayRefreshMonitorManager::displayDidRefresh(DisplayRefreshMonitor& monitor)
+void DisplayRefreshMonitorManager::displayDidRefresh(DisplayRefreshMonitor* monitor)
 {
-    if (!monitor.shouldBeTerminated())
-        return;
-
-    size_t monitorIndex = m_monitors.find(&monitor);
-    ASSERT(monitorIndex != notFound);
-    m_monitors.remove(monitorIndex);
+    if (monitor->shouldBeTerminated()) {
+        ASSERT(m_monitors.contains(monitor->displayID()));
+        m_monitors.remove(monitor->displayID());
+    }
 }
 
-void DisplayRefreshMonitorManager::windowScreenDidChange(PlatformDisplayID displayID, DisplayRefreshMonitorClient& client)
+void DisplayRefreshMonitorManager::windowScreenDidChange(PlatformDisplayID displayID, DisplayRefreshMonitorClient* client)
 {
-    if (client.hasDisplayID() && client.displayID() == displayID)
+    if (client->hasDisplayID() && client->displayID() == displayID)
         return;
     
     unregisterClient(client);
-    client.setDisplayID(displayID);
+    client->setDisplayID(displayID);
     registerClient(client);
-    if (client.isScheduled())
+    if (client->isScheduled())
         scheduleAnimation(client);
 }
 

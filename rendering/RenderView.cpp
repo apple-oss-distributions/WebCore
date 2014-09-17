@@ -54,26 +54,6 @@
 
 namespace WebCore {
 
-struct FrameFlatteningLayoutDisallower {
-    FrameFlatteningLayoutDisallower(FrameView& frameView)
-        : m_frameView(frameView)
-        , m_disallowLayout(frameView.frame().settings().frameFlatteningEnabled())
-    {
-        if (m_disallowLayout)
-            m_frameView.startDisallowingLayout();
-    }
-
-    ~FrameFlatteningLayoutDisallower()
-    {
-        if (m_disallowLayout)
-            m_frameView.endDisallowingLayout();
-    }
-
-private:
-    FrameView& m_frameView;
-    bool m_disallowLayout { false };
-};
-
 struct SelectionIterator {
     RenderObject* m_current;
     Vector<RenderMultiColumnSpannerPlaceholder*> m_spannerStack;
@@ -196,8 +176,6 @@ bool RenderView::hitTest(const HitTestRequest& request, HitTestResult& result)
 
 bool RenderView::hitTest(const HitTestRequest& request, const HitTestLocation& location, HitTestResult& result)
 {
-    FrameFlatteningLayoutDisallower disallower(frameView());
-
     if (layer()->hitTest(request, location, result))
         return true;
 
@@ -853,12 +831,6 @@ void RenderView::setMaximalOutlineSize(int o)
 
 void RenderView::setSelection(RenderObject* start, int startPos, RenderObject* end, int endPos, SelectionRepaintMode blockRepaintMode)
 {
-#if ENABLE(SERVICE_CONTROLS)
-    // Clear the current rects and create a notifier for the new rects we are about to gather.
-    // The Notifier updates the Editor when it goes out of scope and is destroyed.
-    std::unique_ptr<SelectionRectGatherer::Notifier> rectNotifier = m_selectionRectGatherer.clearAndCreateNotifier();
-#endif // ENABLE(SERVICE_CONTROLS)
-
     // Make sure both our start and end objects are defined.
     // Check www.msnbc.com and try clicking around to find the case where this happened.
     if ((start && !end) || (end && !start))
@@ -871,6 +843,11 @@ void RenderView::setSelection(RenderObject* start, int startPos, RenderObject* e
         m_selectionEnd == end && m_selectionEndPos == endPos && !caretChanged)
         return;
 
+#if ENABLE(SERVICE_CONTROLS)
+    // Clear the current rects and create a notifier for the new rects we are about to gather.
+    // The Notifier updates the Editor when it goes out of scope and is destroyed.
+    std::unique_ptr<SelectionRectGatherer::Notifier> rectNotifier = m_selectionRectGatherer.clearAndCreateNotifier();
+#endif // ENABLE(SERVICE_CONTROLS)
     // Set global positions for new selection.
     m_selectionStart = start;
     m_selectionStartPos = startPos;
@@ -1018,7 +995,9 @@ void RenderView::setSubtreeSelection(SelectionSubtreeRoot& root, RenderObject* s
 
 #if ENABLE(SERVICE_CONTROLS)
             for (auto& rect : selectionInfo->rects())
-                m_selectionRectGatherer.addRect(rect);
+                m_selectionRectGatherer.addRect(selectionInfo->repaintContainer(), rect);
+            if (!o->isTextOrLineBreak())
+                m_selectionRectGatherer.setTextOnly(false);
 #endif
 
             newSelectedObjects.set(o, WTF::move(selectionInfo));
@@ -1032,7 +1011,7 @@ void RenderView::setSubtreeSelection(SelectionSubtreeRoot& root, RenderObject* s
                 cb = cb->containingBlock();
 
 #if ENABLE(SERVICE_CONTROLS)
-                m_selectionRectGatherer.addRects(blockInfo->rects());
+                m_selectionRectGatherer.addGapRects(blockInfo->repaintContainer(), blockInfo->rects());
 #endif
             }
         }
@@ -1217,9 +1196,6 @@ void RenderView::updateHitTestResult(HitTestResult& result, const LayoutPoint& p
 {
     if (result.innerNode())
         return;
-
-    if (multiColumnFlowThread() && multiColumnFlowThread()->firstMultiColumnSet())
-        return multiColumnFlowThread()->firstMultiColumnSet()->updateHitTestResult(result, point);
 
     Node* node = document().documentElement();
     if (node) {

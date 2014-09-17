@@ -27,7 +27,6 @@
 #include "LoaderStrategy.h"
 
 #include "BlobRegistryImpl.h"
-#include "PingHandle.h"
 #include "ResourceHandle.h"
 #include "ResourceLoadScheduler.h"
 
@@ -46,12 +45,6 @@ void LoaderStrategy::loadResourceSynchronously(NetworkingContext* context, unsig
 BlobRegistry* LoaderStrategy::createBlobRegistry()
 {
     return new BlobRegistryImpl;
-}
-
-void LoaderStrategy::createPingHandle(NetworkingContext* networkingContext, ResourceRequest& request, bool shouldUseCredentialStorage)
-{
-    // PingHandle manages its own lifetime, deleting itself when its purpose has been fulfilled.
-    new PingHandle(networkingContext, request, shouldUseCredentialStorage, PingHandle::UsesAsyncCallbacks::No);
 }
 
 } // namespace WebCore

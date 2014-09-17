@@ -24,7 +24,6 @@
 #include "config.h"
 #include "Font.h"
 
-#include "CharacterProperties.h" 
 #include "FloatRect.h"
 #include "FontCache.h"
 #include "GlyphBuffer.h"
@@ -621,13 +620,8 @@ Font::CodePath Font::characterRangeCodePath(const UChar* characters, unsigned le
     // Alternatively, we may as well consider binary search over a sorted
     // list of ranges.
     CodePath result = Simple;
-    bool previousCharacterIsEmojiGroupCandidate = false;
     for (unsigned i = 0; i < len; i++) {
         const UChar c = characters[i];
-        if (c == zeroWidthJoiner && previousCharacterIsEmojiGroupCandidate)
-            return Complex;
-            
-        previousCharacterIsEmojiGroupCandidate = false;
         if (c < 0x2E5) // U+02E5 through U+02E9 (Modifier Letters : Tone letters)  
             continue;
         if (c <= 0x2E9) 
@@ -748,12 +742,6 @@ Font::CodePath Font::characterRangeCodePath(const UChar* characters, unsigned le
             if (supplementaryCharacter <= 0x1F1FF)
                 return Complex;
 
-            if (supplementaryCharacter >= 0x1F466 && supplementaryCharacter <= 0x1F469) {
-                previousCharacterIsEmojiGroupCandidate = true;
-                continue;
-            }
-            if (isEmojiModifier(supplementaryCharacter))
-                return Complex;
             if (supplementaryCharacter < 0xE0100) // U+E0100 through U+E01EF Unicode variation selectors.
                 continue;
             if (supplementaryCharacter <= 0xE01EF)
@@ -980,7 +968,7 @@ bool Font::isCJKIdeographOrSymbol(UChar32 c)
     return isCJKIdeograph(c);
 }
 
-unsigned Font::expansionOpportunityCountInternal(const LChar* characters, size_t length, TextDirection direction, bool& isAfterExpansion)
+unsigned Font::expansionOpportunityCount(const LChar* characters, size_t length, TextDirection direction, bool& isAfterExpansion)
 {
     unsigned count = 0;
     if (direction == LTR) {
@@ -1003,7 +991,7 @@ unsigned Font::expansionOpportunityCountInternal(const LChar* characters, size_t
     return count;
 }
 
-unsigned Font::expansionOpportunityCountInternal(const UChar* characters, size_t length, TextDirection direction, bool& isAfterExpansion)
+unsigned Font::expansionOpportunityCount(const UChar* characters, size_t length, TextDirection direction, bool& isAfterExpansion)
 {
     static bool expandAroundIdeographs = canExpandAroundIdeographsInComplexText();
     unsigned count = 0;
@@ -1051,13 +1039,6 @@ unsigned Font::expansionOpportunityCountInternal(const UChar* characters, size_t
         }
     }
     return count;
-}
-
-unsigned Font::expansionOpportunityCount(const StringView& stringView, TextDirection direction, bool& isAfterExpansion)
-{
-    if (stringView.is8Bit())
-        return expansionOpportunityCountInternal(stringView.characters8(), stringView.length(), direction, isAfterExpansion);
-    return expansionOpportunityCountInternal(stringView.characters16(), stringView.length(), direction, isAfterExpansion);
 }
 
 bool Font::canReceiveTextEmphasis(UChar32 c)

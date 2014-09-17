@@ -413,8 +413,7 @@ inline void BreakingContext::handleReplaced()
         m_width.updateAvailableWidth(replacedBox.logicalHeight());
 
     // Break on replaced elements if either has normal white-space.
-    if ((m_autoWrap || RenderStyle::autoWrap(m_lastWS)) && (!m_current.renderer()->isImage() || m_allowImagesToBreak)
-        && (!m_current.renderer()->isRubyRun() || toRenderRubyRun(m_current.renderer())->canBreakBefore(m_renderTextInfo.m_lineBreakIterator))) {
+    if ((m_autoWrap || RenderStyle::autoWrap(m_lastWS)) && (!m_current.renderer()->isImage() || m_allowImagesToBreak)) {
         m_width.commit();
         m_lineBreak.moveToStartOf(m_current.renderer());
     }
@@ -443,13 +442,10 @@ inline void BreakingContext::handleReplaced()
             m_width.addUncommittedWidth(replacedLogicalWidth);
     } else
         m_width.addUncommittedWidth(replacedLogicalWidth);
-    if (m_current.renderer()->isRubyRun()) {
+    if (m_current.renderer()->isRubyRun())
         m_width.applyOverhang(toRenderRubyRun(m_current.renderer()), m_lastObject, m_nextObject);
-        toRenderRubyRun(m_current.renderer())->updatePriorContextFromCachedBreakIterator(m_renderTextInfo.m_lineBreakIterator);
-    } else {
-        // Update prior line break context characters, using U+FFFD (OBJECT REPLACEMENT CHARACTER) for replaced element.
-        m_renderTextInfo.m_lineBreakIterator.updatePriorContext(replacementCharacter);
-    }
+    // Update prior line break context characters, using U+FFFD (OBJECT REPLACEMENT CHARACTER) for replaced element.
+    m_renderTextInfo.m_lineBreakIterator.updatePriorContext(replacementCharacter);
 }
 
 inline float firstPositiveWidth(const WordMeasurements& wordMeasurements)
@@ -598,7 +594,7 @@ inline bool BreakingContext::handleText(WordMeasurements& wordMeasurements, bool
     if (m_autoWrap && !RenderStyle::autoWrap(m_lastWS) && m_ignoringSpaces)
         commitLineBreakAtCurrentWidth(m_current.renderer());
 
-    if (renderText->style().hasTextCombine() && m_current.renderer()->isCombineText()) {
+    if (renderText->style().hasTextCombine() && m_current.renderer()->isCombineText() && !toRenderCombineText(*m_current.renderer()).isCombined()) {
         RenderCombineText& combineRenderer = toRenderCombineText(*m_current.renderer());
         combineRenderer.combineText();
         // The length of the renderer's text may have changed. Increment stale iterator positions
@@ -628,7 +624,6 @@ inline bool BreakingContext::handleText(WordMeasurements& wordMeasurements, bool
     bool midWordBreak = false;
     bool breakAll = m_currentStyle->wordBreak() == BreakAllWordBreak && m_autoWrap;
     float hyphenWidth = 0;
-    bool isLooseCJKMode = false;
 
     if (isSVGText) {
         breakWords = false;
@@ -640,8 +635,7 @@ inline bool BreakingContext::handleText(WordMeasurements& wordMeasurements, bool
         m_renderTextInfo.m_text = renderText;
         m_renderTextInfo.m_font = &font;
         m_renderTextInfo.m_layout = font.createLayout(renderText, m_width.currentWidth(), m_collapseWhiteSpace);
-        m_renderTextInfo.m_lineBreakIterator.resetStringAndReleaseIterator(renderText->text(), style.locale(), mapLineBreakToIteratorMode(m_blockStyle.lineBreak()));
-        isLooseCJKMode = m_renderTextInfo.m_lineBreakIterator.isLooseCJKMode();
+        m_renderTextInfo.m_lineBreakIterator.resetStringAndReleaseIterator(renderText->text(), style.locale());
     } else if (m_renderTextInfo.m_layout && m_renderTextInfo.m_font != &font) {
         m_renderTextInfo.m_font = &font;
         m_renderTextInfo.m_layout = font.createLayout(renderText, m_width.currentWidth(), m_collapseWhiteSpace);
@@ -682,7 +676,7 @@ inline bool BreakingContext::handleText(WordMeasurements& wordMeasurements, bool
         }
 
         int nextBreakablePosition = m_current.nextBreakablePosition();
-        bool betweenWords = c == '\n' || (m_currWS != PRE && !m_atStart && isBreakable(m_renderTextInfo.m_lineBreakIterator, m_current.offset(), nextBreakablePosition, breakNBSP, isLooseCJKMode)
+        bool betweenWords = c == '\n' || (m_currWS != PRE && !m_atStart && isBreakable(m_renderTextInfo.m_lineBreakIterator, m_current.offset(), nextBreakablePosition, breakNBSP)
             && (style.hyphens() != HyphensNone || (m_current.previousInSameNode() != softHyphen)));
         m_current.setNextBreakablePosition(nextBreakablePosition);
 
@@ -957,7 +951,7 @@ inline bool BreakingContext::canBreakAtThisPosition()
         return m_autoWrap;
     bool currentIsTextOrEmptyInline = m_current.renderer()->isText() || (m_current.renderer()->isRenderInline() && isEmptyInline(toRenderInline(*m_current.renderer())));
     if (!currentIsTextOrEmptyInline)
-        return m_autoWrap && !m_current.renderer()->isRubyRun();
+        return m_autoWrap;
 
     bool canBreakHere = !m_currentCharacterIsSpace && textBeginsWithBreakablePosition(m_nextObject);
 
@@ -1004,7 +998,7 @@ inline void BreakingContext::commitAndUpdateLineBreakIfNeeded()
 
     if (!m_current.renderer()->isFloatingOrOutOfFlowPositioned()) {
         m_lastObject = m_current.renderer();
-        if (m_lastObject->isReplaced() && m_autoWrap && !m_lastObject->isRubyRun() && (!m_lastObject->isImage() || m_allowImagesToBreak) && (!m_lastObject->isListMarker() || toRenderListMarker(*m_lastObject).isInside())) {
+        if (m_lastObject->isReplaced() && m_autoWrap && (!m_lastObject->isImage() || m_allowImagesToBreak) && (!m_lastObject->isListMarker() || toRenderListMarker(*m_lastObject).isInside())) {
             m_width.commit();
             m_lineBreak.moveToStartOf(m_nextObject);
         }

@@ -74,20 +74,9 @@ int RenderMathMLUnderOver::firstLineBaseline() const
 void RenderMathMLUnderOver::layout()
 {
     LayoutUnit stretchWidth = 0;
-    Vector<RenderMathMLOperator*, 2> renderOperators;
-
     for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
-        if (child->needsLayout()) {
-            if (child->isRenderMathMLBlock()) {
-                if (auto renderOperator = toRenderMathMLBlock(child)->unembellishedOperator()) {
-                    renderOperator->resetStretchSize();
-                    renderOperators.append(renderOperator);
-                }
-            }
-
+        if (child->needsLayout())
             toRenderElement(child)->layout();
-        }
-
         // Skipping the embellished op does not work for nested structures like
         // <munder><mover><mo>_</mo>...</mover> <mo>_</mo></munder>.
         if (child->isBox())
@@ -95,8 +84,10 @@ void RenderMathMLUnderOver::layout()
     }
 
     // Set the sizes of (possibly embellished) stretchy operator children.
-    for (auto& renderOperator : renderOperators)
-        renderOperator->stretchTo(stretchWidth);
+    for (auto& child : childrenOfType<RenderMathMLBlock>(*this)) {
+        if (auto renderOperator = child.unembellishedOperator())
+            renderOperator->stretchTo(stretchWidth);
+    }
 
     RenderMathMLBlock::layout();
 }

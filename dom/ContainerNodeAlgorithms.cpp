@@ -29,7 +29,7 @@
 
 namespace WebCore {
 
-void ChildNodeInsertionNotifier::notifyDescendantInsertedIntoDocument(ContainerNode& node, NodeVector& postInsertionNotificationTargets)
+void ChildNodeInsertionNotifier::notifyDescendantInsertedIntoDocument(ContainerNode& node)
 {
     ChildNodesLazySnapshot snapshot(node);
     while (RefPtr<Node> child = snapshot.nextNode()) {
@@ -37,7 +37,7 @@ void ChildNodeInsertionNotifier::notifyDescendantInsertedIntoDocument(ContainerN
         // we don't want to tell the rest of our children that they've been
         // inserted into the document because they haven't.
         if (node.inDocument() && child->parentNode() == &node)
-            notifyNodeInsertedIntoDocument(*child.get(), postInsertionNotificationTargets);
+            notifyNodeInsertedIntoDocument(*child.get());
     }
 
     if (!node.isElementNode())
@@ -45,19 +45,19 @@ void ChildNodeInsertionNotifier::notifyDescendantInsertedIntoDocument(ContainerN
 
     if (RefPtr<ShadowRoot> root = toElement(node).shadowRoot()) {
         if (node.inDocument() && root->hostElement() == &node)
-            notifyNodeInsertedIntoDocument(*root.get(), postInsertionNotificationTargets);
+            notifyNodeInsertedIntoDocument(*root.get());
     }
 }
 
-void ChildNodeInsertionNotifier::notifyDescendantInsertedIntoTree(ContainerNode& node, NodeVector& postInsertionNotificationTargets)
+void ChildNodeInsertionNotifier::notifyDescendantInsertedIntoTree(ContainerNode& node)
 {
     for (Node* child = node.firstChild(); child; child = child->nextSibling()) {
         if (child->isContainerNode())
-            notifyNodeInsertedIntoTree(*toContainerNode(child), postInsertionNotificationTargets);
+            notifyNodeInsertedIntoTree(*toContainerNode(child));
     }
 
     if (ShadowRoot* root = node.shadowRoot())
-        notifyNodeInsertedIntoTree(*root, postInsertionNotificationTargets);
+        notifyNodeInsertedIntoTree(*root);
 }
 
 void ChildNodeRemovalNotifier::notifyDescendantRemovedFromDocument(ContainerNode& node)

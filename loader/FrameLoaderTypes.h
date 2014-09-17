@@ -57,11 +57,6 @@ enum class FrameLoadType {
     ReloadFromOrigin,
 };
 
-enum class NewFrameOpenerPolicy {
-    Suppress,
-    Allow
-};
-
     enum NavigationType {
         NavigationTypeLinkClicked,
         NavigationTypeFormSubmitted,
@@ -121,6 +116,11 @@ enum class NewFrameOpenerPolicy {
     };
 
     enum class LockBackForwardList {
+        Yes,
+        No
+    };
+
+    enum class AllowNavigationToInvalidURL {
         Yes,
         No
     };

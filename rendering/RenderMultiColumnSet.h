@@ -72,7 +72,6 @@ public:
     unsigned computedColumnCount() const { return m_computedColumnCount; }
     LayoutUnit computedColumnWidth() const { return m_computedColumnWidth; }
     LayoutUnit computedColumnHeight() const { return m_computedColumnHeight; }
-    bool columnHeightComputed() const { return m_columnHeightComputed; }
 
     void setComputedColumnWidthAndCount(LayoutUnit width, unsigned count)
     {
@@ -192,8 +191,7 @@ private:
     LayoutUnit m_computedColumnWidth; // Used column width (the resulting 'W' from the pseudo-algorithm in the multicol spec)
     LayoutUnit m_computedColumnHeight;
     LayoutUnit m_availableColumnHeight;
-    bool m_columnHeightComputed;
-
+    
     // The following variables are used when balancing the column set.
     LayoutUnit m_maxColumnHeight; // Maximum column height allowed.
     LayoutUnit m_minSpaceShortage; // The smallest amout of space shortage that caused a column break.

@@ -31,7 +31,6 @@
 #include "CrossOriginAccessControl.h"
 #include "Document.h"
 #include "DocumentLoader.h"
-#include "FeatureCounter.h"
 #include "FrameLoader.h"
 #include "FrameLoaderClient.h"
 #include "HTTPHeaderNames.h"
@@ -63,8 +62,6 @@
 using namespace WTF;
 
 namespace WebCore {
-
-static const unsigned LiveMarker = 0xCACED;
 
 // These response headers are not copied from a revalidated response to the
 // cached response headers. For compatibility, this list is based on Chromium's
@@ -184,7 +181,6 @@ CachedResource::CachedResource(const ResourceRequest& request, Type type, Sessio
     , m_owningCachedResourceLoader(0)
     , m_resourceToRevalidate(0)
     , m_proxyResource(0)
-    , m_liveObjectMarker(LiveMarker)
 {
     ASSERT(m_type == unsigned(type)); // m_type is a bitfield, so this tests careless updates of the enum.
     ASSERT(sessionID.isValid());
@@ -216,7 +212,6 @@ CachedResource::~CachedResource()
 
     if (m_owningCachedResourceLoader)
         m_owningCachedResourceLoader->removeCachedResource(this);
-    m_liveObjectMarker = 0;
 }
 
 void CachedResource::failBeforeStarting()
@@ -381,17 +376,10 @@ void CachedResource::finish()
         m_status = Cached;
 }
 
-bool CachedResource::passesAccessControlCheck(SecurityOrigin& securityOrigin)
+bool CachedResource::passesAccessControlCheck(SecurityOrigin* securityOrigin)
 {
     String errorDescription;
-    return WebCore::passesAccessControlCheck(response(), resourceRequest().allowCookies() ? AllowStoredCredentials : DoNotAllowStoredCredentials, &securityOrigin, errorDescription);
-}
-
-bool CachedResource::passesSameOriginPolicyCheck(SecurityOrigin& securityOrigin)
-{
-    if (securityOrigin.canRequest(responseForSameOriginPolicyChecks().url()))
-        return true;
-    return passesAccessControlCheck(securityOrigin);
+    return WebCore::passesAccessControlCheck(m_response, resourceRequest().allowCookies() ? AllowStoredCredentials : DoNotAllowStoredCredentials, securityOrigin, errorDescription);
 }
 
 bool CachedResource::isExpired() const
@@ -440,22 +428,6 @@ double CachedResource::freshnessLifetime() const
         return (creationTime - lastModifiedValue) * 0.1;
     // If no cache headers are present, the specification leaves the decision to the UA. Other browsers seem to opt for 0.
     return 0;
-}
-
-void CachedResource::willSendRequest(ResourceRequest& request, const ResourceResponse& response)
-{
-    m_requestedFromNetworkingLayer = true;
-    if (response.isNull())
-        return;
-
-    // Redirect to data: URL uses the last HTTP response for SOP.
-    if (response.isHTTP() && request.url().protocolIsData())
-        m_redirectResponseForSameOriginPolicyChecks = response;
-}
-
-const ResourceResponse& CachedResource::responseForSameOriginPolicyChecks() const
-{
-    return m_redirectResponseForSameOriginPolicyChecks.isNull() ? m_response : m_redirectResponseForSameOriginPolicyChecks;
 }
 
 void CachedResource::responseReceived(const ResourceResponse& response)
@@ -785,29 +757,21 @@ bool CachedResource::canUseCacheValidator() const
     return m_response.hasCacheValidatorFields();
 }
 
-bool CachedResource::mustRevalidateDueToCacheHeaders(const CachedResourceLoader& cachedResourceLoader, CachePolicy cachePolicy) const
+bool CachedResource::mustRevalidateDueToCacheHeaders(CachePolicy cachePolicy) const
 {    
     ASSERT(cachePolicy == CachePolicyRevalidate || cachePolicy == CachePolicyCache || cachePolicy == CachePolicyVerify);
 
-    if (cachePolicy == CachePolicyRevalidate) {
-        FEATURE_COUNTER_INCREMENT_KEY(cachedResourceLoader.frame()->page(), FeatureCounterCachedResourceRevalidationReasonReloadKey);
+    if (cachePolicy == CachePolicyRevalidate)
         return true;
-    }
 
     if (m_response.cacheControlContainsNoCache() || m_response.cacheControlContainsNoStore()) {
         LOG(ResourceLoading, "CachedResource %p mustRevalidate because of m_response.cacheControlContainsNoCache() || m_response.cacheControlContainsNoStore()\n", this);
-        if (m_response.cacheControlContainsNoStore())
-            FEATURE_COUNTER_INCREMENT_KEY(cachedResourceLoader.frame()->page(), FeatureCounterCachedResourceRevalidationReasonNoStoreKey);
-        else
-            FEATURE_COUNTER_INCREMENT_KEY(cachedResourceLoader.frame()->page(), FeatureCounterCachedResourceRevalidationReasonNoCacheKey);
-
         return true;
     }
 
     if (cachePolicy == CachePolicyCache) {
         if (m_response.cacheControlContainsMustRevalidate() && isExpired()) {
             LOG(ResourceLoading, "CachedResource %p mustRevalidate because of cachePolicy == CachePolicyCache and m_response.cacheControlContainsMustRevalidate() && isExpired()\n", this);
-            FEATURE_COUNTER_INCREMENT_KEY(cachedResourceLoader.frame()->page(), FeatureCounterCachedResourceRevalidationReasonMustRevalidateIsExpiredKey);
             return true;
         }
         return false;
@@ -816,7 +780,6 @@ bool CachedResource::mustRevalidateDueToCacheHeaders(const CachedResourceLoader&
     // CachePolicyVerify
     if (isExpired()) {
         LOG(ResourceLoading, "CachedResource %p mustRevalidate because of isExpired()\n", this);
-        FEATURE_COUNTER_INCREMENT_KEY(cachedResourceLoader.frame()->page(), FeatureCounterCachedResourceRevalidationReasonIsExpiredKey);
         return true;
     }
 
@@ -838,9 +801,6 @@ bool CachedResource::isSafeToMakePurgeable() const
 
 bool CachedResource::makePurgeable(bool purgeable) 
 { 
-    if (m_liveObjectMarker != LiveMarker)
-        return false;
-
     if (purgeable) {
         ASSERT(isSafeToMakePurgeable());
 

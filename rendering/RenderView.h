@@ -27,7 +27,6 @@
 #include "PODFreeListArena.h"
 #include "Region.h"
 #include "RenderBlockFlow.h"
-#include "RenderWidget.h"
 #include "SelectionSubtreeRoot.h"
 #include <memory>
 #include <wtf/HashSet.h>
@@ -250,9 +249,6 @@ public:
     void scheduleLazyRepaint(RenderBox&);
     void unscheduleLazyRepaint(RenderBox&);
 
-    void protectRenderWidgetUntilLayoutIsDone(RenderWidget& widget) { m_protectedRenderWidgets.append(&widget); }
-    void releaseProtectedRenderWidgets() { m_protectedRenderWidgets.clear(); }
-
 protected:
     virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const override;
     virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const override;
@@ -369,7 +365,6 @@ private:
 #endif
 
     HashSet<RenderElement*> m_renderersWithPausedImageAnimation;
-    Vector<RefPtr<RenderWidget>> m_protectedRenderWidgets;
 
 #if ENABLE(SERVICE_CONTROLS)
     SelectionRectGatherer m_selectionRectGatherer;

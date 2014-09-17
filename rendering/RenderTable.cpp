@@ -1540,18 +1540,4 @@ const BorderValue& RenderTable::tableEndBorderAdjoiningCell(const RenderTableCel
     return style().borderStart();
 }
 
-void RenderTable::markForPaginationRelayoutIfNeeded()
-{
-    if (!view().layoutState()->isPaginated() || (!view().layoutState()->pageLogicalHeightChanged() && (!view().layoutState()->pageLogicalHeight() || view().layoutState()->pageLogicalOffset(this, logicalTop()) == pageLogicalOffset())))
-        return;
-    
-    // When a table moves, we have to dirty all of the sections too.
-    if (!needsLayout())
-        setChildNeedsLayout(MarkOnlyThis);
-    for (auto& child : childrenOfType<RenderTableSection>(*this)) {
-        if (!child.needsLayout())
-            child.setChildNeedsLayout(MarkOnlyThis);
-    }
-}
-
 }

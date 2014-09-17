@@ -58,8 +58,7 @@ void IconLoader::startLoading()
     if (m_resource || !m_frame.document())
         return;
 
-    // ContentSecurityPolicyImposition::DoPolicyCheck is a placeholder value. It does not affect the request since Content Security Policy does not apply to raw resources.
-    CachedResourceRequest request(ResourceRequest(m_frame.loader().icon().url()), ResourceLoaderOptions(SendCallbacks, SniffContent, BufferData, DoNotAllowStoredCredentials, DoNotAskClientForAnyCredentials, DoSecurityCheck, UseDefaultOriginRestrictionsForType, ContentSecurityPolicyImposition::DoPolicyCheck));
+    CachedResourceRequest request(ResourceRequest(m_frame.loader().icon().url()), ResourceLoaderOptions(SendCallbacks, SniffContent, BufferData, DoNotAllowStoredCredentials, DoNotAskClientForAnyCredentials, DoSecurityCheck, UseDefaultOriginRestrictionsForType));
 
     request.mutableResourceRequest().setPriority(ResourceLoadPriorityLow);
     request.setInitiator(cachedResourceRequestInitiators().icon);

@@ -34,7 +34,10 @@ namespace WebCore {
 RenderQuote::RenderQuote(Document& document, PassRef<RenderStyle> style, QuoteType quote)
     : RenderInline(document, WTF::move(style))
     , m_type(quote)
-    , m_text(emptyString())
+    , m_depth(-1)
+    , m_next(0)
+    , m_previous(0)
+    , m_isAttached(false)
 {
 }
 
@@ -334,30 +337,24 @@ static inline StringImpl* apostropheString()
     return apostropheString;
 }
 
-static RenderTextFragment* fragmentChild(RenderObject* lastChild)
-{
-    if (!lastChild)
-        return nullptr;
-
-    if (!toRenderText(lastChild)->isTextFragment())
-        return nullptr;
-
-    return toRenderTextFragment(lastChild);
-}
-
 void RenderQuote::updateText()
 {
     String text = computeText();
     if (m_text == text)
         return;
-    m_text = text;
-    // Start from the end of the child list because, if we've had a first-letter
-    // renderer inserted then the remaining text will be at the end.
-    if (auto* fragment = fragmentChild(lastChild())) {
-        fragment->setContentString(m_text);
+
+    while (RenderObject* child = lastChild())
+        child->destroy();
+
+    if (text == emptyString() || text == String()) {
+        m_text = String();
         return;
     }
-    addChild(new RenderTextFragment(document(), m_text));
+
+    m_text = text;
+
+    RenderTextFragment* fragment = new RenderTextFragment(document(), m_text.impl());
+    addChild(fragment);
 }
 
 String RenderQuote::computeText() const

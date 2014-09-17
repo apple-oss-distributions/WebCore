@@ -66,8 +66,6 @@ public:
     static PassRefPtr<Settings> create(Page*);
     ~Settings();
 
-    void pageDestroyed() { m_page = nullptr; }
-
     void setStandardFontFamily(const AtomicString&, UScriptCode = USCRIPT_COMMON);
     const AtomicString& standardFontFamily(UScriptCode = USCRIPT_COMMON) const;
 

@@ -35,7 +35,6 @@ namespace WebCore {
 
 class CachedSVGDocument;
 class CachedResourceLoader;
-struct ResourceLoaderOptions;
 
 class CachedSVGDocumentReference : public CachedSVGDocumentClient {
 public:
@@ -43,7 +42,7 @@ public:
 
     virtual ~CachedSVGDocumentReference();
 
-    void load(CachedResourceLoader*, const ResourceLoaderOptions&);
+    void load(CachedResourceLoader*);
     bool loadRequested() const { return m_loadRequested; }
 
     CachedSVGDocument* document() { return m_document.get(); }

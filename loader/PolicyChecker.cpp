@@ -86,7 +86,9 @@ void PolicyChecker::checkNavigationPolicy(const ResourceRequest& request, Docume
         return;
     }
 
-    if (m_frame.ownerElement() && !m_frame.ownerElement()->document().contentSecurityPolicy()->allowChildFrameFromSource(request.url(), m_frame.ownerElement()->isInUserAgentShadowTree())) {
+    // If we're loading content into a subframe, check against the parent's Content Security Policy
+    // and kill the load if that check fails.
+    if (m_frame.ownerElement() && !m_frame.ownerElement()->document().contentSecurityPolicy()->allowChildFrameFromSource(request.url())) {
         function(request, 0, false);
         return;
     }

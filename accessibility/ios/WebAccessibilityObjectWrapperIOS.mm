@@ -360,7 +360,7 @@ static AccessibilityObjectWrapper* AccessibilityUnignoredAncestor(AccessibilityO
     if (![self _prepareAccessibilityCall])
         return 0;
 
-    if ([self isAttachment] && [self attachmentView])
+    if ([self isAttachment])
         return [[self attachmentView] accessibilityElementCount];
     
     return m_object->children().size();
@@ -371,16 +371,15 @@ static AccessibilityObjectWrapper* AccessibilityUnignoredAncestor(AccessibilityO
     if (![self _prepareAccessibilityCall])
         return nil;
 
-    if ([self isAttachment] && [self attachmentView])
+    if ([self isAttachment])
         return [[self attachmentView] accessibilityElementAtIndex:index];
     
     const auto& children = m_object->children();
-    size_t elementIndex = static_cast<size_t>(index);
-    if (elementIndex >= children.size())
+    if (static_cast<unsigned>(index) >= children.size())
         return nil;
     
-    AccessibilityObjectWrapper* wrapper = children[elementIndex]->wrapper();
-    if (children[elementIndex]->isAttachment())
+    AccessibilityObjectWrapper* wrapper = children[index]->wrapper();
+    if (children[index]->isAttachment())
         return [wrapper attachmentView];
 
     return wrapper;
@@ -391,7 +390,7 @@ static AccessibilityObjectWrapper* AccessibilityUnignoredAncestor(AccessibilityO
     if (![self _prepareAccessibilityCall])
         return NSNotFound;
     
-    if ([self isAttachment] && [self attachmentView])
+    if ([self isAttachment])
         return [[self attachmentView] indexOfAccessibilityElement:element];
     
     const auto& children = m_object->children();
@@ -1262,11 +1261,7 @@ static void appendStringToResult(NSMutableString *result, NSString *string)
     if (parent)
         return parent->wrapper();
 
-    // Mock objects can have their parents detached but still exist in the cache.
-    if (m_object->isDetachedFromParent())
-        return nil;
-    
-    // The only object without a parent wrapper at this point should be a scroll view.
+    // The only object without a parent wrapper should be a scroll view.
     ASSERT(m_object->isAccessibilityScrollView());
     
     // Verify this is the top document. If not, we might need to go through the platform widget.
@@ -1627,13 +1622,6 @@ static RenderObject* rendererForView(WAKView* view)
     [wrapper setValue:[NSNumber numberWithBool:YES] forKey:@"isAccessibilityElement"];    
     [array addObject:wrapper];
     return YES;
-}
-
-- (void)_accessibilitySetValue:(NSString *)string
-{
-    if (![self _prepareAccessibilityCall])
-        return;
-    m_object->setValue(string);
 }
 
 - (NSString *)stringForTextMarkers:(NSArray *)markers

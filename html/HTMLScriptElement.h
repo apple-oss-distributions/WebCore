@@ -46,7 +46,6 @@ private:
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual InsertionNotificationRequest insertedInto(ContainerNode&) override;
-    virtual void didNotifySubtreeInsertions(ContainerNode*) override;
     virtual void childrenChanged(const ChildChange&) override;
 
     virtual bool isURLAttribute(const Attribute&) const override;

@@ -35,7 +35,6 @@
 #include "AccessibilityTable.h"
 #include "DOMTokenList.h"
 #include "Editor.h"
-#include "EventHandler.h"
 #include "FloatRect.h"
 #include "FocusController.h"
 #include "Frame.h"
@@ -532,8 +531,8 @@ void AccessibilityObject::findMatchingObjects(AccessibilitySearchCriteria* crite
 static PassRefPtr<Range> rangeClosestToRange(Range* referenceRange, PassRefPtr<Range> afterRange, PassRefPtr<Range> beforeRange)
 {
     ASSERT(referenceRange);
-    ASSERT(!afterRange || afterRange->startPosition() > referenceRange->startPosition());
-    ASSERT(!beforeRange || beforeRange->endPosition() < referenceRange->endPosition());
+    ASSERT(!afterRange || afterRange->startPosition() >= referenceRange->endPosition());
+    ASSERT(!beforeRange || beforeRange->endPosition() <= referenceRange->startPosition());
     
     if (!referenceRange || (!afterRange && !beforeRange))
         return nullptr;
@@ -542,8 +541,8 @@ static PassRefPtr<Range> rangeClosestToRange(Range* referenceRange, PassRefPtr<R
     if (!afterRange && beforeRange)
         return beforeRange;
     
-    unsigned positionsToAfterRange = Position::positionCountBetweenPositions(afterRange->startPosition(), referenceRange->startPosition());
-    unsigned positionsToBeforeRange = Position::positionCountBetweenPositions(afterRange->endPosition(), referenceRange->endPosition());
+    unsigned positionsToAfterRange = Position::positionCountBetweenPositions(afterRange->startPosition(), referenceRange->endPosition());
+    unsigned positionsToBeforeRange = Position::positionCountBetweenPositions(beforeRange->endPosition(), referenceRange->startPosition());
     
     return positionsToAfterRange < positionsToBeforeRange ? afterRange : beforeRange;
 }
@@ -558,7 +557,7 @@ PassRefPtr<Range> AccessibilityObject::rangeOfStringClosestToRangeInDirection(Ra
         return nullptr;
     
     bool isBackwardSearch = searchDirection == SearchDirectionPrevious;
-    FindOptions findOptions = AtWordStarts | CaseInsensitive | StartInSelection;
+    FindOptions findOptions = AtWordStarts | AtWordEnds | CaseInsensitive | StartInSelection;
     if (isBackwardSearch)
         findOptions |= Backwards;
     
@@ -618,6 +617,8 @@ String AccessibilityObject::selectText(AccessibilitySelectTextCriteria* criteria
     Vector<String>& searchStrings = criteria->searchStrings;
     
     RefPtr<Range> selectedStringRange = selectionRange();
+    // When starting our search again, make this a zero length range so that search forwards will find this selected range if its appropriate.
+    selectedStringRange->setEnd(selectedStringRange->startContainer(), selectedStringRange->startOffset());
     
     RefPtr<Range> closestAfterStringRange = nullptr;
     RefPtr<Range> closestBeforeStringRange = nullptr;
@@ -648,15 +649,31 @@ String AccessibilityObject::selectText(AccessibilitySelectTextCriteria* criteria
                 replacementString = closestString.lower();
                 replaceSelection = true;
                 break;
-            case FindAndReplaceActivity:
+            case FindAndReplaceActivity: {
                 replaceSelection = true;
+                
+                // When applying find and replace activities, we want to match the capitalization of the replaced text,
+                // (unless we're replacing with an abbreviation.)
+                String uppercaseReplacementString = replacementString.upper();
+                if (closestString.length() > 0 && replacementString.length() > 2 && replacementString != uppercaseReplacementString) {
+                    if (closestString[0] == closestString.upper()[0])
+                        makeCapitalized(&replacementString, 0);
+                    else
+                        replacementString = replacementString.lower();
+                }
                 break;
+            }
             case FindAndSelectActivity:
                 break;
             }
             
-            if (replaceSelection)
+            // A bit obvious, but worth noting the API contract for this method is that we should
+            // return the replacement string when replacing, but the selected string if not.
+            if (replaceSelection) {
                 frame->editor().replaceSelectionWithText(replacementString, true, true);
+                return replacementString;
+            }
+            
             return closestString;
         }
     }
@@ -776,25 +793,8 @@ bool AccessibilityObject::press()
         pressElement = hitTestElement;
     
     UserGestureIndicator gestureIndicator(DefinitelyProcessingUserGesture);
-    
-    bool dispatchedTouchEvent = dispatchTouchEvent();
-    if (!dispatchedTouchEvent)
-        pressElement->accessKeyAction(true);
-    
+    pressElement->accessKeyAction(true);
     return true;
-}
-    
-bool AccessibilityObject::dispatchTouchEvent()
-{
-    bool handled = false;
-#if ENABLE(IOS_TOUCH_EVENTS)
-    MainFrame* frame = mainFrame();
-    if (!frame)
-        return false;
-
-    frame->eventHandler().dispatchSimulatedTouchEvent(clickPoint());
-#endif
-    return handled;
 }
 
 Frame* AccessibilityObject::frame() const
@@ -1509,11 +1509,8 @@ const AccessibilityObject::AccessibilityChildrenVector& AccessibilityObject::chi
 
 void AccessibilityObject::updateChildrenIfNecessary()
 {
-    if (!hasChildren()) {
-        // Enable the cache in case we end up adding a lot of children, we don't want to recompute axIsIgnored each time.
-        AXAttributeCacheEnabler enableCache(axObjectCache());
-        addChildren();
-    }
+    if (!hasChildren())
+        addChildren();    
 }
     
 void AccessibilityObject::clearChildren()
@@ -2428,8 +2425,7 @@ AccessibilityObjectInclusion AccessibilityObject::defaultObjectInclusion() const
 bool AccessibilityObject::accessibilityIsIgnored() const
 {
     AXComputedObjectAttributeCache* attributeCache = nullptr;
-    AXObjectCache* cache = axObjectCache();
-    if (cache)
+    if (AXObjectCache* cache = axObjectCache())
         attributeCache = cache->computedObjectAttributeCache();
     
     if (attributeCache) {
@@ -2446,8 +2442,7 @@ bool AccessibilityObject::accessibilityIsIgnored() const
 
     bool result = computeAccessibilityIsIgnored();
 
-    // In case computing axIsIgnored disables attribute caching, we should refetch the object to see if it exists.
-    if (cache && (attributeCache = cache->computedObjectAttributeCache()))
+    if (attributeCache)
         attributeCache->setIgnored(axObjectID(), result ? IgnoreObject : IncludeObject);
 
     return result;

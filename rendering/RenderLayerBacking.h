@@ -80,7 +80,7 @@ public:
     void updateGeometry();
 
     // Update state the requires that descendant layers have been updated.
-    void updateAfterDescendants();
+    void updateAfterDescendents();
 
     // Update contents and clipping structure.
     void updateDrawsContent();
@@ -89,15 +89,15 @@ public:
 
     // Layer to clip children
     bool hasClippingLayer() const { return (m_childContainmentLayer && !m_usingTiledCacheLayer); }
-    GraphicsLayer* clippingLayer() const { return !m_usingTiledCacheLayer ? m_childContainmentLayer.get() : nullptr; }
+    GraphicsLayer* clippingLayer() const { return !m_usingTiledCacheLayer ? m_childContainmentLayer.get() : 0; }
 
     // Layer to get clipped by ancestor
-    bool hasAncestorClippingLayer() const { return m_ancestorClippingLayer != nullptr; }
+    bool hasAncestorClippingLayer() const { return m_ancestorClippingLayer != 0; }
     GraphicsLayer* ancestorClippingLayer() const { return m_ancestorClippingLayer.get(); }
 
     GraphicsLayer* contentsContainmentLayer() const { return m_contentsContainmentLayer.get(); }
 
-    bool hasContentsLayer() const { return m_foregroundLayer != nullptr; }
+    bool hasContentsLayer() const { return m_foregroundLayer != 0; }
     GraphicsLayer* foregroundLayer() const { return m_foregroundLayer.get(); }
 
     GraphicsLayer* backgroundLayer() const { return m_backgroundLayer.get(); }

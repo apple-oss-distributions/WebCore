@@ -174,13 +174,8 @@ void PageRuntimeAgent::reportExecutionContextCreation()
 void PageRuntimeAgent::notifyContextCreated(const String& frameId, JSC::ExecState* scriptState, SecurityOrigin* securityOrigin, bool isPageContext)
 {
     ASSERT(securityOrigin || isPageContext);
-
-    InjectedScript result = injectedScriptManager()->injectedScriptFor(scriptState);
-    if (result.hasNoValue())
-        return;
-
     int executionContextId = injectedScriptManager()->injectedScriptIdFor(scriptState);
-    String name = securityOrigin ? securityOrigin->toRawString() : String();
+    String name = securityOrigin ? securityOrigin->toRawString() : "";
     m_frontendDispatcher->executionContextCreated(ExecutionContextDescription::create()
         .setId(executionContextId)
         .setIsPageContext(isPageContext)

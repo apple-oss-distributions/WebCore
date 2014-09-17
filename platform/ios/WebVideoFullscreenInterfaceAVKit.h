@@ -35,7 +35,6 @@
 #include <WebCore/WebVideoFullscreenInterface.h>
 #include <wtf/RefPtr.h>
 #include <wtf/RetainPtr.h>
-#include <wtf/ThreadSafeRefCounted.h>
 
 OBJC_CLASS WebAVPlayerController;
 OBJC_CLASS AVPlayerViewController;
@@ -59,16 +58,8 @@ public:
     
 class WebVideoFullscreenInterfaceAVKit
     : public WebVideoFullscreenInterface
-    , public ThreadSafeRefCounted<WebVideoFullscreenInterfaceAVKit> {
-
-protected:
-    void setupFullscreenInternal(PlatformLayer&, IntRect initialRect, UIView *);
-    void beginSession();
-    void enterFullscreenOptimized();
-    void enterFullscreenStandard();
-    void exitFullscreenInternal(IntRect finalRect);
-    void cleanupFullscreenInternal();
-
+    , public RefCounted<WebVideoFullscreenInterfaceAVKit> {
+        
     RetainPtr<WebAVPlayerController> m_playerController;
     RetainPtr<AVPlayerViewController> m_playerViewController;
     RetainPtr<CALayer> m_videoLayer;
@@ -80,8 +71,9 @@ protected:
     RetainPtr<UIWindow> m_window;
     RetainPtr<UIViewController> m_viewController;
     RetainPtr<UIView> m_parentView;
-    RetainPtr<UIWindow> m_parentWindow;
 
+    WebAVPlayerController *playerController();
+    
     void doEnterFullscreen();
         
 public:
@@ -90,7 +82,6 @@ public:
     void setWebVideoFullscreenModel(WebVideoFullscreenModel*);
     void setWebVideoFullscreenChangeObserver(WebVideoFullscreenChangeObserver*);
     
-    virtual void resetMediaState() override; 
     virtual void setDuration(double) override;
     virtual void setCurrentTime(double currentTime, double anchorTime) override;
     virtual void setRate(bool isPlaying, float playbackRate) override;

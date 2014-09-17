@@ -172,7 +172,7 @@ bool SearchInputType::searchEventsShouldBeDispatched() const
 
 void SearchInputType::didSetValueByUserEdit(ValueChangeState state)
 {
-    if (m_cancelButton && element().renderer())
+    if (m_cancelButton)
         toRenderSearchField(element().renderer())->updateCancelButtonVisibility();
 
     // If the incremental attribute is set, then dispatch the search event

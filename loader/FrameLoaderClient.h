@@ -153,7 +153,6 @@ namespace WebCore {
 
         virtual void dispatchDidHandleOnloadEvents() = 0;
         virtual void dispatchDidReceiveServerRedirectForProvisionalLoad() = 0;
-        virtual void dispatchDidChangeProvisionalURL() { }
         virtual void dispatchDidCancelClientRedirect() = 0;
         virtual void dispatchWillPerformClientRedirect(const URL&, double interval, double fireDate) = 0;
         virtual void dispatchDidNavigateWithinPage() { }

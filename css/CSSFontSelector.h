@@ -67,7 +67,7 @@ public:
 
     void clearDocument();
 
-    void addFontFaceRule(const StyleRuleFontFace*, bool isInitiatingElementInUserAgentShadowTree);
+    void addFontFaceRule(const StyleRuleFontFace*);
 
     void fontLoaded();
     virtual void fontCacheInvalidated() override;

@@ -108,8 +108,6 @@ private:
     virtual bool canStartSelection() const override;
 
     virtual bool isURLAttribute(const Attribute&) const override;
-    virtual bool attributeContainsURL(const Attribute&) const override;
-    virtual String completeURLsInAttributeValue(const URL& base, const Attribute&) const override;
 
     virtual bool draggable() const override;
 

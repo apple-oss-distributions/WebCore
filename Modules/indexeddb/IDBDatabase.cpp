@@ -70,26 +70,7 @@ IDBDatabase::IDBDatabase(ScriptExecutionContext* context, PassRefPtr<IDBDatabase
 
 IDBDatabase::~IDBDatabase()
 {
-    // This does what IDBDatabase::close does, but without any ref/deref of the
-    // database since it is already in the process of being deleted. The logic here
-    // is also simpler since we know there are no transactions (since they ref the
-    // database when they are alive).
-
-    ASSERT(m_transactions.isEmpty());
-
-    if (!m_closePending) {
-        m_closePending = true;
-        m_backend->close(m_databaseCallbacks);
-    }
-
-    if (auto* context = scriptExecutionContext()) {
-        // Remove any pending versionchange events scheduled to fire on this
-        // connection. They would have been scheduled by the backend when another
-        // connection called setVersion, but the frontend connection is being
-        // closed before they could fire.
-        for (auto& event : m_enqueuedEvents)
-            context->eventQueue().cancelEvent(*event);
-    }
+    close();
 }
 
 int64_t IDBDatabase::nextTransactionId()
@@ -301,11 +282,6 @@ void IDBDatabase::closeConnection()
 {
     ASSERT(m_closePending);
     ASSERT(m_transactions.isEmpty());
-
-    // This can destroy the last reference to the database.
-    // Closing may result in deallocating the last transaction, which could result in deleting
-    // this IDBDatabase. We need the deallocation to happen after we are through.
-    Ref<IDBDatabase> protect(*this);
 
     m_backend->close(m_databaseCallbacks);
 

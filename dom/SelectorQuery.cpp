@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2011, 2013, 2014 Apple Inc. All rights reserved.
- * Copyright (C) 2014 Yusuke Suzuki <utatane.tea@gmail.com>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -252,8 +251,6 @@ static ContainerNode& filterRootById(ContainerNode& rootNode, const CSSSelector&
                 }
             }
         }
-        if (selector->relation() == CSSSelector::SubSelector)
-            continue;
         if (selector->relation() == CSSSelector::DirectAdjacent || selector->relation() == CSSSelector::IndirectAdjacent)
             inAdjacentChain = true;
         else
@@ -497,7 +494,7 @@ SelectorQuery* SelectorQueryCache::add(const String& selectors, Document& docume
     const int maximumSelectorQueryCacheSize = 256;
     if (m_entries.size() == maximumSelectorQueryCacheSize)
         m_entries.remove(m_entries.begin());
-
+    
     return m_entries.add(selectors, std::make_unique<SelectorQuery>(WTF::move(selectorList))).iterator->value.get();
 }
 

@@ -42,7 +42,6 @@ RenderMultiColumnSet::RenderMultiColumnSet(RenderFlowThread& flowThread, PassRef
     , m_computedColumnWidth(0)
     , m_computedColumnHeight(0)
     , m_availableColumnHeight(0)
-    , m_columnHeightComputed(false)
     , m_maxColumnHeight(RenderFlowThread::maxLogicalHeight())
     , m_minSpaceShortage(RenderFlowThread::maxLogicalHeight())
     , m_minimumColumnHeight(0)
@@ -169,9 +168,6 @@ void RenderMultiColumnSet::setAndConstrainColumnHeight(LayoutUnit newHeight)
         if (pageLength)
             m_computedColumnHeight = pageLength;
     }
-    
-    m_columnHeightComputed = true;
-
     // FIXME: the height may also be affected by the enclosing pagination context, if any.
 }
 
@@ -345,7 +341,6 @@ void RenderMultiColumnSet::prepareForLayout(bool initial)
         if (initial) {
             m_computedColumnHeight = 0;
             m_availableColumnHeight = 0;
-            m_columnHeightComputed = false;
         }
     } else
         setAndConstrainColumnHeight(heightAdjustedForSetOffset(multiColumnFlowThread()->columnHeightAvailable()));

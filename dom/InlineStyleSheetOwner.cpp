@@ -123,7 +123,7 @@ void InlineStyleSheetOwner::createSheet(Element& element, const String& text)
 
     if (!isValidCSSContentType(element, m_contentType))
         return;
-    if (!document.contentSecurityPolicy()->allowInlineStyle(document.url(), m_startLineNumber, element.isInUserAgentShadowTree()))
+    if (!document.contentSecurityPolicy()->allowInlineStyle(document.url(), m_startLineNumber))
         return;
 
     RefPtr<MediaQuerySet> mediaQueries;

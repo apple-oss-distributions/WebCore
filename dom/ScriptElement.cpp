@@ -79,15 +79,10 @@ ScriptElement::~ScriptElement()
     stopLoadRequest();
 }
 
-bool ScriptElement::shouldNotifySubtreeInsertions(ContainerNode& insertionPoint)
+void ScriptElement::insertedInto(ContainerNode& insertionPoint)
 {
-    return insertionPoint.inDocument() && !m_parserInserted;
-}
-
-void ScriptElement::didNotifySubtreeInsertions(ContainerNode*)
-{
-    ASSERT(!m_parserInserted);
-    prepareScript(); // FIXME: Provide a real starting line number here.
+    if (insertionPoint.inDocument() && !m_parserInserted)
+        prepareScript(); // FIXME: Provide a real starting line number here.
 }
 
 void ScriptElement::childrenChanged()
@@ -255,10 +250,7 @@ bool ScriptElement::requestScript(const String& sourceUrl)
 
     ASSERT(!m_cachedScript);
     if (!stripLeadingAndTrailingHTMLSpaces(sourceUrl).isEmpty()) {
-        ResourceLoaderOptions options = CachedResourceLoader::defaultCachedResourceOptions();
-        options.setContentSecurityPolicyImposition(m_element.isInUserAgentShadowTree() ? ContentSecurityPolicyImposition::SkipPolicyCheck : ContentSecurityPolicyImposition::DoPolicyCheck);
-
-        CachedResourceRequest request(ResourceRequest(m_element.document().completeURL(sourceUrl)), options);
+        CachedResourceRequest request(ResourceRequest(m_element.document().completeURL(sourceUrl)));
 
         String crossOriginMode = m_element.fastGetAttribute(HTMLNames::crossoriginAttr);
         if (!crossOriginMode.isNull()) {
@@ -288,7 +280,7 @@ void ScriptElement::executeScript(const ScriptSourceCode& sourceCode)
     if (sourceCode.isEmpty())
         return;
 
-    if (!m_isExternalScript && !m_element.document().contentSecurityPolicy()->allowInlineScript(m_element.document().url(), m_startLineNumber, m_element.isInUserAgentShadowTree()))
+    if (!m_isExternalScript && !m_element.document().contentSecurityPolicy()->allowInlineScript(m_element.document().url(), m_startLineNumber))
         return;
 
 #if ENABLE(NOSNIFF)
@@ -344,7 +336,10 @@ void ScriptElement::notifyFinished(CachedResource* resource)
     if (!m_cachedScript)
         return;
 
-    if (m_requestUsesAccessControl && !m_cachedScript->passesSameOriginPolicyCheck(*m_element.document().securityOrigin())) {
+    if (m_requestUsesAccessControl
+        && !m_element.document().securityOrigin()->canRequest(m_cachedScript->response().url())
+        && !m_cachedScript->passesAccessControlCheck(m_element.document().securityOrigin())) {
+
         dispatchErrorEvent();
         DEPRECATED_DEFINE_STATIC_LOCAL(String, consoleMessage, (ASCIILiteral("Cross-origin script load denied by Cross-Origin Resource Sharing policy.")));
         m_element.document().addConsoleMessage(MessageSource::JS, MessageLevel::Error, consoleMessage);

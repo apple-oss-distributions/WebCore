@@ -141,10 +141,8 @@ public:
 
 - (void)didSetupFullscreen
 {
-    WebThreadRun(^{
-        _model->setVideoFullscreenLayer(_videoFullscreenLayer.get());
-        _interface->enterFullscreen();
-    });
+    _model->setVideoFullscreenLayer(_videoFullscreenLayer.get());
+    _interface->enterFullscreen();
 }
 
 - (void)didEnterFullscreen

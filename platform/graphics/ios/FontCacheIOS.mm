@@ -52,7 +52,7 @@ static inline bool isFontWeightBold(NSInteger fontWeight)
 
 static inline bool requiresCustomFallbackFont(const UInt32 character)
 {
-    return character == AppleLogo || character == blackCircle || character == narrowNonBreakingSpace;
+    return character == AppleLogo || character == blackCircle;
 }
 
 static CFCharacterSetRef copyFontCharacterSet(CFStringRef fontName)
@@ -151,8 +151,8 @@ static LanguageSpecificFont languageSpecificFallbackFont(UChar32 c)
         return LanguageSpecificFont::None;
     if (c < 0x1200)
         return LanguageSpecificFont::Korean;
-    if (c < 0x1400)
-        return LanguageSpecificFont::None;
+    if (c < 0x1401)
+        return LanguageSpecificFont::Khmer; // FIXME: These codepoints don't belong to Khmer
     if (c < 0x1780)
         return LanguageSpecificFont::CanadianAboriginalSyllabic;
     if (c < 0x1800)
@@ -429,11 +429,6 @@ PassRefPtr<SimpleFontData> FontCache::systemFallbackForCharacters(const FontDesc
         }
         if (useEmojiFont)
             simpleFontData = getCachedFontData(description, appleColorEmoji, false, DoNotRetain);
-        else {
-            RetainPtr<CTFontRef> fallbackFont = adoptCF(CTFontCreateForCharacters(originalFontData->getCTFont(), characters, length, nullptr));
-            if (RetainPtr<CFStringRef> foundFontName = adoptCF(CTFontCopyPostScriptName(fallbackFont.get())))
-                simpleFontData = getCachedFontData(description, foundFontName.get(), false, DoNotRetain);
-        }
         break;
     }
     }
@@ -494,30 +489,15 @@ PassRefPtr<SimpleFontData> FontCache::getLastResortFallbackFont(const FontDescri
 FontPlatformData* FontCache::getCustomFallbackFont(const UInt32 c, const FontDescription& description)
 {
     ASSERT(requiresCustomFallbackFont(c));
-
-    static NeverDestroyed<AtomicString> helveticaFamily("Helvetica Neue", AtomicString::ConstructFromLiteral);
-    static NeverDestroyed<AtomicString> lockClockFamily("LockClock-Light", AtomicString::ConstructFromLiteral);
-    static NeverDestroyed<AtomicString> timesNewRomanPSMTFamily("TimesNewRomanPSMT", AtomicString::ConstructFromLiteral);
-
-    AtomicString* family = nullptr;
-    switch (c) {
-    case AppleLogo:
-        family = &helveticaFamily.get();
-        break;
-    case blackCircle:
-        family = &lockClockFamily.get();
-        break;
-    case narrowNonBreakingSpace:
-        family = &timesNewRomanPSMTFamily.get();
-        break;
-    default:
-        ASSERT_NOT_REACHED();
-        return nullptr;
+    if (c == AppleLogo) {
+        static NeverDestroyed<AtomicString> helveticaFamily("Helvetica Neue", AtomicString::ConstructFromLiteral);
+        return getCachedFontPlatformData(description, helveticaFamily);
     }
-    ASSERT(family);
-    if (!family)
-        return nullptr;
-    return getCachedFontPlatformData(description, *family);
+    if (c == blackCircle) {
+        static NeverDestroyed<AtomicString> lockClockFamily("LockClock-Light", AtomicString::ConstructFromLiteral);
+        return getCachedFontPlatformData(description, lockClockFamily);
+    }
+    return nullptr;
 }
 
 static inline FontTraitsMask toTraitsMask(CTFontSymbolicTraits ctFontTraits)

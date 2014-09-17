@@ -27,7 +27,6 @@
 
 #include "AdjustViewSizeOrNot.h"
 #include "Color.h"
-#include "ContainerNode.h"
 #include "LayoutMilestones.h"
 #include "LayoutRect.h"
 #include "Pagination.h"
@@ -120,8 +119,6 @@ public:
     void setNeedsLayout();
     void setViewportConstrainedObjectsNeedLayout();
 
-    bool needsStyleRecalcOrLayout(bool includeSubframes = true) const;
-
     bool needsFullRepaint() const { return m_needsFullRepaint; }
 
     bool renderedCharactersExceed(unsigned threshold);
@@ -180,8 +177,6 @@ public:
     // a faithful representation of the content.
     bool isSoftwareRenderable() const;
 
-    void didMoveOnscreen();
-    void willMoveOffscreen();
     void setIsInWindow(bool);
 
     void resetScrollbars();
@@ -237,6 +232,7 @@ public:
     virtual void setFixedVisibleContentRect(const IntRect&) override;
 #endif
     virtual void setScrollPosition(const IntPoint&) override;
+    void scrollPositionChangedViaPlatformWidget(const IntPoint& oldPosition, const IntPoint& newPosition);
     virtual void updateLayerPositionsAfterScrolling() override;
     virtual void updateCompositingLayersAfterScrolling() override;
     virtual bool requestScrollPositionUpdate(const IntPoint&) override;
@@ -352,10 +348,6 @@ public:
 
     bool isInChildFrameWithFrameFlattening() const;
 
-    void startDisallowingLayout() { ++m_layoutDisallowed; }
-    void endDisallowingLayout() { ASSERT(m_layoutDisallowed > 0); --m_layoutDisallowed; }
-    bool layoutDisallowed() const { return m_layoutDisallowed; }
-
     static double currentPaintTimeStamp() { return sCurrentPaintTimeStamp; } // returns 0 if not painting
     
     void updateLayoutAndStyleIfNeededRecursive();
@@ -391,14 +383,14 @@ public:
 
     bool scrollToFragment(const URL&);
     bool scrollToAnchor(const String&);
-    void maintainScrollPositionAtAnchor(ContainerNode*);
+    void maintainScrollPositionAtAnchor(Node*);
     void scrollElementToRect(Element*, const IntRect&);
 
     // Methods to convert points and rects between the coordinate space of the renderer, and this view.
-    IntRect convertFromRenderer(const RenderElement*, const IntRect&) const;
-    IntRect convertToRenderer(const RenderElement*, const IntRect&) const;
-    IntPoint convertFromRenderer(const RenderElement*, const IntPoint&) const;
-    IntPoint convertToRenderer(const RenderElement*, const IntPoint&) const;
+    IntRect convertFromRendererToContainingView(const RenderElement*, const IntRect&) const;
+    IntRect convertFromContainingViewToRenderer(const RenderElement*, const IntRect&) const;
+    IntPoint convertFromRendererToContainingView(const RenderElement*, const IntPoint&) const;
+    IntPoint convertFromContainingViewToRenderer(const RenderElement*, const IntPoint&) const;
 
     bool isFrameViewScrollCorner(RenderScrollbarPart* scrollCorner) const { return m_scrollCorner == scrollCorner; }
 
@@ -473,8 +465,8 @@ public:
     virtual int footerHeight() const override { return m_footerHeight; }
     void setFooterHeight(int);
 
-    virtual float topContentInset() const override;
-    void topContentInsetDidChange();
+    virtual float topContentInset(TopContentInsetType = TopContentInsetType::WebCoreContentInset) const override;
+    void topContentInsetDidChange(float newTopContentInset);
 
     virtual void willStartLiveResize() override;
     virtual void willEndLiveResize() override;
@@ -526,7 +518,6 @@ private:
         InLayout,
         InViewSizeAdjust,
         InPostLayout,
-        InPostLayerPositionsUpdatedAfterLayout,
     };
     LayoutPhase layoutPhase() const { return m_layoutPhase; }
 
@@ -542,10 +533,6 @@ private:
     bool shouldLayoutAfterContentsResized() const;
 
     bool shouldUpdateCompositingLayersAfterScrolling() const;
-
-    virtual bool shouldDeferScrollUpdateAfterContentSizeChange() override;
-
-    virtual void scrollPositionChangedViaPlatformWidgetImpl(const IntPoint& oldPosition, const IntPoint& newPosition) override;
 
     void applyOverflowToViewport(RenderElement*, ScrollbarMode& hMode, ScrollbarMode& vMode);
     void applyPaginationToViewport();
@@ -694,7 +681,6 @@ private:
 
     unsigned m_deferSetNeedsLayouts;
     bool m_setNeedsLayoutWasDeferred;
-    int m_layoutDisallowed { 0 };
 
     RefPtr<Node> m_nodeToDraw;
     PaintBehavior m_paintBehavior;
@@ -705,7 +691,7 @@ private:
     bool m_isVisuallyNonEmpty;
     bool m_firstVisuallyNonEmptyLayoutCallbackPending;
 
-    RefPtr<ContainerNode> m_maintainScrollPositionAnchor;
+    RefPtr<Node> m_maintainScrollPositionAnchor;
 
     // Renderer to hold our custom scroll corner.
     RenderPtr<RenderScrollbarPart> m_scrollCorner;

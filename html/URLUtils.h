@@ -98,7 +98,7 @@ void URLUtils<T>::setProtocol(const String& value)
 template <typename T>
 String URLUtils<T>::username() const
 {
-    return href().encodedUser();
+    return href().user();
 }
 
 template <typename T>
@@ -112,7 +112,7 @@ void URLUtils<T>::setUsername(const String& user)
 template <typename T>
 String URLUtils<T>::password() const
 {
-    return href().encodedPass();
+    return href().pass();
 }
 
 template <typename T>

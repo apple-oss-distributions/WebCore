@@ -145,13 +145,6 @@ public:
             m_floats = std::make_unique<Vector<RenderBox*>>(1, &floatingBox);
     }
 
-    void removeFloat(RenderBox& floatingBox)
-    {
-        ASSERT(m_floats);
-        ASSERT(m_floats->contains(&floatingBox));
-        m_floats->remove(m_floats->find(&floatingBox));
-    }
-
     Vector<RenderBox*>* floatsPtr() { ASSERT(!isDirty()); return m_floats.get(); }
 
     virtual void extractLineBoxFromRenderObject() override final;
@@ -186,6 +179,9 @@ public:
     {
         return InlineFlowBox::logicalBottomLayoutOverflow(lineBottom());
     }
+
+    // Used to calculate the underline offset for TextUnderlinePositionUnder.
+    float maxLogicalTop() const;
 
     Node* getLogicalStartBoxWithNode(InlineBox*&) const;
     Node* getLogicalEndBoxWithNode(InlineBox*&) const;

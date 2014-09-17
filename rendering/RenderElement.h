@@ -132,11 +132,6 @@ public:
     bool hasClipPath() const { return style().clipPath(); }
     bool hasHiddenBackface() const { return style().backfaceVisibility() == BackfaceVisibilityHidden; }
 
-    // anchorRect() is conceptually similar to absoluteBoundingBoxRect(), but is intended for scrolling to an anchor.
-    // For inline renderers, this gets the logical top left of the first leaf child and the logical bottom right of the
-    // last leaf child, converts them to absolute coordinates, and makes a box out of them.
-    LayoutRect anchorRect() const;
-
 #if ENABLE(CSS_FILTERS)
     bool hasFilter() const { return style().hasFilter(); }
 #else
@@ -163,9 +158,6 @@ public:
 
     void setRenderBoxNeedsLazyRepaint(bool b) { m_renderBoxNeedsLazyRepaint = b; }
     bool renderBoxNeedsLazyRepaint() const { return m_renderBoxNeedsLazyRepaint; }
-
-    
-    const RenderElement* enclosingRendererWithTextDecoration(TextDecoration, bool firstLine) const;
 
 protected:
     enum BaseTypeFlags {
@@ -231,9 +223,6 @@ private:
     RenderStyle* cachedFirstLineStyle() const;
 
     virtual void newImageAnimationFrameAvailable(CachedImage&) final override;
-
-    bool getLeadingCorner(FloatPoint& output) const;
-    bool getTrailingCorner(FloatPoint& output) const;
 
     unsigned m_baseTypeFlags : 6;
     bool m_ancestorLineBoxDirty : 1;

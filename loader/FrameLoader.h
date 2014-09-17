@@ -108,7 +108,7 @@ public:
     // FIXME: These are all functions which start loads. We have too many.
     void loadURLIntoChildFrame(const URL&, const String& referer, Frame*);
     void loadFrameRequest(const FrameLoadRequest&, LockHistory, LockBackForwardList,  // Called by submitForm, calls loadPostRequest and loadURL.
-        PassRefPtr<Event>, PassRefPtr<FormState>, ShouldSendReferrer, NewFrameOpenerPolicy);
+        PassRefPtr<Event>, PassRefPtr<FormState>, ShouldSendReferrer, AllowNavigationToInvalidURL);
 
     void load(const FrameLoadRequest&);
 
@@ -118,7 +118,7 @@ public:
     unsigned long loadResourceSynchronously(const ResourceRequest&, StoredCredentials, ClientCredentialPolicy, ResourceError&, ResourceResponse&, Vector<char>& data);
 
     void changeLocation(SecurityOrigin*, const URL&, const String& referrer, LockHistory = LockHistory::Yes,
-        LockBackForwardList = LockBackForwardList::Yes, bool refresh = false);
+        LockBackForwardList = LockBackForwardList::Yes, bool refresh = false, AllowNavigationToInvalidURL = AllowNavigationToInvalidURL::Yes);
     void urlSelected(const URL&, const String& target, PassRefPtr<Event>, LockHistory, LockBackForwardList, ShouldSendReferrer);
     void submitForm(PassRefPtr<FormSubmission>);
 
@@ -266,6 +266,8 @@ public:
 
     void setOriginalURLForDownloadRequest(ResourceRequest&);
 
+    bool suppressOpenerInNewFrame() const { return m_suppressOpenerInNewFrame; }
+
     static ObjectContentType defaultObjectContentType(const URL&, const String& mimeType, bool shouldPreferPlugInsForImages);
 
     bool quickRedirectComing() const { return m_quickRedirectComing; }
@@ -318,8 +320,8 @@ private:
 
     bool handleBeforeUnloadEvent(Chrome&, FrameLoader* frameLoaderBeingNavigated);
 
-    void continueLoadAfterNavigationPolicy(const ResourceRequest&, PassRefPtr<FormState>, bool shouldContinue);
-    void continueLoadAfterNewWindowPolicy(const ResourceRequest&, PassRefPtr<FormState>, const String& frameName, const NavigationAction&, bool shouldContinue, NewFrameOpenerPolicy);
+    void continueLoadAfterNavigationPolicy(const ResourceRequest&, PassRefPtr<FormState>, bool shouldContinue, AllowNavigationToInvalidURL);
+    void continueLoadAfterNewWindowPolicy(const ResourceRequest&, PassRefPtr<FormState>, const String& frameName, const NavigationAction&, bool shouldContinue, AllowNavigationToInvalidURL);
     void continueFragmentScrollAfterNavigationPolicy(const ResourceRequest&, bool shouldContinue);
 
     bool shouldPerformFragmentNavigation(bool isFormSubmission, const String& httpMethod, FrameLoadType, const URL&);
@@ -340,18 +342,18 @@ private:
 
     void dispatchDidCommitLoad();
 
-    void urlSelected(const FrameLoadRequest&, PassRefPtr<Event>, LockHistory, LockBackForwardList, ShouldSendReferrer, ShouldReplaceDocumentIfJavaScriptURL);
+    void urlSelected(const FrameLoadRequest&, PassRefPtr<Event>, LockHistory, LockBackForwardList, ShouldSendReferrer, ShouldReplaceDocumentIfJavaScriptURL, AllowNavigationToInvalidURL);
 
-    void loadWithDocumentLoader(DocumentLoader*, FrameLoadType, PassRefPtr<FormState>); // Calls continueLoadAfterNavigationPolicy
+    void loadWithDocumentLoader(DocumentLoader*, FrameLoadType, PassRefPtr<FormState>, AllowNavigationToInvalidURL); // Calls continueLoadAfterNavigationPolicy
     void load(DocumentLoader*);                                                         // Calls loadWithDocumentLoader   
 
     void loadWithNavigationAction(const ResourceRequest&, const NavigationAction&,      // Calls loadWithDocumentLoader
-        LockHistory, FrameLoadType, PassRefPtr<FormState>);
+        LockHistory, FrameLoadType, PassRefPtr<FormState>, AllowNavigationToInvalidURL);
 
     void loadPostRequest(const ResourceRequest&, const String& referrer,                // Called by loadFrameRequest, calls loadWithNavigationAction
-        const String& frameName, LockHistory, FrameLoadType, PassRefPtr<Event>, PassRefPtr<FormState>, NewFrameOpenerPolicy);
+        const String& frameName, LockHistory, FrameLoadType, PassRefPtr<Event>, PassRefPtr<FormState>, AllowNavigationToInvalidURL);
     void loadURL(const URL&, const String& referrer, const String& frameName,          // Called by loadFrameRequest, calls loadWithNavigationAction or dispatches to navigation policy delegate
-        LockHistory, FrameLoadType, PassRefPtr<Event>, PassRefPtr<FormState>, NewFrameOpenerPolicy);
+        LockHistory, FrameLoadType, PassRefPtr<Event>, PassRefPtr<FormState>, AllowNavigationToInvalidURL);
 
     bool shouldReload(const URL& currentURL, const URL& destinationURL);
 
@@ -430,6 +432,7 @@ private:
     HashSet<Frame*> m_openedFrames;
 
     bool m_loadingFromCachedPage;
+    bool m_suppressOpenerInNewFrame;
 
     bool m_currentNavigationHasShownBeforeUnloadConfirmPanel;
 

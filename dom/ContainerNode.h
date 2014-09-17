@@ -107,6 +107,8 @@ public:
 
     void cloneChildNodes(ContainerNode* clone);
 
+    virtual LayoutRect boundingBox() const override;
+
     enum ChildChangeType { ElementInserted, ElementRemoved, TextInserted, TextRemoved, TextChanged, AllChildrenRemoved, NonContentsChildChanged };
     enum ChildChangeSource { ChildChangeSourceParser, ChildChangeSourceAPI };
     struct ChildChange {
@@ -151,6 +153,9 @@ protected:
 private:
     void removeBetween(Node* previousChild, Node* nextChild, Node& oldChild);
     void insertBeforeCommon(Node& nextChild, Node& oldChild);
+
+    bool getUpperLeftCorner(FloatPoint&) const;
+    bool getLowerRightCorner(FloatPoint&) const;
 
     void notifyChildInserted(Node& child, ChildChangeSource);
     void notifyChildRemoved(Node& child, Node* previousSibling, Node* nextSibling, ChildChangeSource);

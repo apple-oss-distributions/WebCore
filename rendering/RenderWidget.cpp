@@ -99,14 +99,13 @@ void RenderWidget::willBeDestroyed()
         cache->remove(this);
     }
 
-    setWidget(nullptr);
+    setWidget(0);
 
     RenderReplaced::willBeDestroyed();
 }
 
 RenderWidget::~RenderWidget()
 {
-    ASSERT(!m_refCount);
 }
 
 // Widgets are always placed on integer boundaries, so rounding the size is actually
@@ -306,15 +305,15 @@ void RenderWidget::setOverlapTestResult(bool isOverlapped)
     toFrameView(m_widget.get())->setIsOverlapped(isOverlapped);
 }
 
-RenderWidget::ChildWidgetState RenderWidget::updateWidgetPosition()
+void RenderWidget::updateWidgetPosition()
 {
     if (!m_widget)
-        return ChildWidgetState::ChildWidgetIsDestroyed;
+        return;
 
     WeakPtr<RenderWidget> weakThis = createWeakPtr();
     bool widgetSizeChanged = updateWidgetGeometry();
-    if (!weakThis || !m_widget)
-        return ChildWidgetState::ChildWidgetIsDestroyed;
+    if (!weakThis)
+        return;
 
     // if the frame size got changed, or if view needs layout (possibly indicating
     // content size is wrong) we have to do a layout to set the right widget size.
@@ -324,7 +323,6 @@ RenderWidget::ChildWidgetState RenderWidget::updateWidgetPosition()
         if ((widgetSizeChanged || frameView->needsLayout()) && frameView->frame().page())
             frameView->layout();
     }
-    return ChildWidgetState::ChildWidgetIsValid;
 }
 
 IntRect RenderWidget::windowClipRect() const

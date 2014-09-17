@@ -266,10 +266,10 @@ IntRect ScrollView::unobscuredContentRectInternal(VisibleContentRectIncludesScro
     return IntRect(IntPoint(m_scrollOffset), expandedIntSize(visibleContentSize));
 }
 
-IntSize ScrollView::unscaledTotalVisibleContentSize(VisibleContentRectIncludesScrollbars scrollbarInclusion) const
+IntSize ScrollView::unscaledVisibleContentSizeIncludingObscuredArea(VisibleContentRectIncludesScrollbars scrollbarInclusion) const
 {
     if (platformWidget())
-        return platformVisibleContentSize(scrollbarInclusion == IncludeScrollbars);
+        return platformVisibleContentSizeIncludingObscuredArea(scrollbarInclusion == IncludeScrollbars);
 
 #if USE(TILED_BACKING_STORE)
     if (!m_fixedVisibleContentRect.isEmpty())
@@ -291,10 +291,10 @@ IntSize ScrollView::unscaledTotalVisibleContentSize(VisibleContentRectIncludesSc
     
 IntSize ScrollView::unscaledUnobscuredVisibleContentSize(VisibleContentRectIncludesScrollbars scrollbarInclusion) const
 {
-    IntSize visibleContentSize = unscaledTotalVisibleContentSize(scrollbarInclusion);
-    
+    IntSize visibleContentSize = unscaledVisibleContentSizeIncludingObscuredArea(scrollbarInclusion);
+
     if (platformWidget())
-        return visibleContentSize;
+        return platformVisibleContentSize(scrollbarInclusion == IncludeScrollbars);
 
 #if USE(TILED_BACKING_STORE)
     if (!m_fixedVisibleContentRect.isEmpty())
@@ -310,7 +310,7 @@ IntRect ScrollView::visibleContentRectInternal(VisibleContentRectIncludesScrollb
 #if PLATFORM(IOS)
     if (visibleContentRectBehavior == LegacyIOSDocumentViewRect) {
         if (platformWidget())
-            return platformVisibleContentRect(scrollbarInclusion == IncludeScrollbars);
+            return platformVisibleContentRect(true /* include scrollbars */);
     }
     
     if (platformWidget())
@@ -410,13 +410,13 @@ IntPoint ScrollView::adjustScrollPositionWithinRange(const IntPoint& scrollPoint
 
 IntSize ScrollView::documentScrollOffsetRelativeToViewOrigin() const
 {
-    return scrollOffset() - IntSize(0, headerHeight() + topContentInset());
+    return scrollOffset() - IntSize(0, headerHeight() + topContentInset(TopContentInsetType::WebCoreOrPlatformContentInset));
 }
 
 IntPoint ScrollView::documentScrollPositionRelativeToViewOrigin() const
 {
     IntPoint scrollPosition = this->scrollPosition();
-    return IntPoint(scrollPosition.x(), scrollPosition.y() - headerHeight() - topContentInset());
+    return IntPoint(scrollPosition.x(), scrollPosition.y() - headerHeight() - topContentInset(TopContentInsetType::WebCoreOrPlatformContentInset));
 }
 
 IntSize ScrollView::documentScrollOffsetRelativeToScrollableAreaOrigin() const
@@ -457,41 +457,10 @@ void ScrollView::setScrollOffset(const IntPoint& offset)
     scrollTo(newOffset);
 }
 
-void ScrollView::scrollPositionChangedViaPlatformWidget(const IntPoint& oldPosition, const IntPoint& newPosition)
-{
-    // We should not attempt to actually modify (paint) platform widgets if the layout phase
-    // is not complete. Instead, defer the scroll event until the layout finishes.
-    if (shouldDeferScrollUpdateAfterContentSizeChange()) {
-        // We only care about the most recent scroll position change request
-        m_deferredScrollPositions = std::make_unique<std::pair<IntPoint, IntPoint>>(std::make_pair(oldPosition, newPosition));
-        return;
-    }
-
-    scrollPositionChangedViaPlatformWidgetImpl(oldPosition, newPosition);
-}
-
-void ScrollView::handleDeferredScrollUpdateAfterContentSizeChange()
-{
-    ASSERT(!shouldDeferScrollUpdateAfterContentSizeChange());
-
-    if (!m_deferredScrollDelta && !m_deferredScrollPositions)
-        return;
-
-    ASSERT(static_cast<bool>(m_deferredScrollDelta) != static_cast<bool>(m_deferredScrollPositions));
-
-    if (m_deferredScrollDelta)
-        completeUpdatesAfterScrollTo(*m_deferredScrollDelta);
-    else if (m_deferredScrollPositions)
-        scrollPositionChangedViaPlatformWidgetImpl(m_deferredScrollPositions->first, m_deferredScrollPositions->second);
-    
-    m_deferredScrollDelta = nullptr;
-    m_deferredScrollPositions = nullptr;
-}
-
 void ScrollView::scrollTo(const IntSize& newOffset)
 {
     IntSize scrollDelta = newOffset - m_scrollOffset;
-    if (scrollDelta.isZero())
+    if (scrollDelta == IntSize())
         return;
     m_scrollOffset = newOffset;
 
@@ -504,19 +473,6 @@ void ScrollView::scrollTo(const IntSize& newOffset)
         return;
     }
 #endif
-    // We should not attempt to actually modify layer contents if the layout phase
-    // is not complete. Instead, defer the scroll event until the layout finishes.
-    if (shouldDeferScrollUpdateAfterContentSizeChange()) {
-        ASSERT(!m_deferredScrollDelta);
-        m_deferredScrollDelta = std::make_unique<IntSize>(scrollDelta);
-        return;
-    }
-
-    completeUpdatesAfterScrollTo(scrollDelta);
-}
-
-void ScrollView::completeUpdatesAfterScrollTo(const IntSize& scrollDelta)
-{
     updateLayerPositionsAfterScrolling();
     scrollContents(scrollDelta);
     updateCompositingLayersAfterScrolling();
@@ -874,7 +830,7 @@ IntPoint ScrollView::contentsToRootView(const IntPoint& contentsPoint) const
     if (delegatesScrolling())
         return convertToRootView(contentsPoint);
 
-    IntPoint viewPoint = contentsPoint + IntSize(0, headerHeight() + topContentInset()) - scrollOffset();
+    IntPoint viewPoint = contentsPoint + IntSize(0, headerHeight() + topContentInset(TopContentInsetType::WebCoreOrPlatformContentInset)) - scrollOffset();
     return convertToRootView(viewPoint);  
 }
 
@@ -894,7 +850,7 @@ IntRect ScrollView::contentsToRootView(const IntRect& contentsRect) const
         return convertToRootView(contentsRect);
 
     IntRect viewRect = contentsRect;
-    viewRect.move(-scrollOffset() + IntSize(0, headerHeight() + topContentInset()));
+    viewRect.move(-scrollOffset() + IntSize(0, headerHeight() + topContentInset(TopContentInsetType::WebCoreOrPlatformContentInset)));
     return convertToRootView(viewRect);
 }
 
@@ -904,7 +860,7 @@ IntPoint ScrollView::rootViewToTotalContents(const IntPoint& rootViewPoint) cons
         return convertFromRootView(rootViewPoint);
 
     IntPoint viewPoint = convertFromRootView(rootViewPoint);
-    return viewPoint + scrollOffset() - IntSize(0, topContentInset());
+    return viewPoint + scrollOffset() - IntSize(0, topContentInset(TopContentInsetType::WebCoreOrPlatformContentInset));
 }
 
 IntPoint ScrollView::windowToContents(const IntPoint& windowPoint) const
@@ -921,7 +877,7 @@ IntPoint ScrollView::contentsToWindow(const IntPoint& contentsPoint) const
     if (delegatesScrolling())
         return convertToContainingWindow(contentsPoint);
 
-    IntPoint viewPoint = contentsPoint + IntSize(0, headerHeight() + topContentInset()) - scrollOffset();
+    IntPoint viewPoint = contentsPoint + IntSize(0, headerHeight() + topContentInset(TopContentInsetType::WebCoreOrPlatformContentInset)) - scrollOffset();
     return convertToContainingWindow(viewPoint);  
 }
 
@@ -941,7 +897,7 @@ IntRect ScrollView::contentsToWindow(const IntRect& contentsRect) const
         return convertToContainingWindow(contentsRect);
 
     IntRect viewRect = contentsRect;
-    viewRect.move(-scrollOffset() + IntSize(0, headerHeight() + topContentInset()));
+    viewRect.move(-scrollOffset() + IntSize(0, headerHeight() + topContentInset(TopContentInsetType::WebCoreOrPlatformContentInset)));
     return convertToContainingWindow(viewRect);
 }
 
@@ -1041,7 +997,6 @@ void ScrollView::setScrollbarOverlayStyle(ScrollbarOverlayStyle overlayStyle)
 
 void ScrollView::setFrameRect(const IntRect& newRect)
 {
-    Ref<ScrollView> protect(*this);
     IntRect oldRect = frameRect();
     
     if (newRect == oldRect)
@@ -1263,7 +1218,6 @@ void ScrollView::paint(GraphicsContext* context, const IntRect& rect)
         scrollViewDirtyRect.intersect(visibleAreaWithScrollbars);
         context->translate(x(), y());
         scrollViewDirtyRect.moveBy(-location());
-        context->clip(IntRect(IntPoint(), visibleAreaWithScrollbars.size()));
 
         paintScrollbars(context, scrollViewDirtyRect);
     }
@@ -1561,7 +1515,26 @@ IntRect ScrollView::platformVisibleContentRect(bool) const
     return IntRect();
 }
 
+float ScrollView::platformTopContentInset() const
+{
+    return 0;
+}
+
+void ScrollView::platformSetTopContentInset(float)
+{
+}
+
 IntSize ScrollView::platformVisibleContentSize(bool) const
+{
+    return IntSize();
+}
+
+IntRect ScrollView::platformVisibleContentRectIncludingObscuredArea(bool) const
+{
+    return IntRect();
+}
+
+IntSize ScrollView::platformVisibleContentSizeIncludingObscuredArea(bool) const
 {
     return IntSize();
 }

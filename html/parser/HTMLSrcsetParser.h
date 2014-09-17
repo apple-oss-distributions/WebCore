@@ -104,8 +104,6 @@ ImageCandidate bestFitSourceForImageAttributes(float deviceScaleFactor, const At
 #endif
     );
 
-Vector<ImageCandidate> parseImageCandidatesFromSrcsetAttribute(StringView attribute);
-
 }
 
 #endif

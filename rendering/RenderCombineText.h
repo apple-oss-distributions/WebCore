@@ -52,7 +52,7 @@ private:
     virtual void setRenderedText(const String&) override;
 
     RefPtr<RenderStyle> m_combineFontStyle;
-    FloatSize m_combinedTextSize;
+    float m_combinedTextWidth;
     bool m_isCombined : 1;
     bool m_needsFontUpdate : 1;
 };

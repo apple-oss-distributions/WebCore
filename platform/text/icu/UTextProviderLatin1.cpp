@@ -104,7 +104,7 @@ static UBool uTextLatin1Access(UText* uText, int64_t index, UBool forward)
         }
         if (index >= length && uText->chunkNativeLimit == length) {
             // Off the end of the buffer, but we can't get it.
-            uText->chunkOffset = static_cast<int32_t>(index - uText->chunkNativeStart);
+            uText->chunkOffset = uText->chunkLength;
             return FALSE;
         }
     } else {
@@ -136,7 +136,7 @@ static UBool uTextLatin1Access(UText* uText, int64_t index, UBool forward)
         if (uText->chunkNativeStart < 0)
             uText->chunkNativeStart = 0;
 
-        uText->chunkOffset = static_cast<int32_t>(index - uText->chunkNativeStart);
+        uText->chunkOffset = uText->chunkLength;
     }
     uText->chunkLength = static_cast<int32_t>(uText->chunkNativeLimit - uText->chunkNativeStart);
 

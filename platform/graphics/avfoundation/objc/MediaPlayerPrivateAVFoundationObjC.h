@@ -63,7 +63,6 @@ class WebCoreAVFResourceLoader;
 class InbandMetadataTextTrackPrivateAVF;
 class InbandTextTrackPrivateAVFObjC;
 class AudioTrackPrivateAVFObjC;
-class MediaSelectionGroupAVFObjC;
 class VideoTrackPrivateAVFObjC;
 
 class MediaPlayerPrivateAVFoundationObjC : public MediaPlayerPrivateAVFoundation {
@@ -147,7 +146,7 @@ private:
     virtual void platformSetVisible(bool);
     virtual void platformPlay();
     virtual void platformPause();
-    virtual float currentTime() const;
+    virtual double currentTimeDouble() const override;
     virtual void setVolume(float);
     virtual void setClosedCaptionsVisible(bool);
     virtual void paint(GraphicsContext*, const IntRect&);
@@ -165,7 +164,7 @@ private:
 
     virtual bool supportsAcceleratedRendering() const { return true; }
     virtual float mediaTimeForTimeValue(float) const;
-    virtual double maximumDurationToCacheMediaTime() const;
+    virtual double maximumDurationToCacheMediaTime() const { return 5; }
 
     virtual void createAVPlayer();
     virtual void createAVPlayerItem();
@@ -182,7 +181,7 @@ private:
     virtual std::unique_ptr<PlatformTimeRanges> platformBufferedTimeRanges() const;
     virtual double platformMinTimeSeekable() const;
     virtual double platformMaxTimeSeekable() const;
-    virtual float platformDuration() const;
+    virtual double platformDuration() const;
     virtual float platformMaxTimeLoaded() const;
     virtual void beginLoadingMetadata();
     virtual void sizeChanged();
@@ -241,8 +240,6 @@ private:
 #if HAVE(AVFOUNDATION_MEDIA_SELECTION_GROUP)
     void processMediaSelectionOptions();
     AVMediaSelectionGroup* safeMediaSelectionGroupForLegibleMedia();
-    AVMediaSelectionGroup* safeMediaSelectionGroupForAudibleMedia();
-    AVMediaSelectionGroup* safeMediaSelectionGroupForVisualMedia();
 #endif
 
 #if ENABLE(DATACUE_VALUE)
@@ -273,16 +270,14 @@ private:
     virtual double maxFastForwardRate() const override { return m_cachedCanPlayFastForward ? std::numeric_limits<double>::infinity() : 2.0; }
     virtual double minFastReverseRate() const override { return m_cachedCanPlayFastReverse ? -std::numeric_limits<double>::infinity() : 0.0; }
 
-    virtual URL resolvedURL() const override;
-
     WeakPtrFactory<MediaPlayerPrivateAVFoundationObjC> m_weakPtrFactory;
 
     RetainPtr<AVURLAsset> m_avAsset;
     RetainPtr<AVPlayer> m_avPlayer;
     RetainPtr<AVPlayerItem> m_avPlayerItem;
     RetainPtr<AVPlayerLayer> m_videoLayer;
-    RetainPtr<PlatformLayer> m_videoInlineLayer;
 #if PLATFORM(IOS)
+    RetainPtr<PlatformLayer> m_videoInlineLayer;
     RetainPtr<PlatformLayer> m_videoFullscreenLayer;
     FloatRect m_videoFullscreenFrame;
     MediaPlayer::VideoGravity m_videoFullscreenGravity;
@@ -321,10 +316,6 @@ private:
 #if ENABLE(VIDEO_TRACK)
     Vector<RefPtr<AudioTrackPrivateAVFObjC>> m_audioTracks;
     Vector<RefPtr<VideoTrackPrivateAVFObjC>> m_videoTracks;
-#if HAVE(AVFOUNDATION_MEDIA_SELECTION_GROUP)
-    RefPtr<MediaSelectionGroupAVFObjC> m_audibleGroup;
-    RefPtr<MediaSelectionGroupAVFObjC> m_visualGroup;
-#endif
 #endif
 
     InbandTextTrackPrivateAVF* m_currentTextTrack;

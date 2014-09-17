@@ -1077,6 +1077,8 @@ HitTestResult EventHandler::hitTestResultAtPoint(const LayoutPoint& point, HitTe
     if (!m_frame.contentRenderer())
         return result;
 
+    m_frame.document()->updateLayout();
+    
     // hitTestResultAtPoint is specifically used to hitTest into all frames, thus it always allows child frame content.
     HitTestRequest request(hitType | HitTestRequest::AllowChildFrameContent);
     m_frame.contentRenderer()->hitTest(request, result);
@@ -2534,7 +2536,7 @@ bool EventHandler::platformCompleteWheelEvent(const PlatformWheelEvent& event, E
     return didHandleEvent;
 }
 
-bool EventHandler::platformCompletePlatformWidgetWheelEvent(const PlatformWheelEvent&, ContainerNode*)
+bool EventHandler::platformCompletePlatformWidgetWheelEvent(const PlatformWheelEvent&, const Widget&, ContainerNode*)
 {
     return true;
 }
@@ -2593,7 +2595,7 @@ bool EventHandler::handleWheelEvent(const PlatformWheelEvent& event)
                         scrollableArea->setScrolledProgrammatically(false);
                     if (!widget->platformWidget())
                         return true;
-                    return platformCompletePlatformWidgetWheelEvent(event, scrollableContainer.get());
+                    return platformCompletePlatformWidgetWheelEvent(event, *widget, scrollableContainer.get());
                 }
             }
         }

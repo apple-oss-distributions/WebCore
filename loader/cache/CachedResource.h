@@ -175,8 +175,7 @@ public:
     // Updates the expire date on the cache entry file
     void finish();
 
-    bool passesAccessControlCheck(SecurityOrigin&);
-    bool passesSameOriginPolicyCheck(SecurityOrigin&);
+    bool passesAccessControlCheck(SecurityOrigin*);
 
     // Called by the cache if the object has been removed from the cache
     // while still being referenced. This means the object should delete itself
@@ -191,12 +190,10 @@ public:
 
     ResourceBuffer* resourceBuffer() const { ASSERT(!m_purgeableData); return m_data.get(); }
 
-    virtual void willSendRequest(ResourceRequest&, const ResourceResponse&);
+    virtual void willSendRequest(ResourceRequest&, const ResourceResponse&) { m_requestedFromNetworkingLayer = true; }
     virtual void responseReceived(const ResourceResponse&);
     void setResponse(const ResourceResponse& response) { m_response = response; }
     const ResourceResponse& response() const { return m_response; }
-    // This is the same as response() except after HTTP redirect to data: URL.
-    const ResourceResponse& responseForSameOriginPolicyChecks() const;
 
     bool canDelete() const { return !hasClients() && !m_loader && !m_preloadCount && !m_handleCount && !m_resourceToRevalidate && !m_proxyResource; }
     bool hasOneHandle() const { return m_handleCount == 1; }
@@ -229,7 +226,7 @@ public:
     
     bool canUseCacheValidator() const;
 
-    virtual bool mustRevalidateDueToCacheHeaders(const CachedResourceLoader&, CachePolicy) const;
+    virtual bool mustRevalidateDueToCacheHeaders(CachePolicy) const;
 
     bool isCacheValidator() const { return m_resourceToRevalidate; }
     CachedResource* resourceToRevalidate() const { return m_resourceToRevalidate; }
@@ -302,7 +299,6 @@ protected:
     ResourceLoadPriority m_loadPriority;
 
     ResourceResponse m_response;
-    ResourceResponse m_redirectResponseForSameOriginPolicyChecks;
     double m_responseTimestamp;
 
     RefPtr<ResourceBuffer> m_data;
@@ -373,7 +369,6 @@ private:
 
     // These handles will need to be updated to point to the m_resourceToRevalidate in case we get 304 response.
     HashSet<CachedResourceHandleBase*> m_handlesToRevalidate;
-    unsigned m_liveObjectMarker;
 };
 
 #define CACHED_RESOURCE_TYPE_CASTS(ToClassName, FromClassName, CachedResourceType) \

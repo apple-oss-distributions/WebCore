@@ -29,20 +29,13 @@
 ] interface Internals {
     DOMString address(Node node);
 
-    // Animated image pausing testing.
-    [RaisesException] boolean hasPausedImageAnimations(Element element);
-
     [RaisesException] DOMString elementRenderTreeAsText(Element element);
     boolean isPreloaded(DOMString url);
     boolean isLoadingFromMemoryCache(DOMString url);
 
-    void clearPageCache();
-    unsigned int pageCacheSize();
-
     [RaisesException] CSSStyleDeclaration computedStyleIncludingVisitedInfo(Node node);
 
     [RaisesException] Node ensureShadowRoot(Element host);
-    [RaisesException] Node ensureUserAgentShadowRoot(Element host);
     [RaisesException] Node createShadowRoot(Element host);
     [RaisesException] Node shadowRoot(Element host);
 
@@ -89,8 +82,6 @@
     [RaisesException] DOMString markerDescriptionForNode(Node node, DOMString markerType, unsigned long index);
     void addTextMatchMarker(Range range, boolean isActive);
     [RaisesException] void setMarkedTextMatchesAreHighlighted(boolean flag);
-
-    void invalidateFontCache();
 
     [RaisesException] void setScrollViewPosition(long x, long y);
 
@@ -241,9 +232,6 @@
     //  startTrackingRepaints, repaintRectsAsText, stopTrackingRepaints.
     [RaisesException] void startTrackingRepaints();
     [RaisesException] void stopTrackingRepaints();
-
-    [RaisesException] void startTrackingLayerFlushes();
-    [RaisesException] unsigned long layerFlushCount();
 
     // |node| should be Document, HTMLIFrameElement, or unspecified.
     // If |node| is an HTMLIFrameElement, it assumes node.contentDocument is

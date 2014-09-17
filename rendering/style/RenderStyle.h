@@ -1708,7 +1708,7 @@ public:
 #endif
 
     StyleDifference diff(const RenderStyle*, unsigned& changedContextSensitiveProperties) const;
-    bool diffRequiresRepaint(const RenderStyle*) const;
+    bool diffRequiresLayerRepaint(const RenderStyle&, bool isComposited) const;
 
     bool isDisplayReplacedType() const { return isDisplayReplacedType(display()); }
     bool isDisplayInlineType() const { return isDisplayInlineType(display()); }
@@ -2073,10 +2073,10 @@ inline LayoutUnit adjustLayoutUnitForAbsoluteZoom(LayoutUnit value, const Render
 
 inline bool RenderStyle::setZoom(float f)
 {
-    setEffectiveZoom(effectiveZoom() * f);
     if (compareEqual(visual->m_zoom, f))
         return false;
     visual.access()->m_zoom = f;
+    setEffectiveZoom(effectiveZoom() * zoom());
     return true;
 }
 

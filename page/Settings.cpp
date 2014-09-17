@@ -53,9 +53,6 @@ namespace WebCore {
 
 static void setImageLoadingSettings(Page* page)
 {
-    if (!page)
-        return;
-
     for (Frame* frame = &page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
         frame->document()->cachedResourceLoader()->setImagesEnabled(page->settings().areImagesEnabled());
         frame->document()->cachedResourceLoader()->setAutoLoadImages(page->settings().loadsImagesAutomatically());
@@ -200,7 +197,7 @@ Settings::Settings(Page* page)
     // hash before trying to use it.
     AtomicString::init();
     initializeDefaultFontFamilies();
-    m_page = page; // Page is not yet fully initialized when constructing Settings, so keeping m_page null over initializeDefaultFontFamilies() call.
+    m_page = page; // Page is not yet fully initialized wen constructing Settings, so keeping m_page null over initializeDefaultFontFamilies() call.
 }
 
 Settings::~Settings()
@@ -329,8 +326,7 @@ void Settings::setTextAutosizingEnabled(bool textAutosizingEnabled)
         return;
 
     m_textAutosizingEnabled = textAutosizingEnabled;
-    if (m_page)
-        m_page->setNeedsRecalcStyleInAllFrames();
+    m_page->setNeedsRecalcStyleInAllFrames();
 }
 
 void Settings::setTextAutosizingWindowSizeOverride(const IntSize& textAutosizingWindowSizeOverride)
@@ -339,16 +335,12 @@ void Settings::setTextAutosizingWindowSizeOverride(const IntSize& textAutosizing
         return;
 
     m_textAutosizingWindowSizeOverride = textAutosizingWindowSizeOverride;
-    if (m_page)
-        m_page->setNeedsRecalcStyleInAllFrames();
+    m_page->setNeedsRecalcStyleInAllFrames();
 }
 
 void Settings::setTextAutosizingFontScaleFactor(float fontScaleFactor)
 {
     m_textAutosizingFontScaleFactor = fontScaleFactor;
-
-    if (!m_page)
-        return;
 
     // FIXME: I wonder if this needs to traverse frames like in WebViewImpl::resize, or whether there is only one document per Settings instance?
     for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext())
@@ -365,9 +357,6 @@ void Settings::setMediaTypeOverride(const String& mediaTypeOverride)
         return;
 
     m_mediaTypeOverride = mediaTypeOverride;
-
-    if (!m_page)
-        return;
 
     FrameView* view = m_page->mainFrame().view();
     ASSERT(view);
@@ -401,10 +390,6 @@ void Settings::setScriptEnabled(bool isScriptEnabled)
         return;
 
     m_isScriptEnabled = isScriptEnabled;
-
-    if (!m_page)
-        return;
-
 #if PLATFORM(IOS)
     m_page->setNeedsRecalcStyleInAllFrames();
 #endif
@@ -445,8 +430,7 @@ void Settings::setUserStyleSheetLocation(const URL& userStyleSheetLocation)
 
     m_userStyleSheetLocation = userStyleSheetLocation;
 
-    if (m_page)
-        m_page->userStyleSheetLocationChanged();
+    m_page->userStyleSheetLocationChanged();
 }
 
 // FIXME: This quirk is needed because of Radar 4674537 and 5211271. We need to phase it out once Adobe
@@ -468,14 +452,11 @@ double Settings::defaultMinDOMTimerInterval()
 
 void Settings::setMinDOMTimerInterval(double interval)
 {
-    if (m_page)
-        m_page->setMinimumTimerInterval(interval);
+    m_page->setMinimumTimerInterval(interval);
 }
 
 double Settings::minDOMTimerInterval()
 {
-    if (!m_page)
-        return 0;
     return m_page->minimumTimerInterval();
 }
 
@@ -491,8 +472,6 @@ double Settings::defaultDOMTimerAlignmentInterval()
 
 double Settings::domTimerAlignmentInterval() const
 {
-    if (!m_page)
-        return 0;
     return m_page->timerAlignmentInterval();
 }
 
@@ -509,10 +488,6 @@ void Settings::setUsesPageCache(bool usesPageCache)
         return;
         
     m_usesPageCache = usesPageCache;
-
-    if (!m_page)
-        return;
-
     if (!m_usesPageCache) {
         int first = -m_page->backForward().backCount();
         int last = m_page->backForward().forwardCount();
@@ -526,9 +501,7 @@ void Settings::setScreenFontSubstitutionEnabled(bool enabled)
     if (m_screenFontSubstitutionEnabled == enabled)
         return;
     m_screenFontSubstitutionEnabled = enabled;
-
-    if (m_page)
-        m_page->setNeedsRecalcStyleInAllFrames();
+    m_page->setNeedsRecalcStyleInAllFrames();
 }
 
 void Settings::setFontRenderingMode(FontRenderingMode mode)
@@ -536,8 +509,7 @@ void Settings::setFontRenderingMode(FontRenderingMode mode)
     if (fontRenderingMode() == mode)
         return;
     m_fontRenderingMode = mode;
-    if (m_page)
-        m_page->setNeedsRecalcStyleInAllFrames();
+    m_page->setNeedsRecalcStyleInAllFrames();
 }
 
 FontRenderingMode Settings::fontRenderingMode() const
@@ -558,8 +530,7 @@ void Settings::setDNSPrefetchingEnabled(bool dnsPrefetchingEnabled)
         return;
 
     m_dnsPrefetchingEnabled = dnsPrefetchingEnabled;
-    if (m_page)
-        m_page->dnsPrefetchingStateChanged();
+    m_page->dnsPrefetchingStateChanged();
 }
 
 void Settings::setShowTiledScrollingIndicator(bool enabled)
@@ -583,8 +554,7 @@ void Settings::setStorageBlockingPolicy(SecurityOrigin::StorageBlockingPolicy en
         return;
 
     m_storageBlockingPolicy = enabled;
-    if (m_page)
-        m_page->storageBlockingStateChanged();
+    m_page->storageBlockingStateChanged();
 }
 
 void Settings::setBackgroundShouldExtendBeyondPage(bool shouldExtend)
@@ -594,8 +564,7 @@ void Settings::setBackgroundShouldExtendBeyondPage(bool shouldExtend)
 
     m_backgroundShouldExtendBeyondPage = shouldExtend;
 
-    if (m_page)
-        m_page->mainFrame().view()->updateExtendBackgroundIfNecessary();
+    m_page->mainFrame().view()->updateExtendBackgroundIfNecessary();
 }
 
 #if USE(AVFOUNDATION)
@@ -624,7 +593,7 @@ void Settings::setScrollingPerformanceLoggingEnabled(bool enabled)
 {
     m_scrollingPerformanceLoggingEnabled = enabled;
 
-    if (m_page && m_page->mainFrame().view())
+    if (m_page->mainFrame().view())
         m_page->mainFrame().view()->setScrollingPerformanceLoggingEnabled(enabled);
 }
 
@@ -666,8 +635,7 @@ void Settings::setHiddenPageDOMTimerThrottlingEnabled(bool flag)
     if (m_hiddenPageDOMTimerThrottlingEnabled == flag)
         return;
     m_hiddenPageDOMTimerThrottlingEnabled = flag;
-    if (m_page)
-        m_page->hiddenPageDOMTimerThrottlingStateChanged();
+    m_page->hiddenPageDOMTimerThrottlingStateChanged();
 }
 #endif
 
@@ -676,8 +644,7 @@ void Settings::setHiddenPageCSSAnimationSuspensionEnabled(bool flag)
     if (m_hiddenPageCSSAnimationSuspensionEnabled == flag)
         return;
     m_hiddenPageCSSAnimationSuspensionEnabled = flag;
-    if (m_page)
-        m_page->hiddenPageCSSAnimationSuspensionStateChanged();
+    m_page->hiddenPageCSSAnimationSuspensionStateChanged();
 }
 
 void Settings::setFontFallbackPrefersPictographs(bool preferPictographs)
@@ -686,8 +653,7 @@ void Settings::setFontFallbackPrefersPictographs(bool preferPictographs)
         return;
 
     m_fontFallbackPrefersPictographs = preferPictographs;
-    if (m_page)
-        m_page->setNeedsRecalcStyleInAllFrames();
+    m_page->setNeedsRecalcStyleInAllFrames();
 }
 
 void Settings::setLowPowerVideoAudioBufferSizeEnabled(bool flag)

@@ -158,6 +158,7 @@
 #include <wtf/CurrentTime.h>
 #include <wtf/TemporaryChange.h>
 #include <wtf/text/StringBuffer.h>
+#include <yarr/RegularExpression.h>
 
 #if ENABLE(SHARED_WORKERS)
 #include "SharedWorkerRepository.h"
@@ -1770,10 +1771,6 @@ void Document::recalcStyle(Style::Change change)
 
     InspectorInstrumentation::didRecalculateStyle(cookie);
 
-    // Some animated images may now be inside the viewport due to style recalc,
-    // resume them if necessary.
-    frameView.resumeVisibleImageAnimationsIncludingSubframes();
-
     // As a result of the style recalculation, the currently hovered element might have been
     // detached (for example, by setting display:none in the :hover style), schedule another mouseMove event
     // to check if any other elements ended up under the mouse pointer due to re-layout.
@@ -2059,14 +2056,6 @@ void Document::prepareForDestruction()
     clearTouchEventListeners();
 #endif
 
-#if HAVE(ACCESSIBILITY)
-    // Sub-frames need to cleanup Nodes in the text marker cache when the Document disappears.
-    if (this != &topDocument()) {
-        if (AXObjectCache* cache = existingAXObjectCache())
-            cache->clearTextMarkerNodesInUse(this);
-    }
-#endif
-    
     disconnectDescendantFrames();
     if (m_domWindow && m_frame)
         m_domWindow->willDetachDocumentFromFrame();
@@ -2392,14 +2381,16 @@ void Document::implicitClose()
     if (f) {
         f->loader().icon().startLoader();
         f->animation().startAnimationsIfNotSuspended(this);
+
+        // FIXME: We shouldn't be dispatching pending events globally on all Documents here.
+        // For now, only do this when there is a Frame, otherwise this could cause JS reentrancy
+        // below SVG font parsing, for example. <https://webkit.org/b/136269>
+        ImageLoader::dispatchPendingBeforeLoadEvents();
+        ImageLoader::dispatchPendingLoadEvents();
+        ImageLoader::dispatchPendingErrorEvents();
+        HTMLLinkElement::dispatchPendingLoadEvents();
+        HTMLStyleElement::dispatchPendingLoadEvents();
     }
-
-    ImageLoader::dispatchPendingBeforeLoadEvents();
-    ImageLoader::dispatchPendingLoadEvents();
-    ImageLoader::dispatchPendingErrorEvents();
-
-    HTMLLinkElement::dispatchPendingLoadEvents();
-    HTMLStyleElement::dispatchPendingLoadEvents();
 
     // To align the HTML load event and the SVGLoad event for the outermost <svg> element, fire it from
     // here, instead of doing it from SVGElement::finishedParsingChildren (if externalResourcesRequired="false",
@@ -2457,14 +2448,10 @@ void Document::implicitClose()
         // The AX cache may have been cleared at this point, but we need to make sure it contains an
         // AX object to send the notification to. getOrCreate will make sure that an valid AX object
         // exists in the cache (we ignore the return value because we don't need it here). This is 
-        // only safe to call when a layout is not in progress, so it can not be used in postNotification.
-        //
-        // This notification is now called AXNewDocumentLoadComplete because there are other handlers that will
-        // catch new AND page history loads, and that uses AXLoadComplete
-        
+        // only safe to call when a layout is not in progress, so it can not be used in postNotification.    
         axObjectCache()->getOrCreate(renderView());
         if (this == &topDocument())
-            axObjectCache()->postNotification(renderView(), AXObjectCache::AXNewDocumentLoadComplete);
+            axObjectCache()->postNotification(renderView(), AXObjectCache::AXLoadComplete);
         else {
             // AXLoadComplete can only be posted on the top document, so if it's a document
             // in an iframe that just finished loading, post AXLayoutComplete instead.
@@ -2806,9 +2793,6 @@ CSSStyleSheet& Document::elementSheet()
 void Document::processHttpEquiv(const String& equiv, const String& content)
 {
     ASSERT(!equiv.isNull() && !content.isNull());
-
-    if (page() && !page()->settings().httpEquivEnabled())
-        return;
 
     Frame* frame = this->frame();
 
@@ -5348,6 +5332,15 @@ static void unwrapFullScreenRenderer(RenderFullScreen* fullScreenRenderer, Eleme
         fullScreenElement->parentNode()->setNeedsStyleRecalc(ReconstructRenderTree);
 }
 
+static bool hostIsYouTube(const String& host)
+{
+    // Match .youtube.com, youtube.com, youtube.co.uk, and all two-letter country codes.
+    static NeverDestroyed<JSC::Yarr::RegularExpression> youtubePattern("(^|\\.)youtube.(com|co.uk|[a-z]{2})$", TextCaseInsensitive);
+    ASSERT(youtubePattern.get().isValid());
+
+    return youtubePattern.get().match(host);
+}
+
 void Document::webkitWillEnterFullScreenForElement(Element* element)
 {
     if (!hasLivingRenderTree() || inPageCache())
@@ -5385,8 +5378,11 @@ void Document::webkitWillEnterFullScreenForElement(Element* element)
         RenderFullScreen::wrapRenderer(renderer, renderer ? renderer->parent() : nullptr, *this);
 
     m_fullScreenElement->setContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(true);
-    
+
     recalcStyle(Style::Force);
+
+    if (settings() && settings()->needsSiteSpecificQuirks() && hostIsYouTube(url().host()))
+        fullScreenChangeDelayTimerFired(m_fullScreenChangeDelayTimer);
 }
 
 void Document::webkitDidEnterFullScreenForElement(Element*)
@@ -5399,7 +5395,8 @@ void Document::webkitDidEnterFullScreenForElement(Element*)
 
     m_fullScreenElement->didBecomeFullscreenElement();
 
-    m_fullScreenChangeDelayTimer.startOneShot(0);
+    if (!settings() || !settings()->needsSiteSpecificQuirks() || !hostIsYouTube(url().host()))
+        m_fullScreenChangeDelayTimer.startOneShot(0);
 }
 
 void Document::webkitWillExitFullScreenForElement(Element*)
@@ -5435,9 +5432,16 @@ void Document::webkitDidExitFullScreenForElement(Element*)
     // the exiting document.
     bool eventTargetQueuesEmpty = m_fullScreenChangeEventTargetQueue.isEmpty() && m_fullScreenErrorEventTargetQueue.isEmpty();
     Document& exitingDocument = eventTargetQueuesEmpty ? topDocument() : *this;
-    exitingDocument.m_fullScreenChangeDelayTimer.startOneShot(0);
+
+    // FIXME(136605): Remove this quirk once YouTube moves to relative widths and heights for
+    // fullscreen mode.
+    if (settings() && settings()->needsSiteSpecificQuirks() && hostIsYouTube(url().host()))
+        exitingDocument.fullScreenChangeDelayTimerFired(exitingDocument.m_fullScreenChangeDelayTimer);
+    else
+        exitingDocument.m_fullScreenChangeDelayTimer.startOneShot(0);
+
 }
-    
+
 void Document::setFullScreenRenderer(RenderFullScreen* renderer)
 {
     if (renderer == m_fullScreenRenderer)

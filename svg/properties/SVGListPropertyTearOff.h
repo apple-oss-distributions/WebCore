@@ -186,7 +186,7 @@ protected:
         if (!livesInOtherList && indexToModify && static_cast<unsigned>(indexToRemove) == *indexToModify)
             return false;
 
-        propertyTearOff->removeItemFromList(indexToRemove, true);
+        propertyTearOff->removeItemFromList(indexToRemove, livesInOtherList);
 
         if (!indexToModify)
             return true;

@@ -67,16 +67,12 @@ public:
 
     static RenderWidget* find(const Widget*);
 
-    enum class ChildWidgetState { ChildWidgetIsValid, ChildWidgetIsDestroyed };
-    ChildWidgetState updateWidgetPosition() WARN_UNUSED_RETURN;
+    void updateWidgetPosition();
     IntRect windowClipRect() const;
 
     bool requiresAcceleratedCompositing() const;
 
     WeakPtr<RenderWidget> createWeakPtr() { return m_weakPtrFactory.createWeakPtr(); }
-
-    void ref() { ++m_refCount; }
-    void deref();
 
 protected:
     RenderWidget(HTMLFrameOwnerElement&, PassRef<RenderStyle>);
@@ -106,15 +102,7 @@ private:
     WeakPtrFactory<RenderWidget> m_weakPtrFactory;
     RefPtr<Widget> m_widget;
     IntRect m_clipRect; // The rectangle needs to remain correct after scrolling, so it is stored in content view coordinates, and not clipped to window.
-    unsigned m_refCount { 1 };
 };
-
-inline void RenderWidget::deref()
-{
-    ASSERT(m_refCount);
-    if (!--m_refCount)
-        delete this;
-}
 
 RENDER_OBJECT_TYPE_CASTS(RenderWidget, isWidget())
 

@@ -237,8 +237,6 @@ Page::~Page()
     setGroupName(String());
     allPages->remove(this);
     
-    m_settings->pageDestroyed();
-
     for (Frame* frame = &mainFrame(); frame; frame = frame->tree().traverseNext()) {
         frame->willDetachPage();
         frame->detachFromPage();
@@ -267,6 +265,20 @@ Page::~Page()
         m_userContentController->removePage(*this);
     if (m_visitedLinkStore)
         m_visitedLinkStore->removePage(*this);
+}
+
+void Page::clearPreviousItemFromAllPages(HistoryItem* item)
+{
+    if (!allPages)
+        return;
+
+    for (auto& page : *allPages) {
+        HistoryController& controller = page->mainFrame().loader().history();
+        if (item == controller.previousItem()) {
+            controller.clearPreviousItem();
+            return;
+        }
+    }
 }
 
 uint64_t Page::renderTreeSize() const
@@ -808,7 +820,7 @@ void Page::setTopContentInset(float contentInset)
     m_topContentInset = contentInset;
     
     if (FrameView* view = mainFrame().view())
-        view->topContentInsetDidChange();
+        view->topContentInsetDidChange(m_topContentInset);
 }
 
 void Page::setShouldSuppressScrollbarAnimations(bool suppressAnimations)
@@ -1241,11 +1253,6 @@ void Page::setIsVisibleInternal(bool isVisible)
     if (isVisible) {
         m_isPrerender = false;
 
-        for (Frame* frame = &mainFrame(); frame; frame = frame->tree().traverseNext()) {
-            if (FrameView* frameView = frame->view())
-                frameView->didMoveOnscreen();
-        }
-
         resumeScriptedAnimations();
 
         if (FrameView* view = mainFrame().view())
@@ -1267,11 +1274,6 @@ void Page::setIsVisibleInternal(bool isVisible)
     if (!isVisible) {
         if (m_settings->hiddenPageCSSAnimationSuspensionEnabled())
             mainFrame().animation().suspendAnimations();
-
-        for (Frame* frame = &mainFrame(); frame; frame = frame->tree().traverseNext()) {
-            if (FrameView* frameView = frame->view())
-                frameView->willMoveOffscreen();
-        }
 
         suspendScriptedAnimations();
 

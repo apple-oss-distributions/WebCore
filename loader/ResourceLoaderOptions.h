@@ -61,11 +61,6 @@ enum RequestOriginPolicy {
     PotentiallyCrossOriginEnabled // Indicates "potentially CORS-enabled fetch" in HTML standard.
 };
 
-enum class ContentSecurityPolicyImposition : uint8_t {
-    SkipPolicyCheck,
-    DoPolicyCheck
-};
-
 struct ResourceLoaderOptions {
     ResourceLoaderOptions()
         : m_sendLoadCallbacks(DoNotSendCallbacks)
@@ -78,7 +73,7 @@ struct ResourceLoaderOptions {
     {
     }
 
-    ResourceLoaderOptions(SendCallbackPolicy sendLoadCallbacks, ContentSniffingPolicy sniffContent, DataBufferingPolicy dataBufferingPolicy, StoredCredentials allowCredentials, ClientCredentialPolicy credentialPolicy, SecurityCheckPolicy securityCheck, RequestOriginPolicy requestOriginPolicy, ContentSecurityPolicyImposition contentSecurityPolicyImposition)
+    ResourceLoaderOptions(SendCallbackPolicy sendLoadCallbacks, ContentSniffingPolicy sniffContent, DataBufferingPolicy dataBufferingPolicy, StoredCredentials allowCredentials, ClientCredentialPolicy credentialPolicy, SecurityCheckPolicy securityCheck, RequestOriginPolicy requestOriginPolicy)
         : m_sendLoadCallbacks(sendLoadCallbacks)
         , m_sniffContent(sniffContent)
         , m_dataBufferingPolicy(dataBufferingPolicy)
@@ -86,7 +81,6 @@ struct ResourceLoaderOptions {
         , m_clientCredentialPolicy(credentialPolicy)
         , m_securityCheck(securityCheck)
         , m_requestOriginPolicy(requestOriginPolicy)
-        , m_contentSecurityPolicyImposition(contentSecurityPolicyImposition)
     {
     }
 
@@ -104,8 +98,6 @@ struct ResourceLoaderOptions {
     void setSecurityCheck(SecurityCheckPolicy check) { m_securityCheck = check; }
     RequestOriginPolicy requestOriginPolicy() const { return static_cast<RequestOriginPolicy>(m_requestOriginPolicy); }
     void setRequestOriginPolicy(RequestOriginPolicy policy) { m_requestOriginPolicy = policy; }
-    ContentSecurityPolicyImposition contentSecurityPolicyImposition() const { return m_contentSecurityPolicyImposition; }
-    void setContentSecurityPolicyImposition(ContentSecurityPolicyImposition imposition) { m_contentSecurityPolicyImposition = imposition; }
 
     unsigned m_sendLoadCallbacks : 1;
     unsigned m_sniffContent : 1;
@@ -114,7 +106,6 @@ struct ResourceLoaderOptions {
     unsigned m_clientCredentialPolicy : 2; // When we should ask the client for credentials (if we allow credentials at all).
     unsigned m_securityCheck : 1;
     unsigned m_requestOriginPolicy : 2;
-    ContentSecurityPolicyImposition m_contentSecurityPolicyImposition { ContentSecurityPolicyImposition::DoPolicyCheck };
 };
 
 } // namespace WebCore    

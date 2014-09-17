@@ -182,10 +182,6 @@ FrameView::FrameView(Frame& frame)
 #if PLATFORM(IOS)
     , m_useCustomFixedPositionLayoutRect(false)
     , m_useCustomSizeForResizeEvent(false)
-    , m_horizontalVelocity(0)
-    , m_verticalVelocity(0)
-    , m_scaleChangeRate(0)
-    , m_lastVelocityUpdateTime(0)
 #endif
     , m_hasOverrideViewportSize(false)
     , m_shouldAutoSize(false)
@@ -278,11 +274,8 @@ void FrameView::reset()
 
 void FrameView::removeFromAXObjectCache()
 {
-    if (AXObjectCache* cache = axObjectCache()) {
-        if (HTMLFrameOwnerElement* owner = frame().ownerElement())
-            cache->childrenChanged(owner->renderer());
+    if (AXObjectCache* cache = axObjectCache())
         cache->remove(this);
-    }
 }
 
 void FrameView::resetScrollbars()
@@ -419,7 +412,6 @@ void FrameView::invalidateRect(const IntRect& rect)
 
 void FrameView::setFrameRect(const IntRect& newRect)
 {
-    Ref<FrameView> protect(*this);
     IntRect oldRect = frameRect();
     if (newRect == oldRect)
         return;
@@ -443,9 +435,6 @@ void FrameView::setFrameRect(const IntRect& newRect)
         if (renderView->usesCompositing())
             renderView->compositor().frameViewDidChangeSize();
     }
-
-    // The frame view was resized, check if we should resume animated images.
-    resumeVisibleImageAnimationsIncludingSubframes();
 }
 
 #if ENABLE(REQUEST_ANIMATION_FRAME)
@@ -941,8 +930,11 @@ void FrameView::setFooterHeight(int footerHeight)
         renderView->setNeedsLayout();
 }
 
-float FrameView::topContentInset() const
+float FrameView::topContentInset(TopContentInsetType contentInsetTypeToReturn) const
 {
+    if (platformWidget() && contentInsetTypeToReturn == TopContentInsetType::WebCoreOrPlatformContentInset)
+        return platformTopContentInset();
+
     if (!frame().isMainFrame())
         return 0;
     
@@ -950,11 +942,14 @@ float FrameView::topContentInset() const
     return page ? page->topContentInset() : 0;
 }
     
-void FrameView::topContentInsetDidChange()
+void FrameView::topContentInsetDidChange(float newTopContentInset)
 {
     RenderView* renderView = this->renderView();
     if (!renderView)
         return;
+
+    if (platformWidget())
+        platformSetTopContentInset(newTopContentInset);
     
     layout();
 
@@ -963,7 +958,7 @@ void FrameView::topContentInsetDidChange()
         renderView->compositor().frameViewDidChangeSize();
 
     if (TiledBacking* tiledBacking = this->tiledBacking())
-        tiledBacking->setTopContentInset(topContentInset());
+        tiledBacking->setTopContentInset(newTopContentInset);
 }
     
 bool FrameView::hasCompositedContent() const
@@ -1037,16 +1032,6 @@ bool FrameView::isSoftwareRenderable() const
     return !renderView || !renderView->compositor().has3DContent();
 }
 
-void FrameView::didMoveOnscreen()
-{
-    contentAreaDidShow();
-}
-
-void FrameView::willMoveOffscreen()
-{
-    contentAreaDidHide();
-}
-
 void FrameView::setIsInWindow(bool isInWindow)
 {
     if (RenderView* renderView = this->renderView())
@@ -1093,9 +1078,6 @@ void FrameView::layout(bool allowSubtree)
     if (isInLayout())
         return;
 
-    if (layoutDisallowed())
-        return;
-
     // Protect the view from being deleted during layout (in recalcStyle).
     Ref<FrameView> protect(*this);
 
@@ -1133,7 +1115,7 @@ void FrameView::layout(bool allowSubtree)
 
     if (!allowSubtree && m_layoutRoot) {
         m_layoutRoot->markContainingBlocksForLayout(false);
-        m_layoutRoot = nullptr;
+        m_layoutRoot = 0;
     }
 
     ASSERT(frame().view() == this);
@@ -1328,14 +1310,10 @@ void FrameView::layout(bool allowSubtree)
     if (m_needsFullRepaint)
         root->view().repaintRootContents();
 
-    root->view().releaseProtectedRenderWidgets();
-
     layer->updateLayerPositionsAfterLayout(renderView()->layer(), updateLayerPositionFlags(layer, subtree, m_needsFullRepaint));
 
     updateCompositingLayersAfterLayout();
-
-    m_layoutPhase = InPostLayerPositionsUpdatedAfterLayout;
-
+    
     m_layoutCount++;
 
 #if PLATFORM(COCOA) || PLATFORM(WIN) || PLATFORM(GTK) || PLATFORM(EFL)
@@ -1354,8 +1332,6 @@ void FrameView::layout(bool allowSubtree)
     ASSERT(!root->needsLayout());
 
     updateCanBlitOnScrollRecursively();
-
-    handleDeferredScrollUpdateAfterContentSizeChange();
 
     if (document.hasListenerType(Document::OVERFLOWCHANGED_LISTENER))
         updateOverflowStatus(layoutWidth() < contentsWidth(), layoutHeight() < contentsHeight());
@@ -1384,11 +1360,6 @@ void FrameView::layout(bool allowSubtree)
     InspectorInstrumentation::didLayout(cookie, root);
 
     --m_nestedLayoutCount;
-}
-
-bool FrameView::shouldDeferScrollUpdateAfterContentSizeChange()
-{
-    return (m_layoutPhase < InPostLayout) && (m_layoutPhase != OutsideLayout);
 }
 
 RenderBox* FrameView::embeddedContentBox() const
@@ -1973,10 +1944,7 @@ bool FrameView::scrollToAnchor(const String& name)
     if (!anchorElement && !(name.isEmpty() || equalIgnoringCase(name, "top")))
         return false;
 
-    ContainerNode* scrollPositionAnchor = anchorElement;
-    if (!scrollPositionAnchor)
-        scrollPositionAnchor = frame().document();
-    maintainScrollPositionAtAnchor(scrollPositionAnchor);
+    maintainScrollPositionAtAnchor(anchorElement ? static_cast<Node*>(anchorElement) : frame().document());
     
     // If the anchor accepts keyboard focus, move focus there to aid users relying on keyboard navigation.
     if (anchorElement && anchorElement->isFocusable())
@@ -1985,7 +1953,7 @@ bool FrameView::scrollToAnchor(const String& name)
     return true;
 }
 
-void FrameView::maintainScrollPositionAtAnchor(ContainerNode* anchorNode)
+void FrameView::maintainScrollPositionAtAnchor(Node* anchorNode)
 {
     m_maintainScrollPositionAnchor = anchorNode;
     if (!m_maintainScrollPositionAnchor)
@@ -2006,9 +1974,7 @@ void FrameView::scrollElementToRect(Element* element, const IntRect& rect)
 {
     frame().document()->updateLayoutIgnorePendingStylesheets();
 
-    LayoutRect bounds;
-    if (RenderElement* renderer = element->renderer())
-        bounds = renderer->anchorRect();
+    LayoutRect bounds = element->boundingBox();
     int centeringOffsetX = (rect.width() - bounds.width()) / 2;
     int centeringOffsetY = (rect.height() - bounds.height()) / 2;
     setScrollPosition(IntPoint(bounds.x() - centeringOffsetX - rect.x(), bounds.y() - centeringOffsetY - rect.y()));
@@ -2067,7 +2033,7 @@ void FrameView::setViewportConstrainedObjectsNeedLayout()
         renderer->setNeedsLayout();
 }
 
-void FrameView::scrollPositionChangedViaPlatformWidgetImpl(const IntPoint& oldPosition, const IntPoint& newPosition)
+void FrameView::scrollPositionChangedViaPlatformWidget(const IntPoint& oldPosition, const IntPoint& newPosition)
 {
     updateLayerPositionsAfterScrolling();
     updateCompositingLayersAfterScrolling();
@@ -2151,8 +2117,6 @@ bool FrameView::shouldUpdateCompositingLayersAfterScrolling() const
 
 void FrameView::updateCompositingLayersAfterScrolling()
 {
-    ASSERT(m_layoutPhase >= InPostLayout || m_layoutPhase == OutsideLayout);
-
     if (!shouldUpdateCompositingLayersAfterScrolling())
         return;
 
@@ -2520,33 +2484,6 @@ bool FrameView::layoutPending() const
     return m_layoutTimer.isActive();
 }
 
-bool FrameView::needsStyleRecalcOrLayout(bool includeSubframes) const
-{
-    if (frame().document() && frame().document()->childNeedsStyleRecalc())
-        return true;
-    
-    if (needsLayout())
-        return true;
-
-    if (!includeSubframes)
-        return false;
-
-    // Find child frames via the Widget tree, as updateLayoutAndStyleIfNeededRecursive() does.
-    Vector<Ref<FrameView>, 16> childViews;
-    childViews.reserveInitialCapacity(children().size());
-    for (auto& widget : children()) {
-        if (widget->isFrameView())
-            childViews.uncheckedAppend(toFrameView(*widget));
-    }
-
-    for (unsigned i = 0; i < childViews.size(); ++i) {
-        if (childViews[i]->needsStyleRecalcOrLayout())
-            return true;
-    }
-
-    return false;
-}
-
 bool FrameView::needsLayout() const
 {
     // This can return true in cases where the document does not have a body yet.
@@ -2615,13 +2552,6 @@ void FrameView::setTransparent(bool isTransparent)
 
     RenderView* renderView = this->renderView();
     if (!renderView)
-        return;
-
-    // setTransparent can be called in the window between FrameView initialization
-    // and switching in the new Document; this means that the RenderView that we
-    // retrieve is actually attached to the previous Document, which is going away,
-    // and must not update compositing layers.
-    if (&renderView->frameView() != this)
         return;
 
     RenderLayerCompositor& compositor = renderView->compositor();
@@ -2790,7 +2720,7 @@ bool FrameView::shouldUpdate() const
 
 void FrameView::scrollToAnchor()
 {
-    RefPtr<ContainerNode> anchorNode = m_maintainScrollPositionAnchor;
+    RefPtr<Node> anchorNode = m_maintainScrollPositionAnchor;
     if (!anchorNode)
         return;
 
@@ -2798,17 +2728,12 @@ void FrameView::scrollToAnchor()
         return;
 
     LayoutRect rect;
-    if (anchorNode != frame().document() && anchorNode->renderer())
-        rect = anchorNode->renderer()->anchorRect();
+    if (anchorNode != frame().document())
+        rect = anchorNode->boundingBox();
 
     // Scroll nested layers and frames to reveal the anchor.
     // Align to the top and to the closest side (this matches other browsers).
-    if (anchorNode->renderer()->style().isHorizontalWritingMode())
-        anchorNode->renderer()->scrollRectToVisible(rect, ScrollAlignment::alignToEdgeIfNeeded, ScrollAlignment::alignTopAlways);
-    else if (anchorNode->renderer()->style().isFlippedBlocksWritingMode())
-        anchorNode->renderer()->scrollRectToVisible(rect, ScrollAlignment::alignRightAlways, ScrollAlignment::alignToEdgeIfNeeded);
-    else
-        anchorNode->renderer()->scrollRectToVisible(rect, ScrollAlignment::alignLeftAlways, ScrollAlignment::alignToEdgeIfNeeded);
+    anchorNode->renderer()->scrollRectToVisible(rect, ScrollAlignment::alignToEdgeIfNeeded, ScrollAlignment::alignTopAlways);
 
     if (AXObjectCache* cache = frame().document()->existingAXObjectCache())
         cache->handleScrolledToAnchor(anchorNode.get());
@@ -2852,8 +2777,7 @@ void FrameView::updateEmbeddedObject(RenderEmbeddedObject& embeddedObject)
     if (!weakRenderer)
         return;
 
-    auto ignoreWidgetState = embeddedObject.updateWidgetPosition();
-    UNUSED_PARAM(ignoreWidgetState);
+    embeddedObject.updateWidgetPosition();
 }
 
 bool FrameView::updateEmbeddedObjects()
@@ -2901,7 +2825,7 @@ void FrameView::performPostLayoutTasks()
 
     m_postLayoutTasksTimer.stop();
 
-    frame().selection().layoutDidChange();
+    frame().selection().didLayout();
 
     if (m_nestedLayoutCount <= 1 && frame().document()->documentElement())
         fireLayoutRelatedMilestonesIfNeeded();
@@ -3194,7 +3118,7 @@ IntRect FrameView::windowClipRect(bool clipToContents) const
     ASSERT(frame().view() == this);
 
     if (paintsEntireContents())
-        return contentsToWindow(IntRect(IntPoint(), totalContentsSize()));
+        return IntRect(IntPoint(), totalContentsSize());
 
     // Set our clip rect to be our contents.
     IntRect clipRect;
@@ -3597,6 +3521,9 @@ void FrameView::startLayoutAtMainFrameViewIfNeeded(bool allowSubtree)
         parentView = parentView->parentFrameView();
 
     parentView->layout(allowSubtree);
+
+    RenderElement* root = m_layoutRoot ? m_layoutRoot : frame().document()->renderView();
+    ASSERT_UNUSED(root, !root->needsLayout());
 }
 
 void FrameView::updateControlTints()
@@ -3721,11 +3648,6 @@ void FrameView::didPaintContents(GraphicsContext* context, const IntRect& dirtyR
 
 void FrameView::paintContents(GraphicsContext* context, const IntRect& dirtyRect)
 {
-    if (m_layoutPhase == InViewSizeAdjust)
-        return;
-
-    ASSERT(m_layoutPhase == InPostLayerPositionsUpdatedAfterLayout || m_layoutPhase == OutsideLayout);
-
 #ifndef NDEBUG
     bool fillWithRed;
     if (frame().document()->printing())
@@ -3867,7 +3789,6 @@ void FrameView::updateLayoutAndStyleIfNeededRecursive()
     // Grab a copy of the children() set, as it may be mutated by the following updateLayoutAndStyleIfNeededRecursive
     // calls, as they can potentially re-enter a layout of the parent frame view, which may add/remove scrollbars
     // and thus mutates the children() set.
-    // FIXME: use FrameTree::traverseNextRendered().
     Vector<Ref<FrameView>, 16> childViews;
     childViews.reserveInitialCapacity(children().size());
     for (auto& widget : children()) {
@@ -3878,12 +3799,10 @@ void FrameView::updateLayoutAndStyleIfNeededRecursive()
     for (unsigned i = 0; i < childViews.size(); ++i)
         childViews[i]->updateLayoutAndStyleIfNeededRecursive();
 
-    // A child frame may have dirtied us during its layout.
-    frame().document()->updateStyleIfNeeded();
-    if (needsLayout())
-        layout();
-
-    ASSERT(!frame().isMainFrame() || !needsStyleRecalcOrLayout());
+    // When frame flattening is on, child frame can mark parent frame dirty. In such case, child frame
+    // needs to call layout on parent frame recursively.
+    // This assert ensures that parent frames are clean, when child frames finished updating layout and style.
+    ASSERT(!needsLayout());
 }
 
 bool FrameView::qualifiesAsVisuallyNonEmpty() const
@@ -4023,18 +3942,18 @@ void FrameView::adjustPageHeightDeprecated(float *newBottom, float oldTop, float
     renderView->setPrintRect(IntRect());
 }
 
-IntRect FrameView::convertFromRenderer(const RenderElement* renderer, const IntRect& rendererRect) const
+IntRect FrameView::convertFromRendererToContainingView(const RenderElement* renderer, const IntRect& rendererRect) const
 {
     IntRect rect = pixelSnappedIntRect(enclosingLayoutRect(renderer->localToAbsoluteQuad(FloatRect(rendererRect)).boundingBox()));
 
     // Convert from page ("absolute") to FrameView coordinates.
     if (!delegatesScrolling())
-        rect.moveBy(-scrollPosition() + IntPoint(0, headerHeight() + topContentInset()));
+        rect.moveBy(-scrollPosition() + IntPoint(0, headerHeight() + topContentInset(TopContentInsetType::WebCoreOrPlatformContentInset)));
 
     return rect;
 }
 
-IntRect FrameView::convertToRenderer(const RenderElement* renderer, const IntRect& viewRect) const
+IntRect FrameView::convertFromContainingViewToRenderer(const RenderElement* renderer, const IntRect& viewRect) const
 {
     IntRect rect = viewRect;
     
@@ -4048,17 +3967,17 @@ IntRect FrameView::convertToRenderer(const RenderElement* renderer, const IntRec
     return rect;
 }
 
-IntPoint FrameView::convertFromRenderer(const RenderElement* renderer, const IntPoint& rendererPoint) const
+IntPoint FrameView::convertFromRendererToContainingView(const RenderElement* renderer, const IntPoint& rendererPoint) const
 {
     IntPoint point = roundedIntPoint(renderer->localToAbsolute(rendererPoint, UseTransforms));
 
     // Convert from page ("absolute") to FrameView coordinates.
     if (!delegatesScrolling())
-        point.moveBy(-scrollPosition() + IntPoint(0, headerHeight() + topContentInset()));
+        point.moveBy(-scrollPosition() + IntPoint(0, headerHeight() + topContentInset(TopContentInsetType::WebCoreOrPlatformContentInset)));
     return point;
 }
 
-IntPoint FrameView::convertToRenderer(const RenderElement* renderer, const IntPoint& viewPoint) const
+IntPoint FrameView::convertFromContainingViewToRenderer(const RenderElement* renderer, const IntPoint& viewPoint) const
 {
     IntPoint point = viewPoint;
 
@@ -4083,7 +4002,7 @@ IntRect FrameView::convertToContainingView(const IntRect& localRect) const
             // Add borders and padding??
             rect.move(renderer->borderLeft() + renderer->paddingLeft(),
                       renderer->borderTop() + renderer->paddingTop());
-            return parentView->convertFromRenderer(renderer, rect);
+            return parentView->convertFromRendererToContainingView(renderer, rect);
         }
         
         return Widget::convertToContainingView(localRect);
@@ -4103,7 +4022,7 @@ IntRect FrameView::convertFromContainingView(const IntRect& parentRect) const
             if (!renderer)
                 return parentRect;
 
-            IntRect rect = parentView->convertToRenderer(renderer, parentRect);
+            IntRect rect = parentView->convertFromContainingViewToRenderer(renderer, parentRect);
             // Subtract borders and padding
             rect.move(-renderer->borderLeft() - renderer->paddingLeft(),
                       -renderer->borderTop() - renderer->paddingTop());
@@ -4132,7 +4051,7 @@ IntPoint FrameView::convertToContainingView(const IntPoint& localPoint) const
             // Add borders and padding
             point.move(renderer->borderLeft() + renderer->paddingLeft(),
                        renderer->borderTop() + renderer->paddingTop());
-            return parentView->convertFromRenderer(renderer, point);
+            return parentView->convertFromRendererToContainingView(renderer, point);
         }
         
         return Widget::convertToContainingView(localPoint);
@@ -4152,7 +4071,7 @@ IntPoint FrameView::convertFromContainingView(const IntPoint& parentPoint) const
             if (!renderer)
                 return parentPoint;
 
-            IntPoint point = parentView->convertToRenderer(renderer, parentPoint);
+            IntPoint point = parentView->convertFromContainingViewToRenderer(renderer, parentPoint);
             // Subtract borders and padding
             point.move(-renderer->borderLeft() - renderer->paddingLeft(),
                        -renderer->borderTop() - renderer->paddingTop());
@@ -4566,10 +4485,8 @@ void FrameView::updateWidgetPositions()
     auto protectedWidgets = collectAndProtectWidgets(m_widgetsInRenderTree);
 
     for (unsigned i = 0, size = protectedWidgets.size(); i < size; ++i) {
-        if (RenderWidget* renderWidget = RenderWidget::find(protectedWidgets[i].get())) {
-            auto ignoreWidgetState = renderWidget->updateWidgetPosition();
-            UNUSED_PARAM(ignoreWidgetState);
-        }
+        if (RenderWidget* renderWidget = RenderWidget::find(protectedWidgets[i].get()))
+            renderWidget->updateWidgetPosition();
     }
 }
 

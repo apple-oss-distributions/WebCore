@@ -388,7 +388,7 @@ private:
     bool validateWebGLObject(const char*, WebGLObject*);
 
     bool validateDrawArrays(const char* functionName, GC3Denum mode, GC3Dint first, GC3Dsizei count, GC3Dsizei primcount);
-    bool validateDrawElements(const char* functionName, GC3Denum mode, GC3Dsizei count, GC3Denum type, long long offset, unsigned& numElements, GC3Dsizei primcount);
+    bool validateDrawElements(const char* functionName, GC3Denum mode, GC3Dsizei count, GC3Denum type, long long offset, unsigned& numElements);
 
     // Adds a compressed texture format.
     void addCompressedTextureFormat(GC3Denum);
@@ -759,7 +759,6 @@ private:
     // Helpers for simulating vertexAttrib0
     void initVertexAttrib0();
     bool simulateVertexAttrib0(GC3Dsizei numVertex);
-    bool validateSimulatedVertexAttrib0(GC3Dsizei numVertex);
     void restoreStatesAfterVertexAttrib0Simulation();
 
     void dispatchContextLostEvent(Timer<WebGLRenderingContext>*);
