@@ -1,3 +1,295 @@
+2014-10-03  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174277.
+
+    2014-10-03  Jer Noble  <jer.noble@apple.com>
+
+            [iOS] Back-to-back fullscreen videos result in incorrectly sized videos
+            https://bugs.webkit.org/show_bug.cgi?id=137380
+
+            Reviewed by Eric Carlson.
+
+            During a normal workflow, a <video> element will create an AVPlayerLayer, then it will get a
+            fullscreen (hosted) parent layer, then it will be told an explicit fullscreen size. But when
+            a <video> element creates an AVPlayerLayer after the <video> element is already in
+            fullscreen mode, it sets that AVPlayerLayer's frame using the size of the hosted parent
+            layer, rather than the explicit fullscreen size. Instead, use the (already set) explicit
+            fullscreen size after creating the AVPlayerLayer.
+
+            * platform/graphics/avfoundation/objc/MediaPlayerPrivateAVFoundationObjC.mm:
+            (WebCore::MediaPlayerPrivateAVFoundationObjC::ensureAVPlayerLayer):
+            (WebCore::MediaPlayerPrivateAVFoundationObjC::platformLayer):
+
+2014-10-03  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174244.
+
+    2014-10-02  Pratik Solanki  <psolanki@apple.com>
+
+            [iOS] Networking process stops loading web pages while running Alexa test with random URL list
+            https://bugs.webkit.org/show_bug.cgi?id=137362
+            <rdar://problem/18507382>
+
+            Reviewed by Alexey Proskuryakov.
+
+            ResourceHandleCFURLConnectionDelegateWithOperationQueue needs to signal threads waiting on
+            its semaphore when the handle is being destroyed. Otherwise, we can leave dispatch threads
+            hanging around waiting for a response. This can happen when the Web Content process dies.
+            Any thread/queue waiting on a response from that web process will leak and stay around
+            forever. If we reach the dispatch queue limit of 64, then all networking will cease to
+            happen in the Networking process. Fix this by signalling waiting threads and clearing out
+            our state in much the same way that -[WebCoreResourceHandleAsOperationQueueDelegate
+            detachHandle] does for Mac.
+
+            * platform/network/cf/ResourceHandleCFURLConnectionDelegate.h:
+            * platform/network/cf/ResourceHandleCFURLConnectionDelegateWithOperationQueue.cpp:
+            (WebCore::ResourceHandleCFURLConnectionDelegateWithOperationQueue::releaseHandle):
+            * platform/network/cf/ResourceHandleCFURLConnectionDelegateWithOperationQueue.h:
+
+2014-10-02  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174199.
+
+    2014-10-01  Benjamin Poulain  <bpoulain@apple.com>
+
+            Click events offset in webkit-overflow-scrolling iframes
+            https://bugs.webkit.org/show_bug.cgi?id=134596
+
+            Reviewed by Sam Weinig.
+
+            * platform/ScrollView.cpp:
+            (WebCore::ScrollView::visibleContentRectInternal):
+            When converting coordinates from the main frame to a subframe's document, the position
+            is first converted to the subframe's FrameView coordinate system, then offset by the scroll
+            offset of the subframe itself.
+
+            The bug in this case was that the scroll offset used was the global scroll offset of the frame
+            in the view instead of the scroll offset of the document in its own frameview.
+
+            The regression was introduced by the refactoring r162663. On iOS WebKit1, the coordinate system
+            is different depending on VisibleContentRectIncludesScrollbars. In r162663, the value was set
+            such that the rect returned is always in absolute coordinate.
+
+            The ideal solution would be to refactor ScrollView::platformVisibleContentRect() to always return
+            the offsets in scroll view coordinates and verify and update all the call sites to use explicit
+            conversion to the top frame. In this patch I only reverted the coordinate change of r162663 to avoid
+            large scale impact.
+
+2014-09-18  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge patch for <rdar://problem/18382131>.
+
+    2014-09-18  Benjamin Poulain  <bpoulain@apple.com>
+
+            CSS JIT: The backtracking register can be ignored from the minimumRegisterRequirements
+            https://bugs.webkit.org/show_bug.cgi?id=136906
+            rdar://problem/18368294
+
+            Reviewed by Darin Adler.
+
+            This patch is for WebKit branches that do not include r173229.
+
+            * cssjit/SelectorCompiler.cpp:
+            (WebCore::SelectorCompiler::minimumRegisterRequirements):
+            In the worst case, the nth-child() filter can take up to 6 registers:
+            1) currentElement, the state register.
+            2) parentElement for tree marking on style resolution.
+            3) elementCounter to count elements pior to current.
+            4) previousSibling when walking the previous siblings.
+            5) elementRareData to access the index cache.
+            6) cachedChildIndex, the value of the index cache.
+
+            If the backtracking register is also used, the total of "in-flight" registers is 7,
+            one more than "minimumRequiredRegisterCount". This needs to be taken into account
+            in minimumRegisterRequirements() or we will run out of registers when hitting the worst case.
+
+2014-09-15  Babak Shafiei  <bshafiei@apple.com>
+
+        <rdar://problem/18327341> Disable Web Timing on this branch.
+
+        Reviewed originally by Sam Weinig.
+
+        Disable:
+        - WEB_TIMING
+
+        * Configurations/FeatureDefines.xcconfig:
+
+2014-09-11  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173016.
+
+    2014-08-27  Timothy Hatcher  <timothy@apple.com>
+
+            Web Inspector: Crash when you open Web Inspector in a private window (due to IndexedDB)
+            https://bugs.webkit.org/show_bug.cgi?id=136293
+
+            Reviewed by Joseph Pecoraro.
+
+            * inspector/InspectorIndexedDBAgent.cpp:
+            (WebCore::InspectorIndexedDBAgent::requestDatabaseNames): Null check idbRequest from
+            IDBFactory::getDatabaseNames, which can return null now after r172603 in private browsing.
+
+2014-09-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173345.
+
+    2014-09-05  Tim Horton  <timothy_horton@apple.com>
+
+            [iOS] Work around bug 136593 by disabling the PDFDocumentImage live resize optimization there
+            https://bugs.webkit.org/show_bug.cgi?id=136594
+            rdar://problem/17457013
+
+            Reviewed by Simon Fraser.
+
+            * platform/graphics/cg/PDFDocumentImage.cpp:
+            (WebCore::PDFDocumentImage::updateCachedImageIfNeeded):
+            Disable the optimization on iOS, because bug 136593 rears its head
+            most often on iOS because it is more common to have contexts that always
+            use low-quality image interpolation on that platform.
+
+2014-09-08  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173344.
+
+    2014-09-05  Tim Horton  <timothy_horton@apple.com>
+
+            Doing a navigation on a non-opaque WKWebView can result in an empty layer tree
+            https://bugs.webkit.org/show_bug.cgi?id=136590
+            <rdar://problem/18234000>
+
+            Reviewed by Simon Fraser.
+
+            * page/FrameView.cpp:
+            (WebCore::FrameView::setTransparent):
+            Avoid scheduling a compositing layer update if the RenderView isn't the
+            one associated with this FrameView. This can happen during a navigation,
+            before the new Document (and RenderView) is swapped in. This is particularly
+            bad in the case of setTransparent because it is called from Frame::createView,
+            which is right in the middle of that transition window. If we let the compositing
+            layer update go ahead, it can end up detaching the new Document's layer tree,
+            and we have no mechanism that would cause it to reattach.
+
+2014-08-18  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r172213.
+
+    2014-08-06  Brent Fulgham  <bfulgham@apple.com>
+
+            [Mac, iOS] Captions are appearing multiple times during repeated video play through
+            https://bugs.webkit.org/show_bug.cgi?id=135680
+            <rdar://problem/17926802>
+
+            Reviewed by Eric Carlson.
+
+            Test: media/track/track-in-band-cues-added-once.html
+
+            Revert TextTrackCueGeneric::isOrderedBefore logic to its original form, and add
+            a new 'isOrderedBeforeDuringDisplay' for the special case of displaying captions.
+
+            * html/shadow/MediaControlElements.cpp:
+            (WebCore::compareCueIntervalForDisplay): Added helper function.
+            (WebCore::MediaControlTextTrackContainerElement::updateDisplay): Use the new
+            'isOrderedBeforeDuringDisplay' to order the cues for display.
+            * html/track/TextTrackCue.h:
+            (WebCore::TextTrackCue::isOrderedBeforeDuringDisplay): Added. This just
+            calls the existing 'isOrderedBefore' method.
+            * html/track/TextTrackCueGeneric.cpp:
+            (WebCore::TextTrackCueGeneric::isOrderedBefore): Revert to logic used
+            prior to r171700.
+            (WebCore::TextTrackCueGeneric::isOrderedBeforeDuringDisplay): New method that
+            implements the behavior in r171700.
+            * html/track/TextTrackCueGeneric.h:
+
+2014-08-18  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r172317.
+
+    2014-08-07  Simon Fraser  <simon.fraser@apple.com>
+
+            HTML <sub> and <sup> elements do not work in some 64-bit builds
+            https://bugs.webkit.org/show_bug.cgi?id=135736
+
+            Reviewed by Tim Horton.
+        
+            RootInlineBox::verticalPositionForBox() had some implicit conversions between
+            LayoutUnit and int that caused overflow, and resulted in different comparison
+            behavior with an int constant in different architectures, since overflow behavior
+            is undefined.
+        
+            Specifically, VerticalPositionCache was written in terms of ints with a special
+            0x80000000 "not found" value. However, 0x80000000 was being assigned to
+            a LayoutUnit, which multiplies by 64 causing overflow. The result was then
+            compared again with 0x80000000 which could pass or fail depending on overflow
+            behavior.
+        
+            Fix by converting VerticalPositionCache to use LayoutUnits, and to have a bool
+            return value with a result out param, instead of a special return value.
+
+            Not easily testable, since the difference does not show in DRT output,
+            and a ref test would be flakey.
+
+            * rendering/RootInlineBox.cpp:
+            (WebCore::RootInlineBox::ascentAndDescentForBox):
+            * rendering/VerticalPositionCache.h:
+            (WebCore::VerticalPositionCache::get):
+            (WebCore::VerticalPositionCache::set):
+
+2014-08-15  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r172603. <rdar://problem/18008488>
+
+    2014-08-14  Martin Hock  <mhock@apple.com>
+
+            IndexedDB should respect SchemeRegistry's database access setting.
+            https://bugs.webkit.org/show_bug.cgi?id=135890
+            <rdar://problem/17989469>
+
+            Reviewed by Alexey Proskuryakov.
+
+            Test: storage/indexeddb/open-db-private-browsing.html
+
+            * Modules/indexeddb/IDBFactory.cpp:
+
+2014-08-15  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r172502
+
+    2014-08-12  Pratik Solanki  <psolanki@apple.com>
+
+            Cached file backed resources don't make it to the Web Process when NETWORK_CFDATA_ARRAY_CALLBACK is enabled
+            https://bugs.webkit.org/show_bug.cgi?id=135727
+            <rdar://problem/17947880>
+
+            Reviewed by Darin Adler.
+
+            Add SharedBuffer::existingCFData() which returns CFDataRef if it has one. Refactor
+            this code out of createCFData().
+
+            * WebCore.exp.in:
+            * platform/SharedBuffer.h:
+            * platform/mac/SharedBufferMac.mm:
+            (WebCore::SharedBuffer::existingCFData): Added.
+            (WebCore::SharedBuffer::createCFData):
+
+2014-08-15  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r171675
+
+    2014-07-28  Yusuke Suzuki  <utatane.tea@gmail.com>
+
+            CSS: Fix :visited behavior for SubSelectors
+            https://bugs.webkit.org/show_bug.cgi?id=135324
+
+            Reviewed by Benjamin Poulain.
+
+            Disable :visited match for the selectors that has SubSelectors.
+
+            Tests: fast/history/nested-visited-test-complex.html
+                   fast/history/sibling-visited-test-complex.html
+
+            * css/SelectorChecker.cpp:
+            (WebCore::SelectorChecker::matchRecursively):
+
 2014-08-11  Babak Shafiei  <bshafiei@apple.com>
 
         Merge r172422. <rdar://problem/17912361>
