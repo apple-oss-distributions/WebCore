@@ -1,3 +1,207 @@
+2014-10-27  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175158.
+
+    2014-10-23  Zalan Bujtas  <zalan@apple.com>
+
+            WebContent crash at WebCore::RenderTextControl::textFormControlElement const.
+            https://bugs.webkit.org/show_bug.cgi?id=138035
+
+            Reviewed by Antti Koivisto.
+
+            NULL-check element().renderer() before using it.
+
+            * html/SearchInputType.cpp:
+            (WebCore::SearchInputType::didSetValueByUserEdit):
+
+2014-10-23  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174827.
+
+    2014-10-17  Alexey Proskuryakov  <ap@apple.com>
+
+            [iOS] Crash when load is canceled while waiting for the user to type HTTP authentication credentials
+            https://bugs.webkit.org/show_bug.cgi?id=137826
+            rdar://problem/17329599
+
+            Reviewed by Brady Eidson.
+
+            No new tests, as we don't have a way to simulate details of user interaction with
+            an auth dialog.
+
+            * platform/network/cf/ResourceHandleCFNet.cpp:
+            (WebCore::ResourceHandle::receivedCredential):
+            (WebCore::ResourceHandle::receivedRequestToContinueWithoutCredential):
+            (WebCore::ResourceHandle::receivedRequestToPerformDefaultHandling):
+            (WebCore::ResourceHandle::receivedChallengeRejection):
+            Added null checks before passing m_connection for CFNetwork functions, making this
+            match what Mac code does when sending a message to a nil receiver.
+
+2014-10-23  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174846.
+
+    2014-10-17  Simon Fraser  <simon.fraser@apple.com>
+
+            [iOS] Speculative fix for a crash under RenderLayerCompositor::updateScrollCoordinatedLayer()
+            https://bugs.webkit.org/show_bug.cgi?id=137837
+            rdar://problem/18545452
+
+            Reviewed by Tim Horton.
+
+            Crash logs suggest that an iframe's RenderView's RenderLayer's backing can be null
+            in a call to updateScrollCoordinatedLayer(), so add an assertion (to help find a reproducible case)
+            and a null check.
+
+            * rendering/RenderLayerCompositor.cpp:
+            (WebCore::RenderLayerCompositor::attachScrollingNode):
+
+2014-10-23  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174787.
+
+    2014-10-16  Alexey Proskuryakov  <ap@apple.com>
+
+            Crashes in ResourceHandleCFURLConnectionDelegateWithOperationQueue due to unimplemented retain/release
+            https://bugs.webkit.org/show_bug.cgi?id=137779
+            rdar://problem/18679320
+
+            Reviewed by Brady Eidson.
+
+            * platform/network/cf/ResourceHandleCFURLConnectionDelegate.cpp:
+            (WebCore::ResourceHandleCFURLConnectionDelegate::retain):
+            (WebCore::ResourceHandleCFURLConnectionDelegate::release):
+            (WebCore::ResourceHandleCFURLConnectionDelegate::makeConnectionClient):
+            * platform/network/cf/ResourceHandleCFURLConnectionDelegate.h:
+            Implemented retain/release. They are necessary, as ResourceHandle goes away when
+            it's canceled, and there is noone else to keep the client object alive but
+            CFURLConnection itself.
+
+            * platform/network/cf/ResourceHandleCFURLConnectionDelegateWithOperationQueue.cpp:
+            (WebCore::ResourceHandleCFURLConnectionDelegateWithOperationQueue::willSendRequest):
+            (WebCore::ResourceHandleCFURLConnectionDelegateWithOperationQueue::didReceiveResponse):
+            (WebCore::ResourceHandleCFURLConnectionDelegateWithOperationQueue::didReceiveData):
+            (WebCore::ResourceHandleCFURLConnectionDelegateWithOperationQueue::didFinishLoading):
+            (WebCore::ResourceHandleCFURLConnectionDelegateWithOperationQueue::didFail):
+            (WebCore::ResourceHandleCFURLConnectionDelegateWithOperationQueue::willCacheResponse):
+            (WebCore::ResourceHandleCFURLConnectionDelegateWithOperationQueue::didReceiveChallenge):
+            (WebCore::ResourceHandleCFURLConnectionDelegateWithOperationQueue::didSendBodyData):
+            (WebCore::ResourceHandleCFURLConnectionDelegateWithOperationQueue::canRespondToProtectionSpace):
+            (WebCore::ResourceHandleCFURLConnectionDelegateWithOperationQueue::didReceiveDataArray):
+            Added a FIXME about potential improvements that I spotted while invsestigating this.
+
+2014-10-22  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173974.
+
+    2014-09-25  Jeremy Jones  <jeremyj@apple.com>
+
+            Race in ref pointer for WebVideoFullscreenInterfaceAVKit.
+            https://bugs.webkit.org/show_bug.cgi?id=137123
+
+            Reviewed by Eric Carlson.
+
+            Add WebThreadRun to prevent race with RefPtr of WebVideoFullscreenInterfaceAVKit.
+
+            * platform/ios/WebVideoFullscreenControllerAVKit.mm:
+            (-[WebVideoFullscreenController didSetupFullscreen]): add WebThreadRun
+            * platform/ios/WebVideoFullscreenInterfaceAVKit.mm:
+            (WebVideoFullscreenInterfaceAVKit::setDuration): ditto
+            (WebVideoFullscreenInterfaceAVKit::setCurrentTime): ditto
+            (WebVideoFullscreenInterfaceAVKit::setRate): ditto
+            (WebVideoFullscreenInterfaceAVKit::setVideoDimensions): ditto
+            (WebVideoFullscreenInterfaceAVKit::setSeekableRanges): ditto
+            (WebVideoFullscreenInterfaceAVKit::setAudioMediaSelectionOptions): ditto
+            (WebVideoFullscreenInterfaceAVKit::setLegibleMediaSelectionOptions): ditto
+            (WebVideoFullscreenInterfaceAVKit::setExternalPlayback): ditto
+            (WebVideoFullscreenInterfaceAVKit::setupFullscreen): ditto
+            (WebVideoFullscreenInterfaceAVKit::enterFullscreen): ditto
+            (WebVideoFullscreenInterfaceAVKit::exitFullscreen): ditto
+            (WebVideoFullscreenInterfaceAVKit::cleanupFullscreen): ditto
+            (WebVideoFullscreenInterfaceAVKit::requestHideAndExitFullscreen): ditto
+
+2014-10-22  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173848.
+
+    2014-09-22  Alexey Proskuryakov  <ap@apple.com>
+
+            WebSocket crash when a connection is closed from server side
+            https://bugs.webkit.org/show_bug.cgi?id=137009
+            rdar://problem/18333977
+            rdar://problem/12708225
+
+            Reviewed by Brady Eidson.
+
+            I don't think that this can be tested with our test server.
+
+            * Modules/websockets/WebSocketChannel.cpp:
+            (WebCore::WebSocketChannel::WebSocketChannel): Added logging.
+            (WebCore::WebSocketChannel::~WebSocketChannel): Ditto.
+            (WebCore::WebSocketChannel::close): Protect self, because startClosingHandshake
+            can release the last reference.
+            (WebCore::WebSocketChannel::fail): Added an assertion that the channel is always
+            closed after this function.
+            (WebCore::WebSocketChannel::startClosingHandshake): Protect self, and don't change
+            the stack from closed back to closing if after failing to send closing handshake.
+            (WebCore::WebSocketChannel::processOutgoingFrameQueue): Protect self.
+
+2014-10-19  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174651.
+
+    2014-10-13  Jer Noble  <jer.noble@apple.com>
+
+            [iOS] Stop listening for wireless playback target availability when the default controls are hidden.
+            https://bugs.webkit.org/show_bug.cgi?id=137633
+
+            Reviewed by Dean Jackson.
+
+            In order to minimize the excess bandwidth and power consumption required for actively listening
+            for wireless playback target availablity, unregister for those notifications while the controls
+            are hidden due to playback, or when the element's document is hidden.
+
+            * Modules/mediacontrols/mediaControlsiOS.js:
+            (ControllerIOS.prototype.createBase): Register for document visiblity change notfications.
+            (ControllerIOS.prototype.setControlsType): Call updateShouldListenForPlaybackTargetAvailabilityEvent()
+                instead of setShouldListenForPlaybackTargetAvailabilityEvent()
+            (ControllerIOS.prototype.hideControls): Ditto.
+            (ControllerIOS.prototype.showControls): Ditto.
+            (ControllerIOS.prototype.updateStatusDisplay): Ditto.
+            (ControllerIOS.prototype.handleVisibilityChange): Ditto.
+            (ControllerIOS.prototype.updateShouldListenForPlaybackTargetAvailabilityEvent): Added. Only listen
+                for target availability when the video has no errors, is not in the initial "big play button"
+                controls state, and when the controls are not hidden.
+            * platform/audio/ios/MediaSessionManagerIOS.mm:
+            (-[WebMediaSessionHelper stopMonitoringAirPlayRoutes]): Explicitly set the discoveryMode to "disabled"
+                rather than waiting for the autoreleasepool to destroy our routing controller.
+
+2014-10-19  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174073.
+
+    2014-09-29  Eric Carlson  <eric.carlson@apple.com>
+
+            [iOS] Optimize media controls AirPlay discovery
+            https://bugs.webkit.org/show_bug.cgi?id=137180
+
+            Reviewed by Darin Adler.
+        
+            AirPlay discovery mode uses increases power consumption, so don't enable it when there
+            is no chance an AirPlay target picker will be useful.
+
+            * Modules/mediacontrols/mediaControlsiOS.js:
+            (ControllerIOS): Initialize isListeningForPlaybackTargetAvailabilityEvent.
+            (ControllerIOS.prototype.addVideoListeners): Don't enable register wireless playback event
+                listeners, it isn't possible to show the target picker until there is an inline controller.
+            (ControllerIOS.prototype.removeVideoListeners): Call setShouldListenForPlaybackTargetAvailabilityEvent.
+            (ControllerIOS.prototype.setControlsType): Add wireless event listers on when not showing 
+                the one button controller.
+            (ControllerIOS.prototype.updateStatusDisplay): Unregister wireless event listeners when the
+                media element is in an error state.
+            (ControllerIOS.prototype.setShouldListenForPlaybackTargetAvailabilityEvent): New, add or
+                remove event listeners.
+
 2014-10-03  Babak Shafiei  <bshafiei@apple.com>
 
         Merge r174277.
