@@ -120,6 +120,7 @@ void RenderBlockFlow::createMultiColumnFlowThread()
     RenderMultiColumnFlowThread* flowThread = new RenderMultiColumnFlowThread(document(), RenderStyle::createAnonymousStyleWithDisplay(&style(), BLOCK));
     flowThread->initializeStyle();
     setChildrenInline(false); // Do this to avoid wrapping inline children that are just going to move into the flow thread.
+    deleteLines();
     RenderBlock::addChild(flowThread);
     flowThread->populate(); // Called after the flow thread is inserted so that we are reachable by the flow thread.
     setMultiColumnFlowThread(flowThread);
@@ -2246,6 +2247,7 @@ void RenderBlockFlow::removeFloatingObject(RenderBox& floatBox)
                     logicalBottom = std::max(logicalBottom, logicalTop + 1);
                 }
                 if (floatingObject->originatingLine()) {
+                    floatingObject->originatingLine()->removeFloat(floatBox);
                     if (!selfNeedsLayout()) {
                         ASSERT(&floatingObject->originatingLine()->renderer() == this);
                         floatingObject->originatingLine()->markDirty();
@@ -2651,10 +2653,7 @@ void RenderBlockFlow::markAllDescendantsWithFloatsForLayout(RenderBox* floatToRe
     if (floatToRemove)
         removeFloatingObject(*floatToRemove);
 
-    if (childrenInline())
-        return;
-
-    // Iterate over our children and mark them as needed.
+    // Iterate over our block children and mark them as needed.
     for (auto& block : childrenOfType<RenderBlock>(*this)) {
         if (!floatToRemove && block.isFloatingOrOutOfFlowPositioned())
             continue;

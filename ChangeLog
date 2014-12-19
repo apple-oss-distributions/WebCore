@@ -1,3 +1,450 @@
+2014-12-18  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r177566.
+
+    2014-12-18  Jeremy Jones  <jeremyj@apple.com>
+
+            dispatch to main thread before accessing playerController() in WebVideoFullscreenInterfaceAVKit::setCanPlayFastReverse
+            https://bugs.webkit.org/show_bug.cgi?id=139809
+
+            Reviewed by Dan Bernstein.
+
+            This prevents a race in playerController().
+
+            * platform/ios/WebVideoFullscreenInterfaceAVKit.mm:
+            (WebVideoFullscreenInterfaceAVKit::setCanPlayFastReverse):
+
+2014-12-17  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge build fix for r177375.
+
+    2014-12-16  Jer Noble  <jer.noble@apple.com>
+
+            Unreviewed build fix after r177375; explicitly cast to NSUInteger.
+
+            * platform/ios/WebVideoFullscreenInterfaceAVKit.mm:
+            (WebVideoFullscreenInterfaceAVKit::setAudioMediaSelectionOptions):
+            (WebVideoFullscreenInterfaceAVKit::setLegibleMediaSelectionOptions):
+
+2014-12-17  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge patch for r177375.
+
+    2014-12-16  Jer Noble  <jer.noble@apple.com>
+
+            [iOS] Crash in WebKit::WebPageProxy::dispatchViewStateChange() tapping a link from another app while playing a video
+            https://bugs.webkit.org/show_bug.cgi?id=139550
+
+            Reviewed by Anders Carlsson.
+
+            The existing "dispatch to WebThread, then release" model is insufficient and still
+            can result in RefPtr race conditions between the main thread and the web thread.
+            Make WebVideoFullscreenInterfaceAVKit a thread-safe ref-counted class, which
+            eliminates the necessity of disptaching back to the web thread before releasing.
+
+            * platform/ios/WebVideoFullscreenInterfaceAVKit.h:
+            * platform/ios/WebVideoFullscreenInterfaceAVKit.mm:
+            (WebVideoFullscreenInterfaceAVKit::setDuration): Use a strongThis model.
+            (WebVideoFullscreenInterfaceAVKit::setCurrentTime): Ditto.
+            (WebVideoFullscreenInterfaceAVKit::setRate): Ditto.
+            (WebVideoFullscreenInterfaceAVKit::setVideoDimensions): Ditto.
+            (WebVideoFullscreenInterfaceAVKit::setSeekableRanges): Ditto.
+            (mediaSelectionOptions): Return a RetainPtr object.
+            (WebVideoFullscreenInterfaceAVKit::setAudioMediaSelectionOptions): Use a strongThis model.
+            (WebVideoFullscreenInterfaceAVKit::setLegibleMediaSelectionOptions): Ditto.
+            (WebVideoFullscreenInterfaceAVKit::setExternalPlayback): Ditto.
+            (WebVideoFullscreenInterfaceAVKit::setupFullscreen): Ditto.
+            (WebVideoFullscreenInterfaceAVKit::enterFullscreen): Ditto.
+            (WebVideoFullscreenInterfaceAVKit::exitFullscreen): Ditto.
+            (WebVideoFullscreenInterfaceAVKit::cleanupFullscreen): Ditto.
+            (WebVideoFullscreenInterfaceAVKit::setupFullscreenInternal): Added utility
+                function. Lets us use the implied this pointer rather than an explicit
+                strongThis.
+            (WebVideoFullscreenInterfaceAVKit::enterFullscreenOptimized): Ditto.
+            (WebVideoFullscreenInterfaceAVKit::enterFullscreenStandard): Ditto.
+            (WebVideoFullscreenInterfaceAVKit::exitFullscreenInternal): Ditto.
+            (WebVideoFullscreenInterfaceAVKit::cleanupFullscreenInternal): Ditto.
+            (WebVideoFullscreenInterfaceAVKit::requestHideAndExitFullscreen): Use a strongThis model.
+
+2014-12-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r176803.
+
+    2014-12-04  Oliver Hunt  <oliver@apple.com>
+
+            Serialization of MapData object provides unsafe access to internal types
+            https://bugs.webkit.org/show_bug.cgi?id=138653
+
+            Reviewed by Geoffrey Garen.
+
+            We now keep the value portion of the key/value pair in MapData as a
+            separate stack. This allows us to maintain the spec semantic of
+            "atomic" serialisation of the key/value pair without retaining the
+            use of a potentially invalid iterator.
+
+            * bindings/js/SerializedScriptValue.cpp:
+            (WebCore::CloneSerializer::serialize):
+
+2014-12-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175974.
+
+    2014-11-11  David Kilzer  <ddkilzer@apple.com>
+
+            Protect Document in ProcessingInstruction::setXSLStyleSheet()
+            <http://webkit.org/b/138621>
+
+            Reviewed by Andreas Kling.
+
+            The patch is inspired by the following Blink revision by
+            <tasak@google.com>:
+            <https://src.chromium.org/viewvc/blink?view=rev&revision=182309>
+
+            * dom/ProcessingInstruction.cpp:
+            (WebCore::ProcessingInstruction::setXSLStyleSheet):
+
+2014-12-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175347.
+
+    2014-10-29  Alexey Proskuryakov  <ap@apple.com>
+
+            Notify Settings object when its Page object goes away.
+            https://bugs.webkit.org/show_bug.cgi?id=138183
+            rdar://problem/18786900
+
+            Reviewed by Andreas Kling.
+
+            I could not make a test for this issue.
+
+            * page/Page.cpp:
+            (WebCore::Page::~Page):
+            * page/Settings.cpp:
+            (WebCore::setImageLoadingSettings):
+            (WebCore::Settings::Settings):
+            (WebCore::Settings::setTextAutosizingEnabled):
+            (WebCore::Settings::setTextAutosizingWindowSizeOverride):
+            (WebCore::Settings::setTextAutosizingFontScaleFactor):
+            (WebCore::Settings::setMediaTypeOverride):
+            (WebCore::Settings::setScriptEnabled):
+            (WebCore::Settings::setUserStyleSheetLocation):
+            (WebCore::Settings::setMinDOMTimerInterval):
+            (WebCore::Settings::minDOMTimerInterval):
+            (WebCore::Settings::domTimerAlignmentInterval):
+            (WebCore::Settings::setUsesPageCache):
+            (WebCore::Settings::setScreenFontSubstitutionEnabled):
+            (WebCore::Settings::setFontRenderingMode):
+            (WebCore::Settings::setDNSPrefetchingEnabled):
+            (WebCore::Settings::setStorageBlockingPolicy):
+            (WebCore::Settings::setBackgroundShouldExtendBeyondPage):
+            (WebCore::Settings::setScrollingPerformanceLoggingEnabled):
+            (WebCore::Settings::setHiddenPageDOMTimerThrottlingEnabled):
+            (WebCore::Settings::setHiddenPageCSSAnimationSuspensionEnabled):
+            (WebCore::Settings::setFontFallbackPrefersPictographs):
+            * page/Settings.h:
+            (WebCore::Settings::pageDestroyed):
+
+2014-12-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175345.
+
+    2014-10-29  Zalan Bujtas  <zalan@apple.com>
+
+            Remove invalid float from RootInlineBox.
+            https://bugs.webkit.org/show_bug.cgi?id=137707
+
+            Reviewed by Antti Koivisto.
+
+            In certain cases, floating boxes get attached to the last (root) inline box.
+            When this particular floating box gets destroyed, it also needs to be detached
+            from the last inline box.
+            1. Introduce RootInlineBox::removeFloat() (vs. RootInlineBox::appendFloat())
+            2. Ensure that it is called when the floating box is being destroyed.
+
+            Test: fast/inline/crash-when-inline-box-has-invalid-float.html
+
+            * rendering/RenderBlockFlow.cpp:
+            (WebCore::RenderBlockFlow::removeFloatingObject):
+            (WebCore::RenderBlockFlow::markAllDescendantsWithFloatsForLayout): During style recalc, while
+            tearing down the render tree, we can get to a state where a block element has both inline and block children.
+            It happens when the style change on an element makes sibling anonymous block wrappers detached.
+            In that case the markAllDescendantsWithFloatsForLayout() call does not get propagated down on the
+            block child elements as we return early at the childrenInline() check.
+            * rendering/RootInlineBox.h:
+            (WebCore::RootInlineBox::removeFloat):
+
+2014-12-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175197.
+
+    2014-10-24  Said Abou-Hallawa  <sabouhallawa@apple.com>
+
+            Clamp wordSpacing percentage value.
+            https://bugs.webkit.org/show_bug.cgi?id=129350.
+
+            Reviewed by Zalan Bujtas.
+
+            When the CSS wordSpacing property is percentage, its value has to be within the
+            pre-defined min/max values for the CSS length type. This is done the same way
+            the wordSpacing of type <length> is handled.
+
+            Tests: css3/infinite-word-spacing.html.
+
+            Move the definitions of minValueForCssLength and maxValueForCssLength from the
+            .cpp file to the .h file.
+            * css/CSSPrimitiveValue.cpp:
+            * css/CSSPrimitiveValue.h:
+
+            Clamp the wordSpacing value to minValueForCssLength and maxValueForCssLength when
+            its type is percentage.
+            * css/DeprecatedStyleBuilder.cpp:
+            (WebCore::ApplyPropertyWordSpacing::applyValue):
+
+2014-12-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r176735.
+
+    2014-12-03  Dana Burkart  <dburkart@apple.com>
+
+            Fix merge-related build failure.
+
+            * rendering/RenderBlock.cpp:
+            (WebCore::RenderBlock::blockSelectionGaps):
+
+2014-12-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r176295.
+
+    2014-11-18  David Hyatt  <hyatt@apple.com>
+
+            REGRESSION (r167210): Invalid cast in WebCore::RenderBlock::blockSelectionGaps
+            https://bugs.webkit.org/show_bug.cgi?id=137590
+
+            Reviewed by Dean Jackson.
+
+            Added fast/block/selection-block-gaps-crash.html
+
+            * rendering/RenderBlock.cpp:
+            (WebCore::RenderBlock::blockSelectionGaps):
+            Check that we really are a RenderBlock before recurring.
+
+2014-12-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175074.
+
+    2014-10-22  Said Abou-Hallawa  <sabouhallawa@apple.com>
+
+            SVG loaded through html <img> can't request to load any external resources.
+            https://bugs.webkit.org/show_bug.cgi?id=137762.
+
+            Reviewed by Daniel Bates.
+
+            SVG images have unique security rules that prevent them from loading any external
+            resources. This patch enforces these rules in CachedResourceLoader::canRequest for
+            all non-data-uri resources.
+
+            The fix and the tests are ported but modified a little from the chromium fix:
+            http://src.chromium.org/viewvc/blink?view=rev&rev=176084
+
+            Test: http/tests/security/svg-image-with-cached-remote-image.html
+                  http/tests/security/svg-image-with-css-cross-domain.html
+
+            For the SVG image, prevent loading any external sub-resource except for data urls.
+            * loader/cache/CachedResourceLoader.cpp:
+            (WebCore::CachedResourceLoader::canRequest):
+
+2014-12-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174946.
+
+    2014-10-21  Manuel Rego Casasnovas  <rego@igalia.com>
+
+            ASSERTION FAILED: !gridWasPopulated() in WebCore::RenderGrid::placeItemsOnGrid
+            https://bugs.webkit.org/show_bug.cgi?id=136939
+
+            Reviewed by Darin Adler.
+
+            In some particular situations computeIntrinsicLogicalWidths() is called
+            in the middle of layoutGridItems(). In these cases we do not need to
+            populate the grid again, so we should avoid calling placeItemsOnGrid().
+            In addition, we do not need to clean the grid either, as that will be
+            done later by layoutGridItems().
+
+            Test: fast/css-grid-layout/grid-was-populated-assert.html
+
+            * rendering/RenderGrid.cpp:
+            (WebCore::RenderGrid::computeIntrinsicLogicalWidths): Avoid calls to
+            placeItemsOnGrid() and clearGrid() if the grid was already populated.
+            * rendering/RenderGrid.h: Move gridWasPopulated() header out of the
+            debug ifdefs.
+
+2014-12-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174922.
+
+    2014-10-17  Jeffrey Pfau  <jpfau@apple.com>
+
+            Ensure attached frame count doesn't exceed the maximum allowed frames
+            https://bugs.webkit.org/show_bug.cgi?id=136457
+
+            Reviewed by Alexey Proskuryakov.
+
+            Test: fast/frames/exponential-frames.html
+
+            * html/HTMLFrameElementBase.cpp:
+            (WebCore::HTMLFrameElementBase::isURLAllowed):
+
+2014-12-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173845.
+
+    2014-09-22  David Hyatt  <hyatt@apple.com>
+
+            Bad cast in isValidColumnSpanner.
+            https://bugs.webkit.org/show_bug.cgi?id=133380.
+
+            Reviewed by Simon Fraser.
+
+            Added fast/multicol/multicol-crazy-nesting.html
+
+            * rendering/RenderMultiColumnFlowThread.cpp:
+            (WebCore::isValidColumnSpanner):
+            The crawl up the chain looking for unsplittable objects should use containing blocks
+            and not be casting to parent boxes. You can have an inline in the parent chain, so
+            this was not the right way to walk up the tree.
+
+2014-12-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173843.
+
+    2014-09-22  David Hyatt  <hyatt@apple.com>
+
+            ASSERT in RenderMultiColumnSet::requiresBalancing.
+            https://bugs.webkit.org/show_bug.cgi?id=136376.
+
+            Reviewed by David Kilzer.
+
+            Added fast/multicol/multicol-selection.html.
+
+            * rendering/RenderMultiColumnFlowThread.cpp:
+            (WebCore::isValidColumnSpanner):
+            Don't allow an object to become a spanner if it does not have the flow
+            thread as its containing block. Otherwise the flow thread won't get notified
+            of spanner placeholder insertions, and so the spanner ends up orphaned.
+
+2014-12-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173738.
+
+    2014-09-18  Daniel Bates  <dabates@apple.com>
+
+            REGRESSION (r168921): SVG elements may be unnecessarily rebuilt
+            https://bugs.webkit.org/show_bug.cgi?id=136373
+
+            Reviewed by David Kilzer.
+
+            Fixes an issue where a SVG element may be unnecessarily rebuilt. In particular,
+            it is unnecessary to rebuild a SVG element that will be removed from the document.
+
+            Test: svg/custom/remove-subtree-including-use-with-child-textpath-that-references-earlier-path.html
+
+            * svg/SVGDocumentExtensions.cpp:
+            (WebCore::SVGDocumentExtensions::removeAllElementReferencesForTarget): Modified to remove a SVG element
+            from the list of elements to be rebuilt.
+
+2014-12-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173424.
+
+    2014-09-08  Mihnea Ovidenie  <mihnea@adobe.com>
+
+            [CSSRegions]Incorrect layout for multicol element transformed into region
+            https://bugs.webkit.org/show_bug.cgi?id=136459
+
+            Reviewed by David Hyatt.
+
+            Until we will support the multicolumn region functionality, a multicolumn element
+            that also has flow-from style is not transformed into a region (https://bugs.webkit.org/show_bug.cgi?id=135153).
+            However, when a multicolumn element with flow-from style dynamically loses
+            its multicolumn style while keeping the flow-from style, we have to transform
+            the element into a region by detaching and attaching the associated DOM node,
+            in the same way we are proceeding when an element receives a different flow-from style.
+
+            Test: fast/regions/multicol/nested-multicol-into-region-dynamic.html
+
+            * style/StyleResolveTree.cpp:
+            (WebCore::Style::determineChange):
+
+2014-12-09  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173061.
+
+    2014-08-28  Mihnea Ovidenie  <mihnea@adobe.com>
+
+            [CSSRegions] Incorrect selection clearing on a document without regions
+            https://bugs.webkit.org/show_bug.cgi?id=134901
+
+            Reviewed by David Hyatt.
+
+            When we select all the content of document with named flows but without regions,
+            the start and end points of selection is cached in RenderView. However, since
+            the document has named flows, the selection is split between the subtrees. During the split,
+            it is possible that the cached end-points of the original selection are not included
+            in any of the resulting subtree selection and they are not marked accordingly.
+            In order to process the selection clearing correctly, we have to take the original
+            selection end-points into account.
+
+            Test: fast/regions/selection/select-all-without-regions.html
+
+            * rendering/RenderObject.cpp:
+            (WebCore::RenderObject::isSelectionBorder):
+
+2014-12-09  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173046.
+
+    2014-08-27  Daniel Bates  <dabates@apple.com>
+
+            Scrollbar corner can be drawn outside containing frame
+            https://bugs.webkit.org/show_bug.cgi?id=133131
+            <rdar://problem/16382769>
+
+            Reviewed by Simon Fraser.
+
+            Merged from Blink (patch by Levi Weintraub):
+            <https://src.chromium.org/viewvc/blink?revision=170625&view=revision>
+
+            Fixes an issue where the scroll corner may be painted outside the rectangle of
+            its associated frame by setting a clip rectangle before painting the scroll bar(s)
+            and scroll corner.
+
+            Test: scrollbars/custom-scrollbars-paint-outside-iframe.html
+
+            * platform/ScrollView.cpp:
+            (WebCore::ScrollView::paint):
+
+2014-12-09  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r171849.
+
+    2014-07-31  Andrei Bucur  <abucur@adobe.com>
+
+            [CSS Multicolumn] Clear the lines when switching to multi-column layout
+            https://bugs.webkit.org/show_bug.cgi?id=135127
+
+            Reviewed by Alexandru Chiculita.
+
+            When switching an element to multi-column layout it becomes a container of block
+            children. When this happens the existing line boxes must be deleted in addition
+            to clearing the hasInlineChildren flag.
+
+            Tests: fast/multicol/inline-container-to-multicol.html
+                   fast/multicol/inline-container-to-multicol-float.html
+                   fast/multicol/inline-container-to-multicol-positioned.html
+
+            * rendering/RenderBlockFlow.cpp:
+            (WebCore::RenderBlockFlow::createMultiColumnFlowThread):
+
 2014-10-27  Babak Shafiei  <bshafiei@apple.com>
 
         Merge r175158.
