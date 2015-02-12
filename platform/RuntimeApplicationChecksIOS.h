@@ -33,6 +33,7 @@ bool applicationIsMobileSafari();
 bool applicationIsDumpRenderTree();
 bool applicationIsMobileStore();
 bool applicationIsWebApp();
+bool applicationIsWebSheet();
 bool applicationIsOkCupid();
 bool applicationIsFacebook();
 bool applicationIsEpicurious();

@@ -459,8 +459,7 @@ void HTMLPlugInImageElement::createShadowIFrameSubtree(const String& src)
         iframeElement->setAttribute(HTMLNames::widthAttr, "100%");
     if (hasAttribute(HTMLNames::heightAttr)) {
         iframeElement->setAttribute(HTMLNames::styleAttr, "max-height: 100%");
-        iframeElement->setAttribute(HTMLNames::heightAttr, "100%");
-        shadowElement->setAttribute(HTMLNames::styleAttr, "height: 100%");
+        iframeElement->setAttribute(HTMLNames::heightAttr, getAttribute(HTMLNames::heightAttr));
     }
     iframeElement->setAttribute(HTMLNames::srcAttr, src);
     iframeElement->setAttribute(HTMLNames::frameborderAttr, "0");
