@@ -64,6 +64,8 @@ namespace WebCore {
 // texture size limit on all supported hardware.
 #if PLATFORM(IOS)
 static const int cMaxPixelDimension = 1280;
+static const int cMaxPixelDimensionLowMemory = 1024;
+static const int cMemoryLevelToUseSmallerPixelDimension = 35;
 #else
 static const int cMaxPixelDimension = 2000;
 #endif
@@ -74,6 +76,20 @@ static const int cMaxLayerTreeDepth = 250;
 // If we send a duration of 0 to CA, then it will use the default duration
 // of 250ms. So send a very small value instead.
 static const float cAnimationAlmostZeroDuration = 1e-3f;
+
+static inline bool isIntegral(float value)
+{
+    return static_cast<int>(value) == value;
+}
+
+static float clampedContentsScaleForScale(float scale)
+{
+    // Define some limits as a sanity check for the incoming scale value
+    // those too small to see.
+    const float maxScale = 10.0f;
+    const float minScale = 0.01f;
+    return std::max(minScale, std::min(scale, maxScale));
+}
 
 static bool isTransformTypeTransformationMatrix(TransformOperation::OperationType transformType)
 {
@@ -686,6 +702,11 @@ void GraphicsLayerCA::setContentsRect(const IntRect& rect)
     noteLayerPropertyChanged(ContentsRectChanged);
 }
 
+bool GraphicsLayerCA::shouldRepaintOnSizeChange() const
+{
+    return drawsContent() && !tiledBacking();
+}
+
 bool GraphicsLayerCA::addAnimation(const KeyframeValueList& valueList, const IntSize& boxSize, const Animation* anim, const String& animationName, double timeOffset)
 {
     ASSERT(!animationName.isEmpty());
@@ -1149,6 +1170,11 @@ float GraphicsLayerCA::platformCALayerDeviceScaleFactor()
     return deviceScaleFactor();
 }
 
+float GraphicsLayerCA::platformCALayerContentsScaleMultiplierForNewTiles(PlatformCALayer*) const
+{
+    return client() ? client()->contentsScaleMultiplierForNewTiles(this) : 1;
+}
+
 void GraphicsLayerCA::commitLayerChangesBeforeSublayers(CommitState& commitState, float pageScaleFactor, const FloatPoint& positionRelativeToBase, const FloatRect& oldVisibleRect)
 {
     ++commitState.treeDepth;
@@ -1206,8 +1232,9 @@ void GraphicsLayerCA::commitLayerChangesBeforeSublayers(CommitState& commitState
     if (m_uncommittedChanges & ContentsVisibilityChanged)
         updateContentsVisibility();
 
+    // Note that contentsScale can affect whether the layer can be opaque.
     if (m_uncommittedChanges & ContentsOpaqueChanged)
-        updateContentsOpaque();
+        updateContentsOpaque(pageScaleFactor);
 
     if (m_uncommittedChanges & BackfaceVisibilityChanged)
         updateBackfaceVisibility();
@@ -1488,14 +1515,21 @@ void GraphicsLayerCA::updateContentsVisibility()
     }
 }
 
-void GraphicsLayerCA::updateContentsOpaque()
+void GraphicsLayerCA::updateContentsOpaque(float pageScaleFactor)
 {
-    m_layer->setOpaque(m_contentsOpaque);
+    bool contentsOpaque = m_contentsOpaque;
+    if (contentsOpaque) {
+        float contentsScale = clampedContentsScaleForScale(pageScaleFactor * deviceScaleFactor());
+        if (!isIntegral(contentsScale))
+            contentsOpaque = false;
+    }
+    
+    m_layer->setOpaque(contentsOpaque);
 
     if (LayerMap* layerCloneMap = m_layerClones.get()) {
         LayerMap::const_iterator end = layerCloneMap->end();
         for (LayerMap::const_iterator it = layerCloneMap->begin(); it != end; ++it)
-            it->value->setOpaque(m_contentsOpaque);
+            it->value->setOpaque(contentsOpaque);
     }
 }
 
@@ -2639,15 +2673,6 @@ GraphicsLayerCA::LayerMap* GraphicsLayerCA::animatedLayerClones(AnimatedProperty
     return (property == AnimatedPropertyBackgroundColor) ? m_contentsLayerClones.get() : primaryLayerClones();
 }
 
-static float clampedContentsScaleForScale(float scale)
-{
-    // Define some limits as a sanity check for the incoming scale value
-    // those too small to see.
-    const float maxScale = 10.0f;
-    const float minScale = 0.01f;
-    return max(minScale, min(scale, maxScale));
-}
-
 void GraphicsLayerCA::updateContentsScale(float pageScaleFactor)
 {
     float contentsScale = clampedContentsScaleForScale(pageScaleFactor * deviceScaleFactor());
@@ -2739,7 +2764,12 @@ bool GraphicsLayerCA::requiresTiledLayer(float pageScaleFactor) const
         return false;
 
     // FIXME: catch zero-size height or width here (or earlier)?
+#if PLATFORM(IOS)
+    int maxPixelDimension = systemMemoryLevel() < cMemoryLevelToUseSmallerPixelDimension ? cMaxPixelDimensionLowMemory : cMaxPixelDimension;
+    return m_size.width() * pageScaleFactor > maxPixelDimension || m_size.height() * pageScaleFactor > maxPixelDimension;
+#else
     return m_size.width() * pageScaleFactor > cMaxPixelDimension || m_size.height() * pageScaleFactor > cMaxPixelDimension;
+#endif
 }
 
 void GraphicsLayerCA::swapFromOrToTiledLayer(bool useTiledLayer)
@@ -3068,12 +3098,7 @@ void GraphicsLayerCA::deviceOrPageScaleFactorChanged()
 
 void GraphicsLayerCA::noteChangesForScaleSensitiveProperties()
 {
-    noteLayerPropertyChanged(GeometryChanged | ContentsScaleChanged);
-}
-
-static inline bool isIntegral(float value)
-{
-    return static_cast<int>(value) == value;
+    noteLayerPropertyChanged(GeometryChanged | ContentsScaleChanged | ContentsOpaqueChanged);
 }
 
 void GraphicsLayerCA::computePixelAlignment(float pageScaleFactor, const FloatPoint& positionRelativeToBase,

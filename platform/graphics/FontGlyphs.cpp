@@ -194,7 +194,7 @@ static bool shouldIgnoreRotation(UChar32 character)
         return true;
 
     if (isInRange(character, 0x0FF01, 0x0FF07) || isInRange(character, 0x0FF0A, 0x0FF0C)
-        || isInRange(character, 0x0FF0E, 0x0FF19) || isInRange(character, 0x0FF1F, 0x0FF3A))
+        || isInRange(character, 0x0FF0E, 0x0FF19) || character == 0x0FF1B || isInRange(character, 0x0FF1F, 0x0FF3A))
         return true;
 
     if (character == 0x0FF3C || character == 0x0FF3E)
@@ -285,12 +285,6 @@ std::pair<GlyphData, GlyphPage*> FontGlyphs::glyphDataAndPageForCharacter(const 
 
     if (mirror)
         c = WTF::Unicode::mirroredChar(c);
-#if PLATFORM(IOS)
-    // see also "pageNumber != 6" in GlyphPageTreeNode::initializePage()
-    bool forceFallback = false;
-    if (c >= 0x0600 && c <= 0x06FF)
-        forceFallback = true;
-#endif
 
     unsigned pageNumber = (c / GlyphPage::size);
 
@@ -310,10 +304,6 @@ std::pair<GlyphData, GlyphPage*> FontGlyphs::glyphDataAndPageForCharacter(const 
             page = node->page();
             if (page) {
                 GlyphData data = page->glyphDataForCharacter(c);
-#if PLATFORM(IOS)
-                if (forceFallback && !node->isSystemFallback())
-                    data.fontData = 0;
-#endif
                 if (data.fontData && (data.fontData->platformData().orientation() == Horizontal || data.fontData->isTextOrientationFallback()))
                     return std::make_pair(data, page);
 

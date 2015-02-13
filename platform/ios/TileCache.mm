@@ -91,6 +91,7 @@ TileCache::TileCache(WAKWindow* window)
     , m_currentScale(1.f)
     , m_pendingScale(0)
     , m_pendingZoomedOutScale(0)
+    , m_tileControllerShouldUseLowScaleTiles(false)
 {
     m_zoomedOutTileGrid = TileGrid::create(this, m_tileSize);
     [hostLayer() insertSublayer:m_zoomedOutTileGrid->tileHostLayer() atIndex:0];

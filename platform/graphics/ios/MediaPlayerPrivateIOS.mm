@@ -120,7 +120,7 @@ MediaPlayerPrivateIOS::MediaPlayerPrivateIOS(MediaPlayer* player)
     , m_objcHelper(AdoptNS, [[WebCoreMediaPlayerNotificationHelper alloc] initWithClient:this])
     , m_networkState(MediaPlayer::Empty)
     , m_readyState(MediaPlayer::HaveNothing)
-#if HAVE(VIDEO_TRACK)
+#if ENABLE(VIDEO_TRACK)
     , m_currentTrack(0)
 #endif
     , m_delayCallbacks(0)

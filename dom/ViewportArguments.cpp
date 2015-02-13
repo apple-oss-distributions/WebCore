@@ -410,6 +410,10 @@ void setViewportFeature(const String& keyString, const String& valueString, Docu
         arguments->maxZoom = findScaleValue(keyString, valueString, document);
     else if (keyString == "user-scalable")
         arguments->userZoom = findUserScalableValue(keyString, valueString, document);
+#if PLATFORM(IOS)
+    else if (keyString == "minimal-ui")
+        arguments->minimalUI = true;
+#endif
     else
         reportViewportWarning(document, UnrecognizedViewportArgumentKeyError, keyString, String());
 }

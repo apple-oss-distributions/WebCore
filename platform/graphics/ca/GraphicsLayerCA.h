@@ -179,8 +179,11 @@ private:
     virtual void platformCALayerLayerDidDisplay(PlatformLayer* layer) { return layerDidDisplay(layer); }
     virtual void platformCALayerDidCreateTiles(const Vector<FloatRect>& dirtyRects) OVERRIDE;
     virtual float platformCALayerDeviceScaleFactor() OVERRIDE;
+    virtual float platformCALayerContentsScaleMultiplierForNewTiles(PlatformCALayer*) const OVERRIDE;
 
     virtual double backingStoreMemoryEstimate() const;
+
+    virtual bool shouldRepaintOnSizeChange() const OVERRIDE;
 
     void updateOpacityOnLayer();
     
@@ -338,7 +341,7 @@ private:
     void updateChildrenTransform();
     void updateMasksToBounds();
     void updateContentsVisibility();
-    void updateContentsOpaque();
+    void updateContentsOpaque(float pageScaleFactor);
     void updateBackfaceVisibility();
     void updateStructuralLayer();
     void updateLayerDrawsContent();

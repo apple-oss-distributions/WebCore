@@ -122,7 +122,7 @@ namespace WebCore {
         PageGroup(Page*);
 
         void addVisitedLink(LinkHash);
-        void invalidatedInjectedStyleSheetCacheInAllFrames();
+        void invalidateInjectedStyleSheetCacheInAllFrames();
 
         String m_name;
 

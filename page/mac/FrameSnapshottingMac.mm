@@ -38,10 +38,10 @@
 #import "RenderView.h"
 
 #if PLATFORM(IOS)
-#import "FoundationExtras.h"
 #import "WAKView.h"
 #import "WKGraphics.h"
 #import "WebCoreThread.h"
+#import <wtf/ObjcRuntimeExtras.h>
 
 @interface WAKView (WebCoreHTMLDocumentView)
 - (void)drawSingleRect:(CGRect)rect;

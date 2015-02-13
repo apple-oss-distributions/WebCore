@@ -92,6 +92,8 @@ public:
     // Page scale factor.
     virtual float pageScaleFactor() const { return 1; }
 
+    virtual float contentsScaleMultiplierForNewTiles(const GraphicsLayer*) const { return 1; }
+
     virtual bool isTrackingRepaints() const { return false; }
 
 #if PLATFORM(IOS)

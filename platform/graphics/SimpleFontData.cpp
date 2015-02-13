@@ -82,6 +82,9 @@ SimpleFontData::SimpleFontData(PassOwnPtr<AdditionalFontData> fontData, float fo
     , m_verticalData(0)
 #endif
     , m_hasVerticalGlyphs(false)
+#if PLATFORM(IOS)
+    , m_shouldNotBeUsedForArabic(false)
+#endif
 {
     m_fontData->initializeFontData(this, fontSize);
 }

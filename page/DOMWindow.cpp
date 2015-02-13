@@ -1744,7 +1744,7 @@ void DOMWindow::incrementScrollEventListenersCount()
 void DOMWindow::decrementScrollEventListenersCount()
 {
     if (--m_scrollEventListenerCount == 0 && document() == document()->topDocument()) {
-        if (frame() && frame()->page())
+        if (frame() && frame()->page() && !document()->inPageCache())
             frame()->page()->chrome().client()->setNeedsScrollNotifications(frame(), false);
     }
 }

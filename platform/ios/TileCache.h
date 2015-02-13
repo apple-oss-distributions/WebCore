@@ -153,6 +153,9 @@ public:
     
     enum SynchronousTileCreationMode { CoverVisibleOnly, CoverSpeculative };
 
+    bool tileControllerShouldUseLowScaleTiles() const { return m_tileControllerShouldUseLowScaleTiles; }
+    void setTileControllerShouldUseLowScaleTiles(bool flag) { m_tileControllerShouldUseLowScaleTiles = flag; }
+
 private:
     TileGrid* activeTileGrid() const;
     TileGrid* inactiveTileGrid() const;
@@ -213,6 +216,8 @@ private:
     mutable Mutex m_tileMutex;
     mutable Mutex m_savedDisplayRectMutex;
     mutable Mutex m_contentReplacementImageMutex;
+
+    bool m_tileControllerShouldUseLowScaleTiles;
 };
 
 }

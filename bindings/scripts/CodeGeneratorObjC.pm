@@ -625,7 +625,6 @@ sub AddIncludesForType
     if (IsNativeObjCType($type)) {
         if ($type eq "Color") {
             if ($buildingForIPhone) {
-                $implIncludes{"FoundationExtras.h"} = 1;
                 $implIncludes{"ColorSpace.h"} = 1;
             } else {
                 $implIncludes{"ColorMac.h"} = 1;

@@ -169,6 +169,8 @@ public:
     virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& clip) OVERRIDE;
 
     virtual float deviceScaleFactor() const OVERRIDE;
+    virtual float contentsScaleMultiplierForNewTiles(const GraphicsLayer*) const OVERRIDE;
+
     virtual float pageScaleFactor() const OVERRIDE;
     virtual void didCommitChangesForLayer(const GraphicsLayer*) const OVERRIDE;
     virtual bool getCurrentTransform(const GraphicsLayer*, TransformationMatrix&) const OVERRIDE;
@@ -308,7 +310,6 @@ private:
     IntRect m_compositedBounds;
 
     bool m_artificiallyInflatedBounds; // bounds had to be made non-zero to make transform-origin work
-    bool m_boundsConstrainedByClipping;
     bool m_isMainFrameRenderViewLayer;
     bool m_usingTiledCacheLayer;
     bool m_requiresOwnBackingStore;

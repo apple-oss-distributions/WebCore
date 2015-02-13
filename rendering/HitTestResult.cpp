@@ -288,7 +288,7 @@ Image* HitTestResult::image() const
         return 0;
     
     RenderObject* renderer = m_innerNonSharedNode->renderer();
-    if (renderer && renderer->isImage()) {
+    if (renderer && renderer->isRenderImage()) {
         RenderImage* image = static_cast<WebCore::RenderImage*>(renderer);
         if (image->cachedImage() && !image->cachedImage()->errorOccurred())
             return image->cachedImage()->imageForRenderer(image);

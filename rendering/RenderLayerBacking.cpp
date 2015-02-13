@@ -110,7 +110,6 @@ RenderLayerBacking::RenderLayerBacking(RenderLayer* layer)
     : m_owningLayer(layer)
     , m_scrollLayerID(0)
     , m_artificiallyInflatedBounds(false)
-    , m_boundsConstrainedByClipping(false)
     , m_isMainFrameRenderViewLayer(false)
     , m_usingTiledCacheLayer(false)
     , m_requiresOwnBackingStore(true)
@@ -482,9 +481,7 @@ void RenderLayerBacking::updateCompositedBounds()
         clippingBounds.move(-delta.x(), -delta.y());
 
         layerBounds.intersect(pixelSnappedIntRect(clippingBounds));
-        m_boundsConstrainedByClipping = true;
-    } else
-        m_boundsConstrainedByClipping = false;
+    }
     
     // If the element has a transform-origin that has fixed lengths, and the renderer has zero size,
     // then we need to ensure that the compositing layer has non-zero size so that we can apply
@@ -700,7 +697,8 @@ void RenderLayerBacking::updateGraphicsLayerGeometry()
         ancestorCompositingBounds = pixelSnappedIntRect(compAncestor->backing()->compositedBounds());
     }
 
-    IntRect localCompositingBounds = pixelSnappedIntRect(compositedBounds());
+    LayoutRect localRawCompositingBounds = compositedBounds();
+    IntRect localCompositingBounds = pixelSnappedIntRect(localRawCompositingBounds);
 
     IntRect relativeCompositingBounds(localCompositingBounds);
     IntPoint delta;
@@ -765,21 +763,14 @@ void RenderLayerBacking::updateGraphicsLayerGeometry()
     }
 
     m_graphicsLayer->setPosition(FloatPoint(relativeCompositingBounds.location() - graphicsLayerParentLocation));
+    m_graphicsLayer->setSize(contentsSize);
     m_graphicsLayer->setOffsetFromRenderer(toIntSize(localCompositingBounds.location()));
-    
-    FloatSize oldSize = m_graphicsLayer->size();
-    if (oldSize != contentsSize) {
-        m_graphicsLayer->setSize(contentsSize);
-        // Usually invalidation will happen via layout etc, but if we've affected the layer
-        // size by constraining relative to a clipping ancestor or the viewport, we
-        // have to invalidate to avoid showing stretched content.
-        if (m_boundsConstrainedByClipping)
-            m_graphicsLayer->setNeedsDisplay();
-    }
+
     if (!m_isMainFrameRenderViewLayer) {
         // For non-root layers, background is always painted by the primary graphics layer.
         ASSERT(!m_backgroundLayer);
-        m_graphicsLayer->setContentsOpaque(m_owningLayer->backgroundIsKnownToBeOpaqueInRect(localCompositingBounds));
+        bool hadSubpixelRounding = LayoutSize(relativeCompositingBounds.size()) != localRawCompositingBounds.size();
+        m_graphicsLayer->setContentsOpaque(!hadSubpixelRounding && m_owningLayer->backgroundIsKnownToBeOpaqueInRect(localCompositingBounds));
     }
 
     // If we have a layer that clips children, position it.
@@ -792,10 +783,7 @@ void RenderLayerBacking::updateGraphicsLayerGeometry()
     }
     
     if (m_maskLayer) {
-        if (m_maskLayer->size() != m_graphicsLayer->size()) {
-            m_maskLayer->setSize(m_graphicsLayer->size());
-            m_maskLayer->setNeedsDisplay();
-        }
+        m_maskLayer->setSize(m_graphicsLayer->size());
         m_maskLayer->setPosition(FloatPoint());
         m_maskLayer->setOffsetFromRenderer(m_graphicsLayer->offsetFromRenderer());
     }
@@ -852,10 +840,7 @@ void RenderLayerBacking::updateGraphicsLayerGeometry()
         }
 
         m_foregroundLayer->setPosition(foregroundPosition);
-        if (foregroundSize != m_foregroundLayer->size()) {
-            m_foregroundLayer->setSize(foregroundSize);
-            m_foregroundLayer->setNeedsDisplay();
-        }
+        m_foregroundLayer->setSize(foregroundSize);
         m_foregroundLayer->setOffsetFromRenderer(foregroundOffset);
     }
 
@@ -868,10 +853,7 @@ void RenderLayerBacking::updateGraphicsLayerGeometry()
             backgroundSize = frameView->visibleContentRect().size();
         }
         m_backgroundLayer->setPosition(backgroundPosition);
-        if (backgroundSize != m_backgroundLayer->size()) {
-            m_backgroundLayer->setSize(backgroundSize);
-            m_backgroundLayer->setNeedsDisplay();
-        }
+        m_backgroundLayer->setSize(backgroundSize);
         m_backgroundLayer->setOffsetFromRenderer(m_graphicsLayer->offsetFromRenderer());
     }
 
@@ -945,9 +927,7 @@ void RenderLayerBacking::updateGraphicsLayerGeometry()
 #endif
 
         if (m_foregroundLayer) {
-            if (m_foregroundLayer->size() != m_scrollingContentsLayer->size())
-                m_foregroundLayer->setSize(m_scrollingContentsLayer->size());
-            m_foregroundLayer->setNeedsDisplay();
+            m_foregroundLayer->setSize(m_scrollingContentsLayer->size());
             m_foregroundLayer->setOffsetFromRenderer(m_scrollingContentsLayer->offsetFromRenderer());
         }
     }
@@ -1818,7 +1798,7 @@ bool RenderLayerBacking::isDirectlyCompositedImage() const
 {
     RenderObject* renderObject = renderer();
 
-    if (!renderObject->isImage() || m_owningLayer->hasBoxDecorationsOrBackground() || renderObject->hasClip())
+    if (!renderObject->isRenderImage() || m_owningLayer->hasBoxDecorationsOrBackground() || renderObject->hasClip())
         return false;
 
     RenderImage* imageRenderer = toRenderImage(renderObject);
@@ -1862,7 +1842,7 @@ void RenderLayerBacking::contentChanged(ContentChangeType changeType)
 
 void RenderLayerBacking::updateImageContents()
 {
-    ASSERT(renderer()->isImage());
+    ASSERT(renderer()->isRenderImage());
     RenderImage* imageRenderer = toRenderImage(renderer());
 
     CachedImage* cachedImage = imageRenderer->cachedImage();
@@ -2198,6 +2178,11 @@ float RenderLayerBacking::pageScaleFactor() const
 float RenderLayerBacking::deviceScaleFactor() const
 {
     return compositor()->deviceScaleFactor();
+}
+
+float RenderLayerBacking::contentsScaleMultiplierForNewTiles(const GraphicsLayer* layer) const
+{
+    return compositor()->contentsScaleMultiplierForNewTiles(layer);
 }
 
 void RenderLayerBacking::didCommitChangesForLayer(const GraphicsLayer* layer) const

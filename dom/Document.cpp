@@ -101,6 +101,7 @@
 #include "InspectorCounters.h"
 #include "InspectorInstrumentation.h"
 #include "Language.h"
+#include "LoaderStrategy.h"
 #include "Logging.h"
 #include "MediaCanStartListener.h"
 #include "MediaQueryList.h"
@@ -119,6 +120,7 @@
 #include "PageGroup.h"
 #include "PageTransitionEvent.h"
 #include "PlatformLocale.h"
+#include "PlatformStrategies.h"
 #include "PlugInsResources.h"
 #include "PluginDocument.h"
 #include "PointerLockController.h"
@@ -128,6 +130,7 @@
 #include "RenderArena.h"
 #include "RenderView.h"
 #include "RenderWidget.h"
+#include "ResourceLoadScheduler.h"
 #include "ResourceLoader.h"
 #include "RuntimeEnabledFeatures.h"
 #include "SchemeRegistry.h"
@@ -451,6 +454,7 @@ Document::Document(Frame* frame, const KURL& url, unsigned documentClasses)
     , m_visuallyOrdered(false)
     , m_readyState(Complete)
     , m_bParsing(false)
+    , m_optimizedStyleSheetUpdateTimer(this, &Document::optimizedStyleSheetUpdateTimerFired)
     , m_styleRecalcTimer(this, &Document::styleRecalcTimerFired)
     , m_pendingStyleRecalcShouldForce(false)
     , m_inStyleRecalc(false)
@@ -1805,6 +1809,15 @@ void Document::recalcStyle(StyleChange change)
     if (m_inStyleRecalc)
         return; // Guard against re-entrancy. -dwh
 
+#if USE(WEB_THREAD)
+    // Ensure we don't update the styles while layouting, to prevent render objects from
+    // getting deleted while they are being laid out.
+    if (view() && view()->isInLayout()) {
+        scheduleStyleRecalc();
+        return;
+    }
+#endif
+
     // FIXME: We should update style on our ancestor chain before proceeding (especially for seamless),
     // however doing so currently causes several tests to crash, as Frame::setDocument calls Document::attach
     // before setting the DOMWindow on the Frame, or the SecurityOrigin on the document. The attach, in turn
@@ -1812,8 +1825,7 @@ void Document::recalcStyle(StyleChange change)
     // re-attaching our containing iframe, which when asked HTMLFrameElementBase::isURLAllowed
     // hits a null-dereference due to security code always assuming the document has a SecurityOrigin.
 
-    if (m_styleSheetCollection->needsUpdateActiveStylesheetsOnStyleRecalc())
-        m_styleSheetCollection->updateActiveStyleSheets(DocumentStyleSheetCollection::FullUpdate);
+    m_styleSheetCollection->flushPendingUpdates();
 
     InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRecalculateStyle(this);
 
@@ -1904,7 +1916,10 @@ void Document::updateStyleIfNeeded()
     ASSERT(isMainThread() || pthread_main_np());
 #endif
     ASSERT(!view() || (!view()->isInLayout() && !view()->isPainting()));
-    
+
+    if (m_optimizedStyleSheetUpdateTimer.isActive())
+        styleResolverChanged(RecalcStyleIfNeeded);
+
     if ((!m_pendingStyleRecalcShouldForce && !childNeedsStyleRecalc()) || inPageCache())
         return;
 
@@ -1994,6 +2009,9 @@ void Document::updateLayoutIgnorePendingStylesheets()
 PassRefPtr<RenderStyle> Document::styleForElementIgnoringPendingStylesheets(Element* element)
 {
     ASSERT_ARG(element, element->document() == this);
+
+    // On iOS request delegates called during styleForElement may result in re-entering WebKit and killing the style resolver.
+    ResourceLoadScheduler::Suspender suspender(*platformStrategies()->loaderStrategy()->resourceLoadScheduler());
 
     bool oldIgnore = m_ignorePendingStylesheets;
     m_ignorePendingStylesheets = true;
@@ -3307,8 +3325,24 @@ void Document::evaluateMediaQueryList()
         m_mediaQueryMatcher->styleResolverChanged();
 }
 
+void Document::optimizedStyleSheetUpdateTimerFired(Timer<Document>*)
+{
+    styleResolverChanged(RecalcStyleIfNeeded);
+}
+
+void Document::scheduleOptimizedStyleSheetUpdate()
+{
+    if (m_optimizedStyleSheetUpdateTimer.isActive())
+        return;
+    styleSheetCollection()->setPendingUpdateType(DocumentStyleSheetCollection::OptimizedUpdate);
+    m_optimizedStyleSheetUpdateTimer.startOneShot(0);
+}
+
 void Document::styleResolverChanged(StyleResolverUpdateFlag updateFlag)
 {
+    if (m_optimizedStyleSheetUpdateTimer.isActive())
+        m_optimizedStyleSheetUpdateTimer.stop();
+
     // Don't bother updating, since we haven't loaded all our style info yet
     // and haven't calculated the style selector for the first time.
     if (!attached() || (!m_didCalculateStyleResolver && !haveStylesheetsLoaded())) {
@@ -6287,7 +6321,7 @@ static RenderObject* nearestCommonHoverAncestor(RenderObject* obj1, RenderObject
     return 0;
 }
 
-void Document::updateHoverActiveState(const HitTestRequest& request, Element* innerElement, const PlatformMouseEvent* event)
+void Document::updateHoverActiveState(const HitTestRequest& request, Element* innerElement, const PlatformMouseEvent* event, StyleResolverUpdateFlag updateFlag)
 {
     ASSERT(!request.readOnly());
 
@@ -6431,7 +6465,9 @@ void Document::updateHoverActiveState(const HitTestRequest& request, Element* in
         }
     }
 
-    updateStyleIfNeeded();
+    ASSERT(updateFlag == RecalcStyleIfNeeded || updateFlag == DeferRecalcStyleIfNeeded);
+    if (updateFlag == RecalcStyleIfNeeded)
+        updateStyleIfNeeded();
 }
 
 bool Document::haveStylesheetsLoaded() const

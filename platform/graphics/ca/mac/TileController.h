@@ -85,6 +85,11 @@ public:
     // Only public for the WebTileCacheMapLayer.
     void drawTileMapContents(CGContextRef, CGRect);
 
+#if PLATFORM(IOS)
+    unsigned numberOfUnparentedTiles() const { return m_cohortList.size(); }
+    void removeUnparentedTilesNow();
+#endif
+
 public:
     // Only public for inline methods in the implementation file.
     typedef IntPoint TileIndex;
@@ -206,6 +211,7 @@ private:
     bool m_acceleratesDrawing;
     bool m_tilesAreOpaque;
     bool m_clipsToExposedRect;
+    bool m_hasTilesWithTemporaryScaleFactor; // Used to make low-res tiles when zooming.
 
     RetainPtr<CGColorRef> m_tileDebugBorderColor;
     float m_tileDebugBorderWidth;

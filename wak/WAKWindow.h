@@ -141,6 +141,8 @@ extern NSString * const WAKWindowVisibilityDidChangeNotification;
 - (BOOL)keepsZoomedOutTiles;
 - (TileCache *)tileCache;
 
+- (void)setTileControllerShouldUseLowScaleTiles:(BOOL)lowScaleTiles;
+
 - (void)dumpTiles;
 
 - (void)setTileBordersVisible:(BOOL)visible;

@@ -252,6 +252,9 @@ void SharedBuffer::createPurgeableBuffer() const
         return;
 #endif
 
+    if (!hasOneRef())
+        return;
+
 #if PLATFORM(IOS)
     if (!m_shouldUsePurgeableMemory)
         return;

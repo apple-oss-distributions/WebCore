@@ -67,6 +67,7 @@
 #include "Region.h"
 #include "RenderScrollbar.h"
 #include "ScrollingConstraints.h"
+#include "TileCache.h"
 #endif
 
 #if ENABLE(PLUGIN_PROXY_FOR_VIDEO)
@@ -834,7 +835,8 @@ bool RenderLayerCompositor::updateBacking(RenderLayer* layer, CompositingChangeR
             if (ScrollingCoordinator* scrollingCoordinator = this->scrollingCoordinator())
                 scrollingCoordinator->frameViewFixedObjectsDidChange(m_renderView->frameView());
         }
-    }
+    } else
+        layer->setViewportConstrainedNotCompositedReason(RenderLayer::NoNotCompositedReason);
     
     if (layer->backing())
         layer->backing()->updateDebugIndicators(m_showDebugBorders, m_showRepaintCounter);
@@ -2640,6 +2642,23 @@ float RenderLayerCompositor::pageScaleFactor() const
     Page* page = this->page();
     return page ? page->pageScaleFactor() : 1;
 #endif
+}
+
+float RenderLayerCompositor::contentsScaleMultiplierForNewTiles(const GraphicsLayer*) const
+{
+#if PLATFORM(IOS)
+    TileCache* tileCache = 0;
+    if (Page* page = this->page()) {
+        if (Frame* mainFrame = page->mainFrame())
+            tileCache = mainFrame->view() ? mainFrame->view()->tileCache() : 0;
+    }
+
+    if (!tileCache)
+        return 1;
+
+    return tileCache->tileControllerShouldUseLowScaleTiles() ? 0.125 : 1;
+#endif
+    return 1;
 }
 
 void RenderLayerCompositor::didCommitChangesForLayer(const GraphicsLayer*) const

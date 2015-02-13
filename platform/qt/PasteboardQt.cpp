@@ -212,7 +212,7 @@ void Pasteboard::writeImage(Node* node, const KURL&, const String&)
 {
     ASSERT(node);
 
-    if (!(node->renderer() && node->renderer()->isImage()))
+    if (!(node->renderer() && node->renderer()->isRenderImage()))
         return;
 
 #ifndef QT_NO_CLIPBOARD

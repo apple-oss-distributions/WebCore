@@ -43,7 +43,6 @@ SOFT_LINK_POINTER(AVFoundation, AVAudioSessionCategoryPlayback, NSString *)
 SOFT_LINK_POINTER(AVFoundation, AVAudioSessionCategoryRecord, NSString *)
 SOFT_LINK_POINTER(AVFoundation, AVAudioSessionCategoryPlayAndRecord, NSString *)
 SOFT_LINK_POINTER(AVFoundation, AVAudioSessionCategoryAudioProcessing, NSString *)
-SOFT_LINK_POINTER(AVFoundation, AVAudioSessionInterruptionNotification, NSString *)
 SOFT_LINK_POINTER(AVFoundation, AVAudioSessionInterruptionTypeKey, NSString *)
 
 #define AVAudioSession getAVAudioSessionClass()
@@ -53,8 +52,13 @@ SOFT_LINK_POINTER(AVFoundation, AVAudioSessionInterruptionTypeKey, NSString *)
 #define AVAudioSessionCategoryRecord getAVAudioSessionCategoryRecord()
 #define AVAudioSessionCategoryPlayAndRecord getAVAudioSessionCategoryPlayAndRecord()
 #define AVAudioSessionCategoryAudioProcessing getAVAudioSessionCategoryAudioProcessing()
-#define AVAudioSessionInterruptionNotification getAVAudioSessionInterruptionNotification()
 #define AVAudioSessionInterruptionTypeKey getAVAudioSessionInterruptionTypeKey()
+
+static NSString * const WCAVAudioSessionInterruptionNotification = @"AVAudioSessionInterruptionNotification";
+
+#if !ASSERT_DISABLED
+SOFT_LINK_POINTER(AVFoundation, AVAudioSessionInterruptionNotification, NSString *)
+#endif
 
 @interface WebAudioSessionHelper : NSObject {
     WebCore::AudioSession* _callback;
@@ -72,19 +76,25 @@ SOFT_LINK_POINTER(AVFoundation, AVAudioSessionInterruptionTypeKey, NSString *)
 
     _callback = callback;
 
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(interruption:) name:AVAudioSessionInterruptionNotification object:[AVAudioSession sharedInstance]];
+    ASSERT([WCAVAudioSessionInterruptionNotification isEqualToString:getAVAudioSessionInterruptionNotification()]);
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(interruption:) name:WCAVAudioSessionInterruptionNotification object:nil];
 
     return self;
 }
 
 - (void)dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:WCAVAudioSessionInterruptionNotification object:nil];
     [super dealloc];
 }
 
 - (void)interruption:(NSNotification *)notification
 {
+    ASSERT([AVAudioSession sharedInstance] == [notification object]);
+    if ([AVAudioSession sharedInstance] != [notification object])
+        return;
+
     NSUInteger type = [[[notification userInfo] objectForKey:AVAudioSessionInterruptionTypeKey] unsignedIntegerValue];
     if (type == AVAudioSessionInterruptionTypeBegan)
         _callback->beganAudioInterruption();

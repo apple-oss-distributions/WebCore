@@ -403,8 +403,10 @@ HTMLMediaElement::~HTMLMediaElement()
         m_player->setHasPlaybackTargetAvailabilityListeners(false);
 #endif
 
-    if (m_mediaController)
+    if (m_mediaController) {
         m_mediaController->removeMediaElement(this);
+        m_mediaController = 0;
+    }
 
 #if ENABLE(MEDIA_SOURCE)
     setSourceState(MediaSource::closedKeyword());

@@ -40,6 +40,10 @@
 #import <WebCore/BlockExceptions.h>
 #import <utility>
 
+#if PLATFORM(IOS)
+#import "TileControllerMemoryHandlerIOS.h"
+#endif
+
 using namespace std;
 
 #if PLATFORM(IOS) || __MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
@@ -112,6 +116,7 @@ TileController::TileController(WebTiledBackingLayer* tileCacheLayer)
     , m_acceleratesDrawing(false)
     , m_tilesAreOpaque(false)
     , m_clipsToExposedRect(false)
+    , m_hasTilesWithTemporaryScaleFactor(false)
     , m_tileDebugBorderWidth(0)
     , m_indicatorMode(ThreadedScrollingIndication)
 {
@@ -130,6 +135,10 @@ TileController::~TileController()
      ASSERT(isMainThread());
 #else
     ASSERT((isMainThread() || pthread_main_np()) && WebThreadIsLockedOrDisabled());
+#endif
+
+#if PLATFORM(IOS)
+    tileControllerMemoryHandler().removeTileController(this);
 #endif
 
     for (TileMap::iterator it = m_tiles.begin(), end = m_tiles.end(); it != end; ++it) {
@@ -246,8 +255,10 @@ void TileController::setScale(CGFloat scale)
     // Divide by the device scale factor so we'll get the page scale factor.
     scale /= deviceScaleFactor;
 
-    if (m_scale == scale && m_deviceScaleFactor == deviceScaleFactor)
+    if (m_scale == scale && m_deviceScaleFactor == deviceScaleFactor && !m_hasTilesWithTemporaryScaleFactor)
         return;
+
+    m_hasTilesWithTemporaryScaleFactor = false;
 
 #if PLATFORM(IOS) || __MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
     Vector<FloatRect> dirtyRects;
@@ -786,6 +797,10 @@ TileController::TileCohort TileController::nextTileCohort() const
 void TileController::startedNewCohort(TileCohort cohort)
 {
     m_cohortList.append(TileCohortInfo(cohort, monotonicallyIncreasingTime()));
+#if PLATFORM(IOS)
+    if (!m_isInWindow)
+        tileControllerMemoryHandler().tileControllerGainedUnparentedTiles(this);
+#endif
 }
 
 TileController::TileCohort TileController::newestTileCohort() const
@@ -1042,7 +1057,13 @@ RetainPtr<WebTileLayer> TileController::createTileLayer(const IntRect& tileRect)
 #endif
 
 #if PLATFORM(IOS) || __MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
-    [layer.get() setContentsScale:m_deviceScaleFactor];
+    float temporaryScaleFactor = 1;
+    if (PlatformCALayer* platformLayer = PlatformCALayer::platformCALayer(m_tileCacheLayer))
+        temporaryScaleFactor = platformLayer->owner()->platformCALayerContentsScaleMultiplierForNewTiles(platformLayer);
+
+    m_hasTilesWithTemporaryScaleFactor |= temporaryScaleFactor != 1;
+
+    [layer.get() setContentsScale:m_deviceScaleFactor * temporaryScaleFactor];
     [layer.get() setAcceleratesDrawing:m_acceleratesDrawing];
 #endif
 
@@ -1150,5 +1171,17 @@ void TileController::drawTileMapContents(CGContextRef context, CGRect layerBound
     }
 }
     
+#if PLATFORM(IOS)
+void TileController::removeUnparentedTilesNow()
+{
+    while (!m_cohortList.isEmpty()) {
+        TileCohortInfo firstCohort = m_cohortList.takeFirst();
+        removeTilesInCohort(firstCohort.cohort);
+    }
+
+    if (m_tiledScrollingIndicatorLayer)
+        updateTileCoverageMap();
+}
+#endif
 
 } // namespace WebCore

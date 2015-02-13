@@ -640,6 +640,14 @@ static id<OrientationProvider> gOrientationProvider;
     _tileCache->dumpTiles();
 }
 
+- (void)setTileControllerShouldUseLowScaleTiles:(BOOL)lowScaleTiles
+{
+    if (!_tileCache)
+        return;
+
+    _tileCache->setTileControllerShouldUseLowScaleTiles(lowScaleTiles);
+}
+
 - (NSString *)description
 {
     NSMutableString *description = [NSMutableString stringWithFormat:@"<%@: WAK: %p; ", [self class], self];

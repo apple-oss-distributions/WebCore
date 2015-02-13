@@ -152,15 +152,13 @@ const SimpleFontData* Font::fontDataForCombiningCharacterSequence(const UChar* c
 
     bool triedBaseCharacterFontData = false;
 
-#if PLATFORM(IOS)
-    // In iOS, glyphDataForCharacter() always returns the system fallback font for characters in the
-    // range U+0600..U+06FF (see forceFallback in glyphDataAndPageForCharacter()), because other
-    // fonts may not shape correctly. Therefore, this function should only return that font or 0.
-    if (baseCharacter < 0x0600 || baseCharacter > 0x06FF) {
-#endif
     unsigned i = 0;
     for (const FontData* fontData = fontDataAt(0); fontData; fontData = fontDataAt(++i)) {
         const SimpleFontData* simpleFontData = fontData->fontDataForCharacter(baseCharacter);
+#if PLATFORM(IOS)
+        if (baseCharacter >= 0x0600 && baseCharacter <= 0x06ff && simpleFontData->shouldNotBeUsedForArabic())
+            continue;
+#endif
         if (variant == NormalVariant) {
             if (simpleFontData->platformData().orientation() == Vertical) {
                 if (isCJKIdeographOrSymbol(baseCharacter) && !simpleFontData->hasVerticalGlyphs()) {
@@ -189,9 +187,6 @@ const SimpleFontData* Font::fontDataForCombiningCharacterSequence(const UChar* c
         if (simpleFontData->canRenderCombiningCharacterSequence(characters, length))
             return simpleFontData;
     }
-#if PLATFORM(IOS)
-    }
-#endif
     if (!triedBaseCharacterFontData && baseCharacterGlyphData.fontData && baseCharacterGlyphData.fontData->canRenderCombiningCharacterSequence(characters, length))
         return baseCharacterGlyphData.fontData;
 

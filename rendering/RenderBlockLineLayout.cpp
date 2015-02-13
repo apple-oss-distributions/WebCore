@@ -417,7 +417,7 @@ static void checkMidpoints(LineMidpointState& lineMidpointState, InlineIterator&
         if (currpoint == lBreak) {
             // We hit the line break before the start point.  Shave off the start point.
             lineMidpointState.numMidpoints--;
-            if (endpoint.m_obj->style()->collapseWhiteSpace())
+            if (endpoint.m_obj->style()->collapseWhiteSpace() && endpoint.m_obj->isText())
                 endpoint.m_pos--;
         }
     }
@@ -1351,6 +1351,7 @@ static inline void constructBidiRunsForSegment(InlineBidiResolver& topResolver, 
         if (!isolatedResolver.isolatedRuns().isEmpty()) {
             topResolver.isolatedRuns().appendVector(isolatedResolver.isolatedRuns());
             isolatedResolver.isolatedRuns().clear();
+            currentRoot = isolatedInline;
         }
     }
 }
@@ -3662,7 +3663,11 @@ LayoutUnit RenderBlock::startAlignedOffsetForLine(LayoutUnit position, bool firs
 {
     ETextAlign textAlign = style()->textAlign();
 
-    if (textAlign == TASTART) // FIXME: Handle TAEND here
+    // <rdar://problem/15427571>
+    // https://bugs.webkit.org/show_bug.cgi?id=124522
+    // This quirk is for legacy content that doesn't work properly with the center positioning scheme
+    // being honored (e.g., epubs).
+    if (textAlign == TASTART || document()->settings()->useLegacyTextAlignPositionedElementBehavior()) // FIXME: Handle TAEND here
         return startOffsetForLine(position, firstLine);
 
     // updateLogicalWidthForAlignment() handles the direction of the block so no need to consider it here

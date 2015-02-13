@@ -191,6 +191,7 @@ public:
 #endif
 #else // PLATFORM(IOS)
     GSFontRef getGSFont() const { return m_platformData.font(); }
+    bool shouldNotBeUsedForArabic() const { return m_shouldNotBeUsedForArabic; };
 #endif // !PLATFORM(IOS)
 
 #if PLATFORM(MAC)
@@ -329,6 +330,9 @@ private:
     mutable SCRIPT_CACHE m_scriptCache;
     mutable SCRIPT_FONTPROPERTIES* m_scriptFontProperties;
 #endif
+#endif
+#if PLATFORM(IOS)
+    bool m_shouldNotBeUsedForArabic;
 #endif
 };
 

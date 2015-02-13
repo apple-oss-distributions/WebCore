@@ -173,7 +173,7 @@ void Pasteboard::writeImage(Node* node, Frame* frame)
 {
     ASSERT(node);
 
-    if (!(node->renderer() && node->renderer()->isImage()))
+    if (!(node->renderer() && node->renderer()->isRenderImage()))
         return;
 
     RenderImage* renderer = toRenderImage(node->renderer());

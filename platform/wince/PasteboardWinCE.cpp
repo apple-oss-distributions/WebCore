@@ -210,7 +210,7 @@ void Pasteboard::writeImage(Node* node, const KURL&, const String&)
 {
     ASSERT(node);
 
-    if (!(node->renderer() && node->renderer()->isImage()))
+    if (!(node->renderer() && node->renderer()->isRenderImage()))
         return;
 
     RenderImage* renderer = static_cast<RenderImage*>(node->renderer());

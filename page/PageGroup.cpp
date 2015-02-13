@@ -317,7 +317,7 @@ void PageGroup::addUserStyleSheetToWorld(DOMWrapperWorld* world, const String& s
     styleSheetsInWorld->append(userStyleSheet.release());
 
     if (injectionTime == InjectInExistingDocuments)
-        invalidatedInjectedStyleSheetCacheInAllFrames();
+        invalidateInjectedStyleSheetCacheInAllFrames();
 }
 
 void PageGroup::removeUserScriptFromWorld(DOMWrapperWorld* world, const KURL& url)
@@ -367,7 +367,7 @@ void PageGroup::removeUserStyleSheetFromWorld(DOMWrapperWorld* world, const KURL
     if (stylesheets->isEmpty())
         m_userStyleSheets->remove(it);
 
-    invalidatedInjectedStyleSheetCacheInAllFrames();
+    invalidateInjectedStyleSheetCacheInAllFrames();
 }
 
 void PageGroup::removeUserScriptsFromWorld(DOMWrapperWorld* world)
@@ -397,7 +397,7 @@ void PageGroup::removeUserStyleSheetsFromWorld(DOMWrapperWorld* world)
     
     m_userStyleSheets->remove(it);
 
-    invalidatedInjectedStyleSheetCacheInAllFrames();
+    invalidateInjectedStyleSheetCacheInAllFrames();
 }
 
 void PageGroup::removeAllUserContent()
@@ -406,17 +406,19 @@ void PageGroup::removeAllUserContent()
 
     if (m_userStyleSheets) {
         m_userStyleSheets.clear();
-        invalidatedInjectedStyleSheetCacheInAllFrames();
+        invalidateInjectedStyleSheetCacheInAllFrames();
     }
 }
 
-void PageGroup::invalidatedInjectedStyleSheetCacheInAllFrames()
+void PageGroup::invalidateInjectedStyleSheetCacheInAllFrames()
 {
     // Clear our cached sheets and have them just reparse.
     HashSet<Page*>::const_iterator end = m_pages.end();
     for (HashSet<Page*>::const_iterator it = m_pages.begin(); it != end; ++it) {
-        for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree()->traverseNext())
+        for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree()->traverseNext()) {
             frame->document()->styleSheetCollection()->invalidateInjectedStyleSheetCache();
+            frame->document()->styleResolverChanged(DeferRecalcStyle);
+        }
     }
 }
 

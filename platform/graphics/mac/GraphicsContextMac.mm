@@ -206,6 +206,8 @@ void GraphicsContext::drawLineForDocumentMarker(const FloatPoint& point, float w
             return;
     }
 
+    FloatPoint offsetPoint = point;
+
     // Make sure to draw only complete dots.
     // NOTE: Code here used to shift the underline to the left and increase the width
     // to make sure everything gets underlined, but that results in drawing out of
@@ -214,8 +216,10 @@ void GraphicsContext::drawLineForDocumentMarker(const FloatPoint& point, float w
     if (usingDot) {
         // allow slightly more considering that the pattern ends with a transparent pixel
         float widthMod = fmodf(width, patternWidth);
-        if (patternWidth - widthMod > cMisspellingLinePatternGapWidth)
+        if (patternWidth - widthMod > cMisspellingLinePatternGapWidth) {
+            offsetPoint.move(widthMod / 2, 0);
             width -= widthMod;
+        }
     }
     
     // FIXME: This code should not use NSGraphicsContext currentContext
@@ -239,12 +243,12 @@ void GraphicsContext::drawLineForDocumentMarker(const FloatPoint& point, float w
     WKSetPattern(context, dotPattern, YES, YES);
 #endif
 
-    wkSetPatternPhaseInUserSpace(context, point);
+    wkSetPatternPhaseInUserSpace(context, offsetPoint);
 
 #if !PLATFORM(IOS)
-    NSRectFillUsingOperation(NSMakeRect(point.x(), point.y(), width, patternHeight), NSCompositeSourceOver);
+    NSRectFillUsingOperation(NSMakeRect(offsetPoint.x(), offsetPoint.y(), width, patternHeight), NSCompositeSourceOver);
 #else
-    WKRectFillUsingOperation(context, CGRectMake(point.x(), point.y(), width, patternHeight), kCGCompositeSover);
+    WKRectFillUsingOperation(context, CGRectMake(offsetPoint.x(), offsetPoint.y(), width, patternHeight), kCGCompositeSover);
 #endif
     
     CGContextRestoreGState(context);

@@ -139,7 +139,7 @@ void CachedFrameBase::restore()
 
         if (DOMWindow* domWindow = m_document->domWindow()) {
             // FIXME: add SCROLL_LISTENER to the list of event types on Document, and use m_document->hasListenerType() <rdar://problem/9615482>
-            if (domWindow->scrollEventListenerCount() > 0 && frame->page())
+            if (domWindow->scrollEventListenerCount() && frame->page())
                 frame->page()->chrome().client()->setNeedsScrollNotifications(frame, true);
         }
     }
@@ -226,6 +226,14 @@ CachedFrame::CachedFrame(Frame* frame)
         LOG(PageCache, "Finished creating CachedFrame for child frame with url '%s' and DocumentLoader %p\n", m_url.string().utf8().data(), m_documentLoader.get());
 #endif
 
+#if PLATFORM(IOS)
+    if (m_isMainFrame) {
+        if (DOMWindow* domWindow = m_document->domWindow()) {
+            if (domWindow->scrollEventListenerCount() && frame->page())
+                frame->page()->chrome().client()->setNeedsScrollNotifications(frame, false);
+        }
+    }
+#endif
 }
 
 void CachedFrame::open()

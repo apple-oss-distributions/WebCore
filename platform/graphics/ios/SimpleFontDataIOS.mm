@@ -45,6 +45,19 @@
 
 namespace WebCore {
 
+static bool fontFamilyShouldNotBeUsedForArabic(CFStringRef fontFamilyName)
+{
+    if (!fontFamilyName)
+        return NO;
+
+    // Times New Roman contains Arabic glyphs, but Core Text doesn't know how to shape them. <rdar://problem/9823975>
+    // FIXME <rdar://problem/12096835> remove this function once the above bug is fixed.
+    // Arial and Tahoma are have performance issues so don't use them as well.
+    return (CFStringCompare(CFSTR("Times New Roman"), fontFamilyName, 0) == kCFCompareEqualTo)
+           || (CFStringCompare(CFSTR("Arial"), fontFamilyName, 0) == kCFCompareEqualTo)
+           || (CFStringCompare(CFSTR("Tahoma"), fontFamilyName, 0) == kCFCompareEqualTo);
+}
+
 static bool fontHasVerticalGlyphs(CTFontRef ctFont)
 {
     // The check doesn't look neat but this is what AppKit does for vertical writing...
@@ -69,6 +82,7 @@ void SimpleFontData::platformInit()
     float lineGap;
     float lineSpacing;
     float xHeight;
+    RetainPtr<CFStringRef> familyName;
     if (GSFontRef gsFont = m_platformData.font()) {
         FontServicesIOS fontService(gsFont);
         ascent = ceilf(fontService.ascent());
@@ -77,6 +91,7 @@ void SimpleFontData::platformInit()
         lineGap = fontService.lineGap();
         xHeight = fontService.xHeight();
         unitsPerEm = fontService.unitsPerEm();
+        familyName = adoptCF(CTFontCopyFamilyName(gsFont));
     } else {
         CGFontRef cgFont = m_platformData.cgFont();
 
@@ -89,6 +104,7 @@ void SimpleFontData::platformInit()
         xHeight = scaleEmToUnits(CGFontGetXHeight(cgFont), unitsPerEm) * pointSize;
 
         lineSpacing = ascent + descent + lineGap;
+        familyName = adoptCF(CGFontCopyFamilyName(cgFont));
     }
 
     m_fontMetrics.setUnitsPerEm(unitsPerEm);
@@ -97,6 +113,7 @@ void SimpleFontData::platformInit()
     m_fontMetrics.setLineGap(lineGap);
     m_fontMetrics.setLineSpacing(lineSpacing);
     m_fontMetrics.setXHeight(xHeight);
+    m_shouldNotBeUsedForArabic = fontFamilyShouldNotBeUsedForArabic(familyName.get());
 
     if (platformData().orientation() == Vertical && !isTextOrientationFallback())
         m_hasVerticalGlyphs = fontHasVerticalGlyphs(m_platformData.ctFont());

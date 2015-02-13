@@ -3500,7 +3500,14 @@ NetworkingContext* FrameLoader::networkingContext() const
 
 void FrameLoader::loadProgressingStatusChanged()
 {
-    FrameView* view = m_frame->page()->mainFrame()->view();
+    Page* page = m_frame->page();
+    if (!page)
+        return;
+
+    FrameView* view = page->mainFrame()->view();
+    if (!view)
+        return;
+
     view->updateLayerFlushThrottlingInAllFrames();
     view->adjustTiledBackingCoverage();
 }

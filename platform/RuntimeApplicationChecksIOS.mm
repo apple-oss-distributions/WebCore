@@ -59,13 +59,7 @@ bool applicationIsWebApp()
     static const bool isWebApp = [[[NSBundle mainBundle] bundleIdentifier] isEqualToString:@"com.apple.webapp"];
     return isWebApp;
 }
-
-bool applicationIsWebSheet()
-{
-    static const bool isWebSheet = [[[NSBundle mainBundle] bundleIdentifier] isEqualToString:@"com.apple.WebSheet"];
-    return isWebSheet;
-}
-
+    
 bool applicationIsOkCupid()
 {
     static const bool isOkCupid = [[[NSBundle mainBundle] bundleIdentifier] isEqualToString:@"com.okcupid.app"];

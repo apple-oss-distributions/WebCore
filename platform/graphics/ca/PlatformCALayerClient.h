@@ -61,6 +61,7 @@ public:
 
     virtual void platformCALayerDidCreateTiles(const Vector<FloatRect>& dirtyRects) = 0;
     virtual float platformCALayerDeviceScaleFactor() = 0;
+    virtual float platformCALayerContentsScaleMultiplierForNewTiles(PlatformCALayer*) const { return 1; }
 
 protected:
     virtual ~PlatformCALayerClient() {}

@@ -215,6 +215,11 @@ void GlyphPageTreeNode::initializePage(const FontData* fontData, unsigned pageNu
                     m_page = GlyphPage::createForMixedFontData(this);
                 else
                     m_page = GlyphPage::createForSingleFontData(this, static_cast<const SimpleFontData*>(fontData));
+#if PLATFORM(IOS)
+                if (pageNumber == 6 && static_cast<const SimpleFontData*>(fontData)->shouldNotBeUsedForArabic())
+                    haveGlyphs = false;
+                else
+#endif
                 haveGlyphs = fill(m_page.get(), 0, GlyphPage::size, buffer, bufferLength, static_cast<const SimpleFontData*>(fontData));
             } else {
                 m_page = GlyphPage::createForMixedFontData(this);
@@ -311,11 +316,7 @@ void GlyphPageTreeNode::initializePage(const FontData* fontData, unsigned pageNu
         // entries may use different fonts depending on character. If the Font
         // ever finds it needs a glyph out of the system fallback page, it will
         // ask the system for the best font to use and fill that glyph in for us.
-#if !PLATFORM(IOS)
         if (parentPage)
-#else
-        if (parentPage && pageNumber != 6) // don't copy the fallback page for arabic - rdar://6814152 see glyphDataForCharacter in FontFastPath.cpp
-#endif
             m_page = parentPage->createCopiedSystemFallbackPage(this);
         else
             m_page = GlyphPage::createForMixedFontData(this);
