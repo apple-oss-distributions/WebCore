@@ -45,6 +45,7 @@
 #include <limits.h>
 #include <wtf/CurrentTime.h>
 #include <wtf/text/WTFString.h>
+#include <wtf/TemporaryChange.h>
 
 #if PLATFORM(IOS)
 #include "SystemMemory.h"
@@ -286,6 +287,8 @@ static inline bool supportsAcceleratedFilterAnimations()
 #endif
 }
 #endif
+
+GraphicsLayerCA* GraphicsLayerCA::s_layerBeingPainted;
 
 PassOwnPtr<GraphicsLayer> GraphicsLayer::create(GraphicsLayerFactory* factory, GraphicsLayerClient* client)
 {
@@ -930,6 +933,9 @@ FloatPoint GraphicsLayerCA::computePositionRelativeToBase(float& pageScale) cons
 
 void GraphicsLayerCA::flushCompositingState(const FloatRect& clipRect)
 {
+    if (layerBeingPainted())
+        return;
+
     TransformState state(TransformState::UnapplyInverseTransformDirection, FloatQuad(clipRect));
     recursiveCommitChanges(CommitState(), state);
 }
@@ -1152,6 +1158,8 @@ bool GraphicsLayerCA::platformCALayerShowRepaintCounter(PlatformCALayer* platfor
 
 void GraphicsLayerCA::platformCALayerPaintContents(GraphicsContext& context, const IntRect& clip)
 {
+    ASSERT(!s_layerBeingPainted);
+    TemporaryChange<GraphicsLayerCA*> layerChange(s_layerBeingPainted, this);
     paintGraphicsLayerContents(context, clip);
 }
 

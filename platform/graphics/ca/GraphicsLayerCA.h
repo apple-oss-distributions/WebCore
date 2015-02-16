@@ -498,6 +498,9 @@ private:
     FloatSize m_pixelAlignmentOffset;
     
     LayerChangeFlags m_uncommittedChanges;
+
+    static GraphicsLayerCA* layerBeingPainted() { return s_layerBeingPainted; }
+    static GraphicsLayerCA* s_layerBeingPainted;
 };
 
 } // namespace WebCore

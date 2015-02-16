@@ -3766,7 +3766,7 @@ void FrameView::paintContents(GraphicsContext* p, const IntRect& rect)
     FontCachePurgePreventer fontCachePurgePreventer;
 
 #if USE(ACCELERATED_COMPOSITING)
-    if (!p->paintingDisabled() && !document->printing())
+    if (!p->paintingDisabled() && !document->printing() && isTopLevelPainter)
         flushCompositingStateForThisFrame(m_frame.get());
 #endif
 
