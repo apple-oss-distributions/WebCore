@@ -42,7 +42,6 @@
 #include "FontCache.h"
 #include "FontLoader.h"
 #include "Frame.h"
-#include "FrameActionScheduler.h"
 #include "FrameLoader.h"
 #include "FrameLoaderClient.h"
 #include "FrameSelection.h"
@@ -194,7 +193,6 @@ FrameView::FrameView(Frame* frame)
     , m_isTransparent(false)
     , m_baseBackgroundColor(Color::white)
     , m_mediaType("screen")
-    , m_actionScheduler(adoptPtr(new FrameActionScheduler))
     , m_overflowStatusDirty(true)
     , m_viewportRenderer(0)
     , m_wasScrolledByUser(false)
@@ -256,10 +254,8 @@ PassRefPtr<FrameView> FrameView::create(Frame* frame, const IntSize& initialSize
 
 FrameView::~FrameView()
 {
-    if (m_postLayoutTasksTimer.isActive()) {
+    if (m_postLayoutTasksTimer.isActive())
         m_postLayoutTasksTimer.stop();
-        m_actionScheduler->clear();
-    }
     
     removeFromAXObjectCache();
     resetScrollbars();
@@ -272,7 +268,6 @@ FrameView::~FrameView()
     setHasVerticalScrollbar(false);
     
     ASSERT(!m_scrollCorner);
-    ASSERT(m_actionScheduler->isEmpty());
 
     if (m_frame) {
         ASSERT(m_frame->view() != this || !m_frame->contentRenderer());
@@ -1384,8 +1379,6 @@ void FrameView::layout(bool allowSubtree)
 
         layer = root->enclosingLayer();
 
-        m_actionScheduler->pause();
-
         {
             bool disableLayoutState = false;
             if (subtree) {
@@ -1484,13 +1477,9 @@ void FrameView::layout(bool allowSubtree)
             // can make us need to update again, and we can get stuck in a nasty cycle unless
             // we call it through the timer here.
             m_postLayoutTasksTimer.startOneShot(0);
-            if (needsLayout()) {
-                m_actionScheduler->pause();
+            if (needsLayout())
                 layout();
-            }
         }
-    } else {
-        m_actionScheduler->resume();
     }
 
     InspectorInstrumentation::didLayout(cookie, root);
@@ -2777,21 +2766,6 @@ bool FrameView::shouldUpdate(bool immediateRequested) const
     return true;
 }
 
-void FrameView::scheduleEvent(PassRefPtr<Event> event, PassRefPtr<Node> eventTarget)
-{
-    m_actionScheduler->scheduleEvent(event, eventTarget);
-}
-
-void FrameView::pauseScheduledEvents()
-{
-    m_actionScheduler->pause();
-}
-
-void FrameView::resumeScheduledEvents()
-{
-    m_actionScheduler->resume();
-}
-
 void FrameView::scrollToAnchor()
 {
     RefPtr<Node> anchorNode = m_maintainScrollPositionAnchor;
@@ -2990,8 +2964,6 @@ void FrameView::performPostLayoutTasks()
 
     scrollToAnchor();
 
-    m_actionScheduler->resume();
-
     sendResizeEventIfNeeded();
 }
 
@@ -3177,10 +3149,12 @@ void FrameView::updateOverflowStatus(bool horizontalOverflow, bool verticalOverf
     if (horizontalOverflowChanged || verticalOverflowChanged) {
         m_horizontalOverflow = horizontalOverflow;
         m_verticalOverflow = verticalOverflow;
-        
-        m_actionScheduler->scheduleEvent(OverflowEvent::create(horizontalOverflowChanged, horizontalOverflow,
-            verticalOverflowChanged, verticalOverflow),
-            m_viewportRenderer->node());
+
+        RefPtr<OverflowEvent> overflowEvent = OverflowEvent::create(horizontalOverflowChanged, horizontalOverflow,
+            verticalOverflowChanged, verticalOverflow);
+        overflowEvent->setTarget(m_viewportRenderer->node());
+
+        frame()->document()->enqueueOverflowEvent(overflowEvent.release());
     }
     
 }

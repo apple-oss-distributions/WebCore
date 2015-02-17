@@ -3924,7 +3924,6 @@
     <ClCompile Include="..\page\FeatureObserver.cpp" />
     <ClCompile Include="..\page\FocusController.cpp" />
     <ClCompile Include="..\page\Frame.cpp" />
-    <ClCompile Include="..\page\FrameActionScheduler.cpp" />
     <ClCompile Include="..\page\FrameDestructionObserver.cpp" />
     <ClCompile Include="..\page\FrameTree.cpp" />
     <ClCompile Include="..\page\FrameView.cpp" />
@@ -11354,7 +11353,6 @@
     <ClInclude Include="..\page\FocusController.h" />
     <ClInclude Include="..\page\FocusDirection.h" />
     <ClInclude Include="..\page\Frame.h" />
-    <ClInclude Include="..\page\FrameActionScheduler.h" />
     <ClInclude Include="..\page\FrameDestructionObserver.h" />
     <ClInclude Include="..\page\FrameTree.h" />
     <ClInclude Include="..\page\FrameView.h" />
@@ -13126,6 +13124,7 @@
     <ClInclude Include="..\svg\properties\SVGAttributeToPropertyMap.h" />
     <ClInclude Include="..\svg\properties\SVGListProperty.h" />
     <ClInclude Include="..\svg\properties\SVGListPropertyTearOff.h" />
+    <ClInclude Include="..\svg\properties\SVGMatrixTearOff.h" />
     <ClInclude Include="..\svg\properties\SVGPathSegListPropertyTearOff.h" />
     <ClInclude Include="..\svg\properties\SVGProperty.h" />
     <ClInclude Include="..\svg\properties\SVGPropertyInfo.h" />
@@ -13133,7 +13132,6 @@
     <ClInclude Include="..\svg\properties\SVGPropertyTraits.h" />
     <ClInclude Include="..\svg\properties\SVGStaticListPropertyTearOff.h" />
     <ClInclude Include="..\svg\properties\SVGStaticPropertyTearOff.h" />
-    <ClInclude Include="..\svg\properties\SVGStaticPropertyWithParentTearOff.h" />
     <ClInclude Include="..\svg\properties\SVGTransformListPropertyTearOff.h" />
     <ClInclude Include="..\ForwardingHeaders\runtime\ArgList.h" />
     <ClInclude Include="..\ForwardingHeaders\runtime\Identifier.h" />

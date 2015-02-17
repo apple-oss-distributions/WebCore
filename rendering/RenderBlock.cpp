@@ -152,10 +152,12 @@ public:
 
         bool horizontalLayoutOverflowChanged = hasHorizontalLayoutOverflow != m_hadHorizontalLayoutOverflow;
         bool verticalLayoutOverflowChanged = hasVerticalLayoutOverflow != m_hadVerticalLayoutOverflow;
-        if (horizontalLayoutOverflowChanged || verticalLayoutOverflowChanged) {
-            if (FrameView* frameView = m_block->document()->view())
-                frameView->scheduleEvent(OverflowEvent::create(horizontalLayoutOverflowChanged, hasHorizontalLayoutOverflow, verticalLayoutOverflowChanged, hasVerticalLayoutOverflow), m_block->node());
-        }
+        if (!horizontalLayoutOverflowChanged && !verticalLayoutOverflowChanged)
+            return;
+
+        RefPtr<OverflowEvent> overflowEvent = OverflowEvent::create(horizontalLayoutOverflowChanged, hasHorizontalLayoutOverflow, verticalLayoutOverflowChanged, hasVerticalLayoutOverflow);
+        overflowEvent->setTarget(m_block->node());
+        m_block->document()->enqueueOverflowEvent(overflowEvent.release());
     }
 
 private:
@@ -632,9 +634,7 @@ void RenderBlock::splitBlocks(RenderBlock* fromBlock, RenderBlock* toBlock,
     RenderBoxModelObject* currChild = this;
     RenderObject* currChildNextSibling = currChild->nextSibling();
 
-    while (curr && curr != fromBlock) {
-        ASSERT_WITH_SECURITY_IMPLICATION(curr->isRenderBlock());
-        
+    while (curr && curr->isDescendantOf(fromBlock) && curr != fromBlock) {
         RenderBlock* blockCurr = toRenderBlock(curr);
         
         // Create a new clone.
@@ -669,7 +669,8 @@ void RenderBlock::splitBlocks(RenderBlock* fromBlock, RenderBlock* toBlock,
 
     // Now take all the children after currChild and remove them from the fromBlock
     // and put them in the toBlock.
-    fromBlock->moveChildrenTo(toBlock, currChildNextSibling, 0, true);
+    if (currChildNextSibling && currChildNextSibling->parent() == fromBlock)
+        fromBlock->moveChildrenTo(toBlock, currChildNextSibling, 0, true);
 }
 
 void RenderBlock::splitFlow(RenderObject* beforeChild, RenderBlock* newBlockBox,
@@ -3378,7 +3379,7 @@ void RenderBlock::paintFloats(PaintInfo& paintInfo, const LayoutPoint& paintOffs
 RenderInline* RenderBlock::inlineElementContinuation() const
 { 
     RenderBoxModelObject* continuation = this->continuation();
-    return continuation && continuation->isInline() ? toRenderInline(continuation) : 0;
+    return continuation && continuation->isRenderInline() ? toRenderInline(continuation) : 0;
 }
 
 RenderBlock* RenderBlock::blockElementContinuation() const

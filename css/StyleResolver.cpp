@@ -3660,7 +3660,7 @@ void StyleResolver::loadPendingSVGDocuments()
     for (unsigned i = 0; i < filterOperations.size(); ++i) {
         RefPtr<FilterOperation> filterOperation = filterOperations.at(i);
         if (filterOperation->getOperationType() == FilterOperation::REFERENCE) {
-            ReferenceFilterOperation* referenceFilter = static_cast<ReferenceFilterOperation*>(filterOperation.get());
+            ReferenceFilterOperation* referenceFilter = toReferenceFilterOperation(filterOperation.get());
 
             WebKitCSSSVGDocumentValue* value = state.pendingSVGDocuments().get(referenceFilter);
             if (!value)
@@ -4056,7 +4056,7 @@ bool StyleResolver::createFilterOperations(CSSValue* inValue, RenderStyle* style
             WebKitCSSSVGDocumentValue* svgDocumentValue = static_cast<WebKitCSSSVGDocumentValue*>(argument);
             KURL url = m_state.document()->completeURL(svgDocumentValue->url());
 
-            RefPtr<ReferenceFilterOperation> operation = ReferenceFilterOperation::create(svgDocumentValue->url(), url.fragmentIdentifier(), operationType);
+            RefPtr<ReferenceFilterOperation> operation = ReferenceFilterOperation::create(svgDocumentValue->url(), url.fragmentIdentifier());
             if (SVGURIReference::isExternalURIReference(svgDocumentValue->url(), m_state.document())) {
                 if (!svgDocumentValue->loadRequested())
                     m_state.pendingSVGDocuments().set(operation.get(), svgDocumentValue);
@@ -4126,7 +4126,7 @@ bool StyleResolver::createFilterOperations(CSSValue* inValue, RenderStyle* style
             if (stdDeviation.isUndefined())
                 return false;
 
-            operations.operations().append(BlurFilterOperation::create(stdDeviation, operationType));
+            operations.operations().append(BlurFilterOperation::create(stdDeviation));
             break;
         }
         case WebKitCSSFilterValue::DropShadowFilterOperation: {
@@ -4145,7 +4145,7 @@ bool StyleResolver::createFilterOperations(CSSValue* inValue, RenderStyle* style
             if (item->color)
                 color = colorFromPrimitiveValue(item->color.get());
 
-            operations.operations().append(DropShadowFilterOperation::create(location, blur, color.isValid() ? color : Color::transparent, operationType));
+            operations.operations().append(DropShadowFilterOperation::create(location, blur, color.isValid() ? color : Color::transparent));
             break;
         }
         case WebKitCSSFilterValue::UnknownFilterOperation:

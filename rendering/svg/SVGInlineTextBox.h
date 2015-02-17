@@ -57,7 +57,8 @@ public:
     Vector<SVGTextFragment>& textFragments() { return m_textFragments; }
     const Vector<SVGTextFragment>& textFragments() const { return m_textFragments; }
 
-    virtual void dirtyLineBoxes() OVERRIDE;
+    virtual void dirtyOwnLineBoxes() OVERRIDE FINAL;
+    virtual void dirtyLineBoxes() OVERRIDE FINAL;
 
     bool startsNewTextChunk() const { return m_startsNewTextChunk; }
     void setStartsNewTextChunk(bool newTextChunk) { m_startsNewTextChunk = newTextChunk; }
