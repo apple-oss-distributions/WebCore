@@ -25,6 +25,7 @@
 #include "config.h"
 #include "ComplexTextController.h"
 
+#include "CharacterProperties.h"
 #include "FloatSize.h"
 #include "Font.h"
 #include "RenderBlock.h"
@@ -144,11 +145,13 @@ ComplexTextController::ComplexTextController(const Font* font, const TextRun& ru
         m_expansionPerOpportunity = 0;
     else {
         bool isAfterExpansion = m_afterExpansion;
-        unsigned expansionOpportunityCount;
+
+        StringView sv;
         if (m_run.is8Bit())
-            expansionOpportunityCount = Font::expansionOpportunityCount(m_run.characters8(), m_end, m_run.ltr() ? LTR : RTL, isAfterExpansion);
-         else
-             expansionOpportunityCount = Font::expansionOpportunityCount(m_run.characters16(), m_end, m_run.ltr() ? LTR : RTL, isAfterExpansion);
+            sv = StringView(m_run.characters8(), m_run.length());
+        else
+            sv = StringView(m_run.characters16(), m_run.length());
+        unsigned expansionOpportunityCount = Font::expansionOpportunityCount(sv, m_run.ltr() ? LTR : RTL, isAfterExpansion);
         if (isAfterExpansion && !m_run.allowsTrailingExpansion())
             expansionOpportunityCount--;
 
@@ -262,6 +265,8 @@ int ComplexTextController::offsetForPosition(float h, bool includePartialGlyphs)
     return 0;
 }
 
+// FIXME: We should consider reimplementing this function using ICU to advance by grapheme.
+// The current implementation only considers explicitly emoji sequences and emoji variations.
 static bool advanceByCombiningCharacterSequence(const UChar*& iterator, const UChar* end, UChar32& baseCharacter, unsigned& markCount)
 {
     ASSERT(iterator < end);
@@ -272,17 +277,33 @@ static bool advanceByCombiningCharacterSequence(const UChar*& iterator, const UC
     unsigned remainingCharacters = end - iterator;
     U16_NEXT(iterator, i, remainingCharacters, baseCharacter);
     iterator = iterator + i;
-
     if (U_IS_SURROGATE(baseCharacter))
         return false;
 
     // Consume marks.
+    bool sawEmojiGroupCandidate = isEmojiGroupCandidate(baseCharacter);
+    bool sawJoiner = false;
     while (iterator < end) {
         UChar32 nextCharacter;
         int markLength = 0;
+        bool shouldContinue = false;
         U16_NEXT(iterator, markLength, end - iterator, nextCharacter);
-        if (!(U_GET_GC_MASK(nextCharacter) & U_GC_M_MASK))
+
+        if (isVariationSelector(nextCharacter) || isEmojiModifier(nextCharacter))
+            shouldContinue = true;
+
+        if (sawJoiner && isEmojiGroupCandidate(nextCharacter))
+            shouldContinue = true;
+
+        sawJoiner = false;
+        if (sawEmojiGroupCandidate && nextCharacter == zeroWidthJoiner) {
+            sawJoiner = true;
+            shouldContinue = true;
+        }
+        
+        if (!shouldContinue && !(U_GET_GC_MASK(nextCharacter) & U_GC_M_MASK))
             break;
+
         markCount += markLength;
         iterator += markLength;
     }

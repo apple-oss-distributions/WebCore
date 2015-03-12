@@ -1196,6 +1196,9 @@ void RenderView::updateHitTestResult(HitTestResult& result, const LayoutPoint& p
     if (result.innerNode())
         return;
 
+    if (multiColumnFlowThread() && multiColumnFlowThread()->firstMultiColumnSet())
+        return multiColumnFlowThread()->firstMultiColumnSet()->updateHitTestResult(result, point);
+
     Node* node = document().documentElement();
     if (node) {
         result.setInnerNode(node);
@@ -1339,7 +1342,7 @@ void RenderView::removeRendererWithPausedImageAnimations(RenderElement& renderer
 
 void RenderView::resumePausedImageAnimationsIfNeeded()
 {
-    auto visibleRect = frameView().visibleContentRect();
+    auto visibleRect = frameView().windowToContents(frameView().windowClipRect());
     Vector<RenderElement*, 10> toRemove;
     for (auto* renderer : m_renderersWithPausedImageAnimation) {
         if (renderer->repaintForPausedImageAnimationsIfNeeded(visibleRect))

@@ -56,6 +56,7 @@
 #include "Event.h"
 #include "EventHandler.h"
 #include "EventNames.h"
+#include "FeatureCounter.h"
 #include "FloatRect.h"
 #include "FormState.h"
 #include "FormSubmission.h"
@@ -189,8 +190,7 @@ public:
 
     ~FrameProgressTracker()
     {
-        ASSERT(!m_inProgress || m_frame.page());
-        if (m_inProgress)
+        if (m_inProgress && m_frame.page())
             m_frame.page()->progress().progressCompleted(m_frame);
     }
 
@@ -1148,7 +1148,7 @@ void FrameLoader::completed()
         parent->loader().checkCompleted();
 
     if (m_frame.view())
-        m_frame.view()->maintainScrollPositionAtAnchor(0);
+        m_frame.view()->maintainScrollPositionAtAnchor(nullptr);
     m_activityAssertion = nullptr;
 }
 
@@ -1421,6 +1421,39 @@ void FrameLoader::load(DocumentLoader* newDocumentLoader)
     loadWithDocumentLoader(newDocumentLoader, type, 0);
 }
 
+static void logNavigationWithFeatureCounter(Page* page, FrameLoadType type)
+{
+    const char* key;
+    switch (type) {
+    case FrameLoadType::Standard:
+        key = FeatureCounterNavigationStandard;
+        break;
+    case FrameLoadType::Back:
+        key = FeatureCounterNavigationBack;
+        break;
+    case FrameLoadType::Forward:
+        key = FeatureCounterNavigationForward;
+        break;
+    case FrameLoadType::IndexedBackForward:
+        key = FeatureCounterNavigationIndexedBackForward;
+        break;
+    case FrameLoadType::Reload:
+        key = FeatureCounterNavigationReload;
+        break;
+    case FrameLoadType::Same:
+        key = FeatureCounterNavigationSame;
+        break;
+    case FrameLoadType::ReloadFromOrigin:
+        key = FeatureCounterNavigationReloadFromOrigin;
+        break;
+    case FrameLoadType::Replace:
+    case FrameLoadType::RedirectWithLockedBackForwardList:
+        // Not logging those for now.
+        return;
+    }
+    FEATURE_COUNTER_INCREMENT_KEY(page, key);
+}
+
 void FrameLoader::loadWithDocumentLoader(DocumentLoader* loader, FrameLoadType type, PassRefPtr<FormState> prpFormState)
 {
     // Retain because dispatchBeforeLoadEvent may release the last reference to it.
@@ -1438,6 +1471,10 @@ void FrameLoader::loadWithDocumentLoader(DocumentLoader* loader, FrameLoadType t
 
     if (m_frame.document())
         m_previousURL = m_frame.document()->url();
+
+    // Log main frame navigation types.
+    if (m_frame.isMainFrame())
+        logNavigationWithFeatureCounter(m_frame.page(), type);
 
     policyChecker().setLoadType(type);
     RefPtr<FormState> formState = prpFormState;
@@ -1755,7 +1792,7 @@ void FrameLoader::commitProvisionalLoad()
 
     std::unique_ptr<CachedPage> cachedPage;
     if (m_loadingFromCachedPage)
-        cachedPage = pageCache()->take(history().provisionalItem());
+        cachedPage = pageCache()->take(history().provisionalItem(), m_frame.page());
 
     LOG(PageCache, "WebCoreLoading %s: About to commit provisional load from previous URL '%s' to new URL '%s'", m_frame.tree().uniqueName().string().utf8().data(),
         m_frame.document() ? m_frame.document()->url().stringCenterEllipsizedToLength().utf8().data() : "",
@@ -1772,11 +1809,11 @@ void FrameLoader::commitProvisionalLoad()
             LOG(MemoryPressure, "Pruning page cache because under memory pressure at: %s", __PRETTY_FUNCTION__);
             LOG(PageCache, "Pruning page cache to 0 due to memory pressure");
             // Don't cache any page if we are under memory pressure.
-            pageCache()->pruneToCapacityNow(0);
+            pageCache()->pruneToCapacityNow(0, PruningReason::MemoryPressure);
         } else if (systemMemoryLevel() <= memoryLevelThresholdToPrunePageCache) {
             LOG(MemoryPressure, "Pruning page cache because system memory level is %d at: %s", systemMemoryLevel(), __PRETTY_FUNCTION__);
             LOG(PageCache, "Pruning page cache to %d due to low memory (level %d less or equal to %d threshold)", pageCache()->capacity() / 2, systemMemoryLevel(), memoryLevelThresholdToPrunePageCache);
-            pageCache()->pruneToCapacityNow(pageCache()->capacity() / 2);
+            pageCache()->pruneToCapacityNow(pageCache()->capacity() / 2, PruningReason::MemoryPressure);
         }
     }
 #endif
@@ -3161,7 +3198,7 @@ void FrameLoader::loadDifferentDocumentItem(HistoryItem* item, FrameLoadType loa
     // Remember this item so we can traverse any child items as child frames load
     history().setProvisionalItem(item);
 
-    if (CachedPage* cachedPage = pageCache()->get(item)) {
+    if (CachedPage* cachedPage = pageCache()->get(item, m_frame.page())) {
         loadWithDocumentLoader(cachedPage->documentLoader(), loadType, 0);   
         return;
     }

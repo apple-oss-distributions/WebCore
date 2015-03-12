@@ -964,7 +964,7 @@ void RenderLayerBacking::updateGeometry()
     compositor().updateScrollCoordinatedStatus(m_owningLayer);
 }
 
-void RenderLayerBacking::updateAfterDescendents()
+void RenderLayerBacking::updateAfterDescendants()
 {
     bool didUpdateContentsRect = false;
     bool isSimpleContainer = isSimpleContainerCompositingLayer();
@@ -1973,14 +1973,7 @@ GraphicsLayer* RenderLayerBacking::parentForSublayers() const
     if (m_scrollingContentsLayer)
         return m_scrollingContentsLayer.get();
 
-#if PLATFORM(IOS)
-    // FIXME: Can we remove this iOS-specific code path?
-    if (GraphicsLayer* clippingLayer = this->clippingLayer())
-        return clippingLayer;
-    return m_graphicsLayer.get();
-#else
     return m_childContainmentLayer ? m_childContainmentLayer.get() : m_graphicsLayer.get();
-#endif
 }
 
 GraphicsLayer* RenderLayerBacking::childForSuperlayers() const

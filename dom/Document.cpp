@@ -1770,6 +1770,10 @@ void Document::recalcStyle(Style::Change change)
 
     InspectorInstrumentation::didRecalculateStyle(cookie);
 
+    // Some animated images may now be inside the viewport due to style recalc,
+    // resume them if necessary.
+    frameView.resumeVisibleImageAnimationsIncludingSubframes();
+
     // As a result of the style recalculation, the currently hovered element might have been
     // detached (for example, by setting display:none in the :hover style), schedule another mouseMove event
     // to check if any other elements ended up under the mouse pointer due to re-layout.
@@ -2055,6 +2059,14 @@ void Document::prepareForDestruction()
     clearTouchEventListeners();
 #endif
 
+#if HAVE(ACCESSIBILITY)
+    // Sub-frames need to cleanup Nodes in the text marker cache when the Document disappears.
+    if (this != &topDocument()) {
+        if (AXObjectCache* cache = existingAXObjectCache())
+            cache->clearTextMarkerNodesInUse(this);
+    }
+#endif
+    
     disconnectDescendantFrames();
     if (m_domWindow && m_frame)
         m_domWindow->willDetachDocumentFromFrame();
@@ -2445,10 +2457,14 @@ void Document::implicitClose()
         // The AX cache may have been cleared at this point, but we need to make sure it contains an
         // AX object to send the notification to. getOrCreate will make sure that an valid AX object
         // exists in the cache (we ignore the return value because we don't need it here). This is 
-        // only safe to call when a layout is not in progress, so it can not be used in postNotification.    
+        // only safe to call when a layout is not in progress, so it can not be used in postNotification.
+        //
+        // This notification is now called AXNewDocumentLoadComplete because there are other handlers that will
+        // catch new AND page history loads, and that uses AXLoadComplete
+        
         axObjectCache()->getOrCreate(renderView());
         if (this == &topDocument())
-            axObjectCache()->postNotification(renderView(), AXObjectCache::AXLoadComplete);
+            axObjectCache()->postNotification(renderView(), AXObjectCache::AXNewDocumentLoadComplete);
         else {
             // AXLoadComplete can only be posted on the top document, so if it's a document
             // in an iframe that just finished loading, post AXLayoutComplete instead.

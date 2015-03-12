@@ -570,7 +570,7 @@ void Element::scrollIntoView(bool alignToTop)
     if (!renderer())
         return;
 
-    LayoutRect bounds = boundingBox();
+    LayoutRect bounds = renderer()->anchorRect();
     // Align to the top / bottom and to the closest edge.
     if (alignToTop)
         renderer()->scrollRectToVisible(bounds, ScrollAlignment::alignToEdgeIfNeeded, ScrollAlignment::alignTopAlways);
@@ -585,7 +585,7 @@ void Element::scrollIntoViewIfNeeded(bool centerIfNeeded)
     if (!renderer())
         return;
 
-    LayoutRect bounds = boundingBox();
+    LayoutRect bounds = renderer()->anchorRect();
     if (centerIfNeeded)
         renderer()->scrollRectToVisible(bounds, ScrollAlignment::alignCenterIfNeeded, ScrollAlignment::alignCenterIfNeeded);
     else
@@ -1995,7 +1995,7 @@ void Element::updateFocusAppearance(bool /*restorePreviousSelection*/)
             frame->selection().revealSelection();
         }
     } else if (renderer() && !renderer()->isWidget())
-        renderer()->scrollRectToVisible(boundingBox());
+        renderer()->scrollRectToVisible(renderer()->anchorRect());
 }
 
 void Element::blur()
@@ -2273,10 +2273,17 @@ void Element::normalizeAttributes()
 {
     if (!hasAttributes())
         return;
-    for (const Attribute& attribute : attributesIterator()) {
-        if (RefPtr<Attr> attr = attrIfExists(attribute.name()))
-            attr->normalize();
-    }
+
+    auto* attrNodeList = attrNodeListForElement(*this);
+    if (!attrNodeList)
+        return;
+
+    // Copy the Attr Vector because Node::normalize() can fire synchronous JS
+    // events (e.g. DOMSubtreeModified) and a JS listener could add / remove
+    // attributes while we are iterating.
+    auto copyOfAttrNodeList = *attrNodeList;
+    for (auto& attrNode : copyOfAttrNodeList)
+        attrNode->normalize();
 }
 
 PseudoElement* Element::beforePseudoElement() const
@@ -3020,6 +3027,11 @@ void Element::clearHasPendingResources()
 bool Element::canContainRangeEndPoint() const
 {
     return !equalIgnoringCase(fastGetAttribute(roleAttr), "img");
+}
+
+String Element::completeURLsInAttributeValue(const URL& base, const Attribute& attribute) const
+{
+    return URL(base, attribute.value()).string();
 }
 
 } // namespace WebCore

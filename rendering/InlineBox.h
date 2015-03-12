@@ -22,7 +22,9 @@
 #define InlineBox_h
 
 #include "RenderBoxModelObject.h"
+#include "TextBreakIterator.h"
 #include "TextDirection.h"
+
 
 namespace WebCore {
 
@@ -243,8 +245,6 @@ public:
     void invalidateParentChildList();
 #endif
 
-    int expansion() const { return m_bitfields.expansion(); }
-
     bool visibleToHitTesting() const { return renderer().style().visibility() == VISIBLE && renderer().style().pointerEvents() != PE_NONE; }
 
     const RenderStyle& lineStyle() const { return m_bitfields.firstLine() ? renderer().firstLineStyle() : renderer().style(); }
@@ -270,6 +270,19 @@ public:
 
     bool dirOverride() const { return m_bitfields.dirOverride(); }
     void setDirOverride(bool dirOverride) { m_bitfields.setDirOverride(dirOverride); }
+
+    void setExpansion(float newExpansion)
+    {
+        m_logicalWidth -= m_expansion;
+        m_expansion = newExpansion;
+        m_logicalWidth += m_expansion;
+    }
+    void setExpansionWithoutGrowing(float newExpansion)
+    {
+        ASSERT(!m_expansion);
+        m_expansion = newExpansion;
+    }
+    float expansion() const { return m_expansion; }
 
 private:
     InlineBox* m_next; // The next element on the same line as us.
@@ -308,7 +321,6 @@ public:
             , m_behavesLikeText(false)
             , m_determinedIfNextOnLineExists(false)
             , m_nextOnLineExists(false)
-            , m_expansion(0)
         {
         }
 
@@ -351,17 +363,11 @@ public:
     public:
         bool nextOnLineExists() const { return m_nextOnLineExists; }
         void setNextOnLineExists(bool nextOnLineExists) const { m_nextOnLineExists = nextOnLineExists; }
-
-    private:
-        signed m_expansion : 12; // for justified text
-        
-    public:
-        signed expansion() const { return m_expansion; }
-        void setExpansion(signed expansion) { m_expansion = expansion; }
     };
 #undef ADD_BOOLEAN_BITFIELD
 
 private:
+    float m_expansion;
     InlineBoxBitfields m_bitfields;
 
 protected:
@@ -371,6 +377,7 @@ protected:
         , m_parent(nullptr)
         , m_renderer(renderer)
         , m_logicalWidth(0)
+        , m_expansion(0)
 #if !ASSERT_WITH_SECURITY_IMPLICATION_DISABLED
         , m_deletionSentinel(deletionSentinelNotDeletedValue)
         , m_hasBadParent(false)
@@ -378,14 +385,14 @@ protected:
     {
     }
 
-    InlineBox(RenderObject& renderer, FloatPoint topLeft, float logicalWidth, bool firstLine, bool constructed,
-              bool dirty, bool extracted, bool isHorizontal, InlineBox* next, InlineBox* prev, InlineFlowBox* parent)
+    InlineBox(RenderObject& renderer, FloatPoint topLeft, float logicalWidth, bool firstLine, bool constructed, bool dirty, bool extracted, bool isHorizontal, InlineBox* next, InlineBox* prev, InlineFlowBox* parent)
         : m_next(next)
         , m_prev(prev)
         , m_parent(parent)
         , m_renderer(renderer)
         , m_topLeft(topLeft)
         , m_logicalWidth(logicalWidth)
+        , m_expansion(0)
         , m_bitfields(firstLine, constructed, dirty, extracted, isHorizontal)
 #if !ASSERT_WITH_SECURITY_IMPLICATION_DISABLED
         , m_deletionSentinel(deletionSentinelNotDeletedValue)
@@ -407,8 +414,6 @@ protected:
     void setHasHyphen(bool hasHyphen) { m_bitfields.setHasEllipsisBoxOrHyphen(hasHyphen); }    
     bool canHaveLeadingExpansion() const { return m_bitfields.hasSelectedChildrenOrCanHaveLeadingExpansion(); }
     void setCanHaveLeadingExpansion(bool canHaveLeadingExpansion) { m_bitfields.setHasSelectedChildrenOrCanHaveLeadingExpansion(canHaveLeadingExpansion); }
-    int expansion() { return m_bitfields.expansion(); }
-    void setExpansion(int expansion) { m_bitfields.setExpansion(expansion); }
     
     // For InlineFlowBox and InlineTextBox
     bool extracted() const { return m_bitfields.extracted(); }

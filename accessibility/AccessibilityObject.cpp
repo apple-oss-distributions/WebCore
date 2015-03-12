@@ -35,6 +35,7 @@
 #include "AccessibilityTable.h"
 #include "DOMTokenList.h"
 #include "Editor.h"
+#include "EventHandler.h"
 #include "FloatRect.h"
 #include "FocusController.h"
 #include "Frame.h"
@@ -775,8 +776,25 @@ bool AccessibilityObject::press()
         pressElement = hitTestElement;
     
     UserGestureIndicator gestureIndicator(DefinitelyProcessingUserGesture);
-    pressElement->accessKeyAction(true);
+    
+    bool dispatchedTouchEvent = dispatchTouchEvent();
+    if (!dispatchedTouchEvent)
+        pressElement->accessKeyAction(true);
+    
     return true;
+}
+    
+bool AccessibilityObject::dispatchTouchEvent()
+{
+    bool handled = false;
+#if ENABLE(IOS_TOUCH_EVENTS)
+    MainFrame* frame = mainFrame();
+    if (!frame)
+        return false;
+
+    frame->eventHandler().dispatchSimulatedTouchEvent(clickPoint());
+#endif
+    return handled;
 }
 
 Frame* AccessibilityObject::frame() const
@@ -1491,8 +1509,11 @@ const AccessibilityObject::AccessibilityChildrenVector& AccessibilityObject::chi
 
 void AccessibilityObject::updateChildrenIfNecessary()
 {
-    if (!hasChildren())
-        addChildren();    
+    if (!hasChildren()) {
+        // Enable the cache in case we end up adding a lot of children, we don't want to recompute axIsIgnored each time.
+        AXAttributeCacheEnabler enableCache(axObjectCache());
+        addChildren();
+    }
 }
     
 void AccessibilityObject::clearChildren()
@@ -2407,7 +2428,8 @@ AccessibilityObjectInclusion AccessibilityObject::defaultObjectInclusion() const
 bool AccessibilityObject::accessibilityIsIgnored() const
 {
     AXComputedObjectAttributeCache* attributeCache = nullptr;
-    if (AXObjectCache* cache = axObjectCache())
+    AXObjectCache* cache = axObjectCache();
+    if (cache)
         attributeCache = cache->computedObjectAttributeCache();
     
     if (attributeCache) {
@@ -2424,7 +2446,8 @@ bool AccessibilityObject::accessibilityIsIgnored() const
 
     bool result = computeAccessibilityIsIgnored();
 
-    if (attributeCache)
+    // In case computing axIsIgnored disables attribute caching, we should refetch the object to see if it exists.
+    if (cache && (attributeCache = cache->computedObjectAttributeCache()))
         attributeCache->setIgnored(axObjectID(), result ? IgnoreObject : IncludeObject);
 
     return result;

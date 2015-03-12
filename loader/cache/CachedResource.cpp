@@ -31,6 +31,7 @@
 #include "CrossOriginAccessControl.h"
 #include "Document.h"
 #include "DocumentLoader.h"
+#include "FeatureCounter.h"
 #include "FrameLoader.h"
 #include "FrameLoaderClient.h"
 #include "HTTPHeaderNames.h"
@@ -62,6 +63,8 @@
 using namespace WTF;
 
 namespace WebCore {
+
+static const unsigned LiveMarker = 0xCACED;
 
 // These response headers are not copied from a revalidated response to the
 // cached response headers. For compatibility, this list is based on Chromium's
@@ -181,6 +184,7 @@ CachedResource::CachedResource(const ResourceRequest& request, Type type, Sessio
     , m_owningCachedResourceLoader(0)
     , m_resourceToRevalidate(0)
     , m_proxyResource(0)
+    , m_liveObjectMarker(LiveMarker)
 {
     ASSERT(m_type == unsigned(type)); // m_type is a bitfield, so this tests careless updates of the enum.
     ASSERT(sessionID.isValid());
@@ -212,6 +216,7 @@ CachedResource::~CachedResource()
 
     if (m_owningCachedResourceLoader)
         m_owningCachedResourceLoader->removeCachedResource(this);
+    m_liveObjectMarker = 0;
 }
 
 void CachedResource::failBeforeStarting()
@@ -757,21 +762,29 @@ bool CachedResource::canUseCacheValidator() const
     return m_response.hasCacheValidatorFields();
 }
 
-bool CachedResource::mustRevalidateDueToCacheHeaders(CachePolicy cachePolicy) const
+bool CachedResource::mustRevalidateDueToCacheHeaders(const CachedResourceLoader& cachedResourceLoader, CachePolicy cachePolicy) const
 {    
     ASSERT(cachePolicy == CachePolicyRevalidate || cachePolicy == CachePolicyCache || cachePolicy == CachePolicyVerify);
 
-    if (cachePolicy == CachePolicyRevalidate)
+    if (cachePolicy == CachePolicyRevalidate) {
+        FEATURE_COUNTER_INCREMENT_KEY(cachedResourceLoader.frame()->page(), FeatureCounterCachedResourceRevalidationReasonReloadKey);
         return true;
+    }
 
     if (m_response.cacheControlContainsNoCache() || m_response.cacheControlContainsNoStore()) {
         LOG(ResourceLoading, "CachedResource %p mustRevalidate because of m_response.cacheControlContainsNoCache() || m_response.cacheControlContainsNoStore()\n", this);
+        if (m_response.cacheControlContainsNoStore())
+            FEATURE_COUNTER_INCREMENT_KEY(cachedResourceLoader.frame()->page(), FeatureCounterCachedResourceRevalidationReasonNoStoreKey);
+        else
+            FEATURE_COUNTER_INCREMENT_KEY(cachedResourceLoader.frame()->page(), FeatureCounterCachedResourceRevalidationReasonNoCacheKey);
+
         return true;
     }
 
     if (cachePolicy == CachePolicyCache) {
         if (m_response.cacheControlContainsMustRevalidate() && isExpired()) {
             LOG(ResourceLoading, "CachedResource %p mustRevalidate because of cachePolicy == CachePolicyCache and m_response.cacheControlContainsMustRevalidate() && isExpired()\n", this);
+            FEATURE_COUNTER_INCREMENT_KEY(cachedResourceLoader.frame()->page(), FeatureCounterCachedResourceRevalidationReasonMustRevalidateIsExpiredKey);
             return true;
         }
         return false;
@@ -780,6 +793,7 @@ bool CachedResource::mustRevalidateDueToCacheHeaders(CachePolicy cachePolicy) co
     // CachePolicyVerify
     if (isExpired()) {
         LOG(ResourceLoading, "CachedResource %p mustRevalidate because of isExpired()\n", this);
+        FEATURE_COUNTER_INCREMENT_KEY(cachedResourceLoader.frame()->page(), FeatureCounterCachedResourceRevalidationReasonIsExpiredKey);
         return true;
     }
 
@@ -801,6 +815,9 @@ bool CachedResource::isSafeToMakePurgeable() const
 
 bool CachedResource::makePurgeable(bool purgeable) 
 { 
+    if (m_liveObjectMarker != LiveMarker)
+        return false;
+
     if (purgeable) {
         ASSERT(isSafeToMakePurgeable());
 
@@ -896,8 +913,11 @@ void CachedResource::tryReplaceEncodedData(PassRefPtr<SharedBuffer> newBuffer)
     if (!mayTryReplaceEncodedData())
         return;
 
-    ASSERT(m_data->size() == newBuffer->size());
-    ASSERT(!memcmp(m_data->data(), newBuffer->data(), m_data->size()));
+    // We have to do the memcmp because we can't tell if the replacement file backed data is for the
+    // same resource or if we made a second request with the same URL which gave us a different
+    // resource. We have seen this happen for cached POST resources.
+    if (m_data->size() != newBuffer->size() || memcmp(m_data->data(), newBuffer->data(), m_data->size()))
+        return;
 
     m_data->tryReplaceSharedBufferContents(newBuffer.get());
 }

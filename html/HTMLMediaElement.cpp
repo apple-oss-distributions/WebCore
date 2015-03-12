@@ -44,6 +44,7 @@
 #include "ElementIterator.h"
 #include "EventNames.h"
 #include "ExceptionCodePlaceholder.h"
+#include "FeatureCounter.h"
 #include "FrameLoader.h"
 #include "FrameLoaderClient.h"
 #include "FrameView.h"
@@ -291,6 +292,7 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tagName, Document& docum
     , m_actionAfterScan(Nothing)
     , m_scanType(Scan)
     , m_scanDirection(Forward)
+    , m_firstTimePlaying(true)
     , m_playing(false)
     , m_isWaitingUntilMediaCanStart(false)
     , m_shouldDelayLoadEvent(false)
@@ -1198,6 +1200,10 @@ void HTMLMediaElement::loadResource(const URL& initialURL, ContentType& contentT
             return;
         }
     }
+
+    // Log that we started loading a media element.
+    FEATURE_COUNTER_INCREMENT_KEY(document().page(), isVideo() ? FeatureCounterMediaVideoElementLoadingKey : FeatureCounterMediaAudioElementLoadingKey);
+    m_firstTimePlaying = true;
 
     // Set m_currentSrc *before* changing to the cache url, the fact that we are loading from the app
     // cache is an internal detail not exposed through the media element API.
@@ -2365,7 +2371,7 @@ void HTMLMediaElement::seekWithTolerance(double time, double negativeTolerance, 
     // 3 - If the element's seeking IDL attribute is true, then another instance of this algorithm is
     // already running. Abort that other instance of the algorithm without waiting for the step that
     // it is running to complete.
-    if (m_seeking) {
+    if (m_seekTimer.isActive()) {
         m_seekTimer.stop();
         m_pendingSeek = nullptr;
     }
@@ -4544,6 +4550,12 @@ void HTMLMediaElement::updatePlayState()
             m_player->setRate(effectivePlaybackRate());
             m_player->setMuted(muted());
 
+            if (m_firstTimePlaying) {
+                // Log that a media element was played.
+                FEATURE_COUNTER_INCREMENT_KEY(document().page(), isVideo() ? FeatureCounterMediaVideoElementPlayedKey : FeatureCounterMediaAudioElementPlayedKey);
+                m_firstTimePlaying = false;
+            }
+
             m_player->play();
         }
 
@@ -4652,6 +4664,8 @@ void HTMLMediaElement::userCancelledLoad()
 
 void HTMLMediaElement::clearMediaPlayer(int flags)
 {
+    LOG(Media, "HTMLMediaElement::clearMediaPlayer(%p) - flags = %x", this, (unsigned)flags);
+
 #if USE(PLATFORM_TEXT_TRACK_MENU)
     if (platformTextTrackMenu()) {
         m_platformMenu->setClient(0);
@@ -4853,6 +4867,7 @@ bool HTMLMediaElement::removeEventListener(const AtomicString& eventType, EventL
         return false;
 
     bool didRemoveLastAvailabilityChangedListener = !hasEventListeners(eventNames().webkitplaybacktargetavailabilitychangedEvent);
+    LOG(Media, "HTMLMediaElement::removeEventListener(%p) - removed last listener = %s", this, boolString(didRemoveLastAvailabilityChangedListener));
     if (didRemoveLastAvailabilityChangedListener)
         m_mediaSession->setHasPlaybackTargetAvailabilityListeners(*this, false);
 
@@ -5343,6 +5358,8 @@ void HTMLMediaElement::markCaptionAndSubtitleTracksAsUnconfigured(ReconfigureMod
 
 void HTMLMediaElement::createMediaPlayer()
 {
+    LOG(Media, "HTMLMediaElement::createMediaPlayer(%p)", this);
+
 #if ENABLE(WEB_AUDIO)
     if (m_audioSourceNode)
         m_audioSourceNode->lock();

@@ -63,6 +63,7 @@ class WebCoreAVFResourceLoader;
 class InbandMetadataTextTrackPrivateAVF;
 class InbandTextTrackPrivateAVFObjC;
 class AudioTrackPrivateAVFObjC;
+class MediaSelectionGroupAVFObjC;
 class VideoTrackPrivateAVFObjC;
 
 class MediaPlayerPrivateAVFoundationObjC : public MediaPlayerPrivateAVFoundation {
@@ -164,7 +165,7 @@ private:
 
     virtual bool supportsAcceleratedRendering() const { return true; }
     virtual float mediaTimeForTimeValue(float) const;
-    virtual double maximumDurationToCacheMediaTime() const { return 5; }
+    virtual double maximumDurationToCacheMediaTime() const;
 
     virtual void createAVPlayer();
     virtual void createAVPlayerItem();
@@ -240,6 +241,8 @@ private:
 #if HAVE(AVFOUNDATION_MEDIA_SELECTION_GROUP)
     void processMediaSelectionOptions();
     AVMediaSelectionGroup* safeMediaSelectionGroupForLegibleMedia();
+    AVMediaSelectionGroup* safeMediaSelectionGroupForAudibleMedia();
+    AVMediaSelectionGroup* safeMediaSelectionGroupForVisualMedia();
 #endif
 
 #if ENABLE(DATACUE_VALUE)
@@ -269,6 +272,8 @@ private:
 
     virtual double maxFastForwardRate() const override { return m_cachedCanPlayFastForward ? std::numeric_limits<double>::infinity() : 2.0; }
     virtual double minFastReverseRate() const override { return m_cachedCanPlayFastReverse ? -std::numeric_limits<double>::infinity() : 0.0; }
+
+    virtual URL resolvedURL() const override;
 
     WeakPtrFactory<MediaPlayerPrivateAVFoundationObjC> m_weakPtrFactory;
 
@@ -316,6 +321,10 @@ private:
 #if ENABLE(VIDEO_TRACK)
     Vector<RefPtr<AudioTrackPrivateAVFObjC>> m_audioTracks;
     Vector<RefPtr<VideoTrackPrivateAVFObjC>> m_videoTracks;
+#if HAVE(AVFOUNDATION_MEDIA_SELECTION_GROUP)
+    RefPtr<MediaSelectionGroupAVFObjC> m_audibleGroup;
+    RefPtr<MediaSelectionGroupAVFObjC> m_visualGroup;
+#endif
 #endif
 
     InbandTextTrackPrivateAVF* m_currentTextTrack;

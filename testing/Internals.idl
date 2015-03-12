@@ -29,9 +29,15 @@
 ] interface Internals {
     DOMString address(Node node);
 
+    // Animated image pausing testing.
+    [RaisesException] boolean hasPausedImageAnimations(Element element);
+
     [RaisesException] DOMString elementRenderTreeAsText(Element element);
     boolean isPreloaded(DOMString url);
     boolean isLoadingFromMemoryCache(DOMString url);
+
+    void clearPageCache();
+    unsigned int pageCacheSize();
 
     [RaisesException] CSSStyleDeclaration computedStyleIncludingVisitedInfo(Node node);
 
@@ -82,6 +88,8 @@
     [RaisesException] DOMString markerDescriptionForNode(Node node, DOMString markerType, unsigned long index);
     void addTextMatchMarker(Range range, boolean isActive);
     [RaisesException] void setMarkedTextMatchesAreHighlighted(boolean flag);
+
+    void invalidateFontCache();
 
     [RaisesException] void setScrollViewPosition(long x, long y);
 

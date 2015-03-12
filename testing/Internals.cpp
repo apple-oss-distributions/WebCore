@@ -47,6 +47,7 @@
 #include "Element.h"
 #include "EventHandler.h"
 #include "ExceptionCode.h"
+#include "FontCache.h"
 #include "FormController.h"
 #include "FrameLoader.h"
 #include "FrameView.h"
@@ -75,6 +76,7 @@
 #include "MemoryCache.h"
 #include "MemoryInfo.h"
 #include "Page.h"
+#include "PageCache.h"
 #include "PrintContext.h"
 #include "PseudoElement.h"
 #include "Range.h"
@@ -367,6 +369,16 @@ bool Internals::isLoadingFromMemoryCache(const String& url)
 }
 
 
+void Internals::clearPageCache()
+{
+    pageCache()->pruneToCapacityNow(0, PruningReason::None);
+}
+
+unsigned Internals::pageCacheSize() const
+{
+    return pageCache()->pageCount();
+}
+
 Node* Internals::treeScopeRootNode(Node* node, ExceptionCode& ec)
 {
     if (!node) {
@@ -522,6 +534,15 @@ String Internals::elementRenderTreeAsText(Element* element, ExceptionCode& ec)
     }
 
     return representation;
+}
+
+bool Internals::hasPausedImageAnimations(Element* element, ExceptionCode& ec)
+{
+    if (!element) {
+        ec = INVALID_ACCESS_ERR;
+        return false;
+    }
+    return element->renderer() && element->renderer()->hasPausedImageAnimations();
 }
 
 PassRefPtr<CSSComputedStyleDeclaration> Internals::computedStyleIncludingVisitedInfo(Node* node, ExceptionCode& ec) const
@@ -811,6 +832,11 @@ void Internals::setMarkedTextMatchesAreHighlighted(bool flag, ExceptionCode& ec)
         return;
     }
     document->frame()->editor().setMarkedTextMatchesAreHighlighted(flag);
+}
+
+void Internals::invalidateFontCache()
+{
+    fontCache().invalidate();
 }
 
 void Internals::setScrollViewPosition(long x, long y, ExceptionCode& ec)
@@ -2319,8 +2345,10 @@ void Internals::setMediaSessionRestrictions(const String& mediaTypeString, const
         restrictions += MediaSessionManager::MetadataPreloadingNotPermitted;
     if (equalIgnoringCase(restrictionsString, "AutoPreloadingNotPermitted"))
         restrictions += MediaSessionManager::AutoPreloadingNotPermitted;
-    if (equalIgnoringCase(restrictionsString, "BackgroundPlaybackNotPermitted"))
-        restrictions += MediaSessionManager::BackgroundPlaybackNotPermitted;
+    if (equalIgnoringCase(restrictionsString, "BackgroundProcessPlaybackRestricted"))
+        restrictions += MediaSessionManager::BackgroundProcessPlaybackRestricted;
+    if (equalIgnoringCase(restrictionsString, "BackgroundTabPlaybackRestricted"))
+        restrictions += MediaSessionManager::BackgroundTabPlaybackRestricted;
 
     MediaSessionManager::sharedManager().addRestriction(mediaType, restrictions);
 }
