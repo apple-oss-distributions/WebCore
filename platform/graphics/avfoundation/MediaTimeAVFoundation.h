@@ -23,10 +23,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef MediaTimeMac_h
-#define MediaTimeMac_h
+#ifndef MediaTimeAVFoundation_h
+#define MediaTimeAVFoundation_h
 
-#if USE(COREMEDIA)
+#if USE(AVFOUNDATION)
 
 #include <CoreMedia/CMTime.h>
 #include <wtf/MediaTime.h>

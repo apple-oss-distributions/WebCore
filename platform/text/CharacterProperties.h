@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2015 Apple, Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -20,47 +20,27 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#include "MediaTimeMac.h"
-
-#if USE(COREMEDIA)
+#ifndef CharacterProperties_h
+#define CharacterProperties_h
 
 namespace WebCore {
 
-MediaTime toMediaTime(const CMTime& cmTime)
+static inline bool isEmojiGroupCandidate(UChar32 character)
 {
-    uint32_t flags = 0;
-    if (CMTIME_IS_VALID(cmTime))
-        flags |= MediaTime::Valid;
-    if (CMTIME_HAS_BEEN_ROUNDED(cmTime))
-        flags |= MediaTime::HasBeenRounded;
-    if (CMTIME_IS_POSITIVE_INFINITY(cmTime))
-        flags |= MediaTime::PositiveInfinite;
-    if (CMTIME_IS_NEGATIVE_INFINITY(cmTime))
-        flags |= MediaTime::NegativeInfinite;
-    if (CMTIME_IS_INDEFINITE(cmTime))
-        flags |= MediaTime::Indefinite;
-
-    return MediaTime(cmTime.value, cmTime.timescale, flags);
+    return (character >= 0x1F466 && character <= 0x1F469) || character == 0x2764 || character == 0x1F48B;
 }
 
-CMTime toCMTime(const MediaTime& mediaTime)
+static inline bool isEmojiModifier(UChar32 character)
 {
-    CMTime time = {mediaTime.timeValue(), mediaTime.timeScale(), 0, 0};
+    return character >= 0x1F3FB && character <= 0x1F3FF;
+}
 
-    if (mediaTime.isValid())
-        time.flags |= kCMTimeFlags_Valid;
-    if (mediaTime.hasBeenRounded())
-        time.flags |= kCMTimeFlags_HasBeenRounded;
-    if (mediaTime.isPositiveInfinite())
-        time.flags |= kCMTimeFlags_PositiveInfinity;
-    if (mediaTime.isNegativeInfinite())
-        time.flags |= kCMTimeFlags_NegativeInfinity;
-
-    return time;
+inline bool isVariationSelector(UChar32 character)
+{
+    return character >= 0xFE00 && character <= 0xFE0F;
 }
 
 }
