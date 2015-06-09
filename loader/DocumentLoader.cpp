@@ -162,6 +162,7 @@ ResourceLoader* DocumentLoader::mainResourceLoader() const
 DocumentLoader::~DocumentLoader()
 {
     ASSERT(!m_frame || frameLoader()->activeDocumentLoader() != this || !isLoading());
+    RELEASE_ASSERT_WITH_MESSAGE(!m_waitingForContentPolicy, "The content policy callback should never outlive its DocumentLoader.");
     if (m_iconLoadDecisionCallback)
         m_iconLoadDecisionCallback->invalidate();
     if (m_iconDataCallback)
@@ -674,7 +675,7 @@ void DocumentLoader::responseReceived(CachedResource* resource, const ResourceRe
 
 void DocumentLoader::continueAfterContentPolicy(PolicyAction policy)
 {
-    ASSERT(m_waitingForContentPolicy);
+    RELEASE_ASSERT(m_waitingForContentPolicy);
     m_waitingForContentPolicy = false;
     if (isStopping())
         return;
@@ -872,9 +873,6 @@ void DocumentLoader::dataReceived(CachedResource* resource, const char* data, in
 
         data = m_contentFilter->getReplacementData(length);
         loadWasBlockedBeforeFinishing = m_contentFilter->didBlockData();
-
-        if (loadWasBlockedBeforeFinishing)
-            frameLoader()->client().contentFilterDidBlockLoad(WTF::move(m_contentFilter));
     }
 #endif
 
@@ -888,8 +886,10 @@ void DocumentLoader::dataReceived(CachedResource* resource, const char* data, in
         commitLoad(data, length);
 
 #if USE(CONTENT_FILTERING)
-    if (loadWasBlockedBeforeFinishing)
+    if (loadWasBlockedBeforeFinishing) {
+        frameLoader()->client().contentFilterDidBlockLoad(WTF::move(m_contentFilter));
         cancelMainResourceLoad(frameLoader()->cancelledError(m_request));
+    }
 #endif
 }
 
@@ -947,9 +947,11 @@ void DocumentLoader::detachFromFrame()
     if (m_mainResource && m_mainResource->hasClient(this))
         m_mainResource->removeClient(this);
 
-    m_applicationCacheHost->setDOMApplicationCache(0);
+    m_applicationCacheHost->setDOMApplicationCache(nullptr);
     InspectorInstrumentation::loaderDetachedFromFrame(m_frame, this);
-    m_frame = 0;
+    m_frame = nullptr;
+    // The call to stopLoading() above should have canceled any pending content policy check.
+    RELEASE_ASSERT_WITH_MESSAGE(!m_waitingForContentPolicy, "The content policy callback needs a valid frame.");
 }
 
 void DocumentLoader::clearMainResourceLoader()
