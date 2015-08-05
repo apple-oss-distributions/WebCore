@@ -419,6 +419,7 @@ void FrameView::invalidateRect(const IntRect& rect)
 
 void FrameView::setFrameRect(const IntRect& newRect)
 {
+    Ref<FrameView> protect(*this);
     IntRect oldRect = frameRect();
     if (newRect == oldRect)
         return;
@@ -1090,6 +1091,9 @@ inline void FrameView::forceLayoutParentViewIfNeeded()
 void FrameView::layout(bool allowSubtree)
 {
     if (isInLayout())
+        return;
+
+    if (layoutDisallowed())
         return;
 
     // Protect the view from being deleted during layout (in recalcStyle).
@@ -2848,7 +2852,8 @@ void FrameView::updateEmbeddedObject(RenderEmbeddedObject& embeddedObject)
     if (!weakRenderer)
         return;
 
-    embeddedObject.updateWidgetPosition();
+    auto ignoreWidgetState = embeddedObject.updateWidgetPosition();
+    UNUSED_PARAM(ignoreWidgetState);
 }
 
 bool FrameView::updateEmbeddedObjects()
@@ -3592,9 +3597,6 @@ void FrameView::startLayoutAtMainFrameViewIfNeeded(bool allowSubtree)
         parentView = parentView->parentFrameView();
 
     parentView->layout(allowSubtree);
-
-    RenderElement* root = m_layoutRoot ? m_layoutRoot : frame().document()->renderView();
-    ASSERT_UNUSED(root, !root->needsLayout());
 }
 
 void FrameView::updateControlTints()
@@ -4564,8 +4566,10 @@ void FrameView::updateWidgetPositions()
     auto protectedWidgets = collectAndProtectWidgets(m_widgetsInRenderTree);
 
     for (unsigned i = 0, size = protectedWidgets.size(); i < size; ++i) {
-        if (RenderWidget* renderWidget = RenderWidget::find(protectedWidgets[i].get()))
-            renderWidget->updateWidgetPosition();
+        if (RenderWidget* renderWidget = RenderWidget::find(protectedWidgets[i].get())) {
+            auto ignoreWidgetState = renderWidget->updateWidgetPosition();
+            UNUSED_PARAM(ignoreWidgetState);
+        }
     }
 }
 
