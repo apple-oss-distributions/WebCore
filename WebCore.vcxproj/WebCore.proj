@@ -12,6 +12,7 @@
   <!-- Wrapper to build WebCore for both win32 and x64. -->
   <PropertyGroup>
     <OFFICIAL_BUILD>1</OFFICIAL_BUILD>
+    <DXSDK_DIR>C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\</DXSDK_DIR>
     <WebKit_Libraries>$(SRCROOT)\AppleInternal</WebKit_Libraries>
     <WebKit_OutputDir>$(OBJROOT)</WebKit_OutputDir>
     <AppleInternal>$(DSTROOT)\AppleInternal</AppleInternal>
@@ -29,10 +30,10 @@
 
   <ItemGroup>
     <WebCore Include="WebCore.submit.sln">
-      <AdditionalProperties>Platform=Win32;WEBKIT_OUTPUTDIR=$(WebKit_OutputDir);WEBKIT_LIBRARIES=$(WebKit_Libraries);OFFICIAL_BUILD=$(OFFICIAL_BUILD)</AdditionalProperties>
+      <AdditionalProperties>Platform=Win32;WEBKIT_OUTPUTDIR=$(WebKit_OutputDir);WEBKIT_LIBRARIES=$(WebKit_Libraries);OFFICIAL_BUILD=$(OFFICIAL_BUILD);DXSDK_DIR=$(DXSDK_DIR)</AdditionalProperties>
     </WebCore>
     <WebCore Include="WebCore.submit.sln">
-      <AdditionalProperties>Platform=x64;WEBKIT_OUTPUTDIR=$(WebKit_OutputDir);WEBKIT_LIBRARIES=$(WebKit_Libraries);OFFICIAL_BUILD=$(OFFICIAL_BUILD)</AdditionalProperties>
+      <AdditionalProperties>Platform=x64;WEBKIT_OUTPUTDIR=$(WebKit_OutputDir);WEBKIT_LIBRARIES=$(WebKit_Libraries);OFFICIAL_BUILD=$(OFFICIAL_BUILD);DXSDK_DIR=$(DXSDK_DIR)</AdditionalProperties>
     </WebCore>
   </ItemGroup>
  
@@ -51,6 +52,7 @@
     <Message Text="Build output -> $(OBJROOT)" />
     <Message Text="Final output -> $(DSTROOT)" />
     <MakeDir Directories="$(AppleInternalLib32);$(AppleInternalLib64);$(AppleInternalBin32);$(AppleInternalBin64);$(AppleInternal32Symbols);$(AppleInternal64Symbols);$(AppleInternal)\include;$(DSTROOT)\$(ProgramFilesAAS32);$(DSTROOT)\$(ProgramFilesAAS64)" />
+    <MakeDir Directories="$(DSTROOT)\$(ProgramFilesAAS32)\WebKit.resources;$(DSTROOT)\$(ProgramFilesAAS64)\WebKit.resources" />
     <MakeDir Directories="$(DSTROOT)\AppleInternal\Sources32\WebCore;$(DSTROOT)\AppleInternal\Sources64\WebCore" />
   </Target>
 
@@ -82,6 +84,12 @@
     <CreateItem Include="$(ConfigurationBuildDir)\bin64\*.pdb">
       <Output TaskParameter="Include" ItemName="Bin64SymbolFiles" />
     </CreateItem>
+    <CreateItem Include="$(ConfigurationBuildDir)\bin32\WebKit.resources\**\*.*">
+      <Output TaskParameter="Include" ItemName="Bin32Resources" />
+    </CreateItem>
+    <CreateItem Include="$(ConfigurationBuildDir)\bin64\WebKit.resources\**\*.*">
+      <Output TaskParameter="Include" ItemName="Bin64Resources" />
+    </CreateItem>
     <CreateItem Include="$(ConfigurationBuildDir)\lib32\*">
       <Output TaskParameter="Include" ItemName="Lib32Files" />
     </CreateItem>
@@ -99,11 +107,11 @@
     <Copy SourceFiles="@(Lib32Files)" DestinationFolder="$(AppleInternalLib32)" />
     <Copy SourceFiles="@(Lib64Files)" DestinationFolder="$(AppleInternalLib64)" />
     <Copy SourceFiles="@(Bin32Files)" DestinationFolder="$(AppleInternalBin32)" />
-    <Copy SourceFiles="@(Bin32Files)" DestinationFolder="$(DSTROOT)\$(ProgramFilesAAS32)" />
     <Copy SourceFiles="@(Bin32SymbolFiles)" DestinationFolder="$(AppleInternal32Symbols)" />
+    <Copy SourceFiles="@(Bin32Resources)" DestinationFiles="@(Bin32Resources->'$(DSTROOT)\$(ProgramFilesAAS32)\WebKit.resources\%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(Bin64Files)" DestinationFolder="$(AppleInternalBin64)" />
-    <Copy SourceFiles="@(Bin64Files)" DestinationFolder="$(DSTROOT)\$(ProgramFilesAAS64)" />
     <Copy SourceFiles="@(Bin64SymbolFiles)" DestinationFolder="$(AppleInternal64Symbols)" />
+    <Copy SourceFiles="@(Bin64Resources)" DestinationFiles="@(Bin64Resources->'$(DSTROOT)\$(ProgramFilesAAS64)\WebKit.resources\%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(Derived32Sources)" DestinationFiles="@(Derived32Sources->'$(DSTROOT)\AppleInternal\Sources32\WebCore\%(RecursiveDir)%(Filename)%(Extension)')" />
     <Copy SourceFiles="@(Derived64Sources)" DestinationFiles="@(Derived64Sources->'$(DSTROOT)\AppleInternal\Sources64\WebCore\%(RecursiveDir)%(Filename)%(Extension)')" />
   </Target>

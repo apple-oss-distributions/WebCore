@@ -32,14 +32,14 @@
 #include <wtf/RefCounted.h>
 #include <wtf/Vector.h>
 
+namespace WTF {
+class PrintStream;
+}
+
 namespace WebCore {
 
 class PlatformTimeRanges {
 public:
-    static std::unique_ptr<PlatformTimeRanges> create();
-    static std::unique_ptr<PlatformTimeRanges> create(const MediaTime& start, const MediaTime& end);
-    static std::unique_ptr<PlatformTimeRanges> create(const PlatformTimeRanges&);
-
     explicit PlatformTimeRanges() { }
     PlatformTimeRanges(const MediaTime& start, const MediaTime& end);
     PlatformTimeRanges(const PlatformTimeRanges&);
@@ -68,6 +68,8 @@ public:
     MediaTime nearest(const MediaTime&) const;
 
     MediaTime totalDuration() const;
+
+    void dump(WTF::PrintStream&) const;
 
 private:
     PlatformTimeRanges& copy(const PlatformTimeRanges&);

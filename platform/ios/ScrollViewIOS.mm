@@ -34,7 +34,7 @@
 #import "WAKAppKitStubs.h"
 #import "WAKClipView.h"
 #import "WAKScrollView.h"
-#import "WAKViewPrivate.h"
+#import "WAKViewInternal.h"
 #import "WAKWindow.h"
 #import "WKViewPrivate.h"
 #import "WebCoreFrameView.h"
@@ -108,7 +108,7 @@ IntRect ScrollView::unobscuredContentRect(VisibleContentRectIncludesScrollbars) 
     }
 
     if (!m_unobscuredContentSize.isEmpty())
-        return IntRect(IntPoint(m_scrollOffset), roundedIntSize(m_unobscuredContentSize));
+        return IntRect(scrollOrigin() + m_scrollOffset, roundedIntSize(m_unobscuredContentSize));
 
     return unobscuredContentRectInternal();
 }
@@ -161,6 +161,15 @@ void ScrollView::setActualScrollPosition(const IntPoint& position)
     END_BLOCK_OBJC_EXCEPTIONS;
 }
 
+float ScrollView::platformTopContentInset() const
+{
+    return 0;
+}
+
+void ScrollView::platformSetTopContentInset(float)
+{
+}
+
 IntRect ScrollView::platformVisibleContentRect(bool includeScrollbars) const
 {
     BEGIN_BLOCK_OBJC_EXCEPTIONS;
@@ -184,6 +193,16 @@ IntSize ScrollView::platformVisibleContentSize(bool includeScrollbars) const
     return expandedIntSize(FloatSize([scrollView() documentVisibleRect].size));
     END_BLOCK_OBJC_EXCEPTIONS;
     return IntSize();
+}
+
+IntRect ScrollView::platformVisibleContentRectIncludingObscuredArea(bool includeScrollbars) const
+{
+    return platformVisibleContentRect(includeScrollbars);
+}
+
+IntSize ScrollView::platformVisibleContentSizeIncludingObscuredArea(bool includeScrollbars) const
+{
+    return platformVisibleContentSize(includeScrollbars);
 }
 
 LegacyTileCache* ScrollView::legacyTileCache()

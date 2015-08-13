@@ -48,7 +48,7 @@ public:
 
     static unsigned long createUniqueIdentifier();
 
-    double estimatedProgress() const;
+    WEBCORE_EXPORT double estimatedProgress() const;
 
     void progressStarted(Frame&);
     void progressCompleted(Frame&);
@@ -66,7 +66,7 @@ private:
     void reset();
     void finalProgressComplete();
 
-    void progressHeartbeatTimerFired(Timer<ProgressTracker>&);
+    void progressHeartbeatTimerFired();
     
     static unsigned long s_uniqueIdentifier;
     
@@ -82,7 +82,7 @@ private:
     int m_numProgressTrackedFrames;
     HashMap<unsigned long, std::unique_ptr<ProgressItem>> m_progressItems;
 
-    Timer<ProgressTracker> m_progressHeartbeatTimer;
+    Timer m_progressHeartbeatTimer;
     unsigned m_heartbeatsWithNoProgress;
     long long m_totalBytesReceivedBeforePreviousHeartbeat;
     std::chrono::steady_clock::time_point m_mainLoadCompletionTime;

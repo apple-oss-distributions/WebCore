@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2012-2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,88 +32,19 @@
 #include "ISOVTTCue.h"
 #include "InbandTextTrackPrivateClient.h"
 #include "Logging.h"
-#include "SoftLinking.h"
-#include <CoreMedia/CoreMedia.h>
+#include "MediaTimeAVFoundation.h"
 #include <runtime/ArrayBuffer.h>
 #include <runtime/DataView.h>
 #include <runtime/Int8Array.h>
 #include <wtf/MediaTime.h>
 #include <wtf/NeverDestroyed.h>
-#include <wtf/PassOwnPtr.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/StringBuilder.h>
 #include <wtf/text/WTFString.h>
 #include <wtf/unicode/CharacterNames.h>
+#include <wtf/StringPrintStream.h>
 
-#if !PLATFORM(WIN)
-#include "MediaTimeMac.h"
-#endif
-
-#if !PLATFORM(WIN)
-#define SOFT_LINK_AVF_FRAMEWORK(Lib) SOFT_LINK_FRAMEWORK_OPTIONAL(Lib)
-#define SOFT_LINK_AVF_POINTER(Lib, Name, Type) SOFT_LINK_POINTER_OPTIONAL(Lib, Name, Type)
-#else
-#ifdef DEBUG_ALL
-#define SOFT_LINK_AVF_FRAMEWORK(Lib) SOFT_LINK_DEBUG_LIBRARY(Lib)
-#else
-#define SOFT_LINK_AVF_FRAMEWORK(Lib) SOFT_LINK_LIBRARY(Lib)
-#endif
-
-#define SOFT_LINK_AVF_POINTER(Lib, Name, Type) SOFT_LINK_VARIABLE_DLL_IMPORT_OPTIONAL(Lib, Name, Type)
-#endif
-
-SOFT_LINK_AVF_FRAMEWORK(CoreMedia)
-
-#if !PLATFORM(WIN)
-SOFT_LINK(CoreMedia, CMSampleBufferGetDataBuffer, CMBlockBufferRef, (CMSampleBufferRef sbuf), (sbuf))
-SOFT_LINK(CoreMedia, CMBlockBufferCopyDataBytes, OSStatus, (CMBlockBufferRef theSourceBuffer, size_t offsetToData, size_t dataLength, void* destination), (theSourceBuffer, offsetToData, dataLength, destination))
-SOFT_LINK(CoreMedia, CMBlockBufferGetDataLength, size_t, (CMBlockBufferRef theBuffer), (theBuffer))
-SOFT_LINK(CoreMedia, CMSampleBufferGetSampleTimingInfo, OSStatus, (CMSampleBufferRef sbuf, CMItemIndex sampleIndex, CMSampleTimingInfo* timingInfoOut), (sbuf, sampleIndex, timingInfoOut))
-SOFT_LINK(CoreMedia, CMFormatDescriptionGetExtensions, CFDictionaryRef, (CMFormatDescriptionRef desc), (desc))
-SOFT_LINK(CoreMedia, CMSampleBufferGetFormatDescription, CMFormatDescriptionRef, (CMSampleBufferRef sbuf), (sbuf))
-#endif
-
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAttribute_Alignment, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAlignmentType_Start, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAlignmentType_Middle, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAlignmentType_End, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAttribute_BoldStyle, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAttribute_ItalicStyle, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAttribute_UnderlineStyle, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAttribute_TextPositionPercentageRelativeToWritingDirection, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAttribute_WritingDirectionSizePercentage, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAttribute_OrthogonalLinePositionPercentageRelativeToWritingDirection, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAttribute_VerticalLayout, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextVerticalLayout_LeftToRight, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextVerticalLayout_RightToLeft, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAttribute_BaseFontSizePercentageRelativeToVideoHeight, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAttribute_RelativeFontSize, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAttribute_FontFamilyName, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAttribute_ForegroundColorARGB, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAttribute_BackgroundColorARGB, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMTextMarkupAttribute_CharacterBackgroundColorARGB, CFStringRef)
-SOFT_LINK_AVF_POINTER(CoreMedia, kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms, CFStringRef)
-
-#define kCMTextMarkupAttribute_Alignment getkCMTextMarkupAttribute_Alignment()
-#define kCMTextMarkupAlignmentType_Start getkCMTextMarkupAlignmentType_Start()
-#define kCMTextMarkupAlignmentType_Middle getkCMTextMarkupAlignmentType_Middle()
-#define kCMTextMarkupAlignmentType_End getkCMTextMarkupAlignmentType_End()
-#define kCMTextMarkupAttribute_BoldStyle getkCMTextMarkupAttribute_BoldStyle()
-#define kCMTextMarkupAttribute_ItalicStyle getkCMTextMarkupAttribute_ItalicStyle()
-#define kCMTextMarkupAttribute_UnderlineStyle getkCMTextMarkupAttribute_UnderlineStyle()
-#define kCMTextMarkupAttribute_TextPositionPercentageRelativeToWritingDirection getkCMTextMarkupAttribute_TextPositionPercentageRelativeToWritingDirection()
-#define kCMTextMarkupAttribute_WritingDirectionSizePercentage getkCMTextMarkupAttribute_WritingDirectionSizePercentage()
-#define kCMTextMarkupAttribute_OrthogonalLinePositionPercentageRelativeToWritingDirection getkCMTextMarkupAttribute_OrthogonalLinePositionPercentageRelativeToWritingDirection()
-#define kCMTextMarkupAttribute_VerticalLayout getkCMTextMarkupAttribute_VerticalLayout()
-#define kCMTextVerticalLayout_LeftToRight getkCMTextVerticalLayout_LeftToRight()
-#define kCMTextVerticalLayout_RightToLeft getkCMTextVerticalLayout_RightToLeft()
-#define kCMTextMarkupAttribute_BaseFontSizePercentageRelativeToVideoHeight getkCMTextMarkupAttribute_BaseFontSizePercentageRelativeToVideoHeight()
-#define kCMTextMarkupAttribute_RelativeFontSize getkCMTextMarkupAttribute_RelativeFontSize()
-#define kCMTextMarkupAttribute_FontFamilyName getkCMTextMarkupAttribute_FontFamilyName()
-#define kCMTextMarkupAttribute_ForegroundColorARGB getkCMTextMarkupAttribute_ForegroundColorARGB()
-#define kCMTextMarkupAttribute_BackgroundColorARGB getkCMTextMarkupAttribute_BackgroundColorARGB()
-#define kCMTextMarkupAttribute_CharacterBackgroundColorARGB getkCMTextMarkupAttribute_CharacterBackgroundColorARGB()
-#define kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms getkCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms()
+#include "CoreMediaSoftLink.h"
 
 namespace JSC {
 class ArrayBuffer;
@@ -226,7 +157,7 @@ void InbandTextTrackPrivateAVF::processCueAttributes(CFAttributedStringRef attri
                 if (static_cast<CFBooleanRef>(value) != kCFBooleanTrue)
                     continue;
 
-                tagStart.append("<b>");
+                tagStart.appendLiteral("<b>");
                 tagEnd = "</b>" + tagEnd;
                 continue;
             }
@@ -235,7 +166,7 @@ void InbandTextTrackPrivateAVF::processCueAttributes(CFAttributedStringRef attri
                 if (static_cast<CFBooleanRef>(value) != kCFBooleanTrue)
                     continue;
 
-                tagStart.append("<i>");
+                tagStart.appendLiteral("<i>");
                 tagEnd = "</i>" + tagEnd;
                 continue;
             }
@@ -244,7 +175,7 @@ void InbandTextTrackPrivateAVF::processCueAttributes(CFAttributedStringRef attri
                 if (static_cast<CFBooleanRef>(value) != kCFBooleanTrue)
                     continue;
 
-                tagStart.append("<u>");
+                tagStart.appendLiteral("<u>");
                 tagEnd = "</u>" + tagEnd;
                 continue;
             }
@@ -380,7 +311,7 @@ void InbandTextTrackPrivateAVF::processCueAttributes(CFAttributedStringRef attri
         cueData.setContent(content.toString());
 }
 
-void InbandTextTrackPrivateAVF::processCue(CFArrayRef attributedStrings, CFArrayRef nativeSamples, double time)
+void InbandTextTrackPrivateAVF::processCue(CFArrayRef attributedStrings, CFArrayRef nativeSamples, const MediaTime& time)
 {
     if (!client())
         return;
@@ -389,9 +320,9 @@ void InbandTextTrackPrivateAVF::processCue(CFArrayRef attributedStrings, CFArray
     processNativeSamples(nativeSamples, time);
 }
 
-void InbandTextTrackPrivateAVF::processAttributedStrings(CFArrayRef attributedStrings, double time)
+void InbandTextTrackPrivateAVF::processAttributedStrings(CFArrayRef attributedStrings, const MediaTime& time)
 {
-    LOG(Media, "InbandTextTrackPrivateAVF::processAttributedStrings - %li attributed strings at time %.2f\n", attributedStrings ? CFArrayGetCount(attributedStrings) : 0, time);
+    LOG(Media, "InbandTextTrackPrivateAVF::processCue - %li cues at time %s\n", attributedStrings ? CFArrayGetCount(attributedStrings) : 0, toString(time).utf8().data());
 
     Vector<RefPtr<GenericCueData>> arrivingCues;
     if (attributedStrings) {
@@ -410,14 +341,14 @@ void InbandTextTrackPrivateAVF::processAttributedStrings(CFArrayRef attributedSt
             arrivingCues.append(cueData);
             
             cueData->setStartTime(time);
-            cueData->setEndTime(std::numeric_limits<double>::infinity());
+            cueData->setEndTime(MediaTime::positiveInfiniteTime());
             
             // AVFoundation cue "position" is to the center of the text so adjust relative to the edge because we will use it to
             // set CSS "left".
             if (cueData->position() >= 0 && cueData->size() > 0)
                 cueData->setPosition(cueData->position() - cueData->size() / 2);
             
-            LOG(Media, "InbandTextTrackPrivateAVF::processCue(%p) - considering cue (\"%s\") for time = %.2f, position =  %.2f, line =  %.2f", this, cueData->content().utf8().data(), cueData->startTime(), cueData->position(), cueData->line());
+            LOG(Media, "InbandTextTrackPrivateAVF::processCue(%p) - considering cue (\"%s\") for time = %s, position =  %.2f, line =  %.2f", this, cueData->content().utf8().data(), toString(cueData->startTime()).utf8().data(), cueData->position(), cueData->line());
             
             cueData->setStatus(GenericCueData::Partial);
         }
@@ -435,7 +366,7 @@ void InbandTextTrackPrivateAVF::processAttributedStrings(CFArrayRef attributedSt
                     if (!arrivingCue->doesExtendCueData(*cueData))
                         nonExtensionCues.append(arrivingCue);
                     else
-                        LOG(Media, "InbandTextTrackPrivateAVF::processCue(%p) - found an extension cue (\"%s\") for time = %.2f, end = %.2f, position =  %.2f, line =  %.2f", this, arrivingCue->content().utf8().data(), arrivingCue->startTime(), arrivingCue->endTime(), arrivingCue->position(), arrivingCue->line());
+                        LOG(Media, "InbandTextTrackPrivateAVF::processCue(%p) - found an extension cue (\"%s\") for time = %.2f, end = %.2f, position =  %.2f, line =  %.2f", this, arrivingCue->content().utf8().data(), arrivingCue->startTime().toDouble(), arrivingCue->endTime().toDouble(), arrivingCue->position(), arrivingCue->line());
                 }
 
                 bool currentCueIsExtended = (arrivingCues.size() != nonExtensionCues.size());
@@ -449,16 +380,16 @@ void InbandTextTrackPrivateAVF::processAttributedStrings(CFArrayRef attributedSt
                     cueData->setEndTime(m_currentCueEndTime);
                     cueData->setStatus(GenericCueData::Complete);
 
-                    LOG(Media, "InbandTextTrackPrivateAVF::processCue(%p) - updating cue \"%s\": start=%.2f, end=%.2f", this, cueData->content().utf8().data(), cueData->startTime(), m_currentCueEndTime);
+                    LOG(Media, "InbandTextTrackPrivateAVF::processCue(%p) - updating cue \"%s\": start=%.2f, end=%.2f", this, cueData->content().utf8().data(), cueData->startTime().toDouble(), m_currentCueEndTime.toDouble());
                     client()->updateGenericCue(this, cueData.get());
                 } else {
                     // We have to assume that the implicit duration is invalid for cues delivered during a seek because the AVF decode pipeline may not
                     // see every cue, so DO NOT update cue duration while seeking.
-                    LOG(Media, "InbandTextTrackPrivateAVF::processCue(%p) - ignoring cue delivered during seek: start=%.2f, end=%.2f, content=\"%s\"", this, cueData->startTime(), m_currentCueEndTime, cueData->content().utf8().data());
+                    LOG(Media, "InbandTextTrackPrivateAVF::processCue(%p) - ignoring cue delivered during seek: start=%s, end=%s, content=\"%s\"", this, toString(cueData->startTime()).utf8().data(), toString(m_currentCueEndTime).utf8().data(), cueData->content().utf8().data());
                 }
             }
         } else
-            LOG(Media, "InbandTextTrackPrivateAVF::processCue negative length cue(s) ignored: start=%.2f, end=%.2f\n", m_currentCueStartTime, m_currentCueEndTime);
+            LOG(Media, "InbandTextTrackPrivateAVF::processCue negative length cue(s) ignored: start=%s, end=%s\n",  toString(m_currentCueStartTime).utf8().data(), toString(m_currentCueEndTime).utf8().data());
 
         removeCompletedCues();
     }
@@ -472,7 +403,7 @@ void InbandTextTrackPrivateAVF::processAttributedStrings(CFArrayRef attributedSt
 
         m_cues.append(cueData);
         
-        LOG(Media, "InbandTextTrackPrivateAVF::processCue(%p) - adding cue \"%s\" for time = %.2f, end = %.2f, position =  %.2f, line =  %.2f", this, cueData->content().utf8().data(), cueData->startTime(), cueData->endTime(), cueData->position(), cueData->line());
+        LOG(Media, "InbandTextTrackPrivateAVF::processCue(%p) - adding cue \"%s\" for time = %.2f, end = %.2f, position =  %.2f, line =  %.2f", this, cueData->content().utf8().data(), cueData->startTime().toDouble(), cueData->endTime().toDouble(), cueData->position(), cueData->line());
 
         client()->addGenericCue(this, cueData.release());
     }
@@ -503,7 +434,7 @@ void InbandTextTrackPrivateAVF::removeCompletedCues()
             if (m_cues[currentCue]->status() != GenericCueData::Complete)
                 continue;
 
-            LOG(Media, "InbandTextTrackPrivateAVF::removeCompletedCues(%p) - removing cue \"%s\": start=%.2f, end=%.2f", this, m_cues[currentCue]->content().utf8().data(), m_cues[currentCue]->startTime(), m_cues[currentCue]->endTime());
+            LOG(Media, "InbandTextTrackPrivateAVF::removeCompletedCues(%p) - removing cue \"%s\": start=%.2f, end=%.2f", this, m_cues[currentCue]->content().utf8().data(), m_cues[currentCue]->startTime().toDouble(), m_cues[currentCue]->endTime().toDouble());
 
             m_cues.remove(currentCue);
         }
@@ -512,14 +443,14 @@ void InbandTextTrackPrivateAVF::removeCompletedCues()
     if (m_cues.isEmpty())
         m_pendingCueStatus = None;
 
-    m_currentCueStartTime = 0;
-    m_currentCueEndTime = 0;
+    m_currentCueStartTime = MediaTime::zeroTime();
+    m_currentCueEndTime = MediaTime::zeroTime();
 }
 
 void InbandTextTrackPrivateAVF::resetCueValues()
 {
     if (m_currentCueEndTime && m_cues.size())
-        LOG(Media, "InbandTextTrackPrivateAVF::resetCueValues flushing data for cues: start=%.2f\n", m_currentCueStartTime);
+        LOG(Media, "InbandTextTrackPrivateAVF::resetCueValues flushing data for cues: start=%s\n", toString(m_currentCueStartTime).utf8().data());
 
     if (client()) {
         for (size_t i = 0; i < m_cues.size(); i++)
@@ -528,8 +459,8 @@ void InbandTextTrackPrivateAVF::resetCueValues()
 
     m_cues.resize(0);
     m_pendingCueStatus = None;
-    m_currentCueStartTime = 0;
-    m_currentCueEndTime = 0;
+    m_currentCueStartTime = MediaTime::zeroTime();
+    m_currentCueEndTime = MediaTime::zeroTime();
 }
 
 void InbandTextTrackPrivateAVF::setMode(InbandTextTrackPrivate::Mode newMode)
@@ -546,13 +477,8 @@ void InbandTextTrackPrivateAVF::setMode(InbandTextTrackPrivate::Mode newMode)
     m_owner->trackModeChanged();
 }
 
-void InbandTextTrackPrivateAVF::processNativeSamples(CFArrayRef nativeSamples, double presentationTime)
+void InbandTextTrackPrivateAVF::processNativeSamples(CFArrayRef nativeSamples, const MediaTime& presentationTime)
 {
-#if PLATFORM(WIN)
-    UNUSED_PARAM(nativeSamples);
-    UNUSED_PARAM(presentationTime);
-    ASSERT_NOT_REACHED();
-#else
     if (!nativeSamples)
         return;
 
@@ -560,32 +486,14 @@ void InbandTextTrackPrivateAVF::processNativeSamples(CFArrayRef nativeSamples, d
     if (!count)
         return;
 
-    LOG(Media, "InbandTextTrackPrivateAVF::processNativeSamples - %li sample buffers at time %.2f\n", count, presentationTime);
+    LOG(Media, "InbandTextTrackPrivateAVF::processNativeSamples - %li sample buffers at time %.2f\n", count, presentationTime.toDouble());
 
     for (CFIndex i = 0; i < count; i++) {
-
-        CMSampleBufferRef sampleBuffer = (CMSampleBufferRef)CFArrayGetValueAtIndex(nativeSamples, i);
-        if (!sampleBuffer)
+        RefPtr<ArrayBuffer> buffer;
+        MediaTime duration;
+        CMFormatDescriptionRef formatDescription;
+        if (!readNativeSampleBuffer(nativeSamples, i, buffer, duration, formatDescription))
             continue;
-
-        CMSampleTimingInfo timingInfo;
-        OSStatus status = CMSampleBufferGetSampleTimingInfo(sampleBuffer, i, &timingInfo);
-        if (status) {
-            LOG(Media, "InbandTextTrackPrivateAVF::processNativeSamples(%p) - CMSampleBufferGetSampleTimingInfo returned error %x for sample %li", this, static_cast<int>(status), i);
-            continue;
-        }
-
-        CMBlockBufferRef blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer);
-        size_t bufferLength = CMBlockBufferGetDataLength(blockBuffer);
-        if (bufferLength < ISOBox::boxHeaderSize()) {
-            LOG(Media, "InbandTextTrackPrivateAVF::processNativeSamples(%p) - ERROR: CMSampleBuffer size length unexpectedly small (%zu)!!", this, bufferLength);
-            continue;
-        }
-
-        m_sampleInputBuffer.resize(m_sampleInputBuffer.size() + bufferLength);
-        CMBlockBufferCopyDataBytes(blockBuffer, 0, bufferLength, m_sampleInputBuffer.data() + m_sampleInputBuffer.size() - bufferLength);
-
-        RefPtr<ArrayBuffer> buffer = ArrayBuffer::create(m_sampleInputBuffer.data(), m_sampleInputBuffer.size());
 
         String type = ISOBox::peekType(buffer.get());
         size_t boxLength = ISOBox::peekLength(buffer.get());
@@ -597,11 +505,7 @@ void InbandTextTrackPrivateAVF::processNativeSamples(CFArrayRef nativeSamples, d
         LOG(Media, "InbandTextTrackPrivateAVF::processNativeSamples(%p) - chunk type = '%s', size = %zu", this, type.utf8().data(), boxLength);
 
         if (type == ISOWebVTTCue::boxType()) {
-#if !PLATFORM(WIN)
-            ISOWebVTTCue cueData = ISOWebVTTCue(MediaTime::createWithDouble(presentationTime), toMediaTime(timingInfo.duration), buffer.get());
-#else
-            ISOWebVTTCue cueData = ISOWebVTTCue(MediaTime::createWithDouble(presentationTime), MediaTime::createWithDouble(CMTimeGetSeconds(timingInfo.duration)), buffer.get());
-#endif
+            ISOWebVTTCue cueData = ISOWebVTTCue(presentationTime, duration, buffer.get());
             LOG(Media, "    sample presentation time = %.2f, duration = %.2f", cueData.presentationTime().toDouble(), cueData.duration().toDouble());
             LOG(Media, "    id = \"%s\", settings = \"%s\", cue text = \"%s\"", cueData.id().utf8().data(), cueData.settings().utf8().data(), cueData.cueText().utf8().data());
             LOG(Media, "    sourceID = \"%s\", originalStartTime = \"%s\"", cueData.sourceID().utf8().data(), cueData.originalStartTime().utf8().data());
@@ -613,7 +517,6 @@ void InbandTextTrackPrivateAVF::processNativeSamples(CFArrayRef nativeSamples, d
             if (m_haveReportedVTTHeader)
                 break;
 
-            CMFormatDescriptionRef formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer);
             if (!formatDescription)
                 break;
 
@@ -646,6 +549,41 @@ void InbandTextTrackPrivateAVF::processNativeSamples(CFArrayRef nativeSamples, d
 
         m_sampleInputBuffer.remove(0, boxLength);
     }
+}
+
+bool InbandTextTrackPrivateAVF::readNativeSampleBuffer(CFArrayRef nativeSamples, CFIndex index, RefPtr<ArrayBuffer>& buffer, MediaTime& duration, CMFormatDescriptionRef& formatDescription)
+{
+#if OS(WINDOWS) && HAVE(AVCFPLAYERITEM_CALLBACK_VERSION_2)
+    return false;
+#else
+    CMSampleBufferRef const sampleBuffer = reinterpret_cast<CMSampleBufferRef>(const_cast<void*>(CFArrayGetValueAtIndex(nativeSamples, index)));
+    if (!sampleBuffer)
+        return false;
+
+    CMSampleTimingInfo timingInfo;
+    OSStatus status = CMSampleBufferGetSampleTimingInfo(sampleBuffer, index, &timingInfo);
+    if (status) {
+        LOG(Media, "InbandTextTrackPrivateAVF::readNativeSampleBuffer(%p) - CMSampleBufferGetSampleTimingInfo returned error %x for sample %li", this, static_cast<int>(status), index);
+        return false;
+    }
+
+    duration = toMediaTime(timingInfo.duration);
+
+    CMBlockBufferRef blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer);
+    size_t bufferLength = CMBlockBufferGetDataLength(blockBuffer);
+    if (bufferLength < ISOBox::boxHeaderSize()) {
+        LOG(Media, "InbandTextTrackPrivateAVF::readNativeSampleBuffer(%p) - ERROR: CMSampleBuffer size length unexpectedly small (%zu)!!", this, bufferLength);
+        return false;
+    }
+
+    m_sampleInputBuffer.resize(m_sampleInputBuffer.size() + bufferLength);
+    CMBlockBufferCopyDataBytes(blockBuffer, 0, bufferLength, m_sampleInputBuffer.data() + m_sampleInputBuffer.size() - bufferLength);
+
+    buffer = ArrayBuffer::create(m_sampleInputBuffer.data(), m_sampleInputBuffer.size());
+
+    formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer);
+
+    return true;
 #endif
 }
 

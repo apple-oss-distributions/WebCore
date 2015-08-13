@@ -48,7 +48,7 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-RenderVideo::RenderVideo(HTMLVideoElement& element, PassRef<RenderStyle> style)
+RenderVideo::RenderVideo(HTMLVideoElement& element, Ref<RenderStyle>&& style)
     : RenderMedia(element, WTF::move(style))
 {
     setIntrinsicSize(calculateIntrinsicSize());
@@ -56,10 +56,8 @@ RenderVideo::RenderVideo(HTMLVideoElement& element, PassRef<RenderStyle> style)
 
 RenderVideo::~RenderVideo()
 {
-    if (MediaPlayer* player = videoElement().player()) {
+    if (MediaPlayer* player = videoElement().player())
         player->setVisible(false);
-        player->setFrameView(0);
-    }
 }
 
 IntSize RenderVideo::defaultSize()
@@ -108,7 +106,7 @@ LayoutSize RenderVideo::calculateIntrinsicSize()
     // height of the poster frame, if that is available; otherwise it is 150 CSS pixels.
     MediaPlayer* player = videoElement().player();
     if (player && videoElement().readyState() >= HTMLVideoElement::HAVE_METADATA) {
-        LayoutSize size = player->naturalSize();
+        LayoutSize size(player->naturalSize());
         if (!size.isEmpty())
             return size;
     }
@@ -148,7 +146,7 @@ IntRect RenderVideo::videoBox() const
     if (videoElement().shouldDisplayPosterImage())
         intrinsicSize = m_cachedImageSize;
 
-    return pixelSnappedIntRect(replacedContentRect(intrinsicSize));
+    return snappedIntRect(replacedContentRect(intrinsicSize));
 }
 
 bool RenderVideo::shouldDisplayVideo() const
@@ -190,10 +188,12 @@ void RenderVideo::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOf
 
     if (displayingPoster)
         paintIntoRect(context, rect);
-    else if (view().frameView().paintBehavior() & PaintBehaviorFlattenCompositingLayers)
-        mediaPlayer->paintCurrentFrameInContext(context, pixelSnappedIntRect(rect));
-    else
-        mediaPlayer->paint(context, pixelSnappedIntRect(rect));
+    else if (!videoElement().isFullscreen() || !mediaPlayer->supportsAcceleratedRendering()) {
+        if (view().frameView().paintBehavior() & PaintBehaviorFlattenCompositingLayers)
+            mediaPlayer->paintCurrentFrameInContext(context, rect);
+        else
+            mediaPlayer->paint(context, rect);
+    }
 }
 
 void RenderVideo::layout()
@@ -205,7 +205,7 @@ void RenderVideo::layout()
     
 HTMLVideoElement& RenderVideo::videoElement() const
 {
-    return toHTMLVideoElement(RenderMedia::mediaElement());
+    return downcast<HTMLVideoElement>(RenderMedia::mediaElement());
 }
 
 void RenderVideo::updateFromElement()
@@ -233,7 +233,6 @@ void RenderVideo::updatePlayer()
     contentChanged(VideoChanged);
     
     IntRect videoBounds = videoBox(); 
-    mediaPlayer->setFrameView(&view().frameView());
     mediaPlayer->setSize(IntSize(videoBounds.width(), videoBounds.height()));
     mediaPlayer->setVisible(true);
     mediaPlayer->setShouldMaintainAspectRatio(style().objectFit() != ObjectFitFill);
@@ -277,14 +276,7 @@ bool RenderVideo::requiresImmediateCompositing() const
 static const RenderBlock* rendererPlaceholder(const RenderObject* renderer)
 {
     RenderObject* parent = renderer->parent();
-    if (!parent)
-        return 0;
-    
-    RenderFullScreen* fullScreen = parent->isRenderFullScreen() ? toRenderFullScreen(parent) : 0;
-    if (!fullScreen)
-        return 0;
-    
-    return fullScreen->placeholder();
+    return is<RenderFullScreen>(parent) ? downcast<RenderFullScreen>(*parent).placeholder() : nullptr;
 }
 
 LayoutUnit RenderVideo::offsetLeft() const

@@ -59,7 +59,7 @@ class WebSocketChannel : public RefCounted<WebSocketChannel>, public SocketStrea
 {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    static PassRefPtr<WebSocketChannel> create(Document* document, WebSocketChannelClient* client) { return adoptRef(new WebSocketChannel(document, client)); }
+    static Ref<WebSocketChannel> create(Document* document, WebSocketChannelClient* client) { return adoptRef(*new WebSocketChannel(document, client)); }
     virtual ~WebSocketChannel();
 
     bool send(const char* data, int length);
@@ -109,17 +109,17 @@ public:
     };
 
     // FileReaderLoaderClient functions.
-    virtual void didStartLoading();
-    virtual void didReceiveData();
-    virtual void didFinishLoading();
-    virtual void didFail(int errorCode);
+    virtual void didStartLoading() override;
+    virtual void didReceiveData() override;
+    virtual void didFinishLoading() override;
+    virtual void didFail(int errorCode) override;
 
     using RefCounted<WebSocketChannel>::ref;
     using RefCounted<WebSocketChannel>::deref;
 
 protected:
-    virtual void refThreadableWebSocketChannel() { ref(); }
-    virtual void derefThreadableWebSocketChannel() { deref(); }
+    virtual void refThreadableWebSocketChannel() override { ref(); }
+    virtual void derefThreadableWebSocketChannel() override { deref(); }
 
 private:
     WebSocketChannel(Document*, WebSocketChannelClient*);
@@ -127,9 +127,9 @@ private:
     bool appendToBuffer(const char* data, size_t len);
     void skipBuffer(size_t len);
     bool processBuffer();
-    void resumeTimerFired(Timer<WebSocketChannel>*);
+    void resumeTimerFired();
     void startClosingHandshake(int code, const String& reason);
-    void closingTimerFired(Timer<WebSocketChannel>*);
+    void closingTimerFired();
 
     bool processFrame();
 
@@ -186,15 +186,15 @@ private:
 
     Document* m_document;
     WebSocketChannelClient* m_client;
-    OwnPtr<WebSocketHandshake> m_handshake;
+    std::unique_ptr<WebSocketHandshake> m_handshake;
     RefPtr<SocketStreamHandle> m_handle;
     Vector<char> m_buffer;
 
-    Timer<WebSocketChannel> m_resumeTimer;
+    Timer m_resumeTimer;
     bool m_suspended;
     bool m_closing;
     bool m_receivedClosingHandshake;
-    Timer<WebSocketChannel> m_closingTimer;
+    Timer m_closingTimer;
     bool m_closed;
     bool m_shouldDiscardReceivedData;
     unsigned long m_unhandledBufferedAmount;
@@ -208,11 +208,11 @@ private:
     unsigned short m_closeEventCode;
     String m_closeEventReason;
 
-    Deque<OwnPtr<QueuedFrame>> m_outgoingFrameQueue;
+    Deque<std::unique_ptr<QueuedFrame>> m_outgoingFrameQueue;
     OutgoingFrameQueueStatus m_outgoingFrameQueueStatus;
 
     // FIXME: Load two or more Blobs simultaneously for better performance.
-    OwnPtr<FileReaderLoader> m_blobLoader;
+    std::unique_ptr<FileReaderLoader> m_blobLoader;
     BlobLoaderStatus m_blobLoaderStatus;
 
     WebSocketDeflateFramer m_deflateFramer;

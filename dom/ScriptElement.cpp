@@ -79,10 +79,15 @@ ScriptElement::~ScriptElement()
     stopLoadRequest();
 }
 
-void ScriptElement::insertedInto(ContainerNode& insertionPoint)
+bool ScriptElement::shouldCallFinishedInsertingSubtree(ContainerNode& insertionPoint)
 {
-    if (insertionPoint.inDocument() && !m_parserInserted)
-        prepareScript(); // FIXME: Provide a real starting line number here.
+    return insertionPoint.inDocument() && !m_parserInserted;
+}
+
+void ScriptElement::finishedInsertingSubtree()
+{
+    ASSERT(!m_parserInserted);
+    prepareScript(); // FIXME: Provide a real starting line number here.
 }
 
 void ScriptElement::childrenChanged()
@@ -245,12 +250,15 @@ bool ScriptElement::requestScript(const String& sourceUrl)
     Ref<Document> originalDocument(m_element.document());
     if (!m_element.dispatchBeforeLoadEvent(sourceUrl))
         return false;
-    if (!m_element.inDocument() || &m_element.document() != &originalDocument.get())
+    if (!m_element.inDocument() || &m_element.document() != originalDocument.ptr())
         return false;
 
     ASSERT(!m_cachedScript);
     if (!stripLeadingAndTrailingHTMLSpaces(sourceUrl).isEmpty()) {
-        CachedResourceRequest request(ResourceRequest(m_element.document().completeURL(sourceUrl)));
+        ResourceLoaderOptions options = CachedResourceLoader::defaultCachedResourceOptions();
+        options.setContentSecurityPolicyImposition(m_element.isInUserAgentShadowTree() ? ContentSecurityPolicyImposition::SkipPolicyCheck : ContentSecurityPolicyImposition::DoPolicyCheck);
+
+        CachedResourceRequest request(ResourceRequest(m_element.document().completeURL(sourceUrl)), options);
 
         String crossOriginMode = m_element.fastGetAttribute(HTMLNames::crossoriginAttr);
         if (!crossOriginMode.isNull()) {
@@ -261,7 +269,7 @@ bool ScriptElement::requestScript(const String& sourceUrl)
         request.setCharset(scriptCharset());
         request.setInitiator(&element());
 
-        m_cachedScript = m_element.document().cachedResourceLoader()->requestScript(request);
+        m_cachedScript = m_element.document().cachedResourceLoader().requestScript(request);
         m_isExternalScript = true;
     }
 
@@ -280,7 +288,7 @@ void ScriptElement::executeScript(const ScriptSourceCode& sourceCode)
     if (sourceCode.isEmpty())
         return;
 
-    if (!m_isExternalScript && !m_element.document().contentSecurityPolicy()->allowInlineScript(m_element.document().url(), m_startLineNumber))
+    if (!m_isExternalScript && !m_element.document().contentSecurityPolicy()->allowInlineScript(m_element.document().url(), m_startLineNumber, m_element.isInUserAgentShadowTree()))
         return;
 
 #if ENABLE(NOSNIFF)
@@ -292,8 +300,8 @@ void ScriptElement::executeScript(const ScriptSourceCode& sourceCode)
 
     Ref<Document> document(m_element.document());
     if (Frame* frame = document->frame()) {
-        IgnoreDestructiveWriteCountIncrementer ignoreDesctructiveWriteCountIncrementer(m_isExternalScript ? &document.get() : 0);
-        CurrentScriptIncrementer currentScriptIncrementer(&document.get(), &m_element);
+        IgnoreDestructiveWriteCountIncrementer ignoreDesctructiveWriteCountIncrementer(m_isExternalScript ? document.ptr() : nullptr);
+        CurrentScriptIncrementer currentScriptIncrementer(document, &m_element);
 
         // Create a script from the script element node, using the script
         // block's source and the script block's type.
@@ -336,10 +344,7 @@ void ScriptElement::notifyFinished(CachedResource* resource)
     if (!m_cachedScript)
         return;
 
-    if (m_requestUsesAccessControl
-        && !m_element.document().securityOrigin()->canRequest(m_cachedScript->response().url())
-        && !m_cachedScript->passesAccessControlCheck(m_element.document().securityOrigin())) {
-
+    if (m_requestUsesAccessControl && !m_cachedScript->passesSameOriginPolicyCheck(*m_element.document().securityOrigin())) {
         dispatchErrorEvent();
         DEPRECATED_DEFINE_STATIC_LOCAL(String, consoleMessage, (ASCIILiteral("Cross-origin script load denied by Cross-Origin Resource Sharing policy.")));
         m_element.document().addConsoleMessage(MessageSource::JS, MessageLevel::Error, consoleMessage);
@@ -377,18 +382,18 @@ bool ScriptElement::isScriptForEventSupported() const
 
 String ScriptElement::scriptContent() const
 {
-    return TextNodeTraversal::contentsAsString(&m_element);
+    return TextNodeTraversal::contentsAsString(m_element);
 }
 
 ScriptElement* toScriptElementIfPossible(Element* element)
 {
-    if (isHTMLScriptElement(element))
-        return toHTMLScriptElement(element);
+    if (is<HTMLScriptElement>(*element))
+        return downcast<HTMLScriptElement>(element);
 
-    if (isSVGScriptElement(element))
-        return toSVGScriptElement(element);
+    if (is<SVGScriptElement>(*element))
+        return downcast<SVGScriptElement>(element);
 
-    return 0;
+    return nullptr;
 }
 
 }

@@ -27,23 +27,9 @@
 #include "PlatformTimeRanges.h"
 
 #include <math.h>
+#include <wtf/PrintStream.h>
 
 namespace WebCore {
-
-std::unique_ptr<PlatformTimeRanges> PlatformTimeRanges::create()
-{
-    return std::make_unique<PlatformTimeRanges>();
-}
-
-std::unique_ptr<PlatformTimeRanges> PlatformTimeRanges::create(const MediaTime& start, const MediaTime& end)
-{
-    return std::make_unique<PlatformTimeRanges>(start, end);
-}
-
-std::unique_ptr<PlatformTimeRanges> PlatformTimeRanges::create(const PlatformTimeRanges& other)
-{
-    return std::make_unique<PlatformTimeRanges>(other);
-}
     
 PlatformTimeRanges::PlatformTimeRanges(const MediaTime& start, const MediaTime& end)
 {
@@ -252,11 +238,19 @@ MediaTime PlatformTimeRanges::nearest(const MediaTime& time) const
 MediaTime PlatformTimeRanges::totalDuration() const
 {
     MediaTime total = MediaTime::zeroTime();
-    bool ignoreInvalid;
 
     for (unsigned n = 0; n < length(); n++)
-        total += abs(end(n, ignoreInvalid) - start(n, ignoreInvalid));
+        total += abs(end(n) - start(n));
     return total;
+}
+
+void PlatformTimeRanges::dump(PrintStream& out) const
+{
+    if (!length())
+        return;
+
+    for (size_t i = 0; i < length(); ++i)
+        out.print("[", start(i), "..", end(i), "] ");
 }
 
 }

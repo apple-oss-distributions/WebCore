@@ -47,10 +47,11 @@ class MediaKeys;
 
 class MediaKeySession final : public RefCounted<MediaKeySession>, public EventTargetWithInlineData, public ActiveDOMObject, public CDMSessionClient {
 public:
-    static PassRefPtr<MediaKeySession> create(ScriptExecutionContext*, MediaKeys*, const String& keySystem);
+    static Ref<MediaKeySession> create(ScriptExecutionContext*, MediaKeys*, const String& keySystem);
     ~MediaKeySession();
 
     const String& keySystem() const { return m_keySystem; }
+    CDMSession* session() { return m_session.get(); }
     const String& sessionId() const;
 
     void setError(MediaKeyError*);
@@ -65,29 +66,28 @@ public:
     bool isClosed() const { return !m_session; }
     void close();
 
+    RefPtr<ArrayBuffer> cachedKeyForKeyId(const String& keyId) const;
+
     using RefCounted<MediaKeySession>::ref;
     using RefCounted<MediaKeySession>::deref;
 
     void enqueueEvent(PassRefPtr<Event>);
 
-    // ActiveDOMObject
-    virtual bool hasPendingActivity() const override { return (m_keys && !isClosed()) || m_asyncEventQueue.hasPendingEvents(); }
-
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeyadded);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeyerror);
-    DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitkeymessage);
-
     virtual EventTargetInterface eventTargetInterface() const override { return MediaKeySessionEventTargetInterfaceType; }
     virtual ScriptExecutionContext* scriptExecutionContext() const override { return ActiveDOMObject::scriptExecutionContext(); }
 
+    // ActiveDOMObject API.
+    bool hasPendingActivity() const override;
+
 protected:
     MediaKeySession(ScriptExecutionContext*, MediaKeys*, const String& keySystem);
-    void keyRequestTimerFired(Timer<MediaKeySession>&);
-    void addKeyTimerFired(Timer<MediaKeySession>&);
+    void keyRequestTimerFired();
+    void addKeyTimerFired();
 
     // CDMSessionClient
-    virtual void sendMessage(Uint8Array*, String destinationURL);
-    virtual void sendError(MediaKeyErrorCode, unsigned long systemCode);
+    virtual void sendMessage(Uint8Array*, String destinationURL) override;
+    virtual void sendError(MediaKeyErrorCode, unsigned long systemCode) override;
+    virtual String mediaKeysStorageDirectory() const override;
 
     MediaKeys* m_keys;
     String m_keySystem;
@@ -102,14 +102,19 @@ protected:
         RefPtr<Uint8Array> initData;
     };
     Deque<PendingKeyRequest> m_pendingKeyRequests;
-    Timer<MediaKeySession> m_keyRequestTimer;
+    Timer m_keyRequestTimer;
 
     Deque<RefPtr<Uint8Array>> m_pendingKeys;
-    Timer<MediaKeySession> m_addKeyTimer;
+    Timer m_addKeyTimer;
 
 private:
     virtual void refEventTarget() override { ref(); }
     virtual void derefEventTarget() override { deref(); }
+
+    // ActiveDOMObject API.
+    void stop() override;
+    bool canSuspendForPageCache() const override;
+    const char* activeDOMObjectName() const override;
 };
 
 }

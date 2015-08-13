@@ -40,7 +40,7 @@ class Text;
 
 class EditCommandComposition : public UndoStep {
 public:
-    static PassRefPtr<EditCommandComposition> create(Document&, const VisibleSelection&, const VisibleSelection&, EditAction);
+    static Ref<EditCommandComposition> create(Document&, const VisibleSelection&, const VisibleSelection&, EditAction);
 
     virtual void unapply() override;
     virtual void reapply() override;
@@ -58,6 +58,8 @@ public:
 #ifndef NDEBUG
     virtual void getNodesInCommand(HashSet<Node*>&);
 #endif
+
+    AXTextEditType unapplyEditType() const;
 
 private:
     EditCommandComposition(Document&, const VisibleSelection& startingSelection, const VisibleSelection& endingSelection, EditAction);
@@ -89,7 +91,7 @@ public:
     virtual bool shouldStopCaretBlinking() const { return false; }
 
 protected:
-    explicit CompositeEditCommand(Document&);
+    explicit CompositeEditCommand(Document&, EditAction = EditActionUnspecified);
 
     //
     // sugary-sweet convenience functions to help create and apply edit commands in composite commands
@@ -104,9 +106,7 @@ protected:
     void deleteSelection(bool smartDelete = false, bool mergeBlocksAfterDelete = true, bool replace = false, bool expandForSpecialElements = true, bool sanitizeMarkup = true);
     void deleteSelection(const VisibleSelection&, bool smartDelete = false, bool mergeBlocksAfterDelete = true, bool replace = false, bool expandForSpecialElements = true, bool sanitizeMarkup = true);
     virtual void deleteTextFromNode(PassRefPtr<Text>, unsigned offset, unsigned count);
-#if PLATFORM(IOS)
     void inputText(const String&, bool selectInsertedText = false);
-#endif
     bool isRemovableBlock(const Node*);
     void insertNodeAfter(PassRefPtr<Node>, PassRefPtr<Node> refChild);
     void insertNodeAt(PassRefPtr<Node>, const Position&);
@@ -130,7 +130,7 @@ protected:
     void removeNodePreservingChildren(PassRefPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable);
     void removeNodeAndPruneAncestors(PassRefPtr<Node>);
     void moveRemainingSiblingsToNewParent(Node*, Node* pastLastNodeToMove, PassRefPtr<Element> prpNewParent);
-    void updatePositionForNodeRemovalPreservingChildren(Position&, Node*);
+    void updatePositionForNodeRemovalPreservingChildren(Position&, Node&);
     void prune(PassRefPtr<Node>);
     void replaceTextInNode(PassRefPtr<Text>, unsigned offset, unsigned count, const String& replacementText);
     Position replaceSelectedTextInNode(const String&);

@@ -37,15 +37,27 @@
 
 namespace WebCore {
 
+#if COMPILER(MSVC)
+AffineTransform::AffineTransform()
+{
+    m_transform = { 1, 0, 0, 1, 0, 0 };
+}
+
+AffineTransform::AffineTransform(double a, double b, double c, double d, double e, double f)
+{
+    m_transform = { a, b, c, d, e, f };
+}
+#else
 AffineTransform::AffineTransform()
     : m_transform { { 1, 0, 0, 1, 0, 0 } }
 {
 }
 
 AffineTransform::AffineTransform(double a, double b, double c, double d, double e, double f)
-    : m_transform { { a, b, c, d, e, f } }
+    : m_transform{ { a, b, c, d, e, f } }
 {
 }
+#endif
 
 void AffineTransform::makeIdentity()
 {
@@ -160,6 +172,16 @@ AffineTransform& AffineTransform::scale(double sx, double sy)
     return *this;
 }
 
+AffineTransform& AffineTransform::scaleNonUniform(double sx, double sy)
+{
+    return scale(sx, sy);
+}
+
+AffineTransform& AffineTransform::scale(const FloatSize& s)
+{
+    return scale(s.width(), s.height());
+}
+
 // *this = *this * translation
 AffineTransform& AffineTransform::translate(double tx, double ty)
 {
@@ -174,9 +196,9 @@ AffineTransform& AffineTransform::translate(double tx, double ty)
     return *this;
 }
 
-AffineTransform& AffineTransform::scaleNonUniform(double sx, double sy)
+AffineTransform& AffineTransform::translate(const FloatPoint& t)
 {
-    return scale(sx, sy);
+    return translate(t.x(), t.y());
 }
 
 AffineTransform& AffineTransform::rotateFromVector(double x, double y)

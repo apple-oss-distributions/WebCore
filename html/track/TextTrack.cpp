@@ -103,14 +103,14 @@ const AtomicString& TextTrack::showingKeyword()
 
 TextTrack* TextTrack::captionMenuOffItem()
 {
-    static TextTrack* off = TextTrack::create(0, 0, "off menu item", "", "", "").leakRef();
-    return off;
+    static TextTrack& off = TextTrack::create(0, 0, "off menu item", "", "", "").leakRef();
+    return &off;
 }
 
 TextTrack* TextTrack::captionMenuAutomaticItem()
 {
-    static TextTrack* automatic = TextTrack::create(0, 0, "automatic menu item", "", "", "").leakRef();
-    return automatic;
+    static TextTrack& automatic = TextTrack::create(0, 0, "automatic menu item", "", "", "").leakRef();
+    return &automatic;
 }
 
 TextTrack::TextTrack(ScriptExecutionContext* context, TextTrackClient* client, const AtomicString& kind, const AtomicString& id, const AtomicString& label, const AtomicString& language, TextTrackType type)
@@ -245,7 +245,7 @@ TextTrackCueList* TextTrack::cues()
     // http://www.whatwg.org/specs/web-apps/current-work/#dom-texttrack-cues
     if (m_mode != disabledKeyword())
         return ensureTextTrackCueList();
-    return 0;
+    return nullptr;
 }
 
 void TextTrack::removeAllCues()
@@ -257,9 +257,9 @@ void TextTrack::removeAllCues()
         m_client->textTrackRemoveCues(this, m_cues.get());
     
     for (size_t i = 0; i < m_cues->length(); ++i)
-        m_cues->item(i)->setTrack(0);
+        m_cues->item(i)->setTrack(nullptr);
     
-    m_cues = 0;
+    m_cues = nullptr;
 }
 
 TextTrackCueList* TextTrack::activeCues() const
@@ -272,7 +272,7 @@ TextTrackCueList* TextTrack::activeCues() const
     // http://www.whatwg.org/specs/web-apps/current-work/#dom-texttrack-activecues
     if (m_cues && m_mode != disabledKeyword())
         return m_cues->activeCues();
-    return 0;
+    return nullptr;
 }
 
 void TextTrack::addCue(PassRefPtr<TextTrackCue> prpCue, ExceptionCode& ec)
@@ -294,7 +294,7 @@ void TextTrack::addCue(PassRefPtr<TextTrackCue> prpCue, ExceptionCode& ec)
     }
 
     // TODO(93143): Add spec-compliant behavior for negative time values.
-    if (std::isnan(cue->startTime()) || std::isnan(cue->endTime()) || cue->startTime() < 0 || cue->endTime() < 0)
+    if (!cue->startMediaTime().isValid() || !cue->endMediaTime().isValid() || cue->startMediaTime() < MediaTime::zeroTime() || cue->endMediaTime() < MediaTime::zeroTime())
         return;
 
     // 4.8.10.12.5 Text track API
@@ -485,7 +485,7 @@ int TextTrack::trackIndexRelativeToRenderedTracks()
 
 bool TextTrack::hasCue(TextTrackCue* cue, TextTrackCue::CueMatchRules match)
 {
-    if (cue->startTime() < 0 || cue->endTime() < 0)
+    if (cue->startMediaTime() < MediaTime::zeroTime() || cue->endMediaTime() < MediaTime::zeroTime())
         return false;
     
     if (!m_cues || !m_cues->length())
@@ -522,7 +522,7 @@ bool TextTrack::hasCue(TextTrackCue* cue, TextTrackCue::CueMatchRules match)
                 if (!existingCue)
                     return false;
 
-                if (cue->startTime() > (existingCue->startTime() + startTimeVariance()))
+                if (cue->startMediaTime() > (existingCue->startMediaTime() + startTimeVariance()))
                     return false;
 
                 if (existingCue->isEqual(*cue, match))
@@ -532,7 +532,7 @@ bool TextTrack::hasCue(TextTrackCue* cue, TextTrackCue::CueMatchRules match)
         
         size_t index = (searchStart + searchEnd) / 2;
         existingCue = m_cues->item(index);
-        if ((cue->startTime() + startTimeVariance()) < existingCue->startTime() || (match != TextTrackCue::IgnoreDuration && cue->hasEquivalentStartTime(*existingCue) && cue->endTime() > existingCue->endTime()))
+        if ((cue->startMediaTime() + startTimeVariance()) < existingCue->startMediaTime() || (match != TextTrackCue::IgnoreDuration && cue->hasEquivalentStartTime(*existingCue) && cue->endMediaTime() > existingCue->endMediaTime()))
             searchEnd = index;
         else
             searchStart = index + 1;

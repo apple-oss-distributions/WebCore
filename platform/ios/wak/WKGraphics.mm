@@ -28,8 +28,9 @@
 
 #if PLATFORM(IOS)
 
+#import "CoreGraphicsSPI.h"
+#import "FontCascade.h"
 #import "WebCoreSystemInterface.h"
-#import "Font.h"
 #import "WebCoreThread.h"
 #import <ImageIO/ImageIO.h>
 #import <wtf/StdLibExtras.h>
@@ -70,11 +71,12 @@ void WKRectFill(CGContextRef context, CGRect aRect)
     }
 }
 
-void WKRectFillUsingOperation(CGContextRef context, CGRect aRect, CGCompositeOperation op)
+void WKRectFillUsingOperation(CGContextRef context, CGRect aRect, WKCompositeOperation compositeOperation)
 {
+    COMPILE_ASSERT(sizeof(WKCompositeOperation) == sizeof(CGCompositeOperation), "WKCompositeOperation must be the same size as CGCompositeOperation.");
     if (aRect.size.width > 0 && aRect.size.height > 0.0) {
         CGContextSaveGState(context);
-        _FillRectUsingOperation(context, aRect, op);
+        _FillRectUsingOperation(context, aRect, static_cast<CGCompositeOperation>(compositeOperation));
         CGContextRestoreGState(context);
     }
 }
@@ -168,26 +170,6 @@ void WKSetPattern(CGContextRef context, CGPatternRef pattern, bool fill, bool st
         CGContextSetStrokePattern(context, pattern, &patternAlpha);
     }
     CGColorSpaceRelease(colorspace);
-}
-
-void WKFontAntialiasingStateSaver::setup(bool isLandscapeOrientation)
-{
-#if !PLATFORM(IOS_SIMULATOR)
-    m_oldAntialiasingStyle = CGContextGetFontAntialiasingStyle(m_context);
-
-    if (m_useOrientationDependentFontAntialiasing)
-        CGContextSetFontAntialiasingStyle(m_context, isLandscapeOrientation ? kCGFontAntialiasingStyleFilterLight : kCGFontAntialiasingStyleUnfiltered);
-#else
-    UNUSED_PARAM(isLandscapeOrientation);
-#endif
-}
-
-void WKFontAntialiasingStateSaver::restore()
-{
-#if !PLATFORM(IOS_SIMULATOR)
-    if (m_useOrientationDependentFontAntialiasing)
-        CGContextSetFontAntialiasingStyle(m_context, m_oldAntialiasingStyle);
-#endif
 }
 
 #endif // PLATFORM(IOS)

@@ -37,9 +37,9 @@
 
 using namespace WebCore;
 
-PassRefPtr<MediaController> MediaController::create(ScriptExecutionContext& context)
+Ref<MediaController> MediaController::create(ScriptExecutionContext& context)
 {
-    return adoptRef(new MediaController(context));
+    return adoptRef(*new MediaController(context));
 }
 
 MediaController::MediaController(ScriptExecutionContext& context)
@@ -50,12 +50,12 @@ MediaController::MediaController(ScriptExecutionContext& context)
     , m_muted(false)
     , m_readyState(HAVE_NOTHING)
     , m_playbackState(WAITING)
-    , m_asyncEventTimer(this, &MediaController::asyncEventTimerFired)
-    , m_clearPositionTimer(this, &MediaController::clearPositionTimerFired)
+    , m_asyncEventTimer(*this, &MediaController::asyncEventTimerFired)
+    , m_clearPositionTimer(*this, &MediaController::clearPositionTimerFired)
     , m_closedCaptionsVisible(false)
     , m_clock(Clock::create())
     , m_scriptExecutionContext(context)
-    , m_timeupdateTimer(this, &MediaController::timeupdateTimerFired)
+    , m_timeupdateTimer(*this, &MediaController::timeupdateTimerFired)
     , m_previousTimeupdateTime(0)
 {
 }
@@ -171,7 +171,7 @@ void MediaController::setCurrentTime(double time)
     
     // Seek each slaved media element to the new playback position relative to the media element timeline.
     for (size_t index = 0; index < m_mediaElements.size(); ++index)
-        m_mediaElements[index]->seek(time);
+        m_mediaElements[index]->seek(MediaTime::createWithDouble(time));
 
     scheduleTimeupdateEvent();
 }
@@ -479,7 +479,7 @@ void MediaController::bringElementUpToSpeed(HTMLMediaElement* element)
     // When the user agent is to bring a media element up to speed with its new media controller,
     // it must seek that media element to the MediaController's media controller position relative
     // to the media element's timeline.
-    element->seekInternal(currentTime());
+    element->seekInternal(MediaTime::createWithDouble(currentTime()));
 }
 
 bool MediaController::isBlocked() const
@@ -538,7 +538,7 @@ void MediaController::scheduleEvent(const AtomicString& eventName)
         m_asyncEventTimer.startOneShot(0);
 }
 
-void MediaController::asyncEventTimerFired(Timer<MediaController>&)
+void MediaController::asyncEventTimerFired()
 {
     Vector<RefPtr<Event>> pendingEvents;
 
@@ -548,7 +548,7 @@ void MediaController::asyncEventTimerFired(Timer<MediaController>&)
         dispatchEvent(pendingEvents[index].release(), IGNORE_EXCEPTION);
 }
 
-void MediaController::clearPositionTimerFired(Timer<MediaController>&)
+void MediaController::clearPositionTimerFired()
 {
     m_position = MediaPlayer::invalidTime();
 }
@@ -672,7 +672,7 @@ void MediaController::startTimeupdateTimer()
     m_timeupdateTimer.startRepeating(maxTimeupdateEventFrequency);
 }
 
-void MediaController::timeupdateTimerFired(Timer<MediaController>&)
+void MediaController::timeupdateTimerFired()
 {
     scheduleTimeupdateEvent();
 }

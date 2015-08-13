@@ -29,6 +29,7 @@
 #if USE(REQUEST_ANIMATION_FRAME_DISPLAY_MONITOR)
 
 #include "PlatformScreen.h"
+#include <wtf/Optional.h>
 
 namespace WebCore {
 
@@ -43,7 +44,7 @@ public:
     // Always called on the main thread.
     virtual void displayRefreshFired(double timestamp) = 0;
 
-    virtual PassRefPtr<DisplayRefreshMonitor> createDisplayRefreshMonitor(PlatformDisplayID) const = 0;
+    virtual RefPtr<DisplayRefreshMonitor> createDisplayRefreshMonitor(PlatformDisplayID) const = 0;
 
     PlatformDisplayID displayID() const { return m_displayID; }
     bool hasDisplayID() const { return m_displayIDIsSet; }

@@ -36,6 +36,7 @@
 
 #include "WebVTTParser.h"
 
+#include "HTMLParserIdioms.h"
 #include "ISOVTTCue.h"
 #include "ProcessingInstruction.h"
 #include "Text.h"
@@ -89,8 +90,6 @@ WebVTTParser::WebVTTParser(WebVTTParserClient* client, ScriptExecutionContext* c
     : m_scriptExecutionContext(context)
     , m_state(Initial)
     , m_decoder(TextResourceDecoder::create("text/plain", UTF8Encoding()))
-    , m_currentStartTime(0)
-    , m_currentEndTime(0)
     , m_client(client)
 {
 }
@@ -128,15 +127,15 @@ void WebVTTParser::parseCueData(const ISOWebVTTCue& data)
 {
     RefPtr<WebVTTCueData> cue = WebVTTCueData::create();
 
-    double startTime = data.presentationTime().toDouble();
+    MediaTime startTime = data.presentationTime();
     cue->setStartTime(startTime);
-    cue->setEndTime(startTime + data.duration().toDouble());
+    cue->setEndTime(startTime + data.duration());
 
     cue->setContent(data.cueText());
     cue->setId(data.id());
     cue->setSettings(data.settings());
 
-    double originalStartTime;
+    MediaTime originalStartTime;
     if (WebVTTParser::collectTimeStamp(data.originalStartTime(), originalStartTime))
         cue->setOriginalStartTime(originalStartTime);
 
@@ -260,7 +259,7 @@ bool WebVTTParser::hasRequiredFileIdentifier(const String& line)
     if (!line.startsWith(fileIdentifier, fileIdentifierLength))
         return false;
 
-    if (line.length() > fileIdentifierLength && !isASpace(line[fileIdentifierLength]))
+    if (line.length() > fileIdentifierLength && !isHTMLSpace(line[fileIdentifierLength]))
         return false;
     return true;
 }
@@ -308,25 +307,25 @@ WebVTTParser::ParseState WebVTTParser::collectTimingsAndSettings(const String& l
 
     // Collect WebVTT cue timings and settings. (5.3 WebVTT cue timings and settings parsing.)
     // Steps 1 - 3 - Let input be the string being parsed and position be a pointer into input
-    input.skipWhile<isASpace>();
+    input.skipWhile<isHTMLSpace<UChar>>();
 
     // Steps 4 - 5 - Collect a WebVTT timestamp. If that fails, then abort and return failure. Otherwise, let cue's text track cue start time be the collected time.
     if (!collectTimeStamp(input, m_currentStartTime))
         return BadCue;
     
-    input.skipWhile<isASpace>();
+    input.skipWhile<isHTMLSpace<UChar>>();
 
     // Steps 6 - 9 - If the next three characters are not "-->", abort and return failure.
     if (!input.scan("-->"))
         return BadCue;
     
-    input.skipWhile<isASpace>();
+    input.skipWhile<isHTMLSpace<UChar>>();
 
     // Steps 10 - 11 - Collect a WebVTT timestamp. If that fails, then abort and return failure. Otherwise, let cue's text track cue end time be the collected time.
     if (!collectTimeStamp(input, m_currentEndTime))
         return BadCue;
 
-    input.skipWhile<isASpace>();
+    input.skipWhile<isHTMLSpace<UChar>>();
 
     // Step 12 - Parse the WebVTT settings for the cue (conducted in TextTrackCue).
     m_currentSettings = input.restOfInputAsString();
@@ -349,7 +348,7 @@ WebVTTParser::ParseState WebVTTParser::collectCueText(const String& line)
         return recoverCue(line);
     }
     if (!m_currentContent.isEmpty())
-        m_currentContent.append("\n");
+        m_currentContent.append('\n');
     m_currentContent.append(line);
 
     return CueText;
@@ -437,8 +436,8 @@ void WebVTTParser::resetCueValues()
 {
     m_currentId = emptyString();
     m_currentSettings = emptyString();
-    m_currentStartTime = 0;
-    m_currentEndTime = 0;
+    m_currentStartTime = MediaTime::zeroTime();
+    m_currentEndTime = MediaTime::zeroTime();
     m_currentContent.clear();
 }
 
@@ -465,7 +464,7 @@ void WebVTTParser::createNewRegion(const String& headerValue)
 }
 #endif
 
-bool WebVTTParser::collectTimeStamp(const String& line, double& timeStamp)
+bool WebVTTParser::collectTimeStamp(const String& line, MediaTime& timeStamp)
 {
     if (line.isEmpty())
         return false;
@@ -474,7 +473,7 @@ bool WebVTTParser::collectTimeStamp(const String& line, double& timeStamp)
     return collectTimeStamp(input, timeStamp);
 }
 
-bool WebVTTParser::collectTimeStamp(VTTScanner& input, double& timeStamp)
+bool WebVTTParser::collectTimeStamp(VTTScanner& input, MediaTime& timeStamp)
 {
     // Collect a WebVTT timestamp (5.3 WebVTT cue timings and settings parsing.)
     // Steps 1 - 4 - Initial checks, let most significant units be minutes.
@@ -514,7 +513,7 @@ bool WebVTTParser::collectTimeStamp(VTTScanner& input, double& timeStamp)
         return false;
 
     // Steps 18 - 19 - Calculate result.
-    timeStamp = (value1 * secondsPerHour) + (value2 * secondsPerMinute) + value3 + (value4 * secondsPerMillisecond);
+    timeStamp = MediaTime::createWithDouble((value1 * secondsPerHour) + (value2 * secondsPerMinute) + value3 + (value4 * secondsPerMillisecond));
     return true;
 }
 
@@ -562,7 +561,7 @@ void WebVTTTreeBuilder::constructTreeFromToken(Document& document)
         if (nodeType == WebVTTNodeTypeNone)
             break;
 
-        WebVTTNodeType currentType = m_currentNode->isWebVTTElement() ? toWebVTTElement(m_currentNode.get())->webVTTNodeType() : WebVTTNodeTypeNone;
+        WebVTTNodeType currentType = is<WebVTTElement>(*m_currentNode) ? downcast<WebVTTElement>(*m_currentNode).webVTTNodeType() : WebVTTNodeTypeNone;
         // <rt> is only allowed if the current node is <ruby>.
         if (nodeType == WebVTTNodeTypeRubyText && currentType != WebVTTNodeTypeRuby)
             break;
@@ -590,10 +589,10 @@ void WebVTTTreeBuilder::constructTreeFromToken(Document& document)
         
         // The only non-VTTElement would be the DocumentFragment root. (Text
         // nodes and PIs will never appear as m_currentNode.)
-        if (!m_currentNode->isWebVTTElement())
+        if (!is<WebVTTElement>(*m_currentNode))
             break;
 
-        WebVTTNodeType currentType = toWebVTTElement(m_currentNode.get())->webVTTNodeType();
+        WebVTTNodeType currentType = downcast<WebVTTElement>(*m_currentNode).webVTTNodeType();
         bool matchesCurrent = nodeType == currentType;
         if (!matchesCurrent) {
             // </ruby> auto-closes <rt>
@@ -611,7 +610,7 @@ void WebVTTTreeBuilder::constructTreeFromToken(Document& document)
     }
     case WebVTTTokenTypes::TimestampTag: {
         String charactersString = m_token.characters();
-        double parsedTimeStamp;
+        MediaTime parsedTimeStamp;
         if (WebVTTParser::collectTimeStamp(charactersString, parsedTimeStamp))
             m_currentNode->parserAppendChild(ProcessingInstruction::create(document, "timestamp", charactersString));
         break;

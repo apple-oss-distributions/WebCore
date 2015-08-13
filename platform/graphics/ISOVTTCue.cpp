@@ -30,6 +30,8 @@
 #include <runtime/ArrayBuffer.h>
 #include <runtime/DataView.h>
 #include <runtime/Int8Array.h>
+#include <runtime/JSCInlines.h>
+#include <runtime/TypedArrayInlines.h>
 #include <wtf/NeverDestroyed.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/StringBuilder.h>
@@ -75,7 +77,7 @@ String ISOBox::peekString(ArrayBuffer* data, unsigned offset, unsigned length)
     if (data->byteLength() < offset + length)
         return emptyString();
 
-    return String(JSC::Uint8Array::create(data, offset, length)->data(), length);
+    return String::fromUTF8(JSC::Uint8Array::create(data, offset, length)->data(), length);
 }
 
 static const AtomicString& vttCueBoxType()
@@ -134,7 +136,7 @@ ISOWebVTTCue::ISOWebVTTCue(const MediaTime& presentationTime, const MediaTime& d
         if (boxType == vttCueSourceIDBoxType())
             m_sourceID = peekString(subBuffer.get(), ISOBox::boxHeaderSize(), boxDataSize);
         else if (boxType == vttIdBoxType())
-            m_identifer = peekString(subBuffer.get(), ISOBox::boxHeaderSize(), boxDataSize);
+            m_identifier = peekString(subBuffer.get(), ISOBox::boxHeaderSize(), boxDataSize);
         else if (boxType == vttCurrentTimeBoxType())
             m_originalStartTime = peekString(subBuffer.get(), ISOBox::boxHeaderSize(), boxDataSize);
         else if (boxType == vttSettingsBoxType())

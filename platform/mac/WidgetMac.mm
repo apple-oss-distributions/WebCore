@@ -31,13 +31,13 @@
 #import "Chrome.h"
 #import "Cursor.h"
 #import "Document.h"
-#import "Font.h"
+#import "FontCascade.h"
 #import "Frame.h"
+#import "FrameView.h"
 #import "GraphicsContext.h"
 #import "Page.h"
 #import "PlatformMouseEvent.h"
 #import "RuntimeApplicationChecks.h"
-#import "ScrollView.h"
 #import "WebCoreFrameView.h"
 #import "WebCoreView.h"
 #import <wtf/Ref.h>
@@ -106,7 +106,7 @@ void Widget::setFocus(bool focused)
 
 void Widget::setCursor(const Cursor& cursor)
 {
-    ScrollView* view = root();
+    FrameView* view = root();
     if (!view)
         return;
     view->hostWindow()->setCursor(cursor);
@@ -159,7 +159,7 @@ void Widget::setFrameRect(const IntRect& rect)
         return;
 
     // Take a reference to this Widget, because sending messages to outerView can invoke arbitrary
-    // code, which can deref it.
+    // code including recalc style/layout, which can deref it.
     Ref<Widget> protect(*this);
 
     NSRect frame = rect;

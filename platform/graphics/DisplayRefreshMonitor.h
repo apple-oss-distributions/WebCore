@@ -41,8 +41,8 @@ class DisplayRefreshMonitorClient;
 
 class DisplayRefreshMonitor : public RefCounted<DisplayRefreshMonitor> {
 public:
-    static PassRefPtr<DisplayRefreshMonitor> create(DisplayRefreshMonitorClient*);
-    virtual ~DisplayRefreshMonitor();
+    static RefPtr<DisplayRefreshMonitor> create(DisplayRefreshMonitorClient&);
+    WEBCORE_EXPORT virtual ~DisplayRefreshMonitor();
     
     // Return true if callback request was scheduled, false if it couldn't be
     // (e.g., hardware refresh is not available)
@@ -50,8 +50,8 @@ public:
     void windowScreenDidChange(PlatformDisplayID);
     
     bool hasClients() const { return m_clients.size(); }
-    void addClient(DisplayRefreshMonitorClient*);
-    bool removeClient(DisplayRefreshMonitorClient*);
+    void addClient(DisplayRefreshMonitorClient&);
+    bool removeClient(DisplayRefreshMonitorClient&);
     
     PlatformDisplayID displayID() const { return m_displayID; }
 
@@ -74,9 +74,11 @@ public:
 
     Mutex& mutex() { return m_mutex; }
 
+    static RefPtr<DisplayRefreshMonitor> createDefaultDisplayRefreshMonitor(PlatformDisplayID);
+
 protected:
-    explicit DisplayRefreshMonitor(PlatformDisplayID);
-    static void handleDisplayRefreshedNotificationOnMainThread(void* data);
+    WEBCORE_EXPORT explicit DisplayRefreshMonitor(PlatformDisplayID);
+    WEBCORE_EXPORT static void handleDisplayRefreshedNotificationOnMainThread(void* data);
 
 private:
     void displayDidRefresh();

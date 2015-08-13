@@ -46,11 +46,11 @@ class HTMLDivElement;
 class VTTCueBox;
 class VTTScanner;
 
-class VTTRegion : public RefCounted<VTTRegion>, public ContextDestructionObserver {
+class VTTRegion final : public RefCounted<VTTRegion>, public ContextDestructionObserver {
 public:
-    static PassRefPtr<VTTRegion> create(ScriptExecutionContext& context)
+    static Ref<VTTRegion> create(ScriptExecutionContext& context)
     {
-        return adoptRef(new VTTRegion(context));
+        return adoptRef(*new VTTRegion(context));
     }
 
     virtual ~VTTRegion();
@@ -98,14 +98,14 @@ public:
 private:
     VTTRegion(ScriptExecutionContext&);
 
-    Document* ownerDocument() { return toDocument(m_scriptExecutionContext); }
+    Document* ownerDocument() { return downcast<Document>(m_scriptExecutionContext); }
 
     void prepareRegionDisplayTree();
 
     // The timer is needed to continue processing when cue scrolling ended.
     void startTimer();
     void stopTimer();
-    void scrollTimerFired(Timer<VTTRegion>*);
+    void scrollTimerFired();
 
     enum RegionSetting {
         None,
@@ -155,7 +155,7 @@ private:
     // soon as the animation for rolling out one line has finished, but
     // currently it is used also for non-scrolling regions to use a single
     // code path.
-    Timer<VTTRegion> m_scrollTimer;
+    Timer m_scrollTimer;
 };
 
 } // namespace WebCore

@@ -41,6 +41,8 @@ class WebCoreAVCFResourceLoader;
 
 class MediaPlayerPrivateAVFoundationCF : public MediaPlayerPrivateAVFoundation {
 public:
+    // Engine support
+    explicit MediaPlayerPrivateAVFoundationCF(MediaPlayer*);
     virtual ~MediaPlayerPrivateAVFoundationCF();
 
     virtual void tracksChanged() override;
@@ -49,21 +51,18 @@ public:
     bool shouldWaitForLoadingOfResource(AVCFAssetResourceLoadingRequestRef);
     void didCancelLoadingRequest(AVCFAssetResourceLoadingRequestRef);
     void didStopLoadingRequest(AVCFAssetResourceLoadingRequestRef);
-#endif
 
 #if ENABLE(ENCRYPTED_MEDIA_V2)
     RetainPtr<AVCFAssetResourceLoadingRequestRef> takeRequestForKeyURI(const String&);
+#endif
 #endif
 
     static void registerMediaEngine(MediaEngineRegistrar);
 
 private:
-    MediaPlayerPrivateAVFoundationCF(MediaPlayer*);
-
-    // Engine support
-    static PassOwnPtr<MediaPlayerPrivateInterface> create(MediaPlayer*);
     static void getSupportedTypes(HashSet<String>& types);
     static MediaPlayer::SupportsType supportsType(const MediaEngineSupportParameters&);
+    static bool supportsKeySystem(const String& keySystem, const String& mimeType);
     static bool isAvailable();
 
     virtual void cancelLoad();
@@ -73,14 +72,14 @@ private:
     virtual void platformSetVisible(bool);
     virtual void platformPlay();
     virtual void platformPause();
-    virtual float currentTime() const;
+    virtual MediaTime currentMediaTime() const override;
     virtual void setVolume(float);
     virtual void setClosedCaptionsVisible(bool);
-    virtual void paint(GraphicsContext*, const IntRect&);
-    virtual void paintCurrentFrameInContext(GraphicsContext*, const IntRect&);
+    virtual void paint(GraphicsContext*, const FloatRect&);
+    virtual void paintCurrentFrameInContext(GraphicsContext*, const FloatRect&);
     virtual PlatformLayer* platformLayer() const;
     virtual bool supportsAcceleratedRendering() const { return true; }
-    virtual float mediaTimeForTimeValue(float) const;
+    virtual MediaTime mediaTimeForTimeValue(const MediaTime&) const;
 
     virtual void createAVPlayer();
     virtual void createAVPlayerItem();
@@ -89,15 +88,15 @@ private:
     virtual MediaPlayerPrivateAVFoundation::AssetStatus assetStatus() const;
 
     virtual void checkPlayability();
-    virtual void updateRate();
-    virtual float rate() const;
-    virtual void seekToTime(double time, double negativeTolerance, double positiveTolerance);
+    virtual void setRate(float) override;
+    virtual double rate() const override;
+    virtual void seekToTime(const MediaTime&, const MediaTime& negativeTolerance, const MediaTime& positiveTolerance);
     virtual unsigned long long totalBytes() const;
     virtual std::unique_ptr<PlatformTimeRanges> platformBufferedTimeRanges() const;
-    virtual double platformMinTimeSeekable() const;
-    virtual double platformMaxTimeSeekable() const;
-    virtual float platformDuration() const;
-    virtual float platformMaxTimeLoaded() const;
+    virtual MediaTime platformMinTimeSeekable() const;
+    virtual MediaTime platformMaxTimeSeekable() const;
+    virtual MediaTime platformDuration() const;
+    virtual MediaTime platformMaxTimeLoaded() const;
     virtual void beginLoadingMetadata();
     virtual void sizeChanged();
     virtual bool requiresImmediateCompositing() const override;
@@ -129,6 +128,8 @@ private:
 
     virtual void setCurrentTextTrack(InbandTextTrackPrivateAVF*) override;
     virtual InbandTextTrackPrivateAVF* currentTextTrack() const override;
+
+    virtual long assetErrorCode() const override final;
 
 #if !HAVE(AVFOUNDATION_LEGIBLE_OUTPUT_SUPPORT)
     void processLegacyClosedCaptionsTracks();

@@ -33,7 +33,6 @@
 #include "Timer.h"
 #include "WebVTTParser.h"
 #include <memory>
-#include <wtf/OwnPtr.h>
 
 namespace WebCore {
 
@@ -60,7 +59,7 @@ public:
     TextTrackLoader(TextTrackLoaderClient&, ScriptExecutionContext*);
     virtual ~TextTrackLoader();
     
-    bool load(const URL&, const String& crossOriginMode);
+    bool load(const URL&, const String& crossOriginMode, bool isInitiatingElementInUserAgentShadowTree);
     void cancelLoad();
     void getNewCues(Vector<RefPtr<TextTrackCue>>& outputCues);
 #if ENABLE(WEBVTT_REGIONS)
@@ -80,7 +79,7 @@ private:
     virtual void fileFailedToParse() override;
     
     void processNewCueData(CachedResource*);
-    void cueLoadTimerFired(Timer<TextTrackLoader>*);
+    void cueLoadTimerFired();
     void corsPolicyPreventedLoad();
 
     enum State { Idle, Loading, Finished, Failed };
@@ -89,7 +88,7 @@ private:
     std::unique_ptr<WebVTTParser> m_cueParser;
     CachedResourceHandle<CachedTextTrack> m_resource;
     ScriptExecutionContext* m_scriptExecutionContext;
-    Timer<TextTrackLoader> m_cueLoadTimer;
+    Timer m_cueLoadTimer;
     String m_crossOriginMode;
     State m_state;
     unsigned m_parseOffset;

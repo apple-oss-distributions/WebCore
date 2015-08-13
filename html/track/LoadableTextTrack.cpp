@@ -43,7 +43,7 @@ namespace WebCore {
 LoadableTextTrack::LoadableTextTrack(HTMLTrackElement* track, const String& kind, const String& label, const String& language)
     : TextTrack(&track->document(), track, kind, emptyString(), label, language, TrackElement)
     , m_trackElement(track)
-    , m_loadTimer(this, &LoadableTextTrack::loadTimerFired)
+    , m_loadTimer(*this, &LoadableTextTrack::loadTimerFired)
     , m_isDefault(false)
 {
 }
@@ -85,7 +85,7 @@ void LoadableTextTrack::setTrackElement(HTMLTrackElement* element)
     m_trackElement = element;
 }
 
-void LoadableTextTrack::loadTimerFired(Timer<LoadableTextTrack>&)
+void LoadableTextTrack::loadTimerFired()
 {
     if (m_loader)
         m_loader->cancelLoad();
@@ -99,7 +99,7 @@ void LoadableTextTrack::loadTimerFired(Timer<LoadableTextTrack>&)
     // mode being the state of the media element's crossorigin content attribute, the origin being the
     // origin of the media element's Document, and the default origin behaviour set to fail.
     m_loader = std::make_unique<TextTrackLoader>(static_cast<TextTrackLoaderClient&>(*this), static_cast<ScriptExecutionContext*>(&m_trackElement->document()));
-    if (!m_loader->load(m_url, m_trackElement->mediaElementCrossOriginAttribute()))
+    if (!m_loader->load(m_url, m_trackElement->mediaElementCrossOriginAttribute(), m_trackElement->isInUserAgentShadowTree()))
         m_trackElement->didCompleteLoad(HTMLTrackElement::Failure);
 }
 

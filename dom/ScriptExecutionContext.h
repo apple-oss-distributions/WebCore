@@ -29,6 +29,9 @@
 #define ScriptExecutionContext_h
 
 #include "ActiveDOMObject.h"
+#include "DOMTimer.h"
+#include "ResourceRequest.h"
+#include "ScheduledAction.h"
 #include "SecurityContext.h"
 #include "Supplementable.h"
 #include <runtime/ConsoleTypes.h>
@@ -47,11 +50,11 @@ namespace WebCore {
 
 class CachedScript;
 class DatabaseContext;
-class DOMTimer;
 class EventQueue;
 class EventTarget;
 class MessagePort;
 class PublicURLManager;
+class SecurityOrigin;
 class URL;
 
 class ScriptExecutionContext : public SecurityContext, public Supplementable<ScriptExecutionContext> {
@@ -73,7 +76,7 @@ public:
     virtual void disableEval(const String& errorMessage) = 0;
 
     bool sanitizeScriptError(String& errorMessage, int& lineNumber, int& columnNumber, String& sourceURL, CachedScript* = nullptr);
-    void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, PassRefPtr<Inspector::ScriptCallStack>, CachedScript* = nullptr);
+    void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, RefPtr<Inspector::ScriptCallStack>&&, CachedScript* = nullptr);
 
     void addConsoleMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, unsigned columnNumber, JSC::ExecState* = nullptr, unsigned long requestIdentifier = 0);
     virtual void addConsoleMessage(MessageSource, MessageLevel, const String& message, unsigned long requestIdentifier = 0) = 0;
@@ -83,8 +86,9 @@ public:
     PublicURLManager& publicURLManager();
 
     // Active objects are not garbage collected even if inaccessible, e.g. because their activity may result in callbacks being invoked.
-    bool canSuspendActiveDOMObjects();
-    // Active objects can be asked to suspend even if canSuspendActiveDOMObjects() returns 'false' -
+    WEBCORE_EXPORT bool canSuspendActiveDOMObjectsForPageCache(Vector<ActiveDOMObject*>* unsuspendableObjects = nullptr);
+
+    // Active objects can be asked to suspend even if canSuspendActiveDOMObjectsForPageCache() returns 'false' -
     // step-by-step JS debugging is one example.
     virtual void suspendActiveDOMObjects(ActiveDOMObject::ReasonForSuspension);
     virtual void resumeActiveDOMObjects(ActiveDOMObject::ReasonForSuspension);
@@ -109,6 +113,8 @@ public:
     void createdMessagePort(MessagePort&);
     void destroyedMessagePort(MessagePort&);
 
+    virtual void didLoadResourceSynchronously(const ResourceRequest&);
+
     void ref() { refScriptExecutionContext(); }
     void deref() { derefScriptExecutionContext(); }
 
@@ -120,6 +126,12 @@ public:
         template<typename T, typename = typename std::enable_if<!std::is_base_of<Task, T>::value && std::is_convertible<T, std::function<void (ScriptExecutionContext&)>>::value>::type>
         Task(T task)
             : m_task(WTF::move(task))
+            , m_isCleanupTask(false)
+        {
+        }
+
+        Task(std::function<void()> task)
+            : m_task([task](ScriptExecutionContext&) { task(); })
             , m_isCleanupTask(false)
         {
         }
@@ -150,36 +162,37 @@ public:
     // Gets the next id in a circular sequence from 1 to 2^31-1.
     int circularSequentialID();
 
-    bool addTimeout(int timeoutId, DOMTimer* timer) { return m_timeouts.add(timeoutId, timer).isNewEntry; }
+    bool addTimeout(int timeoutId, PassRefPtr<DOMTimer> timer) { return m_timeouts.add(timeoutId, timer).isNewEntry; }
     void removeTimeout(int timeoutId) { m_timeouts.remove(timeoutId); }
     DOMTimer* findTimeout(int timeoutId) { return m_timeouts.get(timeoutId); }
 
-    JSC::VM& vm();
+    WEBCORE_EXPORT JSC::VM& vm();
 
     // Interval is in seconds.
     void adjustMinimumTimerInterval(double oldMinimumTimerInterval);
     virtual double minimumTimerInterval() const;
 
     void didChangeTimerAlignmentInterval();
-    virtual double timerAlignmentInterval() const;
+    virtual double timerAlignmentInterval(bool hasReachedMaxNestingLevel) const;
 
     virtual EventQueue& eventQueue() const = 0;
 
-#if ENABLE(SQL_DATABASE)
     void setDatabaseContext(DatabaseContext*);
-#endif
 
 #if ENABLE(SUBTLE_CRYPTO)
     virtual bool wrapCryptoKey(const Vector<uint8_t>& key, Vector<uint8_t>& wrappedKey) = 0;
     virtual bool unwrapCryptoKey(const Vector<uint8_t>& wrappedKey, Vector<uint8_t>& key) = 0;
 #endif
 
+    int timerNestingLevel() const { return m_timerNestingLevel; }
+    void setTimerNestingLevel(int timerNestingLevel) { m_timerNestingLevel = timerNestingLevel; }
+
 protected:
     class AddConsoleMessageTask : public Task {
     public:
-        AddConsoleMessageTask(MessageSource source, MessageLevel level, const String& message)
-            : Task([=] (ScriptExecutionContext& context) {
-                context.addConsoleMessage(source, level, message);
+        AddConsoleMessageTask(MessageSource source, MessageLevel level, const StringCapture& message)
+            : Task([source, level, message](ScriptExecutionContext& context) {
+                context.addConsoleMessage(source, level, message.string());
             })
         {
         }
@@ -190,9 +203,9 @@ protected:
     bool hasPendingActivity() const;
 
 private:
-    virtual void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, unsigned columnNumber, PassRefPtr<Inspector::ScriptCallStack>, JSC::ExecState* = nullptr, unsigned long requestIdentifier = 0) = 0;
+    virtual void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, unsigned columnNumber, RefPtr<Inspector::ScriptCallStack>&&, JSC::ExecState* = nullptr, unsigned long requestIdentifier = 0) = 0;
     virtual EventTarget* errorEventTarget() = 0;
-    virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtr<Inspector::ScriptCallStack>) = 0;
+    virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, RefPtr<Inspector::ScriptCallStack>&&) = 0;
     bool dispatchErrorEvent(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, CachedScript*);
 
     virtual void refScriptExecutionContext() = 0;
@@ -205,7 +218,7 @@ private:
     HashSet<ActiveDOMObject*> m_activeDOMObjects;
 
     int m_circularSequentialID;
-    HashMap<int, DOMTimer*> m_timeouts;
+    HashMap<int, RefPtr<DOMTimer>> m_timeouts;
 
     bool m_inDispatchErrorEvent;
     class PendingException;
@@ -217,20 +230,18 @@ private:
 
     std::unique_ptr<PublicURLManager> m_publicURLManager;
 
-#if ENABLE(SQL_DATABASE)
     RefPtr<DatabaseContext> m_databaseContext;
-#endif
 
     bool m_activeDOMObjectAdditionForbidden;
+    int m_timerNestingLevel;
 
 #if !ASSERT_DISABLED
     bool m_inScriptExecutionContextDestructor;
+#endif
+#if !ASSERT_DISABLED || ENABLE(SECURITY_ASSERTIONS)
     bool m_activeDOMObjectRemovalForbidden;
 #endif
 };
-
-#define SCRIPT_EXECUTION_CONTEXT_TYPE_CASTS(ToValueTypeName) \
-    TYPE_CASTS_BASE(ToValueTypeName, ScriptExecutionContext, context, context->is##ToValueTypeName(), context.is##ToValueTypeName())
 
 } // namespace WebCore
 

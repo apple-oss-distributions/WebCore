@@ -73,12 +73,12 @@ private:
     void updateState();
 
 #if PLATFORM(MAC)
-    void networkStateChangeTimerFired(Timer<NetworkStateNotifier>&);
+    void networkStateChangeTimerFired();
 
     static void dynamicStoreCallback(SCDynamicStoreRef, CFArrayRef changedKeys, void *info); 
 
     RetainPtr<SCDynamicStoreRef> m_store;
-    Timer<NetworkStateNotifier> m_networkStateChangeTimer;
+    Timer m_networkStateChangeTimer;
 
 #elif PLATFORM(WIN)
     static void CALLBACK addrChangeCallback(void*, BOOLEAN timedOut);
@@ -124,7 +124,7 @@ inline bool NetworkStateNotifier::onLine() const
 }
 #endif
 
-NetworkStateNotifier& networkStateNotifier();
+WEBCORE_EXPORT NetworkStateNotifier& networkStateNotifier();
 
 } // namespace WebCore
 

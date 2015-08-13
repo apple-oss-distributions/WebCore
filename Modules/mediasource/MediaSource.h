@@ -58,7 +58,7 @@ public:
     static const AtomicString& closedKeyword();
     static const AtomicString& endedKeyword();
 
-    static PassRefPtr<MediaSource> create(ScriptExecutionContext&);
+    static Ref<MediaSource> create(ScriptExecutionContext&);
     virtual ~MediaSource();
 
     void addedToRegistry();
@@ -71,19 +71,20 @@ public:
     void streamEndedWithError(const AtomicString& error, ExceptionCode&);
 
     // MediaSourcePrivateClient
-    virtual void setPrivateAndOpen(PassRef<MediaSourcePrivate>) override;
-    virtual double duration() const override;
+    virtual void setPrivateAndOpen(Ref<MediaSourcePrivate>&&) override;
+    virtual MediaTime duration() const override;
     virtual std::unique_ptr<PlatformTimeRanges> buffered() const override;
     virtual void seekToTime(const MediaTime&) override;
 
     bool attachToElement(HTMLMediaElement*);
     void close();
     void monitorSourceBuffers();
+    bool isSeeking() const { return m_pendingSeekTime.isValid(); }
     void completeSeek();
 
     void setDuration(double, ExceptionCode&);
-    void setDurationInternal(double);
-    double currentTime() const;
+    void setDurationInternal(const MediaTime&);
+    MediaTime currentTime() const;
     const AtomicString& readyState() const { return m_readyState; }
     void setReadyState(const AtomicString&);
     void endOfStream(ExceptionCode&);
@@ -98,10 +99,6 @@ public:
     void removeSourceBuffer(SourceBuffer*, ExceptionCode&);
     static bool isTypeSupported(const String& type);
 
-    // ActiveDOMObject interface
-    virtual bool hasPendingActivity() const override;
-    virtual void stop() override;
-
     // EventTarget interface
     virtual ScriptExecutionContext* scriptExecutionContext() const override final;
     virtual void refEventTarget() override final { ref(); }
@@ -114,11 +111,19 @@ public:
     using RefCounted<MediaSourcePrivateClient>::ref;
     using RefCounted<MediaSourcePrivateClient>::deref;
 
+    // ActiveDOMObject API.
+    bool hasPendingActivity() const override;
+
 protected:
     explicit MediaSource(ScriptExecutionContext&);
 
+    // ActiveDOMObject API.
+    void stop() override;
+    bool canSuspendForPageCache() const override;
+    const char* activeDOMObjectName() const override;
+
     void onReadyStateChange(const AtomicString& oldState, const AtomicString& newState);
-    Vector<RefPtr<TimeRanges>> activeRanges() const;
+    Vector<PlatformTimeRanges> activeRanges() const;
 
     RefPtr<SourceBufferPrivate> createSourceBufferPrivate(const ContentType&, ExceptionCode&);
     void scheduleEvent(const AtomicString& eventName);
@@ -132,7 +137,7 @@ protected:
     RefPtr<SourceBufferList> m_sourceBuffers;
     RefPtr<SourceBufferList> m_activeSourceBuffers;
     HTMLMediaElement* m_mediaElement;
-    double m_duration;
+    MediaTime m_duration;
     MediaTime m_pendingSeekTime;
     AtomicString m_readyState;
     GenericEventQueue m_asyncEventQueue;

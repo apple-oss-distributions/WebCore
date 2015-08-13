@@ -59,21 +59,32 @@ public:
     virtual void applyCSSProperties(const IntSize& videoSize);
 
     static const AtomicString& vttCueBoxShadowPseudoId();
+    void setFontSizeFromCaptionUserPrefs(int fontSize) { m_fontSizeFromCaptionUserPrefs = fontSize; }
 
 protected:
     VTTCueBox(Document&, VTTCue&);
 
-    virtual RenderPtr<RenderElement> createElementRenderer(PassRef<RenderStyle>) override;
+    virtual RenderPtr<RenderElement> createElementRenderer(Ref<RenderStyle>&&, const RenderTreePosition&) override final;
 
     VTTCue& m_cue;
+    int m_fontSizeFromCaptionUserPrefs;
 };
 
 // ----------------------------
 
 class VTTCue : public TextTrackCue {
 public:
-    static PassRefPtr<VTTCue> create(ScriptExecutionContext&, double start, double end, const String&);
-    static PassRefPtr<VTTCue> create(ScriptExecutionContext&, const WebVTTCueData&);
+    static Ref<VTTCue> create(ScriptExecutionContext& context, double start, double end, const String& content)
+    {
+        return create(context, MediaTime::createWithDouble(start), MediaTime::createWithDouble(end), content);
+    }
+
+    static Ref<VTTCue> create(ScriptExecutionContext& context, const MediaTime& start, const MediaTime& end, const String& content)
+    {
+        return adoptRef(*new VTTCue(context, start, end, content));
+    }
+
+    static Ref<VTTCue> create(ScriptExecutionContext&, const WebVTTCueData&);
 
     static const AtomicString& cueBackdropShadowPseudoId();
 
@@ -112,15 +123,15 @@ public:
     void notifyRegionWhenRemovingDisplayTree(bool);
 #endif
 
-    virtual void setIsActive(bool);
+    virtual void setIsActive(bool) override;
 
     bool hasDisplayTree() const { return m_displayTree; }
-    VTTCueBox* getDisplayTree(const IntSize& videoSize);
+    VTTCueBox* getDisplayTree(const IntSize& videoSize, int fontSize);
     HTMLSpanElement* element() const { return m_cueHighlightBox.get(); }
 
-    void updateDisplayTree(double);
+    void updateDisplayTree(const MediaTime&);
     void removeDisplayTree();
-    void markFutureAndPastNodes(ContainerNode*, double, double);
+    void markFutureAndPastNodes(ContainerNode*, const MediaTime&, const MediaTime&);
 
     int calculateComputedLinePosition();
     std::pair<double, double> getPositionCoordinates() const;
@@ -156,13 +167,13 @@ public:
     virtual bool cueContentsMatch(const TextTrackCue&) const override;
     virtual bool doesExtendCue(const TextTrackCue&) const override;
 
-    virtual CueType cueType() const { return WebVTT; }
+    virtual CueType cueType() const override { return WebVTT; }
     virtual bool isRenderable() const override final { return true; }
 
     virtual void didChange() override;
 
 protected:
-    VTTCue(ScriptExecutionContext&, double start, double end, const String& content);
+    VTTCue(ScriptExecutionContext&, const MediaTime& start, const MediaTime& end, const String& content);
     VTTCue(ScriptExecutionContext&, const WebVTTCueData&);
 
     virtual PassRefPtr<VTTCueBox> createDisplayTree();
@@ -213,7 +224,7 @@ private:
     int m_displaySize;
     std::pair<float, float> m_displayPosition;
 
-    double m_originalStartTime;
+    MediaTime m_originalStartTime;
 
     bool m_snapToLines : 1;
     bool m_displayTreeShouldChange : 1;

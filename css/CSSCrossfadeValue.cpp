@@ -47,11 +47,11 @@ static inline double blendFunc(double from, double to, double progress)
 
 static bool subimageKnownToBeOpaque(CSSValue& value, const RenderElement* renderer)
 {
-    if (value.isImageValue())
-        return toCSSImageValue(value).knownToBeOpaque(renderer);
+    if (is<CSSImageValue>(value))
+        return downcast<CSSImageValue>(value).knownToBeOpaque(renderer);
 
-    if (value.isImageGeneratorValue())
-        return toCSSImageGeneratorValue(value).knownToBeOpaque(renderer);
+    if (is<CSSImageGeneratorValue>(value))
+        return downcast<CSSImageGeneratorValue>(value).knownToBeOpaque(renderer);
 
     ASSERT_NOT_REACHED();
 
@@ -84,9 +84,13 @@ FloatSize CSSCrossfadeValue::fixedSize(const RenderElement* renderer)
     float percentage = m_percentageValue->getFloatValue();
     float inversePercentage = 1 - percentage;
 
-    CachedResourceLoader* cachedResourceLoader = renderer->document().cachedResourceLoader();
-    CachedImage* cachedFromImage = cachedImageForCSSValue(m_fromValue.get(), cachedResourceLoader);
-    CachedImage* cachedToImage = cachedImageForCSSValue(m_toValue.get(), cachedResourceLoader);
+    // FIXME: Skip Content Security Policy check when cross fade is applied to an element in a user agent shadow tree.
+    // See <https://bugs.webkit.org/show_bug.cgi?id=146663>.
+    ResourceLoaderOptions options = CachedResourceLoader::defaultCachedResourceOptions();
+
+    CachedResourceLoader& cachedResourceLoader = renderer->document().cachedResourceLoader();
+    CachedImage* cachedFromImage = cachedImageForCSSValue(m_fromValue.get(), cachedResourceLoader, options);
+    CachedImage* cachedToImage = cachedImageForCSSValue(m_toValue.get(), cachedResourceLoader, options);
 
     if (!cachedFromImage || !cachedToImage)
         return FloatSize();
@@ -114,13 +118,13 @@ bool CSSCrossfadeValue::knownToBeOpaque(const RenderElement* renderer) const
     return subimageKnownToBeOpaque(*m_fromValue, renderer) && subimageKnownToBeOpaque(*m_toValue, renderer);
 }
 
-void CSSCrossfadeValue::loadSubimages(CachedResourceLoader* cachedResourceLoader)
+void CSSCrossfadeValue::loadSubimages(CachedResourceLoader& cachedResourceLoader, const ResourceLoaderOptions& options)
 {
     CachedResourceHandle<CachedImage> oldCachedFromImage = m_cachedFromImage;
     CachedResourceHandle<CachedImage> oldCachedToImage = m_cachedToImage;
 
-    m_cachedFromImage = CSSImageGeneratorValue::cachedImageForCSSValue(m_fromValue.get(), cachedResourceLoader);
-    m_cachedToImage = CSSImageGeneratorValue::cachedImageForCSSValue(m_toValue.get(), cachedResourceLoader);
+    m_cachedFromImage = CSSImageGeneratorValue::cachedImageForCSSValue(m_fromValue.get(), cachedResourceLoader, options);
+    m_cachedToImage = CSSImageGeneratorValue::cachedImageForCSSValue(m_toValue.get(), cachedResourceLoader, options);
 
     if (m_cachedFromImage != oldCachedFromImage) {
         if (oldCachedFromImage)
@@ -142,11 +146,15 @@ void CSSCrossfadeValue::loadSubimages(CachedResourceLoader* cachedResourceLoader
 PassRefPtr<Image> CSSCrossfadeValue::image(RenderElement* renderer, const FloatSize& size)
 {
     if (size.isEmpty())
-        return 0;
+        return nullptr;
 
-    CachedResourceLoader* cachedResourceLoader = renderer->document().cachedResourceLoader();
-    CachedImage* cachedFromImage = cachedImageForCSSValue(m_fromValue.get(), cachedResourceLoader);
-    CachedImage* cachedToImage = cachedImageForCSSValue(m_toValue.get(), cachedResourceLoader);
+    // FIXME: Skip Content Security Policy check when cross fade is applied to an element in a user agent shadow tree.
+    // See <https://bugs.webkit.org/show_bug.cgi?id=146663>.
+    ResourceLoaderOptions options = CachedResourceLoader::defaultCachedResourceOptions();
+
+    CachedResourceLoader& cachedResourceLoader = renderer->document().cachedResourceLoader();
+    CachedImage* cachedFromImage = cachedImageForCSSValue(m_fromValue.get(), cachedResourceLoader, options);
+    CachedImage* cachedToImage = cachedImageForCSSValue(m_toValue.get(), cachedResourceLoader, options);
 
     if (!cachedFromImage || !cachedToImage)
         return Image::nullImage();
@@ -174,11 +182,11 @@ void CSSCrossfadeValue::CrossfadeSubimageObserverProxy::imageChanged(CachedImage
         m_ownerValue->crossfadeChanged(*rect);
 }
 
-bool CSSCrossfadeValue::hasFailedOrCanceledSubresources() const
+bool CSSCrossfadeValue::traverseSubresources(const std::function<bool (const CachedResource&)>& handler) const
 {
-    if (m_cachedFromImage && m_cachedFromImage->loadFailedOrCanceled())
+    if (m_cachedFromImage && handler(*m_cachedFromImage))
         return true;
-    if (m_cachedToImage && m_cachedToImage->loadFailedOrCanceled())
+    if (m_cachedToImage && handler(*m_cachedToImage))
         return true;
     return false;
 }

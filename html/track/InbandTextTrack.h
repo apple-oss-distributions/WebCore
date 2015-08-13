@@ -32,6 +32,7 @@
 #include "TextTrack.h"
 #include "TextTrackCueGeneric.h"
 #include <wtf/RefPtr.h>
+#include <wtf/TypeCasts.h>
 
 namespace WebCore {
 
@@ -48,11 +49,9 @@ public:
     virtual void setMode(const AtomicString&) override;
     size_t inbandTrackIndex();
 
-    virtual AtomicString inBandMetadataTrackDispatchType() const;
+    virtual AtomicString inBandMetadataTrackDispatchType() const override;
 
     void setPrivate(PassRefPtr<InbandTextTrackPrivate>);
-
-    virtual bool isInband() const override { return true; }
 
 protected:
     InbandTextTrack(ScriptExecutionContext*, TextTrackClient*, PassRefPtr<InbandTextTrackPrivate>);
@@ -63,18 +62,18 @@ protected:
     RefPtr<InbandTextTrackPrivate> m_private;
 
 private:
-
+    virtual bool isInband() const override final { return true; }
     virtual void idChanged(TrackPrivateBase*, const AtomicString&) override;
     virtual void labelChanged(TrackPrivateBase*, const AtomicString&) override;
     virtual void languageChanged(TrackPrivateBase*, const AtomicString&) override;
     virtual void willRemove(TrackPrivateBase*) override;
 
-    virtual void addDataCue(InbandTextTrackPrivate*, double, double, const void*, unsigned) override { ASSERT_NOT_REACHED(); }
+    virtual void addDataCue(InbandTextTrackPrivate*, const MediaTime&, const MediaTime&, const void*, unsigned) override { ASSERT_NOT_REACHED(); }
 
 #if ENABLE(DATACUE_VALUE)
-    virtual void addDataCue(InbandTextTrackPrivate*, double, double, PassRefPtr<SerializedPlatformRepresentation>, const String&) override { ASSERT_NOT_REACHED(); }
-    virtual void updateDataCue(InbandTextTrackPrivate*, double, double, PassRefPtr<SerializedPlatformRepresentation>) override  { ASSERT_NOT_REACHED(); }
-    virtual void removeDataCue(InbandTextTrackPrivate*, double, double, PassRefPtr<SerializedPlatformRepresentation>) override  { ASSERT_NOT_REACHED(); }
+    virtual void addDataCue(InbandTextTrackPrivate*, const MediaTime&, const MediaTime&, PassRefPtr<SerializedPlatformRepresentation>, const String&) override { ASSERT_NOT_REACHED(); }
+    virtual void updateDataCue(InbandTextTrackPrivate*, const MediaTime&, const MediaTime&, PassRefPtr<SerializedPlatformRepresentation>) override  { ASSERT_NOT_REACHED(); }
+    virtual void removeDataCue(InbandTextTrackPrivate*, const MediaTime&, const MediaTime&, PassRefPtr<SerializedPlatformRepresentation>) override  { ASSERT_NOT_REACHED(); }
 #endif
 
     virtual void addGenericCue(InbandTextTrackPrivate*, PassRefPtr<GenericCueData>) override { ASSERT_NOT_REACHED(); }
@@ -85,16 +84,19 @@ private:
     virtual void parseWebVTTCueData(InbandTextTrackPrivate*, const char*, unsigned) override { ASSERT_NOT_REACHED(); }
     virtual void parseWebVTTCueData(InbandTextTrackPrivate*, const ISOWebVTTCue&) override { ASSERT_NOT_REACHED(); }
 
-    virtual double startTimeVariance() const;
+    virtual MediaTime startTimeVariance() const override;
 
 #if USE(PLATFORM_TEXT_TRACK_MENU)
     virtual InbandTextTrackPrivate* privateTrack() override { return m_private.get(); }
 #endif
 };
 
-TYPE_CASTS_BASE(InbandTextTrack, TextTrack, track, track->isInband(), track.isInband());
-
 } // namespace WebCore
 
-#endif
-#endif
+SPECIALIZE_TYPE_TRAITS_BEGIN(WebCore::InbandTextTrack)
+    static bool isType(const WebCore::TextTrack& track) { return track.isInband(); }
+SPECIALIZE_TYPE_TRAITS_END()
+
+#endif // ENABLE(VIDEO_TRACK)
+
+#endif // InbandTextTrack_h

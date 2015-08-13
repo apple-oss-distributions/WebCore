@@ -29,12 +29,18 @@
 
 #include "CDM.h"
 
+#include "CDMPrivateClearKey.h"
 #include "CDMPrivateMediaPlayer.h"
 #include "CDMSession.h"
 #include "MediaKeyError.h"
 #include "MediaKeys.h"
+#include "MediaPlayer.h"
 #include <wtf/NeverDestroyed.h>
 #include <wtf/text/WTFString.h>
+
+#if PLATFORM(MAC) && ENABLE(MEDIA_SOURCE)
+#include "CDMPrivateMediaSourceAVFObjC.h"
+#endif
 
 namespace WebCore {
 
@@ -60,8 +66,17 @@ static Vector<CDMFactory*>& installedCDMFactories()
     if (!queriedCDMs) {
         queriedCDMs = true;
 
+        cdms.get().append(new CDMFactory([](CDM* cdm) { return std::make_unique<CDMPrivateClearKey>(cdm); },
+            CDMPrivateClearKey::supportsKeySystem, CDMPrivateClearKey::supportsKeySystemAndMimeType));
+
         // FIXME: initialize specific UA CDMs. http://webkit.org/b/109318, http://webkit.org/b/109320
-        cdms.get().append(new CDMFactory(CDMPrivateMediaPlayer::create, CDMPrivateMediaPlayer::supportsKeySystem, CDMPrivateMediaPlayer::supportsKeySystemAndMimeType));
+        cdms.get().append(new CDMFactory([](CDM* cdm) { return std::make_unique<CDMPrivateMediaPlayer>(cdm); },
+            CDMPrivateMediaPlayer::supportsKeySystem, CDMPrivateMediaPlayer::supportsKeySystemAndMimeType));
+
+#if PLATFORM(MAC) && ENABLE(MEDIA_SOURCE)
+        cdms.get().append(new CDMFactory([](CDM* cdm) { return std::make_unique<CDMPrivateMediaSourceAVFObjC>(cdm); },
+            CDMPrivateMediaSourceAVFObjC::supportsKeySystem, CDMPrivateMediaSourceAVFObjC::supportsKeySystemAndMimeType));
+#endif
     }
 
     return cdms;
@@ -74,10 +89,9 @@ void CDM::registerCDMFactory(CreateCDM constructor, CDMSupportsKeySystem support
 
 static CDMFactory* CDMFactoryForKeySystem(const String& keySystem)
 {
-    Vector<CDMFactory*>& cdmFactories = installedCDMFactories();
-    for (size_t i = 0; i < cdmFactories.size(); ++i) {
-        if (cdmFactories[i]->supportsKeySystem(keySystem))
-            return cdmFactories[i];
+    for (auto& factory : installedCDMFactories()) {
+        if (factory->supportsKeySystem(keySystem))
+            return factory;
     }
     return 0;
 }
@@ -104,7 +118,7 @@ std::unique_ptr<CDM> CDM::create(const String& keySystem)
 
 CDM::CDM(const String& keySystem)
     : m_keySystem(keySystem)
-    , m_client(0)
+    , m_client(nullptr)
 {
     m_private = CDMFactoryForKeySystem(keySystem)->constructor(this);
 }
@@ -120,7 +134,10 @@ bool CDM::supportsMIMEType(const String& mimeType) const
 
 std::unique_ptr<CDMSession> CDM::createSession()
 {
-    return m_private->createSession();
+    std::unique_ptr<CDMSession> session = m_private->createSession();
+    if (mediaPlayer())
+        mediaPlayer()->setCDMSession(session.get());
+    return session;
 }
 
 MediaPlayer* CDM::mediaPlayer() const

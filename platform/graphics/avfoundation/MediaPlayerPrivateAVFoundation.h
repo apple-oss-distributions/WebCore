@@ -33,7 +33,7 @@
 #include "MediaPlayerPrivate.h"
 #include "Timer.h"
 #include <functional>
-#include <wtf/Functional.h>
+#include <wtf/HashSet.h>
 #include <wtf/RetainPtr.h>
 #include <wtf/WeakPtr.h>
 
@@ -46,21 +46,20 @@ class GenericCueData;
 class MediaPlayerPrivateAVFoundation : public MediaPlayerPrivateInterface, public AVFInbandTrackParent
 {
 public:
-
     virtual void repaint();
     virtual void metadataLoaded();
     virtual void playabilityKnown();
     virtual void rateChanged();
     virtual void loadedTimeRangesChanged();
     virtual void seekableTimeRangesChanged();
-    virtual void timeChanged(double);
+    virtual void timeChanged(const MediaTime&);
     virtual void seekCompleted(bool);
     virtual void didEnd();
     virtual void contentsNeedsDisplay() { }
     virtual void configureInbandTracks();
     virtual void setCurrentTextTrack(InbandTextTrackPrivateAVF*) { }
     virtual InbandTextTrackPrivateAVF* currentTextTrack() const = 0;
-#if ENABLE(IOS_AIRPLAY)
+#if ENABLE(WIRELESS_PLAYBACK_TARGET)
     void playbackTargetIsWirelessChanged();
 #endif
     
@@ -96,12 +95,11 @@ public:
         
         Notification()
             : m_type(None)
-            , m_time(0)
             , m_finished(false)
         {
         }
 
-        Notification(Type type, double time)
+        Notification(Type type, const MediaTime& time)
             : m_type(type)
             , m_time(time)
             , m_finished(false)
@@ -110,14 +108,12 @@ public:
         
         Notification(Type type, bool finished)
             : m_type(type)
-            , m_time(0)
             , m_finished(finished)
         {
         }
 
         Notification(std::function<void ()> function)
             : m_type(FunctionType)
-            , m_time(0)
             , m_finished(false)
             , m_function(function)
         {
@@ -125,19 +121,19 @@ public:
         
         Type type() { return m_type; }
         bool isValid() { return m_type != None; }
-        double time() { return m_time; }
+        MediaTime time() { return m_time; }
         bool finished() { return m_finished; }
         std::function<void ()>& function() { return m_function; }
         
     private:
         Type m_type;
-        double m_time;
+        MediaTime m_time;
         bool m_finished;
         std::function<void ()> m_function;
     };
 
     void scheduleMainThreadNotification(Notification);
-    void scheduleMainThreadNotification(Notification::Type, double time = 0);
+    void scheduleMainThreadNotification(Notification::Type, const MediaTime& = MediaTime::zeroTime());
     void scheduleMainThreadNotification(Notification::Type, bool completed);
     void dispatchNotification();
     void clearMainThreadPendingFlag();
@@ -147,7 +143,7 @@ public:
 #endif
 
 protected:
-    MediaPlayerPrivateAVFoundation(MediaPlayer*);
+    explicit MediaPlayerPrivateAVFoundation(MediaPlayer*);
     virtual ~MediaPlayerPrivateAVFoundation();
 
     WeakPtr<MediaPlayerPrivateAVFoundation> createWeakPtr() { return m_weakPtrFactory.createWeakPtr(); }
@@ -155,53 +151,55 @@ protected:
     // MediaPlayerPrivatePrivateInterface overrides.
     virtual void load(const String& url) override;
 #if ENABLE(MEDIA_SOURCE)
-    virtual void load(const String&, MediaSourcePrivateClient*);
+    virtual void load(const String&, MediaSourcePrivateClient*) override;
 #endif
-    virtual void cancelLoad() = 0;
+#if ENABLE(MEDIA_STREAM)
+    void load(MediaStreamPrivate*) override { }
+#endif
+    virtual void cancelLoad() override = 0;
 
     virtual void prepareToPlay() override;
-    virtual PlatformMedia platformMedia() const = 0;
+    virtual PlatformMedia platformMedia() const override = 0;
 
     virtual void play() override;
     virtual void pause() override;
 
-    virtual IntSize naturalSize() const override;
+    virtual FloatSize naturalSize() const override;
     virtual bool hasVideo() const override { return m_cachedHasVideo; }
     virtual bool hasAudio() const override { return m_cachedHasAudio; }
     virtual void setVisible(bool) override;
-    virtual float duration() const override;
-    virtual float currentTime() const = 0;
-    virtual void seek(float) override;
-    virtual void seekWithTolerance(double, double, double) override;
+    virtual MediaTime durationMediaTime() const override;
+    virtual MediaTime currentMediaTime() const override = 0;
+    virtual void seek(const MediaTime&) override;
+    virtual void seekWithTolerance(const MediaTime&, const MediaTime&, const MediaTime&) override;
     virtual bool seeking() const override;
-    virtual void setRate(float) override;
     virtual bool paused() const override;
-    virtual void setVolume(float) = 0;
+    virtual void setVolume(float) override = 0;
     virtual bool hasClosedCaptions() const override { return m_cachedHasCaptions; }
-    virtual void setClosedCaptionsVisible(bool) = 0;
+    virtual void setClosedCaptionsVisible(bool) override = 0;
     virtual MediaPlayer::NetworkState networkState() const override { return m_networkState; }
     virtual MediaPlayer::ReadyState readyState() const override { return m_readyState; }
-    virtual double maxTimeSeekableDouble() const override;
-    virtual double minTimeSeekable() const override;
+    virtual MediaTime maxMediaTimeSeekable() const override;
+    virtual MediaTime minMediaTimeSeekable() const override;
     virtual std::unique_ptr<PlatformTimeRanges> buffered() const override;
     virtual bool didLoadingProgress() const override;
     virtual void setSize(const IntSize&) override;
-    virtual void paint(GraphicsContext*, const IntRect&) = 0;
-    virtual void paintCurrentFrameInContext(GraphicsContext*, const IntRect&) = 0;
+    virtual void paint(GraphicsContext*, const FloatRect&) override = 0;
+    virtual void paintCurrentFrameInContext(GraphicsContext*, const FloatRect&) override = 0;
     virtual void setPreload(MediaPlayer::Preload) override;
-    virtual PlatformLayer* platformLayer() const { return 0; }
-    virtual bool supportsAcceleratedRendering() const = 0;
+    virtual PlatformLayer* platformLayer() const override { return 0; }
+    virtual bool supportsAcceleratedRendering() const override = 0;
     virtual void acceleratedRenderingStateChanged() override;
     virtual bool shouldMaintainAspectRatio() const override { return m_shouldMaintainAspectRatio; }
     virtual void setShouldMaintainAspectRatio(bool) override;
+    virtual bool canSaveMediaData() const override;
 
-    virtual MediaPlayer::MovieLoadType movieLoadType() const;
-    virtual void prepareForRendering();
-    virtual float mediaTimeForTimeValue(float) const = 0;
+    virtual MediaPlayer::MovieLoadType movieLoadType() const override;
+    virtual void prepareForRendering() override;
 
-    virtual bool supportsFullscreen() const;
-    virtual bool supportsScanning() const { return true; }
-    unsigned long long fileSize() const { return totalBytes(); }
+    virtual bool supportsFullscreen() const override;
+    virtual bool supportsScanning() const override { return true; }
+    unsigned long long fileSize() const override { return totalBytes(); }
 
     // Required interfaces for concrete derived classes.
     virtual void createAVAssetForURL(const String&) = 0;
@@ -229,23 +227,21 @@ protected:
         MediaPlayerAVAssetStatusPlayable,
     };
     virtual AssetStatus assetStatus() const = 0;
+    virtual long assetErrorCode() const = 0;
 
     virtual void platformSetVisible(bool) = 0;
     virtual void platformPlay() = 0;
     virtual void platformPause() = 0;
     virtual void checkPlayability() = 0;
-    virtual void updateRate() = 0;
-    virtual float rate() const = 0;
-    virtual void seekToTime(double time, double negativeTolerance, double positiveTolerance) = 0;
-    virtual unsigned long long totalBytes() const = 0;
+    virtual void seekToTime(const MediaTime&, const MediaTime& negativeTolerance, const MediaTime& positiveTolerance) = 0;
+    virtual unsigned long long totalBytes() const override = 0;
     virtual std::unique_ptr<PlatformTimeRanges> platformBufferedTimeRanges() const = 0;
-    virtual double platformMaxTimeSeekable() const = 0;
-    virtual double platformMinTimeSeekable() const = 0;
-    virtual float platformMaxTimeLoaded() const = 0;
-    virtual float platformDuration() const = 0;
+    virtual MediaTime platformMaxTimeSeekable() const = 0;
+    virtual MediaTime platformMinTimeSeekable() const = 0;
+    virtual MediaTime platformMaxTimeLoaded() const = 0;
+    virtual MediaTime platformDuration() const = 0;
 
     virtual void beginLoadingMetadata() = 0;
-    virtual void tracksChanged() = 0;
     virtual void sizeChanged() = 0;
 
     virtual void createContextVideoRenderer() = 0;
@@ -254,12 +250,15 @@ protected:
     virtual void createVideoLayer() = 0;
     virtual void destroyVideoLayer() = 0;
 
-    virtual bool hasAvailableVideoFrame() const = 0;
+    virtual bool hasAvailableVideoFrame() const override = 0;
 
     virtual bool hasContextRenderer() const = 0;
     virtual bool hasLayerRenderer() const = 0;
 
     virtual void updateVideoLayerGravity() = 0;
+
+    static bool isUnsupportedMIMEType(const String&);
+    static const HashSet<String>& staticMIMETypeList();
 
 protected:
     void updateStates();
@@ -271,16 +270,18 @@ protected:
     void setDelayCharacteristicsChangedNotification(bool);
     void setDelayCallbacks(bool) const;
     void setIgnoreLoadStateChanges(bool delay) { m_ignoreLoadStateChanges = delay; }
-    void setNaturalSize(IntSize);
+    void setNaturalSize(FloatSize);
     bool isLiveStream() const { return std::isinf(duration()); }
+    void setNetworkState(MediaPlayer::NetworkState);
+    void setReadyState(MediaPlayer::ReadyState);
 
     enum MediaRenderingMode { MediaRenderingNone, MediaRenderingToContext, MediaRenderingToLayer };
     MediaRenderingMode currentRenderingMode() const;
     MediaRenderingMode preferredRenderingMode() const;
 
     bool metaDataAvailable() const { return m_readyState >= MediaPlayer::HaveMetadata; }
-    float requestedRate() const { return m_requestedRate; }
-    float maxTimeLoaded() const;
+    double requestedRate() const;
+    MediaTime maxTimeLoaded() const;
     bool isReadyForVideoSetup() const;
     virtual void setUpVideoRendering();
     virtual void tearDownVideoRendering();
@@ -294,18 +295,19 @@ protected:
 
     MediaPlayer* player() { return m_player; }
 
-    virtual String engineDescription() const { return "AVFoundation"; }
-
-    virtual size_t extraMemoryCost() const override;
+    virtual String engineDescription() const override { return "AVFoundation"; }
+    virtual long platformErrorCode() const override { return assetErrorCode(); }
 
     virtual void trackModeChanged() override;
 #if ENABLE(AVF_CAPTIONS)
-    virtual void notifyTrackModeChanged() { }
+    virtual void notifyTrackModeChanged() override { }
     virtual void synchronizeTextTrackState() { }
 #endif
     void processNewAndRemovedTextTracks(const Vector<RefPtr<InbandTextTrackPrivateAVF>>&);
     void clearTextTracks();
     Vector<RefPtr<InbandTextTrackPrivateAVF>> m_textTracks;
+
+virtual URL resolvedURL() const;
 
 private:
     MediaPlayer* m_player;
@@ -325,14 +327,13 @@ private:
     String m_assetURL;
     MediaPlayer::Preload m_preload;
 
-    IntSize m_cachedNaturalSize;
-    mutable float m_cachedMaxTimeLoaded;
-    mutable double m_cachedMaxTimeSeekable;
-    mutable double m_cachedMinTimeSeekable;
-    mutable float m_cachedDuration;
-    float m_reportedDuration;
-    mutable float m_maxTimeLoadedAtLastDidLoadingProgress;
-    float m_requestedRate;
+    FloatSize m_cachedNaturalSize;
+    mutable MediaTime m_cachedMaxTimeLoaded;
+    mutable MediaTime m_cachedMaxTimeSeekable;
+    mutable MediaTime m_cachedMinTimeSeekable;
+    mutable MediaTime m_cachedDuration;
+    MediaTime m_reportedDuration;
+    mutable MediaTime m_maxTimeLoadedAtLastDidLoadingProgress;
     mutable int m_delayCallbacks;
     int m_delayCharacteristicsChangedNotification;
     bool m_mainThreadCallPending;

@@ -34,12 +34,21 @@
 #include "FrameLoaderClient.h"
 #include <wtf/Ref.h>
 
+#if ENABLE(CONTENT_EXTENSIONS)
+#include "ResourceLoadInfo.h"
+#endif
+
 namespace WebCore {
 
+// FIXME: Skip Content Security Policy check when associated plugin element is in a user agent shadow tree.
+// See <https://bugs.webkit.org/show_bug.cgi?id=146663>.
 NetscapePlugInStreamLoader::NetscapePlugInStreamLoader(Frame* frame, NetscapePlugInStreamLoaderClient* client)
-    : ResourceLoader(frame, ResourceLoaderOptions(SendCallbacks, SniffContent, DoNotBufferData, AllowStoredCredentials, AskClientForAllCredentials, SkipSecurityCheck, UseDefaultOriginRestrictionsForType))
+    : ResourceLoader(frame, ResourceLoaderOptions(SendCallbacks, SniffContent, DoNotBufferData, AllowStoredCredentials, AskClientForAllCredentials, SkipSecurityCheck, UseDefaultOriginRestrictionsForType, DoNotIncludeCertificateInfo, ContentSecurityPolicyImposition::DoPolicyCheck))
     , m_client(client)
 {
+#if ENABLE(CONTENT_EXTENSIONS)
+    m_resourceType = ResourceType::PlugInStream;
+#endif
 }
 
 NetscapePlugInStreamLoader::~NetscapePlugInStreamLoader()
@@ -50,9 +59,7 @@ PassRefPtr<NetscapePlugInStreamLoader> NetscapePlugInStreamLoader::create(Frame*
 {
     RefPtr<NetscapePlugInStreamLoader> loader(adoptRef(new NetscapePlugInStreamLoader(frame, client)));
     if (!loader->init(request))
-        return 0;
-
-    loader->documentLoader()->addPlugInStreamLoader(loader.get());
+        return nullptr;
     return loader.release();
 }
 

@@ -146,7 +146,7 @@ void TextCheckingParagraph::expandRangeToNextEnd()
 void TextCheckingParagraph::invalidateParagraphRangeValues()
 {
     m_checkingStart = m_checkingEnd = -1;
-    m_offsetAsRange = 0;
+    m_offsetAsRange = nullptr;
     m_text = String();
 }
 
@@ -184,7 +184,7 @@ bool TextCheckingParagraph::isEmpty() const
 {
     // Both predicates should have same result, but we check both just for sure.
     // We need to investigate to remove this redundancy.
-    return isRangeEmpty() || isTextEmpty();
+    return checkingStart() >= checkingEnd() || text().isEmpty();
 }
 
 PassRefPtr<Range> TextCheckingParagraph::offsetAsRange() const
@@ -239,8 +239,6 @@ TextCheckingHelper::TextCheckingHelper(EditorClient* client, PassRefPtr<Range> r
 TextCheckingHelper::~TextCheckingHelper()
 {
 }
-
-#if !PLATFORM(IOS)
 
 String TextCheckingHelper::findFirstMisspelling(int& firstMisspellingOffset, bool markAll, RefPtr<Range>& firstMisspellingRange)
 {
@@ -420,8 +418,6 @@ String TextCheckingHelper::findFirstMisspellingOrBadGrammar(bool checkGrammar, b
     }
     return firstFoundItem;
 }
-
-#endif // !PLATFORM(IOS)
 
 #if USE(GRAMMAR_CHECKING)
 
@@ -622,8 +618,6 @@ Vector<String> TextCheckingHelper::guessesForMisspelledOrUngrammaticalRange(bool
     return guesses;
 }
 
-#if !PLATFORM(IOS)
-
 void TextCheckingHelper::markAllMisspellings(RefPtr<Range>& firstMisspellingRange)
 {
     // Use the "markAll" feature of findFirstMisspelling. Ignore the return value and the "out parameter";
@@ -642,8 +636,6 @@ void TextCheckingHelper::markAllBadGrammar()
     findFirstBadGrammar(ignoredGrammarDetail, ignoredOffset, true);
 }
 #endif
-
-#endif // !PLATFORM(IOS)
 
 bool TextCheckingHelper::unifiedTextCheckerEnabled() const
 {

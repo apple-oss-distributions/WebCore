@@ -35,8 +35,8 @@ namespace WebCore {
 
 class ArchiveResource : public SubstituteResource {
 public:
-    static PassRefPtr<ArchiveResource> create(PassRefPtr<SharedBuffer>, const URL&, const ResourceResponse&);
-    static PassRefPtr<ArchiveResource> create(PassRefPtr<SharedBuffer>, const URL&,
+    static RefPtr<ArchiveResource> create(PassRefPtr<SharedBuffer>, const URL&, const ResourceResponse&);
+    WEBCORE_EXPORT static RefPtr<ArchiveResource> create(PassRefPtr<SharedBuffer>, const URL&,
         const String& mimeType, const String& textEncoding, const String& frameName,
         const ResourceResponse& = ResourceResponse());
 
@@ -47,9 +47,6 @@ public:
     void ignoreWhenUnarchiving() { m_shouldIgnoreWhenUnarchiving = true; }
     bool shouldIgnoreWhenUnarchiving() const { return m_shouldIgnoreWhenUnarchiving; }
 
-    void setShouldLoadImmediately(bool shouldLoadImmediately) { m_shouldLoadImmediately = shouldLoadImmediately; }
-    bool shouldLoadImmediately() const { return m_shouldLoadImmediately; }
-
 private:
     ArchiveResource(PassRefPtr<SharedBuffer>, const URL&, const String& mimeType, const String& textEncoding, const String& frameName, const ResourceResponse&);
 
@@ -58,7 +55,6 @@ private:
     String m_frameName;
 
     bool m_shouldIgnoreWhenUnarchiving;
-    bool m_shouldLoadImmediately;
 };
 
 }

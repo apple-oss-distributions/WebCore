@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2012-2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,6 +32,12 @@
 #include "InbandTextTrackPrivateClient.h"
 #include <wtf/text/StringBuilder.h>
 
+typedef const struct opaqueCMFormatDescription* CMFormatDescriptionRef;
+
+namespace JSC {
+class ArrayBuffer;
+}
+
 namespace WebCore {
 
 class AVFInbandTrackParent {
@@ -55,7 +61,7 @@ public:
     bool hasBeenReported() const { return m_hasBeenReported; }
     void setHasBeenReported(bool reported) { m_hasBeenReported = reported; }
 
-    virtual void processCue(CFArrayRef attributedStrings, CFArrayRef nativeSamples, double);
+    virtual void processCue(CFArrayRef attributedStrings, CFArrayRef nativeSamples, const MediaTime&);
     virtual void resetCueValues();
 
     void beginSeeking();
@@ -68,19 +74,21 @@ public:
         InBand
     };
     virtual Category textTrackCategory() const = 0;
+    
+    virtual MediaTime startTimeVariance() const override { return MediaTime(1, 4); }
 
-    virtual double startTimeVariance() const override { return 0.25; }
-
+    virtual bool readNativeSampleBuffer(CFArrayRef nativeSamples, CFIndex, RefPtr<JSC::ArrayBuffer>&, MediaTime&, CMFormatDescriptionRef&);
+    
 protected:
     InbandTextTrackPrivateAVF(AVFInbandTrackParent*, CueFormat);
 
     void processCueAttributes(CFAttributedStringRef, GenericCueData&);
-    void processAttributedStrings(CFArrayRef, double);
-    void processNativeSamples(CFArrayRef, double);
+    void processAttributedStrings(CFArrayRef, const MediaTime&);
+    void processNativeSamples(CFArrayRef, const MediaTime&);
     void removeCompletedCues();
 
-    double m_currentCueStartTime;
-    double m_currentCueEndTime;
+    MediaTime m_currentCueStartTime;
+    MediaTime m_currentCueEndTime;
 
     Vector<RefPtr<GenericCueData>> m_cues;
     AVFInbandTrackParent* m_owner;

@@ -27,6 +27,7 @@
 #ifndef RenderMultiColumnSet_h
 #define RenderMultiColumnSet_h
 
+#include "LayerFragment.h"
 #include "RenderMultiColumnFlowThread.h"
 #include "RenderRegionSet.h"
 #include <wtf/Vector.h>
@@ -45,11 +46,9 @@ namespace WebCore {
 // come before and after the span.
 class RenderMultiColumnSet final : public RenderRegionSet {
 public:
-    RenderMultiColumnSet(RenderFlowThread&, PassRef<RenderStyle>);
+    RenderMultiColumnSet(RenderFlowThread&, Ref<RenderStyle>&&);
 
-    virtual bool isRenderMultiColumnSet() const override { return true; }
-
-    RenderBlockFlow* multiColumnBlockFlow() const { return toRenderBlockFlow(parent()); }
+    RenderBlockFlow* multiColumnBlockFlow() const { return downcast<RenderBlockFlow>(parent()); }
     RenderMultiColumnFlowThread* multiColumnFlowThread() const { return static_cast<RenderMultiColumnFlowThread*>(flowThread()); }
 
     RenderMultiColumnSet* nextSiblingMultiColumnSet() const;
@@ -72,6 +71,7 @@ public:
     unsigned computedColumnCount() const { return m_computedColumnCount; }
     LayoutUnit computedColumnWidth() const { return m_computedColumnWidth; }
     LayoutUnit computedColumnHeight() const { return m_computedColumnHeight; }
+    bool columnHeightComputed() const { return m_columnHeightComputed; }
 
     void setComputedColumnWidthAndCount(LayoutUnit width, unsigned count)
     {
@@ -117,7 +117,7 @@ public:
 
     LayoutPoint columnTranslationForOffset(const LayoutUnit&) const;
     
-    void paintColumnRules(PaintInfo&, const LayoutPoint& paintOffset);
+    void paintColumnRules(PaintInfo&, const LayoutPoint& paintOffset) override;
 
     enum ColumnHitTestTranslationMode {
         ClampHitTestTranslationToColumns,
@@ -131,9 +131,10 @@ public:
     unsigned columnCount() const;
 
 protected:
-    void addOverflowFromChildren() override;
+    virtual void addOverflowFromChildren() override;
     
 private:
+    virtual bool isRenderMultiColumnSet() const override { return true; }
     virtual void layout() override;
 
     virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const override;
@@ -151,11 +152,11 @@ private:
 
     virtual void collectLayerFragments(LayerFragments&, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect) override;
 
-    virtual void adjustRegionBoundsFromFlowThreadPortionRect(const LayoutPoint& layerOffset, LayoutRect& regionBounds) override;
+    virtual void adjustRegionBoundsFromFlowThreadPortionRect(LayoutRect& regionBounds) const override;
 
     virtual VisiblePosition positionForPoint(const LayoutPoint&, const RenderRegion*) override;
 
-    virtual const char* renderName() const;
+    virtual const char* renderName() const override;
 
     LayoutUnit calculateMaxColumnHeight() const;
     LayoutUnit columnGap() const;
@@ -191,7 +192,8 @@ private:
     LayoutUnit m_computedColumnWidth; // Used column width (the resulting 'W' from the pseudo-algorithm in the multicol spec)
     LayoutUnit m_computedColumnHeight;
     LayoutUnit m_availableColumnHeight;
-    
+    bool m_columnHeightComputed;
+
     // The following variables are used when balancing the column set.
     LayoutUnit m_maxColumnHeight; // Maximum column height allowed.
     LayoutUnit m_minSpaceShortage; // The smallest amout of space shortage that caused a column break.
@@ -225,9 +227,9 @@ private:
     Vector<ContentRun, 1> m_contentRuns;
 };
 
-RENDER_OBJECT_TYPE_CASTS(RenderMultiColumnSet, isRenderMultiColumnSet())
-
 } // namespace WebCore
+
+SPECIALIZE_TYPE_TRAITS_RENDER_OBJECT(RenderMultiColumnSet, isRenderMultiColumnSet())
 
 #endif // RenderMultiColumnSet_h
 

@@ -47,6 +47,7 @@ void VideoTrackPrivateMediaSourceAVFObjC::resetPropertiesFromTrack()
 {
     m_trackID = m_impl->trackID();
 
+    setTrackIndex(m_impl->index());
     setKind(m_impl->videoKind());
     setId(m_impl->id());
     setLabel(m_impl->label());
@@ -79,9 +80,9 @@ void VideoTrackPrivateMediaSourceAVFObjC::setSelected(bool selected)
     m_parent->trackDidChangeEnabled(this);
 }
 
-IntSize VideoTrackPrivateMediaSourceAVFObjC::naturalSize() const
+FloatSize VideoTrackPrivateMediaSourceAVFObjC::naturalSize() const
 {
-    return IntSize([assetTrack() naturalSize]);
+    return FloatSize([assetTrack() naturalSize]);
 }
 
 }

@@ -57,14 +57,25 @@ enum class FrameLoadType {
     ReloadFromOrigin,
 };
 
-    enum NavigationType {
-        NavigationTypeLinkClicked,
-        NavigationTypeFormSubmitted,
-        NavigationTypeBackForward,
-        NavigationTypeReload,
-        NavigationTypeFormResubmitted,
-        NavigationTypeOther
-    };
+enum class NewFrameOpenerPolicy {
+    Suppress,
+    Allow
+};
+
+enum class NavigationType {
+    LinkClicked,
+    FormSubmitted,
+    BackForward,
+    Reload,
+    FormResubmitted,
+    Other
+};
+
+enum class ShouldOpenExternalURLsPolicy {
+    ShouldNotAllow,
+    ShouldAllowExternalSchemes,
+    ShouldAllow,
+};
 
     enum ClearProvisionalItemPolicy {
         ShouldClearProvisionalItem,
@@ -116,6 +127,11 @@ enum class FrameLoadType {
     };
 
     enum class LockBackForwardList {
+        Yes,
+        No
+    };
+
+    enum class AllowNavigationToInvalidURL {
         Yes,
         No
     };

@@ -30,22 +30,27 @@ public:
     // Used for non-animated POD types that are not associated with a SVGAnimatedProperty object, nor with a XML DOM attribute
     // and that contain a parent type that's exposed to the bindings via a SVGStaticPropertyTearOff object
     // (for example: SVGTransform::matrix).
-    static PassRefPtr<SVGMatrixTearOff> create(SVGPropertyTearOff<SVGTransform>& parent, SVGMatrix& value)
+    static Ref<SVGMatrixTearOff> create(SVGPropertyTearOff<SVGTransform>& parent, SVGMatrix& value)
     {
-        RefPtr<SVGMatrixTearOff> result = adoptRef(new SVGMatrixTearOff(&parent, value));
+        ASSERT_UNUSED(value, &parent.propertyReference().svgMatrix() == &value);
+        Ref<SVGMatrixTearOff> result = adoptRef(*new SVGMatrixTearOff(&parent));
         parent.addChild(result->m_weakFactory.createWeakPtr());
-        return result.release();
+        return result;
     }
 
-    virtual void commitChange()
+    virtual SVGMatrix& propertyReference() override { return m_parent->propertyReference().svgMatrix(); }
+
+    virtual void setValue(SVGMatrix& value) override { m_parent->propertyReference().setMatrix(value); }
+
+    virtual void commitChange() override
     {
         m_parent->propertyReference().updateSVGMatrix();
         m_parent->commitChange();
     }
 
 private:
-    SVGMatrixTearOff(SVGPropertyTearOff<SVGTransform>* parent, SVGMatrix& value)
-        : SVGPropertyTearOff<SVGMatrix>(0, UndefinedRole, value)
+    SVGMatrixTearOff(SVGPropertyTearOff<SVGTransform>* parent)
+        : SVGPropertyTearOff<SVGMatrix>(nullptr)
         , m_parent(parent)
         , m_weakFactory(this)
     {

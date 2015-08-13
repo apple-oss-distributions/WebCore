@@ -44,8 +44,8 @@ enum SkipEmptySectionsValue { DoNotSkipEmptySections, SkipEmptySections };
 
 class RenderTable : public RenderBlock {
 public:
-    RenderTable(Element&, PassRef<RenderStyle>);
-    RenderTable(Document&, PassRef<RenderStyle>);
+    RenderTable(Element&, Ref<RenderStyle>&&);
+    RenderTable(Document&, Ref<RenderStyle>&&);
     virtual ~RenderTable();
 
     // Per CSS 3 writing-mode: "The first and second values of the 'border-spacing' property represent spacing between columns
@@ -242,11 +242,9 @@ public:
     RenderTableCell* cellAfter(const RenderTableCell*) const;
  
     typedef Vector<CollapsedBorderValue> CollapsedBorderValues;
-    void invalidateCollapsedBorders()
-    {
-        m_collapsedBordersValid = false;
-        m_collapsedBorders.clear();
-    }
+    bool collapsedBordersAreValid() const { return m_collapsedBordersValid; }
+    void invalidateCollapsedBorders();
+    void collapsedEmptyBorderIsPresent() { m_collapsedEmptyBorderIsPresent = true; }
     const CollapsedBorderValue* currentBorderValue() const { return m_currentBorder; }
     
     bool hasSections() const { return m_head || m_foot || m_firstBody; }
@@ -275,7 +273,9 @@ public:
     LayoutUnit offsetLeftForColumn(const RenderTableCol&) const;
     LayoutUnit offsetWidthForColumn(const RenderTableCol&) const;
     LayoutUnit offsetHeightForColumn(const RenderTableCol&) const;
-
+    
+    virtual void markForPaginationRelayoutIfNeeded() override final;
+    
 protected:
     virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override final;
     virtual void simplifiedNormalFlowLayout() override final;
@@ -297,8 +297,8 @@ private:
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
 
     virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const override final;
-    virtual int firstLineBaseline() const override;
-    virtual int inlineBlockBaseline(LineDirectionMode) const override final;
+    virtual Optional<int> firstLineBaseline() const override;
+    virtual Optional<int> inlineBlockBaseline(LineDirectionMode) const override final;
 
     RenderTableCol* slowColElement(unsigned col, bool* startEdge, bool* endEdge) const;
 
@@ -346,6 +346,7 @@ private:
     CollapsedBorderValues m_collapsedBorders;
     const CollapsedBorderValue* m_currentBorder;
     bool m_collapsedBordersValid : 1;
+    bool m_collapsedEmptyBorderIsPresent : 1;
 
     mutable bool m_hasColElements : 1;
     mutable bool m_needsSectionRecalc : 1;
@@ -381,8 +382,8 @@ inline RenderTableSection* RenderTable::topSection() const
     return m_foot;
 }
 
-RENDER_OBJECT_TYPE_CASTS(RenderTable, isTable())
-
 } // namespace WebCore
+
+SPECIALIZE_TYPE_TRAITS_RENDER_OBJECT(RenderTable, isTable())
 
 #endif // RenderTable_h

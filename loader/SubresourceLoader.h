@@ -39,12 +39,11 @@ namespace WebCore {
 class CachedResource;
 class CachedResourceLoader;
 class Document;
-class PageActivityAssertionToken;
 class ResourceRequest;
 
 class SubresourceLoader final : public ResourceLoader {
 public:
-    static PassRefPtr<SubresourceLoader> create(Frame*, CachedResource*, const ResourceRequest&, const ResourceLoaderOptions&);
+    WEBCORE_EXPORT static PassRefPtr<SubresourceLoader> create(Frame*, CachedResource*, const ResourceRequest&, const ResourceLoaderOptions&);
 
     virtual ~SubresourceLoader();
 
@@ -74,6 +73,13 @@ private:
     virtual void willCancel(const ResourceError&) override;
     virtual void didCancel(const ResourceError&) override;
 
+#if PLATFORM(COCOA) && !USE(CFNETWORK)
+    virtual NSCachedURLResponse *willCacheResponse(ResourceHandle*, NSCachedURLResponse*) override;
+#endif
+#if PLATFORM(COCOA) && USE(CFNETWORK)
+    virtual CFCachedURLResponseRef willCacheResponse(ResourceHandle*, CFCachedURLResponseRef) override;
+#endif
+
 #if USE(NETWORK_CFDATA_ARRAY_CALLBACK)
     virtual bool supportsDataArray() override { return true; }
     virtual void didReceiveDataArray(CFArrayRef) override;
@@ -101,10 +107,10 @@ private:
 
     class RequestCountTracker {
     public:
-        RequestCountTracker(CachedResourceLoader*, CachedResource*);
+        RequestCountTracker(CachedResourceLoader&, CachedResource*);
         ~RequestCountTracker();
     private:
-        CachedResourceLoader* m_cachedResourceLoader;
+        CachedResourceLoader& m_cachedResourceLoader;
         CachedResource* m_resource;
     };
 
@@ -114,7 +120,7 @@ private:
     CachedResource* m_resource;
     bool m_loadingMultipartContent;
     SubresourceLoaderState m_state;
-    OwnPtr<RequestCountTracker> m_requestCountTracker;
+    std::unique_ptr<RequestCountTracker> m_requestCountTracker;
 };
 
 }

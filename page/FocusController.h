@@ -52,7 +52,7 @@ class FocusNavigationScope {
 public:
     ContainerNode* rootNode() const;
     Element* owner() const;
-    static FocusNavigationScope focusNavigationScopeOf(Node*);
+    WEBCORE_EXPORT static FocusNavigationScope focusNavigationScopeOf(Node*);
     static FocusNavigationScope focusNavigationScopeOwnedByShadowHost(Node*);
     static FocusNavigationScope focusNavigationScopeOwnedByIFrame(HTMLFrameOwnerElement*);
 
@@ -66,28 +66,28 @@ class FocusController {
 public:
     explicit FocusController(Page&, ViewState::Flags);
 
-    void setFocusedFrame(PassRefPtr<Frame>);
+    WEBCORE_EXPORT void setFocusedFrame(PassRefPtr<Frame>);
     Frame* focusedFrame() const { return m_focusedFrame.get(); }
-    Frame& focusedOrMainFrame() const;
+    WEBCORE_EXPORT Frame& focusedOrMainFrame() const;
 
-    bool setInitialFocus(FocusDirection, KeyboardEvent*);
+    WEBCORE_EXPORT bool setInitialFocus(FocusDirection, KeyboardEvent*);
     bool advanceFocus(FocusDirection, KeyboardEvent*, bool initialFocus = false);
 
-    bool setFocusedElement(Element*, PassRefPtr<Frame>, FocusDirection = FocusDirectionNone);
+    WEBCORE_EXPORT bool setFocusedElement(Element*, PassRefPtr<Frame>, FocusDirection = FocusDirectionNone);
 
     void setViewState(ViewState::Flags);
 
-    void setActive(bool);
+    WEBCORE_EXPORT void setActive(bool);
     bool isActive() const { return m_viewState & ViewState::WindowIsActive; }
 
-    void setFocused(bool);
+    WEBCORE_EXPORT void setFocused(bool);
     bool isFocused() const { return m_viewState & ViewState::IsFocused; }
 
     bool contentIsVisible() const { return m_viewState & ViewState::IsVisible; }
 
     // These methods are used in WebCore/bindings/objc/DOM.mm.
-    Element* nextFocusableElement(FocusNavigationScope, Node* start, KeyboardEvent*);
-    Element* previousFocusableElement(FocusNavigationScope, Node* start, KeyboardEvent*);
+    WEBCORE_EXPORT Element* nextFocusableElement(FocusNavigationScope, Node* start, KeyboardEvent*);
+    WEBCORE_EXPORT Element* previousFocusableElement(FocusNavigationScope, Node* start, KeyboardEvent*);
 
     void setFocusedElementNeedsRepaint();
     double timeSinceFocusWasSet() const;
@@ -95,7 +95,7 @@ public:
 private:
     void setActiveInternal(bool);
     void setFocusedInternal(bool);
-    void setIsVisibleInternal(bool);
+    void setIsVisibleAndActiveInternal(bool);
 
     bool advanceFocusDirectionally(FocusDirection, KeyboardEvent*);
     bool advanceFocusInDocumentOrder(FocusDirection, KeyboardEvent*, bool initialFocus);
@@ -118,16 +118,16 @@ private:
     Element* findElementWithExactTabIndex(Node* start, int tabIndex, KeyboardEvent*, FocusDirection);
 
     bool advanceFocusDirectionallyInContainer(Node* container, const LayoutRect& startingRect, FocusDirection, KeyboardEvent*);
-    void findFocusCandidateInContainer(Node* container, const LayoutRect& startingRect, FocusDirection, KeyboardEvent*, FocusCandidate& closest);
+    void findFocusCandidateInContainer(Node& container, const LayoutRect& startingRect, FocusDirection, KeyboardEvent*, FocusCandidate& closest);
 
-    void focusRepaintTimerFired(Timer<FocusController>&);
+    void focusRepaintTimerFired();
 
     Page& m_page;
     RefPtr<Frame> m_focusedFrame;
     bool m_isChangingFocusedFrame;
     ViewState::Flags m_viewState;
 
-    Timer<FocusController> m_focusRepaintTimer;
+    Timer m_focusRepaintTimer;
     double m_focusSetTime;
 };
 
