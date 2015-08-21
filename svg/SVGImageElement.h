@@ -37,8 +37,6 @@ class SVGImageElement final : public SVGGraphicsElement,
 public:
     static Ref<SVGImageElement> create(const QualifiedName&, Document&);
 
-    bool hasSingleSecurityOrigin() const;
-
 private:
     SVGImageElement(const QualifiedName&, Document&);
     

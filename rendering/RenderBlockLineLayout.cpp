@@ -485,7 +485,7 @@ static inline void setLogicalWidthForTextRun(RootInlineBox* lineBox, BidiRun* ru
 
     float measuredWidth = 0;
 
-    bool kerningIsEnabled = font.enableKerning();
+    bool kerningIsEnabled = font.typesettingFeatures() & Kerning;
     bool canUseSimpleFontCodePath = renderer.canUseSimpleFontCodePath();
     
     // Since we don't cache glyph overflows, we need to re-measure the run if
@@ -720,15 +720,12 @@ void RenderBlockFlow::computeInlineDirectionPositionsForLine(RootInlineBox* line
 
 static inline ExpansionBehavior expansionBehaviorForInlineTextBox(RenderBlockFlow& block, InlineTextBox& textBox, BidiRun* previousRun, BidiRun* nextRun, ETextAlign textAlign, bool isAfterExpansion)
 {
-    // Tatechuyoko is modeled as the Object Replacement Character (U+FFFC), which can never have expansion opportunities inside nor intrinsically adjacent to it.
-    if (textBox.renderer().style().textCombine() == TextCombineHorizontal)
-        return ForbidLeadingExpansion | ForbidTrailingExpansion;
-
     ExpansionBehavior result = 0;
     bool setLeadingExpansion = false;
     bool setTrailingExpansion = false;
     if (textAlign == JUSTIFY) {
-        // If the next box is ruby, and we're justifying, and the first box in the ruby base has a leading expansion, and we are a text box, then force a trailing expansion.
+        // If the next box is ruby, and we're justifying, and the first box in the ruby base has a leading expansion, and we are a text box, then
+        // force a trailing expansion.
         if (nextRun && is<RenderRubyRun>(nextRun->renderer()) && downcast<RenderRubyRun>(nextRun->renderer()).rubyBase() && nextRun->renderer().style().collapseWhiteSpace()) {
             auto& rubyBase = *downcast<RenderRubyRun>(nextRun->renderer()).rubyBase();
             if (rubyBase.firstRootBox() && !rubyBase.firstRootBox()->nextRootBox()) {
@@ -1432,39 +1429,18 @@ void RenderBlockFlow::layoutRunsAndFloatsInRange(LineLayoutState& layoutState, I
             markLinesDirtyInBlockRange(lastRootBox()->lineBottomWithLeading(), lineBox->lineBottomWithLeading(), lineBox);
         }
     }
+
     clearDidBreakAtLineToAvoidWidow();
-}
-
-void RenderBlockFlow::reattachCleanLineFloats(RootInlineBox& cleanLine, LayoutUnit delta, bool isFirstCleanLine)
-{
-    auto* cleanLineFloats = cleanLine.floatsPtr();
-    if (!cleanLineFloats)
-        return;
-
-    for (auto* floatingBox : *cleanLineFloats) {
-        auto* floatingObject = insertFloatingObject(*floatingBox);
-        if (isFirstCleanLine && floatingObject->originatingLine()) {
-            // Float box does not belong to this line anymore.
-            ASSERT(cleanLine.prevRootBox() == floatingObject->originatingLine());
-            cleanLine.removeFloat(*floatingBox);
-            continue;
-        }
-        ASSERT(!floatingObject->originatingLine());
-        floatingObject->setOriginatingLine(&cleanLine);
-        setLogicalHeight(logicalTopForChild(*floatingBox) - marginBeforeForChild(*floatingBox) + delta);
-        positionNewFloats();
-    }
 }
 
 void RenderBlockFlow::linkToEndLineIfNeeded(LineLayoutState& layoutState)
 {
-    auto* firstCleanLine = layoutState.endLine();
-    if (firstCleanLine) {
+    if (layoutState.endLine()) {
         if (layoutState.endLineMatched()) {
             bool paginated = view().layoutState() && view().layoutState()->isPaginated();
             // Attach all the remaining lines, and then adjust their y-positions as needed.
             LayoutUnit delta = logicalHeight() - layoutState.endLineLogicalTop();
-            for (auto* line = firstCleanLine; line; line = line->nextRootBox()) {
+            for (RootInlineBox* line = layoutState.endLine(); line; line = line->nextRootBox()) {
                 line->attachLine();
                 if (paginated) {
                     delta -= line->paginationStrut();
@@ -1477,7 +1453,16 @@ void RenderBlockFlow::linkToEndLineIfNeeded(LineLayoutState& layoutState)
                 }
                 if (layoutState.flowThread())
                     updateRegionForLine(line);
-                reattachCleanLineFloats(*line, delta, line == firstCleanLine);
+                if (Vector<RenderBox*>* cleanLineFloats = line->floatsPtr()) {
+                    for (auto it = cleanLineFloats->begin(), end = cleanLineFloats->end(); it != end; ++it) {
+                        RenderBox* floatingBox = *it;
+                        FloatingObject* floatingObject = insertFloatingObject(*floatingBox);
+                        ASSERT(!floatingObject->originatingLine());
+                        floatingObject->setOriginatingLine(line);
+                        setLogicalHeight(logicalTopForChild(*floatingBox) - marginBeforeForChild(*floatingBox) + delta);
+                        positionNewFloats();
+                    }
+                }
             }
             setLogicalHeight(lastRootBox()->lineBottomWithLeading());
         } else {

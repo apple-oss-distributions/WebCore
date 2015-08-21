@@ -238,7 +238,7 @@ static ASCIILiteral propertyIdToString(AnimatedPropertyID property)
         return ASCIILiteral("opacity");
     case AnimatedPropertyBackgroundColor:
         return ASCIILiteral("backgroundColor");
-    case AnimatedPropertyFilter:
+    case AnimatedPropertyWebkitFilter:
         return ASCIILiteral("filters");
 #if ENABLE(FILTERS_LEVEL_2)
     case AnimatedPropertyWebkitBackdropFilter:
@@ -611,7 +611,7 @@ void GraphicsLayerCA::moveOrCopyAnimations(MoveOrCopy operation, PlatformCALayer
             if (currAnimation.m_property == AnimatedPropertyTransform
                 || currAnimation.m_property == AnimatedPropertyOpacity
                 || currAnimation.m_property == AnimatedPropertyBackgroundColor
-                || currAnimation.m_property == AnimatedPropertyFilter)
+                || currAnimation.m_property == AnimatedPropertyWebkitFilter)
                 moveOrCopyLayerAnimation(operation, animationIdentifier(currAnimation.m_name, currAnimation.m_property, currAnimation.m_index, currAnimation.m_subIndex), fromLayer, toLayer);
         }
     }
@@ -894,7 +894,7 @@ bool GraphicsLayerCA::addAnimation(const KeyframeValueList& valueList, const Flo
     bool createdAnimations = false;
     if (valueList.property() == AnimatedPropertyTransform)
         createdAnimations = createTransformAnimationsFromKeyframes(valueList, anim, animationName, timeOffset, boxSize);
-    else if (valueList.property() == AnimatedPropertyFilter) {
+    else if (valueList.property() == AnimatedPropertyWebkitFilter) {
         if (supportsAcceleratedFilterAnimations())
             createdAnimations = createFilterAnimationsFromKeyframes(valueList, anim, animationName, timeOffset);
     }
@@ -2634,7 +2634,7 @@ void GraphicsLayerCA::updateContentsNeedsDisplay()
 
 bool GraphicsLayerCA::createAnimationFromKeyframes(const KeyframeValueList& valueList, const Animation* animation, const String& animationName, double timeOffset)
 {
-    ASSERT(valueList.property() != AnimatedPropertyTransform && (!supportsAcceleratedFilterAnimations() || valueList.property() != AnimatedPropertyFilter));
+    ASSERT(valueList.property() != AnimatedPropertyTransform && (!supportsAcceleratedFilterAnimations() || valueList.property() != AnimatedPropertyWebkitFilter));
 
     bool isKeyframe = valueList.size() > 2;
     bool valuesOK;
@@ -2769,9 +2769,9 @@ bool GraphicsLayerCA::appendToUncommittedAnimations(const KeyframeValueList& val
 bool GraphicsLayerCA::createFilterAnimationsFromKeyframes(const KeyframeValueList& valueList, const Animation* animation, const String& animationName, double timeOffset)
 {
 #if ENABLE(FILTERS_LEVEL_2)
-    ASSERT(valueList.property() == AnimatedPropertyFilter || valueList.property() == AnimatedPropertyWebkitBackdropFilter);
+    ASSERT(valueList.property() == AnimatedPropertyWebkitFilter || valueList.property() == AnimatedPropertyWebkitBackdropFilter);
 #else
-    ASSERT(valueList.property() == AnimatedPropertyFilter);
+    ASSERT(valueList.property() == AnimatedPropertyWebkitFilter);
 #endif
 
     int listIndex = validateFilterOperations(valueList);
@@ -3487,25 +3487,14 @@ void GraphicsLayerCA::ensureCloneLayers(CloneID cloneID, RefPtr<PlatformCALayer>
     shapeMaskLayer = findOrMakeClone(cloneID, m_shapeMaskLayer.get(), m_shapeMaskLayerClones.get(), cloneLevel);
 }
 
-void GraphicsLayerCA::clearClones(std::unique_ptr<LayerMap>& layerMap)
-{
-    if (!layerMap)
-        return;
-
-    for (auto& layer : layerMap->values())
-        layer->setOwner(nullptr);
-    
-    layerMap = nullptr;
-}
-
 void GraphicsLayerCA::removeCloneLayers()
 {
-    clearClones(m_layerClones);
-    clearClones(m_structuralLayerClones);
-    clearClones(m_contentsLayerClones);
-    clearClones(m_contentsClippingLayerClones);
-    clearClones(m_contentsShapeMaskLayerClones);
-    clearClones(m_shapeMaskLayerClones);
+    m_layerClones = nullptr;
+    m_structuralLayerClones = nullptr;
+    m_contentsLayerClones = nullptr;
+    m_contentsClippingLayerClones = nullptr;
+    m_contentsShapeMaskLayerClones = nullptr;
+    m_shapeMaskLayerClones = nullptr;
 }
 
 FloatPoint GraphicsLayerCA::positionForCloneRootLayer() const
@@ -3776,7 +3765,7 @@ double GraphicsLayerCA::backingStoreMemoryEstimate() const
     if (!m_layer->backingContributesToMemoryEstimate())
         return 0;
 
-    return m_layer->backingStoreBytesPerPixel() * size().width() * m_layer->contentsScale() * size().height() * m_layer->contentsScale();
+    return 4.0 * size().width() * m_layer->contentsScale() * size().height() * m_layer->contentsScale();
 }
 
 } // namespace WebCore

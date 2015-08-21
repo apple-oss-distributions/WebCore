@@ -34,7 +34,11 @@
 
 #include "Event.h"
 #include "FloatQuad.h"
+#include "IntRect.h"
 #include "JSMainThreadExecState.h"
+#include "LayoutRect.h"
+#include "ResourceRequest.h"
+#include "ResourceResponse.h"
 #include <inspector/InspectorProtocolObjects.h>
 #include <inspector/ScriptBreakpoint.h>
 #include <inspector/ScriptCallStack.h>
@@ -48,12 +52,12 @@ namespace WebCore {
 Ref<InspectorObject> TimelineRecordFactory::createGenericRecord(double startTime, int maxCallStackDepth)
 {
     Ref<InspectorObject> record = InspectorObject::create();
-    record->setDouble(ASCIILiteral("startTime"), startTime);
+    record->setDouble("startTime", startTime);
 
     if (maxCallStackDepth) {
         RefPtr<ScriptCallStack> stackTrace = createScriptCallStack(JSMainThreadExecState::currentState(), maxCallStackDepth);
         if (stackTrace && stackTrace->size())
-            record->setValue(ASCIILiteral("stackTrace"), stackTrace->buildInspectorArray());
+            record->setValue("stackTrace", stackTrace->buildInspectorArray());
     }
     return WTF::move(record);
 }
@@ -76,15 +80,15 @@ Ref<InspectorObject> TimelineRecordFactory::createGCEventData(const size_t usedH
 Ref<InspectorObject> TimelineRecordFactory::createFunctionCallData(const String& scriptName, int scriptLine)
 {
     Ref<InspectorObject> data = InspectorObject::create();
-    data->setString(ASCIILiteral("scriptName"), scriptName);
-    data->setInteger(ASCIILiteral("scriptLine"), scriptLine);
+    data->setString("scriptName", scriptName);
+    data->setInteger("scriptLine", scriptLine);
     return WTF::move(data);
 }
 
 Ref<InspectorObject> TimelineRecordFactory::createConsoleProfileData(const String& title)
 {
     Ref<InspectorObject> data = InspectorObject::create();
-    data->setString(ASCIILiteral("title"), title);
+    data->setString("title", title);
     return WTF::move(data);
 }
 
@@ -99,23 +103,23 @@ Ref<InspectorObject> TimelineRecordFactory::createProbeSampleData(const ScriptBr
 Ref<InspectorObject> TimelineRecordFactory::createEventDispatchData(const Event& event)
 {
     Ref<InspectorObject> data = InspectorObject::create();
-    data->setString(ASCIILiteral("type"), event.type().string());
+    data->setString("type", event.type().string());
     return WTF::move(data);
 }
 
 Ref<InspectorObject> TimelineRecordFactory::createGenericTimerData(int timerId)
 {
     Ref<InspectorObject> data = InspectorObject::create();
-    data->setInteger(ASCIILiteral("timerId"), timerId);
+    data->setInteger("timerId", timerId);
     return WTF::move(data);
 }
 
 Ref<InspectorObject> TimelineRecordFactory::createTimerInstallData(int timerId, int timeout, bool singleShot)
 {
     Ref<InspectorObject> data = InspectorObject::create();
-    data->setInteger(ASCIILiteral("timerId"), timerId);
-    data->setInteger(ASCIILiteral("timeout"), timeout);
-    data->setBoolean(ASCIILiteral("singleShot"), singleShot);
+    data->setInteger("timerId", timerId);
+    data->setInteger("timeout", timeout);
+    data->setBoolean("singleShot", singleShot);
     return WTF::move(data);
 }
 
@@ -137,22 +141,45 @@ Ref<InspectorObject> TimelineRecordFactory::createXHRLoadData(const String& url)
 Ref<InspectorObject> TimelineRecordFactory::createEvaluateScriptData(const String& url, double lineNumber)
 {
     Ref<InspectorObject> data = InspectorObject::create();
-    data->setString(ASCIILiteral("url"), url);
-    data->setInteger(ASCIILiteral("lineNumber"), lineNumber);
+    data->setString("url", url);
+    data->setInteger("lineNumber", lineNumber);
     return WTF::move(data);
 }
 
 Ref<InspectorObject> TimelineRecordFactory::createTimeStampData(const String& message)
 {
     Ref<InspectorObject> data = InspectorObject::create();
-    data->setString(ASCIILiteral("message"), message);
+    data->setString("message", message);
+    return WTF::move(data);
+}
+
+Ref<InspectorObject> TimelineRecordFactory::createLayoutData(unsigned dirtyObjects, unsigned totalObjects, bool partialLayout)
+{
+    Ref<InspectorObject> data = InspectorObject::create();
+    data->setInteger("dirtyObjects", dirtyObjects);
+    data->setInteger("totalObjects", totalObjects);
+    data->setBoolean("partialLayout", partialLayout);
+    return WTF::move(data);
+}
+
+Ref<InspectorObject> TimelineRecordFactory::createMarkData(bool isMainFrame)
+{
+    Ref<InspectorObject> data = InspectorObject::create();
+    data->setBoolean("isMainFrame", isMainFrame);
+    return WTF::move(data);
+}
+
+Ref<InspectorObject> TimelineRecordFactory::createParseHTMLData(unsigned startLine)
+{
+    Ref<InspectorObject> data = InspectorObject::create();
+    data->setInteger("startLine", startLine);
     return WTF::move(data);
 }
 
 Ref<InspectorObject> TimelineRecordFactory::createAnimationFrameData(int callbackId)
 {
     Ref<InspectorObject> data = InspectorObject::create();
-    data->setInteger(ASCIILiteral("id"), callbackId);
+    data->setInteger("id", callbackId);
     return WTF::move(data);
 }
 
@@ -173,13 +200,13 @@ static PassRefPtr<InspectorArray> createQuad(const FloatQuad& quad)
 Ref<InspectorObject> TimelineRecordFactory::createPaintData(const FloatQuad& quad)
 {
     Ref<InspectorObject> data = InspectorObject::create();
-    data->setArray(ASCIILiteral("clip"), createQuad(quad));
+    data->setArray("clip", createQuad(quad));
     return WTF::move(data);
 }
 
 void TimelineRecordFactory::appendLayoutRoot(InspectorObject* data, const FloatQuad& quad)
 {
-    data->setArray(ASCIILiteral("root"), createQuad(quad));
+    data->setArray("root", createQuad(quad));
 }
 
 static Ref<Protocol::Timeline::CPUProfileNodeAggregateCallInfo> buildAggregateCallInfoInspectorObject(const JSC::ProfileNode* node)

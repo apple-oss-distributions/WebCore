@@ -67,11 +67,8 @@ private:
 
     virtual ~PingHandle()
     {
-        if (m_handle) {
-            ASSERT(m_handle->client() == this);
-            m_handle->setClient(nullptr);
+        if (m_handle)
             m_handle->cancel();
-        }
     }
 
     RefPtr<ResourceHandle> m_handle;

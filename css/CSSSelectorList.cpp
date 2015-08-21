@@ -111,15 +111,12 @@ void CSSSelectorList::deleteSelectors()
     if (!m_selectorArray)
         return;
 
-    CSSSelector* selectorArray = m_selectorArray;
-    m_selectorArray = nullptr;
-
-    bool isLastSelector = false;
-    for (CSSSelector* s = selectorArray; !isLastSelector; ++s) {
-        isLastSelector = s->isLastInSelectorList();
+    for (CSSSelector* s = m_selectorArray; ; ++s) {
         s->~CSSSelector();
+        if (s->isLastInSelectorList())
+            break;
     }
-    fastFree(selectorArray);
+    fastFree(m_selectorArray);
 }
 
 String CSSSelectorList::selectorsText() const

@@ -81,7 +81,6 @@
 #include "HTMLMediaElement.h"
 #include "HTMLNameCollection.h"
 #include "HTMLParserIdioms.h"
-#include "HTMLPictureElement.h"
 #include "HTMLPlugInElement.h"
 #include "HTMLScriptElement.h"
 #include "HTMLStyleElement.h"
@@ -125,7 +124,6 @@
 #include "RenderView.h"
 #include "RenderWidget.h"
 #include "ResourceLoadScheduler.h"
-#include "ResourceLoader.h"
 #include "RuntimeEnabledFeatures.h"
 #include "SVGDocumentExtensions.h"
 #include "SVGElement.h"
@@ -148,6 +146,7 @@
 #include "StyleResolver.h"
 #include "StyleSheetContents.h"
 #include "StyleSheetList.h"
+#include "SubresourceLoader.h"
 #include "TextNodeTraversal.h"
 #include "TextResourceDecoder.h"
 #include "TransformSource.h"
@@ -319,6 +318,19 @@ static inline bool isValidNamePart(UChar32 c)
         return false;
 
     return true;
+}
+
+static bool shouldInheritSecurityOriginFromOwner(const URL& url)
+{
+    // http://www.whatwg.org/specs/web-apps/current-work/#origin-0
+    //
+    // If a Document has the address "about:blank"
+    //     The origin of the Document is the origin it was assigned when its browsing context was created.
+    //
+    // Note: We generalize this to all "blank" URLs and invalid URLs because we
+    // treat all of these URLs as about:blank.
+    //
+    return url.isEmpty() || url.isBlankURL();
 }
 
 static Widget* widgetForElement(Element* focusedElement)
@@ -621,8 +633,7 @@ Document::~Document()
     if (m_cachedResourceLoader->document() == this)
         m_cachedResourceLoader->setDocument(nullptr);
 
-    if (auto* platformMediaSessionManager = PlatformMediaSessionManager::sharedManagerIfExists())
-        platformMediaSessionManager->stopAllMediaPlaybackForDocument(this);
+    PlatformMediaSessionManager::sharedManager().stopAllMediaPlaybackForDocument(this);
     
     // We must call clearRareData() here since a Document class inherits TreeScope
     // as well as Node. See a comment on TreeScope.h for the reason.
@@ -2080,7 +2091,7 @@ void Document::createStyleResolver()
     m_styleSheetCollection.combineCSSFeatureFlags();
 }
 
-void Document::fontsNeedUpdate(FontSelector&)
+void Document::fontsNeedUpdate(FontSelector*)
 {
     if (m_styleResolver)
         m_styleResolver->invalidateMatchedPropertiesCache();
@@ -2093,7 +2104,7 @@ CSSFontSelector& Document::fontSelector()
 {
     if (!m_fontSelector) {
         m_fontSelector = CSSFontSelector::create(*this);
-        m_fontSelector->registerForInvalidationCallbacks(*this);
+        m_fontSelector->registerForInvalidationCallbacks(this);
     }
     return *m_fontSelector;
 }
@@ -2105,7 +2116,7 @@ void Document::clearStyleResolver()
     // FIXME: It would be better if the FontSelector could survive this operation.
     if (m_fontSelector) {
         m_fontSelector->clearDocument();
-        m_fontSelector->unregisterForInvalidationCallbacks(*this);
+        m_fontSelector->unregisterForInvalidationCallbacks(this);
         m_fontSelector = nullptr;
     }
 }
@@ -2252,8 +2263,6 @@ void Document::prepareForDestruction()
         page()->pointerLockController().documentDetached(this);
 #endif
 
-    InspectorInstrumentation::documentDetached(*this);
-
     stopActiveDOMObjects();
     m_eventQueue.close();
 #if ENABLE(FULLSCREEN_API)
@@ -2301,35 +2310,16 @@ void Document::removeAllEventListeners()
         node->removeAllEventListeners();
 }
 
-void Document::suspendDeviceMotionAndOrientationUpdates()
+void Document::platformSuspendOrStopActiveDOMObjects()
 {
-    if (m_areDeviceMotionAndOrientationUpdatesSuspended)
-        return;
-    m_areDeviceMotionAndOrientationUpdatesSuspended = true;
-#if ENABLE(DEVICE_ORIENTATION) && PLATFORM(IOS)
+#if PLATFORM(IOS)
+#if ENABLE(DEVICE_ORIENTATION)
     if (m_deviceMotionController)
         m_deviceMotionController->suspendUpdates();
     if (m_deviceOrientationController)
         m_deviceOrientationController->suspendUpdates();
 #endif
-}
 
-void Document::resumeDeviceMotionAndOrientationUpdates()
-{
-    if (!m_areDeviceMotionAndOrientationUpdatesSuspended)
-        return;
-    m_areDeviceMotionAndOrientationUpdatesSuspended = false;
-#if ENABLE(DEVICE_ORIENTATION) && PLATFORM(IOS)
-    if (m_deviceMotionController)
-        m_deviceMotionController->resumeUpdates();
-    if (m_deviceOrientationController)
-        m_deviceOrientationController->resumeUpdates();
-#endif
-}
-
-void Document::platformSuspendOrStopActiveDOMObjects()
-{
-#if PLATFORM(IOS)
     if (WebThreadCountOfObservedContentModifiers() > 0) {
         Frame* frame = this->frame();
         if (Page* page = frame ? frame->page() : nullptr)
@@ -2341,14 +2331,19 @@ void Document::platformSuspendOrStopActiveDOMObjects()
 void Document::suspendActiveDOMObjects(ActiveDOMObject::ReasonForSuspension why)
 {
     ScriptExecutionContext::suspendActiveDOMObjects(why);
-    suspendDeviceMotionAndOrientationUpdates();
     platformSuspendOrStopActiveDOMObjects();
 }
 
 void Document::resumeActiveDOMObjects(ActiveDOMObject::ReasonForSuspension why)
 {
     ScriptExecutionContext::resumeActiveDOMObjects(why);
-    resumeDeviceMotionAndOrientationUpdates();
+
+#if ENABLE(DEVICE_ORIENTATION) && PLATFORM(IOS)
+    if (m_deviceMotionController)
+        m_deviceMotionController->resumeUpdates();
+    if (m_deviceOrientationController)
+        m_deviceOrientationController->resumeUpdates();
+#endif
     // FIXME: For iOS, do we need to add content change observers that were removed in Document::suspendActiveDOMObjects()?
 }
 
@@ -2616,8 +2611,7 @@ void Document::implicitClose()
 
     dispatchWindowLoadEvent();
     enqueuePageshowEvent(PageshowEventNotPersisted);
-    if (m_pendingStateObject)
-        enqueuePopstateEvent(m_pendingStateObject.release());
+    enqueuePopstateEvent(m_pendingStateObject ? m_pendingStateObject.release() : SerializedScriptValue::nullValue());
     
     if (f)
         f->loader().handledOnloadEvents();
@@ -3271,11 +3265,6 @@ void Document::processReferrerPolicy(const String& policy)
 {
     ASSERT(!policy.isNull());
 
-    // Documents in a Content-Disposition: attachment sandbox should never send a Referer header,
-    // even if the document has a meta tag saying otherwise.
-    if (shouldEnforceContentDispositionAttachmentSandbox())
-        return;
-
     // Note that we're supporting both the standard and legacy keywords for referrer
     // policies, as defined by http://www.w3.org/TR/referrer-policy/#referrer-policy-delivery-meta
     if (equalIgnoringCase(policy, "no-referrer") || equalIgnoringCase(policy, "never"))
@@ -3477,20 +3466,6 @@ void Document::evaluateMediaQueryList()
 {
     if (m_mediaQueryMatcher)
         m_mediaQueryMatcher->styleResolverChanged();
-    
-    checkViewportDependentPictures();
-}
-
-void Document::checkViewportDependentPictures()
-{
-    Vector<HTMLPictureElement*, 16> changedPictures;
-    HashSet<HTMLPictureElement*>::iterator end = m_viewportDependentPictures.end();
-    for (HashSet<HTMLPictureElement*>::iterator it = m_viewportDependentPictures.begin(); it != end; ++it) {
-        if ((*it)->viewportChangeAffectedPicture())
-            changedPictures.append(*it);
-    }
-    for (auto* picture : changedPictures)
-        picture->sourcesChanged();
 }
 
 void Document::optimizedStyleSheetUpdateTimerFired()
@@ -4956,7 +4931,7 @@ void Document::initSecurityContext()
     enforceSandboxFlags(m_frame->loader().effectiveSandboxFlags());
 
     if (shouldEnforceContentDispositionAttachmentSandbox())
-        applyContentDispositionAttachmentSandbox();
+        enforceSandboxFlags(SandboxAll);
 
     setSecurityOriginPolicy(SecurityOriginPolicy::create(isSandboxed(SandboxOrigin) ? SecurityOrigin::createUnique() : SecurityOrigin::create(m_url)));
     setContentSecurityPolicy(std::make_unique<ContentSecurityPolicy>(this));
@@ -4986,7 +4961,7 @@ void Document::initSecurityContext()
         setBaseURLOverride(parentDocument->baseURL());
     }
 
-    if (!m_url.shouldInheritSecurityOriginFromOwner())
+    if (!shouldInheritSecurityOriginFromOwner(m_url))
         return;
 
     // If we do not obtain a meaningful origin from the URL, then we try to
@@ -5019,7 +4994,7 @@ void Document::initSecurityContext()
 
 void Document::initContentSecurityPolicy()
 {
-    if (!m_frame->tree().parent() || (!m_url.shouldInheritSecurityOriginFromOwner() && !isPluginDocument()))
+    if (!m_frame->tree().parent() || (!shouldInheritSecurityOriginFromOwner(m_url) && !isPluginDocument()))
         return;
 
     contentSecurityPolicy()->copyStateFrom(m_frame->tree().parent()->document()->contentSecurityPolicy());
@@ -5351,6 +5326,7 @@ void Document::enqueueHashchangeEvent(const String& oldURL, const String& newURL
 
 void Document::enqueuePopstateEvent(PassRefPtr<SerializedScriptValue> stateObject)
 {
+    // FIXME: https://bugs.webkit.org/show_bug.cgi?id=36202 Popstate event needs to fire asynchronously
     dispatchWindowEvent(PopStateEvent::create(stateObject, m_domWindow ? m_domWindow->history() : nullptr));
 }
 
@@ -6747,27 +6723,6 @@ bool Document::shouldEnforceContentDispositionAttachmentSandbox() const
         responseIsAttachment = documentLoader->response().isAttachment();
 
     return contentDispositionAttachmentSandboxEnabled && responseIsAttachment;
-}
-
-void Document::applyContentDispositionAttachmentSandbox()
-{
-    ASSERT(shouldEnforceContentDispositionAttachmentSandbox());
-
-    setReferrerPolicy(ReferrerPolicyNever);
-    if (!isMediaDocument())
-        enforceSandboxFlags(SandboxAll);
-    else
-        enforceSandboxFlags(SandboxOrigin);
-}
-
-void Document::addViewportDependentPicture(HTMLPictureElement& picture)
-{
-    m_viewportDependentPictures.add(&picture);
-}
-
-void Document::removeViewportDependentPicture(HTMLPictureElement& picture)
-{
-    m_viewportDependentPictures.remove(&picture);
 }
 
 } // namespace WebCore

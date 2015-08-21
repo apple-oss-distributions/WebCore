@@ -53,7 +53,7 @@ video:-webkit-full-page-media::-webkit-media-controls-panel {
     width: inherit;
     height: inherit;
     position: relative;
-    display: -webkit-flex !important;
+    display: -webkit-flex;
     -webkit-align-items: stretch;
     -webkit-justify-content: flex-end;
     -webkit-flex-direction: column;
@@ -169,9 +169,7 @@ video::-webkit-media-controls-panel {
 }
 
 video::-webkit-media-controls-panel .hidden,
-audio::-webkit-media-controls-panel .hidden,
-video::-webkit-media-controls-panel .dropped,
-audio::-webkit-media-controls-panel .dropped {
+audio::-webkit-media-controls-panel .hidden {
     display: none;
 }
 

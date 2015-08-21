@@ -59,8 +59,8 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
 #if ENABLE(CSS_SCROLL_SNAP)
     , m_scrollSnapPoints(StyleScrollSnapPoints::create())
 #endif
-    , m_willChange(RenderStyle::initialWillChange())
     , m_mask(FillLayer(MaskFillLayer))
+    , m_pageSize()
 #if ENABLE(CSS_SHAPES)
     , m_shapeOutside(RenderStyle::initialShapeOutside())
     , m_shapeMargin(RenderStyle::initialShapeMargin())
@@ -77,9 +77,6 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_justifyContent(RenderStyle::initialContentAlignment())
     , m_justifyItems(RenderStyle::initialSelfAlignment())
     , m_justifySelf(RenderStyle::initialSelfAlignment())
-#if ENABLE(TOUCH_EVENTS)
-    , m_touchAction(static_cast<unsigned>(RenderStyle::initialTouchAction()))
-#endif
 #if ENABLE(CSS_SCROLL_SNAP)
     , m_scrollSnapType(static_cast<unsigned>(RenderStyle::initialScrollSnapType()))
 #endif
@@ -139,7 +136,6 @@ inline StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonIn
     , m_counterDirectives(o.m_counterDirectives ? clone(*o.m_counterDirectives) : nullptr)
     , m_altText(o.m_altText)
     , m_boxShadow(o.m_boxShadow ? std::make_unique<ShadowData>(*o.m_boxShadow) : nullptr)
-    , m_willChange(o.m_willChange)
     , m_boxReflect(o.m_boxReflect)
     , m_animations(o.m_animations ? std::make_unique<AnimationList>(*o.m_animations) : nullptr)
     , m_transitions(o.m_transitions ? std::make_unique<AnimationList>(*o.m_transitions) : nullptr)
@@ -169,9 +165,6 @@ inline StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonIn
     , m_justifyContent(o.m_justifyContent)
     , m_justifyItems(o.m_justifyItems)
     , m_justifySelf(o.m_justifySelf)
-#if ENABLE(TOUCH_EVENTS)
-    , m_touchAction(o.m_touchAction)
-#endif
 #if ENABLE(CSS_SCROLL_SNAP)
     , m_scrollSnapType(o.m_scrollSnapType)
 #endif
@@ -241,7 +234,6 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && contentDataEquivalent(o)
         && counterDataEquivalent(o)
         && shadowDataEquivalent(o)
-        && willChangeDataEquivalent(o)
         && reflectionDataEquivalent(o)
         && animationDataEquivalent(o)
         && transitionDataEquivalent(o)
@@ -253,7 +245,7 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_shapeMargin == o.m_shapeMargin
         && m_shapeImageThreshold == o.m_shapeImageThreshold
 #endif
-        && m_clipPath == o.m_clipPath // FIXME: This needs to compare values.
+        && m_clipPath == o.m_clipPath
         && m_textDecorationColor == o.m_textDecorationColor
         && m_visitedLinkTextDecorationColor == o.m_visitedLinkTextDecorationColor
         && m_visitedLinkBackgroundColor == o.m_visitedLinkBackgroundColor
@@ -286,9 +278,6 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_borderFit == o.m_borderFit
         && m_textCombine == o.m_textCombine
         && m_textDecorationStyle == o.m_textDecorationStyle
-#if ENABLE(TOUCH_EVENTS)
-        && m_touchAction == o.m_touchAction
-#endif
 #if ENABLE(CSS_SCROLL_SNAP)
         && m_scrollSnapType == o.m_scrollSnapType
 #endif
@@ -331,16 +320,6 @@ bool StyleRareNonInheritedData::shadowDataEquivalent(const StyleRareNonInherited
         return false;
     if (m_boxShadow && o.m_boxShadow && (*m_boxShadow != *o.m_boxShadow))
         return false;
-    return true;
-}
-
-bool StyleRareNonInheritedData::willChangeDataEquivalent(const StyleRareNonInheritedData& o) const
-{
-    if (m_willChange != o.m_willChange) {
-        if (!m_willChange || !o.m_willChange)
-            return false;
-        return *m_willChange == *o.m_willChange;
-    }
     return true;
 }
 

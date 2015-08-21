@@ -70,6 +70,10 @@ public:
     bool canContainFixedPositionObjects() const;
     bool canContainAbsolutelyPositionedObjects() const;
 
+    RenderBlock* containingBlockForFixedPosition() const;
+    RenderBlock* containingBlockForAbsolutePosition() const;
+    RenderBlock* containingBlockForObjectInFlow() const;
+
     Color selectionColor(int colorProperty) const;
     PassRefPtr<RenderStyle> selectionPseudoStyle() const;
 
@@ -294,8 +298,6 @@ private:
     bool getLeadingCorner(FloatPoint& output) const;
     bool getTrailingCorner(FloatPoint& output) const;
 
-    bool shouldWillChangeCreateStackingContext() const;
-
     unsigned m_baseTypeFlags : 6;
     unsigned m_ancestorLineBoxDirty : 1;
     unsigned m_hasInitializedStyle : 1;
@@ -477,9 +479,6 @@ inline LayoutUnit adjustLayoutUnitForAbsoluteZoom(LayoutUnit value, const Render
     return adjustLayoutUnitForAbsoluteZoom(value, renderer.style());
 }
 
-RenderBlock* containingBlockForFixedPosition(const RenderElement*);
-RenderBlock* containingBlockForAbsolutePosition(const RenderElement*);
-RenderBlock* containingBlockForObjectInFlow(const RenderElement*);
 } // namespace WebCore
 
 SPECIALIZE_TYPE_TRAITS_RENDER_OBJECT(RenderElement, isRenderElement())

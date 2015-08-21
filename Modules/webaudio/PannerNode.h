@@ -36,7 +36,6 @@
 #include "Panner.h"
 #include <memory>
 #include <mutex>
-#include <wtf/HashSet.h>
 
 namespace WebCore {
 
@@ -140,7 +139,7 @@ private:
 
     // Notifies any AudioBufferSourceNodes connected to us either directly or indirectly about our existence.
     // This is in order to handle the pitch change necessary for the doppler shift.
-    void notifyAudioSourcesConnectedToNode(AudioNode*, HashSet<AudioNode*>& visitedNodes);
+    void notifyAudioSourcesConnectedToNode(AudioNode*);
 
     std::unique_ptr<Panner> m_panner;
     unsigned m_panningModel;

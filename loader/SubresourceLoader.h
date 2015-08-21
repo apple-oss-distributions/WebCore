@@ -58,12 +58,14 @@ public:
     virtual const ResourceRequest& iOSOriginalRequest() const override { return m_iOSOriginalRequest; }
 #endif
 
+    bool callingDidReceiveResponse() const { return m_callingDidReceiveResponse; }
+
 private:
     SubresourceLoader(Frame*, CachedResource*, const ResourceLoaderOptions&);
 
     virtual bool init(const ResourceRequest&) override;
 
-    virtual void willSendRequest(ResourceRequest&, const ResourceResponse& redirectResponse) override;
+    virtual void willSendRequestInternal(ResourceRequest&, const ResourceResponse& redirectResponse) override;
     virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) override;
     virtual void didReceiveResponse(const ResourceResponse&) override;
     virtual void didReceiveData(const char*, unsigned, long long encodedDataLength, DataPayloadType) override;
@@ -121,6 +123,7 @@ private:
     bool m_loadingMultipartContent;
     SubresourceLoaderState m_state;
     std::unique_ptr<RequestCountTracker> m_requestCountTracker;
+    bool m_callingDidReceiveResponse { false };
 };
 
 }

@@ -101,7 +101,7 @@ void CSSFontFaceSource::fontLoaded(CachedFont*)
         m_face->fontLoaded(this);
 }
 
-RefPtr<Font> CSSFontFaceSource::font(const FontDescription& fontDescription, bool syntheticBold, bool syntheticItalic, CSSFontSelector* fontSelector, const FontFeatureSettings& fontFaceFeatures, const FontVariantSettings& fontFaceVariantSettings)
+RefPtr<Font> CSSFontFaceSource::font(const FontDescription& fontDescription, bool syntheticBold, bool syntheticItalic, CSSFontSelector* fontSelector)
 {
     // If the font hasn't loaded or an error occurred, then we've got nothing.
     if (!isValid())
@@ -124,8 +124,10 @@ RefPtr<Font> CSSFontFaceSource::font(const FontDescription& fontDescription, boo
     if (font)
         return font.release();
 
+    // If we are still loading, then we let the system pick a font.
     if (isLoaded()) {
         if (m_font) {
+            // Create new FontPlatformData from our CGFontRef, point size and ATSFontRef.
             bool hasExternalSVGFont = false;
 #if ENABLE(SVG_FONTS)
             hasExternalSVGFont = m_hasExternalSVGFont;
@@ -133,7 +135,7 @@ RefPtr<Font> CSSFontFaceSource::font(const FontDescription& fontDescription, boo
             if (!m_font->ensureCustomFontData(hasExternalSVGFont, m_string))
                 return nullptr;
 
-            font = m_font->createFont(fontDescription, m_string, syntheticBold, syntheticItalic, hasExternalSVGFont, fontFaceFeatures, fontFaceVariantSettings);
+            font = m_font->createFont(fontDescription, m_string, syntheticBold, syntheticItalic, hasExternalSVGFont);
         } else {
 #if ENABLE(SVG_FONTS)
             // In-Document SVG Fonts
@@ -148,10 +150,8 @@ RefPtr<Font> CSSFontFaceSource::font(const FontDescription& fontDescription, boo
                 m_generatedOTFBuffer = SharedBuffer::adoptVector(otfFont);
                 if (!m_generatedOTFBuffer)
                     return nullptr;
-                auto customPlatformData = createFontCustomPlatformData(*m_generatedOTFBuffer);
-                if (!customPlatformData)
-                    return nullptr;
-                font = Font::create(customPlatformData->fontPlatformData(fontDescription, syntheticBold, syntheticItalic, fontFaceFeatures, fontFaceVariantSettings), true, false);
+                std::unique_ptr<FontCustomPlatformData> customPlatformData = createFontCustomPlatformData(*m_generatedOTFBuffer);
+                font = Font::create(customPlatformData->fontPlatformData(static_cast<int>(fontDescription.computedPixelSize()), syntheticBold, syntheticItalic, fontDescription.orientation(), fontDescription.widthVariant(), fontDescription.renderingMode()), true, false);
 #else
                 font = Font::create(std::make_unique<SVGFontData>(m_svgFontFaceElement.get()), fontDescription.computedPixelSize(), syntheticBold, syntheticItalic);
 #endif

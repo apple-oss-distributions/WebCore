@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006-2008, 2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
  * Copyright (C) 2011 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -138,10 +138,11 @@ DocumentLoader::DocumentLoader(const ResourceRequest& req, const SubstituteData&
     , m_timeOfLastDataReceived(0.0)
     , m_identifierForLoadWithoutResourceLoader(0)
     , m_dataLoadTimer(*this, &DocumentLoader::handleSubstituteDataLoadNow)
+    , m_waitingForContentPolicy(false)
     , m_subresourceLoadersArePageCacheAcceptable(false)
     , m_applicationCacheHost(std::make_unique<ApplicationCacheHost>(*this))
 #if ENABLE(CONTENT_FILTERING)
-    , m_contentFilter(!substituteData.isValid() ? ContentFilter::create(*this) : nullptr)
+    , m_contentFilter(!substituteData.isValid() ? ContentFilter::createIfNeeded(std::bind(&DocumentLoader::contentFilterDidDecide, this)) : nullptr)
 #endif
 {
 }
@@ -153,7 +154,7 @@ FrameLoader* DocumentLoader::frameLoader() const
     return &m_frame->loader();
 }
 
-ResourceLoader* DocumentLoader::mainResourceLoader() const
+SubresourceLoader* DocumentLoader::mainResourceLoader() const
 {
     return m_mainResource ? m_mainResource->loader() : 0;
 }
@@ -162,7 +163,6 @@ DocumentLoader::~DocumentLoader()
 {
     ASSERT(!m_frame || frameLoader()->activeDocumentLoader() != this || !isLoading());
     ASSERT_WITH_MESSAGE(!m_waitingForContentPolicy, "The content policy callback should never outlive its DocumentLoader.");
-    ASSERT_WITH_MESSAGE(!m_waitingForNavigationPolicy, "The navigation policy callback should never outlive its DocumentLoader.");
     if (m_iconLoadDecisionCallback)
         m_iconLoadDecisionCallback->invalidate();
     if (m_iconDataCallback)
@@ -371,11 +371,6 @@ bool DocumentLoader::isLoading() const
 
 void DocumentLoader::notifyFinished(CachedResource* resource)
 {
-#if ENABLE(CONTENT_FILTERING)
-    if (m_contentFilter && !m_contentFilter->continueAfterNotifyFinished(resource))
-        return;
-#endif
-
     ASSERT_UNUSED(resource, m_mainResource == resource);
     ASSERT(m_mainResource);
     if (!m_mainResource->errorOccurred() && !m_mainResource->wasCanceled()) {
@@ -517,11 +512,6 @@ void DocumentLoader::willSendRequest(ResourceRequest& newRequest, const Resource
             cancelMainResourceLoad(frameLoader()->cancelledError(newRequest));
             return;
         }
-        if (!portAllowed(newRequest.url())) {
-            FrameLoader::reportBlockedPortFailed(m_frame, newRequest.url().string());
-            cancelMainResourceLoad(frameLoader()->blockedError(newRequest));
-            return;
-        }
         timing().addRedirect(redirectResponse.url(), newRequest.url());
     }
 
@@ -546,8 +536,12 @@ void DocumentLoader::willSendRequest(ResourceRequest& newRequest, const Resource
     }
 
 #if ENABLE(CONTENT_FILTERING)
-    if (m_contentFilter && !m_contentFilter->continueAfterWillSendRequest(newRequest, redirectResponse))
-        return;
+    if (m_contentFilter) {
+        ASSERT(redirectResponse.isNull());
+        m_contentFilter->willSendRequest(newRequest, redirectResponse);
+        if (newRequest.isNull())
+            return;
+    }
 #endif
 
     setRequest(newRequest);
@@ -570,8 +564,6 @@ void DocumentLoader::willSendRequest(ResourceRequest& newRequest, const Resource
     if (redirectResponse.isNull())
         return;
 
-    ASSERT(!m_waitingForNavigationPolicy);
-    m_waitingForNavigationPolicy = true;
     frameLoader()->policyChecker().checkNavigationPolicy(newRequest, [this](const ResourceRequest& request, PassRefPtr<FormState>, bool shouldContinue) {
         continueAfterNavigationPolicy(request, shouldContinue);
     });
@@ -579,8 +571,6 @@ void DocumentLoader::willSendRequest(ResourceRequest& newRequest, const Resource
 
 void DocumentLoader::continueAfterNavigationPolicy(const ResourceRequest&, bool shouldContinue)
 {
-    ASSERT(m_waitingForNavigationPolicy);
-    m_waitingForNavigationPolicy = false;
     if (!shouldContinue)
         stopLoadingForPolicyChange();
     else if (m_substituteData.isValid()) {
@@ -609,11 +599,6 @@ void DocumentLoader::continueAfterNavigationPolicy(const ResourceRequest&, bool 
 
 void DocumentLoader::responseReceived(CachedResource* resource, const ResourceResponse& response)
 {
-#if ENABLE(CONTENT_FILTERING)
-    if (m_contentFilter && !m_contentFilter->continueAfterResponseReceived(resource, response))
-        return;
-#endif
-
     ASSERT_UNUSED(resource, m_mainResource == resource);
     Ref<DocumentLoader> protect(*this);
     bool willLoadFallback = m_applicationCacheHost->maybeLoadFallbackForMainResponse(request(), response);
@@ -663,10 +648,6 @@ void DocumentLoader::responseReceived(CachedResource* resource, const ResourceRe
     m_response = response;
 
     if (m_identifierForLoadWithoutResourceLoader) {
-        if (m_mainResource && m_mainResource->wasRedirected()) {
-            ASSERT(m_mainResource->status() == CachedResource::Status::Cached);
-            frameLoader()->client().dispatchDidReceiveServerRedirectForProvisionalLoad();
-        }
         addResponse(m_response);
         frameLoader()->notifier().dispatchDidReceiveResponse(this, m_identifierForLoadWithoutResourceLoader, m_response, 0);
     }
@@ -688,14 +669,6 @@ void DocumentLoader::responseReceived(CachedResource* resource, const ResourceRe
         return;
     }
 #endif
-
-    if (m_response.isHttpVersion0_9()) {
-        ASSERT(m_identifierForLoadWithoutResourceLoader || m_mainResource);
-        unsigned long identifier = m_identifierForLoadWithoutResourceLoader ? m_identifierForLoadWithoutResourceLoader : m_mainResource->identifier();
-        String message = "Sandboxing '" + response.url().string() + "' because it is using HTTP/0.9.";
-        m_frame->document()->addConsoleMessage(MessageSource::Security, MessageLevel::Error, message, identifier);
-        frameLoader()->forceSandboxFlags(SandboxScripts | SandboxPlugins);
-    }
 
     frameLoader()->policyChecker().checkContentPolicy(m_response, [this](PolicyAction policy) {
         continueAfterContentPolicy(policy);
@@ -748,7 +721,7 @@ void DocumentLoader::continueAfterContentPolicy(PolicyAction policy)
 
         // It might have gone missing
         if (mainResourceLoader())
-            mainResourceLoader()->didFail(interruptedForPolicyChangeError());
+            static_cast<ResourceLoader*>(mainResourceLoader())->didFail(interruptedForPolicyChangeError());
         return;
     }
     case PolicyIgnore:
@@ -887,11 +860,6 @@ void DocumentLoader::commitData(const char* bytes, size_t length)
 
 void DocumentLoader::dataReceived(CachedResource* resource, const char* data, int length)
 {
-#if ENABLE(CONTENT_FILTERING)
-    if (m_contentFilter && !m_contentFilter->continueAfterDataReceived(resource, data, length))
-        return;
-#endif
-
     ASSERT(data);
     ASSERT(length);
     ASSERT_UNUSED(resource, resource == m_mainResource);
@@ -979,8 +947,7 @@ void DocumentLoader::detachFromFrame()
     if (m_mainResource && m_mainResource->hasClient(this))
         m_mainResource->removeClient(this);
 #if ENABLE(CONTENT_FILTERING)
-    if (m_contentFilter)
-        m_contentFilter->stopFilteringMainResource();
+    m_contentFilter = nullptr;
 #endif
 
     m_applicationCacheHost->setDOMApplicationCache(nullptr);
@@ -1386,20 +1353,20 @@ void DocumentLoader::removeSubresourceLoader(ResourceLoader* loader)
         frame->loader().checkLoadComplete();
 }
 
-void DocumentLoader::addPlugInStreamLoader(ResourceLoader* loader)
+void DocumentLoader::addPlugInStreamLoader(ResourceLoader& loader)
 {
-    ASSERT(loader->identifier());
-    ASSERT(!m_plugInStreamLoaders.contains(loader->identifier()));
+    ASSERT(loader.identifier());
+    ASSERT(!m_plugInStreamLoaders.contains(loader.identifier()));
 
-    m_plugInStreamLoaders.add(loader->identifier(), loader);
+    m_plugInStreamLoaders.add(loader.identifier(), &loader);
 }
 
-void DocumentLoader::removePlugInStreamLoader(ResourceLoader* loader)
+void DocumentLoader::removePlugInStreamLoader(ResourceLoader& loader)
 {
-    ASSERT(loader->identifier());
-    ASSERT(loader == m_plugInStreamLoaders.get(loader->identifier()));
+    ASSERT(loader.identifier());
+    ASSERT(&loader == m_plugInStreamLoaders.get(loader.identifier()));
 
-    m_plugInStreamLoaders.remove(loader->identifier());
+    m_plugInStreamLoaders.remove(loader.identifier());
     checkLoadComplete();
 }
 
@@ -1487,7 +1454,11 @@ void DocumentLoader::startLoadingMainResource()
         frameLoader()->notifier().dispatchWillSendRequest(this, m_identifierForLoadWithoutResourceLoader, request, ResourceResponse());
     }
 
-    becomeMainResourceClient();
+#if ENABLE(CONTENT_FILTERING)
+    becomeMainResourceClientIfFilterAllows();
+#else
+    m_mainResource->addClient(this);
+#endif
 
     // A bunch of headers are set when the underlying ResourceLoader is created, and m_request needs to include those.
     if (mainResourceLoader())
@@ -1501,11 +1472,10 @@ void DocumentLoader::startLoadingMainResource()
 
 void DocumentLoader::cancelPolicyCheckIfNeeded()
 {
-    if ((m_waitingForContentPolicy || m_waitingForNavigationPolicy) && frameLoader()) {
+    if (m_waitingForContentPolicy && frameLoader())
         frameLoader()->policyChecker().cancelCheck();
-        m_waitingForContentPolicy = false;
-        m_waitingForNavigationPolicy = false;
-    }
+
+    m_waitingForContentPolicy = false;
 }
 
 void DocumentLoader::cancelMainResourceLoad(const ResourceError& resourceError)
@@ -1530,8 +1500,7 @@ void DocumentLoader::clearMainResource()
     if (m_mainResource && m_mainResource->hasClient(this))
         m_mainResource->removeClient(this);
 #if ENABLE(CONTENT_FILTERING)
-    if (m_contentFilter)
-        m_contentFilter->stopFilteringMainResource();
+    m_contentFilter = nullptr;
 #endif
 
     m_mainResource = 0;
@@ -1625,15 +1594,6 @@ ShouldOpenExternalURLsPolicy DocumentLoader::shouldOpenExternalURLsPolicyToPropa
     return m_shouldOpenExternalURLsPolicy;
 }
 
-void DocumentLoader::becomeMainResourceClient()
-{
-#if ENABLE(CONTENT_FILTERING)
-    if (m_contentFilter)
-        m_contentFilter->startFilteringMainResource(*m_mainResource);
-#endif
-    m_mainResource->addClient(this);
-}
-
 #if ENABLE(CONTENT_EXTENSIONS)
 void DocumentLoader::addPendingContentExtensionSheet(const String& identifier, StyleSheetContents& sheet)
 {
@@ -1650,6 +1610,16 @@ void DocumentLoader::addPendingContentExtensionDisplayNoneSelector(const String&
 #endif
 
 #if ENABLE(CONTENT_FILTERING)
+void DocumentLoader::becomeMainResourceClientIfFilterAllows()
+{
+    ASSERT(m_mainResource);
+    if (m_contentFilter) {
+        ASSERT(m_contentFilter->state() == ContentFilter::State::Initialized);
+        m_contentFilter->startFilteringMainResource(*m_mainResource);
+    } else
+        m_mainResource->addClient(this);
+}
+
 void DocumentLoader::installContentFilterUnblockHandler(ContentFilter& contentFilter)
 {
     ContentFilterUnblockHandler unblockHandler { contentFilter.unblockHandler() };
@@ -1667,18 +1637,26 @@ void DocumentLoader::installContentFilterUnblockHandler(ContentFilter& contentFi
     frameLoader()->client().contentFilterDidBlockLoad(WTF::move(unblockHandler));
 }
 
-void DocumentLoader::contentFilterDidBlock()
+void DocumentLoader::contentFilterDidDecide()
 {
+    using State = ContentFilter::State;
     ASSERT(m_contentFilter);
+    ASSERT(m_contentFilter->state() == State::Blocked || m_contentFilter->state() == State::Allowed);
+    std::unique_ptr<ContentFilter> contentFilter;
+    std::swap(contentFilter, m_contentFilter);
+    if (contentFilter->state() == State::Allowed) {
+        if (m_mainResource)
+            m_mainResource->addClient(this);
+        return;
+    }
 
-    installContentFilterUnblockHandler(*m_contentFilter);
+    installContentFilterUnblockHandler(*contentFilter);
 
     URL blockedURL;
     blockedURL.setProtocol(ContentFilter::urlScheme());
     blockedURL.setHost(ASCIILiteral("blocked-page"));
-    auto replacementData = m_contentFilter->replacementData();
-    ResourceResponse response(URL(), ASCIILiteral("text/html"), replacementData->size(), ASCIILiteral("UTF-8"));
-    SubstituteData substituteData { adoptRef(&replacementData.leakRef()), documentURL(), response, SubstituteData::SessionHistoryVisibility::Hidden };
+    ResourceResponse response(URL(), ASCIILiteral("text/html"), contentFilter->replacementData()->size(), ASCIILiteral("UTF-8"));
+    SubstituteData substituteData { contentFilter->replacementData(), documentURL(), response, SubstituteData::SessionHistoryVisibility::Hidden };
     frame()->navigationScheduler().scheduleSubstituteDataLoad(blockedURL, substituteData);
 }
 #endif

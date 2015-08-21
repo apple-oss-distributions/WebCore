@@ -309,13 +309,6 @@ RefPtr<Font> FontCache::systemFallbackForCharacters(const FontDescription& descr
     return fontData.release();
 }
 
-Vector<String> FontCache::systemFontFamilies()
-{
-    // FIXME: <https://webkit.org/b/147017> Web Inspector: [Win] Allow inspector to retrieve a list of system fonts
-    Vector<String> fontFamilies;
-    return fontFamilies;
-}
-
 RefPtr<Font> FontCache::fontFromDescriptionAndLogFont(const FontDescription& fontDescription, const LOGFONT& font, AtomicString& outFontFamilyName)
 {
     AtomicString familyName = String(font.lfFaceName, wcsnlen(font.lfFaceName, LF_FACESIZE));
@@ -528,6 +521,7 @@ static int CALLBACK traitsInFamilyEnumProc(CONST LOGFONT* logFont, CONST TEXTMET
 
     unsigned traitsMask = 0;
     traitsMask |= logFont->lfItalic ? FontStyleItalicMask : FontStyleNormalMask;
+    traitsMask |= FontVariantNormalMask;
     LONG weight = adjustedGDIFontWeight(logFont->lfWeight, procData->m_familyName);
     traitsMask |= weight == FW_THIN ? FontWeight100Mask :
         weight == FW_EXTRALIGHT ? FontWeight200Mask :

@@ -4,7 +4,7 @@
  *           (C) 2001 Peter Kelly (pmk@post.com)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
  *           (C) 2007 David Smith (catfish.man@gmail.com)
- * Copyright (C) 2004-2015 Apple Inc. All rights reserved.
+ * Copyright (C) 2004-2014 Apple Inc. All rights reserved.
  *           (C) 2007 Eric Seidel (eric@webkit.org)
  *
  * This library is free software; you can redistribute it and/or
@@ -948,7 +948,7 @@ static bool layoutOverflowRectContainsAllDescendants(const RenderElement& render
     }
 
     // This renderer may have positioned descendants whose containing block is some ancestor.
-    if (auto containingBlock = containingBlockForAbsolutePosition(&renderer)) {
+    if (auto containingBlock = renderer.containingBlockForAbsolutePosition()) {
         if (auto positionedObjects = containingBlock->positionedObjects()) {
             for (RenderBox* it : *positionedObjects) {
                 if (it != &renderer && renderer.element()->contains(it->element()))
@@ -1369,17 +1369,6 @@ URL Element::absoluteLinkURL() const
     return document().completeURL(stripLeadingAndTrailingHTMLSpaces(linkAttribute));
 }
 
-#if ENABLE(TOUCH_EVENTS)
-bool Element::allowsDoubleTapGesture() const
-{
-    if (renderStyle() && renderStyle()->touchAction() != TouchAction::Auto)
-        return false;
-
-    Element* parent = parentElement();
-    return !parent || parent->allowsDoubleTapGesture();
-}
-#endif
-
 // Returns true is the given attribute is an event handler.
 // We consider an event handler any attribute that begins with "on".
 // It is a simple solution that has the advantage of not requiring any
@@ -1573,7 +1562,7 @@ void Element::removedFrom(ContainerNode& insertionPoint)
     if (insertionPoint.isInTreeScope()) {
         TreeScope* oldScope = &insertionPoint.treeScope();
         HTMLDocument* oldDocument = inDocument() && is<HTMLDocument>(oldScope->documentScope()) ? &downcast<HTMLDocument>(oldScope->documentScope()) : nullptr;
-        if (!isInTreeScope() || &treeScope() != &document())
+        if (oldScope != &treeScope() || !isInTreeScope())
             oldScope = nullptr;
 
         const AtomicString& idValue = getIdAttribute();
@@ -2128,12 +2117,8 @@ void Element::focus(bool restorePreviousSelection, FocusDirection direction)
     if (!inDocument())
         return;
 
-    if (document().focusedElement() == this) {
-        if (document().page())
-            document().page()->chrome().client().elementDidRefocus(this);
-
+    if (document().focusedElement() == this)
         return;
-    }
 
     // If the stylesheets have already been loaded we can reliably check isFocusable.
     // If not, we continue and set the focused node on the focus controller below so
@@ -2197,8 +2182,7 @@ void Element::updateFocusAppearanceAfterAttachIfNeeded()
 void Element::updateFocusAppearance(bool /*restorePreviousSelection*/)
 {
     if (isRootEditableElement()) {
-        // Keep frame alive in this method, since setSelection() may release the last reference to |frame|.
-        RefPtr<Frame> frame = document().frame();
+        Frame* frame = document().frame();
         if (!frame)
             return;
         

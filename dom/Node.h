@@ -164,7 +164,6 @@ public:
     virtual String nodeValue() const;
     virtual void setNodeValue(const String&, ExceptionCode&);
     virtual NodeType nodeType() const = 0;
-    virtual size_t approximateMemoryCost() const { return sizeof(*this); }
     ContainerNode* parentNode() const;
     static ptrdiff_t parentNodeMemoryOffset() { return OBJECT_OFFSETOF(Node, m_parentNode); }
     Element* parentElement() const;
@@ -528,10 +527,6 @@ public:
 
     void dispatchSubtreeModifiedEvent();
     bool dispatchDOMActivateEvent(int detail, PassRefPtr<Event> underlyingEvent);
-
-#if ENABLE(TOUCH_EVENTS)
-    virtual bool allowsDoubleTapGesture() const { return true; }
-#endif
 
 #if ENABLE(TOUCH_EVENTS) && !PLATFORM(IOS)
     bool dispatchTouchEvent(PassRefPtr<TouchEvent>);

@@ -61,13 +61,6 @@ const AtomicString& MediaControlsHost::alwaysOnKeyword()
     return alwaysOn;
 }
 
-const AtomicString& MediaControlsHost::manualKeyword()
-{
-    DEPRECATED_DEFINE_STATIC_LOCAL(const AtomicString, alwaysOn, ("manual", AtomicString::ConstructFromLiteral));
-    return alwaysOn;
-}
-
-
 Ref<MediaControlsHost> MediaControlsHost::create(HTMLMediaElement* mediaElement)
 {
     return adoptRef(*new MediaControlsHost(mediaElement));
@@ -158,8 +151,6 @@ AtomicString MediaControlsHost::captionDisplayMode()
         return forcedOnlyKeyword();
     case CaptionUserPreferences::AlwaysOn:
         return alwaysOnKeyword();
-    case CaptionUserPreferences::Manual:
-        return manualKeyword();
     default:
         ASSERT_NOT_REACHED();
         return emptyAtom;

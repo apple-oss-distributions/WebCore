@@ -222,12 +222,6 @@ static inline bool checkAcceptChildGuaranteedNodeTypes(ContainerNode* newParent,
     return true;
 }
 
-bool ContainerNode::ensurePreInsertionValidity(Node& newChild, Node* refChild, ExceptionCode& ec)
-{
-    ec = checkAcceptChild(this, &newChild, refChild);
-    return !ec;
-}
-
 static inline bool checkAddChild(ContainerNode* newParent, Node* newChild, ExceptionCode& ec)
 {
     ec = checkAcceptChild(newParent, newChild, 0);

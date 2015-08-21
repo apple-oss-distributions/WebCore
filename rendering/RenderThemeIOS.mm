@@ -173,7 +173,7 @@ static void drawAxialGradient(CGContextRef context, IOSGradientRef gradient, con
 
 static void drawRadialGradient(CGContextRef context, IOSGradientRef gradient, const FloatPoint& startPoint, float startRadius, const FloatPoint& stopPoint, float stopRadius, Interpolation interpolation)
 {
-    RetainPtr<CGShadingRef> shading = adoptCF(CGShadingCreateRadial(sRGBColorSpaceRef(), startPoint, startRadius, stopPoint, stopRadius, getSharedFunctionRef(gradient, interpolation), false, false));
+    RetainPtr<CGShadingRef> shading = adoptCF(CGShadingCreateRadial(deviceRGBColorSpaceRef(), startPoint, startRadius, stopPoint, stopRadius, getSharedFunctionRef(gradient, interpolation), false, false));
     CGContextDrawShading(context, shading.get());
 }
 
@@ -1271,7 +1271,6 @@ void RenderThemeIOS::updateCachedSystemFontDescription(CSSValueID valueID, FontD
 
     ASSERT(fontDescriptor);
     RetainPtr<CTFontRef> font = adoptCF(CTFontCreateWithFontDescriptor(fontDescriptor.get(), 0, nullptr));
-    font = applyFontFeatureSettings(font.get(), nullptr, nullptr, fontDescription.featureSettings(), fontDescription.variantSettings());
     fontDescription.setIsAbsoluteSize(true);
     fontDescription.setOneFamily(textStyle);
     fontDescription.setSpecifiedSize(CTFontGetSize(font.get()));

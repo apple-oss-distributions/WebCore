@@ -259,9 +259,6 @@ private:
 
     Timer m_resumeTimer;
     bool m_dispatchErrorOnResuming;
-
-    Timer m_networkErrorTimer;
-    void networkErrorTimerFired();
 };
 
 } // namespace WebCore

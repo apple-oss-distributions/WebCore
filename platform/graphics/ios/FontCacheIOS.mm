@@ -33,7 +33,6 @@
 #import "CoreTextSPI.h"
 #import "FontCascade.h"
 #import "RenderThemeIOS.h"
-#import <wtf/HashSet.h>
 #import <wtf/NeverDestroyed.h>
 #import <wtf/RetainPtr.h>
 #import <wtf/text/CString.h>
@@ -85,8 +84,6 @@ PassRefPtr<Font> FontCache::getSystemFontFallbackForCharacters(const FontDescrip
     RetainPtr<CTFontRef> substituteFont = adoptCF(CTFontCreatePhysicalFontForCharactersWithLanguage(ctFont, (const UTF16Char*)characters, (CFIndex)length, 0, &coveredLength));
     if (!substituteFont)
         return nullptr;
-
-    substituteFont = applyFontFeatureSettings(substituteFont.get(), nullptr, nullptr, description.featureSettings(), description.variantSettings());
 
     CTFontSymbolicTraits originalTraits = CTFontGetSymbolicTraits(ctFont);
     CTFontSymbolicTraits actualTraits = 0;
@@ -465,30 +462,6 @@ RefPtr<Font> FontCache::systemFallbackForCharacters(const FontDescription& descr
     return lastResortFallbackFont(description);
 }
 
-Vector<String> FontCache::systemFontFamilies()
-{
-    // FIXME: <rdar://problem/21890188>
-    Vector<String> fontFamilies;
-    auto emptyFontDescriptor = adoptCF(CTFontDescriptorCreateWithAttributes((CFDictionaryRef) @{ }));
-    auto matchedDescriptors = adoptCF(CTFontDescriptorCreateMatchingFontDescriptors(emptyFontDescriptor.get(), nullptr));
-    if (!matchedDescriptors)
-        return fontFamilies;
-
-    CFIndex numMatches = CFArrayGetCount(matchedDescriptors.get());
-    if (!numMatches)
-        return fontFamilies;
-
-    HashSet<String> visited;
-    for (CFIndex i = 0; i < numMatches; ++i) {
-        auto fontDescriptor = static_cast<CTFontDescriptorRef>(CFArrayGetValueAtIndex(matchedDescriptors.get(), i));
-        if (auto familyName = adoptCF(static_cast<CFStringRef>(CTFontDescriptorCopyAttribute(fontDescriptor, kCTFontFamilyNameAttribute))))
-            visited.add(familyName.get());
-    }
-
-    copyToVector(visited, fontFamilies);
-    return fontFamilies;
-}
-
 RefPtr<Font> FontCache::similarFont(const FontDescription& description)
 {
     // Attempt to find an appropriate font using a match based on the presence of keywords in
@@ -569,6 +542,7 @@ FontPlatformData* FontCache::getCustomFallbackFont(const UInt32 c, const FontDes
 static inline FontTraitsMask toTraitsMask(CTFontSymbolicTraits ctFontTraits)
 {
     return static_cast<FontTraitsMask>(((ctFontTraits & kCTFontTraitItalic) ? FontStyleItalicMask : FontStyleNormalMask)
+        | FontVariantNormalMask
         // FontWeight600 or higher is bold for CTFonts, so choose middle values for
         // bold (600-900) and non-bold (100-500)
         | ((ctFontTraits & kCTFontTraitBold) ? FontWeight700Mask : FontWeight300Mask));
@@ -717,8 +691,6 @@ std::unique_ptr<FontPlatformData> FontCache::createFontPlatformData(const FontDe
         ctFont = adoptCF(createCTFontWithFamilyNameAndWeight(family, traits, size, toCTFontWeight(fontDescription.weight())));
     if (!ctFont)
         return nullptr;
-
-    ctFont = applyFontFeatureSettings(ctFont.get(), nullptr, nullptr, fontDescription.featureSettings(), fontDescription.variantSettings());
 
     CTFontSymbolicTraits actualTraits = 0;
     if (isFontWeightBold(fontDescription.weight()) || fontDescription.italic())

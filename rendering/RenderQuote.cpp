@@ -330,7 +330,7 @@ static inline StringImpl* apostropheString()
     return apostropheString;
 }
 
-static RenderTextFragment* quoteTextRenderer(RenderObject* lastChild)
+static RenderTextFragment* fragmentChild(RenderObject* lastChild)
 {
     if (!lastChild)
         return nullptr;
@@ -349,9 +349,8 @@ void RenderQuote::updateText()
     m_text = text;
     // Start from the end of the child list because, if we've had a first-letter
     // renderer inserted then the remaining text will be at the end.
-    if (auto* renderText = quoteTextRenderer(lastChild())) {
-        renderText->setContentString(m_text);
-        renderText->dirtyLineBoxes(false);
+    if (auto* fragment = fragmentChild(lastChild())) {
+        fragment->setContentString(m_text);
         return;
     }
     addChild(new RenderTextFragment(document(), m_text));

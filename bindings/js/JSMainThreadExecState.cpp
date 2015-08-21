@@ -25,8 +25,6 @@
 
 #include "config.h"
 #include "JSMainThreadExecState.h"
-
-#include "Microtasks.h"
 #include "MutationObserver.h"
 
 #if ENABLE(INDEXED_DATABASE)
@@ -45,7 +43,7 @@ void JSMainThreadExecState::didLeaveScriptContext()
     IDBPendingTransactionMonitor::deactivateNewTransactions();
 #endif
 
-    MicrotaskQueue::mainThreadQueue().performMicrotaskCheckpoint();
+    MutationObserver::deliverAllMutations();
 }
 
 JSC::JSValue functionCallHandlerFromAnyThread(JSC::ExecState* exec, JSC::JSValue functionObject, JSC::CallType callType, const JSC::CallData& callData, JSC::JSValue thisValue, const JSC::ArgList& args, NakedPtr<JSC::Exception>& returnedException)

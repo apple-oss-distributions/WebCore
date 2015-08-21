@@ -32,6 +32,8 @@
 #include <wtf/OSObjectPtr.h>
 #include <wtf/RetainPtr.h>
 
+#define HAVE_NETWORK_EXTENSION PLATFORM(IOS) || (PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101000 && CPU(X86_64))
+
 enum NEFilterSourceStatus : NSInteger;
 
 OBJC_CLASS NEFilterSource;
@@ -39,12 +41,11 @@ OBJC_CLASS NSData;
 
 namespace WebCore {
 
-class URL;
-
 class NetworkExtensionContentFilter final : public PlatformContentFilter {
     friend std::unique_ptr<NetworkExtensionContentFilter> std::make_unique<NetworkExtensionContentFilter>();
 
 public:
+    static bool enabled();
     static std::unique_ptr<NetworkExtensionContentFilter> create();
 
     void willSendRequest(ResourceRequest&, const ResourceResponse&) override;
@@ -57,10 +58,7 @@ public:
     ContentFilterUnblockHandler unblockHandler() const override;
 
 private:
-    static bool enabled();
-
     NetworkExtensionContentFilter();
-    void initialize(const URL* = nullptr);
     void handleDecision(NEFilterSourceStatus, NSData *replacementData);
 
     NEFilterSourceStatus m_status;

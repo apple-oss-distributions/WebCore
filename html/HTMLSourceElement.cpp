@@ -24,6 +24,7 @@
  */
 
 #include "config.h"
+#if ENABLE(VIDEO)
 #include "HTMLSourceElement.h"
 
 #include "Event.h"
@@ -31,7 +32,6 @@
 #include "HTMLDocument.h"
 #include "HTMLMediaElement.h"
 #include "HTMLNames.h"
-#include "HTMLPictureElement.h"
 #include "Logging.h"
 
 namespace WebCore {
@@ -58,12 +58,8 @@ Node::InsertionNotificationRequest HTMLSourceElement::insertedInto(ContainerNode
 {
     HTMLElement::insertedInto(insertionPoint);
     Element* parent = parentElement();
-    if (parent) {
-        if (is<HTMLMediaElement>(*parent))
-            downcast<HTMLMediaElement>(*parent).sourceWasAdded(this);
-        else if (is<HTMLPictureElement>(*parent))
-            downcast<HTMLPictureElement>(*parent).sourcesChanged();
-    }
+    if (is<HTMLMediaElement>(parent))
+        downcast<HTMLMediaElement>(*parent).sourceWasAdded(this);
     return InsertionDone;
 }
 
@@ -72,12 +68,8 @@ void HTMLSourceElement::removedFrom(ContainerNode& removalRoot)
     Element* parent = parentElement();
     if (!parent && is<Element>(removalRoot))
         parent = &downcast<Element>(removalRoot);
-    if (parent) {
-        if (is<HTMLMediaElement>(*parent))
-            downcast<HTMLMediaElement>(*parent).sourceWasRemoved(this);
-        else if (is<HTMLPictureElement>(*parent))
-            downcast<HTMLPictureElement>(*parent).sourcesChanged();
-    }
+    if (is<HTMLMediaElement>(parent))
+        downcast<HTMLMediaElement>(*parent).sourceWasRemoved(this);
     HTMLElement::removedFrom(removalRoot);
 }
 
@@ -163,17 +155,6 @@ void HTMLSourceElement::stop()
     cancelPendingErrorEvent();
 }
 
-void HTMLSourceElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    HTMLElement::parseAttribute(name, value);
-    if (name == srcsetAttr || name == sizesAttr || name == mediaAttr || name == typeAttr) {
-        if (name == mediaAttr)
-            m_mediaQuerySet = MediaQuerySet::createAllowingDescriptionSyntax(value);
-        auto* parent = parentNode();
-        if (is<HTMLPictureElement>(parent))
-            downcast<HTMLPictureElement>(*parent).sourcesChanged();
-    }
 }
 
-}
-
+#endif

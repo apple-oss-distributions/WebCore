@@ -129,7 +129,6 @@ public:
     bool protocolIsInHTTPFamily() const;
     WEBCORE_EXPORT bool isLocalFile() const;
     bool isBlankURL() const;
-    bool shouldInheritSecurityOriginFromOwner() const;
 
     WEBCORE_EXPORT bool setProtocol(const String&);
     void setHost(const String&);
@@ -233,7 +232,6 @@ bool operator!=(const String&, const URL&);
 
 WEBCORE_EXPORT bool equalIgnoringFragmentIdentifier(const URL&, const URL&);
 WEBCORE_EXPORT bool protocolHostAndPortAreEqual(const URL&, const URL&);
-WEBCORE_EXPORT bool hostsAreEqual(const URL&, const URL&);
 
 WEBCORE_EXPORT const URL& blankURL();
 

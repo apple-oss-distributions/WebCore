@@ -56,12 +56,6 @@ extern const CFStringRef kIOSurfaceCacheMode;
 extern const CFStringRef kIOSurfaceHeight;
 extern const CFStringRef kIOSurfacePixelFormat;
 extern const CFStringRef kIOSurfaceWidth;
-extern const CFStringRef kIOSurfacePlaneWidth;
-extern const CFStringRef kIOSurfacePlaneHeight;
-extern const CFStringRef kIOSurfacePlaneBytesPerRow;
-extern const CFStringRef kIOSurfacePlaneOffset;
-extern const CFStringRef kIOSurfacePlaneSize;
-extern const CFStringRef kIOSurfacePlaneInfo;
 
 size_t IOSurfaceAlignProperty(CFStringRef property, size_t value);
 IOSurfaceRef IOSurfaceCreate(CFDictionaryRef properties);
@@ -72,7 +66,6 @@ size_t IOSurfaceGetBytesPerRow(IOSurfaceRef buffer);
 size_t IOSurfaceGetHeight(IOSurfaceRef buffer);
 size_t IOSurfaceGetPropertyMaximum(CFStringRef property);
 size_t IOSurfaceGetWidth(IOSurfaceRef buffer);
-OSType IOSurfaceGetPixelFormat(IOSurfaceRef buffer);
 Boolean IOSurfaceIsInUse(IOSurfaceRef buffer);
 IOReturn IOSurfaceLock(IOSurfaceRef buffer, uint32_t options, uint32_t *seed);
 IOSurfaceRef IOSurfaceLookupFromMachPort(mach_port_t);
@@ -101,35 +94,6 @@ IOReturn IOSurfaceSetPurgeable(IOSurfaceRef buffer, uint32_t newState, uint32_t 
 
 WTF_EXTERN_C_END
 
-#if PLATFORM(IOS)
-#if USE(APPLE_INTERNAL_SDK)
-
-#import <IOSurfaceAccelerator/IOSurfaceAccelerator.h>
-
-#else
-
-typedef struct __IOSurfaceAccelerator *IOSurfaceAcceleratorRef;
-
-WTF_EXTERN_C_BEGIN
-
-IOReturn IOSurfaceAcceleratorCreate(CFAllocatorRef allocator, CFDictionaryRef properties, IOSurfaceAcceleratorRef* acceleratorOut);
-CFRunLoopSourceRef IOSurfaceAcceleratorGetRunLoopSource(IOSurfaceAcceleratorRef accelerator);
-
-typedef void (*IOSurfaceAcceleratorCompletionCallback)(void* completionRefCon, IOReturn status, void* completionRefCon2);
-
-typedef struct IOSurfaceAcceleratorCompletion {
-    IOSurfaceAcceleratorCompletionCallback completionCallback;
-    void* completionRefCon;
-    void* completionRefCon2;
-} IOSurfaceAcceleratorCompletion;
-
-IOReturn IOSurfaceAcceleratorTransformSurface(IOSurfaceAcceleratorRef accelerator, IOSurfaceRef sourceBuffer, IOSurfaceRef destinationBuffer, CFDictionaryRef options, void* pCropRectangles, IOSurfaceAcceleratorCompletion* pCompletion, void* pSwap, uint32_t* pCommandID);
-
-WTF_EXTERN_C_END
-
-#endif // USE(APPLE_INTERNAL_SDK)
-#endif // PLATFORM(IOS)
-
-#endif // !PLATFORM(IOS_SIMULATOR)
+#endif
 
 #endif // IOSurfaceSPI_h

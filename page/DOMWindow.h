@@ -361,8 +361,6 @@ namespace WebCore {
         void reconnectDOMWindowProperties();
         void willDestroyDocumentInFrame();
 
-        bool isSameSecurityOriginAsMainFrame() const;
-
 #if ENABLE(GAMEPAD)
         void incrementGamepadEventListenerCount();
         void decrementGamepadEventListenerCount();

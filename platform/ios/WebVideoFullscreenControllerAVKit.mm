@@ -46,6 +46,14 @@ SOFT_LINK_CLASS(UIKit, UIView)
 
 using namespace WebCore;
 
+static IntRect elementRectInWindow(HTMLVideoElement* videoElement)
+{
+    if (!videoElement || !videoElement->renderer() || !videoElement->document().view())
+        return IntRect();
+    
+    return videoElement->document().view()->convertToContainingWindow(videoElement->renderer()->absoluteBoundingBoxRect());
+}
+
 #if __IPHONE_OS_VERSION_MIN_REQUIRED <= 80200 || !HAVE(AVKIT)
 
 @implementation WebVideoFullscreenController
@@ -75,14 +83,6 @@ using namespace WebCore;
 @end
 
 #else
-
-static IntRect elementRectInWindow(HTMLVideoElement* videoElement)
-{
-    if (!videoElement || !videoElement->renderer() || !videoElement->document().view())
-        return IntRect();
-    
-    return videoElement->document().view()->convertToContainingWindow(videoElement->renderer()->absoluteBoundingBoxRect());
-}
 
 class WebVideoFullscreenControllerContext;
 

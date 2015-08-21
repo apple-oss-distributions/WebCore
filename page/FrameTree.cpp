@@ -82,19 +82,6 @@ bool FrameTree::transferChild(PassRefPtr<Frame> child)
     return true;
 }
 
-unsigned FrameTree::indexInParent() const
-{
-    if (!m_parent)
-        return 0;
-    unsigned index = 0;
-    for (Frame* frame = m_parent->tree().firstChild(); frame; frame = frame->tree().nextSibling()) {
-        if (&frame->tree() == this)
-            return index;
-        ++index;
-    }
-    RELEASE_ASSERT_NOT_REACHED();
-}
-
 void FrameTree::appendChild(PassRefPtr<Frame> child)
 {
     ASSERT(child->page() == m_thisFrame.page());
@@ -141,16 +128,15 @@ void FrameTree::removeChild(Frame* child)
 
 AtomicString FrameTree::uniqueChildName(const AtomicString& requestedName) const
 {
-    // If the requested name (the frame's "name" attribute) is unique, just use that.
     if (!requestedName.isEmpty() && !child(requestedName) && requestedName != "_blank")
         return requestedName;
 
-    // The "name" attribute was not unique or absent. Generate a name based on the
-    // new frame's location in the frame tree. The name uses HTML comment syntax to
-    // avoid collisions with author names.
-
-    // An example path for the third child of the second child of the root frame:
-    // <!--framePath //<!--frame1-->/<!--frame2-->-->
+    // Create a repeatable name for a child about to be added to us. The name must be
+    // unique within the frame tree. The string we generate includes a "path" of names
+    // from the root frame down to us. For this path to be unique, each set of siblings must
+    // contribute a unique name to the path, which can't collide with any HTML-assigned names.
+    // We generate this path component by index in the child list along with an unlikely
+    // frame name that can't be set in HTML because it collides with comment syntax.
 
     const char framePathPrefix[] = "<!--framePath ";
     const int framePathPrefixLength = 14;
@@ -173,11 +159,7 @@ AtomicString FrameTree::uniqueChildName(const AtomicString& requestedName) const
     for (int i = chain.size() - 1; i >= 0; --i) {
         frame = chain[i];
         name.append('/');
-        if (frame->tree().parent()) {
-            name.appendLiteral("<!--frame");
-            name.appendNumber(frame->tree().indexInParent());
-            name.appendLiteral("-->");
-        }
+        name.append(frame->tree().uniqueName());
     }
 
     name.appendLiteral("/<!--frame");

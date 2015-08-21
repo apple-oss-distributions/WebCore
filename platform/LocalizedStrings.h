@@ -257,7 +257,6 @@ namespace WebCore {
     String closedCaptionTrackMenuItemText(const String&);
     String sdhTrackMenuItemText(const String&);
     String easyReaderTrackMenuItemText(const String&);
-    String forcedTrackMenuItemText(const String&);
 #endif
 #endif
 

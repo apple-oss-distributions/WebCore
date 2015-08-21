@@ -42,7 +42,6 @@ public:
     CommandLineAPIHost* commandLineAPIHost() const { return m_commandLineAPIHost.get(); }
 
     virtual void disconnect() override;
-    virtual void discardInjectedScripts() override;
 
     void discardInjectedScriptsFor(DOMWindow*);
 

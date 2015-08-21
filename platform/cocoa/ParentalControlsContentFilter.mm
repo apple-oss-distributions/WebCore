@@ -56,6 +56,7 @@ std::unique_ptr<ParentalControlsContentFilter> ParentalControlsContentFilter::cr
 ParentalControlsContentFilter::ParentalControlsContentFilter()
     : m_filterState { kWFEStateBuffering }
 {
+    ASSERT([getWebFilterEvaluatorClass() isManagedSession]);
 }
 
 static inline bool canHandleResponse(const ResourceResponse& response)
@@ -71,7 +72,7 @@ void ParentalControlsContentFilter::responseReceived(const ResourceResponse& res
 {
     ASSERT(!m_webFilterEvaluator);
 
-    if (!canHandleResponse(response) || !enabled()) {
+    if (!canHandleResponse(response)) {
         m_filterState = kWFEStateAllowed;
         return;
     }

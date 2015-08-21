@@ -28,7 +28,6 @@
 #ifndef MediaQueryEvaluator_h
 #define MediaQueryEvaluator_h
 
-#include "MediaQueryExp.h"
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
@@ -37,19 +36,6 @@ class MediaQueryExp;
 class MediaQuerySet;
 class RenderStyle;
 class StyleResolver;
-
-class MediaQueryResult {
-    WTF_MAKE_NONCOPYABLE(MediaQueryResult); WTF_MAKE_FAST_ALLOCATED;
-public:
-    MediaQueryResult(const MediaQueryExp& expr, bool result)
-        : m_expression(expr)
-        , m_result(result)
-    {
-    }
-
-    MediaQueryExp m_expression;
-    bool m_result;
-};
 
 /**
  * Class that evaluates css media queries as defined in
@@ -92,9 +78,6 @@ public:
 
     /** Evaluates media query subexpression, ie "and (media-feature: value)" part */
     bool eval(const MediaQueryExp*) const;
-    
-    /* Evaluates a list of media queries and fills in a vector with any viewport-dependent results found. */
-    bool evalCheckingViewportDependentResults(const MediaQuerySet*, Vector<std::unique_ptr<MediaQueryResult>>&);
 
 private:
     String m_mediaType;

@@ -463,7 +463,6 @@ Controller.prototype = {
         captionButton.setAttribute('pseudo', '-webkit-media-controls-toggle-closed-captions-button');
         captionButton.setAttribute('aria-label', this.UIString('Captions'));
         captionButton.setAttribute('aria-haspopup', 'true');
-        captionButton.setAttribute('aria-owns', 'audioAndTextTrackMenu');
         this.listenFor(captionButton, 'click', this.handleCaptionButtonClicked);
 
         var fullscreenButton = this.controls.fullscreenButton = document.createElement('button');
@@ -697,6 +696,7 @@ Controller.prototype = {
         this.updateCaptionButton();
         this.updateCaptionContainer();
         this.updateFullscreenButtons();
+        this.updateWirelessTargetAvailable();
         this.updateWirelessTargetPickerButton();
         this.updateProgress();
         this.updateControls();
@@ -1081,9 +1081,9 @@ Controller.prototype = {
         try {
             this.updateBase();
 
-            if (this.shouldHaveControls() && !this.hasControls())
+            if (this.shouldHaveControls())
                 this.addControls();
-            else if (!this.shouldHaveControls() && this.hasControls())
+            else
                 this.removeControls();
         } catch(e) {
             if (window.console)
@@ -1475,10 +1475,7 @@ Controller.prototype = {
         if (!this.controls || !this.controls.panel)
             return;
 
-        var visibleWidth = this.controls.panel.getBoundingClientRect().width;
-        if (this._pageScaleFactor > 1)
-            visibleWidth *= this._pageScaleFactor;
-
+        var visibleWidth = this.controls.panel.getBoundingClientRect().width * this._pageScaleFactor;
         if (visibleWidth <= 0 || visibleWidth == this.currentDisplayWidth)
             return;
 
@@ -1495,7 +1492,6 @@ Controller.prototype = {
 
         // Check if there is enough room for the scrubber.
         var shouldDropTimeline = (visibleWidth - visibleButtonWidth) < this.MinimumTimelineWidth;
-        this.controls.timeline.classList.toggle(this.ClassNames.dropped, shouldDropTimeline);
         this.controls.currentTime.classList.toggle(this.ClassNames.dropped, shouldDropTimeline);
         this.controls.thumbnailTrack.classList.toggle(this.ClassNames.dropped, shouldDropTimeline);
         this.controls.remainingTime.classList.toggle(this.ClassNames.dropped, shouldDropTimeline);
@@ -1534,11 +1530,6 @@ Controller.prototype = {
         this.base.appendChild(this.controls.inlinePlaybackPlaceholder);
         this.base.appendChild(this.controls.panel);
         this.updateControls();
-    },
-
-    hasControls: function()
-    {
-        return this.controls.panel.parentElement;
     },
 
     updateTime: function()
@@ -1646,7 +1637,6 @@ Controller.prototype = {
 
         this.captionMenu = document.createElement('div');
         this.captionMenu.setAttribute('pseudo', '-webkit-media-controls-closed-captions-container');
-        this.captionMenu.setAttribute('id', 'audioAndTextTrackMenu');
         this.base.appendChild(this.captionMenu);
         this.captionMenuItems = [];
 
@@ -1682,10 +1672,6 @@ Controller.prototype = {
                 menuItem.innerText = this.host.displayNameForTrack(track);
                 menuItem.track = track;
 
-                var itemCheckmark = document.createElement("img");
-                itemCheckmark.classList.add("checkmark-container");
-                menuItem.insertBefore(itemCheckmark, menuItem.firstChild);
-
                 if (track.enabled) {
                     menuItem.classList.add(this.ClassNames.selected);
                     menuItem.setAttribute('tabindex', '0');
@@ -1718,10 +1704,6 @@ Controller.prototype = {
                 menuItem.innerText = this.host.displayNameForTrack(track);
                 menuItem.track = track;
 
-                var itemCheckmark = document.createElement("img");
-                itemCheckmark.classList.add("checkmark-container");
-                menuItem.insertBefore(itemCheckmark, menuItem.firstChild);
-
                 if (track === offItem) {
                     var offMenu = menuItem;
                     continue;
@@ -1745,10 +1727,10 @@ Controller.prototype = {
 
             }
 
-            if (offMenu && (displayMode === 'forced-only' || displayMode === 'manual') && !trackMenuItemSelected) {
+            if (offMenu && displayMode === 'forced-only' && !trackMenuItemSelected) {
                 offMenu.classList.add(this.ClassNames.selected);
-                offMenu.setAttribute('tabindex', '0');
-                offMenu.setAttribute('aria-checked', 'true');
+                menuItem.setAttribute('tabindex', '0');
+                menuItem.setAttribute('aria-checked', 'true');
             }
         }
         
@@ -1906,9 +1888,6 @@ Controller.prototype = {
             this.controls.panel.classList.remove(this.ClassNames.noVideo);
         else
             this.controls.panel.classList.add(this.ClassNames.noVideo);
-
-        // The wireless target picker is only visible for files with video, force an update.
-        this.updateWirelessTargetAvailable();
     },
 
     updateVolume: function()
@@ -2022,7 +2001,7 @@ Controller.prototype = {
         if (this.wirelessPlaybackDisabled)
             wirelessPlaybackTargetsAvailable = false;
 
-        if (wirelessPlaybackTargetsAvailable && this.isPlayable() && this.hasVideo())
+        if (wirelessPlaybackTargetsAvailable && this.isPlayable())
             this.controls.wirelessTargetPicker.classList.remove(this.ClassNames.hidden);
         else
             this.controls.wirelessTargetPicker.classList.add(this.ClassNames.hidden);

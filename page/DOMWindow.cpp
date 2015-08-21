@@ -724,7 +724,7 @@ DOMApplicationCache* DOMWindow::applicationCache() const
 Navigator* DOMWindow::navigator() const
 {
     if (!isCurrentlyDisplayedInFrame())
-        return nullptr;
+        return 0;
     if (!m_navigator)
         m_navigator = Navigator::create(m_frame);
     return m_navigator.get();
@@ -734,9 +734,9 @@ Navigator* DOMWindow::navigator() const
 Performance* DOMWindow::performance() const
 {
     if (!isCurrentlyDisplayedInFrame())
-        return nullptr;
+        return 0;
     if (!m_performance)
-        m_performance = Performance::create(*m_frame);
+        m_performance = Performance::create(m_frame);
     return m_performance.get();
 }
 #endif
@@ -1692,22 +1692,6 @@ static void didAddStorageEventListener(DOMWindow* window)
     window->sessionStorage(IGNORE_EXCEPTION);
 }
 
-bool DOMWindow::isSameSecurityOriginAsMainFrame() const
-{
-    if (!m_frame || !m_frame->page() || !document())
-        return false;
-
-    if (m_frame->isMainFrame())
-        return true;
-
-    Document* mainFrameDocument = m_frame->mainFrame().document();
-
-    if (mainFrameDocument && document()->securityOrigin()->canAccess(mainFrameDocument->securityOrigin()))
-        return true;
-
-    return false;
-}
-
 bool DOMWindow::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
 {
     if (!EventTarget::addEventListener(eventType, listener, useCapture))
@@ -1729,28 +1713,17 @@ bool DOMWindow::addEventListener(const AtomicString& eventType, PassRefPtr<Event
         addBeforeUnloadEventListener(this);
 #if ENABLE(DEVICE_ORIENTATION)
 #if PLATFORM(IOS)
-    else if ((eventType == eventNames().devicemotionEvent || eventType == eventNames().deviceorientationEvent) && document()) {
-        if (isSameSecurityOriginAsMainFrame()) {
-            if (eventType == eventNames().deviceorientationEvent)
-                document()->deviceOrientationController()->addDeviceEventListener(this);
-            else
-                document()->deviceMotionController()->addDeviceEventListener(this);
-        } else if (document())
-            document()->addConsoleMessage(MessageSource::JS, MessageLevel::Warning, ASCIILiteral("Blocked attempt add device motion or orientation listener from child frame that wasn't the same security origin as the main page."));
-    }
+    else if (eventType == eventNames().devicemotionEvent && document())
+        document()->deviceMotionController()->addDeviceEventListener(this);
+    else if (eventType == eventNames().deviceorientationEvent && document())
+        document()->deviceOrientationController()->addDeviceEventListener(this);
 #else
     else if (eventType == eventNames().devicemotionEvent && RuntimeEnabledFeatures::sharedFeatures().deviceMotionEnabled()) {
-        if (isSameSecurityOriginAsMainFrame()) {
-            if (DeviceMotionController* controller = DeviceMotionController::from(page()))
-                controller->addDeviceEventListener(this);
-        } else if (document())
-            document()->addConsoleMessage(MessageSource::JS, MessageLevel::Warning, ASCIILiteral("Blocked attempt add device motion listener from child frame that wasn't the same security origin as the main page."));
+        if (DeviceMotionController* controller = DeviceMotionController::from(page()))
+            controller->addDeviceEventListener(this);
     } else if (eventType == eventNames().deviceorientationEvent && RuntimeEnabledFeatures::sharedFeatures().deviceOrientationEnabled()) {
-        if (isSameSecurityOriginAsMainFrame()) {
-            if (DeviceOrientationController* controller = DeviceOrientationController::from(page()))
-                controller->addDeviceEventListener(this);
-        } else if (document())
-            document()->addConsoleMessage(MessageSource::JS, MessageLevel::Warning, ASCIILiteral("Blocked attempt add device orientation listener from child frame that wasn't the same security origin as the main page."));
+        if (DeviceOrientationController* controller = DeviceOrientationController::from(page()))
+            controller->addDeviceEventListener(this);
     }
 #endif // PLATFORM(IOS)
 #endif // ENABLE(DEVICE_ORIENTATION)
@@ -2172,10 +2145,9 @@ PassRefPtr<DOMWindow> DOMWindow::open(const String& urlString, const AtomicStrin
     if (firstFrame->document()
         && firstFrame->mainFrame().page()
         && firstFrame->mainFrame().page()->userContentController()
-        && firstFrame->mainFrame().document()
-        && firstFrame->mainFrame().document()->loader()) {
+        && firstFrame->mainFrame().document()) {
         ResourceLoadInfo resourceLoadInfo = {firstFrame->document()->completeURL(urlString), firstFrame->mainFrame().document()->url(), ResourceType::Popup};
-        Vector<ContentExtensions::Action> actions = firstFrame->mainFrame().page()->userContentController()->actionsForResourceLoad(resourceLoadInfo, *firstFrame->mainFrame().document()->loader());
+        Vector<ContentExtensions::Action> actions = firstFrame->mainFrame().page()->userContentController()->actionsForResourceLoad(*firstFrame->mainFrame().page(), resourceLoadInfo);
         for (const ContentExtensions::Action& action : actions) {
             if (action.type() == ContentExtensions::ActionType::BlockLoad)
                 return nullptr;

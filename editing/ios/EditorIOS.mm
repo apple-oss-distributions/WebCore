@@ -192,10 +192,13 @@ const Font* Editor::fontForSelection(bool& hasMultipleFonts) const
         RenderStyle* style = styleForSelectionStart(&m_frame, nodeToRemove); // sets nodeToRemove
 
         const Font* result = nullptr;
-        if (style) {
+        if (style)
             result = &style->fontCascade().primaryFont();
-            if (nodeToRemove)
-                nodeToRemove->remove(ASSERT_NO_EXCEPTION);
+
+        if (nodeToRemove) {
+            ExceptionCode ec;
+            nodeToRemove->remove(ec);
+            ASSERT(!ec);
         }
 
         return result;
@@ -261,7 +264,7 @@ void Editor::removeUnchangeableStyles()
     // FIXME: it'd be nice if knowledge about which styles were unchangeable was not hard-coded here.
     defaultStyle->removeProperty(CSSPropertyFontWeight);
     defaultStyle->removeProperty(CSSPropertyFontStyle);
-    defaultStyle->removeProperty(CSSPropertyFontVariantCaps);
+    defaultStyle->removeProperty(CSSPropertyFontVariant);
     // FIXME: we should handle also pasted quoted text, strikethrough, etc. <rdar://problem/9255115>
     defaultStyle->removeProperty(CSSPropertyTextDecoration);
     defaultStyle->removeProperty(CSSPropertyWebkitTextDecorationsInEffect); // implements underline

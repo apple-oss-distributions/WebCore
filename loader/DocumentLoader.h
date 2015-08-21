@@ -70,6 +70,7 @@ namespace WebCore {
     class Page;
     class ResourceLoader;
     class SharedBuffer;
+    class SubresourceLoader;
     class SubstituteResource;
 
 #if ENABLE(CONTENT_FILTERING)
@@ -94,7 +95,7 @@ namespace WebCore {
         WEBCORE_EXPORT virtual void detachFromFrame();
 
         WEBCORE_EXPORT FrameLoader* frameLoader() const;
-        WEBCORE_EXPORT ResourceLoader* mainResourceLoader() const;
+        WEBCORE_EXPORT SubresourceLoader* mainResourceLoader() const;
         WEBCORE_EXPORT PassRefPtr<SharedBuffer> mainResourceData() const;
         
         DocumentWriter& writer() const { return m_writer; }
@@ -226,13 +227,10 @@ namespace WebCore {
         void stopLoadingPlugIns();
         void stopLoadingSubresources();
 
-        bool userContentExtensionsEnabled() const { return m_userContentExtensionsEnabled; }
-        void setUserContentExtensionsEnabled(bool enabled) { m_userContentExtensionsEnabled = enabled; }
-
         void addSubresourceLoader(ResourceLoader*);
         void removeSubresourceLoader(ResourceLoader*);
-        WEBCORE_EXPORT void addPlugInStreamLoader(ResourceLoader*);
-        WEBCORE_EXPORT void removePlugInStreamLoader(ResourceLoader*);
+        void addPlugInStreamLoader(ResourceLoader&);
+        void removePlugInStreamLoader(ResourceLoader&);
 
         void subresourceLoaderFinishedLoadingOnePart(ResourceLoader*);
 
@@ -319,6 +317,7 @@ namespace WebCore {
         bool isPostOrRedirectAfterPost(const ResourceRequest&, const ResourceResponse&);
 
         void continueAfterNavigationPolicy(const ResourceRequest&, bool shouldContinue);
+
         void continueAfterContentPolicy(PolicyAction);
 
         void stopLoadingForPolicyChange();
@@ -339,12 +338,11 @@ namespace WebCore {
         void clearMainResource();
 
         void cancelPolicyCheckIfNeeded();
-        void becomeMainResourceClient();
 
 #if ENABLE(CONTENT_FILTERING)
-        friend class ContentFilter;
+        void becomeMainResourceClientIfFilterAllows();
         void installContentFilterUnblockHandler(ContentFilter&);
-        void contentFilterDidBlock();
+        void contentFilterDidDecide();
 #endif
 
         Frame* m_frame;
@@ -430,8 +428,7 @@ namespace WebCore {
         unsigned long m_identifierForLoadWithoutResourceLoader;
 
         DocumentLoaderTimer m_dataLoadTimer;
-        bool m_waitingForContentPolicy { false };
-        bool m_waitingForNavigationPolicy { false };
+        bool m_waitingForContentPolicy;
 
         RefPtr<IconLoadDecisionCallback> m_iconLoadDecisionCallback;
         RefPtr<IconDataCallback> m_iconDataCallback;
@@ -453,7 +450,6 @@ namespace WebCore {
         HashMap<String, RefPtr<StyleSheetContents>> m_pendingNamedContentExtensionStyleSheets;
         HashMap<String, Vector<std::pair<String, uint32_t>>> m_pendingContentExtensionDisplayNoneSelectors;
 #endif
-        bool m_userContentExtensionsEnabled { true };
 
 #ifndef NDEBUG
         bool m_hasEverBeenAttached { false };

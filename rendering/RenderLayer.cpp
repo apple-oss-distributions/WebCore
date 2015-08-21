@@ -1799,15 +1799,14 @@ void RenderLayer::beginTransparencyLayers(GraphicsContext* context, const LayerP
         context->clip(pixelSnappedClipRect);
 
 #if ENABLE(CSS_COMPOSITING)
-        // RenderSVGRoot takes care of its blend mode.
-        if (!renderer().isSVGRoot() && hasBlendMode())
+        if (hasBlendMode())
             context->setCompositeOperation(context->compositeOperation(), blendMode());
 #endif
 
         context->beginTransparencyLayer(renderer().opacity());
 
 #if ENABLE(CSS_COMPOSITING)
-        if (!renderer().isSVGRoot() && hasBlendMode())
+        if (hasBlendMode())
             context->setCompositeOperation(context->compositeOperation(), BlendModeNormal);
 #endif
 
@@ -6133,10 +6132,6 @@ bool RenderLayer::backgroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect)
     if (m_zOrderListsDirty || m_normalFlowListDirty)
         return false;
 
-    // Table painting is special; a table paints its sections.
-    if (renderer().isTablePart())
-        return false;
-
     // FIXME: We currently only check the immediate renderer,
     // which will miss many cases.
     if (renderer().backgroundIsKnownToBeOpaqueInRect(localRect))
@@ -6861,9 +6856,8 @@ void RenderLayer::updateOrRemoveFilterClients()
         FilterInfo::remove(*this);
         return;
     }
-    // Add the filter as a client to this renderer, unless we are a RenderLayer accommodating
-    // an SVG. In that case it takes care of its own resource management for filters.
-    if (renderer().style().filter().hasReferenceFilter() && !renderer().isSVGRoot())
+
+    if (renderer().style().filter().hasReferenceFilter())
         FilterInfo::get(*this).updateReferenceFilterClients(renderer().style().filter());
     else if (FilterInfo* filterInfo = FilterInfo::getIfExists(*this))
         filterInfo->removeReferenceFilterClients();

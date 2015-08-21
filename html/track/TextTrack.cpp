@@ -138,11 +138,11 @@ TextTrack::~TextTrack()
             m_client->textTrackRemoveCues(this, m_cues.get());
 
         for (size_t i = 0; i < m_cues->length(); ++i)
-            m_cues->item(i)->setTrack(nullptr);
+            m_cues->item(i)->setTrack(0);
 #if ENABLE(WEBVTT_REGIONS)
         if (m_regions) {
             for (size_t i = 0; i < m_regions->length(); ++i)
-                m_regions->item(i)->setTrack(nullptr);
+                m_regions->item(i)->setTrack(0);
         }
 #endif
     }
@@ -591,11 +591,6 @@ bool TextTrack::isMainProgramContent() const
     // a way to express this in a machine-reable form, it is typically done with the track label, so we assume that caption
     // tracks are main content and all other track types are not.
     return kind() == captionsKeyword();
-}
-
-bool TextTrack::containsOnlyForcedSubtitles() const
-{
-    return kind() == forcedKeyword();
 }
 
 #if ENABLE(MEDIA_SOURCE)

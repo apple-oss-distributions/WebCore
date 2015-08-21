@@ -75,13 +75,25 @@ private:
 };
 
 struct SelectionIterator {
-    SelectionIterator(RenderObject* start)
-        : m_current(start)
+    RenderObject* m_current;
+    Vector<RenderMultiColumnSpannerPlaceholder*> m_spannerStack;
+    
+    SelectionIterator(RenderObject* o)
     {
+        m_current = o;
         checkForSpanner();
     }
     
-    RenderObject* current() const
+    void checkForSpanner()
+    {
+        if (!is<RenderMultiColumnSpannerPlaceholder>(m_current))
+            return;
+        auto& placeholder = downcast<RenderMultiColumnSpannerPlaceholder>(*m_current);
+        m_spannerStack.append(&placeholder);
+        m_current = placeholder.spanner();
+    }
+    
+    RenderObject* current()
     {
         return m_current;
     }
@@ -99,19 +111,6 @@ struct SelectionIterator {
         }
         return m_current;
     }
-
-private:
-    void checkForSpanner()
-    {
-        if (!is<RenderMultiColumnSpannerPlaceholder>(m_current))
-            return;
-        auto& placeholder = downcast<RenderMultiColumnSpannerPlaceholder>(*m_current);
-        m_spannerStack.append(&placeholder);
-        m_current = placeholder.spanner();
-    }
-
-    RenderObject* m_current { nullptr };
-    Vector<RenderMultiColumnSpannerPlaceholder*> m_spannerStack;
 };
 
 RenderView::RenderView(Document& document, Ref<RenderStyle>&& style)
@@ -1021,18 +1020,14 @@ void RenderView::applySubtreeSelection(const SelectionSubtreeRoot& root, Selecti
             root.selectionData().selectionEnd()->setSelectionStateIfNeeded(SelectionEnd);
     }
 
-    RenderObject* selectionStart = root.selectionData().selectionStart();
-    RenderObject* selectionEnd = rendererAfterPosition(root.selectionData().selectionEnd(), root.selectionData().selectionEndPos());
-    SelectionIterator selectionIterator(selectionStart);
-    for (RenderObject* currentRenderer = selectionStart; currentRenderer && currentRenderer != selectionEnd; currentRenderer = selectionIterator.next()) {
-        if (currentRenderer == root.selectionData().selectionStart() || currentRenderer == root.selectionData().selectionEnd())
-            continue;
-        if (!currentRenderer->canBeSelectionLeaf())
-            continue;
-        // FIXME: Move this logic to SelectionIterator::next()
-        if (&currentRenderer->selectionRoot() != &root)
-            continue;
-        currentRenderer->setSelectionStateIfNeeded(SelectionInside);
+    RenderObject* o = root.selectionData().selectionStart();
+    RenderObject* stop = rendererAfterPosition(root.selectionData().selectionEnd(), root.selectionData().selectionEndPos());
+    SelectionIterator selectionIterator(o);
+    
+    while (o && o != stop) {
+        if (o != root.selectionData().selectionStart() && o != root.selectionData().selectionEnd() && o->canBeSelectionLeaf())
+            o->setSelectionStateIfNeeded(SelectionInside);
+        o = selectionIterator.next();
     }
 
     if (blockRepaintMode != RepaintNothing)
@@ -1042,33 +1037,36 @@ void RenderView::applySubtreeSelection(const SelectionSubtreeRoot& root, Selecti
     // put them in the new objects list.
     SelectedObjectMap newSelectedObjects;
     SelectedBlockMap newSelectedBlocks;
-    selectionIterator = SelectionIterator(selectionStart);
-    for (RenderObject* currentRenderer = selectionStart; currentRenderer && currentRenderer != selectionEnd; currentRenderer = selectionIterator.next()) {
-        if (isValidObjectForNewSelection(root, *currentRenderer)) {
-            std::unique_ptr<RenderSelectionInfo> selectionInfo = std::make_unique<RenderSelectionInfo>(*currentRenderer, true);
+    o = root.selectionData().selectionStart();
+    selectionIterator = SelectionIterator(o);
+    while (o && o != stop) {
+        if (isValidObjectForNewSelection(root, *o)) {
+            std::unique_ptr<RenderSelectionInfo> selectionInfo = std::make_unique<RenderSelectionInfo>(*o, true);
 
 #if ENABLE(SERVICE_CONTROLS)
             for (auto& rect : selectionInfo->collectedSelectionRects())
                 m_selectionRectGatherer.addRect(selectionInfo->repaintContainer(), rect);
-            if (!currentRenderer->isTextOrLineBreak())
+            if (!o->isTextOrLineBreak())
                 m_selectionRectGatherer.setTextOnly(false);
 #endif
 
-            newSelectedObjects.set(currentRenderer, WTF::move(selectionInfo));
+            newSelectedObjects.set(o, WTF::move(selectionInfo));
 
-            RenderBlock* containingBlock = currentRenderer->containingBlock();
-            while (containingBlock && !containingBlock->isRenderView()) {
-                std::unique_ptr<RenderBlockSelectionInfo>& blockInfo = newSelectedBlocks.add(containingBlock, nullptr).iterator->value;
+            RenderBlock* cb = o->containingBlock();
+            while (cb && !cb->isRenderView()) {
+                std::unique_ptr<RenderBlockSelectionInfo>& blockInfo = newSelectedBlocks.add(cb, nullptr).iterator->value;
                 if (blockInfo)
                     break;
-                blockInfo = std::make_unique<RenderBlockSelectionInfo>(*containingBlock);
-                containingBlock = containingBlock->containingBlock();
+                blockInfo = std::make_unique<RenderBlockSelectionInfo>(*cb);
+                cb = cb->containingBlock();
 
 #if ENABLE(SERVICE_CONTROLS)
                 m_selectionRectGatherer.addGapRects(blockInfo->repaintContainer(), blockInfo->rects());
 #endif
             }
         }
+
+        o = selectionIterator.next();
     }
 
     if (blockRepaintMode == RepaintNothing)

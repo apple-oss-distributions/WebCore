@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006-2007, 2010-2011, 2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2006, 2007, 2010, 2011 Apple Inc. All rights reserved.
  *           (C) 2007 Graham Dennis (graham.dennis@gmail.com)
  *
  * Redistribution and use in source and binary forms, with or without
@@ -147,7 +147,7 @@ bool ResourceLoader::init(const ResourceRequest& r)
             clientRequest.setFirstPartyForCookies(document->firstPartyForCookies());
     }
 
-    willSendRequest(clientRequest, ResourceResponse());
+    willSendRequestInternal(clientRequest, ResourceResponse());
 
 #if PLATFORM(IOS)
     // If this ResourceLoader was stopped as a result of willSendRequest, bail out.
@@ -286,7 +286,7 @@ bool ResourceLoader::isSubresourceLoader()
     return false;
 }
 
-void ResourceLoader::willSendRequest(ResourceRequest& request, const ResourceResponse& redirectResponse)
+void ResourceLoader::willSendRequestInternal(ResourceRequest& request, const ResourceResponse& redirectResponse)
 {
     // Protect this in this delegate method since the additional processing can do
     // anything including possibly derefing this; one example of this is Radar 3266216.
@@ -310,13 +310,10 @@ void ResourceLoader::willSendRequest(ResourceRequest& request, const ResourceRes
         if (page && m_documentLoader) {
             auto* userContentController = page->userContentController();
             if (userContentController)
-                userContentController->processContentExtensionRulesForLoad(request, m_resourceType, *m_documentLoader);
+                userContentController->processContentExtensionRulesForLoad(*page, request, m_resourceType, *m_documentLoader);
         }
     }
 #endif
-    
-    if (isPlugInStreamLoader())
-        documentLoader()->addPlugInStreamLoader(this);
 
     if (request.isNull()) {
         didFail(cannotShowURLError());
@@ -347,10 +344,10 @@ void ResourceLoader::willSendRequest(ResourceRequest& request, const ResourceRes
         frameLoader()->client().dispatchDidReceiveServerRedirectForProvisionalLoad();
 }
 
-void ResourceLoader::willSendRequest(ResourceRequest&& request, const ResourceResponse& redirectResponse, std::function<void(ResourceRequest&)> callback)
+void ResourceLoader::willSendRequest(ResourceRequest&& request, const ResourceResponse& redirectResponse, std::function<void(ResourceRequest&&)>&& callback)
 {
-    willSendRequest(request, redirectResponse);
-    callback(request);
+    willSendRequestInternal(request, redirectResponse);
+    callback(WTF::move(request));
 }
 
 void ResourceLoader::didSendData(unsigned long long, unsigned long long)
@@ -391,12 +388,6 @@ void ResourceLoader::didReceiveResponse(const ResourceResponse& r)
     logResourceResponseSource(m_frame.get(), r.source());
 
     m_response = r;
-
-    if (m_response.isHttpVersion0_9()) {
-        String message = "Sandboxing '" + m_response.url().string() + "' because it is using HTTP/0.9.";
-        m_frame->document()->addConsoleMessage(MessageSource::Security, MessageLevel::Error, message, m_identifier);
-        frameLoader()->forceSandboxFlags(SandboxScripts | SandboxPlugins);
-    }
 
     if (FormData* data = m_request.httpBody())
         data->removeGeneratedFilesIfNeeded();
@@ -566,7 +557,7 @@ void ResourceLoader::willSendRequest(ResourceHandle*, ResourceRequest& request, 
 {
     if (documentLoader()->applicationCacheHost()->maybeLoadFallbackForRedirect(this, request, redirectResponse))
         return;
-    willSendRequest(request, redirectResponse);
+    willSendRequestInternal(request, redirectResponse);
 }
 
 void ResourceLoader::didSendData(ResourceHandle*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent)

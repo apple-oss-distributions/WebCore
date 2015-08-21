@@ -37,18 +37,10 @@
 namespace WebCore {
 
 #if !PLATFORM(IOS)
-static PlatformMediaSessionManager* platformMediaSessionManager = nullptr;
-
 PlatformMediaSessionManager& PlatformMediaSessionManager::sharedManager()
 {
-    if (!platformMediaSessionManager)
-        platformMediaSessionManager = new PlatformMediaSessionManager;
-    return *platformMediaSessionManager;
-}
-
-PlatformMediaSessionManager* PlatformMediaSessionManager::sharedManagerIfExists()
-{
-    return platformMediaSessionManager;
+    DEPRECATED_DEFINE_STATIC_LOCAL(PlatformMediaSessionManager, manager, ());
+    return manager;
 }
 #endif
 
@@ -143,6 +135,7 @@ void PlatformMediaSessionManager::removeSession(PlatformMediaSession& session)
     LOG(Media, "PlatformMediaSessionManager::removeSession - %p", &session);
     
     size_t index = m_sessions.find(&session);
+    ASSERT(index != notFound);
     if (index == notFound)
         return;
     
@@ -283,12 +276,6 @@ bool PlatformMediaSessionManager::sessionCanLoadMedia(const PlatformMediaSession
 void PlatformMediaSessionManager::applicationWillEnterBackground() const
 {
     LOG(Media, "PlatformMediaSessionManager::applicationWillEnterBackground");
-
-    if (m_isApplicationInBackground)
-        return;
-
-    m_isApplicationInBackground = true;
-    
     Vector<PlatformMediaSession*> sessions = m_sessions;
     for (auto* session : sessions) {
         if (m_restrictions[session->mediaType()] & BackgroundProcessPlaybackRestricted)
@@ -296,29 +283,28 @@ void PlatformMediaSessionManager::applicationWillEnterBackground() const
     }
 }
 
-void PlatformMediaSessionManager::applicationDidEnterForeground() const
+void PlatformMediaSessionManager::applicationDidEnterBackground(bool isSuspendedUnderLock) const
 {
-    LOG(Media, "PlatformMediaSessionManager::applicationDidEnterForeground");
+    LOG(Media, "PlatformMediaSessionManager::applicationDidEnterBackground");
 
-    if (!m_isApplicationInBackground)
+    if (!isSuspendedUnderLock)
         return;
 
-    m_isApplicationInBackground = false;
+    Vector<PlatformMediaSession*> sessions = m_sessions;
+    for (auto* session : sessions) {
+        if (m_restrictions[session->mediaType()] & BackgroundProcessPlaybackRestricted)
+            session->forceInterruption(PlatformMediaSession::EnteringBackground);
+    }
+}
 
+void PlatformMediaSessionManager::applicationWillEnterForeground() const
+{
+    LOG(Media, "PlatformMediaSessionManager::applicationWillEnterForeground");
     Vector<PlatformMediaSession*> sessions = m_sessions;
     for (auto* session : sessions) {
         if (m_restrictions[session->mediaType()] & BackgroundProcessPlaybackRestricted)
             session->endInterruption(PlatformMediaSession::MayResumePlaying);
     }
-}
-
-void PlatformMediaSessionManager::sessionIsPlayingToWirelessPlaybackTargetChanged(PlatformMediaSession& session)
-{
-    if (!m_isApplicationInBackground || !(m_restrictions[session.mediaType()] & BackgroundProcessPlaybackRestricted))
-        return;
-
-    if (session.state() != PlatformMediaSession::Interrupted)
-        session.beginInterruption(PlatformMediaSession::EnteringBackground);
 }
 
 #if !PLATFORM(COCOA)
@@ -371,7 +357,7 @@ void PlatformMediaSessionManager::stopAllMediaPlaybackForProcess()
 {
     Vector<PlatformMediaSession*> sessions = m_sessions;
     for (auto* session : sessions)
-        session->stopSession();
+        session->pauseSession();
 }
 
 }

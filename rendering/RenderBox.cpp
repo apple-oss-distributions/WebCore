@@ -312,15 +312,6 @@ void RenderBox::styleWillChange(StyleDifference diff, const RenderStyle& newStyl
     } else if (isBody())
         view().repaintRootContents();
 
-#if ENABLE(CSS_SCROLL_SNAP)
-    if (!newStyle.scrollSnapCoordinates().isEmpty() || (oldStyle && !oldStyle->scrollSnapCoordinates().isEmpty())) {
-        if (newStyle.scrollSnapCoordinates().isEmpty())
-            view().unregisterBoxWithScrollSnapCoordinates(*this);
-        else
-            view().registerBoxWithScrollSnapCoordinates(*this);
-    }
-#endif
-
     RenderBoxModelObject::styleWillChange(diff, newStyle);
 }
 
@@ -433,17 +424,6 @@ void RenderBox::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle
         updateShapeOutsideInfoAfterStyleChange(style(), oldStyle);
 #endif
 }
-
-void RenderBox::willBeRemovedFromTree()
-{
-#if ENABLE(CSS_SCROLL_SNAP)
-    if (hasInitializedStyle() && !style().scrollSnapCoordinates().isEmpty())
-        view().unregisterBoxWithScrollSnapCoordinates(*this);
-#endif
-    
-    RenderBoxModelObject::willBeRemovedFromTree();
-}
-    
 
 #if ENABLE(CSS_SHAPES)
 void RenderBox::updateShapeOutsideInfoAfterStyleChange(const RenderStyle& style, const RenderStyle* oldStyle)

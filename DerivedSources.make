@@ -393,7 +393,6 @@ NON_SVG_BINDING_IDLS = \
     $(WebCore)/html/HTMLOutputElement.idl \
     $(WebCore)/html/HTMLParagraphElement.idl \
     $(WebCore)/html/HTMLParamElement.idl \
-	$(WebCore)/html/HTMLPictureElement.idl \
     $(WebCore)/html/HTMLPreElement.idl \
     $(WebCore)/html/HTMLProgressElement.idl \
     $(WebCore)/html/HTMLQuoteElement.idl \

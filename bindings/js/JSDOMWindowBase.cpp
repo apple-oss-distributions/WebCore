@@ -23,14 +23,12 @@
 #include "config.h"
 #include "JSDOMWindowBase.h"
 
-#include "ActiveDOMCallbackMicrotask.h"
 #include "Chrome.h"
 #include "DOMWindow.h"
 #include "Frame.h"
 #include "InspectorController.h"
 #include "JSDOMGlobalObjectTask.h"
 #include "JSDOMWindowCustom.h"
-#include "JSMainThreadExecState.h"
 #include "JSNode.h"
 #include "Logging.h"
 #include "Page.h"
@@ -38,7 +36,6 @@
 #include "SecurityOrigin.h"
 #include "Settings.h"
 #include "WebCoreJSClientData.h"
-#include <heap/StrongInlines.h>
 #include <runtime/Microtask.h>
 #include <wtf/MainThread.h>
 
@@ -181,46 +178,10 @@ RuntimeFlags JSDOMWindowBase::javaScriptRuntimeFlags(const JSGlobalObject* objec
     return frame->settings().javaScriptRuntimeFlags();
 }
 
-class JSDOMWindowMicrotaskCallback : public RefCounted<JSDOMWindowMicrotaskCallback> {
-public:
-    static Ref<JSDOMWindowMicrotaskCallback> create(JSDOMWindowBase* globalObject, PassRefPtr<JSC::Microtask> task)
-    {
-        return adoptRef(*new JSDOMWindowMicrotaskCallback(globalObject, task));
-    }
-
-    void call()
-    {
-        Ref<JSDOMWindowMicrotaskCallback> protect(*this);
-        JSLockHolder lock(m_globalObject->vm());
-
-        ExecState* exec = m_globalObject->globalExec();
-
-        JSMainThreadExecState::runTask(exec, *m_task.get());
-
-        ASSERT(!exec->hadException());
-    }
-
-private:
-    JSDOMWindowMicrotaskCallback(JSDOMWindowBase* globalObject, PassRefPtr<JSC::Microtask> task)
-        : m_globalObject(globalObject->vm(), globalObject)
-        , m_task(task)
-    {
-    }
-
-    Strong<JSDOMWindowBase> m_globalObject;
-    RefPtr<JSC::Microtask> m_task;
-};
-
-void JSDOMWindowBase::queueTaskToEventLoop(const JSGlobalObject* object, PassRefPtr<JSC::Microtask> task)
+void JSDOMWindowBase::queueTaskToEventLoop(const JSGlobalObject* object, PassRefPtr<Microtask> task)
 {
     const JSDOMWindowBase* thisObject = static_cast<const JSDOMWindowBase*>(object);
-
-    RefPtr<JSDOMWindowMicrotaskCallback> callback = JSDOMWindowMicrotaskCallback::create((JSDOMWindowBase*)thisObject, task);
-    auto microtask = std::make_unique<ActiveDOMCallbackMicrotask>(MicrotaskQueue::mainThreadQueue(), *thisObject->scriptExecutionContext(), [callback]() mutable {
-        callback->call();
-    });
-
-    MicrotaskQueue::mainThreadQueue().append(WTF::move(microtask));
+    thisObject->scriptExecutionContext()->postTask(JSGlobalObjectTask((JSDOMWindowBase*)thisObject, task));
 }
 
 void JSDOMWindowBase::willRemoveFromWindowShell()

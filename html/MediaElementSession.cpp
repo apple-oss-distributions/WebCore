@@ -129,12 +129,12 @@ bool MediaElementSession::playbackPermitted(const HTMLMediaElement& element) con
     if (pageExplicitlyAllowsElementToAutoplayInline(element))
         return true;
 
-    if (m_restrictions & RequireUserGestureForRateChange && !ScriptController::processingUserGestureForMedia()) {
+    if (m_restrictions & RequireUserGestureForRateChange && !ScriptController::processingUserGesture()) {
         LOG(Media, "MediaElementSession::playbackPermitted - returning FALSE");
         return false;
     }
 
-    if (m_restrictions & RequireUserGestureForAudioRateChange && element.hasAudio() && !ScriptController::processingUserGestureForMedia()) {
+    if (m_restrictions & RequireUserGestureForAudioRateChange && element.hasAudio() && !ScriptController::processingUserGesture()) {
         LOG(Media, "MediaElementSession::playbackPermitted - returning FALSE");
         return false;
     }
@@ -144,7 +144,7 @@ bool MediaElementSession::playbackPermitted(const HTMLMediaElement& element) con
 
 bool MediaElementSession::dataLoadingPermitted(const HTMLMediaElement&) const
 {
-    if (m_restrictions & RequireUserGestureForLoad && !ScriptController::processingUserGestureForMedia()) {
+    if (m_restrictions & RequireUserGestureForLoad && !ScriptController::processingUserGesture()) {
         LOG(Media, "MediaElementSession::dataLoadingPermitted - returning FALSE");
         return false;
     }
@@ -154,7 +154,7 @@ bool MediaElementSession::dataLoadingPermitted(const HTMLMediaElement&) const
 
 bool MediaElementSession::fullscreenPermitted(const HTMLMediaElement&) const
 {
-    if (m_restrictions & RequireUserGestureForFullscreen && !ScriptController::processingUserGestureForMedia()) {
+    if (m_restrictions & RequireUserGestureForFullscreen && !ScriptController::processingUserGesture()) {
         LOG(Media, "MediaElementSession::fullscreenPermitted - returning FALSE");
         return false;
     }
@@ -189,7 +189,7 @@ void MediaElementSession::showPlaybackTargetPicker(const HTMLMediaElement& eleme
 {
     LOG(Media, "MediaElementSession::showPlaybackTargetPicker");
 
-    if (m_restrictions & RequireUserGestureToShowPlaybackTargetPicker && !ScriptController::processingUserGestureForMedia()) {
+    if (m_restrictions & RequireUserGestureToShowPlaybackTargetPicker && !ScriptController::processingUserGesture()) {
         LOG(Media, "MediaElementSession::showPlaybackTargetPicker - returning early because of permissions");
         return;
     }
@@ -200,8 +200,8 @@ void MediaElementSession::showPlaybackTargetPicker(const HTMLMediaElement& eleme
     }
 
 #if !PLATFORM(IOS)
-    if (!element.hasVideo()) {
-        LOG(Media, "MediaElementSession::showPlaybackTargetPicker - returning early because element has no video");
+    if (element.readyState() < HTMLMediaElementEnums::HAVE_METADATA) {
+        LOG(Media, "MediaElementSession::showPlaybackTargetPicker - returning early because element is not playable");
         return;
     }
 #endif

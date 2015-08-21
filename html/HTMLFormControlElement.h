@@ -114,9 +114,6 @@ public:
 
     static HTMLFormControlElement* enclosingFormControlElement(Node*);
 
-    String autocomplete() const;
-    void setAutocomplete(const String&);
-
     using Node::ref;
     using Node::deref;
 
@@ -132,7 +129,6 @@ protected:
     virtual void requiredAttributeChanged();
     virtual void didAttachRenderers() override;
     virtual InsertionNotificationRequest insertedInto(ContainerNode&) override;
-    void finishedInsertingSubtree() override;
     virtual void removedFrom(ContainerNode&) override;
     virtual void didMoveToNewDocument(Document* oldDocument) override;
 

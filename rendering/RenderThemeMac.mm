@@ -1147,7 +1147,7 @@ bool RenderThemeMac::paintProgressBar(const RenderObject& renderObject, const Pa
     trackInfo.reserved = 0;
     trackInfo.filler1 = 0;
 
-    std::unique_ptr<ImageBuffer> imageBuffer = ImageBuffer::createCompatibleBuffer(inflatedRect.size(), deviceScaleFactor, ColorSpaceSRGB, paintInfo.context, true);
+    std::unique_ptr<ImageBuffer> imageBuffer = ImageBuffer::createCompatibleBuffer(inflatedRect.size(), deviceScaleFactor, ColorSpaceDeviceRGB, paintInfo.context, true);
     if (!imageBuffer)
         return true;
 
@@ -1231,7 +1231,7 @@ void RenderThemeMac::paintMenuListButtonGradients(const RenderObject& o, const P
     FloatRoundedRect border = FloatRoundedRect(o.style().getRoundedBorderFor(r));
     int radius = border.radii().topLeft().width();
 
-    CGColorSpaceRef cspace = sRGBColorSpaceRef();
+    CGColorSpaceRef cspace = deviceRGBColorSpaceRef();
 
     FloatRect topGradient(r.x(), r.y(), r.width(), r.height() / 2.0f);
     struct CGFunctionCallbacks topCallbacks = { 0, TopGradientInterpolate, NULL };
@@ -1496,7 +1496,7 @@ bool RenderThemeMac::paintSliderTrack(const RenderObject& o, const PaintInfo& pa
 
     LocalCurrentGraphicsContext localContext(paintInfo.context);
     CGContextRef context = localContext.cgContext();
-    CGColorSpaceRef cspace = sRGBColorSpaceRef();
+    CGColorSpaceRef cspace = deviceRGBColorSpaceRef();
 
 #if ENABLE(DATALIST_ELEMENT)
     paintSliderTicks(o, paintInfo, r);

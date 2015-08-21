@@ -27,8 +27,6 @@
 #include "RenderSVGRoot.h"
 #include "SVGFitToViewBox.h"
 #include "SVGRenderingContext.h"
-#include "SVGResources.h"
-#include "SVGResourcesCache.h"
 
 namespace WebCore {
 
@@ -56,19 +54,6 @@ void RenderSVGResourcePattern::removeClientFromCache(RenderElement& client, bool
     markClientForInvalidation(client, markForInvalidation ? RepaintInvalidation : ParentOnlyInvalidation);
 }
 
-void RenderSVGResourcePattern::collectPatternAttributes(PatternAttributes& attributes) const
-{
-    const RenderSVGResourcePattern* current = this;
-
-    while (current) {
-        const SVGPatternElement& pattern = current->patternElement();
-        pattern.collectPatternAttributes(attributes);
-
-        auto* resources = SVGResourcesCache::cachedResourcesForRenderer(*current);
-        current = resources ? downcast<RenderSVGResourcePattern>(resources->linkedResource()) : nullptr;
-    }
-}
-
 PatternData* RenderSVGResourcePattern::buildPattern(RenderElement& renderer, unsigned short resourceMode)
 {
     PatternData* currentData = m_patternMap.get(&renderer);
@@ -79,7 +64,7 @@ PatternData* RenderSVGResourcePattern::buildPattern(RenderElement& renderer, uns
         patternElement().synchronizeAnimatedSVGAttribute(anyQName());
 
         m_attributes = PatternAttributes();
-        collectPatternAttributes(m_attributes);
+        patternElement().collectPatternAttributes(m_attributes);
         m_shouldCollectPatternAttributes = false;
     }
 
@@ -248,7 +233,7 @@ bool RenderSVGResourcePattern::buildTileImageTransform(RenderElement& renderer,
 std::unique_ptr<ImageBuffer> RenderSVGResourcePattern::createTileImage(const PatternAttributes& attributes, const FloatRect& tileBoundaries, const FloatRect& absoluteTileBoundaries, const AffineTransform& tileImageTransform, FloatRect& clampedAbsoluteTileBoundaries) const
 {
     clampedAbsoluteTileBoundaries = ImageBuffer::clampedRect(absoluteTileBoundaries);
-    auto tileImage = SVGRenderingContext::createImageBuffer(absoluteTileBoundaries, clampedAbsoluteTileBoundaries, ColorSpaceSRGB, Unaccelerated);
+    auto tileImage = SVGRenderingContext::createImageBuffer(absoluteTileBoundaries, clampedAbsoluteTileBoundaries, ColorSpaceDeviceRGB, Unaccelerated);
     if (!tileImage)
         return nullptr;
 

@@ -148,7 +148,7 @@ private:
     void requestPreload(CachedResource::Type, CachedResourceRequest&, const String& charset);
 
     enum RevalidationPolicy { Use, Revalidate, Reload, Load };
-    RevalidationPolicy determineRevalidationPolicy(CachedResource::Type, CachedResourceRequest&, CachedResource* existingResource) const;
+    RevalidationPolicy determineRevalidationPolicy(CachedResource::Type, ResourceRequest&, bool forPreload, CachedResource* existingResource, CachedResourceRequest::DeferOption) const;
     
     bool shouldContinueAfterNotifyingLoadedFromMemoryCache(const CachedResourceRequest&, CachedResource*);
     bool checkInsecureContent(CachedResource::Type, const URL&) const;
@@ -158,8 +158,6 @@ private:
 
     bool clientDefersImage(const URL&) const;
     void reloadImagesIfNotDeferred();
-
-    bool canRequestInContentDispositionAttachmentSandbox(CachedResource::Type, const URL&) const;
     
     HashSet<String> m_validatedURLs;
     mutable DocumentResourceMap m_documentResources;

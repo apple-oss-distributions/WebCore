@@ -148,7 +148,6 @@ CachedResourceLoader::~CachedResourceLoader()
 
 CachedResource* CachedResourceLoader::cachedResource(const String& resourceURL) const 
 {
-    ASSERT(!resourceURL.isNull());
     URL url = m_document->completeURL(resourceURL);
     return cachedResource(url); 
 }
@@ -374,6 +373,13 @@ bool CachedResourceLoader::canRequest(CachedResource::Type type, const URL& url,
     // any URL.
     switch (type) {
     case CachedResource::MainResource:
+        if (HTMLFrameOwnerElement* ownerElement = frame() ? frame()->ownerElement() : nullptr) {
+            if (ownerElement->document().shouldEnforceContentDispositionAttachmentSandbox() && !ownerElement->document().securityOrigin()->canRequest(url)) {
+                printAccessDeniedMessage(url);
+                return false;
+            }
+        }
+        FALLTHROUGH;
     case CachedResource::ImageResource:
     case CachedResource::CSSStyleSheet:
     case CachedResource::Script:
@@ -456,9 +462,6 @@ bool CachedResourceLoader::canRequest(CachedResource::Type type, const URL& url,
             return false;
     }
 
-    if (!canRequestInContentDispositionAttachmentSandbox(type, url))
-        return false;
-
     // Last of all, check for insecure content. We do this last so that when
     // folks block insecure content with a CSP policy, they don't get a warning.
     // They'll still get a warning in the console about CSP blocking the load.
@@ -468,33 +471,6 @@ bool CachedResourceLoader::canRequest(CachedResource::Type type, const URL& url,
         return false;
 
     return true;
-}
-
-bool CachedResourceLoader::canRequestInContentDispositionAttachmentSandbox(CachedResource::Type type, const URL& url) const
-{
-    Document* document;
-    
-    // FIXME: Do we want to expand this to all resource types that the mixed content checker would consider active content?
-    switch (type) {
-    case CachedResource::MainResource:
-        if (auto ownerElement = frame() ? frame()->ownerElement() : nullptr) {
-            document = &ownerElement->document();
-            break;
-        }
-        return true;
-    case CachedResource::CSSStyleSheet:
-        document = m_document;
-        break;
-    default:
-        return true;
-    }
-
-    if (!document->shouldEnforceContentDispositionAttachmentSandbox() || document->securityOrigin()->canRequest(url))
-        return true;
-
-    String message = "Unsafe attempt to load URL " + url.stringCenterEllipsizedToLength() + " from document with Content-Disposition: attachment at URL " + document->url().stringCenterEllipsizedToLength() + ".";
-    document->addConsoleMessage(MessageSource::Security, MessageLevel::Error, message);
-    return false;
 }
 
 bool CachedResourceLoader::shouldContinueAfterNotifyingLoadedFromMemoryCache(const CachedResourceRequest& request, CachedResource* resource)
@@ -539,7 +515,7 @@ CachedResourceHandle<CachedResource> CachedResourceLoader::requestResource(Cache
 
 #if ENABLE(CONTENT_EXTENSIONS)
     if (frame() && frame()->mainFrame().page() && frame()->mainFrame().page()->userContentController() && m_documentLoader)
-        frame()->mainFrame().page()->userContentController()->processContentExtensionRulesForLoad(request.mutableResourceRequest(), toResourceType(type), *m_documentLoader);
+        frame()->mainFrame().page()->userContentController()->processContentExtensionRulesForLoad(*frame()->mainFrame().page(), request.mutableResourceRequest(), toResourceType(type), *m_documentLoader);
 
     if (request.mutableResourceRequest().isNull())
         return nullptr;
@@ -565,7 +541,7 @@ CachedResourceHandle<CachedResource> CachedResourceLoader::requestResource(Cache
 
     logMemoryCacheResourceRequest(frame(), resource ? DiagnosticLoggingKeys::inMemoryCacheKey() : DiagnosticLoggingKeys::notInMemoryCacheKey());
 
-    const RevalidationPolicy policy = determineRevalidationPolicy(type, request, resource.get());
+    const RevalidationPolicy policy = determineRevalidationPolicy(type, request.mutableResourceRequest(), request.forPreload(), resource.get(), request.defer());
     switch (policy) {
     case Reload:
         memoryCache.remove(*resource);
@@ -704,15 +680,13 @@ static void logResourceRevalidationDecision(CachedResource::RevalidationDecision
     }
 }
 
-CachedResourceLoader::RevalidationPolicy CachedResourceLoader::determineRevalidationPolicy(CachedResource::Type type, CachedResourceRequest& cachedResourceRequest, CachedResource* existingResource) const
+CachedResourceLoader::RevalidationPolicy CachedResourceLoader::determineRevalidationPolicy(CachedResource::Type type, ResourceRequest& request, bool forPreload, CachedResource* existingResource, CachedResourceRequest::DeferOption defer) const
 {
-    auto& request = cachedResourceRequest.resourceRequest();
-
     if (!existingResource)
         return Load;
 
     // We already have a preload going for this URL.
-    if (cachedResourceRequest.forPreload() && existingResource->isPreloaded())
+    if (forPreload && existingResource->isPreloaded())
         return Use;
 
     // If the same URL has been loaded as a different type, we need to reload.
@@ -725,16 +699,12 @@ CachedResourceLoader::RevalidationPolicy CachedResourceLoader::determineRevalida
     if (!existingResource->canReuse(request))
         return Reload;
 
-    auto* textDecoder = existingResource->textResourceDecoder();
-    if (textDecoder && !textDecoder->hasEqualEncodingForCharset(cachedResourceRequest.charset()))
-        return Reload;
-
     // Conditional requests should have failed canReuse check.
     ASSERT(!request.isConditional());
 
     // Do not load from cache if images are not enabled. The load for this image will be blocked
     // in CachedImage::load.
-    if (cachedResourceRequest.defer() == CachedResourceRequest::DeferredByClient)
+    if (CachedResourceRequest::DeferredByClient == defer)
         return Reload;
     
     // Don't reload resources while pasting.

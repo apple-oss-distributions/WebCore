@@ -65,35 +65,23 @@ std::unique_ptr<NetworkExtensionContentFilter> NetworkExtensionContentFilter::cr
 
 NetworkExtensionContentFilter::NetworkExtensionContentFilter()
     : m_status { NEFilterSourceStatusNeedsMoreData }
-{
-}
-
-void NetworkExtensionContentFilter::initialize(const URL* url)
-{
-    ASSERT(!m_queue);
-    ASSERT(!m_semaphore);
-    ASSERT(!m_neFilterSource);
-    m_queue = adoptOSObject(dispatch_queue_create("com.apple.WebCore.NEFilterSourceQueue", DISPATCH_QUEUE_SERIAL));
-    m_semaphore = adoptOSObject(dispatch_semaphore_create(0));
+    , m_queue { adoptOSObject(dispatch_queue_create("com.apple.WebCore.NEFilterSourceQueue", DISPATCH_QUEUE_SERIAL)) }
+    , m_semaphore { adoptOSObject(dispatch_semaphore_create(0)) }
 #if HAVE(MODERN_NE_FILTER_SOURCE)
-    ASSERT_UNUSED(url, !url);
-    m_neFilterSource = adoptNS([allocNEFilterSourceInstance() initWithDecisionQueue:m_queue.get()]);
-#else
-    ASSERT_ARG(url, url);
-    m_neFilterSource = adoptNS([allocNEFilterSourceInstance() initWithURL:*url direction:NEFilterSourceDirectionInbound socketIdentifier:0]);
+    , m_neFilterSource { adoptNS([allocNEFilterSourceInstance() initWithDecisionQueue:m_queue.get()]) }
 #endif
+{
+    ASSERT([getNEFilterSourceClass() filterRequired]);
 }
 
 void NetworkExtensionContentFilter::willSendRequest(ResourceRequest& request, const ResourceResponse& redirectResponse)
 {
 #if HAVE(MODERN_NE_FILTER_SOURCE)
     ASSERT(!request.isNull());
-    if (!request.url().protocolIsInHTTPFamily() || !enabled()) {
+    if (!request.url().protocolIsInHTTPFamily()) {
         m_status = NEFilterSourceStatusPass;
         return;
     }
-
-    initialize();
 
     if (!redirectResponse.isNull()) {
         responseReceived(redirectResponse);
@@ -137,12 +125,8 @@ void NetworkExtensionContentFilter::responseReceived(const ResourceResponse& res
     }
 
 #if !HAVE(MODERN_NE_FILTER_SOURCE)
-    if (!enabled()) {
-        m_status = NEFilterSourceStatusPass;
-        return;
-    }
-
-    initialize(&response.url());
+    ASSERT(!m_neFilterSource);
+    m_neFilterSource = adoptNS([allocNEFilterSourceInstance() initWithURL:response.url() direction:NEFilterSourceDirectionInbound socketIdentifier:0]);
 #else
     [m_neFilterSource receivedResponse:response.nsURLResponse() decisionHandler:[this](NEFilterSourceStatus status, NSDictionary *decisionInfo) {
         handleDecision(status, replacementDataFromDecisionInfo(decisionInfo));

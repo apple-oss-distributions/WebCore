@@ -318,12 +318,11 @@ private:
     // PlatformMediaSessionClient
     virtual PlatformMediaSession::MediaType mediaType() const override { return PlatformMediaSession::WebAudio; }
     virtual PlatformMediaSession::MediaType presentationType() const override { return PlatformMediaSession::WebAudio; }
-    PlatformMediaSession::CharacteristicsFlags characteristics() const override { return m_state == State::Running ? PlatformMediaSession::HasAudio : PlatformMediaSession::HasNothing; }
     virtual void mayResumePlayback(bool shouldResume) override;
     virtual void suspendPlayback() override;
     virtual bool canReceiveRemoteControlCommands() const override { return false; }
     virtual void didReceiveRemoteControlCommand(PlatformMediaSession::RemoteControlCommandType) override { }
-    bool shouldOverrideBackgroundPlaybackRestriction(PlatformMediaSession::InterruptionType) const override { return false; }
+    virtual bool overrideBackgroundPlaybackRestriction() const override { return false; }
 
     // EventTarget
     virtual void refEventTarget() override { ref(); }

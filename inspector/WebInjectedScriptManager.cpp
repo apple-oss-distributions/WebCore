@@ -47,13 +47,6 @@ void WebInjectedScriptManager::disconnect()
     m_commandLineAPIHost = nullptr;
 }
 
-void WebInjectedScriptManager::discardInjectedScripts()
-{
-    InjectedScriptManager::discardInjectedScripts();
-
-    m_commandLineAPIHost->clearAllWrappers();
-}
-
 void WebInjectedScriptManager::didCreateInjectedScript(InjectedScript injectedScript)
 {
     CommandLineAPIModule::injectIfNeeded(this, injectedScript);

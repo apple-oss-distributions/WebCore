@@ -57,7 +57,6 @@ class CSSValueList;
 class CSSBasicShape;
 class CSSBasicShapeInset;
 class CSSGridLineNamesValue;
-class CSSVariableDependentValue;
 class Document;
 class Element;
 class ImmutableStyleProperties;
@@ -120,7 +119,6 @@ public:
     bool parseSupportsCondition(const String&);
 
     static ParseResult parseValue(MutableStyleProperties*, CSSPropertyID, const String&, bool important, CSSParserMode, StyleSheetContents*);
-    static ParseResult parseCustomPropertyValue(MutableStyleProperties*, const AtomicString& propertyName, const String&, bool important, CSSParserMode, StyleSheetContents* contextStyleSheet);
 
     static bool parseColor(RGBA32& color, const String&, bool strict = false);
     static bool isValidSystemColorValue(CSSValueID);
@@ -145,9 +143,8 @@ public:
     bool parseQuotes(CSSPropertyID, bool important);
     bool parseAlt(CSSPropertyID, bool important);
     
-    bool parseCustomPropertyDeclaration(bool important, CSSValueID);
-    
     PassRefPtr<CSSValue> parseAttr(CSSParserValueList& args);
+
     PassRefPtr<CSSValue> parseBackgroundColor();
 
     struct SourceSize {
@@ -262,6 +259,7 @@ public:
 
     bool parseLineHeight(bool important);
     bool parseFontSize(bool important);
+    bool parseFontVariant(bool important);
     bool parseFontWeight(bool important);
     bool parseFontSynthesis(bool important);
     bool parseFontFaceSrc();
@@ -345,12 +343,7 @@ public:
     bool parseFlowThread(CSSPropertyID, bool important);
     bool parseRegionThread(CSSPropertyID, bool important);
 
-    bool parseFontVariantLigatures(bool important, bool unknownIsFailure, bool implicit);
-    bool parseFontVariantNumeric(bool important, bool unknownIsFailure, bool implicit);
-    bool parseFontVariantEastAsian(bool important, bool unknownIsFailure, bool implicit);
-    bool parseFontVariant(bool important);
-
-    bool parseWillChange(bool important);
+    bool parseFontVariantLigatures(bool important);
 
     // Faster than doing a new/delete each time since it keeps one vector.
     std::unique_ptr<Vector<std::unique_ptr<CSSParserSelector>>> createSelectorVector();
@@ -396,7 +389,6 @@ public:
 
     bool m_important;
     CSSPropertyID m_id;
-    AtomicString m_customPropertyName;
     StyleSheetContents* m_styleSheet;
     RefPtr<StyleRuleBase> m_rule;
     RefPtr<StyleKeyframe> m_keyframe;
@@ -414,6 +406,7 @@ public:
     CSSPropertyID m_currentShorthand;
     bool m_implicitShorthand;
 
+    bool m_hasFontFaceOnlyValues;
     bool m_hadSyntacticallyValidCSSRule;
     bool m_logErrors;
     bool m_ignoreErrorsInDeclaration;
@@ -466,10 +459,6 @@ public:
 
     Location currentLocation();
     static bool isCalculation(CSSParserValue&);
-
-    void setCustomPropertyName(const AtomicString& propertyName) { m_customPropertyName = propertyName; }
-
-    RefPtr<CSSValue> parseVariableDependentValue(CSSPropertyID, const CSSVariableDependentValue&, const CustomPropertyValueMap& customProperties);
 
 private:
     bool is8BitSource() { return m_is8BitSource; }
@@ -560,6 +549,8 @@ private:
     bool inShorthand() const { return m_inParseShorthand; }
 
     bool isValidSize(ValueWithCalculation&);
+
+    void deleteFontFaceOnlyValues();
 
     bool isGeneratedImageValue(CSSParserValue&) const;
     bool parseGeneratedImage(CSSParserValueList&, RefPtr<CSSValue>&);
@@ -758,11 +749,6 @@ inline UChar CSSParser::tokenStartChar()
     if (is8BitSource())
         return *m_tokenStart.ptr8;
     return *m_tokenStart.ptr16;
-}
-
-inline bool isCustomPropertyName(const String& propertyName)
-{
-    return propertyName.length() > 2 && propertyName.characterAt(0) == '-' && propertyName.characterAt(1) == '-';
 }
 
 inline int cssyylex(void* yylval, CSSParser* parser)

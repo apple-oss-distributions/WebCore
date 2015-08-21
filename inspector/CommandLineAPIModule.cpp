@@ -27,7 +27,8 @@
 #include "CommandLineAPIModule.h"
 
 #include "CommandLineAPIModuleSource.h"
-#include "JSDOMGlobalObject.h"
+#include "DOMWrapperWorld.h"
+#include "JSCommandLineAPIHost.h"
 #include "WebInjectedScriptManager.h"
 #include <inspector/InjectedScript.h>
 
@@ -52,14 +53,13 @@ String CommandLineAPIModule::source() const
     return StringImpl::createWithoutCopying(CommandLineAPIModuleSource_js, sizeof(CommandLineAPIModuleSource_js));
 }
 
-JSValue CommandLineAPIModule::host(InjectedScriptManager* injectedScriptManager, ExecState* exec) const
+JSC::JSValue CommandLineAPIModule::host(InjectedScriptManager* injectedScriptManager, JSC::ExecState* exec) const
 {
     // CommandLineAPIModule should only ever be used by a WebInjectedScriptManager.
     WebInjectedScriptManager* pageInjectedScriptManager = static_cast<WebInjectedScriptManager*>(injectedScriptManager);
     ASSERT(pageInjectedScriptManager->commandLineAPIHost());
-
     JSDOMGlobalObject* globalObject = jsCast<JSDOMGlobalObject*>(exec->lexicalGlobalObject());
-    return pageInjectedScriptManager->commandLineAPIHost()->wrapper(exec, globalObject);
+    return toJS(exec, globalObject, pageInjectedScriptManager->commandLineAPIHost());
 }
 
 } // namespace WebCore

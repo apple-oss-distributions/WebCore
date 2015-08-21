@@ -376,11 +376,10 @@ void RenderMultiColumnFlowThread::flowThreadDescendantInserted(RenderObject* des
                 
                 // We have to nuke the placeholder, since the ancestor already lost the mapping to it when
                 // we shifted the placeholder down into this flow thread.
-                placeholder.flowThread()->m_spannerMap.remove(spanner);
-                placeholder.parent()->removeChild(placeholder);
-
                 if (subtreeRoot == descendant)
                     subtreeRoot = spanner;
+                placeholder.parent()->removeChild(placeholder);
+
                 // Now we process the spanner.
                 descendant = processPossibleSpannerDescendant(subtreeRoot, spanner);
                 continue;

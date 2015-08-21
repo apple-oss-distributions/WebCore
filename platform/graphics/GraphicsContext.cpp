@@ -399,13 +399,14 @@ void GraphicsContext::drawImage(Image* image, ColorSpace colorSpace, const Float
     image->draw(this, destination, source, colorSpace, imagePaintingOptions.m_compositeOperator, imagePaintingOptions.m_blendMode, imagePaintingOptions.m_orientationDescription);
 }
 
-void GraphicsContext::drawTiledImage(Image* image, ColorSpace colorSpace, const FloatRect& destination, const FloatPoint& source, const FloatSize& tileSize, const FloatSize& spacing, const ImagePaintingOptions& imagePaintingOptions)
+void GraphicsContext::drawTiledImage(Image* image, ColorSpace colorSpace, const FloatRect& destination, const FloatPoint& source, const FloatSize& tileSize,
+    const ImagePaintingOptions& imagePaintingOptions)
 {
     if (paintingDisabled() || !image)
         return;
 
     InterpolationQualityMaintainer interpolationQualityForThisScope(*this, imagePaintingOptions.m_useLowQualityScale ? InterpolationLow : imageInterpolationQuality());
-    image->drawTiled(this, destination, source, tileSize, spacing, colorSpace, imagePaintingOptions.m_compositeOperator, imagePaintingOptions.m_blendMode);
+    image->drawTiled(this, destination, source, tileSize, colorSpace, imagePaintingOptions.m_compositeOperator, imagePaintingOptions.m_blendMode);
 }
 
 void GraphicsContext::drawTiledImage(Image* image, ColorSpace colorSpace, const FloatRect& destination, const FloatRect& source, const FloatSize& tileScaleFactor,
@@ -639,7 +640,7 @@ std::unique_ptr<ImageBuffer> GraphicsContext::createCompatibleBuffer(const Float
     AffineTransform transform = getCTM(DefinitelyIncludeDeviceScale);
     FloatSize scaledSize(static_cast<int>(ceil(size.width() * transform.xScale())), static_cast<int>(ceil(size.height() * transform.yScale())));
 
-    std::unique_ptr<ImageBuffer> buffer = ImageBuffer::createCompatibleBuffer(scaledSize, 1, ColorSpaceSRGB, this, hasAlpha);
+    std::unique_ptr<ImageBuffer> buffer = ImageBuffer::createCompatibleBuffer(scaledSize, 1, ColorSpaceDeviceRGB, this, hasAlpha);
     if (!buffer)
         return nullptr;
 

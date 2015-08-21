@@ -35,7 +35,6 @@ namespace WebCore {
 
 class CachedResourceLoader;
 class FontDescription;
-class FontFeatureSettings;
 class FontPlatformData;
 class SVGDocument;
 class SVGFontElement;
@@ -51,10 +50,10 @@ public:
 
     virtual bool ensureCustomFontData(bool externalSVG, const AtomicString& remoteURI);
 
-    virtual RefPtr<Font> createFont(const FontDescription&, const AtomicString& remoteURI, bool syntheticBold, bool syntheticItalic, bool externalSVG, const FontFeatureSettings&, const FontVariantSettings&);
+    virtual RefPtr<Font> createFont(const FontDescription&, const AtomicString& remoteURI, bool syntheticBold, bool syntheticItalic, bool externalSVG);
 
 protected:
-    FontPlatformData platformDataFromCustomData(const FontDescription&, bool bold, bool italic, const FontFeatureSettings&, const FontVariantSettings&);
+    FontPlatformData platformDataFromCustomData(float size, bool bold, bool italic, FontOrientation = Horizontal, FontWidthVariant = RegularWidth, FontRenderingMode = NormalRenderingMode);
 
     bool ensureCustomFontData(SharedBuffer* data);
 

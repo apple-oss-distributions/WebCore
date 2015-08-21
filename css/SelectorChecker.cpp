@@ -353,7 +353,7 @@ SelectorChecker::MatchResult SelectorChecker::matchRecursively(const CheckingCon
         nextContext.elementStyle = nullptr;
         for (; nextContext.element; nextContext.element = nextContext.element->previousElementSibling()) {
             if (context.resolvingMode == Mode::ResolvingStyle)
-                nextContext.element->setAffectsNextSiblingElementStyle();
+                context.element->setAffectsNextSiblingElementStyle();
 
             PseudoIdSet ignoreDynamicPseudo;
             unsigned indirectAdjacentSpecificity = 0;

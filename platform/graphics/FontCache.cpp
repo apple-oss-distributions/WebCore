@@ -105,11 +105,8 @@ public:
         , m_family(family)
     { }
 
-    explicit FontPlatformDataCacheKey(HashTableDeletedValueType t)
-        : m_fontDescriptionKey(t)
-    { }
-
-    bool isHashTableDeletedValue() const { return m_fontDescriptionKey.isHashTableDeletedValue(); }
+    FontPlatformDataCacheKey(HashTableDeletedValueType) : m_fontDescriptionKey(hashTableDeletedSize()) { }
+    bool isHashTableDeletedValue() const { return m_fontDescriptionKey.size == hashTableDeletedSize(); }
 
     bool operator==(const FontPlatformDataCacheKey& other) const
     {
@@ -118,6 +115,9 @@ public:
 
     FontDescriptionFontDataCacheKey m_fontDescriptionKey;
     AtomicString m_family;
+
+private:
+    static unsigned hashTableDeletedSize() { return 0xFFFFFFFFU; }
 };
 
 inline unsigned computeHash(const FontPlatformDataCacheKey& fontKey)
@@ -479,8 +479,6 @@ void FontCache::purgeInactiveFontData(unsigned purgeCount)
             fontVerticalDataCache.remove(key);
     }
 #endif
-
-    platformPurgeInactiveFontData();
 }
 
 size_t FontCache::fontCount()

@@ -46,8 +46,6 @@ public:
 
     void clear();
 
-    bool wasRedirected() const { return !m_redirectChain.isEmpty(); };
-
 private:
     virtual void didAddClient(CachedResourceClient*) override;
     virtual void addDataBuffer(SharedBuffer&) override;

@@ -36,6 +36,7 @@ class MockContentFilter final : public PlatformContentFilter {
 
 public:
     static void ensureInstalled();
+    static bool enabled();
     static std::unique_ptr<MockContentFilter> create();
 
     void willSendRequest(ResourceRequest&, const ResourceResponse&) override;
@@ -54,8 +55,6 @@ private:
         Allowed,
         Blocked
     };
-
-    static bool enabled();
 
     MockContentFilter() = default;
     void maybeDetermineStatus(MockContentFilterSettings::DecisionPoint);

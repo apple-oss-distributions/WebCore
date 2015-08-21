@@ -47,7 +47,6 @@ private:
     virtual void didAddClient(CachedResourceClient*) override;
     virtual void setEncoding(const String&) override;
     virtual String encoding() const override;
-    const TextResourceDecoder* textResourceDecoder() const override { return m_decoder.get(); }
     virtual void finishLoading(SharedBuffer*) override;
 
     String m_sheet;

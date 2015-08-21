@@ -28,7 +28,6 @@
 #include "Internals.h"
 
 #include "AXObjectCache.h"
-#include "ActiveDOMCallbackMicrotask.h"
 #include "AnimationController.h"
 #include "ApplicationCacheStorage.h"
 #include "BackForwardController.h"
@@ -83,6 +82,8 @@
 #include "MediaPlayer.h"
 #include "MemoryCache.h"
 #include "MemoryInfo.h"
+#include "MicroTask.h"
+#include "MicroTaskTest.h"
 #include "MockPageOverlayClient.h"
 #include "Page.h"
 #include "PageCache.h"
@@ -182,7 +183,7 @@
 #endif
 
 #if ENABLE(CONTENT_FILTERING)
-#include "MockContentFilterSettings.h"
+#include "MockContentFilter.h"
 #endif
 
 #if ENABLE(WEB_AUDIO)
@@ -349,6 +350,10 @@ Internals::Internals(Document* document)
     MockRealtimeMediaSourceCenter::registerMockRealtimeMediaSourceCenter();
     enableMockRTCPeerConnectionHandler();
     WebCore::provideUserMediaTo(document->page(), new UserMediaClientMock());
+#endif
+
+#if ENABLE(CONTENT_FILTERING)
+    MockContentFilter::ensureInstalled();
 #endif
 }
 
@@ -2521,8 +2526,6 @@ void Internals::setCaptionDisplayMode(const String& mode, ExceptionCode& ec)
         captionPreferences->setCaptionDisplayMode(CaptionUserPreferences::ForcedOnly);
     else if (equalIgnoringCase(mode, "AlwaysOn"))
         captionPreferences->setCaptionDisplayMode(CaptionUserPreferences::AlwaysOn);
-    else if (equalIgnoringCase(mode, "manual"))
-        captionPreferences->setCaptionDisplayMode(CaptionUserPreferences::Manual);
     else
         ec = SYNTAX_ERR;
 #else
@@ -2615,22 +2618,9 @@ Vector<String> Internals::bufferedSamplesForTrackID(SourceBuffer* buffer, const 
 #endif
 
 #if ENABLE(VIDEO)
-void Internals::beginMediaSessionInterruption(const String& interruptionString, ExceptionCode& ec)
+void Internals::beginMediaSessionInterruption()
 {
-    PlatformMediaSession::InterruptionType interruption = PlatformMediaSession::SystemInterruption;
-
-    if (equalIgnoringCase(interruptionString, "System"))
-        interruption = PlatformMediaSession::SystemInterruption;
-    else if (equalIgnoringCase(interruptionString, "SystemSleep"))
-        interruption = PlatformMediaSession::SystemSleep;
-    else if (equalIgnoringCase(interruptionString, "EnteringBackground"))
-        interruption = PlatformMediaSession::EnteringBackground;
-    else {
-        ec = INVALID_ACCESS_ERR;
-        return;
-    }
-
-    PlatformMediaSessionManager::sharedManager().beginInterruption(interruption);
+    PlatformMediaSessionManager::sharedManager().beginInterruption(PlatformMediaSession::SystemInterruption);
 }
 
 void Internals::endMediaSessionInterruption(const String& flagsString)
@@ -2643,9 +2633,9 @@ void Internals::endMediaSessionInterruption(const String& flagsString)
     PlatformMediaSessionManager::sharedManager().endInterruption(flags);
 }
 
-void Internals::applicationDidEnterForeground() const
+void Internals::applicationWillEnterForeground() const
 {
-    PlatformMediaSessionManager::sharedManager().applicationDidEnterForeground();
+    PlatformMediaSessionManager::sharedManager().applicationWillEnterForeground();
 }
 
 void Internals::applicationWillEnterBackground() const
@@ -2868,15 +2858,8 @@ RefPtr<File> Internals::createFile(const String& path)
 
 void Internals::queueMicroTask(int testNumber)
 {
-    Document* document = contextDocument();
-    if (!document)
-        return;
-
-    auto microtask = std::make_unique<ActiveDOMCallbackMicrotask>(MicrotaskQueue::mainThreadQueue(), *document, [document, testNumber]() {
-        document->addConsoleMessage(MessageSource::JS, MessageLevel::Debug, makeString("MicroTask #", String::number(testNumber), " has run."));
-    });
-
-    MicrotaskQueue::mainThreadQueue().append(WTF::move(microtask));
+    if (contextDocument())
+        MicroTaskQueue::singleton().queueMicroTask(std::make_unique<MicroTaskTest>(contextDocument()->createWeakPtr(), testNumber));
 }
 
 #if ENABLE(CONTENT_FILTERING)

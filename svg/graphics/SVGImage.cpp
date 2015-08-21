@@ -29,7 +29,6 @@
 #include "SVGImage.h"
 
 #include "Chrome.h"
-#include "DOMWindow.h"
 #include "DocumentLoader.h"
 #include "ElementIterator.h"
 #include "FrameLoader.h"
@@ -37,20 +36,15 @@
 #include "ImageBuffer.h"
 #include "ImageObserver.h"
 #include "IntRect.h"
-#include "JSDOMWindowBase.h"
 #include "MainFrame.h"
 #include "PageConfiguration.h"
 #include "RenderSVGRoot.h"
 #include "RenderStyle.h"
 #include "SVGDocument.h"
-#include "SVGFEImageElement.h"
 #include "SVGForeignObjectElement.h"
 #include "SVGImageClients.h"
-#include "SVGImageElement.h"
 #include "SVGSVGElement.h"
 #include "Settings.h"
-#include <runtime/JSCInlines.h>
-#include <runtime/JSLock.h>
 
 namespace WebCore {
 
@@ -85,20 +79,9 @@ bool SVGImage::hasSingleSecurityOrigin() const
     if (!rootElement)
         return true;
 
-    // FIXME: Once foreignObject elements within SVG images are updated to not leak cross-origin data
-    // (e.g., visited links, spellcheck) we can remove the SVGForeignObjectElement check here and
-    // research if we can remove the Image::hasSingleSecurityOrigin mechanism entirely.
-    for (auto& element : descendantsOfType<SVGElement>(*rootElement)) {
-        if (is<SVGForeignObjectElement>(element))
-            return false;
-        if (is<SVGImageElement>(element)) {
-            if (!downcast<SVGImageElement>(element).hasSingleSecurityOrigin())
-                return false;
-        } else if (is<SVGFEImageElement>(element)) {
-            if (!downcast<SVGFEImageElement>(element).hasSingleSecurityOrigin())
-                return false;
-        }
-    }
+    // Don't allow foreignObject elements since they can leak information with arbitrary HTML (like spellcheck or control theme).
+    if (descendantsOfType<SVGForeignObjectElement>(*rootElement).first())
+        return false;
 
     // Because SVG image rendering disallows external resources and links,
     // these images effectively are restricted to a single security origin.
@@ -201,8 +184,8 @@ PassNativeImagePtr SVGImage::nativeImageForCurrentFrame()
 }
 #endif
 
-void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize& containerSize, float zoom, const FloatRect& srcRect,
-    const AffineTransform& patternTransform, const FloatPoint& phase, const FloatSize& spacing, ColorSpace colorSpace, CompositeOperator compositeOp, const FloatRect& dstRect, BlendMode blendMode)
+void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize containerSize, float zoom, const FloatRect& srcRect,
+    const AffineTransform& patternTransform, const FloatPoint& phase, ColorSpace colorSpace, CompositeOperator compositeOp, const FloatRect& dstRect, BlendMode blendMode)
 {
     FloatRect zoomedContainerRect = FloatRect(FloatPoint(), containerSize);
     zoomedContainerRect.scale(zoom);
@@ -216,7 +199,7 @@ void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize
     FloatRect imageBufferSize = zoomedContainerRect;
     imageBufferSize.scale(imageBufferScale.width(), imageBufferScale.height());
 
-    std::unique_ptr<ImageBuffer> buffer = ImageBuffer::createCompatibleBuffer(expandedIntSize(imageBufferSize.size()), 1, ColorSpaceSRGB, context, true);
+    std::unique_ptr<ImageBuffer> buffer = ImageBuffer::createCompatibleBuffer(expandedIntSize(imageBufferSize.size()), 1, ColorSpaceDeviceRGB, context, true);
     if (!buffer) // Failed to allocate buffer.
         return;
     drawForContainer(buffer->context(), containerSize, zoom, imageBufferSize, zoomedContainerRect, ColorSpaceDeviceRGB, CompositeSourceOver, BlendModeNormal);
@@ -226,6 +209,7 @@ void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize
     RefPtr<Image> image = buffer->copyImage(DontCopyBackingStore, Unscaled);
     if (!image)
         return;
+    image->setSpaceSize(spaceSize());
 
     // Adjust the source rect and transform due to the image buffer's scaling.
     FloatRect scaledSrcRect = srcRect;
@@ -234,7 +218,7 @@ void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize
     unscaledPatternTransform.scale(1 / imageBufferScale.width(), 1 / imageBufferScale.height());
 
     context->setDrawLuminanceMask(false);
-    image->drawPattern(context, scaledSrcRect, unscaledPatternTransform, phase, spacing, colorSpace, compositeOp, dstRect, blendMode);
+    image->drawPattern(context, scaledSrcRect, unscaledPatternTransform, phase, colorSpace, compositeOp, dstRect, blendMode);
 }
 
 void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, ColorSpace, CompositeOperator compositeOp, BlendMode blendMode, ImageOrientationDescription)
@@ -355,21 +339,6 @@ void SVGImage::resetAnimation()
     stopAnimation();
 }
 
-void SVGImage::reportApproximateMemoryCost() const
-{
-    Document* document = m_page->mainFrame().document();
-    size_t decodedImageMemoryCost = 0;
-
-    for (Node* node = document; node; node = NodeTraversal::next(*node))
-        decodedImageMemoryCost += node->approximateMemoryCost();
-
-    JSC::VM& vm = JSDOMWindowBase::commonVM();
-    JSC::JSLockHolder lock(vm);
-    // FIXME: Adopt reportExtraMemoryVisited, and switch to reportExtraMemoryAllocated.
-    // https://bugs.webkit.org/show_bug.cgi?id=142595
-    vm.heap.deprecatedReportExtraMemory(decodedImageMemoryCost + data()->size());
-}
-
 bool SVGImage::dataChanged(bool allDataReceived)
 {
     // Don't do anything if is an empty image.
@@ -412,7 +381,6 @@ bool SVGImage::dataChanged(bool allDataReceived)
 
         // Set the intrinsic size before a container size is available.
         m_intrinsicSize = containerSize();
-        reportApproximateMemoryCost();
     }
 
     return m_page != nullptr;

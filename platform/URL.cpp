@@ -1592,23 +1592,6 @@ bool protocolHostAndPortAreEqual(const URL& a, const URL& b)
     return true;
 }
 
-bool hostsAreEqual(const URL& a, const URL& b)
-{
-    int hostStartA = a.hostStart();
-    int hostLengthA = a.hostEnd() - hostStartA;
-    int hostStartB = b.hostStart();
-    int hostLengthB = b.hostEnd() - hostStartB;
-    if (hostLengthA != hostLengthB)
-        return false;
-
-    for (int i = 0; i < hostLengthA; ++i) {
-        if (a.string()[hostStartA + i] != b.string()[hostStartB + i])
-            return false;
-    }
-
-    return true;
-}
-
 String encodeWithURLEscapeSequences(const String& notEncodedString, PercentEncodeCharacterClass whatToEncode)
 {
     CString asUTF8 = notEncodedString.utf8();
@@ -1973,13 +1956,6 @@ const URL& blankURL()
 bool URL::isBlankURL() const
 {
     return protocolIs("about");
-}
-
-bool URL::shouldInheritSecurityOriginFromOwner() const
-{
-    return isEmpty()
-        || equalIgnoringASCIICase(m_string, blankURL().string())
-        || equalIgnoringASCIICase(m_string, "about:srcdoc");
 }
 
 bool isDefaultPortForProtocol(unsigned short port, const String& protocol)

@@ -28,7 +28,6 @@
 
 #include "DOMWrapperWorld.h"
 #include "Document.h"
-#include "DocumentLoader.h"
 #include "MainFrame.h"
 #include "Page.h"
 #include "ResourceLoadInfo.h"
@@ -205,35 +204,23 @@ void UserContentController::removeAllUserContentExtensions()
     m_contentExtensionBackend->removeAllContentExtensions();
 }
 
-static bool contentExtensionsEnabled(const DocumentLoader& documentLoader)
-{
-    if (auto frame = documentLoader.frame()) {
-        if (frame->isMainFrame())
-            return documentLoader.userContentExtensionsEnabled();
-        if (auto mainDocumentLoader = frame->mainFrame().loader().documentLoader())
-            return mainDocumentLoader->userContentExtensionsEnabled();
-    }
-
-    return true;
-}
-
-void UserContentController::processContentExtensionRulesForLoad(ResourceRequest& request, ResourceType resourceType, DocumentLoader& initiatingDocumentLoader)
+void UserContentController::processContentExtensionRulesForLoad(Page& page, ResourceRequest& request, ResourceType resourceType, DocumentLoader& initiatingDocumentLoader)
 {
     if (!m_contentExtensionBackend)
         return;
 
-    if (!contentExtensionsEnabled(initiatingDocumentLoader))
+    if (!page.userContentExtensionsEnabled())
         return;
 
     m_contentExtensionBackend->processContentExtensionRulesForLoad(request, resourceType, initiatingDocumentLoader);
 }
 
-Vector<ContentExtensions::Action> UserContentController::actionsForResourceLoad(const ResourceLoadInfo& resourceLoadInfo, DocumentLoader& initiatingDocumentLoader)
+Vector<ContentExtensions::Action> UserContentController::actionsForResourceLoad(Page& page, const ResourceLoadInfo& resourceLoadInfo)
 {
     if (!m_contentExtensionBackend)
         return Vector<ContentExtensions::Action>();
     
-    if (!contentExtensionsEnabled(initiatingDocumentLoader))
+    if (!page.userContentExtensionsEnabled())
         return Vector<ContentExtensions::Action>();
 
     return m_contentExtensionBackend->actionsForResourceLoad(resourceLoadInfo);

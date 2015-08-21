@@ -44,7 +44,6 @@ class RemoteCommandListener;
 class PlatformMediaSessionManager : private RemoteCommandListenerClient, private SystemSleepListener::Client, private AudioHardwareListener::Client {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    WEBCORE_EXPORT static PlatformMediaSessionManager* sharedManagerIfExists();
     WEBCORE_EXPORT static PlatformMediaSessionManager& sharedManager();
     virtual ~PlatformMediaSessionManager() { }
 
@@ -55,8 +54,9 @@ public:
     WEBCORE_EXPORT void beginInterruption(PlatformMediaSession::InterruptionType);
     WEBCORE_EXPORT void endInterruption(PlatformMediaSession::EndInterruptionFlags);
 
-    WEBCORE_EXPORT void applicationDidEnterForeground() const;
+    WEBCORE_EXPORT void applicationWillEnterForeground() const;
     WEBCORE_EXPORT void applicationWillEnterBackground() const;
+    WEBCORE_EXPORT void applicationDidEnterBackground(bool isSuspendedUnderLock) const;
 
     void stopAllMediaPlaybackForDocument(const Document*);
     WEBCORE_EXPORT void stopAllMediaPlaybackForProcess();
@@ -84,7 +84,6 @@ public:
     bool sessionRestrictsInlineVideoPlayback(const PlatformMediaSession&) const;
 
     virtual bool sessionCanLoadMedia(const PlatformMediaSession&) const;
-    virtual void clientCharacteristicsChanged(PlatformMediaSession&) { }
 
 #if PLATFORM(IOS)
     virtual void configureWireLessTargetMonitoring() { }
@@ -94,14 +93,12 @@ public:
     void setCurrentSession(PlatformMediaSession&);
     PlatformMediaSession* currentSession();
 
-    void sessionIsPlayingToWirelessPlaybackTargetChanged(PlatformMediaSession&);
-
 protected:
     friend class PlatformMediaSession;
     explicit PlatformMediaSessionManager();
 
     void addSession(PlatformMediaSession&);
-    virtual void removeSession(PlatformMediaSession&);
+    void removeSession(PlatformMediaSession&);
 
     Vector<PlatformMediaSession*> sessions() { return m_sessions; }
 
@@ -134,7 +131,6 @@ private:
 #endif
 
     bool m_interrupted { false };
-    mutable bool m_isApplicationInBackground { false };
 };
 
 }

@@ -77,38 +77,12 @@ static const char* boolString(bool val)
 }
 #endif
 
-#if USE(APPLE_INTERNAL_SDK)
-#import <WebKitAdditions/WebFullScreenVideoRootViewController.m>
-#else
-@interface WebFullScreenVideoRootViewController : UIViewController
-- (instancetype)initWithSourceWindow:(UIWindow *)sourceWindow;
-@end
-
-static Class createFullScreenVideoRootViewControllerClass()
-{
-    Class newClass = objc_allocateClassPair(getUIViewControllerClass(), "WebFullScreenVideoRootViewController", 0);
-
-    class_addMethod(newClass, @selector(initWithSourceWindow:), imp_implementationWithBlock(^(id self, UIWindow*){
-        return [self init];
-    }), "@@:@");
-
-    objc_registerClassPair(newClass);
-    return newClass;
-}
-
-static WebFullScreenVideoRootViewController *allocWebFullScreenVideoRootViewControllerInstance()
-{
-    static Class fullScreenVideoRootViewControllerClass = createFullScreenVideoRootViewControllerClass();
-    return [fullScreenVideoRootViewControllerClass alloc];
-}
-#endif
 
 @class WebAVMediaSelectionOption;
 
 @interface WebAVPlayerController : NSObject <AVPlayerViewControllerDelegate> {
     WebAVMediaSelectionOption *_currentAudioMediaSelectionOption;
     WebAVMediaSelectionOption *_currentLegibleMediaSelectionOption;
-    BOOL _pictureInPictureInterrupted;
 }
 
 - (void)resetState;
@@ -164,7 +138,6 @@ static WebFullScreenVideoRootViewController *allocWebFullScreenVideoRootViewCont
     if (!(self = [super init]))
         return self;
     
-    _pictureInPictureInterrupted = NO;
     initAVPlayerController();
     self.playerControllerProxy = [[allocAVPlayerControllerInstance() init] autorelease];
     return self;
@@ -594,21 +567,6 @@ static WebVideoFullscreenInterfaceAVKit::ExitFullScreenReason convertToExitFullS
 {
     return self.fullscreenInterface->allowsPictureInPicturePlayback();
 }
-
-- (BOOL)isPictureInPictureInterrupted
-{
-    return _pictureInPictureInterrupted;
-}
-
-- (void)setPictureInPictureInterrupted:(BOOL)pictureInPictureInterrupted
-{
-    if (_pictureInPictureInterrupted != pictureInPictureInterrupted) {
-        _pictureInPictureInterrupted = pictureInPictureInterrupted;
-        if (pictureInPictureInterrupted)
-            [self setPlaying:NO];
-    }
-}
-
 @end
 
 @interface WebAVMediaSelectionOption : NSObject
@@ -1095,7 +1053,7 @@ void WebVideoFullscreenInterfaceAVKit::setupFullscreen(UIView& videoView, const 
     if (![[parentView window] _isHostedInAnotherProcess]) {
         m_window = adoptNS([allocUIWindowInstance() initWithFrame:[[getUIScreenClass() mainScreen] bounds]]);
         [m_window setBackgroundColor:[getUIColorClass() clearColor]];
-        m_viewController = adoptNS([allocWebFullScreenVideoRootViewControllerInstance() initWithSourceWindow:[parentView window]]);
+        m_viewController = adoptNS([allocUIViewControllerInstance() init]);
         [[m_viewController view] setFrame:[m_window bounds]];
         [m_viewController _setIgnoreAppSupportedOrientations:YES];
         [m_window setRootViewController:m_viewController.get()];
@@ -1343,19 +1301,8 @@ void WebVideoFullscreenInterfaceAVKit::didStartPictureInPicture()
 {
     LOG(Fullscreen, "WebVideoFullscreenInterfaceAVKit::didStartPictureInPicture(%p)", this);
     [m_playerViewController setShowsPlaybackControls:YES];
-
-    if (m_mode & HTMLMediaElementEnums::VideoFullscreenModeStandard) {
-        clearMode(HTMLMediaElementEnums::VideoFullscreenModeStandard);
-
-        RefPtr<WebVideoFullscreenInterfaceAVKit> strongThis(this);
-        [m_playerViewController exitFullScreenAnimated:YES completionHandler:[strongThis, this] (BOOL, NSError*) {
-            [m_window setHidden:YES];
-            [[m_playerViewController view] setHidden:YES];
-        }];
-    } else {
-        [m_window setHidden:YES];
-        [[m_playerViewController view] setHidden:YES];
-    }
+    [m_window setHidden:YES];
+    [[m_playerViewController view] setHidden:YES];
 
     if (m_fullscreenChangeObserver)
         m_fullscreenChangeObserver->didEnterFullscreen();

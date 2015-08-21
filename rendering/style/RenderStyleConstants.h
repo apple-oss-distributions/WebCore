@@ -69,8 +69,7 @@ enum StyleDifferenceContextSensitiveProperty {
     ContextSensitivePropertyOpacity     = 1 << 1,
     ContextSensitivePropertyFilter      = 1 << 2,
     ContextSensitivePropertyClipRect    = 1 << 3,
-    ContextSensitivePropertyClipPath    = 1 << 4,
-    ContextSensitivePropertyWillChange  = 1 << 5,
+    ContextSensitivePropertyClipPath    = 1 << 4
 };
 
 // Static pseudo styles. Dynamic ones are produced on the fly.
@@ -636,13 +635,6 @@ enum Isolation { IsolationAuto, IsolationIsolate };
 
 // Fill, Stroke, ViewBox are just used for SVG.
 enum CSSBoxType { BoxMissing = 0, MarginBox, BorderBox, PaddingBox, ContentBox, Fill, Stroke, ViewBox };
-
-#if ENABLE(TOUCH_EVENTS)
-enum class TouchAction {
-    Auto,
-    Manipulation
-};
-#endif
 
 #if ENABLE(CSS_SCROLL_SNAP)
 enum class ScrollSnapType {

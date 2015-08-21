@@ -114,7 +114,6 @@ class HTMLImageElement;
 class HTMLMapElement;
 class HTMLMediaElement;
 class HTMLNameCollection;
-class HTMLPictureElement;
 class HTMLScriptElement;
 class HitTestRequest;
 class HitTestResult;
@@ -582,9 +581,6 @@ public:
     virtual void suspendActiveDOMObjects(ActiveDOMObject::ReasonForSuspension) override final;
     virtual void resumeActiveDOMObjects(ActiveDOMObject::ReasonForSuspension) override final;
     virtual void stopActiveDOMObjects() override final;
-
-    void suspendDeviceMotionAndOrientationUpdates();
-    void resumeDeviceMotionAndOrientationUpdates();
 
     RenderView* renderView() const { return m_renderView.get(); }
 
@@ -1282,10 +1278,6 @@ public:
 
     ShouldOpenExternalURLsPolicy shouldOpenExternalURLsPolicyToPropagate() const;
     bool shouldEnforceContentDispositionAttachmentSandbox() const;
-    void applyContentDispositionAttachmentSandbox();
-
-    void addViewportDependentPicture(HTMLPictureElement&);
-    void removeViewportDependentPicture(HTMLPictureElement&);
 
 protected:
     enum ConstructionFlags { Synthesized = 1, NonRenderedPlaceholder = 1 << 1 };
@@ -1311,7 +1303,7 @@ private:
     void processArguments(const String& features, void* data, ArgumentsCallback);
 
     // FontSelectorClient
-    virtual void fontsNeedUpdate(FontSelector&) override final;
+    virtual void fontsNeedUpdate(FontSelector*) override final;
 
     virtual bool isDocument() const override final { return true; }
 
@@ -1380,8 +1372,6 @@ private:
     void invalidateDOMCookieCache();
     void domCookieCacheExpiryTimerFired();
     virtual void didLoadResourceSynchronously(const ResourceRequest&) override final;
-
-    void checkViewportDependentPictures();
 
     unsigned m_referencingNodeCount;
 
@@ -1605,8 +1595,6 @@ private:
     RefPtr<RenderStyle> m_savedPlaceholderRenderStyle;
 #endif
 
-    HashSet<HTMLPictureElement*> m_viewportDependentPictures;
-
     int m_loadEventDelayCount;
     Timer m_loadEventDelayTimer;
 
@@ -1748,7 +1736,6 @@ private:
 #if ENABLE(MEDIA_SESSION)
     RefPtr<MediaSession> m_defaultMediaSession;
 #endif
-    bool m_areDeviceMotionAndOrientationUpdatesSuspended { false };
 };
 
 inline void Document::notifyRemovePendingSheetIfNeeded()

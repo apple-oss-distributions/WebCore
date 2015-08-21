@@ -23,12 +23,10 @@
 #include "StyleRareInheritedData.h"
 
 #include "CursorList.h"
-#include "DataRef.h"
 #include "QuotesData.h"
 #include "RenderStyle.h"
 #include "RenderStyleConstants.h"
 #include "ShadowData.h"
-#include "StyleCustomPropertyData.h"
 #include "StyleImage.h"
 
 namespace WebCore {
@@ -62,8 +60,6 @@ struct GreaterThanOrSameSizeAsStyleRareInheritedData : public RefCounted<Greater
 #if ENABLE(TOUCH_EVENTS)
     Color tapHighlightColor;
 #endif
-
-    void* customPropertyDataRefs[1];
 };
 
 COMPILE_ASSERT(sizeof(StyleRareInheritedData) <= sizeof(GreaterThanOrSameSizeAsStyleRareInheritedData), StyleRareInheritedData_should_bit_pack);
@@ -73,7 +69,6 @@ StyleRareInheritedData::StyleRareInheritedData()
     , textStrokeWidth(RenderStyle::initialTextStrokeWidth())
     , indent(RenderStyle::initialTextIndent())
     , m_effectiveZoom(RenderStyle::initialZoom())
-    , m_customProperties(StyleCustomPropertyData::create())
     , widows(RenderStyle::initialWidows())
     , orphans(RenderStyle::initialOrphans())
     , m_hasAutoWidows(true)
@@ -155,7 +150,6 @@ inline StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedDa
     , cursorData(o.cursorData)
     , indent(o.indent)
     , m_effectiveZoom(o.m_effectiveZoom)
-    , m_customProperties(o.m_customProperties)
     , widows(o.widows)
     , orphans(o.orphans)
     , m_hasAutoWidows(o.m_hasAutoWidows)
@@ -332,7 +326,6 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
 #if ENABLE(CSS_TRAILING_WORD)
         && trailingWord == o.trailingWord
 #endif
-        && m_customProperties == o.m_customProperties
         && StyleImage::imagesEquivalent(listStyleImage.get(), o.listStyleImage.get());
 }
 

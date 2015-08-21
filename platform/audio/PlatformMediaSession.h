@@ -74,31 +74,26 @@ public:
         SystemSleep,
         EnteringBackground,
         SystemInterruption,
-        SuspendedUnderLock,
     };
     enum EndInterruptionFlags {
         NoFlags = 0,
         MayResumePlaying = 1 << 0,
     };
 
-    enum Characteristics {
-        HasNothing = 0,
-        HasAudio = 1 << 0,
-        HasVideo = 1 << 1,
-    };
-    typedef unsigned CharacteristicsFlags;
-
-    CharacteristicsFlags characteristics() const;
-    void clientCharacteristicsChanged();
-
+    void doInterruption();
+    bool shouldDoInterruption(InterruptionType);
     void beginInterruption(InterruptionType);
+    void forceInterruption(InterruptionType);
     void endInterruption(EndInterruptionFlags);
+
+    void applicationWillEnterForeground() const;
+    void applicationWillEnterBackground() const;
+    void applicationDidEnterBackground(bool isSuspendedUnderLock) const;
 
     bool clientWillBeginPlayback();
     bool clientWillPausePlayback();
 
     void pauseSession();
-    void stopSession();
     
     void visibilityChanged();
 
@@ -130,8 +125,7 @@ public:
     bool isHidden() const;
 
     virtual bool canPlayToWirelessPlaybackTarget() const { return false; }
-    virtual bool isPlayingToWirelessPlaybackTarget() const { return m_isPlayingToWirelessPlaybackTarget; }
-    void isPlayingToWirelessPlaybackTargetChanged(bool);
+    virtual bool isPlayingToWirelessPlaybackTarget() const { return false; }
 
 #if ENABLE(WIRELESS_PLAYBACK_TARGET)
     // MediaPlaybackTargetClient
@@ -157,7 +151,6 @@ private:
     State m_stateToRestore;
     int m_interruptionCount { 0 };
     bool m_notifyingClient;
-    bool m_isPlayingToWirelessPlaybackTarget { false };
 
     friend class PlatformMediaSessionManager;
 };
@@ -170,7 +163,6 @@ public:
     virtual PlatformMediaSession::MediaType mediaType() const = 0;
     virtual PlatformMediaSession::MediaType presentationType() const = 0;
     virtual PlatformMediaSession::DisplayType displayType() const { return PlatformMediaSession::Normal; }
-    virtual PlatformMediaSession::CharacteristicsFlags characteristics() const = 0;
 
     virtual void mayResumePlayback(bool shouldResume) = 0;
     virtual void suspendPlayback() = 0;
@@ -185,7 +177,7 @@ public:
     virtual void setShouldBufferData(bool) { }
     virtual bool elementIsHidden() const { return false; }
 
-    virtual bool shouldOverrideBackgroundPlaybackRestriction(PlatformMediaSession::InterruptionType) const = 0;
+    virtual bool overrideBackgroundPlaybackRestriction() const = 0;
 
     virtual void wirelessRoutesAvailableDidChange() { }
     virtual void setWirelessPlaybackTarget(Ref<MediaPlaybackTarget>&&) { }

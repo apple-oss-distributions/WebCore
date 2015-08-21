@@ -40,9 +40,6 @@
 /* Text track contains simplified (3rd grade level) subtitles */
 "%@ Easy Reader" = "%@ Easy Reader";
 
-/* Text track contains forced subtitles */
-"%@ Forced" = "%@ Forced";
-
 /* visible name of the network process. The argument is the application name. */
 "%@ Networking" = "%@ Networking";
 

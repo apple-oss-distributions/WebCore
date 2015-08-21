@@ -51,10 +51,6 @@ public:
 
     void didClearMainFrameWindowObject();
 
-    void mainFrameStartedLoading();
-    void mainFrameStoppedLoading();
-    void mainFrameNavigated();
-
     virtual PageScriptDebugServer& scriptDebugServer() override;
 
 protected:

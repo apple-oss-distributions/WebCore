@@ -25,7 +25,6 @@
 #include "CSSValueKeywords.h"
 #include "CSSValueList.h"
 #include <wtf/text/AtomicString.h>
-#include <wtf/text/AtomicStringHash.h>
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
@@ -105,7 +104,6 @@ struct CSSParserString {
 };
 
 struct CSSParserFunction;
-struct CSSParserVariable;
 
 struct CSSParserValue {
     CSSValueID id;
@@ -115,7 +113,6 @@ struct CSSParserValue {
         int iValue;
         CSSParserString string;
         CSSParserFunction* function;
-        CSSParserVariable* variable;
         CSSParserValueList* valueList;
     };
     enum {
@@ -123,7 +120,6 @@ struct CSSParserValue {
         Function  = 0x100001,
         ValueList = 0x100002,
         Q_EMS     = 0x100003,
-        Variable  = 0x100004
     };
     int unit;
 
@@ -169,10 +165,6 @@ public:
     CSSParserValue* valueAt(unsigned i) { return i < m_values.size() ? &m_values[i] : 0; }
 
     void clear() { m_values.clear(); }
-    
-    String toString();
-    
-    bool containsVariables() const;
 
 private:
     unsigned m_current;
@@ -184,13 +176,6 @@ struct CSSParserFunction {
 public:
     CSSParserString name;
     std::unique_ptr<CSSParserValueList> args;
-};
-
-struct CSSParserVariable {
-    WTF_MAKE_FAST_ALLOCATED;
-public:
-    CSSParserString name; // The custom property name
-    std::unique_ptr<CSSParserValueList> args; // The fallback args
 };
 
 enum class CSSParserSelectorCombinator {

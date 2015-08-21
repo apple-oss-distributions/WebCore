@@ -70,11 +70,6 @@ std::unique_ptr<MockContentFilter> MockContentFilter::create()
 
 void MockContentFilter::willSendRequest(ResourceRequest& request, const ResourceResponse& redirectResponse)
 {
-    if (!enabled()) {
-        m_status = Status::Allowed;
-        return;
-    }
-
     if (redirectResponse.isNull())
         maybeDetermineStatus(DecisionPoint::AfterWillSendRequest);
     else

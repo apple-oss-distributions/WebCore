@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006-2007, 2016 Apple Inc.  All rights reserved.
+ * Copyright (C) 2006, 2007 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,10 +28,9 @@
 
 #if USE(CFNETWORK)
 
-#include "CFNetworkSPI.h"
-
 #include "HTTPParsers.h"
 #include "MIMETypeRegistry.h"
+#include <CFNetwork/CFURLResponsePriv.h>
 #include <wtf/RetainPtr.h>
 
 #if PLATFORM(COCOA)
@@ -91,8 +90,6 @@ void ResourceResponse::platformLazyInit(InitLevel initLevel)
 
         CFHTTPMessageRef httpResponse = CFURLResponseGetHTTPResponse(m_cfResponse.get());
         if (httpResponse) {
-            RetainPtr<CFStringRef> messageString = adoptCF(CFHTTPMessageCopyVersion(httpResponse));
-            m_httpVersion = String(messageString.get()).upper();
             m_httpStatusCode = CFHTTPMessageGetResponseStatusCode(httpResponse);
             
             if (initLevel < AllFields) {

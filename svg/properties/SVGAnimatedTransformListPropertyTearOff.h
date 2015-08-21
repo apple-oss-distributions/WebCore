@@ -28,24 +28,18 @@ namespace WebCore {
 
 class SVGAnimatedTransformListPropertyTearOff : public SVGAnimatedListPropertyTearOff<SVGTransformList> {
 public:
-    virtual RefPtr<ListProperty> baseVal() override
+    virtual SVGListPropertyTearOff<SVGTransformList>* baseVal() override
     {
-        if (m_baseVal)
-            return m_baseVal;
-
-        auto property = SVGTransformListPropertyTearOff::create(this, BaseValRole, m_values, m_wrappers);
-        m_baseVal = property.ptr();
-        return WTF::move(property);
+        if (!m_baseVal)
+            m_baseVal = SVGTransformListPropertyTearOff::create(this, BaseValRole, m_values, m_wrappers);
+        return static_cast<SVGListPropertyTearOff<SVGTransformList>*>(m_baseVal.get());
     }
 
-    virtual RefPtr<ListProperty> animVal() override
+    virtual SVGListPropertyTearOff<SVGTransformList>* animVal() override
     {
-        if (m_animVal)
-            return m_animVal;
-
-        auto property = SVGTransformListPropertyTearOff::create(this, AnimValRole, m_values, m_wrappers);
-        m_animVal = property.ptr();
-        return WTF::move(property);
+        if (!m_animVal)
+            m_animVal = SVGTransformListPropertyTearOff::create(this, AnimValRole, m_values, m_wrappers);
+        return static_cast<SVGListPropertyTearOff<SVGTransformList>*>(m_animVal.get());
     }
 
     static Ref<SVGAnimatedTransformListPropertyTearOff> create(SVGElement* contextElement, const QualifiedName& attributeName, AnimatedPropertyType animatedPropertyType, SVGTransformList& values)

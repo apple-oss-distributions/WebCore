@@ -283,11 +283,6 @@ StyleDifference RenderElement::adjustStyleDifference(StyleDifference diff, unsig
             diff = std::max(diff, StyleDifferenceRepaint);
     }
     
-    if (contextSensitiveProperties & ContextSensitivePropertyWillChange) {
-        if (style().willChange() && style().willChange()->canTriggerCompositing())
-            diff = std::max(diff, StyleDifferenceRecompositeLayer);
-    }
-    
     if ((contextSensitiveProperties & ContextSensitivePropertyFilter) && hasLayer()) {
         RenderLayer* layer = downcast<RenderLayerModelObject>(*this).layer();
         if (!layer->isComposited() || layer->paintsWithFilters())
@@ -903,6 +898,16 @@ void RenderElement::styleWillChange(StyleDifference diff, const RenderStyle& new
         }
     }
 
+#if ENABLE(CSS_SCROLL_SNAP)
+    if (!newStyle.scrollSnapCoordinates().isEmpty() || (oldStyle && !oldStyle->scrollSnapCoordinates().isEmpty())) {
+        ASSERT(is<RenderBox>(this));
+        if (newStyle.scrollSnapCoordinates().isEmpty())
+            view().unregisterBoxWithScrollSnapCoordinates(downcast<RenderBox>(*this));
+        else
+            view().registerBoxWithScrollSnapCoordinates(downcast<RenderBox>(*this));
+    }
+#endif
+
     if (isRoot() || isBody())
         view().frameView().updateExtendBackgroundIfNecessary();
 }
@@ -1056,6 +1061,14 @@ void RenderElement::willBeRemovedFromTree()
 
     if (auto* containerFlowThread = parent()->renderNamedFlowThreadWrapper())
         containerFlowThread->removeFlowChild(*this);
+
+    
+#if ENABLE(CSS_SCROLL_SNAP)
+    if (!m_style->scrollSnapCoordinates().isEmpty()) {
+        ASSERT(is<RenderBox>(this));
+        view().unregisterBoxWithScrollSnapCoordinates(downcast<RenderBox>(*this));
+    }
+#endif
 
     RenderObject::willBeRemovedFromTree();
 }
@@ -1515,6 +1528,48 @@ PassRefPtr<RenderStyle> RenderElement::getUncachedPseudoStyle(const PseudoStyleR
     return document().ensureStyleResolver().pseudoStyleForElement(element(), pseudoStyleRequest, parentStyle);
 }
 
+RenderBlock* RenderElement::containingBlockForFixedPosition() const
+{
+    const RenderElement* object = this;
+    while (object && !object->canContainFixedPositionObjects())
+        object = object->parent();
+
+    ASSERT(!object || !object->isAnonymousBlock());
+    return const_cast<RenderBlock*>(downcast<RenderBlock>(object));
+}
+
+RenderBlock* RenderElement::containingBlockForAbsolutePosition() const
+{
+    const RenderElement* object = this;
+    while (object && !object->canContainAbsolutelyPositionedObjects())
+        object = object->parent();
+
+    // For a relatively positioned inline, return its nearest non-anonymous containing block,
+    // not the inline itself, to avoid having a positioned objects list in all RenderInlines
+    // and use RenderBlock* as RenderElement::containingBlock's return type.
+    // Use RenderBlock::container() to obtain the inline.
+    if (object && !is<RenderBlock>(*object))
+        object = object->containingBlock();
+
+    while (object && object->isAnonymousBlock())
+        object = object->containingBlock();
+
+    return const_cast<RenderBlock*>(downcast<RenderBlock>(object));
+}
+
+static inline bool isNonRenderBlockInline(const RenderElement& object)
+{
+    return (object.isInline() && !object.isReplaced()) || !object.isRenderBlock();
+}
+
+RenderBlock* RenderElement::containingBlockForObjectInFlow() const
+{
+    const RenderElement* object = this;
+    while (object && isNonRenderBlockInline(*object))
+        object = object->parent();
+    return const_cast<RenderBlock*>(downcast<RenderBlock>(object));
+}
+
 Color RenderElement::selectionColor(int colorProperty) const
 {
     // If the element is unselectable, or we are only painting the selection,
@@ -1699,7 +1754,7 @@ const RenderElement* RenderElement::enclosingRendererWithTextDecoration(TextDeco
             return current;
         if (!current->isRenderInline() || current->isRubyText())
             return nullptr;
-
+        
         const RenderStyle& styleToUse = firstLine ? current->firstLineStyle() : current->style();
         if (styleToUse.textDecoration() & textDecoration)
             return current;
@@ -1709,41 +1764,4 @@ const RenderElement* RenderElement::enclosingRendererWithTextDecoration(TextDeco
     return current;
 }
 
-RenderBlock* containingBlockForFixedPosition(const RenderElement* element)
-{
-    const auto* object = element;
-    while (object && !object->canContainFixedPositionObjects())
-        object = object->parent();
-
-    ASSERT(!object || !object->isAnonymousBlock());
-    return const_cast<RenderBlock*>(downcast<RenderBlock>(object));
-}
-
-RenderBlock* containingBlockForAbsolutePosition(const RenderElement* element)
-{
-    const auto* object = element;
-    while (object && !object->canContainAbsolutelyPositionedObjects())
-        object = object->parent();
-
-    // For a relatively positioned inline, return its nearest non-anonymous containing block,
-    // not the inline itself, to avoid having a positioned objects list in all RenderInlines
-    // and use RenderBlock* as RenderElement::containingBlock's return type.
-    // Use RenderBlock::container() to obtain the inline.
-    if (object && !is<RenderBlock>(*object))
-        object = object->containingBlock();
-
-    while (object && object->isAnonymousBlock())
-        object = object->containingBlock();
-
-    return const_cast<RenderBlock*>(downcast<RenderBlock>(object));
-}
-
-RenderBlock* containingBlockForObjectInFlow(const RenderElement* element)
-{
-    const auto* object = element;
-    while (object && ((object->isInline() && !object->isReplaced()) || !object->isRenderBlock()))
-        object = object->parent();
-    return const_cast<RenderBlock*>(downcast<RenderBlock>(object));
-}
- 
 }

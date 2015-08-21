@@ -757,7 +757,7 @@ String HTMLConverterCaches::propertyValueForNode(Node& node, CSSPropertyID prope
             inherit = true;
         break;
     case CSSPropertyFontFamily:
-    case CSSPropertyFontVariantCaps:
+    case CSSPropertyFontVariant:
     case CSSPropertyTextTransform:
     case CSSPropertyTextShadow:
     case CSSPropertyVisibility:
@@ -1118,7 +1118,7 @@ NSDictionary *HTMLConverter::computedAttributesForElement(Element& element)
                 font = originalFont;
         }
 #if !PLATFORM(IOS) // IJB: No small caps support on iOS
-        if (_caches->propertyValueForNode(element, CSSPropertyFontVariantCaps) == "small-caps") {
+        if (_caches->propertyValueForNode(element, CSSPropertyFontVariant) == "small-caps") {
             // ??? synthesize small-caps if [font isEqual:originalFont]
             NSFont *originalFont = font;
             font = [fontManager convertFont:font toHaveTrait:NSSmallCapsFontMask];
@@ -1156,7 +1156,7 @@ NSDictionary *HTMLConverter::computedAttributesForElement(Element& element)
         }
     }
 
-    String fontLigatures = _caches->propertyValueForNode(element, CSSPropertyFontVariantLigatures);
+    String fontLigatures = _caches->propertyValueForNode(element, CSSPropertyWebkitFontVariantLigatures);
     if (fontLigatures.length()) {
         if (fontLigatures.contains("normal"))
             ;   // default: whatever the system decides to do

@@ -123,7 +123,7 @@ public:
     WEBCORE_EXPORT void urlSelected(const URL&, const String& target, Event*, LockHistory, LockBackForwardList, ShouldSendReferrer, ShouldOpenExternalURLsPolicy);
     void submitForm(PassRefPtr<FormSubmission>);
 
-    WEBCORE_EXPORT void reload(bool endToEndReload = false, bool contentBlockersEnabled = true);
+    WEBCORE_EXPORT void reload(bool endToEndReload = false);
     WEBCORE_EXPORT void reloadWithOverrideEncoding(const String& overrideEncoding);
 
     void open(CachedFrameBase&);
@@ -133,7 +133,6 @@ public:
     void retryAfterFailedCacheOnlyMainResourceLoad();
 
     static void reportLocalLoadFailed(Frame*, const String& url);
-    static void reportBlockedPortFailed(Frame*, const String& url);
 
     // FIXME: These are all functions which stop loads. We have too many.
     WEBCORE_EXPORT void stopAllLoaders(ClearProvisionalItemPolicy = ShouldClearProvisionalItem);
@@ -171,7 +170,6 @@ public:
     void handleFallbackContent();
 
     WEBCORE_EXPORT ResourceError cancelledError(const ResourceRequest&) const;
-    ResourceError blockedError(const ResourceRequest&) const;
 
     bool isHostedByObjectElement() const;
 

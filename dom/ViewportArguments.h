@@ -95,7 +95,6 @@ struct ViewportArguments {
     float userZoom { ValueAuto };
     float orientation { ValueAuto };
     float shrinkToFit { ValueAuto };
-    bool widthWasExplicit { false };
 
     bool operator==(const ViewportArguments& other) const
     {
@@ -112,8 +111,7 @@ struct ViewportArguments {
             && maxZoom == other.maxZoom
             && userZoom == other.userZoom
             && orientation == other.orientation
-            && shrinkToFit == other.shrinkToFit
-            && widthWasExplicit == other.widthWasExplicit;
+            && shrinkToFit == other.shrinkToFit;
     }
 
     bool operator!=(const ViewportArguments& other) const

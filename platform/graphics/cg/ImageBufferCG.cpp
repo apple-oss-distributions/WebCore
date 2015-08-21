@@ -185,7 +185,7 @@ RefPtr<Image> ImageBuffer::copyImage(BackingStoreCopy copyBehavior, ScaleBehavio
         image = createCroppedImageIfNecessary(image.get(), internalSize());
     } else {
         image = copyNativeImage(DontCopyBackingStore);
-        RetainPtr<CGContextRef> context = adoptCF(CGBitmapContextCreate(0, logicalSize().width(), logicalSize().height(), 8, 4 * logicalSize().width(), sRGBColorSpaceRef(), kCGImageAlphaPremultipliedLast));
+        RetainPtr<CGContextRef> context = adoptCF(CGBitmapContextCreate(0, logicalSize().width(), logicalSize().height(), 8, 4 * logicalSize().width(), deviceRGBColorSpaceRef(), kCGImageAlphaPremultipliedLast));
         CGContextSetBlendMode(context.get(), kCGBlendModeCopy);
         CGContextClipToRect(context.get(), FloatRect(FloatPoint::zero(), logicalSize()));
         FloatSize imageSizeInUserSpace = scaleSizeToUserSpace(logicalSize(), m_data.backingStoreSize, internalSize());
@@ -196,7 +196,10 @@ RefPtr<Image> ImageBuffer::copyImage(BackingStoreCopy copyBehavior, ScaleBehavio
     if (!image)
         return nullptr;
 
-    return BitmapImage::create(image.get());
+    auto bitmapImage = BitmapImage::create(image.get());
+    bitmapImage->setSpaceSize(spaceSize());
+
+    return WTF::move(bitmapImage);
 }
 
 BackingStoreCopy ImageBuffer::fastCopyImageMode()
@@ -244,7 +247,7 @@ void ImageBuffer::draw(GraphicsContext* destContext, ColorSpace styleColorSpace,
     destContext->drawNativeImage(image.get(), m_data.backingStoreSize, colorSpace, destRect, adjustedSrcRect, op, blendMode);
 }
 
-void ImageBuffer::drawPattern(GraphicsContext* destContext, const FloatRect& srcRect, const AffineTransform& patternTransform, const FloatPoint& phase, const FloatSize& spacing, ColorSpace styleColorSpace, CompositeOperator op, const FloatRect& destRect, BlendMode blendMode)
+void ImageBuffer::drawPattern(GraphicsContext* destContext, const FloatRect& srcRect, const AffineTransform& patternTransform, const FloatPoint& phase, ColorSpace styleColorSpace, CompositeOperator op, const FloatRect& destRect, BlendMode blendMode)
 {
     FloatRect adjustedSrcRect = srcRect;
     adjustedSrcRect.scale(m_resolutionScale, m_resolutionScale);
@@ -252,14 +255,14 @@ void ImageBuffer::drawPattern(GraphicsContext* destContext, const FloatRect& src
     if (!context()->isAcceleratedContext()) {
         if (destContext == context() || destContext->isAcceleratedContext()) {
             if (RefPtr<Image> copy = copyImage(CopyBackingStore)) // Drawing into our own buffer, need to deep copy.
-                copy->drawPattern(destContext, adjustedSrcRect, patternTransform, phase, spacing, styleColorSpace, op, destRect, blendMode);
+                copy->drawPattern(destContext, adjustedSrcRect, patternTransform, phase, styleColorSpace, op, destRect, blendMode);
         } else {
             if (RefPtr<Image> imageForRendering = copyImage(DontCopyBackingStore))
-                imageForRendering->drawPattern(destContext, adjustedSrcRect, patternTransform, phase, spacing, styleColorSpace, op, destRect, blendMode);
+                imageForRendering->drawPattern(destContext, adjustedSrcRect, patternTransform, phase, styleColorSpace, op, destRect, blendMode);
         }
     } else {
         if (RefPtr<Image> copy = copyImage(CopyBackingStore))
-            copy->drawPattern(destContext, adjustedSrcRect, patternTransform, phase, spacing, styleColorSpace, op, destRect, blendMode);
+            copy->drawPattern(destContext, adjustedSrcRect, patternTransform, phase, styleColorSpace, op, destRect, blendMode);
     }
 }
 
@@ -319,7 +322,7 @@ void ImageBuffer::putByteArray(Multiply multiplied, Uint8ClampedArray* source, c
 #if USE(IOSURFACE_CANVAS_BACKING_STORE)
     // Make a copy of the source to ensure the bits don't change before being drawn
     IntSize sourceCopySize(sourceRect.width(), sourceRect.height());
-    std::unique_ptr<ImageBuffer> sourceCopy = ImageBuffer::create(sourceCopySize, 1, ColorSpaceSRGB, Unaccelerated);
+    std::unique_ptr<ImageBuffer> sourceCopy = ImageBuffer::create(sourceCopySize, 1, ColorSpaceDeviceRGB, Unaccelerated);
     if (!sourceCopy)
         return;
 
@@ -448,14 +451,14 @@ String ImageBuffer::toDataURL(const String& mimeType, const double* quality, Coo
             return "data:,";
 
         image = adoptCF(CGImageCreate(logicalSize().width(), logicalSize().height(), 8, 32, 4 * logicalSize().width(),
-                                    sRGBColorSpaceRef(), kCGBitmapByteOrderDefault | kCGImageAlphaNoneSkipLast,
+                                    deviceRGBColorSpaceRef(), kCGBitmapByteOrderDefault | kCGImageAlphaNoneSkipLast,
                                     dataProvider.get(), 0, false, kCGRenderingIntentDefault));
     } else if (m_resolutionScale == 1) {
         image = copyNativeImage(CopyBackingStore);
         image = createCroppedImageIfNecessary(image.get(), internalSize());
     } else {
         image = copyNativeImage(DontCopyBackingStore);
-        RetainPtr<CGContextRef> context = adoptCF(CGBitmapContextCreate(0, logicalSize().width(), logicalSize().height(), 8, 4 * logicalSize().width(), sRGBColorSpaceRef(), kCGImageAlphaPremultipliedLast));
+        RetainPtr<CGContextRef> context = adoptCF(CGBitmapContextCreate(0, logicalSize().width(), logicalSize().height(), 8, 4 * logicalSize().width(), deviceRGBColorSpaceRef(), kCGImageAlphaPremultipliedLast));
         CGContextSetBlendMode(context.get(), kCGBlendModeCopy);
         CGContextClipToRect(context.get(), CGRectMake(0, 0, logicalSize().width(), logicalSize().height()));
         FloatSize imageSizeInUserSpace = scaleSizeToUserSpace(logicalSize(), m_data.backingStoreSize, internalSize());
@@ -509,7 +512,7 @@ String ImageDataToDataURL(const ImageData& source, const String& mimeType, const
 
     RetainPtr<CGImageRef> image;
     image = adoptCF(CGImageCreate(source.width(), source.height(), 8, 32, 4 * source.width(),
-                                sRGBColorSpaceRef(), kCGBitmapByteOrderDefault | dataAlphaInfo,
+                                deviceRGBColorSpaceRef(), kCGBitmapByteOrderDefault | dataAlphaInfo,
                                 dataProvider.get(), 0, false, kCGRenderingIntentDefault));
 
     return CGImageToDataURL(image.get(), mimeType, quality);

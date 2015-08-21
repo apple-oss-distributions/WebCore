@@ -105,13 +105,13 @@ JSValue toJS(ExecState* exec, JSDOMGlobalObject* globalObject, Document* documen
     // Make sure the document is kept around by the window object, and works right with the
     // back/forward cache.
     if (!document->frame()) {
-        size_t memoryCost = 0;
+        size_t nodeCount = 0;
         for (Node* n = document; n; n = NodeTraversal::next(*n))
-            memoryCost += n->approximateMemoryCost();
+            nodeCount++;
         
         // FIXME: Adopt reportExtraMemoryVisited, and switch to reportExtraMemoryAllocated.
         // https://bugs.webkit.org/show_bug.cgi?id=142595
-        exec->heap()->deprecatedReportExtraMemory(memoryCost);
+        exec->heap()->deprecatedReportExtraMemory(nodeCount * sizeof(Node));
     }
 
     return wrapper;

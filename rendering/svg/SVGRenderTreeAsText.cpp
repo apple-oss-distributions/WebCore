@@ -510,7 +510,7 @@ void writeSVGResourceContainer(TextStream& ts, const RenderSVGResourceContainer&
         // Dump final results that are used for rendering. No use in asking SVGPatternElement for its patternUnits(), as it may
         // link to other patterns using xlink:href, we need to build the full inheritance chain, aka. collectPatternProperties()
         PatternAttributes attributes;
-        pattern.collectPatternAttributes(attributes);
+        pattern.patternElement().collectPatternAttributes(attributes);
 
         writeNameValuePair(ts, "patternUnits", attributes.patternUnits());
         writeNameValuePair(ts, "patternContentUnits", attributes.patternContentUnits());
@@ -634,22 +634,14 @@ void writeResources(TextStream& ts, const RenderObject& renderer, int indent)
             ts << " " << clipper->resourceBoundingBox(renderer) << "\n";
         }
     }
-    if (style.hasFilter()) {
-        const FilterOperations& filterOperations = style.filter();
-        if (filterOperations.size() == 1) {
-            const FilterOperation& filterOperation = *filterOperations.at(0);
-            if (filterOperation.type() == FilterOperation::REFERENCE) {
-                const auto& referenceFilterOperation = downcast<ReferenceFilterOperation>(filterOperation);
-                AtomicString id = SVGURIReference::fragmentIdentifierFromIRIString(referenceFilterOperation.url(), renderer.document());
-                if (RenderSVGResourceFilter* filter = getRenderSVGResourceById<RenderSVGResourceFilter>(renderer.document(), id)) {
-                    writeIndent(ts, indent);
-                    ts << " ";
-                    writeNameAndQuotedValue(ts, "filter", id);
-                    ts << " ";
-                    writeStandardPrefix(ts, *filter, 0);
-                    ts << " " << filter->resourceBoundingBox(renderer) << "\n";
-                }
-            }
+    if (!svgStyle.filterResource().isEmpty()) {
+        if (RenderSVGResourceFilter* filter = getRenderSVGResourceById<RenderSVGResourceFilter>(renderer.document(), svgStyle.filterResource())) {
+            writeIndent(ts, indent);
+            ts << " ";
+            writeNameAndQuotedValue(ts, "filter", svgStyle.filterResource());
+            ts << " ";
+            writeStandardPrefix(ts, *filter, 0);
+            ts << " " << filter->resourceBoundingBox(renderer) << "\n";
         }
     }
 }

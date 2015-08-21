@@ -31,36 +31,32 @@ namespace WebCore {
 
 class SVGAnimatedPathSegListPropertyTearOff : public SVGAnimatedListPropertyTearOff<SVGPathSegList> {
 public:
-    virtual RefPtr<ListProperty> baseVal() override
+    virtual SVGListProperty<SVGPathSegList>* baseVal() override
     {
-        if (m_baseVal)
-            return m_baseVal;
-
-        auto property = SVGPathSegListPropertyTearOff::create(this, BaseValRole, PathSegUnalteredRole, m_values, m_wrappers);
-        m_baseVal = property.ptr();
-        return WTF::move(property);
+        if (!m_baseVal)
+            m_baseVal = SVGPathSegListPropertyTearOff::create(this, BaseValRole, PathSegUnalteredRole, m_values, m_wrappers);
+        return static_cast<SVGListProperty<SVGPathSegList>*>(m_baseVal.get());
     }
 
-    virtual RefPtr<ListProperty> animVal() override
+    virtual SVGListProperty<SVGPathSegList>* animVal() override
     {
-        if (m_animVal)
-            return m_animVal;
-
-        auto property = SVGPathSegListPropertyTearOff::create(this, AnimValRole, PathSegUnalteredRole, m_values, m_wrappers);
-        m_animVal = property.ptr();
-        return WTF::move(property);
+        if (!m_animVal)
+            m_animVal = SVGPathSegListPropertyTearOff::create(this, AnimValRole, PathSegUnalteredRole, m_values, m_wrappers);
+        return static_cast<SVGListProperty<SVGPathSegList>*>(m_animVal.get());
     }
 
-    int findItem(const RefPtr<SVGPathSeg>& segment)
+    int findItem(const RefPtr<SVGPathSeg>& segment) const
     {
         // This should ever be called for our baseVal, as animVal can't modify the list.
-        return static_cast<SVGPathSegListPropertyTearOff*>(baseVal().get())->findItem(segment);
+        ASSERT(m_baseVal);
+        return static_cast<SVGPathSegListPropertyTearOff*>(m_baseVal.get())->findItem(segment);
     }
 
     void removeItemFromList(size_t itemIndex, bool shouldSynchronizeWrappers)
     {
         // This should ever be called for our baseVal, as animVal can't modify the list.
-        static_cast<SVGPathSegListPropertyTearOff*>(baseVal().get())->removeItemFromList(itemIndex, shouldSynchronizeWrappers);
+        ASSERT(m_baseVal);
+        static_cast<SVGPathSegListPropertyTearOff*>(m_baseVal.get())->removeItemFromList(itemIndex, shouldSynchronizeWrappers);
     }
 
     static Ref<SVGAnimatedPathSegListPropertyTearOff> create(SVGElement* contextElement, const QualifiedName& attributeName, AnimatedPropertyType animatedPropertyType, SVGPathSegList& values)
@@ -112,13 +108,6 @@ private:
         : SVGAnimatedListPropertyTearOff<SVGPathSegList>(contextElement, attributeName, animatedPropertyType, values)
         , m_animatedPathByteStream(nullptr)
     {
-        ASSERT(contextElement);
-        ASSERT(is<SVGPathElement>(contextElement));
-    }
-
-    virtual ~SVGAnimatedPathSegListPropertyTearOff()
-    {
-        downcast<SVGPathElement>(contextElement())->animatedPropertyWillBeDeleted();
     }
 
     SVGPathByteStream* m_animatedPathByteStream;

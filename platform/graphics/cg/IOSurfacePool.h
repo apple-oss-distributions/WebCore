@@ -26,10 +26,7 @@
 #ifndef IOSurfacePool_h
 #define IOSurfacePool_h
 
-#if USE(IOSURFACE)
-
 #include "ColorSpace.h"
-#include "IOSurface.h"
 #include "IntSize.h"
 #include "IntSizeHash.h"
 #include "Timer.h"
@@ -38,7 +35,11 @@
 #include <wtf/NeverDestroyed.h>
 #include <wtf/RetainPtr.h>
 
+#if USE(IOSURFACE)
+
 namespace WebCore {
+
+class IOSurface;
 
 class IOSurfacePool {
     WTF_MAKE_NONCOPYABLE(IOSurfacePool);
@@ -48,7 +49,7 @@ class IOSurfacePool {
 public:
     WEBCORE_EXPORT static IOSurfacePool& sharedPool();
 
-    std::unique_ptr<IOSurface> takeSurface(IntSize, ColorSpace, IOSurface::Format);
+    std::unique_ptr<IOSurface> takeSurface(IntSize, ColorSpace);
     WEBCORE_EXPORT void addSurface(std::unique_ptr<IOSurface>);
 
     void discardAllSurfaces();
@@ -74,8 +75,6 @@ private:
     typedef Deque<std::unique_ptr<IOSurface>> CachedSurfaceQueue;
     typedef HashMap<IntSize, CachedSurfaceQueue> CachedSurfaceMap;
     typedef HashMap<IOSurface*, CachedSurfaceDetails> CachedSurfaceDetailsMap;
-    
-    bool shouldCacheSurface(const IOSurface&) const;
 
     void willAddSurface(IOSurface&, bool inUse);
     void didRemoveSurface(IOSurface&, bool inUse);

@@ -52,7 +52,6 @@ public:
     static const AtomicString& automaticKeyword();
     static const AtomicString& forcedOnlyKeyword();
     static const AtomicString& alwaysOnKeyword();
-    static const AtomicString& manualKeyword();
 
     Vector<RefPtr<TextTrack>> sortedTrackListForMenu(TextTrackList*);
     Vector<RefPtr<AudioTrack>> sortedTrackListForMenu(AudioTrackList*);

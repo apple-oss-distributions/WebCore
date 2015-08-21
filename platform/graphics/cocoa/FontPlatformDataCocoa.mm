@@ -91,6 +91,15 @@ bool FontPlatformData::platformIsEqual(const FontPlatformData& other) const
     return m_cgFont == other.m_cgFont;
 }
 
+CTFontRef FontPlatformData::registeredFont() const
+{
+    CTFontRef platformFont = font();
+    ASSERT(!CORETEXT_WEB_FONTS || platformFont);
+    if (platformFont && adoptCF(CTFontCopyAttribute(platformFont, kCTFontURLAttribute)))
+        return platformFont;
+    return nullptr;
+}
+
 void FontPlatformData::setFont(CTFontRef font)
 {
     ASSERT_ARG(font, font);
@@ -107,6 +116,15 @@ void FontPlatformData::setFont(CTFontRef font)
     m_isCompositeFontReference = traits & kCTFontCompositeTrait;
     
     m_ctFont = nullptr;
+}
+
+bool FontPlatformData::allowsLigatures() const
+{
+    if (!m_font)
+        return false;
+
+    RetainPtr<CFCharacterSetRef> characterSet = adoptCF(CTFontCopyCharacterSet(ctFont()));
+    return !(characterSet.get() && CFCharacterSetIsCharacterMember(characterSet.get(), 'a'));
 }
 
 inline int mapFontWidthVariantToCTFeatureSelector(FontWidthVariant variant)
@@ -196,7 +214,7 @@ RetainPtr<CFTypeRef> FontPlatformData::objectForEqualityCheck(CTFontRef ctFont)
     // FIXME: https://bugs.webkit.org/show_bug.cgi?id=138683 This is a shallow pointer compare for web fonts
     // because the URL contains the address of the font. This means we might erroneously get false negatives.
     RetainPtr<CFURLRef> url = adoptCF(static_cast<CFURLRef>(CTFontDescriptorCopyAttribute(fontDescriptor.get(), kCTFontReferenceURLAttribute)));
-    ASSERT(CFGetTypeID(url.get()) == CFURLGetTypeID());
+    ASSERT(!url || CFGetTypeID(url.get()) == CFURLGetTypeID());
     return url;
 }
 

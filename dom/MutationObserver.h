@@ -53,7 +53,6 @@ typedef unsigned char MutationObserverOptions;
 typedef unsigned char MutationRecordDeliveryOptions;
 
 class MutationObserver : public RefCounted<MutationObserver> {
-    friend class MutationObserverMicrotask;
 public:
     enum MutationType {
         ChildList = 1 << 0,
@@ -74,6 +73,7 @@ public:
     };
 
     static Ref<MutationObserver> create(PassRefPtr<MutationCallback>);
+    static void deliverAllMutations();
 
     ~MutationObserver();
 
@@ -94,7 +94,6 @@ private:
     explicit MutationObserver(PassRefPtr<MutationCallback>);
     void deliver();
 
-    static void deliverAllMutations();
     static bool validateOptions(MutationObserverOptions);
 
     RefPtr<MutationCallback> m_callback;

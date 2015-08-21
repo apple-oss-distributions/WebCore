@@ -1493,15 +1493,6 @@ void FrameLoader::reportLocalLoadFailed(Frame* frame, const String& url)
     frame->document()->addConsoleMessage(MessageSource::Security, MessageLevel::Error, "Not allowed to load local resource: " + url);
 }
 
-void FrameLoader::reportBlockedPortFailed(Frame* frame, const String& url)
-{
-    ASSERT(!url.isEmpty());
-    if (!frame)
-        return;
-    
-    frame->document()->addConsoleMessage(MessageSource::Security, MessageLevel::Error, "Not allowed to use restricted network port: " + url);
-}
-
 const ResourceRequest& FrameLoader::initialRequest() const
 {
     return activeDocumentLoader()->originalRequest();
@@ -1573,7 +1564,7 @@ void FrameLoader::reloadWithOverrideEncoding(const String& encoding)
     loadWithDocumentLoader(loader.get(), FrameLoadType::Reload, 0, AllowNavigationToInvalidURL::Yes);
 }
 
-void FrameLoader::reload(bool endToEndReload, bool contentBlockersEnabled)
+void FrameLoader::reload(bool endToEndReload)
 {
     if (!m_documentLoader)
         return;
@@ -1594,8 +1585,6 @@ void FrameLoader::reload(bool endToEndReload, bool contentBlockersEnabled)
     RefPtr<DocumentLoader> loader = m_client.createDocumentLoader(initialRequest, defaultSubstituteDataForURL(initialRequest.url()));
     applyShouldOpenExternalURLsPolicyToNewDocumentLoader(*loader, m_documentLoader->shouldOpenExternalURLsPolicyToPropagate());
 
-    loader->setUserContentExtensionsEnabled(contentBlockersEnabled);
-    
     ResourceRequest& request = loader->request();
 
     // FIXME: We don't have a mechanism to revalidate the main resource without reloading at the moment.
@@ -1649,9 +1638,6 @@ void FrameLoader::stopAllLoaders(ClearProvisionalItemPolicy clearProvisionalItem
 
 void FrameLoader::stopForUserCancel(bool deferCheckLoadComplete)
 {
-    // Calling stopAllLoaders can cause the frame to be deallocated, including the frame loader.
-    Ref<Frame> protectedFrame(m_frame);
-
     stopAllLoaders();
 
 #if PLATFORM(IOS)
@@ -2505,9 +2491,6 @@ void FrameLoader::handledOnloadEvents()
 
 void FrameLoader::frameDetached()
 {
-    // Calling stopAllLoaders can cause the frame to be deallocated, including the frame loader.
-    Ref<Frame> protectedFrame(m_frame);
-
     stopAllLoaders();
     m_frame.document()->stopActiveDOMObjects();
     detachFromParent();
@@ -2730,7 +2713,7 @@ unsigned long FrameLoader::loadResourceSynchronously(const ResourceRequest& requ
         if (m_documentLoader) {
             if (auto* page = m_frame.page()) {
                 if (auto* controller = page->userContentController())
-                    controller->processContentExtensionRulesForLoad(newRequest, ResourceType::Raw, *m_documentLoader);
+                    controller->processContentExtensionRulesForLoad(*page, newRequest, ResourceType::Raw, *m_documentLoader);
             }
         }
         
@@ -2802,10 +2785,6 @@ void FrameLoader::continueFragmentScrollAfterNavigationPolicy(const ResourceRequ
 
     if (!shouldContinue)
         return;
-
-    // Calling stopLoading() on the provisional document loader can cause the underlying
-    // frame to be deallocated.
-    Ref<Frame> protectedFrame(m_frame);
 
     // If we have a provisional request for a different document, a fragment scroll should cancel it.
     if (m_provisionalDocumentLoader && !equalIgnoringFragmentIdentifier(m_provisionalDocumentLoader->request().url(), request.url())) {
@@ -3002,6 +2981,11 @@ void FrameLoader::continueLoadAfterNavigationPolicy(const ResourceRequest& reque
     // might detach the current FrameLoader, in which case we should bail on this newly defunct load. 
     if (!m_frame.page())
         return;
+
+    if (Page* page = m_frame.page()) {
+        if (m_frame.isMainFrame())
+            page->inspectorController().resume();
+    }
 
     setProvisionalDocumentLoader(m_policyDocumentLoader.get());
     m_loadType = type;
@@ -3201,8 +3185,6 @@ void FrameLoader::loadSameDocumentItem(HistoryItem& item)
 {
     ASSERT(item.documentSequenceNumber() == history().currentItem()->documentSequenceNumber());
 
-    Ref<Frame> protect(m_frame);
-
     // Save user view state to the current history item here since we don't do a normal load.
     // FIXME: Does form state need to be saved here too?
     history().saveScrollPositionAndViewStateToItem(history().currentItem());
@@ -3341,13 +3323,6 @@ void FrameLoader::retryAfterFailedCacheOnlyMainResourceLoad()
 ResourceError FrameLoader::cancelledError(const ResourceRequest& request) const
 {
     ResourceError error = m_client.cancelledError(request);
-    error.setIsCancellation(true);
-    return error;
-}
-
-ResourceError FrameLoader::blockedError(const ResourceRequest& request) const
-{
-    ResourceError error = m_client.blockedError(request);
     error.setIsCancellation(true);
     return error;
 }

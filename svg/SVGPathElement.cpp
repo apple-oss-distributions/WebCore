@@ -295,10 +295,10 @@ void SVGPathElement::removedFrom(ContainerNode& rootParent)
 
 SVGPathByteStream* SVGPathElement::pathByteStream() const
 {
-    auto property = SVGAnimatedProperty::lookupWrapper<SVGPathElement, SVGAnimatedPathSegListPropertyTearOff>(this, dPropertyInfo());
+    SVGAnimatedProperty* property = SVGAnimatedProperty::lookupWrapper<SVGPathElement, SVGAnimatedPathSegListPropertyTearOff>(this, dPropertyInfo());
     if (!property || !property->isAnimating())
         return m_pathByteStream.get();
-    return static_cast<SVGAnimatedPathSegListPropertyTearOff*>(property.get())->animatedPathByteStream();
+    return static_cast<SVGAnimatedPathSegListPropertyTearOff*>(property)->animatedPathByteStream();
 }
 
 Ref<SVGAnimatedProperty> SVGPathElement::lookupOrCreateDWrapper(SVGElement* contextElement)
@@ -306,11 +306,11 @@ Ref<SVGAnimatedProperty> SVGPathElement::lookupOrCreateDWrapper(SVGElement* cont
     ASSERT(contextElement);
     SVGPathElement& ownerType = downcast<SVGPathElement>(*contextElement);
 
-    if (auto property = SVGAnimatedProperty::lookupWrapper<SVGPathElement, SVGAnimatedPathSegListPropertyTearOff>(&ownerType, dPropertyInfo()))
+    if (SVGAnimatedProperty* property = SVGAnimatedProperty::lookupWrapper<SVGPathElement, SVGAnimatedPathSegListPropertyTearOff>(&ownerType, dPropertyInfo()))
         return *property;
 
-    if (ownerType.m_pathSegList.value.isEmpty())
-        buildSVGPathSegListFromByteStream(ownerType.m_pathByteStream.get(), &ownerType, ownerType.m_pathSegList.value, UnalteredParsing);
+    // Build initial SVGPathSegList.
+    buildSVGPathSegListFromByteStream(ownerType.m_pathByteStream.get(), &ownerType, ownerType.m_pathSegList.value, UnalteredParsing);
 
     return SVGAnimatedProperty::lookupOrCreateWrapper<SVGPathElement, SVGAnimatedPathSegListPropertyTearOff, SVGPathSegList>
         (&ownerType, dPropertyInfo(), ownerType.m_pathSegList.value);
@@ -325,46 +325,29 @@ void SVGPathElement::synchronizeD(SVGElement* contextElement)
     ownerType.m_pathSegList.synchronize(&ownerType, dPropertyInfo()->attributeName, ownerType.m_pathSegList.value.valueAsString());
 }
 
-void SVGPathElement::animatedPropertyWillBeDeleted()
-{
-    // m_pathSegList.shouldSynchronize is set to true when the 'd' wrapper for m_pathSegList
-    // is created and cached. We need to reset it back to false when this wrapper is deleted
-    // so we can be sure if shouldSynchronize is true, SVGAnimatedProperty::lookupWrapper()
-    // will return a valid cached 'd' wrapper for the m_pathSegList.
-    m_pathSegList.shouldSynchronize = false;
-}
-
-RefPtr<SVGPathSegListPropertyTearOff> SVGPathElement::pathSegList()
+SVGPathSegListPropertyTearOff* SVGPathElement::pathSegList()
 {
     m_pathSegList.shouldSynchronize = true;
-    return static_cast<SVGPathSegListPropertyTearOff*>(static_reference_cast<SVGAnimatedPathSegListPropertyTearOff>(lookupOrCreateDWrapper(this))->baseVal().get());
+    return static_cast<SVGPathSegListPropertyTearOff*>(static_reference_cast<SVGAnimatedPathSegListPropertyTearOff>(lookupOrCreateDWrapper(this))->baseVal());
 }
 
-RefPtr<SVGPathSegListPropertyTearOff> SVGPathElement::normalizedPathSegList()
+SVGPathSegListPropertyTearOff* SVGPathElement::normalizedPathSegList()
 {
     // FIXME: https://bugs.webkit.org/show_bug.cgi?id=15412 - Implement normalized path segment lists!
-    return nullptr;
+    return 0;
 }
 
-RefPtr<SVGPathSegListPropertyTearOff> SVGPathElement::animatedPathSegList()
+SVGPathSegListPropertyTearOff* SVGPathElement::animatedPathSegList()
 {
     m_pathSegList.shouldSynchronize = true;
     m_isAnimValObserved = true;
-    return static_cast<SVGPathSegListPropertyTearOff*>(static_reference_cast<SVGAnimatedPathSegListPropertyTearOff>(lookupOrCreateDWrapper(this))->animVal().get());
+    return static_cast<SVGPathSegListPropertyTearOff*>(static_reference_cast<SVGAnimatedPathSegListPropertyTearOff>(lookupOrCreateDWrapper(this))->animVal());
 }
 
-RefPtr<SVGPathSegListPropertyTearOff> SVGPathElement::animatedNormalizedPathSegList()
+SVGPathSegListPropertyTearOff* SVGPathElement::animatedNormalizedPathSegList()
 {
     // FIXME: https://bugs.webkit.org/show_bug.cgi?id=15412 - Implement normalized path segment lists!
-    return nullptr;
-}
-
-size_t SVGPathElement::approximateMemoryCost() const
-{
-    // This is an approximation for path memory cost since the path is parsed on demand.
-    size_t pathMemoryCost = (m_pathByteStream->size() / 10) * sizeof(FloatPoint);
-    // We need to account for the memory which is allocated by the RenderSVGPath::m_path.
-    return sizeof(*this) + (renderer() ? pathMemoryCost * 2 + sizeof(RenderSVGPath) : pathMemoryCost);
+    return 0;
 }
 
 void SVGPathElement::pathSegListChanged(SVGPathSegRole role, ListModification listModification)

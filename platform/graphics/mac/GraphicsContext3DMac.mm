@@ -40,7 +40,6 @@
 #include "GraphicsContext.h"
 #include "HTMLCanvasElement.h"
 #include "ImageBuffer.h"
-#include "Logging.h"
 #if PLATFORM(IOS)
 #import "OpenGLESSPI.h"
 #import <OpenGLES/ES2/glext.h>
@@ -59,7 +58,6 @@
 #include <runtime/Int32Array.h>
 #include <runtime/Float32Array.h>
 #include <runtime/Uint8Array.h>
-#include <sysexits.h>
 #include <wtf/text/CString.h>
 
 namespace WebCore {
@@ -375,31 +373,25 @@ bool GraphicsContext3D::makeContextCurrent()
 void GraphicsContext3D::checkGPUStatusIfNecessary()
 {
 #if USE_GPU_STATUS_CHECK
-    bool needsCheck = !GPUCheckCounter;
     GPUCheckCounter = (GPUCheckCounter + 1) % GPUStatusCheckThreshold;
-
-    if (!needsCheck)
+    if (GPUCheckCounter)
         return;
-
-    GLint restartStatus = 0;
 #if PLATFORM(MAC)
+    GLint restartStatus = 0;
     CGLGetParameter(platformGraphicsContext3D(), kCGLCPGPURestartStatus, &restartStatus);
-    if (restartStatus == kCGLCPGPURestartStatusBlacklisted) {
-        LOG(WebGL, "The GPU has blacklisted us. Terminating.");
-        exit(EX_OSERR);
-    }
-    if (restartStatus == kCGLCPGPURestartStatusCaused) {
-        LOG(WebGL, "The GPU has reset us. Lose the context.");
-        forceContextLost();
+    if (restartStatus == kCGLCPGPURestartStatusCaused || restartStatus == kCGLCPGPURestartStatusBlacklisted) {
         CGLSetCurrentContext(0);
+        CGLDestroyContext(platformGraphicsContext3D());
+        forceContextLost();
     }
 #elif PLATFORM(IOS)
+    GLint restartStatus = 0;
     EAGLContext* currentContext = static_cast<EAGLContext*>(PlatformGraphicsContext3D());
     [currentContext getParameter:kEAGLCPGPURestartStatus to:&restartStatus];
     if (restartStatus == kEAGLCPGPURestartStatusCaused || restartStatus == kEAGLCPGPURestartStatusBlacklisted) {
-        LOG(WebGL, "The GPU has either reset or blacklisted us. Lose the context.");
-        forceContextLost();
         [EAGLContext setCurrentContext:0];
+        [static_cast<EAGLContext*>(currentContext) release];
+        forceContextLost();
     }
 #endif
 #endif

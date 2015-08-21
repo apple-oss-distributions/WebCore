@@ -86,7 +86,12 @@ void PlatformCAFilters::setFiltersOnLayer(PlatformLayer* layer, const FilterOper
             // <rdar://problem/10959969> Handle case where drop-shadow is not the last filter.
             const auto& dropShadowOperation = downcast<DropShadowFilterOperation>(filterOperation);
             [layer setShadowOffset:CGSizeMake(dropShadowOperation.x(), dropShadowOperation.y())];
-            [layer setShadowColor:cachedCGColor(dropShadowOperation.color(), ColorSpaceDeviceRGB)];
+
+            CGFloat components[4];
+            dropShadowOperation.color().getRGBA(components[0], components[1], components[2], components[3]);
+            RetainPtr<CGColorSpaceRef> colorSpace = adoptCF(CGColorSpaceCreateDeviceRGB());
+            RetainPtr<CGColorRef> color = adoptCF(CGColorCreate(colorSpace.get(), components));
+            [layer setShadowColor:color.get()];
             [layer setShadowRadius:dropShadowOperation.stdDeviation()];
             [layer setShadowOpacity:1];
             break;

@@ -1591,7 +1591,8 @@ Node::InsertionNotificationRequest HTMLSelectElement::insertedInto(ContainerNode
     // items yet - but for innerHTML and related methods, this method is called
     // after the whole subtree is constructed.
     recalcListItems();
-    return HTMLFormControlElementWithState::insertedInto(insertionPoint);
+    HTMLFormControlElementWithState::insertedInto(insertionPoint);
+    return InsertionDone;
 }
 
 void HTMLSelectElement::accessKeySetSelectedIndex(int index)
