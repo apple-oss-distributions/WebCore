@@ -462,6 +462,7 @@ public:
     WEBCORE_EXPORT bool removeScrollableArea(ScrollableArea*);
     bool containsScrollableArea(ScrollableArea*) const;
     const ScrollableAreaSet* scrollableAreas() const { return m_scrollableAreas.get(); }
+    void clearScrollableAreas();
 
     virtual void removeChild(Widget&) override;
 
@@ -597,7 +598,7 @@ private:
 
     virtual void scrollPositionChangedViaPlatformWidgetImpl(const IntPoint& oldPosition, const IntPoint& newPosition) override;
 
-    void applyOverflowToViewport(RenderElement*, ScrollbarMode& hMode, ScrollbarMode& vMode);
+    void applyOverflowToViewport(const RenderElement&, ScrollbarMode& hMode, ScrollbarMode& vMode);
     void applyPaginationToViewport();
 
     void updateOverflowStatus(bool horizontalOverflow, bool verticalOverflow);
@@ -678,6 +679,8 @@ private:
     void removeFromAXObjectCache();
     void notifyWidgets(WidgetNotification);
 
+    RenderElement* viewportRenderer() const;
+
     HashSet<Widget*> m_widgetsInRenderTree;
 
     static double sCurrentPaintTimeStamp; // used for detecting decoded resource thrash in the cache
@@ -721,8 +724,9 @@ private:
 
     bool m_overflowStatusDirty;
     bool m_horizontalOverflow;
-    bool m_verticalOverflow;    
-    RenderElement* m_viewportRenderer;
+    bool m_verticalOverflow;
+    enum class ViewportRendererType { None, Document, Body };
+    ViewportRendererType m_viewportRendererType { ViewportRendererType::None };
 
     Pagination m_pagination;
 
