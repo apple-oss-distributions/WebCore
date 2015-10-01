@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Apple, Inc.  All rights reserved.
+ * Copyright (C) 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -20,30 +20,47 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef CharacterProperties_h
-#define CharacterProperties_h
+#ifndef WebTiledBackingLayerWin_h
+#define WebTiledBackingLayerWin_h
+
+#include "PlatformCALayerWinInternal.h"
 
 namespace WebCore {
 
-static inline bool isEmojiGroupCandidate(UChar32 character)
-{
-    return (character >= 0x1F466 && character <= 0x1F469) || character == 0x2764 || character == 0x1F48B
-        || character == 0x1F441 || character == 0x1F5E8;
+class WebTiledBackingLayerWin : public PlatformCALayerWinInternal {
+public:
+    WebTiledBackingLayerWin(PlatformCALayer*);
+    ~WebTiledBackingLayerWin();
+
+    void displayCallback(CACFLayerRef, CGContextRef) override;
+    void setNeedsDisplayInRect(const FloatRect&) override;
+    void setNeedsDisplay() override;
+
+    bool isOpaque() const override;
+    void setOpaque(bool) override;
+
+    void setBounds(const FloatRect&) override;
+
+    float contentsScale() const override;
+    void setContentsScale(float) override;
+
+    void setBorderWidth(float) override;
+
+    void setBorderColor(const Color&) override;
+
+    // WebTiledBackingLayer Features
+    TileController* createTileController(PlatformCALayer* rootLayer);
+    TiledBacking* tiledBacking();
+    void invalidate();
+
+private:
+    RetainPtr<CACFLayerRef> m_tileParent;
+    std::unique_ptr<TileController> m_tileController;
+};
+
 }
 
-static inline bool isEmojiModifier(UChar32 character)
-{
-    return character >= 0x1F3FB && character <= 0x1F3FF;
-}
-
-inline bool isVariationSelector(UChar32 character)
-{
-    return character >= 0xFE00 && character <= 0xFE0F;
-}
-
-}
-
-#endif
+#endif // WebTiledBackingLayerWin_h
