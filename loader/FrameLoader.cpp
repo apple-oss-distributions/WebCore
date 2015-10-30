@@ -1564,7 +1564,7 @@ void FrameLoader::reloadWithOverrideEncoding(const String& encoding)
     loadWithDocumentLoader(loader.get(), FrameLoadType::Reload, 0, AllowNavigationToInvalidURL::Yes);
 }
 
-void FrameLoader::reload(bool endToEndReload)
+void FrameLoader::reload(bool endToEndReload, bool contentBlockersEnabled)
 {
     if (!m_documentLoader)
         return;
@@ -1585,6 +1585,8 @@ void FrameLoader::reload(bool endToEndReload)
     RefPtr<DocumentLoader> loader = m_client.createDocumentLoader(initialRequest, defaultSubstituteDataForURL(initialRequest.url()));
     applyShouldOpenExternalURLsPolicyToNewDocumentLoader(*loader, m_documentLoader->shouldOpenExternalURLsPolicyToPropagate());
 
+    loader->setUserContentExtensionsEnabled(contentBlockersEnabled);
+    
     ResourceRequest& request = loader->request();
 
     // FIXME: We don't have a mechanism to revalidate the main resource without reloading at the moment.
@@ -2713,7 +2715,7 @@ unsigned long FrameLoader::loadResourceSynchronously(const ResourceRequest& requ
         if (m_documentLoader) {
             if (auto* page = m_frame.page()) {
                 if (auto* controller = page->userContentController())
-                    controller->processContentExtensionRulesForLoad(*page, newRequest, ResourceType::Raw, *m_documentLoader);
+                    controller->processContentExtensionRulesForLoad(newRequest, ResourceType::Raw, *m_documentLoader);
             }
         }
         
@@ -2981,11 +2983,6 @@ void FrameLoader::continueLoadAfterNavigationPolicy(const ResourceRequest& reque
     // might detach the current FrameLoader, in which case we should bail on this newly defunct load. 
     if (!m_frame.page())
         return;
-
-    if (Page* page = m_frame.page()) {
-        if (m_frame.isMainFrame())
-            page->inspectorController().resume();
-    }
 
     setProvisionalDocumentLoader(m_policyDocumentLoader.get());
     m_loadType = type;

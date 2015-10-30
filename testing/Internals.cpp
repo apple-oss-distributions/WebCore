@@ -183,7 +183,7 @@
 #endif
 
 #if ENABLE(CONTENT_FILTERING)
-#include "MockContentFilter.h"
+#include "MockContentFilterSettings.h"
 #endif
 
 #if ENABLE(WEB_AUDIO)
@@ -350,10 +350,6 @@ Internals::Internals(Document* document)
     MockRealtimeMediaSourceCenter::registerMockRealtimeMediaSourceCenter();
     enableMockRTCPeerConnectionHandler();
     WebCore::provideUserMediaTo(document->page(), new UserMediaClientMock());
-#endif
-
-#if ENABLE(CONTENT_FILTERING)
-    MockContentFilter::ensureInstalled();
 #endif
 }
 
@@ -2618,9 +2614,22 @@ Vector<String> Internals::bufferedSamplesForTrackID(SourceBuffer* buffer, const 
 #endif
 
 #if ENABLE(VIDEO)
-void Internals::beginMediaSessionInterruption()
+void Internals::beginMediaSessionInterruption(const String& interruptionString, ExceptionCode& ec)
 {
-    PlatformMediaSessionManager::sharedManager().beginInterruption(PlatformMediaSession::SystemInterruption);
+    PlatformMediaSession::InterruptionType interruption = PlatformMediaSession::SystemInterruption;
+
+    if (equalIgnoringCase(interruptionString, "System"))
+        interruption = PlatformMediaSession::SystemInterruption;
+    else if (equalIgnoringCase(interruptionString, "SystemSleep"))
+        interruption = PlatformMediaSession::SystemSleep;
+    else if (equalIgnoringCase(interruptionString, "EnteringBackground"))
+        interruption = PlatformMediaSession::EnteringBackground;
+    else {
+        ec = INVALID_ACCESS_ERR;
+        return;
+    }
+
+    PlatformMediaSessionManager::sharedManager().beginInterruption(interruption);
 }
 
 void Internals::endMediaSessionInterruption(const String& flagsString)
@@ -2633,9 +2642,9 @@ void Internals::endMediaSessionInterruption(const String& flagsString)
     PlatformMediaSessionManager::sharedManager().endInterruption(flags);
 }
 
-void Internals::applicationWillEnterForeground() const
+void Internals::applicationDidEnterForeground() const
 {
-    PlatformMediaSessionManager::sharedManager().applicationWillEnterForeground();
+    PlatformMediaSessionManager::sharedManager().applicationDidEnterForeground();
 }
 
 void Internals::applicationWillEnterBackground() const

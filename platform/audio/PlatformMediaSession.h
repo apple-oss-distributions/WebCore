@@ -74,21 +74,15 @@ public:
         SystemSleep,
         EnteringBackground,
         SystemInterruption,
+        SuspendedUnderLock,
     };
     enum EndInterruptionFlags {
         NoFlags = 0,
         MayResumePlaying = 1 << 0,
     };
 
-    void doInterruption();
-    bool shouldDoInterruption(InterruptionType);
     void beginInterruption(InterruptionType);
-    void forceInterruption(InterruptionType);
     void endInterruption(EndInterruptionFlags);
-
-    void applicationWillEnterForeground() const;
-    void applicationWillEnterBackground() const;
-    void applicationDidEnterBackground(bool isSuspendedUnderLock) const;
 
     bool clientWillBeginPlayback();
     bool clientWillPausePlayback();
@@ -125,7 +119,8 @@ public:
     bool isHidden() const;
 
     virtual bool canPlayToWirelessPlaybackTarget() const { return false; }
-    virtual bool isPlayingToWirelessPlaybackTarget() const { return false; }
+    virtual bool isPlayingToWirelessPlaybackTarget() const { return m_isPlayingToWirelessPlaybackTarget; }
+    void isPlayingToWirelessPlaybackTargetChanged(bool);
 
 #if ENABLE(WIRELESS_PLAYBACK_TARGET)
     // MediaPlaybackTargetClient
@@ -151,6 +146,7 @@ private:
     State m_stateToRestore;
     int m_interruptionCount { 0 };
     bool m_notifyingClient;
+    bool m_isPlayingToWirelessPlaybackTarget { false };
 
     friend class PlatformMediaSessionManager;
 };
@@ -177,7 +173,7 @@ public:
     virtual void setShouldBufferData(bool) { }
     virtual bool elementIsHidden() const { return false; }
 
-    virtual bool overrideBackgroundPlaybackRestriction() const = 0;
+    virtual bool shouldOverrideBackgroundPlaybackRestriction(PlatformMediaSession::InterruptionType) const = 0;
 
     virtual void wirelessRoutesAvailableDidChange() { }
     virtual void setWirelessPlaybackTarget(Ref<MediaPlaybackTarget>&&) { }

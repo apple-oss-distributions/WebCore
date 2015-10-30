@@ -54,9 +54,8 @@ public:
     WEBCORE_EXPORT void beginInterruption(PlatformMediaSession::InterruptionType);
     WEBCORE_EXPORT void endInterruption(PlatformMediaSession::EndInterruptionFlags);
 
-    WEBCORE_EXPORT void applicationWillEnterForeground() const;
+    WEBCORE_EXPORT void applicationDidEnterForeground() const;
     WEBCORE_EXPORT void applicationWillEnterBackground() const;
-    WEBCORE_EXPORT void applicationDidEnterBackground(bool isSuspendedUnderLock) const;
 
     void stopAllMediaPlaybackForDocument(const Document*);
     WEBCORE_EXPORT void stopAllMediaPlaybackForProcess();
@@ -92,6 +91,8 @@ public:
 
     void setCurrentSession(PlatformMediaSession&);
     PlatformMediaSession* currentSession();
+
+    void sessionIsPlayingToWirelessPlaybackTargetChanged(PlatformMediaSession&);
 
 protected:
     friend class PlatformMediaSession;
@@ -131,6 +132,7 @@ private:
 #endif
 
     bool m_interrupted { false };
+    mutable bool m_isApplicationInBackground { false };
 };
 
 }

@@ -382,9 +382,9 @@ public:
 #endif
 
 #if ENABLE(VIDEO)
-    void beginMediaSessionInterruption();
+    void beginMediaSessionInterruption(const String&, ExceptionCode&);
     void endMediaSessionInterruption(const String&);
-    void applicationWillEnterForeground() const;
+    void applicationDidEnterForeground() const;
     void applicationWillEnterBackground() const;
     void setMediaSessionRestrictions(const String& mediaType, const String& restrictions, ExceptionCode&);
     void setMediaElementRestrictions(HTMLMediaElement*, const String& restrictions, ExceptionCode&);
