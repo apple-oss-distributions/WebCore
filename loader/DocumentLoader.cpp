@@ -141,7 +141,7 @@ DocumentLoader::DocumentLoader(const ResourceRequest& req, const SubstituteData&
     , m_subresourceLoadersArePageCacheAcceptable(false)
     , m_applicationCacheHost(std::make_unique<ApplicationCacheHost>(*this))
 #if ENABLE(CONTENT_FILTERING)
-    , m_contentFilter(!substituteData.isValid() ? ContentFilter::createIfEnabled(*this) : nullptr)
+    , m_contentFilter(!substituteData.isValid() ? ContentFilter::create(*this) : nullptr)
 #endif
 {
 }
@@ -371,6 +371,11 @@ bool DocumentLoader::isLoading() const
 
 void DocumentLoader::notifyFinished(CachedResource* resource)
 {
+#if ENABLE(CONTENT_FILTERING)
+    if (m_contentFilter && !m_contentFilter->continueAfterNotifyFinished(resource))
+        return;
+#endif
+
     ASSERT_UNUSED(resource, m_mainResource == resource);
     ASSERT(m_mainResource);
     if (!m_mainResource->errorOccurred() && !m_mainResource->wasCanceled()) {
@@ -512,6 +517,11 @@ void DocumentLoader::willSendRequest(ResourceRequest& newRequest, const Resource
             cancelMainResourceLoad(frameLoader()->cancelledError(newRequest));
             return;
         }
+        if (!portAllowed(newRequest.url())) {
+            FrameLoader::reportBlockedPortFailed(m_frame, newRequest.url().string());
+            cancelMainResourceLoad(frameLoader()->blockedError(newRequest));
+            return;
+        }
         timing().addRedirect(redirectResponse.url(), newRequest.url());
     }
 
@@ -536,11 +546,8 @@ void DocumentLoader::willSendRequest(ResourceRequest& newRequest, const Resource
     }
 
 #if ENABLE(CONTENT_FILTERING)
-    if (m_contentFilter && redirectResponse.isNull()) {
-        m_contentFilter->willSendRequest(newRequest, redirectResponse);
-        if (newRequest.isNull())
-            return;
-    }
+    if (m_contentFilter && !m_contentFilter->continueAfterWillSendRequest(newRequest, redirectResponse))
+        return;
 #endif
 
     setRequest(newRequest);
@@ -602,6 +609,11 @@ void DocumentLoader::continueAfterNavigationPolicy(const ResourceRequest&, bool 
 
 void DocumentLoader::responseReceived(CachedResource* resource, const ResourceResponse& response)
 {
+#if ENABLE(CONTENT_FILTERING)
+    if (m_contentFilter && !m_contentFilter->continueAfterResponseReceived(resource, response))
+        return;
+#endif
+
     ASSERT_UNUSED(resource, m_mainResource == resource);
     Ref<DocumentLoader> protect(*this);
     bool willLoadFallback = m_applicationCacheHost->maybeLoadFallbackForMainResponse(request(), response);
@@ -651,6 +663,10 @@ void DocumentLoader::responseReceived(CachedResource* resource, const ResourceRe
     m_response = response;
 
     if (m_identifierForLoadWithoutResourceLoader) {
+        if (m_mainResource && m_mainResource->wasRedirected()) {
+            ASSERT(m_mainResource->status() == CachedResource::Status::Cached);
+            frameLoader()->client().dispatchDidReceiveServerRedirectForProvisionalLoad();
+        }
         addResponse(m_response);
         frameLoader()->notifier().dispatchDidReceiveResponse(this, m_identifierForLoadWithoutResourceLoader, m_response, 0);
     }
@@ -863,6 +879,11 @@ void DocumentLoader::commitData(const char* bytes, size_t length)
 
 void DocumentLoader::dataReceived(CachedResource* resource, const char* data, int length)
 {
+#if ENABLE(CONTENT_FILTERING)
+    if (m_contentFilter && !m_contentFilter->continueAfterDataReceived(resource, data, length))
+        return;
+#endif
+
     ASSERT(data);
     ASSERT(length);
     ASSERT_UNUSED(resource, resource == m_mainResource);
@@ -950,7 +971,8 @@ void DocumentLoader::detachFromFrame()
     if (m_mainResource && m_mainResource->hasClient(this))
         m_mainResource->removeClient(this);
 #if ENABLE(CONTENT_FILTERING)
-    m_contentFilter = nullptr;
+    if (m_contentFilter)
+        m_contentFilter->stopFilteringMainResource();
 #endif
 
     m_applicationCacheHost->setDOMApplicationCache(nullptr);
@@ -1500,7 +1522,8 @@ void DocumentLoader::clearMainResource()
     if (m_mainResource && m_mainResource->hasClient(this))
         m_mainResource->removeClient(this);
 #if ENABLE(CONTENT_FILTERING)
-    m_contentFilter = nullptr;
+    if (m_contentFilter)
+        m_contentFilter->stopFilteringMainResource();
 #endif
 
     m_mainResource = 0;
@@ -1597,11 +1620,8 @@ ShouldOpenExternalURLsPolicy DocumentLoader::shouldOpenExternalURLsPolicyToPropa
 void DocumentLoader::becomeMainResourceClient()
 {
 #if ENABLE(CONTENT_FILTERING)
-    if (m_contentFilter && m_contentFilter->state() == ContentFilter::State::Initialized) {
-        // ContentFilter will synthesize CachedRawResourceClient callbacks.
+    if (m_contentFilter)
         m_contentFilter->startFilteringMainResource(*m_mainResource);
-        return;
-    }
 #endif
     m_mainResource->addClient(this);
 }
@@ -1639,13 +1659,9 @@ void DocumentLoader::installContentFilterUnblockHandler(ContentFilter& contentFi
     frameLoader()->client().contentFilterDidBlockLoad(WTF::move(unblockHandler));
 }
 
-void DocumentLoader::contentFilterDidDecide()
+void DocumentLoader::contentFilterDidBlock()
 {
-    using State = ContentFilter::State;
     ASSERT(m_contentFilter);
-    ASSERT(m_contentFilter->state() == State::Blocked || m_contentFilter->state() == State::Allowed);
-    if (m_contentFilter->state() == State::Allowed)
-        return;
 
     installContentFilterUnblockHandler(*m_contentFilter);
 

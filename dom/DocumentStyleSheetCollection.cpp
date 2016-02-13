@@ -33,6 +33,7 @@
 #include "HTMLIFrameElement.h"
 #include "HTMLLinkElement.h"
 #include "HTMLStyleElement.h"
+#include "InspectorInstrumentation.h"
 #include "Page.h"
 #include "PageGroup.h"
 #include "ProcessingInstruction.h"
@@ -202,8 +203,8 @@ void DocumentStyleSheetCollection::addDisplayNoneSelector(const String& identifi
         m_userStyleSheets.append(&result.iterator->value->styleSheet());
     }
 
-    result.iterator->value->addDisplayNoneSelector(selector, selectorID);
-    m_styleResolverChangedTimer.startOneShot(0);
+    if (result.iterator->value->addDisplayNoneSelector(selector, selectorID))
+        m_styleResolverChangedTimer.startOneShot(0);
 }
 
 void DocumentStyleSheetCollection::maybeAddContentExtensionSheet(const String& identifier, StyleSheetContents& sheet)
@@ -483,6 +484,8 @@ bool DocumentStyleSheetCollection::updateActiveStyleSheets(UpdateFlag updateFlag
     m_activeAuthorStyleSheets.swap(activeCSSStyleSheets);
     m_styleSheetsForStyleSheetList.swap(activeStyleSheets);
 
+    InspectorInstrumentation::activeStyleSheetsUpdated(m_document);
+
     for (const auto& sheet : m_activeAuthorStyleSheets) {
         if (sheet->contents().usesRemUnits())
             m_usesRemUnits = true;
@@ -492,6 +495,27 @@ bool DocumentStyleSheetCollection::updateActiveStyleSheets(UpdateFlag updateFlag
     m_pendingUpdateType = NoUpdate;
 
     return requiresFullStyleRecalc;
+}
+
+const Vector<RefPtr<CSSStyleSheet>> DocumentStyleSheetCollection::activeStyleSheetsForInspector() const
+{
+    Vector<RefPtr<CSSStyleSheet>> result;
+
+    result.appendVector(injectedAuthorStyleSheets());
+    result.appendVector(documentAuthorStyleSheets());
+
+    for (auto& styleSheet : m_styleSheetsForStyleSheetList) {
+        if (!is<CSSStyleSheet>(*styleSheet))
+            continue;
+
+        CSSStyleSheet& sheet = downcast<CSSStyleSheet>(*styleSheet);
+        if (sheet.disabled())
+            continue;
+
+        result.append(&sheet);
+    }
+
+    return result;
 }
 
 bool DocumentStyleSheetCollection::activeStyleSheetsContains(const CSSStyleSheet* sheet) const

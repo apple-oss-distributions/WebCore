@@ -2832,6 +2832,9 @@
     <ClCompile Include="..\rendering\style\StyleVisualData.cpp">
       <Filter>rendering\style</Filter>
     </ClCompile>
+    <ClCompile Include="..\rendering\style\WillChangeData.cpp">
+      <Filter>rendering\style</Filter>
+    </ClCompile>
     <ClCompile Include="..\rendering\style\SVGRenderStyle.cpp">
       <Filter>rendering\style</Filter>
     </ClCompile>
@@ -9890,6 +9893,9 @@
     <ClInclude Include="..\rendering\style\StyleVisualData.h">
       <Filter>rendering\style</Filter>
     </ClInclude>
+    <ClInclude Include="..\rendering\style\WillChangeData.h">
+      <Filter>rendering\style</Filter>
+    </ClInclude>
     <ClInclude Include="..\rendering\style\SVGRenderStyle.h">
       <Filter>rendering\style</Filter>
     </ClInclude>
@@ -11763,6 +11769,9 @@
       <Filter>ForwardingHeaders\inspector</Filter>
     </ClInclude>
     <ClInclude Include="..\ForwardingHeaders\inspector\InspectorValues.h">
+      <Filter>ForwardingHeaders\inspector</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ForwardingHeaders\inspector\PerGlobalObjectWrapperWorld.h">
       <Filter>ForwardingHeaders\inspector</Filter>
     </ClInclude>
     <ClInclude Include="..\ForwardingHeaders\inspector\ScriptArguments.h">

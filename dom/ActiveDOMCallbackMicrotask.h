@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,16 +23,32 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TypesettingFeatures_h
-#define TypesettingFeatures_h
+#ifndef ActiveDOMCallbackMicrotask_h
+#define ActiveDOMCallbackMicrotask_h
+
+#include "ActiveDOMCallback.h"
+#include "Microtasks.h"
+#include <functional>
 
 namespace WebCore {
-    enum TypesettingFeature {
-        Kerning = 1 << 0,
-        Ligatures = 1 << 1,
-    };
 
-    typedef unsigned TypesettingFeatures;
+class ActiveDOMCallbackMicrotask : public Microtask, public ActiveDOMCallback {
+public:
+    WEBCORE_EXPORT ActiveDOMCallbackMicrotask(MicrotaskQueue&, ScriptExecutionContext&, std::function<void()>&&);
+    virtual ~ActiveDOMCallbackMicrotask();
+
+    virtual Result run() override;
+
+private:
+    virtual void contextDestroyed() override;
+
+    // FIXME: It should not be necessary to have the queue as a member. Instead, it should
+    // be accessed via the ScriptExecutionContext, which should hold a reference to the relevent
+    // queue.
+    MicrotaskQueue& m_queue;
+    std::function<void()> m_task;
+};
+
 } // namespace WebCore
 
-#endif // TypesettingFeatures_h
+#endif // ActiveDOMCallbackMicrotask_h
