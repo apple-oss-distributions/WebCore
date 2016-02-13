@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,16 +23,10 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TypesettingFeatures_h
-#define TypesettingFeatures_h
+#include "config.h"
 
-namespace WebCore {
-    enum TypesettingFeature {
-        Kerning = 1 << 0,
-        Ligatures = 1 << 1,
-    };
+#if ENABLE(MAC_GESTURE_EVENTS)
 
-    typedef unsigned TypesettingFeatures;
-} // namespace WebCore
+#include <WebKitAdditions/GestureEvent.cpp>
 
-#endif // TypesettingFeatures_h
+#endif
