@@ -1,3 +1,803 @@
+2016-04-22  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r199881. rdar://problem/25879593
+
+    2016-04-22  Antti Koivisto  <antti@apple.com>
+
+            REGRESSION (r194898): Multi download of external SVG defs file by <use> xlinks:href (caching)
+            https://bugs.webkit.org/show_bug.cgi?id=156368
+            <rdar://problem/25611746>
+
+            Reviewed by Simon Fraser.
+
+            We would load svg resources with fragment identifier again because the encoding never matched.
+
+            Test: http/tests/svg/svg-use-external.html
+
+            * loader/TextResourceDecoder.cpp:
+            (WebCore::TextResourceDecoder::setEncoding):
+            (WebCore::TextResourceDecoder::hasEqualEncodingForCharset):
+
+                Encoding can depend on mime type. Add a comparison function that takes this into account.
+
+            (WebCore::findXMLEncoding):
+            * loader/TextResourceDecoder.h:
+            (WebCore::TextResourceDecoder::encoding):
+            * loader/cache/CachedCSSStyleSheet.h:
+            * loader/cache/CachedResource.h:
+            (WebCore::CachedResource::textResourceDecoder):
+
+                Add a way to get the TextResourceDecoder from a cached resource.
+
+            * loader/cache/CachedResourceLoader.cpp:
+            (WebCore::CachedResourceLoader::determineRevalidationPolicy):
+
+                Use the new comparison function.
+
+            * loader/cache/CachedSVGDocument.h:
+            * loader/cache/CachedScript.h:
+            * loader/cache/CachedXSLStyleSheet.h:
+
+2016-04-15  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r199598.
+
+    2016-04-15  Said Abou-Hallawa  <sabouhallawa@apple.com>
+
+            Calling SVGAnimatedPropertyTearOff::animationEnded() will crash if the SVG property is not animating
+            https://bugs.webkit.org/show_bug.cgi?id=156549
+
+            Reviewed by Darin Adler.
+
+            A speculative fix for a crash which may happen when calling animationEnded()
+            of any SVGAnimatedProperty while it is not animating.
+
+            * svg/SVGAnimatedTypeAnimator.h:
+            (WebCore::SVGAnimatedTypeAnimator::executeAction):
+
+2016-04-08  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r199253.
+
+    2016-04-08  Jer Noble  <jer.noble@apple.com>
+
+            Unreviewed 32-bit build fix; make type of std::min<> explicit.
+
+            * platform/audio/ios/AudioDestinationIOS.cpp:
+            (WebCore::AudioDestinationIOS::render):
+
+2016-04-08  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r199252.
+
+    2016-04-08  Jer Noble  <jer.noble@apple.com>
+
+            CRASH in AudioDestinationNode::render()
+            https://bugs.webkit.org/show_bug.cgi?id=156308
+
+            Reviewed by Eric Carlson.
+
+            Yet another math error in AudioDestinationIOS::render(). It is possible for the difference between
+            m_startSpareFrame and m_endSpareFrame to be greater than the numberOfFrames to be rendered. Protect
+            against this case by taking the min() of those two values and only advancing m_startSpareFrame by
+            that amount.  This guarantees that framesThisTime will never underflow, and that data will not be
+            written past the end of the ioData parameter.
+
+            * platform/audio/ios/AudioDestinationIOS.cpp:
+            (WebCore::AudioDestinationIOS::render):
+
+2016-04-06  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r199116. rdar://problem/25468815
+
+    2016-04-06  Jer Noble  <jer.noble@apple.com>
+
+            CRASH in AudioDestinationNode::render()
+            https://bugs.webkit.org/show_bug.cgi?id=156308
+            <rdar://problem/25468815>
+
+            Reviewed by Eric Carlson.
+
+
+            AudioDestinationNode::render() will crash when passed in a zero-length frame count. Rather than get into
+            this bad state, ASSERT() and bail out early in this case.
+
+            Also, address the situation in AudioDestinationIOS::render which can cause this 0-frame count to occur.
+
+            * Modules/webaudio/AudioDestinationNode.cpp:
+            (WebCore::AudioDestinationNode::render):
+            * platform/audio/ios/AudioDestinationIOS.cpp:
+            (WebCore::AudioDestinationIOS::render):
+
+2016-04-05  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r199042. rdar://problem/25533763
+
+    2016-04-04  Jer Noble  <jer.noble@apple.com>
+
+            [iOS] Crash when playing <video> after playing Web Audio
+            https://bugs.webkit.org/show_bug.cgi?id=156185
+            <rdar://problem/10177005>
+
+            Reviewed by Eric Carlson.
+
+            Off-by-one error in AudioDestinationIOS::render. The ivars m_firstSpareFrame and m_lastSpareFrame imply that
+            the sample range is inclusive, i.e. [m_firstSpareFrame .. m_lastSpareFrame], but the length of the range was
+            being calculated as if m_lastSpareFrame was exclusive; when the two were equal, the length was calculated as
+            0, rather than 1. This was caught by an ASSERT (and would have been caught by a downstream ASSERT had that one
+            not been present).
+
+            Fix the off-by-one by treating them as inclusive/exclusive--similar to C++ iterators--and renaming them to reflect
+            this: [m_startSpareFrame .. m_endSpareFrame). This corrects the "length" math which caused the crash.
+
+            * platform/audio/ios/AudioDestinationIOS.cpp:
+            (WebCore::AudioDestinationIOS::render):
+            * platform/audio/ios/AudioDestinationIOS.h:
+
+2016-04-05  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r198035. rdar://problem/25467558
+
+    2016-03-10  Jer Noble  <jer.noble@apple.com>
+
+            Web Audio becomes distorted after sample rate changes
+            https://bugs.webkit.org/show_bug.cgi?id=154538
+            <rdar://problem/24771292>
+
+            Reviewed by Darin Adler.
+
+            When the underlying audio hardware sample rate changes, the AudioUnit render callback will begin asking
+            for fewer or more frames. For example, when the sample rate goes from 44.1kHz to 48kHz, it will ask for
+            118 samples instead of 128. (And vice-versa, 140 samples instead of 128.) But the Web Audio engine can only
+            really handle requests in multiples of 128 samples. In the case where there are requests for < 128 samples,
+            actually render 128, but save off the unrequested samples in a separate bus. Then fill that bus during the
+            next request.
+
+            * platform/audio/AudioBus.cpp:
+            (WebCore::AudioBus::copyFromRange): Added utility method.
+            * platform/audio/AudioBus.h:
+            * platform/audio/ios/AudioDestinationIOS.cpp:
+            (WebCore::AudioDestinationIOS::AudioDestinationIOS): Create a "spare" bus.
+            (WebCore::assignAudioBuffersToBus): Moved from inside render.
+            (WebCore::AudioDestinationIOS::render): Save off extra samples to the "spare" bus.
+            * platform/audio/ios/AudioDestinationIOS.h:
+
+2016-04-01  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Rollout r198903. rdar://problem/25467558
+
+2016-03-31  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Roll out r191180. rdar://problem/25449273
+
+        Landed on behalf of Chris Dumez.
+
+        * html/parser/HTMLPreloadScanner.cpp:
+        (WebCore::TokenPreloadScanner::StartTagScanner::shouldPreload):
+        (WebCore::TokenPreloadScanner::tagIdFor): Deleted.
+        (WebCore::TokenPreloadScanner::initiatorFor): Deleted.
+        (WebCore::TokenPreloadScanner::StartTagScanner::processAttribute): Deleted.
+        (WebCore::TokenPreloadScanner::StartTagScanner::resourceType): Deleted.
+        * html/parser/HTMLPreloadScanner.h:
+
+2016-03-31  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r198035. rdar://problem/25467558
+
+    2016-03-10  Jer Noble  <jer.noble@apple.com>
+
+            Web Audio becomes distorted after sample rate changes
+            https://bugs.webkit.org/show_bug.cgi?id=154538
+            <rdar://problem/24771292>
+
+            Reviewed by Darin Adler.
+
+            When the underlying audio hardware sample rate changes, the AudioUnit render callback will begin asking
+            for fewer or more frames. For example, when the sample rate goes from 44.1kHz to 48kHz, it will ask for
+            118 samples instead of 128. (And vice-versa, 140 samples instead of 128.) But the Web Audio engine can only
+            really handle requests in multiples of 128 samples. In the case where there are requests for < 128 samples,
+            actually render 128, but save off the unrequested samples in a separate bus. Then fill that bus during the
+            next request.
+
+            * platform/audio/AudioBus.cpp:
+            (WebCore::AudioBus::copyFromRange): Added utility method.
+            * platform/audio/AudioBus.h:
+            * platform/audio/ios/AudioDestinationIOS.cpp:
+            (WebCore::AudioDestinationIOS::AudioDestinationIOS): Create a "spare" bus.
+            (WebCore::assignAudioBuffersToBus): Moved from inside render.
+            (WebCore::AudioDestinationIOS::render): Save off extra samples to the "spare" bus.
+            * platform/audio/ios/AudioDestinationIOS.h:
+
+2016-03-25  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r197856. rdar://problem/25152411
+
+    2016-03-09  Andreas Kling  <akling@apple.com>
+
+            ImageDocuments leak their world.
+            <https://webkit.org/b/155167>
+            <rdar://problem/24987363>
+
+            Reviewed by Antti Koivisto.
+
+            ImageDocument uses a special code path in ImageLoader in order to manually
+            control how the image is loaded. It has to do this because the ImageDocument
+            is really just a synthetic wrapper around a main resource that's an image.
+
+            This custom loading code had a bug where it would create a new CachedImage
+            and neglect to set its CachedResource::m_state flag to Pending (which is
+            normally set by CachedResource::load(), but we don't call that for these.)
+
+            This meant that when ImageDocument called CachedImage::finishLoading() to
+            trigger the notifyFinished() callback path, the image would look at its
+            loading state and see that it was Unknown (not Pending), and conclude that
+            it hadn't loaded yet. So we never got the notifyFinished() signal.
+
+            The world leaks here because ImageLoader slaps a ref on its <img> element
+            while it waits for the loading operation to complete. Once finished, whether
+            successfully or with an error, it derefs the <img>.
+
+            Since we never fired notifyFinished(), we ended up with an extra ref on
+            these <img> forever, and then the element kept its document alive too.
+
+            Test: fast/dom/ImageDocument-world-leak.html
+
+            * loader/ImageLoader.cpp:
+            (WebCore::ImageLoader::updateFromElement):
+
+2016-03-24  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge custom patch. rdar://problem/25152415.
+
+        * rendering/OrderIterator.cpp:
+
+2016-03-24  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r198157. rdar://problem/25271134
+
+    2016-03-14  Simon Fraser  <simon.fraser@apple.com>
+
+            Fix crash when reloading a page using requestAnimationFrame on iOS
+            https://bugs.webkit.org/show_bug.cgi?id=155465
+            rdar://problem/25100202
+
+            Reviewed by Tim Horton.
+
+            On iOS, it's possible for all clients for a DisplayRefreshMonitor
+            to be unregistered, but still get a subsequent displayDidRefresh() for that monitor.
+            In this case, we would remove(notFound) which release-asserts.
+
+            Fix by just checking for notFound.
+
+            Unable to test because requestAnimationFrame doesn't work in the simulator.
+
+            * platform/graphics/DisplayRefreshMonitorManager.cpp:
+            (WebCore::DisplayRefreshMonitorManager::displayDidRefresh):
+
+2016-03-24  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r195614. rdar://problem/24850429
+
+    2016-01-26  Philip Rogers  <pdr@chromium.org>
+
+            Let SVG images not taint canvases except when containing foreignObjects
+            https://bugs.webkit.org/show_bug.cgi?id=119639
+
+            Reviewed by Brent Fulgham.
+
+            r153876 caused SVG images to not taint canvases but the patch allowed
+            for subimage resources. This can be a problem if a subimage (e.g., data
+            uri image) contains a foreignObject which can violate security (e.g.,
+            visited links).
+
+            This patch updates SVGImage::hasSingleSecurityOrigin to check if the
+            image contains any foreignObjects or images that themselves contain
+            foreignObjects. SVG images without foreignObjects are allowed to not
+            taint canvases.
+
+            Canvas patterns are problematic because an animated SVG image can switch
+            between tainting and not tainting the canvas. A FIXME has been added to
+            solve this, and in the meantime we cause SVG images to taint patterns.
+
+            Tests: svg/as-image/svg-canvas-pattern-with-link-tainted.html
+                   svg/as-image/svg-canvas-svg-with-feimage-with-link-tainted.html
+                   svg/as-image/svg-canvas-svg-with-image-with-link-tainted.html
+
+            * html/canvas/CanvasPattern.cpp:
+            (WebCore::CanvasPattern::CanvasPattern):
+            (WebCore::CanvasPattern::~CanvasPattern):
+            * svg/SVGFEImageElement.cpp:
+            (WebCore::SVGFEImageElement::~SVGFEImageElement):
+            (WebCore::SVGFEImageElement::hasSingleSecurityOrigin):
+            (WebCore::SVGFEImageElement::clearResourceReferences):
+            * svg/SVGFEImageElement.h:
+            * svg/SVGImageElement.cpp:
+            (WebCore::SVGImageElement::create):
+            (WebCore::SVGImageElement::hasSingleSecurityOrigin):
+            (WebCore::SVGImageElement::isSupportedAttribute):
+            * svg/SVGImageElement.h:
+            * svg/graphics/SVGImage.cpp:
+            (WebCore::SVGImage::hasSingleSecurityOrigin):
+
+2016-03-21  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r197967. rdar://problem/25271137
+
+    2016-03-10  Said Abou-Hallawa  <sabouhallawa@apple.com>
+
+            REGRESSION: GuardMallloc crash in SVGListPropertyTearOff<SVGPointList>::processIncomingListItemWrapper
+            https://bugs.webkit.org/show_bug.cgi?id=154969
+
+            Reviewed by Darin Adler.
+
+            The life cycle of the SVGAnimatedPropertyTearOff::m_baseVal and m_animVal
+            was not correct. Like what was done in SVGAnimatedListPropertyTearOff,
+            m_baseVal and m_animVal have to be raw RefCounted pointers. When requested
+            through, SVGAnimatedPropertyTearOff::baseVal() and animVal() they are
+            encapsulated in a RefPtr to ensure they existence as long as they are
+            referenced. When the animated property object (which is stored in either
+            m_baseVal or m_animVal) is not referenced by anyone, it is going to be
+            deleted. In the destructor of their class, SVGAnimatedPropertyTearOff
+            will be notified of this deletion through propertyWillBeDeleted() to clean
+            its member m_baseVal or m_animVal.
+
+            * bindings/scripts/CodeGeneratorJS.pm:
+            (NativeToJSValue): Now all the SVG animated property return RefPtrs. In
+            addition to that, SVGViewSpec.transform also returns
+            RefPtr<SVGTransformListPropertyTearOff>.
+
+            * svg/properties/SVGAnimatedListPropertyTearOff.h:
+            (WebCore::SVGAnimatedListPropertyTearOff::animVal):
+            (WebCore::SVGAnimatedListPropertyTearOff::currentAnimatedValue):
+            (WebCore::SVGAnimatedListPropertyTearOff::animationStarted):
+            (WebCore::SVGAnimatedListPropertyTearOff::animationEnded):
+            (WebCore::SVGAnimatedListPropertyTearOff::synchronizeWrappersIfNeeded):
+            (WebCore::SVGAnimatedListPropertyTearOff::isAnimating):
+            (WebCore::SVGAnimatedListPropertyTearOff::propertyWillBeDeleted):
+            Change propertyWillBeDeleted() to be virtual and make it takes an SVGProperty*.
+            Rename m_animatingAnimVal to be m_animatedProperty. Add isAnimating() which
+            returns true if m_animatedProperty is not null. Use isAnimating() instead of
+            m_isAnimating because it's deleted from the base class.
+
+            * svg/properties/SVGAnimatedProperty.cpp:
+            (WebCore::SVGAnimatedProperty::SVGAnimatedProperty):
+            (WebCore::SVGAnimatedProperty::~SVGAnimatedProperty):
+            * svg/properties/SVGAnimatedProperty.h:
+            (WebCore::SVGAnimatedProperty::isAnimating):
+            (WebCore::SVGAnimatedProperty::propertyWillBeDeleted):
+            Delete m_isAnimating since its value can be deduced from the value of
+            m_animatedProperty in the derived class. Add propertyWillBeDeleted() and
+            isAnimating() as virtual functions with the default behavior.
+
+            * svg/properties/SVGAnimatedPropertyTearOff.h:
+            (WebCore::SVGAnimatedPropertyTearOff::baseVal):
+            (WebCore::SVGAnimatedPropertyTearOff::animVal):
+            Like SVGAnimatedListPropertyTearOff::baseVal() and animVal() create the
+            value if it does not exist. Keep a raw RefCounted pointer but return a
+            RefPtr.
+
+            (WebCore::SVGAnimatedPropertyTearOff::isAnimating):
+            (WebCore::SVGAnimatedPropertyTearOff::propertyWillBeDeleted):
+            Override virtual functions.
+
+            (WebCore::SVGAnimatedPropertyTearOff::currentAnimatedValue):
+            (WebCore::SVGAnimatedPropertyTearOff::animationStarted):
+            (WebCore::SVGAnimatedPropertyTearOff::animationEnded):
+            (WebCore::SVGAnimatedPropertyTearOff::animValWillChange):
+            (WebCore::SVGAnimatedPropertyTearOff::animValDidChange):
+            Replace m_isAnimating with isAnimating(). Ensure that we get a new animated
+            property through animVal() and store it in a RefPtr to ensure it will not
+            go away while animating.
+
+            * svg/properties/SVGAnimatedStaticPropertyTearOff.h:
+            (WebCore::SVGAnimatedStaticPropertyTearOff::isAnimating):
+            (WebCore::SVGAnimatedStaticPropertyTearOff::currentAnimatedValue):
+            (WebCore::SVGAnimatedStaticPropertyTearOff::animationStarted):
+            (WebCore::SVGAnimatedStaticPropertyTearOff::animationEnded):
+            (WebCore::SVGAnimatedStaticPropertyTearOff::animValWillChange):
+            (WebCore::SVGAnimatedStaticPropertyTearOff::animValDidChange):
+            Add isAnimating() and replace all the instances of m_isAnimating with calls
+            to isAnimating().
+
+            * svg/properties/SVGPropertyTearOff.h:
+            (WebCore::SVGPropertyTearOff::animatedProperty):
+            (WebCore::SVGPropertyTearOff::setAnimatedProperty):
+            (WebCore::SVGPropertyTearOff::contextElement):
+            (WebCore::SVGPropertyTearOff::SVGPropertyTearOff):
+            (WebCore::SVGPropertyTearOff::~SVGPropertyTearOff):
+            SVGPropertyTearOff is what SVGAnimatedPropertyTearOff creates for its
+            baseVal() and animVal() values. These values can be null anytime once
+            they are not referenced. The SVGAnimatedPropertyTearOff holds only raw
+            RefCounted pointer for them. So (1) SVGPropertyTearOff needs to hold a
+            RefPtr for its SVGAnimatedProperty and (2) it needs to notify its
+            SVGAnimatedProperty when it's deleted by calling propertyWillBeDeleted()
+            from the destructor. Also there is no need to get the contextElement()
+            and save it in class member, m_contextElement since it can be always be
+            retrieved from SVGAnimatedProperty::contextElement().
+
+2016-03-18  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r192285.
+
+        * dom/ContainerNode.cpp:
+        (WebCore::ContainerNode::ensurePreInsertionValidity): Added.
+        * dom/ContainerNode.h:
+
+    2015-11-10  Pranjal Jumde  <pjumde@apple.com>
+
+            Fixed crash loading Mozilla layout test editor/libeditor/crashtests/431086-1.xhtml.
+            https://bugs.webkit.org/show_bug.cgi?id=150252
+            <rdar://problem/23149470>
+
+            Reviewed by Brent Fulgham.
+
+            * Source/WebCore/editing/ios/EditorIOS.mm
+            * Source/WebCore/editing/mac/EditorMac.mm
+              In Editor::fontForSelection moved the node removal code, so that the
+              node is only removed if style is not NULL.
+            * Source/WebCore/editing/cocoa/EditorCocoa.mm
+              In Editor::styleForSelectionStart checking if the parentNode can 
+              accept the styleElement node.
+
+2016-03-18  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r198377.
+
+    2016-03-17  Brent Fulgham  <bfulgham@apple.com>
+
+            [XSS Auditor] Off by one in XSSAuditor::canonicalizedSnippetForJavaScript()
+            https://bugs.webkit.org/show_bug.cgi?id=155624
+            <rdar://problem/25219962>
+
+            Unreviewed merge from Blink (patch by Tom Sepez <tsepez@chromium.org>):
+            <https://src.chromium.org/viewvc/blink?revision=201803&view=revision>
+
+            Test: http/tests/security/xssAuditor/script-tag-with-trailing-script-and-urlencode.html
+
+            * html/parser/XSSAuditor.cpp:
+            (WebCore::XSSAuditor::canonicalizedSnippetForJavaScript): Correct off-by-one error.
+
+2016-03-18  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r198372.
+
+    2016-03-17  Zalan Bujtas  <zalan@apple.com>
+
+            Don't initiate a style recall while drawing text 
+            https://bugs.webkit.org/show_bug.cgi?id=155618
+
+            Reviewed by Simon Fraser.
+
+            This patch ensures that we don't initiate a style recalc while in the middle of text drawing.
+
+            Test: fast/canvas/crash-while-resizing-canvas.html
+
+            * html/canvas/CanvasRenderingContext2D.cpp:
+            (WebCore::CanvasRenderingContext2D::drawTextInternal):
+
+2016-03-18  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r198370.
+
+    2016-03-17  Eric Carlson  <eric.carlson@apple.com>
+
+            Improve some metadata tests
+            https://bugs.webkit.org/show_bug.cgi?id=155616
+
+            Reviewed by Saam Barati.
+
+            * html/track/DataCue.cpp:
+            (WebCore::DataCue::DataCue):
+            (WebCore::DataCue::setData):
+
+2016-03-18  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r198361.
+
+    2016-03-17  Brent Fulgham  <bfulgham@apple.com>
+
+            Some media tests are flaky.
+            https://bugs.webkit.org/show_bug.cgi?id=155614
+
+            Reviewed by Eric Carlson.
+
+            * html/track/TextTrack.cpp:
+            (WebCore::TextTrack::~TextTrack):
+
+2016-03-18  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r192770.
+
+    2015-11-25  Pranjal Jumde  <pjumde@apple.com>
+
+            Checks for buffer-overflows when reading characters from textRun
+            https://bugs.webkit.org/show_bug.cgi?id=151055
+            <rdar://problem/23251789>
+
+            Reviewed by Myles C. Maxfield.
+
+            Prevents an off by one error when adding the last font data to the GlyphBuffer.
+
+            * Source/WebCore/platform/graphics/WidthIterator.cpp:
+            * Source/WebCore/platform/graphics/FontCascade.cpp:
+
+2016-03-18  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r192499.
+
+    2015-11-16  Pranjal Jumde  <pjumde@apple.com>
+
+            Fixes the buffer-overflow when reading characters from textRun
+            https://bugs.webkit.org/attachment.cgi?bugid=151055
+            <rdar://problem/23251789>
+
+            Reviewed by Brent Fulgham.
+
+            * platform/graphics/FontCascade.cpp
+
+2016-03-18  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r192252.
+
+    2015-11-10  Zalan Bujtas  <zalan@apple.com>
+
+            Force display: block on ::-webkit-media-controls.
+            https://bugs.webkit.org/show_bug.cgi?id=149178
+            <rdar://problem/23448397>
+
+            Reviewed by Simon Fraser.
+
+            This patch ensures that we always have a block level container for media controls
+            so that continuation never needs to split RenderMedia into multiple subtrees.
+
+            Current inline continuation logic assumes that only inline elements with RenderInline
+            type of renderers participate in continuation. This is mostly the case since other inline renderers
+            such as RenderReplaced, RenderImage, RenderEmbeddedObject etc can't have (accessible) children.
+            (Unlike video::-webkit-media-controls)
+
+            Test: media/webkit-media-controls-display.html
+
+            * Modules/mediacontrols/mediaControlsApple.css:
+            (::-webkit-media-controls):
+            * Modules/mediacontrols/mediaControlsiOS.css:
+            (::-webkit-media-controls):
+            * css/mediaControls.css:
+            (::-webkit-media-controls):
+
+2016-03-18  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r192853.
+
+    2015-11-30  Simon Fraser  <simon.fraser@apple.com>
+
+            Fix possible crash with animated layers in reflections
+            https://bugs.webkit.org/show_bug.cgi?id=151689
+            rdar://problem/23018612
+
+            Reviewed by Darin Adler.
+
+            Reflections create additional PlatformCALayers whose owner is set to the GraphicsLayerCA.
+            Those PlatformCALayers need their owner pointer cleared out when the GraphicsLayerCA
+            is destroyed.
+
+            Tested by compositing/reflections/nested-reflection-transition.html
+
+            * platform/graphics/ca/GraphicsLayerCA.cpp:
+            * platform/graphics/ca/GraphicsLayerCA.h:
+
+2016-03-14  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r197125. rdar://problem/24860685
+
+    2016-02-25  Said Abou-Hallawa  <sabouhallawa@apple.com>
+
+            REGRESSION (r196268): Many assertion failures and crashes on SVG path animation tests when JS garbage collection happens quickly
+            https://bugs.webkit.org/show_bug.cgi?id=154331
+
+            Reviewed by Darin Adler.
+
+            This is not an actual regression. The bug did exist before r196268 but
+            the whole document was leaking once an SVGAnimatedProperty was created
+            so there was no way to produce this bug. After fixing the leak, one crash
+            and one assert got uncovered. Both of them happen because of the fact:
+            "if an SVGAnimatedProperty is not referenced it will be deleted."
+
+            * svg/SVGPathElement.cpp:
+            (WebCore::SVGPathElement::lookupOrCreateDWrapper):
+            The code in this function was assuming that the wrapper will be created
+            only once which happens when SVGAnimatedProperty::lookupOrCreateWrapper()
+            is called. Before making this single call, lookupOrCreateDWrapper() was
+            building an initial SVGPathSegList from byte stream. But now
+            SVGAnimatedProperty::lookupWrapper() can return false even after creating
+            the SVGAnimatedProperty because it was deleted later. Calling
+            buildSVGPathSegListFromByteStream() more than once was causing
+            SVGAnimatedListPropertyTearOff::animationStarted() to fire the assertion
+            ASSERT(m_values.size() == m_wrappers.size()) because the path segments were
+            appended twice to m_values which is in fact SVGPathElement::m_pathSegList.value.
+            The fix is to build the initial SVGPathSegList only once which should happen
+            when m_pathSegList.value.isEmpty().
+
+            (WebCore::SVGPathElement::animatedPropertyWillBeDeleted):
+            * svg/SVGPathElement.h:
+            * svg/properties/SVGAnimatedPathSegListPropertyTearOff.h:
+            (WebCore::SVGAnimatedPathSegListPropertyTearOff::~SVGAnimatedPathSegListPropertyTearOff):
+            SVGPathElement is assuming the following equivalence relation:
+            m_pathSegList.shouldSynchronize ~ SVGAnimatedProperty_is_created_and_not_null.
+            SVGPathElement::animatedPathSegList() and animatedNormalizedPathSegList()
+            set m_pathSegList.shouldSynchronize to true when SVGAnimatedProperty is
+            created but nothing sets m_pathSegList.shouldSynchronize back to false.
+            This was not a problem when the SVGAnimatedProperty was leaking but after
+            ensuring it is deleted when it is not referenced this equivalence relation
+            becomes untrue sometimes. This caused SVGPathElement::svgAttributeChanged()
+            to crash when we check m_pathSegList.shouldSynchronize and if it is true we
+            assume that SVGAnimatedProperty::lookupWrapper() will return a non-null pointer
+            and therefore we deference this pointer and call SVGAnimatedProperty::isAnimating().
+            To fix this crash we need to set m_pathSegList.shouldSynchronize back to false
+            when the associated SVGAnimatedProperty is deleted.
+
+2016-03-14  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r196670. rdar://problem/24860681
+
+    2016-02-16  Said Abou-Hallawa  <sabouhallawa@apple.com>
+
+            REGRESSION(r196268): WTFCrashWithSecurityImplication on SVG path animation tests
+            https://bugs.webkit.org/show_bug.cgi?id=154221
+
+            Reviewed by Brent Fulgham.
+
+            In r196268, a destructor was added to SVGListPropertyTearOff that notifies
+            its wrapper (the SVGAnimatedListPropertyTearoff) about its deletion. This
+            allows the wrapper to nullify any references to the wrapped content.
+
+            We needed to do the same thing for SVGPathSegListPropertyTearOff. Both
+            SVGPathSegListPropertyTearOff and SVGListPropertyTearOff inherit from
+            SVGListProperty and both hold pointers to SVGAnimatedListPropertyTearOff
+            which needs to be notified.
+
+            Tests: exiting svg path animation tests should not crash.
+
+            * svg/properties/SVGPathSegListPropertyTearOff.h:
+            (WebCore::SVGPathSegListPropertyTearOff::~SVGPathSegListPropertyTearOff):
+
+2016-03-14  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r196268. rdar://problem/24748259
+
+    2016-02-08  Said Abou-Hallawa  <sabouhallawa@apple.com>
+
+            REGRESSION(r181345): SVG polyline and polygon leak page
+            https://bugs.webkit.org/show_bug.cgi?id=152759
+
+            Reviewed by Darin Adler.
+
+            The leak happens because of cyclic reference between SVGListPropertyTearOff
+            and SVGAnimatedListPropertyTearOff which is derived from SVGAnimatedProperty.
+            There is also cyclic reference between SVGAnimatedProperty and SVGElement
+            and this causes the whole document to be leaked. So if the JS requests, for
+            example, an instance of SVGPolylineElement.points, the whole document will be
+            leaked.
+
+            The fix depends on having the cyclic reference as is since the owning and the
+            owned classes have to live together if any of them is referenced. But the owning
+            class caches a raw 'ref-counted' pointer of the owned class. If it is requested
+            for an instance of the owned class it returned a RefPtr<> of it. Once the owned
+            class is not used, it can delete itself. The only thing needed here is to notify
+            the owner class of the deletion so it cleans its caches and be able to create a
+            new pointer if it is requested for an instance of the owned class later.
+
+            Revert the change of r181345 in SVGAnimatedProperty::lookupOrCreateWrapper()
+            to break the cyclic reference between SVGElement and SVGAnimatedProperty.
+
+            Also apply the same approach in SVGAnimatedListPropertyTearOff::baseVal() and
+            animVal() to break cyclic reference between SVGListPropertyTearOff and
+            SVGAnimatedListPropertyTearOff.
+
+            Test: svg/animations/smil-leak-list-property-instances.svg
+
+            * bindings/scripts/CodeGeneratorJS.pm:
+            (NativeToJSValue): The SVG non-string list tear-off properties became of
+            type RefPtr<>. So we need to use get() with the casting expressions.
+
+            * svg/SVGMarkerElement.cpp:
+            (WebCore::SVGMarkerElement::orientType):
+            Use 'auto' type for the return of SVGAnimatedProperty::lookupWrapper().
+
+            * svg/SVGPathElement.cpp:
+            (WebCore::SVGPathElement::pathByteStream):
+            (WebCore::SVGPathElement::lookupOrCreateDWrapper):
+            Since SVGAnimatedProperty::lookupWrappe() returns a RefPtr<> we need to
+            use get() for the casting expressions.
+
+            (WebCore::SVGPathElement::pathSegList):
+            (WebCore::SVGPathElement::normalizedPathSegList):
+            (WebCore::SVGPathElement::animatedPathSegList):
+            (WebCore::SVGPathElement::animatedNormalizedPathSegList):
+            * svg/SVGPathElement.h:
+            Change the return value from raw pointer to RefPtr<>.
+
+            * svg/SVGPathSegWithContext.h:
+            (WebCore::SVGPathSegWithContext::animatedProperty):
+            Change the return type to be RefPtr<> to preserve the value from being deleted.
+
+            * svg/SVGPolyElement.cpp:
+            (WebCore::SVGPolyElement::parseAttribute):
+            Since SVGAnimatedProperty::lookupWrapper() returns a RefPtr<> we need to
+            use get() for the casting expressions.
+
+            (WebCore::SVGPolyElement::points):
+            (WebCore::SVGPolyElement::animatedPoints):
+            * svg/SVGPolyElement.h:
+            Change the return value from raw pointer to RefPtr<>.
+
+            * svg/SVGViewSpec.cpp:
+            (WebCore::SVGViewSpec::setTransformString):
+            Since SVGAnimatedProperty::lookupWrapper() returns a RefPtr<> we need to
+            use get() for the casting expressions.
+
+            (WebCore::SVGViewSpec::transform):
+            * svg/SVGViewSpec.h:
+            Change the return value from raw pointer to RefPtr<>.
+
+            * svg/properties/SVGAnimatedListPropertyTearOff.h:
+            (WebCore::SVGAnimatedListPropertyTearOff::baseVal):
+            (WebCore::SVGAnimatedListPropertyTearOff::animVal):
+            Change the return value from raw pointer to RefPtr<> and change the cached
+            value from RefPtr<> to raw pointer. If the property is null, it will be
+            created, its raw pointer will be cached and the only ref-counted RefPtr<>
+            will be returned. This will guarantee, the RefPtr<> will be deleted once
+            it is not used anymore.
+
+            (WebCore::SVGAnimatedListPropertyTearOff::propertyWillBeDeleted):
+            Clean the raw pointer caches m_baseVal and m_animVal upon deleting the
+            actual pointer. This function will be called from the destructor of
+            SVGListPropertyTearOff.
+
+            (WebCore::SVGAnimatedListPropertyTearOff::findItem):
+            (WebCore::SVGAnimatedListPropertyTearOff::removeItemFromList):
+            We have to ensure the baseVal() is created before using it.
+
+            (WebCore::SVGAnimatedListPropertyTearOff::detachListWrappers):
+            (WebCore::SVGAnimatedListPropertyTearOff::currentAnimatedValue):
+            (WebCore::SVGAnimatedListPropertyTearOff::animationStarted):
+            (WebCore::SVGAnimatedListPropertyTearOff::animationEnded):
+            (WebCore::SVGAnimatedListPropertyTearOff::synchronizeWrappersIfNeeded):
+            (WebCore::SVGAnimatedListPropertyTearOff::animValWillChange):
+            (WebCore::SVGAnimatedListPropertyTearOff::animValDidChange):
+            For animation, a separate RefPtr<> 'm_animatingAnimVal' will be assigned
+            to the animVal(). This will prevent deleting m_animVal while animation.
+
+            * svg/properties/SVGAnimatedPathSegListPropertyTearOff.h:
+            (WebCore::SVGAnimatedPathSegListPropertyTearOff::baseVal):
+            (WebCore::SVGAnimatedPathSegListPropertyTearOff::animVal):
+            Same as what is done in SVGAnimatedListPropertyTearOff.
+
+            (WebCore::SVGAnimatedPathSegListPropertyTearOff::findItem):
+            (WebCore::SVGAnimatedPathSegListPropertyTearOff::removeItemFromList):
+            Same as what is done in SVGAnimatedListPropertyTearOff.
+
+            * svg/properties/SVGAnimatedProperty.h:
+            (WebCore::SVGAnimatedProperty::lookupOrCreateWrapper):
+            Change the return value from raw reference to Ref<> and change the
+            cached value from Ref<> to raw pointer. This reverts the change of
+            r181345 in this function.
+
+            (WebCore::SVGAnimatedProperty::lookupWrapper):
+            Change the return value from raw pointer to RefPtr<>.
+
+            * svg/properties/SVGAnimatedPropertyMacros.h:
+            Use 'auto' type for the return of SVGAnimatedProperty::lookupWrapper().
+
+            * svg/properties/SVGAnimatedTransformListPropertyTearOff.h:
+            (WebCore::SVGAnimatedTransformListPropertyTearOff::baseVal):
+            (WebCore::SVGAnimatedTransformListPropertyTearOff::animVal):
+            Same as what is done in SVGAnimatedListPropertyTearOff.
+
+            * svg/properties/SVGListPropertyTearOff.h:
+            (WebCore::SVGListPropertyTearOff::~SVGListPropertyTearOff):
+            Call the SVGAnimatedListPropertyTearOff::propertyWillBeDeleted() to clean
+            its raw pointers when the RefPtr<> deletes itself.
+
 2016-02-12  Babak Shafiei  <bshafiei@apple.com>
 
         Merge r196401.

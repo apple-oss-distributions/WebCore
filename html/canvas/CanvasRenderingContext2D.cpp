@@ -1818,6 +1818,16 @@ RefPtr<CanvasPattern> CanvasRenderingContext2D::createPattern(HTMLImageElement* 
         return CanvasPattern::create(Image::nullImage(), repeatX, repeatY, true);
 
     bool originClean = cachedImage->isOriginClean(canvas()->securityOrigin());
+
+    // FIXME: SVG images with animations can switch between clean and dirty (leaking cross-origin
+    // data). We should either:
+    //   1) Take a fixed snapshot of an SVG image when creating a pattern and determine then whether
+    //      the origin is clean.
+    //   2) Dynamically verify the origin checks at draw time, and dirty the canvas accordingly.
+    // To be on the safe side, taint the origin for all patterns containing SVG images for now.
+    if (cachedImage->image()->isSVGImage())
+        originClean = false;
+
     return CanvasPattern::create(cachedImage->imageForRenderer(image->renderer()), repeatX, repeatY, originClean);
 }
 
@@ -2322,6 +2332,9 @@ Ref<TextMetrics> CanvasRenderingContext2D::measureText(const String& text)
 
 void CanvasRenderingContext2D::drawTextInternal(const String& text, float x, float y, bool fill, float maxWidth, bool useMaxWidth)
 {
+    const auto& fontProxy = this->fontProxy();
+    const FontMetrics& fontMetrics = fontProxy.fontMetrics();
+
     GraphicsContext* c = drawingContext();
     if (!c)
         return;
@@ -2341,16 +2354,12 @@ void CanvasRenderingContext2D::drawTextInternal(const String& text, float x, flo
     if (fill && gradient && gradient->isZeroSize())
         return;
 
-    const auto& fontProxy = this->fontProxy();
-    const FontMetrics& fontMetrics = fontProxy.fontMetrics();
-
     String normalizedText = text;
     normalizeSpaces(normalizedText);
 
     // FIXME: Need to turn off font smoothing.
 
     RenderStyle* computedStyle;
-    canvas()->document().updateStyleIfNeeded();
     TextDirection direction = toTextDirection(state().direction, &computedStyle);
     bool isRTL = direction == RTL;
     bool override = computedStyle ? isOverride(computedStyle->unicodeBidi()) : false;
