@@ -631,7 +631,7 @@ private:
     void scheduleNextSourceChild();
     void loadNextSourceChild();
     void userCancelledLoad();
-    void clearMediaPlayer(int flags);
+    void clearMediaPlayer(DelayedActionType flags);
     bool havePotentialSourceChild();
     void noneSupported();
     void cancelPendingEventsAndCallbacks();
@@ -718,6 +718,7 @@ private:
     virtual PlatformMediaSession::MediaType mediaType() const override;
     virtual PlatformMediaSession::MediaType presentationType() const override;
     virtual PlatformMediaSession::DisplayType displayType() const override;
+    PlatformMediaSession::CharacteristicsFlags characteristics() const final;
     virtual void suspendPlayback() override;
     virtual void mayResumePlayback(bool shouldResume) override;
     virtual String mediaSessionTitle() const override;
@@ -735,6 +736,7 @@ private:
     void unregisterWithDocument(Document&);
 
     void updateCaptionContainer();
+    void ensureMediaControlsShadowRoot();
 
 #if ENABLE(WIRELESS_PLAYBACK_TARGET)
     virtual void documentWillSuspendForPageCache() override final;
@@ -879,9 +881,11 @@ private:
     bool m_havePreparedToPlay : 1;
     bool m_parsingInProgress : 1;
     bool m_elementIsHidden : 1;
+    bool m_creatingControls : 1;
 
 #if ENABLE(MEDIA_CONTROLS_SCRIPT)
     bool m_mediaControlsDependOnPageScaleFactor : 1;
+    bool m_haveSetUpCaptionContainer : 1;
 #endif
 
 #if ENABLE(VIDEO_TRACK)

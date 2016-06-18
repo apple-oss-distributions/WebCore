@@ -56,9 +56,12 @@ private:
 
     MediaSessionManageriOS();
 
+    void removeSession(PlatformMediaSession&) override;
+
     virtual bool sessionWillBeginPlayback(PlatformMediaSession&) override;
     virtual void sessionWillEndPlayback(PlatformMediaSession&) override;
-    
+    void clientCharacteristicsChanged(PlatformMediaSession&) override;
+
     void updateNowPlayingInfo();
     
     virtual void resetRestrictions() override;
@@ -66,8 +69,14 @@ private:
     virtual void configureWireLessTargetMonitoring() override;
 
     virtual bool sessionCanLoadMedia(const PlatformMediaSession&) const override;
+
+    PlatformMediaSession* nowPlayingEligibleSession();
     
     RetainPtr<WebMediaSessionHelper> m_objcObserver;
+    double m_reportedRate { 0 };
+    double m_reportedDuration { 0 };
+    String m_reportedTitle;
+    bool m_nowPlayingActive { false };
     bool m_isInBackground { false };
 };
 
