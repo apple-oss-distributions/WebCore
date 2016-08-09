@@ -5357,18 +5357,9 @@ void Document::initSecurityContext()
 
 void Document::initContentSecurityPolicy()
 {
-    if (!m_frame->tree().parent())
+    if (!m_frame->tree().parent() || (!shouldInheritSecurityOriginFromOwner(m_url) && !isPluginDocument()))
         return;
 
-    if (!shouldInheritSecurityOriginFromOwner(m_url) && !isPluginDocument()) {
-        // Per <http://www.w3.org/TR/upgrade-insecure-requests/>, we need to retain an ongoing set of upgraded
-        // requests in new navigation contexts. Although this information is present when we construct the
-        // Document object, it is discard in the subsequent 'clear' statements below. So, we must capture it
-        ASSERT(m_frame->tree().parent()->document());
-        contentSecurityPolicy()->copyUpgradeInsecureRequestStateFrom(*m_frame->tree().parent()->document()->contentSecurityPolicy());
-        return;
-    }
-    
     contentSecurityPolicy()->copyStateFrom(m_frame->tree().parent()->document()->contentSecurityPolicy());
 }
 
