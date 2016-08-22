@@ -30,10 +30,14 @@
  */
 
 #include "config.h"
+
+#if ENABLE(WEB_TIMING)
 #include "Performance.h"
 
 #include "Document.h"
 #include "DocumentLoader.h"
+#include "EventNames.h"
+#include "Frame.h"
 #include "PerformanceEntry.h"
 #include "PerformanceNavigation.h"
 #include "PerformanceResourceTiming.h"
@@ -42,22 +46,14 @@
 #include "ResourceResponse.h"
 #include <wtf/CurrentTime.h>
 
-#if ENABLE(WEB_TIMING)
-
-#include "Frame.h"
-
 namespace WebCore {
 
-#if ENABLE(RESOURCE_TIMING)
 static const size_t defaultResourceTimingBufferSize = 150;
-#endif
 
-Performance::Performance(Frame* frame)
-    : DOMWindowProperty(frame)
-#if ENABLE(RESOURCE_TIMING)
+Performance::Performance(Frame& frame)
+    : DOMWindowProperty(&frame)
     , m_resourceTimingBufferSize(defaultResourceTimingBufferSize)
-#endif // ENABLE(RESOURCE_TIMING)
-    , m_referenceTime(frame->document()->loader()->timing().referenceMonotonicTime())
+    , m_referenceTime(frame.document()->loader() ? frame.document()->loader()->timing().referenceMonotonicTime() : monotonicallyIncreasingTime())
 #if ENABLE(USER_TIMING)
     , m_userTiming(nullptr)
 #endif // ENABLE(USER_TIMING)
@@ -72,7 +68,7 @@ Performance::~Performance()
 ScriptExecutionContext* Performance::scriptExecutionContext() const
 {
     if (!frame())
-        return 0;
+        return nullptr;
     return frame()->document();
 }
 
@@ -92,14 +88,11 @@ PerformanceTiming* Performance::timing() const
     return m_timing.get();
 }
 
-#if ENABLE(PERFORMANCE_TIMELINE)
-PassRefPtr<PerformanceEntryList> Performance::webkitGetEntries() const
+RefPtr<PerformanceEntryList> Performance::getEntries() const
 {
     RefPtr<PerformanceEntryList> entries = PerformanceEntryList::create();
 
-#if ENABLE(RESOURCE_TIMING)
     entries->appendAll(m_resourceTimingBuffer);
-#endif // ENABLE(RESOURCE_TIMING)
 
 #if ENABLE(USER_TIMING)
     if (m_userTiming) {
@@ -112,68 +105,62 @@ PassRefPtr<PerformanceEntryList> Performance::webkitGetEntries() const
     return entries;
 }
 
-PassRefPtr<PerformanceEntryList> Performance::webkitGetEntriesByType(const String& entryType)
+RefPtr<PerformanceEntryList> Performance::getEntriesByType(const String& entryType)
 {
     RefPtr<PerformanceEntryList> entries = PerformanceEntryList::create();
 
-#if ENABLE(RESOURCE_TIMING)
-    if (equalIgnoringCase(entryType, "resource"))
+    if (equalLettersIgnoringASCIICase(entryType, "resource")) {
         for (auto& resource : m_resourceTimingBuffer)
             entries->append(resource);
-#endif // ENABLE(RESOURCE_TIMING)
+    }
 
 #if ENABLE(USER_TIMING)
     if (m_userTiming) {
-        if (equalIgnoringCase(entryType, "mark"))
+        if (equalLettersIgnoringASCIICase(entryType, "mark"))
             entries->appendAll(m_userTiming->getMarks());
-        else if (equalIgnoringCase(entryType, "measure"))
+        else if (equalLettersIgnoringASCIICase(entryType, "measure"))
             entries->appendAll(m_userTiming->getMeasures());
     }
-#endif // ENABLE(USER_TIMING)
+#endif
 
     entries->sort();
     return entries;
 }
 
-PassRefPtr<PerformanceEntryList> Performance::webkitGetEntriesByName(const String& name, const String& entryType)
+RefPtr<PerformanceEntryList> Performance::getEntriesByName(const String& name, const String& entryType)
 {
     RefPtr<PerformanceEntryList> entries = PerformanceEntryList::create();
 
-#if ENABLE(RESOURCE_TIMING)
-    if (entryType.isNull() || equalIgnoringCase(entryType, "resource"))
+    if (entryType.isNull() || equalLettersIgnoringASCIICase(entryType, "resource")) {
         for (auto& resource : m_resourceTimingBuffer) {
             if (resource->name() == name)
                 entries->append(resource);
         }
-#endif // ENABLE(RESOURCE_TIMING)
+    }
 
 #if ENABLE(USER_TIMING)
     if (m_userTiming) {
-        if (entryType.isNull() || equalIgnoringCase(entryType, "mark"))
+        if (entryType.isNull() || equalLettersIgnoringASCIICase(entryType, "mark"))
             entries->appendAll(m_userTiming->getMarks(name));
-        if (entryType.isNull() || equalIgnoringCase(entryType, "measure"))
+        if (entryType.isNull() || equalLettersIgnoringASCIICase(entryType, "measure"))
             entries->appendAll(m_userTiming->getMeasures(name));
     }
-#endif // ENABLE(USER_TIMING)
+#endif
 
     entries->sort();
     return entries;
 }
 
-#endif // ENABLE(PERFORMANCE_TIMELINE)
-
-#if ENABLE(RESOURCE_TIMING)
-
-void Performance::webkitClearResourceTimings()
+void Performance::clearResourceTimings()
 {
     m_resourceTimingBuffer.clear();
 }
 
-void Performance::webkitSetResourceTimingBufferSize(unsigned size)
+void Performance::setResourceTimingBufferSize(unsigned size)
 {
     m_resourceTimingBufferSize = size;
     if (isResourceTimingBufferFull())
-        dispatchEvent(Event::create(eventNames().webkitresourcetimingbufferfullEvent, false, false));
+        dispatchEvent(Event::create(eventNames().resourcetimingbufferfullEvent, false, false));
 }
 
 void Performance::addResourceTiming(const String& initiatorName, Document* initiatorDocument, const ResourceRequest& request, const ResourceResponse& response, double initiationTime, double finishTime)
@@ -186,15 +173,13 @@ void Performance::addResourceTiming(const String& initiatorName, Document* initi
     m_resourceTimingBuffer.append(entry);
 
     if (isResourceTimingBufferFull())
-        dispatchEvent(Event::create(eventNames().webkitresourcetimingbufferfullEvent, false, false));
+        dispatchEvent(Event::create(eventNames().resourcetimingbufferfullEvent, false, false));
 }
 
 bool Performance::isResourceTimingBufferFull()
 {
     return m_resourceTimingBuffer.size() >= m_resourceTimingBufferSize;
 }
-
-#endif // ENABLE(RESOURCE_TIMING)
 
 #if ENABLE(USER_TIMING)
 void Performance::webkitMark(const String& markName, ExceptionCode& ec)
@@ -231,7 +216,7 @@ void Performance::webkitClearMeasures(const String& measureName)
 
 double Performance::now() const
 {
-    double nowSeconds = WTF::monotonicallyIncreasingTime() - m_referenceTime;
+    double nowSeconds = monotonicallyIncreasingTime() - m_referenceTime;
     const double resolutionSeconds = 0.000005;
     return 1000.0 * floor(nowSeconds / resolutionSeconds) * resolutionSeconds;
 }

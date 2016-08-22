@@ -42,9 +42,9 @@ namespace WebCore {
 
 // FIXME: Skip Content Security Policy check when associated plugin element is in a user agent shadow tree.
 // See <https://bugs.webkit.org/show_bug.cgi?id=146663>.
-NetscapePlugInStreamLoader::NetscapePlugInStreamLoader(Frame* frame, NetscapePlugInStreamLoaderClient* client)
-    : ResourceLoader(frame, ResourceLoaderOptions(SendCallbacks, SniffContent, DoNotBufferData, AllowStoredCredentials, AskClientForAllCredentials, SkipSecurityCheck, UseDefaultOriginRestrictionsForType, DoNotIncludeCertificateInfo, ContentSecurityPolicyImposition::DoPolicyCheck))
-    , m_client(client)
+NetscapePlugInStreamLoader::NetscapePlugInStreamLoader(Frame& frame, NetscapePlugInStreamLoaderClient& client)
+    : ResourceLoader(frame, ResourceLoaderOptions(SendCallbacks, SniffContent, DoNotBufferData, AllowStoredCredentials, AskClientForAllCredentials, FetchOptions::Credentials::Include, SkipSecurityCheck, FetchOptions::Mode::NoCors, DoNotIncludeCertificateInfo, ContentSecurityPolicyImposition::DoPolicyCheck, DefersLoadingPolicy::AllowDefersLoading, CachingPolicy::AllowCaching))
+    , m_client(&client)
 {
 #if ENABLE(CONTENT_EXTENSIONS)
     m_resourceType = ResourceType::PlugInStream;
@@ -55,12 +55,13 @@ NetscapePlugInStreamLoader::~NetscapePlugInStreamLoader()
 {
 }
 
-PassRefPtr<NetscapePlugInStreamLoader> NetscapePlugInStreamLoader::create(Frame* frame, NetscapePlugInStreamLoaderClient* client, const ResourceRequest& request)
+RefPtr<NetscapePlugInStreamLoader> NetscapePlugInStreamLoader::create(Frame& frame, NetscapePlugInStreamLoaderClient& client, const ResourceRequest& request)
 {
-    RefPtr<NetscapePlugInStreamLoader> loader(adoptRef(new NetscapePlugInStreamLoader(frame, client)));
+    auto loader(adoptRef(new NetscapePlugInStreamLoader(frame, client)));
     if (!loader->init(request))
         return nullptr;
-    return loader.release();
+
+    return loader;
 }
 
 bool NetscapePlugInStreamLoader::isDone() const
@@ -70,13 +71,38 @@ bool NetscapePlugInStreamLoader::isDone() const
 
 void NetscapePlugInStreamLoader::releaseResources()
 {
-    m_client = 0;
+    m_client = nullptr;
     ResourceLoader::releaseResources();
+}
+
+bool NetscapePlugInStreamLoader::init(const ResourceRequest& request)
+{
+    if (!ResourceLoader::init(request))
+        return false;
+
+    ASSERT(!reachedTerminalState());
+
+    m_documentLoader->addPlugInStreamLoader(*this);
+    m_isInitialized = true;
+
+    return true;
+}
+
+void NetscapePlugInStreamLoader::willSendRequest(ResourceRequest&& request, const ResourceResponse& redirectResponse, std::function<void(ResourceRequest&&)>&& callback)
+{
+    RefPtr<NetscapePlugInStreamLoader> protectedThis(this);
+
+    m_client->willSendRequest(this, WTFMove(request), redirectResponse, [protectedThis, redirectResponse, callback](ResourceRequest request) {
+        if (!request.isNull())
+            protectedThis->willSendRequestInternal(request, redirectResponse);
+
+        callback(WTFMove(request));
+    });
 }
 
 void NetscapePlugInStreamLoader::didReceiveResponse(const ResourceResponse& response)
 {
-    Ref<NetscapePlugInStreamLoader> protect(*this);
+    Ref<NetscapePlugInStreamLoader> protectedThis(*this);
 
     m_client->didReceiveResponse(this, response);
 
@@ -103,37 +129,39 @@ void NetscapePlugInStreamLoader::didReceiveResponse(const ResourceResponse& resp
 
 void NetscapePlugInStreamLoader::didReceiveData(const char* data, unsigned length, long long encodedDataLength, DataPayloadType dataPayloadType)
 {
-    didReceiveDataOrBuffer(data, length, 0, encodedDataLength, dataPayloadType);
+    didReceiveDataOrBuffer(data, length, nullptr, encodedDataLength, dataPayloadType);
 }
 
-void NetscapePlugInStreamLoader::didReceiveBuffer(PassRefPtr<SharedBuffer> buffer, long long encodedDataLength, DataPayloadType dataPayloadType)
+void NetscapePlugInStreamLoader::didReceiveBuffer(Ref<SharedBuffer>&& buffer, long long encodedDataLength, DataPayloadType dataPayloadType)
 {
-    didReceiveDataOrBuffer(0, 0, buffer, encodedDataLength, dataPayloadType);
+    didReceiveDataOrBuffer(nullptr, 0, WTFMove(buffer), encodedDataLength, dataPayloadType);
 }
 
-void NetscapePlugInStreamLoader::didReceiveDataOrBuffer(const char* data, int length, PassRefPtr<SharedBuffer> buffer, long long encodedDataLength, DataPayloadType dataPayloadType)
+void NetscapePlugInStreamLoader::didReceiveDataOrBuffer(const char* data, int length, RefPtr<SharedBuffer>&& buffer, long long encodedDataLength, DataPayloadType dataPayloadType)
 {
-    Ref<NetscapePlugInStreamLoader> protect(*this);
+    Ref<NetscapePlugInStreamLoader> protectedThis(*this);
     
     m_client->didReceiveData(this, buffer ? buffer->data() : data, buffer ? buffer->size() : length);
 
-    ResourceLoader::didReceiveDataOrBuffer(data, length, buffer, encodedDataLength, dataPayloadType);
+    ResourceLoader::didReceiveDataOrBuffer(data, length, WTFMove(buffer), encodedDataLength, dataPayloadType);
 }
 
 void NetscapePlugInStreamLoader::didFinishLoading(double finishTime)
 {
-    Ref<NetscapePlugInStreamLoader> protect(*this);
+    Ref<NetscapePlugInStreamLoader> protectedThis(*this);
 
-    m_documentLoader->removePlugInStreamLoader(this);
+    notifyDone();
+
     m_client->didFinishLoading(this);
     ResourceLoader::didFinishLoading(finishTime);
 }
 
 void NetscapePlugInStreamLoader::didFail(const ResourceError& error)
 {
-    Ref<NetscapePlugInStreamLoader> protect(*this);
+    Ref<NetscapePlugInStreamLoader> protectedThis(*this);
 
-    m_documentLoader->removePlugInStreamLoader(this);
+    notifyDone();
+
     m_client->didFail(this, error);
     ResourceLoader::didFail(error);
 }
@@ -145,10 +173,16 @@ void NetscapePlugInStreamLoader::willCancel(const ResourceError& error)
 
 void NetscapePlugInStreamLoader::didCancel(const ResourceError&)
 {
-    // We need to remove the stream loader after the call to didFail, since didFail can 
-    // spawn a new run loop and if the loader has been removed it won't be deferred when
-    // the document loader is asked to defer loading.
-    m_documentLoader->removePlugInStreamLoader(this);
+    notifyDone();
 }
+
+void NetscapePlugInStreamLoader::notifyDone()
+{
+    if (!m_isInitialized)
+        return;
+
+    m_documentLoader->removePlugInStreamLoader(*this);
+}
+
 
 }

@@ -23,11 +23,14 @@
 #include "StyleRareInheritedData.h"
 
 #include "CursorList.h"
+#include "DataRef.h"
 #include "QuotesData.h"
 #include "RenderStyle.h"
 #include "RenderStyleConstants.h"
 #include "ShadowData.h"
+#include "StyleCustomPropertyData.h"
 #include "StyleImage.h"
+#include <wtf/PointerComparison.h>
 
 namespace WebCore {
 
@@ -60,6 +63,8 @@ struct GreaterThanOrSameSizeAsStyleRareInheritedData : public RefCounted<Greater
 #if ENABLE(TOUCH_EVENTS)
     Color tapHighlightColor;
 #endif
+
+    void* customPropertyDataRefs[1];
 };
 
 COMPILE_ASSERT(sizeof(StyleRareInheritedData) <= sizeof(GreaterThanOrSameSizeAsStyleRareInheritedData), StyleRareInheritedData_should_bit_pack);
@@ -69,6 +74,7 @@ StyleRareInheritedData::StyleRareInheritedData()
     , textStrokeWidth(RenderStyle::initialTextStrokeWidth())
     , indent(RenderStyle::initialTextIndent())
     , m_effectiveZoom(RenderStyle::initialZoom())
+    , m_customProperties(StyleCustomPropertyData::create())
     , widows(RenderStyle::initialWidows())
     , orphans(RenderStyle::initialOrphans())
     , m_hasAutoWidows(true)
@@ -79,15 +85,13 @@ StyleRareInheritedData::StyleRareInheritedData()
     , overflowWrap(RenderStyle::initialOverflowWrap())
     , nbspMode(NBNORMAL)
     , lineBreak(LineBreakAuto)
-    , resize(RenderStyle::initialResize())
     , userSelect(RenderStyle::initialUserSelect())
-    , colorSpace(ColorSpaceDeviceRGB)
     , speak(SpeakNormal)
     , hyphens(HyphensManual)
     , textEmphasisFill(TextEmphasisFillFilled)
     , textEmphasisMark(TextEmphasisMarkNone)
     , textEmphasisPosition(TextEmphasisPositionOver | TextEmphasisPositionRight)
-    , m_textOrientation(TextOrientationVerticalRight)
+    , m_textOrientation(static_cast<unsigned>(TextOrientation::Mixed))
 #if ENABLE(CSS3_TEXT)
     , m_textIndentLine(RenderStyle::initialTextIndentLine())
     , m_textIndentType(RenderStyle::initialTextIndentType())
@@ -113,12 +117,14 @@ StyleRareInheritedData::StyleRareInheritedData()
     , m_textDecorationSkip(RenderStyle::initialTextDecorationSkip())
     , m_textUnderlinePosition(RenderStyle::initialTextUnderlinePosition())
     , m_rubyPosition(RenderStyle::initialRubyPosition())
+    , m_textZoom(RenderStyle::initialTextZoom())
 #if PLATFORM(IOS)
     , touchCalloutEnabled(RenderStyle::initialTouchCalloutEnabled())
 #endif
 #if ENABLE(CSS_TRAILING_WORD)
     , trailingWord(static_cast<unsigned>(RenderStyle::initialTrailingWord()))
 #endif
+    , m_hangingPunctuation(RenderStyle::initialHangingPunctuation())
     , hyphenationLimitBefore(-1)
     , hyphenationLimitAfter(-1)
     , hyphenationLimitLines(-1)
@@ -150,6 +156,7 @@ inline StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedDa
     , cursorData(o.cursorData)
     , indent(o.indent)
     , m_effectiveZoom(o.m_effectiveZoom)
+    , m_customProperties(o.m_customProperties)
     , widows(o.widows)
     , orphans(o.orphans)
     , m_hasAutoWidows(o.m_hasAutoWidows)
@@ -160,9 +167,7 @@ inline StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedDa
     , overflowWrap(o.overflowWrap)
     , nbspMode(o.nbspMode)
     , lineBreak(o.lineBreak)
-    , resize(o.resize)
     , userSelect(o.userSelect)
-    , colorSpace(o.colorSpace)
     , speak(o.speak)
     , hyphens(o.hyphens)
     , textEmphasisFill(o.textEmphasisFill)
@@ -194,17 +199,18 @@ inline StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedDa
     , m_textDecorationSkip(o.m_textDecorationSkip)
     , m_textUnderlinePosition(o.m_textUnderlinePosition)
     , m_rubyPosition(o.m_rubyPosition)
+    , m_textZoom(o.m_textZoom)
 #if PLATFORM(IOS)
     , touchCalloutEnabled(o.touchCalloutEnabled)
 #endif
 #if ENABLE(CSS_TRAILING_WORD)
     , trailingWord(o.trailingWord)
 #endif
+    , m_hangingPunctuation(o.m_hangingPunctuation)
     , hyphenationString(o.hyphenationString)
     , hyphenationLimitBefore(o.hyphenationLimitBefore)
     , hyphenationLimitAfter(o.hyphenationLimitAfter)
     , hyphenationLimitLines(o.hyphenationLimitLines)
-    , locale(o.locale)
     , textEmphasisCustomMark(o.textEmphasisCustomMark)
     , m_lineGrid(o.m_lineGrid)
     , m_tabSize(o.m_tabSize)
@@ -229,24 +235,6 @@ StyleRareInheritedData::~StyleRareInheritedData()
 {
 }
 
-static bool cursorDataEquivalent(const CursorList* c1, const CursorList* c2)
-{
-    if (c1 == c2)
-        return true;
-    if ((!c1 && c2) || (c1 && !c2))
-        return false;
-    return (*c1 == *c2);
-}
-
-static bool quotesDataEquivalent(const QuotesData* q1, const QuotesData* q2)
-{
-    if (q1 == q2)
-        return true;
-    if ((!q1 && q2) || (q1 && !q2))
-        return false;
-    return (*q1 == *q2);
-}
-
 bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
 {
     return textStrokeColor == o.textStrokeColor
@@ -259,8 +247,8 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
 #if ENABLE(TOUCH_EVENTS)
         && tapHighlightColor == o.tapHighlightColor
 #endif
-        && shadowDataEquivalent(o)
-        && cursorDataEquivalent(cursorData.get(), o.cursorData.get())
+        && arePointingToEqualData(textShadow, o.textShadow)
+        && arePointingToEqualData(cursorData, o.cursorData)
         && indent == o.indent
         && m_effectiveZoom == o.m_effectiveZoom
         && widows == o.widows
@@ -279,9 +267,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
 #if ENABLE(IOS_TEXT_AUTOSIZING)
         && textSizeAdjust == o.textSizeAdjust
 #endif
-        && resize == o.resize
         && userSelect == o.userSelect
-        && colorSpace == o.colorSpace
         && speak == o.speak
         && hyphens == o.hyphens
         && hyphenationLimitBefore == o.hyphenationLimitBefore
@@ -300,9 +286,8 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && touchCalloutEnabled == o.touchCalloutEnabled
 #endif
         && hyphenationString == o.hyphenationString
-        && locale == o.locale
         && textEmphasisCustomMark == o.textEmphasisCustomMark
-        && quotesDataEquivalent(quotes.get(), o.quotes.get())
+        && arePointingToEqualData(quotes, o.quotes)
         && m_tabSize == o.m_tabSize
         && m_lineGrid == o.m_lineGrid
 #if ENABLE(CSS_IMAGE_ORIENTATION)
@@ -321,21 +306,15 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && m_textDecorationSkip == o.m_textDecorationSkip
         && m_textUnderlinePosition == o.m_textUnderlinePosition
         && m_rubyPosition == o.m_rubyPosition
+        && m_textZoom == o.m_textZoom
         && m_lineSnap == o.m_lineSnap
         && m_lineAlign == o.m_lineAlign
 #if ENABLE(CSS_TRAILING_WORD)
         && trailingWord == o.trailingWord
 #endif
-        && StyleImage::imagesEquivalent(listStyleImage.get(), o.listStyleImage.get());
-}
-
-bool StyleRareInheritedData::shadowDataEquivalent(const StyleRareInheritedData& o) const
-{
-    if ((!textShadow && o.textShadow) || (textShadow && !o.textShadow))
-        return false;
-    if (textShadow && o.textShadow && (*textShadow != *o.textShadow))
-        return false;
-    return true;
+        && m_hangingPunctuation == o.m_hangingPunctuation
+        && m_customProperties == o.m_customProperties
+        && arePointingToEqualData(listStyleImage, o.listStyleImage);
 }
 
 } // namespace WebCore

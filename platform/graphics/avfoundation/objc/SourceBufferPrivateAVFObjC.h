@@ -29,9 +29,11 @@
 #if ENABLE(MEDIA_SOURCE) && USE(AVFOUNDATION)
 
 #include "SourceBufferPrivate.h"
+#include <dispatch/semaphore.h>
 #include <wtf/Deque.h>
 #include <wtf/HashMap.h>
 #include <wtf/MediaTime.h>
+#include <wtf/OSObjectPtr.h>
 #include <wtf/RefPtr.h>
 #include <wtf/RetainPtr.h>
 #include <wtf/Vector.h>
@@ -53,6 +55,7 @@ typedef const struct opaqueCMFormatDescription *CMFormatDescriptionRef;
 
 namespace WebCore {
 
+class CDMSessionMediaSourceAVFObjC;
 class MediaSourcePrivateAVFObjC;
 class TimeRanges;
 class AudioTrackPrivate;
@@ -80,7 +83,7 @@ public:
     void didProvideMediaDataForTrackID(int trackID, CMSampleBufferRef, const String& mediaType, unsigned flags);
     void didReachEndOfTrackWithTrackID(int trackID, const String& mediaType);
     void willProvideContentKeyRequestInitializationDataForTrackID(int trackID);
-    void didProvideContentKeyRequestInitializationDataForTrackID(NSData*, int trackID);
+    void didProvideContentKeyRequestInitializationDataForTrackID(NSData*, int trackID, OSObjectPtr<dispatch_semaphore_t>);
 
     bool processCodedFrame(int trackID, CMSampleBufferRef, const String& mediaType);
 
@@ -96,6 +99,7 @@ public:
 
     int protectedTrackID() const { return m_protectedTrackID; }
     AVStreamDataParser* parser() const { return m_parser.get(); }
+    void setCDMSession(CDMSessionMediaSourceAVFObjC*);
 
     void flush();
 
@@ -108,17 +112,17 @@ private:
     explicit SourceBufferPrivateAVFObjC(MediaSourcePrivateAVFObjC*);
 
     // SourceBufferPrivate overrides
-    virtual void setClient(SourceBufferPrivateClient*) override;
-    virtual void append(const unsigned char* data, unsigned length) override;
-    virtual void abort() override;
-    virtual void removedFromMediaSource() override;
-    virtual MediaPlayer::ReadyState readyState() const override;
-    virtual void setReadyState(MediaPlayer::ReadyState) override;
-    virtual void flushAndEnqueueNonDisplayingSamples(Vector<RefPtr<MediaSample>>, AtomicString trackID) override;
-    virtual void enqueueSample(PassRefPtr<MediaSample>, AtomicString trackID) override;
-    virtual bool isReadyForMoreSamples(AtomicString trackID) override;
-    virtual void setActive(bool) override;
-    virtual void notifyClientWhenReadyForMoreSamples(AtomicString trackID) override;
+    void setClient(SourceBufferPrivateClient*) override;
+    void append(const unsigned char* data, unsigned length) override;
+    void abort() override;
+    void removedFromMediaSource() override;
+    MediaPlayer::ReadyState readyState() const override;
+    void setReadyState(MediaPlayer::ReadyState) override;
+    void flushAndEnqueueNonDisplayingSamples(Vector<RefPtr<MediaSample>>, AtomicString trackID) override;
+    void enqueueSample(PassRefPtr<MediaSample>, AtomicString trackID) override;
+    bool isReadyForMoreSamples(AtomicString trackID) override;
+    void setActive(bool) override;
+    void notifyClientWhenReadyForMoreSamples(AtomicString trackID) override;
 
     void flushAndEnqueueNonDisplayingSamples(Vector<RefPtr<MediaSample>>, AVSampleBufferAudioRenderer*);
     void flushAndEnqueueNonDisplayingSamples(Vector<RefPtr<MediaSample>>, AVSampleBufferDisplayLayer*);
@@ -142,9 +146,12 @@ private:
     HashMap<int, RetainPtr<AVSampleBufferAudioRenderer>> m_audioRenderers;
     RetainPtr<WebAVStreamDataParserListener> m_delegate;
     RetainPtr<WebAVSampleBufferErrorListener> m_errorListener;
+    RetainPtr<NSError> m_hdcpError;
+    OSObjectPtr<dispatch_semaphore_t> m_hasSessionSemaphore;
 
     MediaSourcePrivateAVFObjC* m_mediaSource;
     SourceBufferPrivateClient* m_client;
+    CDMSessionMediaSourceAVFObjC* m_session { nullptr };
 
     FloatSize m_cachedSize;
     bool m_parsingSucceeded;

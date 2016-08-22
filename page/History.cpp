@@ -34,9 +34,12 @@
 #include "FrameLoaderClient.h"
 #include "HistoryController.h"
 #include "HistoryItem.h"
+#include "MainFrame.h"
 #include "Page.h"
+#include "ScriptController.h"
 #include "SecurityOrigin.h"
 #include "SerializedScriptValue.h"
+#include <wtf/CheckedArithmetic.h>
 #include <wtf/MainThread.h>
 
 namespace WebCore {
@@ -88,9 +91,9 @@ void History::back()
     go(-1);
 }
 
-void History::back(ScriptExecutionContext* context)
+void History::back(Document& document)
 {
-    go(context, -1);
+    go(document, -1);
 }
 
 void History::forward()
@@ -98,9 +101,9 @@ void History::forward()
     go(1);
 }
 
-void History::forward(ScriptExecutionContext* context)
+void History::forward(Document& document)
 {
-    go(context, 1);
+    go(document, 1);
 }
 
 void History::go(int distance)
@@ -111,17 +114,14 @@ void History::go(int distance)
     m_frame->navigationScheduler().scheduleHistoryNavigation(distance);
 }
 
-void History::go(ScriptExecutionContext* context, int distance)
+void History::go(Document& document, int distance)
 {
     if (!m_frame)
         return;
 
     ASSERT(isMainThread());
-    Document* activeDocument = downcast<Document>(context);
-    if (!activeDocument)
-        return;
 
-    if (!activeDocument->canNavigate(m_frame))
+    if (!document.canNavigate(m_frame))
         return;
 
     m_frame->navigationScheduler().scheduleHistoryNavigation(distance);
@@ -136,16 +136,85 @@ URL History::urlForState(const String& urlString)
     return URL(baseURL, urlString);
 }
 
-void History::stateObjectAdded(PassRefPtr<SerializedScriptValue> data, const String& title, const String& urlString, StateObjectType stateObjectType, ExceptionCode& ec)
+void History::stateObjectAdded(PassRefPtr<SerializedScriptValue> data, const String& title, const String& urlString, StateObjectType stateObjectType, ExceptionCodeWithMessage& ec)
 {
+    // Each unique main-frame document is only allowed to send 64mb of state object payload to the UI client/process.
+    static uint32_t totalStateObjectPayloadLimit = 0x4000000;
+    static double stateObjectTimeSpan = 30.0;
+    static unsigned perStateObjectTimeSpanLimit = 100;
+
     if (!m_frame || !m_frame->page())
         return;
-    
+
     URL fullURL = urlForState(urlString);
     if (!fullURL.isValid() || !m_frame->document()->securityOrigin()->canRequest(fullURL)) {
-        ec = SECURITY_ERR;
+        ec.code = SECURITY_ERR;
         return;
     }
+
+    if (fullURL.hasUsername() || fullURL.hasPassword()) {
+        ec.code = SECURITY_ERR;
+        if (stateObjectType == StateObjectType::Replace)
+            ec.message = makeString("Attempt to use history.replaceState() to change session history URL to ", fullURL.string(), " is insecure; Username/passwords aren't allowed in state object URLs");
+        else
+            ec.message = makeString("Attempt to use history.pushState() to add URL ", fullURL.string(), " to session history is insecure; Username/passwords aren't allowed in state object URLs");
+        return;
+    }
+
+    Document* mainDocument = m_frame->page()->mainFrame().document();
+    History* mainHistory = nullptr;
+    if (mainDocument) {
+        if (auto* mainDOMWindow = mainDocument->domWindow())
+            mainHistory = mainDOMWindow->history();
+    }
+
+    if (!mainHistory)
+        return;
+
+    double currentTimestamp = currentTime();
+    if (currentTimestamp - mainHistory->m_currentStateObjectTimeSpanStart > stateObjectTimeSpan) {
+        mainHistory->m_currentStateObjectTimeSpanStart = currentTimestamp;
+        mainHistory->m_currentStateObjectTimeSpanObjectsAdded = 0;
+    }
+    
+    if (mainHistory->m_currentStateObjectTimeSpanObjectsAdded >= perStateObjectTimeSpanLimit) {
+        ec.code = SECURITY_ERR;
+        if (stateObjectType == StateObjectType::Replace)
+            ec.message = String::format("Attempt to use history.replaceState() more than %u times per %f seconds", perStateObjectTimeSpanLimit, stateObjectTimeSpan);
+        else
+            ec.message = String::format("Attempt to use history.pushState() more than %u times per %f seconds", perStateObjectTimeSpanLimit, stateObjectTimeSpan);
+        return;
+    }
+
+    Checked<unsigned> titleSize = title.length();
+    titleSize *= 2;
+
+    Checked<unsigned> urlSize = fullURL.string().length();
+    urlSize *= 2;
+
+    Checked<uint64_t> payloadSize = titleSize;
+    payloadSize += urlSize;
+    payloadSize += data ? data->data().size() : 0;
+
+    Checked<uint64_t> newTotalUsage = mainHistory->m_totalStateObjectUsage;
+
+    if (stateObjectType == StateObjectType::Replace)
+        newTotalUsage -= m_mostRecentStateObjectUsage;
+    newTotalUsage += payloadSize;
+
+    if (newTotalUsage > totalStateObjectPayloadLimit) {
+        ec.code = QUOTA_EXCEEDED_ERR;
+        if (stateObjectType == StateObjectType::Replace)
+            ec.message = ASCIILiteral("Attempt to store more data than allowed using history.replaceState()");
+        else
+            ec.message = ASCIILiteral("Attempt to store more data than allowed using history.pushState()");
+        return;
+    }
+
+    m_mostRecentStateObjectUsage = payloadSize.unsafeGet();
+
+    mainHistory->m_totalStateObjectUsage = newTotalUsage.unsafeGet();
+    ++mainHistory->m_currentStateObjectTimeSpanObjectsAdded;
 
     if (!urlString.isEmpty())
         m_frame->document()->updateURLForPushOrReplaceState(fullURL);

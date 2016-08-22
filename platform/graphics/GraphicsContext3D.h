@@ -60,7 +60,7 @@
 #include <wtf/RetainPtr.h>
 OBJC_CLASS CALayer;
 OBJC_CLASS WebGLLayer;
-#elif PLATFORM(GTK) || PLATFORM(EFL)
+#elif PLATFORM(GTK) || PLATFORM(EFL) || PLATFORM(WIN_CAIRO)
 typedef unsigned int GLuint;
 #endif
 
@@ -504,6 +504,7 @@ public:
         FLOAT_MAT4x3 = 0x8B6A,
         SRGB = 0x8C40,
         SRGB8 = 0x8C41,
+        SRGB_ALPHA = 0x8C42,
         SRGB8_ALPHA8 = 0x8C43,
         COMPARE_REF_TO_TEXTURE = 0x884E,
         RGBA32F = 0x8814,
@@ -727,6 +728,7 @@ public:
             , shareResources(true)
             , preferDiscreteGPU(false)
             , forceSoftwareRenderer(false)
+            , useGLES3(false)
             , devicePixelRatio(1)
         {
         }
@@ -741,6 +743,7 @@ public:
         bool shareResources;
         bool preferDiscreteGPU;
         bool forceSoftwareRenderer;
+        bool useGLES3;
         float devicePixelRatio;
     };
 
@@ -765,7 +768,7 @@ public:
     void setContextLostCallback(std::unique_ptr<ContextLostCallback>);
     void setErrorMessageCallback(std::unique_ptr<ErrorMessageCallback>);
 
-    static PassRefPtr<GraphicsContext3D> create(Attributes, HostWindow*, RenderStyle = RenderOffscreen);
+    static RefPtr<GraphicsContext3D> create(Attributes, HostWindow*, RenderStyle = RenderOffscreen);
     static PassRefPtr<GraphicsContext3D> createForCurrentGLContext();
     ~GraphicsContext3D();
 
@@ -1128,14 +1131,14 @@ public:
     void paintToCanvas(const unsigned char* imagePixels, int imageWidth, int imageHeight,
                        int canvasWidth, int canvasHeight, PlatformContextCairo* context);
 #elif USE(CG)
-    void paintToCanvas(const unsigned char* imagePixels, int imageWidth, int imageHeight,
-                       int canvasWidth, int canvasHeight, GraphicsContext*);
+    void paintToCanvas(const unsigned char* imagePixels, int imageWidth, int imageHeight, int canvasWidth, int canvasHeight, GraphicsContext&);
 #endif
 
     void markContextChanged();
     void markLayerComposited();
     bool layerComposited() const;
     void forceContextLost();
+    void recycleContext();
 
     void paintRenderingResultsToCanvas(ImageBuffer*);
     PassRefPtr<ImageData> paintRenderingResultsToImageData();
@@ -1245,7 +1248,7 @@ public:
         ImageSource* m_decoder;
         RefPtr<cairo_surface_t> m_imageSurface;
 #elif USE(CG)
-        CGImageRef m_cgImage;
+        RetainPtr<CGImageRef> m_cgImage;
         RetainPtr<CGImageRef> m_decodedImage;
         RetainPtr<CFDataRef> m_pixelData;
         std::unique_ptr<uint8_t[]> m_formalizedRGBA8Data;
@@ -1263,7 +1266,6 @@ public:
 
 private:
     GraphicsContext3D(Attributes, HostWindow*, RenderStyle = RenderOffscreen);
-    static int numActiveContexts;
     static int GPUCheckCounter;
 
     // Helper for packImageData/extractImageData/extractTextureData which implement packing of pixel
@@ -1289,11 +1291,12 @@ private:
     void readPixelsAndConvertToBGRAIfNecessary(int x, int y, int width, int height, unsigned char* pixels);
 
 #if PLATFORM(IOS)
-    bool setRenderbufferStorageFromDrawable(GC3Dsizei width, GC3Dsizei height);
+    void setRenderbufferStorageFromDrawable(GC3Dsizei width, GC3Dsizei height);
 #endif
 
     bool reshapeFBOs(const IntSize&);
     void resolveMultisamplingIfNecessary(const IntRect& = IntRect());
+    void attachDepthAndStencilBufferIfNeeded(GLuint internalDepthStencilFormat, int width, int height);
 #if PLATFORM(EFL) && USE(GRAPHICS_SURFACE)
     void createGraphicsSurfaces(const IntSize&);
 #endif
@@ -1418,6 +1421,9 @@ private:
     GC3Duint m_texture;
     GC3Duint m_compositorTexture;
     GC3Duint m_fbo;
+#if USE(COORDINATED_GRAPHICS_THREADED)
+    GC3Duint m_compositorFBO;
+#endif
 
     GC3Duint m_depthBuffer;
     GC3Duint m_stencilBuffer;

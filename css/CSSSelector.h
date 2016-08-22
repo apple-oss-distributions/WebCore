@@ -48,7 +48,7 @@ namespace WebCore {
         /**
          * Re-create selector text from selector's data
          */
-        String selectorText(const String& = "") const;
+        String selectorText(const String& = emptyString()) const;
 
         // checks if the 2 selectors (including sub selectors) agree.
         bool operator==(const CSSSelector&) const;
@@ -112,6 +112,7 @@ namespace WebCore {
             PseudoClassHover,
             PseudoClassDrag,
             PseudoClassFocus,
+            PseudoClassFocusWithin,
             PseudoClassActive,
             PseudoClassChecked,
             PseudoClassEnabled,
@@ -159,6 +160,10 @@ namespace WebCore {
             PseudoClassDir,
             PseudoClassRole,
 #endif
+            PseudoClassHost,
+#if ENABLE(CUSTOM_ELEMENTS)
+            PseudoClassDefined,
+#endif
         };
 
         enum PseudoElementType {
@@ -178,8 +183,13 @@ namespace WebCore {
             PseudoElementScrollbarTrack,
             PseudoElementScrollbarTrackPiece,
             PseudoElementSelection,
+            PseudoElementSlotted,
             PseudoElementUserAgentCustom,
             PseudoElementWebKitCustom,
+
+            // WebKitCustom that appeared in an old prefixed form
+            // and need special handling.
+            PseudoElementWebKitCustomLegacyPrefixed,
         };
 
         enum PagePseudoClassType {
@@ -273,6 +283,7 @@ namespace WebCore {
         bool matchesPseudoElement() const;
         bool isUnknownPseudoElement() const;
         bool isCustomPseudoElement() const;
+        bool isWebKitCustomPseudoElement() const;
         bool isSiblingSelector() const;
         bool isAttributeSelector() const;
 
@@ -321,6 +332,9 @@ namespace WebCore {
         unsigned m_descendantDoubleChildSyntax : 1;
 #endif
         unsigned m_caseInsensitiveAttributeValueMatching : 1;
+#if !ASSERT_WITH_SECURITY_IMPLICATION_DISABLED
+        unsigned m_destructorHasBeenCalled : 1;
+#endif
 
         unsigned simpleSelectorSpecificityForPage() const;
 
@@ -395,7 +409,15 @@ inline bool CSSSelector::isUnknownPseudoElement() const
 
 inline bool CSSSelector::isCustomPseudoElement() const
 {
-    return match() == PseudoElement && (pseudoElementType() == PseudoElementUserAgentCustom || pseudoElementType() == PseudoElementWebKitCustom);
+    return match() == PseudoElement
+        && (pseudoElementType() == PseudoElementUserAgentCustom
+            || pseudoElementType() == PseudoElementWebKitCustom
+            || pseudoElementType() == PseudoElementWebKitCustomLegacyPrefixed);
+}
+
+inline bool CSSSelector::isWebKitCustomPseudoElement() const
+{
+    return pseudoElementType() == PseudoElementWebKitCustom || pseudoElementType() == PseudoElementWebKitCustomLegacyPrefixed;
 }
 
 static inline bool pseudoClassIsRelativeToSiblings(CSSSelector::PseudoClassType type)
@@ -463,6 +485,9 @@ inline CSSSelector::CSSSelector()
     , m_descendantDoubleChildSyntax(false)
 #endif
     , m_caseInsensitiveAttributeValueMatching(false)
+#if !ASSERT_WITH_SECURITY_IMPLICATION_DISABLED
+    , m_destructorHasBeenCalled(false)
+#endif
 {
 }
 
@@ -481,6 +506,9 @@ inline CSSSelector::CSSSelector(const CSSSelector& o)
     , m_descendantDoubleChildSyntax(o.m_descendantDoubleChildSyntax)
 #endif
     , m_caseInsensitiveAttributeValueMatching(o.m_caseInsensitiveAttributeValueMatching)
+#if !ASSERT_WITH_SECURITY_IMPLICATION_DISABLED
+    , m_destructorHasBeenCalled(false)
+#endif
 {
     if (o.m_hasRareData) {
         m_data.m_rareData = o.m_data.m_rareData;
@@ -499,14 +527,26 @@ inline CSSSelector::CSSSelector(const CSSSelector& o)
 
 inline CSSSelector::~CSSSelector()
 {
-    if (m_hasRareData)
+    ASSERT_WITH_SECURITY_IMPLICATION(!m_destructorHasBeenCalled);
+#if !ASSERT_WITH_SECURITY_IMPLICATION_DISABLED
+    m_destructorHasBeenCalled = true;
+#endif
+    if (m_hasRareData) {
         m_data.m_rareData->deref();
-    else if (m_hasNameWithCase)
+        m_data.m_rareData = nullptr;
+        m_hasRareData = false;
+    } else if (m_hasNameWithCase) {
         m_data.m_nameWithCase->deref();
-    else if (match() == Tag)
+        m_data.m_nameWithCase = nullptr;
+        m_hasNameWithCase = false;
+    } else if (match() == Tag) {
         m_data.m_tagQName->deref();
-    else if (m_data.m_value)
+        m_data.m_tagQName = nullptr;
+        m_match = Unknown;
+    } else if (m_data.m_value) {
         m_data.m_value->deref();
+        m_data.m_value = nullptr;
+    }
 }
 
 inline const QualifiedName& CSSSelector::tagQName() const

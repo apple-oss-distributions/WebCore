@@ -35,12 +35,10 @@
 
 namespace WebCore {
 
-CFDictionaryRef Font::getCFStringAttributes(TypesettingFeatures typesettingFeatures, FontOrientation orientation) const
+CFDictionaryRef Font::getCFStringAttributes(bool enableKerning, FontOrientation orientation) const
 {
-    unsigned key = typesettingFeatures + 1;
-    HashMap<unsigned, RetainPtr<CFDictionaryRef>>::AddResult addResult = m_CFStringAttributes.add(key, RetainPtr<CFDictionaryRef>());
-    RetainPtr<CFDictionaryRef>& attributesDictionary = addResult.iterator->value;
-    if (!addResult.isNewEntry)
+    auto& attributesDictionary = enableKerning ? m_kernedCFStringAttributes : m_nonKernedCFStringAttributes;
+    if (attributesDictionary)
         return attributesDictionary.get();
 
     attributesDictionary = adoptCF(CFDictionaryCreateMutable(kCFAllocatorDefault, 4, &kCFCopyStringDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
@@ -48,17 +46,10 @@ CFDictionaryRef Font::getCFStringAttributes(TypesettingFeatures typesettingFeatu
 
     CFDictionarySetValue(mutableAttributes, kCTFontAttributeName, platformData().ctFont());
 
-    if (!(typesettingFeatures & Kerning)) {
+    if (!enableKerning) {
         const float zero = 0;
         static CFNumberRef zeroKerningValue = CFNumberCreate(kCFAllocatorDefault, kCFNumberFloatType, &zero);
         CFDictionarySetValue(mutableAttributes, kCTKernAttributeName, zeroKerningValue);
-    }
-
-    bool allowLigatures = (orientation == Horizontal && platformData().allowsLigatures()) || (typesettingFeatures & Ligatures);
-    if (!allowLigatures) {
-        const int zero = 0;
-        static CFNumberRef essentialLigaturesValue = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &zero);
-        CFDictionarySetValue(mutableAttributes, kCTLigatureAttributeName, essentialLigaturesValue);
     }
 
     if (orientation == Vertical)

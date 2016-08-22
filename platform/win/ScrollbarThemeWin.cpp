@@ -26,7 +26,9 @@
 #include "config.h"
 #include "ScrollbarThemeWin.h"
 
+#include "GDIUtilities.h"
 #include "GraphicsContext.h"
+#include "HWndDC.h"
 #include "LocalWindowsContext.h"
 #include "PlatformMouseEvent.h"
 #include "Scrollbar.h"
@@ -87,10 +89,10 @@ static void checkAndInitScrollbarTheme()
         scrollbarTheme = OpenThemeData(0, L"Scrollbar");
 }
 
-ScrollbarTheme* ScrollbarTheme::nativeTheme()
+ScrollbarTheme& ScrollbarTheme::nativeTheme()
 {
     static ScrollbarThemeWin winTheme;
-    return &winTheme;
+    return winTheme;
 }
 
 ScrollbarThemeWin::ScrollbarThemeWin()
@@ -107,12 +109,16 @@ ScrollbarThemeWin::~ScrollbarThemeWin()
 {
 }
 
+static int scrollbarThicknessInPixels()
+{
+    static int thickness = ::GetSystemMetrics(SM_CXVSCROLL);
+    return thickness;
+}
+
 int ScrollbarThemeWin::scrollbarThickness(ScrollbarControlSize)
 {
-    static int thickness;
-    if (!thickness)
-        thickness = ::GetSystemMetrics(SM_CXVSCROLL);
-    return thickness;
+    float inverseScaleFactor = 1.0f / deviceScaleFactorForWindow(0);
+    return clampTo<int>(inverseScaleFactor * scrollbarThicknessInPixels());
 }
 
 void ScrollbarThemeWin::themeChanged()
@@ -187,9 +193,24 @@ IntRect ScrollbarThemeWin::trackRect(Scrollbar& scrollbar, bool)
     return IntRect(scrollbar.x(), scrollbar.y() + thickness, thickness, scrollbar.height() - 2 * thickness);
 }
 
-bool ScrollbarThemeWin::shouldCenterOnThumb(Scrollbar&, const PlatformMouseEvent& evt)
+ScrollbarButtonPressAction ScrollbarThemeWin::handleMousePressEvent(Scrollbar&, const PlatformMouseEvent& event, ScrollbarPart pressedPart)
 {
-    return evt.shiftKey() && evt.button() == LeftButton;
+    if (event.button() == RightButton)
+        return ScrollbarButtonPressAction::None;
+
+    switch (pressedPart) {
+    case BackTrackPart:
+    case ForwardTrackPart:
+        if (event.shiftKey() && event.button() == LeftButton)
+            return ScrollbarButtonPressAction::CenterOnThumb;
+        break;
+    case ThumbPart:
+        return ScrollbarButtonPressAction::StartDrag;
+    default:
+        break;
+    }
+
+    return ScrollbarButtonPressAction::Scroll;
 }
 
 bool ScrollbarThemeWin::shouldSnapBackToDragOrigin(Scrollbar& scrollbar, const PlatformMouseEvent& evt)
@@ -241,7 +262,7 @@ void ScrollbarThemeWin::paintTrackPiece(GraphicsContext& context, Scrollbar& scr
     if (scrollbarTheme)
         alphaBlend = IsThemeBackgroundPartiallyTransparent(scrollbarTheme, part, state);
 
-    LocalWindowsContext windowsContext(&context, rect, alphaBlend);
+    LocalWindowsContext windowsContext(context, rect, alphaBlend);
     RECT themeRect(rect);
 
     if (scrollbarTheme)
@@ -310,7 +331,7 @@ void ScrollbarThemeWin::paintButton(GraphicsContext& context, Scrollbar& scrollb
     if (scrollbarTheme)
         alphaBlend = IsThemeBackgroundPartiallyTransparent(scrollbarTheme, SP_BUTTON, xpState);
 
-    LocalWindowsContext windowsContext(&context, rect, alphaBlend);
+    LocalWindowsContext windowsContext(context, rect, alphaBlend);
     RECT themeRect(rect);
     if (scrollbarTheme)
         DrawThemeBackground(scrollbarTheme, windowsContext.hdc(), SP_BUTTON, xpState, &themeRect, 0);
@@ -366,7 +387,7 @@ void ScrollbarThemeWin::paintThumb(GraphicsContext& context, Scrollbar& scrollba
     bool alphaBlend = false;
     if (scrollbarTheme)
         alphaBlend = IsThemeBackgroundPartiallyTransparent(scrollbarTheme, scrollbar.orientation() == HorizontalScrollbar ? SP_THUMBHOR : SP_THUMBVERT, state);
-    LocalWindowsContext windowsContext(&context, rect, alphaBlend);
+    LocalWindowsContext windowsContext(context, rect, alphaBlend);
     RECT themeRect(rect);
     if (scrollbarTheme) {
         DrawThemeBackground(scrollbarTheme, windowsContext.hdc(), scrollbar.orientation() == HorizontalScrollbar ? SP_THUMBHOR : SP_THUMBVERT, state, &themeRect, 0);

@@ -36,6 +36,7 @@
 #include "CSSContentDistributionValue.h"
 #include "CSSCrossfadeValue.h"
 #include "CSSCursorImageValue.h"
+#include "CSSCustomPropertyValue.h"
 #include "CSSFilterImageValue.h"
 #include "CSSFontFaceSrcValue.h"
 #include "CSSFontFeatureValue.h"
@@ -49,17 +50,22 @@
 #include "CSSLineBoxContainValue.h"
 #include "CSSNamedImageValue.h"
 #include "CSSPrimitiveValue.h"
+#include "CSSProperty.h"
 #include "CSSReflectValue.h"
 #include "CSSShadowValue.h"
 #include "CSSTimingFunctionValue.h"
 #include "CSSUnicodeRangeValue.h"
+#include "CSSUnsetValue.h"
 #include "CSSValueList.h"
+#include "CSSVariableDependentValue.h"
+#include "CSSVariableValue.h"
 #include "SVGColor.h"
 #include "SVGPaint.h"
 #include "WebKitCSSFilterValue.h"
 #include "WebKitCSSTransformValue.h"
 
 #if ENABLE(CSS_GRID_LAYOUT)
+#include "CSSGridAutoRepeatValue.h"
 #include "CSSGridLineNamesValue.h"
 #include "CSSGridTemplateAreasValue.h"
 #endif
@@ -107,6 +113,10 @@ CSSValue::Type CSSValue::cssValueType() const
         return CSS_VALUE_LIST;
     if (isInitialValue())
         return CSS_INITIAL;
+    if (isUnsetValue())
+        return CSS_UNSET;
+    if (isRevertValue())
+        return CSS_REVERT;
     return CSS_CUSTOM;
 }
 
@@ -194,7 +204,13 @@ bool CSSValue::equals(const CSSValue& other) const
             return compareCSSValues<CSSInheritedValue>(*this, other);
         case InitialClass:
             return compareCSSValues<CSSInitialValue>(*this, other);
+        case UnsetClass:
+            return compareCSSValues<CSSUnsetValue>(*this, other);
+        case RevertClass:
+            return compareCSSValues<CSSRevertValue>(*this, other);
 #if ENABLE(CSS_GRID_LAYOUT)
+        case GridAutoRepeatClass:
+            return compareCSSValues<CSSGridAutoRepeatValue>(*this, other);
         case GridLineNamesClass:
             return compareCSSValues<CSSGridLineNamesValue>(*this, other);
         case GridTemplateAreasClass:
@@ -210,6 +226,8 @@ bool CSSValue::equals(const CSSValue& other) const
             return compareCSSValues<CSSCubicBezierTimingFunctionValue>(*this, other);
         case StepsTimingFunctionClass:
             return compareCSSValues<CSSStepsTimingFunctionValue>(*this, other);
+        case SpringTimingFunctionClass:
+            return compareCSSValues<CSSSpringTimingFunctionValue>(*this, other);
         case UnicodeRangeClass:
             return compareCSSValues<CSSUnicodeRangeValue>(*this, other);
         case ValueListClass:
@@ -236,6 +254,12 @@ bool CSSValue::equals(const CSSValue& other) const
 #endif
         case CSSContentDistributionClass:
             return compareCSSValues<CSSContentDistributionValue>(*this, other);
+        case CustomPropertyClass:
+            return compareCSSValues<CSSCustomPropertyValue>(*this, other);
+        case VariableDependentClass:
+            return compareCSSValues<CSSVariableDependentValue>(*this, other);
+        case VariableClass:
+            return compareCSSValues<CSSVariableValue>(*this, other);
         default:
             ASSERT_NOT_REACHED();
             return false;
@@ -288,7 +312,13 @@ String CSSValue::cssText() const
         return downcast<CSSInheritedValue>(*this).customCSSText();
     case InitialClass:
         return downcast<CSSInitialValue>(*this).customCSSText();
+    case UnsetClass:
+        return downcast<CSSUnsetValue>(*this).customCSSText();
+    case RevertClass:
+        return downcast<CSSRevertValue>(*this).customCSSText();
 #if ENABLE(CSS_GRID_LAYOUT)
+    case GridAutoRepeatClass:
+        return downcast<CSSGridAutoRepeatValue>(*this).customCSSText();
     case GridLineNamesClass:
         return downcast<CSSGridLineNamesValue>(*this).customCSSText();
     case GridTemplateAreasClass:
@@ -304,6 +334,8 @@ String CSSValue::cssText() const
         return downcast<CSSCubicBezierTimingFunctionValue>(*this).customCSSText();
     case StepsTimingFunctionClass:
         return downcast<CSSStepsTimingFunctionValue>(*this).customCSSText();
+    case SpringTimingFunctionClass:
+        return downcast<CSSSpringTimingFunctionValue>(*this).customCSSText();
     case UnicodeRangeClass:
         return downcast<CSSUnicodeRangeValue>(*this).customCSSText();
     case ValueListClass:
@@ -330,7 +362,14 @@ String CSSValue::cssText() const
 #endif
     case CSSContentDistributionClass:
         return downcast<CSSContentDistributionValue>(*this).customCSSText();
+    case CustomPropertyClass:
+        return downcast<CSSCustomPropertyValue>(*this).customCSSText();
+    case VariableDependentClass:
+        return downcast<CSSVariableDependentValue>(*this).customCSSText();
+    case VariableClass:
+        return downcast<CSSVariableValue>(*this).customCSSText();
     }
+
     ASSERT_NOT_REACHED();
     return String();
 }
@@ -390,7 +429,16 @@ void CSSValue::destroy()
     case InitialClass:
         delete downcast<CSSInitialValue>(this);
         return;
+    case UnsetClass:
+        delete downcast<CSSUnsetValue>(this);
+        return;
+    case RevertClass:
+        delete downcast<CSSRevertValue>(this);
+        return;
 #if ENABLE(CSS_GRID_LAYOUT)
+    case GridAutoRepeatClass:
+        delete downcast<CSSGridAutoRepeatValue>(this);
+        return;
     case GridLineNamesClass:
         delete downcast<CSSGridLineNamesValue>(this);
         return;
@@ -412,6 +460,9 @@ void CSSValue::destroy()
         return;
     case StepsTimingFunctionClass:
         delete downcast<CSSStepsTimingFunctionValue>(this);
+        return;
+    case SpringTimingFunctionClass:
+        delete downcast<CSSSpringTimingFunctionValue>(this);
         return;
     case UnicodeRangeClass:
         delete downcast<CSSUnicodeRangeValue>(this);
@@ -453,11 +504,20 @@ void CSSValue::destroy()
     case CSSContentDistributionClass:
         delete downcast<CSSContentDistributionValue>(this);
         return;
+    case CustomPropertyClass:
+        delete downcast<CSSCustomPropertyValue>(this);
+        return;
+    case VariableDependentClass:
+        delete downcast<CSSVariableDependentValue>(this);
+        return;
+    case VariableClass:
+        delete downcast<CSSVariableValue>(this);
+        return;
     }
     ASSERT_NOT_REACHED();
 }
 
-PassRefPtr<CSSValue> CSSValue::cloneForCSSOM() const
+RefPtr<CSSValue> CSSValue::cloneForCSSOM() const
 {
     switch (classType()) {
     case PrimitiveClass:
@@ -483,6 +543,21 @@ PassRefPtr<CSSValue> CSSValue::cloneForCSSOM() const
         ASSERT(!isSubtypeExposedToCSSOM());
         return TextCloneCSSValue::create(classType(), cssText());
     }
+}
+
+bool CSSValue::isInvalidCustomPropertyValue() const
+{
+    return isCustomPropertyValue() && downcast<CSSCustomPropertyValue>(*this).isInvalid();
+}
+
+bool CSSValue::treatAsInheritedValue(CSSPropertyID propertyID) const
+{
+    return classType() == InheritedClass || (classType() == UnsetClass && CSSProperty::isInheritedProperty(propertyID));
+}
+
+bool CSSValue::treatAsInitialValue(CSSPropertyID propertyID) const
+{
+    return classType() == InitialClass || (classType() == UnsetClass && !CSSProperty::isInheritedProperty(propertyID));
 }
 
 }

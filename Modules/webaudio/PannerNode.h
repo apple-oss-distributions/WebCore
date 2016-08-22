@@ -35,7 +35,8 @@
 #include "HRTFDatabaseLoader.h"
 #include "Panner.h"
 #include <memory>
-#include <mutex>
+#include <wtf/HashSet.h>
+#include <wtf/Lock.h>
 
 namespace WebCore {
 
@@ -63,7 +64,7 @@ public:
         EXPONENTIAL_DISTANCE = 2,
     };
 
-    static Ref<PannerNode> create(AudioContext* context, float sampleRate)
+    static Ref<PannerNode> create(AudioContext& context, float sampleRate)
     {
         return adoptRef(*new PannerNode(context, sampleRate));
     }
@@ -71,11 +72,11 @@ public:
     virtual ~PannerNode();
 
     // AudioNode
-    virtual void process(size_t framesToProcess) override;
-    virtual void pullInputs(size_t framesToProcess) override;
-    virtual void reset() override;
-    virtual void initialize() override;
-    virtual void uninitialize() override;
+    void process(size_t framesToProcess) override;
+    void pullInputs(size_t framesToProcess) override;
+    void reset() override;
+    void initialize() override;
+    void uninitialize() override;
 
     // Listener
     AudioListener* listener();
@@ -128,18 +129,18 @@ public:
     AudioParam* distanceGain() { return m_distanceGain.get(); }
     AudioParam* coneGain() { return m_coneGain.get(); }
 
-    virtual double tailTime() const override { return m_panner ? m_panner->tailTime() : 0; }
-    virtual double latencyTime() const override { return m_panner ? m_panner->latencyTime() : 0; }
+    double tailTime() const override { return m_panner ? m_panner->tailTime() : 0; }
+    double latencyTime() const override { return m_panner ? m_panner->latencyTime() : 0; }
 
 private:
-    PannerNode(AudioContext*, float sampleRate);
+    PannerNode(AudioContext&, float sampleRate);
 
     // Returns the combined distance and cone gain attenuation.
     float distanceConeGain();
 
     // Notifies any AudioBufferSourceNodes connected to us either directly or indirectly about our existence.
     // This is in order to handle the pitch change necessary for the doppler shift.
-    void notifyAudioSourcesConnectedToNode(AudioNode*);
+    void notifyAudioSourcesConnectedToNode(AudioNode*, HashSet<AudioNode*>& visitedNodes);
 
     std::unique_ptr<Panner> m_panner;
     unsigned m_panningModel;
@@ -161,7 +162,7 @@ private:
     unsigned m_connectionCount;
 
     // Synchronize process() and setPanningModel() which can change the panner.
-    mutable std::mutex m_pannerMutex;
+    mutable Lock m_pannerMutex;
 };
 
 } // namespace WebCore

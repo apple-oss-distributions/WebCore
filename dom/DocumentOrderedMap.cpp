@@ -51,13 +51,22 @@ void DocumentOrderedMap::add(const AtomicStringImpl& key, Element& element, cons
     UNUSED_PARAM(treeScope);
     ASSERT_WITH_SECURITY_IMPLICATION(element.isInTreeScope());
     ASSERT_WITH_SECURITY_IMPLICATION(treeScope.rootNode().containsIncludingShadowDOM(&element));
+
     if (!element.isInTreeScope())
         return;
-    Map::AddResult addResult = m_map.add(&key, MapEntry(&element));
+    Map::AddResult addResult = m_map.ensure(&key, [&element] {
+        return MapEntry(&element);
+    });
+    MapEntry& entry = addResult.iterator->value;
+
+#if !ASSERT_DISABLED || ENABLE(SECURITY_ASSERTIONS)
+    ASSERT_WITH_SECURITY_IMPLICATION(!entry.registeredElements.contains(&element));
+    entry.registeredElements.add(&element);
+#endif
+
     if (addResult.isNewEntry)
         return;
 
-    MapEntry& entry = addResult.iterator->value;
     ASSERT_WITH_SECURITY_IMPLICATION(entry.count);
     entry.element = nullptr;
     entry.count++;
@@ -68,11 +77,13 @@ void DocumentOrderedMap::remove(const AtomicStringImpl& key, Element& element)
 {
     m_map.checkConsistency();
     auto it = m_map.find(&key);
+
     ASSERT_WITH_SECURITY_IMPLICATION(it != m_map.end());
     if (it == m_map.end())
         return;
-    MapEntry& entry = it->value;
 
+    MapEntry& entry = it->value;
+    ASSERT_WITH_SECURITY_IMPLICATION(entry.registeredElements.remove(&element));
     ASSERT_WITH_SECURITY_IMPLICATION(entry.count);
     if (entry.count == 1) {
         ASSERT_WITH_SECURITY_IMPLICATION(!entry.element || entry.element == &element);
@@ -99,6 +110,7 @@ inline Element* DocumentOrderedMap::get(const AtomicStringImpl& key, const TreeS
     if (entry.element) {
         ASSERT_WITH_SECURITY_IMPLICATION(entry.element->isInTreeScope());
         ASSERT_WITH_SECURITY_IMPLICATION(&entry.element->treeScope() == &scope);
+        ASSERT_WITH_SECURITY_IMPLICATION(entry.registeredElements.contains(entry.element));
         return entry.element;
     }
 
@@ -109,6 +121,7 @@ inline Element* DocumentOrderedMap::get(const AtomicStringImpl& key, const TreeS
         entry.element = &element;
         ASSERT_WITH_SECURITY_IMPLICATION(element.isInTreeScope());
         ASSERT_WITH_SECURITY_IMPLICATION(&element.treeScope() == &scope);
+        ASSERT_WITH_SECURITY_IMPLICATION(entry.registeredElements.contains(entry.element));
         return &element;
     }
     ASSERT_NOT_REACHED();
@@ -136,25 +149,25 @@ HTMLMapElement* DocumentOrderedMap::getElementByMapName(const AtomicStringImpl& 
     }));
 }
 
-HTMLMapElement* DocumentOrderedMap::getElementByLowercasedMapName(const AtomicStringImpl& key, const TreeScope& scope) const
+HTMLMapElement* DocumentOrderedMap::getElementByCaseFoldedMapName(const AtomicStringImpl& key, const TreeScope& scope) const
 {
     return downcast<HTMLMapElement>(get(key, scope, [] (const AtomicStringImpl& key, const Element& element) {
-        return is<HTMLMapElement>(element) && downcast<HTMLMapElement>(element).getName().lower().impl() == &key;
+        return is<HTMLMapElement>(element) && equal(downcast<HTMLMapElement>(element).getName().string().foldCase().impl(), &key);
     }));
 }
 
-HTMLImageElement* DocumentOrderedMap::getElementByLowercasedUsemap(const AtomicStringImpl& key, const TreeScope& scope) const
+HTMLImageElement* DocumentOrderedMap::getElementByCaseFoldedUsemap(const AtomicStringImpl& key, const TreeScope& scope) const
 {
     return downcast<HTMLImageElement>(get(key, scope, [] (const AtomicStringImpl& key, const Element& element) {
         // FIXME: HTML5 specification says we should match both image and object elements.
-        return is<HTMLImageElement>(element) && downcast<HTMLImageElement>(element).matchesLowercasedUsemap(key);
+        return is<HTMLImageElement>(element) && downcast<HTMLImageElement>(element).matchesCaseFoldedUsemap(key);
     }));
 }
 
 HTMLLabelElement* DocumentOrderedMap::getElementByLabelForAttribute(const AtomicStringImpl& key, const TreeScope& scope) const
 {
     return downcast<HTMLLabelElement>(get(key, scope, [] (const AtomicStringImpl& key, const Element& element) {
-        return is<HTMLLabelElement>(element) && element.fastGetAttribute(forAttr).impl() == &key;
+        return is<HTMLLabelElement>(element) && element.attributeWithoutSynchronization(forAttr).impl() == &key;
     }));
 }
 

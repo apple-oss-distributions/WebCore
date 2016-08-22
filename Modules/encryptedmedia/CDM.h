@@ -31,7 +31,6 @@
 #include "CDMSession.h"
 #include <runtime/Uint8Array.h>
 #include <wtf/Forward.h>
-#include <wtf/PassRefPtr.h>
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
@@ -55,7 +54,7 @@ class CDM {
 public:
     explicit CDM(const String& keySystem);
 
-    enum CDMErrorCode { UnknownError = 1, ClientError, ServiceError, OutputError, HardwareChangeError, DomainError };
+    enum CDMErrorCode { NoError, UnknownError, ClientError, ServiceError, OutputError, HardwareChangeError, DomainError };
     static bool supportsKeySystem(const String&);
     static bool keySystemSupportsMimeType(const String& keySystem, const String& mimeType);
     static std::unique_ptr<CDM> create(const String& keySystem);
@@ -63,7 +62,7 @@ public:
     ~CDM();
 
     bool supportsMIMEType(const String&) const;
-    std::unique_ptr<CDMSession> createSession();
+    std::unique_ptr<CDMSession> createSession(CDMSessionClient*);
 
     const String& keySystem() const { return m_keySystem; }
 

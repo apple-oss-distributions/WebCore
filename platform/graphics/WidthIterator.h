@@ -22,9 +22,7 @@
 #ifndef WidthIterator_h
 #define WidthIterator_h
 
-#include "FontCascade.h"
-#include "SVGGlyph.h"
-#include "TextRun.h"
+#include <unicode/umachine.h>
 #include <wtf/HashSet.h>
 #include <wtf/Vector.h>
 
@@ -35,6 +33,9 @@ class GlyphBuffer;
 class Font;
 class TextRun;
 struct GlyphData;
+struct OriginalAdvancesForCharacterTreatedAsSpace;
+
+typedef Vector<std::pair<int, OriginalAdvancesForCharacterTreatedAsSpace>, 64> CharactersTreatedAsSpace;
 
 struct WidthIterator {
     WTF_MAKE_FAST_ALLOCATED;
@@ -52,21 +53,6 @@ public:
     const TextRun& run() const { return m_run; }
     float runWidthSoFar() const { return m_runWidthSoFar; }
 
-#if ENABLE(SVG_FONTS)
-    String lastGlyphName() const { return m_lastGlyphName; }
-    void setLastGlyphName(const String& name) { m_lastGlyphName = name; }
-    Vector<SVGGlyph::ArabicForm>& arabicForms() { return m_arabicForms; }
-#endif
-
-    static bool supportsTypesettingFeatures(const FontCascade& font)
-    {
-#if PLATFORM(COCOA)
-        return !(font.typesettingFeatures() & ~(Kerning | Ligatures));
-#else
-        return !font.typesettingFeatures();
-#endif
-    }
-
     const FontCascade* m_font;
 
     const TextRun& m_run;
@@ -78,27 +64,24 @@ public:
     bool m_isAfterExpansion;
     float m_finalRoundingWidth;
 
-#if ENABLE(SVG_FONTS)
-    String m_lastGlyphName;
-    Vector<SVGGlyph::ArabicForm> m_arabicForms;
-#endif
-
 private:
-    GlyphData glyphDataForCharacter(UChar32, bool mirror, int currentCharacter, unsigned& advanceLength, String& normalizedSpacesStringCache);
+    GlyphData glyphDataForCharacter(UChar32, bool mirror);
     template <typename TextIterator>
     inline unsigned advanceInternal(TextIterator&, GlyphBuffer*);
 
     enum class TransformsType { None, Forced, NotForced };
     TransformsType shouldApplyFontTransforms(const GlyphBuffer*, int lastGlyphCount, UChar32 previousCharacter) const;
+    float applyFontTransforms(GlyphBuffer*, bool ltr, int& lastGlyphCount, const Font*, UChar32 previousCharacter, bool force, CharactersTreatedAsSpace&);
 
-    TypesettingFeatures m_typesettingFeatures;
-    HashSet<const Font*>* m_fallbackFonts;
-    bool m_accountForGlyphBounds;
-    float m_maxGlyphBoundingBoxY;
-    float m_minGlyphBoundingBoxY;
-    float m_firstGlyphOverflow;
-    float m_lastGlyphOverflow;
-    bool m_forTextEmphasis;
+    HashSet<const Font*>* m_fallbackFonts { nullptr };
+    bool m_accountForGlyphBounds { false };
+    bool m_enableKerning { false };
+    bool m_requiresShaping { false };
+    bool m_forTextEmphasis { false };
+    float m_maxGlyphBoundingBoxY { std::numeric_limits<float>::min() };
+    float m_minGlyphBoundingBoxY { std::numeric_limits<float>::max() };
+    float m_firstGlyphOverflow { 0 };
+    float m_lastGlyphOverflow { 0 };
 };
 
 }

@@ -22,13 +22,13 @@
 #define CSSStyleSheet_h
 
 #include "CSSParserMode.h"
-#include "CSSRule.h"
 #include "StyleSheet.h"
 #include <memory>
 #include <wtf/HashMap.h>
 #include <wtf/Noncopyable.h>
 #include <wtf/TypeCasts.h>
 #include <wtf/text/AtomicStringHash.h>
+#include <wtf/text/TextPosition.h>
 
 namespace WebCore {
 
@@ -51,41 +51,40 @@ class CSSStyleSheet final : public StyleSheet {
 public:
     static Ref<CSSStyleSheet> create(Ref<StyleSheetContents>&&, CSSImportRule* ownerRule = 0);
     static Ref<CSSStyleSheet> create(Ref<StyleSheetContents>&&, Node* ownerNode);
-    static Ref<CSSStyleSheet> createInline(Node&, const URL&, const String& encoding = String());
+    static Ref<CSSStyleSheet> createInline(Node&, const URL&, const TextPosition& startPosition = TextPosition::minimumPosition(), const String& encoding = String());
 
     virtual ~CSSStyleSheet();
 
-    virtual CSSStyleSheet* parentStyleSheet() const override;
-    virtual Node* ownerNode() const override { return m_ownerNode; }
-    virtual MediaList* media() const override;
-    virtual String href() const override;
-    virtual String title() const override { return m_title; }
-    virtual bool disabled() const override { return m_isDisabled; }
-    virtual void setDisabled(bool) override;
+    CSSStyleSheet* parentStyleSheet() const override;
+    Node* ownerNode() const override { return m_ownerNode; }
+    MediaList* media() const override;
+    String href() const override;
+    String title() const override { return m_title; }
+    bool disabled() const override { return m_isDisabled; }
+    void setDisabled(bool) override;
     
-    PassRefPtr<CSSRuleList> cssRules();
+    RefPtr<CSSRuleList> cssRules();
     unsigned insertRule(const String& rule, unsigned index, ExceptionCode&);
     void deleteRule(unsigned index, ExceptionCode&);
     
     // IE Extensions
-    PassRefPtr<CSSRuleList> rules();
-    int addRule(const String& selector, const String& style, int index, ExceptionCode&);
-    int addRule(const String& selector, const String& style, ExceptionCode&);
+    RefPtr<CSSRuleList> rules();
+    int addRule(const String& selector, const String& style, Optional<unsigned> index, ExceptionCode&);
     void removeRule(unsigned index, ExceptionCode& ec) { deleteRule(index, ec); }
     
     // For CSSRuleList.
     unsigned length() const;
     CSSRule* item(unsigned index);
 
-    virtual void clearOwnerNode() override;
-    virtual CSSImportRule* ownerRule() const override { return m_ownerRule; }
-    virtual URL baseURL() const override;
-    virtual bool isLoading() const override;
+    void clearOwnerNode() override;
+    CSSImportRule* ownerRule() const override { return m_ownerRule; }
+    URL baseURL() const override;
+    bool isLoading() const override;
     
     void clearOwnerRule() { m_ownerRule = 0; }
     Document* ownerDocument() const;
     MediaQuerySet* mediaQueries() const { return m_mediaQueries.get(); }
-    void setMediaQueries(PassRefPtr<MediaQuerySet>);
+    void setMediaQueries(Ref<MediaQuerySet>&&);
     void setTitle(const String& title) { m_title = title; }
 
     bool hadRulesMutation() const { return m_mutatedRules; }
@@ -118,14 +117,17 @@ public:
 
     StyleSheetContents& contents() { return m_contents; }
 
+    bool isInline() const { return m_isInlineStylesheet; }
+    TextPosition startPosition() const { return m_startPosition; }
+
     void detachFromDocument() { m_ownerNode = nullptr; }
 
 private:
     CSSStyleSheet(Ref<StyleSheetContents>&&, CSSImportRule* ownerRule);
-    CSSStyleSheet(Ref<StyleSheetContents>&&, Node* ownerNode, bool isInlineStylesheet);
+    CSSStyleSheet(Ref<StyleSheetContents>&&, Node* ownerNode, const TextPosition& startPosition, bool isInlineStylesheet);
 
-    virtual bool isCSSStyleSheet() const override { return true; }
-    virtual String type() const override { return ASCIILiteral("text/css"); }
+    bool isCSSStyleSheet() const override { return true; }
+    String type() const override { return ASCIILiteral("text/css"); }
 
     bool canAccessRules() const;
     
@@ -138,6 +140,8 @@ private:
 
     Node* m_ownerNode;
     CSSImportRule* m_ownerRule;
+
+    TextPosition m_startPosition;
 
     mutable RefPtr<MediaList> m_mediaCSSOMWrapper;
     mutable Vector<RefPtr<CSSRule>> m_childRuleCSSOMWrappers;

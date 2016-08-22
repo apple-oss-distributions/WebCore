@@ -19,14 +19,10 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef StyleProperties_h
-#define StyleProperties_h
+#pragma once
 
-#include "CSSParser.h"
 #include "CSSParserMode.h"
-#include "CSSPrimitiveValue.h"
 #include "CSSProperty.h"
-#include "CSSPropertyNames.h"
 #include "CSSValueKeywords.h"
 #include <memory>
 #include <wtf/ListHashSet.h>
@@ -86,11 +82,15 @@ public:
     bool isEmpty() const { return !propertyCount(); }
     PropertyReference propertyAt(unsigned) const;
 
-    WEBCORE_EXPORT PassRefPtr<CSSValue> getPropertyCSSValue(CSSPropertyID) const;
+    WEBCORE_EXPORT RefPtr<CSSValue> getPropertyCSSValue(CSSPropertyID) const;
     WEBCORE_EXPORT String getPropertyValue(CSSPropertyID) const;
     bool propertyIsImportant(CSSPropertyID) const;
     String getPropertyShorthand(CSSPropertyID) const;
     bool isPropertyImplicit(CSSPropertyID) const;
+
+    RefPtr<CSSValue> getCustomPropertyCSSValue(const String& propertyName) const;
+    String getCustomPropertyValue(const String& propertyName) const;
+    bool customPropertyIsImportant(const String& propertyName) const;
 
     Ref<MutableStyleProperties> copyBlockProperties() const;
 
@@ -132,7 +132,8 @@ protected:
     { }
 
     int findPropertyIndex(CSSPropertyID) const;
-
+    int findCustomPropertyIndex(const String& propertyName) const;
+    
     unsigned m_cssParserMode : 2;
     mutable unsigned m_isMutable : 1;
     unsigned m_arraySize : 29;
@@ -147,7 +148,9 @@ private:
     String borderSpacingValue(const StylePropertyShorthand&) const;
     String fontValue() const;
     void appendFontLonghandValueIfExplicit(CSSPropertyID, StringBuilder& result, String& value) const;
-
+    
+    RefPtr<CSSValue> getPropertyCSSValueInternal(CSSPropertyID) const;
+    
     friend class PropertySetCSSStyleDeclaration;
 };
 
@@ -163,7 +166,8 @@ public:
     const CSSValue** valueArray() const;
     const StylePropertyMetadata* metadataArray() const;
     int findPropertyIndex(CSSPropertyID) const;
-
+    int findCustomPropertyIndex(const String& propertyName) const;
+    
     void* m_storage;
 
 private:
@@ -193,12 +197,12 @@ public:
 
     PropertySetCSSStyleDeclaration* cssStyleDeclaration();
 
-    bool addParsedProperties(const CSSParser::ParsedPropertyVector&);
+    bool addParsedProperties(const ParsedPropertyVector&);
     bool addParsedProperty(const CSSProperty&);
 
     // These expand shorthand properties into multiple properties.
     bool setProperty(CSSPropertyID, const String& value, bool important = false, StyleSheetContents* contextStyleSheet = 0);
-    void setProperty(CSSPropertyID, PassRefPtr<CSSValue>, bool important = false);
+    void setProperty(CSSPropertyID, RefPtr<CSSValue>&&, bool important = false);
 
     // These do not. FIXME: This is too messy, we can do better.
     bool setProperty(CSSPropertyID, CSSValueID identifier, bool important = false);
@@ -215,14 +219,19 @@ public:
     void mergeAndOverrideOnConflict(const StyleProperties&);
 
     void clear();
-    void parseDeclaration(const String& styleDeclaration, StyleSheetContents* contextStyleSheet);
+    bool parseDeclaration(const String& styleDeclaration, StyleSheetContents* contextStyleSheet);
 
     WEBCORE_EXPORT CSSStyleDeclaration* ensureCSSStyleDeclaration();
     CSSStyleDeclaration* ensureInlineCSSStyleDeclaration(StyledElement* parentElement);
 
     int findPropertyIndex(CSSPropertyID) const;
-
+    int findCustomPropertyIndex(const String& propertyName) const;
+    
     Vector<CSSProperty, 4> m_propertyVector;
+
+    // Methods for querying and altering CSS custom properties.
+    bool setCustomProperty(const String& propertyName, const String& value, bool important = false, StyleSheetContents* contextStyleSheet = 0);
+    bool removeCustomProperty(const String& propertyName, String* returnText = nullptr);
 
 private:
     explicit MutableStyleProperties(CSSParserMode);
@@ -231,6 +240,7 @@ private:
 
     bool removeShorthandProperty(CSSPropertyID);
     CSSProperty* findCSSPropertyWithID(CSSPropertyID);
+    CSSProperty* findCustomCSSPropertyWithName(const String&);
     std::unique_ptr<PropertySetCSSStyleDeclaration> m_cssomWrapper;
 
     friend class StyleProperties;
@@ -279,6 +289,13 @@ inline int StyleProperties::findPropertyIndex(CSSPropertyID propertyID) const
     return downcast<ImmutableStyleProperties>(*this).findPropertyIndex(propertyID);
 }
 
+inline int StyleProperties::findCustomPropertyIndex(const String& propertyName) const
+{
+    if (is<MutableStyleProperties>(*this))
+        return downcast<MutableStyleProperties>(*this).findCustomPropertyIndex(propertyName);
+    return downcast<ImmutableStyleProperties>(*this).findCustomPropertyIndex(propertyName);
+}
+
 } // namespace WebCore
 
 SPECIALIZE_TYPE_TRAITS_BEGIN(WebCore::MutableStyleProperties)
@@ -288,5 +305,3 @@ SPECIALIZE_TYPE_TRAITS_END()
 SPECIALIZE_TYPE_TRAITS_BEGIN(WebCore::ImmutableStyleProperties)
     static bool isType(const WebCore::StyleProperties& set) { return !set.isMutable(); }
 SPECIALIZE_TYPE_TRAITS_END()
-
-#endif // StyleProperties_h

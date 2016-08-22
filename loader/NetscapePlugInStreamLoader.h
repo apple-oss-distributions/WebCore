@@ -26,8 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef NetscapePlugInStreamLoader_h
-#define NetscapePlugInStreamLoader_h
+#pragma once
 
 #include "ResourceLoader.h"
 #include <wtf/Forward.h>
@@ -38,6 +37,7 @@ class NetscapePlugInStreamLoader;
 
 class NetscapePlugInStreamLoaderClient {
 public:
+    virtual void willSendRequest(NetscapePlugInStreamLoader*, ResourceRequest&&, const ResourceResponse& redirectResponse, std::function<void (ResourceRequest&&)>&&) = 0;
     virtual void didReceiveResponse(NetscapePlugInStreamLoader*, const ResourceResponse&) = 0;
     virtual void didReceiveData(NetscapePlugInStreamLoader*, const char*, int) = 0;
     virtual void didFail(NetscapePlugInStreamLoader*, const ResourceError&) = 0;
@@ -50,31 +50,34 @@ protected:
 
 class NetscapePlugInStreamLoader final : public ResourceLoader {
 public:
-    WEBCORE_EXPORT static PassRefPtr<NetscapePlugInStreamLoader> create(Frame*, NetscapePlugInStreamLoaderClient*, const ResourceRequest&);
+    WEBCORE_EXPORT static RefPtr<NetscapePlugInStreamLoader> create(Frame&, NetscapePlugInStreamLoaderClient&, const ResourceRequest&);
     virtual ~NetscapePlugInStreamLoader();
 
     WEBCORE_EXPORT bool isDone() const;
 
 private:
-    virtual void didReceiveResponse(const ResourceResponse&) override;
-    virtual void didReceiveData(const char*, unsigned, long long encodedDataLength, DataPayloadType) override;
-    virtual void didReceiveBuffer(PassRefPtr<SharedBuffer>, long long encodedDataLength, DataPayloadType) override;
-    virtual void didFinishLoading(double finishTime) override;
-    virtual void didFail(const ResourceError&) override;
+    bool init(const ResourceRequest&) override;
 
-    virtual void releaseResources() override;
-    virtual bool isPlugInStreamLoader() override { return true; }
+    void willSendRequest(ResourceRequest&&, const ResourceResponse& redirectResponse, std::function<void(ResourceRequest&&)>&& callback) override;
+    void didReceiveResponse(const ResourceResponse&) override;
+    void didReceiveData(const char*, unsigned, long long encodedDataLength, DataPayloadType) override;
+    void didReceiveBuffer(Ref<SharedBuffer>&&, long long encodedDataLength, DataPayloadType) override;
+    void didFinishLoading(double finishTime) override;
+    void didFail(const ResourceError&) override;
 
-    NetscapePlugInStreamLoader(Frame*, NetscapePlugInStreamLoaderClient*);
+    void releaseResources() override;
 
-    virtual void willCancel(const ResourceError&) override;
-    virtual void didCancel(const ResourceError&) override;
+    NetscapePlugInStreamLoader(Frame&, NetscapePlugInStreamLoaderClient&);
 
-    void didReceiveDataOrBuffer(const char*, int, PassRefPtr<SharedBuffer>, long long encodedDataLength, DataPayloadType);
+    void willCancel(const ResourceError&) override;
+    void didCancel(const ResourceError&) override;
+
+    void didReceiveDataOrBuffer(const char*, int, RefPtr<SharedBuffer>&&, long long encodedDataLength, DataPayloadType);
+
+    void notifyDone();
 
     NetscapePlugInStreamLoaderClient* m_client;
+    bool m_isInitialized { false };
 };
 
 }
-
-#endif // NetscapePlugInStreamLoader_h

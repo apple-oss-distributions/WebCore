@@ -23,8 +23,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef CSSFunctionValue_h
-#define CSSFunctionValue_h
+#pragma once
 
 #include "CSSValue.h"
 
@@ -32,6 +31,7 @@ namespace WebCore {
 
 class CSSValueList;
 struct CSSParserFunction;
+struct CSSParserValue;
 
 class CSSFunctionValue : public CSSValue {
 public:
@@ -40,9 +40,9 @@ public:
         return adoptRef(*new CSSFunctionValue(function));
     }
 
-    static Ref<CSSFunctionValue> create(const String& name, PassRefPtr<CSSValueList> args)
+    static Ref<CSSFunctionValue> create(const String& name, Ref<CSSValueList>&& args)
     {
-        return adoptRef(*new CSSFunctionValue(name, args));
+        return adoptRef(*new CSSFunctionValue(name, WTFMove(args)));
     }
 
     String customCSSText() const;
@@ -51,9 +51,11 @@ public:
 
     CSSValueList* arguments() const { return m_args.get(); }
 
+    bool buildParserValueSubstitutingVariables(CSSParserValue*, const CustomPropertyValueMap& customProperties) const;
+    
 private:
     explicit CSSFunctionValue(CSSParserFunction*);
-    CSSFunctionValue(const String&, PassRefPtr<CSSValueList>);
+    CSSFunctionValue(const String&, Ref<CSSValueList>&&);
 
     String m_name;
     RefPtr<CSSValueList> m_args;
@@ -62,6 +64,3 @@ private:
 } // namespace WebCore
 
 SPECIALIZE_TYPE_TRAITS_CSS_VALUE(CSSFunctionValue, isFunctionValue())
-
-#endif
-

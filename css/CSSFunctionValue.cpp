@@ -35,15 +35,14 @@ namespace WebCore {
 CSSFunctionValue::CSSFunctionValue(CSSParserFunction* function)
     : CSSValue(FunctionClass)
     , m_name(function->name)
+    , m_args(function->args ? RefPtr<CSSValueList>(CSSValueList::createFromParserValueList(*function->args)) : nullptr)
 {
-    if (function->args)
-        m_args = CSSValueList::createFromParserValueList(*function->args);
 }
 
-CSSFunctionValue::CSSFunctionValue(const String& name, PassRefPtr<CSSValueList> args)
+CSSFunctionValue::CSSFunctionValue(const String& name, Ref<CSSValueList>&& args)
     : CSSValue(FunctionClass)
     , m_name(name)
-    , m_args(args)
+    , m_args(WTFMove(args))
 {
 }
 
@@ -60,6 +59,21 @@ String CSSFunctionValue::customCSSText() const
 bool CSSFunctionValue::equals(const CSSFunctionValue& other) const
 {
     return m_name == other.m_name && compareCSSValuePtr(m_args, other.m_args);
+}
+
+bool CSSFunctionValue::buildParserValueSubstitutingVariables(CSSParserValue* result, const CustomPropertyValueMap& customProperties) const
+{
+    result->id = CSSValueInvalid;
+    result->unit = CSSParserValue::Function;
+    result->function = new CSSParserFunction;
+    result->function->name.init(m_name);
+    bool success = true;
+    if (m_args) {
+        CSSParserValueList* argList = new CSSParserValueList;
+        success = m_args->buildParserValueListSubstitutingVariables(argList, customProperties);
+        result->function->args.reset(argList);
+    }
+    return success;
 }
 
 }

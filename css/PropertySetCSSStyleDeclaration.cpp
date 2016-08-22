@@ -22,7 +22,9 @@
 #include "config.h"
 #include "PropertySetCSSStyleDeclaration.h"
 
+#include "CSSCustomPropertyValue.h"
 #include "CSSParser.h"
+#include "CSSRule.h"
 #include "CSSStyleSheet.h"
 #include "HTMLNames.h"
 #include "InspectorInstrumentation.h"
@@ -76,7 +78,7 @@ public:
             return;
 
         if (m_mutation && s_shouldDeliver)
-            m_mutationRecipients->enqueueMutationRecord(m_mutation);
+            m_mutationRecipients->enqueueMutationRecord(m_mutation.releaseNonNull());
 
         s_shouldDeliver = false;
         if (!s_shouldNotifyInspector) {
@@ -136,7 +138,7 @@ unsigned PropertySetCSSStyleDeclaration::length() const
 String PropertySetCSSStyleDeclaration::item(unsigned i) const
 {
     if (i >= m_propertySet->propertyCount())
-        return "";
+        return String();
     return m_propertySet->propertyAt(i).cssName();
 }
 
@@ -144,32 +146,40 @@ String PropertySetCSSStyleDeclaration::cssText() const
 {
     return m_propertySet->asText();
 }
-    
-void PropertySetCSSStyleDeclaration::setCssText(const String& text, ExceptionCode& ec)
+
+void PropertySetCSSStyleDeclaration::setCssText(const String& text, ExceptionCode&)
 {
     StyleAttributeMutationScope mutationScope(this);
     if (!willMutate())
         return;
 
-    ec = 0;
-    // FIXME: Detect syntax errors and set ec.
-    m_propertySet->parseDeclaration(text, contextStyleSheet());
+    bool changed = m_propertySet->parseDeclaration(text, contextStyleSheet());
 
-    didMutate(PropertyChanged);
+    didMutate(changed ? PropertyChanged : NoChanges);
 
     mutationScope.enqueueMutationRecord();    
 }
 
-PassRefPtr<CSSValue> PropertySetCSSStyleDeclaration::getPropertyCSSValue(const String& propertyName)
+RefPtr<CSSValue> PropertySetCSSStyleDeclaration::getPropertyCSSValue(const String& propertyName)
 {
+    if (isCustomPropertyName(propertyName)) {
+        RefPtr<CSSValue> value = m_propertySet->getCustomPropertyCSSValue(propertyName);
+        if (!value)
+            return nullptr;
+        return cloneAndCacheForCSSOM(value.get());
+    }
+    
     CSSPropertyID propertyID = cssPropertyID(propertyName);
     if (!propertyID)
-        return 0;
+        return nullptr;
     return cloneAndCacheForCSSOM(m_propertySet->getPropertyCSSValue(propertyID).get());
 }
 
 String PropertySetCSSStyleDeclaration::getPropertyValue(const String& propertyName)
 {
+    if (isCustomPropertyName(propertyName))
+        return m_propertySet->getCustomPropertyValue(propertyName);
+
     CSSPropertyID propertyID = cssPropertyID(propertyName);
     if (!propertyID)
         return String();
@@ -178,10 +188,13 @@ String PropertySetCSSStyleDeclaration::getPropertyValue(const String& propertyNa
 
 String PropertySetCSSStyleDeclaration::getPropertyPriority(const String& propertyName)
 {
+    if (isCustomPropertyName(propertyName))
+        return m_propertySet->customPropertyIsImportant(propertyName) ? ASCIILiteral("important") : emptyString();
+
     CSSPropertyID propertyID = cssPropertyID(propertyName);
     if (!propertyID)
         return String();
-    return m_propertySet->propertyIsImportant(propertyID) ? "important" : "";
+    return m_propertySet->propertyIsImportant(propertyID) ? ASCIILiteral("important") : emptyString();
 }
 
 String PropertySetCSSStyleDeclaration::getPropertyShorthand(const String& propertyName)
@@ -203,7 +216,10 @@ bool PropertySetCSSStyleDeclaration::isPropertyImplicit(const String& propertyNa
 void PropertySetCSSStyleDeclaration::setProperty(const String& propertyName, const String& value, const String& priority, ExceptionCode& ec)
 {
     StyleAttributeMutationScope mutationScope(this);
+    
     CSSPropertyID propertyID = cssPropertyID(propertyName);
+    if (isCustomPropertyName(propertyName))
+        propertyID = CSSPropertyCustom;
     if (!propertyID)
         return;
 
@@ -213,7 +229,7 @@ void PropertySetCSSStyleDeclaration::setProperty(const String& propertyName, con
     bool important = priority.find("important", 0, false) != notFound;
 
     ec = 0;
-    bool changed = m_propertySet->setProperty(propertyID, value, important, contextStyleSheet());
+    bool changed = propertyID != CSSPropertyCustom ? m_propertySet->setProperty(propertyID, value, important, contextStyleSheet()) : m_propertySet->setCustomProperty(propertyName, value, important, contextStyleSheet());
 
     didMutate(changed ? PropertyChanged : NoChanges);
 
@@ -228,6 +244,8 @@ String PropertySetCSSStyleDeclaration::removeProperty(const String& propertyName
 {
     StyleAttributeMutationScope mutationScope(this);
     CSSPropertyID propertyID = cssPropertyID(propertyName);
+    if (isCustomPropertyName(propertyName))
+        propertyID = CSSPropertyCustom;
     if (!propertyID)
         return String();
 
@@ -236,7 +254,7 @@ String PropertySetCSSStyleDeclaration::removeProperty(const String& propertyName
 
     ec = 0;
     String result;
-    bool changed = m_propertySet->removeProperty(propertyID, &result);
+    bool changed = propertyID != CSSPropertyCustom ? m_propertySet->removeProperty(propertyID, &result) : m_propertySet->removeCustomProperty(propertyName, &result);
 
     didMutate(changed ? PropertyChanged : NoChanges);
 
@@ -245,7 +263,7 @@ String PropertySetCSSStyleDeclaration::removeProperty(const String& propertyName
     return result;
 }
 
-PassRefPtr<CSSValue> PropertySetCSSStyleDeclaration::getPropertyCSSValueInternal(CSSPropertyID propertyID)
+RefPtr<CSSValue> PropertySetCSSStyleDeclaration::getPropertyCSSValueInternal(CSSPropertyID propertyID)
 {
     return m_propertySet->getPropertyCSSValue(propertyID);
 }
@@ -365,7 +383,6 @@ void InlineCSSStyleDeclaration::didMutate(MutationType type)
     if (!m_parentElement)
         return;
 
-    m_parentElement->setNeedsStyleRecalc(InlineStyleChange);
     m_parentElement->invalidateStyleAttribute();
     StyleAttributeMutationScope(this).didInvalidateStyleAttr();
 }

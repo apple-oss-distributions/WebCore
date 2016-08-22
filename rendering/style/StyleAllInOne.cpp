@@ -29,7 +29,7 @@
 #include "ContentData.cpp"
 #include "CounterDirectives.cpp"
 #include "FillLayer.cpp"
-#include "GridResolvedPosition.cpp"
+#include "GridPositionsResolver.cpp"
 #include "KeyframeList.cpp"
 #include "NinePieceImage.cpp"
 #include "QuotesData.cpp"
@@ -57,3 +57,4 @@
 #include "StyleSurroundData.cpp"
 #include "StyleTransformData.cpp"
 #include "StyleVisualData.cpp"
+#include "WillChangeData.cpp"

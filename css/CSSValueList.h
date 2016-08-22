@@ -27,6 +27,7 @@
 
 namespace WebCore {
 
+struct CSSParserValue;
 class CSSParserValueList;
 
 class CSSValueList : public CSSValue {
@@ -66,7 +67,7 @@ public:
     void prepend(Ref<CSSValue>&&);
     bool removeAll(CSSValue*);
     bool hasValue(CSSValue*) const;
-    PassRefPtr<CSSValueList> copy();
+    Ref<CSSValueList> copy();
 
     String customCSSText() const;
     bool equals(const CSSValueList&) const;
@@ -76,8 +77,14 @@ public:
 
     bool traverseSubresources(const std::function<bool (const CachedResource&)>& handler) const;
     
-    PassRefPtr<CSSValueList> cloneForCSSOM() const;
+    Ref<CSSValueList> cloneForCSSOM() const;
 
+    bool containsVariables() const;
+    bool checkVariablesForCycles(CustomPropertyValueMap& customProperties, HashSet<AtomicString>& seenProperties, HashSet<AtomicString>& invalidProperties) const;
+    
+    bool buildParserValueListSubstitutingVariables(CSSParserValueList*, const CustomPropertyValueMap& customProperties) const;
+    bool buildParserValueSubstitutingVariables(CSSParserValue*, const CustomPropertyValueMap& customProperties) const;
+    
 protected:
     CSSValueList(ClassType, ValueListSeparator);
     CSSValueList(const CSSValueList& cloneFrom);
@@ -91,12 +98,12 @@ private:
 
 inline void CSSValueList::append(Ref<CSSValue>&& value)
 {
-    m_values.append(WTF::move(value));
+    m_values.append(WTFMove(value));
 }
 
 inline void CSSValueList::prepend(Ref<CSSValue>&& value)
 {
-    m_values.insert(0, WTF::move(value));
+    m_values.insert(0, WTFMove(value));
 }
 
 } // namespace WebCore

@@ -23,8 +23,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef FontSelector_h
-#define FontSelector_h
+#pragma once
 
 #include "FontRanges.h"
 #include <wtf/Forward.h>
@@ -33,35 +32,34 @@
 
 namespace WebCore {
 
+class FontCascadeDescription;
 class FontDescription;
 class FontSelectorClient;
+
+class FontAccessor : public RefCounted<FontAccessor> {
+public:
+    virtual ~FontAccessor() { }
+
+    virtual const Font* font() const = 0;
+    virtual bool isLoading() const = 0;
+};
 
 class FontSelector : public RefCounted<FontSelector> {
 public:
     virtual ~FontSelector() { }
 
     virtual FontRanges fontRangesForFamily(const FontDescription&, const AtomicString&) = 0;
-    virtual PassRefPtr<Font> fallbackFontAt(const FontDescription&, size_t) = 0;
+    virtual RefPtr<Font> fallbackFontAt(const FontDescription&, size_t) = 0;
 
     virtual size_t fallbackFontCount() = 0;
-    virtual bool resolvesFamilyFor(const FontDescription&) const = 0;
 
     virtual void fontCacheInvalidated() { }
 
-    virtual void registerForInvalidationCallbacks(FontSelectorClient*) = 0;
-    virtual void unregisterForInvalidationCallbacks(FontSelectorClient*) = 0;
+    virtual void registerForInvalidationCallbacks(FontSelectorClient&) = 0;
+    virtual void unregisterForInvalidationCallbacks(FontSelectorClient&) = 0;
 
     virtual unsigned uniqueId() const = 0;
     virtual unsigned version() const = 0;
 };
 
-class FontSelectorClient {
-public:
-    virtual ~FontSelectorClient() { }
-
-    virtual void fontsNeedUpdate(FontSelector*) = 0;
-};
-
-} // namespace WebCore
-
-#endif // FontSelector_h
+}

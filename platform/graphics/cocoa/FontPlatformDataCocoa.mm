@@ -29,9 +29,7 @@
 #import "WebCoreSystemInterface.h"
 #import <wtf/text/WTFString.h>
 
-#if !PLATFORM(IOS)
-#import <AppKit/NSFont.h>
-#else
+#if PLATFORM(IOS)
 #import "CoreGraphicsSPI.h"
 #import <CoreText/CoreText.h>
 #endif
@@ -41,38 +39,17 @@ namespace WebCore {
 // These CoreText Text Spacing feature selectors are not defined in CoreText.
 enum TextSpacingCTFeatureSelector { TextSpacingProportional, TextSpacingFullWidth, TextSpacingHalfWidth, TextSpacingThirdWidth, TextSpacingQuarterWidth };
 
-FontPlatformData::FontPlatformData(CTFontRef font, float size, bool syntheticBold, bool syntheticOblique, FontOrientation orientation, FontWidthVariant widthVariant)
-    : FontPlatformData(adoptCF(CTFontCopyGraphicsFont(font, NULL)).get(), size, syntheticBold, syntheticOblique, orientation, widthVariant)
+FontPlatformData::FontPlatformData(CTFontRef font, float size, bool syntheticBold, bool syntheticOblique, FontOrientation orientation, FontWidthVariant widthVariant, TextRenderingMode textRenderingMode)
+    : FontPlatformData(adoptCF(CTFontCopyGraphicsFont(font, NULL)).get(), size, syntheticBold, syntheticOblique, orientation, widthVariant, textRenderingMode)
 {
     ASSERT_ARG(font, font);
     m_font = font;
     m_isColorBitmapFont = CTFontGetSymbolicTraits(font) & kCTFontTraitColorGlyphs;
-    m_isCompositeFontReference = CTFontGetSymbolicTraits(font) & kCTFontCompositeTrait;
-}
+    m_isSystemFont = CTFontDescriptorIsSystemUIFont(adoptCF(CTFontCopyFontDescriptor(m_font.get())).get());
 
-FontPlatformData::~FontPlatformData()
-{
-}
-
-void FontPlatformData::platformDataInit(const FontPlatformData& f)
-{
-    m_font = f.m_font;
-
-    setIsEmoji(f.isEmoji());
-    m_cgFont = f.m_cgFont;
-    m_ctFont = f.m_ctFont;
-}
-
-const FontPlatformData& FontPlatformData::platformDataAssign(const FontPlatformData& f)
-{
-    m_cgFont = f.m_cgFont;
-    setIsEmoji(f.isEmoji());
-    if (m_font && f.m_font && CFEqual(m_font.get(), f.m_font.get()))
-        return *this;
-    m_font = f.m_font;
-    m_ctFont = f.m_ctFont;
-
-    return *this;
+#if PLATFORM(IOS)
+    m_isEmoji = CTFontIsAppleColorEmoji(m_font.get());
+#endif
 }
 
 bool FontPlatformData::platformIsEqual(const FontPlatformData& other) const
@@ -84,38 +61,18 @@ bool FontPlatformData::platformIsEqual(const FontPlatformData& other) const
 #else
         result = m_font == other.m_font;
 #endif
-        ASSERT(!result || isEmoji() == other.isEmoji());
         return result;
     }
-    ASSERT(m_cgFont != other.m_cgFont || isEmoji() == other.isEmoji());
     return m_cgFont == other.m_cgFont;
 }
 
-void FontPlatformData::setFont(CTFontRef font)
+CTFontRef FontPlatformData::registeredFont() const
 {
-    ASSERT_ARG(font, font);
-
-    if (m_font == font)
-        return;
-
-    m_font = font;
-    m_size = CTFontGetSize(font);
-    m_cgFont = adoptCF(CTFontCopyGraphicsFont(font, nullptr));
-
-    CTFontSymbolicTraits traits = CTFontGetSymbolicTraits(m_font.get());
-    m_isColorBitmapFont = traits & kCTFontTraitColorGlyphs;
-    m_isCompositeFontReference = traits & kCTFontCompositeTrait;
-    
-    m_ctFont = nullptr;
-}
-
-bool FontPlatformData::allowsLigatures() const
-{
-    if (!m_font)
-        return false;
-
-    RetainPtr<CFCharacterSetRef> characterSet = adoptCF(CTFontCopyCharacterSet(ctFont()));
-    return !(characterSet.get() && CFCharacterSetIsCharacterMember(characterSet.get(), 'a'));
+    CTFontRef platformFont = font();
+    ASSERT(platformFont);
+    if (platformFont && adoptCF(CTFontCopyAttribute(platformFont, kCTFontURLAttribute)))
+        return platformFont;
+    return nullptr;
 }
 
 inline int mapFontWidthVariantToCTFeatureSelector(FontWidthVariant variant)
@@ -158,30 +115,14 @@ static CTFontDescriptorRef cascadeToLastResortFontDescriptor()
     return descriptor;
 }
 
-CGFloat FontPlatformData::ctFontSize() const
-{
-    // On iOS, Apple Color Emoji size is adjusted (and then re-adjusted by Core Text) and capped.
-    return !isEmoji() ? m_size : m_size <= 15 ? 4 * (m_size + 2) / static_cast<CGFloat>(5) : 16;
-}
-
 CTFontRef FontPlatformData::ctFont() const
 {
     if (m_ctFont)
         return m_ctFont.get();
 
-    ASSERT(m_cgFont.get());
-    m_ctFont = m_font;
-    if (m_ctFont) {
-        CTFontDescriptorRef fontDescriptor;
-        RetainPtr<CFStringRef> postScriptName = adoptCF(CTFontCopyPostScriptName(m_ctFont.get()));
-        fontDescriptor = cascadeToLastResortFontDescriptor();
-        m_ctFont = adoptCF(CTFontCreateCopyWithAttributes(m_ctFont.get(), ctFontSize(), 0, fontDescriptor));
-    } else {
-#if CORETEXT_WEB_FONTS
-        ASSERT_NOT_REACHED();
-#endif
-        m_ctFont = adoptCF(CTFontCreateWithGraphicsFont(m_cgFont.get(), ctFontSize(), 0, cascadeToLastResortFontDescriptor()));
-    }
+    ASSERT(m_font);
+    ASSERT(m_cgFont);
+    m_ctFont = adoptCF(CTFontCreateCopyWithAttributes(m_font.get(), m_size, 0, cascadeToLastResortFontDescriptor()));
 
     if (m_widthVariant != RegularWidth) {
         int featureTypeValue = kTextSpacingType;
@@ -205,7 +146,7 @@ RetainPtr<CFTypeRef> FontPlatformData::objectForEqualityCheck(CTFontRef ctFont)
     // FIXME: https://bugs.webkit.org/show_bug.cgi?id=138683 This is a shallow pointer compare for web fonts
     // because the URL contains the address of the font. This means we might erroneously get false negatives.
     RetainPtr<CFURLRef> url = adoptCF(static_cast<CFURLRef>(CTFontDescriptorCopyAttribute(fontDescriptor.get(), kCTFontReferenceURLAttribute)));
-    ASSERT(CFGetTypeID(url.get()) == CFURLGetTypeID());
+    ASSERT(!url || CFGetTypeID(url.get()) == CFURLGetTypeID());
     return url;
 }
 
@@ -214,7 +155,7 @@ RetainPtr<CFTypeRef> FontPlatformData::objectForEqualityCheck() const
     return objectForEqualityCheck(ctFont());
 }
 
-PassRefPtr<SharedBuffer> FontPlatformData::openTypeTable(uint32_t table) const
+RefPtr<SharedBuffer> FontPlatformData::openTypeTable(uint32_t table) const
 {
     if (RetainPtr<CFDataRef> data = adoptCF(CGFontCopyTableForTag(cgFont(), table)))
         return SharedBuffer::wrapCFData(data.get());

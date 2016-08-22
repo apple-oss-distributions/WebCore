@@ -150,12 +150,9 @@ ComplexTextController::ComplexTextRun::ComplexTextRun(const Font& font, const UC
     unsigned r = 0;
     while (r < m_stringLength) {
         m_coreTextIndicesVector.uncheckedAppend(r);
-        if (U_IS_SURROGATE(m_characters[r])) {
-            ASSERT(r + 1 < m_stringLength);
-            ASSERT(U_IS_SURROGATE_LEAD(m_characters[r]));
-            ASSERT(U_IS_TRAIL(m_characters[r + 1]));
+        if (U_IS_LEAD(m_characters[r]) && r + 1 < m_stringLength && U_IS_TRAIL(m_characters[r + 1]))
             r += 2;
-        } else
+        else
             r++;
     }
     m_glyphCount = m_coreTextIndicesVector.size();
@@ -189,6 +186,11 @@ static const UniChar* provideStringAndAttributes(CFIndex stringIndex, CFIndex* c
     return info->cp + stringIndex;
 }
 
+static inline bool safeCFEqual(CFTypeRef a, CFTypeRef b)
+{
+    return (!a && !b) || (a && b && CFEqual(a, b));
+}
+
 void ComplexTextController::collectComplexTextRunsForCharacters(const UChar* cp, unsigned length, unsigned stringLocation, const Font* font)
 {
     if (!font) {
@@ -212,7 +214,7 @@ void ComplexTextController::collectComplexTextRunsForCharacters(const UChar* cp,
 
         RetainPtr<WebCascadeList> cascadeList = adoptNS([[WebCascadeList alloc] initWithFont:&m_font character:baseCharacter]);
 
-        stringAttributes = adoptCF(CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, font->getCFStringAttributes(m_font.typesettingFeatures(), font->platformData().orientation())));
+        stringAttributes = adoptCF(CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, font->getCFStringAttributes(m_font.enableKerning(), font->platformData().orientation())));
         static const void* attributeKeys[] = { kCTFontCascadeListAttribute };
         const void* values[] = { cascadeList.get() };
         RetainPtr<CFDictionaryRef> attributes = adoptCF(CFDictionaryCreate(kCFAllocatorDefault, attributeKeys, values, sizeof(attributeKeys) / sizeof(*attributeKeys), &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
@@ -220,7 +222,7 @@ void ComplexTextController::collectComplexTextRunsForCharacters(const UChar* cp,
         RetainPtr<CTFontRef> fontWithCascadeList = adoptCF(CTFontCreateCopyWithAttributes(font->platformData().ctFont(), m_font.pixelSize(), 0, fontDescriptor.get()));
         CFDictionarySetValue(const_cast<CFMutableDictionaryRef>(stringAttributes.get()), kCTFontAttributeName, fontWithCascadeList.get());
     } else
-        stringAttributes = font->getCFStringAttributes(m_font.typesettingFeatures(), font->platformData().orientation());
+        stringAttributes = font->getCFStringAttributes(m_font.enableKerning(), font->platformData().orientation());
 
     RetainPtr<CTLineRef> line;
 
@@ -257,16 +259,16 @@ void ComplexTextController::collectComplexTextRunsForCharacters(const UChar* cp,
         if (isSystemFallback) {
             CFDictionaryRef runAttributes = CTRunGetAttributes(ctRun);
             CTFontRef runCTFont = static_cast<CTFontRef>(CFDictionaryGetValue(runAttributes, kCTFontAttributeName));
-            ASSERT(CFGetTypeID(runCTFont) == CTFontGetTypeID());
+            ASSERT(runCTFont && CFGetTypeID(runCTFont) == CTFontGetTypeID());
             RetainPtr<CFTypeRef> runFontEqualityObject = FontPlatformData::objectForEqualityCheck(runCTFont);
-            if (!CFEqual(runFontEqualityObject.get(), font->platformData().objectForEqualityCheck().get())) {
+            if (!safeCFEqual(runFontEqualityObject.get(), font->platformData().objectForEqualityCheck().get())) {
                 // Begin trying to see if runFont matches any of the fonts in the fallback list.
 
                 for (unsigned i = 0; !m_font.fallbackRangesAt(i).isNull(); ++i) {
                     runFont = m_font.fallbackRangesAt(i).fontForCharacter(baseCharacter);
                     if (!runFont)
                         continue;
-                    if (CFEqual(runFont->platformData().objectForEqualityCheck().get(), runFontEqualityObject.get()))
+                    if (safeCFEqual(runFont->platformData().objectForEqualityCheck().get(), runFontEqualityObject.get()))
                         break;
                     runFont = nullptr;
                 }
@@ -281,7 +283,7 @@ void ComplexTextController::collectComplexTextRunsForCharacters(const UChar* cp,
                         continue;
                     }
                     auto& fontCache = FontCache::singleton();
-                    runFont = fontCache.fontForFamily(m_font.fontDescription(), fontName.get(), false).get();
+                    runFont = fontCache.fontForFamily(m_font.fontDescription(), fontName.get()).get();
                     // Core Text may have used a font that our font lookup path cannot find. In that case, fall back on
                     // using the font as returned.
                     if (!runFont) {

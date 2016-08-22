@@ -65,11 +65,13 @@ bool MixedContentChecker::canDisplayInsecureContent(SecurityOrigin* securityOrig
     if (!isMixedContent(securityOrigin, url))
         return true;
 
-    bool allowed = m_frame.settings().allowDisplayOfInsecureContent() || type == ContentType::ActiveCanWarn;
+    bool allowed = (m_frame.settings().allowDisplayOfInsecureContent() || type == ContentType::ActiveCanWarn) && !m_frame.document()->geolocationAccessed();
     logWarning(allowed, "display", url);
 
-    if (allowed)
+    if (allowed) {
+        m_frame.document()->setFoundMixedContent();
         client().didDisplayInsecureContent();
+    }
 
     return allowed;
 }
@@ -79,13 +81,31 @@ bool MixedContentChecker::canRunInsecureContent(SecurityOrigin* securityOrigin, 
     if (!isMixedContent(securityOrigin, url))
         return true;
 
-    bool allowed = m_frame.settings().allowRunningOfInsecureContent();
+    bool allowed = m_frame.settings().allowRunningOfInsecureContent() && !m_frame.document()->geolocationAccessed();
     logWarning(allowed, "run", url);
 
-    if (allowed)
+    if (allowed) {
+        m_frame.document()->setFoundMixedContent();
         client().didRunInsecureContent(securityOrigin, url);
+    }
 
     return allowed;
+}
+
+void MixedContentChecker::checkFormForMixedContent(SecurityOrigin* securityOrigin, const URL& url) const
+{
+    // Unconditionally allow javascript: URLs as form actions as some pages do this and it does not introduce
+    // a mixed content issue.
+    if (protocolIsJavaScript(url))
+        return;
+
+    if (!isMixedContent(securityOrigin, url))
+        return;
+
+    String message = makeString("The page at ", m_frame.document()->url().stringCenterEllipsizedToLength(), " contains a form which targets an insecure URL ", url.stringCenterEllipsizedToLength(), ".\n");
+    m_frame.document()->addConsoleMessage(MessageSource::Security, MessageLevel::Warning, message);
+
+    client().didDisplayInsecureContent();
 }
 
 void MixedContentChecker::logWarning(bool allowed, const String& action, const URL& target) const
