@@ -198,10 +198,6 @@ void MockSourceBufferPrivate::abort()
 {
 }
 
-void MockSourceBufferPrivate::resetParserState()
-{
-}
-
 void MockSourceBufferPrivate::removedFromMediaSource()
 {
     if (m_mediaSource)

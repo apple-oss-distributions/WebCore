@@ -228,12 +228,13 @@ bool MediaElementSession::canShowControlsManager(PlaybackControlsPurpose purpose
         return true;
     }
 
-    if (purpose == PlaybackControlsPurpose::ControlsManager && !isElementRectMostlyInMainFrame(m_element)) {
+    if (!isElementRectMostlyInMainFrame(m_element)) {
         LOG(Media, "MediaElementSession::canShowControlsManager - returning FALSE: Not in main frame");
         return false;
     }
 
-    if (!m_element.hasAudio() && !m_element.hasEverHadAudio()) {
+    bool meetsAudioTrackRequirements = m_element.hasAudio() || (purpose == PlaybackControlsPurpose::ControlsManager && m_element.hasEverHadAudio());
+    if (!meetsAudioTrackRequirements) {
         LOG(Media, "MediaElementSession::canShowControlsManager - returning FALSE: No audio");
         return false;
     }
@@ -258,7 +259,7 @@ bool MediaElementSession::canShowControlsManager(PlaybackControlsPurpose purpose
         return true;
     }
 
-    if (purpose == PlaybackControlsPurpose::ControlsManager && hasBehaviorRestriction(RequirePlaybackToControlControlsManager) && !m_element.isPlaying()) {
+    if (hasBehaviorRestriction(RequirePlaybackToControlControlsManager) && !m_element.isPlaying()) {
         LOG(Media, "MediaElementSession::canShowControlsManager - returning FALSE: Needs to be playing");
         return false;
     }
@@ -273,14 +274,13 @@ bool MediaElementSession::canShowControlsManager(PlaybackControlsPurpose purpose
         return false;
     }
 
-    // Only allow the main content heuristic to forbid videos from showing up if our purpose is the controls manager.
-    if (purpose == PlaybackControlsPurpose::ControlsManager && m_element.isVideo()) {
+    if (m_element.isVideo()) {
         if (!m_element.renderer()) {
             LOG(Media, "MediaElementSession::canShowControlsManager - returning FALSE: No renderer");
             return false;
         }
 
-        if (!m_element.hasVideo() && !m_element.hasEverHadVideo()) {
+        if (purpose == PlaybackControlsPurpose::ControlsManager && !m_element.hasVideo() && !m_element.hasEverHadVideo()) {
             LOG(Media, "MediaElementSession::canShowControlsManager - returning FALSE: No video");
             return false;
         }
@@ -289,11 +289,6 @@ bool MediaElementSession::canShowControlsManager(PlaybackControlsPurpose purpose
             LOG(Media, "MediaElementSession::canShowControlsManager - returning TRUE: Is main content");
             return true;
         }
-    }
-
-    if (purpose == PlaybackControlsPurpose::NowPlaying) {
-        LOG(Media, "MediaElementSession::canShowControlsManager - returning TRUE: Potentially plays audio");
-        return true;
     }
 
     LOG(Media, "MediaElementSession::canShowControlsManager - returning FALSE: No user gesture");

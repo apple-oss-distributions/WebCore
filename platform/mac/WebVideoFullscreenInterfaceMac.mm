@@ -352,9 +352,7 @@ WebVideoFullscreenInterfaceMac::WebVideoFullscreenInterfaceMac(WebPlaybackSessio
     : m_playbackSessionInterface(playbackSessionInterface)
 {
     ASSERT(m_playbackSessionInterface->webPlaybackSessionModel());
-    auto model = m_playbackSessionInterface->webPlaybackSessionModel();
-    model->addClient(*this);
-    [videoFullscreenInterfaceObjC() updateIsPlaying:model->isPlaying() newPlaybackRate:model->playbackRate()];
+    m_playbackSessionInterface->webPlaybackSessionModel()->addClient(*this);
 }
 
 WebVideoFullscreenInterfaceMac::~WebVideoFullscreenInterfaceMac()

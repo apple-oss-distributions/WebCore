@@ -51,13 +51,10 @@ public:
 
     virtual ~PlatformMediaSessionManager() { }
 
-    virtual void scheduleUpdateNowPlayingInfo() { }
     bool has(PlatformMediaSession::MediaType) const;
     int count(PlatformMediaSession::MediaType) const;
     bool activeAudioSessionRequired() const;
     bool canProduceAudio() const;
-
-    WEBCORE_EXPORT virtual bool hasActiveNowPlayingSession() const { return false; }
 
     bool willIgnoreSystemInterruptions() const { return m_willIgnoreSystemInterruptions; }
     void setWillIgnoreSystemInterruptions(bool ignore) { m_willIgnoreSystemInterruptions = ignore; }
@@ -88,7 +85,6 @@ public:
     virtual bool sessionWillBeginPlayback(PlatformMediaSession&);
     virtual void sessionWillEndPlayback(PlatformMediaSession&);
     virtual bool sessionCanLoadMedia(const PlatformMediaSession&) const;
-    virtual void sessionDidEndRemoteScrubbing(const PlatformMediaSession&) { };
     virtual void clientCharacteristicsChanged(PlatformMediaSession&) { }
 
 #if PLATFORM(IOS)

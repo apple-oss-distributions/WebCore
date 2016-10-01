@@ -29,7 +29,6 @@
 #if ENABLE(MEDIA_SOURCE) && USE(AVFOUNDATION)
 
 #include "SourceBufferPrivate.h"
-#include <dispatch/group.h>
 #include <dispatch/semaphore.h>
 #include <wtf/Deque.h>
 #include <wtf/HashMap.h>
@@ -116,7 +115,6 @@ private:
     void setClient(SourceBufferPrivateClient*) override;
     void append(const unsigned char* data, unsigned length) override;
     void abort() override;
-    void resetParserState() override;
     void removedFromMediaSource() override;
     MediaPlayer::ReadyState readyState() const override;
     void setReadyState(MediaPlayer::ReadyState) override;
@@ -141,7 +139,6 @@ private:
     Vector<SourceBufferPrivateAVFObjCErrorClient*> m_errorClients;
 
     WeakPtrFactory<SourceBufferPrivateAVFObjC> m_weakFactory;
-    WeakPtrFactory<SourceBufferPrivateAVFObjC> m_appendWeakFactory;
 
     RetainPtr<AVStreamDataParser> m_parser;
     RetainPtr<AVAsset> m_asset;
@@ -151,7 +148,6 @@ private:
     RetainPtr<WebAVSampleBufferErrorListener> m_errorListener;
     RetainPtr<NSError> m_hdcpError;
     OSObjectPtr<dispatch_semaphore_t> m_hasSessionSemaphore;
-    OSObjectPtr<dispatch_group_t> m_isAppendingGroup;
 
     MediaSourcePrivateAVFObjC* m_mediaSource;
     SourceBufferPrivateClient* m_client;
@@ -159,7 +155,6 @@ private:
 
     FloatSize m_cachedSize;
     bool m_parsingSucceeded;
-    bool m_parserStateWasReset { false };
     int m_enabledVideoTrackID;
     int m_protectedTrackID;
 };
