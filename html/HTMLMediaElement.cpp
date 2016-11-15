@@ -350,6 +350,7 @@ static uint64_t nextElementID()
 
 struct MediaElementSessionInfo {
     const MediaElementSession* session;
+    MediaElementSession::PlaybackControlsPurpose purpose;
 
     double timeOfLastUserInteraction;
     bool canShowControlsManager : 1;
@@ -363,6 +364,7 @@ static MediaElementSessionInfo mediaElementSessionInfoForSession(const MediaElem
     const HTMLMediaElement& element = session.element();
     return {
         &session,
+        purpose,
         session.mostRecentUserInteractionTime(),
         session.canShowControlsManager(purpose),
         element.isFullscreen() || element.isVisibleInViewport(),
@@ -373,9 +375,16 @@ static MediaElementSessionInfo mediaElementSessionInfoForSession(const MediaElem
 
 static bool preferMediaControlsForCandidateSessionOverOtherCandidateSession(const MediaElementSessionInfo& session, const MediaElementSessionInfo& otherSession)
 {
-    // Prioritize visible media over offscreen media.
-    if (session.isVisibleInViewportOrFullscreen != otherSession.isVisibleInViewportOrFullscreen)
+    MediaElementSession::PlaybackControlsPurpose purpose = session.purpose;
+    ASSERT(purpose == otherSession.purpose);
+
+    // For the controls manager, prioritize visible media over offscreen media.
+    if (purpose == MediaElementSession::PlaybackControlsPurpose::ControlsManager && session.isVisibleInViewportOrFullscreen != otherSession.isVisibleInViewportOrFullscreen)
         return session.isVisibleInViewportOrFullscreen;
+
+    // For Now Playing, prioritize elements that would normally satisfy main content.
+    if (purpose == MediaElementSession::PlaybackControlsPurpose::NowPlaying && session.isLargeEnoughForMainContent != otherSession.isLargeEnoughForMainContent)
+        return session.isLargeEnoughForMainContent;
 
     // As a tiebreaker, prioritize elements that the user recently interacted with.
     return session.timeOfLastUserInteraction > otherSession.timeOfLastUserInteraction;
@@ -405,6 +414,7 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tagName, Document& docum
     , m_playbackProgressTimer(*this, &HTMLMediaElement::playbackProgressTimerFired)
     , m_scanTimer(*this, &HTMLMediaElement::scanTimerFired)
     , m_playbackControlsManagerBehaviorRestrictionsTimer(*this, &HTMLMediaElement::playbackControlsManagerBehaviorRestrictionsTimerFired)
+    , m_seekToPlaybackPositionEndedTimer(*this, &HTMLMediaElement::seekToPlaybackPositionEndedTimerFired)
     , m_playedTimeRanges()
     , m_asyncEventQueue(*this)
     , m_requestedPlaybackRate(1)
@@ -467,6 +477,7 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tagName, Document& docum
     , m_mediaControlsDependOnPageScaleFactor(false)
     , m_haveSetUpCaptionContainer(false)
 #endif
+    , m_isScrubbingRemotely(false)
 #if ENABLE(VIDEO_TRACK)
     , m_tracksAreReady(true)
     , m_haveVisibleTextTrack(false)
@@ -511,7 +522,8 @@ HTMLMediaElement::HTMLMediaElement(const QualifiedName& tagName, Document& docum
     if (document.ownerElement() || !document.isMediaDocument()) {
         if (settings && settings->videoPlaybackRequiresUserGesture()) {
             m_mediaSession->addBehaviorRestriction(MediaElementSession::RequireUserGestureForVideoRateChange);
-            m_mediaSession->addBehaviorRestriction(MediaElementSession::RequireUserGestureForLoad);
+            if (settings->requiresUserGestureToLoadVideo())
+                m_mediaSession->addBehaviorRestriction(MediaElementSession::RequireUserGestureForLoad);
         }
 
         if (settings && settings->audioPlaybackRequiresUserGesture())
@@ -4560,6 +4572,37 @@ void HTMLMediaElement::addBehaviorRestrictionsOnEndIfNecessary()
     m_playbackControlsManagerBehaviorRestrictionsTimer.startOneShot(HideMediaControlsAfterEndedDelay);
 }
 
+void HTMLMediaElement::handleSeekToPlaybackPosition(double position)
+{
+#if PLATFORM(MAC)
+    // FIXME: This should ideally use faskSeek, but this causes MediaRemote's playhead to flicker upon release.
+    // Please see <rdar://problem/28457219> for more details.
+    seek(MediaTime::createWithDouble(position));
+    m_seekToPlaybackPositionEndedTimer.stop();
+    m_seekToPlaybackPositionEndedTimer.startOneShot(0.5);
+
+    if (!m_isScrubbingRemotely) {
+        m_isScrubbingRemotely = true;
+        if (!paused())
+            pauseInternal();
+    }
+#else
+    fastSeek(position);
+#endif
+}
+
+void HTMLMediaElement::seekToPlaybackPositionEndedTimerFired()
+{
+#if PLATFORM(MAC)
+    if (!m_isScrubbingRemotely)
+        return;
+
+    PlatformMediaSessionManager::sharedManager().sessionDidEndRemoteScrubbing(*m_mediaSession);
+    m_isScrubbingRemotely = false;
+    m_seekToPlaybackPositionEndedTimer.stop();
+#endif
+}
+
 void HTMLMediaElement::mediaPlayerVolumeChanged(MediaPlayer*)
 {
     LOG(Media, "HTMLMediaElement::mediaPlayerVolumeChanged(%p)", this);
@@ -5052,6 +5095,9 @@ void HTMLMediaElement::updatePlayState(UpdateState updateState)
     
     updateMediaController();
     updateRenderer();
+
+    m_hasEverHadAudio |= hasAudio();
+    m_hasEverHadVideo |= hasVideo();
 }
 
 void HTMLMediaElement::setPlaying(bool playing)
@@ -6281,10 +6327,14 @@ void HTMLMediaElement::applyMediaFragmentURI()
 
 void HTMLMediaElement::updateSleepDisabling()
 {
-    if (!shouldDisableSleep() && m_sleepDisabler)
+    bool shouldDisableSleep = this->shouldDisableSleep();
+    if (!shouldDisableSleep && m_sleepDisabler)
         m_sleepDisabler = nullptr;
-    else if (shouldDisableSleep() && !m_sleepDisabler)
+    else if (shouldDisableSleep && !m_sleepDisabler)
         m_sleepDisabler = DisplaySleepDisabler::create("com.apple.WebCore: HTMLMediaElement playback");
+
+    if (m_player)
+        m_player->setShouldDisableSleep(shouldDisableSleep);
 }
 
 bool HTMLMediaElement::shouldDisableSleep() const
@@ -6992,7 +7042,7 @@ void HTMLMediaElement::didReceiveRemoteControlCommand(PlatformMediaSession::Remo
     case PlatformMediaSession::SeekToPlaybackPositionCommand:
         ASSERT(argument);
         if (argument)
-            fastSeek(argument->asDouble);
+            handleSeekToPlaybackPosition(argument->asDouble);
         break;
     default:
         { } // Do nothing

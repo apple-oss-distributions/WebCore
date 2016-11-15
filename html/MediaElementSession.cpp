@@ -218,23 +218,17 @@ bool MediaElementSession::pageAllowsPlaybackAfterResuming(const HTMLMediaElement
 
 bool MediaElementSession::canShowControlsManager(PlaybackControlsPurpose purpose) const
 {
-    if (purpose == PlaybackControlsPurpose::NowPlaying && !pageAllowsNowPlayingControls()) {
-        LOG(Media, "MediaElementSession::canShowControlsManager - returning FALSE: Now playing not allowed in foreground tab");
-        return false;
-    }
-
     if (m_element.isFullscreen()) {
         LOG(Media, "MediaElementSession::canShowControlsManager - returning TRUE: Is fullscreen");
         return true;
     }
 
-    if (!isElementRectMostlyInMainFrame(m_element)) {
+    if (purpose == PlaybackControlsPurpose::ControlsManager && !isElementRectMostlyInMainFrame(m_element)) {
         LOG(Media, "MediaElementSession::canShowControlsManager - returning FALSE: Not in main frame");
         return false;
     }
 
-    bool meetsAudioTrackRequirements = m_element.hasAudio() || (purpose == PlaybackControlsPurpose::ControlsManager && m_element.hasEverHadAudio());
-    if (!meetsAudioTrackRequirements) {
+    if (!m_element.hasAudio() && !m_element.hasEverHadAudio()) {
         LOG(Media, "MediaElementSession::canShowControlsManager - returning FALSE: No audio");
         return false;
     }
@@ -259,7 +253,7 @@ bool MediaElementSession::canShowControlsManager(PlaybackControlsPurpose purpose
         return true;
     }
 
-    if (hasBehaviorRestriction(RequirePlaybackToControlControlsManager) && !m_element.isPlaying()) {
+    if (purpose == PlaybackControlsPurpose::ControlsManager && hasBehaviorRestriction(RequirePlaybackToControlControlsManager) && !m_element.isPlaying()) {
         LOG(Media, "MediaElementSession::canShowControlsManager - returning FALSE: Needs to be playing");
         return false;
     }
@@ -274,13 +268,14 @@ bool MediaElementSession::canShowControlsManager(PlaybackControlsPurpose purpose
         return false;
     }
 
-    if (m_element.isVideo()) {
+    // Only allow the main content heuristic to forbid videos from showing up if our purpose is the controls manager.
+    if (purpose == PlaybackControlsPurpose::ControlsManager && m_element.isVideo()) {
         if (!m_element.renderer()) {
             LOG(Media, "MediaElementSession::canShowControlsManager - returning FALSE: No renderer");
             return false;
         }
 
-        if (purpose == PlaybackControlsPurpose::ControlsManager && !m_element.hasVideo() && !m_element.hasEverHadVideo()) {
+        if (!m_element.hasVideo() && !m_element.hasEverHadVideo()) {
             LOG(Media, "MediaElementSession::canShowControlsManager - returning FALSE: No video");
             return false;
         }
@@ -289,6 +284,11 @@ bool MediaElementSession::canShowControlsManager(PlaybackControlsPurpose purpose
             LOG(Media, "MediaElementSession::canShowControlsManager - returning TRUE: Is main content");
             return true;
         }
+    }
+
+    if (purpose == PlaybackControlsPurpose::NowPlaying) {
+        LOG(Media, "MediaElementSession::canShowControlsManager - returning TRUE: Potentially plays audio");
+        return true;
     }
 
     LOG(Media, "MediaElementSession::canShowControlsManager - returning FALSE: No user gesture");
@@ -657,10 +657,13 @@ static bool isElementRectMostlyInMainFrame(const HTMLMediaElement& element)
 
     IntRect mainFrameRectAdjustedForScrollPosition = IntRect(-mainFrameView->documentScrollPositionRelativeToViewOrigin(), mainFrameView->contentsSize());
     IntRect elementRectInMainFrame = element.clientRect();
-    unsigned int totalElementArea = elementRectInMainFrame.area();
+    auto totalElementArea = elementRectInMainFrame.area<RecordOverflow>();
+    if (totalElementArea.hasOverflowed())
+        return false;
+
     elementRectInMainFrame.intersect(mainFrameRectAdjustedForScrollPosition);
 
-    return elementRectInMainFrame.area() > totalElementArea / 2;
+    return elementRectInMainFrame.area().unsafeGet() > totalElementArea.unsafeGet() / 2;
 }
 
 static bool isElementLargeRelativeToMainFrame(const HTMLMediaElement& element)
@@ -728,7 +731,7 @@ bool MediaElementSession::updateIsMainContent() const
     return m_isMainContent;
 }
 
-bool MediaElementSession::pageAllowsNowPlayingControls() const
+bool MediaElementSession::allowsNowPlayingControlsVisibility() const
 {
     auto page = m_element.document().page();
     return page && !page->isVisibleAndActive();
