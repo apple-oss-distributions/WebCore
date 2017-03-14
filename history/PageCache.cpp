@@ -52,7 +52,7 @@
 #include "SubframeLoader.h"
 #include <wtf/CurrentTime.h>
 #include <wtf/NeverDestroyed.h>
-#include <wtf/TemporaryChange.h>
+#include <wtf/SetForScope.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/StringConcatenate.h>
 
@@ -193,6 +193,19 @@ static bool canCachePage(Page& page)
 
     DiagnosticLoggingClient& diagnosticLoggingClient = page.diagnosticLoggingClient();
     bool isCacheable = canCacheFrame(page.mainFrame(), diagnosticLoggingClient, indentLevel + 1);
+
+    if (page.openedByWindowOpen() && !page.settings().allowsPageCacheWithWindowOpener()) {
+        PCLOG("   -Page has been opened via window.open()");
+        logPageCacheFailureDiagnosticMessage(diagnosticLoggingClient, DiagnosticLoggingKeys::hasOpenerKey());
+        isCacheable = false;
+    }
+
+    auto* topDocument = page.mainFrame().document();
+    if (topDocument && topDocument->hasEverCalledWindowOpen()) {
+        PCLOG("   -Page has called window.open()");
+        logPageCacheFailureDiagnosticMessage(diagnosticLoggingClient, DiagnosticLoggingKeys::hasCalledWindowOpenKey());
+        isCacheable = false;
+    }
     
     if (!page.settings().usesPageCache() || page.isResourceCachingDisabled()) {
         PCLOG("   -Page settings says b/f cache disabled");
@@ -291,7 +304,7 @@ bool PageCache::canCache(Page& page) const
 
 void PageCache::pruneToSizeNow(unsigned size, PruningReason pruningReason)
 {
-    TemporaryChange<unsigned> change(m_maxSize, size);
+    SetForScope<unsigned> change(m_maxSize, size);
     prune(pruningReason);
 }
 
@@ -310,23 +323,6 @@ unsigned PageCache::frameCount() const
     }
     
     return frameCount;
-}
-
-void PageCache::markPagesForVisitedLinkStyleRecalc()
-{
-    for (auto& item : m_items) {
-        ASSERT(item->m_cachedPage);
-        item->m_cachedPage->markForVisitedLinkStyleRecalc();
-    }
-}
-
-void PageCache::markPagesForFullStyleRecalc(Page& page)
-{
-    for (auto& item : m_items) {
-        CachedPage& cachedPage = *item->m_cachedPage;
-        if (&page.mainFrame() == &cachedPage.cachedMainFrame()->view()->frame())
-            cachedPage.markForFullStyleRecalc();
-    }
 }
 
 void PageCache::markPagesForDeviceOrPageScaleChanged(Page& page)
@@ -373,11 +369,11 @@ static String pruningReasonToDiagnosticLoggingKey(PruningReason pruningReason)
     return emptyString();
 }
 
-static void setInPageCache(Page& page, bool isInPageCache)
+static void setPageCacheState(Page& page, Document::PageCacheState pageCacheState)
 {
     for (Frame* frame = &page.mainFrame(); frame; frame = frame->tree().traverseNext()) {
         if (auto* document = frame->document())
-            document->setInPageCache(isInPageCache);
+            document->setPageCacheState(pageCacheState);
     }
 }
 
@@ -407,8 +403,7 @@ void PageCache::addIfCacheable(HistoryItem& item, Page* page)
     if (!page || !canCache(*page))
         return;
 
-    // Make sure all the documents know they are being added to the PageCache.
-    setInPageCache(*page, true);
+    setPageCacheState(*page, Document::AboutToEnterPageCache);
 
     // Focus the main frame, defocusing a focused subframe (if we have one). We do this here,
     // before the page enters the page cache, while we still can dispatch DOM blur/focus events.
@@ -421,9 +416,11 @@ void PageCache::addIfCacheable(HistoryItem& item, Page* page)
     // Check that the page is still page-cacheable after firing the pagehide event. The JS event handlers
     // could have altered the page in a way that could prevent caching.
     if (!canCache(*page)) {
-        setInPageCache(*page, false);
+        setPageCacheState(*page, Document::NotInPageCache);
         return;
     }
+
+    setPageCacheState(*page, Document::InPageCache);
 
     // Make sure we no longer fire any JS events past this point.
     NoEventDispatchAssertion assertNoEventDispatch;
@@ -453,6 +450,19 @@ std::unique_ptr<CachedPage> PageCache::take(HistoryItem& item, Page* page)
     }
 
     return cachedPage;
+}
+
+void PageCache::removeAllItemsForPage(Page& page)
+{
+    for (auto it = m_items.begin(); it != m_items.end();) {
+        // Increment iterator first so it stays valid after the removal.
+        auto current = it;
+        ++it;
+        if (&(*current)->m_cachedPage->page() == &page) {
+            (*current)->m_cachedPage = nullptr;
+            m_items.remove(current);
+        }
+    }
 }
 
 CachedPage* PageCache::get(HistoryItem& item, Page* page)

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2006-2008, 2016 Apple Inc. All rights reserved.
  * Copyright (C) 2008 Nokia Corporation and/or its subsidiary(-ies)
  *
  * Redistribution and use in source and binary forms, with or without
@@ -32,7 +32,6 @@
 #include "Editor.h"
 #include "Element.h"
 #include "Event.h"
-#include "ExceptionCodePlaceholder.h"
 #include "FloatQuad.h"
 #include "Frame.h"
 #include "FrameView.h"
@@ -257,11 +256,10 @@ void AlternativeTextController::applyAlternativeTextToRange(const Range* range, 
     RefPtr<Range> correctionStartOffsetInParagraphAsRange = Range::create(paragraphRangeContainingCorrection->startContainer().document(), paragraphRangeContainingCorrection->startPosition(), paragraphRangeContainingCorrection->startPosition());
 
     Position startPositionOfRangeWithAlternative = range->startPosition();
-    ExceptionCode ec = 0;
     if (!startPositionOfRangeWithAlternative.containerNode())
         return;
-    correctionStartOffsetInParagraphAsRange->setEnd(*startPositionOfRangeWithAlternative.containerNode(), startPositionOfRangeWithAlternative.computeOffsetInContainerNode(), ec);
-    if (ec)
+    auto setEndResult = correctionStartOffsetInParagraphAsRange->setEnd(*startPositionOfRangeWithAlternative.containerNode(), startPositionOfRangeWithAlternative.computeOffsetInContainerNode());
+    if (setEndResult.hasException())
         return;
 
     // Take note of the location of autocorrection so that we can add marker after the replacement took place.
@@ -316,7 +314,9 @@ bool AlternativeTextController::applyAutocorrectionBeforeTypingIfAppropriate()
 void AlternativeTextController::respondToUnappliedSpellCorrection(const VisibleSelection& selectionOfCorrected, const String& corrected, const String& correction)
 {
     if (AlternativeTextClient* client = alternativeTextClient())
-        client->recordAutocorrectionResponse(AutocorrectionReverted, corrected, correction);
+        client->recordAutocorrectionResponse(AutocorrectionResponse::Reverted, corrected, correction);
+
+    Ref<Frame> protector(m_frame);
     m_frame.document()->updateLayout();
     m_frame.selection().setSelection(selectionOfCorrected, FrameSelection::defaultSetSelectionOptions() | FrameSelection::SpellCorrectionTriggered);
     RefPtr<Range> range = Range::create(*m_frame.document(), m_frame.selection().selection().start(), m_frame.selection().selection().end());
@@ -516,15 +516,10 @@ TextCheckerClient* AlternativeTextController::textChecker()
     return nullptr;
 }
 
-void AlternativeTextController::recordAutocorrectionResponseReversed(const String& replacedString, const String& replacementString)
+void AlternativeTextController::recordAutocorrectionResponse(AutocorrectionResponse response, const String& replacedString, PassRefPtr<Range> replacementRange)
 {
-    if (AlternativeTextClient* client = alternativeTextClient())
-        client->recordAutocorrectionResponse(AutocorrectionReverted, replacedString, replacementString);
-}
-
-void AlternativeTextController::recordAutocorrectionResponseReversed(const String& replacedString, PassRefPtr<Range> replacementRange)
-{
-    recordAutocorrectionResponseReversed(replacedString, plainText(replacementRange.get()));
+    if (auto client = alternativeTextClient())
+        client->recordAutocorrectionResponse(response, replacedString, plainText(replacementRange.get()));
 }
 
 void AlternativeTextController::markReversed(PassRefPtr<Range> changedRange)
@@ -557,9 +552,9 @@ void AlternativeTextController::recordSpellcheckerResponseForModifiedCorrection(
         // Spelling corrected text has been edited. We need to determine whether user has reverted it to original text or
         // edited it to something else, and notify spellchecker accordingly.
         if (markersHaveIdenticalDescription(correctedOnceMarkers) && correctedOnceMarkers[0]->description() == corrected)
-            client->recordAutocorrectionResponse(AutocorrectionReverted, corrected, correction);
+            client->recordAutocorrectionResponse(AutocorrectionResponse::Reverted, corrected, correction);
         else
-            client->recordAutocorrectionResponse(AutocorrectionEdited, corrected, correction);
+            client->recordAutocorrectionResponse(AutocorrectionResponse::Edited, corrected, correction);
     }
 
     markers.removeMarkers(rangeOfCorrection, DocumentMarker::Autocorrected, DocumentMarkerController::RemovePartiallyOverlappingMarker);

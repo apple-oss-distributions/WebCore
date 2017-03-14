@@ -242,9 +242,14 @@ bool PlatformMediaSession::canReceiveRemoteControlCommands() const
     return m_client.canReceiveRemoteControlCommands();
 }
 
-void PlatformMediaSession::didReceiveRemoteControlCommand(RemoteControlCommandType command)
+void PlatformMediaSession::didReceiveRemoteControlCommand(RemoteControlCommandType command, const PlatformMediaSession::RemoteCommandArgument* argument)
 {
-    m_client.didReceiveRemoteControlCommand(command);
+    m_client.didReceiveRemoteControlCommand(command, argument);
+}
+
+bool PlatformMediaSession::supportsSeeking() const
+{
+    return m_client.supportsSeeking();
 }
 
 void PlatformMediaSession::visibilityChanged()
@@ -284,6 +289,11 @@ void PlatformMediaSession::updateClientDataBuffering()
     m_client.setShouldBufferData(PlatformMediaSessionManager::sharedManager().sessionCanLoadMedia(*this));
 }
 
+String PlatformMediaSession::sourceApplicationIdentifier() const
+{
+    return m_client.sourceApplicationIdentifier();
+}
+
 bool PlatformMediaSession::isHidden() const
 {
     return m_client.elementIsHidden();
@@ -319,15 +329,16 @@ bool PlatformMediaSession::activeAudioSessionRequired()
         return false;
     if (state() != PlatformMediaSession::State::Playing)
         return false;
-    return m_canProduceAudio;
+    return canProduceAudio();
 }
 
-void PlatformMediaSession::setCanProduceAudio(bool canProduceAudio)
+bool PlatformMediaSession::canProduceAudio() const
 {
-    if (m_canProduceAudio == canProduceAudio)
-        return;
-    m_canProduceAudio = canProduceAudio;
+    return m_client.canProduceAudio();
+}
 
+void PlatformMediaSession::canProduceAudioChanged()
+{
     PlatformMediaSessionManager::sharedManager().sessionCanProduceAudioChanged(*this);
 }
 

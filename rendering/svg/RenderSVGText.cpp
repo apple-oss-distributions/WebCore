@@ -43,7 +43,6 @@
 #include "SVGResourcesCache.h"
 #include "SVGRootInlineBox.h"
 #include "SVGTextElement.h"
-#include "SVGTransformList.h"
 #include "SVGURIReference.h"
 #include "TransformState.h"
 #include "VisiblePosition.h"
@@ -434,7 +433,7 @@ bool RenderSVGText::nodeAtFloatPoint(const HitTestRequest& request, HitTestResul
     if (isVisible || !hitRules.requireVisible) {
         if ((hitRules.canHitStroke && (style().svgStyle().hasStroke() || !hitRules.requireStroke))
             || (hitRules.canHitFill && (style().svgStyle().hasFill() || !hitRules.requireFill))) {
-            FloatPoint localPoint = localToParentTransform().inverse().valueOr(AffineTransform()).mapPoint(pointInParent);
+            FloatPoint localPoint = localToParentTransform().inverse().value_or(AffineTransform()).mapPoint(pointInParent);
 
             if (!SVGRenderSupport::pointInClippingArea(*this, localPoint))
                 return false;       
@@ -545,7 +544,7 @@ RenderBlock* RenderSVGText::firstLineBlock() const
 
 // Fix for <rdar://problem/8048875>. We should not render :first-letter CSS Style
 // in a SVG text element context.
-void RenderSVGText::updateFirstLetter()
+void RenderSVGText::updateFirstLetter(RenderTreeMutationIsAllowed)
 {
 }
 

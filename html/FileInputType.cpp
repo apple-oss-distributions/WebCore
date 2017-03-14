@@ -24,6 +24,7 @@
 
 #include "Chrome.h"
 #include "DragData.h"
+#include "ElementChildIterator.h"
 #include "Event.h"
 #include "File.h"
 #include "FileList.h"
@@ -39,7 +40,18 @@
 #include "RenderFileUploadControl.h"
 #include "ScriptController.h"
 #include "ShadowRoot.h"
+#include <wtf/TypeCasts.h>
 #include <wtf/text/StringBuilder.h>
+
+
+namespace WebCore {
+class UploadButtonElement;
+}
+
+SPECIALIZE_TYPE_TRAITS_BEGIN(WebCore::UploadButtonElement)
+    static bool isType(const WebCore::Element& element) { return element.isUploadButton(); }
+    static bool isType(const WebCore::Node& node) { return is<WebCore::Element>(node) && isType(downcast<WebCore::Element>(node)); }
+SPECIALIZE_TYPE_TRAITS_END()
 
 namespace WebCore {
 
@@ -51,6 +63,8 @@ public:
     static Ref<UploadButtonElement> createForMultiple(Document&);
 
 private:
+    bool isUploadButton() const override { return true; }
+    
     UploadButtonElement(Document&);
 };
 
@@ -155,7 +169,7 @@ bool FileInputType::appendFormData(FormDataList& encoding, bool multipart) const
     }
 
     for (unsigned i = 0; i < numFiles; ++i)
-        encoding.appendBlob(element().name(), fileList->item(i));
+        encoding.appendBlob(element().name(), *fileList->item(i));
     return true;
 }
 
@@ -169,7 +183,7 @@ String FileInputType::valueMissingText() const
     return element().multiple() ? validationMessageValueMissingForMultipleFileText() : validationMessageValueMissingForFileText();
 }
 
-void FileInputType::handleDOMActivateEvent(Event* event)
+void FileInputType::handleDOMActivateEvent(Event& event)
 {
     if (element().isDisabledFormControl())
         return;
@@ -185,14 +199,14 @@ void FileInputType::handleDOMActivateEvent(Event* event)
         settings.acceptFileExtensions = input.acceptFileExtensions();
         settings.selectedFiles = m_fileList->paths();
 #if ENABLE(MEDIA_CAPTURE)
-        settings.capture = input.shouldUseMediaCapture();
+        settings.mediaCaptureType = input.mediaCaptureType();
 #endif
 
         applyFileChooserSettings(settings);
         chrome->runOpenPanel(input.document().frame(), m_fileChooser);
     }
 
-    event->setDefaultHandled();
+    event.setDefaultHandled();
 }
 
 RenderPtr<RenderElement> FileInputType::createInputRenderer(RenderStyle&& style)
@@ -202,16 +216,6 @@ RenderPtr<RenderElement> FileInputType::createInputRenderer(RenderStyle&& style)
 
 bool FileInputType::canSetStringValue() const
 {
-    return false;
-}
-
-bool FileInputType::canChangeFromAnotherType() const
-{
-    // Don't allow the type to be changed to file after the first type change.
-    // In other engines this might mean a JavaScript programmer could set a text
-    // field's value to something like /etc/passwd and then change it to a file input.
-    // I don't think this would actually occur in WebKit, but this rule still may be
-    // important for compatibility.
     return false;
 }
 
@@ -251,7 +255,7 @@ void FileInputType::setValue(const String&, bool, TextFieldEventBehavior)
     // FIXME: Should we clear the file list, or replace it with a new empty one here? This is observable from JavaScript through custom properties.
     m_fileList->clear();
     m_icon = nullptr;
-    element().setNeedsStyleRecalc();
+    element().invalidateStyleForSubtree();
 }
 
 PassRefPtr<FileList> FileInputType::createFileList(const Vector<FileChooserFileInfo>& files) const
@@ -271,22 +275,30 @@ bool FileInputType::isFileUpload() const
 void FileInputType::createShadowSubtree()
 {
     ASSERT(element().shadowRoot());
-    element().userAgentShadowRoot()->appendChild(element().multiple() ? UploadButtonElement::createForMultiple(element().document()): UploadButtonElement::create(element().document()), IGNORE_EXCEPTION);
+    element().userAgentShadowRoot()->appendChild(element().multiple() ? UploadButtonElement::createForMultiple(element().document()): UploadButtonElement::create(element().document()));
 }
 
 void FileInputType::disabledAttributeChanged()
 {
     ASSERT(element().shadowRoot());
-    UploadButtonElement* button = static_cast<UploadButtonElement*>(element().userAgentShadowRoot()->firstChild());
-    if (button)
+
+    ShadowRoot* root = element().userAgentShadowRoot();
+    if (!root)
+        return;
+    
+    if (auto* button = childrenOfType<UploadButtonElement>(*root).first())
         button->setBooleanAttribute(disabledAttr, element().isDisabledFormControl());
 }
 
 void FileInputType::multipleAttributeChanged()
 {
     ASSERT(element().shadowRoot());
-    UploadButtonElement* button = static_cast<UploadButtonElement*>(element().userAgentShadowRoot()->firstChild());
-    if (button)
+
+    ShadowRoot* root = element().userAgentShadowRoot();
+    if (!root)
+        return;
+
+    if (auto* button = childrenOfType<UploadButtonElement>(*root).first())
         button->setValue(element().multiple() ? fileButtonChooseMultipleFilesLabel() : fileButtonChooseFileLabel());
 }
 

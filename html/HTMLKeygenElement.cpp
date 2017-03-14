@@ -2,7 +2,7 @@
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2004-2006, 2010, 2012-2016 Apple Inc. All rights reserved.
  *           (C) 2006 Alexey Proskuryakov (ap@nypop.com)
  *
  * This library is free software; you can redistribute it and/or
@@ -27,6 +27,7 @@
 
 #include "Attribute.h"
 #include "Document.h"
+#include "ElementChildIterator.h"
 #include "FormDataList.h"
 #include "HTMLNames.h"
 #include "HTMLSelectElement.h"
@@ -77,11 +78,11 @@ inline HTMLKeygenElement::HTMLKeygenElement(const QualifiedName& tagName, Docume
     auto select = KeygenSelectElement::create(document);
     for (auto& key : keys) {
         auto option = HTMLOptionElement::create(document);
-        select->appendChild(option, IGNORE_EXCEPTION);
-        option->appendChild(Text::create(document, key), IGNORE_EXCEPTION);
+        select->appendChild(option);
+        option->appendChild(Text::create(document, key));
     }
 
-    ensureUserAgentShadowRoot().appendChild(select, IGNORE_EXCEPTION);
+    ensureUserAgentShadowRoot().appendChild(select);
 }
 
 Ref<HTMLKeygenElement> HTMLKeygenElement::create(const QualifiedName& tagName, Document& document, HTMLFormElement* form)
@@ -145,7 +146,10 @@ bool HTMLKeygenElement::shouldSaveAndRestoreFormControlState() const
 HTMLSelectElement* HTMLKeygenElement::shadowSelect() const
 {
     ShadowRoot* root = userAgentShadowRoot();
-    return root ? downcast<HTMLSelectElement>(root->firstChild()) : nullptr;
+    if (!root)
+        return nullptr;
+
+    return childrenOfType<HTMLSelectElement>(*root).first();
 }
 
 } // namespace

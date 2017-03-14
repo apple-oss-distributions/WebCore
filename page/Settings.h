@@ -24,8 +24,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-#ifndef Settings_h
-#define Settings_h
+#pragma once
 
 #include "ClipboardAccessPolicy.h"
 #include "EditingBehaviorTypes.h"
@@ -77,6 +76,18 @@ enum class UserInterfaceDirectionPolicy {
     System
 };
 
+enum PDFImageCachingPolicy {
+    PDFImageCachingEnabled,
+    PDFImageCachingBelowMemoryLimit,
+    PDFImageCachingDisabled,
+    PDFImageCachingClipBoundsOnly,
+#if PLATFORM(IOS)
+    PDFImageCachingDefault = PDFImageCachingBelowMemoryLimit
+#else
+    PDFImageCachingDefault = PDFImageCachingEnabled
+#endif
+};
+
 typedef unsigned DebugOverlayRegions;
 
 class Settings : public RefCounted<Settings> {
@@ -86,6 +97,11 @@ public:
     ~Settings();
 
     void pageDestroyed() { m_page = nullptr; }
+
+    enum class ForcedAccessibilityValue { System, On, Off };
+    static const Settings::ForcedAccessibilityValue defaultForcedColorsAreInvertedAccessibilityValue = ForcedAccessibilityValue::System;
+    static const Settings::ForcedAccessibilityValue defaultForcedDisplayIsMonochromeAccessibilityValue = ForcedAccessibilityValue::System;
+    static const Settings::ForcedAccessibilityValue defaultForcedPrefersReducedMotionAccessibilityValue = ForcedAccessibilityValue::System;
 
     WEBCORE_EXPORT void setStandardFontFamily(const AtomicString&, UScriptCode = USCRIPT_COMMON);
     WEBCORE_EXPORT const AtomicString& standardFontFamily(UScriptCode = USCRIPT_COMMON) const;
@@ -107,11 +123,6 @@ public:
 
     WEBCORE_EXPORT void setPictographFontFamily(const AtomicString&, UScriptCode = USCRIPT_COMMON);
     WEBCORE_EXPORT const AtomicString& pictographFontFamily(UScriptCode = USCRIPT_COMMON) const;
-
-#if ENABLE(TEXT_AUTOSIZING)
-    void setTextAutosizingFontScaleFactor(float);
-    float textAutosizingFontScaleFactor() const { return m_textAutosizingFontScaleFactor; }
-#endif
 
     WEBCORE_EXPORT static bool defaultTextAutosizingEnabled();
     WEBCORE_EXPORT static float defaultMinimumZoomFontSize();
@@ -146,9 +157,6 @@ public:
     WEBCORE_EXPORT void setPreferMIMETypeForImages(bool);
     bool preferMIMETypeForImages() const { return m_preferMIMETypeForImages; }
 
-    WEBCORE_EXPORT void setCachedPDFImageEnabled(bool);
-    bool isCachedPDFImageEnabled() const { return m_isCachedPDFImageEnabled; }
-
     WEBCORE_EXPORT void setPluginsEnabled(bool);
     bool arePluginsEnabled() const { return m_arePluginsEnabled; }
 
@@ -164,8 +172,8 @@ public:
     WEBCORE_EXPORT void setMinimumDOMTimerInterval(std::chrono::milliseconds); // Initialized to DOMTimer::defaultMinimumInterval().
     std::chrono::milliseconds minimumDOMTimerInterval() const { return m_minimumDOMTimerInterval; }
 
-    WEBCORE_EXPORT void setLayoutInterval(std::chrono::milliseconds);
-    std::chrono::milliseconds layoutInterval() const { return m_layoutInterval; }
+    WEBCORE_EXPORT void setLayoutInterval(Seconds);
+    Seconds layoutInterval() const { return m_layoutInterval; }
 
     bool hiddenPageDOMTimerThrottlingEnabled() const { return m_hiddenPageDOMTimerThrottlingEnabled; }
     WEBCORE_EXPORT void setHiddenPageDOMTimerThrottlingEnabled(bool);
@@ -191,6 +199,13 @@ public:
     static bool shouldUseHighResolutionTimers() { return gShouldUseHighResolutionTimers; }
 #endif
 
+    static bool isPostLoadCPUUsageMeasurementEnabled();
+    static bool isPostBackgroundingCPUUsageMeasurementEnabled();
+    static bool isPerActivityStateCPUUsageMeasurementEnabled();
+
+    static bool isPostLoadMemoryUsageMeasurementEnabled();
+    static bool isPostBackgroundingMemoryUsageMeasurementEnabled();
+
     static bool globalConstRedeclarationShouldThrow();
 
     WEBCORE_EXPORT void setBackgroundShouldExtendBeyondPage(bool);
@@ -206,11 +221,13 @@ public:
 #if PLATFORM(COCOA)
     WEBCORE_EXPORT static void setQTKitEnabled(bool flag);
     static bool isQTKitEnabled() { return gQTKitEnabled; }
-
-    WEBCORE_EXPORT static void setCookieStoragePartitioningEnabled(bool flag);
-    static bool cookieStoragePartitioningEnabled() { return gCookieStoragePartitioningEnabled; }
 #else
     static bool isQTKitEnabled() { return false; }
+#endif
+
+#if USE(GSTREAMER)
+    WEBCORE_EXPORT static void setGStreamerEnabled(bool flag);
+    static bool isGStreamerEnabled() { return gGStreamerEnabled; }
 #endif
 
     static const unsigned defaultMaximumHTMLParserDOMTreeDepth = 512;
@@ -279,7 +296,7 @@ public:
     static bool shouldManageAudioSessionCategory() { return gManageAudioSession; }
 #endif
 
-#if ENABLE(ENCRYPTED_MEDIA_V2)
+#if ENABLE(LEGACY_ENCRYPTED_MEDIA)
     void setMediaKeysStorageDirectory(const String& directory) { m_mediaKeysStorageDirectory = directory; }
     const String& mediaKeysStorageDirectory() const { return m_mediaKeysStorageDirectory; }
 #endif
@@ -290,6 +307,9 @@ public:
 
     static bool mockCaptureDevicesEnabled();
     WEBCORE_EXPORT static void setMockCaptureDevicesEnabled(bool);
+
+    bool mediaCaptureRequiresSecureConnection() const;
+    WEBCORE_EXPORT static void setMediaCaptureRequiresSecureConnection(bool);
 #endif
 
 #if ENABLE(APPLE_PAY)
@@ -317,12 +337,8 @@ private:
     URL m_userStyleSheetLocation;
     const std::unique_ptr<FontGenericFamilies> m_fontGenericFamilies;
     SecurityOrigin::StorageBlockingPolicy m_storageBlockingPolicy;
-    std::chrono::milliseconds m_layoutInterval;
+    Seconds m_layoutInterval;
     std::chrono::milliseconds m_minimumDOMTimerInterval;
-
-#if ENABLE(TEXT_AUTOSIZING)
-    float m_textAutosizingFontScaleFactor;
-#endif
 
     SETTINGS_MEMBER_VARIABLES
 
@@ -331,7 +347,6 @@ private:
     bool m_loadsImagesAutomatically : 1;
     bool m_areImagesEnabled : 1;
     bool m_preferMIMETypeForImages : 1;
-    bool m_isCachedPDFImageEnabled : 1;
     bool m_arePluginsEnabled : 1;
     bool m_isScriptEnabled : 1;
     bool m_needsAdobeFrameReloadingQuirk : 1;
@@ -371,7 +386,10 @@ private:
 
 #if PLATFORM(COCOA)
     WEBCORE_EXPORT static bool gQTKitEnabled;
-    static bool gCookieStoragePartitioningEnabled;
+#endif
+
+#if USE(GSTREAMER)
+    WEBCORE_EXPORT static bool gGStreamerEnabled;
 #endif
 
     static bool gMockScrollbarsEnabled;
@@ -389,13 +407,14 @@ private:
     WEBCORE_EXPORT static bool gManageAudioSession;
 #endif
 
-#if ENABLE(ENCRYPTED_MEDIA_V2)
+#if ENABLE(LEGACY_ENCRYPTED_MEDIA)
     String m_mediaKeysStorageDirectory;
 #endif
     
 #if ENABLE(MEDIA_STREAM)
     String m_mediaDeviceIdentifierStorageDirectory;
     static bool gMockCaptureDevicesEnabled;
+    static bool gMediaCaptureRequiresSecureConnection;
 #endif
 
 #if ENABLE(APPLE_PAY)
@@ -408,6 +427,49 @@ private:
     static bool gAllowsAnySSLCertificate;
 };
 
-} // namespace WebCore
-
+inline bool Settings::isPostLoadCPUUsageMeasurementEnabled()
+{
+#if PLATFORM(COCOA)
+    return true;
+#else
+    return false;
 #endif
+}
+
+inline bool Settings::isPostBackgroundingCPUUsageMeasurementEnabled()
+{
+#if PLATFORM(MAC)
+    return true;
+#else
+    return false;
+#endif
+}
+
+inline bool Settings::isPerActivityStateCPUUsageMeasurementEnabled()
+{
+#if PLATFORM(MAC)
+    return true;
+#else
+    return false;
+#endif
+}
+
+inline bool Settings::isPostLoadMemoryUsageMeasurementEnabled()
+{
+#if PLATFORM(COCOA)
+    return true;
+#else
+    return false;
+#endif
+}
+
+inline bool Settings::isPostBackgroundingMemoryUsageMeasurementEnabled()
+{
+#if PLATFORM(MAC)
+    return true;
+#else
+    return false;
+#endif
+}
+
+} // namespace WebCore

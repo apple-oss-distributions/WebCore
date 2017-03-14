@@ -23,12 +23,11 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef RenderThemeIOS_h
-#define RenderThemeIOS_h
+#pragma once
 
 #if PLATFORM(IOS)
 
-#include "RenderTheme.h"
+#include "RenderThemeCocoa.h"
 
 namespace WebCore {
     
@@ -36,7 +35,7 @@ class RenderStyle;
 class GraphicsContext;
 struct AttachmentLayout;
 
-class RenderThemeIOS final : public RenderTheme {
+class RenderThemeIOS final : public RenderThemeCocoa {
 public:
     static Ref<RenderTheme> create();
 
@@ -109,6 +108,7 @@ protected:
 #if ENABLE(VIDEO)
     String mediaControlsStyleSheet() override;
     String mediaControlsScript() override;
+    String mediaControlsBase64StringForIconAndPlatform(const String&, const String&) override;
 #endif
 
 #if ENABLE(ATTACHMENT_ELEMENT)
@@ -126,7 +126,9 @@ private:
 
     Color systemColor(CSSValueID) const override;
 
+    String m_legacyMediaControlsScript;
     String m_mediaControlsScript;
+    String m_legacyMediaControlsStyleSheet;
     String m_mediaControlsStyleSheet;
 
     mutable HashMap<int, Color> m_systemColorCache;
@@ -135,4 +137,3 @@ private:
 }
 
 #endif // PLATFORM(IOS)
-#endif // RenderThemeIOS_h

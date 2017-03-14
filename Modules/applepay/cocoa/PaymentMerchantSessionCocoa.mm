@@ -29,7 +29,7 @@
 #if ENABLE(APPLE_PAY)
 
 #import "SoftLinking.h"
-#import <PassKitCore/PKPaymentMerchantSession.h>
+#import "PassKitSPI.h"
 #import <runtime/JSONObject.h>
 
 #if PLATFORM(MAC)
@@ -42,16 +42,16 @@ SOFT_LINK_CLASS(PassKit, PKPaymentMerchantSession)
 
 namespace WebCore {
 
-Optional<PaymentMerchantSession> PaymentMerchantSession::fromJS(JSC::ExecState& state, JSC::JSValue value, String&)
+std::optional<PaymentMerchantSession> PaymentMerchantSession::fromJS(JSC::ExecState& state, JSC::JSValue value, String&)
 {
     // FIXME: Don't round-trip using NSString.
     auto jsonString = JSONStringify(&state, value, 0);
     if (!jsonString)
-        return Nullopt;
+        return std::nullopt;
 
     auto dictionary = dynamic_objc_cast<NSDictionary>([NSJSONSerialization JSONObjectWithData:[(NSString *)jsonString dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil]);
     if (!dictionary || ![dictionary isKindOfClass:[NSDictionary class]])
-        return Nullopt;
+        return std::nullopt;
 
     auto pkPaymentMerchantSession = adoptNS([allocPKPaymentMerchantSessionInstance() initWithDictionary:dictionary]);
 

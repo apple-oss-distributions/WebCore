@@ -295,7 +295,9 @@ void SVGRenderingContext::renderSubtreeToImageBuffer(ImageBuffer* image, RenderE
 {
     ASSERT(image);
 
-    PaintInfo info(image->context(), LayoutRect::infiniteRect(), PaintPhaseForeground, PaintBehaviorNormal);
+    // Rendering into a buffer implies we're being used for masking, clipping, patterns or filters. In each of these
+    // cases we don't want to paint the selection.
+    PaintInfo info(image->context(), LayoutRect::infiniteRect(), PaintPhaseForeground, PaintBehaviorSkipSelectionHighlight);
 
     AffineTransform& contentTransformation = currentContentTransformation();
     AffineTransform savedContentTransformation = contentTransformation;
@@ -316,7 +318,7 @@ void SVGRenderingContext::clipToImageBuffer(GraphicsContext& context, const Affi
 
     // The mask image has been created in the absolute coordinate space, as the image should not be scaled.
     // So the actual masking process has to be done in the absolute coordinate space as well.
-    context.concatCTM(absoluteTransform.inverse().valueOr(AffineTransform()));
+    context.concatCTM(absoluteTransform.inverse().value_or(AffineTransform()));
     context.clipToImageBuffer(*imageBuffer, absoluteTargetRect);
     context.concatCTM(absoluteTransform);
 
