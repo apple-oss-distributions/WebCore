@@ -785,12 +785,12 @@ Element* HitTestResult::innerNonSharedElement() const
     return node->parentElement();
 }
 
-String HitTestResult::linkSuggestedFilename() const
+const AtomicString& HitTestResult::URLElementDownloadAttribute() const
 {
     auto* urlElement = URLElement();
     if (!is<HTMLAnchorElement>(urlElement))
         return nullAtom;
-    return ResourceResponse::sanitizeSuggestedFilename(urlElement->attributeWithoutSynchronization(HTMLNames::downloadAttr));
+    return urlElement->attributeWithoutSynchronization(HTMLNames::downloadAttr);
 }
 
 bool HitTestResult::mediaSupportsEnhancedFullscreen() const

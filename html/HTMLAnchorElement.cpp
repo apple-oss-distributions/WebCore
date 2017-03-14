@@ -377,13 +377,13 @@ void HTMLAnchorElement::handleClick(Event& event)
     appendServerMapMousePosition(url, event);
     URL completedURL = document().completeURL(url.toString());
 
-    String downloadAttribute;
+    auto downloadAttribute = nullAtom;
 #if ENABLE(DOWNLOAD_ATTRIBUTE)
     if (RuntimeEnabledFeatures::sharedFeatures().downloadAttributeEnabled()) {
         // Ignore the download attribute completely if the href URL is cross origin.
         bool isSameOrigin = completedURL.protocolIsData() || document().securityOrigin()->canRequest(completedURL);
         if (isSameOrigin)
-            downloadAttribute = ResourceResponse::sanitizeSuggestedFilename(attributeWithoutSynchronization(downloadAttr));
+            downloadAttribute = attributeWithoutSynchronization(downloadAttr);
         else if (hasAttributeWithoutSynchronization(downloadAttr))
             document().addConsoleMessage(MessageSource::Security, MessageLevel::Warning, "The download attribute on anchor was ignored because its href URL has a different security origin.");
     }

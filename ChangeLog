@@ -1,6 +1,6 @@
 2017-03-14  Matthew Hanson  <matthew_hanson@apple.com>
 
-        Merge r213949. rdar://problem/31049771
+        Merge r213949. rdar://problem/31049877
 
     2017-03-14  Andy Estes  <aestes@apple.com>
 
@@ -17,27 +17,7 @@
 
 2017-03-03  Matthew Hanson  <matthew_hanson@apple.com>
 
-        Merge r213253. rdar://problem/30773140
-
-    2017-03-01  Chris Dumez  <cdumez@apple.com>
-
-            [WK2][!NETWORK_SESSION] Failure to download when using a download attribute with no value on an anchor
-            https://bugs.webkit.org/show_bug.cgi?id=169060
-            <rdar://problem/30773140>
-
-            Reviewed by Darin Adler.
-
-            Make sure we never set the suggested filename to the empty string when
-            the download attribute is present but has no value.
-
-            Test: http/tests/download/anchor-download-no-value.html
-
-            * loader/PolicyChecker.cpp:
-            (WebCore::PolicyChecker::checkNavigationPolicy):
-
-2017-03-03  Matthew Hanson  <matthew_hanson@apple.com>
-
-        Merge r213385. rdar://problem/30838985
+        Merge r213385. rdar://problem/30838984
 
     2017-03-03  Sam Weinig  <sam@webkit.org>
 
@@ -53,98 +33,13 @@
             * Modules/applepay/ApplePaySession.cpp:
             (WebCore::convertAndValidate):
 
-2017-03-03  Matthew Hanson  <matthew_hanson@apple.com>
-
-        Rollout r213374. rdar://problem/30773140
-
-2017-03-03  Matthew Hanson  <matthew_hanson@apple.com>
-
-        Merge r213253. rdar://problem/30773140
-
-    2017-03-01  Chris Dumez  <cdumez@apple.com>
-
-            [WK2][!NETWORK_SESSION] Failure to download when using a download attribute with no value on an anchor
-            https://bugs.webkit.org/show_bug.cgi?id=169060
-            <rdar://problem/30773140>
-
-            Reviewed by Darin Adler.
-
-            Make sure we never set the suggested filename to the empty string when
-            the download attribute is present but has no value.
-
-            Test: http/tests/download/anchor-download-no-value.html
-
-            * loader/PolicyChecker.cpp:
-            (WebCore::PolicyChecker::checkNavigationPolicy):
-
 2017-03-02  Matthew Hanson  <matthew_hanson@apple.com>
 
-        Rollout r212886. rdar://problem/30812601
-
-2017-02-27  Matthew Hanson  <matthew_hanson@apple.com>
-
-        Merge r213010. rdar://problem/30704432
-
-    2017-02-26  Chris Dumez  <cdumez@apple.com>
-
-            HitTestResult's linkSuggestedFilename should sanitize download attribute
-            https://bugs.webkit.org/show_bug.cgi?id=168856
-            <rdar://problem/30683109>
-
-            Reviewed by Antti Koivisto.
-
-            HitTestResult's linkSuggestedFilename should sanitize download attribute.
-            This is used by the context menu's "Download Linked File" & "Download Linked
-            File As..." actions.
-
-            * rendering/HitTestResult.cpp:
-            (WebCore::HitTestResult::linkSuggestedFilename):
-            * rendering/HitTestResult.h:
-
-2017-02-27  Matthew Hanson  <matthew_hanson@apple.com>
-
-        Merge r212987. rdar://problem/30704432
-
-    2017-02-24  Chris Dumez  <cdumez@apple.com>
-
-            Unreviewed, follow-up fix after r212972.
-
-            Fixes a few assertions on the debug build bots.
-            URL needs to be exactly the same as the parsed one given
-            that we are calling the ParsedURLString constructor.
-
-            * platform/network/ResourceResponseBase.cpp:
-            (WebCore::ResourceResponseBase::sanitizeSuggestedFilename):
-
-2017-02-27  Matthew Hanson  <matthew_hanson@apple.com>
-
-        Merge r212972. rdar://problem/30704432
-
-    2017-02-24  Chris Dumez  <cdumez@apple.com>
-
-            Download attribute should be sanitized before being used as suggested filename
-            https://bugs.webkit.org/show_bug.cgi?id=168839
-            <rdar://problem/30683109>
-
-            Reviewed by Darin Adler.
-
-            Sanitize Download attribute before using it as a suggested filename for the download.
-            We rely on ResourceResponse's sanitizing of the suggested filename to do so, which has
-            the benefit of being consistent with downloads without the download attribute.
-
-            Tests: fast/dom/HTMLAnchorElement/anchor-file-blob-download-includes-doublequote.html
-                   fast/dom/HTMLAnchorElement/anchor-file-blob-download-includes-slashes.html
-                   fast/dom/HTMLAnchorElement/anchor-file-blob-download-includes-unicode.html
-
-            * html/HTMLAnchorElement.cpp:
-            (WebCore::HTMLAnchorElement::handleClick):
-            * platform/network/ResourceResponseBase.cpp:
-            (WebCore::ResourceResponseBase::sanitizeSuggestedFilename):
-            * platform/network/ResourceResponseBase.h:
+        Rollout r212893. rdar://problem/30812551
 
 2017-02-22  Brent Fulgham  <bfulgham@apple.com>
 
-        Merge r212828. rdar://problem/30636274
+        Merge r212828. rdar://problem/30636288
 
     2017-02-21  Antti Koivisto  <antti@apple.com>
 
@@ -174,7 +69,7 @@
 
 2017-02-23  Matthew Hanson  <matthew_hanson@apple.com>
 
-        Rollout r212740. rdar://problem/30636274
+        Rollout r212740. rdar://problem/30636288
 
 2017-02-22  Brent Fulgham  <bfulgham@apple.com>
 
@@ -202,43 +97,9 @@
             (WebCore::Frame::setView): Destroy the old render tree (if present) before switching to
             the new view. Then notify the document that it is now the current document in the new view.
 
-2017-02-22  Matthew Hanson  <matthew_hanson@apple.com>
-
-        rdar://problem/30657889
-
-    2017-02-22  Filip Pizlo  <fpizlo@apple.com>
-
-            A:B testing should not be contingent upon RC_SEED_BUILD
-
-            Reviewed by Alexey Proskuryakov.
-
-            * platform/SplitTestInitializer.cpp:
-
-2017-02-22  Matthew Hanson  <matthew_hanson@apple.com>
-
-        Merge r212773. rdar://problem/30640217
-
-    2017-02-21  Chris Dumez  <cdumez@apple.com>
-
-            REGRESSION (203941): iAd Producer: Clicking buttons in Preview does not work
-            https://bugs.webkit.org/show_bug.cgi?id=168677
-            <rdar://problem/30640101>
-
-            Reviewed by Ryosuke Niwa.
-
-            Add quirk to initMouseEvent to unbreak iAd Producer.
-
-            * dom/MouseEvent.cpp:
-            (WebCore::MouseEvent::initMouseEventQuirk):
-            * dom/MouseEvent.h:
-            * dom/MouseEvent.idl:
-            * platform/RuntimeApplicationChecks.h:
-            * platform/RuntimeApplicationChecks.mm:
-            (WebCore::MacApplication::isIADProducer):
-
 2017-02-21  Matthew Hanson  <matthew_hanson@apple.com>
 
-        Merge r212737. rdar://problem/30636274
+        Merge r212737. rdar://problem/30636288
 
     2017-02-21  Antti Koivisto  <antti@apple.com>
 
@@ -257,43 +118,6 @@
             have data structures that point to the old sheet contents.
 
             The resolver would get wiped anyway when the scheduled update actually occurs.
-
-2017-02-17  JF Bastien  <jfbastien@apple.com>
-
-        A/B test concurrent GC
-        https://bugs.webkit.org/show_bug.cgi?id=168453
-        <rdar://problem/30553220>
-
-        Reviewed by Phil Pizlo.
-
-        Initialize the WTF::SplitTest singleton using the anonymous UUID
-        from crash reporter. This makes it easy to figure out which A/B
-        split tests were enabled from a particular crash log.
-
-        * WebCore.xcodeproj/project.pbxproj:
-        * platform/SplitTestInitializer.cpp: Added.
-        (getUUID):
-        (InitWebCoreSplitTest):
-        * platform/SplitTestInitializer.h: Copied from Source/WebKit2/WebProcess/EntryPoint/mac/XPCService/WebContentServiceEntryPoint.mm.
-
-2017-02-21  Matthew Hanson  <matthew_hanson@apple.com>
-
-        Merge r212667. rdar://problem/29852056
-
-    2017-02-20  Brent Fulgham  <bfulgham@apple.com>
-
-            Nullptr dereferences when stopping a load
-            https://bugs.webkit.org/show_bug.cgi?id=168608
-            <rdar://problem/29852056>
-
-            Reviewed by Ryosuke Niwa.
-
-            Don't attempt to notify a detached frame's load client that the load is
-            stopped.
-
-            * loader/DocumentLoader.cpp:
-            (WebCore::DocumentLoader::stopLoading): Check for null frame loader and
-            bypass dereferencing it.
 
 2017-02-18  Ryosuke Niwa  <rniwa@webkit.org>
 
