@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2017 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,24 +23,12 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#pragma once
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-#if ENABLE(CONTENT_EXTENSIONS)
+WEBCORE_EXPORT void initSplitTest(void);
 
-#include <system_error>
-#include <wtf/Forward.h>
-#include <wtf/Vector.h>
-
-namespace WebCore {
-
-namespace ContentExtensions {
-
-class ContentExtensionRule;
-
-std::error_code parseRuleList(const String& rules, Vector<ContentExtensionRule>&);
-WEBCORE_EXPORT bool isValidCSSSelector(const String&);
-
-} // namespace ContentExtensions
-} // namespace WebCore
-
-#endif // ENABLE(CONTENT_EXTENSIONS)
+#ifdef __cplusplus
+}
+#endif
