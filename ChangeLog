@@ -1,62 +1,118 @@
 2017-08-15  Jason Marcell  <jmarcell@apple.com>
 
-        Cherry-pick r217197. rdar://problem/33890636
+        Cherry-pick r220723. rdar://problem/33901117
 
-    2017-05-21  Antti Koivisto  <antti@apple.com>
+    2017-08-14  Jer Noble  <jer.noble@apple.com>
 
-            matchMedia('print').addListener() fires in WK1 but never in WK2 when printing (breaks printing Google maps, QuickLooks)
-            https://bugs.webkit.org/show_bug.cgi?id=172361
-            <rdar://problem/28777408>
+            Obj-C exception crash in AVStreamSession when using EME in Private Browsing mode
+            https://bugs.webkit.org/show_bug.cgi?id=175547
 
-            Reviewed by Sam Weinig.
+            Reviewed by Eric Carlson.
 
-            Test: fast/media/matchMedia-print.html
+            When the storagePath() is empty, do not use those AVStreamSession APIs which require a valid file path to stored
+            proof-of-key-release data.
 
-            * page/FrameView.cpp:
-            (WebCore::FrameView::layout):
+            Drive-by fix: return emptyString() from HTMLMediaElement::mediaPlayerMediaKeysStorageDirectory() when in Private
+            Browsing mode, to match the behavior of WebKitMediaKeySession.
 
-                Evaluate matchMedia queries unconditionally. No idea why it wasn't like that.
+            * html/HTMLMediaElement.cpp:
+            (WebCore::HTMLMediaElement::mediaPlayerMediaKeysStorageDirectory const):
+            * platform/graphics/avfoundation/objc/CDMSessionAVStreamSession.mm:
+            (WebCore::CDMSessionAVStreamSession::releaseKeys):
+            (WebCore::CDMSessionAVStreamSession::update):
+            (WebCore::CDMSessionAVStreamSession::generateKeyReleaseMessage):
 
-            * testing/Internals.cpp:
-            (WebCore::Internals::setPrinting):
+2017-08-11  Jason Marcell  <jmarcell@apple.com>
 
-                Add testing support. The existing ways to do printing testing were unable to hit this bug as
-                they had too much additional gunk.
+        Cherry-pick r220551. rdar://problem/33843387
 
-            * testing/Internals.h:
-            * testing/Internals.idl:
+    2017-08-10  Nan Wang  <n_wang@apple.com>
 
-2017-08-15  Matthew Hanson  <matthew_hanson@apple.com>
+            AX: crash at WebCore::AccessibilityObject::supportsARIALiveRegion() const + 24
+            https://bugs.webkit.org/show_bug.cgi?id=175340
+            <rdar://problem/33782159>
 
-        Cherry-pick r220722. rdar://problem/33890575
+            Reviewed by Chris Fleizach.
 
-    2017-08-14  Andy Estes  <aestes@apple.com>
+            The issue here is that we manualy set the parent object of the AccessibilitySVGRoot object
+            and there are chances that the parent doesn't detach it properly during the parent's destroying
+            process. Accessing the stale parent object will lead to a crash.
+            Fixed this by making the parent object a weak pointer so we don't access an invalid memory.
 
-            REGRESSION (r220456): Crash in PreviewLoader::shouldCreateForMIMEType() when a ResourceResponse has a null MIME type
-            https://bugs.webkit.org/show_bug.cgi?id=175548
-            <rdar://problem/33866206>
+            Test: accessibility/add-children-pseudo-element.html
 
-            Reviewed by Brady Eidson.
+            * accessibility/AccessibilityRenderObject.cpp:
+            (WebCore::AccessibilityRenderObject::AccessibilityRenderObject):
+            * accessibility/AccessibilityRenderObject.h:
+            (WebCore::AccessibilityRenderObject::createWeakPtr):
+            * accessibility/AccessibilitySVGRoot.cpp:
+            (WebCore::AccessibilitySVGRoot::AccessibilitySVGRoot):
+            (WebCore::AccessibilitySVGRoot::setParent):
+            (WebCore::AccessibilitySVGRoot::parentObject const):
+            * accessibility/AccessibilitySVGRoot.h:
 
-            New API test: QuickLook.ShouldCreateForMIMEType
+2017-08-11  Jason Marcell  <jmarcell@apple.com>
 
-            * WebCore.xcodeproj/project.pbxproj:
-            * loader/ios/PreviewLoader.h:
-            * loader/ios/PreviewLoader.mm:
-            (WebCore::PreviewLoader::shouldCreateForMIMEType): Check if mimeType is a null String before
-            calling HashSet::contains().
+        Revert r220587. rdar://problem/33843387
 
-2017-08-14  Jason Marcell  <jmarcell@apple.com>
+2017-08-11  Jason Marcell  <jmarcell@apple.com>
 
-        Revert r217197. rdar://problem/33890636
+        Revert r220588. rdar://problem/33843387
 
-2017-08-14  Jason Marcell  <jmarcell@apple.com>
+2017-08-11  Jason Marcell  <jmarcell@apple.com>
 
-        Revert r220112. rdar://problem/33890629
+        Cherry-pick r220551. rdar://problem/33594320
+
+    2017-08-10  Nan Wang  <n_wang@apple.com>
+
+            AX: crash at WebCore::AccessibilityObject::supportsARIALiveRegion() const + 24
+            https://bugs.webkit.org/show_bug.cgi?id=175340
+            <rdar://problem/33782159>
+
+            Reviewed by Chris Fleizach.
+
+            The issue here is that we manualy set the parent object of the AccessibilitySVGRoot object
+            and there are chances that the parent doesn't detach it properly during the parent's destroying
+            process. Accessing the stale parent object will lead to a crash.
+            Fixed this by making the parent object a weak pointer so we don't access an invalid memory.
+
+            Test: accessibility/add-children-pseudo-element.html
+
+            * accessibility/AccessibilityRenderObject.cpp:
+            (WebCore::AccessibilityRenderObject::AccessibilityRenderObject):
+            * accessibility/AccessibilityRenderObject.h:
+            (WebCore::AccessibilityRenderObject::createWeakPtr):
+            * accessibility/AccessibilitySVGRoot.cpp:
+            (WebCore::AccessibilitySVGRoot::AccessibilitySVGRoot):
+            (WebCore::AccessibilitySVGRoot::setParent):
+            (WebCore::AccessibilitySVGRoot::parentObject const):
+            * accessibility/AccessibilitySVGRoot.h:
+
+2017-08-11  Jason Marcell  <jmarcell@apple.com>
+
+        Cherry-pick r220463. rdar://problem/33594320
+
+    2017-08-09  Nan Wang  <n_wang@apple.com>
+
+            AX: crash at WebCore::AccessibilityObject::supportsARIALiveRegion() const + 24
+            https://bugs.webkit.org/show_bug.cgi?id=175340
+            <rdar://problem/33782159>
+
+            Reviewed by Chris Fleizach.
+
+            When adding a psuedo element child to a RenderBlockFlow element, there might be a chance where
+            the element has already been layed out but we are still holding onto its stale children. Fixed it
+            by notifying AX correctly when inserting/removing children during layout.
+
+            Test: accessibility/add-children-pseudo-element.html
+
+            * rendering/RenderBlockFlow.cpp:
+            (WebCore::RenderBlockFlow::insertFloatingObject):
+            (WebCore::RenderBlockFlow::removeFloatingObject):
 
 2017-08-09  Jason Marcell  <jmarcell@apple.com>
 
-        Cherry-pick r220459. rdar://problem/33820787
+        Cherry-pick r220459. rdar://problem/33820786
 
     2017-08-09  Daniel Bates  <dabates@apple.com>
 
@@ -90,35 +146,9 @@
             (WebCore::PolicyChecker::checkNavigationPolicy): Notify the frame loader client whether the navigation
             is in response to receiving a redirect response.
 
-2017-08-09  Jason Marcell  <jmarcell@apple.com>
-
-        Cherry-pick r220456. rdar://problem/33805190
-
-    2017-08-09  Andy Estes  <aestes@apple.com>
-
-            [QuickLook] Use case-insensitive comparison of preview MIME types
-            https://bugs.webkit.org/show_bug.cgi?id=175350
-            <rdar://problem/33761159>
-
-            Reviewed by Brady Eidson.
-
-            MIME types are case-insensitive, but PreviewLoader was using a case-sensitive comparison to
-            determine if a MIME type was supported by QLPreviewConverter. As a result we would fail to
-            preview Excel macro-enabled workbooks, since CFNetwork would sniff a MIME type of
-            "application/vnd.ms-excel.sheet.macroEnabled.12" but QuickLook contained
-            "application/vnd.ms-excel.sheet.macroenabled.12" in its set of supported MIME type strings.
-
-            Fix this by copying the QuickLook supported MIME type set into a HashSet using
-            ASCIICaseInsensitiveHash and using that HashSet for MIME type checks.
-
-            Test: quicklook/excel-macro-enabled.html
-
-            * loader/ios/PreviewLoader.mm:
-            (WebCore::PreviewLoader::shouldCreateForMIMEType):
-
 2017-08-08  Jason Marcell  <jmarcell@apple.com>
 
-        Cherry-pick r220289. rdar://problem/33789085
+        Cherry-pick r220289. rdar://problem/33789082
 
     2017-08-04  Said Abou-Hallawa  <sabouhallawa@apple.com>
 
@@ -168,6 +198,79 @@
             available. This is because CachedImage::imageForRenderer() returns
             the nullImage() if the image is not available; see CachedImage.h. We should
             do the same for the derived class for consistency.
+
+2017-08-07  Jason Marcell  <jmarcell@apple.com>
+
+        Cherry-pick r220333. rdar://problem/33601173
+
+    2017-08-07  Antti Koivisto  <antti@apple.com>
+
+            REGRESSION (r219121): Airmail 3 prints header part only.
+            https://bugs.webkit.org/show_bug.cgi?id=175258
+            <rdar://problem/33601173>
+
+            Reviewed by Andreas Kling.
+
+            When a WK1 WebViw is printed via AppKit view hierarchy it won't explictly set the page width
+            but uses the existing width. r219121 assumes that all printing code paths set the page width.
+
+            No test, there appears to be no good way to test AppKit printing behaviors without adding complicated
+            new testing infrastructure.
+
+            * rendering/RenderView.cpp:
+            (WebCore::RenderView::layout):
+
+                If we are in printing layout and don't have page width set yet then use the current view width.
+                This matches the behavior prior r219121.
+
+2017-08-07  Jason Marcell  <jmarcell@apple.com>
+
+        Cherry-pick r220248. rdar://problem/33754446
+
+    2017-08-03  Jeremy Jones  <jeremyj@apple.com>
+
+            Improve WebKitLegacy video fullscreen animation begin and end rects.
+            https://bugs.webkit.org/show_bug.cgi?id=175152
+            rdar://problem/32840576
+
+            Reviewed by Eric Carlson.
+
+            No new tests, becuase this change has no effect on the DOM.
+
+            This change uses different rects for fullscreen animation to prevent the animation
+            from failing, and to improve the aesthetics of the animation.
+
+            * platform/mac/WebVideoFullscreenController.mm:
+            (frameExpandedToRatioOfFrame):
+            (-[WebVideoFullscreenController enterFullscreen:]):
+            (-[WebVideoFullscreenController exitFullscreen]):
+            (-[WebVideoFullscreenWindow animateFromRect:toRect:withSubAnimation:controllerAction:]):
+            (constrainFrameToRatioOfFrame): Deleted.
+
+2017-08-07  Jason Marcell  <jmarcell@apple.com>
+
+        Cherry-pick r220247. rdar://problem/33754440
+
+    2017-08-03  Jer Noble  <jer.noble@apple.com>
+
+            [EME][Mac] SecureStop left on disk in Private Browsing mode.
+            https://bugs.webkit.org/show_bug.cgi?id=175162
+
+            Reviewed by Eric Carlson.
+
+            Return an empty string from mediaKeysStorageDirectory() when the page indicates that storage should
+            be ephemeral(). Previously, an empty string in this case would be treated as an error. Instead, treat
+            an empty string as valid, and do not try to store or retrieve session information to disk in that case.
+
+            * Modules/encryptedmedia/legacy/WebKitMediaKeySession.cpp:
+            (WebCore::WebKitMediaKeySession::mediaKeysStorageDirectory const):
+            * platform/graphics/avfoundation/objc/CDMSessionAVContentKeySession.mm:
+            (WebCore::CDMSessionAVContentKeySession::releaseKeys):
+            (WebCore::CDMSessionAVContentKeySession::update):
+            (WebCore::CDMSessionAVContentKeySession::generateKeyReleaseMessage):
+            (WebCore::CDMSessionAVContentKeySession::contentKeySession):
+            * platform/graphics/avfoundation/objc/CDMSessionMediaSourceAVFObjC.mm:
+            (WebCore::CDMSessionMediaSourceAVFObjC::storagePath const):
 
 2017-08-04  Jason Marcell  <jmarcell@apple.com>
 

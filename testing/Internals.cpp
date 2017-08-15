@@ -464,13 +464,13 @@ void Internals::resetToConsistentState(Page& page)
     PreviewLoader::setClientForTesting(nullptr);
 #endif
 
+    printContextForTesting() = nullptr;
+
 #if USE(LIBWEBRTC)
     WebCore::useRealRTCPeerConnectionFactory();
 #endif
     
     ResourceLoadObserver::shared().setShouldThrottleObserverNotifications(true);
-
-    printContextForTesting() = nullptr;
 }
 
 Internals::Internals(Document& document)

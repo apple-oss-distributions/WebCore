@@ -203,17 +203,7 @@ PreviewLoader::~PreviewLoader()
 
 bool PreviewLoader::shouldCreateForMIMEType(const String& mimeType)
 {
-    static std::once_flag onceFlag;
-    static NeverDestroyed<HashSet<String, ASCIICaseInsensitiveHash>> supportedMIMETypes;
-    std::call_once(onceFlag, [] {
-        for (NSString *mimeType in QLPreviewGetSupportedMIMETypesSet())
-            supportedMIMETypes.get().add(mimeType);
-    });
-
-    if (mimeType.isNull())
-        return false;
-
-    return supportedMIMETypes.get().contains(mimeType);
+    return [QLPreviewGetSupportedMIMETypesSet() containsObject:mimeType];
 }
 
 std::unique_ptr<PreviewLoader> PreviewLoader::create(ResourceLoader& loader, const ResourceResponse& response)

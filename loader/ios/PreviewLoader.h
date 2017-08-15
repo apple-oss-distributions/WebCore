@@ -41,7 +41,7 @@ class SharedBuffer;
 class PreviewLoader {
     WTF_MAKE_NONCOPYABLE(PreviewLoader);
 public:
-    WEBCORE_EXPORT static bool shouldCreateForMIMEType(const String&);
+    static bool shouldCreateForMIMEType(const String&);
     static std::unique_ptr<PreviewLoader> create(ResourceLoader&, const ResourceResponse&);
     ~PreviewLoader();
 
