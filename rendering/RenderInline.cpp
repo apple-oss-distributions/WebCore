@@ -30,7 +30,6 @@
 #include "HitTestResult.h"
 #include "InlineElementBox.h"
 #include "InlineTextBox.h"
-#include "Page.h"
 #include "RenderBlock.h"
 #include "RenderChildIterator.h"
 #include "RenderFullScreen.h"
@@ -85,7 +84,7 @@ void RenderInline::willBeDestroyed()
     // properly dirty line boxes that they are removed from.  Effects that do :before/:after only on hover could crash otherwise.
     destroyLeftoverChildren();
     
-    if (!documentBeingDestroyed()) {
+    if (!renderTreeBeingDestroyed()) {
         if (firstLineBox()) {
             // We can't wait for RenderBoxModelObject::destroy to clear the selection,
             // because by then we will have nuked the line boxes.
@@ -327,7 +326,7 @@ void RenderInline::addChildIgnoringContinuation(RenderObject* newChild, RenderOb
     if (!beforeChild && isAfterContent(lastChild()))
         beforeChild = lastChild();
     
-    bool useNewBlockInsideInlineModel = document().settings()->newBlockInsideInlineModelEnabled();
+    bool useNewBlockInsideInlineModel = settings().newBlockInsideInlineModelEnabled();
     bool childInline = newChildIsInline(*newChild, *this);
     // This code is for the old block-inside-inline model that uses continuations.
     if (!useNewBlockInsideInlineModel && !childInline && !newChild->isFloatingOrOutOfFlowPositioned()) {
@@ -622,16 +621,20 @@ void RenderInline::addChildToContinuation(RenderObject* newChild, RenderObject* 
     auto* flow = continuationBefore(beforeChild);
     // It may or may not be the direct parent of the beforeChild.
     RenderBoxModelObject* beforeChildAncestor = nullptr;
-    // In case of anonymous wrappers, the parent of the beforeChild is mostly irrelevant. What we need is the topmost wrapper.
     if (!beforeChild) {
         auto* continuation = nextContinuation(flow);
         beforeChildAncestor = continuation ? continuation : flow;
     } else if (canUseAsParentForContinuation(beforeChild->parent()))
         beforeChildAncestor = downcast<RenderBoxModelObject>(beforeChild->parent());
     else if (beforeChild->parent()) {
+        // In case of anonymous wrappers, the parent of the beforeChild is mostly irrelevant. What we need is the topmost wrapper.
         auto* parent = beforeChild->parent();
-        while (parent && parent->parent() && parent->parent()->isAnonymous())
+        while (parent && parent->parent() && parent->parent()->isAnonymous()) {
+            // The ancestor candidate needs to be inside the continuation.
+            if (parent->hasContinuation())
+                break;
             parent = parent->parent();
+        }
         ASSERT(parent && parent->parent());
         beforeChildAncestor = downcast<RenderBoxModelObject>(parent->parent());
     } else

@@ -25,7 +25,6 @@
 
 #include "FilterEffect.h"
 #include "FloatPoint.h"
-#include "FloatSize.h"
 #include "Filter.h"
 #include <wtf/Vector.h>
 
@@ -83,6 +82,7 @@ private:
         int width;
         int height;
         float bias;
+        Vector<float> kernelMatrix;
     };
 
     FEConvolveMatrix(Filter&, const IntSize&, float, float,

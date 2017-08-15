@@ -65,7 +65,7 @@ bool FetchBodyOwner::isDisturbedOrLocked() const
     if (m_isDisturbed)
         return true;
 
-#if ENABLE(READABLE_STREAM_API)
+#if ENABLE(STREAMS_API)
     if (m_readableStreamSource && m_readableStreamSource->isReadableStreamLocked())
         return true;
 #endif
@@ -109,9 +109,9 @@ void FetchBodyOwner::cloneBody(const FetchBodyOwner& owner)
     m_body = owner.m_body->clone();
 }
 
-void FetchBodyOwner::extractBody(ScriptExecutionContext& context, JSC::ExecState& state, JSC::JSValue value)
+void FetchBodyOwner::extractBody(ScriptExecutionContext& context, FetchBody::BindingDataType&& value)
 {
-    m_body = FetchBody::extract(context, state, value, m_contentType);
+    m_body = FetchBody::extract(context, WTFMove(value), m_contentType);
 }
 
 void FetchBodyOwner::updateContentType()
@@ -132,7 +132,7 @@ void FetchBodyOwner::consumeOnceLoadingFinished(FetchBodyConsumer::Type type, Re
         return;
     }
     m_isDisturbed = true;
-    m_body->consumeOnceLoadingFinished(type, WTFMove(promise));
+    m_body->consumeOnceLoadingFinished(type, WTFMove(promise), m_contentType);
 }
 
 void FetchBodyOwner::formData(Ref<DeferredPromise>&& promise)
@@ -212,7 +212,7 @@ void FetchBodyOwner::finishBlobLoading()
 void FetchBodyOwner::blobLoadingSucceeded()
 {
     ASSERT(!isBodyNull());
-#if ENABLE(READABLE_STREAM_API)
+#if ENABLE(STREAMS_API)
     if (m_readableStreamSource) {
         m_readableStreamSource->close();
         m_readableStreamSource = nullptr;
@@ -225,7 +225,7 @@ void FetchBodyOwner::blobLoadingSucceeded()
 void FetchBodyOwner::blobLoadingFailed()
 {
     ASSERT(!isBodyNull());
-#if ENABLE(READABLE_STREAM_API)
+#if ENABLE(STREAMS_API)
     if (m_readableStreamSource) {
         if (!m_readableStreamSource->isCancelling())
             m_readableStreamSource->error(ASCIILiteral("Blob loading failed"));
@@ -240,7 +240,7 @@ void FetchBodyOwner::blobLoadingFailed()
 void FetchBodyOwner::blobChunk(const char* data, size_t size)
 {
     ASSERT(data);
-#if ENABLE(READABLE_STREAM_API)
+#if ENABLE(STREAMS_API)
     ASSERT(m_readableStreamSource);
     if (!m_readableStreamSource->enqueue(ArrayBuffer::tryCreate(data, size)))
         stop();

@@ -33,9 +33,13 @@ namespace WebCore {
 #define WEBCORE_COMMON_PRIVATE_IDENTIFIERS_EACH_PROPERTY_NAME(macro)\
     macro(addTrack) \
     macro(appendFromJS) \
+    macro(associatedReadableByteStreamController) \
     macro(autoAllocateChunkSize) \
+    macro(backingMap) \
     macro(body) \
+    macro(byobRequest) \
     macro(cancel) \
+    macro(cloneArrayBuffer) \
     macro(cloneForJS) \
     macro(closeRequested) \
     macro(closedPromiseCapability) \
@@ -45,6 +49,7 @@ namespace WebCore {
     macro(controller) \
     macro(createReadableStreamSource) \
     macro(disturbed) \
+    macro(failureKind) \
     macro(fetchRequest) \
     macro(fillFromJS) \
     macro(finishConsumingStream) \
@@ -73,7 +78,9 @@ namespace WebCore {
     macro(queuedSetLocalDescription) \
     macro(queuedSetRemoteDescription) \
     macro(reader) \
+    macro(readIntoRequests) \
     macro(readRequests) \
+    macro(readableByteStreamAPIEnabled) \
     macro(readableStreamController) \
     macro(readyPromiseCapability) \
     macro(removeTrack) \
@@ -81,6 +88,8 @@ namespace WebCore {
     macro(retrieveResponse) \
     macro(response) \
     macro(setBody) \
+    macro(setBodyAsReadableStream) \
+    macro(setBodyFromInputRequest) \
     macro(setStatus) \
     macro(state) \
     macro(startConsumingStream) \
@@ -101,12 +110,16 @@ namespace WebCore {
     macro(underlyingByteSource) \
     macro(underlyingSink) \
     macro(underlyingSource) \
+    macro(view) \
+    macro(webRTCLegacyAPIEnabled) \
     macro(writing) \
     macro(Headers) \
     macro(MediaStream) \
     macro(MediaStreamTrack) \
     macro(ReadableByteStreamController) \
     macro(ReadableStream) \
+    macro(ReadableStreamBYOBReader) \
+    macro(ReadableStreamBYOBRequest) \
     macro(ReadableStreamDefaultController) \
     macro(ReadableStreamDefaultReader) \
     macro(Request) \

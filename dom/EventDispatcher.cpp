@@ -28,13 +28,14 @@
 
 #include "CompositionEvent.h"
 #include "EventContext.h"
-#include "EventNames.h"
 #include "EventPath.h"
 #include "Frame.h"
+#include "FrameLoader.h"
 #include "FrameView.h"
 #include "HTMLInputElement.h"
 #include "InputEvent.h"
 #include "KeyboardEvent.h"
+#include "MainFrame.h"
 #include "MouseEvent.h"
 #include "NoEventDispatchAssertion.h"
 #include "ScopedEventQueue.h"
@@ -97,7 +98,7 @@ static void dispatchEventInDOM(Event& event, const EventPath& path)
         const EventContext& eventContext = path.contextAt(i);
         if (eventContext.currentTargetSameAsTarget())
             event.setEventPhase(Event::AT_TARGET);
-        else if (event.bubbles() && !event.cancelBubble())
+        else if (event.bubbles())
             event.setEventPhase(Event::BUBBLING_PHASE);
         else
             continue;
@@ -116,7 +117,7 @@ static bool shouldSuppressEventDispatchInDOM(Node& node, Event& event)
     if (!frame)
         return false;
 
-    if (!frame->loader().shouldSuppressKeyboardInput())
+    if (!frame->mainFrame().loader().shouldSuppressKeyboardInput())
         return false;
 
     if (is<TextEvent>(event)) {

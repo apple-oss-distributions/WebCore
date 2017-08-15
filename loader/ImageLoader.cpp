@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2009, 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2004-2017 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -32,13 +32,13 @@
 #include "EventNames.h"
 #include "EventSender.h"
 #include "Frame.h"
+#include "FrameLoader.h"
 #include "HTMLNames.h"
 #include "HTMLObjectElement.h"
 #include "HTMLParserIdioms.h"
 #include "Page.h"
 #include "RenderImage.h"
 #include "RenderSVGImage.h"
-#include "SecurityOrigin.h"
 #include <wtf/NeverDestroyed.h>
 
 #if ENABLE(VIDEO)
@@ -178,7 +178,7 @@ void ImageLoader::updateFromElement()
         options.sameOriginDataURLFlag = SameOriginDataURLFlag::Set;
 
         CachedResourceRequest request(ResourceRequest(document.completeURL(sourceURI(attr))), options);
-        request.setInitiator(&element());
+        request.setInitiator(element());
 
         request.setAsPotentiallyCrossOrigin(element().attributeWithoutSynchronization(HTMLNames::crossoriginAttr), document);
 
@@ -288,7 +288,7 @@ void ImageLoader::notifyFinished(CachedResource& resource)
         m_hasPendingErrorEvent = true;
         errorEventSender().dispatchEventSoon(*this);
 
-        static NeverDestroyed<String> consoleMessage(ASCIILiteral("Cross-origin image load denied by Cross-Origin Resource Sharing policy."));
+        static NeverDestroyed<String> consoleMessage(MAKE_STATIC_STRING_IMPL("Cross-origin image load denied by Cross-Origin Resource Sharing policy."));
         element().document().addConsoleMessage(MessageSource::Security, MessageLevel::Error, consoleMessage);
 
         ASSERT(!m_hasPendingLoadEvent);
@@ -365,7 +365,7 @@ void ImageLoader::updatedHasPendingEvent()
             m_protectedElement = &element();
     } else {
         ASSERT(!m_derefElementTimer.isActive());
-        m_derefElementTimer.startOneShot(0);
+        m_derefElementTimer.startOneShot(0_s);
     }   
 }
 
@@ -395,7 +395,12 @@ void ImageLoader::dispatchPendingBeforeLoadEvent()
     if (!element().document().hasLivingRenderTree())
         return;
     m_hasPendingBeforeLoadEvent = false;
+    Ref<Document> originalDocument = element().document();
     if (element().dispatchBeforeLoadEvent(m_image->url())) {
+        bool didEventListenerDisconnectThisElement = !element().isConnected() || &element().document() != originalDocument.ptr();
+        if (didEventListenerDisconnectThisElement)
+            return;
+        
         updateRenderer();
         return;
     }
@@ -466,7 +471,7 @@ void ImageLoader::elementDidMoveToNewDocument()
 
 inline void ImageLoader::clearFailedLoadURL()
 {
-    m_failedLoadURL = nullAtom;
+    m_failedLoadURL = nullAtom();
 }
 
 }

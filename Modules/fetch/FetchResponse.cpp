@@ -75,10 +75,17 @@ ExceptionOr<void> FetchResponse::setStatus(int status, const String& statusText)
     return { };
 }
 
-void FetchResponse::initializeWith(JSC::ExecState& execState, JSC::JSValue body)
+void FetchResponse::initializeWith(FetchBody::BindingDataType&& body)
 {
     ASSERT(scriptExecutionContext());
-    extractBody(*scriptExecutionContext(), execState, body);
+    extractBody(*scriptExecutionContext(), WTFMove(body));
+    updateContentType();
+}
+
+void FetchResponse::setBodyAsReadableStream()
+{
+    ASSERT(isBodyNull());
+    setBody(FetchBody::readableStreamBody());
     updateContentType();
 }
 
@@ -106,9 +113,6 @@ void FetchResponse::fetch(ScriptExecutionContext& context, FetchRequest& request
     }
     auto response = adoptRef(*new FetchResponse(context, FetchBody::loadingBody(), FetchHeaders::create(FetchHeaders::Guard::Immutable), { }));
 
-    // Setting pending activity until BodyLoader didFail or didSucceed callback is called.
-    response->setPendingActivity(response.ptr());
-
     response->m_bodyLoader.emplace(response.get(), WTFMove(promise));
     if (!response->m_bodyLoader->start(context, request))
         response->m_bodyLoader = std::nullopt;
@@ -126,14 +130,15 @@ void FetchResponse::BodyLoader::didSucceed()
     ASSERT(m_response.hasPendingActivity());
     m_response.m_body->loadingSucceeded();
 
-#if ENABLE(READABLE_STREAM_API)
+#if ENABLE(STREAMS_API)
     if (m_response.m_readableStreamSource && !m_response.body().consumer().hasData())
         m_response.closeStream();
 #endif
 
-    if (m_loader->isStarted())
+    if (m_loader->isStarted()) {
+        Ref<FetchResponse> protector(m_response);
         m_response.m_bodyLoader = std::nullopt;
-    m_response.unsetPendingActivity(&m_response);
+    }
 }
 
 void FetchResponse::BodyLoader::didFail()
@@ -142,7 +147,7 @@ void FetchResponse::BodyLoader::didFail()
     if (m_promise)
         std::exchange(m_promise, std::nullopt)->reject(TypeError);
 
-#if ENABLE(READABLE_STREAM_API)
+#if ENABLE(STREAMS_API)
     if (m_response.m_readableStreamSource) {
         if (!m_response.m_readableStreamSource->isCancelling())
             m_response.m_readableStreamSource->error(ASCIILiteral("Loading failed"));
@@ -151,16 +156,22 @@ void FetchResponse::BodyLoader::didFail()
 #endif
 
     // Check whether didFail is called as part of FetchLoader::start.
-    if (m_loader->isStarted())
+    if (m_loader->isStarted()) {
+        Ref<FetchResponse> protector(m_response);
         m_response.m_bodyLoader = std::nullopt;
-
-    m_response.unsetPendingActivity(&m_response);
+    }
 }
 
 FetchResponse::BodyLoader::BodyLoader(FetchResponse& response, FetchPromise&& promise)
     : m_response(response)
     , m_promise(WTFMove(promise))
 {
+    m_response.setPendingActivity(&m_response);
+}
+
+FetchResponse::BodyLoader::~BodyLoader()
+{
+    m_response.unsetPendingActivity(&m_response);
 }
 
 void FetchResponse::BodyLoader::didReceiveResponse(const ResourceResponse& resourceResponse)
@@ -169,13 +180,14 @@ void FetchResponse::BodyLoader::didReceiveResponse(const ResourceResponse& resou
 
     m_response.m_response = resourceResponse;
     m_response.m_headers->filterAndFill(resourceResponse.httpHeaderFields(), FetchHeaders::Guard::Response);
+    m_response.updateContentType();
 
     std::exchange(m_promise, std::nullopt)->resolve(m_response);
 }
 
 void FetchResponse::BodyLoader::didReceiveData(const char* data, size_t size)
 {
-#if ENABLE(READABLE_STREAM_API)
+#if ENABLE(STREAMS_API)
     ASSERT(m_response.m_readableStreamSource);
     auto& source = *m_response.m_readableStreamSource;
 
@@ -242,11 +254,14 @@ void FetchResponse::consume(unsigned type, Ref<DeferredPromise>&& wrapper)
     }
 }
 
-#if ENABLE(READABLE_STREAM_API)
+#if ENABLE(STREAMS_API)
 void FetchResponse::startConsumingStream(unsigned type)
 {
     m_isDisturbed = true;
-    m_consumer.setType(static_cast<FetchBodyConsumer::Type>(type));
+    auto consumerType = static_cast<FetchBodyConsumer::Type>(type);
+    m_consumer.setType(consumerType);
+    if (consumerType == FetchBodyConsumer::Type::Blob)
+        m_consumer.setContentType(Blob::normalizedContentType(extractMIMETypeFromMediaType(m_contentType)));
 }
 
 void FetchResponse::consumeChunk(Ref<JSC::Uint8Array>&& chunk)
@@ -274,7 +289,7 @@ void FetchResponse::consumeBodyAsStream()
 
     RefPtr<SharedBuffer> data = m_bodyLoader->startStreaming();
     if (data) {
-        if (!m_readableStreamSource->enqueue(data->createArrayBuffer())) {
+        if (!m_readableStreamSource->enqueue(data->tryCreateArrayBuffer())) {
             stop();
             return;
         }
@@ -341,7 +356,7 @@ void FetchResponse::stop()
     FetchBodyOwner::stop();
     if (m_bodyLoader) {
         m_bodyLoader->stop();
-        ASSERT(!m_bodyLoader);
+        m_bodyLoader = std::nullopt;
     }
 }
 
