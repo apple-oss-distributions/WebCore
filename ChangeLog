@@ -1,6 +1,6 @@
 2017-11-03  Jason Marcell  <jmarcell@apple.com>
 
-        Cherry-pick r224405. rdar://problem/35296405
+        Cherry-pick r224405. rdar://problem/35296404
 
     2017-11-03  Ryosuke Niwa  <rniwa@webkit.org>
 
@@ -39,7 +39,7 @@
 
 2017-11-03  Jason Marcell  <jmarcell@apple.com>
 
-        Cherry-pick r224398. rdar://problem/35329714
+        Cherry-pick r224398. rdar://problem/35329684
 
     2017-11-03  Daniel Bates  <dabates@apple.com>
 
