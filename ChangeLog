@@ -1,6 +1,6 @@
 2018-02-28  Jason Marcell  <jmarcell@apple.com>
 
-        Cherry-pick r229086. rdar://problem/37991818
+        Cherry-pick r229086. rdar://problem/37991718
 
     2018-02-27  Youenn Fablet  <youenn@apple.com>
 
@@ -22,7 +22,7 @@
 
 2018-02-28  Jason Marcell  <jmarcell@apple.com>
 
-        Cherry-pick r229028. rdar://problem/37947990
+        Cherry-pick r229028. rdar://problem/37992270
 
     2018-02-26  Youenn Fablet  <youenn@apple.com>
 
