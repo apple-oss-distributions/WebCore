@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2016 Apple Inc.  All rights reserved.
+ * Copyright (C) 2004-2018 Apple Inc.  All rights reserved.
  * Copyright (C) 2008 Collabora Ltd.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -87,7 +87,7 @@ enum WidgetNotification { WillPaintFlattened, DidPaintFlattened };
 // Scrollbar - Mac, Gtk
 // Plugin - Mac, Windows (windowed only), Qt (windowed only, widget is an HWND on windows), Gtk (windowed only)
 //
-class Widget : public RefCounted<Widget> {
+class Widget : public RefCounted<Widget>, public CanMakeWeakPtr<Widget> {
 public:
     WEBCORE_EXPORT explicit Widget(PlatformWidget = nullptr);
     WEBCORE_EXPORT virtual ~Widget();
@@ -140,7 +140,7 @@ public:
 
     WEBCORE_EXPORT void removeFromParent();
     WEBCORE_EXPORT virtual void setParent(ScrollView* view);
-    ScrollView* parent() const { return m_parent; }
+    ScrollView* parent() const { return m_parent.get(); }
     FrameView* root() const;
 
     virtual void handleEvent(Event&) { }
@@ -187,8 +187,6 @@ public:
     WEBCORE_EXPORT virtual IntPoint convertToContainingView(const IntPoint&) const;
     WEBCORE_EXPORT virtual IntPoint convertFromContainingView(const IntPoint&) const;
 
-    WeakPtr<Widget> createWeakPtr() { return m_weakPtrFactory.createWeakPtr(*this); }
-
 private:
     void init(PlatformWidget); // Must be called by all Widget constructors to initialize cross-platform data.
 
@@ -204,13 +202,12 @@ private:
     static IntPoint convertFromContainingWindowToRoot(const Widget* rootWidget, const IntPoint&);
 
 private:
-    ScrollView* m_parent;
+    WeakPtr<ScrollView> m_parent;
 #if !PLATFORM(COCOA)
     PlatformWidget m_widget;
 #else
     RetainPtr<NSView> m_widget;
 #endif
-    WeakPtrFactory<Widget> m_weakPtrFactory;
     bool m_selfVisible;
     bool m_parentVisible;
 

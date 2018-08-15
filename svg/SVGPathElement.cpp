@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2004, 2005, 2006, 2008 Nikolas Zimmermann <zimmermann@kde.org>
  * Copyright (C) 2004, 2005, 2006, 2007 Rob Buis <buis@kde.org>
+ * Copyright (C) 2018 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -48,9 +49,12 @@
 #include "SVGPathSegMovetoRel.h"
 #include "SVGPathUtilities.h"
 #include "SVGPoint.h"
+#include <wtf/IsoMallocInlines.h>
 #include <wtf/NeverDestroyed.h>
 
 namespace WebCore {
+
+WTF_MAKE_ISO_ALLOCATED_IMPL(SVGPathElement);
 
 // Define custom animated property 'd'.
 const SVGPropertyInfo* SVGPathElement::dPropertyInfo()
@@ -75,11 +79,11 @@ BEGIN_REGISTER_ANIMATED_PROPERTIES(SVGPathElement)
     REGISTER_LOCAL_ANIMATED_PROPERTY(d)
     REGISTER_LOCAL_ANIMATED_PROPERTY(pathLength)
     REGISTER_LOCAL_ANIMATED_PROPERTY(externalResourcesRequired)
-    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGraphicsElement)
+    REGISTER_PARENT_ANIMATED_PROPERTIES(SVGGeometryElement)
 END_REGISTER_ANIMATED_PROPERTIES
 
 inline SVGPathElement::SVGPathElement(const QualifiedName& tagName, Document& document)
-    : SVGGraphicsElement(tagName, document)
+    : SVGGeometryElement(tagName, document)
     , m_pathSegList(PathSegUnalteredRole)
     , m_isAnimValObserved(false)
 {
@@ -236,14 +240,14 @@ void SVGPathElement::parseAttribute(const QualifiedName& name, const AtomicStrin
         return;
     }
 
-    SVGGraphicsElement::parseAttribute(name, value);
+    SVGGeometryElement::parseAttribute(name, value);
     SVGExternalResourcesRequired::parseAttribute(name, value);
 }
 
 void SVGPathElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     if (!isSupportedAttribute(attrName)) {
-        SVGGraphicsElement::svgAttributeChanged(attrName);
+        SVGGeometryElement::svgAttributeChanged(attrName);
         return;
     }
 
@@ -255,7 +259,7 @@ void SVGPathElement::svgAttributeChanged(const QualifiedName& attrName)
         if (m_pathSegList.shouldSynchronize && !SVGAnimatedProperty::lookupWrapper<SVGPathElement, SVGAnimatedPathSegListPropertyTearOff>(this, dPropertyInfo())->isAnimating()) {
             SVGPathSegListValues newList(PathSegUnalteredRole);
             buildSVGPathSegListValuesFromByteStream(m_pathByteStream, *this, newList, UnalteredParsing);
-            m_pathSegList.value = newList;
+            m_pathSegList.value = WTFMove(newList);
         }
 
         if (renderer)
@@ -282,14 +286,14 @@ void SVGPathElement::invalidateMPathDependencies()
 
 Node::InsertedIntoAncestorResult SVGPathElement::insertedIntoAncestor(InsertionType insertionType, ContainerNode& parentOfInsertedTree)
 {
-    SVGGraphicsElement::insertedIntoAncestor(insertionType, parentOfInsertedTree);
+    SVGGeometryElement::insertedIntoAncestor(insertionType, parentOfInsertedTree);
     invalidateMPathDependencies();
     return InsertedIntoAncestorResult::Done;
 }
 
 void SVGPathElement::removedFromAncestor(RemovalType removalType, ContainerNode& oldParentOfRemovedTree)
 {
-    SVGGraphicsElement::removedFromAncestor(removalType, oldParentOfRemovedTree);
+    SVGGeometryElement::removedFromAncestor(removalType, oldParentOfRemovedTree);
     invalidateMPathDependencies();
 }
 

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2011, 2012 Google Inc.  All rights reserved.
+ * Copyright (C) 2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -49,7 +50,7 @@
 #include "UserContentProvider.h"
 #include "WebSocketChannelClient.h"
 #include "WebSocketHandshake.h"
-#include <runtime/ArrayBuffer.h>
+#include <JavaScriptCore/ArrayBuffer.h>
 #include <wtf/FastMalloc.h>
 #include <wtf/HashMap.h>
 #include <wtf/text/CString.h>
@@ -270,12 +271,16 @@ void WebSocketChannel::didOpenSocketStream(SocketStreamHandle& handle)
     ASSERT(&handle == m_handle);
     if (!m_document)
         return;
-    if (m_identifier)
+    if (m_identifier && UNLIKELY(InspectorInstrumentation::hasFrontends()))
         InspectorInstrumentation::willSendWebSocketHandshakeRequest(m_document, m_identifier, m_handshake->clientHandshakeRequest());
-    CString handshakeMessage = m_handshake->clientHandshakeMessage();
-    handle.sendData(handshakeMessage.data(), handshakeMessage.length(), [this, protectedThis = makeRef(*this)] (bool success) {
+    auto handshakeMessage = m_handshake->clientHandshakeMessage();
+    auto cookieRequestHeaderFieldProxy = m_handshake->clientHandshakeCookieRequestHeaderFieldProxy();
+    handle.sendHandshake(WTFMove(handshakeMessage), WTFMove(cookieRequestHeaderFieldProxy), [this, protectedThis = makeRef(*this)] (bool success, bool didAccessSecureCookies) {
         if (!success)
             fail("Failed to send WebSocket handshake.");
+
+        if (didAccessSecureCookies && m_document)
+            m_document->setSecureCookiesAccessed();
     });
 }
 
@@ -443,13 +448,11 @@ bool WebSocketChannel::processBuffer()
         if (m_handshake->mode() == WebSocketHandshake::Connected) {
             if (m_identifier)
                 InspectorInstrumentation::didReceiveWebSocketHandshakeResponse(m_document, m_identifier, m_handshake->serverHandshakeResponse());
-            if (!m_handshake->serverSetCookie().isEmpty()) {
-                if (m_document && cookiesEnabled(*m_document)) {
-                    // Exception (for sandboxed documents) ignored.
-                    m_document->setCookie(m_handshake->serverSetCookie());
-                }
+            String serverSetCookie = m_handshake->serverSetCookie();
+            if (!serverSetCookie.isEmpty()) {
+                if (m_document && cookiesEnabled(*m_document))
+                    setCookies(*m_document, m_handshake->httpURLForAuthenticationAndCookies(), serverSetCookie);
             }
-            // FIXME: handle set-cookie2.
             LOG(Network, "WebSocketChannel %p Connected", this);
             skipBuffer(headerLength);
             m_client->didConnect();

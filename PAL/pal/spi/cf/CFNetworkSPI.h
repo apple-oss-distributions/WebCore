@@ -32,15 +32,7 @@
 
 #if ((PLATFORM(MAC) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 101302 && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101300) || (PLATFORM(IOS) && __IPHONE_OS_VERSION_MIN_REQUIRED >= 110200) || (PLATFORM(WATCHOS) && __WATCH_OS_VERSION_MIN_REQUIRED >= 40200) || (PLATFORM(TVOS) && __TV_OS_VERSION_MIN_REQUIRED >= 110200))
 #define USE_CFNETWORK_IGNORE_HSTS 1
-
-/* FIXME: Remove after rdar 35390452 is fixed: */
-#if PLATFORM(MAC) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 101500
-#undef USE_CFNETWORK_IGNORE_HSTS
-#define USE_CFNETWORK_IGNORE_HSTS 0
 #endif
-
-#endif
-
 
 #if PLATFORM(WIN) || USE(APPLE_INTERNAL_SDK)
 
@@ -96,7 +88,6 @@ typedef void (^CFCachedURLResponseCallBackBlock)(CFCachedURLResponseRef);
 #if defined(__OBJC__)
 
 @interface NSURLCache ()
--(instancetype)_initWithMemoryCapacity:(NSUInteger)memoryCapacity diskCapacity:(NSUInteger)diskCapacity relativePath:(NSString *)path;
 - (CFURLCacheRef)_CFURLCache;
 @end
 
@@ -105,7 +96,7 @@ typedef void (^CFCachedURLResponseCallBackBlock)(CFCachedURLResponseRef);
 + (void)setAllowsSpecificHTTPSCertificate:(NSArray *)allow forHost:(NSString *)host;
 + (void)setDefaultTimeoutInterval:(NSTimeInterval)seconds;
 - (NSArray *)contentDispositionEncodingFallbackArray;
-- (CFURLRequestRef)_CFURLRequest;
+- (CFMutableURLRequestRef)_CFURLRequest;
 - (id)_initWithCFURLRequest:(CFURLRequestRef)request;
 - (id)_propertyForKey:(NSString *)key;
 - (void)_setProperty:(id)value forKey:(NSString *)key;
@@ -131,16 +122,6 @@ typedef void (^CFCachedURLResponseCallBackBlock)(CFCachedURLResponseRef);
 - (NSDate *)_lastModifiedDate;
 @end
 
-@interface NSURLSessionTask (TimingData)
-- (NSDictionary *)_timingData;
-@end
-
-#if (PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101300) || (PLATFORM(IOS) && __IPHONE_OS_VERSION_MIN_REQUIRED >= 110000)
-@interface NSURLSessionTask (ResourceHints)
-@property (nonatomic, assign) BOOL _preconnect;
-@end
-#endif
-
 @interface NSHTTPCookie ()
 - (CFHTTPCookieRef)_CFHTTPCookie;
 + (CFArrayRef __nullable)_ns2cfCookies:(NSArray * __nullable)nsCookies CF_RETURNS_RETAINED;
@@ -159,6 +140,9 @@ typedef void (^CFCachedURLResponseCallBackBlock)(CFCachedURLResponseRef);
 #if (PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101300) || (PLATFORM(IOS) && __IPHONE_OS_VERSION_MIN_REQUIRED >= 110000)
 @property (nullable, copy) NSSet *_suppressedAutoAddedHTTPHeaders;
 #endif
+#if (PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101400) || (PLATFORM(IOS) && __IPHONE_OS_VERSION_MIN_REQUIRED >= 120000)
+@property (copy) NSDictionary *_socketStreamProperties;
+#endif
 @end
 
 #if (PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101300) || (PLATFORM(IOS) && __IPHONE_OS_VERSION_MIN_REQUIRED >= 110000)
@@ -172,21 +156,27 @@ typedef void (^CFCachedURLResponseCallBackBlock)(CFCachedURLResponseRef);
 @end
 #endif
 
-#if (PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101200) || PLATFORM(IOS)
 @interface NSHTTPCookie ()
 @property (nullable, readonly, copy) NSString *_storagePartition;
 @end
 
 @interface NSHTTPCookieStorage ()
-- (void)_getCookiesForURL:(NSURL *)url mainDocumentURL:(NSURL *)mainDocumentURL partition:(NSString *)partition completionHandler:(void (^)(NSArray *))completionHandler;
 - (id)_initWithIdentifier:(NSString *)identifier private:(bool)isPrivate;
+- (void)_getCookiesForURL:(NSURL *)url mainDocumentURL:(NSURL *)mainDocumentURL partition:(NSString *)partition completionHandler:(void (^)(NSArray *))completionHandler;
+- (void)_getCookiesForURL:(NSURL *)url mainDocumentURL:(NSURL *)mainDocumentURL partition:(NSString *)partition policyProperties:(NSDictionary*)props completionHandler:(void (^)(NSArray *))completionHandler;
+- (void)_setCookies:(NSArray *)cookies forURL:(NSURL *)URL mainDocumentURL:(NSURL *)mainDocumentURL policyProperties:(NSDictionary*) props;
 @end
 
 @interface NSURLSessionTask ()
+- (NSDictionary *)_timingData;
 @property (readwrite, copy) NSString *_pathToDownloadTaskFile;
 @property (copy) NSString *_storagePartitionIdentifier;
-@end
+@property (nullable, readwrite, retain) NSURL *_siteForCookies;
+@property (readwrite) BOOL _isTopLevelNavigation;
+#if (PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101300) || (PLATFORM(IOS) && __IPHONE_OS_VERSION_MIN_REQUIRED >= 110000)
+@property (nonatomic, assign) BOOL _preconnect;
 #endif
+@end
 
 #endif // defined(__OBJC__)
 
@@ -277,6 +267,7 @@ CFStringRef _CFURLCacheCopyCacheDirectory(CFURLCacheRef);
 Boolean _CFHostIsDomainTopLevel(CFStringRef domain);
 void _CFURLRequestCreateArchiveList(CFAllocatorRef, CFURLRequestRef, CFIndex* version, CFTypeRef** objects, CFIndex* objectCount, CFDictionaryRef* protocolProperties);
 CFMutableURLRequestRef _CFURLRequestCreateFromArchiveList(CFAllocatorRef, CFIndex version, CFTypeRef* objects, CFIndex objectCount, CFDictionaryRef protocolProperties);
+void CFURLRequestSetProxySettings(CFMutableURLRequestRef, CFDictionaryRef);
 
 #endif // !PLATFORM(WIN)
 
@@ -334,6 +325,7 @@ WTF_EXTERN_C_END
 - (id)_initWithCFHTTPCookieStorage:(CFHTTPCookieStorageRef)cfStorage;
 - (CFHTTPCookieStorageRef)_cookieStorage;
 - (void)_saveCookies;
+- (void)_saveCookies:(dispatch_block_t) completionHandler;
 @end
 #endif
 
@@ -345,25 +337,5 @@ WTF_EXTERN_C_END
 @interface NSURLResponse ()
 - (void)_setMIMEType:(NSString *)type;
 @end
-
-static bool schemeWasUpgradedDueToDynamicHSTS(NSURLRequest *request)
-{
-    if ([request respondsToSelector:@selector(_schemeWasUpgradedDueToDynamicHSTS)])
-        return [request performSelector:@selector(_schemeWasUpgradedDueToDynamicHSTS)];
-    return false;
-}
-
-static void setIgnoreHSTS(NSMutableURLRequest *request, bool ignoreHSTS)
-{
-    if ([request respondsToSelector:@selector(_setIgnoreHSTS)])
-        [request performSelector:@selector(_setIgnoreHSTS) withObject:[NSNumber numberWithBool:ignoreHSTS]];
-}
-
-static bool ignoreHSTS(NSURLRequest *request)
-{
-    if ([request respondsToSelector:@selector(_ignoreHSTS)])
-        return [request performSelector:@selector(_ignoreHSTS)];
-    return false;
-}
 
 #endif // defined(__OBJC__)

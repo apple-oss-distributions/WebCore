@@ -352,7 +352,7 @@ GlyphData FontCascadeFonts::glyphDataForSystemFallback(UChar32 character, const 
     if (systemFallbackShouldBeInvisible)
         systemFallbackFont = const_cast<Font*>(&systemFallbackFont->invisibleFont());
 
-    if (systemFallbackFont->platformData().orientation() == Vertical && !systemFallbackFont->hasVerticalGlyphs() && FontCascade::isCJKIdeographOrSymbol(character))
+    if (systemFallbackFont->platformData().orientation() == FontOrientation::Vertical && !systemFallbackFont->hasVerticalGlyphs() && FontCascade::isCJKIdeographOrSymbol(character))
         variant = BrokenIdeographVariant;
 
     GlyphData fallbackGlyphData;
@@ -361,7 +361,7 @@ GlyphData FontCascadeFonts::glyphDataForSystemFallback(UChar32 character, const 
     else
         fallbackGlyphData = systemFallbackFont->variantFont(description, variant)->glyphDataForCharacter(character);
 
-    if (fallbackGlyphData.font && fallbackGlyphData.font->platformData().orientation() == Vertical && !fallbackGlyphData.font->isTextOrientationFallback()) {
+    if (fallbackGlyphData.font && fallbackGlyphData.font->platformData().orientation() == FontOrientation::Vertical && !fallbackGlyphData.font->isTextOrientationFallback()) {
         if (variant == NormalVariant && !FontCascade::isCJKIdeographOrSymbol(character))
             fallbackGlyphData = glyphDataForNonCJKCharacterWithGlyphOrientation(character, description.nonCJKGlyphOrientation(), fallbackGlyphData);
     }
@@ -389,14 +389,8 @@ static void opportunisticallyStartFontDataURLLoading(const FontCascadeDescriptio
     // asynchronous, and this code doesn't actually fix the race - it just makes it more likely for the two fonts to tie in the race.
     if (!fontSelector)
         return;
-    for (unsigned i = 0; i < description.effectiveFamilyCount(); ++i) {
-        auto visitor = WTF::makeVisitor([&](const AtomicString& family) {
-            fontSelector->opportunisticallyStartFontDataURLLoading(description, family);
-        }, [&](const FontFamilyPlatformSpecification&) {
-        });
-        const auto& currentFamily = description.effectiveFamilyAt(i);
-        WTF::visit(visitor, currentFamily);
-    }
+    for (unsigned i = 0; i < description.familyCount(); ++i)
+        fontSelector->opportunisticallyStartFontDataURLLoading(description, description.familyAt(i));
 }
 
 GlyphData FontCascadeFonts::glyphDataForVariant(UChar32 character, const FontCascadeDescription& description, FontVariant variant, unsigned fallbackIndex)
@@ -427,7 +421,7 @@ GlyphData FontCascadeFonts::glyphDataForVariant(UChar32 character, const FontCas
             data.font = &data.font->invisibleFont();
 
         if (variant == NormalVariant) {
-            if (data.font->platformData().orientation() == Vertical && !data.font->isTextOrientationFallback()) {
+            if (data.font->platformData().orientation() == FontOrientation::Vertical && !data.font->isTextOrientationFallback()) {
                 if (!FontCascade::isCJKIdeographOrSymbol(character))
                     return glyphDataForNonCJKCharacterWithGlyphOrientation(character, description.nonCJKGlyphOrientation(), data);
 
@@ -482,7 +476,7 @@ static RefPtr<GlyphPage> glyphPageFromFontRanges(unsigned pageNumber, const Font
         }
         break;
     }
-    if (!font || font->platformData().orientation() == Vertical)
+    if (!font || font->platformData().orientation() == FontOrientation::Vertical)
         return nullptr;
 
     if (desiredVisibility == FallbackVisibility::Invisible && font->visibility() == Font::Visibility::Visible)

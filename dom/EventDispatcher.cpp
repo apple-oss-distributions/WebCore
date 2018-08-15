@@ -29,13 +29,13 @@
 #include "CompositionEvent.h"
 #include "EventContext.h"
 #include "EventPath.h"
+#include "Frame.h"
 #include "FrameLoader.h"
 #include "FrameView.h"
 #include "HTMLInputElement.h"
 #include "InputEvent.h"
 #include "KeyboardEvent.h"
 #include "Logging.h"
-#include "MainFrame.h"
 #include "MouseEvent.h"
 #include "ScopedEventQueue.h"
 #include "ScriptDisallowedScope.h"
@@ -141,6 +141,8 @@ void EventDispatcher::dispatchEvent(Node& node, Event& event)
 
     ChildNodesLazySnapshot::takeChildNodesLazySnapshot();
 
+    event.resetBeforeDispatch();
+
     event.setTarget(EventPath::eventTargetRespectingTargetRules(node));
     if (!event.target())
         return;
@@ -175,7 +177,8 @@ void EventDispatcher::dispatchEvent(Node& node, Event& event)
     }
 }
 
-void EventDispatcher::dispatchEvent(const Vector<EventTarget*>& targets, Event& event)
+template<typename T>
+static void dispatchEventWithType(const Vector<T*>& targets, Event& event)
 {
     ASSERT(targets.size() >= 1);
     ASSERT(*targets.begin());
@@ -183,8 +186,19 @@ void EventDispatcher::dispatchEvent(const Vector<EventTarget*>& targets, Event& 
     EventPath eventPath { targets };
     event.setTarget(*targets.begin());
     event.setEventPath(eventPath);
+    event.resetBeforeDispatch();
     dispatchEventInDOM(event, eventPath);
     event.resetAfterDispatch();
+}
+
+void EventDispatcher::dispatchEvent(const Vector<EventTarget*>& targets, Event& event)
+{
+    dispatchEventWithType<EventTarget>(targets, event);
+}
+
+void EventDispatcher::dispatchEvent(const Vector<Element*>& targets, Event& event)
+{
+    dispatchEventWithType<Element>(targets, event);
 }
 
 }

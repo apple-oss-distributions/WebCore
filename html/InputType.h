@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2010 Google Inc. All rights reserved.
- * Copyright (C) 2011-2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2011-2018 Apple Inc. All rights reserved.
  * Copyright (C) 2012 Samsung Electronics. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -37,6 +37,7 @@
 #include "StepRange.h"
 #include <wtf/FastMalloc.h>
 #include <wtf/Forward.h>
+#include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
 
 #if PLATFORM(IOS)
@@ -68,12 +69,12 @@ struct InputElementClickState;
 // An InputType object represents the type-specific part of an HTMLInputElement.
 // Do not expose instances of InputType and classes derived from it to classes
 // other than HTMLInputElement.
-class InputType {
+class InputType : public RefCounted<InputType> {
     WTF_MAKE_FAST_ALLOCATED;
 
 public:
-    static std::unique_ptr<InputType> create(HTMLInputElement&, const AtomicString&);
-    static std::unique_ptr<InputType> createText(HTMLInputElement&);
+    static Ref<InputType> create(HTMLInputElement&, const AtomicString&);
+    static Ref<InputType> createText(HTMLInputElement&);
     virtual ~InputType();
 
     static bool themeSupportsDataListUI(InputType*);
@@ -193,7 +194,7 @@ public:
 
     virtual bool shouldSubmitImplicitly(Event&);
     virtual bool hasCustomFocusLogic() const;
-    virtual bool isKeyboardFocusable(KeyboardEvent&) const;
+    virtual bool isKeyboardFocusable(KeyboardEvent*) const;
     virtual bool isMouseFocusable() const;
     virtual bool shouldUseInputMethod() const;
     virtual void handleFocusEvent(Node* oldFocusedNode, FocusDirection);
@@ -233,11 +234,6 @@ public:
     virtual void addSearchResult();
     virtual void attach();
     virtual void detach();
-    virtual void minOrMaxAttributeChanged();
-    virtual void stepAttributeChanged();
-    virtual void altAttributeChanged();
-    virtual void srcAttributeChanged();
-    virtual void maxResultsAttributeChanged();
     virtual bool shouldRespectAlignAttribute();
     virtual FileList* files();
     virtual void setFiles(RefPtr<FileList>&&);
@@ -256,11 +252,10 @@ public:
     virtual bool supportsReadOnly() const;
     virtual void updateInnerTextValue();
     virtual void updatePlaceholderText();
-    virtual void attributeChanged(const QualifiedName&);
-    virtual void multipleAttributeChanged();
-    virtual void disabledAttributeChanged();
-    virtual void readonlyAttributeChanged();
-    virtual void requiredAttributeChanged();
+    virtual void attributeChanged(const QualifiedName&) { }
+    virtual void disabledStateChanged() { }
+    virtual void readOnlyStateChanged() { }
+    virtual void requiredStateChanged() { }
     virtual void capsLockStateMayHaveChanged();
     virtual void updateAutoFillButton();
     virtual String defaultToolTip() const;
@@ -309,8 +304,9 @@ public:
     virtual String displayString() const;
 
 protected:
-    explicit InputType(HTMLInputElement& element) : m_element(element) { }
-    HTMLInputElement& element() const { return m_element; }
+    explicit InputType(HTMLInputElement& element)
+        : m_element(makeWeakPtr(element)) { }
+    HTMLInputElement* element() const { return m_element.get(); }
     Chrome* chrome() const;
     Decimal parseToNumberOrNaN(const String&) const;
 
@@ -319,7 +315,7 @@ private:
     ExceptionOr<void> applyStep(int count, AnyStepHandling, TextFieldEventBehavior);
 
     // Raw pointer because the HTMLInputElement object owns this InputType object.
-    HTMLInputElement& m_element;
+    WeakPtr<HTMLInputElement> m_element;
 };
 
 } // namespace WebCore
