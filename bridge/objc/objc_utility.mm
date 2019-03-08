@@ -88,9 +88,10 @@ ObjcValue convertValueToObjcValue(ExecState* exec, JSValue value, ObjcValueType 
 
     switch (type) {
         case ObjcObjectType: {
-            JSLockHolder lock(exec);
+            VM& vm = exec->vm();
+            JSLockHolder lock(vm);
             
-            JSGlobalObject *originGlobalObject = exec->vmEntryGlobalObject();
+            JSGlobalObject *originGlobalObject = vm.vmEntryGlobalObject(exec);
             RootObject* originRootObject = findRootObject(originGlobalObject);
 
             JSGlobalObject* globalObject = 0;
@@ -101,8 +102,8 @@ ObjcValue convertValueToObjcValue(ExecState* exec, JSValue value, ObjcValueType 
                 globalObject = originGlobalObject;
                 
             RootObject* rootObject = findRootObject(globalObject);
-            result.objectValue =  rootObject
-                ? [webScriptObjectClass() _convertValueToObjcValue:value originRootObject:originRootObject rootObject:rootObject]
+            result.objectValue = rootObject
+                ? (__bridge CFTypeRef)[webScriptObjectClass() _convertValueToObjcValue:value originRootObject:originRootObject rootObject:rootObject]
                 : nil;
         }
         break;

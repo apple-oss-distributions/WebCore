@@ -122,7 +122,8 @@ JSValue ObjcField::valueFromInstance(ExecState* exec, const Instance* instance) 
 
 static id convertValueToObjcObject(ExecState* exec, JSValue value)
 {
-    RefPtr<RootObject> rootObject = findRootObject(exec->vmEntryGlobalObject());
+    VM& vm = exec->vm();
+    RefPtr<RootObject> rootObject = findRootObject(vm.vmEntryGlobalObject(exec));
     if (!rootObject)
         return nil;
     return [webScriptObjectClass() _convertValueToObjcValue:value originRootObject:rootObject.get() rootObject:rootObject.get()];
@@ -180,7 +181,7 @@ bool ObjcArray::setValueAt(ExecState* exec, unsigned int index, JSValue aValue) 
     ObjcValue oValue = convertValueToObjcValue (exec, aValue, ObjcObjectType);
 
     @try {
-        [_array.get() insertObject:oValue.objectValue atIndex:index];
+        [_array.get() insertObject:(__bridge id)oValue.objectValue atIndex:index];
         return true;
     } @catch(NSException* localException) {
         throwException(exec, scope, createError(exec, "Objective-C exception."));

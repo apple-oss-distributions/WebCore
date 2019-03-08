@@ -283,12 +283,13 @@ static void compileToBytecode(CombinedURLFilters&& filters, UniversalActionSet&&
     LOG_LARGE_STRUCTURES(universalActions, universalActions.capacity() * sizeof(unsigned));
 }
 
-std::error_code compileRuleList(ContentExtensionCompilationClient& client, String&& ruleJSON)
+std::error_code compileRuleList(ContentExtensionCompilationClient& client, String&& ruleJSON, Vector<ContentExtensionRule>&& parsedRuleList)
 {
-    auto ruleList = parseRuleList(WTFMove(ruleJSON));
-    if (!ruleList.has_value())
-        return ruleList.error();
-    Vector<ContentExtensionRule> parsedRuleList = WTFMove(ruleList.value());
+#if !ASSERT_DISABLED
+    callOnMainThread([ruleJSON = ruleJSON.isolatedCopy(), parsedRuleList = parsedRuleList.isolatedCopy()] {
+        ASSERT(parseRuleList(ruleJSON) == parsedRuleList);
+    });
+#endif
 
     bool domainConditionSeen = false;
     bool topURLConditionSeen = false;
@@ -313,7 +314,7 @@ std::error_code compileRuleList(ContentExtensionCompilationClient& client, Strin
     MonotonicTime patternPartitioningStart = MonotonicTime::now();
 #endif
     
-    client.writeSource(ruleJSON);
+    client.writeSource(std::exchange(ruleJSON, String()));
 
     Vector<SerializedActionByte> actions;
     Vector<unsigned> actionLocations = serializeActions(parsedRuleList, actions);
@@ -426,9 +427,6 @@ std::error_code compileRuleList(ContentExtensionCompilationClient& client, Strin
 #if CONTENT_EXTENSIONS_PERFORMANCE_REPORTING
     MonotonicTime totalNFAToByteCodeBuildTimeEnd = MonotonicTime::now();
     dataLogF("    Time spent building and compiling the DFAs: %f\n", (totalNFAToByteCodeBuildTimeEnd - totalNFAToByteCodeBuildTimeStart).seconds());
-
-    dataLogF("    Number of machines without condition filters: %d (total bytecode size = %d)\n", machinesWithoutConditionsCount, totalBytecodeSizeForMachinesWithoutConditions);
-    dataLogF("    Number of machines with condition filters: %d (total bytecode size = %d)\n", machinesWithConditionsCount, totalBytecodeSizeForMachinesWithConditions);
 #endif
 
     client.finalize();

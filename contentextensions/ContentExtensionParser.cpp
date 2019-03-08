@@ -230,6 +230,7 @@ static Expected<Trigger, std::error_code> loadTrigger(ExecState& exec, const JSO
 
 bool isValidCSSSelector(const String& selector)
 {
+    ASSERT(isMainThread());
     AtomicString::init();
     QualifiedName::init();
     CSSParserContext context(HTMLQuirksMode);
@@ -239,7 +240,7 @@ bool isValidCSSSelector(const String& selector)
     return selectorList.isValid();
 }
 
-static Expected<std::optional<Action>, std::error_code> loadAction(ExecState& exec, const JSObject& ruleObject)
+static Expected<Optional<Action>, std::error_code> loadAction(ExecState& exec, const JSObject& ruleObject)
 {
     VM& vm = exec.vm();
     auto scope = DECLARE_THROW_SCOPE(vm);
@@ -268,7 +269,7 @@ static Expected<std::optional<Action>, std::error_code> loadAction(ExecState& ex
         String selectorString = asString(selector)->value(&exec);
         if (!isValidCSSSelector(selectorString)) {
             // Skip rules with invalid selectors to be backwards-compatible.
-            return { std::nullopt };
+            return { WTF::nullopt };
         }
         return { Action(ActionType::CSSDisplayNoneSelector, selectorString) };
     }
@@ -283,7 +284,7 @@ static Expected<std::optional<Action>, std::error_code> loadAction(ExecState& ex
     return makeUnexpected(ContentExtensionError::JSONInvalidActionType);
 }
 
-static Expected<std::optional<ContentExtensionRule>, std::error_code> loadRule(ExecState& exec, const JSObject& ruleObject)
+static Expected<Optional<ContentExtensionRule>, std::error_code> loadRule(ExecState& exec, const JSObject& ruleObject)
 {
     auto trigger = loadTrigger(exec, ruleObject);
     if (!trigger.has_value())
@@ -296,10 +297,10 @@ static Expected<std::optional<ContentExtensionRule>, std::error_code> loadRule(E
     if (action.value())
         return {{{ WTFMove(trigger.value()), WTFMove(action.value().value()) }}};
 
-    return { std::nullopt };
+    return { WTF::nullopt };
 }
 
-static Expected<Vector<ContentExtensionRule>, std::error_code> loadEncodedRules(ExecState& exec, String&& ruleJSON)
+static Expected<Vector<ContentExtensionRule>, std::error_code> loadEncodedRules(ExecState& exec, const String& ruleJSON)
 {
     VM& vm = exec.vm();
     auto scope = DECLARE_THROW_SCOPE(vm);
@@ -347,7 +348,7 @@ static Expected<Vector<ContentExtensionRule>, std::error_code> loadEncodedRules(
     return WTFMove(ruleList);
 }
 
-Expected<Vector<ContentExtensionRule>, std::error_code> parseRuleList(String&& ruleJSON)
+Expected<Vector<ContentExtensionRule>, std::error_code> parseRuleList(const String& ruleJSON)
 {
 #if CONTENT_EXTENSIONS_PERFORMANCE_REPORTING
     MonotonicTime loadExtensionStartTime = MonotonicTime::now();
@@ -358,7 +359,7 @@ Expected<Vector<ContentExtensionRule>, std::error_code> parseRuleList(String&& r
     JSGlobalObject* globalObject = JSGlobalObject::create(*vm, JSGlobalObject::createStructure(*vm, jsNull()));
 
     ExecState* exec = globalObject->globalExec();
-    auto ruleList = loadEncodedRules(*exec, WTFMove(ruleJSON));
+    auto ruleList = loadEncodedRules(*exec, ruleJSON);
 
     vm = nullptr;
 

@@ -25,7 +25,7 @@
 
 #import "config.h"
 
-#if PLATFORM(IOS)
+#if PLATFORM(IOS_FAMILY)
 
 #import "WebVideoFullscreenControllerAVKit.h"
 
@@ -174,6 +174,7 @@ private:
     void toggleMuted() override;
     void setMuted(bool) final;
     void setVolume(double) final;
+    void setPlayingOnSecondScreen(bool) final;
 
     // PlaybackSessionModelClient
     void durationChanged(double) override;
@@ -194,14 +195,19 @@ private:
     void removeClient(VideoFullscreenModelClient&) override;
     void requestFullscreenMode(HTMLMediaElementEnums::VideoFullscreenMode, bool finishedWithMedia = false) override;
     void setVideoLayerFrame(FloatRect) override;
-    void setVideoLayerGravity(VideoFullscreenModel::VideoGravity) override;
+    void setVideoLayerGravity(MediaPlayerEnums::VideoGravity) override;
     void fullscreenModeChanged(HTMLMediaElementEnums::VideoFullscreenMode) override;
-    bool isVisible() const override;
     bool hasVideo() const override;
     FloatSize videoDimensions() const override;
     bool isMuted() const override;
     double volume() const override;
+    bool isPictureInPictureSupported() const override;
     bool isPictureInPictureActive() const override;
+    void willEnterPictureInPicture() final;
+    void didEnterPictureInPicture() final;
+    void failedToEnterPictureInPicture() final;
+    void willExitPictureInPicture() final;
+    void didExitPictureInPicture() final;
 
     HashSet<PlaybackSessionModelClient*> m_playbackClients;
     HashSet<VideoFullscreenModelClient*> m_fullscreenClients;
@@ -217,7 +223,7 @@ private:
 
 void VideoFullscreenControllerContext::requestUpdateInlineRect()
 {
-#if PLATFORM(IOS) && ENABLE(FULLSCREEN_API)
+#if PLATFORM(IOS_FAMILY)
     ASSERT(isUIThread());
     WebThreadRun([protectedThis = makeRefPtr(this), this] () mutable {
         IntRect clientRect = elementRectInWindow(m_videoElement.get());
@@ -232,7 +238,7 @@ void VideoFullscreenControllerContext::requestUpdateInlineRect()
 
 void VideoFullscreenControllerContext::requestVideoContentLayer()
 {
-#if PLATFORM(IOS) && ENABLE(FULLSCREEN_API)
+#if PLATFORM(IOS_FAMILY)
     ASSERT(isUIThread());
     WebThreadRun([protectedThis = makeRefPtr(this), this, videoFullscreenLayer = retainPtr([m_videoFullscreenView layer])] () mutable {
         [videoFullscreenLayer setBackgroundColor:cachedCGColor(WebCore::Color::transparent)];
@@ -249,7 +255,7 @@ void VideoFullscreenControllerContext::requestVideoContentLayer()
 
 void VideoFullscreenControllerContext::returnVideoContentLayer()
 {
-#if PLATFORM(IOS) && ENABLE(FULLSCREEN_API)
+#if PLATFORM(IOS_FAMILY)
     ASSERT(isUIThread());
     WebThreadRun([protectedThis = makeRefPtr(this), this, videoFullscreenLayer = retainPtr([m_videoFullscreenView layer])] () mutable {
         [videoFullscreenLayer setBackgroundColor:cachedCGColor(WebCore::Color::transparent)];
@@ -267,7 +273,7 @@ void VideoFullscreenControllerContext::returnVideoContentLayer()
 void VideoFullscreenControllerContext::didSetupFullscreen()
 {
     ASSERT(isUIThread());
-#if PLATFORM(IOS) && ENABLE(FULLSCREEN_API)
+#if PLATFORM(IOS_FAMILY)
     dispatch_async(dispatch_get_main_queue(), [protectedThis = makeRefPtr(this), this] {
         m_interface->enterFullscreen();
     });
@@ -296,7 +302,7 @@ void VideoFullscreenControllerContext::willExitFullscreen()
 void VideoFullscreenControllerContext::didExitFullscreen()
 {
     ASSERT(isUIThread());
-#if PLATFORM(IOS) && ENABLE(FULLSCREEN_API)
+#if PLATFORM(IOS_FAMILY)
     dispatch_async(dispatch_get_main_queue(), [protectedThis = makeRefPtr(this), this] {
         m_interface->cleanupFullscreen();
     });
@@ -323,6 +329,7 @@ void VideoFullscreenControllerContext::didCleanupFullscreen()
         m_fullscreenModel->setVideoFullscreenLayer(nil);
         m_fullscreenModel->setVideoElement(nullptr);
         m_playbackModel->setMediaElement(nullptr);
+        m_playbackModel->removeClient(*this);
         m_fullscreenModel->removeClient(*this);
         m_fullscreenModel = nullptr;
         m_videoElement = nullptr;
@@ -579,7 +586,7 @@ void VideoFullscreenControllerContext::setVideoLayerFrame(FloatRect frame)
     });
 }
 
-void VideoFullscreenControllerContext::setVideoLayerGravity(VideoFullscreenModel::VideoGravity videoGravity)
+void VideoFullscreenControllerContext::setVideoLayerGravity(MediaPlayerEnums::VideoGravity videoGravity)
 {
     ASSERT(isUIThread());
     WebThreadRun([protectedThis = makeRefPtr(this), this, videoGravity] {
@@ -595,12 +602,6 @@ void VideoFullscreenControllerContext::fullscreenModeChanged(HTMLMediaElementEnu
         if (m_fullscreenModel)
             m_fullscreenModel->fullscreenModeChanged(mode);
     });
-}
-
-bool VideoFullscreenControllerContext::isVisible() const
-{
-    ASSERT(isUIThread());
-    return m_fullscreenModel ? m_fullscreenModel->isVisible() : false;
 }
 
 bool VideoFullscreenControllerContext::hasVideo() const
@@ -625,6 +626,47 @@ bool VideoFullscreenControllerContext::isPictureInPictureActive() const
 {
     ASSERT(isUIThread());
     return m_playbackModel ? m_playbackModel->isPictureInPictureActive() : false;
+}
+
+bool VideoFullscreenControllerContext::isPictureInPictureSupported() const
+{
+    ASSERT(isUIThread());
+    return m_playbackModel ? m_playbackModel->isPictureInPictureSupported() : false;
+}
+
+void VideoFullscreenControllerContext::willEnterPictureInPicture()
+{
+    ASSERT(isUIThread());
+    for (auto* client : m_fullscreenClients)
+        client->willEnterPictureInPicture();
+}
+
+void VideoFullscreenControllerContext::didEnterPictureInPicture()
+{
+    ASSERT(isUIThread());
+    for (auto* client : m_fullscreenClients)
+        client->didEnterPictureInPicture();
+}
+
+void VideoFullscreenControllerContext::failedToEnterPictureInPicture()
+{
+    ASSERT(isUIThread());
+    for (auto* client : m_fullscreenClients)
+        client->failedToEnterPictureInPicture();
+}
+
+void VideoFullscreenControllerContext::willExitPictureInPicture()
+{
+    ASSERT(isUIThread());
+    for (auto* client : m_fullscreenClients)
+        client->willExitPictureInPicture();
+}
+
+void VideoFullscreenControllerContext::didExitPictureInPicture()
+{
+    ASSERT(isUIThread());
+    for (auto* client : m_fullscreenClients)
+        client->didExitPictureInPicture();
 }
 
 FloatSize VideoFullscreenControllerContext::videoDimensions() const
@@ -698,6 +740,15 @@ void VideoFullscreenControllerContext::setVolume(double volume)
     WebThreadRun([protectedThis = makeRefPtr(this), this, volume] {
         if (m_playbackModel)
             m_playbackModel->setVolume(volume);
+    });
+}
+
+void VideoFullscreenControllerContext::setPlayingOnSecondScreen(bool value)
+{
+    ASSERT(isUIThread());
+    WebThreadRun([protectedThis = makeRefPtr(this), this, value] {
+        if (m_playbackModel)
+            m_playbackModel->setPlayingOnSecondScreen(value);
     });
 }
 
@@ -998,4 +1049,4 @@ void VideoFullscreenControllerContext::requestHideAndExitFullscreen()
 
 #endif // !HAVE(AVKIT)
 
-#endif // PLATFORM(IOS)
+#endif // PLATFORM(IOS_FAMILY)

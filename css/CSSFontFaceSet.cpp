@@ -230,6 +230,8 @@ void CSSFontFaceSet::removeFromFacesLookupTable(const CSSFontFace& face, const C
 
 void CSSFontFaceSet::remove(const CSSFontFace& face)
 {
+    auto protect = makeRef(face);
+
     m_cache.clear();
 
     for (auto* client : m_clients)
@@ -312,9 +314,9 @@ static FontSelectionRequest computeFontSelectionRequest(MutableStyleProperties& 
     if (!styleValue)
         styleValue = CSSFontStyleValue::create(CSSValuePool::singleton().createIdentifierValue(CSSValueNormal));
 
-    FontSelectionValue weightSelectionValue = StyleBuilderConverter::convertFontWeightFromValue(*weightValue);
-    FontSelectionValue stretchSelectionValue = StyleBuilderConverter::convertFontStretchFromValue(*stretchValue);
-    FontSelectionValue styleSelectionValue = StyleBuilderConverter::convertFontStyleFromValue(*styleValue);
+    auto weightSelectionValue = StyleBuilderConverter::convertFontWeightFromValue(*weightValue);
+    auto stretchSelectionValue = StyleBuilderConverter::convertFontStretchFromValue(*stretchValue);
+    auto styleSelectionValue = StyleBuilderConverter::convertFontStyleFromValue(*styleValue);
 
     return { weightSelectionValue, stretchSelectionValue, styleSelectionValue };
 }

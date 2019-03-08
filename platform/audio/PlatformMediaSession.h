@@ -85,6 +85,7 @@ public:
         SuspendedUnderLock,
         InvisibleAutoplay,
         ProcessInactive,
+        PlaybackSuspended,
     };
     InterruptionType interruptionType() const { return m_interruptionType; }
 
@@ -152,7 +153,6 @@ public:
 
     bool shouldOverrideBackgroundLoadingRestriction() const;
 
-    virtual bool canPlayToWirelessPlaybackTarget() const { return false; }
     virtual bool isPlayingToWirelessPlaybackTarget() const { return m_isPlayingToWirelessPlaybackTarget; }
     void isPlayingToWirelessPlaybackTargetChanged(bool);
 
@@ -163,7 +163,7 @@ public:
     void setShouldPlayToPlaybackTarget(bool) override { }
 #endif
 
-#if PLATFORM(IOS)
+#if PLATFORM(IOS_FAMILY)
     virtual bool requiresPlaybackTargetRouteMonitoring() const { return false; }
 #endif
 
@@ -240,9 +240,10 @@ public:
 
     virtual void wirelessRoutesAvailableDidChange() { }
     virtual void setWirelessPlaybackTarget(Ref<MediaPlaybackTarget>&&) { }
-    virtual bool canPlayToWirelessPlaybackTarget() const { return false; }
     virtual bool isPlayingToWirelessPlaybackTarget() const { return false; }
     virtual void setShouldPlayToPlaybackTarget(bool) { }
+
+    virtual bool isPlayingOnSecondScreen() const { return false; }
 
     virtual Document* hostingDocument() const = 0;
     virtual String sourceApplicationIdentifier() const = 0;
@@ -255,7 +256,7 @@ protected:
 
 String convertEnumerationToString(PlatformMediaSession::State);
 String convertEnumerationToString(PlatformMediaSession::InterruptionType);
-
+String convertEnumerationToString(PlatformMediaSession::RemoteControlCommandType);
 }
 
 namespace WTF {
@@ -276,6 +277,14 @@ struct LogArgument<WebCore::PlatformMediaSession::InterruptionType> {
     static String toString(const WebCore::PlatformMediaSession::InterruptionType state)
     {
         return convertEnumerationToString(state);
+    }
+};
+
+template <>
+struct LogArgument<WebCore::PlatformMediaSession::RemoteControlCommandType> {
+    static String toString(const WebCore::PlatformMediaSession::RemoteControlCommandType command)
+    {
+        return convertEnumerationToString(command);
     }
 };
 

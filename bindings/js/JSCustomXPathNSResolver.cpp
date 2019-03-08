@@ -32,7 +32,7 @@
 #include "Frame.h"
 #include "JSDOMExceptionHandling.h"
 #include "JSDOMWindowCustom.h"
-#include "JSMainThreadExecState.h"
+#include "JSExecState.h"
 #include "Page.h"
 #include "PageConsoleClient.h"
 #include <JavaScriptCore/JSLock.h>
@@ -51,7 +51,8 @@ ExceptionOr<Ref<JSCustomXPathNSResolver>> JSCustomXPathNSResolver::create(ExecSt
     if (!resolverObject)
         return Exception { TypeMismatchError };
 
-    return adoptRef(*new JSCustomXPathNSResolver(state.vm(), resolverObject, asJSDOMWindow(state.vmEntryGlobalObject())));
+    VM& vm = state.vm();
+    return adoptRef(*new JSCustomXPathNSResolver(vm, resolverObject, asJSDOMWindow(vm.vmEntryGlobalObject(&state))));
 }
 
 JSCustomXPathNSResolver::JSCustomXPathNSResolver(VM& vm, JSObject* customResolver, JSDOMWindow* globalObject)
@@ -91,7 +92,7 @@ String JSCustomXPathNSResolver::lookupNamespaceURI(const String& prefix)
     ASSERT(!args.hasOverflowed());
 
     NakedPtr<JSC::Exception> exception;
-    JSValue retval = JSMainThreadExecState::call(exec, function, callType, callData, m_customResolver.get(), args, exception);
+    JSValue retval = JSExecState::call(exec, function, callType, callData, m_customResolver.get(), args, exception);
 
     String result;
     if (exception)

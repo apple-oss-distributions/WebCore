@@ -72,7 +72,7 @@ typedef Function<void(const IDBError&, const IDBGetResult&)> GetResultCallback;
 typedef Function<void(const IDBError&, const IDBGetAllResult&)> GetAllResultsCallback;
 typedef Function<void(const IDBError&, uint64_t)> CountCallback;
 
-class UniqueIDBDatabase {
+class UniqueIDBDatabase : public CanMakeWeakPtr<UniqueIDBDatabase> {
 public:
     UniqueIDBDatabase(IDBServer&, const IDBDatabaseIdentifier&);
     UniqueIDBDatabase(UniqueIDBDatabase&) = delete;
@@ -118,6 +118,7 @@ public:
 
     bool hardClosedForUserDelete() const { return m_hardClosedForUserDelete; }
 
+    void setQuota(uint64_t);
 private:
     void handleDatabaseOperations();
     void handleCurrentOperation();
@@ -212,6 +213,8 @@ private:
     RefPtr<UniqueIDBDatabaseTransaction> takeNextRunnableTransaction(bool& hadDeferredTransactions);
 
     bool prepareToFinishTransaction(UniqueIDBDatabaseTransaction&);
+    
+    void clearStalePendingOpenDBRequests();
 
     void postDatabaseTask(CrossThreadTask&&);
     void postDatabaseTaskReply(CrossThreadTask&&);

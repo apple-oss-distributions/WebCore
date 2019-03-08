@@ -26,7 +26,7 @@
 #include "config.h"
 #include "CryptoAlgorithmRSA_PSS.h"
 
-#if ENABLE(SUBTLE_CRYPTO) && HAVE(RSA_PSS)
+#if ENABLE(WEB_CRYPTO) && HAVE(RSA_PSS)
 
 #include "CommonCryptoUtilities.h"
 #include "CryptoAlgorithmRsaPssParams.h"
@@ -81,16 +81,16 @@ static ExceptionOr<bool> verifyRSA_PSS(CryptoAlgorithmIdentifier hash, const Pla
     return false;
 }
 
-ExceptionOr<Vector<uint8_t>> CryptoAlgorithmRSA_PSS::platformSign(CryptoAlgorithmRsaPssParams& parameters, const CryptoKeyRSA& key, const Vector<uint8_t>& data)
+ExceptionOr<Vector<uint8_t>> CryptoAlgorithmRSA_PSS::platformSign(const CryptoAlgorithmRsaPssParams& parameters, const CryptoKeyRSA& key, const Vector<uint8_t>& data)
 {
     return signRSA_PSS(key.hashAlgorithmIdentifier(), key.platformKey(), key.keySizeInBits(), data, parameters.saltLength);
 }
 
-ExceptionOr<bool> CryptoAlgorithmRSA_PSS::platformVerify(CryptoAlgorithmRsaPssParams& parameters, const CryptoKeyRSA& key, const Vector<uint8_t>& signature, const Vector<uint8_t>& data)
+ExceptionOr<bool> CryptoAlgorithmRSA_PSS::platformVerify(const CryptoAlgorithmRsaPssParams& parameters, const CryptoKeyRSA& key, const Vector<uint8_t>& signature, const Vector<uint8_t>& data)
 {
     return verifyRSA_PSS(key.hashAlgorithmIdentifier(), key.platformKey(), signature, data, parameters.saltLength);
 }
 
 } // namespace WebCore
 
-#endif // ENABLE(SUBTLE_CRYPTO) && HAVE(RSA_PSS)
+#endif // ENABLE(WEB_CRYPTO) && HAVE(RSA_PSS)
