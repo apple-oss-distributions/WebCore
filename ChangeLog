@@ -1,121 +1,37 @@
-2019-03-04  Babak Shafiei  <bshafiei@apple.com>
+2019-03-11  Kocsen Chung  <kocsen_chung@apple.com>
 
-        Cherry-pick r242355. rdar://problem/48563891
+        Cherry-pick r242770. rdar://problem/48795263
 
-    [iOS] Fullscreen "stay in page" option breaks video playback
-    https://bugs.webkit.org/show_bug.cgi?id=195277
-    <rdar://problem/48537317>
+    REGRESSION(r236281): YouTube Movies fail with "video format" error
+    https://bugs.webkit.org/show_bug.cgi?id=195598
+    <rdar://problem/48782842>
     
-    Reviewed by Eric Carlson.
+    Reviewed by Jon Lee.
     
-    Source/WebCore:
+    Partially revert r236281 for YouTube.com.
     
-    Add a LOG entry when playback is rejected due to media playback suspension.
-    
-    * html/MediaElementSession.cpp:
-    (WebCore::MediaElementSession::playbackPermitted const):
-    
-    Source/WebKit:
-    
-    Make sure we resume media playback when the user chooses "stay in page" from the deceptive
-    website warning dialog.
-    
-    * UIProcess/ios/fullscreen/WKFullScreenViewController.mm:
-    (-[WKFullScreenViewController _showPhishingAlert]):
+    * page/Quirks.cpp:
+    (WebCore::Quirks::hasBrokenEncryptedMediaAPISupportQuirk const):
     
     
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@242355 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@242770 268f45cc-cd09-0410-ab3c-d52691b4dbfc
 
-    2019-03-04  Jer Noble  <jer.noble@apple.com>
+    2019-03-11  Jer Noble  <jer.noble@apple.com>
 
-            [iOS] Fullscreen "stay in page" option breaks video playback
-            https://bugs.webkit.org/show_bug.cgi?id=195277
-            <rdar://problem/48537317>
+            REGRESSION(r236281): YouTube Movies fail with "video format" error
+            https://bugs.webkit.org/show_bug.cgi?id=195598
+            <rdar://problem/48782842>
 
-            Reviewed by Eric Carlson.
+            Reviewed by Jon Lee.
 
-            Add a LOG entry when playback is rejected due to media playback suspension.
+            Partially revert r236281 for YouTube.com.
 
-            * html/MediaElementSession.cpp:
-            (WebCore::MediaElementSession::playbackPermitted const):
+            * page/Quirks.cpp:
+            (WebCore::Quirks::hasBrokenEncryptedMediaAPISupportQuirk const):
 
-2019-03-01  Babak Shafiei  <bshafiei@apple.com>
+2019-02-28  Kocsen Chung  <kocsen_chung@apple.com>
 
-        Cherry-pick r242248. rdar://problem/48503712
-
-    [iOS] Dark flash when opening Google AMP pages
-    https://bugs.webkit.org/show_bug.cgi?id=195193
-    rdar://problem/48326442
-    
-    Reviewed by Zalan Bujtas.
-    
-    Source/WebCore:
-    
-    After the incremental compositing updates changes, it was possible for a change in the size
-    of an overflow:hidden element to fail to update the "ancestor clipping layer" geometry on
-    a composited descendant that is not a descendant in z-order. When Google search results
-    create the <iframe> that contain AMP contents, we'd fail to update a zero-sized clipping layer,
-    leaving the #222 background of an intermediate element visible.
-    
-    Fix by setting a flag in RenderLayer::updateLayerPosition() (which is called in containing block order)
-    that sets the "needs geometry update" dirty bit on containing-block-descendant layers. Currently
-    this flag affects all descendants; in future, we might be able to clear it for grand-children.
-    
-    Tests: compositing/geometry/ancestor-clip-change-interleaved-stacking-context.html
-           compositing/geometry/ancestor-clip-change.html
-    
-    * rendering/RenderLayer.cpp:
-    (WebCore::RenderLayer::updateLayerPositions):
-    (WebCore::RenderLayer::updateLayerPosition):
-    * rendering/RenderLayer.h:
-    * rendering/RenderLayerBacking.cpp:
-    (WebCore::RenderLayerBacking::updateAfterLayout):
-    * rendering/RenderLayerBacking.h:
-    
-    LayoutTests:
-    
-    Tests that change the size of a clipping layer with non-z-order composited descendant, with
-    a couple of layer tree configurations.
-    
-    * compositing/geometry/ancestor-clip-change-expected.html: Added.
-    * compositing/geometry/ancestor-clip-change-interleaved-stacking-context-expected.html: Added.
-    * compositing/geometry/ancestor-clip-change-interleaved-stacking-context.html: Added.
-    * compositing/geometry/ancestor-clip-change.html: Added.
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@242248 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2019-02-28  Simon Fraser  <simon.fraser@apple.com>
-
-            [iOS] Dark flash when opening Google AMP pages
-            https://bugs.webkit.org/show_bug.cgi?id=195193
-            rdar://problem/48326442
-
-            Reviewed by Zalan Bujtas.
-
-            After the incremental compositing updates changes, it was possible for a change in the size
-            of an overflow:hidden element to fail to update the "ancestor clipping layer" geometry on
-            a composited descendant that is not a descendant in z-order. When Google search results
-            create the <iframe> that contain AMP contents, we'd fail to update a zero-sized clipping layer,
-            leaving the #222 background of an intermediate element visible.
-
-            Fix by setting a flag in RenderLayer::updateLayerPosition() (which is called in containing block order)
-            that sets the "needs geometry update" dirty bit on containing-block-descendant layers. Currently
-            this flag affects all descendants; in future, we might be able to clear it for grand-children.
-
-            Tests: compositing/geometry/ancestor-clip-change-interleaved-stacking-context.html
-                   compositing/geometry/ancestor-clip-change.html
-
-            * rendering/RenderLayer.cpp:
-            (WebCore::RenderLayer::updateLayerPositions):
-            (WebCore::RenderLayer::updateLayerPosition):
-            * rendering/RenderLayer.h:
-            * rendering/RenderLayerBacking.cpp:
-            (WebCore::RenderLayerBacking::updateAfterLayout):
-            * rendering/RenderLayerBacking.h:
-
-2019-02-28  Alan Coon  <alancoon@apple.com>
-
-        Cherry-pick r242204. rdar://problem/48483749
+        Cherry-pick r242204. rdar://problem/48483747
 
     Locale names can be nullptr
     https://bugs.webkit.org/show_bug.cgi?id=195171
@@ -147,114 +63,20 @@
             * platform/graphics/cocoa/FontDescriptionCocoa.cpp:
             (WebCore::FontDescription::platformResolveGenericFamily):
 
-2019-02-27  Alan Coon  <alancoon@apple.com>
+2019-02-28  Alan Coon  <alancoon@apple.com>
 
-        Cherry-pick r242138. rdar://problem/48444136
+        Apply patch. rdar://problem/48464969
 
-    Unable to log into chase.com on iPad when DeviceMotionEvent API is disabled
-    https://bugs.webkit.org/show_bug.cgi?id=195101
-    <rdar://problem/48423023>
-    
-    Reviewed by Geoffrey Garen.
-    
-    Add site-specific quirk for chase.com on iOS where we fire a dummy DeviceMotionEvent if the page
-    tries to register a "devicemotion" event listener and fails because the API is disabled. This is
-    needed to unblock the site and proceed with the login flow.
-    
-    Unfortunately, document()->settings().needsSiteSpecificQuirks() is false on iOS so I could not
-    guard the quirk behind this flag.
-    
-    * page/DOMWindow.cpp:
-    (WebCore::DOMWindow::addEventListener):
-    (WebCore::DOMWindow::failedToRegisterDeviceMotionEventListener):
-    * page/DOMWindow.h:
-    
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@242138 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+    2019-02-28  Timothy Hatcher  <timothy@apple.com>
 
-    2019-02-27  Chris Dumez  <cdumez@apple.com>
+            REGRESSION: WebKit content crash in Base System (because NSAppearance is NULL).
+            https://bugs.webkit.org/show_bug.cgi?id=195086
+            rdar://problem/48419124
 
-            Unable to log into chase.com on iPad when DeviceMotionEvent API is disabled
-            https://bugs.webkit.org/show_bug.cgi?id=195101
-            <rdar://problem/48423023>
+            Reviewed by Tim Horton.
 
-            Reviewed by Geoffrey Garen.
-
-            Add site-specific quirk for chase.com on iOS where we fire a dummy DeviceMotionEvent if the page
-            tries to register a "devicemotion" event listener and fails because the API is disabled. This is
-            needed to unblock the site and proceed with the login flow.
-
-            Unfortunately, document()->settings().needsSiteSpecificQuirks() is false on iOS so I could not
-            guard the quirk behind this flag.
-
-            * page/DOMWindow.cpp:
-            (WebCore::DOMWindow::addEventListener):
-            (WebCore::DOMWindow::failedToRegisterDeviceMotionEventListener):
-            * page/DOMWindow.h:
-
-2019-02-27  Babak Shafiei  <bshafiei@apple.com>
-
-        Cherry-pick r242099. rdar://problem/48429675
-
-    [iOS] Regression(PSON) Scroll position is no longer restored when navigating back to reddit.com
-    https://bugs.webkit.org/show_bug.cgi?id=195054
-    <rdar://problem/48330549>
-    
-    Reviewed by Geoff Garen.
-    
-    Source/WebCore:
-    
-    Add MaintainMemoryCache flag to indicate that the memory cache should not get purged.
-    
-    * page/MemoryRelease.cpp:
-    (WebCore::releaseNoncriticalMemory):
-    (WebCore::releaseCriticalMemory):
-    (WebCore::releaseMemory):
-    * page/MemoryRelease.h:
-    
-    Source/WebKit:
-    
-    We attempt to restore the scroll position twice, on first layout and then on load completion.
-    Before PSON, the scroll position would fail to get restored on first layout but would succeed
-    on load completion because the view is tall enough by then. With PSON however, we would
-    fail to restore the scroll position on load completion because the view would not be tall
-    enough yet by this point. The reason is that the dynamic resources would not be in the memory cache
-    and would then get reloaded abd finish loading *after* the load event.
-    
-    To address the issue, we now make sure to not purge the memory cache on process suspension on
-    iOS if there is currently a SuspendedPageProxy in the UIProcess for this process.
-    
-    * UIProcess/SuspendedPageProxy.cpp:
-    (WebKit::SuspendedPageProxy::SuspendedPageProxy):
-    (WebKit::SuspendedPageProxy::~SuspendedPageProxy):
-    * UIProcess/WebProcessProxy.cpp:
-    (WebKit::WebProcessProxy::incrementSuspendedPageCount):
-    (WebKit::WebProcessProxy::decrementSuspendedPageCount):
-    * UIProcess/WebProcessProxy.h:
-    * WebProcess/WebProcess.cpp:
-    (WebKit::WebProcess::initializeWebProcess):
-    (WebKit::WebProcess::setHasSuspendedPageProxy):
-    * WebProcess/WebProcess.h:
-    * WebProcess/WebProcess.messages.in:
-    
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@242099 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2019-02-26  Chris Dumez  <cdumez@apple.com>
-
-            [iOS] Regression(PSON) Scroll position is no longer restored when navigating back to reddit.com
-            https://bugs.webkit.org/show_bug.cgi?id=195054
-            <rdar://problem/48330549>
-
-            Reviewed by Geoff Garen.
-
-            Add MaintainMemoryCache flag to indicate that the memory cache should not get purged.
-
-            * page/MemoryRelease.cpp:
-            (WebCore::releaseNoncriticalMemory):
-            (WebCore::releaseCriticalMemory):
-            (WebCore::releaseMemory):
-            * page/MemoryRelease.h:
+            * platform/mac/ScrollAnimatorMac.mm:
+            (-[WebScrollerImpDelegate effectiveAppearanceForScrollerImp:]): Always return a valid NSAppearance.
 
 2019-02-24  Babak Shafiei  <bshafiei@apple.com>
 

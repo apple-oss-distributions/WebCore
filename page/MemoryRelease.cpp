@@ -58,7 +58,7 @@
 
 namespace WebCore {
 
-static void releaseNoncriticalMemory(MaintainMemoryCache maintainMemoryCache)
+static void releaseNoncriticalMemory()
 {
     RenderTheme::singleton().purgeCaches();
 
@@ -70,13 +70,12 @@ static void releaseNoncriticalMemory(MaintainMemoryCache maintainMemoryCache)
     for (auto* document : Document::allDocuments())
         document->clearSelectorQueryCache();
 
-    if (maintainMemoryCache == MaintainMemoryCache::No)
-        MemoryCache::singleton().pruneDeadResourcesToSize(0);
+    MemoryCache::singleton().pruneDeadResourcesToSize(0);
 
     InlineStyleSheetOwner::clearCache();
 }
 
-static void releaseCriticalMemory(Synchronous synchronous, MaintainPageCache maintainPageCache, MaintainMemoryCache maintainMemoryCache)
+static void releaseCriticalMemory(Synchronous synchronous, MaintainPageCache maintainPageCache)
 {
     // Right now, the only reason we call release critical memory while not under memory pressure is if the process is about to be suspended.
     if (maintainPageCache == MaintainPageCache::No) {
@@ -84,10 +83,7 @@ static void releaseCriticalMemory(Synchronous synchronous, MaintainPageCache mai
         PageCache::singleton().pruneToSizeNow(0, pruningReason);
     }
 
-    if (maintainMemoryCache == MaintainMemoryCache::No) {
-        auto shouldDestroyDecodedDataForAllLiveResources = true;
-        MemoryCache::singleton().pruneLiveResourcesToSize(0, shouldDestroyDecodedDataForAllLiveResources);
-    }
+    MemoryCache::singleton().pruneLiveResourcesToSize(0, /*shouldDestroyDecodedDataForAllLiveResources*/ true);
 
     CSSValuePool::singleton().drain();
 
@@ -117,17 +113,17 @@ static void releaseCriticalMemory(Synchronous synchronous, MaintainPageCache mai
     }
 }
 
-void releaseMemory(Critical critical, Synchronous synchronous, MaintainPageCache maintainPageCache, MaintainMemoryCache maintainMemoryCache)
+void releaseMemory(Critical critical, Synchronous synchronous, MaintainPageCache maintainPageCache)
 {
     TraceScope scope(MemoryPressureHandlerStart, MemoryPressureHandlerEnd, static_cast<uint64_t>(critical), static_cast<uint64_t>(synchronous));
 
     if (critical == Critical::Yes) {
         // Return unused pages back to the OS now as this will likely give us a little memory to work with.
         WTF::releaseFastMallocFreeMemory();
-        releaseCriticalMemory(synchronous, maintainPageCache, maintainMemoryCache);
+        releaseCriticalMemory(synchronous, maintainPageCache);
     }
 
-    releaseNoncriticalMemory(maintainMemoryCache);
+    releaseNoncriticalMemory();
 
     platformReleaseMemory(critical);
 

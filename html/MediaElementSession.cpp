@@ -264,10 +264,8 @@ SuccessOr<MediaPlaybackDenialReason> MediaElementSession::playbackPermitted() co
 
     auto& document = m_element.document();
     auto* page = document.page();
-    if (!page || page->mediaPlaybackIsSuspended()) {
-        ALWAYS_LOG(LOGIDENTIFIER, "Returning FALSE because media playback is suspended");
+    if (!page || page->mediaPlaybackIsSuspended())
         return MediaPlaybackDenialReason::PageConsentRequired;
-    }
 
     if (document.isMediaDocument() && !document.ownerElement())
         return { };

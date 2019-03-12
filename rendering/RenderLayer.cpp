@@ -850,7 +850,10 @@ void RenderLayer::updateLayerPositionsAfterLayout(const RenderLayer* rootLayer, 
 
 void RenderLayer::updateLayerPositions(RenderGeometryMap* geometryMap, OptionSet<UpdateLayerPositionsFlag> flags)
 {
-    updateLayerPosition(&flags);
+    updateLayerPosition(); // For relpositioned layers or non-positioned layers,
+                           // we need to keep in sync, since we may have shifted relative
+                           // to our parent layer.
+
     applyPostLayoutScrollPositionIfNeeded();
 
     if (geometryMap)
@@ -951,7 +954,7 @@ void RenderLayer::updateLayerPositions(RenderGeometryMap* geometryMap, OptionSet
     }
 
     if (isComposited())
-        backing()->updateAfterLayout(flags.contains(ContainingClippingLayerChangedSize), flags.contains(NeedsFullRepaintInBacking));
+        backing()->updateAfterLayout(flags.contains(NeedsFullRepaintInBacking));
 
     if (geometryMap)
         geometryMap->popMappingsToAncestor(parent());
@@ -1497,7 +1500,7 @@ bool RenderLayer::update3DTransformedDescendantStatus()
     return has3DTransform();
 }
 
-bool RenderLayer::updateLayerPosition(OptionSet<UpdateLayerPositionsFlag>* flags)
+bool RenderLayer::updateLayerPosition()
 {
     LayoutPoint localPoint;
     LayoutSize inlineBoundingBoxOffset; // We don't put this into the RenderLayer x/y for inlines, so we need to subtract it out when done.
@@ -1515,10 +1518,6 @@ bool RenderLayer::updateLayerPosition(OptionSet<UpdateLayerPositionsFlag>* flags
                 // Trigger RenderLayerCompositor::requiresCompositingForFrame() which depends on the contentBoxRect size.
                 setNeedsPostLayoutCompositingUpdate();
             }
-
-            if (flags && renderer().hasOverflowClip())
-                flags->add(ContainingClippingLayerChangedSize);
-
             setSize(newSize);
         }
         
