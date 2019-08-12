@@ -4,9 +4,7 @@ include(platform/FreeType.cmake)
 include(platform/ImageDecoders.cmake)
 include(platform/TextureMapper.cmake)
 
-list(APPEND WebCore_INCLUDE_DIRECTORIES
-    ${THIRDPARTY_DIR}/ANGLE/
-    ${THIRDPARTY_DIR}/ANGLE/include/KHR
+list(APPEND WebCore_PRIVATE_INCLUDE_DIRECTORIES
     ${WEBCORE_DIR}/platform
     ${WEBCORE_DIR}/platform/generic
     ${WEBCORE_DIR}/platform/graphics/egl
@@ -63,7 +61,6 @@ list(APPEND WebCore_SOURCES
     platform/playstation/ScrollbarThemePlayStation.cpp
     platform/playstation/UserAgentPlayStation.cpp
 
-    platform/posix/FileSystemPOSIX.cpp
     platform/posix/SharedBufferPOSIX.cpp
 
     platform/text/Hyphenation.cpp
@@ -84,7 +81,6 @@ set(WebCore_USER_AGENT_SCRIPTS
 )
 
 list(APPEND WebCore_SYSTEM_INCLUDE_DIRECTORIES
-    ${ICU_INCLUDE_DIRS}
     ${LIBXML2_INCLUDE_DIR}
     ${SQLITE_INCLUDE_DIR}
     ${ZLIB_INCLUDE_DIRS}
@@ -92,7 +88,6 @@ list(APPEND WebCore_SYSTEM_INCLUDE_DIRECTORIES
 )
 
 list(APPEND WebCore_LIBRARIES
-    ${ICU_LIBRARIES}
     ${LIBXML2_LIBRARIES}
     ${SQLITE_LIBRARIES}
     ${ZLIB_LIBRARIES}

@@ -50,9 +50,12 @@
 #include "WorkerThread.h"
 #include <JavaScriptCore/ScriptArguments.h>
 #include <JavaScriptCore/ScriptCallStack.h>
+#include <wtf/IsoMallocInlines.h>
 
 namespace WebCore {
 using namespace Inspector;
+
+WTF_MAKE_ISO_ALLOCATED_IMPL(WorkerGlobalScope);
 
 WorkerGlobalScope::WorkerGlobalScope(const URL& url, Ref<SecurityOrigin>&& origin, const String& identifier, const String& userAgent, bool isOnline, WorkerThread& thread, bool shouldBypassMainWorldContentSecurityPolicy, Ref<SecurityOrigin>&& topOrigin, MonotonicTime timeOrigin, IDBClient::IDBConnectionProxy* connectionProxy, SocketProvider* socketProvider, PAL::SessionID sessionID)
     : m_url(url)
@@ -61,7 +64,7 @@ WorkerGlobalScope::WorkerGlobalScope(const URL& url, Ref<SecurityOrigin>&& origi
     , m_thread(thread)
     , m_script(std::make_unique<WorkerScriptController>(this))
     , m_inspectorController(std::make_unique<WorkerInspectorController>(*this))
-    , m_microtaskQueue(std::make_unique<MicrotaskQueue>())
+    , m_microtaskQueue(std::make_unique<MicrotaskQueue>(m_script->vm()))
     , m_isOnline(isOnline)
     , m_shouldBypassMainWorldContentSecurityPolicy(shouldBypassMainWorldContentSecurityPolicy)
     , m_eventQueue(*this)
@@ -112,6 +115,9 @@ void WorkerGlobalScope::prepareForTermination()
 #endif
 
     stopActiveDOMObjects();
+
+    if (m_cacheStorageConnection)
+        m_cacheStorageConnection->clearPendingRequests();
 
     m_inspectorController->workerTerminating();
 

@@ -42,8 +42,11 @@
 #include "NotificationController.h"
 #include "NotificationPermissionCallback.h"
 #include "WindowFocusAllowedIndicator.h"
+#include <wtf/IsoMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_ISO_ALLOCATED_IMPL(Notification);
 
 Ref<Notification> Notification::create(Document& context, const String& title, const Options& options)
 {
@@ -91,7 +94,7 @@ void Notification::show()
     }
     if (client.show(this)) {
         m_state = Showing;
-        setPendingActivity(this);
+        setPendingActivity(*this);
     }
 }
 
@@ -136,7 +139,7 @@ void Notification::finalize()
     if (m_state == Closed)
         return;
     m_state = Closed;
-    unsetPendingActivity(this);
+    unsetPendingActivity(*this);
 }
 
 void Notification::dispatchShowEvent()

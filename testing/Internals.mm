@@ -32,13 +32,8 @@
 #import "EventHandler.h"
 #import "HitTestResult.h"
 #import "Range.h"
-#import <wtf/SoftLinking.h>
+#import <pal/ios/UIKitSoftLink.h>
 #import <wtf/cocoa/NSURLExtras.h>
-
-#if PLATFORM(IOS_FAMILY)
-SOFT_LINK_FRAMEWORK(UIKit)
-SOFT_LINK(UIKit, UIAccessibilityIsReduceMotionEnabled, BOOL, (void), ())
-#endif
 
 namespace WebCore {
 
@@ -50,7 +45,7 @@ String Internals::userVisibleString(const DOMURL& url)
 bool Internals::userPrefersReducedMotion() const
 {
 #if PLATFORM(IOS_FAMILY)
-    return UIAccessibilityIsReduceMotionEnabled();
+    return PAL::softLink_UIKit_UIAccessibilityIsReduceMotionEnabled();
 #else
     return [[NSWorkspace sharedWorkspace] accessibilityDisplayShouldReduceMotion];
 #endif
@@ -66,7 +61,7 @@ ExceptionOr<RefPtr<Range>> Internals::rangeForDictionaryLookupAtLocation(int x, 
 
     document->updateLayoutIgnorePendingStylesheets();
 
-    HitTestResult result = document->frame()->mainFrame().eventHandler().hitTestResultAtPoint(IntPoint(x, y));
+    HitTestResult result = document->frame()->mainFrame().eventHandler().hitTestResultAtPoint(IntPoint(x, y), HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::DisallowUserAgentShadowContent | HitTestRequest::AllowChildFrameContent);
     RefPtr<Range> range;
     std::tie(range, std::ignore) = DictionaryLookup::rangeAtHitTestResult(result);
     return WTFMove(range);

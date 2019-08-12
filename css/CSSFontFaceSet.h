@@ -68,7 +68,7 @@ public:
 
     ExceptionOr<bool> check(const String& font, const String& text);
 
-    CSSSegmentedFontFace* fontFace(FontSelectionRequest, const AtomicString& family);
+    CSSSegmentedFontFace* fontFace(FontSelectionRequest, const AtomString& family);
 
     enum class Status { Loading, Loaded };
     Status status() const { return m_status; }
@@ -120,7 +120,7 @@ private:
     size_t m_facesPartitionIndex { 0 }; // All entries in m_faces before this index are CSS-connected.
     Status m_status { Status::Loaded };
     HashSet<CSSFontFaceSetClient*> m_clients;
-    CSSFontSelector* m_owningFontSelector;
+    WeakPtr<CSSFontSelector> m_owningFontSelector;
     unsigned m_activeCount { 0 };
 };
 
