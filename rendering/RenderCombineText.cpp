@@ -23,9 +23,12 @@
 
 #include "RenderBlock.h"
 #include "StyleInheritedData.h"
+#include <wtf/IsoMallocInlines.h>
 #include <wtf/NeverDestroyed.h>
 
 namespace WebCore {
+
+WTF_MAKE_ISO_ALLOCATED_IMPL(RenderCombineText);
 
 const float textCombineMargin = 1.15f; // Allow em + 15% margin
 
@@ -54,6 +57,7 @@ void RenderCombineText::styleDidChange(StyleDifference diff, const RenderStyle* 
     }
 
     m_needsFontUpdate = true;
+    combineTextIfNeeded();
 }
 
 void RenderCombineText::setRenderedText(const String& text)
@@ -61,6 +65,7 @@ void RenderCombineText::setRenderedText(const String& text)
     RenderText::setRenderedText(text);
 
     m_needsFontUpdate = true;
+    combineTextIfNeeded();
 }
 
 float RenderCombineText::width(unsigned from, unsigned length, const FontCascade& font, float xPosition, HashSet<const Font*>* fallbackFonts, GlyphOverflow* glyphOverflow) const
@@ -95,7 +100,7 @@ String RenderCombineText::combinedStringForRendering() const
     return { };
 }
 
-void RenderCombineText::combineText()
+void RenderCombineText::combineTextIfNeeded()
 {
     if (!m_needsFontUpdate)
         return;
@@ -124,7 +129,7 @@ void RenderCombineText::combineText()
     
     GlyphOverflow glyphOverflow;
     glyphOverflow.computeBounds = true;
-    float combinedTextWidth = width(0, textLength(), horizontalFont, 0, nullptr, &glyphOverflow);
+    float combinedTextWidth = width(0, text().length(), horizontalFont, 0, nullptr, &glyphOverflow);
 
     float bestFitDelta = combinedTextWidth - emWidth;
     auto bestFitDescription = description;
@@ -143,7 +148,7 @@ void RenderCombineText::combineText()
             compressedFont.update(fontSelector);
             
             glyphOverflow.left = glyphOverflow.top = glyphOverflow.right = glyphOverflow.bottom = 0;
-            float runWidth = RenderText::width(0, textLength(), compressedFont, 0, nullptr, &glyphOverflow);
+            float runWidth = RenderText::width(0, text().length(), compressedFont, 0, nullptr, &glyphOverflow);
             if (runWidth <= emWidth) {
                 combinedTextWidth = runWidth;
                 m_isCombined = true;
@@ -173,7 +178,7 @@ void RenderCombineText::combineText()
             compressedFont.update(fontSelector);
             
             glyphOverflow.left = glyphOverflow.top = glyphOverflow.right = glyphOverflow.bottom = 0;
-            float runWidth = RenderText::width(0, textLength(), compressedFont, 0, nullptr, &glyphOverflow);
+            float runWidth = RenderText::width(0, text().length(), compressedFont, 0, nullptr, &glyphOverflow);
             if (runWidth <= emWidth) {
                 combinedTextWidth = runWidth;
                 m_isCombined = true;
@@ -192,6 +197,8 @@ void RenderCombineText::combineText()
         m_combinedTextWidth = combinedTextWidth;
         m_combinedTextAscent = glyphOverflow.top;
         m_combinedTextDescent = glyphOverflow.bottom;
+        m_lineBoxes.dirtyRange(*this, 0, originalText().length(), originalText().length());
+        setNeedsLayout();
     }
 }
 

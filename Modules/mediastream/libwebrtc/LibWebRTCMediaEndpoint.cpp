@@ -35,6 +35,7 @@
 #include "Logging.h"
 #include "MediaStreamEvent.h"
 #include "NotImplemented.h"
+#include "Performance.h"
 #include "PlatformStrategies.h"
 #include "RTCDataChannel.h"
 #include "RTCDataChannelEvent.h"
@@ -50,11 +51,13 @@
 #include <webrtc/p2p/base/basicpacketsocketfactory.h>
 #include <webrtc/p2p/client/basicportallocator.h>
 #include <webrtc/pc/peerconnectionfactory.h>
+#include <wtf/CurrentTime.h>
 #include <wtf/MainThread.h>
 
-#include "CoreMediaSoftLink.h"
+#include <pal/cf/CoreMediaSoftLink.h>
 
 namespace WebCore {
+using namespace PAL;
 
 LibWebRTCMediaEndpoint::LibWebRTCMediaEndpoint(LibWebRTCPeerConnectionBackend& peerConnection, LibWebRTCProvider& client)
     : m_peerConnectionBackend(peerConnection)
@@ -63,6 +66,10 @@ LibWebRTCMediaEndpoint::LibWebRTCMediaEndpoint(LibWebRTCPeerConnectionBackend& p
     , m_setLocalSessionDescriptionObserver(*this)
     , m_setRemoteSessionDescriptionObserver(*this)
     , m_statsLogTimer(*this, &LibWebRTCMediaEndpoint::gatherStatsForLogging)
+#if !RELEASE_LOG_DISABLED
+    , m_logger(peerConnection.logger())
+    , m_logIdentifier(peerConnection.logIdentifier())
+#endif
 {
     ASSERT(client.factory());
 }
@@ -76,7 +83,6 @@ bool LibWebRTCMediaEndpoint::setConfiguration(LibWebRTCProvider& client, webrtc:
     return m_backend->SetConfiguration(WTFMove(configuration));
 }
 
-// FIXME: unify with MediaEndpointSessionDescription::typeString()
 static inline const char* sessionDescriptionType(RTCSdpType sdpType)
 {
     switch (sdpType) {
@@ -89,6 +95,9 @@ static inline const char* sessionDescriptionType(RTCSdpType sdpType)
     case RTCSdpType::Rollback:
         return "rollback";
     }
+
+    ASSERT_NOT_REACHED();
+    return "";
 }
 
 static inline RTCSdpType fromSessionDescriptionType(const webrtc::SessionDescriptionInterface& description)
@@ -160,7 +169,7 @@ void LibWebRTCMediaEndpoint::doSetLocalDescription(RTCSessionDescription& descri
 
     // FIXME: See https://bugs.webkit.org/show_bug.cgi?id=173783. Remove this test once fixed at LibWebRTC level.
     if (description.type() == RTCSdpType::Answer && !m_backend->pending_remote_description()) {
-        m_peerConnectionBackend.setLocalDescriptionFailed(Exception { INVALID_STATE_ERR, ASCIILiteral("Failed to set local answer sdp: no pending remote description.") });
+        m_peerConnectionBackend.setLocalDescriptionFailed(Exception { InvalidStateError, ASCIILiteral("Failed to set local answer sdp: no pending remote description.") });
         return;
     }
 
@@ -303,7 +312,7 @@ static inline String fromStdString(const std::string& value)
 
 static inline void fillRTCStats(RTCStatsReport::Stats& stats, const webrtc::RTCStats& rtcStats)
 {
-    stats.timestamp = rtcStats.timestamp_us() / 1000.0;
+    stats.timestamp = Performance::reduceTimeResolution(Seconds::fromMicroseconds(rtcStats.timestamp_us())).milliseconds();
     stats.id = fromStdString(rtcStats.id());
 }
 
@@ -596,6 +605,9 @@ static RTCSignalingState signalingState(webrtc::PeerConnectionInterface::Signali
     case webrtc::PeerConnectionInterface::kClosed:
         return RTCSignalingState::Stable;
     }
+
+    ASSERT_NOT_REACHED();
+    return RTCSignalingState::Stable;
 }
 
 void LibWebRTCMediaEndpoint::OnSignalingChange(webrtc::PeerConnectionInterface::SignalingState rtcState)
@@ -826,9 +838,11 @@ static inline RTCIceConnectionState toRTCIceConnectionState(webrtc::PeerConnecti
     case webrtc::PeerConnectionInterface::kIceConnectionClosed:
         return RTCIceConnectionState::Closed;
     case webrtc::PeerConnectionInterface::kIceConnectionMax:
-        ASSERT_NOT_REACHED();
-        return RTCIceConnectionState::New;
+        break;
     }
+
+    ASSERT_NOT_REACHED();
+    return RTCIceConnectionState::New;
 }
 
 void LibWebRTCMediaEndpoint::OnIceConnectionChange(webrtc::PeerConnectionInterface::IceConnectionState state)
@@ -1065,21 +1079,24 @@ void LibWebRTCMediaEndpoint::gatherStatsForLogging()
 
 void LibWebRTCMediaEndpoint::OnStatsDelivered(const rtc::scoped_refptr<const webrtc::RTCStatsReport>& report)
 {
-    if (!m_statsTimestamp)
-        m_statsTimestamp = report->timestamp_us();
-    else if (m_statsLogTimer.repeatInterval() == 2_s && (report->timestamp_us() - m_statsTimestamp) > 15000000) {
-        callOnMainThread([protectedThis = makeRef(*this)] {
-            protectedThis->m_statsLogTimer.augmentRepeatInterval(9_s);
-        });
-    }
-
 #if !RELEASE_LOG_DISABLED
-    // Log stats once every second for the 30 seconds, then drop to once every 5 seconds.
-    for (auto iterator = report->begin(); iterator != report->end(); ++iterator) {
-        if (iterator->type() == webrtc::RTCCodecStats::kType)
-            continue;
-        RELEASE_LOG(WebRTC, "WebRTC stats for %p: %{public}s", this, iterator->ToString().c_str());
-    }
+    int64_t timestamp = report->timestamp_us();
+    if (!m_statsFirstDeliveredTimestamp)
+        m_statsFirstDeliveredTimestamp = timestamp;
+
+    callOnMainThread([protectedThis = makeRef(*this), this, timestamp, report] {
+        if (m_statsLogTimer.repeatInterval() != statsLogInterval(timestamp)) {
+            m_statsLogTimer.stop();
+            m_statsLogTimer.startRepeating(statsLogInterval(timestamp));
+        }
+
+        for (auto iterator = report->begin(); iterator != report->end(); ++iterator) {
+            if (iterator->type() == webrtc::RTCCodecStats::kType)
+                continue;
+
+            ALWAYS_LOG(LOGIDENTIFIER, "WebRTC stats for :", *iterator);
+        }
+    });
 #else
     UNUSED_PARAM(report);
 #endif
@@ -1090,7 +1107,7 @@ void LibWebRTCMediaEndpoint::startLoggingStats()
 #if !RELEASE_LOG_DISABLED
     if (m_statsLogTimer.isActive())
         m_statsLogTimer.stop();
-    m_statsLogTimer.startRepeating(2_s);
+    m_statsLogTimer.startRepeating(statsLogInterval(0));
 #endif
 }
 
@@ -1098,6 +1115,24 @@ void LibWebRTCMediaEndpoint::stopLoggingStats()
 {
     m_statsLogTimer.stop();
 }
+
+#if !RELEASE_LOG_DISABLED
+WTFLogChannel& LibWebRTCMediaEndpoint::logChannel() const
+{
+    return LogWebRTC;
+}
+
+Seconds LibWebRTCMediaEndpoint::statsLogInterval(int64_t reportTimestamp) const
+{
+    if (logger().willLog(logChannel(), WTFLogLevelInfo))
+        return 2_s;
+
+    if (reportTimestamp - m_statsFirstDeliveredTimestamp > 15000000)
+        return 10_s;
+
+    return 4_s;
+}
+#endif
 
 } // namespace WebCore
 

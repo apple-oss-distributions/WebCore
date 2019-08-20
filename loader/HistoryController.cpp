@@ -41,13 +41,13 @@
 #include "FrameTree.h"
 #include "FrameView.h"
 #include "HistoryItem.h"
-#include "LinkHash.h"
 #include "Logging.h"
 #include "MainFrame.h"
 #include "Page.h"
 #include "PageCache.h"
 #include "ScrollingCoordinator.h"
 #include "SerializedScriptValue.h"
+#include "SharedStringHash.h"
 #include "VisitedLinkStore.h"
 #include <wtf/text/CString.h>
 
@@ -55,7 +55,7 @@ namespace WebCore {
 
 static inline void addVisitedLink(Page& page, const URL& url)
 {
-    page.visitedLinkStore().addVisitedLink(page, visitedLinkHash(url.string()));
+    page.visitedLinkStore().addVisitedLink(page, computeSharedStringHash(url.string()));
 }
 
 HistoryController::HistoryController(Frame& frame)
@@ -65,9 +65,7 @@ HistoryController::HistoryController(Frame& frame)
 {
 }
 
-HistoryController::~HistoryController()
-{
-}
+HistoryController::~HistoryController() = default;
 
 void HistoryController::saveScrollPositionAndViewStateToItem(HistoryItem* item)
 {
@@ -381,7 +379,7 @@ void HistoryController::updateForStandardLoad(HistoryUpdateType updateType)
 
     FrameLoader& frameLoader = m_frame.loader();
 
-    bool needPrivacy = m_frame.page()->usesEphemeralSession();
+    bool needPrivacy = m_frame.page() ? m_frame.page()->usesEphemeralSession() : true;
     const URL& historyURL = frameLoader.documentLoader()->urlForHistory();
 
     if (!frameLoader.documentLoader()->isClientRedirect()) {
@@ -415,7 +413,7 @@ void HistoryController::updateForRedirectWithLockedBackForwardList()
 {
     LOG(History, "HistoryController %p updateForRedirectWithLockedBackForwardList: Updating History for redirect load in frame %p (main frame %d) %s", this, &m_frame, m_frame.isMainFrame(), m_frame.loader().documentLoader() ? m_frame.loader().documentLoader()->url().string().utf8().data() : "");
     
-    bool needPrivacy = m_frame.page()->usesEphemeralSession();
+    bool needPrivacy = m_frame.page() ? m_frame.page()->usesEphemeralSession() : true;
     const URL& historyURL = m_frame.loader().documentLoader()->urlForHistory();
 
     if (m_frame.loader().documentLoader()->isClientRedirect()) {
@@ -460,7 +458,7 @@ void HistoryController::updateForClientRedirect()
         m_currentItem->clearScrollPosition();
     }
 
-    bool needPrivacy = m_frame.page()->usesEphemeralSession();
+    bool needPrivacy = m_frame.page() ? m_frame.page()->usesEphemeralSession() : true;
     const URL& historyURL = m_frame.loader().documentLoader()->urlForHistory();
 
     if (!historyURL.isEmpty() && !needPrivacy) {
@@ -549,11 +547,11 @@ void HistoryController::updateForSameDocumentNavigation()
     if (m_frame.document()->url().isEmpty())
         return;
 
-    if (m_frame.page()->usesEphemeralSession())
-        return;
-
     Page* page = m_frame.page();
     if (!page)
+        return;
+
+    if (page->usesEphemeralSession())
         return;
 
     addVisitedLink(*page, m_frame.document()->url());
@@ -893,10 +891,10 @@ void HistoryController::replaceState(RefPtr<SerializedScriptValue>&& stateObject
     m_currentItem->setFormData(nullptr);
     m_currentItem->setFormContentType(String());
 
+    ASSERT(m_frame.page());
     if (m_frame.page()->usesEphemeralSession())
         return;
 
-    ASSERT(m_frame.page());
     addVisitedLink(*m_frame.page(), URL(ParsedURLString, urlString));
     m_frame.loader().client().updateGlobalHistory();
 }

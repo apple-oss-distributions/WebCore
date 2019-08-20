@@ -30,8 +30,8 @@
 
 #include "Document.h"
 #include "EventNames.h"
-#include "ExceptionCode.h"
 #include "FileSystem.h"
+#include "Page.h"
 #include "SecurityOriginData.h"
 #include "Settings.h"
 #include "WebKitMediaKeyError.h"
@@ -135,10 +135,10 @@ ExceptionOr<void> WebKitMediaKeySession::update(Ref<Uint8Array>&& key)
 {
     // From <http://dvcs.w3.org/hg/html-media/raw-file/tip/encrypted-media/encrypted-media.html#dom-addkey>:
     // The addKey(key) method must run the following steps:
-    // 1. If the first or second argument [sic] is an empty array, throw an INVALID_ACCESS_ERR.
+    // 1. If the first or second argument [sic] is an empty array, throw an InvalidAccessError.
     // NOTE: the reference to a "second argument" is a spec bug.
     if (!key->length())
-        return Exception { INVALID_ACCESS_ERR };
+        return Exception { InvalidAccessError };
 
     // 2. Schedule a task to handle the call, providing key.
     m_pendingKeys.append(WTFMove(key));
@@ -223,11 +223,15 @@ String WebKitMediaKeySession::mediaKeysStorageDirectory() const
     if (!document)
         return emptyString();
 
+    auto* page = document->page();
+    if (!page || page->usesEphemeralSession())
+        return emptyString();
+
     auto storageDirectory = document->settings().mediaKeysStorageDirectory();
     if (storageDirectory.isEmpty())
         return emptyString();
 
-    return pathByAppendingComponent(storageDirectory, SecurityOriginData::fromSecurityOrigin(document->securityOrigin()).databaseIdentifier());
+    return FileSystem::pathByAppendingComponent(storageDirectory, SecurityOriginData::fromSecurityOrigin(document->securityOrigin()).databaseIdentifier());
 }
 
 bool WebKitMediaKeySession::hasPendingActivity() const
