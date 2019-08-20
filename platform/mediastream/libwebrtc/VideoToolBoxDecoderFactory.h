@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2017 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,32 +25,27 @@
 
 #pragma once
 
-#if ENABLE(APPLE_PAY)
+#if USE(LIBWEBRTC) && PLATFORM(COCOA)
 
-#include <wtf/Forward.h>
-#include <wtf/RetainPtr.h>
-
-OBJC_CLASS PKContact;
+#include "LibWebRTCMacros.h"
+#include <webrtc/sdk/objc/Framework/Classes/VideoToolbox/decoder.h>
+#include <webrtc/sdk/objc/Framework/Classes/VideoToolbox/videocodecfactory.h>
+#include <wtf/Vector.h>
 
 namespace WebCore {
 
-struct ApplePayPaymentContact;
-
-class PaymentContact {
+class VideoToolboxVideoDecoderFactory final : public webrtc::VideoToolboxVideoDecoderFactory {
 public:
-    PaymentContact() = default;
-    explicit PaymentContact(PKContact *pkContact)
-        : m_pkContact(pkContact)
-    {
-    }
+    VideoToolboxVideoDecoderFactory() = default;
 
-    static PaymentContact fromApplePayPaymentContact(unsigned version, const ApplePayPaymentContact&);
-    ApplePayPaymentContact toApplePayPaymentContact() const;
-
-    PKContact *pkContact() const { return m_pkContact.get(); }
+    void setActive(bool isActive);
 
 private:
-    RetainPtr<PKContact> m_pkContact;
+    webrtc::VideoDecoder* CreateVideoDecoder(webrtc::VideoCodecType) final;
+    void DestroyVideoDecoder(webrtc::VideoDecoder*) final;
+
+    Vector<std::reference_wrapper<webrtc::H264VideoToolboxDecoder>> m_decoders;
+    bool m_isActive { true };
 };
 
 }

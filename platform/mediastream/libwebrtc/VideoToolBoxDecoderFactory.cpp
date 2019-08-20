@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2017 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,36 +23,39 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#pragma once
+#include "config.h"
+#include "VideoToolBoxDecoderFactory.h"
 
-#if ENABLE(APPLE_PAY)
-
-#include <wtf/Forward.h>
-#include <wtf/RetainPtr.h>
-
-OBJC_CLASS PKContact;
+#if USE(LIBWEBRTC) && PLATFORM(COCOA)
 
 namespace WebCore {
 
-struct ApplePayPaymentContact;
+void VideoToolboxVideoDecoderFactory::setActive(bool isActive)
+{
+    if (m_isActive == isActive)
+        return;
 
-class PaymentContact {
-public:
-    PaymentContact() = default;
-    explicit PaymentContact(PKContact *pkContact)
-        : m_pkContact(pkContact)
-    {
-    }
-
-    static PaymentContact fromApplePayPaymentContact(unsigned version, const ApplePayPaymentContact&);
-    ApplePayPaymentContact toApplePayPaymentContact() const;
-
-    PKContact *pkContact() const { return m_pkContact.get(); }
-
-private:
-    RetainPtr<PKContact> m_pkContact;
-};
-
+    m_isActive = isActive;
+    for (webrtc::H264VideoToolboxDecoder& decoder : m_decoders)
+        decoder.SetActive(isActive);
 }
 
+webrtc::VideoDecoder* VideoToolboxVideoDecoderFactory::CreateVideoDecoder(webrtc::VideoCodecType type)
+{
+    auto* decoder = webrtc::VideoToolboxVideoDecoderFactory::CreateVideoDecoder(type);
+    if (decoder)
+        m_decoders.append(static_cast<webrtc::H264VideoToolboxDecoder&>(*decoder));
+
+    return decoder;
+}
+
+void VideoToolboxVideoDecoderFactory::DestroyVideoDecoder(webrtc::VideoDecoder* decoder)
+{
+    m_decoders.removeFirstMatching([&] (const auto& item) {
+        return &item.get() == decoder;
+    });
+    webrtc::VideoToolboxVideoDecoderFactory::DestroyVideoDecoder(decoder);
+}
+
+}
 #endif
