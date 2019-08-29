@@ -2398,7 +2398,7 @@ ExceptionOr<RefPtr<Frame>> DOMWindow::createWindow(const String& urlString, cons
     return noopener ? RefPtr<Frame> { nullptr } : newFrame;
 }
 
-ExceptionOr<RefPtr<WindowProxy>> DOMWindow::open(DOMWindow& activeWindow, DOMWindow& firstWindow, const String& urlString, const AtomString& frameName, const String& windowFeaturesString)
+ExceptionOr<RefPtr<WindowProxy>> DOMWindow::open(DOMWindow& activeWindow, DOMWindow& firstWindow, const String& urlStringToOpen, const AtomString& frameName, const String& windowFeaturesString)
 {
     if (!isCurrentlyDisplayedInFrame())
         return RefPtr<WindowProxy> { nullptr };
@@ -2410,6 +2410,10 @@ ExceptionOr<RefPtr<WindowProxy>> DOMWindow::open(DOMWindow& activeWindow, DOMWin
     auto* firstFrame = firstWindow.frame();
     if (!firstFrame)
         return RefPtr<WindowProxy> { nullptr };
+
+    auto urlString = urlStringToOpen;
+    if (activeDocument->quirks().shouldOpenAsAboutBlank(urlStringToOpen))
+        urlString = "about:blank"_s;
 
 #if ENABLE(CONTENT_EXTENSIONS)
     if (firstFrame->document()

@@ -551,6 +551,7 @@ public:
 
     bool elementShouldBufferData(HTMLMediaElement&);
     String elementBufferingPolicy(HTMLMediaElement&);
+    double privatePlayerVolume(const HTMLMediaElement&);
 #endif
 
     bool isSelectPopupVisible(HTMLSelectElement&);
@@ -580,7 +581,9 @@ public:
     WEBCORE_TESTSUPPORT_EXPORT void initializeMockMediaSource();
     Vector<String> bufferedSamplesForTrackID(SourceBuffer&, const AtomString&);
     Vector<String> enqueuedSamplesForTrackID(SourceBuffer&, const AtomString&);
+    double minimumUpcomingPresentationTimeForTrackID(SourceBuffer&, const AtomString&);
     void setShouldGenerateTimestamps(SourceBuffer&, bool);
+    void setMaximumQueueDepthForTrackID(SourceBuffer&, const AtomString&, size_t);
 #endif
 
 #if ENABLE(VIDEO)
@@ -706,6 +709,7 @@ public:
 #endif
 
 #if ENABLE(MEDIA_STREAM)
+    void setMockAudioTrackChannelNumber(MediaStreamTrack&, unsigned short);
     void setCameraMediaStreamTrackOrientation(MediaStreamTrack&, int orientation);
     unsigned long trackAudioSampleCount() const { return m_trackAudioSampleCount; }
     unsigned long trackVideoSampleCount() const { return m_trackVideoSampleCount; }

@@ -654,6 +654,11 @@ void AsyncScrollingCoordinator::setFrameScrollingNodeState(ScrollingNodeID nodeI
     frameScrollingNode.setMinLayoutViewportOrigin(frameView.minStableLayoutViewportOrigin());
     frameScrollingNode.setMaxLayoutViewportOrigin(frameView.maxStableLayoutViewportOrigin());
 
+    if (auto visualOverrideRect = frameView.visualViewportOverrideRect())
+        frameScrollingNode.setOverrideVisualViewportSize(FloatSize(visualOverrideRect.value().size()));
+    else
+        frameScrollingNode.setOverrideVisualViewportSize(WTF::nullopt);
+
     frameScrollingNode.setFixedElementsLayoutRelativeToFrame(frameView.fixedElementsLayoutRelativeToFrame());
 
     auto visualViewportIsSmallerThanLayoutViewport = [](const FrameView& frameView) {

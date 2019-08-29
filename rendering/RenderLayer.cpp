@@ -1796,10 +1796,8 @@ void RenderLayer::setBackingProviderLayer(RenderLayer* backingProvider)
     if (backingProvider == m_backingProviderLayer)
         return;
 
-    if (!renderer().renderTreeBeingDestroyed()) {
-        clearRepaintRects();
+    if (!renderer().renderTreeBeingDestroyed())
         clearClipRectsIncludingDescendants();
-    }
 
     m_backingProviderLayer = makeWeakPtr(backingProvider);
 }
@@ -2703,8 +2701,11 @@ void RenderLayer::scrollRectToVisible(const LayoutRect& absoluteRect, bool insid
             targetRect.move(0, frameView.headerHeight());
 
             LayoutRect revealRect = getRectToExpose(viewRect, targetRect, insideFixed, options.alignX, options.alignY);
-            ScrollOffset clampedScrollPosition = roundedIntPoint(revealRect.location()).constrainedBetween(minScrollPosition, maxScrollPosition);
-            frameView.setScrollPosition(clampedScrollPosition);
+            // Avoid scrolling to the rounded value of revealRect.location() if we don't actually need to scroll
+            if (revealRect != viewRect) {
+                ScrollOffset clampedScrollPosition = roundedIntPoint(revealRect.location()).constrainedBetween(minScrollPosition, maxScrollPosition);
+                frameView.setScrollPosition(clampedScrollPosition);
+            }
 
             // This is the outermost view of a web page, so after scrolling this view we
             // scroll its container by calling Page::scrollRectIntoView.
@@ -4012,7 +4013,11 @@ void RenderLayer::clipToRect(GraphicsContext& context, const LayerPaintingInfo& 
     if (needsClipping) {
         LayoutRect adjustedClipRect = clipRect.rect();
         adjustedClipRect.move(paintingInfo.subpixelOffset);
-        context.clip(snapRectToDevicePixels(adjustedClipRect, deviceScaleFactor));
+        auto snappedClipRect = snapRectToDevicePixels(adjustedClipRect, deviceScaleFactor);
+        context.clip(snappedClipRect);
+
+        if (paintingInfo.eventRegionContext)
+            paintingInfo.eventRegionContext->pushClip(enclosingIntRect(snappedClipRect));
     }
 
     if (clipRect.affectedByRadius()) {
@@ -4038,8 +4043,12 @@ void RenderLayer::clipToRect(GraphicsContext& context, const LayerPaintingInfo& 
 
 void RenderLayer::restoreClip(GraphicsContext& context, const LayerPaintingInfo& paintingInfo, const ClipRect& clipRect)
 {
-    if ((!clipRect.isInfinite() && clipRect.rect() != paintingInfo.paintDirtyRect) || clipRect.affectedByRadius())
+    if ((!clipRect.isInfinite() && clipRect.rect() != paintingInfo.paintDirtyRect) || clipRect.affectedByRadius()) {
         context.restore();
+
+        if (paintingInfo.eventRegionContext)
+            paintingInfo.eventRegionContext->popClip();
+    }
 }
 
 static void performOverlapTests(OverlapTestRequestMap& overlapTestRequests, const RenderLayer* rootLayer, const RenderLayer* layer)
@@ -6808,6 +6817,9 @@ bool RenderLayer::isTransparentOrFullyClippedRespectingParentFrames() const
         auto* renderViewLayer = renderView->layer();
         if (!renderViewLayer)
             return false;
+
+        if (is<HTMLFrameOwnerElement>(layer.renderer().element()) && layer.visibleSize().isEmpty())
+            return true;
 
         LayoutRect layerBounds;
         ClipRect backgroundRect;

@@ -263,6 +263,7 @@ public:
     Optional<LayoutRect> layoutViewportOverrideRect() const { return m_layoutViewportOverrideRect; }
 
     WEBCORE_EXPORT void setVisualViewportOverrideRect(Optional<LayoutRect>);
+    Optional<LayoutRect> visualViewportOverrideRect() const { return m_visualViewportOverrideRect; }
 
     // These are in document coordinates, unaffected by page scale (but affected by zooming).
     WEBCORE_EXPORT LayoutRect layoutViewportRect() const;
@@ -402,6 +403,8 @@ public:
     void updateIsVisuallyNonEmpty();
     void updateSignificantRenderedTextMilestoneIfNeeded();
     bool isVisuallyNonEmpty() const { return m_isVisuallyNonEmpty; }
+    WEBCORE_EXPORT bool qualifiesAsVisuallyNonEmpty() const;
+
     WEBCORE_EXPORT void enableAutoSizeMode(bool enable, const IntSize& minSize);
     WEBCORE_EXPORT void setAutoSizeFixedMinimumHeight(int);
     bool isAutoSizeEnabled() const { return m_shouldAutoSize; }
@@ -791,7 +794,6 @@ private:
 
     void markRootOrBodyRendererDirty() const;
 
-    bool qualifiesAsVisuallyNonEmpty() const;
     bool qualifiesAsSignificantRenderedText() const;
     void updateHasReachedSignificantRenderedTextThreshold();
 

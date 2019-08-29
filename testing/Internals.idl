@@ -551,6 +551,7 @@ enum CompositingPolicy {
 
     [Conditional=VIDEO] boolean elementShouldBufferData(HTMLMediaElement media);
     [Conditional=VIDEO] DOMString elementBufferingPolicy(HTMLMediaElement media);
+    [Conditional=VIDEO] double privatePlayerVolume(HTMLMediaElement media);
 
     [Conditional=LEGACY_ENCRYPTED_MEDIA] void initializeMockCDM();
     [Conditional=ENCRYPTED_MEDIA] MockCDMFactory registerMockCDM();
@@ -584,6 +585,8 @@ enum CompositingPolicy {
     [Conditional=MEDIA_SOURCE] sequence<DOMString> bufferedSamplesForTrackID(SourceBuffer buffer, DOMString trackID);
     [Conditional=MEDIA_SOURCE] sequence<DOMString> enqueuedSamplesForTrackID(SourceBuffer buffer, DOMString trackID);
     [Conditional=MEDIA_SOURCE] void setShouldGenerateTimestamps(SourceBuffer buffer, boolean flag);
+    [Conditional=MEDIA_SOURCE] double minimumUpcomingPresentationTimeForTrackID(SourceBuffer buffer, DOMString trackID);
+    [Conditional=MEDIA_SOURCE] void setMaximumQueueDepthForTrackID(SourceBuffer buffer, DOMString trackID, unsigned long maxQueueDepth);
 
     [Conditional=VIDEO, MayThrowException] void beginMediaSessionInterruption(DOMString interruptionType);
     [Conditional=VIDEO] void endMediaSessionInterruption(DOMString flags);
@@ -692,6 +695,7 @@ enum CompositingPolicy {
     [Conditional=WEB_RTC] void setH264HardwareEncoderAllowed(boolean allowed);
     [Conditional=WEB_RTC] void applyRotationForOutgoingVideoSources(RTCPeerConnection connection);
 
+    [Conditional=MEDIA_STREAM] void setMockAudioTrackChannelNumber(MediaStreamTrack track, unsigned short count);
     [Conditional=MEDIA_STREAM] void setShouldInterruptAudioOnPageVisibilityChange(boolean shouldInterrupt);
     [Conditional=MEDIA_STREAM] void setCameraMediaStreamTrackOrientation(MediaStreamTrack track, short orientation);
     [Conditional=MEDIA_STREAM] void observeMediaStreamTrack(MediaStreamTrack track);

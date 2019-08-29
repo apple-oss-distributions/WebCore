@@ -871,7 +871,7 @@ static OptionSet<TouchAction> computeEffectiveTouchActions(const RenderStyle& st
 #endif
 
 #if ENABLE(TEXT_AUTOSIZING)
-static bool hasTextChildren(const Element& element)
+static bool hasTextChild(const Element& element)
 {
     for (auto* child = element.firstChild(); child; child = child->nextSibling()) {
         if (is<Text>(child))
@@ -880,17 +880,14 @@ static bool hasTextChildren(const Element& element)
     return false;
 }
 
-void StyleResolver::adjustRenderStyleForTextAutosizing(RenderStyle& style, const Element& element)
+bool StyleResolver::adjustRenderStyleForTextAutosizing(RenderStyle& style, const Element& element)
 {
     if (!settings().textAutosizingEnabled() || !settings().textAutosizingUsesIdempotentMode())
-        return;
+        return false;
 
     AutosizeStatus::updateStatus(style);
-    if (!hasTextChildren(element))
-        return;
-
     if (style.textSizeAdjust().isNone())
-        return;
+        return false;
 
     float initialScale = document().page() ? document().page()->initialScale() : 1;
     auto adjustLineHeightIfNeeded = [&](auto computedFontSize) {
@@ -904,6 +901,9 @@ void StyleResolver::adjustRenderStyleForTextAutosizing(RenderStyle& style, const
         if (!lineHeight.isFixed() || lineHeight.value() >= minimumLineHeight)
             return;
 
+        if (AutosizeStatus::probablyContainsASmallFixedNumberOfLines(style))
+            return;
+
         style.setLineHeight({ minimumLineHeight, Fixed });
     };
 
@@ -912,16 +912,26 @@ void StyleResolver::adjustRenderStyleForTextAutosizing(RenderStyle& style, const
     auto specifiedFontSize = fontDescription.specifiedSize();
     bool isCandidate = style.isIdempotentTextAutosizingCandidate();
     if (!isCandidate && WTF::areEssentiallyEqual(initialComputedFontSize, specifiedFontSize))
-        return;
+        return false;
 
     auto adjustedFontSize = AutosizeStatus::idempotentTextSize(fontDescription.specifiedSize(), initialScale);
     if (isCandidate && WTF::areEssentiallyEqual(initialComputedFontSize, adjustedFontSize))
-        return;
+        return false;
+
+    if (!hasTextChild(element))
+        return false;
 
     fontDescription.setComputedSize(isCandidate ? adjustedFontSize : specifiedFontSize);
     style.setFontDescription(WTFMove(fontDescription));
     style.fontCascade().update(&document().fontSelector());
-    adjustLineHeightIfNeeded(adjustedFontSize);
+
+    // FIXME: We should restore computed line height to its original value in the case where the element is not
+    // an idempotent text autosizing candidate; otherwise, if an element that is a text autosizing candidate contains
+    // children which are not autosized, the non-autosized content will end up with a boosted line height.
+    if (isCandidate)
+        adjustLineHeightIfNeeded(adjustedFontSize);
+
+    return true;
 }
 #endif
 

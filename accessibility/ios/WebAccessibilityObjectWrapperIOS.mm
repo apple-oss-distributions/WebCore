@@ -599,6 +599,13 @@ static AccessibilityObjectWrapper* AccessibilityUnignoredAncestor(AccessibilityO
     return nil;
 }
 
+- (BOOL)_accessibilityIsInTableCell
+{
+    return AccessibilityObject::matchedParent(*m_object, false, [] (const AccessibilityObject& object) {
+        return object.roleValue() == AccessibilityRole::Cell;
+    }) != nullptr;
+}
+
 - (AccessibilityObjectWrapper*)_accessibilityFieldsetAncestor
 {
     if (const AccessibilityObject* parent = AccessibilityObject::matchedParent(*m_object, false, [] (const AccessibilityObject& object) {
@@ -682,13 +689,12 @@ static AccessibilityObjectWrapper* AccessibilityUnignoredAncestor(AccessibilityO
 {
     if (![self _prepareAccessibilityCall])
         return NO;
-    
-    // Only make the video object interactive if it plays inline and has no native controls.
+
     if (m_object->roleValue() != AccessibilityRole::Video || !is<AccessibilityMediaObject>(m_object))
         return NO;
-    
-    AccessibilityMediaObject* mediaObject = downcast<AccessibilityMediaObject>(m_object);
-    return !mediaObject->isAutoplayEnabled() && mediaObject->isPlayingInline() && !downcast<AccessibilityMediaObject>(m_object)->hasControlsAttributeSet();
+
+    // Convey the video object as interactive if auto-play is not enabled.
+    return !downcast<AccessibilityMediaObject>(*m_object).isAutoplayEnabled();
 }
 
 - (NSString *)interactiveVideoDescription
@@ -1792,20 +1798,26 @@ static void appendStringToResult(NSMutableString *result, NSString *string)
 {
     if (![self _prepareAccessibilityCall])
         return nil;
-    
+
     // If this static text inside of a link, it should use its parent's linked element.
     AccessibilityObject* element = m_object;
     if (m_object->roleValue() == AccessibilityRole::StaticText && m_object->parentObjectUnignored()->isLink())
         element = m_object->parentObjectUnignored();
-    
-    AccessibilityObject::AccessibilityChildrenVector children;
-    element->linkedUIElements(children);
-    if (children.size() == 0)
-        return nil;
-    
-    return children[0]->wrapper();
-}
 
+    AccessibilityObject::AccessibilityChildrenVector linkedElements;
+    element->linkedUIElements(linkedElements);
+    if (!linkedElements.size() || !linkedElements[0])
+        return nil;
+
+    // AccessibilityObject::linkedUIElements may return an object that is
+    // exposed in other platforms but not on iOS, i.e., grouping or structure
+    // elements like <div> or <p>. Thus find the next accessible object that is
+    // exposed on iOS.
+    auto linkedElement = firstAccessibleObjectFromNode(linkedElements[0]->node(), [] (const AccessibilityObject& accessible) {
+        return accessible.wrapper().isAccessibilityElement;
+    });
+    return linkedElement ? linkedElement->wrapper() : nullptr;
+}
 
 - (BOOL)isAttachment
 {

@@ -758,6 +758,9 @@ void MediaPlayerPrivateMediaSourceAVFObjC::ensureLayer()
         return;
     }
 
+    if ([m_sampleBufferDisplayLayer respondsToSelector:@selector(setPreventsDisplaySleepDuringVideoPlayback:)])
+        m_sampleBufferDisplayLayer.get().preventsDisplaySleepDuringVideoPlayback = NO;
+
     [m_synchronizer addRenderer:m_sampleBufferDisplayLayer.get()];
     if (m_mediaSourcePrivate)
         m_mediaSourcePrivate->setVideoLayer(m_sampleBufferDisplayLayer.get());
