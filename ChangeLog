@@ -1,3 +1,217 @@
+2019-09-27  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r250459. rdar://problem/55797569
+
+    [Win] Crash under FontCache::lastResortFallbackFont
+    https://bugs.webkit.org/show_bug.cgi?id=202325
+    <rdar://problem/47856730>
+    
+    Reviewed by Brent Fulgham.
+    
+    As demonstrated by crash reports, there seems to be cases where we are not able to create a last resort fallback font
+    on Windows. If all attempts to create a fallback font fail, create a font from the default UI font.
+    
+    No new tests. I have not been able to reproduce this issue.
+    
+    * platform/graphics/win/FontCacheWin.cpp:
+    (WebCore::FontCache::lastResortFallbackFont):
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@250459 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2019-09-27  Per Arne Vollan  <pvollan@apple.com>
+
+            [Win] Crash under FontCache::lastResortFallbackFont
+            https://bugs.webkit.org/show_bug.cgi?id=202325
+            <rdar://problem/47856730>
+
+            Reviewed by Brent Fulgham.
+
+            As demonstrated by crash reports, there seems to be cases where we are not able to create a last resort fallback font
+            on Windows. If all attempts to create a fallback font fail, create a font from the default UI font.
+
+            No new tests. I have not been able to reproduce this issue.
+
+            * platform/graphics/win/FontCacheWin.cpp:
+            (WebCore::FontCache::lastResortFallbackFont):
+
+2019-08-01  Mark Lam  <mark.lam@apple.com>
+
+        Cherry-pick r248143. rdar://problem/55362908
+
+    2019-08-01  Mark Lam  <mark.lam@apple.com>
+
+            Add crash diagnostics for debugging unexpected zapped cells.
+            https://bugs.webkit.org/show_bug.cgi?id=200149
+            <rdar://problem/53570112>
+
+            Reviewed by Yusuke Suzuki.
+
+            No new tests because this is a feature for debugging crashes.  It has been tested
+            manually by modifying the code to force a crash at the point of interest.
+
+            Added some comments to document the hashes of known subspaces.
+
+            * bindings/js/WebCoreJSClientData.cpp:
+            (WebCore::JSVMClientData::JSVMClientData):
+
+2019-09-11  Alan Coon  <alancoon@apple.com>
+
+        Apply patch. rdar://problem/55240886
+
+    2019-09-11  Chris Dumez  <cdumez@apple.com>
+
+            Nullptr crash in Page::sessionID() via WebKit::WebFrameLoaderClient::detachedFromParent2()
+            https://bugs.webkit.org/show_bug.cgi?id=201625
+
+            Reviewed by Ryosuke Niwa.
+
+            This is based on a patch from Ryosuke Niwa.
+
+            Drop setHasFrameSpecificStorageAccess() in WebCore and call it from the WebKit layer instead.
+
+            * dom/DocumentStorageAccess.cpp:
+            (WebCore::DocumentStorageAccess::requestStorageAccess):
+            (WebCore::DocumentStorageAccess::setHasFrameSpecificStorageAccess): Deleted.
+            * dom/DocumentStorageAccess.h:
+            * loader/EmptyFrameLoaderClient.h:
+            * loader/FrameLoaderClient.h:
+
+2019-09-05  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r249534. rdar://problem/55084674
+
+    AX: children cache are not re-computed if tab index is removed
+    https://bugs.webkit.org/show_bug.cgi?id=201502
+    
+    Reviewed by Zalan Bujtas.
+    
+    Source/WebCore:
+    
+    Test: accessibility/tabindex-removed.html
+    
+    If the tabindex changes, it can potentially affect whether an element is accessible. If we don't update the children cache
+    information can be stale and lead to incorrect navigation with VoiceOver.
+    
+    * accessibility/AXObjectCache.cpp:
+    (WebCore::AXObjectCache::handleAttributeChange):
+    
+    LayoutTests:
+    
+    * accessibility/tabindex-removed-expected.txt: Added.
+    * accessibility/tabindex-removed.html: Added.
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@249534 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2019-09-05  Chris Fleizach  <cfleizach@apple.com>
+
+            AX: children cache are not re-computed if tab index is removed
+            https://bugs.webkit.org/show_bug.cgi?id=201502
+
+            Reviewed by Zalan Bujtas.
+
+            Test: accessibility/tabindex-removed.html
+
+            If the tabindex changes, it can potentially affect whether an element is accessible. If we don't update the children cache
+            information can be stale and lead to incorrect navigation with VoiceOver.
+
+            * accessibility/AXObjectCache.cpp:
+            (WebCore::AXObjectCache::handleAttributeChange):
+
+2019-08-28  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r249156. rdar://problem/54775048
+
+    Crash under WebCore::jsNotificationConstructorPermission
+    https://bugs.webkit.org/show_bug.cgi?id=201186
+    <rdar://problem/53962833>
+    
+    Reviewed by Youenn Fablet.
+    
+    Source/WebCore:
+    
+    Update the Notification API implementation to null-check the page before using. The page becomes null
+    when using the API in a frame that gets detached from its parent while in the middle of running
+    script.
+    
+    Test: http/tests/notifications/request-in-detached-frame.html
+    
+    * Modules/notifications/Notification.cpp:
+    (WebCore::Notification::permission):
+    (WebCore::Notification::requestPermission):
+    
+    LayoutTests:
+    
+    Add layout test coverage.
+    
+    * http/tests/notifications/request-in-detached-frame-expected.txt: Added.
+    * http/tests/notifications/request-in-detached-frame.html: Added.
+    * http/tests/notifications/resources/request-in-detached-frame-subframe.html: Added.
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@249156 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2019-08-27  Chris Dumez  <cdumez@apple.com>
+
+            Crash under WebCore::jsNotificationConstructorPermission
+            https://bugs.webkit.org/show_bug.cgi?id=201186
+            <rdar://problem/53962833>
+
+            Reviewed by Youenn Fablet.
+
+            Update the Notification API implementation to null-check the page before using. The page becomes null
+            when using the API in a frame that gets detached from its parent while in the middle of running
+            script.
+
+            Test: http/tests/notifications/request-in-detached-frame.html
+
+            * Modules/notifications/Notification.cpp:
+            (WebCore::Notification::permission):
+            (WebCore::Notification::requestPermission):
+
+2019-08-28  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r249154. rdar://problem/54775050
+
+    Disabled devices should not be taken into account when searching for a capture device
+    https://bugs.webkit.org/show_bug.cgi?id=201183
+    <rdar://problem/54353440>
+    
+    Reviewed by Jer Noble.
+    
+    Manually tested.
+    
+    * platform/mediastream/mac/CoreAudioCaptureDeviceManager.cpp:
+    (WebCore::CoreAudioCaptureDeviceManager::coreAudioDeviceWithUID):
+    We currently keep a list of devices, some of which might be disabled.
+    We should not take into account disabled devices, only enabled devices
+    when doing this search.
+    * platform/mediastream/mac/CoreAudioCaptureSource.cpp:
+    (WebCore::CoreAudioSharedUnit::setupAudioUnit):
+    Improve logging.
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@249154 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2019-08-27  Youenn Fablet  <youenn@apple.com>
+
+            Disabled devices should not be taken into account when searching for a capture device
+            https://bugs.webkit.org/show_bug.cgi?id=201183
+            <rdar://problem/54353440>
+
+            Reviewed by Jer Noble.
+
+            Manually tested.
+
+            * platform/mediastream/mac/CoreAudioCaptureDeviceManager.cpp:
+            (WebCore::CoreAudioCaptureDeviceManager::coreAudioDeviceWithUID):
+            We currently keep a list of devices, some of which might be disabled.
+            We should not take into account disabled devices, only enabled devices
+            when doing this search.
+            * platform/mediastream/mac/CoreAudioCaptureSource.cpp:
+            (WebCore::CoreAudioSharedUnit::setupAudioUnit):
+            Improve logging.
+
 2019-08-27  Alan Coon  <alancoon@apple.com>
 
         Revert r249140. rdar://problem/54749102
