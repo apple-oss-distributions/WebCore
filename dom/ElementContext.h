@@ -25,46 +25,67 @@
 
 #pragma once
 
-#if ENABLE(WEB_AUTHN)
-
-#include <wtf/text/WTFString.h>
+#include "DocumentIdentifier.h"
+#include "ElementIdentifier.h"
+#include "FloatRect.h"
+#include "PageIdentifier.h"
 
 namespace WebCore {
 
-struct AuthenticationExtensionsClientInputs {
-    String appid;
-    bool googleLegacyAppidSupport;
+struct ElementContext {
+    FloatRect boundingRect;
+
+    PageIdentifier webPageIdentifier;
+    DocumentIdentifier documentIdentifier;
+    ElementIdentifier elementIdentifier;
+
+    ~ElementContext() = default;
 
     template<class Encoder> void encode(Encoder&) const;
-    template<class Decoder> static Optional<AuthenticationExtensionsClientInputs> decode(Decoder&);
+    template<class Decoder> static Optional<ElementContext> decode(Decoder&);
 };
 
-template<class Encoder>
-void AuthenticationExtensionsClientInputs::encode(Encoder& encoder) const
+inline bool operator==(const ElementContext& a, const ElementContext& b)
 {
-    encoder << appid << googleLegacyAppidSupport;
+    return a.boundingRect == b.boundingRect
+        && a.webPageIdentifier == b.webPageIdentifier
+        && a.documentIdentifier == b.documentIdentifier
+        && a.elementIdentifier == b.elementIdentifier;
+}
+
+template<class Encoder>
+void ElementContext::encode(Encoder& encoder) const
+{
+    encoder << boundingRect;
+    encoder << webPageIdentifier;
+    encoder << documentIdentifier;
+    encoder << elementIdentifier;
 }
 
 template<class Decoder>
-Optional<AuthenticationExtensionsClientInputs> AuthenticationExtensionsClientInputs::decode(Decoder& decoder)
+Optional<ElementContext> ElementContext::decode(Decoder& decoder)
 {
-    AuthenticationExtensionsClientInputs result;
+    ElementContext context;
 
-    Optional<String> appid;
-    decoder >> appid;
-    if (!appid)
+    if (!decoder.decode(context.boundingRect))
         return WTF::nullopt;
-    result.appid = WTFMove(*appid);
 
-    Optional<bool> googleLegacyAppidSupport;
-    decoder >> googleLegacyAppidSupport;
-    if (!googleLegacyAppidSupport)
+    auto pageIdentifier = PageIdentifier::decode(decoder);
+    if (!pageIdentifier)
         return WTF::nullopt;
-    result.googleLegacyAppidSupport = WTFMove(*googleLegacyAppidSupport);
+    context.webPageIdentifier = *pageIdentifier;
 
-    return result;
+    auto documentIdentifier = DocumentIdentifier::decode(decoder);
+    if (!documentIdentifier)
+        return WTF::nullopt;
+    context.documentIdentifier = *documentIdentifier;
+
+    auto elementIdentifier = ElementIdentifier::decode(decoder);
+    if (!elementIdentifier)
+        return WTF::nullopt;
+    context.elementIdentifier = *elementIdentifier;
+
+    return context;
 }
 
-} // namespace WebCore
-
-#endif // ENABLE(WEB_AUTHN)
+}
