@@ -32,8 +32,9 @@
 #if PLATFORM(MAC)
 #import <CoreServices/CoreServicesPriv.h>
 #elif PLATFORM(IOS_FAMILY)
-#import <CoreServices/LSURLOverridePriv.h>
 #import <MobileCoreServices/LSAppLinkPriv.h>
+#elif PLATFORM(IOS)
+#import <MobileCoreServices/MobileCoreServicesPriv.h>
 #endif
 
 #endif // USE(APPLE_INTERNAL_SDK)

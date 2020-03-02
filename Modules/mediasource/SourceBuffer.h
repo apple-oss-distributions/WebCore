@@ -79,8 +79,11 @@ public:
 
 #if ENABLE(VIDEO_TRACK)
     VideoTrackList& videoTracks();
+    VideoTrackList* videoTracksIfExists() const { return m_videoTracks.get(); }
     AudioTrackList& audioTracks();
+    AudioTrackList* audioTracksIfExists() const { return m_audioTracks.get(); }
     TextTrackList& textTracks();
+    TextTrackList* textTracksIfExists() const { return m_textTracks.get(); }
 #endif
 
     double appendWindowStart() const;
@@ -144,11 +147,8 @@ private:
     void refEventTarget() final { ref(); }
     void derefEventTarget() final { deref(); }
 
-    void suspend(ReasonForSuspension) final;
-    void resume() final;
     void stop() final;
     const char* activeDOMObjectName() const final;
-    bool canSuspendForDocumentSuspension() const final;
 
     void sourceBufferPrivateDidReceiveInitializationSegment(const InitializationSegment&) final;
     void sourceBufferPrivateDidReceiveSample(MediaSample&) final;
@@ -198,6 +198,8 @@ private:
     void reportExtraMemoryAllocated();
 
     void updateBufferedFromTrackBuffers();
+    void updateMinimumUpcomingPresentationTime(TrackBuffer&, const AtomString& trackID);
+    void resetMinimumUpcomingPresentationTime(TrackBuffer&, const AtomString& trackID);
 
     void appendError(bool);
 
@@ -210,10 +212,12 @@ private:
     friend class Internals;
     WEBCORE_EXPORT Vector<String> bufferedSamplesForTrackID(const AtomString&);
     WEBCORE_EXPORT Vector<String> enqueuedSamplesForTrackID(const AtomString&);
+    WEBCORE_EXPORT MediaTime minimumUpcomingPresentationTimeForTrackID(const AtomString&);
+    WEBCORE_EXPORT void setMaximumQueueDepthForTrackID(const AtomString&, size_t);
 
     Ref<SourceBufferPrivate> m_private;
     MediaSource* m_source;
-    GenericEventQueue m_asyncEventQueue;
+    UniqueRef<MainThreadGenericEventQueue> m_asyncEventQueue;
     AppendMode m_mode { AppendMode::Segments };
 
     Vector<unsigned char> m_pendingAppendData;

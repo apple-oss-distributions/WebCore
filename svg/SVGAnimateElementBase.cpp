@@ -75,7 +75,11 @@ bool SVGAnimateElementBase::hasInvalidCSSAttributeType() const
 
 bool SVGAnimateElementBase::isDiscreteAnimator() const
 {
-    return hasValidAttributeType() && animatorIfExists() && animatorIfExists()->isDiscrete();
+    if (!hasValidAttributeType())
+        return false;
+
+    auto* animator = this->animator();
+    return animator && animator->isDiscrete();
 }
 
 void SVGAnimateElementBase::setTargetElement(SVGElement* target)
@@ -142,16 +146,16 @@ bool SVGAnimateElementBase::calculateToAtEndOfDurationValue(const String& toAtEn
     return false;
 }
 
-void SVGAnimateElementBase::resetAnimatedType()
+void SVGAnimateElementBase::startAnimation()
 {
     if (!targetElement())
         return;
 
-    if (auto* animator = this->animator())
-        animator->start(targetElement());
+    if (auto protectedAnimator = makeRefPtr(this->animator()))
+        protectedAnimator->start(targetElement());
 }
 
-void SVGAnimateElementBase::calculateAnimatedValue(float progress, unsigned repeatCount, SVGSMILElement*)
+void SVGAnimateElementBase::calculateAnimatedValue(float progress, unsigned repeatCount)
 {
     if (!targetElement())
         return;
@@ -163,8 +167,8 @@ void SVGAnimateElementBase::calculateAnimatedValue(float progress, unsigned repe
     if (calcMode() == CalcMode::Discrete)
         progress = progress < 0.5 ? 0 : 1;
 
-    if (auto* animator = this->animator())
-        animator->animate(targetElement(), progress, repeatCount);
+    if (auto protectedAnimator = makeRefPtr(this->animator()))
+        protectedAnimator->animate(targetElement(), progress, repeatCount);
 }
 
 void SVGAnimateElementBase::applyResultsToTarget()
@@ -176,7 +180,7 @@ void SVGAnimateElementBase::applyResultsToTarget()
         animator->apply(targetElement());
 }
 
-void SVGAnimateElementBase::clearAnimatedType(SVGElement* targetElement)
+void SVGAnimateElementBase::stopAnimation(SVGElement* targetElement)
 {
     if (!targetElement)
         return;

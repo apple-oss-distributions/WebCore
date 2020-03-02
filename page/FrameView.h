@@ -4,7 +4,7 @@
              (C) 1998, 1999 Torben Weis (weis@kde.org)
              (C) 1999 Lars Knoll (knoll@kde.org)
              (C) 1999 Antti Koivisto (koivisto@kde.org)
-   Copyright (C) 2004-2017 Apple Inc. All rights reserved.
+   Copyright (C) 2004-2019 Apple Inc. All rights reserved.
 
    This library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Library General Public
@@ -95,11 +95,6 @@ public:
     int mapFromLayoutToCSSUnits(LayoutUnit) const;
     LayoutUnit mapFromCSSToLayoutUnits(int) const;
 
-    LayoutUnit marginWidth() const { return m_margins.width(); } // -1 means default
-    LayoutUnit marginHeight() const { return m_margins.height(); } // -1 means default
-    void setMarginWidth(LayoutUnit);
-    void setMarginHeight(LayoutUnit);
-
     WEBCORE_EXPORT void setCanHaveScrollbars(bool) final;
     WEBCORE_EXPORT void updateCanHaveScrollbars();
 
@@ -122,7 +117,7 @@ public:
     void setNeedsCompositingConfigurationUpdate();
     void setNeedsCompositingGeometryUpdate();
 
-    void setViewportConstrainedObjectsNeedLayout();
+    WEBCORE_EXPORT void setViewportConstrainedObjectsNeedLayout();
 
     WEBCORE_EXPORT bool renderedCharactersExceed(unsigned threshold);
 
@@ -143,6 +138,7 @@ public:
 #endif
 
     void willRecalcStyle();
+    void styleDidChange() override;
     bool updateCompositingLayersAfterStyleChange();
     void updateCompositingLayersAfterLayout();
 
@@ -227,13 +223,13 @@ public:
 #if USE(COORDINATED_GRAPHICS)
     WEBCORE_EXPORT void setFixedVisibleContentRect(const IntRect&) final;
 #endif
-    WEBCORE_EXPORT void setScrollPosition(const ScrollPosition&) final;
+    WEBCORE_EXPORT void setScrollPosition(const ScrollPosition&, ScrollClamping = ScrollClamping::Clamped) final;
     void restoreScrollbar();
     void scheduleScrollToFocusedElement(SelectionRevealMode);
     void scrollToFocusedElementImmediatelyIfNeeded();
     void updateLayerPositionsAfterScrolling() final;
     void updateCompositingLayersAfterScrolling() final;
-    bool requestScrollPositionUpdate(const ScrollPosition&) final;
+    bool requestScrollPositionUpdate(const ScrollPosition&, ScrollType = ScrollType::User, ScrollClamping = ScrollClamping::Clamped) final;
     bool isRubberBandInProgress() const final;
     WEBCORE_EXPORT ScrollPosition minimumScrollPosition() const final;
     WEBCORE_EXPORT ScrollPosition maximumScrollPosition() const final;
@@ -263,6 +259,7 @@ public:
     Optional<LayoutRect> layoutViewportOverrideRect() const { return m_layoutViewportOverrideRect; }
 
     WEBCORE_EXPORT void setVisualViewportOverrideRect(Optional<LayoutRect>);
+    Optional<LayoutRect> visualViewportOverrideRect() const { return m_visualViewportOverrideRect; }
 
     // These are in document coordinates, unaffected by page scale (but affected by zooming).
     WEBCORE_EXPORT LayoutRect layoutViewportRect() const;
@@ -399,9 +396,9 @@ public:
 
     void incrementVisuallyNonEmptyCharacterCount(const String&);
     void incrementVisuallyNonEmptyPixelCount(const IntSize&);
-    void updateIsVisuallyNonEmpty();
-    void updateSignificantRenderedTextMilestoneIfNeeded();
     bool isVisuallyNonEmpty() const { return m_isVisuallyNonEmpty; }
+    WEBCORE_EXPORT bool qualifiesAsVisuallyNonEmpty() const;
+
     WEBCORE_EXPORT void enableAutoSizeMode(bool enable, const IntSize& minSize);
     WEBCORE_EXPORT void setAutoSizeFixedMinimumHeight(int);
     bool isAutoSizeEnabled() const { return m_shouldAutoSize; }
@@ -429,7 +426,6 @@ public:
     WEBCORE_EXPORT void adjustPageHeightDeprecated(float* newBottom, float oldTop, float oldBottom, float bottomLimit);
 
     bool scrollToFragment(const URL&);
-    bool scrollToAnchor(const String&);
     void maintainScrollPositionAtAnchor(ContainerNode*);
     WEBCORE_EXPORT void scrollElementToRect(const Element&, const IntRect&);
 
@@ -556,7 +552,7 @@ public:
 
     // Page and FrameView both store a Pagination value. Page::pagination() is set only by API,
     // and FrameView::pagination() is set only by CSS. Page::pagination() will affect all
-    // FrameViews in the page cache, but FrameView::pagination() only affects the current
+    // FrameViews in the back/forward cache, but FrameView::pagination() only affects the current
     // FrameView. FrameView::pagination() will return m_pagination if it has been set. Otherwise,
     // it will return Page::pagination() since currently there are no callers that need to
     // distinguish between the two.
@@ -645,7 +641,7 @@ public:
 
     bool shouldPlaceBlockDirectionScrollbarOnLeft() const final;
 
-    void didRestoreFromPageCache();
+    void didRestoreFromBackForwardCache();
 
     void willDestroyRenderTree();
     void didDestroyRenderTree();
@@ -660,6 +656,8 @@ public:
 
     GraphicsLayer* layerForHorizontalScrollbar() const final;
     GraphicsLayer* layerForVerticalScrollbar() const final;
+
+    void renderLayerDidScroll(const RenderLayer&);
 
 protected:
     bool scrollContentsFastPath(const IntSize& scrollDelta, const IntRect& rectToScroll, const IntRect& clipRect) final;
@@ -724,6 +722,8 @@ private:
 
     void delegatesScrollingDidChange() final;
 
+    void unobscuredContentSizeChanged() final;
+
     // ScrollableArea interface
     void invalidateScrollbarRect(Scrollbar&, const IntRect&) final;
     void scrollTo(const ScrollPosition&) final;
@@ -737,10 +737,6 @@ private:
 #endif
     void contentsResized() final;
 
-#if PLATFORM(IOS_FAMILY)
-    void unobscuredContentSizeChanged() final;
-#endif
-
 #if ENABLE(DARK_MODE_CSS)
     RenderObject* rendererForColorScheme() const;
 #endif
@@ -749,12 +745,18 @@ private:
     bool usesMockScrollAnimator() const final;
     void logMockScrollAnimatorMessage(const String&) const final;
 
+    bool styleHidesScrollbarWithOrientation(ScrollbarOrientation) const;
+    bool horizontalScrollbarHiddenByStyle() const final;
+    bool verticalScrollbarHiddenByStyle() const final;
+
     // Override scrollbar notifications to update the AXObject cache.
     void didAddScrollbar(Scrollbar*, ScrollbarOrientation) final;
     void willRemoveScrollbar(Scrollbar*, ScrollbarOrientation) final;
 
     IntSize sizeForResizeEvent() const;
     void sendResizeEventIfNeeded();
+    
+    RefPtr<Element> rootElementForCustomScrollbarPartStyle(PseudoId) const;
 
     void adjustScrollbarsForLayout(bool firstLayout);
 
@@ -774,6 +776,7 @@ private:
 
     void updateWidgetPositionsTimerFired();
 
+    bool scrollToFragmentInternal(const String&);
     void scrollToAnchor();
     void scrollPositionChanged(const ScrollPosition& oldPosition, const ScrollPosition& newPosition);
     void scrollableAreaSetChanged();
@@ -791,7 +794,6 @@ private:
 
     void markRootOrBodyRendererDirty() const;
 
-    bool qualifiesAsVisuallyNonEmpty() const;
     bool qualifiesAsSignificantRenderedText() const;
     void updateHasReachedSignificantRenderedTextThreshold();
 
@@ -839,7 +841,6 @@ private:
     MonotonicTime m_lastPaintTime;
 
     LayoutSize m_size;
-    LayoutSize m_margins;
 
     Color m_baseBackgroundColor { Color::white };
     IntSize m_lastViewportSize;

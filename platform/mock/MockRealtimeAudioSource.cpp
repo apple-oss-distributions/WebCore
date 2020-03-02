@@ -32,11 +32,13 @@
 #include "MockRealtimeAudioSource.h"
 
 #if ENABLE(MEDIA_STREAM)
+#include "AudioSession.h"
 #include "CaptureDevice.h"
 #include "Logging.h"
 #include "MediaConstraints.h"
 #include "MockRealtimeMediaSourceCenter.h"
 #include "NotImplemented.h"
+#include "PlatformMediaSessionManager.h"
 #include "RealtimeMediaSourceSettings.h"
 #include <wtf/UUID.h>
 
@@ -68,6 +70,9 @@ MockRealtimeAudioSource::MockRealtimeAudioSource(String&& deviceID, String&& nam
     auto device = MockRealtimeMediaSourceCenter::mockDeviceWithPersistentID(persistentID());
     ASSERT(device);
     m_device = *device;
+
+    setSampleRate(WTF::get<MockMicrophoneProperties>(m_device.properties).defaultSampleRate);
+    initializeEchoCancellation(true);
 }
 
 MockRealtimeAudioSource::~MockRealtimeAudioSource()
@@ -98,6 +103,15 @@ const RealtimeMediaSourceSettings& MockRealtimeAudioSource::settings()
     return m_currentSettings.value();
 }
 
+void MockRealtimeAudioSource::setChannelCount(unsigned channelCount)
+{
+    if (channelCount > 2)
+        return;
+
+    m_channelCount = channelCount;
+    settingsDidChange(RealtimeMediaSourceSettings::Flag::SampleRate);
+}
+
 const RealtimeMediaSourceCapabilities& MockRealtimeAudioSource::capabilities()
 {
     if (!m_capabilities) {
@@ -122,6 +136,8 @@ void MockRealtimeAudioSource::startProducingData()
 {
 #if PLATFORM(IOS_FAMILY)
     RealtimeMediaSourceCenter::singleton().audioCaptureFactory().setActiveSource(*this);
+    PlatformMediaSessionManager::sharedManager().sessionCanProduceAudioChanged();
+    ASSERT(AudioSession::sharedSession().category() == AudioSession::PlayAndRecord);
 #endif
 
     if (!sampleRate())

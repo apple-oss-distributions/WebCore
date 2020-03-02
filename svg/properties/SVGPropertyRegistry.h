@@ -39,12 +39,13 @@ public:
     virtual void detachAllProperties() const = 0;
     virtual QualifiedName propertyAttributeName(const SVGProperty&) const = 0;
     virtual QualifiedName animatedPropertyAttributeName(const SVGAnimatedProperty&) const = 0;
+    virtual void setAnimatedPropertDirty(const QualifiedName&, SVGAnimatedProperty&) const = 0;
     virtual Optional<String> synchronize(const QualifiedName&) const = 0;
     virtual HashMap<QualifiedName, String> synchronizeAllAttributes() const = 0;
 
     virtual bool isAnimatedPropertyAttribute(const QualifiedName&) const = 0;
     virtual bool isAnimatedStylePropertyAttribute(const QualifiedName&) const = 0;
-    virtual std::unique_ptr<SVGAttributeAnimator> createAnimator(const QualifiedName&, AnimationMode, CalcMode, bool isAccumulated, bool isAdditive) const = 0;
+    virtual RefPtr<SVGAttributeAnimator> createAnimator(const QualifiedName&, AnimationMode, CalcMode, bool isAccumulated, bool isAdditive) const = 0;
     virtual void appendAnimatedInstance(const QualifiedName& attributeName, SVGAttributeAnimator&) const = 0;
 };
 

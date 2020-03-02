@@ -79,14 +79,11 @@ SOFT_LINK_CLASS_OPTIONAL(RevealCore, RVSelection)
 @interface WebRevealHighlight <RVPresenterHighlightDelegate> : NSObject {
 @private
     Function<void()> _clearTextIndicator;
-    NSRect _highlightRect;
-    BOOL _useDefaultHighlight;
-    NSAttributedString *_attributedString;
 }
 
 @property (nonatomic, readonly) NSRect highlightRect;
 @property (nonatomic, readonly) BOOL useDefaultHighlight;
-@property (nonatomic, readonly) NSAttributedString *attributedString;
+@property (nonatomic, readonly) RetainPtr<NSAttributedString> attributedString;
 
 - (instancetype)initWithHighlightRect:(NSRect)highlightRect useDefaultHighlight:(BOOL)useDefaultHighlight attributedString:(NSAttributedString *) attributedString;
 - (void)setClearTextIndicator:(Function<void()>&&)clearTextIndicator;
@@ -95,10 +92,6 @@ SOFT_LINK_CLASS_OPTIONAL(RevealCore, RVSelection)
 
 @implementation WebRevealHighlight
 
-@synthesize highlightRect=_highlightRect;
-@synthesize useDefaultHighlight=_useDefaultHighlight;
-@synthesize attributedString=_attributedString;
-
 - (instancetype)initWithHighlightRect:(NSRect)highlightRect useDefaultHighlight:(BOOL)useDefaultHighlight attributedString:(NSAttributedString *) attributedString
 {
     if (!(self = [super init]))
@@ -106,7 +99,7 @@ SOFT_LINK_CLASS_OPTIONAL(RevealCore, RVSelection)
     
     _highlightRect = highlightRect;
     _useDefaultHighlight = useDefaultHighlight;
-    _attributedString = attributedString;
+    _attributedString = adoptNS([attributedString copy]);
     
     return self;
 }
@@ -491,7 +484,7 @@ static WKRevealController showPopupOrCreateAnimationController(bool createAnimat
     
     if (createAnimationController)
         return [presenter animationControllerForItem:item.get() documentContext:nil presentingContext:context.get() options:nil];
-    [presenter revealItem:item.get() documentContext:nil presentingContext:context.get() options:nil];
+    [presenter revealItem:item.get() documentContext:nil presentingContext:context.get() options:@{ @"forceLookup": @YES }];
     return nil;
     
 #elif PLATFORM(MACCATALYST)

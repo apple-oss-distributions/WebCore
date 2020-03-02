@@ -55,6 +55,7 @@ public:
     WEBCORE_EXPORT void initialize(Type) override;
 
     WEBCORE_EXPORT void setName(const String&) override;
+    WEBCORE_EXPORT String debugName() const override;
 
     WEBCORE_EXPORT PlatformLayerID primaryLayerID() const override;
 
@@ -157,6 +158,7 @@ public:
     FloatSize pixelAlignmentOffset() const override { return m_pixelAlignmentOffset; }
 
     struct CommitState {
+        WTF_MAKE_STRUCT_FAST_ALLOCATED;
         unsigned treeDepth { 0 };
         unsigned totalBackdropFilterArea { 0 };
         bool ancestorHadChanges { false };
@@ -304,11 +306,13 @@ private:
         FloatPoint& position, FloatPoint3D& anchorPoint, FloatSize& alignmentOffset) const;
 
     TransformationMatrix layerTransform(const FloatPoint& position, const TransformationMatrix* customTransform = 0) const;
+    TransformationMatrix transformByApplyingAnchorPoint(const TransformationMatrix&) const;
 
     enum ComputeVisibleRectFlag { RespectAnimatingTransforms = 1 << 0 };
     typedef unsigned ComputeVisibleRectFlags;
     
     struct VisibleAndCoverageRects {
+        WTF_MAKE_STRUCT_FAST_ALLOCATED;
         FloatRect visibleRect;
         FloatRect coverageRect;
         TransformationMatrix animatingTransform;
@@ -328,6 +332,7 @@ private:
 
     // Used to track the path down the tree for replica layers.
     struct ReplicaState {
+        WTF_MAKE_STRUCT_FAST_ALLOCATED;
         static const size_t maxReplicaDepth = 16;
         enum ReplicaBranchType { ChildBranch = 0, ReplicaBranch = 1 };
         ReplicaState(ReplicaBranchType firstBranch)
@@ -489,6 +494,7 @@ private:
     bool appendToUncommittedAnimations(const KeyframeValueList&, const TransformOperations*, const Animation*, const String& animationName, const FloatSize& boxSize, int animationIndex, Seconds timeOffset, bool isMatrixAnimation);
     bool appendToUncommittedAnimations(const KeyframeValueList&, const FilterOperation*, const Animation*, const String& animationName, int animationIndex, Seconds timeOffset);
     void appendToUncommittedAnimations(LayerPropertyAnimation&&);
+    void removeFromUncommittedAnimations(const String&);
 
     enum LayerChange : uint64_t {
         NoChange                                = 0,
@@ -579,6 +585,7 @@ private:
 
     // References to clones of our layers, for replicated layers.
     struct LayerClones {
+        WTF_MAKE_STRUCT_FAST_ALLOCATED;
         LayerMap primaryLayerClones;
         LayerMap structuralLayerClones;
         LayerMap contentsLayerClones;
@@ -608,6 +615,7 @@ private:
     typedef HashMap<String, Vector<AnimationProcessingAction>> AnimationsToProcessMap;
     typedef HashMap<String, Vector<LayerPropertyAnimation>> AnimationsMap;
     struct LayerAnimations {
+        WTF_MAKE_STRUCT_FAST_ALLOCATED;
         Vector<LayerPropertyAnimation> uncomittedAnimations;
         AnimationsToProcessMap animationsToProcess;
         AnimationsMap runningAnimations;

@@ -289,6 +289,11 @@ void HTMLTextFormControlElement::setSelectionRange(int start, int end, TextField
     auto innerText = innerTextElement();
     bool hasFocus = document().focusedElement() == this;
     if (!hasFocus && innerText) {
+        if (!isConnected()) {
+            cacheSelection(start, end, direction);
+            return;
+        }
+
         // FIXME: Removing this synchronous layout requires fixing setSelectionWithoutUpdatingAppearance not needing up-to-date style.
         document().updateLayoutIgnorePendingStylesheets();
 
@@ -717,13 +722,13 @@ String HTMLTextFormControlElement::valueWithHardLineBreaks() const
             unsigned position = 0;
             while (breakNode == node && breakOffset <= length) {
                 if (breakOffset > position) {
-                    result.append(data, position, breakOffset - position);
+                    result.appendSubstring(data, position, breakOffset - position);
                     position = breakOffset;
                     result.append(newlineCharacter);
                 }
                 getNextSoftBreak(line, breakNode, breakOffset);
             }
-            result.append(data, position, length - position);
+            result.appendSubstring(data, position, length - position);
         }
         while (breakNode == node)
             getNextSoftBreak(line, breakNode, breakOffset);

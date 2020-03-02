@@ -33,6 +33,8 @@
 
 #include "Blob.h"
 #include "Document.h"
+#include "Frame.h"
+#include "FrameLoader.h"
 #include "ScriptExecutionContext.h"
 #include "SocketProvider.h"
 #include "ThreadableWebSocketChannelClientWrapper.h"
@@ -144,7 +146,7 @@ void WorkerThreadableWebSocketChannel::resume()
 WorkerThreadableWebSocketChannel::Peer::Peer(Ref<ThreadableWebSocketChannelClientWrapper>&& clientWrapper, WorkerLoaderProxy& loaderProxy, ScriptExecutionContext& context, const String& taskMode, SocketProvider& provider)
     : m_workerClientWrapper(WTFMove(clientWrapper))
     , m_loaderProxy(loaderProxy)
-    , m_mainWebSocketChannel(WebSocketChannel::create(downcast<Document>(context), *this, provider))
+    , m_mainWebSocketChannel(ThreadableWebSocketChannel::create(downcast<Document>(context), *this, provider))
     , m_taskMode(taskMode)
 {
     ASSERT(isMainThread());
@@ -361,7 +363,7 @@ void WorkerThreadableWebSocketChannel::Bridge::mainThreadInitialize(ScriptExecut
 
     bool sent = loaderProxy.postTaskForModeToWorkerGlobalScope({
         ScriptExecutionContext::Task::CleanupTask,
-        [clientWrapper = clientWrapper.copyRef(), &loaderProxy, peer = std::make_unique<Peer>(clientWrapper.copyRef(), loaderProxy, context, taskMode, WTFMove(provider))](ScriptExecutionContext& context) mutable {
+        [clientWrapper = clientWrapper.copyRef(), &loaderProxy, peer = makeUnique<Peer>(clientWrapper.copyRef(), loaderProxy, context, taskMode, WTFMove(provider))](ScriptExecutionContext& context) mutable {
             ASSERT_UNUSED(context, context.isWorkerGlobalScope());
             if (clientWrapper->failedWebSocketChannelCreation()) {
                 // If Bridge::initialize() quitted earlier, we need to kick mainThreadDestroy() to delete the peer.
@@ -402,8 +404,19 @@ void WorkerThreadableWebSocketChannel::Bridge::connect(const URL& url, const Str
 
     m_loaderProxy.postTaskToLoader([peer = m_peer, url = url.isolatedCopy(), protocol = protocol.isolatedCopy()](ScriptExecutionContext& context) {
         ASSERT(isMainThread());
-        ASSERT_UNUSED(context, context.isDocument());
+        ASSERT(context.isDocument());
         ASSERT(peer);
+
+        auto& document = downcast<Document>(context);
+        
+        // FIXME: make this mixed content check equivalent to the document mixed content check currently in WebSocket::connect()
+        if (document.frame()) {
+            Optional<String> errorString = document.frame()->loader().mixedContentChecker().checkForMixedContentInFrameTree(url);
+            if (errorString) {
+                peer->fail(errorString.value());
+                return;
+            }
+        }
 
         if (peer->connect(url, protocol) == ThreadableWebSocketChannel::ConnectStatus::KO)
             peer->didReceiveMessageError();

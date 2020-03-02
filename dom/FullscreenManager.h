@@ -41,7 +41,8 @@ class RenderFullScreen;
 class RenderTreeBuilder;
 class RenderStyle;
 
-class FullscreenManager {
+class FullscreenManager final {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     FullscreenManager(Document&);
     ~FullscreenManager();
@@ -53,7 +54,7 @@ public:
     Frame* frame() const { return m_document.frame(); }
     Element* documentElement() const { return m_document.documentElement(); }
     bool hasLivingRenderTree() const { return m_document.hasLivingRenderTree(); }
-    Document::PageCacheState pageCacheState() const { return m_document.pageCacheState(); }
+    Document::BackForwardCacheState backForwardCacheState() const { return m_document.backForwardCacheState(); }
     void scheduleFullStyleRebuild() { m_document.scheduleFullStyleRebuild(); }
 
     // W3C Fullscreen API
@@ -82,7 +83,6 @@ public:
     RenderFullScreen* fullscreenRenderer() const;
 
     void dispatchFullscreenChangeEvents();
-    bool fullscreenIsAllowedForElement(Element&) const;
     void fullscreenElementRemoved();
 
     void adjustFullscreenElementOnNodeRemoval(Node&, Document::NodeRemoval = Document::NodeRemoval::Node);
@@ -108,6 +108,9 @@ protected:
 private:
     Document& m_document;
 
+    RefPtr<Element> fullscreenOrPendingElement() const { return m_fullscreenElement ? m_fullscreenElement : m_pendingFullscreenElement; }
+
+    RefPtr<Element> m_pendingFullscreenElement;
     RefPtr<Element> m_fullscreenElement;
     Vector<RefPtr<Element>> m_fullscreenElementStack;
     WeakPtr<RenderFullScreen> m_fullscreenRenderer { nullptr };

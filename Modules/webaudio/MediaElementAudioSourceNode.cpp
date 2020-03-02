@@ -57,7 +57,7 @@ MediaElementAudioSourceNode::MediaElementAudioSourceNode(AudioContext& context, 
     setNodeType(NodeTypeMediaElementAudioSource);
 
     // Default to stereo. This could change depending on what the media element .src is set to.
-    addOutput(std::make_unique<AudioNodeOutput>(this, 2));
+    addOutput(makeUnique<AudioNodeOutput>(this, 2));
 
     initialize();
 }
@@ -89,7 +89,7 @@ void MediaElementAudioSourceNode::setFormat(size_t numberOfChannels, float sourc
 
         if (sourceSampleRate != sampleRate()) {
             double scaleFactor = sourceSampleRate / sampleRate();
-            m_multiChannelResampler = std::make_unique<MultiChannelResampler>(scaleFactor, numberOfChannels);
+            m_multiChannelResampler = makeUnique<MultiChannelResampler>(scaleFactor, numberOfChannels);
         } else {
             // Bypass resampling.
             m_multiChannelResampler = nullptr;
@@ -134,6 +134,10 @@ void MediaElementAudioSourceNode::process(size_t numberOfFrames)
     std::unique_lock<Lock> lock(m_processMutex, std::try_to_lock);
     if (!lock.owns_lock()) {
         // We failed to acquire the lock.
+        outputBus->zero();
+        return;
+    }
+    if (m_sourceNumberOfChannels != outputBus->numberOfChannels()) {
         outputBus->zero();
         return;
     }

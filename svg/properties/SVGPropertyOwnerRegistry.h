@@ -202,6 +202,16 @@ public:
         return attributeName;
     }
 
+    void setAnimatedPropertDirty(const QualifiedName& attributeName, SVGAnimatedProperty& animatedProperty) const override
+    {
+        enumerateRecursively([&](const auto& entry) -> bool {
+            if (!entry.key.matches(attributeName))
+                return true;
+            entry.value->setDirty(m_owner, animatedProperty);
+            return false;
+        });
+    }
+
     // Detach all the properties recursively from their OwnerTypes.
     void detachAllProperties() const override
     {
@@ -266,9 +276,9 @@ public:
         return isAnimatedLengthAttribute(attributeName) && animatedStyleAttributes.get().contains(attributeName.impl());
     }
 
-    std::unique_ptr<SVGAttributeAnimator> createAnimator(const QualifiedName& attributeName, AnimationMode animationMode, CalcMode calcMode, bool isAccumulated, bool isAdditive) const override
+    RefPtr<SVGAttributeAnimator> createAnimator(const QualifiedName& attributeName, AnimationMode animationMode, CalcMode calcMode, bool isAccumulated, bool isAdditive) const override
     {
-        std::unique_ptr<SVGAttributeAnimator> animator;
+        RefPtr<SVGAttributeAnimator> animator;
         enumerateRecursively([&](const auto& entry) -> bool {
             if (!entry.key.matches(attributeName))
                 return true;

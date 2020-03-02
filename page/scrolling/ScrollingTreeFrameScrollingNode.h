@@ -47,10 +47,11 @@ public:
     bool visualViewportIsSmallerThanLayoutViewport() const { return m_visualViewportIsSmallerThanLayoutViewport; }
 
     FloatSize viewToContentsOffset(const FloatPoint& scrollPosition) const;
-    FloatRect layoutViewportForScrollPosition(const FloatPoint& visibleContentOrigin, float scale) const;
 
     FloatRect layoutViewport() const { return m_layoutViewport; };
     void setLayoutViewport(const FloatRect& r) { m_layoutViewport = r; };
+
+    FloatRect layoutViewportRespectingRubberBanding() const;
 
     float frameScaleFactor() const { return m_frameScaleFactor; }
 
@@ -72,12 +73,14 @@ private:
 
     void updateViewportForCurrentScrollPosition(Optional<FloatRect>) override;
     bool scrollPositionAndLayoutViewportMatch(const FloatPoint& position, Optional<FloatRect> overrideLayoutViewport) override;
+    FloatRect layoutViewportForScrollPosition(const FloatPoint&, float scale, ScrollBehaviorForFixedElements = StickToDocumentBounds) const;
 
     void dumpProperties(WTF::TextStream&, ScrollingStateTreeAsTextBehavior) const override;
 
     FloatRect m_layoutViewport;
     FloatPoint m_minLayoutViewportOrigin;
     FloatPoint m_maxLayoutViewportOrigin;
+    Optional<FloatSize> m_overrideVisualViewportSize;
     
     float m_frameScaleFactor { 1 };
     float m_topContentInset { 0 };

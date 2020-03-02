@@ -79,8 +79,13 @@ void WebAudioSourceProviderAVFObjC::provideInput(AudioBus* bus, size_t framesToP
     }
 
     WebAudioBufferList list { m_outputDescription.value() };
+    if (bus->numberOfChannels() < list.bufferCount()) {
+        bus->zero();
+        return;
+    }
+
     for (unsigned i = 0; i < bus->numberOfChannels(); ++i) {
-        AudioChannel& channel = *bus->channel(i);
+        auto& channel = *bus->channel(i);
         if (i >= list.bufferCount()) {
             channel.zero();
             continue;
@@ -91,6 +96,7 @@ void WebAudioSourceProviderAVFObjC::provideInput(AudioBus* bus, size_t framesToP
         buffer->mDataByteSize = channel.length() * sizeof(float);
     }
 
+    ASSERT(framesToProcess <= bus->length());
     m_dataSource->pullSamples(*list.list(), framesToProcess, m_readCount, 0, AudioSampleDataSource::Copy);
     m_readCount += framesToProcess;
 }
@@ -135,7 +141,7 @@ void WebAudioSourceProviderAVFObjC::prepare(const AudioStreamBasicDescription& f
     m_outputDescription = CAAudioStreamDescription(outputDescription);
 
     if (!m_dataSource)
-        m_dataSource = AudioSampleDataSource::create(kRingBufferDuration * sampleRate);
+        m_dataSource = AudioSampleDataSource::create(kRingBufferDuration * sampleRate, *m_captureSource);
     m_dataSource->setInputFormat(m_inputDescription.value());
     m_dataSource->setOutputFormat(m_outputDescription.value());
 

@@ -41,6 +41,7 @@ inline bool isInWebProcess() { return true; }
 #if PLATFORM(COCOA)
 
 bool isInWebProcess();
+bool isInNetworkProcess();
 
 WEBCORE_EXPORT void setApplicationSDKVersion(uint32_t);
 WEBCORE_EXPORT uint32_t applicationSDKVersion();
@@ -67,6 +68,7 @@ bool isSolidStateNetworksDownloader();
 WEBCORE_EXPORT bool isVersions();
 WEBCORE_EXPORT bool isHRBlock();
 WEBCORE_EXPORT bool isIAdProducer();
+WEBCORE_EXPORT bool isEpsonSoftwareUpdater();
 
 } // MacApplication
 
@@ -77,13 +79,14 @@ WEBCORE_EXPORT bool isIAdProducer();
 namespace IOSApplication {
 
 WEBCORE_EXPORT bool isMobileMail();
+WEBCORE_EXPORT bool isMailCompositionService();
 WEBCORE_EXPORT bool isMobileSafari();
+WEBCORE_EXPORT bool isSafariViewService();
 WEBCORE_EXPORT bool isIMDb();
 WEBCORE_EXPORT bool isWebBookmarksD();
 WEBCORE_EXPORT bool isDumpRenderTree();
 bool isMobileStore();
 bool isSpringBoard();
-WEBCORE_EXPORT bool isWebApp();
 WEBCORE_EXPORT bool isWebProcess();
 WEBCORE_EXPORT bool isIBooks();
 bool isIBooksStorytime();
@@ -94,10 +97,16 @@ bool isMoviStarPlus();
 WEBCORE_EXPORT bool isFirefox();
 WEBCORE_EXPORT bool isAppleApplication();
 WEBCORE_EXPORT bool isEvernote();
+WEBCORE_EXPORT bool isEventbrite();
+WEBCORE_EXPORT bool isDataActivation();
 
 } // IOSApplication
 
 #endif // PLATFORM(IOS_FAMILY)
+
+#else
+
+inline bool isInNetworkProcess() { return false; }
 
 #endif // PLATFORM(COCOA)
 

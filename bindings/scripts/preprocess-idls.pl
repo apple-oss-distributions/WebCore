@@ -112,10 +112,10 @@ foreach my $idlFile (sort keys %idlFileHash) {
 foreach my $idlFile (sort keys %idlFileHash) {
     my $fullPath = Cwd::realpath($idlFile);
     my $idlFileContents = getFileContents($fullPath);
-    # Handle partial interfaces.
-    my $partialInterfaceName = getPartialInterfaceNameFromIDL($idlFileContents);
-    if ($partialInterfaceName) {
-        $supplementalDependencies{$fullPath} = [$partialInterfaceName];
+    # Handle partial names.
+    my $partialNames = getPartialNamesFromIDL($idlFileContents);
+    if (@{$partialNames}) {
+        $supplementalDependencies{$fullPath} = $partialNames;
         next;
     }
 
@@ -283,7 +283,8 @@ sub GenerateConstructorAttributes
     foreach my $attributeName (sort keys %{$extendedAttributes}) {
       next unless ($attributeName eq "Conditional" || $attributeName eq "EnabledAtRuntime" || $attributeName eq "EnabledForWorld"
         || $attributeName eq "EnabledBySetting" || $attributeName eq "SecureContext" || $attributeName eq "PrivateIdentifier"
-        || $attributeName eq "PublicIdentifier" || $attributeName eq "DisabledByQuirk" || $attributeName eq "EnabledByQuirk" || $attributeName eq "EnabledForContext" || $attributeName eq "CustomEnabled");
+        || $attributeName eq "PublicIdentifier" || $attributeName eq "DisabledByQuirk" || $attributeName eq "EnabledByQuirk"
+        || $attributeName eq "EnabledForContext" || $attributeName eq "CustomEnabled") || $attributeName eq "ConstructorEnabledBySetting";
       my $extendedAttribute = $attributeName;
       $extendedAttribute .= "=" . $extendedAttributes->{$attributeName} unless $extendedAttributes->{$attributeName} eq "VALUE_IS_MISSING";
       push(@extendedAttributesList, $extendedAttribute);
@@ -333,13 +334,14 @@ sub getFileContents
     return join('', @lines);
 }
 
-sub getPartialInterfaceNameFromIDL
+sub getPartialNamesFromIDL
 {
     my $fileContents = shift;
-
-    if ($fileContents =~ /partial\s+interface\s+(\w+)/gs) {
-        return $1;
+    my @partialNames = ();
+    while ($fileContents =~ /partial\s+(interface|dictionary)\s+(\w+)/mg) {
+        push(@partialNames, $2);
     }
+    return \@partialNames;
 }
 
 # identifier-A implements identifier-B;

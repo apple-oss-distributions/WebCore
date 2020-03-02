@@ -28,6 +28,7 @@
 // FIXME: Move each iterator class into a separate header file.
 
 #include "FindOptions.h"
+#include "LineLayoutTraversal.h"
 #include "Range.h"
 #include "TextIteratorBehavior.h"
 #include <wtf/Vector.h>
@@ -54,6 +55,7 @@ Ref<Range> findPlainText(const Range&, const String&, FindOptions);
 WEBCORE_EXPORT Ref<Range> findClosestPlainText(const Range&, const String&, FindOptions, unsigned);
 WEBCORE_EXPORT bool hasAnyPlainText(const Range&, TextIteratorBehavior = TextIteratorDefaultBehavior);
 bool findPlainText(const String& document, const String&, FindOptions); // Lets us use the search algorithm on a string.
+WEBCORE_EXPORT String foldQuoteMarks(const String&);
 
 // FIXME: Move this somewhere else in the editing directory. It doesn't belong here.
 bool isRendererReplacedElement(RenderObject*);
@@ -166,10 +168,10 @@ private:
 
     // Used when there is still some pending text from the current node; when these are false and null, we go back to normal iterating.
     Node* m_nodeForAdditionalNewline { nullptr };
-    InlineTextBox* m_textBox { nullptr };
+    LineLayoutTraversal::TextBoxIterator m_textBox;
 
     // Used when iterating over :first-letter text to save pointer to remaining text box.
-    InlineTextBox* m_remainingTextBox { nullptr };
+    LineLayoutTraversal::TextBoxIterator m_remainingTextBox;
 
     // Used to point to RenderText object for :first-letter.
     RenderText* m_firstLetterText { nullptr };
@@ -178,16 +180,6 @@ private:
     Text* m_lastTextNode { nullptr };
     bool m_lastTextNodeEndedWithCollapsedSpace { false };
     UChar m_lastCharacter { 0 };
-
-    // Used to do simple line layout run logic.
-    bool m_nextRunNeedsWhitespace { false };
-    unsigned m_accumulatedSimpleTextLengthInFlow { 0 };
-    Text* m_previousSimpleTextNodeInFlow { nullptr };
-    std::unique_ptr<SimpleLineLayout::RunResolver> m_flowRunResolverCache;
-
-    // Used when text boxes are out of order (Hebrew/Arabic with embedded LTR text)
-    Vector<InlineTextBox*> m_sortedTextBoxes;
-    size_t m_sortedTextBoxesPosition { 0 };
 
     // Used when deciding whether to emit a "positioning" (e.g. newline) before any other content
     bool m_hasEmitted { false };
@@ -256,7 +248,7 @@ private:
 // character at a time, or faster, as needed. Useful for searching.
 class CharacterIterator {
 public:
-    explicit CharacterIterator(const Range&, TextIteratorBehavior = TextIteratorDefaultBehavior);
+    WEBCORE_EXPORT explicit CharacterIterator(const Range&, TextIteratorBehavior = TextIteratorDefaultBehavior);
     WEBCORE_EXPORT explicit CharacterIterator(Position start, Position end, TextIteratorBehavior = TextIteratorDefaultBehavior);
     
     bool atEnd() const { return m_underlyingIterator.atEnd(); }
