@@ -801,7 +801,6 @@ public:
         uint64_t uniqueIdentifier;
         bool hasActiveSession;
         bool registeredAsNowPlayingApplication;
-        bool haveEverRegisteredAsNowPlayingApplication;
     };
     ExceptionOr<NowPlayingState> nowPlayingState() const;
 

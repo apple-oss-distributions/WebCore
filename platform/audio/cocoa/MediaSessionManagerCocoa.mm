@@ -204,9 +204,6 @@ void MediaSessionManagerCocoa::updateNowPlayingInfo()
     ALWAYS_LOG(LOGIDENTIFIER, "currentSession: ", currentSession ? currentSession->logIdentifier() : nullptr);
 
     if (!currentSession) {
-        if (!m_haveEverRegisteredAsNowPlayingApplication)
-            return;
-
         if (canLoad_MediaRemote_MRMediaRemoteSetNowPlayingVisibility())
             MRMediaRemoteSetNowPlayingVisibility(MRMediaRemoteGetLocalOrigin(), MRNowPlayingClientVisibilityNeverVisible);
 
@@ -237,7 +234,6 @@ void MediaSessionManagerCocoa::updateNowPlayingInfo()
         m_registeredAsNowPlayingApplication = true;
         providePresentingApplicationPIDIfNecessary();
         MRMediaRemoteSetCanBeNowPlayingApplication(true);
-        m_haveEverRegisteredAsNowPlayingApplication = true;
     }
 
     String title = currentSession->title();
