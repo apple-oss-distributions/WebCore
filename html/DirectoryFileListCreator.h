@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2017-2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -36,28 +36,25 @@ namespace WebCore {
 struct FileChooserFileInfo;
 class FileList;
 
-class FileListCreator : public ThreadSafeRefCounted<FileListCreator> {
+class DirectoryFileListCreator : public ThreadSafeRefCounted<DirectoryFileListCreator> {
 public:
     using CompletionHandler = Function<void(Ref<FileList>&&)>;
 
-    enum class ShouldResolveDirectories { No, Yes };
-    static Ref<FileListCreator> create(const Vector<FileChooserFileInfo>& paths, ShouldResolveDirectories shouldResolveDirectories, CompletionHandler&& completionHandler)
+    static Ref<DirectoryFileListCreator> create(CompletionHandler&& completionHandler)
     {
-        return adoptRef(*new FileListCreator(paths, shouldResolveDirectories, WTFMove(completionHandler)));
+        return adoptRef(*new DirectoryFileListCreator(WTFMove(completionHandler)));
     }
 
-    ~FileListCreator();
+    ~DirectoryFileListCreator();
 
+    void start(const Vector<FileChooserFileInfo>&);
     void cancel();
 
 private:
-    FileListCreator(const Vector<FileChooserFileInfo>& paths, ShouldResolveDirectories, CompletionHandler&&);
-
-    template<ShouldResolveDirectories shouldResolveDirectories>
-    static Ref<FileList> createFileList(const Vector<FileChooserFileInfo>&);
+    explicit DirectoryFileListCreator(CompletionHandler&&);
 
     RefPtr<WorkQueue> m_workQueue;
-    CompletionHandler m_completionHander;
+    CompletionHandler m_completionHandler;
 };
 
 }

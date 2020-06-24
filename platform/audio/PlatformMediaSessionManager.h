@@ -73,6 +73,7 @@ public:
     virtual double lastUpdatedNowPlayingElapsedTime() const { return NAN; }
     virtual uint64_t lastUpdatedNowPlayingInfoUniqueIdentifier() const { return 0; }
     virtual bool registeredAsNowPlayingApplication() const { return false; }
+    virtual bool haveEverRegisteredAsNowPlayingApplication() const { return false; }
     virtual void prepareToSendUserMediaPermissionRequest() { }
 
     bool willIgnoreSystemInterruptions() const { return m_willIgnoreSystemInterruptions; }
@@ -136,6 +137,8 @@ public:
     void forEachMatchingSession(const Function<bool(const PlatformMediaSession&)>& predicate, const Function<void(PlatformMediaSession&)>& matchingCallback);
 
     bool processIsSuspended() const { return m_processIsSuspended; }
+
+    bool isInterrupted() const { return m_interrupted; }
 
 protected:
     friend class PlatformMediaSession;
