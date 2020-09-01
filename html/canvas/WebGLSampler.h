@@ -36,9 +36,9 @@ public:
     static Ref<WebGLSampler> create(WebGLRenderingContextBase&);
     virtual ~WebGLSampler();
 
-protected:
+private:
     explicit WebGLSampler(WebGLRenderingContextBase&);
-    void deleteObjectImpl(GraphicsContext3D*, Platform3DObject) final;
+    void deleteObjectImpl(GraphicsContextGLOpenGL*, PlatformGLObject) final;
 };
 
 } // namespace WebCore

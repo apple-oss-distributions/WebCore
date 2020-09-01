@@ -47,7 +47,7 @@ namespace WebCore {
 
 WTF_MAKE_ISO_ALLOCATED_IMPL(ConvolverNode);
 
-ConvolverNode::ConvolverNode(AudioContext& context, float sampleRate)
+ConvolverNode::ConvolverNode(BaseAudioContext& context, float sampleRate)
     : AudioNode(context, sampleRate)
 {
     setNodeType(NodeTypeConvolver);
@@ -57,8 +57,8 @@ ConvolverNode::ConvolverNode(AudioContext& context, float sampleRate)
 
     // Node-specific default mixing rules.
     m_channelCount = 2;
-    m_channelCountMode = ClampedMax;
-    m_channelInterpretation = AudioBus::Speakers;
+    m_channelCountMode = ChannelCountMode::ClampedMax;
+    m_channelInterpretation = ChannelInterpretation::Speakers;
     
     initialize();
 }
@@ -94,7 +94,7 @@ void ConvolverNode::process(size_t framesToProcess)
 
 void ConvolverNode::reset()
 {
-    std::lock_guard<Lock> lock(m_processMutex);
+    auto locker = holdLock(m_processMutex);
     if (m_reverb)
         m_reverb->reset();
 }
@@ -150,7 +150,7 @@ ExceptionOr<void> ConvolverNode::setBuffer(AudioBuffer* buffer)
 
     {
         // Synchronize with process().
-        std::lock_guard<Lock> lock(m_processMutex);
+        auto locker = holdLock(m_processMutex);
         m_reverb = WTFMove(reverb);
         m_buffer = buffer;
     }

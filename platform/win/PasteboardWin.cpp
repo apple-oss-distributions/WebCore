@@ -64,6 +64,7 @@ namespace WebCore {
 static UINT HTMLClipboardFormat = 0;
 static UINT BookmarkClipboardFormat = 0;
 static UINT WebSmartPasteFormat = 0;
+static UINT CustomDataClipboardFormat = 0;
 
 static LRESULT CALLBACK PasteboardOwnerWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -135,6 +136,7 @@ void Pasteboard::finishCreatingPasteboard()
     HTMLClipboardFormat = ::RegisterClipboardFormat(L"HTML Format");
     BookmarkClipboardFormat = ::RegisterClipboardFormat(L"UniformResourceLocatorW");
     WebSmartPasteFormat = ::RegisterClipboardFormat(L"WebKit Smart Paste Format");
+    CustomDataClipboardFormat = ::RegisterClipboardFormat(L"WebKit Custom Data Format");
 }
 
 Pasteboard::Pasteboard()
@@ -240,10 +242,41 @@ static void addMimeTypesForFormat(ListHashSet<String>& results, const FORMATETC&
         results.add("text/plain");
 }
 
-Vector<String> Pasteboard::typesSafeForBindings(const String&)
+Optional<PasteboardCustomData> Pasteboard::readPasteboardCustomData()
 {
-    notImplemented();
-    return { };
+    if (::IsClipboardFormatAvailable(CustomDataClipboardFormat) && ::OpenClipboard(m_owner)) {
+        if (HANDLE cbData = ::GetClipboardData(CustomDataClipboardFormat)) {
+            size_t size = GlobalSize(cbData);
+            auto data = static_cast<uint8_t*>(GlobalLock(cbData));
+            auto customData = PasteboardCustomData::fromPersistenceDecoder({data, size});
+
+            GlobalUnlock(cbData);
+            ::CloseClipboard();
+
+            return customData;
+        }
+        ::CloseClipboard();
+    }
+
+    return WTF::nullopt;
+}
+
+Vector<String> Pasteboard::typesSafeForBindings(const String& origin)
+{
+    ListHashSet<String> domPasteboardTypes;
+
+    Optional<PasteboardCustomData> customData = readPasteboardCustomData();
+
+    if (customData && customData->origin() == origin) {
+        for (const auto& type : customData->orderedTypes())
+            domPasteboardTypes.add(type);
+    }
+
+    domPasteboardTypes.add("text/plain");
+    domPasteboardTypes.add("text/uri-list");
+    domPasteboardTypes.add("text/html");
+
+    return copyToVector(domPasteboardTypes);
 }
 
 Vector<String> Pasteboard::typesForLegacyUnsafeBindings()
@@ -280,7 +313,11 @@ Vector<String> Pasteboard::typesForLegacyUnsafeBindings()
 
 String Pasteboard::readOrigin()
 {
-    notImplemented();
+    Optional<PasteboardCustomData> customData = readPasteboardCustomData();
+
+    if (customData)
+        return customData->origin();
+
     return { };
 }
 
@@ -304,9 +341,13 @@ String Pasteboard::readString(const String& type)
     return "";
 }
 
-String Pasteboard::readStringInCustomData(const String&)
+String Pasteboard::readStringInCustomData(const String& type)
 {
-    notImplemented();
+    Optional<PasteboardCustomData> customData = readPasteboardCustomData();
+
+    if (customData)
+        return customData->readStringInCustomData(type);
+
     return { };
 }
 
@@ -325,7 +366,7 @@ Pasteboard::FileContentState Pasteboard::fileContentState()
     return reader.count ? FileContentState::MayContainFilePaths : FileContentState::NoFileOrImageData;
 }
 
-void Pasteboard::read(PasteboardFileReader& reader)
+void Pasteboard::read(PasteboardFileReader& reader, Optional<size_t>)
 {
 #if USE(CF)
     if (m_dataObject) {
@@ -370,7 +411,7 @@ static bool writeURL(WCDataObject *data, const URL& url, String title, bool with
         return false;
 
     if (title.isEmpty()) {
-        title = url.lastPathComponent();
+        title = url.lastPathComponent().toString();
         if (title.isEmpty())
             title = url.host().toString();
     }
@@ -579,10 +620,10 @@ static String filesystemPathFromUrlOrTitle(const String& url, const String& titl
         // the path. If we can't find it, or we're coming up with the name for a link
         // we just use the entire url.
         DWORD len = fsPathMaxLengthExcludingExtension;
-        String lastComponent = kurl.lastPathComponent();
+        auto lastComponent = kurl.lastPathComponent();
         if (kurl.isLocalFile() || (!isLink && !lastComponent.isEmpty())) {
             len = std::min<DWORD>(fsPathMaxLengthExcludingExtension, lastComponent.length());
-            StringView(lastComponent).substring(0, len).getCharactersWithUpconvert(fsPathBuffer);
+            lastComponent.substring(0, len).getCharactersWithUpconvert(fsPathBuffer);
         } else {
             len = std::min<DWORD>(fsPathMaxLengthExcludingExtension, url.length());
             StringView(url).substring(0, len).getCharactersWithUpconvert(fsPathBuffer);
@@ -708,7 +749,7 @@ void Pasteboard::write(const PasteboardURL& pasteboardURL)
 
     String title(pasteboardURL.title);
     if (title.isEmpty()) {
-        title = pasteboardURL.url.lastPathComponent();
+        title = pasteboardURL.url.lastPathComponent().toString();
         if (title.isEmpty())
             title = pasteboardURL.url.host().toString();
     }
@@ -1082,8 +1123,47 @@ void Pasteboard::write(const PasteboardImage&)
 {
 }
 
-void Pasteboard::writeCustomData(const Vector<PasteboardCustomData>&)
+void Pasteboard::writeCustomData(const Vector<PasteboardCustomData>& data)
 {
+    if (data.isEmpty() || data.size() > 1) {
+        // We don't support more than one custom item in the clipboard.
+        return;
+    }
+
+    clear();
+
+    if (::OpenClipboard(m_owner)) {
+        const auto& customData = data.first();
+        customData.forEachPlatformStringOrBuffer([](auto& type, auto& stringOrBuffer) {
+            if (WTF::holds_alternative<String>(stringOrBuffer)) {
+                ClipboardDataType dataType = clipboardTypeFromMIMEType(type);
+
+                String str = WTF::get<String>(stringOrBuffer);
+                replaceNewlinesWithWindowsStyleNewlines(str);
+                HGLOBAL cbData = createGlobalData(str);
+
+                if (dataType == ClipboardDataTypeText) {
+                    if (cbData && !::SetClipboardData(CF_UNICODETEXT, cbData))
+                        ::GlobalFree(cbData);
+                } else if (dataType == ClipboardDataTypeURL) {
+                    if (cbData && !::SetClipboardData(BookmarkClipboardFormat, cbData))
+                        ::GlobalFree(cbData);
+                } else if (dataType == ClipboardDataTypeTextHTML) {
+                    if (cbData && !::SetClipboardData(HTMLClipboardFormat, cbData))
+                        ::GlobalFree(cbData);
+                }
+            }
+        });
+
+        if (customData.hasSameOriginCustomData() || !customData.origin().isEmpty()) {
+            auto sharedBuffer = customData.createSharedBuffer();
+            HGLOBAL cbData = createGlobalData(reinterpret_cast<const uint8_t*>(sharedBuffer->data()), sharedBuffer->size());
+            if (cbData && !::SetClipboardData(CustomDataClipboardFormat, cbData))
+                ::GlobalFree(cbData);
+        }
+
+        ::CloseClipboard();
+    }
 }
 
 void Pasteboard::write(const Color&)

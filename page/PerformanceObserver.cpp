@@ -60,17 +60,24 @@ ExceptionOr<void> PerformanceObserver::observe(Init&& init)
     if (!m_performance)
         return Exception { TypeError };
 
-    if (init.entryTypes.isEmpty())
-        return Exception { TypeError, "entryTypes cannot be an empty list"_s };
-
     OptionSet<PerformanceEntry::Type> filter;
-    for (const String& entryType : init.entryTypes) {
-        if (auto type = PerformanceEntry::parseEntryTypeString(entryType))
+    if (init.entryTypes) {
+        if (init.type)
+            return Exception { TypeError, "either entryTypes or type must be provided"_s };
+        for (auto& entryType : *init.entryTypes) {
+            if (auto type = PerformanceEntry::parseEntryTypeString(entryType))
+                filter.add(*type);
+        }
+        if (filter.isEmpty())
+            return { };
+    } else {
+        if (!init.type)
+            return Exception { TypeError, "no type or entryTypes were provided"_s };
+        if (auto type = PerformanceEntry::parseEntryTypeString(*init.type))
             filter.add(*type);
+        else
+            return { };
     }
-
-    if (filter.isEmpty())
-        return Exception { TypeError, "entryTypes contained only unsupported types"_s };
 
     m_typeFilter = filter;
 
@@ -113,15 +120,21 @@ void PerformanceObserver::deliver()
     InspectorInstrumentation::didFireObserverCallback(*context);
 }
 
-Vector<String> PerformanceObserver::supportedEntryTypes()
+Vector<String> PerformanceObserver::supportedEntryTypes(ScriptExecutionContext& context)
 {
-    return {
+    Vector<String> entryTypes = {
         // FIXME: <https://webkit.org/b/184363> Add support for Navigation Timing Level 2
         // "navigation"_s,
         "mark"_s,
-        "measure"_s,
-        "resource"_s
+        "measure"_s
     };
+
+    if (is<Document>(context) && downcast<Document>(context).supportsPaintTiming())
+        entryTypes.append("paint"_s);
+
+    entryTypes.append("resource"_s);
+
+    return entryTypes;
 }
 
 } // namespace WebCore

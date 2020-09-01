@@ -31,6 +31,8 @@
 #include "AudioContext.h"
 #include "AudioDestination.h"
 #include "Logging.h"
+#include "MediaStrategy.h"
+#include "PlatformStrategies.h"
 #include "ScriptExecutionContext.h"
 #include <wtf/IsoMallocInlines.h>
 #include <wtf/MainThread.h>
@@ -40,14 +42,14 @@ const unsigned EnabledInputChannels = 2;
 namespace WebCore {
 
 WTF_MAKE_ISO_ALLOCATED_IMPL(DefaultAudioDestinationNode);
-    
-DefaultAudioDestinationNode::DefaultAudioDestinationNode(AudioContext& context)
-    : AudioDestinationNode(context, AudioDestination::hardwareSampleRate())
+
+DefaultAudioDestinationNode::DefaultAudioDestinationNode(BaseAudioContext& context, Optional<float> sampleRate)
+    : AudioDestinationNode(context, sampleRate.valueOr(AudioDestination::hardwareSampleRate()))
 {
     // Node-specific default mixing rules.
     m_channelCount = 2;
-    m_channelCountMode = Explicit;
-    m_channelInterpretation = AudioBus::Speakers;
+    m_channelCountMode = ChannelCountMode::Explicit;
+    m_channelInterpretation = ChannelInterpretation::Speakers;
 }
 
 DefaultAudioDestinationNode::~DefaultAudioDestinationNode()
@@ -84,8 +86,8 @@ void DefaultAudioDestinationNode::createDestination()
 {
     float hardwareSampleRate = AudioDestination::hardwareSampleRate();
     LOG(WebAudio, ">>>> hardwareSampleRate = %f\n", hardwareSampleRate);
-    
-    m_destination = AudioDestination::create(*this, m_inputDeviceId, m_numberOfInputChannels, channelCount(), hardwareSampleRate);
+
+    m_destination = platformStrategies()->mediaStrategy().createAudioDestination(*this, m_inputDeviceId, m_numberOfInputChannels, channelCount(), hardwareSampleRate);
 }
 
 void DefaultAudioDestinationNode::enableInput(const String& inputDeviceId)
@@ -106,11 +108,14 @@ void DefaultAudioDestinationNode::enableInput(const String& inputDeviceId)
     }
 }
 
-void DefaultAudioDestinationNode::startRendering()
+ExceptionOr<void> DefaultAudioDestinationNode::startRendering()
 {
     ASSERT(isInitialized());
-    if (isInitialized())
-        m_destination->start();
+    if (!isInitialized())
+        return Exception { InvalidStateError };
+
+    m_destination->start();
+    return { };
 }
 
 void DefaultAudioDestinationNode::resume(Function<void ()>&& function)

@@ -93,7 +93,7 @@ public:
     static bool isValidContentType(const String&);
     // The normalization procedure described in the File API spec.
     static String normalizedContentType(const String&);
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     static bool isNormalizedContentType(const String&);
     static bool isNormalizedContentType(const CString&);
 #endif
@@ -101,7 +101,7 @@ public:
     // URLRegistrable
     URLRegistry& registry() const override;
 
-    Ref<Blob> slice(long long start = 0, long long end = std::numeric_limits<long long>::max(), const String& contentType = String()) const
+    Ref<Blob> slice(long long start, long long end, const String& contentType) const
     {
         return adoptRef(*new Blob(m_internalURL, start, end, contentType));
     }

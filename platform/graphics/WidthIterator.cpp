@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003, 2006, 2008, 2009, 2010, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2003 - 2020 Apple Inc. All rights reserved.
  * Copyright (C) 2008 Holger Hans Peter Freyther
  *
  * This library is free software; you can redistribute it and/or
@@ -38,19 +38,14 @@ using namespace WTF::Unicode;
 WidthIterator::WidthIterator(const FontCascade* font, const TextRun& run, HashSet<const Font*>* fallbackFonts, bool accountForGlyphBounds, bool forTextEmphasis)
     : m_font(font)
     , m_run(run)
-    , m_currentCharacter(0)
-    , m_runWidthSoFar(0)
-    , m_isAfterExpansion((run.expansionBehavior() & LeadingExpansionMask) == ForbidLeadingExpansion)
-    , m_finalRoundingWidth(0)
     , m_fallbackFonts(fallbackFonts)
+    , m_expansion(run.expansion())
+    , m_isAfterExpansion((run.expansionBehavior() & LeadingExpansionMask) == ForbidLeadingExpansion)
     , m_accountForGlyphBounds(accountForGlyphBounds)
     , m_enableKerning(font->enableKerning())
     , m_requiresShaping(font->requiresShaping())
     , m_forTextEmphasis(forTextEmphasis)
 {
-    // If the padding is non-zero, count the number of spaces in the run
-    // and divide that by the padding for per space addition.
-    m_expansion = m_run.expansion();
     if (!m_expansion)
         m_expansionPerOpportunity = 0;
     else {
@@ -98,22 +93,23 @@ inline float WidthIterator::applyFontTransforms(GlyphBuffer* glyphBuffer, bool l
     if (!glyphBuffer)
         return 0;
 
-    unsigned glyphBufferSize = glyphBuffer->size();
+    auto glyphBufferSize = glyphBuffer->size();
     if (!force && glyphBufferSize <= lastGlyphCount + 1) {
         lastGlyphCount = glyphBufferSize;
         return 0;
     }
 
     GlyphBufferAdvance* advances = glyphBuffer->advances(0);
-    float widthDifference = 0;
+    float beforeWidth = 0;
     for (unsigned i = lastGlyphCount; i < glyphBufferSize; ++i)
-        widthDifference -= advances[i].width();
+        beforeWidth += advances[i].width();
 
     ASSERT(lastGlyphCount <= glyphBufferSize);
     if (!ltr)
         glyphBuffer->reverse(lastGlyphCount, glyphBufferSize - lastGlyphCount);
 
-    font->applyTransforms(glyphBuffer->glyphs(lastGlyphCount), advances + lastGlyphCount, glyphBufferSize - lastGlyphCount, m_enableKerning, m_requiresShaping);
+    font->applyTransforms(*glyphBuffer, lastGlyphCount, m_enableKerning, m_requiresShaping, m_font->fontDescription().computedLocale());
+    glyphBufferSize = glyphBuffer->size();
 
     for (unsigned i = lastGlyphCount; i < glyphBufferSize; ++i)
         advances[i].setHeight(-advances[i].height());
@@ -121,8 +117,14 @@ inline float WidthIterator::applyFontTransforms(GlyphBuffer* glyphBuffer, bool l
     if (!ltr)
         glyphBuffer->reverse(lastGlyphCount, glyphBufferSize - lastGlyphCount);
 
+    // https://bugs.webkit.org/show_bug.cgi?id=206208: This is totally, 100%, furiously, utterly, frustratingly bogus.
+    // There is absolutely no guarantee that glyph indices before shaping have any relation at all with glyph indices after shaping.
+    // One of the fundamental things that shaping does is insert glyph all over the place.
     for (size_t i = 0; i < charactersTreatedAsSpace.size(); ++i) {
-        int spaceOffset = charactersTreatedAsSpace[i].first;
+        auto spaceOffset = charactersTreatedAsSpace[i].first;
+        // Shaping may have deleted the glyph.
+        if (spaceOffset >= glyphBufferSize)
+            continue;
         const OriginalAdvancesForCharacterTreatedAsSpace& originalAdvances = charactersTreatedAsSpace[i].second;
         if (spaceOffset && !originalAdvances.characterIsSpace)
             glyphBuffer->advances(spaceOffset - 1)->setWidth(originalAdvances.advanceBeforeCharacter);
@@ -130,11 +132,12 @@ inline float WidthIterator::applyFontTransforms(GlyphBuffer* glyphBuffer, bool l
     }
     charactersTreatedAsSpace.clear();
 
+    float afterWidth = 0;
     for (unsigned i = lastGlyphCount; i < glyphBufferSize; ++i)
-        widthDifference += advances[i].width();
+        afterWidth += advances[i].width();
 
     lastGlyphCount = glyphBufferSize;
-    return widthDifference;
+    return afterWidth - beforeWidth;
 }
 
 static inline std::pair<bool, bool> expansionLocation(bool ideograph, bool treatAsSpace, bool ltr, bool isAfterExpansion, bool forbidLeadingExpansion, bool forbidTrailingExpansion, bool forceLeadingExpansion, bool forceTrailingExpansion)

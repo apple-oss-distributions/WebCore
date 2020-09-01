@@ -22,7 +22,6 @@
 #include "RadioButtonGroups.h"
 
 #include "HTMLInputElement.h"
-#include "Range.h"
 #include <wtf/WeakHashSet.h>
 #include <wtf/WeakPtr.h>
 
@@ -228,7 +227,8 @@ void RadioButtonGroups::updateCheckedState(HTMLInputElement& element)
     ASSERT(element.isRadioButton());
     if (element.name().isEmpty())
         return;
-    m_nameToGroupMap.get(element.name().impl())->updateCheckedState(element);
+    if (auto* group = m_nameToGroupMap.get(element.name().impl()))
+        group->updateCheckedState(element);
 }
 
 void RadioButtonGroups::requiredStateChanged(HTMLInputElement& element)
@@ -237,7 +237,8 @@ void RadioButtonGroups::requiredStateChanged(HTMLInputElement& element)
     if (element.name().isEmpty())
         return;
     auto* group = m_nameToGroupMap.get(element.name().impl());
-    ASSERT(group);
+    if (!group)
+        return;
     group->requiredStateChanged(element);
 }
 

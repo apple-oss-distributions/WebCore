@@ -30,7 +30,7 @@
 #include "CachedResourceHandle.h"
 #include "Font.h"
 #include "FontSelector.h"
-#include "Timer.h"
+#include "SuspendableTimer.h"
 #include <memory>
 #include <wtf/Forward.h>
 #include <wtf/HashSet.h>
@@ -81,7 +81,7 @@ public:
 
     void beginLoadingFontSoon(CachedFont&);
 
-    FontFaceSet* optionalFontFaceSet();
+    FontFaceSet* fontFaceSetIfExists();
     FontFaceSet& fontFaceSet();
 
     void incrementIsComputingRootStyleFont() { ++m_computingRootStyleFontCount; }
@@ -112,7 +112,7 @@ private:
     Vector<CachedResourceHandle<CachedFont>> m_fontsToBeginLoading;
     HashSet<RefPtr<CSSFontFace>> m_cssConnectionsPossiblyToRemove;
     HashSet<RefPtr<StyleRuleFontFace>> m_cssConnectionsEncounteredDuringBuild;
-    Timer m_beginLoadingTimer;
+    SuspendableTimer m_beginLoadingTimer;
 
     unsigned m_uniqueId;
     unsigned m_version;

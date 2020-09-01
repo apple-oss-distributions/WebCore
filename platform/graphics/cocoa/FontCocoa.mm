@@ -32,6 +32,7 @@
 #import "FontCache.h"
 #import "FontCascade.h"
 #import "FontDescription.h"
+#import "LocaleCocoa.h"
 #import "OpenTypeCG.h"
 #import "SharedBuffer.h"
 #import <CoreText/CoreText.h>
@@ -543,6 +544,29 @@ RefPtr<Font> Font::platformCreateScaledFont(const FontDescription&, float scaleF
     return createDerivativeFont(scaledFont.get(), size, m_platformData.orientation(), fontTraits, m_platformData.syntheticBold(), m_platformData.syntheticOblique());
 }
 
+void Font::applyTransforms(GlyphBuffer& glyphBuffer, unsigned beginningIndex, bool enableKerning, bool requiresShaping, const AtomString& locale) const
+{
+    // FIXME: Implement GlyphBuffer initial advance.
+    CTFontTransformOptions options = (enableKerning ? kCTFontTransformApplyPositioning : 0) | (requiresShaping ? kCTFontTransformApplyShaping : 0);
+#if USE(CTFONTTRANSFORMGLYPHSWITHLANGUAGE)
+    auto handler = ^(CFRange range, CGGlyph** newGlyphsPointer, CGSize** newAdvancesPointer) {
+        range.location = std::min(std::max(range.location, static_cast<CFIndex>(0)), static_cast<CFIndex>(glyphBuffer.size()));
+        if (range.length < 0) {
+            range.length = std::min(range.location, -range.length);
+            range.location = range.location - range.length;
+            glyphBuffer.remove(beginningIndex + range.location, range.length);
+        } else
+            glyphBuffer.makeHole(beginningIndex + range.location, range.length, this);
+        *newGlyphsPointer = glyphBuffer.glyphs(beginningIndex);
+        *newAdvancesPointer = glyphBuffer.advances(beginningIndex);
+    };
+    CTFontTransformGlyphsWithLanguage(m_platformData.ctFont(), glyphBuffer.glyphs(beginningIndex), reinterpret_cast<CGSize*>(glyphBuffer.advances(beginningIndex)), glyphBuffer.size() - beginningIndex, options, LocaleCocoa::canonicalLanguageIdentifierFromString(locale).string().createCFString().get(), handler);
+#else
+    UNUSED_PARAM(locale);
+    CTFontTransformGlyphs(m_platformData.ctFont(), glyphBuffer.glyphs(beginningIndex), reinterpret_cast<CGSize*>(glyphBuffer.advances(beginningIndex)), glyphBuffer.size() - beginningIndex, options);
+#endif
+}
+
 static int extractNumber(CFNumberRef number)
 {
     int result = 0;
@@ -618,9 +642,9 @@ Path Font::platformPathForGlyph(Glyph glyph) const
         CGPathAddPath(newPath.get(), nullptr, result.get());
         auto translation = CGAffineTransformMakeTranslation(syntheticBoldOffset, 0);
         CGPathAddPath(newPath.get(), &translation, result.get());
-        return newPath;
+        return { WTFMove(newPath) };
     }
-    return adoptCF(CGPathCreateMutableCopy(result.get()));
+    return { adoptCF(CGPathCreateMutableCopy(result.get())) };
 }
 
 bool Font::platformSupportsCodePoint(UChar32 character, Optional<UChar32> variation) const
@@ -633,6 +657,45 @@ bool Font::platformSupportsCodePoint(UChar32 character, Optional<UChar32> variat
     CFIndex count = 0;
     U16_APPEND_UNSAFE(codeUnits, count, character);
     return CTFontGetGlyphsForCharacters(platformData().ctFont(), codeUnits, glyphs, count);
+}
+
+bool Font::isProbablyOnlyUsedToRenderIcons() const
+{
+    auto platformFont = platformData().font();
+    if (!platformFont)
+        return false;
+
+    // Allow most non-icon fonts to bail early here by testing a single character 'a', without iterating over all basic latin characters.
+    UniChar lowercaseACharacter = 'a';
+    CGGlyph lowercaseAGlyph;
+    if (CTFontGetGlyphsForCharacters(platformFont, &lowercaseACharacter, &lowercaseAGlyph, 1)) {
+        if (!CGRectIsEmpty(CTFontGetBoundingRectsForGlyphs(platformFont, kCTFontOrientationDefault, &lowercaseAGlyph, nullptr, 1)))
+            return false;
+    }
+
+    auto supportedCharacters = adoptCF(CTFontCopyCharacterSet(platformFont));
+    if (CFCharacterSetHasMemberInPlane(supportedCharacters.get(), 1) || CFCharacterSetHasMemberInPlane(supportedCharacters.get(), 2))
+        return false;
+
+    // This encompasses all basic Latin non-control characters.
+    constexpr UniChar firstCharacterToTest = ' ';
+    constexpr UniChar lastCharacterToTest = '~';
+    constexpr auto numberOfCharactersToTest = lastCharacterToTest - firstCharacterToTest + 1;
+
+    Vector<CGGlyph> glyphs;
+    glyphs.fill(0, numberOfCharactersToTest);
+    CTFontGetGlyphsForCharacterRange(platformFont, glyphs.begin(), CFRangeMake(firstCharacterToTest, numberOfCharactersToTest));
+    glyphs.removeAll(0);
+
+    if (glyphs.isEmpty())
+        return false;
+
+    Vector<CGRect> boundingRects;
+    boundingRects.fill(CGRectZero, glyphs.size());
+    CTFontGetBoundingRectsForGlyphs(platformFont, kCTFontOrientationDefault, glyphs.begin(), boundingRects.begin(), glyphs.size());
+    return notFound == boundingRects.findMatching([](auto& rect) {
+        return !CGRectIsEmpty(rect);
+    });
 }
 
 } // namespace WebCore

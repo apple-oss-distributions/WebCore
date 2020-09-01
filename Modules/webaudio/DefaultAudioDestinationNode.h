@@ -33,15 +33,15 @@ class AudioDestination;
 class DefaultAudioDestinationNode final : public AudioDestinationNode {
     WTF_MAKE_ISO_ALLOCATED(DefaultAudioDestinationNode);
 public:
-    static Ref<DefaultAudioDestinationNode> create(AudioContext& context)
+    static Ref<DefaultAudioDestinationNode> create(BaseAudioContext& context, Optional<float> sampleRate = WTF::nullopt)
     {
-        return adoptRef(*new DefaultAudioDestinationNode(context));     
+        return adoptRef(*new DefaultAudioDestinationNode(context, sampleRate));
     }
-
+    
     virtual ~DefaultAudioDestinationNode();
     
 private:
-    explicit DefaultAudioDestinationNode(AudioContext&);
+    explicit DefaultAudioDestinationNode(BaseAudioContext&, Optional<float>);
     void createDestination();
 
     void initialize() final;
@@ -49,7 +49,7 @@ private:
     ExceptionOr<void> setChannelCount(unsigned) final;
 
     void enableInput(const String& inputDeviceId) final;
-    void startRendering() final;
+    ExceptionOr<void> startRendering() final;
     void resume(Function<void ()>&&) final;
     void suspend(Function<void ()>&&) final;
     void close(Function<void ()>&&) final;

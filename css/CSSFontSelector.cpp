@@ -64,7 +64,7 @@ static unsigned fontSelectorId;
 CSSFontSelector::CSSFontSelector(Document& document)
     : m_document(makeWeakPtr(document))
     , m_cssFontFaceSet(CSSFontFaceSet::create(this))
-    , m_beginLoadingTimer(*this, &CSSFontSelector::beginLoadTimerFired)
+    , m_beginLoadingTimer(&document, *this, &CSSFontSelector::beginLoadTimerFired)
     , m_uniqueId(++fontSelectorId)
     , m_version(0)
 {
@@ -72,6 +72,8 @@ CSSFontSelector::CSSFontSelector(Document& document)
     FontCache::singleton().addClient(*this);
     m_cssFontFaceSet->addClient(*this);
     LOG(Fonts, "CSSFontSelector %p ctor", this);
+
+    m_beginLoadingTimer.suspendIfNeeded();
 }
 
 CSSFontSelector::~CSSFontSelector()
@@ -83,7 +85,7 @@ CSSFontSelector::~CSSFontSelector()
     FontCache::singleton().removeClient(*this);
 }
 
-FontFaceSet* CSSFontSelector::optionalFontFaceSet()
+FontFaceSet* CSSFontSelector::fontFaceSetIfExists()
 {
     return m_fontFaceSet.get();
 }
@@ -263,7 +265,7 @@ void CSSFontSelector::fontCacheInvalidated()
 
 static Optional<AtomString> resolveGenericFamily(Document* document, const FontDescription& fontDescription, const AtomString& familyName)
 {
-    auto platformResult = FontDescription::platformResolveGenericFamily(fontDescription.script(), fontDescription.locale(), familyName);
+    auto platformResult = FontDescription::platformResolveGenericFamily(fontDescription.script(), fontDescription.computedLocale(), familyName);
     if (!platformResult.isNull())
         return platformResult;
 
@@ -336,7 +338,7 @@ void CSSFontSelector::clearDocument()
         return;
     }
 
-    m_beginLoadingTimer.stop();
+    m_beginLoadingTimer.cancel();
 
     CachedResourceLoader& cachedResourceLoader = m_document->cachedResourceLoader();
     for (auto& fontHandle : m_fontsToBeginLoading) {

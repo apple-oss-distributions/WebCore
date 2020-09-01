@@ -140,6 +140,11 @@ static bool canCacheFrame(Frame& frame, DiagnosticLoggingClient& diagnosticLoggi
         logBackForwardCacheFailureDiagnosticMessage(diagnosticLoggingClient, DiagnosticLoggingKeys::hasPluginsKey());
         isCacheable = false;
     }
+    if (frame.isMainFrame() && frame.document() && frame.document()->url().protocolIs("https") && documentLoader->response().cacheControlContainsNoStore()) {
+        PCLOG("   -Frame is HTTPS, and cache control prohibits storing");
+        logBackForwardCacheFailureDiagnosticMessage(diagnosticLoggingClient, DiagnosticLoggingKeys::httpsNoStoreKey());
+        isCacheable = false;
+    }
     if (frame.isMainFrame() && !frameLoader.history().currentItem()) {
         PCLOG("   -Main frame has no current history item");
         logBackForwardCacheFailureDiagnosticMessage(diagnosticLoggingClient, DiagnosticLoggingKeys::noCurrentHistoryItemKey());
@@ -356,7 +361,7 @@ void BackForwardCache::markPagesForContentsSizeChanged(Page& page)
     }
 }
 
-#if ENABLE(VIDEO_TRACK)
+#if ENABLE(VIDEO)
 void BackForwardCache::markPagesForCaptionPreferencesChanged()
 {
     for (auto& item : m_items) {
@@ -501,7 +506,7 @@ std::unique_ptr<CachedPage> BackForwardCache::take(HistoryItem& item, Page* page
 
 void BackForwardCache::removeAllItemsForPage(Page& page)
 {
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     ASSERT_WITH_MESSAGE(!m_isInRemoveAllItemsForPage, "We should not reenter this method");
     SetForScope<bool> inRemoveAllItemsForPageScope { m_isInRemoveAllItemsForPage, true };
 #endif

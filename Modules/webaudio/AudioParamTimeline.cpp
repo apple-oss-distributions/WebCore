@@ -80,7 +80,7 @@ void AudioParamTimeline::insertEvent(const ParamEvent& event)
     if (!isValid)
         return;
         
-    std::lock_guard<Lock> lock(m_eventsMutex);
+    auto locker = holdLock(m_eventsMutex);
     
     unsigned i = 0;
     float insertTime = event.time();
@@ -102,7 +102,7 @@ void AudioParamTimeline::insertEvent(const ParamEvent& event)
 
 void AudioParamTimeline::cancelScheduledValues(float startTime)
 {
-    std::lock_guard<Lock> lock(m_eventsMutex);
+    auto locker = holdLock(m_eventsMutex);
 
     // Remove all events starting at startTime.
     for (unsigned i = 0; i < m_events.size(); ++i) {
@@ -113,7 +113,7 @@ void AudioParamTimeline::cancelScheduledValues(float startTime)
     }
 }
 
-float AudioParamTimeline::valueForContextTime(AudioContext& context, float defaultValue, bool& hasValue)
+float AudioParamTimeline::valueForContextTime(BaseAudioContext& context, float defaultValue, bool& hasValue)
 {
     {
         std::unique_lock<Lock> lock(m_eventsMutex, std::try_to_lock);

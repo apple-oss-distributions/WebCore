@@ -31,6 +31,7 @@
 #include "Clipboard.h"
 #include "ClipboardItem.h"
 #include "Document.h"
+#include "ExceptionCode.h"
 #include "FileReaderLoader.h"
 #include "Frame.h"
 #include "GraphicsContext.h"
@@ -249,7 +250,7 @@ void ClipboardItemBindingsDataSource::ClipboardItemTypeLoader::didFinishLoading(
     invokeCompletionHandler();
 }
 
-void ClipboardItemBindingsDataSource::ClipboardItemTypeLoader::didFail(int)
+void ClipboardItemBindingsDataSource::ClipboardItemTypeLoader::didFail(ExceptionCode)
 {
     ASSERT(m_blobLoader);
     m_blobLoader = nullptr;
@@ -284,7 +285,7 @@ void ClipboardItemBindingsDataSource::ClipboardItemTypeLoader::sanitizeDataIfNee
 
         auto bitmapImage = BitmapImage::create();
         bitmapImage->setData(WTFMove(bufferToSanitize), true);
-        auto imageBuffer = ImageBuffer::create(bitmapImage->size(), Unaccelerated);
+        auto imageBuffer = ImageBuffer::create(bitmapImage->size(), RenderingMode::Unaccelerated);
         if (!imageBuffer) {
             m_data = { nullString() };
             return;

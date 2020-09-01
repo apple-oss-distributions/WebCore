@@ -60,7 +60,7 @@ void EllipsisBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, La
     }
 
     const FontCascade& font = lineStyle.fontCascade();
-    if (selectionState() != RenderObject::SelectionNone) {
+    if (selectionState() != RenderObject::HighlightState::None) {
         paintSelection(context, paintOffset, lineStyle, font);
 
         // Select the correct color for painting the text.
@@ -134,7 +134,7 @@ void EllipsisBox::paintSelection(GraphicsContext& context, const LayoutPoint& pa
     // If the text color ends up being the same as the selection background, invert the selection
     // background.
     if (textColor == c)
-        c = Color(0xff - c.red(), 0xff - c.green(), 0xff - c.blue());
+        c = c.invertedColorWithAlpha(1.0);
 
     const RootInlineBox& rootBox = root();
     GraphicsContextStateSaver stateSaver(context);
@@ -163,7 +163,7 @@ bool EllipsisBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& resu
     LayoutRect boundsRect { adjustedLocation, LayoutSize(LayoutUnit(logicalWidth()), m_height) };
     if (visibleToHitTesting() && boundsRect.intersects(HitTestLocation::rectForPoint(locationInContainer.point(), 0, 0, 0, 0))) {
         blockFlow().updateHitTestResult(result, locationInContainer.point() - toLayoutSize(adjustedLocation));
-        if (result.addNodeToListBasedTestResult(blockFlow().element(), request, locationInContainer, boundsRect) == HitTestProgress::Stop)
+        if (result.addNodeToListBasedTestResult(blockFlow().nodeForHitTest(), request, locationInContainer, boundsRect) == HitTestProgress::Stop)
             return true;
     }
 

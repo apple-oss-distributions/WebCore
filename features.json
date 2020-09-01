@@ -14,7 +14,7 @@
     {
         "name": "Async Clipboard API",
         "status": {
-            "status": "In Development"
+            "status": "Supported"
         },
         "url": "https://www.w3.org/TR/clipboard-apis/#async-clipboard-api",
         "category": "webapps",
@@ -71,6 +71,17 @@
         "keywords": ["css color", "color"],
         "category": "css",
         "description": "Allows content to specify colors outside of the sRGB Color Space."
+    },
+    {
+        "name": "CSS Containment Level 1",
+        "status": {
+            "status": "Under Consideration",
+            "enabled-by-default": false
+        },
+        "url": "https://www.w3.org/TR/css-contain-1/",
+        "keywords": ["css containment", "contain", "content", "layout", "size", "paint"],
+        "category": "css",
+        "description": "Allows content to specify that an element’s subtree is independent of the rest of the page to allow for optimizations by the browser."
     },
     {
         "name": "CSS Font Display",
@@ -131,21 +142,6 @@
         "category": "css"
     },
     {
-        "name": "CSS Masking Level 1",
-        "url": "https://drafts.fxtf.org/css-masking-1/",
-        "status": {
-            "status": "In Development",
-            "enabled-by-default": true
-        },
-        "keywords": ["css masking", "clip-path", "clipping", "masking", "mask"],
-        "category": "css",
-        "contact": {
-            "name": "Dirk Schulze",
-            "twitter": "@dirkschulze",
-            "email": "dschulze@adobe.com"
-        }
-    },
-    {
         "name": "CSS Layout API Level 1",
         "status": {
             "status": "Under Consideration"
@@ -165,6 +161,21 @@
         "contact": {
             "name": "Oriol Brufau",
             "email": "obrufau@igalia.com"
+        }
+    },
+    {
+        "name": "CSS Masking Level 1",
+        "url": "https://drafts.fxtf.org/css-masking-1/",
+        "status": {
+            "status": "In Development",
+            "enabled-by-default": true
+        },
+        "keywords": ["css masking", "clip-path", "clipping", "masking", "mask"],
+        "category": "css",
+        "contact": {
+            "name": "Dirk Schulze",
+            "twitter": "@dirkschulze",
+            "email": "dschulze@adobe.com"
         }
     },
     {
@@ -530,8 +541,7 @@
     {
         "name": "Pointer Events Level 2",
         "status": {
-            "status": "In Development",
-            "enabled-by-default": false
+            "status": "Supported"
         },
         "url": "https://www.w3.org/TR/pointerevents/",
         "keywords": ["dom", "events", "touch", "mouse", "stylus"],
@@ -664,7 +674,7 @@
     {
         "name": "Web Animations",
         "status": {
-            "status": "Supported In Preview"
+            "status": "Supported"
         },
         "url": "https://www.w3.org/TR/web-animations-1/",
         "keywords": ["web animations"],
@@ -678,7 +688,7 @@
     {
         "name": "Web App Manifest",
         "status": {
-            "status": "In Development",
+            "status": "Partially Supported",
             "enabled-by-default": false
         },
         "url": "https://www.w3.org/TR/appmanifest/",
@@ -723,7 +733,7 @@
     {
         "name": "Web SQL Database",
         "status": {
-            "status": "Removed In Preview"
+            "status": "Removed"
         },
         "url": "https://dev.w3.org/html5/webdatabase/",
         "keywords": ["websql", "web sql", "db", "storage", "database"],
@@ -771,22 +781,6 @@
         }
     },
     {
-        "name": "WebVR",
-        "status": {
-            "status": "In Development",
-            "enabled-by-default": false
-        },
-        "url": "https://w3c.github.io/webvr/spec/1.1/",
-        "keywords": ["WebVR, VR"],
-        "category": "html",
-        "description": "A JavaScript API providing access to VR devices to allow developers to build comfortable VR experiences.",
-        "contact": {
-            "name": "Sergio Villar Senin",
-            "twitter": "@svillarsenin",
-            "email": "svillar@igalia.com"
-        }
-    },
-    {
         "name": "Worklets Level 1",
         "status": {
             "status": "Under Consideration"
@@ -815,6 +809,21 @@
         }
     },
     {
+        "name": "CSS Selector :focus-visible",
+        "status": {
+            "status": "Under Consideration",
+            "enabled-by-default": false
+        },
+        "url": "https://drafts.csswg.org/selectors-4/#the-focus-visible-pseudo",
+        "specification": "CSS Selectors Level 4",
+        "description": "The selector :focus-visible matches an element that has received focus and the user-agent has determined that the focus should be made visible on the element.",
+        "contact": {
+            "name": "Jonathan Davis",
+            "twitter": "@jonathandavis",
+            "email": "web-evangelist@apple.com"
+        }
+    },
+    {
         "name": "CSS Selector :focus-within",
         "status": {
             "status": "Supported",
@@ -830,6 +839,18 @@
             "email": "benjamin@webkit.org"
         }
     },
+    {
+        "name": "CSS Selector :is()",
+        "status": {
+            "status": "Supported",
+            "enabled-by-default": true
+        },
+        "url": "http://dev.w3.org/csswg/selectors-4/#matches",
+        "specification": "CSS Selectors Level 4",
+        "description": "The selector :is() takes a selector list as argument and is an element if any of them is (e.g. :is(article > section, #target)). When used for styling, the specificity of :is() is the higest specificity of all selectors in the selector list.",
+        "comment": "The pseudo classes <em>:visited</em> and <em>:link</em> are not supported inside :is()."
+    },
+    
     {
         "name": "CSS Selector :lang() level 4",
         "status": {
@@ -1222,7 +1243,7 @@
     {
         "name": "Resize Observer",
         "status": {
-            "status": "In Development",
+            "status": "Supported In Preview",
             "enabled-by-default": false
         },
         "url": "https://drafts.csswg.org/resize-observer/",
@@ -1457,6 +1478,23 @@
         "url": "https://wicg.github.io/webusb/",
         "keywords": ["USB"],
         "description": "An an API for securely providing access to Universal Serial Bus devices from web pages."
+    },
+    {
+        "name": "inert attribute",
+        "status": {
+            "status": "Under Consideration",
+            "enabled-by-default": false
+        },
+        "url": "https://whatpr.org/html/4288/interaction.html#the-inert-attribute",
+        "documentation-url": "https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/inert",
+        "webkit-url": "https://bugs.webkit.org/show_bug.cgi?id=165279",
+        "specification": "DOM",
+        "description": "An attribute that flags a node as inert to tell the user-agent to ignore the node for targeting user interaction events such as selecting text in the node, or find-in-page text search.",
+        "contact": {
+            "name": "Jonathan Davis",
+            "twitter": "@jonathandavis",
+            "email": "web-evangelist@apple.com"
+        }
     },
     {
         "name": "requestIdleCallback",

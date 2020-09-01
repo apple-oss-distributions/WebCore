@@ -38,12 +38,12 @@ namespace WebCore {
 
 WTF_MAKE_ISO_ALLOCATED_IMPL(MediaStreamAudioSourceNode);
 
-Ref<MediaStreamAudioSourceNode> MediaStreamAudioSourceNode::create(AudioContext& context, MediaStream& mediaStream, MediaStreamTrack& audioTrack)
+Ref<MediaStreamAudioSourceNode> MediaStreamAudioSourceNode::create(BaseAudioContext& context, MediaStream& mediaStream, MediaStreamTrack& audioTrack)
 {
     return adoptRef(*new MediaStreamAudioSourceNode(context, mediaStream, audioTrack));
 }
 
-MediaStreamAudioSourceNode::MediaStreamAudioSourceNode(AudioContext& context, MediaStream& mediaStream, MediaStreamTrack& audioTrack)
+MediaStreamAudioSourceNode::MediaStreamAudioSourceNode(BaseAudioContext& context, MediaStream& mediaStream, MediaStreamTrack& audioTrack)
     : AudioNode(context, context.sampleRate())
     , m_mediaStream(mediaStream)
     , m_audioTrack(audioTrack)
@@ -84,7 +84,7 @@ void MediaStreamAudioSourceNode::setFormat(size_t numberOfChannels, float source
     }
 
     // Synchronize with process().
-    std::lock_guard<Lock> lock(m_processMutex);
+    auto locker = holdLock(m_processMutex);
 
     m_sourceNumberOfChannels = numberOfChannels;
     m_sourceSampleRate = sourceSampleRate;

@@ -495,7 +495,7 @@ typedef (HTMLCanvasElement) WebGLCanvas;
     void blendFuncSeparate(GLenum srcRGB, GLenum dstRGB, GLenum srcAlpha, GLenum dstAlpha);
     void bufferData(GLenum target, BufferDataSource? data, GLenum usage);
     void bufferData(GLenum target, GLsizeiptr size, GLenum usage);
-    void bufferSubData(GLenum target, GLintptr offset, BufferDataSource? data);
+    void bufferSubData(GLenum target, GLintptr offset, BufferDataSource data);
 
     GLenum checkFramebufferStatus(GLenum target);
     void clear(GLbitfield mask);
@@ -505,13 +505,15 @@ typedef (HTMLCanvasElement) WebGLCanvas;
     void colorMask(GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha);
     void compileShader(WebGLShader? shader);
 
-    // compressedTexImage2D is split between WebGLRenderingContext and
-    // WebGL2RenderingContext because the ArrayBufferView overloads are
-    // indistinguishable.
+    void texImage2D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, ArrayBufferView? pixels);
+    [MayThrowException] void texImage2D(GLenum target, GLint level, GLenum internalformat, GLenum format, GLenum type, TexImageSource? source);
 
-    void compressedTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
-        GLsizei width, GLsizei height, GLenum format, ArrayBufferView data);
-    
+    void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, ArrayBufferView? pixels);
+    [MayThrowException] void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLenum format, GLenum type, TexImageSource? source);
+
+    void compressedTexImage2D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, ArrayBufferView data);
+    void compressedTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, ArrayBufferView data);
+
     void copyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, GLint border);
     void copyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height);
 
@@ -600,6 +602,9 @@ typedef (HTMLCanvasElement) WebGLCanvas;
     GLboolean isTexture(WebGLTexture? texture);
     void lineWidth(GLfloat width);
     void linkProgram(WebGLProgram? program);
+
+    [NewObject, Conditional=WEBXR] Promise<void> makeXRCompatible();
+
     void pixelStorei(GLenum pname, GLint param);
     void polygonOffset(GLfloat factor, GLfloat units);
 
