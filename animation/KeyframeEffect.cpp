@@ -69,7 +69,7 @@ using namespace JSC;
 static inline void invalidateElement(Element* element)
 {
     if (element)
-        element->invalidateStyle();
+        element->invalidateStyleInternal();
 }
 
 static inline String CSSPropertyIDToIDLAttributeName(CSSPropertyID cssPropertyId)
@@ -1237,6 +1237,7 @@ bool KeyframeEffect::isRunningAcceleratedAnimationForProperty(CSSPropertyID prop
 
 void KeyframeEffect::invalidate()
 {
+    LOG_WITH_STREAM(Animations, stream << "KeyframeEffect::invalidate on element " << ValueOrNull(targetElementOrPseudoElement()));
     invalidateElement(targetElementOrPseudoElement());
 }
 
@@ -1492,9 +1493,14 @@ TimingFunction* KeyframeEffect::timingFunctionForKeyframeAtIndex(size_t index) c
     return nullptr;
 }
 
+bool KeyframeEffect::canBeAccelerated() const
+{
+    return m_acceleratedPropertiesState != AcceleratedProperties::None && !m_someKeyframesUseStepsTimingFunction && !is<StepsTimingFunction>(timingFunction());
+}
+
 void KeyframeEffect::updateAcceleratedActions()
 {
-    if (m_acceleratedPropertiesState == AcceleratedProperties::None)
+    if (!canBeAccelerated())
         return;
 
     auto computedTiming = getComputedTiming();
@@ -1556,13 +1562,11 @@ void KeyframeEffect::animationDidPlay()
 void KeyframeEffect::animationDidChangeTimingProperties()
 {
     computeSomeKeyframesUseStepsTimingFunction();
-    // The timing function can affect whether the platform can run this as an accelerated animation.
-    m_runningAccelerated = RunningAccelerated::NotStarted;
 
-    // There is no need to update the animation if we're not playing already. If updating timing
-    // means we're moving into an active lexicalGlobalObject, we'll pick this up in apply().
-    if (isAboutToRunAccelerated())
-        addPendingAcceleratedAction(AcceleratedAction::UpdateTiming);
+    if (isRunningAccelerated() || isAboutToRunAccelerated())
+        addPendingAcceleratedAction(canBeAccelerated() ? AcceleratedAction::UpdateTiming : AcceleratedAction::Stop);
+    else if (canBeAccelerated())
+        m_runningAccelerated = RunningAccelerated::NotStarted;
 }
 
 void KeyframeEffect::animationWasCanceled()
@@ -1611,7 +1615,8 @@ void KeyframeEffect::applyPendingAcceleratedActions()
     auto timeOffset = animation()->currentTime().valueOr(0_s).seconds() - delay().seconds();
 
     auto startAnimation = [&]() -> RunningAccelerated {
-        renderer->animationFinished(m_blendingKeyframes.animationName());
+        if (m_runningAccelerated == RunningAccelerated::Yes)
+            renderer->animationFinished(m_blendingKeyframes.animationName());
 
         if (!m_blendingKeyframes.hasImplicitKeyframes())
             return renderer->startAnimation(timeOffset, backingAnimationForCompositedRenderer(), m_blendingKeyframes) ? RunningAccelerated::Yes : RunningAccelerated::No;
@@ -1660,8 +1665,6 @@ void KeyframeEffect::applyPendingAcceleratedActions()
 Ref<const Animation> KeyframeEffect::backingAnimationForCompositedRenderer() const
 {
     auto effectAnimation = animation();
-    if (is<DeclarativeAnimation>(effectAnimation))
-        return downcast<DeclarativeAnimation>(effectAnimation)->backingAnimation();
 
     // FIXME: The iterationStart and endDelay AnimationEffectTiming properties do not have
     // corresponding Animation properties.
@@ -1671,6 +1674,13 @@ Ref<const Animation> KeyframeEffect::backingAnimationForCompositedRenderer() con
     animation->setIterationCount(iterations());
     animation->setTimingFunction(timingFunction()->clone());
     animation->setPlaybackRate(effectAnimation->playbackRate());
+
+    if (m_blendingKeyframesSource == BlendingKeyframesSource::CSSTransition && is<CubicBezierTimingFunction>(timingFunction())) {
+        // FIXME: https://bugs.webkit.org/show_bug.cgi?id=215918
+        // If we are dealing with a CSS Transition and using a cubic bezier timing function, we set up
+        // the Animation object so that GraphicsLayerCA can work around a Core Animation limitation.
+        animation->setProperty({ Animation::TransitionMode::SingleProperty, *m_blendingKeyframes.properties().begin() });
+    }
 
     switch (fill()) {
     case FillMode::None:
@@ -1702,6 +1712,12 @@ Ref<const Animation> KeyframeEffect::backingAnimationForCompositedRenderer() con
         animation->setDirection(Animation::AnimationDirectionAlternateReverse);
         break;
     }
+
+    // In the case of CSS Animations, we must set the default timing function for keyframes to match
+    // the current value set for animation-timing-function on the target element which affects only
+    // keyframes and not the animation-wide timing.
+    if (is<CSSAnimation>(effectAnimation))
+        animation->setDefaultTimingFunctionForKeyframes(downcast<CSSAnimation>(effectAnimation)->backingAnimation().timingFunction());
 
     return animation;
 }

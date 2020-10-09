@@ -49,7 +49,9 @@ namespace WebCore {
     macro(ApplePaySetupFeature) \
     macro(AttachmentElement) \
     macro(Audio) \
+    macro(AudioBufferSourceNode) \
     macro(AudioContext) \
+    macro(AudioListener) \
     macro(AuthenticatorAssertionResponse) \
     macro(AuthenticatorAttestationResponse) \
     macro(AuthenticatorResponse) \
@@ -62,6 +64,7 @@ namespace WebCore {
     macro(Clients) \
     macro(Clipboard) \
     macro(ClipboardItem) \
+    macro(ConstantSourceNode) \
     macro(Credential) \
     macro(CredentialsContainer) \
     macro(CSSAnimation) \
@@ -228,6 +231,7 @@ namespace WebCore {
     macro(ServiceWorkerRegistration) \
     macro(ShadowRoot) \
     macro(StaticRange) \
+    macro(StereoPannerNode) \
     macro(StylePropertyMapReadOnly) \
     macro(StylePropertyMap) \
     macro(TextTrackCue) \
@@ -247,6 +251,8 @@ namespace WebCore {
     macro(Worklet) \
     macro(WorkletGlobalScope) \
     macro(WritableStream) \
+    macro(WritableStreamDefaultController) \
+    macro(WritableStreamDefaultWriter) \
     macro(XMLHttpRequest) \
     macro(XRBoundedReferenceSpace) \
     macro(XRFrame) \
@@ -269,11 +275,14 @@ namespace WebCore {
     macro(XRViewerPose) \
     macro(XRViewport) \
     macro(XRWebGLLayer) \
+    macro(abortAlgorithm) \
+    macro(abortSteps) \
     macro(appendFromJS) \
     macro(associatedReadableByteStreamController) \
     macro(autoAllocateChunkSize) \
     macro(backingMap) \
     macro(backingSet) \
+    macro(backpressure) \
     macro(blur) \
     macro(body) \
     macro(byobRequest) \
@@ -284,8 +293,11 @@ namespace WebCore {
     macro(cancelIdleCallback) \
     macro(cloneArrayBuffer) \
     macro(close) \
+    macro(closeAlgorithm) \
+    macro(closeRequest) \
     macro(closeRequested) \
     macro(closed) \
+    macro(closedPromise) \
     macro(closedPromiseCapability) \
     macro(collectMatchingElementsInFlatTree) \
     macro(consume) \
@@ -297,6 +309,7 @@ namespace WebCore {
     macro(customElements) \
     macro(disturbed) \
     macro(document) \
+    macro(errorSteps) \
     macro(failureKind) \
     macro(fetch) \
     macro(fetchRequest) \
@@ -309,6 +322,8 @@ namespace WebCore {
     macro(gpu) \
     macro(header) \
     macro(href) \
+    macro(inFlightCloseRequest) \
+    macro(inFlightWriteRequest) \
     macro(indexedDB) \
     macro(initializeWith) \
     macro(isDisturbed) \
@@ -356,6 +371,7 @@ namespace WebCore {
     macro(readableByteStreamAPIEnabled) \
     macro(readableStreamController) \
     macro(reader) \
+    macro(readyPromise) \
     macro(readyPromiseCapability) \
     macro(requestAnimationFrame) \
     macro(requestIdleCallback) \
@@ -375,6 +391,8 @@ namespace WebCore {
     macro(storedError) \
     macro(strategy) \
     macro(strategyHWM) \
+    macro(strategySizeAlgorithm) \
+    macro(stream) \
     macro(streamClosed) \
     macro(streamClosing) \
     macro(streamErrored) \
@@ -405,7 +423,11 @@ namespace WebCore {
     macro(webkitOfflineAudioContext) \
     macro(webkitOscillatorNode) \
     macro(window) \
+    macro(writeAlgorithm) \
     macro(writing) \
+    macro(writer) \
+    macro(pendingAbortRequest) \
+    macro(writeRequests) \
     WEBCORE_ADDITIONAL_PRIVATE_IDENTIFIERS(macro) \
 
 class WebCoreBuiltinNames {

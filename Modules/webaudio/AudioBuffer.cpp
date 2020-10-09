@@ -42,13 +42,34 @@ namespace WebCore {
 
 RefPtr<AudioBuffer> AudioBuffer::create(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate)
 {
-    if (sampleRate < 22050 || sampleRate > 96000 || numberOfChannels > AudioContext::maxNumberOfChannels() || !numberOfFrames)
+    if (!BaseAudioContext::isSupportedSampleRate(sampleRate) || !numberOfChannels || numberOfChannels > AudioContext::maxNumberOfChannels() || !numberOfFrames)
         return nullptr;
 
     auto buffer = adoptRef(*new AudioBuffer(numberOfChannels, numberOfFrames, sampleRate));
     if (!buffer->m_length)
         return nullptr;
 
+    return buffer;
+}
+
+ExceptionOr<Ref<AudioBuffer>> AudioBuffer::create(const AudioBufferOptions& options)
+{
+    if (!options.numberOfChannels)
+        return Exception { NotSupportedError, "Number of channels cannot be 0."_s };
+
+    if (options.numberOfChannels > AudioContext::maxNumberOfChannels())
+        return Exception { NotSupportedError, "Number of channels cannot be more than max supported."_s };
+    
+    if (!options.length)
+        return Exception { NotSupportedError, "Length must be at least 1."_s };
+    
+    if (!BaseAudioContext::isSupportedSampleRate(options.sampleRate))
+        return Exception { NotSupportedError, "Sample rate is not in the supported range."_s };
+    
+    auto buffer = adoptRef(*new AudioBuffer(options.numberOfChannels, options.length, options.sampleRate));
+    if (!buffer->length())
+        return Exception { NotSupportedError, "Channel was not able to be created."_s };
+    
     return buffer;
 }
 
@@ -60,9 +81,9 @@ RefPtr<AudioBuffer> AudioBuffer::createFromAudioFileData(const void* data, size_
     return adoptRef(*new AudioBuffer(*bus));
 }
 
-AudioBuffer::AudioBuffer(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate)
+AudioBuffer::AudioBuffer(unsigned numberOfChannels, size_t length, float sampleRate)
     : m_sampleRate(sampleRate)
-    , m_length(numberOfFrames)
+    , m_length(length)
 {
     m_channels.reserveCapacity(numberOfChannels);
 

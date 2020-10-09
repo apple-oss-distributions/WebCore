@@ -237,6 +237,15 @@ enum ContentSizeCategory {
 
 [
     ExportMacro=WEBCORE_TESTSUPPORT_EXPORT,
+    Conditional=ATTACHMENT_ELEMENT,
+    JSGenerateToJSObject,
+] dictionary AttachmentThumbnailInfo {
+    unsigned long width;
+    unsigned long height;
+};
+
+[
+    ExportMacro=WEBCORE_TESTSUPPORT_EXPORT,
     JSGenerateToJSObject,
 ] dictionary TextIndicatorOptions {
     boolean useBoundingRectAndPaintAllContentForComplexRanges = false;
@@ -437,6 +446,7 @@ enum ContentSizeCategory {
 
     void handleAcceptedCandidate(DOMString candidate, unsigned long location, unsigned long length);
     void changeSelectionListType();
+    void changeBackToReplacedString(DOMString replacedString);
 
     boolean isOverwriteModeEnabled();
     void toggleOverwriteModeEnabled();
@@ -650,6 +660,9 @@ enum ContentSizeCategory {
     [Conditional=VIDEO] boolean elementShouldBufferData(HTMLMediaElement media);
     [Conditional=VIDEO] DOMString elementBufferingPolicy(HTMLMediaElement media);
     [Conditional=VIDEO] double privatePlayerVolume(HTMLMediaElement media);
+    [Conditional=VIDEO, MayThrowException] void setOverridePreferredDynamicRangeMode(HTMLMediaElement media, DOMString mode);
+
+    [MayThrowException] void setIsPlayingToBluetoothOverride(optional boolean? isPlaying = null);
 
     [Conditional=LEGACY_ENCRYPTED_MEDIA] void initializeMockCDM();
     [Conditional=ENCRYPTED_MEDIA] MockCDMFactory registerMockCDM();
@@ -962,4 +975,6 @@ enum ContentSizeCategory {
     [Conditional=ENCRYPTED_MEDIA] unsigned long mediaKeySessionInternalInstanceSessionObjectRefCount(MediaKeySession session);
 
     void setContentSizeCategory(ContentSizeCategory category);
+
+    [Conditional=ATTACHMENT_ELEMENT, MayThrowException] AttachmentThumbnailInfo attachmentThumbnailInfo(HTMLAttachmentElement element);
 };

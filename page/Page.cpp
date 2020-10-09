@@ -1229,11 +1229,17 @@ void Page::didStartProvisionalLoad()
         m_performanceMonitor->didStartProvisionalLoad();
 }
 
-void Page::didFinishLoad()
+void Page::didCommitLoad()
 {
 #if ENABLE(EDITABLE_REGION)
     m_isEditableRegionEnabled = false;
 #endif
+    resetSeenPlugins();
+    resetSeenMediaEngines();
+}
+
+void Page::didFinishLoad()
+{
     resetRelevantPaintedObjectCounter();
 
     if (m_performanceMonitor)
@@ -1431,11 +1437,12 @@ void Page::updateRendering()
         return;
     }
 
+    SetForScope<bool> change(m_inUpdateRendering, true);
+    m_lastRenderingUpdateTimestamp = MonotonicTime::now();
+
     bool isSVGImagePage = chrome().client().isSVGImageChromeClient();
     if (!isSVGImagePage)
         tracePoint(RenderingUpdateStart);
-
-    SetForScope<bool> change(m_inUpdateRendering, true);
 
     layoutIfNeeded();
 

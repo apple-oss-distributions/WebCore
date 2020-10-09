@@ -46,6 +46,7 @@
 #include "Frame.h"
 #include "FrameLoader.h"
 #include "FrameSelection.h"
+#include "GeometryUtilities.h"
 #include "HTMLAreaElement.h"
 #include "HTMLAudioElement.h"
 #include "HTMLDetailsElement.h"
@@ -72,6 +73,7 @@
 #include "NodeList.h"
 #include "Page.h"
 #include "ProgressTracker.h"
+#include "Range.h"
 #include "RenderButton.h"
 #include "RenderFileUploadControl.h"
 #include "RenderHTMLCanvas.h"
@@ -1948,7 +1950,7 @@ AXCoreObject::AccessibilityChildrenVector AccessibilityRenderObject::documentLin
         } else {
             auto* parent = current->parentNode();
             if (is<HTMLAreaElement>(*current) && is<HTMLMapElement>(parent)) {
-                auto& areaObject = downcast<AccessibilityImageMapLink>(*axObjectCache()->getOrCreate(AccessibilityRole::ImageMapLink));
+                auto& areaObject = downcast<AccessibilityImageMapLink>(*axObjectCache()->create(AccessibilityRole::ImageMapLink));
                 HTMLMapElement& map = downcast<HTMLMapElement>(*parent);
                 areaObject.setHTMLAreaElement(downcast<HTMLAreaElement>(current));
                 areaObject.setHTMLMapElement(&map);
@@ -2119,9 +2121,8 @@ static IntRect boundsForRects(const LayoutRect& rect1, const LayoutRect& rect2, 
     ourRect.unite(rect2);
 
     // If the rectangle spans lines and contains multiple text characters, use the range's bounding box intead.
-    if (rect1.maxY() != rect2.maxY()) {
-        LayoutRect boundingBox = createLiveRange(dataRange)->absoluteBoundingBox();
-        if (characterCount(dataRange) > 1 && !boundingBox.isEmpty())
+    if (rect1.maxY() != rect2.maxY() && characterCount(dataRange) > 1) {
+        if (auto boundingBox = unionRect(RenderObject::absoluteTextRects(dataRange)); !boundingBox.isEmpty())
             ourRect = boundingBox;
     }
 
@@ -2198,10 +2199,10 @@ bool AccessibilityRenderObject::isVisiblePositionRangeInDifferentDocument(const 
     
     return false;
 }
-    
+
 void AccessibilityRenderObject::setSelectedVisiblePositionRange(const VisiblePositionRange& range) const
 {
-    if (range.start.isNull() || range.end.isNull())
+    if (range.isNull())
         return;
 
     // In WebKit1, when the top web area sets the selection to be an input element in an iframe, the caret will disappear.
@@ -2580,49 +2581,6 @@ AccessibilityObject* AccessibilityRenderObject::activeDescendant() const
     return nullptr;
 }
 
-void AccessibilityRenderObject::handleAriaExpandedChanged()
-{
-    // This object might be deleted under the call to the parentObject() method.
-    auto protectedThis = makeRef(*this);
-    
-    // Find if a parent of this object should handle aria-expanded changes.
-    AccessibilityObject* containerParent = this->parentObject();
-    while (containerParent) {
-        bool foundParent = false;
-        
-        switch (containerParent->roleValue()) {
-        case AccessibilityRole::Tree:
-        case AccessibilityRole::TreeGrid:
-        case AccessibilityRole::Grid:
-        case AccessibilityRole::Table:
-        case AccessibilityRole::Browser:
-            foundParent = true;
-            break;
-        default:
-            break;
-        }
-        
-        if (foundParent)
-            break;
-        
-        containerParent = containerParent->parentObject();
-    }
-    
-    // Post that the row count changed.
-    AXObjectCache* cache = axObjectCache();
-    if (!cache)
-        return;
-    
-    if (containerParent)
-        cache->postNotification(containerParent, document(), AXObjectCache::AXRowCountChanged);
-
-    // Post that the specific row either collapsed or expanded.
-    if (roleValue() == AccessibilityRole::Row || roleValue() == AccessibilityRole::TreeItem)
-        cache->postNotification(this, document(), isExpanded() ? AXObjectCache::AXRowExpanded : AXObjectCache::AXRowCollapsed);
-    else
-        cache->postNotification(this, document(), AXObjectCache::AXExpandedChanged);
-}
-    
 RenderObject* AccessibilityRenderObject::targetElementForActiveDescendant(const QualifiedName& attributeName, AccessibilityObject* activeDescendant) const
 {
     AccessibilityObject::AccessibilityChildrenVector elements;
@@ -3172,7 +3130,7 @@ void AccessibilityRenderObject::addImageMapChildren()
         // add an <area> element for this child if it has a link
         if (!area.isLink())
             continue;
-        auto& areaObject = downcast<AccessibilityImageMapLink>(*axObjectCache()->getOrCreate(AccessibilityRole::ImageMapLink));
+        auto& areaObject = downcast<AccessibilityImageMapLink>(*axObjectCache()->create(AccessibilityRole::ImageMapLink));
         areaObject.setHTMLAreaElement(&area);
         areaObject.setHTMLMapElement(map);
         areaObject.setParent(this);
@@ -3207,7 +3165,7 @@ void AccessibilityRenderObject::addTextFieldChildren()
     if (!is<SpinButtonElement>(spinButtonElement))
         return;
 
-    auto& axSpinButton = downcast<AccessibilitySpinButton>(*axObjectCache()->getOrCreate(AccessibilityRole::SpinButton));
+    auto& axSpinButton = downcast<AccessibilitySpinButton>(*axObjectCache()->create(AccessibilityRole::SpinButton));
     axSpinButton.setSpinButtonElement(downcast<SpinButtonElement>(spinButtonElement));
     axSpinButton.setParent(this);
     m_children.append(&axSpinButton);

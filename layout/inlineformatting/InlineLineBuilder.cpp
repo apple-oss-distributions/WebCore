@@ -228,8 +228,8 @@ void LineBuilder::justifyRuns(InlineLayoutUnit availableWidth)
     // Need to fix up the last run's trailing expansion.
     if (lastRunWithContent && lastRunWithContent->hasExpansionOpportunity()) {
         // Turn off the trailing bits first and add the forbid trailing expansion.
-        auto leadingExpansion = lastRunWithContent->expansionBehavior() & LeadingExpansionMask;
-        lastRunWithContent->setExpansionBehavior(leadingExpansion | ForbidTrailingExpansion);
+        auto leftExpansion = lastRunWithContent->expansionBehavior() & LeftExpansionMask;
+        lastRunWithContent->setExpansionBehavior(leftExpansion | ForbidRightExpansion);
     }
     // Nothing to distribute?
     if (!expansionOpportunityCount)
@@ -582,7 +582,7 @@ void LineBuilder::adjustBaselineAndLineHeight(const Run& run, const LineBoxBuild
     auto& style = layoutBox.style();
     if (run.isContainerStart()) {
         // Inline containers stretch the line by their font size.
-        // Vertical margins, paddings and borders don't contribute to the line height.
+        // Vertical margins, padding and borders don't contribute to the line height.
         auto& fontMetrics = style.fontMetrics();
         if (style.verticalAlign() == VerticalAlign::Baseline) {
             auto halfLeading = halfLeadingMetrics(fontMetrics, style.computedLineHeight());
@@ -825,7 +825,7 @@ void LineBuilder::Run::expand(const InlineTextItem& inlineTextItem, InlineLayout
 
     if (m_trailingWhitespaceType == TrailingWhitespace::None) {
         m_trailingWhitespaceWidth = { };
-        setExpansionBehavior(AllowLeadingExpansion | AllowTrailingExpansion);
+        setExpansionBehavior(AllowLeftExpansion | AllowRightExpansion);
         m_textContent->expand(inlineTextItem.length());
         return;
     }
@@ -879,7 +879,7 @@ void LineBuilder::Run::visuallyCollapseTrailingWhitespace()
         ASSERT(m_expansionOpportunityCount);
         m_expansionOpportunityCount--;
     }
-    setExpansionBehavior(AllowLeadingExpansion | AllowTrailingExpansion);
+    setExpansionBehavior(AllowLeftExpansion | AllowRightExpansion);
 }
 
 void LineBuilder::Run::setExpansionBehavior(ExpansionBehavior expansionBehavior)

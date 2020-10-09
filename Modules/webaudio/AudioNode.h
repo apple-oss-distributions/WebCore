@@ -61,9 +61,7 @@ class AudioNode
 public:
     enum { ProcessingSizeInFrames = 128 };
 
-    // FIXME: Remove once dependencies on old constructor are removed.
-    AudioNode(BaseAudioContext&, float sampleRate);
-    AudioNode(BaseAudioContext&);
+    explicit AudioNode(BaseAudioContext&);
     virtual ~AudioNode();
 
     BaseAudioContext& context() { return m_context.get(); }
@@ -91,6 +89,8 @@ public:
         NodeTypeDynamicsCompressor,
         NodeTypeWaveShaper,
         NodeTypeBasicInspector,
+        NodeTypeConstant,
+        NodeTypeStereo,
         NodeTypeEnd
     };
 
@@ -134,11 +134,18 @@ public:
     AudioNodeOutput* output(unsigned);
 
     // Called from main thread by corresponding JavaScript methods.
-    virtual ExceptionOr<void> connect(AudioNode&, unsigned outputIndex, unsigned inputIndex);
+    ExceptionOr<void> connect(AudioNode&, unsigned outputIndex, unsigned inputIndex);
     ExceptionOr<void> connect(AudioParam&, unsigned outputIndex);
-    virtual ExceptionOr<void> disconnect(unsigned outputIndex);
 
-    virtual float sampleRate() const { return m_sampleRate; }
+    void disconnect();
+    ExceptionOr<void> disconnect(unsigned output);
+    ExceptionOr<void> disconnect(AudioNode& destinationNode);
+    ExceptionOr<void> disconnect(AudioNode& destinationNode, unsigned output);
+    ExceptionOr<void> disconnect(AudioNode& destinationNode, unsigned output, unsigned input);
+    ExceptionOr<void> disconnect(AudioParam& destinationParam);
+    ExceptionOr<void> disconnect(AudioParam& destinationParam, unsigned output);
+
+    virtual float sampleRate() const;
 
     // processIfNecessary() is called by our output(s) when the rendering graph needs this AudioNode to process.
     // This method ensures that the AudioNode will only process once per rendering time quantum even if it's called repeatedly.
@@ -186,6 +193,14 @@ protected:
     // Inputs and outputs must be created before the AudioNode is initialized.
     void addInput(std::unique_ptr<AudioNodeInput>);
     void addOutput(std::unique_ptr<AudioNodeOutput>);
+
+    struct DefaultAudioNodeOptions {
+        unsigned channelCount;
+        ChannelCountMode channelCountMode;
+        ChannelInterpretation channelInterpretation;
+    };
+
+    ExceptionOr<void> handleAudioNodeOptions(const AudioNodeOptions&, const DefaultAudioNodeOptions&);
     
     // Called by processIfNecessary() to cause all parts of the rendering graph connected to us to process.
     // Each rendering quantum, the audio data for each of the AudioNode's inputs will be available after this method is called.
@@ -202,6 +217,10 @@ protected:
     WTFLogChannel& logChannel() const final;
 #endif
 
+    void initializeDefaultNodeOptions(unsigned count, ChannelCountMode, ChannelInterpretation);
+
+    virtual void updatePullStatus() { }
+
 private:
     // EventTarget
     EventTargetInterface eventTargetInterface() const override;
@@ -210,9 +229,6 @@ private:
     volatile bool m_isInitialized { false };
     NodeType m_nodeType { NodeTypeUnknown };
     Ref<BaseAudioContext> m_context;
-
-    // FIXME: Remove m_sampleRate once old constructor is removed.
-    float m_sampleRate;
 
     Vector<std::unique_ptr<AudioNodeInput>> m_inputs;
     Vector<std::unique_ptr<AudioNodeOutput>> m_outputs;
@@ -241,10 +257,9 @@ private:
     const void* m_logIdentifier;
 #endif
 
-protected:
-    unsigned m_channelCount;
-    ChannelCountMode m_channelCountMode;
-    ChannelInterpretation m_channelInterpretation;
+    unsigned m_channelCount { 2 };
+    ChannelCountMode m_channelCountMode { ChannelCountMode::Max };
+    ChannelInterpretation m_channelInterpretation { ChannelInterpretation::Speakers };
 };
 
 String convertEnumerationToString(AudioNode::NodeType);

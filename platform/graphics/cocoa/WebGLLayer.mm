@@ -57,6 +57,7 @@
 #import <ANGLE/gl2ext_angle.h>
 #endif
 
+#if USE(ANGLE)
 namespace {
     class ScopedRestoreTextureBinding {
         WTF_MAKE_NONCOPYABLE(ScopedRestoreTextureBinding);
@@ -77,6 +78,7 @@ namespace {
         GLint m_bindingValue { 0 };
     };
 }
+#endif
 
 @implementation WebGLLayer {
     float _devicePixelRatio;
@@ -204,10 +206,10 @@ static void freeData(void *, const void *data, size_t /* size */)
         if (_latchedPbuffer) {
             WTF::Optional<ScopedRestoreTextureBinding> restoreBinding;
             // We don't need to restore GL_TEXTURE_RECTANGLE because it's not accessible from user code.
-            if (WebCore::GraphicsContextGL::IOSurfaceTextureTarget != WebCore::GraphicsContextGL::TEXTURE_RECTANGLE_ARB)
-                restoreBinding.emplace(WebCore::GraphicsContextGL::IOSurfaceTextureTargetQuery, WebCore::GraphicsContextGL::IOSurfaceTextureTarget);
+            if (WebCore::GraphicsContextGL::IOSurfaceTextureTarget() != WebCore::GraphicsContextGL::TEXTURE_RECTANGLE_ARB)
+                restoreBinding.emplace(WebCore::GraphicsContextGL::IOSurfaceTextureTargetQuery(), WebCore::GraphicsContextGL::IOSurfaceTextureTarget());
             GCGLenum texture = _context->platformTexture();
-            gl::BindTexture(WebCore::GraphicsContextGL::IOSurfaceTextureTarget, texture);
+            gl::BindTexture(WebCore::GraphicsContextGL::IOSurfaceTextureTarget(), texture);
             if (!EGL_ReleaseTexImage(_eglDisplay, _latchedPbuffer, EGL_BACK_BUFFER)) {
                 // FIXME: report error.
                 notImplemented();
@@ -294,7 +296,7 @@ static void freeData(void *, const void *data, size_t /* size */)
         EGL_WIDTH, size.width(),
         EGL_HEIGHT, size.height(),
         EGL_IOSURFACE_PLANE_ANGLE, 0,
-        EGL_TEXTURE_TARGET, WebCore::GraphicsContextGL::EGLIOSurfaceTextureTarget,
+        EGL_TEXTURE_TARGET, WebCore::GraphicsContextGL::EGLIOSurfaceTextureTarget(),
         EGL_TEXTURE_INTERNAL_FORMAT_ANGLE, usingAlpha ? GL_BGRA_EXT : GL_RGB,
         EGL_TEXTURE_FORMAT, EGL_TEXTURE_RGBA,
         EGL_TEXTURE_TYPE_ANGLE, GL_UNSIGNED_BYTE,
@@ -333,12 +335,12 @@ static void freeData(void *, const void *data, size_t /* size */)
 #elif USE(ANGLE)
     WTF::Optional<ScopedRestoreTextureBinding> restoreBinding;
     // We don't need to restore GL_TEXTURE_RECTANGLE because it's not accessible from user code.
-    if (WebCore::GraphicsContextGL::IOSurfaceTextureTarget != WebCore::GraphicsContextGL::TEXTURE_RECTANGLE_ARB)
-        restoreBinding.emplace(WebCore::GraphicsContextGL::IOSurfaceTextureTargetQuery, WebCore::GraphicsContextGL::IOSurfaceTextureTarget);
+    if (WebCore::GraphicsContextGL::IOSurfaceTextureTarget() != WebCore::GraphicsContextGL::TEXTURE_RECTANGLE_ARB)
+        restoreBinding.emplace(WebCore::GraphicsContextGL::IOSurfaceTextureTargetQuery(), WebCore::GraphicsContextGL::IOSurfaceTextureTarget());
 
     GCGLenum texture = _context->platformTexture();
 
-    gl::BindTexture(WebCore::GraphicsContextGL::IOSurfaceTextureTarget, texture);
+    gl::BindTexture(WebCore::GraphicsContextGL::IOSurfaceTextureTarget(), texture);
 
     if (_latchedPbuffer) {
         if (!EGL_ReleaseTexImage(_eglDisplay, _latchedPbuffer, EGL_BACK_BUFFER)) {

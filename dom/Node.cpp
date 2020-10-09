@@ -1584,7 +1584,7 @@ ExceptionOr<void> Node::setTextContent(const String& text)
         if (text.isEmpty())
             container.replaceAllChildren(nullptr);
         else
-            container.replaceAllChildren(document().createTextNode(text));
+            container.replaceAllChildrenWithNewText(text);
         return { };
     }
     case DOCUMENT_NODE:
@@ -2070,6 +2070,10 @@ void Node::moveNodeToNewDocument(Document& oldDocument, Document& newDocument)
         if (auto* cache = oldDocument.existingAXObjectCache())
             cache->remove(*this);
     }
+
+    auto* textManipulationController = oldDocument.textManipulationControllerIfExists();
+    if (UNLIKELY(textManipulationController))
+        textManipulationController->removeNode(this);
 
     if (auto* eventTargetData = this->eventTargetData()) {
         if (!eventTargetData->eventListenerMap.isEmpty()) {

@@ -547,6 +547,8 @@ public:
 #if PLATFORM(IOS_FAMILY)
     virtual void collectSelectionRects(Vector<SelectionRect>&, unsigned startOffset = 0, unsigned endOffset = std::numeric_limits<unsigned>::max());
     virtual void absoluteQuadsForSelection(Vector<FloatQuad>& quads) const { absoluteQuads(quads); }
+    WEBCORE_EXPORT static Vector<SelectionRect> collectSelectionRects(const SimpleRange&);
+    WEBCORE_EXPORT static Vector<SelectionRect> collectSelectionRectsWithoutUnionInteriorLines(const SimpleRange&);
 #endif
 
     virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint&) const { }
@@ -558,8 +560,17 @@ public:
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* /*wasFixed*/ = nullptr) const { }
     virtual void absoluteFocusRingQuads(Vector<FloatQuad>&);
 
-    WEBCORE_EXPORT static Vector<FloatQuad> absoluteTextQuads(const SimpleRange&, bool useSelectionHeight = false);
-    WEBCORE_EXPORT static Vector<IntRect> absoluteTextRects(const SimpleRange&, bool useSelectionHeight = false);
+    enum class BoundingRectBehavior : uint8_t {
+        RespectClipping = 1 << 0,
+        UseVisibleBounds = 1 << 1,
+        IgnoreTinyRects = 1 << 2,
+        IgnoreEmptyTextSelections = 1 << 3,
+        UseSelectionHeight = 1 << 4,
+    };
+    WEBCORE_EXPORT static Vector<FloatQuad> absoluteTextQuads(const SimpleRange&, OptionSet<BoundingRectBehavior> = { });
+    WEBCORE_EXPORT static Vector<IntRect> absoluteTextRects(const SimpleRange&, OptionSet<BoundingRectBehavior> = { });
+    WEBCORE_EXPORT static Vector<FloatRect> absoluteBorderAndTextRects(const SimpleRange&, OptionSet<BoundingRectBehavior> = { });
+    static Vector<FloatRect> clientBorderAndTextRects(const SimpleRange&);
 
     // the rect that will be painted if this object is passed as the paintingRoot
     WEBCORE_EXPORT LayoutRect paintingRootRect(LayoutRect& topLevelRect);
@@ -757,6 +768,14 @@ private:
     void addAbsoluteRectForLayer(LayoutRect& result);
     void setLayerNeedsFullRepaint();
     void setLayerNeedsFullRepaintForPositionedMovementLayout();
+
+#if PLATFORM(IOS_FAMILY)
+    struct SelectionRects {
+        Vector<SelectionRect> rects;
+        int maxLineNumber;
+    };
+    WEBCORE_EXPORT static SelectionRects collectSelectionRectsInternal(const SimpleRange&);
+#endif
 
     Node* generatingPseudoHostElement() const;
 

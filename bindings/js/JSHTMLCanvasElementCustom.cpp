@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007 Alexey Proskuryakov (ap@nypop.com)
+ * Copyright (C) 2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -20,35 +20,20 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#pragma once
+#include "config.h"
+#include "JSHTMLCanvasElement.h"
 
-#include "ExceptionOr.h"
-#include "XPathNSResolver.h"
-#include <JavaScriptCore/JSCInlines.h>
-#include <JavaScriptCore/JSCJSValue.h>
-#include <JavaScriptCore/Strong.h>
-#include <JavaScriptCore/StrongInlines.h>
+#include <JavaScriptCore/SlotVisitor.h>
+#include <JavaScriptCore/SlotVisitorInlines.h>
 
 namespace WebCore {
 
-class JSDOMWindow;
-
-class JSCustomXPathNSResolver final : public XPathNSResolver {
-public:
-    static ExceptionOr<Ref<JSCustomXPathNSResolver>> create(JSC::JSGlobalObject&, JSC::JSValue);
-    virtual ~JSCustomXPathNSResolver();
-
-private:
-    JSCustomXPathNSResolver(JSC::VM&, JSC::JSObject*, JSDOMWindow*);
-
-    String lookupNamespaceURI(const String& prefix) final;
-
-    // JSCustomXPathNSResolvers are always temporary so using a Strong reference is safe here.
-    JSC::Strong<JSC::JSObject> m_customResolver;
-    JSC::Strong<JSDOMWindow> m_globalObject;
-};
+void JSHTMLCanvasElement::visitAdditionalChildren(SlotVisitor& visitor)
+{
+    visitor.addOpaqueRoot(static_cast<CanvasBase*>(&wrapped()));
+}
 
 } // namespace WebCore

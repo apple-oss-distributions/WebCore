@@ -1048,7 +1048,7 @@ void DOMWindow::close()
     if (!frame->loader().shouldClose())
         return;
 
-    ResourceLoadObserver::shared().updateCentralStatisticsStore();
+    ResourceLoadObserver::shared().updateCentralStatisticsStore([] { });
 
     page->setIsClosing();
     page->chrome().closeWindowSoon();
@@ -1068,6 +1068,9 @@ void DOMWindow::print()
         printErrorMessage("Use of window.print is not allowed while unloading a page.");
         return;
     }
+
+    if (page->isControlledByAutomation())
+        return;
 
     if (frame->loader().activeDocumentLoader()->isLoading()) {
         m_shouldPrintWhenFinishedLoading = true;

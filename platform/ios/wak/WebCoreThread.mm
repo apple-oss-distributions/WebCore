@@ -30,6 +30,7 @@
 
 #import "CommonVM.h"
 #import "FloatingPointEnvironment.h"
+#import "GraphicsContextGLOpenGL.h"
 #import "Logging.h"
 #import "RuntimeApplicationChecks.h"
 #import "ThreadGlobalData.h"
@@ -58,6 +59,26 @@
 #define LOG_RELEASES 0
 
 #define DistantFuture   (86400.0 * 2000 * 365.2425 + 86400.0)   // same as +[NSDate distantFuture]
+
+namespace {
+// Release global state that is accessed from both web thread as well
+// as any client thread that calls into WebKit.
+void ReleaseWebThreadGlobalState()
+{
+    // GraphicsContextGLOpenGL current context is owned by the web thread lock. Release the context
+    // before the lock is released.
+
+    // In single-threaded environments we do not need to unset the context, as there should not be access from
+    // multiple threads.
+    ASSERT(WebThreadIsEnabled());
+    using ReleaseBehavior = WebCore::GraphicsContextGLOpenGL::ReleaseBehavior;
+    // For non-web threads, we don't know if we ever see another call from the thread.
+    ReleaseBehavior releaseBehavior =
+        WebThreadIsCurrent() ? ReleaseBehavior::PreserveThreadResources : ReleaseBehavior::ReleaseThreadResources;
+    WebCore::GraphicsContextGLOpenGL::releaseCurrentContext(releaseBehavior);
+}
+
+}
 
 static const constexpr Seconds DelegateWaitInterval { 10_s };
 
@@ -116,6 +137,7 @@ static BOOL sendingDelegateMessage;
 #endif
 
 static CFRunLoopObserverRef mainRunLoopAutoUnlockObserver;
+static BOOL mainThreadHasPendingAutoUnlock;
 
 static Lock startupLock;
 static StaticCondition startupCondition;
@@ -447,7 +469,11 @@ static void MainRunLoopAutoUnlock(CFRunLoopObserverRef, CFRunLoopActivity, void*
 
     if (sMainThreadModalCount)
         return;
-    
+
+    if (!mainThreadHasPendingAutoUnlock)
+        return;
+
+    mainThreadHasPendingAutoUnlock = NO;
     CFRunLoopRemoveObserver(CFRunLoopGetCurrent(), mainRunLoopAutoUnlockObserver, kCFRunLoopCommonModes);
 
     _WebThreadUnlock();
@@ -458,6 +484,7 @@ static void _WebThreadAutoLock(void)
     ASSERT(!WebThreadIsCurrent());
 
     if (!mainThreadLockCount) {
+        mainThreadHasPendingAutoUnlock = YES;
         CFRunLoopAddObserver(CFRunLoopGetCurrent(), mainRunLoopAutoUnlockObserver, kCFRunLoopCommonModes);    
         _WebThreadLock();
         CFRunLoopWakeUp(CFRunLoopGetMain());
@@ -772,6 +799,8 @@ void WebThreadUnlockFromAnyThread(void)
     if (!webThreadStarted)
         return;
     ASSERT(!WebThreadIsCurrent());
+    ReleaseWebThreadGlobalState();
+
     // No-op except from a secondary thread.
     if (pthread_main_np())
         return;
@@ -793,6 +822,8 @@ void WebThreadUnlockGuardForMail(void)
 
 void _WebThreadUnlock()
 {
+    ReleaseWebThreadGlobalState();
+
 #if LOG_WEB_LOCK || LOG_MAIN_THREAD_LOCKING
     lockCount--;
 #if LOG_WEB_LOCK

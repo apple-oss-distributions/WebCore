@@ -70,7 +70,7 @@ public:
     const WebXRRenderState& renderState() const;
     const WebXRInputSourceArray& inputSources() const;
 
-    void updateRenderState(const XRRenderStateInit&);
+    ExceptionOr<void> updateRenderState(const XRRenderStateInit&);
     void requestReferenceSpace(XRReferenceSpaceType, RequestReferenceSpacePromise&&);
 
     unsigned requestAnimationFrame(Ref<XRFrameRequestCallback>&&);
@@ -109,7 +109,7 @@ private:
     XREnvironmentBlendMode m_environmentBlendMode;
     XRInteractionMode m_interactionMode;
     XRVisibilityState m_visibilityState;
-    RefPtr<WebXRInputSourceArray> m_inputSources;
+    Ref<WebXRInputSourceArray> m_inputSources;
     bool m_ended { false };
 
     WebXRSystem& m_xrSystem;

@@ -119,6 +119,13 @@ public:
 #endif
 
     bool makeContextCurrent();
+#if PLATFORM(IOS_FAMILY) && USE(ANGLE)
+    enum class ReleaseBehavior {
+        PreserveThreadResources,
+        ReleaseThreadResources
+    };
+    static bool releaseCurrentContext(ReleaseBehavior);
+#endif
 
     void addClient(Client& client) { m_clients.add(&client); }
     void removeClient(Client& client) { m_clients.remove(&client); }
@@ -314,8 +321,6 @@ public:
     void polygonOffset(GCGLfloat factor, GCGLfloat units) final;
 
     void readPixels(GCGLint x, GCGLint y, GCGLsizei width, GCGLsizei height, GCGLenum format, GCGLenum type, void* data) final;
-
-    void releaseShaderCompiler();
 
     void renderbufferStorage(GCGLenum target, GCGLenum internalformat, GCGLsizei width, GCGLsizei height) final;
     void sampleCoverage(GCGLclampf value, GCGLboolean invert) final;
@@ -606,7 +611,7 @@ public:
 
     class ImageExtractor {
     public:
-        ImageExtractor(Image*, DOMSource, bool premultiplyAlpha, bool ignoreGammaAndColorProfile);
+        ImageExtractor(Image*, DOMSource, bool premultiplyAlpha, bool ignoreGammaAndColorProfile, bool ignoreNativeImageAlphaPremultiplication);
 
         // Each platform must provide an implementation of this method to deallocate or release resources
         // associated with the image if needed.
@@ -624,7 +629,7 @@ public:
         // Each platform must provide an implementation of this method.
         // Extracts the image and keeps track of its status, such as width, height, Source Alignment, format and AlphaOp etc,
         // needs to lock the resources or relevant data if needed and returns true upon success
-        bool extractImage(bool premultiplyAlpha, bool ignoreGammaAndColorProfile);
+        bool extractImage(bool premultiplyAlpha, bool ignoreGammaAndColorProfile, bool ignoreNativeImageAlphaPremultiplication);
 
 #if USE(CAIRO)
         RefPtr<cairo_surface_t> m_imageSurface;

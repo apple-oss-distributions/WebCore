@@ -78,7 +78,10 @@
 #include "HTMLMediaElement.h"
 #include "HTMLMeterElement.h"
 #include "HTMLNames.h"
+#include "HTMLOptGroupElement.h"
+#include "HTMLOptionElement.h"
 #include "HTMLParserIdioms.h"
+#include "HTMLSelectElement.h"
 #include "HTMLTextFormControlElement.h"
 #include "InlineElementBox.h"
 #include "MathMLElement.h"
@@ -292,18 +295,21 @@ bool AXObjectCache::isNodeVisible(Node* node) const
 {
     if (!is<Element>(node))
         return false;
-    
+
     RenderObject* renderer = node->renderer();
     if (!renderer)
         return false;
+
     const RenderStyle& style = renderer->style();
-    if (style.display() == DisplayType::None || style.visibility() != Visibility::Visible)
+    if (style.display() == DisplayType::None
+        || style.visibility() != Visibility::Visible
+        || !style.opacity())
         return false;
-    
+
     // We also need to consider aria hidden status.
     if (!isNodeAriaVisible(node))
         return false;
-    
+
     return true;
 }
 
@@ -640,6 +646,24 @@ AccessibilityObject* AXObjectCache::getOrCreate(Node* node)
     if (!node->parentElement())
         return nullptr;
     
+    bool isOptionElement = is<HTMLOptionElement>(*node);
+    if (isOptionElement || is<HTMLOptGroupElement>(*node)) {
+        auto select = isOptionElement
+            ? downcast<HTMLOptionElement>(*node).ownerSelectElement()
+            : downcast<HTMLOptGroupElement>(*node).ownerSelectElement();
+        if (!select)
+            return nullptr;
+        RefPtr<AccessibilityObject> object;
+        if (select->usesMenuList()) {
+            if (!isOptionElement)
+                return nullptr;
+            object = AccessibilityMenuListOption::create(downcast<HTMLOptionElement>(*node));
+        } else
+            object = AccessibilityListBoxOption::create(downcast<HTMLElement>(*node));
+        cacheAndInitializeWrapper(object.get(), node);
+        return object.get();
+    }
+
     // It's only allowed to create an AccessibilityObject from a Node if it's in a canvas subtree.
     // Or if it's a hidden element, but we still want to expose it because of other ARIA attributes.
     bool inCanvasSubtree = lineageOfType<HTMLCanvasElement>(*node->parentElement()).first();
@@ -801,15 +825,12 @@ AccessibilityObject* AXObjectCache::rootObjectForFrame(Frame* frame)
     return getOrCreate(frame->view());
 }    
     
-AccessibilityObject* AXObjectCache::getOrCreate(AccessibilityRole role)
+AccessibilityObject* AXObjectCache::create(AccessibilityRole role)
 {
     RefPtr<AccessibilityObject> obj;
 
     // will be filled in...
     switch (role) {
-    case AccessibilityRole::ListBoxOption:
-        obj = AccessibilityListBoxOption::create();
-        break;
     case AccessibilityRole::ImageMapLink:
         obj = AccessibilityImageMapLink::create();
         break;
@@ -824,9 +845,6 @@ AccessibilityObject* AXObjectCache::getOrCreate(AccessibilityRole role)
         break;
     case AccessibilityRole::MenuListPopup:
         obj = AccessibilityMenuListPopup::create();
-        break;
-    case AccessibilityRole::MenuListOption:
-        obj = AccessibilityMenuListOption::create();
         break;
     case AccessibilityRole::SpinButton:
         obj = AccessibilitySpinButton::create();
@@ -1631,13 +1649,31 @@ void AXObjectCache::handleScrollbarUpdate(ScrollView* view)
         scrollViewObject->updateChildrenIfNecessary();
     }
 }
-    
+
 void AXObjectCache::handleAriaExpandedChange(Node* node)
 {
-    if (AccessibilityObject* obj = get(node))
-        obj->handleAriaExpandedChanged();
+    // An aria-expanded change can cause two notifications to be posted:
+    // RowCountChanged for the tree or table ancestor of this object, and
+    // RowExpanded/Collapsed for this object.
+    if (auto object = makeRefPtr(get(node))) {
+        // Find the ancestor that supports RowCountChanged if exists.
+        auto* ancestor = Accessibility::findAncestor<AccessibilityObject>(*object, false, [] (auto& candidate) {
+            return candidate.supportsRowCountChange();
+        });
+
+        // Post that the ancestor's row count changed.
+        if (ancestor)
+            postNotification(ancestor, &document(), AXRowCountChanged);
+
+        // Post that the specific row either collapsed or expanded.
+        auto role = object->roleValue();
+        if (role == AccessibilityRole::Row || role == AccessibilityRole::TreeItem)
+            postNotification(object.get(), &document(), object->isExpanded() ? AXRowExpanded : AXRowCollapsed);
+        else
+            postNotification(object.get(), &document(), AXExpandedChanged);
+    }
 }
-    
+
 void AXObjectCache::handleActiveDescendantChanged(Node* node)
 {
     if (AccessibilityObject* obj = getOrCreate(node))
@@ -1685,7 +1721,7 @@ void AXObjectCache::handleAttributeChange(const QualifiedName& attrName, Element
 {
     if (!shouldProcessAttributeChange(attrName, element))
         return;
-    
+
     if (attrName == roleAttr)
         handleAriaRoleChanged(element);
     else if (attrName == altAttr || attrName == titleAttr)
@@ -1694,6 +1730,8 @@ void AXObjectCache::handleAttributeChange(const QualifiedName& attrName, Element
         labelChanged(element);
     else if (attrName == tabindexAttr)
         childrenChanged(element->parentNode(), element);
+    else if (attrName == langAttr)
+        postNotification(element, AXObjectCache::AXLanguageChanged);
 
     if (!attrName.localName().string().startsWith("aria-"))
         return;
@@ -2622,7 +2660,7 @@ CharacterOffset AXObjectCache::nextBoundary(const CharacterOffset& characterOffs
         auto backwardsScanRange = makeRangeSelectingNodeContents(boundary->document());
         if (!setRangeStartOrEndWithCharacterOffset(backwardsScanRange, characterOffset, false))
             return { };
-        prefixLength = prefixLengthForRange(createLiveRange(backwardsScanRange), string);
+        prefixLength = prefixLengthForRange(backwardsScanRange, string);
     }
     
     if (!setRangeStartOrEndWithCharacterOffset(searchRange, characterOffset, true))
@@ -2681,7 +2719,7 @@ CharacterOffset AXObjectCache::previousBoundary(const CharacterOffset& character
         forwardsScanRange.start = *afterBoundary;
         if (!setRangeStartOrEndWithCharacterOffset(forwardsScanRange, characterOffset, true))
             return { };
-        suffixLength = suffixLengthForRange(createLiveRange(forwardsScanRange), string);
+        suffixLength = suffixLengthForRange(forwardsScanRange, string);
     }
     
     if (!setRangeStartOrEndWithCharacterOffset(searchRange, characterOffset, false))
@@ -3170,6 +3208,11 @@ void AXObjectCache::updateIsolatedTree(AXCoreObject& object, AXNotification noti
         tree->updateNode(object);
         break;
     case AXChildrenChanged:
+    case AXLanguageChanged:
+    case AXRowCountChanged:
+    case AXRowCollapsed:
+    case AXRowExpanded:
+    case AXExpandedChanged:
         tree->updateChildren(object);
         break;
     default:
@@ -3230,7 +3273,12 @@ void AXObjectCache::updateIsolatedTree(const Vector<std::pair<RefPtr<AXCoreObjec
                 tree->updateNode(*notification.first);
             break;
         }
-        case AXChildrenChanged: {
+        case AXChildrenChanged:
+        case AXLanguageChanged:
+        case AXRowCountChanged:
+        case AXRowCollapsed:
+        case AXRowExpanded:
+        case AXExpandedChanged: {
             bool needsUpdate = appendIfNotContainsMatching(filteredNotifications, notification, [&notification] (const std::pair<RefPtr<AXCoreObject>, AXNotification>& note) {
                 return note.second == notification.second && note.first.get() == notification.first.get();
             });

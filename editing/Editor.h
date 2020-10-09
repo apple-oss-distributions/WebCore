@@ -336,7 +336,7 @@ public:
 #if PLATFORM(IOS_FAMILY)
     NO_RETURN_DUE_TO_ASSERT
 #endif
-    void changeBackToReplacedString(const String& replacedString);
+    WEBCORE_EXPORT void changeBackToReplacedString(const String& replacedString);
 
 #if !PLATFORM(IOS_FAMILY)
     WEBCORE_EXPORT void advanceToNextMisspelling(bool startBeforeSelection = false);
@@ -489,7 +489,7 @@ public:
     EditorParagraphSeparator defaultParagraphSeparator() const { return m_defaultParagraphSeparator; }
     void setDefaultParagraphSeparator(EditorParagraphSeparator separator) { m_defaultParagraphSeparator = separator; }
     Vector<String> dictationAlternativesForMarker(const DocumentMarker&);
-    void applyDictationAlternativelternative(const String& alternativeString);
+    void applyDictationAlternative(const String& alternativeString);
 
 #if USE(APPKIT)
     WEBCORE_EXPORT void uppercaseWord();

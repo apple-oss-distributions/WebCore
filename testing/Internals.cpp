@@ -88,6 +88,7 @@
 #include "GridPosition.h"
 #include "HEVCUtilities.h"
 #include "HTMLAnchorElement.h"
+#include "HTMLAttachmentElement.h"
 #include "HTMLCanvasElement.h"
 #include "HTMLIFrameElement.h"
 #include "HTMLImageElement.h"
@@ -1775,7 +1776,7 @@ ExceptionOr<RefPtr<Range>> Internals::markerRangeForNode(Node& node, const Strin
     auto marker = result.releaseReturnValue();
     if (!marker)
         return nullptr;
-    return { createLiveRange(range(node, *marker)) };
+    return { createLiveRange(makeSimpleRange(node, *marker)) };
 }
 
 ExceptionOr<String> Internals::markerDescriptionForNode(Node& node, const String& markerType, unsigned index)
@@ -2154,12 +2155,12 @@ RefPtr<Range> Internals::rangeFromLocationAndLength(Element& scope, unsigned ran
 
 unsigned Internals::locationFromRange(Element& scope, const Range& range)
 {
-    return clampTo<unsigned>(characterRange(makeBoundaryPointBeforeNodeContents(scope), range).location);
+    return clampTo<unsigned>(characterRange(makeBoundaryPointBeforeNodeContents(scope), makeSimpleRange(range)).location);
 }
 
 unsigned Internals::lengthFromRange(Element& scope, const Range& range)
 {
-    return clampTo<unsigned>(characterRange(makeBoundaryPointBeforeNodeContents(scope), range).length);
+    return clampTo<unsigned>(characterRange(makeBoundaryPointBeforeNodeContents(scope), makeSimpleRange(range)).length);
 }
 
 String Internals::rangeAsText(const Range& range)
@@ -2170,19 +2171,19 @@ String Internals::rangeAsText(const Range& range)
 String Internals::rangeAsTextUsingBackwardsTextIterator(const Range& range)
 {
     String result;
-    for (SimplifiedBackwardsTextIterator backwardsIterator(range); !backwardsIterator.atEnd(); backwardsIterator.advance())
+    for (SimplifiedBackwardsTextIterator backwardsIterator(makeSimpleRange(range)); !backwardsIterator.atEnd(); backwardsIterator.advance())
         result.insert(backwardsIterator.text().toString(), 0);
     return result;
 }
 
 Ref<Range> Internals::subrange(Range& range, unsigned rangeLocation, unsigned rangeLength)
 {
-    return createLiveRange(resolveCharacterRange(range, { rangeLocation, rangeLength }));
+    return createLiveRange(resolveCharacterRange(makeSimpleRange(range), { rangeLocation, rangeLength }));
 }
 
-RefPtr<Range> Internals::rangeOfStringNearLocation(const Range& searchRange, const String& text, unsigned targetOffset)
+RefPtr<Range> Internals::rangeOfStringNearLocation(const Range& range, const String& text, unsigned targetOffset)
 {
-    return createLiveRange(findClosestPlainText(searchRange, text, { }, targetOffset));
+    return createLiveRange(findClosestPlainText(makeSimpleRange(range), text, { }, targetOffset));
 }
 
 #if !PLATFORM(MAC)
@@ -2555,6 +2556,12 @@ void Internals::changeSelectionListType()
 {
     if (auto frame = makeRefPtr(this->frame()))
         frame->editor().changeSelectionListType();
+}
+
+void Internals::changeBackToReplacedString(const String& replacedString)
+{
+    if (auto frame = makeRefPtr(this->frame()))
+        frame->editor().changeBackToReplacedString(replacedString);
 }
 
 bool Internals::isOverwriteModeEnabled()
@@ -3908,6 +3915,27 @@ String Internals::elementBufferingPolicy(HTMLMediaElement& element)
     ASSERT_NOT_REACHED();
     return "UNKNOWN";
 }
+
+ExceptionOr<void> Internals::setOverridePreferredDynamicRangeMode(HTMLMediaElement& element, const String& modeString)
+{
+    DynamicRangeMode mode;
+    if (modeString == "None")
+        mode = DynamicRangeMode::None;
+    else if (modeString == "Standard")
+        mode = DynamicRangeMode::Standard;
+    else if (modeString == "HLG")
+        mode = DynamicRangeMode::HLG;
+    else if (modeString == "HDR10")
+        mode = DynamicRangeMode::HDR10;
+    else if (modeString == "DolbyVisionPQ")
+        mode = DynamicRangeMode::DolbyVisionPQ;
+    else
+        return Exception { SyntaxError };
+
+    element.setOverridePreferredDynamicRangeMode(mode);
+    return { };
+}
+
 #endif
 
 bool Internals::isSelectPopupVisible(HTMLSelectElement& element)
@@ -4663,7 +4691,7 @@ RefPtr<File> Internals::createFile(const String& path)
     if (!url.isLocalFile())
         return nullptr;
 
-    return File::create(url.fileSystemPath());
+    return File::create(document, url.fileSystemPath());
 }
 
 void Internals::queueMicroTask(int testNumber)
@@ -4936,6 +4964,17 @@ double Internals::privatePlayerVolume(const HTMLMediaElement&)
 #endif
 
 #endif
+
+ExceptionOr<void> Internals::setIsPlayingToBluetoothOverride(Optional<bool> isPlaying)
+{
+#if ENABLE(ROUTING_ARBITRATION)
+    AudioSession::sharedSession().setIsPlayingToBluetoothOverride(isPlaying);
+    return { };
+#else
+    UNUSED_PARAM(isPlaying);
+    return Exception { NotSupportedError };
+#endif
+}
 
 void Internals::reportBacktrace()
 {
@@ -5625,7 +5664,7 @@ size_t Internals::pluginCount()
 
 void Internals::notifyResourceLoadObserver()
 {
-    ResourceLoadObserver::shared().updateCentralStatisticsStore();
+    ResourceLoadObserver::shared().updateCentralStatisticsStore([] { });
 }
 
 unsigned Internals::primaryScreenDisplayID()
@@ -5646,6 +5685,8 @@ bool Internals::supportsVCPEncoder()
 {
 #if defined(ENABLE_VCP_ENCODER)
     return ENABLE_VCP_ENCODER || ENABLE_VCP_VTB_ENCODER;
+#elif defined(HAVE_VTB_REQUIREDLOWLATENCY)
+    return true;
 #else
     return false;
 #endif
@@ -5772,7 +5813,7 @@ Internals::TextIndicatorInfo::~TextIndicatorInfo() = default;
 
 Internals::TextIndicatorInfo Internals::textIndicatorForRange(const Range& range, TextIndicatorOptions options)
 {
-    auto indicator = TextIndicator::createWithRange(range, options.coreOptions(), TextIndicatorPresentationTransition::None);
+    auto indicator = TextIndicator::createWithRange(makeSimpleRange(range), options.coreOptions(), TextIndicatorPresentationTransition::None);
     return indicator->data();
 }
 
@@ -6028,5 +6069,25 @@ void Internals::setContentSizeCategory(Internals::ContentSizeCategory category)
     UNUSED_PARAM(category);
 #endif
 }
+
+#if ENABLE(ATTACHMENT_ELEMENT)
+
+ExceptionOr<Internals::AttachmentThumbnailInfo> Internals::attachmentThumbnailInfo(const HTMLAttachmentElement& element)
+{
+#if HAVE(QUICKLOOK_THUMBNAILING)
+    AttachmentThumbnailInfo info;
+    if (auto image = element.thumbnail()) {
+        auto size = image->size();
+        info.width = size.width();
+        info.height = size.height();
+    }
+    return info;
+#else
+    UNUSED_PARAM(element);
+    return Exception { InvalidAccessError };
+#endif
+}
+
+#endif
 
 } // namespace WebCore

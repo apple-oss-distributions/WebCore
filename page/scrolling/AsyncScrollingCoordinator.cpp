@@ -826,6 +826,11 @@ void AsyncScrollingCoordinator::windowScreenDidChange(PlatformDisplayID displayI
         m_scrollingTree->windowScreenDidChange(displayID, nominalFramesPerSecond);
 }
 
+bool AsyncScrollingCoordinator::hasSubscrollers() const
+{
+    return m_scrollingStateTree && m_scrollingStateTree->scrollingNodeCount() > 1;
+}
+
 bool AsyncScrollingCoordinator::isUserScrollInProgress(ScrollingNodeID nodeID) const
 {
     if (m_scrollingTree)
@@ -834,10 +839,10 @@ bool AsyncScrollingCoordinator::isUserScrollInProgress(ScrollingNodeID nodeID) c
     return false;
 }
 
-bool AsyncScrollingCoordinator::isRubberBandInProgress() const
+bool AsyncScrollingCoordinator::isRubberBandInProgress(ScrollingNodeID nodeID) const
 {
     if (m_scrollingTree)
-        return m_scrollingTree->isRubberBandInProgress();
+        return m_scrollingTree->isRubberBandInProgressForNode(nodeID);
 
     return false;
 }

@@ -72,6 +72,12 @@ typedef NSString * AVVideoRange NS_TYPED_ENUM;
 @end
 #endif
 
+#if HAVE(AVPLAYER_SUPRESSES_AUDIO_RENDERING)
+@interface AVPlayer (AVPlayerSupressesAudioRendering)
+@property (nonatomic, getter=_suppressesAudioRendering, setter=_setSuppressesAudioRendering:) BOOL suppressesAudioRendering;
+@end
+#endif
+
 #if ENABLE(WIRELESS_PLAYBACK_TARGET) || PLATFORM(IOS_FAMILY)
 
 NS_ASSUME_NONNULL_BEGIN
@@ -98,6 +104,7 @@ typedef NS_OPTIONS(NSUInteger, AVOutputDeviceFeatures) {
 
 @interface AVOutputDevice : NSObject
 @property (nonatomic, readonly) NSString *name;
+@property (nonatomic, readonly) NSString *deviceName;
 @property (nonatomic, readonly) AVOutputDeviceFeatures deviceFeatures;
 @end
 
@@ -195,6 +202,12 @@ NS_ASSUME_NONNULL_END
 
 @interface AVContentKeySession (AVContentKeyGroup_Support)
 - (nonnull AVContentKeyReportGroup *)makeContentKeyGroup;
+@end
+
+@interface AVContentKeyRequest (OutputObscured)
+NS_ASSUME_NONNULL_BEGIN
+- (BOOL)willOutputBeObscuredDueToInsufficientExternalProtectionForDisplays:(NSArray<NSNumber *> *)displays;
+NS_ASSUME_NONNULL_END
 @end
 #endif // HAVE(AVCONTENTKEYSESSION)
 

@@ -28,7 +28,6 @@
 
 #include "CharacterData.h"
 #include "NodeTraversal.h"
-#include "Range.h"
 
 namespace WebCore {
 
@@ -41,12 +40,6 @@ SimpleRange::SimpleRange(const BoundaryPoint& start, const BoundaryPoint& end)
 SimpleRange::SimpleRange(BoundaryPoint&& start, BoundaryPoint&& end)
     : start(WTFMove(start))
     , end(WTFMove(end))
-{
-}
-
-SimpleRange::SimpleRange(const Range& other)
-    : start(other.startContainer(), other.startOffset())
-    , end(other.endContainer(), other.endOffset())
 {
 }
 
@@ -115,22 +108,25 @@ IntersectingNodeIterator::IntersectingNodeIterator(const SimpleRange& range)
     : m_node(firstIntersectingNode(range))
     , m_pastLastNode(nodePastLastIntersectingNode(range))
 {
+    enforceEndInvariant();
 }
 
 void IntersectingNodeIterator::advance()
 {
     ASSERT(m_node);
     m_node = NodeTraversal::next(*m_node);
-    if (m_node == m_pastLastNode || !m_node) {
-        m_node = nullptr;
-        m_pastLastNode = nullptr;
-    }
+    enforceEndInvariant();
 }
 
 void IntersectingNodeIterator::advanceSkippingChildren()
 {
     ASSERT(m_node);
     m_node = m_node->contains(m_pastLastNode.get()) ? nullptr : NodeTraversal::nextSkippingChildren(*m_node);
+    enforceEndInvariant();
+}
+
+void IntersectingNodeIterator::enforceEndInvariant()
+{
     if (m_node == m_pastLastNode || !m_node) {
         m_node = nullptr;
         m_pastLastNode = nullptr;

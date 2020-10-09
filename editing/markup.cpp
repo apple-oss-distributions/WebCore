@@ -668,7 +668,7 @@ Node* StyledMarkupAccumulator::traverseNodesForSerialization(Node* startNode, No
         if (!enterNode(*n)) {
             next = nextSkippingChildren(*n);
             // Don't skip over pastEnd.
-            if (pastEnd && isDescendantOf(*pastEnd, *n))
+            if (pastEnd && (isDescendantOf(*pastEnd, *n) || !next))
                 next = pastEnd;
             ASSERT(next || !pastEnd);
         } else {
@@ -1000,9 +1000,9 @@ static void restoreAttachmentElementsInFragment(DocumentFragment& fragment)
         auto attachmentPath = attachment->attachmentPath();
         auto blobURL = attachment->blobURL();
         if (!attachmentPath.isEmpty())
-            attachment->setFile(File::create(attachmentPath));
+            attachment->setFile(File::create(fragment.ownerDocument(), attachmentPath));
         else if (!blobURL.isEmpty())
-            attachment->setFile(File::deserialize({ }, blobURL, attachment->attachmentType(), attachment->attachmentTitle()));
+            attachment->setFile(File::deserialize(fragment.ownerDocument(), { }, blobURL, attachment->attachmentType(), attachment->attachmentTitle()));
 
         // Remove temporary attributes that were previously added in StyledMarkupAccumulator::appendCustomAttributes.
         attachment->removeAttribute(webkitattachmentidAttr);
@@ -1157,14 +1157,13 @@ Ref<DocumentFragment> createFragmentFromText(const SimpleRange& context, const S
     }
 
     // Break string into paragraphs. Extra line breaks turn into empty paragraphs.
-    Node* blockNode = enclosingBlock(createLiveRange(context)->firstNode());
-    Element* block = downcast<Element>(blockNode);
-    bool useClonesOfEnclosingBlock = blockNode
-        && blockNode->isElementNode()
+    auto start = createLegacyEditingPosition(context.start);
+    auto block = enclosingBlock(start.firstNode().get());
+    bool useClonesOfEnclosingBlock = block
         && !block->hasTagName(bodyTag)
         && !block->hasTagName(htmlTag)
-        && block != editableRootForPosition(createLegacyEditingPosition(context.start));
-    bool useLineBreak = enclosingTextFormControl(createLegacyEditingPosition(context.start));
+        && block != editableRootForPosition(start);
+    bool useLineBreak = enclosingTextFormControl(start);
 
     Vector<String> list = string.splitAllowingEmptyEntries('\n');
     size_t numLines = list.size();

@@ -184,11 +184,17 @@ public:
 
 #if ENABLE(RESOURCE_LOAD_STATISTICS)
     WEBCORE_EXPORT void setResourceLoadStatisticsEnabled(bool);
+    WEBCORE_EXPORT bool resourceLoadStatisticsEnabled() const;
+    WEBCORE_EXPORT void setResourceLoadStatisticsDebugLoggingEnabled(bool);
+    WEBCORE_EXPORT bool resourceLoadStatisticsDebugLoggingEnabled() const;
     WEBCORE_EXPORT bool shouldBlockCookies(const ResourceRequest&, Optional<FrameIdentifier>, Optional<PageIdentifier>, ShouldRelaxThirdPartyCookieBlocking) const;
     WEBCORE_EXPORT bool shouldBlockCookies(const URL& firstPartyForCookies, const URL& resource, Optional<FrameIdentifier>, Optional<PageIdentifier>, ShouldRelaxThirdPartyCookieBlocking) const;
     WEBCORE_EXPORT bool shouldBlockThirdPartyCookies(const RegistrableDomain&) const;
     WEBCORE_EXPORT bool shouldBlockThirdPartyCookiesButKeepFirstPartyCookiesFor(const RegistrableDomain&) const;
     WEBCORE_EXPORT void setAllCookiesToSameSiteStrict(const RegistrableDomain&, CompletionHandler<void()>&&);
+#if PLATFORM(COCOA)
+    WEBCORE_EXPORT static NSHTTPCookie *capExpiryOfPersistentCookie(NSHTTPCookie *, Seconds cap);
+#endif
     WEBCORE_EXPORT bool hasHadUserInteractionAsFirstParty(const RegistrableDomain&) const;
     WEBCORE_EXPORT void setPrevalentDomainsToBlockAndDeleteCookiesFor(const Vector<RegistrableDomain>&);
     WEBCORE_EXPORT void setPrevalentDomainsToBlockButKeepCookiesFor(const Vector<RegistrableDomain>&);
@@ -254,6 +260,7 @@ private:
 
 #if ENABLE(RESOURCE_LOAD_STATISTICS)
     bool m_isResourceLoadStatisticsEnabled = false;
+    bool m_isResourceLoadStatisticsDebugLoggingEnabled = false;
     Optional<Seconds> clientSideCookieCap(const TopFrameDomain&, Optional<PageIdentifier>) const;
     bool shouldExemptDomainPairFromThirdPartyCookieBlocking(const TopFrameDomain&, const SubResourceDomain&) const;
     HashSet<RegistrableDomain> m_registrableDomainsToBlockAndDeleteCookiesFor;
@@ -281,7 +288,7 @@ private:
 };
 
 #if PLATFORM(COCOA) || USE(CFURLCONNECTION)
-WEBCORE_EXPORT CFURLStorageSessionRef createPrivateStorageSession(CFStringRef identifier);
+WEBCORE_EXPORT CFURLStorageSessionRef createPrivateStorageSession(CFStringRef identifier, Optional<HTTPCookieAcceptPolicy> = WTF::nullopt);
 #endif
 
 }

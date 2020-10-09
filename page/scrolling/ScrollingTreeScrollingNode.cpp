@@ -54,7 +54,7 @@ void ScrollingTreeScrollingNode::commitStateBeforeChildren(const ScrollingStateN
         m_scrollableAreaSize = state.scrollableAreaSize();
 
     if (state.hasChangedProperty(ScrollingStateScrollingNode::TotalContentsSize)) {
-        if (scrollingTree().isRubberBandInProgress())
+        if (scrollingTree().isRubberBandInProgressForNode(scrollingNodeID()))
             m_totalContentsSizeForRubberBand = m_totalContentsSize;
         else
             m_totalContentsSizeForRubberBand = state.totalContentsSize();
@@ -187,8 +187,7 @@ bool ScrollingTreeScrollingNode::eventCanScrollContents(const PlatformWheelEvent
         wheelDelta.setHeight(0);
 
     auto oldScrollPosition = currentScrollPosition();
-    auto newScrollPosition = oldScrollPosition - wheelDelta;
-    newScrollPosition = newScrollPosition.constrainedBetween(minimumScrollPosition(), maximumScrollPosition());
+    auto newScrollPosition = (oldScrollPosition - wheelDelta).constrainedBetween(minimumScrollPosition(), maximumScrollPosition());
     return newScrollPosition != oldScrollPosition;
 }
 

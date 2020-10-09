@@ -33,6 +33,7 @@
 #include "ApplicationCacheHost.h"
 #include "Archive.h"
 #include "ArchiveResourceCollection.h"
+#include "CSSFontSelector.h"
 #include "CachedPage.h"
 #include "CachedRawResource.h"
 #include "CachedResourceLoader.h"
@@ -72,6 +73,7 @@
 #include "PlatformStrategies.h"
 #include "PolicyChecker.h"
 #include "ProgressTracker.h"
+#include "Quirks.h"
 #include "ResourceHandle.h"
 #include "ResourceLoadObserver.h"
 #include "RuntimeEnabledFeatures.h"
@@ -311,6 +313,9 @@ void DocumentLoader::stopLoading()
 
     // Always cancel multipart loaders
     cancelAll(m_multipartSubresourceLoaders);
+
+    if (auto* document = m_frame->document())
+        document->fontSelector().suspendFontLoadingTimer();
 
     // Appcache uses ResourceHandle directly, DocumentLoader doesn't count these loads.
     m_applicationCacheHost->stopLoadingInFrame(*m_frame);
@@ -1252,6 +1257,19 @@ void DocumentLoader::applyPoliciesToSettings()
 #if ENABLE(TEXT_AUTOSIZING)
     m_frame->settings().setIdempotentModeAutosizingOnlyHonorsPercentages(m_idempotentModeAutosizingOnlyHonorsPercentages);
 #endif
+}
+
+MouseEventPolicy DocumentLoader::mouseEventPolicy() const
+{
+#if ENABLE(IOS_TOUCH_EVENTS)
+    if (m_mouseEventPolicy == MouseEventPolicy::Default) {
+        if (auto* document = this->document()) {
+            if (document->quirks().shouldSynthesizeTouchEvents())
+                return MouseEventPolicy::SynthesizeTouchEvents;
+        }
+    }
+#endif
+    return m_mouseEventPolicy;
 }
 
 void DocumentLoader::attachToFrame(Frame& frame)

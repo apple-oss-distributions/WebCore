@@ -73,7 +73,7 @@ void ScrollingCoordinatorMac::pageDestroyed()
     });
 }
 
-bool ScrollingCoordinatorMac::handleWheelEvent(FrameView&, const PlatformWheelEvent& wheelEvent)
+bool ScrollingCoordinatorMac::handleWheelEvent(FrameView&, const PlatformWheelEvent& wheelEvent, ScrollingNodeID targetNode)
 {
     ASSERT(isMainThread());
     ASSERT(m_page);
@@ -81,9 +81,14 @@ bool ScrollingCoordinatorMac::handleWheelEvent(FrameView&, const PlatformWheelEv
     if (scrollingTree()->willWheelEventStartSwipeGesture(wheelEvent))
         return false;
 
+    LOG_WITH_STREAM(Scrolling, stream << "ScrollingCoordinatorMac::handleWheelEvent - sending event to scrolling thread");
+    
+    // FIXME: Over on the scrolling thread, we'll hit-test the layers and possibly send the event to a node
+    // which we've already discounted on the main thread. This needs to target a specific node.
+
     RefPtr<ThreadedScrollingTree> threadedScrollingTree = downcast<ThreadedScrollingTree>(scrollingTree());
-    ScrollingThread::dispatch([threadedScrollingTree, wheelEvent] {
-        threadedScrollingTree->handleWheelEventAfterMainThread(wheelEvent);
+    ScrollingThread::dispatch([threadedScrollingTree, wheelEvent, targetNode] {
+        threadedScrollingTree->handleWheelEventAfterMainThread(wheelEvent, targetNode);
     });
     return true;
 }

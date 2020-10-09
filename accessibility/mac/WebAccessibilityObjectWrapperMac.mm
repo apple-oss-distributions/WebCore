@@ -542,6 +542,7 @@ extern "C" AXUIElementRef NSAccessibilityCreateAXUIElementRef(id element);
 
 - (void)unregisterUniqueIdForUIElement
 {
+    ASSERT(isMainThread());
     NSAccessibilityUnregisterUniqueIdForUIElement(self);
 }
 
@@ -3624,12 +3625,10 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
     return [self doAXAttributedStringForTextMarkerRange:[self textMarkerRangeFromRange:webRange] spellCheck:YES];
 }
 
-- (NSRange)_convertToNSRange:(Range*)range
+// FIXME: No reason for this to be a method instead of a function; can get document from range.
+- (NSRange)_convertToNSRange:(const SimpleRange&)range
 {
     ASSERT(isMainThread());
-    
-    if (!range)
-        return NSMakeRange(NSNotFound, 0);
     
     auto document = self.axBackingObject->document();
     if (!document)
@@ -3639,7 +3638,7 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
     if (!documentElement)
         return NSMakeRange(NSNotFound, 0);
 
-    return characterRange(makeBoundaryPointBeforeNodeContents(*documentElement), *range);
+    return characterRange(makeBoundaryPointBeforeNodeContents(*documentElement), range);
 }
 
 - (NSInteger)_indexForTextMarker:(id)marker
@@ -3649,9 +3648,10 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
     
     if (AXObjectCache* cache = self.axBackingObject->axObjectCache()) {
         CharacterOffset characterOffset = [self characterOffsetForTextMarker:marker];
-        // Create a collapsed range from the CharacterOffset object.
         auto range = cache->rangeForUnorderedCharacterOffsets(characterOffset, characterOffset);
-        return [self _convertToNSRange:createLiveRange(range).get()].location;
+        if (!range)
+            return NSNotFound;
+        return [self _convertToNSRange:*range].location;
     }
     return NSNotFound;
 }
@@ -3673,7 +3673,7 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
         return nil;
 
     auto boundary = resolveCharacterLocation(makeRangeSelectingNodeContents(*documentElement), textIndex);
-    auto characterOffset = cache->startOrEndCharacterOffsetForRange(createLiveRange({ boundary, boundary }), true);
+    auto characterOffset = cache->startOrEndCharacterOffsetForRange(makeSimpleRange(boundary), true);
     return [self textMarkerForCharacterOffset:characterOffset];
 }
 

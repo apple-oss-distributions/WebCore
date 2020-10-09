@@ -159,7 +159,7 @@ public:
     WEBCORE_EXPORT AccessibilityObject* getOrCreate(Node*);
 
     // used for objects without backing elements
-    AccessibilityObject* getOrCreate(AccessibilityRole);
+    AccessibilityObject* create(AccessibilityRole);
     
     // will only return the AccessibilityObject if it already exists
     AccessibilityObject* get(RenderObject*);
@@ -278,6 +278,7 @@ public:
         AXCurrentChanged,
         AXDisabledStateChanged,
         AXFocusedUIElementChanged,
+        AXLanguageChanged,
         AXLayoutComplete,
         AXLoadComplete,
         AXNewDocumentLoadComplete,
@@ -545,7 +546,7 @@ inline AccessibilityObject* AXObjectCache::get(RenderObject*) { return nullptr; 
 inline AccessibilityObject* AXObjectCache::get(Node*) { return nullptr; }
 inline AccessibilityObject* AXObjectCache::get(Widget*) { return nullptr; }
 inline AccessibilityObject* AXObjectCache::getOrCreate(RenderObject*) { return nullptr; }
-inline AccessibilityObject* AXObjectCache::getOrCreate(AccessibilityRole) { return nullptr; }
+inline AccessibilityObject* AXObjectCache::create(AccessibilityRole) { return nullptr; }
 inline AccessibilityObject* AXObjectCache::getOrCreate(Node*) { return nullptr; }
 inline AccessibilityObject* AXObjectCache::getOrCreate(Widget*) { return nullptr; }
 inline AXCoreObject* AXObjectCache::rootObject() { return nullptr; }

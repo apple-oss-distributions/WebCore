@@ -2917,10 +2917,15 @@ bool EventHandler::handleWheelEvent(const PlatformWheelEvent& event)
     HitTestResult result(view->windowToContents(event.position()));
     document->hitTest(request, result);
 
+    // FIXME: Why do we have track all three of targetElement, scrollableContainer and ScrollableArea?
     RefPtr<Element> element = result.targetElement();
     RefPtr<ContainerNode> scrollableContainer;
     WeakPtr<ScrollableArea> scrollableArea;
     bool isOverWidget = result.isOverWidget();
+    
+    // FIXME: Using the value of isOverWidget from the latching state triggers double-recursion into subframes.
+    // FIXME: Despite doing this up-front search for the correct scrollable area, we dispatch events via elements which
+    // itself finds and tries to scroll overflow scrollers.
     determineWheelEventTarget(event, result, element, scrollableContainer, scrollableArea, isOverWidget);
 
 #if ENABLE(WHEEL_EVENT_LATCHING)
@@ -2954,6 +2959,7 @@ bool EventHandler::handleWheelEvent(const PlatformWheelEvent& event)
     if (scrollableArea)
         scrollableArea->setScrollShouldClearLatchedState(false);
 
+    // FIXME: processWheelEventForScrolling() is only called for FrameView scrolling, not overflow scrolling, which is confusing.
     bool handledEvent = processWheelEventForScrolling(event, scrollableContainer.get(), scrollableArea);
     processWheelEventForScrollSnap(event, scrollableArea);
     return handledEvent;
@@ -3690,7 +3696,7 @@ static void removeDraggedContentDocumentMarkersFromAllFramesInPage(Page& page)
 
 void EventHandler::dragCancelled()
 {
-#if ENABLE(DATA_INTERACTION)
+#if PLATFORM(IOS_FAMILY)
     if (auto* page = m_frame.page())
         removeDraggedContentDocumentMarkersFromAllFramesInPage(*page);
 #endif
@@ -3698,7 +3704,7 @@ void EventHandler::dragCancelled()
 
 void EventHandler::didStartDrag()
 {
-#if ENABLE(DATA_INTERACTION)
+#if PLATFORM(IOS_FAMILY)
     auto dragSource = dragState().source;
     if (!dragSource)
         return;

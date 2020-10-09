@@ -111,6 +111,7 @@
 #include "RenderText.h"
 #include "RenderTheme.h"
 #include "RenderTreeAsText.h"
+#include "RenderTreeMutationDisallowedScope.h"
 #include "RenderView.h"
 #include "RuntimeEnabledFeatures.h"
 #include "SVGNames.h"
@@ -1865,6 +1866,8 @@ static RenderLayer* enclosingContainingBlockLayer(const RenderLayer& layer, Cros
 
 RenderLayer* RenderLayer::enclosingScrollableLayer(IncludeSelfOrNot includeSelf, CrossFrameBoundaries crossFrameBoundaries) const
 {
+    RenderTreeMutationDisallowedScope renderTreeMutationDisallowedScope;
+
     auto isConsideredScrollable = [](const RenderLayer& layer) {
         return is<RenderBox>(layer.renderer()) && downcast<RenderBox>(layer.renderer()).canBeScrolledAndHasScrollableArea();
     };
@@ -1906,6 +1909,11 @@ bool RenderLayer::isRubberBandInProgress() const
 #if ENABLE(RUBBER_BANDING)
     if (!scrollsOverflow())
         return false;
+
+    if (auto scrollingCoordinator = page().scrollingCoordinator()) {
+        if (scrollingCoordinator->isRubberBandInProgress(scrollingNodeID()))
+            return true;
+    }
 
     if (auto scrollAnimator = existingScrollAnimator())
         return scrollAnimator->isRubberBandInProgress();
@@ -2722,8 +2730,8 @@ void RenderLayer::scrollTo(const ScrollPosition& position)
                 setNeedsCompositingGeometryUpdate();
 
                 // Scroll position can affect the location of a composited descendant (which may be a sibling in z-order),
-                // so trigger a descendant walk from the paint-order parent.
-                if (auto* paintParent = paintOrderParent())
+                // so trigger a descendant walk from the stacking context.
+                if (auto* paintParent = stackingContext())
                     paintParent->setDescendantsNeedUpdateBackingAndHierarchyTraversal();
             }
 
@@ -3911,7 +3919,7 @@ void RenderLayer::updateScrollInfoAfterLayout()
     updateSnapOffsets();
 #endif
 
-    if (!box->isHTMLMarquee() && !isRubberBandInProgress()) {
+    if (!box->isHTMLMarquee() && !isRubberBandInProgress() && !isUserScrollInProgress()) {
         // Layout may cause us to be at an invalid scroll position. In this case we need
         // to pull our scroll offsets back to the max (or push them up to the min).
         ScrollOffset clampedScrollOffset = clampScrollOffset(scrollOffset());
@@ -4627,7 +4635,7 @@ void RenderLayer::paintLayerContents(GraphicsContext& context, const LayerPainti
     bool selectionAndBackgroundsOnly = paintingInfo.paintBehavior.contains(PaintBehavior::SelectionAndBackgroundsOnly);
     bool selectionOnly = paintingInfo.paintBehavior.contains(PaintBehavior::SelectionOnly);
 
-    SinglePaintFrequencyTracking singlePaintFrequencyTracking(m_paintFrequencyTracker, shouldPaintContent);
+    SinglePaintFrequencyTracking singlePaintFrequencyTracking(m_paintFrequencyTracker, page().lastRenderingUpdateTimestamp());
 
     LayerFragments layerFragments;
     RenderObject* subtreePaintRootForRenderer = nullptr;
@@ -4647,6 +4655,14 @@ void RenderLayer::paintLayerContents(GraphicsContext& context, const LayerPainti
 
         if (isPaintingOverflowContents)
             paintBehavior.add(PaintBehavior::CompositedOverflowScrollContent);
+
+        if (isCollectingEventRegion) {
+            paintBehavior = paintBehavior & PaintBehavior::CompositedOverflowScrollContent;
+            if (isPaintingCompositedForeground)
+                paintBehavior.add(PaintBehavior::EventRegionIncludeForeground);
+            if (isPaintingCompositedBackground)
+                paintBehavior.add(PaintBehavior::EventRegionIncludeBackground);
+        }
 
         return paintBehavior;
     }();
@@ -5205,7 +5221,7 @@ void RenderLayer::collectEventRegionForFragments(const LayerFragments& layerFrag
     ASSERT(localPaintingInfo.eventRegionContext);
 
     for (const auto& fragment : layerFragments) {
-        PaintInfo paintInfo(context, fragment.foregroundRect.rect(), PaintPhase::EventRegion, paintBehavior & OptionSet<PaintBehavior> { PaintBehavior::CompositedOverflowScrollContent });
+        PaintInfo paintInfo(context, fragment.foregroundRect.rect(), PaintPhase::EventRegion, paintBehavior);
         paintInfo.eventRegionContext = localPaintingInfo.eventRegionContext;
         renderer().paint(paintInfo, toLayoutPoint(fragment.layerBounds.location() - renderBoxLocation() + localPaintingInfo.subpixelOffset));
     }
@@ -7016,6 +7032,11 @@ bool RenderLayer::isTransparentRespectingParentFrames() const
     return false;
 }
 
+void RenderLayer::simulateFrequentPaint()
+{
+    SinglePaintFrequencyTracking { m_paintFrequencyTracker, page().lastRenderingUpdateTimestamp() };
+}
+
 #if !LOG_DISABLED
 static TextStream& operator<<(TextStream& ts, RenderLayer::EventRegionInvalidationReason reason)
 {
@@ -7131,6 +7152,8 @@ TextStream& operator<<(TextStream& ts, PaintBehavior behavior)
     case PaintBehavior::TileFirstPaint: ts << "TileFirstPaint"; break;
     case PaintBehavior::CompositedOverflowScrollContent: ts << "CompositedOverflowScrollContent"; break;
     case PaintBehavior::AnnotateLinks: ts << "AnnotateLinks"; break;
+    case PaintBehavior::EventRegionIncludeForeground: ts << "EventRegionIncludeForeground"; break;
+    case PaintBehavior::EventRegionIncludeBackground: ts << "EventRegionIncludeBackground"; break;
     }
 
     return ts;

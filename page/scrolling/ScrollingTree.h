@@ -92,8 +92,8 @@ public:
     WEBCORE_EXPORT OptionSet<WheelEventProcessingSteps> determineWheelEventProcessing(const PlatformWheelEvent&);
     WEBCORE_EXPORT virtual WheelEventHandlingResult handleWheelEvent(const PlatformWheelEvent&);
 
-    void setMainFrameIsRubberBanding(bool);
-    bool isRubberBandInProgress();
+    bool isRubberBandInProgressForNode(ScrollingNodeID);
+    void setRubberBandingInProgressForNode(ScrollingNodeID, bool);
 
     bool isUserScrollInProgressForNode(ScrollingNodeID);
     void setUserScrollInProgressForNode(ScrollingNodeID, bool);
@@ -212,6 +212,8 @@ public:
     WEBCORE_EXPORT void willProcessWheelEvent();
 
 protected:
+    WheelEventHandlingResult handleWheelEventWithNode(const PlatformWheelEvent&, ScrollingTreeNode*);
+
     FloatPoint mainFrameScrollPosition() const;
     void setMainFrameScrollPosition(FloatPoint);
 
@@ -231,7 +233,10 @@ private:
     void traverseScrollingTreeRecursive(ScrollingTreeNode&, const VisitorFunction&);
 
     WEBCORE_EXPORT virtual RefPtr<ScrollingTreeNode> scrollingNodeForPoint(FloatPoint);
+#if ENABLE(WHEEL_EVENT_REGIONS)
     WEBCORE_EXPORT virtual OptionSet<EventListenerRegionType> eventListenerRegionTypesForPoint(FloatPoint) const;
+#endif
+
     virtual void receivedWheelEvent(const PlatformWheelEvent&) { }
     
     RefPtr<ScrollingTreeFrameScrollingNode> m_rootNode;
@@ -252,9 +257,9 @@ private:
         FloatPoint mainFrameScrollPosition;
         PlatformDisplayID displayID { 0 };
         Optional<unsigned> nominalFramesPerSecond;
+        HashSet<ScrollingNodeID> nodesWithActiveRubberBanding;
         HashSet<ScrollingNodeID> nodesWithActiveScrollSnap;
         HashSet<ScrollingNodeID> nodesWithActiveUserScrolls;
-        bool mainFrameIsRubberBanding { false };
     };
     
     Lock m_treeStateMutex;

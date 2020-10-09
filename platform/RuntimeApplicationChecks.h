@@ -107,6 +107,13 @@ WEBCORE_EXPORT bool isPocketCity();
 WEBCORE_EXPORT bool isEssentialSkeleton();
 WEBCORE_EXPORT bool isLaBanquePostale();
 WEBCORE_EXPORT bool isESPNFantasySports();
+WEBCORE_EXPORT bool isDoubleDown();
+WEBCORE_EXPORT bool isFIFACompanion();
+WEBCORE_EXPORT bool isNoggin();
+WEBCORE_EXPORT bool isOKCupid();
+WEBCORE_EXPORT bool isJWLibrary();
+WEBCORE_EXPORT bool isPaperIO();
+WEBCORE_EXPORT bool isCrunchyroll();
 
 } // IOSApplication
 

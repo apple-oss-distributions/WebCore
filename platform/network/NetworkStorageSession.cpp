@@ -72,7 +72,22 @@ void NetworkStorageSession::setResourceLoadStatisticsEnabled(bool enabled)
 {
     m_isResourceLoadStatisticsEnabled = enabled;
 }
+
+bool NetworkStorageSession::resourceLoadStatisticsEnabled() const
+{
+    return m_isResourceLoadStatisticsEnabled;
+}
 #endif
+
+void NetworkStorageSession::setResourceLoadStatisticsDebugLoggingEnabled(bool enabled)
+{
+    m_isResourceLoadStatisticsDebugLoggingEnabled = enabled;
+}
+
+bool NetworkStorageSession::resourceLoadStatisticsDebugLoggingEnabled() const
+{
+    return m_isResourceLoadStatisticsDebugLoggingEnabled;
+}
 
 bool NetworkStorageSession::shouldBlockThirdPartyCookies(const RegistrableDomain& registrableDomain) const
 {

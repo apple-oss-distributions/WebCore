@@ -787,6 +787,8 @@ static ScrollableArea* scrollableAreaForBox(RenderBox& box)
     
 static ContainerNode* findEnclosingScrollableContainer(ContainerNode* node, const PlatformWheelEvent& wheelEvent)
 {
+    auto biasedDelta = ScrollController::wheelDeltaBiasingTowardsVertical(wheelEvent);
+
     // Find the first node with a valid scrollable area starting with the current
     // node and traversing its parents (or shadow hosts).
     for (ContainerNode* candidate = node; candidate; candidate = candidate->parentOrShadowHostNode()) {
@@ -807,10 +809,8 @@ static ContainerNode* findEnclosingScrollableContainer(ContainerNode* node, cons
         if (wheelEvent.phase() == PlatformWheelEventPhaseMayBegin || wheelEvent.phase() == PlatformWheelEventPhaseCancelled)
             return candidate;
 
-        auto deltaX = wheelEvent.deltaX();
-        auto deltaY = wheelEvent.deltaY();
-        if ((deltaY > 0 && !scrollableArea->scrolledToTop()) || (deltaY < 0 && !scrollableArea->scrolledToBottom())
-            || (deltaX > 0 && !scrollableArea->scrolledToLeft()) || (deltaX < 0 && !scrollableArea->scrolledToRight()))
+        if ((biasedDelta.height() > 0 && !scrollableArea->scrolledToTop()) || (biasedDelta.height() < 0 && !scrollableArea->scrolledToBottom())
+            || (biasedDelta.width() > 0 && !scrollableArea->scrolledToLeft()) || (biasedDelta.width() < 0 && !scrollableArea->scrolledToRight()))
             return candidate;
     }
     
@@ -974,6 +974,7 @@ void EventHandler::determineWheelEventTarget(const PlatformWheelEvent& wheelEven
             if (scrollableContainer && !is<HTMLIFrameElement>(wheelEventTarget))
                 scrollableArea = scrollableAreaForContainerNode(*scrollableContainer);
             else {
+                // FIXME: Why does this assume the body? What if we hit an iframe inside an overflow:scroll?
                 scrollableContainer = view->frame().document()->bodyOrFrameset();
                 scrollableArea = makeWeakPtr(static_cast<ScrollableArea&>(*view));
             }
@@ -1009,6 +1010,7 @@ void EventHandler::determineWheelEventTarget(const PlatformWheelEvent& wheelEven
         LOG_WITH_STREAM(ScrollLatching, stream << "EventHandler::determineWheelEventTarget() - reset latching for event " << wheelEvent << " latching state " << page->latchingStateStack());
     }
 
+    // FIXME: This can use a stale laching state, before we just pushed or cleared.
     if (!wheelEvent.shouldResetLatching() && latchingState && latchingState->wheelEventElement()) {
         if (latchingIsLockedToPlatformFrame(m_frame))
             return;
@@ -1079,8 +1081,10 @@ bool EventHandler::processWheelEventForScrolling(const PlatformWheelEvent& wheel
             return true;
         }
 
-        if (!latchingState->startedGestureAtScrollLimit())
+        if (!latchingState->startedGestureAtScrollLimit()) {
+            // FIXME: This set 'view' to a FrameView that is not this EventHandler's FrameView, which then gets scrolled from here, which is wrong.
             view = frameViewForLatchingState(m_frame, *latchingState);
+        }
 
         ASSERT(view);
 

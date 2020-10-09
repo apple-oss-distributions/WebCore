@@ -28,7 +28,11 @@
 #if ENABLE(WEB_AUDIO)
 
 #include "AudioContext.h"
+#include "AudioTimestamp.h"
+#include "DOMWindow.h"
+#include "DefaultAudioDestinationNode.h"
 #include "JSDOMPromiseDeferred.h"
+#include "Performance.h"
 #include <wtf/IsoMallocInlines.h>
 
 #if ENABLE(MEDIA_STREAM)
@@ -36,11 +40,13 @@
 #include "MediaStreamAudioDestinationNode.h"
 #include "MediaStreamAudioSource.h"
 #include "MediaStreamAudioSourceNode.h"
+#include "MediaStreamAudioSourceOptions.h"
 #endif
 
 #if ENABLE(VIDEO)
 #include "HTMLMediaElement.h"
 #include "MediaElementAudioSourceNode.h"
+#include "MediaElementAudioSourceOptions.h"
 #endif
 
 namespace WebCore {
@@ -65,7 +71,7 @@ ExceptionOr<Ref<AudioContext>> AudioContext::create(Document& document, const Au
     
     // FIXME: Figure out where latencyHint should go.
 
-    if (contextOptions.sampleRate.hasValue() && !isSampleRateRangeGood(contextOptions.sampleRate.value()))
+    if (contextOptions.sampleRate.hasValue() && !isSupportedSampleRate(contextOptions.sampleRate.value()))
         return Exception { SyntaxError, "sampleRate is not in range"_s };
     
     auto audioContext = adoptRef(*new AudioContext(document, contextOptions));
@@ -83,6 +89,33 @@ AudioContext::AudioContext(Document& document, const AudioContextOptions& contex
 AudioContext::AudioContext(Document& document, AudioBuffer* renderTarget)
     : BaseAudioContext(document, renderTarget)
 {
+}
+
+double AudioContext::baseLatency()
+{
+    lazyInitialize();
+
+    auto* destination = this->destination();
+    return destination ? static_cast<double>(destination->framesPerBuffer()) / sampleRate() : 0.;
+}
+
+AudioTimestamp AudioContext::getOutputTimestamp(DOMWindow& window)
+{
+    if (!destination())
+        return { 0, 0 };
+
+    auto& performance = window.performance();
+
+    auto position = outputPosition();
+
+    // The timestamp of what is currently being played (contextTime) cannot be
+    // later than what is being rendered. (currentTime)
+    position.position = Seconds { std::min(position.position.seconds(), currentTime()) };
+
+    auto performanceTime = performance.relativeTimeFromTimeOriginInReducedResolution(position.timestamp);
+    performanceTime = std::max(performanceTime, 0.0);
+
+    return { position.position.seconds(), performanceTime };
 }
 
 void AudioContext::close(DOMPromiseDeferred<void>&& promise)
@@ -107,6 +140,11 @@ void AudioContext::close(DOMPromiseDeferred<void>&& promise)
     });
 }
 
+DefaultAudioDestinationNode* AudioContext::destination()
+{
+    return static_cast<DefaultAudioDestinationNode*>(BaseAudioContext::destination());
+}
+
 #if ENABLE(VIDEO)
 
 ExceptionOr<Ref<MediaElementAudioSourceNode>> AudioContext::createMediaElementSource(HTMLMediaElement& mediaElement)
@@ -114,18 +152,7 @@ ExceptionOr<Ref<MediaElementAudioSourceNode>> AudioContext::createMediaElementSo
     ALWAYS_LOG(LOGIDENTIFIER);
 
     ASSERT(isMainThread());
-
-    if (isStopped() || mediaElement.audioSourceNode())
-        return Exception { InvalidStateError };
-
-    lazyInitialize();
-
-    auto node = MediaElementAudioSourceNode::create(*this, mediaElement);
-
-    mediaElement.setAudioSourceNode(node.ptr());
-
-    refNode(node.get()); // context keeps reference until node is disconnected
-    return node;
+    return MediaElementAudioSourceNode::create(*this, { &mediaElement });
 }
 
 #endif
@@ -138,40 +165,12 @@ ExceptionOr<Ref<MediaStreamAudioSourceNode>> AudioContext::createMediaStreamSour
 
     ASSERT(isMainThread());
 
-    if (isStopped())
-        return Exception { InvalidStateError };
-
-    auto audioTracks = mediaStream.getAudioTracks();
-    if (audioTracks.isEmpty())
-        return Exception { InvalidStateError };
-
-    MediaStreamTrack* providerTrack = nullptr;
-    for (auto& track : audioTracks) {
-        if (track->audioSourceProvider()) {
-            providerTrack = track.get();
-            break;
-        }
-    }
-    if (!providerTrack)
-        return Exception { InvalidStateError };
-
-    lazyInitialize();
-
-    auto node = MediaStreamAudioSourceNode::create(*this, mediaStream, *providerTrack);
-    node->setFormat(2, sampleRate());
-
-    refNode(node); // context keeps reference until node is disconnected
-    return node;
+    return MediaStreamAudioSourceNode::create(*this, { &mediaStream });
 }
 
 ExceptionOr<Ref<MediaStreamAudioDestinationNode>> AudioContext::createMediaStreamDestination()
 {
-    if (isStopped())
-        return Exception { InvalidStateError };
-
-    // FIXME: Add support for an optional argument which specifies the number of channels.
-    // FIXME: The default should probably be stereo instead of mono.
-    return MediaStreamAudioDestinationNode::create(*this, 1);
+    return MediaStreamAudioDestinationNode::create(*this);
 }
 
 #endif

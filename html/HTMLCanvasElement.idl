@@ -39,6 +39,7 @@ typedef (
 
 [
     ActiveDOMObject,
+    JSCustomMarkFunction,
     JSGenerateToNativeObject,
     ReportExtraMemoryCost,
     ReportExternalMemoryCost,
@@ -50,6 +51,7 @@ typedef (
 
     [MayThrowException] DOMString toDataURL(optional DOMString type, optional any quality);
     [CallWith=ScriptExecutionContext, MayThrowException] void toBlob(BlobCallback callback, optional DOMString type, optional any quality);
+    [Conditional=OFFSCREEN_CANVAS, CallWith=ScriptExecutionContext, MayThrowException] OffscreenCanvas transferControlToOffscreen();
 
     [Conditional=MEDIA_STREAM, CallWith=Document, MayThrowException, NewObject] MediaStream captureStream(optional double frameRequestRate);
 };

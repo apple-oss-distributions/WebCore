@@ -1044,6 +1044,8 @@ private:
 
         write(ImageBitmapTag);
         write(static_cast<uint8_t>(imageBitmap.originClean()));
+        write(static_cast<uint8_t>(imageBitmap.premultiplyAlpha()));
+        write(static_cast<uint8_t>(imageBitmap.forciblyPremultiplyAlpha()));
         write(static_cast<int32_t>(logicalSize.width()));
         write(static_cast<int32_t>(logicalSize.height()));
         write(static_cast<double>(buffer->resolutionScale()));
@@ -1929,7 +1931,7 @@ public:
         return str;
     }
 
-    static DeserializationResult deserialize(JSGlobalObject* lexicalGlobalObject, JSGlobalObject* globalObject, const Vector<RefPtr<MessagePort>>& messagePorts, Vector<std::pair<std::unique_ptr<ImageBuffer>, bool>>&& imageBuffers
+    static DeserializationResult deserialize(JSGlobalObject* lexicalGlobalObject, JSGlobalObject* globalObject, const Vector<RefPtr<MessagePort>>& messagePorts, Vector<std::pair<std::unique_ptr<ImageBuffer>, ImageBuffer::SerializationState>>&& imageBuffers
 #if ENABLE(OFFSCREEN_CANVAS)
         , Vector<std::unique_ptr<DetachedOffscreenCanvas>>&& detachedOffscreenCanvases
 #endif
@@ -1994,7 +1996,7 @@ private:
         size_t m_index;
     };
 
-    CloneDeserializer(JSGlobalObject* lexicalGlobalObject, JSGlobalObject* globalObject, const Vector<RefPtr<MessagePort>>& messagePorts, ArrayBufferContentsArray* arrayBufferContents, Vector<std::pair<std::unique_ptr<ImageBuffer>, bool>>&& imageBuffers, const Vector<uint8_t>& buffer
+    CloneDeserializer(JSGlobalObject* lexicalGlobalObject, JSGlobalObject* globalObject, const Vector<RefPtr<MessagePort>>& messagePorts, ArrayBufferContentsArray* arrayBufferContents, Vector<std::pair<std::unique_ptr<ImageBuffer>, ImageBuffer::SerializationState>>&& imageBuffers, const Vector<uint8_t>& buffer
 #if ENABLE(OFFSCREEN_CANVAS)
         , Vector<std::unique_ptr<DetachedOffscreenCanvas>>&& detachedOffscreenCanvases = { }
 #endif
@@ -2004,7 +2006,8 @@ private:
         )
         : CloneBase(lexicalGlobalObject)
         , m_globalObject(globalObject)
-        , m_isJSIDBSerializationGlobalObject(globalObject->inherits<JSIDBSerializationGlobalObject>(globalObject->vm()))
+        , m_isDOMGlobalObject(globalObject->inherits<JSDOMGlobalObject>(globalObject->vm()))
+        , m_canCreateDOMObject(m_isDOMGlobalObject && !globalObject->inherits<JSIDBSerializationGlobalObject>(globalObject->vm()))
         , m_ptr(buffer.data())
         , m_end(buffer.data() + buffer.size())
         , m_version(0xFFFFFFFF)
@@ -2025,7 +2028,7 @@ private:
             m_version = 0xFFFFFFFF;
     }
 
-    CloneDeserializer(JSGlobalObject* lexicalGlobalObject, JSGlobalObject* globalObject, const Vector<RefPtr<MessagePort>>& messagePorts, ArrayBufferContentsArray* arrayBufferContents, const Vector<uint8_t>& buffer, const Vector<String>& blobURLs, const Vector<String> blobFilePaths, ArrayBufferContentsArray* sharedBuffers, Vector<std::pair<std::unique_ptr<ImageBuffer>, bool>>&& imageBuffers
+    CloneDeserializer(JSGlobalObject* lexicalGlobalObject, JSGlobalObject* globalObject, const Vector<RefPtr<MessagePort>>& messagePorts, ArrayBufferContentsArray* arrayBufferContents, const Vector<uint8_t>& buffer, const Vector<String>& blobURLs, const Vector<String> blobFilePaths, ArrayBufferContentsArray* sharedBuffers, Vector<std::pair<std::unique_ptr<ImageBuffer>, ImageBuffer::SerializationState>>&& imageBuffers
 #if ENABLE(OFFSCREEN_CANVAS)
         , Vector<std::unique_ptr<DetachedOffscreenCanvas>>&& detachedOffscreenCanvases
 #endif
@@ -2035,7 +2038,8 @@ private:
         )
         : CloneBase(lexicalGlobalObject)
         , m_globalObject(globalObject)
-        , m_isJSIDBSerializationGlobalObject(globalObject->inherits<JSIDBSerializationGlobalObject>(globalObject->vm()))
+        , m_isDOMGlobalObject(globalObject->inherits<JSDOMGlobalObject>(globalObject->vm()))
+        , m_canCreateDOMObject(m_isDOMGlobalObject && !globalObject->inherits<JSIDBSerializationGlobalObject>(globalObject->vm()))
         , m_ptr(buffer.data())
         , m_end(buffer.data() + buffer.size())
         , m_version(0xFFFFFFFF)
@@ -2291,10 +2295,10 @@ private:
         if (filePath.isEmpty())
             filePath = path->string();
 
-        if (m_isJSIDBSerializationGlobalObject)
+        if (!m_canCreateDOMObject)
             return true;
 
-        file = File::deserialize(filePath, URL(URL(), url->string()), type->string(), name->string(), optionalLastModified);
+        file = File::deserialize(scriptExecutionContextFromExecState(m_lexicalGlobalObject), filePath, URL(URL(), url->string()), type->string(), name->string(), optionalLastModified);
         return true;
     }
 
@@ -2948,7 +2952,7 @@ private:
             fingerprints.uncheckedAppend(RTCCertificate::DtlsFingerprint { algorithm->string(), value->string() });
         }
 
-        if (m_isJSIDBSerializationGlobalObject)
+        if (!m_canCreateDOMObject)
             return constructEmptyObject(m_lexicalGlobalObject, m_globalObject->objectPrototype());
 
         auto rtcCertificate = RTCCertificate::create(SecurityOrigin::createFromString(origin->string()), expires, WTFMove(fingerprints), certificate->takeString(), keyedMaterial->takeString());
@@ -2959,12 +2963,14 @@ private:
     JSValue readImageBitmap()
     {
         uint8_t originClean;
+        uint8_t premultiplyAlpha;
+        uint8_t forciblyPremultiplyAlpha;
         int32_t logicalWidth;
         int32_t logicalHeight;
         double resolutionScale;
         RefPtr<ArrayBuffer> arrayBuffer;
 
-        if (!read(originClean) || !read(logicalWidth) || !read(logicalHeight) || !read(resolutionScale) || !readArrayBuffer(arrayBuffer)) {
+        if (!read(originClean) || !read(premultiplyAlpha) || !read(forciblyPremultiplyAlpha) || !read(logicalWidth) || !read(logicalHeight) || !read(resolutionScale) || !readArrayBuffer(arrayBuffer)) {
             fail();
             return JSValue();
         }
@@ -2993,7 +2999,7 @@ private:
 
         buffer->putImageData(AlphaPremultiplication::Premultiplied, *imageData, { IntPoint::zero(), logicalSize });
 
-        auto bitmap = ImageBitmap::create({ WTFMove(buffer), static_cast<bool>(originClean) });
+        auto bitmap = ImageBitmap::create({ WTFMove(buffer), ImageBuffer::SerializationState { static_cast<bool>(originClean), static_cast<bool>(premultiplyAlpha), static_cast<bool>(forciblyPremultiplyAlpha) }});
         return getJSValue(bitmap);
     }
 
@@ -3160,7 +3166,7 @@ private:
             RefPtr<File> file;
             if (!readFile(file))
                 return JSValue();
-            if (m_isJSIDBSerializationGlobalObject)
+            if (!m_canCreateDOMObject)
                 return jsNull();
             return toJS(m_lexicalGlobalObject, jsCast<JSDOMGlobalObject*>(m_globalObject), file.get());
         }
@@ -3174,10 +3180,10 @@ private:
                 RefPtr<File> file;
                 if (!readFile(file))
                     return JSValue();
-                if (!m_isJSIDBSerializationGlobalObject)
+                if (m_canCreateDOMObject)
                     files.append(file.releaseNonNull());
             }
-            if (m_isJSIDBSerializationGlobalObject)
+            if (!m_canCreateDOMObject)
                 return jsNull();
             return getJSValue(FileList::create(WTFMove(files)).get());
         }
@@ -3194,6 +3200,10 @@ private:
             if (static_cast<uint32_t>(m_end - m_ptr) < length) {
                 fail();
                 return JSValue();
+            }
+            if (!m_isDOMGlobalObject) {
+                m_ptr += length;
+                return jsNull();
             }
             IntSize imageSize(width, height);
             RELEASE_ASSERT(!length || (imageSize.area() * 4).unsafeGet() <= length);
@@ -3219,9 +3229,9 @@ private:
             unsigned long long size = 0;
             if (!read(size))
                 return JSValue();
-            if (m_isJSIDBSerializationGlobalObject)
+            if (!m_canCreateDOMObject)
                 return jsNull();
-            return getJSValue(Blob::deserialize(URL(URL(), url->string()), type->string(), size, blobFilePathForBlobURL(url->string())).get());
+            return getJSValue(Blob::deserialize(scriptExecutionContextFromExecState(m_lexicalGlobalObject), URL(URL(), url->string()), type->string(), size, blobFilePathForBlobURL(url->string())).get());
         }
         case StringTag: {
             CachedStringRef cachedString;
@@ -3412,7 +3422,8 @@ private:
     }
 
     JSGlobalObject* m_globalObject;
-    bool m_isJSIDBSerializationGlobalObject;
+    bool m_isDOMGlobalObject;
+    bool m_canCreateDOMObject;
     const uint8_t* m_ptr;
     const uint8_t* m_end;
     unsigned m_version;
@@ -3423,7 +3434,7 @@ private:
     Vector<String> m_blobURLs;
     Vector<String> m_blobFilePaths;
     ArrayBufferContentsArray* m_sharedBuffers;
-    Vector<std::pair<std::unique_ptr<ImageBuffer>, bool>> m_imageBuffers;
+    Vector<std::pair<std::unique_ptr<ImageBuffer>, ImageBuffer::SerializationState>> m_imageBuffers;
     Vector<RefPtr<ImageBitmap>> m_imageBitmaps;
 #if ENABLE(OFFSCREEN_CANVAS)
     Vector<std::unique_ptr<DetachedOffscreenCanvas>> m_detachedOffscreenCanvases;
@@ -3647,7 +3658,7 @@ SerializedScriptValue::SerializedScriptValue(Vector<uint8_t>&& buffer, std::uniq
     m_memoryCost = computeMemoryCost();
 }
 
-SerializedScriptValue::SerializedScriptValue(Vector<uint8_t>&& buffer, const Vector<String>& blobURLs, std::unique_ptr<ArrayBufferContentsArray> arrayBufferContentsArray, std::unique_ptr<ArrayBufferContentsArray> sharedBufferContentsArray, Vector<std::pair<std::unique_ptr<ImageBuffer>, bool>>&& imageBuffers
+SerializedScriptValue::SerializedScriptValue(Vector<uint8_t>&& buffer, const Vector<String>& blobURLs, std::unique_ptr<ArrayBufferContentsArray> arrayBufferContentsArray, std::unique_ptr<ArrayBufferContentsArray> sharedBufferContentsArray, Vector<std::pair<std::unique_ptr<ImageBuffer>, ImageBuffer::SerializationState>>&& imageBuffers
 #if ENABLE(OFFSCREEN_CANVAS)
         , Vector<std::unique_ptr<DetachedOffscreenCanvas>>&& detachedOffscreenCanvases
 #endif

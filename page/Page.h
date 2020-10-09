@@ -348,7 +348,8 @@ public:
     WEBCORE_EXPORT void updateMediaElementRateChangeRestrictions();
 
     void didStartProvisionalLoad();
-    void didFinishLoad(); // Called when the load has been committed in the main frame.
+    void didCommitLoad();
+    void didFinishLoad();
 
     bool delegatesScaling() const { return m_delegatesScaling; }
     WEBCORE_EXPORT void setDelegatesScaling(bool);
@@ -656,6 +657,9 @@ public:
     void setHasResourceLoadClient(bool has) { m_hasResourceLoadClient = has; }
     bool hasResourceLoadClient() const { return m_hasResourceLoadClient; }
 
+    void setCanUseCredentialStorage(bool canUse) { m_canUseCredentialStorage = canUse; }
+    bool canUseCredentialStorage() const { return m_canUseCredentialStorage; }
+
 #if ENABLE(MEDIA_SESSION)
     WEBCORE_EXPORT void handleMediaEvent(MediaEventType);
     WEBCORE_EXPORT void setVolumeOfMediaElement(double, uint64_t);
@@ -774,6 +778,8 @@ public:
 
     bool hasBeenNotifiedToInjectUserScripts() const { return m_hasBeenNotifiedToInjectUserScripts; }
     WEBCORE_EXPORT void notifyToInjectUserScripts();
+
+    MonotonicTime lastRenderingUpdateTimestamp() const { return m_lastRenderingUpdateTimestamp; }
 
 private:
     struct Navigation {
@@ -1066,8 +1072,11 @@ private:
     bool m_isTakingSnapshotsForApplicationSuspension { false };
     bool m_loadsSubresources { true };
     bool m_loadsFromNetwork { true };
+    bool m_canUseCredentialStorage { true };
     ShouldRelaxThirdPartyCookieBlocking m_shouldRelaxThirdPartyCookieBlocking { ShouldRelaxThirdPartyCookieBlocking::No };
     bool m_hasBeenNotifiedToInjectUserScripts { false };
+
+    MonotonicTime m_lastRenderingUpdateTimestamp;
 };
 
 inline PageGroup& Page::group()

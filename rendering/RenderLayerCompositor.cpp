@@ -211,15 +211,16 @@ struct RenderLayerCompositor::CompositingState {
 };
 
 struct RenderLayerCompositor::UpdateBackingTraversalState {
-
-    UpdateBackingTraversalState(RenderLayer* compAncestor = nullptr)
+    UpdateBackingTraversalState(RenderLayer* compAncestor = nullptr, Vector<RenderLayer*>* clippedLayers = nullptr, Vector<RenderLayer*>* overflowScrollers = nullptr)
         : compositingAncestor(compAncestor)
+        , layersClippedByScrollers(clippedLayers)
+        , overflowScrollLayers(overflowScrollers)
     {
     }
 
     UpdateBackingTraversalState stateForDescendants() const
     {
-        UpdateBackingTraversalState state(compositingAncestor);
+        UpdateBackingTraversalState state(compositingAncestor, layersClippedByScrollers, overflowScrollLayers);
 #if !LOG_DISABLED
         state.depth = depth + 1;
 #endif
@@ -227,6 +228,12 @@ struct RenderLayerCompositor::UpdateBackingTraversalState {
     }
 
     RenderLayer* compositingAncestor;
+
+    // List of layers in the current stacking context that are clipped by ancestor scrollers.
+    Vector<RenderLayer*>* layersClippedByScrollers;
+    // List of layers with composited overflow:scroll.
+    Vector<RenderLayer*>* overflowScrollLayers;
+
 #if !LOG_DISABLED
     unsigned depth { 0 };
 #endif
@@ -857,6 +864,9 @@ bool RenderLayerCompositor::updateCompositingLayers(CompositingUpdateType update
         if (!m_renderView.frame().isMainFrame())
             scrollingTreeState.parentNodeID = frameHostingNodeForFrame(m_renderView.frame());
 
+        auto* scrollingCoordinator = this->scrollingCoordinator();
+        bool hadSubscrollers = scrollingCoordinator ? scrollingCoordinator->hasSubscrollers() : false;
+
         UpdateBackingTraversalState traversalState;
         Vector<Ref<GraphicsLayer>> childList;
         updateBackingAndHierarchy(*updateRoot, childList, traversalState, scrollingTreeState);
@@ -872,6 +882,9 @@ bool RenderLayerCompositor::updateCompositingLayers(CompositingUpdateType update
             destroyRootLayer();
         else if (m_rootContentsLayer)
             m_rootContentsLayer->setChildren(WTFMove(childList));
+
+        if (scrollingCoordinator && scrollingCoordinator->hasSubscrollers() != hadSubscrollers)
+            invalidateEventRegionForAllFrames();
     }
 
 #if !LOG_DISABLED
@@ -1262,7 +1275,9 @@ void RenderLayerCompositor::updateBackingAndHierarchy(RenderLayer& layer, Vector
 
     ScrollingTreeState scrollingStateForDescendants = scrollingTreeState;
     UpdateBackingTraversalState traversalStateForDescendants = traversalState.stateForDescendants();
-
+    Vector<RenderLayer*> layersClippedByScrollers;
+    Vector<RenderLayer*> compositedOverflowScrollLayers;
+    
     if (layer.needsScrollingTreeUpdate())
         scrollingTreeState.needSynchronousScrollingReasonsUpdate = true;
 
@@ -1311,6 +1326,8 @@ void RenderLayerCompositor::updateBackingAndHierarchy(RenderLayer& layer, Vector
         scrollingStateForDescendants.nextChildIndex = 0;
         
         traversalStateForDescendants.compositingAncestor = &layer;
+        traversalStateForDescendants.layersClippedByScrollers = &layersClippedByScrollers;
+        traversalStateForDescendants.overflowScrollLayers = &compositedOverflowScrollLayers;
 
 #if !LOG_DISABLED
         logLayerInfo(layer, "updateBackingAndHierarchy", traversalState.depth);
@@ -1356,6 +1373,9 @@ void RenderLayerCompositor::updateBackingAndHierarchy(RenderLayer& layer, Vector
 
         // Pass needSynchronousScrollingReasonsUpdate back up.
         scrollingTreeState.needSynchronousScrollingReasonsUpdate |= scrollingStateForDescendants.needSynchronousScrollingReasonsUpdate;
+        if (scrollingTreeState.parentNodeID == scrollingStateForDescendants.parentNodeID)
+            scrollingTreeState.nextChildIndex = scrollingStateForDescendants.nextChildIndex;
+
     } else if (requiresChildRebuild)
         appendForegroundLayerIfNecessary();
 
@@ -1373,16 +1393,88 @@ void RenderLayerCompositor::updateBackingAndHierarchy(RenderLayer& layer, Vector
                         layerChildren.append(*overflowControlLayer);
                 }
 
+                adjustOverflowScrollbarContainerLayers(layer, compositedOverflowScrollLayers, layersClippedByScrollers, layerChildren);
                 layerBacking->parentForSublayers()->setChildren(WTFMove(layerChildren));
             }
         }
 
         childLayersOfEnclosingLayer.append(*layerBacking->childForSuperlayers());
 
+        if (layerBacking->hasAncestorClippingLayers() && layerBacking->ancestorClippingStack()->hasAnyScrollingLayers())
+            traversalState.layersClippedByScrollers->append(&layer);
+
+        if (layer.hasCompositedScrollableOverflow())
+            traversalState.overflowScrollLayers->append(&layer);
+
         layerBacking->updateAfterDescendants();
     }
     
     layer.clearUpdateBackingOrHierarchyTraversalState();
+}
+
+// Finds the set of overflow:scroll layers whose overflow controls hosting layer needs to be reparented,
+// to ensure that the scrollbars show on top of positioned content inside the scroller.
+void RenderLayerCompositor::adjustOverflowScrollbarContainerLayers(RenderLayer& stackingContextLayer, const Vector<RenderLayer*>& overflowScrollLayers, const Vector<RenderLayer*>& layersClippedByScrollers, Vector<Ref<GraphicsLayer>>& layerChildren)
+{
+    if (layersClippedByScrollers.isEmpty())
+        return;
+
+    HashMap<RenderLayer*, RenderLayer*> overflowScrollToLastContainedLayerMap;
+
+    for (auto* clippedLayer : layersClippedByScrollers) {
+        auto* clippingStack = clippedLayer->backing()->ancestorClippingStack();
+
+        for (const auto& stackEntry : clippingStack->stack()) {
+            if (!stackEntry.clipData.isOverflowScroll)
+                continue;
+
+            if (auto* layer = stackEntry.clipData.clippingLayer.get())
+                overflowScrollToLastContainedLayerMap.set(layer, clippedLayer);
+        }
+    }
+
+    for (auto* overflowScrollingLayer : overflowScrollLayers) {
+        auto it = overflowScrollToLastContainedLayerMap.find(overflowScrollingLayer);
+        if (it == overflowScrollToLastContainedLayerMap.end())
+            continue;
+    
+        auto* lastContainedDescendant = it->value;
+        if (!lastContainedDescendant || !lastContainedDescendant->isComposited())
+            continue;
+
+        auto* lastContainedDescendantBacking = lastContainedDescendant->backing();
+        auto* overflowBacking = overflowScrollingLayer->backing();
+        if (!overflowBacking)
+            continue;
+        
+        auto* overflowContainerLayer = overflowBacking->overflowControlsContainer();
+        if (!overflowContainerLayer)
+            continue;
+
+        LOG_WITH_STREAM(Compositing, stream << "Moving overflow controls layer for " << overflowScrollingLayer << " to appear after " << lastContainedDescendant);
+
+        overflowContainerLayer->removeFromParent();
+
+        if (overflowBacking->hasAncestorClippingLayers())
+            overflowBacking->ensureOverflowControlsHostLayerAncestorClippingStack(&stackingContextLayer);
+
+        if (auto* overflowControlsAncestorClippingStack = overflowBacking->overflowControlsHostLayerAncestorClippingStack()) {
+            Vector<Ref<GraphicsLayer>> children;
+            children.append(*overflowContainerLayer);
+            overflowControlsAncestorClippingStack->lastClippingLayer()->setChildren(WTFMove(children));
+            overflowContainerLayer = overflowControlsAncestorClippingStack->firstClippingLayer();
+        }
+
+        auto* lastDescendantGraphicsLayer = lastContainedDescendantBacking->childForSuperlayers();
+        auto lastDescendantIndex = layerChildren.findMatching([&](auto& item) {
+            return item.ptr() == lastDescendantGraphicsLayer;
+        });
+
+        if (lastDescendantIndex != notFound)
+            layerChildren.insert(lastDescendantIndex + 1, *overflowContainerLayer);
+
+        overflowBacking->adjustOverflowControlsPositionRelativeToAncestor(stackingContextLayer);
+    }
 }
 
 void RenderLayerCompositor::appendDocumentOverlayLayers(Vector<Ref<GraphicsLayer>>& childList)
@@ -1672,14 +1764,15 @@ bool RenderLayerCompositor::updateBacking(RenderLayer& layer, RequiresCompositin
     };
 
     if (backingRequired == BackingRequired::Yes) {
+        // If we need to repaint, do so before making backing and disconnecting from the backing provider layer.
+        if (!layer.backing())
+            repaintLayer(layer);
+
         layer.disconnectFromBackingProviderLayer();
 
         enableCompositingMode();
         
         if (!layer.backing()) {
-            // If we need to repaint, do so before making backing
-            repaintLayer(layer);
-
             layer.ensureBacking();
 
             if (layer.isRenderViewLayer() && useCoordinatedScrollingForLayer(layer)) {
@@ -2366,6 +2459,14 @@ void RenderLayerCompositor::setIsInWindow(bool isInWindow)
             m_legacyScrollingLayerCoordinator->unregisterAllScrollingLayers();
         }
 #endif
+    }
+}
+
+void RenderLayerCompositor::invalidateEventRegionForAllFrames()
+{
+    for (auto* frame = &page().mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        if (auto* view = frame->contentRenderer())
+            view->compositor().invalidateEventRegionForAllLayers();
     }
 }
 
@@ -4676,6 +4777,8 @@ ScrollingNodeID RenderLayerCompositor::updateScrollingNodeForScrollingProxyRole(
             scrollingCoordinator->setRelatedOverflowScrollingNodes(entry.overflowScrollProxyNodeID, WTFMove(scrollingNodeIDs));
         }
     }
+    
+    // FIXME: also m_overflowControlsHostLayerAncestorClippingStack
 
     if (!nodeID)
         return treeState.parentNodeID.valueOr(0);

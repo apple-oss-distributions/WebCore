@@ -78,6 +78,7 @@
 #include "KeyboardEvent.h"
 #include "KeyframeAnimationOptions.h"
 #include "KeyframeEffect.h"
+#include "Logging.h"
 #include "MutationObserverInterestGroup.h"
 #include "MutationRecord.h"
 #include "NodeRenderStyle.h"
@@ -126,6 +127,7 @@
 #include <wtf/IsoMallocInlines.h>
 #include <wtf/NeverDestroyed.h>
 #include <wtf/text/CString.h>
+#include <wtf/text/TextStream.h>
 
 namespace WebCore {
 
@@ -407,6 +409,8 @@ bool Element::dispatchWheelEvent(const PlatformWheelEvent& platformEvent)
         event->stopPropagation();
 
     dispatchEvent(event);
+    
+    LOG_WITH_STREAM(Scrolling, stream << "Element " << *this << " dispatchWheelEvent: defaultPrevented " << event->defaultPrevented() << " defaultHandled " << event->defaultHandled());
     return !event->defaultPrevented() && !event->defaultHandled();
 }
 
@@ -1940,6 +1944,10 @@ void Element::invalidateStyle()
 {
     Node::invalidateStyle(Style::Validity::ElementInvalid);
     invalidateSiblingsIfNeeded(*this);
+
+    // FIXME: This flag should be set whenever styles are invalidated while computed styles are present,
+    // not just in this codepath.
+    setFlag(IsComputedStyleInvalidFlag);
 }
 
 void Element::invalidateStyleAndLayerComposition()
@@ -1990,6 +1998,7 @@ void Element::storeDisplayContentsStyle(std::unique_ptr<RenderStyle> style)
     ASSERT(style && style->display() == DisplayType::Contents);
     ASSERT(!renderer() || isPseudoElement());
     ensureElementRareData().setComputedStyle(WTFMove(style));
+    clearFlag(IsComputedStyleInvalidFlag);
 }
 
 // Returns true is the given attribute is an event handler.
@@ -3313,7 +3322,7 @@ const RenderStyle* Element::renderOrDisplayContentsStyle() const
 const RenderStyle* Element::resolveComputedStyle(ResolveComputedStyleMode mode)
 {
     ASSERT(isConnected());
-    ASSERT(!existingComputedStyle());
+    ASSERT(!existingComputedStyle() || getFlag(IsComputedStyleInvalidFlag));
 
     Deque<RefPtr<Element>, 32> elementsRequiringComputedStyle({ this });
     const RenderStyle* computedStyle = nullptr;
@@ -3333,6 +3342,7 @@ const RenderStyle* Element::resolveComputedStyle(ResolveComputedStyleMode mode)
         computedStyle = style.get();
         ElementRareData& rareData = element->ensureElementRareData();
         rareData.setComputedStyle(WTFMove(style));
+        element->clearFlag(IsComputedStyleInvalidFlag);
 
         if (mode == ResolveComputedStyleMode::RenderedOnly && computedStyle->display() == DisplayType::None)
             return nullptr;
@@ -3362,7 +3372,7 @@ bool Element::isVisibleWithoutResolvingFullStyle() const
         return renderStyle() && renderStyle()->visibility() == Visibility::Visible;
 
     // Compute style in yet unstyled subtree.
-    auto* style = existingComputedStyle();
+    auto* style = getFlag(IsComputedStyleInvalidFlag) ? nullptr : existingComputedStyle();
     if (!style)
         style = const_cast<Element&>(*this).resolveComputedStyle(ResolveComputedStyleMode::RenderedOnly);
 

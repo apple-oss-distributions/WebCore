@@ -69,6 +69,7 @@ class File;
 class Frame;
 class GCObservation;
 class HTMLAnchorElement;
+class HTMLAttachmentElement;
 class HTMLImageElement;
 class HTMLInputElement;
 class HTMLLinkElement;
@@ -370,6 +371,7 @@ public:
 
     void handleAcceptedCandidate(const String& candidate, unsigned location, unsigned length);
     void changeSelectionListType();
+    void changeBackToReplacedString(const String& replacedString);
 
     bool isOverwriteModeEnabled();
     void toggleOverwriteModeEnabled();
@@ -621,7 +623,10 @@ public:
     bool elementShouldBufferData(HTMLMediaElement&);
     String elementBufferingPolicy(HTMLMediaElement&);
     double privatePlayerVolume(const HTMLMediaElement&);
+    ExceptionOr<void> setOverridePreferredDynamicRangeMode(HTMLMediaElement&, const String&);
 #endif
+
+    ExceptionOr<void> setIsPlayingToBluetoothOverride(Optional<bool>);
 
     bool isSelectPopupVisible(HTMLSelectElement&);
 
@@ -1054,6 +1059,15 @@ public:
 
     enum class ContentSizeCategory { L, XXXL };
     void setContentSizeCategory(ContentSizeCategory);
+
+#if ENABLE(ATTACHMENT_ELEMENT)
+    struct AttachmentThumbnailInfo {
+        unsigned width { 0 };
+        unsigned height { 0 };
+    };
+
+    ExceptionOr<AttachmentThumbnailInfo> attachmentThumbnailInfo(const HTMLAttachmentElement&);
+#endif
 
 private:
     explicit Internals(Document&);

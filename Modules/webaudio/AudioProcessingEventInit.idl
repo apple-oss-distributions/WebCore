@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,28 +23,10 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#include "JSXPathNSResolver.h"
-
-#include "JSCustomXPathNSResolver.h"
-#include "JSDOMExceptionHandling.h"
-
-
-namespace WebCore {
-using namespace JSC;
-
-RefPtr<XPathNSResolver> JSXPathNSResolver::toWrapped(VM& vm, JSGlobalObject& lexicalGlobalObject, JSValue value)
-{
-    if (value.inherits<JSXPathNSResolver>(vm))
-        return &jsCast<JSXPathNSResolver*>(asObject(value))->wrapped();
-
-    auto result = JSCustomXPathNSResolver::create(lexicalGlobalObject, value);
-    if (UNLIKELY(result.hasException())) {
-        auto scope = DECLARE_THROW_SCOPE(vm);
-        propagateException(lexicalGlobalObject, scope, result.releaseException());
-        return nullptr;
-    }
-    return result.releaseReturnValue();
-}
-
-} // namespace WebCore
+[
+    Conditional=WEB_AUDIO,
+] dictionary AudioProcessingEventInit : EventInit {
+    required double playbackTime;
+    required AudioBuffer inputBuffer;
+    required AudioBuffer outputBuffer;
+};

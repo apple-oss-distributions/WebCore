@@ -33,6 +33,7 @@
 #include "Event.h"
 #include "Frame.h"
 #include "FrameView.h"
+#include "GeometryUtilities.h"
 #include "HTMLBodyElement.h"
 #include "HTMLElement.h"
 #include "HTMLHtmlElement.h"
@@ -888,7 +889,7 @@ String Range::text() const
     // FIXME: As with innerText, we'd like this to work even if there are no render objects.
     startContainer().document().updateLayout();
 
-    return plainText(*this);
+    return plainText(makeSimpleRange(*this));
 }
 
 // https://w3c.github.io/DOM-Parsing/#widl-Range-createContextualFragment-DocumentFragment-DOMString-fragment
@@ -1069,11 +1070,6 @@ Node* Range::firstNode() const
     return NodeTraversal::nextSkippingChildren(startContainer());
 }
 
-ShadowRoot* Range::shadowRoot() const
-{
-    return startContainer().containingShadowRoot();
-}
-
 Node* Range::pastLastNode() const
 {
     if (endContainer().isCharacterDataNode())
@@ -1082,334 +1078,6 @@ Node* Range::pastLastNode() const
         return child;
     return NodeTraversal::nextSkippingChildren(endContainer());
 }
-
-IntRect Range::absoluteBoundingBox(OptionSet<BoundingRectBehavior> rectOptions) const
-{
-    Vector<IntRect> rects;
-    absoluteTextRects(rects, false, rectOptions);
-    IntRect result;
-    for (auto& rect : rects)
-        result.unite(rect);
-    return result;
-}
-
-Vector<FloatRect> Range::absoluteRectsForRangeInText(Node* node, RenderText& renderText, bool useSelectionHeight, bool& isFixed, OptionSet<BoundingRectBehavior> rectOptions) const
-{
-    unsigned startOffset = node == &startContainer() ? m_start.offset() : 0;
-    unsigned endOffset = node == &endContainer() ? m_end.offset() : std::numeric_limits<unsigned>::max();
-
-    auto textQuads = renderText.absoluteQuadsForRange(startOffset, endOffset, useSelectionHeight, rectOptions.contains(BoundingRectBehavior::IgnoreEmptyTextSelections), &isFixed);
-
-    if (rectOptions.contains(BoundingRectBehavior::RespectClipping)) {
-        Vector<FloatRect> clippedRects;
-        clippedRects.reserveInitialCapacity(textQuads.size());
-
-        auto absoluteClippedOverflowRect = renderText.absoluteClippedOverflowRect();
-
-        for (auto& quad : textQuads) {
-            auto clippedRect = intersection(quad.boundingBox(), absoluteClippedOverflowRect);
-            if (!clippedRect.isEmpty())
-                clippedRects.uncheckedAppend(clippedRect);
-        }
-
-        return clippedRects;
-    }
-
-    return boundingBoxes(textQuads);
-}
-
-void Range::absoluteTextRects(Vector<IntRect>& rects, bool useSelectionHeight, OptionSet<BoundingRectBehavior> rectOptions) const
-{
-    // FIXME: This function should probably return FloatRects.
-
-    bool allFixed = true;
-    bool someFixed = false;
-
-    Node* stopNode = pastLastNode();
-    for (Node* node = firstNode(); node != stopNode; node = NodeTraversal::next(*node)) {
-        RenderObject* renderer = node->renderer();
-        if (!renderer)
-            continue;
-        bool isFixed = false;
-        if (renderer->isBR())
-            renderer->absoluteRects(rects, flooredLayoutPoint(renderer->localToAbsolute()));
-        else if (is<RenderText>(*renderer)) {
-            auto rectsForRenderer = absoluteRectsForRangeInText(node, downcast<RenderText>(*renderer), useSelectionHeight, isFixed, rectOptions);
-            for (auto& rect : rectsForRenderer)
-                rects.append(enclosingIntRect(rect));
-        } else
-            continue;
-        allFixed &= isFixed;
-        someFixed |= isFixed;
-    }
-}
-
-#if PLATFORM(IOS_FAMILY)
-static bool intervalsSufficientlyOverlap(int startA, int endA, int startB, int endB)
-{
-    if (endA <= startA || endB <= startB)
-        return false;
-
-    const float sufficientOverlap = .75;
-
-    int lengthA = endA - startA;
-    int lengthB = endB - startB;
-
-    int maxStart = std::max(startA, startB);
-    int minEnd = std::min(endA, endB);
-
-    if (maxStart > minEnd)
-        return false;
-
-    return minEnd - maxStart >= sufficientOverlap * std::min(lengthA, lengthB);
-}
-
-static inline void adjustLineHeightOfSelectionRects(Vector<SelectionRect>& rects, size_t numberOfRects, int lineNumber, int lineTop, int lineHeight)
-{
-    ASSERT(rects.size() >= numberOfRects);
-    for (size_t i = numberOfRects; i; ) {
-        --i;
-        if (rects[i].lineNumber())
-            break;
-        rects[i].setLineNumber(lineNumber);
-        rects[i].setLogicalTop(lineTop);
-        rects[i].setLogicalHeight(lineHeight);
-    }
-}
-
-static SelectionRect coalesceSelectionRects(const SelectionRect& original, const SelectionRect& previous)
-{
-    SelectionRect result(unionRect(previous.rect(), original.rect()), original.isHorizontal(), original.pageNumber());
-    result.setDirection(original.containsStart() || original.containsEnd() ? original.direction() : previous.direction());
-    result.setContainsStart(previous.containsStart() || original.containsStart());
-    result.setContainsEnd(previous.containsEnd() || original.containsEnd());
-    result.setIsFirstOnLine(previous.isFirstOnLine() || original.isFirstOnLine());
-    result.setIsLastOnLine(previous.isLastOnLine() || original.isLastOnLine());
-    return result;
-}
-
-// This function is similar in spirit to addLineBoxRects, but annotates the returned rectangles
-// with additional state which helps iOS draw selections in its unique way.
-int Range::collectSelectionRectsWithoutUnionInteriorLines(Vector<SelectionRect>& rects) const
-{
-    auto& startContainer = this->startContainer();
-    auto& endContainer = this->endContainer();
-    int startOffset = m_start.offset();
-    int endOffset = m_end.offset();
-
-    Vector<SelectionRect> newRects;
-    Node* stopNode = pastLastNode();
-    bool hasFlippedWritingMode = startContainer.renderer() && startContainer.renderer()->style().isFlippedBlocksWritingMode();
-    bool containsDifferentWritingModes = false;
-    for (Node* node = firstNode(); node && node != stopNode; node = NodeTraversal::next(*node)) {
-        RenderObject* renderer = node->renderer();
-        // Only ask leaf render objects for their line box rects.
-        if (renderer && !renderer->firstChildSlow() && renderer->style().userSelect() != UserSelect::None) {
-            bool isStartNode = renderer->node() == &startContainer;
-            bool isEndNode = renderer->node() == &endContainer;
-            if (hasFlippedWritingMode != renderer->style().isFlippedBlocksWritingMode())
-                containsDifferentWritingModes = true;
-            // FIXME: Sending 0 for the startOffset is a weird way of telling the renderer that the selection
-            // doesn't start inside it, since we'll also send 0 if the selection *does* start in it, at offset 0.
-            //
-            // FIXME: Selection endpoints aren't always inside leaves, and we only build SelectionRects for leaves,
-            // so we can't accurately determine which SelectionRects contain the selection start and end using
-            // only the offsets of the start and end. We need to pass the whole Range.
-            int beginSelectionOffset = isStartNode ? startOffset : 0;
-            int endSelectionOffset = isEndNode ? endOffset : std::numeric_limits<int>::max();
-            renderer->collectSelectionRects(newRects, beginSelectionOffset, endSelectionOffset);
-            for (auto& selectionRect : newRects) {
-                if (selectionRect.containsStart() && !isStartNode)
-                    selectionRect.setContainsStart(false);
-                if (selectionRect.containsEnd() && !isEndNode)
-                    selectionRect.setContainsEnd(false);
-                if (selectionRect.logicalWidth() || selectionRect.logicalHeight())
-                    rects.append(selectionRect);
-            }
-            newRects.shrink(0);
-        }
-    }
-
-    // The range could span nodes with different writing modes.
-    // If this is the case, we use the writing mode of the common ancestor.
-    if (containsDifferentWritingModes) {
-        if (auto ancestor = commonInclusiveAncestor(startContainer, endContainer))
-            hasFlippedWritingMode = ancestor->renderer()->style().isFlippedBlocksWritingMode();
-    }
-
-    const size_t numberOfRects = rects.size();
-
-    // If the selection ends in a BR, then add the line break bit to the last
-    // rect we have. This will cause its selection rect to extend to the
-    // end of the line.
-    if (stopNode && stopNode->hasTagName(HTMLNames::brTag) && numberOfRects) {
-        // Only set the line break bit if the end of the range actually
-        // extends all the way to include the <br>. VisiblePosition helps to
-        // figure this out.
-        VisiblePosition endPosition(createLegacyEditingPosition(&endContainer, endOffset), VP_DEFAULT_AFFINITY);
-        VisiblePosition brPosition(createLegacyEditingPosition(stopNode, 0), VP_DEFAULT_AFFINITY);
-        if (endPosition == brPosition)
-            rects.last().setIsLineBreak(true);
-    }
-
-    int lineTop = std::numeric_limits<int>::max();
-    int lineBottom = std::numeric_limits<int>::min();
-    int lastLineTop = lineTop;
-    int lastLineBottom = lineBottom;
-    int lineNumber = 0;
-
-    for (size_t i = 0; i < numberOfRects; ++i) {
-        int currentRectTop = rects[i].logicalTop();
-        int currentRectBottom = currentRectTop + rects[i].logicalHeight();
-
-        // We don't want to count the ruby text as a separate line.
-        if (intervalsSufficientlyOverlap(currentRectTop, currentRectBottom, lineTop, lineBottom) || (i && rects[i].isRubyText())) {
-            // Grow the current line bounds.
-            lineTop = std::min(lineTop, currentRectTop);
-            lineBottom = std::max(lineBottom, currentRectBottom);
-            // Avoid overlap with the previous line.
-            if (!hasFlippedWritingMode)
-                lineTop = std::max(lastLineBottom, lineTop);
-            else
-                lineBottom = std::min(lastLineTop, lineBottom);
-        } else {
-            adjustLineHeightOfSelectionRects(rects, i, lineNumber, lineTop, lineBottom - lineTop);
-            if (!hasFlippedWritingMode) {
-                lastLineTop = lineTop;
-                if (currentRectBottom >= lastLineTop) {
-                    lastLineBottom = lineBottom;
-                    lineTop = lastLineBottom;
-                } else {
-                    lineTop = currentRectTop;
-                    lastLineBottom = std::numeric_limits<int>::min();
-                }
-                lineBottom = currentRectBottom;
-            } else {
-                lastLineBottom = lineBottom;
-                if (currentRectTop <= lastLineBottom && i && rects[i].pageNumber() == rects[i - 1].pageNumber()) {
-                    lastLineTop = lineTop;
-                    lineBottom = lastLineTop;
-                } else {
-                    lastLineTop = std::numeric_limits<int>::max();
-                    lineBottom = currentRectBottom;
-                }
-                lineTop = currentRectTop;
-            }
-            ++lineNumber;
-        }
-    }
-
-    // Adjust line height.
-    adjustLineHeightOfSelectionRects(rects, numberOfRects, lineNumber, lineTop, lineBottom - lineTop);
-
-    // Sort the rectangles and make sure there are no gaps. The rectangles could be unsorted when
-    // there is ruby text and we could have gaps on the line when adjacent elements on the line
-    // have a different orientation.
-    size_t firstRectWithCurrentLineNumber = 0;
-    for (size_t currentRect = 1; currentRect < numberOfRects; ++currentRect) {
-        if (rects[currentRect].lineNumber() != rects[currentRect - 1].lineNumber()) {
-            firstRectWithCurrentLineNumber = currentRect;
-            continue;
-        }
-        if (rects[currentRect].logicalLeft() >= rects[currentRect - 1].logicalLeft())
-            continue;
-
-        SelectionRect selectionRect = rects[currentRect];
-        size_t i;
-        for (i = currentRect; i > firstRectWithCurrentLineNumber && selectionRect.logicalLeft() < rects[i - 1].logicalLeft(); --i)
-            rects[i] = rects[i - 1];
-        rects[i] = selectionRect;
-    }
-
-    for (size_t j = 1; j < numberOfRects; ++j) {
-        if (rects[j].lineNumber() != rects[j - 1].lineNumber())
-            continue;
-        SelectionRect& previousRect = rects[j - 1];
-        bool previousRectMayNotReachRightEdge = (previousRect.direction() == TextDirection::LTR && previousRect.containsEnd()) || (previousRect.direction() == TextDirection::RTL && previousRect.containsStart());
-        if (previousRectMayNotReachRightEdge)
-            continue;
-        int adjustedWidth = rects[j].logicalLeft() - previousRect.logicalLeft();
-        if (adjustedWidth > previousRect.logicalWidth())
-            previousRect.setLogicalWidth(adjustedWidth);
-    }
-
-    int maxLineNumber = lineNumber;
-
-    // Extend rects out to edges as needed.
-    for (size_t i = 0; i < numberOfRects; ++i) {
-        SelectionRect& selectionRect = rects[i];
-        if (!selectionRect.isLineBreak() && selectionRect.lineNumber() >= maxLineNumber)
-            continue;
-        if (selectionRect.direction() == TextDirection::RTL && selectionRect.isFirstOnLine()) {
-            selectionRect.setLogicalWidth(selectionRect.logicalWidth() + selectionRect.logicalLeft() - selectionRect.minX());
-            selectionRect.setLogicalLeft(selectionRect.minX());
-        } else if (selectionRect.direction() == TextDirection::LTR && selectionRect.isLastOnLine())
-            selectionRect.setLogicalWidth(selectionRect.maxX() - selectionRect.logicalLeft());
-    }
-    
-    return maxLineNumber;
-}
-
-void Range::collectSelectionRects(Vector<SelectionRect>& rects) const
-{
-    int maxLineNumber = collectSelectionRectsWithoutUnionInteriorLines(rects);
-    const size_t numberOfRects = rects.size();
-    
-    // Union all the rectangles on interior lines (i.e. not first or last).
-    // On first and last lines, just avoid having overlaps by merging intersecting rectangles.
-    Vector<SelectionRect> unionedRects;
-    IntRect interiorUnionRect;
-    for (size_t i = 0; i < numberOfRects; ++i) {
-        SelectionRect& currentRect = rects[i];
-        if (currentRect.lineNumber() == 1) {
-            ASSERT(interiorUnionRect.isEmpty());
-            if (!unionedRects.isEmpty()) {
-                SelectionRect& previousRect = unionedRects.last();
-                if (previousRect.rect().intersects(currentRect.rect())) {
-                    previousRect = coalesceSelectionRects(currentRect, previousRect);
-                    continue;
-                }
-            }
-            // Couldn't merge with previous rect, so just appending.
-            unionedRects.append(currentRect);
-        } else if (currentRect.lineNumber() < maxLineNumber) {
-            if (interiorUnionRect.isEmpty()) {
-                // Start collecting interior rects.
-                interiorUnionRect = currentRect.rect();         
-            } else if (interiorUnionRect.intersects(currentRect.rect())
-                || interiorUnionRect.maxX() == currentRect.rect().x()
-                || interiorUnionRect.maxY() == currentRect.rect().y()
-                || interiorUnionRect.x() == currentRect.rect().maxX()
-                || interiorUnionRect.y() == currentRect.rect().maxY()) {
-                // Only union the lines that are attached.
-                // For iBooks, the interior lines may cross multiple horizontal pages.
-                interiorUnionRect.unite(currentRect.rect());
-            } else {
-                unionedRects.append(SelectionRect(interiorUnionRect, currentRect.isHorizontal(), currentRect.pageNumber()));
-                interiorUnionRect = currentRect.rect();
-            }
-        } else {
-            // Processing last line.
-            if (!interiorUnionRect.isEmpty()) {
-                unionedRects.append(SelectionRect(interiorUnionRect, currentRect.isHorizontal(), currentRect.pageNumber()));
-                interiorUnionRect = IntRect();
-            }
-
-            ASSERT(!unionedRects.isEmpty());
-            SelectionRect& previousRect = unionedRects.last();
-            if (previousRect.logicalTop() == currentRect.logicalTop() && previousRect.rect().intersects(currentRect.rect())) {
-                // previousRect is also on the last line, and intersects the current one.
-                previousRect = coalesceSelectionRects(currentRect, previousRect);
-                continue;
-            }
-            // Couldn't merge with previous rect, so just appending.
-            unionedRects.append(currentRect);
-        }
-    }
-
-    rects.swap(unionedRects);
-}
-#endif
 
 #if ENABLE(TREE_DEBUGGING)
 void Range::formatForDebugger(char* buffer, unsigned length) const
@@ -1435,7 +1103,7 @@ void Range::formatForDebugger(char* buffer, unsigned length) const
 
 bool Range::contains(const Range& other) const
 {
-    if (commonAncestorContainer()->ownerDocument() != other.commonAncestorContainer()->ownerDocument())
+    if (commonAncestorContainer()->document() != other.commonAncestorContainer()->document())
         return false;
 
     auto startToStart = compareBoundaryPoints(Range::START_TO_START, other);
@@ -1690,91 +1358,12 @@ ExceptionOr<void> Range::expand(const String& unit)
 
 Ref<DOMRectList> Range::getClientRects() const
 {
-    return DOMRectList::create(borderAndTextRects(CoordinateSpace::Client));
+    return DOMRectList::create(RenderObject::clientBorderAndTextRects(makeSimpleRange(*this)));
 }
 
 Ref<DOMRect> Range::getBoundingClientRect() const
 {
-    return DOMRect::create(boundingRect(CoordinateSpace::Client));
-}
-
-Vector<FloatRect> Range::borderAndTextRects(CoordinateSpace space, OptionSet<BoundingRectBehavior> rectOptions) const
-{
-    Vector<FloatRect> rects;
-
-    ownerDocument().updateLayoutIgnorePendingStylesheets();
-
-    Node* stopNode = pastLastNode();
-    bool useVisibleBounds = rectOptions.contains(BoundingRectBehavior::UseVisibleBounds);
-
-    HashSet<Node*> selectedElementsSet;
-    for (Node* node = firstNode(); node != stopNode; node = NodeTraversal::next(*node)) {
-        if (is<Element>(*node))
-            selectedElementsSet.add(node);
-    }
-
-    // Don't include elements that are only partially selected.
-    Node* lastNode = m_end.childBefore() ? m_end.childBefore() : &endContainer();
-    for (Node* parent = lastNode->parentNode(); parent; parent = parent->parentNode())
-        selectedElementsSet.remove(parent);
-    
-    OptionSet<RenderObject::VisibleRectContextOption> visibleRectOptions = { RenderObject::VisibleRectContextOption::UseEdgeInclusiveIntersection, RenderObject::VisibleRectContextOption::ApplyCompositedClips, RenderObject::VisibleRectContextOption::ApplyCompositedContainerScrolls };
-
-    for (Node* node = firstNode(); node != stopNode; node = NodeTraversal::next(*node)) {
-        if (is<Element>(*node) && selectedElementsSet.contains(node) && (useVisibleBounds || !node->parentNode() || !selectedElementsSet.contains(node->parentNode()))) {
-            if (auto* renderer = downcast<Element>(*node).renderBoxModelObject()) {
-                if (useVisibleBounds) {
-                    auto localBounds = renderer->borderBoundingBox();
-                    auto rootClippedBounds = renderer->computeVisibleRectInContainer(localBounds, &renderer->view(), { false, false, visibleRectOptions });
-                    if (!rootClippedBounds)
-                        continue;
-                    auto snappedBounds = snapRectToDevicePixels(*rootClippedBounds, node->document().deviceScaleFactor());
-                    if (space == CoordinateSpace::Client)
-                        node->document().convertAbsoluteToClientRect(snappedBounds, renderer->style());
-                    rects.append(snappedBounds);
-
-                    continue;
-                }
-
-                Vector<FloatQuad> elementQuads;
-                renderer->absoluteQuads(elementQuads);
-                if (space == CoordinateSpace::Client)
-                    node->document().convertAbsoluteToClientQuads(elementQuads, renderer->style());
-
-                rects.appendVector(boundingBoxes(elementQuads));
-            }
-        } else if (is<Text>(*node)) {
-            if (auto* renderer = downcast<Text>(*node).renderer()) {
-                bool isFixed;
-                auto clippedRects = absoluteRectsForRangeInText(node, *renderer, false, isFixed, rectOptions);
-                if (space == CoordinateSpace::Client)
-                    node->document().convertAbsoluteToClientRects(clippedRects, renderer->style());
-
-                rects.appendVector(clippedRects);
-            }
-        }
-    }
-
-    if (rectOptions.contains(BoundingRectBehavior::IgnoreTinyRects)) {
-        rects.removeAllMatching([&] (const FloatRect& rect) -> bool {
-            return rect.area() <= 1;
-        });
-    }
-
-    return rects;
-}
-
-FloatRect Range::boundingRect(CoordinateSpace space, OptionSet<BoundingRectBehavior> rectOptions) const
-{
-    FloatRect result;
-    for (auto& rect : borderAndTextRects(space, rectOptions))
-        result.uniteIfNonZero(rect);
-    return result;
-}
-
-FloatRect Range::absoluteBoundingRect(OptionSet<BoundingRectBehavior> rectOptions) const
-{
-    return boundingRect(CoordinateSpace::Absolute, rectOptions);
+    return DOMRect::create(unionRectIgnoringZeroRects(RenderObject::clientBorderAndTextRects(makeSimpleRange(*this))));
 }
 
 SimpleRange makeSimpleRange(const Range& range)

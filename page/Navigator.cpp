@@ -110,26 +110,34 @@ bool Navigator::onLine() const
     return platformStrategies()->loaderStrategy()->isOnLine();
 }
 
+static Optional<URL> shareableURLForShareData(ScriptExecutionContext& context, const ShareData& data)
+{
+    if (data.url.isNull())
+        return WTF::nullopt;
+
+    auto url = context.completeURL(data.url);
+    if (!url.isValid())
+        return WTF::nullopt;
+    if (!url.protocolIsInHTTPFamily() && !url.protocolIsData())
+        return WTF::nullopt;
+
+    return url;
+}
+
 bool Navigator::canShare(ScriptExecutionContext& context, const ShareData& data)
 {
     auto* frame = this->frame();
     if (!frame || !frame->page())
         return false;
- 
+
     bool hasShareableTitleOrText = !data.title.isNull() || !data.text.isNull();
-    bool hasShareableURL = false;
-    Optional<URL> url;
-    if (!data.url.isNull()) {
-        url = context.completeURL(data.url);
-        if (url->isValid())
-            hasShareableURL = true;
-    }
+    bool hasShareableURL = !!shareableURLForShareData(context, data);
 #if ENABLE(FILE_SHARE)
     bool hasShareableFiles = RuntimeEnabledFeatures::sharedFeatures().webShareFileAPIEnabled() && !data.files.isEmpty();
 #else
     bool hasShareableFiles = false;
 #endif
-  
+
     return hasShareableTitleOrText || hasShareableURL || hasShareableFiles;
 }
 
@@ -139,18 +147,15 @@ void Navigator::share(ScriptExecutionContext& context, const ShareData& data, Re
         promise->reject(TypeError);
         return;
     }
-    
-    Optional<URL> url;
-    if (!data.url.isEmpty())
-        url = context.completeURL(data.url);
-    
+
     auto* window = this->window();
     // Note that the specification does not indicate we should consume user activation. We are intentionally stricter here.
     if (!window || !window->consumeTransientActivation() || m_hasPendingShare) {
         promise->reject(NotAllowedError);
         return;
     }
-    
+
+    Optional<URL> url = shareableURLForShareData(context, data);
     ShareDataWithParsedURL shareData = {
         data,
         url,

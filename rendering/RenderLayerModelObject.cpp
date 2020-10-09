@@ -113,42 +113,9 @@ void RenderLayerModelObject::styleWillChange(StyleDifference diff, const RenderS
     if (s_hadLayer)
         s_layerWasSelfPainting = layer()->isSelfPaintingLayer();
 
-    // If our z-index changes value or our visibility changes,
-    // we need to dirty our stacking context's z-order list.
-    const RenderStyle* oldStyle = hasInitializedStyle() ? &style() : nullptr;
-    if (oldStyle) {
-        if (parent()) {
-            // Do a repaint with the old style first, e.g., for example if we go from
-            // having an outline to not having an outline.
-            if (diff == StyleDifference::RepaintLayer) {
-                layer()->repaintIncludingDescendants();
-                if (!(oldStyle->clip() == newStyle.clip()))
-                    layer()->clearClipRectsIncludingDescendants();
-            } else if (diff == StyleDifference::Repaint || newStyle.outlineSize() < oldStyle->outlineSize())
-                repaint();
-        }
-
-        if (diff == StyleDifference::Layout || diff == StyleDifference::SimplifiedLayout) {
-            // When a layout hint happens, we do a repaint of the layer, since the layer could end up being destroyed.
-            if (hasLayer()) {
-                if (oldStyle->position() != newStyle.position()
-                    || oldStyle->usedZIndex() != newStyle.usedZIndex()
-                    || oldStyle->hasAutoUsedZIndex() != newStyle.hasAutoUsedZIndex()
-                    || !(oldStyle->clip() == newStyle.clip())
-                    || oldStyle->hasClip() != newStyle.hasClip()
-                    || oldStyle->opacity() != newStyle.opacity()
-                    || oldStyle->transform() != newStyle.transform()
-                    || oldStyle->filter() != newStyle.filter()
-                    )
-                layer()->repaintIncludingDescendants();
-            } else if (newStyle.hasTransform() || newStyle.opacity() < 1 || newStyle.hasFilter() || newStyle.hasBackdropFilter()) {
-                // If we don't have a layer yet, but we are going to get one because of transform or opacity,
-                //  then we need to repaint the old position of the object.
-                repaint();
-            }
-        }
-    }
-
+    auto* oldStyle = hasInitializedStyle() ? &style() : nullptr;
+    if (diff == StyleDifference::RepaintLayer && parent() && oldStyle && oldStyle->clip() != newStyle.clip())
+        layer()->clearClipRectsIncludingDescendants();
     RenderElement::styleWillChange(diff, newStyle);
 }
 

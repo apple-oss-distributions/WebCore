@@ -2207,12 +2207,12 @@ bool FrameView::scrollToFragmentInternal(const String& fragmentIdentifier)
     auto& document = *frame().document();
     RELEASE_ASSERT(document.haveStylesheetsLoaded());
 
-    Element* anchorElement = document.findAnchor(fragmentIdentifier);
+    auto anchorElement = makeRefPtr(document.findAnchor(fragmentIdentifier));
 
-    LOG(Scrolling, " anchorElement is %p", anchorElement);
+    LOG(Scrolling, " anchorElement is %p", anchorElement.get());
 
     // Setting to null will clear the current target.
-    document.setCSSTarget(anchorElement);
+    document.setCSSTarget(anchorElement.get());
 
     if (is<SVGDocument>(document)) {
         if (fragmentIdentifier.isEmpty())
@@ -2229,18 +2229,18 @@ bool FrameView::scrollToFragmentInternal(const String& fragmentIdentifier)
         return false;
     }
 
-    ContainerNode* scrollPositionAnchor = anchorElement;
+    RefPtr<ContainerNode> scrollPositionAnchor = anchorElement;
     if (!scrollPositionAnchor)
         scrollPositionAnchor = frame().document();
-    maintainScrollPositionAtAnchor(scrollPositionAnchor);
+    maintainScrollPositionAtAnchor(scrollPositionAnchor.get());
     
     // If the anchor accepts keyboard focus, move focus there to aid users relying on keyboard navigation.
     if (anchorElement) {
         if (anchorElement->isFocusable())
-            document.setFocusedElement(anchorElement);
+            document.setFocusedElement(anchorElement.get());
         else {
             document.setFocusedElement(nullptr);
-            document.setFocusNavigationStartingNode(anchorElement);
+            document.setFocusNavigationStartingNode(anchorElement.get());
         }
     }
     
@@ -2632,7 +2632,7 @@ bool FrameView::isRubberBandInProgress() const
 
     if (auto scrollingCoordinator = this->scrollingCoordinator()) {
         if (!scrollingCoordinator->shouldUpdateScrollLayerPositionSynchronously(*this))
-            return scrollingCoordinator->isRubberBandInProgress();
+            return scrollingCoordinator->isRubberBandInProgress(scrollingNodeID());
     }
 
     if (auto scrollAnimator = existingScrollAnimator())
@@ -5122,7 +5122,7 @@ bool FrameView::wheelEvent(const PlatformWheelEvent& wheelEvent)
 #if ENABLE(ASYNC_SCROLLING)
     if (auto scrollingCoordinator = this->scrollingCoordinator()) {
         if (scrollingCoordinator->coordinatesScrollingForFrameView(*this))
-            return scrollingCoordinator->handleWheelEvent(*this, wheelEvent);
+            return scrollingCoordinator->handleWheelEvent(*this, wheelEvent, scrollingNodeID());
     }
 #endif
 

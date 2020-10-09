@@ -172,7 +172,7 @@ CookieStorageObserver& NetworkStorageSession::cookieStorageObserver() const
     return *m_cookieStorageObserver;
 }
 
-CFURLStorageSessionRef createPrivateStorageSession(CFStringRef identifier)
+CFURLStorageSessionRef createPrivateStorageSession(CFStringRef identifier, Optional<HTTPCookieAcceptPolicy> cookieAcceptPolicy)
 {
     const void* sessionPropertyKeys[] = { _kCFURLStorageSessionIsPrivate };
     const void* sessionPropertyValues[] = { kCFBooleanTrue };
@@ -200,8 +200,14 @@ CFURLStorageSessionRef createPrivateStorageSession(CFStringRef identifier)
     if (!cookieStorage)
         return nullptr;
 
+    NSHTTPCookieAcceptPolicy nsCookieAcceptPolicy;
+    if (cookieAcceptPolicy)
+        nsCookieAcceptPolicy = toNSHTTPCookieAcceptPolicy(*cookieAcceptPolicy);
+    else
+        nsCookieAcceptPolicy = [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookieAcceptPolicy];
+
     // FIXME: Use _CFHTTPCookieStorageGetDefault when USE(CFNETWORK) is defined in WebKit for consistency.
-    CFHTTPCookieStorageSetCookieAcceptPolicy(cookieStorage.get(), [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookieAcceptPolicy]);
+    CFHTTPCookieStorageSetCookieAcceptPolicy(cookieStorage.get(), nsCookieAcceptPolicy);
 
     return storageSession.leakRef();
 }
@@ -306,6 +312,20 @@ NSArray *NetworkStorageSession::httpCookiesForURL(CFHTTPCookieStorageRef cookieS
     // NetworkStorageSession could instead keep a NSHTTPCookieStorage object for us.
     RetainPtr<NSHTTPCookieStorage> nsCookieStorage = adoptNS([[NSHTTPCookieStorage alloc] _initWithCFHTTPCookieStorage:cookieStorage]);
     return WebCore::cookiesForURL(nsCookieStorage.get(), url, firstParty, sameSiteInfo);
+}
+
+NSHTTPCookie *NetworkStorageSession::capExpiryOfPersistentCookie(NSHTTPCookie *cookie, Seconds cap)
+{
+    if ([cookie isSessionOnly])
+        return cookie;
+
+    if (!cookie.expiresDate || cookie.expiresDate.timeIntervalSinceNow > cap.seconds()) {
+        auto properties = adoptNS([[cookie properties] mutableCopy]);
+        auto date = adoptNS([[NSDate alloc] initWithTimeIntervalSinceNow:cap.seconds()]);
+        [properties setObject:date.get() forKey:NSHTTPCookieExpires];
+        cookie = [NSHTTPCookie cookieWithProperties:properties.get()];
+    }
+    return cookie;
 }
 
 NSArray *NetworkStorageSession::cookiesForURL(const URL& firstParty, const SameSiteInfo& sameSiteInfo, const URL& url, Optional<FrameIdentifier> frameID, Optional<PageIdentifier> pageID, ShouldAskITP shouldAskITP, ShouldRelaxThirdPartyCookieBlocking shouldRelaxThirdPartyCookieBlocking) const
@@ -417,15 +437,9 @@ static NSHTTPCookie *parseDOMCookie(String cookieString, NSURL* cookieURL, Optio
     if ([cookie isHTTPOnly])
         return nil;
 
-    // Cap lifetime of persistent, client-side cookies to a week.
-    if (cappedLifetime && ![cookie isSessionOnly]) {
-        if (!cookie.expiresDate || cookie.expiresDate.timeIntervalSinceNow > cappedLifetime->seconds()) {
-            auto properties = adoptNS([[cookie properties] mutableCopy]);
-            auto dateInAWeek = adoptNS([[NSDate alloc] initWithTimeIntervalSinceNow:cappedLifetime->seconds()]);
-            [properties setObject:dateInAWeek.get() forKey:NSHTTPCookieExpires];
-            return [NSHTTPCookie cookieWithProperties:properties.get()];
-        }
-    }
+    // Cap lifetime of persistent, client-side cookies.
+    if (cappedLifetime)
+        return NetworkStorageSession::capExpiryOfPersistentCookie(cookie, *cappedLifetime);
 
     return cookie;
 }

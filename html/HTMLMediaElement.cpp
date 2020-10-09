@@ -835,9 +835,9 @@ void HTMLMediaElement::pauseAfterDetachedTask()
     if (m_inActiveDocument)
         return;
 
-    if (m_networkState > NETWORK_EMPTY)
+    if (m_videoFullscreenMode != VideoFullscreenModePictureInPicture && m_networkState > NETWORK_EMPTY)
         pause();
-    if (m_videoFullscreenMode != VideoFullscreenModeNone)
+    if (m_videoFullscreenMode == VideoFullscreenModeStandard)
         exitFullscreen();
 
     if (!m_player)
@@ -4926,6 +4926,12 @@ void HTMLMediaElement::mediaPlayerSizeChanged()
 
 bool HTMLMediaElement::mediaPlayerRenderingCanBeAccelerated()
 {
+    // This function must return "true" when the video is playing in the
+    // picture-in-picture window. Otherwise, the MediaPlayerPrivate* may
+    // destroy the video layer.
+    if (m_videoFullscreenMode == VideoFullscreenModePictureInPicture)
+        return true;
+
     auto* renderer = this->renderer();
     return is<RenderVideo>(renderer)
         && downcast<RenderVideo>(*renderer).view().compositor().canAccelerateVideoRendering(downcast<RenderVideo>(*renderer));
@@ -6033,6 +6039,9 @@ void HTMLMediaElement::exitFullscreen()
 void HTMLMediaElement::prepareForVideoFullscreenStandby()
 {
 #if ENABLE(VIDEO_PRESENTATION_MODE)
+    if (!document().page())
+        return;
+
     document().page()->chrome().client().prepareForVideoFullscreen();
 #endif
 }
@@ -6539,7 +6548,8 @@ void HTMLMediaElement::createMediaPlayer()
 
     m_player = MediaPlayer::create(*this);
     m_player->setBufferingPolicy(m_bufferingPolicy);
-    m_player->setPreferredDynamicRangeMode(preferredDynamicRangeMode(document().view()));
+    m_player->setPreferredDynamicRangeMode(m_overrideDynamicRangeMode.valueOr(preferredDynamicRangeMode(document().view())));
+    m_player->setMuted(effectiveMuted());
     schedulePlaybackControlsManagerUpdate();
 
 #if ENABLE(WEB_AUDIO)
@@ -6954,6 +6964,13 @@ String HTMLMediaElement::sourceApplicationIdentifier() const
 
 void HTMLMediaElement::setPreferredDynamicRangeMode(DynamicRangeMode mode)
 {
+    if (m_player && !m_overrideDynamicRangeMode)
+        m_player->setPreferredDynamicRangeMode(mode);
+}
+
+void HTMLMediaElement::setOverridePreferredDynamicRangeMode(DynamicRangeMode mode)
+{
+    m_overrideDynamicRangeMode = mode;
     if (m_player)
         m_player->setPreferredDynamicRangeMode(mode);
 }

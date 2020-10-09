@@ -444,11 +444,16 @@ set(WebCore_NON_SVG_IDL_FILES
     Modules/streams/ReadableStreamSink.idl
     Modules/streams/ReadableStreamSource.idl
     Modules/streams/WritableStream.idl
+    Modules/streams/WritableStreamDefaultController.idl
+    Modules/streams/WritableStreamDefaultWriter.idl
 
     Modules/webaudio/AnalyserNode.idl
+    Modules/webaudio/AnalyserOptions.idl
     Modules/webaudio/AudioBuffer.idl
     Modules/webaudio/AudioBufferCallback.idl
+    Modules/webaudio/AudioBufferOptions.idl
     Modules/webaudio/AudioBufferSourceNode.idl
+    Modules/webaudio/AudioBufferSourceOptions.idl
     Modules/webaudio/AudioContext.idl
     Modules/webaudio/AudioContextLatencyCategory.idl
     Modules/webaudio/AudioContextOptions.idl
@@ -459,23 +464,35 @@ set(WebCore_NON_SVG_IDL_FILES
     Modules/webaudio/AudioNodeOptions.idl
     Modules/webaudio/AudioParam.idl
     Modules/webaudio/AudioProcessingEvent.idl
+    Modules/webaudio/AudioProcessingEventInit.idl
     Modules/webaudio/AudioScheduledSourceNode.idl
+    Modules/webaudio/AudioTimestamp.idl
     Modules/webaudio/BaseAudioContext.idl
     Modules/webaudio/BiquadFilterNode.idl
+    Modules/webaudio/BiquadFilterOptions.idl
+    Modules/webaudio/BiquadFilterType.idl
     Modules/webaudio/ChannelCountMode.idl
     Modules/webaudio/ChannelInterpretation.idl
     Modules/webaudio/ChannelMergerNode.idl
     Modules/webaudio/ChannelMergerOptions.idl
     Modules/webaudio/ChannelSplitterNode.idl
     Modules/webaudio/ChannelSplitterOptions.idl
+    Modules/webaudio/ConstantSourceNode.idl
+    Modules/webaudio/ConstantSourceOptions.idl
     Modules/webaudio/ConvolverNode.idl
+    Modules/webaudio/ConvolverOptions.idl
     Modules/webaudio/DelayNode.idl
+    Modules/webaudio/DelayOptions.idl
     Modules/webaudio/DistanceModelType.idl
     Modules/webaudio/DynamicsCompressorNode.idl
+    Modules/webaudio/DynamicsCompressorOptions.idl
     Modules/webaudio/GainNode.idl
+    Modules/webaudio/GainOptions.idl
     Modules/webaudio/MediaElementAudioSourceNode.idl
+    Modules/webaudio/MediaElementAudioSourceOptions.idl
     Modules/webaudio/MediaStreamAudioDestinationNode.idl
     Modules/webaudio/MediaStreamAudioSourceNode.idl
+    Modules/webaudio/MediaStreamAudioSourceOptions.idl
     Modules/webaudio/OfflineAudioCompletionEvent.idl
     Modules/webaudio/OfflineAudioCompletionEventInit.idl
     Modules/webaudio/OfflineAudioContext.idl
@@ -490,11 +507,16 @@ set(WebCore_NON_SVG_IDL_FILES
     Modules/webaudio/PeriodicWave.idl
     Modules/webaudio/PeriodicWaveConstraints.idl
     Modules/webaudio/PeriodicWaveOptions.idl
+    Modules/webaudio/StereoPannerNode.idl
+    Modules/webaudio/StereoPannerOptions.idl
     Modules/webaudio/ScriptProcessorNode.idl
     Modules/webaudio/WaveShaperNode.idl
     Modules/webaudio/WaveShaperOptions.idl
+    Modules/webaudio/WebKitAudioBufferSourceNode.idl
     Modules/webaudio/WebKitAudioContext.idl
+    Modules/webaudio/WebKitAudioListener.idl
     Modules/webaudio/WebKitAudioPannerNode.idl
+    Modules/webaudio/WebKitDynamicsCompressorNode.idl
     Modules/webaudio/WebKitOfflineAudioContext.idl
     Modules/webaudio/WebKitOscillatorNode.idl
 
@@ -1056,6 +1078,7 @@ set(WebCore_NON_SVG_IDL_FILES
     worklets/Worklet.idl
     worklets/WorkletGlobalScope.idl
 
+    xml/CustomXPathNSResolver.idl
     xml/DOMParser.idl
     xml/XMLHttpRequest.idl
     xml/XMLHttpRequestEventTarget.idl
@@ -1918,6 +1941,8 @@ set(WebCore_BUILTINS_SOURCES
     ${WEBCORE_DIR}/Modules/streams/ReadableStreamDefaultReader.js
     ${WEBCORE_DIR}/Modules/streams/StreamInternals.js
     ${WEBCORE_DIR}/Modules/streams/WritableStream.js
+    ${WEBCORE_DIR}/Modules/streams/WritableStreamDefaultController.js
+    ${WEBCORE_DIR}/Modules/streams/WritableStreamDefaultWriter.js
     ${WEBCORE_DIR}/Modules/streams/WritableStreamInternals.js
     ${WEBCORE_DIR}/bindings/js/JSDOMBindingInternals.js
 )

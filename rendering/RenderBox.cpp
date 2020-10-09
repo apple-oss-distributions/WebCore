@@ -269,9 +269,7 @@ void RenderBox::styleWillChange(StyleDifference diff, const RenderStyle& newStyl
         // to dirty the render tree using the old position value now.
         if (diff == StyleDifference::Layout && parent() && oldStyle->position() != newStyle.position()) {
             markContainingBlocksForLayout();
-            if (oldStyle->position() == PositionType::Static)
-                repaint();
-            else if (newStyle.hasOutOfFlowPosition())
+            if (oldStyle->position() != PositionType::Static && newStyle.hasOutOfFlowPosition())
                 parent()->setChildNeedsLayout();
             if (isFloating() && !isOutOfFlowPositioned() && newStyle.hasOutOfFlowPosition())
                 removeFloatingOrPositionedChildFromBlockLists();
@@ -2036,7 +2034,7 @@ LayoutUnit RenderBox::perpendicularContainingBlockLogicalHeight() const
 
     // FIXME: For now just support fixed heights.  Eventually should support percentage heights as well.
     if (!logicalHeightLength.isFixed()) {
-        LayoutUnit fillFallbackExtent = containingBlockStyle.isHorizontalWritingMode() ? view().frameView().visibleHeight() : view().frameView().visibleWidth();
+        LayoutUnit fillFallbackExtent = containingBlockStyle.isHorizontalWritingMode() ? view().frameView().layoutSize().height() : view().frameView().layoutSize().width();
         LayoutUnit fillAvailableExtent = containingBlock()->availableLogicalHeight(ExcludeMarginBorderPadding);
         view().addPercentHeightDescendant(const_cast<RenderBox&>(*this));
         // FIXME: https://bugs.webkit.org/show_bug.cgi?id=158286 We also need to perform the same percentHeightDescendant treatment to the element which dictates the return value for containingBlock()->availableLogicalHeight() above.
@@ -2778,7 +2776,10 @@ static bool shouldFlipBeforeAfterMargins(const RenderStyle& containingBlockStyle
 
 void RenderBox::cacheIntrinsicContentLogicalHeightForFlexItem(LayoutUnit height) const
 {
-    if (isFloatingOrOutOfFlowPositioned() || !parent() || !parent()->isFlexibleBox())
+    // FIXME: it should be enough with checking hasOverrideContentLogicalHeight() as this logic could be shared
+    // by any layout system using overrides like grid or flex. However this causes a never ending sequence of calls
+    // between layoutBlock() <-> relayoutToAvoidWidows().
+    if (isFloatingOrOutOfFlowPositioned() || !parent() || !parent()->isFlexibleBox() || hasOverrideContentLogicalHeight())
         return;
     downcast<RenderFlexibleBox>(parent())->setCachedChildIntrinsicContentLogicalHeight(*this, height);
 }
@@ -4838,10 +4839,14 @@ LayoutRect RenderBox::layoutOverflowRectForPropagation(const RenderStyle* parent
         rect.unite(layoutOverflowRect());
 
     bool hasTransform = this->hasTransform();
-    if (isInFlowPositioned() || hasTransform) {
+    // While a stickily positioned renderer is also inflow positioned, they stretch the overflow rect with their inflow geometry
+    // (as opposed to the paint geometry) because they are not stationary.
+    bool paintGeometryAffectsLayoutOverflow = hasTransform || (isInFlowPositioned() && !isStickilyPositioned());
+    if (paintGeometryAffectsLayoutOverflow) {
         // If we are relatively positioned or if we have a transform, then we have to convert
         // this rectangle into physical coordinates, apply relative positioning and transforms
         // to it, and then convert it back.
+        // It ensures that the overflow rect tracks the paint geometry and not the inflow layout position.
         flipForWritingMode(rect);
         
         if (hasTransform && hasLayer())

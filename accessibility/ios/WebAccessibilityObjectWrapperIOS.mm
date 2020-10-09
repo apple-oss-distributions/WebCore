@@ -431,7 +431,7 @@ static AccessibilityObjectWrapper* AccessibilityUnignoredAncestor(AccessibilityO
         if (id attachmentView = [self attachmentView])
             return [attachmentView accessibilityElementCount];
     }
-    
+
     return self.axBackingObject->children().size();
 }
 
@@ -493,6 +493,14 @@ static AccessibilityObjectWrapper* AccessibilityUnignoredAncestor(AccessibilityO
         return NULL;
     
     return [self convertPathToScreenSpace:path];
+}
+
+- (NSString *)_accessibilityWebRoleAsString
+{
+    if (![self _prepareAccessibilityCall])
+        return nil;
+
+    return accessibilityRoleToString(self.axBackingObject->roleValue());
 }
 
 - (BOOL)accessibilityHasPopup
@@ -777,7 +785,7 @@ static AccessibilityObjectWrapper* AccessibilityUnignoredAncestor(AccessibilityO
 {
     if (![self _prepareAccessibilityCall])
         return 0;
-    
+
     AccessibilityRole role = self.axBackingObject->roleValue();
     uint64_t traits = [self _axWebContentTrait];
     switch (role) {
@@ -2346,13 +2354,9 @@ static void AXAttributedStringAppendText(NSMutableAttributedString* attrString, 
     return [array autorelease];
 }
 
-- (NSRange)_convertToNSRange:(Range *)liveRange
+// FIXME: No reason for this to be a method instead of a function.
+- (NSRange)_convertToNSRange:(const SimpleRange&)range
 {
-    if (!liveRange)
-        return NSMakeRange(NSNotFound, 0);
-
-    auto range = SimpleRange { *liveRange };
-
     auto& document = range.start.document();
     auto* frame = document.frame();
     if (!frame)
@@ -2406,7 +2410,9 @@ static void AXAttributedStringAppendText(NSMutableAttributedString* attrString, 
         CharacterOffset characterOffset = [marker characterOffset];
         // Create a collapsed range from the CharacterOffset object.
         auto range = cache->rangeForUnorderedCharacterOffsets(characterOffset, characterOffset);
-        return [self _convertToNSRange:createLiveRange(range).get()].location;
+        if (!range)
+            return NSNotFound;
+        return [self _convertToNSRange:*range].location;
     }
     return NSNotFound;
 }
@@ -2764,8 +2770,7 @@ static void AXAttributedStringAppendText(NSMutableAttributedString* attrString, 
     if (!range || range->collapsed())
         return nil;
 
-    Vector<WebCore::SelectionRect> rects;
-    createLiveRange(range)->collectSelectionRectsWithoutUnionInteriorLines(rects);
+    auto rects = RenderObject::collectSelectionRectsWithoutUnionInteriorLines(*range);
     if (rects.isEmpty())
         return nil;
     return createNSArray(rects, [&] (auto& rect) {

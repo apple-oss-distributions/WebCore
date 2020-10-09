@@ -48,27 +48,20 @@ static void fixNANs(double &x)
         x = 0.0;
 }
 
-WebKitAudioPannerNode::WebKitAudioPannerNode(WebKitAudioContext& context, float sampleRate)
-    : PannerNodeBase(context, sampleRate)
+WebKitAudioPannerNode::WebKitAudioPannerNode(WebKitAudioContext& context)
+    : PannerNodeBase(context)
     , m_panningModel(PanningModelType::HRTF)
     , m_lastGain(-1.0)
     , m_connectionCount(0)
 {
     setNodeType(NodeTypePanner);
+    initializeDefaultNodeOptions(2, ChannelCountMode::ClampedMax, ChannelInterpretation::Speakers);
 
     // Load the HRTF database asynchronously so we don't block the Javascript thread while creating the HRTF database.
     m_hrtfDatabaseLoader = HRTFDatabaseLoader::createAndLoadAsynchronouslyIfNecessary(context.sampleRate());
 
     addInput(makeUnique<AudioNodeInput>(this));
     addOutput(makeUnique<AudioNodeOutput>(this, 2));
-
-    // Node-specific default mixing rules.
-    m_channelCount = 2;
-    m_channelCountMode = ChannelCountMode::ClampedMax;
-    m_channelInterpretation = ChannelInterpretation::Speakers;
-
-    m_distanceGain = AudioParam::create(context, "distanceGain", 1.0, 0.0, 1.0);
-    m_coneGain = AudioParam::create(context, "coneGain", 1.0, 0.0, 1.0);
 
     m_position = FloatPoint3D(0, 0, 0);
     m_orientation = FloatPoint3D(1, 0, 0);
@@ -173,7 +166,7 @@ void WebKitAudioPannerNode::uninitialize()
     AudioNode::uninitialize();
 }
 
-AudioListener* WebKitAudioPannerNode::listener()
+WebKitAudioListener& WebKitAudioPannerNode::listener()
 {
     return context().listener();
 }
@@ -206,7 +199,7 @@ void WebKitAudioPannerNode::getAzimuthElevation(double* outAzimuth, double* outE
     double azimuth = 0.0;
 
     // Calculate the source-listener vector
-    FloatPoint3D listenerPosition = listener()->position();
+    FloatPoint3D listenerPosition = listener().position();
     FloatPoint3D sourceListener = position() - listenerPosition;
 
     if (sourceListener.isZero()) {
@@ -219,8 +212,8 @@ void WebKitAudioPannerNode::getAzimuthElevation(double* outAzimuth, double* outE
     sourceListener.normalize();
 
     // Align axes
-    FloatPoint3D listenerFront = listener()->orientation();
-    FloatPoint3D listenerUp = listener()->upVector();
+    FloatPoint3D listenerFront = listener().orientation();
+    FloatPoint3D listenerUp = listener().upVector();
     FloatPoint3D listenerRight = listenerFront.cross(listenerUp);
     listenerRight.normalize();
 
@@ -268,13 +261,13 @@ float WebKitAudioPannerNode::dopplerRate()
     double dopplerShift = 1.0;
 
     // FIXME: optimize for case when neither source nor listener has changed...
-    double dopplerFactor = listener()->dopplerFactor();
+    double dopplerFactor = listener().dopplerFactor();
 
     if (dopplerFactor > 0.0) {
-        double speedOfSound = listener()->speedOfSound();
+        double speedOfSound = listener().speedOfSound();
 
-        const FloatPoint3D &sourceVelocity = m_velocity;
-        const FloatPoint3D &listenerVelocity = listener()->velocity();
+        const FloatPoint3D& sourceVelocity = m_velocity;
+        const FloatPoint3D& listenerVelocity = listener().velocity();
 
         // Don't bother if both source and listener have no velocity
         bool sourceHasVelocity = !sourceVelocity.isZero();
@@ -282,7 +275,7 @@ float WebKitAudioPannerNode::dopplerRate()
 
         if (sourceHasVelocity || listenerHasVelocity) {
             // Calculate the source to listener vector
-            FloatPoint3D listenerPosition = listener()->position();
+            FloatPoint3D listenerPosition = listener().position();
             FloatPoint3D sourceToListener = position() - listenerPosition;
 
             double sourceListenerMagnitude = sourceToListener.length();
@@ -313,18 +306,14 @@ float WebKitAudioPannerNode::dopplerRate()
 
 float WebKitAudioPannerNode::distanceConeGain()
 {
-    FloatPoint3D listenerPosition = listener()->position();
+    FloatPoint3D listenerPosition = listener().position();
     FloatPoint3D sourcePosition = position();
 
     double listenerDistance = sourcePosition.distanceTo(listenerPosition);
     double distanceGain = m_distanceEffect.gain(listenerDistance);
 
-    m_distanceGain->setValue(static_cast<float>(distanceGain));
-
     // FIXME: could optimize by caching coneGain
     double coneGain = m_coneEffect.gain(sourcePosition, m_orientation, listenerPosition);
-
-    m_coneGain->setValue(static_cast<float>(coneGain));
 
     return float(distanceGain * coneGain);
 }
