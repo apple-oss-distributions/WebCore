@@ -1,6 +1,475 @@
+2020-10-20  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r268712. rdar://problem/70488953
+
+    Fix crash in RenderLayerBacking::updateClippingStackLayerGeometry()
+    https://bugs.webkit.org/show_bug.cgi?id=217940
+    <rdar://problem/70316952>
+    
+    Reviewed by Tim Horton.
+    
+    Crash data suggest that entry.clipData.clippingLayer (which is a WeakRef<RenderLayer>)
+    can be null, so check it.
+    
+    * rendering/RenderLayerBacking.cpp:
+    (WebCore::RenderLayerBacking::updateClippingStackLayerGeometry):
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@268712 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-19  Simon Fraser  <simon.fraser@apple.com>
+
+            Fix crash in RenderLayerBacking::updateClippingStackLayerGeometry()
+            https://bugs.webkit.org/show_bug.cgi?id=217940
+            <rdar://problem/70316952>
+
+            Reviewed by Tim Horton.
+
+            Crash data suggest that entry.clipData.clippingLayer (which is a WeakRef<RenderLayer>)
+            can be null, so check it.
+
+            * rendering/RenderLayerBacking.cpp:
+            (WebCore::RenderLayerBacking::updateClippingStackLayerGeometry):
+
+2020-10-20  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r268701. rdar://problem/70488900
+
+    Fix possible crash in GraphicsLayerCA::computeVisibleAndCoverageRect()
+    https://bugs.webkit.org/show_bug.cgi?id=217930
+    <rdar://problem/70316943>
+    
+    Reviewed by Tim Horton.
+    
+    If we made a m_overflowControlsHostLayerAncestorClippingStack, make sure we unparent
+    its layers when tearing down the RenderLayerBacking, and when we determine that we
+    longer need a m_ancestorClippingStack (having a m_overflowControlsHostLayerAncestorClippingStack
+    implies that we have a m_ancestorClippingStack).
+    
+    * rendering/RenderLayerBacking.cpp:
+    (WebCore::RenderLayerBacking::destroyGraphicsLayers):
+    (WebCore::RenderLayerBacking::updateAncestorClipping):
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@268701 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-19  Simon Fraser  <simon.fraser@apple.com>
+
+            Fix possible crash in GraphicsLayerCA::computeVisibleAndCoverageRect()
+            https://bugs.webkit.org/show_bug.cgi?id=217930
+            <rdar://problem/70316943>
+
+            Reviewed by Tim Horton.
+
+            If we made a m_overflowControlsHostLayerAncestorClippingStack, make sure we unparent
+            its layers when tearing down the RenderLayerBacking, and when we determine that we
+            longer need a m_ancestorClippingStack (having a m_overflowControlsHostLayerAncestorClippingStack
+            implies that we have a m_ancestorClippingStack).
+
+            * rendering/RenderLayerBacking.cpp:
+            (WebCore::RenderLayerBacking::destroyGraphicsLayers):
+            (WebCore::RenderLayerBacking::updateAncestorClipping):
+
+2020-10-19  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r266787. rdar://problem/70447326
+
+    AccessibilityMenuList and MenuListPopup notifications need to be posted asynchronously.
+    https://bugs.webkit.org/show_bug.cgi?id=216309
+    <rdar://problem/68108824>
+    
+    Reviewed by Chris Fleizach.
+    
+    MenuList notifications were posted synchronously which triggers a DOM
+    layout and style update in the middle of an ongoing DOM mutation update.
+    This is unnecessary and, furthermore, causes crashes since the DOM
+    layout update cannot be re-entrant. This change makes these
+    notifications asynchronous.
+    
+    * accessibility/AccessibilityMenuList.cpp:
+    (WebCore::AccessibilityMenuList::didUpdateActiveOption):
+    * accessibility/AccessibilityMenuListPopup.cpp:
+    (WebCore::AccessibilityMenuListPopup::didUpdateActiveOption):
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@266787 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-09-09  Andres Gonzalez  <andresg_22@apple.com>
+
+            AccessibilityMenuList and MenuListPopup notifications need to be posted asynchronously.
+            https://bugs.webkit.org/show_bug.cgi?id=216309
+            <rdar://problem/68108824>
+
+            Reviewed by Chris Fleizach.
+
+            MenuList notifications were posted synchronously which triggers a DOM
+            layout and style update in the middle of an ongoing DOM mutation update.
+            This is unnecessary and, furthermore, causes crashes since the DOM
+            layout update cannot be re-entrant. This change makes these
+            notifications asynchronous.
+
+            * accessibility/AccessibilityMenuList.cpp:
+            (WebCore::AccessibilityMenuList::didUpdateActiveOption):
+            * accessibility/AccessibilityMenuListPopup.cpp:
+            (WebCore::AccessibilityMenuListPopup::didUpdateActiveOption):
+
+2020-10-14  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r268308. rdar://problem/70321631
+
+    [Mac] AirPlay menu does not show up when AirPlay button is clicked
+    https://bugs.webkit.org/show_bug.cgi?id=217536
+    <rdar://problem/69973777>
+    
+    Reviewed by Eric Carlson.
+    
+    Source/WebCore:
+    
+    PAL tries to soft-link the AVRoutePickerView from the AVFoundation framework, rather than the (correct)
+    AVKit framework. Remove AVRoutePickerView from AVFoundationSoftLink.h and use the already declared version
+    inside AVRoutePickerViewTargetPicker.mm.
+    
+    * platform/graphics/avfoundation/objc/AVRoutePickerViewTargetPicker.mm:
+    (WebCore::AVRoutePickerViewTargetPicker::isAvailable):
+    
+    Source/WebCore/PAL:
+    
+    * pal/cocoa/AVFoundationSoftLink.h:
+    * pal/cocoa/AVFoundationSoftLink.mm:
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@268308 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-09  Jer Noble  <jer.noble@apple.com>
+
+            [Mac] AirPlay menu does not show up when AirPlay button is clicked
+            https://bugs.webkit.org/show_bug.cgi?id=217536
+            <rdar://problem/69973777>
+
+            Reviewed by Eric Carlson.
+
+            PAL tries to soft-link the AVRoutePickerView from the AVFoundation framework, rather than the (correct)
+            AVKit framework. Remove AVRoutePickerView from AVFoundationSoftLink.h and use the already declared version
+            inside AVRoutePickerViewTargetPicker.mm.
+
+            * platform/graphics/avfoundation/objc/AVRoutePickerViewTargetPicker.mm:
+            (WebCore::AVRoutePickerViewTargetPicker::isAvailable):
+
+2020-10-12  Babak Shafiei  <bshafiei@apple.com>
+
+        Cherry-pick r268330. rdar://problem/70189394
+
+    Strip patch version from TARGET_MAC_OS_X_VERSION_MAJOR when building for macOS Big Sur
+    or later
+    https://bugs.webkit.org/show_bug.cgi?id=217594
+    rdar://70188497
+    
+    Patch by Luming Yin <luming_yin@apple.com> on 2020-10-11
+    Reviewed by Darin Adler.
+    
+    To ensure successful Mac Catalyst WebKit builds, strip the patch version from
+    TARGET_MAC_OS_X_VERSION_MAJOR by using two `base:`s on MACOSX_DEPLOYMENT_TARGET.
+    
+    * Configurations/Base.xcconfig:
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@268330 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-11  Luming Yin  <luming_yin@apple.com>
+
+            Strip patch version from TARGET_MAC_OS_X_VERSION_MAJOR when building for macOS Big Sur
+            or later
+            https://bugs.webkit.org/show_bug.cgi?id=217594
+            rdar://70188497
+
+            Reviewed by Darin Adler.
+
+            To ensure successful Mac Catalyst WebKit builds, strip the patch version from
+            TARGET_MAC_OS_X_VERSION_MAJOR by using two `base:`s on MACOSX_DEPLOYMENT_TARGET.
+
+            * Configurations/Base.xcconfig:
+
+2020-10-12  Babak Shafiei  <bshafiei@apple.com>
+
+        Cherry-pick r268327. rdar://problem/70189401
+
+    Ignore deployment suffix and identifier when computing major OS version for macOS
+    Big Sur and newer
+    https://bugs.webkit.org/show_bug.cgi?id=217584
+    rdar://70168426
+    
+    Patch by Luming Yin <luming_yin@apple.com> on 2020-10-11
+    Reviewed by Darin Adler.
+    
+    Stop using MACOSX_DEPLOYMENT_TARGET:suffix:identifier to compute major OS versions.
+    Only use the deployment target base for macOS Big Sur and newer. Keep the manual
+    definitions for legacy versions of macOS.
+    
+    * Configurations/Base.xcconfig:
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@268327 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-11  Luming Yin  <luming_yin@apple.com>
+
+            Ignore deployment suffix and identifier when computing major OS version for macOS
+            Big Sur and newer
+            https://bugs.webkit.org/show_bug.cgi?id=217584
+            rdar://70168426
+
+            Reviewed by Darin Adler.
+
+            Stop using MACOSX_DEPLOYMENT_TARGET:suffix:identifier to compute major OS versions.
+            Only use the deployment target base for macOS Big Sur and newer. Keep the manual
+            definitions for legacy versions of macOS.
+
+            * Configurations/Base.xcconfig:
+
+2020-10-09  Russell Epstein  <repstein@apple.com>
+
+        Cherry-pick r268003. rdar://problem/70142496
+
+    Make NetscapePlugInStreamLoaderClient a weak pointer on NetscapePlugInStreamLoader
+    <https://webkit.org/b/217237>
+    <rdar://problem/69776714>
+    
+    Reviewed by Alex Christensen.
+    
+    Source/WebCore:
+    
+    Could not write a test since reproducing a crash requires
+    rapidly reloading a URL to a PDF at random points during the
+    previous load.
+    
+    Make NetscapePlugInStreamLoaderClient a WeakPtr on
+    NetscapePlugInStreamLoader, and add nullptr checks for
+    NetscapePlugInStreamLoader.m_client as needed.
+    
+    * loader/NetscapePlugInStreamLoader.cpp:
+    (WebCore::NetscapePlugInStreamLoader::NetscapePlugInStreamLoader):
+    (WebCore::NetscapePlugInStreamLoader::willSendRequest):
+    (WebCore::NetscapePlugInStreamLoader::didReceiveResponse):
+    (WebCore::NetscapePlugInStreamLoader::didReceiveDataOrBuffer):
+    (WebCore::NetscapePlugInStreamLoader::didFinishLoading):
+    (WebCore::NetscapePlugInStreamLoader::didFail):
+    (WebCore::NetscapePlugInStreamLoader::willCancel):
+    * loader/NetscapePlugInStreamLoader.h:
+    
+    Source/WebKit:
+    
+    Making NetscapePlugInStreamLoaderClient inherit from
+    CanMakeWeakPtr<> caused PDFPlugin to fail to compile because one
+    of its parent classes already inherited from CanMakeWeakPtr<>.
+    To fix this, extract a PDFPluginStreamLoaderClient class from
+    PDFPlugin and link the lifetime of PDFPluginStreamLoaderClient
+    to PDFPlugin.
+    
+    After moving the NetscapePlugInStreamLoaderClient virtual
+    methods from PDFPlugin to PDFPluginStreamLoaderClient, add some
+    simple methods to PDFPlugin so that PDFPluginStreamLoaderClient
+    doesn't access the instance variables directly.  Also make use
+    of these new methods in other parts of PDFPlugin.
+    
+    * WebProcess/Plugins/PDF/PDFPlugin.h:
+    (WebKit::PDFPlugin::documentFinishedLoading): Add.
+    (WebKit::PDFPlugin::identifierForLoader): Add.
+    (WebKit::PDFPlugin::removeOutstandingByteRangeRequest): Add.
+    (WebKit::PDFPlugin::PDFPluginStreamLoaderClient): Add class.
+    * WebProcess/Plugins/PDF/PDFPlugin.mm:
+    (WebKit::PDFPlugin::PDFPlugin):
+    (WebKit::PDFPlugin::receivedNonLinearizedPDFSentinel):
+    (WebKit::PDFPlugin::getResourceBytesAtPosition):
+    (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::willSendRequest): Move from PDFPlugin.
+    (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::didReceiveResponse): Ditto.
+    (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::didReceiveData): Ditto.
+    (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::didFail): Ditto.
+    (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::didFinishLoading): Ditto.
+    (WebKit::PDFPlugin::byteRangeRequestForLoader):
+    (WebKit::PDFPlugin::forgetLoader):
+    (WebKit::PDFPlugin::willSendRequest): Move to PDFPluginStreamLoaderClient.
+    (WebKit::PDFPlugin::didReceiveResponse): Ditto.
+    (WebKit::PDFPlugin::didReceiveData): Ditto.
+    (WebKit::PDFPlugin::didFail): Ditto.
+    (WebKit::PDFPlugin::didFinishLoading): Ditto.
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@268003 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-05  David Kilzer  <ddkilzer@apple.com>
+
+            Make NetscapePlugInStreamLoaderClient a weak pointer on NetscapePlugInStreamLoader
+            <https://webkit.org/b/217237>
+            <rdar://problem/69776714>
+
+            Reviewed by Alex Christensen.
+
+            Could not write a test since reproducing a crash requires
+            rapidly reloading a URL to a PDF at random points during the
+            previous load.
+
+            Make NetscapePlugInStreamLoaderClient a WeakPtr on
+            NetscapePlugInStreamLoader, and add nullptr checks for
+            NetscapePlugInStreamLoader.m_client as needed.
+
+            * loader/NetscapePlugInStreamLoader.cpp:
+            (WebCore::NetscapePlugInStreamLoader::NetscapePlugInStreamLoader):
+            (WebCore::NetscapePlugInStreamLoader::willSendRequest):
+            (WebCore::NetscapePlugInStreamLoader::didReceiveResponse):
+            (WebCore::NetscapePlugInStreamLoader::didReceiveDataOrBuffer):
+            (WebCore::NetscapePlugInStreamLoader::didFinishLoading):
+            (WebCore::NetscapePlugInStreamLoader::didFail):
+            (WebCore::NetscapePlugInStreamLoader::willCancel):
+            * loader/NetscapePlugInStreamLoader.h:
+
 2020-10-08  Russell Epstein  <repstein@apple.com>
 
-        Cherry-pick r268117. rdar://problem/70097482
+        Cherry-pick r266909. rdar://problem/69101091
+
+    Source/WebCore:
+    Text replacements at the beginning of a second line are replaced too early
+    https://bugs.webkit.org/show_bug.cgi?id=216327
+    <rdar://problem/68170353>
+    
+    Reviewed by Darin Adler.
+    
+    In the changes in r258871, using SimpleRanges instead of Range causing some side effects
+    when the replacements at the beginning of lines. The ranges that we are counting are backwards
+    and the return characters are being counted instead of being ignored. There is almost
+    certainly a better fix than this, but this patch restores the original logic that
+    was present when Range was being used, until a better fix can be worked out.
+    
+    Test: editing/spelling/text-replacement-first-word-second-line.html
+    
+    * editing/Editor.cpp:
+    (WebCore::Editor::markAndReplaceFor):
+    * editing/TextCheckingHelper.cpp:
+    (WebCore::TextCheckingParagraph::automaticReplacementStart const):
+    (WebCore::TextCheckingParagraph::automaticReplacementLength const):
+    * editing/TextCheckingHelper.h:
+    
+    LayoutTests:
+    Overlapping text replacements at the beginning of a line are replaced too early
+    https://bugs.webkit.org/show_bug.cgi?id=216327
+    
+    Reviewed by Darin Adler.
+    
+    * editing/spelling/text-replacement-first-word-second-line-expected.txt: Added.
+    * editing/spelling/text-replacement-first-word-second-line.html: Added.
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@266909 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-09-10  Megan Gardner  <megan_gardner@apple.com>
+
+            Text replacements at the beginning of a second line are replaced too early
+            https://bugs.webkit.org/show_bug.cgi?id=216327
+            <rdar://problem/68170353>
+
+            Reviewed by Darin Adler.
+
+            In the changes in r258871, using SimpleRanges instead of Range causing some side effects
+            when the replacements at the beginning of lines. The ranges that we are counting are backwards
+            and the return characters are being counted instead of being ignored. There is almost
+            certainly a better fix than this, but this patch restores the original logic that
+            was present when Range was being used, until a better fix can be worked out.
+
+            Test: editing/spelling/text-replacement-first-word-second-line.html
+
+            * editing/Editor.cpp:
+            (WebCore::Editor::markAndReplaceFor):
+            * editing/TextCheckingHelper.cpp:
+            (WebCore::TextCheckingParagraph::automaticReplacementStart const):
+            (WebCore::TextCheckingParagraph::automaticReplacementLength const):
+            * editing/TextCheckingHelper.h:
+
+2020-10-08  Russell Epstein  <repstein@apple.com>
+
+        Cherry-pick r268162. rdar://problem/70097353
+
+    REGRESSION: Safari unable to load PDF in <embed> (docs.legalconnect.com)
+    https://bugs.webkit.org/show_bug.cgi?id=217451
+    <rdar://problem/69767043>
+    
+    Reviewed by Alex Christensen.
+    
+    Source/WebCore:
+    
+    Test: fast/replaced/pdf-as-embed-with-no-mime-type-is-not-blank.html
+    
+    If plugins are enabled, we'll always let the request go through, and WebKit will
+    guess that files with PDFPlugin-handled extensions should instantiate PDFPlugin,
+    even if no other plugins are available.
+    
+    However, if plugins are disabled, requestPlugin() will early return if the explicitly
+    specified MIME type is not handled by an application plugin (even though the downstream
+    WebKit code would have happily instantiated an application plugin for us).
+    
+    Application plugins shouldn't depend on the plugin enablement setting.
+    To fix this, have SubframeLoader guess the MIME type if not explicitly specified
+    (matching WebKit's behavior), and allow the request if it matches an application plugin.
+    
+    * loader/SubframeLoader.cpp:
+    (WebCore::findPluginMIMETypeFromURL):
+    Improve this previously logging-only function to use the lastPathComponent
+    of the URL instead of randomly looking at the end of the URL, to ignore
+    query strings and fragments when looking for the file extension.
+    
+    (WebCore::FrameLoader::SubframeLoader::requestPlugin):
+    Make use of findPluginMIMETypeFromURL to guess the MIME type if it's not
+    explicitly specified. If the guessed MIME type is one that is handled
+    by application plugins, allow the request to go out to WebKit (which
+    may then instantiate a PDFPlugin, for example).
+    
+    (WebCore::logPluginRequest):
+    (WebCore::FrameLoader::SubframeLoader::requestObject):
+    (WebCore::FrameLoader::SubframeLoader::createJavaAppletWidget):
+    Pass the URL instead of stringifying it, so we can lastPathComponent as above.
+    
+    LayoutTests:
+    
+    * fast/replaced/pdf-as-embed-with-no-mime-type-is-not-blank-expected-mismatch.html: Added.
+    * fast/replaced/pdf-as-embed-with-no-mime-type-is-not-blank.html: Added.
+    Add a test ensuring that <embed> with no specified MIME type still renders the PDF.
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@268162 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-07  Tim Horton  <timothy_horton@apple.com>
+
+            REGRESSION: Safari unable to load PDF in <embed> (docs.legalconnect.com)
+            https://bugs.webkit.org/show_bug.cgi?id=217451
+            <rdar://problem/69767043>
+
+            Reviewed by Alex Christensen.
+
+            Test: fast/replaced/pdf-as-embed-with-no-mime-type-is-not-blank.html
+
+            If plugins are enabled, we'll always let the request go through, and WebKit will
+            guess that files with PDFPlugin-handled extensions should instantiate PDFPlugin,
+            even if no other plugins are available.
+
+            However, if plugins are disabled, requestPlugin() will early return if the explicitly
+            specified MIME type is not handled by an application plugin (even though the downstream
+            WebKit code would have happily instantiated an application plugin for us).
+
+            Application plugins shouldn't depend on the plugin enablement setting.
+            To fix this, have SubframeLoader guess the MIME type if not explicitly specified
+            (matching WebKit's behavior), and allow the request if it matches an application plugin.
+
+            * loader/SubframeLoader.cpp:
+            (WebCore::findPluginMIMETypeFromURL):
+            Improve this previously logging-only function to use the lastPathComponent
+            of the URL instead of randomly looking at the end of the URL, to ignore
+            query strings and fragments when looking for the file extension.
+
+            (WebCore::FrameLoader::SubframeLoader::requestPlugin):
+            Make use of findPluginMIMETypeFromURL to guess the MIME type if it's not
+            explicitly specified. If the guessed MIME type is one that is handled
+            by application plugins, allow the request to go out to WebKit (which
+            may then instantiate a PDFPlugin, for example).
+
+            (WebCore::logPluginRequest):
+            (WebCore::FrameLoader::SubframeLoader::requestObject):
+            (WebCore::FrameLoader::SubframeLoader::createJavaAppletWidget):
+            Pass the URL instead of stringifying it, so we can lastPathComponent as above.
+
+2020-10-08  Russell Epstein  <repstein@apple.com>
+
+        Cherry-pick r268117. rdar://problem/70104128
 
     Presidential Executive Order pages not accessible with Safari.
     https://bugs.webkit.org/show_bug.cgi?id=217415

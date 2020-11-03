@@ -583,10 +583,11 @@ void RenderLayerBacking::destroyGraphicsLayers()
 
     GraphicsLayer::clear(m_maskLayer);
 
-    if (m_ancestorClippingStack) {
-        for (auto& entry : m_ancestorClippingStack->stack())
-            GraphicsLayer::unparentAndClear(entry.clippingLayer);
-    }
+    if (m_ancestorClippingStack)
+        removeClippingStackLayers(*m_ancestorClippingStack);
+
+    if (m_overflowControlsHostLayerAncestorClippingStack)
+        removeClippingStackLayers(*m_overflowControlsHostLayerAncestorClippingStack);
 
     GraphicsLayer::unparentAndClear(m_contentsContainmentLayer);
     GraphicsLayer::unparentAndClear(m_foregroundLayer);
@@ -1912,7 +1913,7 @@ void RenderLayerBacking::updateClippingStackLayerGeometry(LayerAncestorClippingS
         entry.clippingLayer->setSize(snappedClippingLayerRect.size());
 
         if (entry.clipData.isOverflowScroll) {
-            ScrollOffset scrollOffset = entry.clipData.clippingLayer->scrollOffset();
+            ScrollOffset scrollOffset = entry.clipData.clippingLayer ? entry.clipData.clippingLayer->scrollOffset() : ScrollOffset();
 
             entry.clippingLayer->setBoundsOrigin(scrollOffset);
             lastClipLayerRect.moveBy(-scrollOffset);
@@ -1937,8 +1938,13 @@ bool RenderLayerBacking::updateAncestorClipping(bool needsAncestorClip, const Re
         }
     } else if (m_ancestorClippingStack) {
         removeClippingStackLayers(*m_ancestorClippingStack);
-
         m_ancestorClippingStack = nullptr;
+        
+        if (m_overflowControlsHostLayerAncestorClippingStack) {
+            removeClippingStackLayers(*m_overflowControlsHostLayerAncestorClippingStack);
+            m_overflowControlsHostLayerAncestorClippingStack = nullptr;
+        }
+        
         layersChanged = true;
     }
     
