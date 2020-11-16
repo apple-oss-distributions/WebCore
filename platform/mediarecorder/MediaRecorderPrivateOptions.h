@@ -22,48 +22,56 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#pragma once
 
-#include "config.h"
-#include "MediaRecorderPrivate.h"
+#include <wtf/Forward.h>
 
 #if ENABLE(MEDIA_STREAM)
 
-#include "MediaStreamPrivate.h"
-
 namespace WebCore {
 
-MediaRecorderPrivate::AudioVideoSelectedTracks MediaRecorderPrivate::selectTracks(MediaStreamPrivate& stream)
+struct MediaRecorderPrivateOptions {
+    String mimeType;
+    Optional<unsigned> audioBitsPerSecond;
+    Optional<unsigned> videoBitsPerSecond;
+    Optional<unsigned> bitsPerSecond;
+
+    template<class Encoder> void encode(Encoder&) const;
+    template<class Decoder> static Optional<MediaRecorderPrivateOptions> decode(Decoder&);
+};
+
+template<class Encoder>
+inline void MediaRecorderPrivateOptions::encode(Encoder& encoder) const
 {
-    AudioVideoSelectedTracks selectedTracks;
-    stream.forEachTrack([&](auto& track) {
-        if (track.ended())
-            return;
-        switch (track.type()) {
-        case RealtimeMediaSource::Type::Video: {
-            auto& settings = track.settings();
-            if (!selectedTracks.videoTrack && settings.supportsWidth() && settings.supportsHeight())
-                selectedTracks.videoTrack = &track;
-            break;
-        }
-        case RealtimeMediaSource::Type::Audio:
-            if (!selectedTracks.audioTrack)
-                selectedTracks.audioTrack = &track;
-            break;
-        case RealtimeMediaSource::Type::None:
-            break;
-        }
-    });
-    return selectedTracks;
+    encoder << mimeType;
+    encoder << audioBitsPerSecond;
+    encoder << videoBitsPerSecond;
+    encoder << bitsPerSecond;
 }
 
-void MediaRecorderPrivate::checkTrackState(const MediaStreamTrackPrivate& track)
+template<class Decoder>
+inline Optional<MediaRecorderPrivateOptions> MediaRecorderPrivateOptions::decode(Decoder& decoder)
 {
-    if (&track.source() == m_audioSource.get()) {
-        m_shouldMuteAudio = track.muted() || !track.enabled();
-        return;
-    }
-    if (&track.source() == m_videoSource.get())
-        m_shouldMuteVideo = track.muted() || !track.enabled();
+    String mimeType;
+    if (!decoder.decode(mimeType))
+        return WTF::nullopt;
+
+    Optional<Optional<unsigned>> audioBitsPerSecond;
+    decoder >> audioBitsPerSecond;
+    if (!audioBitsPerSecond)
+        return WTF::nullopt;
+
+    Optional<Optional<unsigned>> videoBitsPerSecond;
+    decoder >> videoBitsPerSecond;
+    if (!videoBitsPerSecond)
+        return WTF::nullopt;
+
+    Optional<Optional<unsigned>> bitsPerSecond;
+    decoder >> bitsPerSecond;
+    if (!bitsPerSecond)
+        return WTF::nullopt;
+
+    return MediaRecorderPrivateOptions { WTFMove(mimeType), *audioBitsPerSecond, *videoBitsPerSecond, *bitsPerSecond };
 }
 
 } // namespace WebCore
