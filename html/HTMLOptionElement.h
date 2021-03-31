@@ -35,7 +35,7 @@ class HTMLOptionElement final : public HTMLElement {
 public:
     static Ref<HTMLOptionElement> create(Document&);
     static Ref<HTMLOptionElement> create(const QualifiedName&, Document&);
-    static ExceptionOr<Ref<HTMLOptionElement>> createForJSConstructor(Document&, const String& text, const String& value, bool defaultSelected, bool selected);
+    static ExceptionOr<Ref<HTMLOptionElement>> createForLegacyFactoryFunction(Document&, const String& text, const String& value, bool defaultSelected, bool selected);
 
     WEBCORE_EXPORT String text() const;
     void setText(const String&);
@@ -45,7 +45,7 @@ public:
     WEBCORE_EXPORT String value() const;
     WEBCORE_EXPORT void setValue(const String&);
 
-    WEBCORE_EXPORT bool selected();
+    WEBCORE_EXPORT bool selected() const;
     WEBCORE_EXPORT void setSelected(bool);
 
     WEBCORE_EXPORT HTMLSelectElement* ownerSelectElement() const;

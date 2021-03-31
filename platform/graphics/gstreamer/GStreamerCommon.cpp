@@ -24,15 +24,22 @@
 #if USE(GSTREAMER)
 
 #include "GLVideoSinkGStreamer.h"
+#include "GStreamerAudioMixer.h"
 #include "GstAllocatorFastMalloc.h"
 #include "IntSize.h"
 #include "SharedBuffer.h"
+#include "WebKitAudioSinkGStreamer.h"
 #include <gst/audio/audio-info.h>
 #include <gst/gst.h>
 #include <mutex>
+#include <wtf/Scope.h>
 #include <wtf/glib/GLibUtilities.h>
 #include <wtf/glib/GUniquePtr.h>
 #include <wtf/glib/RunLoopSourcePriority.h>
+
+#if USE(GSTREAMER_FULL)
+#include <gst/gstinitstaticplugins.h>
+#endif
 
 #if USE(GSTREAMER_MPEGTS)
 #define GST_USE_UNSTABLE_API
@@ -59,6 +66,9 @@
 #include "WebKitWebSourceGStreamer.h"
 #endif
 
+GST_DEBUG_CATEGORY(webkit_gst_common_debug);
+#define GST_CAT_DEFAULT webkit_gst_common_debug
+
 namespace WebCore {
 
 GstPad* webkitGstGhostPadFromStaticTemplate(GstStaticPadTemplate* staticPadTemplate, const gchar* name, GstPad* target)
@@ -77,7 +87,7 @@ GstPad* webkitGstGhostPadFromStaticTemplate(GstStaticPadTemplate* staticPadTempl
 }
 
 #if ENABLE(VIDEO)
-bool getVideoSizeAndFormatFromCaps(GstCaps* caps, WebCore::IntSize& size, GstVideoFormat& format, int& pixelAspectRatioNumerator, int& pixelAspectRatioDenominator, int& stride)
+bool getVideoSizeAndFormatFromCaps(const GstCaps* caps, WebCore::IntSize& size, GstVideoFormat& format, int& pixelAspectRatioNumerator, int& pixelAspectRatioDenominator, int& stride)
 {
     if (!doCapsHaveType(caps, GST_VIDEO_CAPS_TYPE_PREFIX)) {
         GST_WARNING("Failed to get the video size and format, these are not a video caps");
@@ -246,6 +256,7 @@ bool initializeGStreamer(Optional<Vector<String>>&& options)
         isGStreamerInitialized = gst_init_check(&argc, &argv, &error.outPtr());
         ASSERT_WITH_MESSAGE(isGStreamerInitialized, "GStreamer initialization failed: %s", error ? error->message : "unknown error occurred");
         g_strfreev(argv);
+        GST_DEBUG_CATEGORY_INIT(webkit_gst_common_debug, "webkitcommon", 0, "WebKit Common utilities");
 
         if (isFastMallocEnabled()) {
             const char* disableFastMalloc = getenv("WEBKIT_GST_DISABLE_FAST_MALLOC");
@@ -257,22 +268,6 @@ bool initializeGStreamer(Optional<Vector<String>>&& options)
         if (isGStreamerInitialized)
             gst_mpegts_initialize();
 #endif
-
-        // If the FDK-AAC decoder is available, promote it and downrank the
-        // libav AAC decoders, due to their broken LC support, as reported in:
-        // https://ffmpeg.org/pipermail/ffmpeg-devel/2019-July/247063.html
-        GRefPtr<GstElementFactory> elementFactory = adoptGRef(gst_element_factory_find("fdkaacdec"));
-        if (elementFactory) {
-            gst_plugin_feature_set_rank(GST_PLUGIN_FEATURE_CAST(elementFactory.get()), GST_RANK_PRIMARY);
-
-            const char* const elementNames[] = {"avdec_aac", "avdec_aac_fixed", "avdec_aac_latm"};
-            for (unsigned i = 0; i < G_N_ELEMENTS(elementNames); i++) {
-                GRefPtr<GstElementFactory> avAACDecoderFactory = adoptGRef(gst_element_factory_find(elementNames[i]));
-                if (avAACDecoderFactory)
-                    gst_plugin_feature_set_rank(GST_PLUGIN_FEATURE_CAST(avAACDecoderFactory.get()), GST_RANK_MARGINAL);
-            }
-        }
-
 #endif
     });
     return isGStreamerInitialized;
@@ -304,6 +299,10 @@ bool initializeGStreamerAndRegisterWebKitElements()
 
     static std::once_flag onceFlag;
     std::call_once(onceFlag, [] {
+#if USE(GSTREAMER_FULL)
+        gst_init_static_plugins();
+#endif
+
 #if ENABLE(ENCRYPTED_MEDIA)
         gst_element_register(nullptr, "webkitclearkey", GST_RANK_PRIMARY + 200, WEBKIT_TYPE_MEDIA_CK_DECRYPT);
 #if ENABLE(THUNDER)
@@ -323,9 +322,26 @@ bool initializeGStreamerAndRegisterWebKitElements()
 #if ENABLE(VIDEO)
         gst_element_register(0, "webkitwebsrc", GST_RANK_PRIMARY + 100, WEBKIT_TYPE_WEB_SRC);
 #if USE(GSTREAMER_GL)
-        gst_element_register(0, "webkitglvideosink", GST_RANK_PRIMARY, WEBKIT_TYPE_GL_VIDEO_SINK);
+        gst_element_register(0, "webkitglvideosink", GST_RANK_NONE, WEBKIT_TYPE_GL_VIDEO_SINK);
 #endif
 #endif
+        // We don't want autoaudiosink to autoplug our sink.
+        gst_element_register(0, "webkitaudiosink", GST_RANK_NONE, WEBKIT_TYPE_AUDIO_SINK);
+
+        // If the FDK-AAC decoder is available, promote it and downrank the
+        // libav AAC decoders, due to their broken LC support, as reported in:
+        // https://ffmpeg.org/pipermail/ffmpeg-devel/2019-July/247063.html
+        GRefPtr<GstElementFactory> elementFactory = adoptGRef(gst_element_factory_find("fdkaacdec"));
+        if (elementFactory) {
+            gst_plugin_feature_set_rank(GST_PLUGIN_FEATURE_CAST(elementFactory.get()), GST_RANK_PRIMARY);
+
+            const char* const elementNames[] = {"avdec_aac", "avdec_aac_fixed", "avdec_aac_latm"};
+            for (unsigned i = 0; i < G_N_ELEMENTS(elementNames); i++) {
+                GRefPtr<GstElementFactory> avAACDecoderFactory = adoptGRef(gst_element_factory_find(elementNames[i]));
+                if (avAACDecoderFactory)
+                    gst_plugin_feature_set_rank(GST_PLUGIN_FEATURE_CAST(avAACDecoderFactory.get()), GST_RANK_MARGINAL);
+            }
+        }
     });
     return true;
 }
@@ -388,13 +404,14 @@ static void simpleBusMessageCallback(GstBus*, GstMessage* message, GstBin* pipel
 
 void disconnectSimpleBusMessageCallback(GstElement* pipeline)
 {
-    GRefPtr<GstBus> bus = adoptGRef(gst_pipeline_get_bus(GST_PIPELINE(pipeline)));
+    auto bus = adoptGRef(gst_pipeline_get_bus(GST_PIPELINE(pipeline)));
     g_signal_handlers_disconnect_by_func(bus.get(), reinterpret_cast<gpointer>(simpleBusMessageCallback), pipeline);
+    gst_bus_remove_signal_watch(bus.get());
 }
 
 void connectSimpleBusMessageCallback(GstElement* pipeline)
 {
-    GRefPtr<GstBus> bus = adoptGRef(gst_pipeline_get_bus(GST_PIPELINE(pipeline)));
+    auto bus = adoptGRef(gst_pipeline_get_bus(GST_PIPELINE(pipeline)));
     gst_bus_add_signal_watch_full(bus.get(), RunLoopSourcePriority::RunLoopDispatcher);
     g_signal_connect(bus.get(), "message", G_CALLBACK(simpleBusMessageCallback), pipeline);
 }
@@ -417,6 +434,67 @@ bool isGStreamerPluginAvailable(const char* name)
     if (!plugin)
         GST_WARNING("Plugin %s not found. Please check your GStreamer installation", name);
     return plugin;
+}
+
+GstElement* createPlatformAudioSink()
+{
+    GstElement* audioSink = webkitAudioSinkNew();
+    if (!audioSink) {
+        // This means the WebKit audio sink configuration failed. It can happen for the following reasons:
+        // - audio mixing was not requested using the WEBKIT_GST_ENABLE_AUDIO_MIXER
+        // - audio mixing was requested using the WEBKIT_GST_ENABLE_AUDIO_MIXER but the audio mixer
+        //   runtime requirements are not fullfilled.
+        // - the sink was created for the WPE port, audio mixing was not requested and no
+        //   WPEBackend-FDO audio receiver has been registered at runtime.
+        audioSink = gst_element_factory_make("autoaudiosink", nullptr);
+    }
+    if (!audioSink) {
+        GST_WARNING("GStreamer's autoaudiosink not found. Please check your gst-plugins-good installation");
+        return nullptr;
+    }
+
+    return audioSink;
+}
+
+bool webkitGstSetElementStateSynchronously(GstElement* pipeline, GstState targetState, Function<bool(GstMessage*)>&& messageHandler)
+{
+    GST_DEBUG_OBJECT(pipeline, "Setting state to %s", gst_element_state_get_name(targetState));
+
+    GstState currentState;
+    auto result = gst_element_get_state(pipeline, &currentState, nullptr, 10);
+    if (result == GST_STATE_CHANGE_SUCCESS && currentState >= targetState) {
+        GST_DEBUG_OBJECT(pipeline, "Target state already reached");
+        return true;
+    }
+
+    auto bus = adoptGRef(gst_pipeline_get_bus(GST_PIPELINE(pipeline)));
+    gst_bus_enable_sync_message_emission(bus.get());
+
+    auto cleanup = makeScopeExit([bus = GRefPtr<GstBus>(bus), pipeline, targetState] {
+        gst_bus_disable_sync_message_emission(bus.get());
+        GstState currentState;
+        auto result = gst_element_get_state(pipeline, &currentState, nullptr, 0);
+        GST_DEBUG_OBJECT(pipeline, "Task finished, result: %s, target state reached: %s", gst_element_state_change_return_get_name(result), boolForPrinting(currentState == targetState));
+    });
+
+    result = gst_element_set_state(pipeline, targetState);
+    if (result == GST_STATE_CHANGE_FAILURE)
+        return false;
+
+    if (result == GST_STATE_CHANGE_ASYNC) {
+        while (auto message = adoptGRef(gst_bus_timed_pop_filtered(bus.get(), GST_CLOCK_TIME_NONE, GST_MESSAGE_STATE_CHANGED))) {
+            if (!messageHandler(message.get()))
+                return false;
+
+            result = gst_element_get_state(pipeline, &currentState, nullptr, 10);
+            if (result == GST_STATE_CHANGE_FAILURE)
+                return false;
+
+            if (currentState == targetState)
+                return true;
+        }
+    }
+    return true;
 }
 
 }

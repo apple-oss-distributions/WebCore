@@ -53,6 +53,8 @@ enum class GamepadButtonRole : uint8_t {
     LeftClusterLeft = 14,
     LeftClusterRight = 15,
     CenterClusterCenter = 16,
+    Nonstandard1 = 17,
+    Nonstandard2 = 18,
 };
 
 extern const size_t numberOfStandardGamepadButtonsWithoutHomeButton;

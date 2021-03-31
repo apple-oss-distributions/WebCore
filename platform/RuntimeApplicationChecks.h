@@ -34,15 +34,20 @@ WEBCORE_EXPORT int presentingApplicationPID();
 
 #if PLATFORM(WIN)
 inline bool isInWebProcess() { return false; }
-#elif !PLATFORM(COCOA)
+inline bool isInGPUProcess() { return false; }
+#elif !PLATFORM(COCOA) && !USE(GLIB)
 inline bool isInWebProcess() { return true; }
+inline bool isInGPUProcess() { return false; }
+inline bool isInNetworkProcess() { return false; }
+#endif
+
+#if PLATFORM(COCOA) || USE(GLIB)
+bool isInWebProcess();
+bool isInGPUProcess();
+bool isInNetworkProcess();
 #endif
 
 #if PLATFORM(COCOA)
-
-bool isInWebProcess();
-bool isInNetworkProcess();
-
 WEBCORE_EXPORT void setApplicationBundleIdentifier(const String&);
 WEBCORE_EXPORT void setApplicationBundleIdentifierOverride(const String&);
 WEBCORE_EXPORT String applicationBundleIdentifier();
@@ -107,14 +112,18 @@ WEBCORE_EXPORT bool isPocketCity();
 WEBCORE_EXPORT bool isEssentialSkeleton();
 WEBCORE_EXPORT bool isLaBanquePostale();
 WEBCORE_EXPORT bool isESPNFantasySports();
+WEBCORE_EXPORT bool isDoubleDown();
+WEBCORE_EXPORT bool isFIFACompanion();
+WEBCORE_EXPORT bool isNoggin();
+WEBCORE_EXPORT bool isOKCupid();
+WEBCORE_EXPORT bool isJWLibrary();
+WEBCORE_EXPORT bool isPaperIO();
+WEBCORE_EXPORT bool isCrunchyroll();
+bool isWechat();
 
 } // IOSApplication
 
 #endif // PLATFORM(IOS_FAMILY)
-
-#else
-
-inline bool isInNetworkProcess() { return false; }
 
 #endif // PLATFORM(COCOA)
 

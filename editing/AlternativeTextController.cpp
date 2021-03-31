@@ -206,13 +206,13 @@ bool AlternativeTextController::applyAutocorrectionBeforeTypingIfAppropriate()
 
     Position caretPosition = m_document.selection().selection().start();
 
-    if (createLegacyEditingPosition(m_rangeWithAlternative->end) == caretPosition) {
+    if (makeDeprecatedLegacyPosition(m_rangeWithAlternative->end) == caretPosition) {
         handleAlternativeTextUIResult(dismissSoon(ReasonForDismissingAlternativeTextAccepted));
         return true;
     } 
     
     // Pending correction should always be where caret is. But in case this is not always true, we still want to dismiss the panel without accepting the correction.
-    ASSERT(createLegacyEditingPosition(m_rangeWithAlternative->end) == caretPosition);
+    ASSERT(makeDeprecatedLegacyPosition(m_rangeWithAlternative->end) == caretPosition);
     dismiss(ReasonForDismissingAlternativeTextIgnored);
     return false;
 }
@@ -265,7 +265,7 @@ void AlternativeTextController::timerFired()
     case AlternativeTextTypeSpellingSuggestions: {
         if (!m_rangeWithAlternative || plainText(*m_rangeWithAlternative) != m_originalText)
             break;
-        String paragraphText = plainText(TextCheckingParagraph(createLiveRange(*m_rangeWithAlternative)).paragraphRange());
+        String paragraphText = plainText(TextCheckingParagraph(*m_rangeWithAlternative).paragraphRange());
         Vector<String> suggestions;
         textChecker()->getGuessesForWord(m_originalText, paragraphText, m_document.selection().selection(), suggestions);
         if (suggestions.isEmpty()) {
@@ -335,9 +335,30 @@ void AlternativeTextController::handleAlternativeTextUIResult(const String& resu
     m_rangeWithAlternative = WTF::nullopt;
 }
 
+bool AlternativeTextController::canEnableAutomaticSpellingCorrection() const
+{
+#if ENABLE(AUTOCORRECT)
+    auto position = m_document.selection().selection().start();
+    if (auto editableRoot = position.rootEditableElement()) {
+        if (is<HTMLElement>(editableRoot) && !downcast<HTMLElement>(*editableRoot).shouldAutocorrect())
+            return false;
+    }
+
+    if (auto control = enclosingTextFormControl(position)) {
+        if (!control->shouldAutocorrect())
+            return false;
+    }
+#endif
+
+    return true;
+}
+
 bool AlternativeTextController::isAutomaticSpellingCorrectionEnabled()
 {
-    return editorClient() && editorClient()->isAutomaticSpellingCorrectionEnabled();
+    if (!editorClient() || !editorClient()->isAutomaticSpellingCorrectionEnabled())
+        return false;
+
+    return canEnableAutomaticSpellingCorrection();
 }
 
 FloatRect AlternativeTextController::rootViewRectForRange(const SimpleRange& range) const
@@ -501,7 +522,7 @@ bool AlternativeTextController::processMarkersOnTextToBeReplacedByResult(const T
     if (markers.hasMarkers(rangeWithAlternative, DocumentMarker::AcceptedCandidate))
         return false;
 
-    auto precedingCharacterRange = makeSimpleRange(createLegacyEditingPosition(rangeWithAlternative.start).previous(), rangeWithAlternative.start);
+    auto precedingCharacterRange = makeSimpleRange(makeDeprecatedLegacyPosition(rangeWithAlternative.start).previous(), rangeWithAlternative.start);
     if (!precedingCharacterRange)
         return false;
 
@@ -523,7 +544,7 @@ bool AlternativeTextController::respondToMarkerAtEndOfWord(const DocumentMarker&
     if (!shouldStartTimerFor(marker, endOfWordPosition.offsetInContainerNode()))
         return false;
     Node* node = endOfWordPosition.containerNode();
-    auto wordRange = range(*node, marker);
+    auto wordRange = makeSimpleRange(*node, marker);
     String currentWord = plainText(wordRange);
     if (!currentWord.length())
         return false;
@@ -583,7 +604,7 @@ void AlternativeTextController::applyAlternativeTextToRange(const SimpleRange& r
     // of the containing paragraph.
 
     // Take note of the location of autocorrection so that we can add marker after the replacement took place.
-    auto paragraphStart = makeBoundaryPoint(startOfParagraph(createLegacyEditingPosition(range.start)));
+    auto paragraphStart = makeBoundaryPoint(startOfParagraph(makeDeprecatedLegacyPosition(range.start)));
     if (!paragraphStart)
         return;
     auto treeScopeRoot = makeRef(range.start.container->treeScope().rootNode());
@@ -591,7 +612,7 @@ void AlternativeTextController::applyAlternativeTextToRange(const SimpleRange& r
     auto correctionOffsetInParagraph = characterCount({ *paragraphStart, range.start });
     auto paragraphOffsetInTreeScope = characterCount({ treeScopeStart, *paragraphStart });
 
-    SpellingCorrectionCommand::create(createLiveRange(range), alternative)->apply();
+    SpellingCorrectionCommand::create(range, alternative)->apply();
 
     // Recalculate pragraphRangeContainingCorrection, since SpellingCorrectionCommand modified the DOM, such that the original paragraphRangeContainingCorrection is no longer valid. Radar: 10305315 Bugzilla: 89526
     auto updatedParagraphStartContainingCorrection = resolveCharacterLocation(makeRangeSelectingNodeContents(treeScopeRoot), paragraphOffsetInTreeScope);

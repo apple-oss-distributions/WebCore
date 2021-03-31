@@ -66,6 +66,7 @@ public:
     virtual void sessionIdentifierChanged(NSData*) = 0;
     virtual void groupSessionIdentifierChanged(AVContentKeyReportGroup*, NSData*) = 0;
     virtual void outputObscuredDueToInsufficientExternalProtectionChanged(bool) = 0;
+    virtual void externalProtectionStatusDidChangeForContentKeyRequest(AVContentKeyRequest*) = 0;
 };
 
 class CDMInstanceFairPlayStreamingAVFObjC final : public CDMInstance, public AVContentKeySessionDelegateClient, public CanMakeWeakPtr<CDMInstanceFairPlayStreamingAVFObjC> {
@@ -111,6 +112,7 @@ public:
     void sessionIdentifierChanged(NSData*) final;
     void groupSessionIdentifierChanged(AVContentKeyReportGroup*, NSData*) final;
     void outputObscuredDueToInsufficientExternalProtectionChanged(bool) final;
+    void externalProtectionStatusDidChangeForContentKeyRequest(AVContentKeyRequest*) final;
 
     using Keys = Vector<Ref<SharedBuffer>>;
     CDMInstanceSessionFairPlayStreamingAVFObjC* sessionForKeyIDs(const Keys&) const;
@@ -118,6 +120,8 @@ public:
     CDMInstanceSessionFairPlayStreamingAVFObjC* sessionForRequest(AVContentKeyRequest*) const;
 
 private:
+    void handleUnexpectedRequests(Vector<RetainPtr<AVContentKeyRequest>>&&);
+
 #if !RELEASE_LOG_DISABLED
     WTF::Logger* loggerPtr() const { return m_logger.get(); };
     const void* logIdentifier() const { return m_logIdentifier; }
@@ -154,6 +158,7 @@ public:
     void closeSession(const String&, CloseSessionCallback&&) final;
     void removeSessionData(const String&, LicenseType, RemoveSessionDataCallback&&) final;
     void storeRecordOfKeyUsage(const String&) final;
+    void displayChanged(PlatformDisplayID) final;
     void setClient(WeakPtr<CDMInstanceSessionClient>&&) final;
     void clearClient() final;
 
@@ -168,6 +173,7 @@ public:
     void sessionIdentifierChanged(NSData*) final;
     void groupSessionIdentifierChanged(AVContentKeyReportGroup*, NSData*) final;
     void outputObscuredDueToInsufficientExternalProtectionChanged(bool) final;
+    void externalProtectionStatusDidChangeForContentKeyRequest(AVContentKeyRequest*) final;
 
     using Keys = CDMInstanceFairPlayStreamingAVFObjC::Keys;
     Keys keyIDs();
@@ -186,15 +192,19 @@ private:
     bool ensureSessionOrGroup();
     bool isLicenseTypeSupported(LicenseType) const;
 
-    KeyStatusVector keyStatuses() const;
+    KeyStatusVector keyStatuses(Optional<PlatformDisplayID> = WTF::nullopt) const;
     void nextRequest();
     AVContentKeyRequest* lastKeyRequest() const;
+
+    Optional<CDMKeyStatus> protectionStatusForDisplayID(AVContentKeyRequest *, Optional<PlatformDisplayID>) const;
 
 #if !RELEASE_LOG_DISABLED
     WTF::Logger* loggerPtr() const { return m_logger.get(); };
     const void* logIdentifier() const { return m_logIdentifier; }
     const char* logClassName() const { return "CDMInstanceSessionFairPlayStreamingAVFObjC"; }
 #endif
+
+    void updateProtectionStatusForDisplayID(PlatformDisplayID);
 
     Ref<CDMInstanceFairPlayStreamingAVFObjC> m_instance;
     RetainPtr<AVContentKeyReportGroup> m_group;

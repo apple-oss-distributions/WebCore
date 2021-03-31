@@ -22,6 +22,7 @@
 #include "RadioButtonGroups.h"
 
 #include "HTMLInputElement.h"
+#include "Range.h"
 #include <wtf/WeakHashSet.h>
 #include <wtf/WeakPtr.h>
 
@@ -59,10 +60,10 @@ inline bool RadioButtonGroup::isValid() const
 Vector<Ref<HTMLInputElement>> RadioButtonGroup::members() const
 {
     Vector<Ref<HTMLInputElement>> sortedMembers;
-    for (auto& memeber : m_members)
-        sortedMembers.append(memeber);
+    for (auto& member : m_members)
+        sortedMembers.append(member);
     std::sort(sortedMembers.begin(), sortedMembers.end(), [](auto& a, auto& b) {
-        return documentOrderComparator(a.ptr(), b.ptr());
+        return is_lt(treeOrder<ComposedTree>(a, b));
     });
     return sortedMembers;
 }

@@ -43,8 +43,8 @@
 
 namespace WebCore {
 
-ImageBufferCairoSurfaceBackend::ImageBufferCairoSurfaceBackend(const FloatSize& logicalSize, const IntSize& backendSize, float resolutionScale, ColorSpace colorSpace, RefPtr<cairo_surface_t>&& surface)
-    : ImageBufferCairoBackend(logicalSize, backendSize, resolutionScale, colorSpace)
+ImageBufferCairoSurfaceBackend::ImageBufferCairoSurfaceBackend(const Parameters& parameters, RefPtr<cairo_surface_t>&& surface)
+    : ImageBufferCairoBackend(parameters)
     , m_surface(WTFMove(surface))
 {
     ASSERT(cairo_surface_status(m_surface.get()) == CAIRO_STATUS_SUCCESS);
@@ -59,12 +59,17 @@ GraphicsContext& ImageBufferCairoSurfaceBackend::context() const
     return *m_context;
 }
 
+IntSize ImageBufferCairoSurfaceBackend::backendSize() const
+{
+    return { cairo_image_surface_get_width(m_surface.get()), cairo_image_surface_get_height(m_surface.get()) };
+}
+
 unsigned ImageBufferCairoSurfaceBackend::bytesPerRow() const
 {
     return cairo_image_surface_get_stride(m_surface.get());
 }
 
-NativeImagePtr ImageBufferCairoSurfaceBackend::copyNativeImage(BackingStoreCopy copyBehavior) const
+RefPtr<NativeImage> ImageBufferCairoSurfaceBackend::copyNativeImage(BackingStoreCopy copyBehavior) const
 {
     switch (copyBehavior) {
     case CopyBackingStore: {
@@ -77,18 +82,18 @@ NativeImagePtr ImageBufferCairoSurfaceBackend::copyNativeImage(BackingStoreCopy 
         cairo_set_source_surface(cr.get(), m_surface.get(), 0, 0);
         cairo_paint(cr.get());
 
-        return copy;
+        return NativeImage::create(WTFMove(copy));
     }
 
     case DontCopyBackingStore:
-        return m_surface;
+        return NativeImage::create(makeRefPtr(m_surface.get()));
     }
 
     ASSERT_NOT_REACHED();
     return nullptr;
 }
 
-NativeImagePtr ImageBufferCairoSurfaceBackend::cairoSurfaceCoerceToImage() const
+RefPtr<NativeImage> ImageBufferCairoSurfaceBackend::cairoSurfaceCoerceToImage() const
 {
     BackingStoreCopy copyBehavior;
     if (cairo_surface_get_type(m_surface.get()) == CAIRO_SURFACE_TYPE_IMAGE && cairo_surface_get_content(m_surface.get()) == CAIRO_CONTENT_COLOR_ALPHA)
@@ -100,7 +105,8 @@ NativeImagePtr ImageBufferCairoSurfaceBackend::cairoSurfaceCoerceToImage() const
 
 Vector<uint8_t> ImageBufferCairoSurfaceBackend::toBGRAData() const
 {
-    auto surface = cairoSurfaceCoerceToImage();
+    auto nativeImage = cairoSurfaceCoerceToImage();
+    auto surface = nativeImage ? nativeImage->platformImage() : nullptr;
     cairo_surface_flush(surface.get());
 
     Vector<uint8_t> imageData;
@@ -119,9 +125,9 @@ RefPtr<ImageData> ImageBufferCairoSurfaceBackend::getImageData(AlphaPremultiplic
     return ImageBufferBackend::getImageData(outputFormat, srcRect, cairo_image_surface_get_data(m_surface.get()));
 }
 
-void ImageBufferCairoSurfaceBackend::putImageData(AlphaPremultiplication inputFormat, const ImageData& imageData, const IntRect& srcRect, const IntPoint& destPoint)
+void ImageBufferCairoSurfaceBackend::putImageData(AlphaPremultiplication inputFormat, const ImageData& imageData, const IntRect& srcRect, const IntPoint& destPoint, AlphaPremultiplication destFormat)
 {
-    ImageBufferBackend::putImageData(inputFormat, imageData, srcRect, destPoint, cairo_image_surface_get_data(m_surface.get()));
+    ImageBufferBackend::putImageData(inputFormat, imageData, srcRect, destPoint, destFormat, cairo_image_surface_get_data(m_surface.get()));
 
     IntRect srcRectScaled = toBackendCoordinates(srcRect);
     IntPoint destPointScaled = toBackendCoordinates(destPoint);

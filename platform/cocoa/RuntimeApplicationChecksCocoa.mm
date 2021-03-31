@@ -96,6 +96,12 @@ bool isInWebProcess()
     return mainBundleIsWebProcess;
 }
 
+bool isInGPUProcess()
+{
+    static bool mainBundleIsGPUProcess = [[[NSBundle mainBundle] bundleIdentifier] hasPrefix:@"com.apple.WebKit.GPU"];
+    return mainBundleIsGPUProcess;
+}
+
 bool isInNetworkProcess()
 {
     static bool mainBundleIsNetworkProcess = [[[NSBundle mainBundle] bundleIdentifier] hasPrefix:@"com.apple.WebKit.Networking"];
@@ -396,6 +402,54 @@ bool IOSApplication::isESPNFantasySports()
 {
     static bool isESPNFantasySports = applicationBundleIsEqualTo("com.espn.fantasyFootball"_s);
     return isESPNFantasySports;
+}
+
+bool IOSApplication::isDoubleDown()
+{
+    static bool isDoubleDown = applicationBundleIsEqualTo("com.doubledowninteractive.DDCasino"_s);
+    return isDoubleDown;
+}
+
+bool IOSApplication::isFIFACompanion()
+{
+    static bool isFIFACompanion = applicationBundleIsEqualTo("com.ea.ios.fifaultimate"_s);
+    return isFIFACompanion;
+}
+
+bool IOSApplication::isNoggin()
+{
+    static bool isNoggin = applicationBundleIsEqualTo("com.mtvn.noggin"_s);
+    return isNoggin;
+}
+
+bool IOSApplication::isOKCupid()
+{
+    static bool isOKCupid = applicationBundleIsEqualTo("com.okcupid.app"_s);
+    return isOKCupid;
+}
+
+bool IOSApplication::isJWLibrary()
+{
+    static bool isJWLibrary = applicationBundleIsEqualTo("org.jw.jwlibrary"_s);
+    return isJWLibrary;
+}
+
+bool IOSApplication::isPaperIO()
+{
+    static bool isPaperIO = applicationBundleIsEqualTo("io.voodoo.paperio"_s);
+    return isPaperIO;
+}
+
+bool IOSApplication::isCrunchyroll()
+{
+    static bool isCrunchyroll = applicationBundleIsEqualTo("com.crunchyroll.iphone"_s);
+    return isCrunchyroll;
+}
+
+bool IOSApplication::isWechat()
+{
+    static bool isWechat = applicationBundleIsEqualTo("com.tencent.xin"_s);
+    return isWechat;
 }
 
 #endif

@@ -34,6 +34,14 @@
 #include <wtf/Lock.h>
 #include <wtf/Vector.h>
 
+namespace JSC {
+class SlotVisitor;
+}
+
+namespace WTF {
+class AbstractLocker;
+};
+
 namespace WebCore {
 
 class ScriptExecutionContext;
@@ -67,8 +75,8 @@ public:
     void increaseLinkCount();
 
     WebGLShader* getAttachedShader(GCGLenum);
-    bool attachShader(WebGLShader*);
-    bool detachShader(WebGLShader*);
+    bool attachShader(const WTF::AbstractLocker&, WebGLShader*);
+    bool detachShader(const WTF::AbstractLocker&, WebGLShader*);
     
     void setRequiredTransformFeedbackBufferCount(int count)
     {
@@ -80,12 +88,14 @@ public:
         return m_requiredTransformFeedbackBufferCount;
     }
 
+    void addMembersToOpaqueRoots(const WTF::AbstractLocker&, JSC::SlotVisitor&);
+
 private:
     WebGLProgram(WebGLRenderingContextBase&);
 
-    void deleteObjectImpl(GraphicsContextGLOpenGL*, PlatformGLObject) override;
+    void deleteObjectImpl(const WTF::AbstractLocker&, GraphicsContextGL*, PlatformGLObject) override;
 
-    void cacheActiveAttribLocations(GraphicsContextGLOpenGL*);
+    void cacheActiveAttribLocations(GraphicsContextGL*);
     void cacheInfoIfNeeded();
 
     Vector<GCGLint> m_activeAttribLocations;

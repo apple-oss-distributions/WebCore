@@ -233,6 +233,9 @@ public:
     void scheduleSubstituteResourceLoad(ResourceLoader&, SubstituteResource&);
     void scheduleCannotShowURLError(ResourceLoader&);
 
+    // FrameDestructionObserver.
+    WEBCORE_EXPORT void frameDestroyed() final;
+
     // Return the ArchiveResource for the URL only when loading an Archive
     WEBCORE_EXPORT ArchiveResource* archiveResourceForURL(const URL&) const;
 
@@ -331,7 +334,7 @@ public:
     LegacyOverflowScrollingTouchPolicy legacyOverflowScrollingTouchPolicy() const { return m_legacyOverflowScrollingTouchPolicy; }
     void setLegacyOverflowScrollingTouchPolicy(LegacyOverflowScrollingTouchPolicy policy) { m_legacyOverflowScrollingTouchPolicy = policy; }
 
-    MouseEventPolicy mouseEventPolicy() const { return m_mouseEventPolicy; }
+    WEBCORE_EXPORT MouseEventPolicy mouseEventPolicy() const;
     void setMouseEventPolicy(MouseEventPolicy policy) { m_mouseEventPolicy = policy; }
 
     void addSubresourceLoader(ResourceLoader*);
@@ -513,6 +516,8 @@ private:
 
     bool disallowWebArchive() const;
     bool disallowDataRequest() const;
+
+    void updateAdditionalSettingsIfNeeded();
 
     Ref<CachedResourceLoader> m_cachedResourceLoader;
 

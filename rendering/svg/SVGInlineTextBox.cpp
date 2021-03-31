@@ -391,7 +391,7 @@ TextRun SVGInlineTextBox::constructTextRun(const RenderStyle& style, const SVGTe
     TextRun run(StringView(renderer().text()).substring(fragment.characterOffset, fragment.length)
                 , 0 /* xPos, only relevant with allowTabs=true */
                 , 0 /* padding, only relevant for justified text, not relevant for SVG */
-                , AllowTrailingExpansion
+                , AllowRightExpansion
                 , direction()
                 , dirOverride() || style.rtlOrdering() == Order::Visual /* directionalOverride */);
 
@@ -602,13 +602,10 @@ void SVGInlineTextBox::paintText(GraphicsContext& context, const RenderStyle& st
         paintTextWithShadows(context, style, textRun, fragment, 0, startPosition);
 
     // Draw text using selection style from the start to the end position of the selection
-    if (style != selectionStyle)
-        SVGResourcesCache::clientStyleChanged(parent()->renderer(), StyleDifference::Repaint, selectionStyle);
-
-    paintTextWithShadows(context, selectionStyle, textRun, fragment, startPosition, endPosition);
-
-    if (style != selectionStyle)
-        SVGResourcesCache::clientStyleChanged(parent()->renderer(), StyleDifference::Repaint, style);
+    {
+        SVGResourcesCache::SetStyleForScope temporaryStyleChange(parent()->renderer(), style, selectionStyle);
+        paintTextWithShadows(context, selectionStyle, textRun, fragment, startPosition, endPosition);
+    }
 
     // Eventually draw text using regular style from the end position of the selection to the end of the current chunk part
     if (endPosition < fragment.length && !paintSelectedTextOnly)

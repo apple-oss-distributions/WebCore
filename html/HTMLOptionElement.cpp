@@ -69,7 +69,7 @@ Ref<HTMLOptionElement> HTMLOptionElement::create(const QualifiedName& tagName, D
     return adoptRef(*new HTMLOptionElement(tagName, document));
 }
 
-ExceptionOr<Ref<HTMLOptionElement>> HTMLOptionElement::createForJSConstructor(Document& document, const String& text, const String& value, bool defaultSelected, bool selected)
+ExceptionOr<Ref<HTMLOptionElement>> HTMLOptionElement::createForLegacyFactoryFunction(Document& document, const String& text, const String& value, bool defaultSelected, bool selected)
 {
     auto element = create(document);
 
@@ -209,7 +209,7 @@ void HTMLOptionElement::setValue(const String& value)
     setAttributeWithoutSynchronization(valueAttr, value);
 }
 
-bool HTMLOptionElement::selected()
+bool HTMLOptionElement::selected() const
 {
     if (RefPtr<HTMLSelectElement> select = ownerSelectElement())
         select->updateListItemSelectedStates();

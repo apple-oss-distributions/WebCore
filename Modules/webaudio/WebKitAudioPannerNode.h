@@ -26,7 +26,6 @@
 
 #if ENABLE(WEB_AUDIO)
 
-#include "AudioListener.h"
 #include "AudioNode.h"
 #include "AudioParam.h"
 #include "Cone.h"
@@ -35,6 +34,7 @@
 #include "Panner.h"
 #include "PannerNode.h"
 #include "WebKitAudioContext.h"
+#include "WebKitAudioListener.h"
 #include <memory>
 #include <wtf/HashSet.h>
 #include <wtf/Lock.h>
@@ -53,9 +53,9 @@ class HRTFDatabaseLoader;
 class WebKitAudioPannerNode final : public PannerNodeBase {
     WTF_MAKE_ISO_ALLOCATED(WebKitAudioPannerNode);
 public:
-    static Ref<WebKitAudioPannerNode> create(WebKitAudioContext& context, float sampleRate)
+    static Ref<WebKitAudioPannerNode> create(WebKitAudioContext& context)
     {
-        return adoptRef(*new WebKitAudioPannerNode(context, sampleRate));
+        return adoptRef(*new WebKitAudioPannerNode(context));
     }
 
     virtual ~WebKitAudioPannerNode();
@@ -66,12 +66,11 @@ public:
     // AudioNode
     void process(size_t framesToProcess) override;
     void pullInputs(size_t framesToProcess) override;
-    void reset() override;
     void initialize() override;
     void uninitialize() override;
 
     // Listener
-    AudioListener* listener();
+    WebKitAudioListener& listener();
 
     // Panning model
     PanningModelType panningModel() const { return m_panningModel; }
@@ -115,15 +114,12 @@ public:
     void getAzimuthElevation(double* outAzimuth, double* outElevation);
     float dopplerRate() final;
 
-    // Accessors for dynamically calculated gain values.
-    AudioParam* distanceGain() { return m_distanceGain.get(); }
-    AudioParam* coneGain() { return m_coneGain.get(); }
-
     double tailTime() const override { return m_panner ? m_panner->tailTime() : 0; }
     double latencyTime() const override { return m_panner ? m_panner->latencyTime() : 0; }
+    bool requiresTailProcessing() const final;
 
 private:
-    WebKitAudioPannerNode(WebKitAudioContext&, float sampleRate);
+    explicit WebKitAudioPannerNode(WebKitAudioContext&);
 
     // Returns the combined distance and cone gain attenuation.
     float distanceConeGain();
@@ -133,26 +129,23 @@ private:
     void notifyAudioSourcesConnectedToNode(AudioNode*, HashSet<AudioNode*>& visitedNodes);
 
     std::unique_ptr<Panner> m_panner;
-    PanningModelType m_panningModel;
+    PanningModelType m_panningModel { PanningModelType::HRTF };
 
     FloatPoint3D m_position;
     FloatPoint3D m_orientation;
     FloatPoint3D m_velocity;
 
     // Gain
-    RefPtr<AudioParam> m_distanceGain;
-    RefPtr<AudioParam> m_coneGain;
     DistanceEffect m_distanceEffect;
     ConeEffect m_coneEffect;
-    float m_lastGain;
 
     // HRTF Database loader
     RefPtr<HRTFDatabaseLoader> m_hrtfDatabaseLoader;
 
-    unsigned m_connectionCount;
+    unsigned m_connectionCount { 0 };
 
     // Synchronize process() and setPanningModel() which can change the panner.
-    mutable Lock m_pannerMutex;
+    mutable Lock m_processLock;
 };
 
 } // namespace WebCore

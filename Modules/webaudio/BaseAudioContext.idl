@@ -28,6 +28,7 @@
     Conditional=WEB_AUDIO,
     EnabledBySetting=WebAudio&ModernUnprefixedWebAudio,
     ExportMacro=WEBCORE_EXPORT,
+    Exposed=Window
 ] interface BaseAudioContext : EventTarget {
     // All rendered audio ultimately connects to destination, which represents the audio hardware.
     readonly attribute AudioDestinationNode destination;
@@ -41,15 +42,15 @@
     // All panning is relative to this listener.
     readonly attribute AudioListener listener;
 
+    [SameObject, SecureContext, EnabledBySetting=AudioWorklet] readonly attribute AudioWorklet audioWorklet;
+
     readonly attribute AudioContextState state;
     attribute EventHandler onstatechange;
     
     [MayThrowException] AudioBuffer createBuffer(unsigned long numberOfChannels, unsigned long numberOfFrames, float sampleRate);
-    [MayThrowException] AudioBuffer createBuffer(ArrayBuffer buffer, boolean mixToMono);
 
     // Asynchronous audio file data decoding.
-    // FIXME: successCallback should be optional and the callbacks should not be nullable. This should also return a Promise.
-    void decodeAudioData(ArrayBuffer audioData, AudioBufferCallback? successCallback, optional AudioBufferCallback? errorCallback);
+    Promise<AudioBuffer> decodeAudioData(ArrayBuffer audioData, optional AudioBufferCallback? successCallback, optional AudioBufferCallback? errorCallback);
 
     // Sources
     [MayThrowException] AudioBufferSourceNode createBufferSource();
@@ -66,6 +67,9 @@
     [MayThrowException] ScriptProcessorNode createScriptProcessor(optional unsigned long bufferSize = 0, optional unsigned long numberOfInputChannels = 2, optional unsigned long numberOfOutputChannels = 2);
     [MayThrowException] OscillatorNode createOscillator();
     [MayThrowException] PeriodicWave createPeriodicWave(sequence<float> real, sequence<float> imag, optional PeriodicWaveOptions options);
+    [MayThrowException] ConstantSourceNode createConstantSource();
+    [MayThrowException] StereoPannerNode createStereoPanner();
+    [MayThrowException, CallWith=ScriptExecutionContext] IIRFilterNode createIIRFilter(sequence<double> feedforward, sequence<double> feedback);
 
     // Channel splitting and merging
     [MayThrowException] ChannelSplitterNode createChannelSplitter(optional unsigned long numberOfOutputs = 6);

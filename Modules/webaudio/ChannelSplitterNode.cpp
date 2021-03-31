@@ -39,41 +39,26 @@ WTF_MAKE_ISO_ALLOCATED_IMPL(ChannelSplitterNode);
 
 ExceptionOr<Ref<ChannelSplitterNode>> ChannelSplitterNode::create(BaseAudioContext& context, const ChannelSplitterOptions& options)
 {
-    if (context.isStopped())
-        return Exception { InvalidStateError };
-
-    context.lazyInitialize();
-    
     if (options.numberOfOutputs > AudioContext::maxNumberOfChannels() || !options.numberOfOutputs)
         return Exception { IndexSizeError, "Number of outputs is not in the allowed range"_s };
     
-    auto splitter = adoptRef(*new ChannelSplitterNode(context, context.sampleRate(), options.numberOfOutputs));
+    auto splitter = adoptRef(*new ChannelSplitterNode(context, options.numberOfOutputs));
     
-    auto result = splitter->setChannelCount(options.channelCount.valueOr(options.numberOfOutputs));
-    if (result.hasException())
-        return result.releaseException();
-    
-    result = splitter->setChannelCountMode(options.channelCountMode.valueOr(ChannelCountMode::Explicit));
-    if (result.hasException())
-        return result.releaseException();
-    
-    result = splitter->setChannelInterpretation(options.channelInterpretation.valueOr(ChannelInterpretation::Discrete));
+    auto result = splitter->handleAudioNodeOptions(options, { options.numberOfOutputs, ChannelCountMode::Explicit, ChannelInterpretation::Discrete });
     if (result.hasException())
         return result.releaseException();
     
     return splitter;
 }
 
-ChannelSplitterNode::ChannelSplitterNode(BaseAudioContext& context, float sampleRate, unsigned numberOfOutputs)
-    : AudioNode(context, sampleRate)
+ChannelSplitterNode::ChannelSplitterNode(BaseAudioContext& context, unsigned numberOfOutputs)
+    : AudioNode(context, NodeTypeChannelSplitter)
 {
-    setNodeType(NodeTypeChannelSplitter);
-
-    addInput(makeUnique<AudioNodeInput>(this));
+    addInput();
 
     // Create a fixed number of outputs (able to handle the maximum number of channels fed to an input).
     for (unsigned i = 0; i < numberOfOutputs; ++i)
-        addOutput(makeUnique<AudioNodeOutput>(this, 1));
+        addOutput(1);
     
     initialize();
 }
@@ -99,10 +84,6 @@ void ChannelSplitterNode::process(size_t framesToProcess)
             destination->zero();
         }
     }
-}
-
-void ChannelSplitterNode::reset()
-{
 }
 
 ExceptionOr<void> ChannelSplitterNode::setChannelCount(unsigned channelCount)

@@ -27,12 +27,15 @@
  */
 
 #include "config.h"
+
+#if !LOG_DISABLED
 #include "AXLogger.h"
 
 #if ENABLE(ACCESSIBILITY_ISOLATED_TREE)
 #include "AXIsolatedObject.h"
 #endif
 #include "AXObjectCache.h"
+#include "FrameView.h"
 #include "Logging.h"
 #include <wtf/text/TextStream.h>
 
@@ -56,11 +59,7 @@ AXLogger::~AXLogger()
 
 void AXLogger::log(const String& message)
 {
-#if !LOG_DISABLED
     LOG(Accessibility, "%s", message.utf8().data());
-#else
-    UNUSED_PARAM(message);
-#endif
 }
 
 void AXLogger::log(RefPtr<AXCoreObject> object)
@@ -71,6 +70,22 @@ void AXLogger::log(RefPtr<AXCoreObject> object)
         stream << *object;
     else
         stream << "null";
+
+    LOG(Accessibility, "%s", stream.release().utf8().data());
+}
+
+void AXLogger::log(const Vector<RefPtr<AXCoreObject>>& objects)
+{
+    TextStream stream(TextStream::LineMode::MultipleLine);
+
+    stream << "[";
+    for (auto object : objects) {
+        if (object)
+            stream << *object;
+        else
+            stream << "null";
+    }
+    stream << "]";
 
     LOG(Accessibility, "%s", stream.release().utf8().data());
 }
@@ -101,6 +116,13 @@ void AXLogger::log(const std::pair<RefPtr<AXCoreObject>, AXObjectCache::AXNotifi
     LOG(Accessibility, "%s", stream.release().utf8().data());
 }
 
+void AXLogger::log(const AccessibilitySearchCriteria& criteria)
+{
+    TextStream stream(TextStream::LineMode::MultipleLine);
+    stream << criteria;
+    LOG(Accessibility, "%s", stream.release().utf8().data());
+}
+
 void AXLogger::log(AccessibilityObjectInclusion inclusion)
 {
     TextStream stream(TextStream::LineMode::SingleLine);
@@ -126,461 +148,173 @@ void AXLogger::log(AXObjectCache& axObjectCache)
 
 TextStream& operator<<(TextStream& stream, AccessibilityRole role)
 {
-    switch (role) {
-    case AccessibilityRole::Annotation:
-        stream << "Annotation";
+    stream << accessibilityRoleToString(role);
+    return stream;
+}
+
+TextStream& operator<<(TextStream& stream, AccessibilitySearchDirection direction)
+{
+    switch (direction) {
+    case AccessibilitySearchDirection::Next:
+        stream << "Next";
         break;
-    case AccessibilityRole::Application:
-        stream << "Application";
+    case AccessibilitySearchDirection::Previous:
+        stream << "Previous";
         break;
-    case AccessibilityRole::ApplicationAlert:
-        stream << "ApplicationAlert";
+    };
+
+    return stream;
+}
+
+TextStream& operator<<(TextStream& stream, AccessibilitySearchKey searchKey)
+{
+    switch (searchKey) {
+    case AccessibilitySearchKey::AnyType:
+        stream << "AnyType";
         break;
-    case AccessibilityRole::ApplicationAlertDialog:
-        stream << "ApplicationAlertDialog";
+    case AccessibilitySearchKey::Article:
+        stream << "Article";
         break;
-    case AccessibilityRole::ApplicationDialog:
-        stream << "ApplicationDialog";
+    case AccessibilitySearchKey::BlockquoteSameLevel:
+        stream << "BlockquoteSameLevel";
         break;
-    case AccessibilityRole::ApplicationGroup:
-        stream << "ApplicationGroup";
-        break;
-    case AccessibilityRole::ApplicationLog:
-        stream << "ApplicationLog";
-        break;
-    case AccessibilityRole::ApplicationMarquee:
-        stream << "ApplicationMarquee";
-        break;
-    case AccessibilityRole::ApplicationStatus:
-        stream << "ApplicationStatus";
-        break;
-    case AccessibilityRole::ApplicationTextGroup:
-        stream << "ApplicationTextGroup";
-        break;
-    case AccessibilityRole::ApplicationTimer:
-        stream << "ApplicationTimer";
-        break;
-    case AccessibilityRole::Audio:
-        stream << "Audio";
-        break;
-    case AccessibilityRole::Blockquote:
+    case AccessibilitySearchKey::Blockquote:
         stream << "Blockquote";
         break;
-    case AccessibilityRole::Browser:
-        stream << "Browser";
+    case AccessibilitySearchKey::BoldFont:
+        stream << "BoldFont";
         break;
-    case AccessibilityRole::BusyIndicator:
-        stream << "BusyIndicator";
-        break;
-    case AccessibilityRole::Button:
+    case AccessibilitySearchKey::Button:
         stream << "Button";
         break;
-    case AccessibilityRole::Canvas:
-        stream << "Canvas";
-        break;
-    case AccessibilityRole::Caption:
-        stream << "Caption";
-        break;
-    case AccessibilityRole::Cell:
-        stream << "Cell";
-        break;
-    case AccessibilityRole::CheckBox:
+    case AccessibilitySearchKey::CheckBox:
         stream << "CheckBox";
         break;
-    case AccessibilityRole::ColorWell:
-        stream << "ColorWell";
+    case AccessibilitySearchKey::Control:
+        stream << "Control";
         break;
-    case AccessibilityRole::Column:
-        stream << "Column";
+    case AccessibilitySearchKey::DifferentType:
+        stream << "DifferentType";
         break;
-    case AccessibilityRole::ColumnHeader:
-        stream << "ColumnHeader";
+    case AccessibilitySearchKey::FontChange:
+        stream << "FontChange";
         break;
-    case AccessibilityRole::ComboBox:
-        stream << "ComboBox";
+    case AccessibilitySearchKey::FontColorChange:
+        stream << "FontColorChange";
         break;
-    case AccessibilityRole::Definition:
-        stream << "Definition";
+    case AccessibilitySearchKey::Frame:
+        stream << "Frame";
         break;
-    case AccessibilityRole::Deletion:
-        stream << "Deletion";
+    case AccessibilitySearchKey::Graphic:
+        stream << "Graphic";
         break;
-    case AccessibilityRole::DescriptionList:
-        stream << "DescriptionList";
+    case AccessibilitySearchKey::HeadingLevel1:
+        stream << "HeadingLevel1";
         break;
-    case AccessibilityRole::DescriptionListTerm:
-        stream << "DescriptionListTerm";
+    case AccessibilitySearchKey::HeadingLevel2:
+        stream << "HeadingLevel2";
         break;
-    case AccessibilityRole::DescriptionListDetail:
-        stream << "DescriptionListDetail";
+    case AccessibilitySearchKey::HeadingLevel3:
+        stream << "HeadingLevel3";
         break;
-    case AccessibilityRole::Details:
-        stream << "Details";
+    case AccessibilitySearchKey::HeadingLevel4:
+        stream << "HeadingLevel4";
         break;
-    case AccessibilityRole::Directory:
-        stream << "Directory";
+    case AccessibilitySearchKey::HeadingLevel5:
+        stream << "HeadingLevel5";
         break;
-    case AccessibilityRole::DisclosureTriangle:
-        stream << "DisclosureTriangle";
+    case AccessibilitySearchKey::HeadingLevel6:
+        stream << "HeadingLevel6";
         break;
-    case AccessibilityRole::Div:
-        stream << "Div";
+    case AccessibilitySearchKey::HeadingSameLevel:
+        stream << "HeadingSameLevel";
         break;
-    case AccessibilityRole::Document:
-        stream << "Document";
-        break;
-    case AccessibilityRole::DocumentArticle:
-        stream << "DocumentArticle";
-        break;
-    case AccessibilityRole::DocumentMath:
-        stream << "DocumentMath";
-        break;
-    case AccessibilityRole::DocumentNote:
-        stream << "DocumentNote";
-        break;
-    case AccessibilityRole::Drawer:
-        stream << "Drawer";
-        break;
-    case AccessibilityRole::EditableText:
-        stream << "EditableText";
-        break;
-    case AccessibilityRole::Feed:
-        stream << "Feed";
-        break;
-    case AccessibilityRole::Figure:
-        stream << "Figure";
-        break;
-    case AccessibilityRole::Footer:
-        stream << "Footer";
-        break;
-    case AccessibilityRole::Footnote:
-        stream << "Footnote";
-        break;
-    case AccessibilityRole::Form:
-        stream << "Form";
-        break;
-    case AccessibilityRole::GraphicsDocument:
-        stream << "GraphicsDocument";
-        break;
-    case AccessibilityRole::GraphicsObject:
-        stream << "GraphicsObject";
-        break;
-    case AccessibilityRole::GraphicsSymbol:
-        stream << "GraphicsSymbol";
-        break;
-    case AccessibilityRole::Grid:
-        stream << "Grid";
-        break;
-    case AccessibilityRole::GridCell:
-        stream << "GridCell";
-        break;
-    case AccessibilityRole::Group:
-        stream << "Group";
-        break;
-    case AccessibilityRole::GrowArea:
-        stream << "GrowArea";
-        break;
-    case AccessibilityRole::Heading:
+    case AccessibilitySearchKey::Heading:
         stream << "Heading";
         break;
-    case AccessibilityRole::HelpTag:
-        stream << "HelpTag";
+    case AccessibilitySearchKey::Highlighted:
+        stream << "Highlighted";
         break;
-    case AccessibilityRole::HorizontalRule:
-        stream << "HorizontalRule";
+    case AccessibilitySearchKey::ItalicFont:
+        stream << "ItalicFont";
         break;
-    case AccessibilityRole::Ignored:
-        stream << "Ignored";
+    case AccessibilitySearchKey::KeyboardFocusable:
+        stream << "KeyboardFocusable";
         break;
-    case AccessibilityRole::Inline:
-        stream << "Inline";
+    case AccessibilitySearchKey::Landmark:
+        stream << "Landmark";
         break;
-    case AccessibilityRole::Image:
-        stream << "Image";
-        break;
-    case AccessibilityRole::ImageMap:
-        stream << "ImageMap";
-        break;
-    case AccessibilityRole::ImageMapLink:
-        stream << "ImageMapLink";
-        break;
-    case AccessibilityRole::Incrementor:
-        stream << "Incrementor";
-        break;
-    case AccessibilityRole::Insertion:
-        stream << "Insertion";
-        break;
-    case AccessibilityRole::Label:
-        stream << "Label";
-        break;
-    case AccessibilityRole::LandmarkBanner:
-        stream << "LandmarkBanner";
-        break;
-    case AccessibilityRole::LandmarkComplementary:
-        stream << "LandmarkComplementary";
-        break;
-    case AccessibilityRole::LandmarkContentInfo:
-        stream << "LandmarkContentInfo";
-        break;
-    case AccessibilityRole::LandmarkDocRegion:
-        stream << "LandmarkDocRegion";
-        break;
-    case AccessibilityRole::LandmarkMain:
-        stream << "LandmarkMain";
-        break;
-    case AccessibilityRole::LandmarkNavigation:
-        stream << "LandmarkNavigation";
-        break;
-    case AccessibilityRole::LandmarkRegion:
-        stream << "LandmarkRegion";
-        break;
-    case AccessibilityRole::LandmarkSearch:
-        stream << "LandmarkSearch";
-        break;
-    case AccessibilityRole::Legend:
-        stream << "Legend";
-        break;
-    case AccessibilityRole::Link:
+    case AccessibilitySearchKey::Link:
         stream << "Link";
         break;
-    case AccessibilityRole::List:
+    case AccessibilitySearchKey::List:
         stream << "List";
         break;
-    case AccessibilityRole::ListBox:
-        stream << "ListBox";
+    case AccessibilitySearchKey::LiveRegion:
+        stream << "LiveRegion";
         break;
-    case AccessibilityRole::ListBoxOption:
-        stream << "ListBoxOption";
+    case AccessibilitySearchKey::MisspelledWord:
+        stream << "MisspelledWord";
         break;
-    case AccessibilityRole::ListItem:
-        stream << "ListItem";
-        break;
-    case AccessibilityRole::ListMarker:
-        stream << "ListMarker";
-        break;
-    case AccessibilityRole::Mark:
-        stream << "Mark";
-        break;
-    case AccessibilityRole::MathElement:
-        stream << "MathElement";
-        break;
-    case AccessibilityRole::Matte:
-        stream << "Matte";
-        break;
-    case AccessibilityRole::Menu:
-        stream << "Menu";
-        break;
-    case AccessibilityRole::MenuBar:
-        stream << "MenuBar";
-        break;
-    case AccessibilityRole::MenuButton:
-        stream << "MenuButton";
-        break;
-    case AccessibilityRole::MenuItem:
-        stream << "MenuItem";
-        break;
-    case AccessibilityRole::MenuItemCheckbox:
-        stream << "MenuItemCheckbox";
-        break;
-    case AccessibilityRole::MenuItemRadio:
-        stream << "MenuItemRadio";
-        break;
-    case AccessibilityRole::MenuListPopup:
-        stream << "MenuListPopup";
-        break;
-    case AccessibilityRole::MenuListOption:
-        stream << "MenuListOption";
-        break;
-    case AccessibilityRole::Meter:
-        stream << "Meter";
-        break;
-    case AccessibilityRole::Outline:
+    case AccessibilitySearchKey::Outline:
         stream << "Outline";
         break;
-    case AccessibilityRole::Paragraph:
-        stream << "Paragraph";
+    case AccessibilitySearchKey::PlainText:
+        stream << "PlainText";
         break;
-    case AccessibilityRole::PopUpButton:
-        stream << "PopUpButton";
-        break;
-    case AccessibilityRole::Pre:
-        stream << "Pre";
-        break;
-    case AccessibilityRole::Presentational:
-        stream << "Presentational";
-        break;
-    case AccessibilityRole::ProgressIndicator:
-        stream << "ProgressIndicator";
-        break;
-    case AccessibilityRole::RadioButton:
-        stream << "RadioButton";
-        break;
-    case AccessibilityRole::RadioGroup:
+    case AccessibilitySearchKey::RadioGroup:
         stream << "RadioGroup";
         break;
-    case AccessibilityRole::RowHeader:
-        stream << "RowHeader";
+    case AccessibilitySearchKey::SameType:
+        stream << "SameType";
         break;
-    case AccessibilityRole::Row:
-        stream << "Row";
-        break;
-    case AccessibilityRole::RowGroup:
-        stream << "RowGroup";
-        break;
-    case AccessibilityRole::RubyBase:
-        stream << "RubyBase";
-        break;
-    case AccessibilityRole::RubyBlock:
-        stream << "RubyBlock";
-        break;
-    case AccessibilityRole::RubyInline:
-        stream << "RubyInline";
-        break;
-    case AccessibilityRole::RubyRun:
-        stream << "RubyRun";
-        break;
-    case AccessibilityRole::RubyText:
-        stream << "RubyText";
-        break;
-    case AccessibilityRole::Ruler:
-        stream << "Ruler";
-        break;
-    case AccessibilityRole::RulerMarker:
-        stream << "RulerMarker";
-        break;
-    case AccessibilityRole::ScrollArea:
-        stream << "ScrollArea";
-        break;
-    case AccessibilityRole::ScrollBar:
-        stream << "ScrollBar";
-        break;
-    case AccessibilityRole::SearchField:
-        stream << "SearchField";
-        break;
-    case AccessibilityRole::Sheet:
-        stream << "Sheet";
-        break;
-    case AccessibilityRole::Slider:
-        stream << "Slider";
-        break;
-    case AccessibilityRole::SliderThumb:
-        stream << "SliderThumb";
-        break;
-    case AccessibilityRole::SpinButton:
-        stream << "SpinButton";
-        break;
-    case AccessibilityRole::SpinButtonPart:
-        stream << "SpinButtonPart";
-        break;
-    case AccessibilityRole::SplitGroup:
-        stream << "SplitGroup";
-        break;
-    case AccessibilityRole::Splitter:
-        stream << "Splitter";
-        break;
-    case AccessibilityRole::StaticText:
+    case AccessibilitySearchKey::StaticText:
         stream << "StaticText";
         break;
-    case AccessibilityRole::Subscript:
-        stream << "Subscript";
+    case AccessibilitySearchKey::StyleChange:
+        stream << "StyleChange";
         break;
-    case AccessibilityRole::Summary:
-        stream << "Summary";
+    case AccessibilitySearchKey::TableSameLevel:
+        stream << "TableSameLevel";
         break;
-    case AccessibilityRole::Superscript:
-        stream << "Superscript";
-        break;
-    case AccessibilityRole::Switch:
-        stream << "Switch";
-        break;
-    case AccessibilityRole::SystemWide:
-        stream << "SystemWide";
-        break;
-    case AccessibilityRole::SVGRoot:
-        stream << "SVGRoot";
-        break;
-    case AccessibilityRole::SVGText:
-        stream << "SVGText";
-        break;
-    case AccessibilityRole::SVGTSpan:
-        stream << "SVGTSpan";
-        break;
-    case AccessibilityRole::SVGTextPath:
-        stream << "SVGTextPath";
-        break;
-    case AccessibilityRole::TabGroup:
-        stream << "TabGroup";
-        break;
-    case AccessibilityRole::TabList:
-        stream << "TabList";
-        break;
-    case AccessibilityRole::TabPanel:
-        stream << "TabPanel";
-        break;
-    case AccessibilityRole::Tab:
-        stream << "Tab";
-        break;
-    case AccessibilityRole::Table:
+    case AccessibilitySearchKey::Table:
         stream << "Table";
         break;
-    case AccessibilityRole::TableHeaderContainer:
-        stream << "TableHeaderContainer";
-        break;
-    case AccessibilityRole::Term:
-        stream << "Term";
-        break;
-    case AccessibilityRole::TextArea:
-        stream << "TextArea";
-        break;
-    case AccessibilityRole::TextField:
+    case AccessibilitySearchKey::TextField:
         stream << "TextField";
         break;
-    case AccessibilityRole::TextGroup:
-        stream << "TextGroup";
+    case AccessibilitySearchKey::Underline:
+        stream << "Underline";
         break;
-    case AccessibilityRole::Time:
-        stream << "Time";
+    case AccessibilitySearchKey::UnvisitedLink:
+        stream << "UnvisitedLink";
         break;
-    case AccessibilityRole::Tree:
-        stream << "Tree";
+    case AccessibilitySearchKey::VisitedLink:
+        stream << "VisitedLink";
         break;
-    case AccessibilityRole::TreeGrid:
-        stream << "TreeGrid";
-        break;
-    case AccessibilityRole::TreeItem:
-        stream << "TreeItem";
-        break;
-    case AccessibilityRole::ToggleButton:
-        stream << "ToggleButton";
-        break;
-    case AccessibilityRole::Toolbar:
-        stream << "Toolbar";
-        break;
-    case AccessibilityRole::Unknown:
-        stream << "Unknown";
-        break;
-    case AccessibilityRole::UserInterfaceTooltip:
-        stream << "UserInterfaceTooltip";
-        break;
-    case AccessibilityRole::ValueIndicator:
-        stream << "ValueIndicator";
-        break;
-    case AccessibilityRole::Video:
-        stream << "Video";
-        break;
-    case AccessibilityRole::WebApplication:
-        stream << "WebApplication";
-        break;
-    case AccessibilityRole::WebArea:
-        stream << "WebArea";
-        break;
-    case AccessibilityRole::WebCoreLink:
-        stream << "WebCoreLink";
-        break;
-    case AccessibilityRole::Window:
-        stream << "Window";
-        break;
-    }
+    };
+
+    return stream;
+}
+
+TextStream& operator<<(TextStream& stream, const AccessibilitySearchCriteria& criteria)
+{
+    TextStream::GroupScope groupScope(stream);
+    stream << "SearchCriteria " << &criteria;
+    stream.dumpProperty("anchorObject", criteria.anchorObject);
+    stream.dumpProperty("startObject", criteria.startObject);
+    stream.dumpProperty("searchDirection", criteria.searchDirection);
+
+    stream.nextLine();
+    stream << "(searchKeys [";
+    for (auto searchKey : criteria.searchKeys)
+        stream << searchKey << ", ";
+    stream << "])";
+
+    stream.dumpProperty("searchText", criteria.searchText);
+    stream.dumpProperty("resultsLimit", criteria.resultsLimit);
+    stream.dumpProperty("visibleOnly", criteria.visibleOnly);
+    stream.dumpProperty("immediateDescendantsOnly", criteria.immediateDescendantsOnly);
 
     return stream;
 }
@@ -597,8 +331,6 @@ TextStream& operator<<(TextStream& stream, AccessibilityObjectInclusion inclusio
     case AccessibilityObjectInclusion::DefaultBehavior:
         stream << "DefaultBehavior";
         break;
-    default:
-        break;
     }
 
     return stream;
@@ -610,6 +342,12 @@ TextStream& operator<<(TextStream& stream, AXObjectCache::AXNotification notific
     case AXObjectCache::AXNotification::AXActiveDescendantChanged:
         stream << "AXActiveDescendantChanged";
         break;
+    case AXObjectCache::AXNotification::AXAriaAttributeChanged:
+        stream << "AXAriaAttributeChanged";
+        break;
+    case AXObjectCache::AXNotification::AXAriaRoleChanged:
+        stream << "AXAriaRoleChanged";
+        break;
     case AXObjectCache::AXNotification::AXAutocorrectionOccured:
         stream << "AXAutocorrectionOccured";
         break;
@@ -619,14 +357,23 @@ TextStream& operator<<(TextStream& stream, AXObjectCache::AXNotification notific
     case AXObjectCache::AXNotification::AXChildrenChanged:
         stream << "AXChildrenChanged";
         break;
-    case AXObjectCache::AXNotification::AXCurrentChanged:
-        stream << "AXCurrentChanged";
+    case AXObjectCache::AXNotification::AXCurrentStateChanged:
+        stream << "AXCurrentStateChanged";
         break;
     case AXObjectCache::AXNotification::AXDisabledStateChanged:
         stream << "AXDisabledStateChanged";
         break;
     case AXObjectCache::AXNotification::AXFocusedUIElementChanged:
         stream << "AXFocusedUIElementChanged";
+        break;
+    case AXObjectCache::AXNotification::AXFrameLoadComplete:
+        stream << "AXFrameLoadComplete";
+        break;
+    case AXObjectCache::AXNotification::AXIdAttributeChanged:
+        stream << "AXIdAttributeChanged";
+        break;
+    case AXObjectCache::AXNotification::AXLanguageChanged:
+        stream << "AXLanguageChanged";
         break;
     case AXObjectCache::AXNotification::AXLayoutComplete:
         stream << "AXLayoutComplete";
@@ -697,16 +444,29 @@ TextStream& operator<<(TextStream& stream, AXObjectCache::AXNotification notific
     case AXObjectCache::AXNotification::AXRequiredStatusChanged:
         stream << "AXRequiredStatusChanged";
         break;
+    case AXObjectCache::AXNotification::AXSortDirectionChanged:
+        stream << "AXSortDirectionChanged";
+        break;
     case AXObjectCache::AXNotification::AXTextChanged:
         stream << "AXTextChanged";
-        break;
-    case AXObjectCache::AXNotification::AXAriaAttributeChanged:
-        stream << "AXAriaAttributeChanged";
         break;
     case AXObjectCache::AXNotification::AXElementBusyChanged:
         stream << "AXElementBusyChanged";
         break;
-    default:
+    case AXObjectCache::AXNotification::AXDraggingStarted:
+        stream << "AXDraggingStarted";
+        break;
+    case AXObjectCache::AXNotification::AXDraggingEnded:
+        stream << "AXDraggingEnded";
+        break;
+    case AXObjectCache::AXNotification::AXDraggingEnteredDropZone:
+        stream << "AXDraggingEnteredDropZone";
+        break;
+    case AXObjectCache::AXNotification::AXDraggingDropped:
+        stream << "AXDraggingDropped";
+        break;
+    case AXObjectCache::AXNotification::AXDraggingExitedDropZone:
+        stream << "AXDraggingExitedDropZone";
         break;
     }
 
@@ -718,10 +478,20 @@ TextStream& operator<<(TextStream& stream, const AXCoreObject& object)
     TextStream::GroupScope groupScope(stream);
     stream << "objectID " << object.objectID();
     stream.dumpProperty("identifierAttribute", object.identifierAttribute());
-    stream.dumpProperty("roleValue", object.roleValue());
-    stream.dumpProperty("address", &object);
+    auto role = object.roleValue();
+    stream.dumpProperty("roleValue", role);
 
+    auto* objectWithInterestingHTML = role == AccessibilityRole::Button ? // Add here other roles of interest.
+        &object : nullptr;
     auto* parent = object.parentObject();
+    if (role == AccessibilityRole::StaticText && parent)
+        objectWithInterestingHTML = parent;
+    if (objectWithInterestingHTML)
+        stream.dumpProperty("outerHTML", objectWithInterestingHTML->outerHTML());
+
+    stream.dumpProperty("address", &object);
+    stream.dumpProperty("wrapper", object.wrapper());
+
     stream.dumpProperty("parentObject", parent ? parent->objectID() : 0);
 #if PLATFORM(COCOA)
     stream.dumpProperty("remoteParentObject", object.remoteParentObject());
@@ -756,3 +526,5 @@ TextStream& operator<<(TextStream& stream, AXObjectCache& axObjectCache)
 }
 
 } // namespace WebCore
+
+#endif // !LOG_DISABLED

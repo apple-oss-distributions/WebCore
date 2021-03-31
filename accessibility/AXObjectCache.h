@@ -65,7 +65,7 @@ struct TextMarkerData {
     int characterStartIndex { 0 };
     int characterOffset { 0 };
     bool ignored { false };
-    EAffinity affinity { DOWNSTREAM };
+    Affinity affinity { Affinity::Downstream };
 };
 
 struct CharacterOffset {
@@ -135,9 +135,7 @@ protected:
 enum AXTextChange { AXTextInserted, AXTextDeleted, AXTextAttributesChanged };
 #endif
 
-enum PostTarget { TargetElement, TargetObservableParent };
-
-enum PostType { PostSynchronously, PostAsynchronously };
+enum class PostTarget { Element, ObservableParent };
 
 class AXObjectCache {
     WTF_MAKE_NONCOPYABLE(AXObjectCache); WTF_MAKE_FAST_ALLOCATED;
@@ -159,7 +157,7 @@ public:
     WEBCORE_EXPORT AccessibilityObject* getOrCreate(Node*);
 
     // used for objects without backing elements
-    AccessibilityObject* getOrCreate(AccessibilityRole);
+    AccessibilityObject* create(AccessibilityRole);
     
     // will only return the AccessibilityObject if it already exists
     AccessibilityObject* get(RenderObject*);
@@ -195,13 +193,14 @@ public:
     Node* modalNode();
 
     void deferAttributeChangeIfNeeded(const QualifiedName&, Element*);
-    void recomputeIsIgnored(RenderObject* renderer);
-
-    WEBCORE_EXPORT bool canUseSecondaryAXThread();
+    void recomputeIsIgnored(RenderObject*);
+    void recomputeIsIgnored(Node*);
 
 #if ENABLE(ACCESSIBILITY)
     WEBCORE_EXPORT static void enableAccessibility();
     WEBCORE_EXPORT static void disableAccessibility();
+
+    static AXCoreObject* focusedObjectForPage(const Page*);
 
     // Enhanced user interface accessibility can be toggled by the assistive technology.
     WEBCORE_EXPORT static void setEnhancedUserInterfaceAccessibility(bool flag);
@@ -210,6 +209,7 @@ public:
     static bool accessibilityEnabled() { return gAccessibilityEnabled; }
     static bool accessibilityEnhancedUserInterfaceEnabled() { return gAccessibilityEnhancedUserInterfaceEnabled; }
 #else
+    static AXCoreObject* focusedObjectForPage(const Page*) { return nullptr; }
     static void enableAccessibility() { }
     static void disableAccessibility() { }
     static void setEnhancedUserInterfaceAccessibility(bool) { }
@@ -222,6 +222,7 @@ public:
 
     AXID platformGenerateAXID() const;
     AccessibilityObject* objectFromAXID(AXID id) const { return m_objects.get(id); }
+    Vector<RefPtr<AXCoreObject>> objectsForIDs(const Vector<AXID>&) const;
 
     // Text marker utilities.
     Optional<TextMarkerData> textMarkerDataForVisiblePosition(const VisiblePosition&);
@@ -272,12 +273,17 @@ public:
 
     enum AXNotification {
         AXActiveDescendantChanged,
+        AXAriaAttributeChanged,
+        AXAriaRoleChanged,
         AXAutocorrectionOccured,
         AXCheckedStateChanged,
         AXChildrenChanged,
-        AXCurrentChanged,
+        AXCurrentStateChanged,
         AXDisabledStateChanged,
         AXFocusedUIElementChanged,
+        AXFrameLoadComplete,
+        AXIdAttributeChanged,
+        AXLanguageChanged,
         AXLayoutComplete,
         AXLoadComplete,
         AXNewDocumentLoadComplete,
@@ -301,8 +307,8 @@ public:
         AXPressedStateChanged,
         AXReadOnlyStatusChanged,
         AXRequiredStatusChanged,
+        AXSortDirectionChanged,
         AXTextChanged,
-        AXAriaAttributeChanged,
         AXElementBusyChanged,
         AXDraggingStarted,
         AXDraggingEnded,
@@ -311,9 +317,9 @@ public:
         AXDraggingExitedDropZone
     };
 
-    void postNotification(RenderObject*, AXNotification, PostTarget = TargetElement, PostType = PostAsynchronously);
-    void postNotification(Node*, AXNotification, PostTarget = TargetElement, PostType = PostAsynchronously);
-    void postNotification(AXCoreObject*, Document*, AXNotification, PostTarget = TargetElement, PostType = PostAsynchronously);
+    void postNotification(RenderObject*, AXNotification, PostTarget = PostTarget::Element);
+    void postNotification(Node*, AXNotification, PostTarget = PostTarget::Element);
+    void postNotification(AXCoreObject*, Document*, AXNotification, PostTarget = PostTarget::Element);
 
 #ifndef NDEBUG
     void showIntent(const AXTextStateChangeIntent&);
@@ -347,6 +353,7 @@ public:
     AXComputedObjectAttributeCache* computedObjectAttributeCache() { return m_computedObjectAttributeCache.get(); }
 
     Document& document() const { return m_document; }
+    Optional<PageIdentifier> pageID() const { return m_pageID; }
 
 #if PLATFORM(MAC)
     static void setShouldRepostNotificationsForTests(bool value);
@@ -362,20 +369,21 @@ public:
 
 #if ENABLE(ACCESSIBILITY_ISOLATED_TREE)
     WEBCORE_EXPORT static bool isIsolatedTreeEnabled();
+    WEBCORE_EXPORT static bool usedOnAXThread();
 private:
     static bool clientSupportsIsolatedTree();
     AXCoreObject* isolatedTreeRootObject();
     AXCoreObject* isolatedTreeFocusedObject();
     void setIsolatedTreeFocusedObject(Node*);
-    static Ref<AXIsolatedTree> generateIsolatedTree(PageIdentifier, Document&);
     RefPtr<AXIsolatedTree> getOrCreateIsolatedTree() const;
     void updateIsolatedTree(AXCoreObject&, AXNotification);
-    void updateIsolatedTree(AXCoreObject&, AXLoadingEvent);
+    void updateIsolatedTree(AXCoreObject*, AXNotification);
     void updateIsolatedTree(const Vector<std::pair<RefPtr<AXCoreObject>, AXNotification>>&);
     static void initializeSecondaryAXThread();
 #endif
 
 protected:
+    static String notificationPlatformName(AXNotification);
     void postPlatformNotification(AXCoreObject*, AXNotification);
     void platformHandleFocusedUIElementChanged(Node* oldFocusedNode, Node* newFocusedNode);
 
@@ -427,9 +435,7 @@ protected:
 
 private:
     AccessibilityObject* rootWebArea();
-
     static AccessibilityObject* focusedImageMapUIElement(HTMLAreaElement*);
-    static AXCoreObject* focusedObject(Document&);
 
     AXID getAXID(AccessibilityObject*);
 
@@ -545,7 +551,7 @@ inline AccessibilityObject* AXObjectCache::get(RenderObject*) { return nullptr; 
 inline AccessibilityObject* AXObjectCache::get(Node*) { return nullptr; }
 inline AccessibilityObject* AXObjectCache::get(Widget*) { return nullptr; }
 inline AccessibilityObject* AXObjectCache::getOrCreate(RenderObject*) { return nullptr; }
-inline AccessibilityObject* AXObjectCache::getOrCreate(AccessibilityRole) { return nullptr; }
+inline AccessibilityObject* AXObjectCache::create(AccessibilityRole) { return nullptr; }
 inline AccessibilityObject* AXObjectCache::getOrCreate(Node*) { return nullptr; }
 inline AccessibilityObject* AXObjectCache::getOrCreate(Widget*) { return nullptr; }
 inline AXCoreObject* AXObjectCache::rootObject() { return nullptr; }
@@ -590,9 +596,9 @@ inline void AXObjectCache::notificationPostTimerFired() { }
 inline void AXObjectCache::passwordNotificationPostTimerFired() { }
 inline void AXObjectCache::performDeferredCacheUpdate() { }
 inline void AXObjectCache::postLiveRegionChangeNotification(AccessibilityObject*) { }
-inline void AXObjectCache::postNotification(AXCoreObject*, Document*, AXNotification, PostTarget, PostType) { }
-inline void AXObjectCache::postNotification(Node*, AXNotification, PostTarget, PostType) { }
-inline void AXObjectCache::postNotification(RenderObject*, AXNotification, PostTarget, PostType) { }
+inline void AXObjectCache::postNotification(AXCoreObject*, Document*, AXNotification, PostTarget) { }
+inline void AXObjectCache::postNotification(Node*, AXNotification, PostTarget) { }
+inline void AXObjectCache::postNotification(RenderObject*, AXNotification, PostTarget) { }
 inline void AXObjectCache::postPlatformNotification(AXCoreObject*, AXNotification) { }
 inline void AXObjectCache::postTextReplacementNotification(Node*, AXTextEditType, const String&, AXTextEditType, const String&, const VisiblePosition&) { }
 inline void AXObjectCache::postTextReplacementNotificationForTextControl(HTMLTextFormControlElement&, const String&, const String&) { }

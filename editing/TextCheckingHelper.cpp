@@ -106,10 +106,11 @@ static void findMisspellings(TextCheckerClient& client, StringView text, Vector<
 
 static SimpleRange expandToParagraphBoundary(const SimpleRange& range)
 {
-    return {
-        *makeBoundaryPoint(startOfParagraph(createLegacyEditingPosition(range.start))),
-        *makeBoundaryPoint(endOfParagraph(createLegacyEditingPosition(range.end)))
-    };
+    auto start = makeBoundaryPoint(startOfParagraph(makeDeprecatedLegacyPosition(range.start)));
+    auto end = makeBoundaryPoint(endOfParagraph(makeDeprecatedLegacyPosition(range.end)));
+    if (!start || !end)
+        return range;
+    return { *start, *end };
 }
 
 TextCheckingParagraph::TextCheckingParagraph(const SimpleRange& range)
@@ -128,7 +129,7 @@ TextCheckingParagraph::TextCheckingParagraph(const SimpleRange& checkingRange, c
 void TextCheckingParagraph::expandRangeToNextEnd()
 {
     paragraphRange();
-    if (auto end = makeBoundaryPoint(endOfParagraph(startOfNextParagraph(createLegacyEditingPosition(m_paragraphRange->start)))))
+    if (auto end = makeBoundaryPoint(endOfParagraph(startOfNextParagraph(makeDeprecatedLegacyPosition(m_paragraphRange->start)))))
         m_paragraphRange->end = WTFMove(*end);
     invalidateParagraphRangeValues();
 }
@@ -302,9 +303,9 @@ auto TextCheckingHelper::findFirstMisspelledWordOrUngrammaticalPhrase(bool check
     // Expand the search range to encompass entire paragraphs, since text checking needs that much context.
     // Determine the character offset from the start of the paragraph to the start of the original search range,
     // since we will want to ignore results in this area.
-    auto paragraphRange = *makeSimpleRange(startOfParagraph(createLegacyEditingPosition(m_range.start)), m_range.end);
+    auto paragraphRange = *makeSimpleRange(startOfParagraph(makeDeprecatedLegacyPosition(m_range.start)), m_range.end);
     auto totalRangeLength = characterCount(paragraphRange);
-    paragraphRange.end = *makeBoundaryPoint(endOfParagraph(createLegacyEditingPosition(m_range.start)));
+    paragraphRange.end = *makeBoundaryPoint(endOfParagraph(makeDeprecatedLegacyPosition(m_range.start)));
     
     auto rangeStartOffset = characterCount({ paragraphRange.start, m_range.start });
     uint64_t totalLengthProcessed = 0;
@@ -316,7 +317,7 @@ auto TextCheckingHelper::findFirstMisspelledWordOrUngrammaticalPhrase(bool check
         auto currentLength = characterCount(paragraphRange);
         uint64_t currentStartOffset = firstIteration ? rangeStartOffset : 0;
         uint64_t currentEndOffset = currentLength;
-        if (inSameParagraph(createLegacyEditingPosition(paragraphRange.start), createLegacyEditingPosition(m_range.end))) {
+        if (inSameParagraph(makeDeprecatedLegacyPosition(paragraphRange.start), makeDeprecatedLegacyPosition(m_range.end))) {
             // Determine the character offset from the end of the original search range to the end of the paragraph,
             // since we will want to ignore results in this area.
             currentEndOffset = characterCount({ paragraphRange.start, m_range.end });
@@ -336,14 +337,13 @@ auto TextCheckingHelper::findFirstMisspelledWordOrUngrammaticalPhrase(bool check
                 if (checkGrammar)
                     checkingTypes.add(TextCheckingType::Grammar);
                 VisibleSelection currentSelection;
-                if (Frame* frame = paragraphRange.start.container->document().frame())
+                if (Frame* frame = paragraphRange.start.document().frame())
                     currentSelection = frame->selection().selection();
                 checkTextOfParagraph(*m_client.textChecker(), paragraphString, checkingTypes, results, currentSelection);
 
                 for (auto& result : results) {
                     if (result.type == TextCheckingType::Spelling && result.range.location >= currentStartOffset && result.range.location + result.range.length <= currentEndOffset) {
                         ASSERT(result.range.length > 0);
-                        ASSERT(result.range.location >= 0);
                         spellingLocation = result.range.location;
                         misspelledWord = paragraphString.substring(result.range.location, result.range.length);
                         ASSERT(misspelledWord.length());
@@ -351,7 +351,6 @@ auto TextCheckingHelper::findFirstMisspelledWordOrUngrammaticalPhrase(bool check
                     }
                     if (checkGrammar && result.type == TextCheckingType::Grammar && result.range.location < currentEndOffset && result.range.location + result.range.length > currentStartOffset) {
                         ASSERT(result.range.length > 0);
-                        ASSERT(result.range.location >= 0);
                         // We can't stop after the first grammar result, since there might still be a spelling result after
                         // it begins but before the first detail in it, but we can stop if we find a second grammar result.
                         if (foundGrammar)
@@ -359,7 +358,6 @@ auto TextCheckingHelper::findFirstMisspelledWordOrUngrammaticalPhrase(bool check
                         for (unsigned j = 0; j < result.details.size(); j++) {
                             const GrammarDetail* detail = &result.details[j];
                             ASSERT(detail->range.length > 0);
-                            ASSERT(detail->range.location >= 0);
                             if (result.range.location + detail->range.location >= currentStartOffset && result.range.location + detail->range.location + detail->range.length <= currentEndOffset && (!foundGrammar || result.range.location + detail->range.location < grammarDetailLocation)) {
                                 grammarDetailIndex = j;
                                 grammarDetailLocation = result.range.location + detail->range.location;
@@ -401,7 +399,7 @@ auto TextCheckingHelper::findFirstMisspelledWordOrUngrammaticalPhrase(bool check
         if (lastIteration || totalLengthProcessed + currentLength >= totalRangeLength)
             break;
 
-        auto nextStart = startOfNextParagraph(createLegacyEditingPosition(paragraphRange.end));
+        auto nextStart = startOfNextParagraph(makeDeprecatedLegacyPosition(paragraphRange.end));
         auto nextParagraphRange = makeSimpleRange(nextStart, endOfParagraph(nextStart));
         if (!nextParagraphRange)
             break;
@@ -422,7 +420,6 @@ int TextCheckingHelper::findUngrammaticalPhrases(Operation operation, const Vect
     for (unsigned i = 0; i < grammarDetails.size(); i++) {
         const GrammarDetail* detail = &grammarDetails[i];
         ASSERT(detail->range.length > 0);
-        ASSERT(detail->range.location >= 0);
         
         uint64_t detailStartOffsetInParagraph = badGrammarPhraseLocation + detail->range.location;
         
@@ -455,7 +452,7 @@ auto TextCheckingHelper::findUngrammaticalPhrases(Operation operation) const -> 
     // Expand the search range to encompass entire paragraphs, since grammar checking needs that much context.
     // Determine the character offset from the start of the paragraph to the start of the original search range,
     // since we will want to ignore results in this area.
-    TextCheckingParagraph paragraph(createLiveRange(m_range));
+    TextCheckingParagraph paragraph(m_range);
     
     // Start checking from beginning of paragraph, but skip past results that occur before the start of the original search range.
     for (uint64_t startOffset = 0; startOffset < paragraph.checkingEnd(); ) {
@@ -541,7 +538,6 @@ TextCheckingGuesses TextCheckingHelper::guessesForMisspelledWordOrUngrammaticalP
         if (result.type == TextCheckingType::Grammar && paragraph.isCheckingRangeCoveredBy(result.range)) {
             for (auto& detail : result.details) {
                 ASSERT(detail.range.length > 0);
-                ASSERT(detail.range.location >= 0);
                 if (paragraph.checkingRangeMatches({ result.range.location + detail.range.location, detail.range.length })) {
                     String badGrammarPhrase = paragraph.text().substring(result.range.location, result.range.length).toString();
                     ASSERT(badGrammarPhrase.length());

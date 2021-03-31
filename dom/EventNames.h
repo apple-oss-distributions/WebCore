@@ -144,6 +144,7 @@ namespace WebCore {
     macro(gotpointercapture) \
     macro(hashchange) \
     macro(icecandidate) \
+    macro(icecandidateerror) \
     macro(iceconnectionstatechange) \
     macro(icegatheringstatechange) \
     macro(inactive) \
@@ -213,6 +214,7 @@ namespace WebCore {
     macro(pointerup) \
     macro(popstate) \
     macro(previoustrack) \
+    macro(processorerror) \
     macro(progress) \
     macro(ratechange) \
     macro(readystatechange) \

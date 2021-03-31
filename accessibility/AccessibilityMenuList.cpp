@@ -71,7 +71,7 @@ void AccessibilityMenuList::addChildren()
     if (!cache)
         return;
     
-    AccessibilityObject* list = cache->getOrCreate(AccessibilityRole::MenuListPopup);
+    auto list = cache->create(AccessibilityRole::MenuListPopup);
     if (!list)
         return;
 
@@ -117,7 +117,6 @@ bool AccessibilityMenuList::canSetFocusAttribute() const
 void AccessibilityMenuList::didUpdateActiveOption(int optionIndex)
 {
     Ref<Document> document(m_renderer->document());
-    AXObjectCache* cache = document->axObjectCache();
 
     const auto& childObjects = children();
     if (!childObjects.isEmpty()) {
@@ -136,7 +135,8 @@ void AccessibilityMenuList::didUpdateActiveOption(int optionIndex)
             downcast<AccessibilityMenuListPopup>(*childObjects[0]).didUpdateActiveOption(optionIndex);
     }
 
-    cache->postNotification(this, document.ptr(), AXObjectCache::AXMenuListValueChanged, TargetElement, PostSynchronously);
+    if (auto* cache = document->axObjectCache())
+        cache->postNotification(this, document.ptr(), AXObjectCache::AXMenuListValueChanged);
 }
 
 } // namespace WebCore

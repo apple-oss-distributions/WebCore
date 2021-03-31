@@ -312,6 +312,7 @@ HTMLElement::EventHandlerNameMap HTMLElement::createEventHandlerNameMap()
         &onseekingAttr.get(),
         &onselectAttr.get(),
         &onselectstartAttr.get(),
+        &onslotchangeAttr.get(),
         &onstalledAttr.get(),
         &onsubmitAttr.get(),
         &onsuspendAttr.get(),
@@ -452,7 +453,7 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomString& va
 
     if (name == tabindexAttr) {
         if (value.isEmpty())
-            clearTabIndexExplicitlyIfNeeded();
+            setTabIndexExplicitly(WTF::nullopt);
         else if (auto optionalTabIndex = parseHTMLInteger(value))
             setTabIndexExplicitly(optionalTabIndex.value());
         return;
@@ -539,10 +540,7 @@ ExceptionOr<void> HTMLElement::setInnerText(const String& text)
     // FIXME: This doesn't take whitespace collapsing into account at all.
 
     if (!text.contains('\n') && !text.contains('\r')) {
-        if (text.isEmpty())
-            replaceAllChildren(nullptr);
-        else
-            replaceAllChildren(document().createTextNode(text));
+        replaceAllChildrenWithNewText(text);
         return { };
     }
 
@@ -552,19 +550,19 @@ ExceptionOr<void> HTMLElement::setInnerText(const String& text)
     auto* r = renderer();
     if ((r && r->style().preserveNewline()) || (isConnected() && isTextControlInnerTextElement())) {
         if (!text.contains('\r')) {
-            replaceAllChildren(document().createTextNode(text));
+            replaceAllChildrenWithNewText(text);
             return { };
         }
         String textWithConsistentLineBreaks = text;
         textWithConsistentLineBreaks.replace("\r\n", "\n");
         textWithConsistentLineBreaks.replace('\r', '\n');
-        replaceAllChildren(document().createTextNode(textWithConsistentLineBreaks));
+        replaceAllChildrenWithNewText(textWithConsistentLineBreaks);
         return { };
     }
 
     // Add text nodes and <br> elements.
     auto fragment = textToFragment(document(), text);
-    // FIXME: This should use replaceAllChildren() once it accepts DocumentFragments as input.
+    // FIXME: This should use a variant of replaceAllChildrenWithNewText() which accepts DocumentFragments as input.
     // It's safe to dispatch events on the new fragment since author scripts have no access to it yet.
     ScriptDisallowedScope::EventAllowedScope allowedScope(fragment.get());
     return replaceChildrenWithFragment(*this, WTFMove(fragment));
@@ -785,7 +783,7 @@ bool HTMLElement::rendererIsEverNeeded()
             return false;
     } else if (hasTagName(noembedTag)) {
         RefPtr<Frame> frame = document().frame();
-        if (frame && frame->loader().arePluginsEnabled())
+        if (frame && frame->arePluginsEnabled())
             return false;
     }
     return StyledElement::rendererIsEverNeeded();
@@ -948,7 +946,7 @@ void HTMLElement::calculateAndAdjustDirectionality()
         invalidateStyleForSubtree();
 }
 
-void HTMLElement::adjustDirectionalityIfNeededAfterChildrenChanged(Element* beforeChange, ChildChangeType changeType)
+void HTMLElement::adjustDirectionalityIfNeededAfterChildrenChanged(Element* beforeChange, ChildChange::Type changeType)
 {
     // FIXME: This function looks suspicious.
 
@@ -957,7 +955,7 @@ void HTMLElement::adjustDirectionalityIfNeededAfterChildrenChanged(Element* befo
 
     RefPtr<Node> oldMarkedNode;
     if (beforeChange)
-        oldMarkedNode = changeType == ElementInserted ? ElementTraversal::nextSibling(*beforeChange) : beforeChange->nextSibling();
+        oldMarkedNode = changeType == ChildChange::Type::ElementInserted ? ElementTraversal::nextSibling(*beforeChange) : beforeChange->nextSibling();
 
     while (oldMarkedNode && elementAffectsDirectionality(*oldMarkedNode))
         oldMarkedNode = oldMarkedNode->nextSibling();

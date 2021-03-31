@@ -2,7 +2,7 @@
  * Copyright (C) 2000 Lars Knoll (knoll@kde.org)
  *           (C) 2000 Antti Koivisto (koivisto@kde.org)
  *           (C) 2000 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2003-2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2003-2020 Apple Inc. All rights reserved.
  * Copyright (C) 2008 Holger Hans Peter Freyther
  *
  * This library is free software; you can redistribute it and/or
@@ -33,12 +33,6 @@
 #include <wtf/Optional.h>
 #include <wtf/WeakPtr.h>
 #include <wtf/unicode/CharacterNames.h>
-
-// "X11/X.h" defines Complex to 0 and conflicts
-// with Complex value in CodePath enum.
-#ifdef Complex
-#undef Complex
-#endif
 
 namespace WebCore {
 
@@ -81,6 +75,13 @@ struct GlyphOverflow {
     bool computeBounds { false };
 };
 
+#if USE(CORE_TEXT)
+void showLetterpressedGlyphsWithAdvances(const FloatPoint&, const Font&, GraphicsContext&, const CGGlyph*, const CGSize* advances, unsigned count);
+void fillVectorWithHorizontalGlyphPositions(Vector<CGPoint, 256>& positions, CGContextRef, const CGSize* advances, unsigned count, const FloatPoint&);
+AffineTransform computeOverallTextMatrix(const Font&);
+AffineTransform computeVerticalTextMatrix(const Font&, const AffineTransform& previousTextMatrix);
+#endif
+
 class TextLayoutDeleter {
 public:
     void operator()(TextLayout*) const;
@@ -108,7 +109,7 @@ public:
     WEBCORE_EXPORT void update(RefPtr<FontSelector>&& = nullptr) const;
 
     enum CustomFontNotReadyAction { DoNotPaintIfFontNotReady, UseFallbackIfFontNotReady };
-    WEBCORE_EXPORT float drawText(GraphicsContext&, const TextRun&, const FloatPoint&, unsigned from = 0, Optional<unsigned> to = WTF::nullopt, CustomFontNotReadyAction = DoNotPaintIfFontNotReady) const;
+    WEBCORE_EXPORT FloatSize drawText(GraphicsContext&, const TextRun&, const FloatPoint&, unsigned from = 0, Optional<unsigned> to = WTF::nullopt, CustomFontNotReadyAction = DoNotPaintIfFontNotReady) const;
     static void drawGlyphs(GraphicsContext&, const Font&, const GlyphBuffer&, unsigned from, unsigned numGlyphs, const FloatPoint&, FontSmoothingMode);
     void drawEmphasisMarks(GraphicsContext&, const TextRun&, const AtomString& mark, const FloatPoint&, unsigned from = 0, Optional<unsigned> to = WTF::nullopt) const;
 
@@ -116,7 +117,7 @@ public:
 
     float widthOfTextRange(const TextRun&, unsigned from, unsigned to, HashSet<const Font*>* fallbackFonts = 0, float* outWidthBeforeRange = nullptr, float* outWidthAfterRange = nullptr) const;
     WEBCORE_EXPORT float width(const TextRun&, HashSet<const Font*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
-    float widthForSimpleText(StringView text) const;
+    float widthForSimpleText(StringView text, TextDirection = TextDirection::LTR) const;
 
     std::unique_ptr<TextLayout, TextLayoutDeleter> createLayout(RenderText&, float xPos, bool collapseWhiteSpace) const;
     static float width(TextLayout&, unsigned from, unsigned len, HashSet<const Font*>* fallbackFonts = 0);
@@ -174,22 +175,22 @@ public:
 
     // Whether or not there is an expansion opportunity just before the first character
     // Note that this does not take a isAfterExpansion flag; this assumes that isAfterExpansion is false
-    // Here, "Leading" and "Trailing" are relevant after the line has been rearranged for bidi.
-    // ("Leading" means "left" and "Trailing" means "right.")
-    static bool leadingExpansionOpportunity(const StringView&, TextDirection);
-    static bool trailingExpansionOpportunity(const StringView&, TextDirection);
+    static bool leftExpansionOpportunity(const StringView&, TextDirection);
+    static bool rightExpansionOpportunity(const StringView&, TextDirection);
 
     WEBCORE_EXPORT static void setShouldUseSmoothing(bool);
     WEBCORE_EXPORT static bool shouldUseSmoothing();
 
     static bool isSubpixelAntialiasingAvailable();
 
-    enum CodePath { Auto, Simple, Complex, SimpleWithGlyphOverflow };
+    enum class CodePath : uint8_t { Auto, Simple, Complex, SimpleWithGlyphOverflow };
     CodePath codePath(const TextRun&, Optional<unsigned> from = WTF::nullopt, Optional<unsigned> to = WTF::nullopt) const;
-    static CodePath characterRangeCodePath(const LChar*, unsigned) { return Simple; }
+    static CodePath characterRangeCodePath(const LChar*, unsigned) { return CodePath::Simple; }
     static CodePath characterRangeCodePath(const UChar*, unsigned len);
 
     bool primaryFontIsSystemFont() const;
+
+    static float syntheticObliqueAngle() { return 14; }
 
     std::unique_ptr<DisplayList::DisplayList> displayListForTextRun(GraphicsContext&, const TextRun&, unsigned from = 0, Optional<unsigned> to = { }, CustomFontNotReadyAction = CustomFontNotReadyAction::DoNotPaintIfFontNotReady) const;
 
@@ -203,13 +204,9 @@ public:
 #endif
 private:
     enum ForTextEmphasisOrNot { NotForTextEmphasis, ForTextEmphasis };
-    enum class ShouldSaveOffsets : uint8_t {
-        Yes,
-        No
-    };
 
-    GlyphBuffer layoutText(CodePath, const TextRun&, unsigned from, unsigned to, ShouldSaveOffsets = ShouldSaveOffsets::No, ForTextEmphasisOrNot = NotForTextEmphasis) const;
-    GlyphBuffer layoutSimpleText(const TextRun&, unsigned from, unsigned to, ShouldSaveOffsets = ShouldSaveOffsets::No, ForTextEmphasisOrNot = NotForTextEmphasis) const;
+    GlyphBuffer layoutText(CodePath, const TextRun&, unsigned from, unsigned to, ForTextEmphasisOrNot = NotForTextEmphasis) const;
+    GlyphBuffer layoutSimpleText(const TextRun&, unsigned from, unsigned to, ForTextEmphasisOrNot = NotForTextEmphasis) const;
     void drawGlyphBuffer(GraphicsContext&, const GlyphBuffer&, FloatPoint&, CustomFontNotReadyAction) const;
     void drawEmphasisMarks(GraphicsContext&, const GlyphBuffer&, const AtomString&, const FloatPoint&) const;
     float floatWidthForSimpleText(const TextRun&, HashSet<const Font*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
@@ -221,7 +218,7 @@ private:
     static bool canReturnFallbackFontsForComplexText();
     static bool canExpandAroundIdeographsInComplexText();
 
-    GlyphBuffer layoutComplexText(const TextRun&, unsigned from, unsigned to, ShouldSaveOffsets = ShouldSaveOffsets::No, ForTextEmphasisOrNot = NotForTextEmphasis) const;
+    GlyphBuffer layoutComplexText(const TextRun&, unsigned from, unsigned to, ForTextEmphasisOrNot = NotForTextEmphasis) const;
     float floatWidthForComplexText(const TextRun&, HashSet<const Font*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
     int offsetForPositionForComplexText(const TextRun&, float position, bool includePartialGlyphs) const;
     void adjustSelectionRectForComplexText(const TextRun&, LayoutRect& selectionRect, unsigned from, unsigned to) const;
@@ -307,8 +304,6 @@ private:
 #endif
         return advancedTextRenderingMode();
     }
-
-    static int syntheticObliqueAngle() { return 14; }
 
 #if PLATFORM(WIN) && USE(CG)
     static double s_fontSmoothingContrast;

@@ -36,25 +36,32 @@ namespace WebCore {
 
 WTF_MAKE_ISO_ALLOCATED_IMPL(WebKitOfflineAudioContext);
 
-inline WebKitOfflineAudioContext::WebKitOfflineAudioContext(Document& document, AudioBuffer* renderTarget)
-    : WebKitAudioContext(document, renderTarget)
+WebKitOfflineAudioContext::WebKitOfflineAudioContext(Document& document, float sampleRate, Ref<AudioBuffer>&& renderTarget)
+    : WebKitAudioContext(document, sampleRate, WTFMove(renderTarget))
 {
 }
+
+WebKitOfflineAudioContext::~WebKitOfflineAudioContext() = default;
 
 ExceptionOr<Ref<WebKitOfflineAudioContext>> WebKitOfflineAudioContext::create(ScriptExecutionContext& context, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate)
 {
     // FIXME: Add support for workers.
     if (!is<Document>(context))
         return Exception { NotSupportedError };
-    if (!numberOfChannels || numberOfChannels > 10 || !numberOfFrames || !isSampleRateRangeGood(sampleRate))
+    if (!numberOfChannels || numberOfChannels > 10 || !numberOfFrames || !isSupportedSampleRate(sampleRate))
         return Exception { SyntaxError };
     auto renderTarget = AudioBuffer::create(numberOfChannels, numberOfFrames, sampleRate);
     if (!renderTarget)
         return Exception { SyntaxError };
 
-    auto audioContext = adoptRef(*new WebKitOfflineAudioContext(downcast<Document>(context), renderTarget.get()));
+    auto audioContext = adoptRef(*new WebKitOfflineAudioContext(downcast<Document>(context), sampleRate, renderTarget.releaseNonNull()));
     audioContext->suspendIfNeeded();
     return audioContext;
+}
+
+const char* WebKitOfflineAudioContext::activeDOMObjectName() const
+{
+    return "WebKitOfflineAudioContext";
 }
 
 } // namespace WebCore

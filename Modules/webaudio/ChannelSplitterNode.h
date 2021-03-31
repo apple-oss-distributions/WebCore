@@ -38,7 +38,6 @@ public:
 
     // AudioNode
     void process(size_t framesToProcess) override;
-    void reset() override;
     
     ExceptionOr<void> setChannelCount(unsigned) final;
     ExceptionOr<void> setChannelCountMode(ChannelCountMode) final;
@@ -47,8 +46,9 @@ public:
 private:
     double tailTime() const override { return 0; }
     double latencyTime() const override { return 0; }
+    bool requiresTailProcessing() const final { return false; }
 
-    ChannelSplitterNode(BaseAudioContext&, float sampleRate, unsigned numberOfOutputs);
+    ChannelSplitterNode(BaseAudioContext&, unsigned numberOfOutputs);
 };
 
 } // namespace WebCore

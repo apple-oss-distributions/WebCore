@@ -91,6 +91,10 @@ private:
 
 bool MouseWheelRegionOverlay::updateRegion()
 {
+#if ENABLE(WHEEL_EVENT_REGIONS)
+    // Wheel event regions are painted via RenderLayerBacking::paintDebugOverlays().
+    return false;
+#else
     auto region = makeUnique<Region>();
     
     for (const Frame* frame = &m_page.mainFrame(); frame; frame = frame->tree().traverseNext()) {
@@ -107,6 +111,7 @@ bool MouseWheelRegionOverlay::updateRegion()
     bool regionChanged = !m_region || !(*m_region == *region);
     m_region = WTFMove(region);
     return regionChanged;
+#endif
 }
 
 class NonFastScrollableRegionOverlay final : public RegionOverlay {
@@ -167,8 +172,7 @@ static void drawRightAlignedText(const String& text, GraphicsContext& context, c
     float textBaselineFromTop = 14;
 
     TextRun textRun = TextRun(text);
-    context.setFillColor(Color::transparentBlack);
-    float textWidth = context.drawText(font, textRun, { });
+    float textWidth = font.width(textRun);
     context.setFillColor(Color::black);
     context.drawText(font, textRun, boxLocation + FloatSize(-(textWidth + textGap), textBaselineFromTop));
 }
@@ -395,14 +399,14 @@ RegionOverlay* DebugPageOverlays::regionOverlayForPage(Page& page, RegionType re
     return it->value.at(indexOf(regionType)).get();
 }
 
-void DebugPageOverlays::updateOverlayRegionVisibility(Page& page, DebugOverlayRegions visibleRegions)
+void DebugPageOverlays::updateOverlayRegionVisibility(Page& page, OptionSet<DebugOverlayRegions> visibleRegions)
 {
-    if (visibleRegions & NonFastScrollableRegion)
+    if (visibleRegions.contains(DebugOverlayRegions::NonFastScrollableRegion))
         showRegionOverlay(page, RegionType::NonFastScrollableRegion);
     else
         hideRegionOverlay(page, RegionType::NonFastScrollableRegion);
 
-    if (visibleRegions & WheelEventHandlerRegion)
+    if (visibleRegions.contains(DebugOverlayRegions::WheelEventHandlerRegion))
         showRegionOverlay(page, RegionType::WheelEventHandlers);
     else
         hideRegionOverlay(page, RegionType::WheelEventHandlers);
@@ -410,7 +414,7 @@ void DebugPageOverlays::updateOverlayRegionVisibility(Page& page, DebugOverlayRe
 
 void DebugPageOverlays::settingsChanged(Page& page)
 {
-    DebugOverlayRegions activeOverlayRegions = page.settings().visibleDebugOverlayRegions();
+    auto activeOverlayRegions = OptionSet<DebugOverlayRegions>::fromRaw(page.settings().visibleDebugOverlayRegions());
     if (!activeOverlayRegions && !hasOverlays(page))
         return;
 

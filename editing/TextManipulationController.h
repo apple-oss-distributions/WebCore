@@ -52,6 +52,7 @@ public:
         String tagName;
         String roleAttribute;
         URL documentURL;
+        bool isVisible { false };
 
         template<class Encoder> void encode(Encoder&) const;
         template<class Decoder> static Optional<ManipulationTokenInfo> decode(Decoder&);
@@ -116,6 +117,7 @@ public:
     WEBCORE_EXPORT void startObservingParagraphs(ManipulationItemCallback&&, Vector<ExclusionRule>&& = { });
 
     void didCreateRendererForElement(Element&);
+    void didCreateRendererForTextNode(Text&);
     void didUpdateContentForText(Text&);
     void removeNode(Node*);
 
@@ -181,9 +183,12 @@ private:
     WeakPtr<Document> m_document;
     WeakHashSet<Element> m_elementsWithNewRenderer;
     HashSet<Text*> m_manipulatedTextsWithNewContent;
+    HashSet<Node*> m_textNodesWithNewRenderer;
     HashSet<Node*> m_manipulatedNodes;
 
     HashMap<String, bool> m_cachedFontFamilyExclusionResults;
+
+    bool m_didScheduleObservationUpdate { false };
 
     ManipulationItemCallback m_callback;
     Vector<ManipulationItem> m_pendingItemsForCallback;
@@ -200,6 +205,7 @@ void TextManipulationController::ManipulationTokenInfo::encode(Encoder& encoder)
     encoder << tagName;
     encoder << roleAttribute;
     encoder << documentURL;
+    encoder << isVisible;
 }
 
 template<class Decoder>
@@ -213,6 +219,9 @@ Optional<TextManipulationController::ManipulationTokenInfo> TextManipulationCont
         return WTF::nullopt;
 
     if (!decoder.decode(result.documentURL))
+        return WTF::nullopt;
+
+    if (!decoder.decode(result.isVisible))
         return WTF::nullopt;
 
     return result;

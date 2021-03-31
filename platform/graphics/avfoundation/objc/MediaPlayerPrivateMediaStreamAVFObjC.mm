@@ -252,6 +252,9 @@ void MediaPlayerPrivateMediaStreamAVFObjC::videoSampleAvailable(MediaSample& sam
 
 void MediaPlayerPrivateMediaStreamAVFObjC::enqueueVideoSample(MediaSample& sample)
 {
+    if (!m_visible)
+        return;
+
     auto locker = tryHoldLock(m_sampleBufferDisplayLayerLock);
     if (!locker)
         return;
@@ -400,7 +403,7 @@ void MediaPlayerPrivateMediaStreamAVFObjC::load(const String&)
 }
 
 #if ENABLE(MEDIA_SOURCE)
-void MediaPlayerPrivateMediaStreamAVFObjC::load(const String&, MediaSourcePrivateClient*)
+void MediaPlayerPrivateMediaStreamAVFObjC::load(const URL&, const ContentType&, MediaSourcePrivateClient*)
 {
     // This media engine only supports MediaStream URLs.
     scheduleDeferredTask([this] {
@@ -419,8 +422,9 @@ void MediaPlayerPrivateMediaStreamAVFObjC::load(MediaStreamPrivate& stream)
     m_mediaStreamPrivate->addObserver(*this);
     m_ended = !m_mediaStreamPrivate->active();
 
+    updateTracks();
+
     scheduleDeferredTask([this] {
-        updateTracks();
         setNetworkState(MediaPlayer::NetworkState::Idle);
         updateReadyState();
     });
@@ -573,18 +577,12 @@ void MediaPlayerPrivateMediaStreamAVFObjC::setMuted(bool muted)
 
 bool MediaPlayerPrivateMediaStreamAVFObjC::hasVideo() const
 {
-    if (!metaDataAvailable())
-        return false;
-    
-    return m_mediaStreamPrivate->hasVideo();
+    return !m_videoTrackMap.isEmpty();
 }
 
 bool MediaPlayerPrivateMediaStreamAVFObjC::hasAudio() const
 {
-    if (!metaDataAvailable())
-        return false;
-    
-    return m_mediaStreamPrivate->hasAudio();
+    return !m_audioTrackMap.isEmpty();
 }
 
 void MediaPlayerPrivateMediaStreamAVFObjC::setVisible(bool visible)
@@ -593,8 +591,11 @@ void MediaPlayerPrivateMediaStreamAVFObjC::setVisible(bool visible)
         return;
 
     m_visible = visible;
-    if (m_visible)
-        flushRenderers();
+    flushRenderers();
+}
+
+void MediaPlayerPrivateMediaStreamAVFObjC::setVisibleForCanvas(bool)
+{
 }
 
 MediaTime MediaPlayerPrivateMediaStreamAVFObjC::durationMediaTime() const
@@ -756,7 +757,7 @@ RetainPtr<PlatformLayer> MediaPlayerPrivateMediaStreamAVFObjC::createVideoFullsc
 void MediaPlayerPrivateMediaStreamAVFObjC::setVideoFullscreenLayer(PlatformLayer* videoFullscreenLayer, WTF::Function<void()>&& completionHandler)
 {
     updateCurrentFrameImage();
-    m_videoLayerManager->setVideoFullscreenLayer(videoFullscreenLayer, WTFMove(completionHandler), m_imagePainter.cgImage);
+    m_videoLayerManager->setVideoFullscreenLayer(videoFullscreenLayer, WTFMove(completionHandler), m_imagePainter.cgImage ? m_imagePainter.cgImage->platformImage() : nullptr);
 }
 
 void MediaPlayerPrivateMediaStreamAVFObjC::setVideoFullscreenFrame(FloatRect frame)
@@ -816,58 +817,52 @@ void updateTracksOfType(HashMap<String, RefT>& trackMap, RealtimeMediaSource::Ty
 
 void MediaPlayerPrivateMediaStreamAVFObjC::checkSelectedVideoTrack()
 {
-    if (m_pendingSelectedTrackCheck)
-        return;
+    auto oldVideoTrack = m_activeVideoTrack;
+    bool hideVideoLayer = true;
 
-    m_pendingSelectedTrackCheck = true;
-    scheduleDeferredTask([this] {
-        auto oldVideoTrack = m_activeVideoTrack;
-        bool hideVideoLayer = true;
-
-        m_activeVideoTrack = nullptr;
-        if (auto* activeVideoTrack = this->activeVideoTrack()) {
-            for (const auto& track : m_videoTrackMap.values()) {
-                if (&track->streamTrack() == activeVideoTrack) {
-                    m_activeVideoTrack = track.ptr();
-                    if (track->selected())
-                        hideVideoLayer = false;
-                    break;
-                }
+    m_activeVideoTrack = nullptr;
+    if (auto* activeVideoTrack = this->activeVideoTrack()) {
+        for (const auto& track : m_videoTrackMap.values()) {
+            if (&track->streamTrack() == activeVideoTrack) {
+                m_activeVideoTrack = track.ptr();
+                if (track->selected())
+                    hideVideoLayer = false;
+                break;
             }
         }
+    }
 
-        if (oldVideoTrack != m_activeVideoTrack) {
-            m_imagePainter.reset();
-            if (m_displayMode == None)
-                m_waitingForFirstImage = true;
-        }
-        ensureLayers();
-        if (m_sampleBufferDisplayLayer) {
-            if (!m_activeVideoTrack)
-                m_sampleBufferDisplayLayer->clearEnqueuedSamples();
-            m_sampleBufferDisplayLayer->updateDisplayMode(hideVideoLayer || m_displayMode < PausedImage, hideRootLayer());
-        }
+    if (oldVideoTrack != m_activeVideoTrack) {
+        m_imagePainter.reset();
+        if (m_displayMode == None)
+            m_waitingForFirstImage = true;
+    }
+    ensureLayers();
+    if (m_sampleBufferDisplayLayer) {
+        if (!m_activeVideoTrack)
+            m_sampleBufferDisplayLayer->clearEnqueuedSamples();
+        m_sampleBufferDisplayLayer->updateDisplayMode(hideVideoLayer || m_displayMode < PausedImage, hideRootLayer());
+    }
 
-        m_pendingSelectedTrackCheck = false;
-        updateDisplayMode();
+    updateDisplayMode();
 
-        if (oldVideoTrack != m_activeVideoTrack) {
-            if (oldVideoTrack)
-                oldVideoTrack->streamTrack().source().removeVideoSampleObserver(*this);
-            if (m_activeVideoTrack) {
-                if (m_sampleBufferDisplayLayer && m_activeVideoTrack->streamTrack().source().isCaptureSource())
-                    m_sampleBufferDisplayLayer->setRenderPolicy(SampleBufferDisplayLayer::RenderPolicy::Immediately);
-                m_activeVideoTrack->streamTrack().source().addVideoSampleObserver(*this);
-            }
+    if (oldVideoTrack != m_activeVideoTrack) {
+        if (oldVideoTrack)
+            oldVideoTrack->streamTrack().source().removeVideoSampleObserver(*this);
+        if (m_activeVideoTrack) {
+            if (m_sampleBufferDisplayLayer && m_activeVideoTrack->streamTrack().source().isCaptureSource())
+                m_sampleBufferDisplayLayer->setRenderPolicy(SampleBufferDisplayLayer::RenderPolicy::Immediately);
+            m_activeVideoTrack->streamTrack().source().addVideoSampleObserver(*this);
         }
-    });
+    }
 }
 
 void MediaPlayerPrivateMediaStreamAVFObjC::updateTracks()
 {
     MediaStreamTrackPrivateVector currentTracks = m_mediaStreamPrivate->tracks();
 
-    auto setAudioTrackState = [this](AudioTrackPrivateMediaStream& track, int index, TrackState state)
+    auto deviceId = m_player->audioOutputDeviceIdOverride();
+    auto setAudioTrackState = [this, &deviceId](AudioTrackPrivateMediaStream& track, int index, TrackState state)
     {
         switch (state) {
         case TrackState::Remove:
@@ -884,6 +879,9 @@ void MediaPlayerPrivateMediaStreamAVFObjC::updateTracks()
             track.setVolume(m_volume);
             track.setMuted(m_muted);
             track.setEnabled(track.streamTrack().enabled() && !track.streamTrack().muted());
+            if (!deviceId.isNull())
+                track.setAudioOutputDevice(deviceId);
+
             if (playing())
                 track.play();
             break;
@@ -945,7 +943,7 @@ void MediaPlayerPrivateMediaStreamAVFObjC::updateCurrentFrameImage()
         return;
 
     auto pixelBuffer = static_cast<CVPixelBufferRef>(CMSampleBufferGetImageBuffer(m_imagePainter.mediaSample->platformSample().sample.cmSampleBuffer));
-    m_imagePainter.cgImage = m_imagePainter.pixelBufferConformer->createImageFromPixelBuffer(pixelBuffer);
+    m_imagePainter.cgImage = NativeImage::create(m_imagePainter.pixelBufferConformer->createImageFromPixelBuffer(pixelBuffer));
 }
 
 void MediaPlayerPrivateMediaStreamAVFObjC::paintCurrentFrameInContext(GraphicsContext& context, const FloatRect& destRect)
@@ -965,14 +963,14 @@ void MediaPlayerPrivateMediaStreamAVFObjC::paintCurrentFrameInContext(GraphicsCo
     if (!m_imagePainter.cgImage || !m_imagePainter.mediaSample)
         return;
 
-    auto image = m_imagePainter.cgImage.get();
-    FloatRect imageRect(0, 0, CGImageGetWidth(image), CGImageGetHeight(image));
+    auto& image = m_imagePainter.cgImage;
+    FloatRect imageRect { FloatPoint::zero(), image->size() };
     if (!m_videoTransform)
         m_videoTransform = videoTransformationMatrix(*m_imagePainter.mediaSample);
     AffineTransform videoTransform = *m_videoTransform;
     FloatRect transformedDestRect = videoTransform.inverse().valueOr(AffineTransform()).mapRect(destRect);
     context.concatCTM(videoTransform);
-    context.drawNativeImage(image, imageRect.size(), transformedDestRect, imageRect);
+    context.drawNativeImage(*image, imageRect.size(), transformedDestRect, imageRect);
 }
 
 void MediaPlayerPrivateMediaStreamAVFObjC::acceleratedRenderingStateChanged()
@@ -1015,6 +1013,15 @@ void MediaPlayerPrivateMediaStreamAVFObjC::setBufferingPolicy(MediaPlayer::Buffe
 {
     if (policy != MediaPlayer::BufferingPolicy::Default && m_sampleBufferDisplayLayer)
         m_sampleBufferDisplayLayer->flushAndRemoveImage();
+}
+
+void MediaPlayerPrivateMediaStreamAVFObjC::audioOutputDeviceChanged()
+{
+    if (!m_player)
+        return;
+    auto deviceId = m_player->audioOutputDeviceId();
+    for (auto& audioTrack : m_audioTrackMap.values())
+        audioTrack->setAudioOutputDevice(deviceId);
 }
 
 void MediaPlayerPrivateMediaStreamAVFObjC::scheduleDeferredTask(Function<void ()>&& function)

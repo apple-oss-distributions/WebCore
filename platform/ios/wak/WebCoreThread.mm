@@ -30,11 +30,13 @@
 
 #import "CommonVM.h"
 #import "FloatingPointEnvironment.h"
+#import "GraphicsContextGLOpenGL.h"
 #import "Logging.h"
 #import "RuntimeApplicationChecks.h"
 #import "ThreadGlobalData.h"
 #import "WAKWindow.h"
 #import "WKUtilities.h"
+#import "WebCoreJITOperations.h"
 #import "WebCoreThreadInternal.h"
 #import "WebCoreThreadMessage.h"
 #import "WebCoreThreadRun.h"
@@ -49,6 +51,7 @@
 #import <wtf/RunLoop.h>
 #import <wtf/ThreadSpecific.h>
 #import <wtf/Threading.h>
+#import <wtf/spi/cf/CFRunLoopSPI.h>
 #import <wtf/spi/cocoa/objcSPI.h>
 #import <wtf/text/AtomString.h>
 
@@ -58,6 +61,26 @@
 #define LOG_RELEASES 0
 
 #define DistantFuture   (86400.0 * 2000 * 365.2425 + 86400.0)   // same as +[NSDate distantFuture]
+
+namespace {
+// Release global state that is accessed from both web thread as well
+// as any client thread that calls into WebKit.
+void ReleaseWebThreadGlobalState()
+{
+    // GraphicsContextGLOpenGL current context is owned by the web thread lock. Release the context
+    // before the lock is released.
+
+    // In single-threaded environments we do not need to unset the context, as there should not be access from
+    // multiple threads.
+    ASSERT(WebThreadIsEnabled());
+    using ReleaseBehavior = WebCore::GraphicsContextGLOpenGL::ReleaseBehavior;
+    // For non-web threads, we don't know if we ever see another call from the thread.
+    ReleaseBehavior releaseBehavior =
+        WebThreadIsCurrent() ? ReleaseBehavior::PreserveThreadResources : ReleaseBehavior::ReleaseThreadResources;
+    WebCore::GraphicsContextGLOpenGL::releaseCurrentContext(releaseBehavior);
+}
+
+}
 
 static const constexpr Seconds DelegateWaitInterval { 10_s };
 
@@ -116,6 +139,7 @@ static BOOL sendingDelegateMessage;
 #endif
 
 static CFRunLoopObserverRef mainRunLoopAutoUnlockObserver;
+static BOOL mainThreadHasPendingAutoUnlock;
 
 static Lock startupLock;
 static StaticCondition startupCondition;
@@ -134,6 +158,8 @@ static void WebCoreObjCDeallocWithWebThreadLockImpl(id self, SEL _cmd);
 static NSMutableArray* sAsyncDelegates = nil;
 
 WEBCORE_EXPORT volatile unsigned webThreadDelegateMessageScopeCount = 0;
+
+static bool perCalloutAutoreleasepoolEnabled;
 
 static inline void SendMessage(NSInvocation* invocation)
 {
@@ -447,7 +473,11 @@ static void MainRunLoopAutoUnlock(CFRunLoopObserverRef, CFRunLoopActivity, void*
 
     if (sMainThreadModalCount)
         return;
-    
+
+    if (!mainThreadHasPendingAutoUnlock)
+        return;
+
+    mainThreadHasPendingAutoUnlock = NO;
     CFRunLoopRemoveObserver(CFRunLoopGetCurrent(), mainRunLoopAutoUnlockObserver, kCFRunLoopCommonModes);
 
     _WebThreadUnlock();
@@ -458,6 +488,7 @@ static void _WebThreadAutoLock(void)
     ASSERT(!WebThreadIsCurrent());
 
     if (!mainThreadLockCount) {
+        mainThreadHasPendingAutoUnlock = YES;
         CFRunLoopAddObserver(CFRunLoopGetCurrent(), mainRunLoopAutoUnlockObserver, kCFRunLoopCommonModes);    
         _WebThreadLock();
         CFRunLoopWakeUp(CFRunLoopGetMain());
@@ -467,7 +498,7 @@ static void _WebThreadAutoLock(void)
 static void WebRunLoopLockInternal(AutoreleasePoolOperation poolOperation)
 {
     _WebThreadLock();
-    if (poolOperation == PushOrPopAutoreleasePool)
+    if (poolOperation == PushOrPopAutoreleasePool && !perCalloutAutoreleasepoolEnabled)
         autoreleasePoolMark = objc_autoreleasePoolPush();
     isWebThreadLocked = YES;
 }
@@ -481,7 +512,7 @@ static void WebRunLoopUnlockInternal(AutoreleasePoolOperation poolOperation)
         [sAsyncDelegates removeAllObjects];
     }
 
-    if (poolOperation == PushOrPopAutoreleasePool)
+    if (poolOperation == PushOrPopAutoreleasePool && !perCalloutAutoreleasepoolEnabled)
         objc_autoreleasePoolPop(autoreleasePoolMark);
 
     _WebThreadUnlock();
@@ -548,6 +579,8 @@ void WebRunLoopEnableNested()
     if (!WebThreadIsCurrent())
         _WebRunLoopEnableNestedFromMainThread();
 
+    _CFRunLoopSetPerCalloutAutoreleasepoolEnabled(NO);
+
     savedAutoreleasePoolMark = autoreleasePoolMark;
     autoreleasePoolMark = 0;
     WebRunLoopUnlockInternal(IgnoreAutoreleasePool);
@@ -563,6 +596,8 @@ void WebRunLoopDisableNested()
 
     if (!WebThreadIsCurrent())
         _WebRunLoopDisableNestedFromMainThread();
+
+    _CFRunLoopSetPerCalloutAutoreleasepoolEnabled(YES);
 
     autoreleasePoolMark = savedAutoreleasePoolMark;
     savedAutoreleasePoolMark = 0;
@@ -589,6 +624,7 @@ static void* RunWebThread(void*)
     // <rdar://problem/8502487>.
     WTF::initializeWebThread();
     JSC::initialize();
+    WebCore::populateJITOperations();
     
     // Make sure that the WebThread and the main thread share the same ThreadGlobalData objects.
     WebCore::threadGlobalData().setWebCoreThreadData();
@@ -615,6 +651,8 @@ static void* RunWebThread(void*)
     CFRunLoopSourceContext ReleaseSourceContext = {0, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, HandleWebThreadReleaseSource};
     WebThreadReleaseSource = CFRunLoopSourceCreate(nullptr, -1, &ReleaseSourceContext);
     CFRunLoopAddSource(webThreadRunLoop, WebThreadReleaseSource, kCFRunLoopDefaultMode);
+
+    perCalloutAutoreleasepoolEnabled = _CFRunLoopSetPerCalloutAutoreleasepoolEnabled(YES);
 
     {
         LockHolder locker(startupLock);
@@ -772,6 +810,8 @@ void WebThreadUnlockFromAnyThread(void)
     if (!webThreadStarted)
         return;
     ASSERT(!WebThreadIsCurrent());
+    ReleaseWebThreadGlobalState();
+
     // No-op except from a secondary thread.
     if (pthread_main_np())
         return;
@@ -793,6 +833,8 @@ void WebThreadUnlockGuardForMail(void)
 
 void _WebThreadUnlock()
 {
+    ReleaseWebThreadGlobalState();
+
 #if LOG_WEB_LOCK || LOG_MAIN_THREAD_LOCKING
     lockCount--;
 #if LOG_WEB_LOCK

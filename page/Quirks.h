@@ -35,7 +35,10 @@ class Element;
 class EventListener;
 class EventTarget;
 class HTMLElement;
+class HTMLVideoElement;
 class LayoutUnit;
+class PlatformMouseEvent;
+enum class StorageAccessWasGranted : bool;
 
 class Quirks {
     WTF_MAKE_NONCOPYABLE(Quirks); WTF_MAKE_FAST_ALLOCATED;
@@ -62,6 +65,9 @@ public:
     bool shouldPreventPointerMediaQueryFromEvaluatingToCoarse() const;
     bool shouldPreventDispatchOfTouchEvent(const AtomString&, EventTarget*) const;
 #endif
+#if ENABLE(IOS_TOUCH_EVENTS)
+    WEBCORE_EXPORT bool shouldSynthesizeTouchEvents() const;
+#endif
     bool shouldDisablePointerEventsQuirk() const;
     bool needsInputModeNoneImplicitly(const HTMLElement&) const;
     bool needsDeferKeyDownAndKeyPressTimersUntilNextEditingCommand() const;
@@ -87,6 +93,7 @@ public:
     bool needsGMailOverflowScrollQuirk() const;
     bool needsYouTubeOverflowScrollQuirk() const;
     bool needsFullscreenDisplayNoneQuirk() const;
+    bool needsWeChatScrollingQuirk() const;
 
     bool shouldOpenAsAboutBlank(const String&) const;
 
@@ -98,7 +105,7 @@ public:
     static bool shouldMakeEventListenerPassive(const EventTarget&, const AtomString& eventType, const EventListener&);
 
 #if ENABLE(MEDIA_STREAM)
-    bool shouldEnableLegacyGetUserMedia() const;
+    bool shouldEnableLegacyGetUserMediaQuirk() const;
 #endif
 
     bool shouldDisableElementFullscreenQuirk() const;
@@ -108,12 +115,36 @@ public:
     bool shouldAvoidPastingImagesAsWebContent() const;
 
     enum StorageAccessResult : bool { ShouldNotCancelEvent, ShouldCancelEvent };
-    StorageAccessResult triggerOptionalStorageAccessQuirk(const Element&, const AtomString& eventType) const;
+    StorageAccessResult triggerOptionalStorageAccessQuirk(Element&, const PlatformMouseEvent&, const AtomString& eventType, int, Element*) const;
 
     bool needsVP9FullRangeFlagQuirk() const;
     bool needsHDRPixelDepthQuirk() const;
     
     bool needsAkamaiMediaPlayerQuirk(const HTMLVideoElement&) const;
+
+    bool needsBlackFullscreenBackgroundQuirk() const;
+
+    bool shouldDisableEndFullscreenEventWhenEnteringPictureInPictureFromFullscreenQuirk() const;
+
+    WEBCORE_EXPORT bool blocksReturnToFullscreenFromPictureInPictureQuirk() const;
+
+    bool requiresUserGestureToPauseInPictureInPicture() const;
+    bool requiresUserGestureToLoadInPictureInPicture() const;
+
+#if ENABLE(RESOURCE_LOAD_STATISTICS)
+    static bool isMicrosoftTeamsRedirectURL(const URL&);
+    static bool hasStorageAccessForAllLoginDomains(const HashSet<RegistrableDomain>&, const RegistrableDomain&);
+    static const String& BBCRadioPlayerURLString();
+    WEBCORE_EXPORT static const String& staticRadioPlayerURLString();
+    StorageAccessResult requestStorageAccessAndHandleClick(CompletionHandler<void(StorageAccessWasGranted)>&&) const;
+    static RegistrableDomain mapToTopDomain(const URL&);
+#endif
+
+#if ENABLE(WEB_AUTHN)
+    WEBCORE_EXPORT bool shouldBypassUserGestureRequirementForWebAuthn() const;
+#endif
+
+    static bool shouldOmitHTMLDocumentSupportedPropertyNames();
 
 private:
     bool needsQuirks() const;
@@ -138,10 +169,18 @@ private:
 #if ENABLE(TOUCH_EVENTS)
     mutable Optional<bool> m_shouldDispatchSimulatedMouseEventsQuirk;
 #endif
+#if ENABLE(IOS_TOUCH_EVENTS)
+    mutable Optional<bool> m_shouldSynthesizeTouchEventsQuirk;
+#endif
     mutable Optional<bool> m_needsCanPlayAfterSeekedQuirk;
     mutable Optional<bool> m_shouldBypassAsyncScriptDeferring;
     mutable Optional<bool> m_needsVP9FullRangeFlagQuirk;
     mutable Optional<bool> m_needsHDRPixelDepthQuirk;
+    mutable Optional<bool> m_needsBlackFullscreenBackgroundQuirk;
+    mutable Optional<bool> m_requiresUserGestureToPauseInPictureInPicture;
+    mutable Optional<bool> m_requiresUserGestureToLoadInPictureInPicture;
+    mutable Optional<bool> m_shouldDisableEndFullscreenEventWhenEnteringPictureInPictureFromFullscreenQuirk;
+    mutable Optional<bool> m_blocksReturnToFullscreenFromPictureInPictureQuirk;
 };
 
-}
+} // namespace WebCore

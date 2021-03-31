@@ -63,6 +63,8 @@ public:
         return subspaceForImpl(vm);
     }
     static JSC::IsoSubspace* subspaceForImpl(JSC::VM& vm);
+    DECLARE_VISIT_CHILDREN;
+
     static void analyzeHeap(JSCell*, JSC::HeapAnalyzer&);
 public:
     static constexpr unsigned StructureFlags = Base::StructureFlags | JSC::InterceptsGetOwnPropertySlotByIndexEvenWhenLengthIsNotZero | JSC::OverridesGetCallData | JSC::OverridesGetOwnPropertySlot | JSC::ProhibitsPropertyCaching;
@@ -72,10 +74,10 @@ protected:
     void finishCreation(JSC::VM&);
 };
 
-class JSTestPluginInterfaceOwner : public JSC::WeakHandleOwner {
+class JSTestPluginInterfaceOwner final : public JSC::WeakHandleOwner {
 public:
-    virtual bool isReachableFromOpaqueRoots(JSC::Handle<JSC::Unknown>, void* context, JSC::SlotVisitor&, const char**);
-    virtual void finalize(JSC::Handle<JSC::Unknown>, void* context);
+    bool isReachableFromOpaqueRoots(JSC::Handle<JSC::Unknown>, void* context, JSC::SlotVisitor&, const char**) final;
+    void finalize(JSC::Handle<JSC::Unknown>, void* context) final;
 };
 
 inline JSC::WeakHandleOwner* wrapperOwner(DOMWrapperWorld&, TestPluginInterface*)

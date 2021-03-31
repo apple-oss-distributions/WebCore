@@ -56,6 +56,14 @@ AccessibilityOrientation AccessibilitySlider::orientation() const
     if (!m_renderer)
         return AccessibilityOrientation::Horizontal;
     
+    auto ariaOrientation = getAttribute(aria_orientationAttr);
+    if (equalLettersIgnoringASCIICase(ariaOrientation, "horizontal"))
+        return AccessibilityOrientation::Horizontal;
+    if (equalLettersIgnoringASCIICase(ariaOrientation, "vertical"))
+        return AccessibilityOrientation::Vertical;
+    if (equalLettersIgnoringASCIICase(ariaOrientation, "undefined"))
+        return AccessibilityOrientation::Undefined;
+    
     const RenderStyle& style = m_renderer->style();
 
     ControlPart styleAppearance = style.appearance();
@@ -84,7 +92,7 @@ void AccessibilitySlider::addChildren()
 
     AXObjectCache* cache = m_renderer->document().axObjectCache();
 
-    auto& thumb = downcast<AccessibilitySliderThumb>(*cache->getOrCreate(AccessibilityRole::SliderThumb));
+    auto& thumb = downcast<AccessibilitySliderThumb>(*cache->create(AccessibilityRole::SliderThumb));
     thumb.setParent(this);
 
     // Before actually adding the value indicator to the hierarchy,

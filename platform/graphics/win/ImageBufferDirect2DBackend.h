@@ -42,24 +42,26 @@ public:
     GraphicsContext& context() const override;
     void flushContext() override;
 
-    NativeImagePtr copyNativeImage(BackingStoreCopy = CopyBackingStore) const override;
+    RefPtr<NativeImage> copyNativeImage(BackingStoreCopy = CopyBackingStore) const override;
     RefPtr<Image> copyImage(BackingStoreCopy, PreserveResolution) const override;
 
     RefPtr<Image> sinkIntoImage(PreserveResolution) override;
+
+    void clipToMask(GraphicsContext&, const FloatRect& destRect) override;
 
     String toDataURL(const String& mimeType, Optional<double> quality, PreserveResolution) const override;
     Vector<uint8_t> toData(const String& mimeType, Optional<double> quality) const override;
     Vector<uint8_t> toBGRAData() const override;
 
     RefPtr<ImageData> getImageData(AlphaPremultiplication outputFormat, const IntRect&) const override;
-    void putImageData(AlphaPremultiplication inputFormat, const ImageData&, const IntRect& srcRect, const IntPoint& destPoint) override;
+    void putImageData(AlphaPremultiplication inputFormat, const ImageData&, const IntRect& srcRect, const IntPoint& destPoint, AlphaPremultiplication destFormat) override;
 
 protected:
     ImageBufferDirect2DBackend(const FloatSize& logicalSize, const IntSize& physicalSize, float resolutionScale, ColorSpace);
 
     std::unique_ptr<PlatformContextDirect2D> m_platformContext;
     std::unique_ptr<GraphicsContext> m_context;
-    NativeImagePtr m_bitmap;
+    PlatformImagePtr m_bitmap;
 };
 
 } // namespace WebCore

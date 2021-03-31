@@ -67,16 +67,11 @@ SourceBufferPrivateGStreamer::SourceBufferPrivateGStreamer(MediaSourcePrivateGSt
 {
 }
 
-void SourceBufferPrivateGStreamer::setClient(SourceBufferPrivateClient* client)
-{
-    m_sourceBufferPrivateClient = client;
-}
-
 void SourceBufferPrivateGStreamer::append(Vector<unsigned char>&& data)
 {
     ASSERT(isMainThread());
     ASSERT(m_mediaSource);
-    ASSERT(m_sourceBufferPrivateClient);
+    ASSERT(m_client);
 
     GST_DEBUG("Appending %zu bytes", data.size());
     // Wrap the whole Vector object in case the data is stored in the inlined buffer.
@@ -108,9 +103,12 @@ void SourceBufferPrivateGStreamer::resetParserState()
 void SourceBufferPrivateGStreamer::removedFromMediaSource()
 {
     ASSERT(isMainThread());
-    if (m_mediaSource)
-        m_mediaSource->removeSourceBuffer(this);
+    clearTrackBuffers();
+    m_mediaSource->removeSourceBuffer(this);
     m_playerPrivate.playbackPipeline()->removeSourceBuffer(this);
+    // After this only SourceBuffer should hold a reference to us, which will be destroyed eventually (when JS
+    // GC releases the last reference). Until then SourceBuffer is in "removed" state and won't use SourceBufferPrivate.
+    ASSERT(refCount() == 1);
 }
 
 MediaPlayer::ReadyState SourceBufferPrivateGStreamer::readyState() const
@@ -162,13 +160,18 @@ void SourceBufferPrivateGStreamer::notifyReadyForMoreSamples()
     ASSERT(WTF::isMainThread());
     setReadyForMoreSamples(true);
     if (m_notifyWhenReadyForMoreSamples)
-        m_sourceBufferPrivateClient->sourceBufferPrivateDidBecomeReadyForMoreSamples(m_trackId);
+        provideMediaData(m_trackId);
 }
 
 void SourceBufferPrivateGStreamer::setActive(bool isActive)
 {
-    if (m_mediaSource)
-        m_mediaSource->sourceBufferPrivateDidChangeActiveState(this, isActive);
+    m_isActive = isActive;
+    m_mediaSource->sourceBufferPrivateDidChangeActiveState(this, isActive);
+}
+
+bool SourceBufferPrivateGStreamer::isActive() const
+{
+    return m_isActive;
 }
 
 void SourceBufferPrivateGStreamer::notifyClientWhenReadyForMoreSamples(const AtomString& trackId)
@@ -178,28 +181,45 @@ void SourceBufferPrivateGStreamer::notifyClientWhenReadyForMoreSamples(const Ato
     m_trackId = trackId;
 }
 
-void SourceBufferPrivateGStreamer::didReceiveInitializationSegment(const SourceBufferPrivateClient::InitializationSegment& initializationSegment)
+void SourceBufferPrivateGStreamer::didReceiveInitializationSegment(SourceBufferPrivateClient::InitializationSegment&& initializationSegment, CompletionHandler<void()>&& completionHandler)
 {
-    if (m_sourceBufferPrivateClient)
-        m_sourceBufferPrivateClient->sourceBufferPrivateDidReceiveInitializationSegment(initializationSegment);
+    SourceBufferPrivate::didReceiveInitializationSegment(WTFMove(initializationSegment), WTFMove(completionHandler));
 }
 
 void SourceBufferPrivateGStreamer::didReceiveSample(MediaSample& sample)
 {
-    if (m_sourceBufferPrivateClient)
-        m_sourceBufferPrivateClient->sourceBufferPrivateDidReceiveSample(sample);
+    SourceBufferPrivate::didReceiveSample(sample);
 }
 
 void SourceBufferPrivateGStreamer::didReceiveAllPendingSamples()
 {
-    if (m_sourceBufferPrivateClient)
-        m_sourceBufferPrivateClient->sourceBufferPrivateAppendComplete(SourceBufferPrivateClient::AppendSucceeded);
+    SourceBufferPrivate::appendCompleted(true, m_mediaSource ? m_mediaSource->isEnded() : true);
 }
 
 void SourceBufferPrivateGStreamer::appendParsingFailed()
 {
-    if (m_sourceBufferPrivateClient)
-        m_sourceBufferPrivateClient->sourceBufferPrivateAppendComplete(SourceBufferPrivateClient::ParsingFailed);
+    SourceBufferPrivate::appendCompleted(false, m_mediaSource ? m_mediaSource->isEnded() : true);
+}
+
+bool SourceBufferPrivateGStreamer::isSeeking() const
+{
+    return m_mediaSource && m_mediaSource->isSeeking();
+}
+
+MediaTime SourceBufferPrivateGStreamer::currentMediaTime() const
+{
+    if (!m_mediaSource)
+        return { };
+
+    return m_mediaSource->currentMediaTime();
+}
+
+MediaTime SourceBufferPrivateGStreamer::duration() const
+{
+    if (!m_mediaSource)
+        return { };
+
+    return m_mediaSource->duration();
 }
 
 #if !RELEASE_LOG_DISABLED

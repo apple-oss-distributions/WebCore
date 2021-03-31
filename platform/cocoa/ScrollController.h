@@ -29,6 +29,7 @@
 
 #include "FloatPoint.h"
 #include "FloatSize.h"
+#include "RectEdges.h"
 #include "ScrollTypes.h"
 #include "WheelEventTestMonitor.h"
 #include <wtf/Noncopyable.h>
@@ -75,17 +76,24 @@ public:
     virtual bool allowsHorizontalStretching(const PlatformWheelEvent&) const = 0;
     virtual bool allowsVerticalStretching(const PlatformWheelEvent&) const = 0;
     virtual IntSize stretchAmount() const = 0;
-    virtual bool pinnedInDirection(const FloatSize&) const = 0;
-    virtual bool canScrollHorizontally() const = 0;
-    virtual bool canScrollVertically() const = 0;
+
+    virtual bool isPinnedForScrollDelta(const FloatSize&) const = 0;
+
+    virtual RectEdges<bool> edgePinnedState() const = 0;
+
+    virtual bool allowsHorizontalScrolling() const = 0;
+    virtual bool allowsVerticalScrolling() const = 0;
     virtual bool shouldRubberBandInDirection(ScrollDirection) const = 0;
 
     // FIXME: use ScrollClamping to collapse these to one.
     virtual void immediateScrollBy(const FloatSize&) = 0;
     virtual void immediateScrollByWithoutContentEdgeConstraints(const FloatSize&) = 0;
+    
     virtual void willStartRubberBandSnapAnimation() { }
     virtual void didStopRubberbandSnapAnimation() { }
-    
+
+    virtual void rubberBandingStateChanged(bool) { }
+
     // If the current scroll position is within the overhang area, this function will cause
     // the page to scroll to the nearest boundary point.
     virtual void adjustScrollPositionToBoundsIfNecessary() = 0;
@@ -100,10 +108,7 @@ public:
     virtual void willStartScrollSnapAnimation() { }
     virtual void didStopScrollSnapAnimation() { }
 
-    virtual float pageScaleFactor() const
-    {
-        return 1.0f;
-    }
+    virtual float pageScaleFactor() const = 0;
 
     virtual unsigned activeScrollOffsetIndex(ScrollEventAxis) const
     {
@@ -134,14 +139,23 @@ public:
     ~ScrollController();
 
 #if PLATFORM(MAC)
+    // Returns true if handled.
     bool handleWheelEvent(const PlatformWheelEvent&);
 #endif
+
+    void stopRubberbanding();
 
     bool usesScrollSnap() const;
 
     bool isUserScrollInProgress() const;
     bool isRubberBandInProgress() const;
     bool isScrollSnapInProgress() const;
+    
+#if ENABLE(RUBBER_BANDING)
+    RectEdges<bool> rubberBandingEdges() const { return m_rubberBandingEdges; }
+#endif
+
+    void scrollPositionChanged();
 
 #if ENABLE(CSS_SCROLL_SNAP)
     void updateScrollSnapPoints(ScrollEventAxis, const Vector<LayoutUnit>&, const Vector<ScrollOffsetRange<LayoutUnit>>&);
@@ -151,10 +165,10 @@ public:
     void setScrollSnapIndexDidChange(bool state) { m_activeScrollSnapIndexDidChange = state; }
     unsigned activeScrollSnapIndexForAxis(ScrollEventAxis) const;
     void updateScrollSnapState(const ScrollableArea&);
-
     void updateGestureInProgressState(const PlatformWheelEvent&);
-
+    float adjustScrollDestinationForDirectionalSnapping(ScrollEventAxis, float destination, float velocity, float originalPosition);
 #if PLATFORM(MAC)
+    // Returns true if handled.
     bool processWheelEventForScrollSnap(const PlatformWheelEvent&);
 #endif
 #endif
@@ -175,6 +189,10 @@ private:
 
     bool shouldRubberBandInHorizontalDirection(const PlatformWheelEvent&) const;
     bool shouldRubberBandInDirection(ScrollDirection) const;
+
+    bool isRubberBandInProgressInternal() const;
+    void updateRubberBandingState();
+    void updateRubberBandingEdges(IntSize clientStretch);
 #endif
 
 #if ENABLE(CSS_SCROLL_SNAP)
@@ -207,6 +225,7 @@ private:
     MonotonicTime m_startTime;
     FloatSize m_startStretch;
     FloatSize m_origVelocity;
+    RectEdges<bool> m_rubberBandingEdges;
     std::unique_ptr<ScrollControllerTimer> m_snapRubberbandTimer;
 #endif
 
@@ -223,6 +242,7 @@ private:
     bool m_inScrollGesture { false };
     bool m_momentumScrollInProgress { false };
     bool m_ignoreMomentumScrolls { false };
+    bool m_isRubberBanding { false };
 #endif
 
 #if ASSERT_ENABLED
