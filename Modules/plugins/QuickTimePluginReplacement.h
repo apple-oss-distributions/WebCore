@@ -26,7 +26,6 @@
 #pragma once
 
 #include "PluginReplacement.h"
-#include <wtf/WeakPtr.h>
 
 namespace WebCore {
 
@@ -52,7 +51,8 @@ private:
     static bool supportsURL(const URL&) { return true; }
     static bool isEnabledBySettings(const Settings&);
 
-    InstallResult installReplacement(ShadowRoot&) final;
+    bool installReplacement(ShadowRoot&) final;
+    JSC::JSObject* scriptObject() final { return m_scriptObject; }
 
     bool willCreateRenderer() final { return m_mediaElement; }
     RenderPtr<RenderElement> createElementRenderer(HTMLPlugInElement&, RenderStyle&&, const RenderTreePosition&) final;
@@ -60,10 +60,11 @@ private:
     bool ensureReplacementScriptInjected();
     DOMWrapperWorld& isolatedWorld();
 
-    WeakPtr<HTMLPlugInElement> m_parentElement;
+    HTMLPlugInElement* m_parentElement;
     RefPtr<HTMLVideoElement> m_mediaElement;
     const Vector<String> m_names;
     const Vector<String> m_values;
+    JSC::JSObject* m_scriptObject { nullptr }; // FIXME: Why is it safe to have this pointer here? What keeps it alive during GC?
 };
 
 }

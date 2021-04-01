@@ -293,14 +293,7 @@ void HTMLPlugInElement::didAddUserAgentShadowRoot(ShadowRoot& root)
         return;
     
     root.setResetStyleInheritance(true);
-    auto result = m_pluginReplacement->installReplacement(root);
-
-#if PLATFORM(COCOA)
-    RELEASE_ASSERT(result.success || !result.scriptObject);
-    m_pluginReplacementScriptObject = result.scriptObject;
-#endif
-
-    if (result.success) {
+    if (m_pluginReplacement->installReplacement(root)) {
         setDisplayState(DisplayingPluginReplacement);
         invalidateStyleAndRenderersForSubtree();
     }
@@ -396,14 +389,9 @@ bool HTMLPlugInElement::requestObject(const String& relativeURL, const String& m
 
 JSC::JSObject* HTMLPlugInElement::scriptObjectForPluginReplacement()
 {
-#if PLATFORM(COCOA)
-    JSC::JSValue value = m_pluginReplacementScriptObject;
-    if (!value)
-        return nullptr;
-    return value.getObject();
-#else
+    if (m_pluginReplacement)
+        return m_pluginReplacement->scriptObject();
     return nullptr;
-#endif
 }
 
 bool HTMLPlugInElement::isBelowSizeThreshold() const

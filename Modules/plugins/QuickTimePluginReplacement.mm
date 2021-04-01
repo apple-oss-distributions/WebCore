@@ -109,13 +109,19 @@ bool QuickTimePluginReplacement::isEnabledBySettings(const Settings& settings)
 }
 
 QuickTimePluginReplacement::QuickTimePluginReplacement(HTMLPlugInElement& plugin, const Vector<String>& paramNames, const Vector<String>& paramValues)
-    : m_parentElement(makeWeakPtr(plugin))
+    : m_parentElement(&plugin)
     , m_names(paramNames)
     , m_values(paramValues)
 {
 }
 
-QuickTimePluginReplacement::~QuickTimePluginReplacement() = default;
+QuickTimePluginReplacement::~QuickTimePluginReplacement()
+{
+    // FIXME: Why is it useful to null out pointers in an object that is being destroyed?
+    m_parentElement = nullptr;
+    m_scriptObject = nullptr;
+    m_mediaElement = nullptr;
+}
 
 RenderPtr<RenderElement> QuickTimePluginReplacement::createElementRenderer(HTMLPlugInElement& plugin, RenderStyle&& style, const RenderTreePosition& insertionPosition)
 {
@@ -160,13 +166,13 @@ bool QuickTimePluginReplacement::ensureReplacementScriptInjected()
     return true;
 }
 
-auto QuickTimePluginReplacement::installReplacement(ShadowRoot& root) -> InstallResult
+bool QuickTimePluginReplacement::installReplacement(ShadowRoot& root)
 {
     if (!ensureReplacementScriptInjected())
-        return { false };
+        return false;
 
     if (!m_parentElement->document().frame())
-        return { false };
+        return false;
 
     DOMWrapperWorld& world = isolatedWorld();
     ScriptController& scriptController = m_parentElement->document().frame()->script();
@@ -179,16 +185,16 @@ auto QuickTimePluginReplacement::installReplacement(ShadowRoot& root) -> Install
     // Lookup the "createPluginReplacement" function.
     JSC::JSValue replacementFunction = globalObject->get(lexicalGlobalObject, JSC::Identifier::fromString(vm, "createPluginReplacement"));
     if (replacementFunction.isUndefinedOrNull())
-        return { false };
+        return false;
     JSC::JSObject* replacementObject = replacementFunction.toObject(lexicalGlobalObject);
     scope.assertNoException();
     auto callData = getCallData(vm, replacementObject);
     if (callData.type == JSC::CallData::Type::None)
-        return { false };
+        return false;
 
     JSC::MarkedArgumentBuffer argList;
     argList.append(toJS(lexicalGlobalObject, globalObject, &root));
-    argList.append(toJS(lexicalGlobalObject, globalObject, m_parentElement.get()));
+    argList.append(toJS(lexicalGlobalObject, globalObject, m_parentElement));
     argList.append(toJS(lexicalGlobalObject, globalObject, this));
     argList.append(toJS<IDLSequence<IDLNullable<IDLDOMString>>>(*lexicalGlobalObject, *globalObject, m_names));
     argList.append(toJS<IDLSequence<IDLNullable<IDLDOMString>>>(*lexicalGlobalObject, *globalObject, m_values));
@@ -196,7 +202,7 @@ auto QuickTimePluginReplacement::installReplacement(ShadowRoot& root) -> Install
     JSC::JSValue replacement = call(lexicalGlobalObject, replacementObject, callData, globalObject, argList);
     if (UNLIKELY(scope.exception())) {
         scope.clearException();
-        return { false };
+        return false;
     }
 
     // Get the <video> created to replace the plug-in.
@@ -207,18 +213,23 @@ auto QuickTimePluginReplacement::installReplacement(ShadowRoot& root) -> Install
     if (!m_mediaElement) {
         LOG(Plugins, "%p - Failed to find <video> element created by QuickTime plugin replacement script.", this);
         scope.clearException();
-        return { false };
+        return false;
     }
 
     // Get the scripting interface.
     value = replacement.get(lexicalGlobalObject, JSC::Identifier::fromString(vm, "scriptObject"));
-    if (!value.isObject()) {
-        LOG(Plugins, "%p - Failed to find script object created by QuickTime plugin replacement.", this);
-        scope.clearException();
-        return { false };
+    if (!scope.exception() && !value.isUndefinedOrNull()) {
+        m_scriptObject = value.toObject(lexicalGlobalObject);
+        scope.assertNoException();
     }
 
-    return { true, value };
+    if (!m_scriptObject) {
+        LOG(Plugins, "%p - Failed to find script object created by QuickTime plugin replacement.", this);
+        scope.clearException();
+        return false;
+    }
+
+    return true;
 }
 
 unsigned long long QuickTimePluginReplacement::movieSize() const

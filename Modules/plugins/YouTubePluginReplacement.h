@@ -27,7 +27,6 @@
 
 #include "PluginReplacement.h"
 #include <wtf/HashMap.h>
-#include <wtf/WeakPtr.h>
 
 namespace WebCore {
 
@@ -49,14 +48,14 @@ private:
     static bool supportsURL(const URL&);
     static bool isEnabledBySettings(const Settings&);
 
-    InstallResult installReplacement(ShadowRoot&) final;
+    bool installReplacement(ShadowRoot&) final;
 
     String youTubeURL(const String& rawURL);
 
     bool willCreateRenderer() final { return m_embedShadowElement; }
     RenderPtr<RenderElement> createElementRenderer(HTMLPlugInElement&, RenderStyle&&, const RenderTreePosition&) final;
 
-    WeakPtr<HTMLPlugInElement> m_parentElement;
+    HTMLPlugInElement* m_parentElement;
     RefPtr<YouTubeEmbedShadowElement> m_embedShadowElement;
     KeyValueMap m_attributes;
 };

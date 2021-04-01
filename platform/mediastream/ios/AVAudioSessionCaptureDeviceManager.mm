@@ -202,12 +202,11 @@ void AVAudioSessionCaptureDeviceManager::activateAudioSession()
 
 Vector<AVAudioSessionCaptureDevice> AVAudioSessionCaptureDeviceManager::retrieveAudioSessionCaptureDevices() const
 {
-    auto *defaultInput = [m_audioSession currentRoute].inputs.firstObject;
-    auto availableInputs = [m_audioSession availableInputs];
-
     Vector<AVAudioSessionCaptureDevice> newAudioDevices;
-    newAudioDevices.reserveInitialCapacity(availableInputs.count);
-    for (AVAudioSessionPortDescription *portDescription in availableInputs)
+    auto *defaultInput = [m_audioSession currentRoute].inputs.firstObject;
+    newAudioDevices.reserveInitialCapacity([m_audioSession availableInputs].count);
+
+    for (AVAudioSessionPortDescription *portDescription in [m_audioSession availableInputs])
         newAudioDevices.uncheckedAppend(AVAudioSessionCaptureDevice::create(portDescription, defaultInput));
 
     return newAudioDevices;
